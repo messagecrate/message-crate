@@ -22,7 +22,7 @@ import {
   waitAtReview,
 } from "./screen";
 import { accountLeft, moveStageAtReview } from "./serverCalls";
-import { type ResumeWrite, runImport } from "./staging";
+import { type PickUp, runImport } from "./staging";
 import { adoptRecordedMode, parseStoredStagingSummary, withRecordedMode } from "./stagingSummary";
 import { runUpload } from "./upload";
 
@@ -99,7 +99,8 @@ export function createImportRunService(deps: ImportRunDeps) {
   }
 
   /**
-   * Start an import. For a fresh iMessage start this first reads which
+   * Start an import, or pick up an existing Import Run at the stage `pickUp`
+   * names. For a fresh iMessage start this first reads which
    * addresses the backup's device sent from and compares them to the
    * profile; when nothing matches, it parks the form and stops at
    * `identity_stop`, before any run exists, so Cancel has nothing to clean
@@ -109,8 +110,7 @@ export function createImportRunService(deps: ImportRunDeps) {
   async function startImport(
     account: RunAccount,
     form: ImportJobFormValues,
-    resume?: OpenRun,
-    resumeWrite?: ResumeWrite,
+    pickUp?: PickUp,
   ): Promise<void> {
     if (!ctx.desktop.isTauri()) return;
     await takeRunFor(account.accountId);
@@ -120,7 +120,7 @@ export function createImportRunService(deps: ImportRunDeps) {
     const started = ctx.scratch;
     await asWork(async () => {
       try {
-        await startRun(account, form, resume, resumeWrite);
+        await startRun(account, form, pickUp);
       } finally {
         started.startImport = false;
       }
@@ -131,12 +131,12 @@ export function createImportRunService(deps: ImportRunDeps) {
   async function startRun(
     account: RunAccount,
     form: ImportJobFormValues,
-    resume?: OpenRun,
-    resumeWrite?: ResumeWrite,
+    pickUp?: PickUp,
   ): Promise<void> {
     let identities: string[] | null = null;
-    const identityRead =
-      resume || resumeWrite ? null : importSourceFor(form.source).appleIdentityRead(form.source);
+    const identityRead = pickUp
+      ? null
+      : importSourceFor(form.source).appleIdentityRead(form.source);
     if (identityRead) {
       // The probe reads the backup (and, for an encrypted one, decrypts
       // it) before any run exists, which can take seconds: mark the run
@@ -164,9 +164,11 @@ export function createImportRunService(deps: ImportRunDeps) {
         store.set({ running: false });
       }
     } else {
-      store.set({ sourceIdentities: resumeWrite ? (resumeWrite.identities ?? null) : null });
+      store.set({
+        sourceIdentities: pickUp?.at === "staging" ? (pickUp.run.identities ?? null) : null,
+      });
     }
-    await runImport(ctx, account.token, form, identities, resume, resumeWrite);
+    await runImport(ctx, account.token, form, identities, pickUp);
   }
 
   /** Continue past the identity stop with the parked form. */

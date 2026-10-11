@@ -53,6 +53,15 @@ export type ResumeWrite = Omit<OpenRun, "approved"> & {
 };
 
 /**
+ * An existing Import Run to pick up, and the stage it picks up at. `upload`
+ * is a run whose run directory is already complete: it goes straight to
+ * Upload. `staging` is a run whose Staging was interrupted: its Staging
+ * resumes in the same run directory and skips the conversations already
+ * written.
+ */
+export type PickUp = { at: "upload"; run: OpenRun } | { at: "staging"; run: ResumeWrite };
+
+/**
  * The form an Import Run is started with, its attachment mode as the form
  * showed it. iMazing and OpenExtract show no Attachments field, so the
  * field may still hold what was chosen for another source; their runs copy
@@ -109,19 +118,15 @@ async function startRunLog(
 }
 
 /**
- * Run an Import Run from the start, or resume one. `resume` is a run whose
- * run directory is already complete, and it goes straight to Upload.
- * `resumeWrite` is a run whose Staging was interrupted. Its Staging resumes in
- * the same run directory and skips the conversations already written. At most
- * one of the two is given.
+ * Run an Import Run from the start, or pick one up at the stage `pickUp`
+ * names.
  */
 export async function runImport(
   ctx: RunContext,
   token: string | null,
   submitted: ImportJobFormValues,
   identities: string[] | null,
-  resume?: OpenRun,
-  resumeWrite?: ResumeWrite,
+  pickUp?: PickUp,
 ): Promise<void> {
   if (!ctx.desktop.isTauri()) return;
   const { store } = ctx;
@@ -142,7 +147,7 @@ export async function runImport(
   try {
     if (!token) throw new Error("Not authenticated");
 
-    if (!resume && !resumeWrite) {
+    if (!pickUp) {
       // A new Import Run works to the server's attachment size limit as it is
       // now. It goes into the form the run is created with, so every later
       // stage, and a resume, measures against this same number.
@@ -153,20 +158,21 @@ export async function runImport(
       store.set({ form });
     }
 
-    if (resume) {
+    if (pickUp?.at === "upload") {
+      const { run } = pickUp;
       // The run directory is already complete, so there is nothing to
       // resolve, no new run to create (the account already has this one),
       // and no extract to run. resume_upload is only ever offered after the
       // last review, so there IS a plan from it: it rides along as
-      // `resume.approved` (parsed from the run's stored summary) when it
+      // `run.approved` (parsed from the run's stored summary) when it
       // parses. Straight to Upload.
-      runId = resume.runId;
-      await loadCarriedRecord(ctx, resume.runDir);
+      runId = run.runId;
+      await loadCarriedRecord(ctx, run.runDir);
       // The approved plan was read from the directory at its review, so it
       // carries the mode Staging recorded there.
-      form = adoptRecordedMode(ctx, form, resume.approved);
+      form = adoptRecordedMode(ctx, form, run.approved);
       store.set({
-        runDir: resume.runDir,
+        runDir: run.runDir,
         importRunId: runId,
         steps: stepsFor(form.attachmentMedia).map((step) =>
           step.label === UPLOAD_LABEL
@@ -174,21 +180,22 @@ export async function runImport(
             : { ...step, status: "done", detail: "Already staged" },
         ),
       });
-      await runUpload(ctx, token, resume);
+      await runUpload(ctx, token, run);
       return;
     }
 
-    // Only a run that extracts starts from the fresh list; the resume above
+    // Only a run that extracts starts from the fresh list; an Upload picked up above
     // built its own, so setting this first would be overwritten.
     store.set({ steps: initialSteps("active", form.attachmentMedia) });
 
     let runDir: string;
-    if (resumeWrite) {
+    if (pickUp?.at === "staging") {
+      const { run } = pickUp;
       // The run already exists and its Staging was interrupted. Reuse it and
       // its run directory: the exporter reads the backup again and skips
       // the conversations already written.
-      runDir = resumeWrite.runDir;
-      runId = resumeWrite.runId;
+      runDir = run.runDir;
+      runId = run.runId;
       await loadCarriedRecord(ctx, runDir);
       store.set({ runDir, importRunId: runId });
       setRowByLabel(ctx, STAGING_LABEL, { detail: "Extracting…" });
@@ -227,7 +234,7 @@ export async function runImport(
         source: form.source,
         path: form.backupPath,
         output_dir: runDir,
-        ...(resumeWrite ? { resume: true } : {}),
+        ...(pickUp?.at === "staging" ? { resume: true } : {}),
         asset_max_bytes: assetLimitOf(form),
         // The media fields go only to a source whose form shows them, as the
         // person chose them: extract checks them before anything is staged

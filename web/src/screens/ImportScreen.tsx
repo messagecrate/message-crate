@@ -405,14 +405,17 @@ export default function ImportScreen() {
         if (!run.run_dir) return; // resumeDecisionFor guarantees this; defensive only.
         setResume(NO_RESUME);
         await startImport(restoredForm, {
-          runId: run.id,
-          runDir: run.run_dir,
-          // Without this, a resumed Upload has no plan to diff its expected
-          // omissions against, which demotes an honest `completed` verdict
-          // to `completed_with_issues` for exactly the interrupted-and-
-          // resumed case. Undefined when the stored summary is missing or
-          // unparsable — startImport/runUpload already tolerate that.
-          approved: parseStoredStagingSummary(run.summary),
+          at: "upload",
+          run: {
+            runId: run.id,
+            runDir: run.run_dir,
+            // Without this, a resumed Upload has no plan to diff its expected
+            // omissions against, which demotes an honest `completed` verdict
+            // to `completed_with_issues` for exactly the interrupted-and-
+            // resumed case. Undefined when the stored summary is missing or
+            // unparsable — startImport/runUpload already tolerate that.
+            approved: parseStoredStagingSummary(run.summary),
+          },
         });
         return;
       }
@@ -427,13 +430,16 @@ export default function ImportScreen() {
       if (resume.kind === "resume_write") {
         if (!run.run_dir) return; // resumeDecisionFor guarantees this; defensive only.
         setResume(NO_RESUME);
-        await startImport(restoredForm, undefined, {
-          runId: run.id,
-          runDir: run.run_dir,
-          // The write is resumed rather than re-probed, so the Staging Review's identity
-          // section has to come from what was recorded on the run at
-          // creation rather than a fresh read of the backup.
-          identities: parseSourceIdentities(run.source_identities),
+        await startImport(restoredForm, {
+          at: "staging",
+          run: {
+            runId: run.id,
+            runDir: run.run_dir,
+            // The write is resumed rather than re-probed, so the Staging Review's identity
+            // section has to come from what was recorded on the run at
+            // creation rather than a fresh read of the backup.
+            identities: parseSourceIdentities(run.source_identities),
+          },
         });
         return;
       }
