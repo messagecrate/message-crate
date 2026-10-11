@@ -8,7 +8,7 @@ import { DEFAULT_TAURI_SERVER_URL, initialLoginServerUrl } from "../lib/authGuar
 import { isOwnAddress } from "../lib/localServer";
 import {
   checkServerHealth,
-  checkServerHealthTwice,
+  checkServerHealthWithRetry,
   type ServerHealthStatus,
 } from "../lib/serverHealth";
 import { invokeOpenDataDirectory, type LocalServerStatus } from "../lib/tauri";
@@ -229,7 +229,7 @@ export default function LoginScreen() {
       // is on. A failed probe is asked once more before the card says
       // Disconnected: a server whose database an import keeps busy can miss
       // one (#2718).
-      const reachable = await checkServerHealthTwice(trimmed, controller.signal);
+      const reachable = await checkServerHealthWithRetry(trimmed, controller.signal);
       if (connectRun.current !== run) return;
       if (reachable) {
         setBaseUrl(trimmed);

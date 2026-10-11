@@ -7,8 +7,12 @@ export const HEALTH_SUCCESS_RECHECK_MS = 30_000;
 export const HEALTH_URL_DEBOUNCE_MS = 400;
 /** Give up on a single /health request so a black-holed host cannot leave the light grey. */
 export const HEALTH_PROBE_TIMEOUT_MS = 8_000;
-/** How long `checkServerHealthTwice` waits after a failed probe before it asks again. */
-export const HEALTH_RECHECK_AFTER_FAILURE_MS = 1_000;
+/**
+ * How long `checkServerHealthWithRetry` waits after a failed probe before it
+ * asks again: the spacing of the desktop app's checks on its own server
+ * (`READY_POLL_MS` in `useLocalServer.ts`).
+ */
+export const HEALTH_RECHECK_AFTER_FAILURE_MS = 3_000;
 
 /** Progressive backoff: 1s → 2s → 4s → … capped at 30s. */
 export function healthBackoffMs(failureIndex: number): number {
@@ -84,7 +88,7 @@ export async function checkServerHealth(baseUrl: string, signal?: AbortSignal): 
  * though a `/v1` read would wait and succeed (#2718). The desktop app's watch
  * on its own server asks twice in a row for the same reason (#2204).
  */
-export async function checkServerHealthTwice(
+export async function checkServerHealthWithRetry(
   baseUrl: string,
   signal?: AbortSignal,
 ): Promise<boolean> {

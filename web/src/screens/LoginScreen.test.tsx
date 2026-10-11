@@ -60,14 +60,14 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
 vi.mock("../lib/serverHealth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverHealth")>()),
   checkServerHealth: vi.fn(),
-  checkServerHealthTwice: vi.fn(),
+  checkServerHealthWithRetry: vi.fn(),
 }));
 
 import { getBaseUrl } from "../lib/api";
 import { getServerState, login as serverLogin } from "../lib/serverApi";
 import {
   checkServerHealth,
-  checkServerHealthTwice,
+  checkServerHealthWithRetry,
   HEALTH_RECHECK_AFTER_FAILURE_MS,
 } from "../lib/serverHealth";
 import type { ServerState } from "../lib/useServerState";
@@ -76,7 +76,9 @@ import { fill, setupUser } from "../test/user";
 import LoginScreen from "./LoginScreen";
 
 const checkServerHealthMock = vi.mocked(checkServerHealth);
-const checkServerHealthTwiceMock = vi.mocked(checkServerHealthTwice);
+const checkServerHealthWithRetryMock = vi.mocked(checkServerHealthWithRetry);
+const getServerStateMock = vi.mocked(getServerState);
+const serverLoginMock = vi.mocked(serverLogin);
 
 /**
  * The card's connect asks twice before it says Disconnected. Most tests are
@@ -85,17 +87,15 @@ const checkServerHealthTwiceMock = vi.mocked(checkServerHealthTwice);
  * real one back over a faked `fetch`.
  */
 function askOnce() {
-  checkServerHealthTwiceMock.mockImplementation((address, signal) =>
+  checkServerHealthWithRetryMock.mockImplementation((address, signal) =>
     checkServerHealthMock(address, signal),
   );
 }
 
 async function askTwiceForReal() {
   const actual = await vi.importActual<typeof import("../lib/serverHealth")>("../lib/serverHealth");
-  checkServerHealthTwiceMock.mockImplementation(actual.checkServerHealthTwice);
+  checkServerHealthWithRetryMock.mockImplementation(actual.checkServerHealthWithRetry);
 }
-const getServerStateMock = vi.mocked(getServerState);
-const serverLoginMock = vi.mocked(serverLogin);
 
 /**
  * What a Message Crate at one address does: answers with its state, refuses
@@ -177,7 +177,7 @@ describe("LoginScreen", () => {
     setBaseUrlSpy.mockReset();
     retrySavedLogin.mockReset();
     checkServerHealthMock.mockReset();
-    checkServerHealthTwiceMock.mockReset();
+    checkServerHealthWithRetryMock.mockReset();
     askOnce();
     getServerStateMock.mockReset();
     serverLoginMock.mockReset();

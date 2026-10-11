@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   checkServerHealth,
-  checkServerHealthTwice,
+  checkServerHealthWithRetry,
   HEALTH_BACKOFF_CAP_MS,
   HEALTH_PROBE_TIMEOUT_MS,
   HEALTH_RECHECK_AFTER_FAILURE_MS,
@@ -135,7 +135,7 @@ describe("checkServerHealth", () => {
   });
 });
 
-describe("checkServerHealthTwice", () => {
+describe("checkServerHealthWithRetry", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.useRealTimers();
@@ -145,7 +145,7 @@ describe("checkServerHealthTwice", () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(checkServerHealthTwice("http://127.0.0.1:8080")).resolves.toBe(true);
+    await expect(checkServerHealthWithRetry("http://127.0.0.1:8080")).resolves.toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -157,7 +157,7 @@ describe("checkServerHealthTwice", () => {
       .mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
 
-    const pending = checkServerHealthTwice("http://127.0.0.1:8080");
+    const pending = checkServerHealthWithRetry("http://127.0.0.1:8080");
     await vi.advanceTimersByTimeAsync(HEALTH_RECHECK_AFTER_FAILURE_MS - 1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
@@ -170,7 +170,7 @@ describe("checkServerHealthTwice", () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500 });
     vi.stubGlobal("fetch", fetchMock);
 
-    const pending = checkServerHealthTwice("http://127.0.0.1:8080");
+    const pending = checkServerHealthWithRetry("http://127.0.0.1:8080");
     await vi.advanceTimersByTimeAsync(HEALTH_RECHECK_AFTER_FAILURE_MS);
     await expect(pending).resolves.toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -182,7 +182,7 @@ describe("checkServerHealthTwice", () => {
     vi.stubGlobal("fetch", fetchMock);
     const ac = new AbortController();
 
-    const pending = checkServerHealthTwice("http://127.0.0.1:8080", ac.signal);
+    const pending = checkServerHealthWithRetry("http://127.0.0.1:8080", ac.signal);
     await vi.advanceTimersByTimeAsync(0);
     ac.abort();
     await expect(pending).resolves.toBe(false);
