@@ -277,6 +277,47 @@ async fn cors_preflight_rejects_unknown_origin() {
     assert_eq!(allow_origin(&response), None);
 }
 
+/// The server log's lines while the CORS layer is built from `origins`.
+fn log_lines_building_cors(origins: &[&str]) -> Vec<crate::logging::LogLine> {
+    use crate::logging::{LogFiles, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
+
+    let dir = TempDir::new().unwrap();
+    let log_dir = dir.path().join("logs");
+    let files = LogFiles::open(&log_dir, SERVER_LOG_LIMITS).unwrap();
+    let origins: Vec<String> = origins.iter().map(|s| (*s).to_string()).collect();
+    let _layer =
+        tracing::subscriber::with_default(crate::logging::subscriber_for(files, "info"), || {
+            build_cors_layer(&origins)
+        });
+    read_lines(
+        &log_dir,
+        &LogLinesQuery {
+            limit: 10,
+            ..LogLinesQuery::default()
+        },
+    )
+    .unwrap()
+    .0
+}
+
+/// A `*` in `cors_origins` lets any website call the server, so the server
+/// says so in its log when it starts, naming the setting (#2218).
+#[test]
+fn a_wildcard_cors_origin_is_warned_about() {
+    let lines = log_lines_building_cors(&["https://app.example", " * "]);
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(lines[0].level, crate::logging::LogLevel::Warn);
+    assert!(lines[0].text.contains("cors_origins"), "{}", lines[0].text);
+    assert!(lines[0].text.contains("--cors-origin"), "{}", lines[0].text);
+    assert!(lines[0].text.contains("any website"), "{}", lines[0].text);
+}
+
+#[test]
+fn a_listed_cors_origin_is_not_warned_about() {
+    let lines = log_lines_building_cors(&["https://app.example"]);
+    assert!(lines.is_empty(), "{lines:?}");
+}
+
 #[tokio::test]
 async fn openapi_ui_off_does_not_serve_spec() {
     let fixture = test_fixture().await;

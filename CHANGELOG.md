@@ -1020,6 +1020,15 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-11: **The server warns when every website may call it.** A `*` in
+  the server's list of websites allowed to call it lets a page on any
+  website, opened by anyone on the network, reach the server through their
+  browser: to try logins, to register while registration is open, and to
+  claim a server nobody owns yet. Until now the server started with it and
+  wrote nothing about it. It now writes a warning to its log as it starts,
+  naming the setting and the command-line option that can add it, whether
+  it runs in Docker or the desktop app starts it (#2218).
+
 - 2026-10-11: **The server trusts a database file less.** The server opens
   only a database it made, but it knows one only by a number in the file,
   which anyone can copy. A tampered file that carries that number, such as
