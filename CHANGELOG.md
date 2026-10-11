@@ -349,10 +349,9 @@ released versions carry their date on the heading.
   server said another request held its upload.** The desktop app sends a
   large attachment to the server in parts, and the server could refuse a
   part with "another request to this upload holds its lock" when nothing
-  else was sending to that upload: it happened when the server started a
-  program, such as ffmpeg converting an earlier attachment, at the moment
-  the previous part finished. The server now keeps track of which uploads
-  are busy itself, so a started program never holds one (#2510).
+  else was sending to that upload, and the import of that attachment
+  failed. A part is now refused this way only while another request to the
+  same upload is still running (#2510).
 - 2026-10-10: **An SMS Backup & Restore import says "drafts or messages
   never sent" for what it skips.** It said "drafts or unsent messages",
   but Unsent is the mark on a message its sender pulled back after sending

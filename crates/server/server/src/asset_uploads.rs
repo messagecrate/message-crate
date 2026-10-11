@@ -6,7 +6,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
@@ -192,10 +192,10 @@ impl Drop for ManifestLock {
 
 /// [`LOCKED_SESSIONS`], which no panic can leave half-changed: each change is
 /// one insert or one remove.
-fn locked_sessions() -> std::sync::MutexGuard<'static, HashSet<PathBuf>> {
+fn locked_sessions() -> MutexGuard<'static, HashSet<PathBuf>> {
     LOCKED_SESSIONS
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Take the session's lock so two part uploads cannot rewrite the manifest at once.
@@ -833,39 +833,22 @@ mod tests {
 
     /// A process the server starts (ffmpeg, say) while a request holds an
     /// upload's lock gets a copy of every descriptor the server has open, and
-    /// keeps it until the process replaces itself with the program it runs.
-    /// The upload must be free again as soon as the request lets go, even while
-    /// such a copy is still open: the next part must not be refused as locked.
+    /// keeps it until it begins running its program. A lock on a file stays
+    /// held while any copy of its descriptor is open, so the next part was
+    /// refused as locked after the request had let go. Holding an upload's
+    /// lock must open no descriptor a started process could copy; this fails
+    /// if the lock goes back to being a file in the upload's directory.
     #[cfg(target_os = "linux")]
     #[test]
-    fn a_copy_of_a_descriptor_held_by_a_started_process_does_not_keep_the_upload_locked() {
-        use std::os::fd::{BorrowedFd, OwnedFd};
-
+    fn holding_an_upload_lock_opens_no_descriptor_a_started_process_could_copy() {
         let (_dir, _sha, _upload_id, session) = started_upload();
-        let held = lock_session(&session).unwrap();
-        // What a fork does: copy each descriptor the lock opened in the
-        // session's directory.
-        let inherited: Vec<OwnedFd> = fs::read_dir("/proc/self/fd")
+        let _held = lock_session(&session).unwrap();
+        let open_in_session: Vec<PathBuf> = fs::read_dir("/proc/self/fd")
             .unwrap()
-            .filter_map(|entry| {
-                let entry = entry.ok()?;
-                let target = fs::read_link(entry.path()).ok()?;
-                if !target.starts_with(&session) {
-                    return None;
-                }
-                let fd: i32 = entry.file_name().to_str()?.parse().ok()?;
-                // SAFETY: `fd` is open: it points into the session directory,
-                // and only `held` opened a file there.
-                unsafe { BorrowedFd::borrow_raw(fd) }
-                    .try_clone_to_owned()
-                    .ok()
-            })
+            .filter_map(|entry| fs::read_link(entry.ok()?.path()).ok())
+            .filter(|target| target.starts_with(&session))
             .collect();
-        drop(held);
-
-        let again = lock_session(&session);
-        drop(inherited);
-        assert!(again.is_ok(), "{:?}", again.err());
+        assert!(open_in_session.is_empty(), "{open_in_session:?}");
     }
 
     /// S2-8: a second request to an upload while the first holds the lock is
