@@ -542,8 +542,12 @@ pub enum ApiError {
     },
     /// `415` — `Content-Type` absent or not one the route accepts.
     UnsupportedMediaType(String),
-    /// `413` — the body is over the configured cap.
-    PayloadTooLarge(String),
+    /// `413` — the body is over its cap. It carries no sentence of its own:
+    /// every cap answers "the request body is too large", so a client sees
+    /// one sentence for one condition whichever cap refused the body and
+    /// however the body declared its size. The problem type's page names
+    /// each cap.
+    PayloadTooLarge,
     /// `401` — a username, password or current-password check failed.
     InvalidCredentials(String),
     /// `401` — no usable bearer token.
@@ -637,7 +641,6 @@ impl ApiError {
         match self {
             Self::MalformedBody(m)
             | Self::UnsupportedMediaType(m)
-            | Self::PayloadTooLarge(m)
             | Self::InvalidCredentials(m)
             | Self::AuthenticationRequired(m)
             | Self::UsernameTaken(m)
@@ -653,6 +656,7 @@ impl ApiError {
             | Self::MethodNotAllowed(m)
             | Self::NotAcceptable(m)
             | Self::MediaLinkInvalid(m) => Some(m),
+            Self::PayloadTooLarge => Some("the request body is too large"),
             Self::ValidationFailed(_)
             | Self::MalformedImportLine { .. }
             | Self::InvalidImportLines { .. }
@@ -684,7 +688,7 @@ impl ApiError {
             }
             Self::MalformedBody(_) | Self::MalformedImportLine { .. } => ProblemType::MalformedBody,
             Self::UnsupportedMediaType(_) => ProblemType::UnsupportedMediaType,
-            Self::PayloadTooLarge(_) => ProblemType::PayloadTooLarge,
+            Self::PayloadTooLarge => ProblemType::PayloadTooLarge,
             Self::InvalidCredentials(_) => ProblemType::InvalidCredentials,
             Self::AuthenticationRequired(_) => ProblemType::AuthenticationRequired,
             Self::RateLimited { .. } => ProblemType::RateLimited,
@@ -1045,7 +1049,7 @@ async fn json_body_limit_response(response: Response) -> Response {
     if already_problem {
         return response;
     }
-    ApiError::PayloadTooLarge("the request body is too large".to_string()).into_response()
+    ApiError::PayloadTooLarge.into_response()
 }
 
 /// The body cap of the routes a stranger may call ([`limited_auth_router`]):
@@ -1104,8 +1108,7 @@ async fn limit_request_body(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok());
     if declared.is_some_and(|bytes| bytes > limit as u64) {
-        return ApiError::PayloadTooLarge("the request body is too large".to_string())
-            .into_response();
+        return ApiError::PayloadTooLarge.into_response();
     }
     let request =
         request.map(|body| axum::body::Body::new(http_body_util::Limited::new(body, limit)));
@@ -1800,7 +1803,7 @@ fn body_read_error(error: axum::Error) -> ApiError {
     let mut source: Option<&(dyn std::error::Error + 'static)> = Some(&error);
     while let Some(cause) = source {
         if cause.is::<http_body_util::LengthLimitError>() {
-            return ApiError::PayloadTooLarge("request body too large".into());
+            return ApiError::PayloadTooLarge;
         }
         source = cause.source();
     }
@@ -1817,7 +1820,7 @@ pub(crate) async fn read_body_limited(
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(body_read_error)?;
         if out.len().saturating_add(chunk.len()) > max_bytes {
-            return Err(ApiError::PayloadTooLarge("request body too large".into()));
+            return Err(ApiError::PayloadTooLarge);
         }
         out.extend_from_slice(&chunk);
     }
@@ -1835,7 +1838,7 @@ pub(crate) async fn discard_body(
         let chunk = chunk.map_err(body_read_error)?;
         seen = seen.saturating_add(chunk.len());
         if seen > max_body_bytes {
-            return Err(ApiError::PayloadTooLarge("request body too large".into()));
+            return Err(ApiError::PayloadTooLarge);
         }
     }
     Ok(())
@@ -1866,7 +1869,7 @@ pub(crate) async fn stream_body_to_file(
         let chunk = chunk.map_err(body_read_error)?;
         written = written.saturating_add(chunk.len() as u64);
         if written > max_body_bytes as u64 {
-            return Err(ApiError::PayloadTooLarge("request body too large".into()));
+            return Err(ApiError::PayloadTooLarge);
         }
         file.write_all(&chunk)
             .await

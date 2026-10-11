@@ -1285,9 +1285,7 @@ pub(crate) async fn replace_asset_upload_part(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok());
     if declared.is_some_and(|bytes| bytes > part_size as u64) {
-        return Err(ApiError::PayloadTooLarge(format!(
-            "a part of this upload is at most {part_size} bytes"
-        )));
+        return Err(ApiError::PayloadTooLarge);
     }
     let body = read_body_limited(request.into_body(), part_size).await?;
     let sha = sha256.clone();
