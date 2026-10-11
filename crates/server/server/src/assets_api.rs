@@ -851,12 +851,12 @@ async fn stream_version(
             return Err(no_version());
         };
         let converted_dir = state.cfg.paths.assets_converted_dir_for_account(account);
-        let Some(full) = crate::asset_store::join_under(&converted_dir, &path) else {
-            tracing::warn!(
-                account_id = account,
-                assets_path = path,
-                "A stored attachment path is not a plain relative path, so its file is not served"
-            );
+        let Some(full) = crate::asset_store::join_stored(
+            &converted_dir,
+            &path,
+            account,
+            &format!("{version} of {sha256}"),
+        ) else {
             return Err(no_version());
         };
         stream_file(&full, mime_type, headers, None).await

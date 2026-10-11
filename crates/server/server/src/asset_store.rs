@@ -250,6 +250,29 @@ pub(crate) fn join_under(dir: &Path, relative: &str) -> Option<PathBuf> {
     (safe && !relative.is_empty()).then(|| dir.join(rel))
 }
 
+/// [`join_under`] for a path read from the database, logging a path it
+/// refuses with the account and `file`, which names the file the row
+/// describes (such as `Preview of <sha256>`), so the damaged row can be found.
+/// Serving and removing both go through it, so neither touches a file the
+/// other would refuse.
+pub(crate) fn join_stored(
+    dir: &Path,
+    assets_path: &str,
+    account_id: i64,
+    file: &str,
+) -> Option<PathBuf> {
+    let path = join_under(dir, assets_path);
+    if path.is_none() {
+        tracing::warn!(
+            account_id,
+            assets_path,
+            file,
+            "A stored path is not a plain relative path, so the server neither serves nor removes its file"
+        );
+    }
+    path
+}
+
 /// Remove one file. A file already gone is not an error, because removing it
 /// was the goal.
 ///
@@ -335,12 +358,11 @@ fn paths_of(paths: &PathsConfig, account_id: i64, file: &OrphanedFile) -> Vec<Pa
             None,
         ),
     };
-    let Some(path) = join_under(&dir, assets_path) else {
-        tracing::warn!(
-            account_id,
-            assets_path,
-            "A stored attachment path is not a plain relative path, so its file is left alone"
-        );
+    let file_name = match file {
+        OrphanedFile::Original { sha256, .. } => format!("Asset {sha256}"),
+        OrphanedFile::Derived { .. } => "Preview or Thumbnail".to_string(),
+    };
+    let Some(path) = join_stored(&dir, assets_path, account_id, &file_name) else {
         return Vec::new();
     };
     std::iter::once(path).chain(sidecar).collect()
