@@ -79,6 +79,7 @@ COPY config/config.docker.toml ./config/config.docker.toml
 COPY --from=frontend-builder /web/dist ./static
 
 COPY docker/entrypoint-release.sh /usr/local/bin/docker-entrypoint-release.sh
+COPY docker/healthcheck.cjs /usr/local/lib/message-crate/healthcheck.cjs
 RUN chmod +x /usr/local/bin/docker-entrypoint-release.sh \
   && mkdir -p /app/data \
   && chown -R node:node /app
@@ -90,16 +91,14 @@ VOLUME ["/app/data"]
 
 # Docker marks the container unhealthy when the server stops answering, so
 # `docker ps` and anything in front of the container can tell a server that
-# hangs from one that runs. The probe asks /health with the node this base
-# image already carries, so the image needs no curl. It assumes port 8080,
-# the port config/config.docker.toml binds: a `serve --bind` with another
-# port reads unhealthy while the server answers. The first start seeds the
-# Demo Account before the server listens. A failed probe inside
-# --start-period does not count against --retries, so a seed shorter than
-# five minutes never marks the container unhealthy. --start-interval probes
-# every 2 seconds during the start period (Docker Engine 25 and later), so a
-# fresh container reads healthy as soon as the server answers.
+# hangs from one that runs. docker/healthcheck.cjs says what it asks and
+# when it passes. The first start seeds the Demo Account before the server
+# listens. A failed probe inside --start-period does not count against
+# --retries, so a seed shorter than five minutes never marks the container
+# unhealthy. --start-interval probes every 2 seconds during the start period
+# (Docker Engine 25 and later), so a fresh container reads healthy as soon as
+# the server answers.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5m --start-interval=2s --retries=3 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:8080/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+  CMD ["node", "/usr/local/lib/message-crate/healthcheck.cjs"]
 
 ENTRYPOINT ["tini", "--", "/usr/local/bin/docker-entrypoint-release.sh"]
