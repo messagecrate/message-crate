@@ -526,7 +526,7 @@ async fn conversation_of_source(
 async fn a_file_imported_from_two_sources_is_stored_once() {
     let (fixture, alice) = fixture_with_account().await;
     let bytes = b"one photo, two backups";
-    let sha = crate::assets_api::sha256_hex(bytes);
+    let sha = file_io::sha256_hex(bytes);
 
     let first = import_file_from(&fixture, &alice, "imessage", "+15555550140", bytes).await;
     let second = import_file_from(
@@ -574,7 +574,7 @@ async fn a_file_imported_from_two_sources_is_stored_once() {
 async fn deleting_one_sources_messages_for_good_keeps_the_file_the_other_names() {
     let (fixture, alice) = fixture_with_account().await;
     let bytes = b"one photo, two backups";
-    let sha = crate::assets_api::sha256_hex(bytes);
+    let sha = file_io::sha256_hex(bytes);
     import_file_from(&fixture, &alice, "imessage", "+15555550140", bytes).await;
     import_file_from(
         &fixture,

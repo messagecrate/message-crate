@@ -18,7 +18,6 @@ obfuscate = { path = "../../libs/obfuscate" }
 phone = { path = "../../libs/phone" }
 serde_json = { workspace = true, optional = true }
 serde = { workspace = true }
-sha2 = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 

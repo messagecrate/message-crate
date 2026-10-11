@@ -92,7 +92,7 @@ async fn import_files(
     let run = run["id"].as_i64().unwrap();
     let mut shas = Vec::new();
     for (name, mime, bytes) in files {
-        let sha = crate::assets_api::sha256_hex(bytes);
+        let sha = file_io::sha256_hex(bytes);
         let (status, text) = crate::test_support::put_raw(
             state,
             &format!("/v1/assets/{sha}"),
@@ -812,7 +812,7 @@ async fn import_photo_run(
 ) -> String {
     let state = &fixture.state;
     let bytes = fixture_bytes("photo.jpg");
-    let sha = crate::assets_api::sha256_hex(&bytes);
+    let sha = file_io::sha256_hex(&bytes);
     let (_, run): (String, serde_json::Value) = crate::test_support::post_created_json(
         state,
         "/v1/imports",
