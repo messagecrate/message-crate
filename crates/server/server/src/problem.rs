@@ -287,9 +287,11 @@ pub mod openapi {
         )*};
     }
 
-    // Only the types a handler names as its own failure, so this list is
+    // The types a handler may name as its own failure, so this list is
     // shorter than `ProblemType::ALL` on purpose: the shared parts add the
-    // rest. A handler that names a type left out here fails to compile.
+    // failures every route of a kind shares, and `method-not-allowed`
+    // belongs to no route. A handler that names a type left out here fails
+    // to compile.
     named!(
         PayloadTooLarge,
         InvalidCredentials,
