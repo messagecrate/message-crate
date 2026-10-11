@@ -471,9 +471,10 @@ pub const DEMO_ACCOUNT_PERMISSIONS: crate::db::permissions::Permissions =
         delete: false,
     };
 
-/// The Demo Account's username. It stays reserved while the Demo Account is
-/// absent, so no other account can take it and block the next build.
-pub const DEMO_USERNAME: &str = "demo";
+/// The Demo Account's username, the one every demo bundle's `seed.toml`
+/// names. It stays reserved while the Demo Account is absent, so no other
+/// account can take it and block the next build.
+pub use demo_seed::bundle::DEMO_USERNAME;
 
 /// True when `account_id` is the seeded demo account.
 pub fn is_demo_account(account_id: i64) -> bool {

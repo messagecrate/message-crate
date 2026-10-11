@@ -22,10 +22,18 @@ pub const SBR_SOURCE: &str = "sms-backup-restore";
 /// The WhatsApp source.
 pub const WHATSAPP_SOURCE: &str = "whatsapp";
 
-/// The lines `write_seed_toml` puts above the values.
+/// The Demo Account's username, written into `seed.toml`.
+pub const DEMO_USERNAME: &str = "demo";
+
+/// The lines `write_seed_toml` puts above the values. `toml::to_string`
+/// writes no comments, so the header says what each key does.
 const SEED_TOML_HEADER: &str = "\
 # Demo account identity, read only when the server builds the Demo Account
 # (`reset-demo`, `serve` on a new database, the Owner Home action).
+#
+# owner.handle_specs: (raw handle, handle type) pairs linked into
+#   `account_handles`.
+# owner.emails: each email is an identity too, linked into `account_handles`.
 
 ";
 
@@ -64,8 +72,8 @@ pub struct DemoAccount {
 }
 
 impl DemoSeed {
-    /// The values every generated bundle carries: the owner's phone and email
-    /// are the numbers the conversations send from.
+    /// The values every generated bundle carries: the owner's phone number
+    /// and email address, which the conversations send from.
     #[must_use]
     pub fn demo() -> Self {
         Self {
@@ -75,7 +83,7 @@ impl DemoSeed {
                 emails: vec![OWNER_EMAIL.into()],
             },
             account: DemoAccount {
-                username: "demo".into(),
+                username: DEMO_USERNAME.into(),
             },
         }
     }
@@ -125,8 +133,8 @@ mod tests {
         format!("{:#}", read_seed_toml(&path).unwrap_err())
     }
 
-    /// What demo-seed writes is what the server reads: the same values come
-    /// back, so a key added on one side only fails here, not in a build.
+    /// The header and the `toml::to_string` output parse back under
+    /// `deny_unknown_fields` into the values written.
     #[test]
     fn the_written_seed_toml_reads_back_into_the_same_values() {
         let dir = tempfile::tempdir().expect("temp dir");
@@ -135,12 +143,6 @@ mod tests {
         let read = read_seed_toml(&dir.path().join("seed.toml")).expect("read seed.toml");
 
         assert_eq!(read, DemoSeed::demo());
-        assert_eq!(read.account.username, "demo");
-        assert_eq!(
-            read.owner.handle_specs,
-            vec![(OWNER_PHONE.to_string(), IdentityType::Phone)]
-        );
-        assert_eq!(read.owner.emails, vec![OWNER_EMAIL.to_string()]);
     }
 
     /// A key the server does not use is refused by its name, with the file: a
