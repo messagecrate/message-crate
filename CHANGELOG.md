@@ -387,7 +387,7 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
-- 2026-10-12: **One-to-one, not direct or chat.** My Identities on Settings →
+- 2026-10-12: **One-to-one, not direct or chat.** The identities on Settings →
   Profile, the identities in a contact's drawer, and the totals of checked
   contacts head their first message count "One-to-one messages" rather than
   "Direct messages", and removing an identity says "12 one-to-one messages"

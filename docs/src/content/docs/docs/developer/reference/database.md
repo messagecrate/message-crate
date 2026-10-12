@@ -39,15 +39,15 @@ erDiagram
 
 ### `conversations`
 
-One row = one chat thread (`account_id`, `chat_handle_id` → `handles`,
+One row = one conversation (`account_id`, `chat_handle_id` → `handles`,
 `conversation_type`, `group_title`, and related fields). There is no
 conversation-level messaging transport: SMS vs iMessage vs RCS varies per
-message. Thread chrome for “which backup” uses distinct `messages.source`
+message. The conversation view's “which backup” uses distinct `messages.source`
 values.
 
 ### `participants`
 
-One row = one handle in one chat (`handle_id` → `handles`, required, and an
+One row = one handle in one conversation (`handle_id` → `handles`, required, and an
 optional `name_alias`). A person the backup names with no address has a handle
 of type `other` holding the name. The participant's contact is the one its
 handle is on in `contact_handles`.
@@ -184,9 +184,9 @@ status names.
 
 ### `message_tags` / `message_tag_members`
 
-Named stamps on whole conversation threads (not on individual messages). A
-thread can have several tags. New messages in a tagged thread stay under that
-tag. A new thread is untagged until someone adds a tag.
+Named stamps on whole conversations (not on individual messages). A
+conversation can have several tags. New messages in a tagged conversation stay
+under that tag. A new conversation is untagged until someone adds a tag.
 
 ## How conversations meet people
 
@@ -256,8 +256,8 @@ SQLite, so it is reported once for the whole database and never per account.
 
 | You want… | Look in… |
 |-----------|----------|
-| A chat thread | `conversations` |
-| Who is listed in a chat | `participants` |
+| A conversation | `conversations` |
+| Who is listed in a conversation | `participants` |
 | An identity (phone, email, username) | `handles` |
 | The texts | `messages` |
 | Photos and files | `attachments` |
