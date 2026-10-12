@@ -1359,9 +1359,14 @@ async fn a_missing_original_is_planned_from_the_decision_recorded_for_it() {
     )
     .unwrap();
 
-    run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
-        .await
-        .unwrap();
+    run(
+        &opened,
+        &ProcessAssetsOptions::default(),
+        &NOT_STOPPED,
+        Progress::Print,
+    )
+    .await
+    .unwrap();
 
     let missing = Some("the original file is missing".to_string());
     assert_eq!(
