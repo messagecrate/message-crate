@@ -153,8 +153,9 @@ from `100` up.
   token.
 - Four columns on `accounts` govern what a logged-in session may do, each
   enforced by a guard in `server.rs` rather than left as decoration:
-  - `disabled` — may not log in; an existing session or API token for a
-    disabled account stops working immediately.
+  - `disabled` — may not log in; the owner disabling the account ends its
+    session, so enabling it again needs a new login, and an existing API
+    token for a disabled account stops working immediately.
   - `can_import`, `can_export`, `can_delete` — may call the import endpoints,
     the export endpoints, and the endpoints that destroy message data,
     respectively. New accounts default to all three. A named API token

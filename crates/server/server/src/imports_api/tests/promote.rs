@@ -23,7 +23,7 @@ async fn promote_stamps_messages_with_import_id() {
 
     let (_pool, mut conn) = open_verify(&db).await;
     crate::db::schema::ensure_schema(&mut conn).await.unwrap();
-    crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
+    crate::db::account_profile::create_account_row_if_missing(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();
     let import_id = crate::db::imports::start_import(
@@ -127,7 +127,7 @@ async fn trunk_zero_phone_imports_digits_with_review_note() {
 
     let (_pool, mut conn) = open_verify(&db).await;
     crate::db::schema::ensure_schema(&mut conn).await.unwrap();
-    crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
+    crate::db::account_profile::create_account_row_if_missing(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();
 
@@ -358,7 +358,7 @@ async fn failed_promote_keeps_the_trashed_contact_and_adds_no_contacts() {
         "ada.jsonl",
         &one_message_conversation("g-ada-1", "+15555550165"),
     );
-    import_jsonl_files_on_conn(&mut conn, &[first], &opts)
+    crate::test_support::import_for_account(&mut conn, &[first], &opts)
         .await
         .unwrap();
     let ada: i64 = sqlx::query_scalar("SELECT id FROM contacts WHERE account_id = $1")

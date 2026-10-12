@@ -315,6 +315,9 @@ pub(crate) async fn import_jsonl_files(
         .with_context(|| format!("failed to open database {}", db_path.display()))?;
     let mut conn = pool.acquire().await?;
     crate::db::schema::ensure_schema(&mut conn).await?;
+    // The import itself never makes the account (#2061); a test that names
+    // one gets it here, as the `import` command makes it.
+    crate::db::account_profile::create_account_row_if_missing(&mut conn, opts.account_id).await?;
     opts.progress
         .say(format_args!("Opened the database at {}", db_path.display()));
     Ok(import_jsonl_files_on_conn(&mut conn, paths, opts).await?)
@@ -330,7 +333,8 @@ pub(crate) async fn import_jsonl_files(
 /// # Errors
 ///
 /// Returns [`ImportError::Rejected`] when the file breaks a rule the sender
-/// can fix, [`ImportError::Run`] when the import run is no longer running,
+/// can fix, [`ImportError::AccountGone`] when the account has no row,
+/// [`ImportError::Run`] when the import run is no longer running,
 /// and [`ImportError::Internal`] when the options are invalid or
 /// staging or promote fails for any other reason.
 pub async fn import_jsonl_files_on_conn(
@@ -372,11 +376,18 @@ pub async fn import_jsonl_files_on_conn(
     // by ADR-0013, discards trashed ones; none of that may outlive a promote
     // that fails. The write lock is taken up front (IMMEDIATE) so two
     // imports for different accounts cannot race into SQLITE_BUSY at the
-    // first INSERT. The run is checked again under that lock: a run discarded
-    // or completed while the batch uploaded takes no messages.
+    // first INSERT. The account and the run are checked again under that
+    // lock: an account deleted, or a run discarded or completed, while the
+    // batch uploaded or waited for its turn takes no messages (#2061).
     let mut tx = crate::db::begin_write(conn)
         .await
         .map_err(|err| ImportError::Internal(err.into()))?;
+    if !crate::db::account_profile::account_exists(&mut tx, opts.account_id)
+        .await
+        .map_err(|err| ImportError::Internal(err.into()))?
+    {
+        return Err(ImportError::AccountGone);
+    }
     if let Some(import_id) = opts.import_id {
         crate::db::imports::require_running_import(&mut tx, opts.account_id, import_id).await?;
     }
@@ -409,7 +420,7 @@ pub async fn import_jsonl_files_on_conn(
 }
 
 /// Everything an import does before its transaction: the asset store
-/// directory, the account row, an empty staging
+/// directory, an empty staging
 /// area, and the source ids a replace-mode import wipes, which it returns.
 /// None of it reads the files, so every error here is the server's.
 ///
@@ -423,7 +434,6 @@ async fn prepare_import(
 ) -> Result<Vec<String>> {
     fs::create_dir_all(opts.assets_dir)
         .with_context(|| format!("failed to create {}", opts.assets_dir.display()))?;
-    crate::db::account_profile::ensure_account_row(conn, opts.account_id).await?;
 
     opts.progress.say("Clearing the account's staging tables…");
     crate::db::staging::reset_for_account(conn, opts.account_id).await?;
@@ -1444,7 +1454,6 @@ pub(crate) async fn create_import(
     let identities_json = capped_json_string(body.source_identities.as_ref(), "source_identities")?;
 
     let mut conn = state.db.acquire().await?;
-    crate::db::account_profile::ensure_account_row(&mut conn, account).await?;
     let args = crate::db::imports::StartImportArgs {
         account_id: account,
         source: &body.source,
@@ -1461,6 +1470,7 @@ pub(crate) async fn create_import(
     // The run and what started it land together, so a run never reads as
     // one the server started.
     let mut tx = crate::db::begin_write(&mut conn).await?;
+    crate::server::require_account_row(&mut tx, account).await?;
     let id = crate::db::imports::start_import(&mut tx, &args, chrono::Utc::now()).await?;
     crate::db::audit_trail::record_run_credential(
         &mut tx,

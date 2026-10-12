@@ -12,7 +12,7 @@ async fn seed(
     name_alias: Option<&str>,
 ) -> (i64, i64) {
     schema::ensure_schema(conn).await.unwrap();
-    crate::db::account_profile::ensure_account_row(conn, TEST_ACCOUNT)
+    crate::db::account_profile::create_account_row_if_missing(conn, TEST_ACCOUNT)
         .await
         .unwrap();
     let handle_id: i64 = sqlx::query_scalar(

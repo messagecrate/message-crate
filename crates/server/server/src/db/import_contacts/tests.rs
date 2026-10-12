@@ -8,7 +8,7 @@ async fn fixture_with_a_run() -> (sqlx::SqlitePool, tempfile::TempDir, i64) {
     let (pool, dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     schema::ensure_schema(&mut conn).await.unwrap();
-    crate::db::account_profile::ensure_account_row(&mut conn, ACCOUNT)
+    crate::db::account_profile::create_account_row_if_missing(&mut conn, ACCOUNT)
         .await
         .unwrap();
     let import_id = start_import(

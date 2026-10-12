@@ -360,6 +360,16 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-12: **Disabling an account logs it out.** A person still logged
+  in to an account the owner disabled was only refused while the account
+  stayed disabled, so enabling it again let them carry on without logging
+  in, and every media link opened before worked again. Disabling now logs
+  them out, and they log in again once the account is enabled.
+- 2026-10-12: **A deleted account no longer comes back.** An import or an
+  export that was already under way when its account was deleted made the
+  account again, named by a number and with no password, so anyone could log
+  in to it. The import or export is now refused, and the account stays
+  deleted.
 - 2026-10-12: **A page asked for while an import keeps the database busy
   loads once the server is ready.** The server says how many seconds to wait
   when its database is too busy, and the app tried again at once, met the

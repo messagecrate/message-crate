@@ -826,3 +826,94 @@ async fn the_batch_answer_counts_the_contacts_it_created() {
     assert_eq!(answer["contacts_created"], 1, "{text}");
     assert_eq!(answer["participants"], 1, "{text}");
 }
+
+/// Whether `accounts` holds a row at `account_id`.
+async fn account_row_exists(fixture: &TestFixture, account_id: i64) -> bool {
+    let mut conn = fixture.conn().await;
+    crate::db::account_profile::account_exists(&mut conn, account_id)
+        .await
+        .unwrap()
+}
+
+/// A batch whose account is deleted after its credential and run were
+/// checked, while it waits for its slot and the account's lock, is refused
+/// as a credential whose account is gone, and puts no row back. Before #2061
+/// the import made the row again, under the deleted id with no password, so
+/// anyone could log in to it with an empty one.
+#[tokio::test]
+async fn a_batch_for_an_account_deleted_while_it_waited_brings_no_account_back() {
+    let (state, fixture, token) = importer().await;
+    let path = batches_path(&state, &token, "imessage").await;
+    let import_id: i64 = path
+        .trim_start_matches("/v1/imports/")
+        .trim_end_matches("/batches")
+        .parse()
+        .unwrap();
+    let mut conn = fixture.conn().await;
+    let account = crate::server::resolve_auth_on_conn(&mut conn, &token, None)
+        .await
+        .unwrap()
+        .account_id;
+    // What the batch learned when it arrived, before it waited.
+    let row = crate::db::imports::require_running_import(&mut conn, account, import_id)
+        .await
+        .unwrap();
+    let context = BatchContext::from_row(&row);
+    crate::db::account_profile::delete_account(
+        &mut conn,
+        account,
+        crate::db::audit_trail::AuditActor::Owner,
+    )
+    .await
+    .unwrap();
+    drop(conn);
+
+    let dir = TempDir::new().unwrap();
+    let jsonl = write_jsonl(dir.path(), "batch.jsonl", &one_message_batch());
+    let permit = take_import_slot(&state).await.unwrap();
+    let err = run_import_path(state, permit, context, jsonl)
+        .await
+        .expect_err("the deleted account's batch must be refused");
+
+    assert!(matches!(err, ApiError::TokenRefused(_)), "{err:?}");
+    assert!(
+        !account_row_exists(&fixture, account).await,
+        "the refused batch put the deleted account's row back"
+    );
+}
+
+/// Starting an Import Run for an account deleted after its credential was
+/// checked is refused the same way, and puts no row back (#2061).
+#[tokio::test]
+async fn an_import_run_for_a_deleted_account_brings_no_account_back() {
+    let (state, fixture, token) = importer().await;
+    let mut conn = fixture.conn().await;
+    let auth = crate::server::resolve_auth_on_conn(&mut conn, &token, None)
+        .await
+        .unwrap();
+    let account = auth.account_id;
+    crate::db::account_profile::delete_account(
+        &mut conn,
+        account,
+        crate::db::audit_trail::AuditActor::Owner,
+    )
+    .await
+    .unwrap();
+    drop(conn);
+
+    let body: CreateImportRequest =
+        serde_json::from_value(serde_json::json!({ "source": "imessage" })).unwrap();
+    let err = create_import(
+        axum::extract::State(state),
+        ImportAccess(auth),
+        crate::extract::Json(body),
+    )
+    .await
+    .expect_err("the deleted account's run must be refused");
+
+    assert!(matches!(err, ApiError::TokenRefused(_)), "{err:?}");
+    assert!(
+        !account_row_exists(&fixture, account).await,
+        "the refused run put the deleted account's row back"
+    );
+}

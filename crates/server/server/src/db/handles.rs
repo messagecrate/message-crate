@@ -680,7 +680,7 @@ mod tests {
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         schema::ensure_schema(&mut conn).await.unwrap();
-        crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
+        crate::db::account_profile::create_account_row_if_missing(&mut conn, TEST_ACCOUNT)
             .await
             .unwrap();
 
@@ -729,7 +729,7 @@ mod tests {
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         schema::ensure_schema(&mut conn).await.unwrap();
-        crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
+        crate::db::account_profile::create_account_row_if_missing(&mut conn, TEST_ACCOUNT)
             .await
             .unwrap();
         let mut cache = HandleIdCache::default();
