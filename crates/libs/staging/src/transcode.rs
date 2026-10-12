@@ -727,7 +727,7 @@ fn apply_transcode(
             ));
             // Short, with no path: the whole error went into the row above,
             // and so into the run's log.
-            let reason = format!("convert_failed: {}", media::why_not_converted(&err));
+            let reason = format!("convert_failed: {}", media::why_not_converted(&err, src));
             if is_heal {
                 // `recorded_rel` is the phantom `-mv` name a crashed prior
                 // run already wrote into the document; nothing will ever

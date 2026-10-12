@@ -1288,7 +1288,7 @@ fn a_compressing_drain_warns_why_hevc_failed() {
     assert!(
         warnings[0]
             .starts_with("HEVC encoding failed, so videos were compressed as H.264 instead: ")
-            && warnings[0].ends_with("libx265: fake failure (fake)"),
+            && warnings[0].ends_with("libx265: fake failure on '<input>'"),
         "{warnings:?}"
     );
 }

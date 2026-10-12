@@ -16,7 +16,7 @@ use std::sync::{Mutex, PoisonError};
 
 use anyhow::{Result, anyhow, bail};
 
-use crate::tools::ffmpeg_command_line;
+use crate::tools::{ffmpeg_command_line, ffmpeg_inputs};
 use crate::{FfmpegFailed, FfmpegTools, KillReason, Killed, MediaProbe, MediaTools, Reads};
 
 /// What ffprobe reports about a small, low-bitrate 320x240 video in
@@ -43,7 +43,8 @@ pub struct FakeTools {
     /// A run whose arguments hold any of these fails, after writing its
     /// output, as an ffmpeg that fails partway leaves a partial file. It
     /// fails with [`FfmpegFailed`], having said what ffmpeg says: the files
-    /// it was given, by their paths, and last the argument it failed on.
+    /// it was given, by their paths, and last the argument it failed on,
+    /// naming its input.
     failing: Vec<String>,
     /// The arguments of every ffmpeg run, in order.
     runs: Mutex<Vec<Vec<String>>>,
@@ -193,12 +194,9 @@ impl MediaTools for FakeTools {
             // What ffmpeg writes when it fails: the files it was given, by
             // the paths it was given them, and what went wrong last.
             let command_line = ffmpeg_command_line(args, dest);
-            let input = args
-                .windows(2)
-                .find(|pair| pair[0] == "-i")
-                .map_or("", |pair| pair[1].as_str());
+            let input = ffmpeg_inputs(&command_line).next().unwrap_or_default();
             let stderr = format!(
-                "Input #0, from '{input}':\nOutput #0, to '{}':\n{arg}: fake failure (fake)",
+                "Input #0, from '{input}':\nOutput #0, to '{}':\n{arg}: fake failure on '{input}'",
                 dest.display()
             );
             return Err(

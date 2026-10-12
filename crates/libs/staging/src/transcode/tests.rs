@@ -1536,7 +1536,7 @@ fn a_failed_conversion_records_the_reason_the_attachment_jobs_record() {
     let doc = read_conversation_jsonl(&jsonl).unwrap();
     assert_eq!(
         doc.messages[0].attachments[0].missing_reason.as_deref(),
-        Some("convert_failed: -q:v: fake failure (fake)")
+        Some("convert_failed: -q:v: fake failure on '<input>'")
     );
     let rows = rows.lock().unwrap();
     let row = rows.last().expect("a row for the failed file");
@@ -1597,7 +1597,7 @@ fn the_media_stage_warns_why_hevc_failed() {
     assert!(
         warnings[0]
             .starts_with("HEVC encoding failed, so videos were compressed as H.264 instead: ")
-            && warnings[0].ends_with("libx265: fake failure (fake)"),
+            && warnings[0].ends_with("libx265: fake failure on '<input>'"),
         "{warnings:?}"
     );
     assert!(!warnings[0].contains("clip"), "{warnings:?}");

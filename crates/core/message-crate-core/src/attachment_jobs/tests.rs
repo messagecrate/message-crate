@@ -774,6 +774,10 @@ fn a_failed_conversion_records_the_short_reason_the_media_stage_records() {
     std::fs::create_dir_all(&att_dir).unwrap();
     let mut photo = empty_att("photo.png");
     photo.mime_type = Some("image/png".into());
+    let warnings = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
+    let sink_warnings = std::sync::Arc::clone(&warnings);
+    let log =
+        LogSink::none().with_warnings(move |w| sink_warnings.lock().unwrap().push(w.to_string()));
     {
         let mut jobs = [AttachmentJob {
             attachment: &mut photo,
@@ -789,7 +793,7 @@ fn a_failed_conversion_records_the_short_reason_the_media_stage_records() {
             },
             |_| Ok(Some(PNG_1X1_RGB.to_vec())),
             |_| {},
-            &LogSink::none(),
+            &log,
             &CancelFlag::default(),
         )
         .unwrap();
@@ -797,12 +801,18 @@ fn a_failed_conversion_records_the_short_reason_the_media_stage_records() {
 
     assert_eq!(
         photo.missing_reason.as_deref(),
-        Some("convert_failed: -q:v: fake failure (fake)")
+        Some("convert_failed: -q:v: fake failure on '<input>'")
     );
+    let rel = photo.path.as_deref().unwrap_or_default();
+    assert!(rel.ends_with(".png"), "the original is kept: {rel}");
+    // The log keeps the whole error, which names the file by its path.
+    let staged = dir.path().join(rel).display().to_string();
+    let warnings = warnings.lock().unwrap();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(
-        photo.path.as_deref().is_some_and(|p| p.ends_with(".png")),
-        "the original is kept: {:?}",
-        photo.path
+        warnings[0].starts_with(&format!("Could not convert {staged}: "))
+            && warnings[0].ends_with(&format!("-q:v: fake failure on '{staged}'")),
+        "{warnings:?}"
     );
 }
 

@@ -248,7 +248,7 @@ async fn the_hevc_fallback_warning_says_why_and_names_no_file() {
     let text = &warnings[0].text;
     assert!(
         text.contains("HEVC encoding failed, so videos were compressed as H.264 instead")
-            && text.contains("libx265: fake failure (fake)"),
+            && text.contains("libx265: fake failure on '<input>'"),
         "{text}"
     );
     for name in ["holiday", "clip", tmp.path().to_str().unwrap()] {

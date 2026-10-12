@@ -370,6 +370,11 @@ fn apply_convert_or_compress(
     if let Some(line) = report.hevc_fallback.line() {
         log.warn(line);
     }
+    // The attachment keeps a short reason; the whole error, with its path
+    // and everything ffmpeg wrote, goes to the log.
+    for err in &report.errors {
+        log.warn(format!("Could not convert {err}"));
+    }
     apply_remap_to_jobs(jobs, &remap, output_dir);
     for failed in &report.not_converted {
         mark_convert_error(jobs, output_dir, failed);

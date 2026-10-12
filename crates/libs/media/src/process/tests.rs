@@ -643,7 +643,7 @@ fn compress_reports_why_hevc_failed_when_h264_stands_in() {
     assert_eq!(report.processed, 2, "{:?}", report.errors);
     let line = report.hevc_fallback.line().expect("a fallback reason");
     assert!(
-        line.contains("ffmpeg failed") && line.contains("libx265: fake failure"),
+        line.ends_with("libx265: fake failure on '<input>'"),
         "the line carries ffmpeg's HEVC error: {line}"
     );
 }
@@ -679,14 +679,7 @@ fn why_hevc_failed_names_no_file() {
     for name in ["one.mov", "one.msgmedia", dir.path().to_str().unwrap()] {
         assert!(!reason.contains(name), "{name:?} survives in {reason:?}");
     }
-    assert!(
-        reason.starts_with("ffmpeg failed (")
-            && reason.ends_with(
-                "): Input #0, from '<input>':\nOutput #0, to '<output>':\n\
-                 libx265: fake failure (fake)"
-            ),
-        "{reason:?}"
-    );
+    assert_eq!(reason, "libx265: fake failure on '<input>'");
 }
 
 /// A file the pass could not convert records ffmpeg's last line, with no
@@ -715,7 +708,7 @@ fn a_file_that_fails_records_ffmpegs_last_line_without_its_path() {
         report.not_converted,
         vec![NotConverted {
             path: files[0].clone(),
-            reason: "libx264: fake failure (fake)".into(),
+            reason: "libx264: fake failure on '<input>'".into(),
         }]
     );
     let logged = &report.errors[0];
@@ -725,16 +718,43 @@ fn a_file_that_fails_records_ffmpegs_last_line_without_its_path() {
     );
 }
 
-/// What a stopped run says is its reason as it stands, and an error from
-/// outside ffmpeg gives its first line.
+/// What a stopped run says is its reason as it stands, and neither an
+/// ffmpeg that wrote nothing nor an error from outside ffmpeg lets the
+/// contexts around it, which name the file by its path, onto the attachment.
 #[test]
-fn why_not_converted_words_a_killed_run_and_any_other_error() {
+fn why_not_converted_names_no_path_however_the_conversion_failed() {
+    let file = Path::new("/home/someone/attachments/IMG_0001.heic");
     let killed = crate::testutil::ffmpeg_killed(KillReason::RanPastLength {
         length: std::time::Duration::from_secs(5),
     });
-    assert_eq!(why_not_converted(&killed), killed.to_string());
-    let other = anyhow::anyhow!("no room left\nsecond line").context("write the copy");
-    assert_eq!(why_not_converted(&other), "write the copy: no room left");
+    assert_eq!(why_not_converted(&killed, file), killed.to_string());
+
+    // Killed by a signal, say, with nothing on stderr.
+    let silent = anyhow::Error::from(FfmpegFailed::new(
+        std::process::ExitStatus::default(),
+        b"",
+        &[
+            "-i".to_string(),
+            file.display().to_string(),
+            "/tmp/out.jpg".to_string(),
+        ],
+    ))
+    .context(format!("convert image {}", file.display()));
+    let reason = why_not_converted(&silent, file);
+    assert!(reason.starts_with("ffmpeg failed ("), "{reason:?}");
+    assert!(!reason.contains("IMG_0001"), "{reason:?}");
+
+    let io = anyhow::Error::from(std::io::Error::other("no room left\nsecond line"))
+        .context(format!("copy {} to /tmp/out.jpg", file.display()))
+        .context(format!("convert image {}", file.display()));
+    assert_eq!(why_not_converted(&io, file), "no room left");
+
+    let named = anyhow::anyhow!("ffprobe reported no stream for {}", file.display())
+        .context(format!("compress video {}", file.display()));
+    assert_eq!(
+        why_not_converted(&named, file),
+        "ffprobe reported no stream for <input>"
+    );
 }
 
 /// A file whose path starts with another file's path is replaced whole.

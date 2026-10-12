@@ -418,6 +418,14 @@ pub(crate) fn ffmpeg_command_line(args: &[String], dest: &Path) -> Vec<String> {
     line
 }
 
+/// The files ffmpeg reads in `command_line`: each argument after a `-i`.
+pub(crate) fn ffmpeg_inputs(command_line: &[String]) -> impl Iterator<Item = &str> {
+    command_line
+        .windows(2)
+        .filter(|pair| pair[0] == "-i")
+        .map(|pair| pair[1].as_str())
+}
+
 /// How many times a program whose file is busy is started before it is
 /// given up on.
 ///
@@ -1300,10 +1308,7 @@ impl FfmpegFailed {
     /// ffmpeg, run with `command_line`, exited with `status` after writing
     /// `stderr_tail`, the end of its standard error.
     pub(crate) fn new(status: ExitStatus, stderr_tail: &[u8], command_line: &[String]) -> Self {
-        let inputs = command_line
-            .windows(2)
-            .filter(|pair| pair[0] == "-i")
-            .map(|pair| (pair[1].clone(), "<input>"));
+        let inputs = ffmpeg_inputs(command_line).map(|input| (input.to_string(), "<input>"));
         let output = command_line.last().map(|dest| (dest.clone(), "<output>"));
         let mut files: Vec<(String, &'static str)> = inputs
             .chain(output)
