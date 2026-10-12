@@ -269,7 +269,7 @@ const EXERCISED: Record<string, () => unknown> = {
   getExport: () => serverApi.getExport(2),
   createExport: () =>
     serverApi.createExport({ scope: { kind: "everything" }, tool: "message-crate-export" }),
-  completeExport: () => serverApi.completeExport(2),
+  completeExport: () => serverApi.completeExport(2, { status: "completed" }),
   cancelExport: () => serverApi.cancelExport(2),
 
   // Imports
