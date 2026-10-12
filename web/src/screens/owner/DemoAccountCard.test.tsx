@@ -2,7 +2,12 @@
 
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { advanceTimersAndSettle, settle, useFakeClock, useRealClock } from "../../test/fakeTimers";
+import {
+  advanceTimersAndSettle,
+  settle,
+  startFakeClock,
+  stopFakeClock,
+} from "../../test/fakeTimers";
 import { Providers } from "../../test/providers";
 import { setupUser } from "../../test/user";
 import { BUILD_POLL_MS, DemoAccountCard } from "./DemoAccountCard";
@@ -36,12 +41,12 @@ beforeEach(() => {
   getDemoAccount.mockReset();
   replaceDemoAccount.mockReset();
   replaceDemoAccount.mockResolvedValue(building);
-  useFakeClock();
+  startFakeClock();
 });
 
 afterEach(() => {
   cleanup();
-  useRealClock();
+  stopFakeClock();
 });
 
 describe("DemoAccountCard", () => {
@@ -86,7 +91,7 @@ describe("DemoAccountCard", () => {
     await settle();
 
     expect(screen.getByRole("status")).toHaveTextContent("Building the Demo Account");
-    // The card asks again only when its poll comes round.
+    // The card asks again only when its poll comes around.
     await advanceTimersAndSettle(BUILD_POLL_MS - 1);
     expect(screen.getByRole("status")).toHaveTextContent("Building the Demo Account");
     await advanceTimersAndSettle(1);

@@ -7,7 +7,12 @@ import { APP_BUILD } from "../../lib/build";
 import { getOpenToNetwork } from "../../lib/localServer";
 import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware";
 import { DOWNLOAD_POLL_MS } from "../../lib/useToolsStatus";
-import { advanceTimersAndSettle, settle, useFakeClock, useRealClock } from "../../test/fakeTimers";
+import {
+  advanceTimersAndSettle,
+  settle,
+  startFakeClock,
+  stopFakeClock,
+} from "../../test/fakeTimers";
 import { renderWithProviders as render } from "../../test/providers";
 import { MIB } from "../../test/units";
 import { fill, setupUser } from "../../test/user";
@@ -56,11 +61,11 @@ vi.mock("../../lib/tauri", async (importOriginal) => ({
 afterEach(() => {
   cleanup();
   setBaseUrl("");
-  useRealClock();
+  stopFakeClock();
 });
 
 beforeEach(() => {
-  useFakeClock();
+  startFakeClock();
   localStorage.clear();
   tauriState.isTauri = true;
   desktopStaging.root = "";

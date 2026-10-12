@@ -17,7 +17,7 @@ import {
 } from "../lib/serverApi";
 import type { Conversation } from "../lib/types";
 import { participant } from "../test/apiShapes";
-import { settle, useFakeClock, useRealClock } from "../test/fakeTimers";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { mockedAuth, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
 import TrashScreen from "./TrashScreen";
@@ -140,12 +140,12 @@ describe("TrashScreen", () => {
     getConversationMock.mockResolvedValue(conversation());
     restoreConversationMock.mockResolvedValue(undefined);
     restoreContactMock.mockResolvedValue(undefined);
-    useFakeClock();
+    startFakeClock();
   });
 
   afterEach(() => {
     cleanup();
-    useRealClock();
+    stopFakeClock();
   });
 
   it("reports the trash count and prompts selection when nothing is selected", async () => {

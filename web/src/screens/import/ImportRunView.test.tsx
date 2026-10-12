@@ -7,7 +7,7 @@ import type { ImportSummaryView } from "../../components/import/ImportSummaryPan
 import { holdDesktopJob } from "../../lib/desktopJob";
 import type { ImportJobFormValues } from "../../lib/importSources/types";
 import type { AttachmentForecast, StagingSummary, ToolStatus, ToolsStatus } from "../../lib/tauri";
-import { settle, useFakeClock, useRealClock } from "../../test/fakeTimers";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { importForm } from "../../test/importForm";
 import { Providers } from "../../test/providers";
 import { MIB } from "../../test/units";
@@ -227,7 +227,7 @@ describe("runHeading and the operation line", () => {
 
 describe("ImportRunView", () => {
   beforeEach(() => {
-    useFakeClock();
+    startFakeClock();
     openPathInExplorer.mockReset();
     openPathInExplorer.mockResolvedValue(undefined);
     getImportMock.mockReset();
@@ -247,7 +247,7 @@ describe("ImportRunView", () => {
     desktop.isTauri = false;
     desktop.toolsStatus.mockReset();
     desktop.retry.mockReset();
-    useRealClock();
+    stopFakeClock();
   });
 
   it("lists every stage and review of the run, in order", () => {

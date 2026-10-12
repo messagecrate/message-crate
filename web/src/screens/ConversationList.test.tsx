@@ -21,7 +21,7 @@ import { RightToolbarProvider } from "../components/RightToolbarContext";
 import { ApiError } from "../lib/api";
 import { createMessageTag, listConversations, updateMessageTagMembers } from "../lib/serverApi";
 import type { Conversation } from "../lib/types";
-import { settle, useFakeClock, useRealClock } from "../test/fakeTimers";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { mockedAuth, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
 import ConversationList from "./ConversationList";
@@ -67,14 +67,14 @@ let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", StubResizeObserver);
   consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-  useFakeClock();
+  startFakeClock();
 });
 
 afterEach(() => {
   consoleErrorSpy.mockRestore();
   cleanup();
   // Also takes back the ResizeObserver stub.
-  useRealClock();
+  stopFakeClock();
 });
 
 /** Every logged message, joined, so one assertion covers every call shape. */

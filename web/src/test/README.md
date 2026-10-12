@@ -3,16 +3,17 @@
 A unit test in `web/src` never depends on time. It is told when the thing it
 waits for has happened, then reads the screen at once with `getBy…` or
 `queryBy…`. It does not poll the screen, and a timeout is never widened to make
-a test pass.
+a test pass. The test files that still poll are being converted under #2902,
+and a new test follows this page from the start.
 
-*The short version: `useFakeClock()` before `render`, `await settle()` after
+*The short version: `startFakeClock()` before `render`, `await settle()` after
 anything that starts work, `advanceTimersAndSettle(ms)` past a debounce or a
 poll, and `deferred()` when the test decides when a fake answers. The helpers
 are in `fakeTimers.ts` and `deferred.ts` in this directory.*
 
 ## Why `waitFor` and `findBy…` aren't used
 
-`waitFor` and every `findBy…` query poll the screen every 50 ms until the check
+`waitFor` and every `findBy…` and `findAllBy…` query poll the screen every 50 ms until the check
 passes or their timeout runs out, 1000 ms unless the test passes another. So
 each one is a timed wait, whatever the number. A polling test passes on an idle
 machine and fails on a busy one, because there the screen reaches the state
@@ -25,24 +26,25 @@ busy machine it runs slower and passes the same way.
 
 ## The setup
 
-`useFakeClock()` puts the test on Vitest's fake clock. `setTimeout`,
-`setInterval`, animation frames and `Date` move only when the test moves them.
+`startFakeClock()` puts the test on Vitest's fake clock. `setTimeout`,
+`setInterval`, animation frames and `Date` move only when the test moves them,
+and `Date` starts at the same moment in every run (`FAKE_CLOCK_START`).
 It lends the clock to Testing Library, which ends each event with a
 `setTimeout(0)`. It also has TanStack Query tell the screen about an answer in a
 microtask instead of a `setTimeout(0)`. The reason: the fake clock runs a
 zero-delay timer that was set while it was moving 1 ms later, so a poll's answer
-would land only after the clock moved again. `useRealClock()` undoes all of it
+would land only after the clock moved again. `stopFakeClock()` undoes all of it
 and calls `vi.unstubAllGlobals`.
 
 ```tsx
-import { advanceTimersAndSettle, settle, useFakeClock, useRealClock } from "../test/fakeTimers";
+import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 
 beforeEach(() => {
-  useFakeClock();
+  startFakeClock();
 });
 
 afterEach(() => {
-  useRealClock();
+  stopFakeClock();
 });
 ```
 
@@ -105,8 +107,21 @@ fake clock too, so moving the clock moves it.
 
 ### A transition or other deferred render
 
-`startTransition`, `useDeferredValue`, and a state update in an effect all
-finish inside `act`. `settle()` runs inside `act`, so it finishes them too.
+`startTransition`, `useDeferredValue`, a state update in an effect, and a
+`Suspense` boundary waiting on a lazy component all finish inside `act`.
+`settle()` runs inside `act`, so it finishes them too. A lazy chunk's importer
+is a promise the test supplies, so it lands in the same `settle()`.
+
+```tsx
+const Arrives = lazyChunk("SettingsScreen", async () => ({ default: () => <p>Settings</p> }));
+render(
+  <Suspense fallback={null}>
+    <Arrives />
+  </Suspense>,
+);
+await settle();
+expect(screen.getByText("Settings")).toBeInTheDocument();
+```
 
 ### A mutation's follow-up refetch
 
@@ -167,18 +182,39 @@ await user.click(screen.getByRole("button", { name: "Log out" }));
 await act(() => cancelAsked.promise);
 ```
 
+### A hook rendered with `renderHook`
+
+A hook test is told the same way as a screen test, and reads `result.current`
+where a screen test reads the screen.
+
+```tsx
+vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+const { result } = renderHook(() => useServerHealth(""));
+await advanceTimersAndSettle(HEALTH_URL_DEBOUNCE_MS - 1);
+expect(result.current).toBe("unknown");
+await advanceTimersAndSettle(1);
+expect(result.current).toBe("ok");
+```
+
+### A real sleep in the test
+
+`await new Promise((resolve) => setTimeout(resolve, 0))` inside `act` waits for
+real time too: it hopes everything queued lands before the timer fires. On the
+fake clock it never fires at all. `settle()` replaces it, because `settle()`
+runs what is queued rather than racing it.
+
 ### Something the fake clock doesn't drive
 
 Real I/O, a dynamic `import()`, or an event from outside the page has no
 notification on its own. The test gives it one before it relies on it: it
 awaits the import before `render`, or the fake that stands in for the outside
-event resolves a `deferred()`. Where neither works, the component gets a small
-signal a test can await, or the test moves to Playwright. Polling is never the
-answer.
+event resolves a `deferred()`. Where neither works, the component resolves a
+`deferred()` the test passes in, or the test moves to Playwright. Polling isn't
+used here either, because it races a timeout the same way.
 
-## Checking a converted test
+## Checking a test
 
-Each converted test must fail when the behavior it guards is broken. The check
+Each test must fail when the behavior it guards is broken. The check
 breaks the source (skips the call, drops the poll, changes the delay) or drops
 the notification (`settle()`, the clock move), runs the test, and sees it fail.
 A test that still passes guards nothing.

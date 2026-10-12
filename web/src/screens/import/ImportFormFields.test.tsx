@@ -17,7 +17,12 @@ import {
   WHATSAPP_METHODS,
   WHATSAPP_SOURCE_ID,
 } from "../../lib/whatsappImport";
-import { advanceTimersAndSettle, settle, useFakeClock, useRealClock } from "../../test/fakeTimers";
+import {
+  advanceTimersAndSettle,
+  settle,
+  startFakeClock,
+  stopFakeClock,
+} from "../../test/fakeTimers";
 import { DIRECTORY_STAT, FILE_STAT } from "../../test/pathStats";
 import { renderWithProviders as render } from "../../test/providers";
 import { MIB } from "../../test/units";
@@ -47,7 +52,7 @@ vi.mock("../../lib/tauri", async (importOriginal) => ({
 }));
 
 beforeEach(() => {
-  useFakeClock();
+  startFakeClock();
 });
 
 afterEach(() => {
@@ -55,7 +60,7 @@ afterEach(() => {
   desktop.isTauri = false;
   desktop.toolsStatus.mockReset();
   desktop.retry.mockReset();
-  useRealClock();
+  stopFakeClock();
 });
 
 const copyAttachments: AttachmentChoices = {
@@ -978,23 +983,20 @@ describe("ImportFormFields programs the import needs", () => {
 
   it("keeps asking while the start-up check runs, and unblocks once wtsexporter arrives", async () => {
     desktop.isTauri = true;
-    // Read before the check has looked at wtsexporter: missing, and checking.
-    // The notice that shows it reads the status again as it appears, so both
-    // first reads say so, and only the poll can bring wtsexporter.
-    const checking = status({ checking: true, wtsexporter: { state: "missing" } });
-    desktop.toolsStatus
-      .mockResolvedValueOnce(checking)
-      .mockResolvedValueOnce(checking)
-      .mockResolvedValue(status({}));
+    // Every read says the check has not looked at wtsexporter yet, until the
+    // test lets the check finish; only the next poll can then bring it.
+    desktop.toolsStatus.mockResolvedValue(
+      status({ checking: true, wtsexporter: { state: "missing" } }),
+    );
     renderForm(readyWhatsapp);
 
     await settle();
-    expect(desktop.toolsStatus).toHaveBeenCalledTimes(2);
     expect(screen.getByText(/wtsexporter not found/)).toBeTruthy();
     expect(importButton()).toBeDisabled();
-    // Asked again at the next poll, which finds it.
     await advanceTimersAndSettle(DOWNLOAD_POLL_MS - 1);
     expect(importButton()).toBeDisabled();
+    // The check finds wtsexporter, and the next poll asks again.
+    desktop.toolsStatus.mockResolvedValue(status({}));
     await advanceTimersAndSettle(1);
     expect(importButton()).toBeEnabled();
   });

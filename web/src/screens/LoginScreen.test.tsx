@@ -73,7 +73,7 @@ import {
 } from "../lib/serverHealth";
 import { STARTING_POLL_MS } from "../lib/useLocalServer";
 import type { ServerState } from "../lib/useServerState";
-import { advanceTimersAndSettle, settle, useFakeClock, useRealClock } from "../test/fakeTimers";
+import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { Providers } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 import LoginScreen from "./LoginScreen";
@@ -185,12 +185,12 @@ describe("LoginScreen", () => {
     skipRetry();
     getServerStateMock.mockReset();
     serverLoginMock.mockReset();
-    useFakeClock();
+    startFakeClock();
   });
 
   afterEach(() => {
     cleanup();
-    useRealClock();
+    stopFakeClock();
   });
 
   it("logs in without a server-selection step", async () => {
@@ -236,7 +236,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByRole("button", { name: "Log in" });
+    expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Explore Demo Account" })).not.toBeInTheDocument();
   });
 
@@ -269,7 +269,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByRole("tab", { name: "Login" });
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     const tabs = screen.getAllByRole("tab");
     expect(tabs.map((t) => t.textContent)).toEqual(["Login", "Create Account"]);
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
@@ -281,7 +281,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByRole("tab", { name: "Create Account" });
+    expect(screen.getByRole("tab", { name: "Create Account" })).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Create Account" }));
 
     expect(screen.getByLabelText("Password")).toBeInTheDocument();
@@ -295,7 +295,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByRole("tab", { name: "Create Account" });
+    expect(screen.getByRole("tab", { name: "Create Account" })).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Create Account" }));
 
     expect(screen.queryByText(/At least 8 characters/i)).not.toBeInTheDocument();
@@ -307,7 +307,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByRole("tab", { name: "Create Account" });
+    expect(screen.getByRole("tab", { name: "Create Account" })).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Create Account" }));
     await fill(user, screen.getByRole("textbox", { name: "Username" }), "ada");
     await fill(user, screen.getByLabelText("Password"), "hunter22");
@@ -370,7 +370,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByText(/^Disconnected from /);
+    expect(screen.getByText(/^Disconnected from /)).toBeInTheDocument();
     expect(screen.queryByTestId("auth-form-skeleton")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Log in" })).toBeDisabled();
     // No server has said it takes new accounts, so the card does not offer one.
@@ -383,7 +383,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByText(/^Connecting to /);
+    expect(screen.getByText(/^Connecting to /)).toBeInTheDocument();
     expect(screen.getByTestId("auth-form-skeleton")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Log in" })).not.toBeInTheDocument();
   });
@@ -410,7 +410,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByText(/^Disconnected from /);
+    expect(screen.getByText(/^Disconnected from /)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Change server address" })).toBeEnabled();
   });
 
@@ -425,7 +425,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByText(/^Connected to /);
+    expect(screen.getByText(/^Connected to /)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
     const field = screen.getByRole("textbox", { name: "Address" });
     await user.clear(field);
@@ -453,7 +453,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByText(/^Disconnected from /);
+    expect(screen.getByText(/^Disconnected from /)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
     const field = screen.getByRole("textbox", { name: "Address" });
     await user.clear(field);
@@ -475,7 +475,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByText(/^Connected to /);
+    expect(screen.getByText(/^Connected to /)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
 
     const field = screen.getByRole("textbox", { name: "Address" });
@@ -516,7 +516,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByRole("tab", { name: "Login" });
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
 
     expect(screen.getByRole("heading", { name: "Server Address" })).toBeInTheDocument();
@@ -535,7 +535,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByRole("tab", { name: "Login" });
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
 
     stubNoServer();
@@ -556,7 +556,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByRole("tab", { name: "Login" });
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
     // Opened on the address the card is connected to, so that connection is
     // this address's and saying so is true.
@@ -585,7 +585,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByText(/^Disconnected from /);
+    expect(screen.getByText(/^Disconnected from /)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
 
     // Only the address being typed answers healthy — the disconnected card's
@@ -662,7 +662,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByText(/^Disconnected from /);
+    expect(screen.getByText(/^Disconnected from /)).toBeInTheDocument();
 
     healthy = true;
 
@@ -681,7 +681,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByText(/^Disconnected from /);
+    expect(screen.getByText(/^Disconnected from /)).toBeInTheDocument();
     expect(retrySavedLogin).not.toHaveBeenCalled();
 
     healthy = true;
@@ -698,7 +698,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByRole("tab", { name: "Login" });
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     expect(checkServerHealthMock).toHaveBeenCalledWith("", expect.any(AbortSignal));
   });
 
@@ -722,7 +722,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByRole("tab", { name: "Login" });
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     const form = screen.getByLabelText("Password").closest("form");
     expect(form).not.toBeNull();
 
@@ -740,7 +740,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByRole("tab", { name: "Create Account" });
+    expect(screen.getByRole("tab", { name: "Create Account" })).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Create Account" }));
 
     expect(screen.getByRole("button", { name: "Continue" })).toBeInTheDocument();
@@ -753,7 +753,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByRole("tab", { name: "Create Account" });
+    expect(screen.getByRole("tab", { name: "Create Account" })).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Create Account" }));
     await fill(user, screen.getByRole("textbox", { name: "Username" }), "ada");
     await fill(user, screen.getByLabelText("Password"), "hunter22");
@@ -780,7 +780,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByRole("tab", { name: "Login" });
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     expect(startLocalServer).toHaveBeenCalledTimes(1);
   });
 
@@ -790,7 +790,7 @@ describe("LoginScreen", () => {
     const user = setupUser();
     renderScreen();
     await settle();
-    screen.getByRole("tab", { name: "Login" });
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     startLocalServer.mockClear();
 
     await user.click(screen.getByRole("button", { name: "Change server address" }));
@@ -809,7 +809,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByRole("tab", { name: "Login" });
+    expect(screen.getByRole("tab", { name: "Login" })).toBeInTheDocument();
     expect(startLocalServer).not.toHaveBeenCalled();
   });
 
@@ -845,7 +845,7 @@ describe("LoginScreen", () => {
     stubNoServer();
     renderScreen();
     await settle();
-    screen.getByText("Setting up Message Crate for the first time…");
+    expect(screen.getByText("Setting up Message Crate for the first time…")).toBeInTheDocument();
 
     stubServer("unclaimed", true);
     invokeLocalServerStatus.mockResolvedValue({ status: "ready", started_by_app: true });
@@ -959,7 +959,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByText("Connected to crate.example:8080");
+    expect(screen.getByText("Connected to crate.example:8080")).toBeInTheDocument();
     expect(retrySavedLogin).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Change server address" }));
@@ -1014,7 +1014,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByText(/^Disconnected from /);
+    expect(screen.getByText(/^Disconnected from /)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
     await user.click(screen.getByRole("button", { name: "Use this website's own Message Crate" }));
     await settle();
@@ -1032,7 +1032,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByText(/^Connected to /);
+    expect(screen.getByText(/^Connected to /)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
 
     expect(screen.getByRole("heading", { name: "Server Address" })).toBeInTheDocument();
@@ -1047,7 +1047,7 @@ describe("LoginScreen", () => {
     renderScreen();
     await settle();
 
-    screen.getByText(/^Connected to /);
+    expect(screen.getByText(/^Connected to /)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
 
     expect(screen.getByRole("heading", { name: "Server Address" })).toBeInTheDocument();
