@@ -275,57 +275,34 @@ fn every_seed_compiles_before_it_is_cut_or_mutated() {
     }
 }
 
-/// Run a Messages `filter` the way the messages route does: one page,
-/// ranked by relevance when the query has a word to rank by, so the
-/// full-text rank query runs too, and with the edited messages on the page
-/// read for which version matched. True when a message on the page was
-/// found only by an earlier version.
-async fn load_messages_page(conn: &mut SqliteConnection, filter: &Filter) -> Result<bool, String> {
-    use crate::db::conversation_messages::{MessageListSort, load_message_list_page};
-    use crate::paging::{Direction, SortKey};
-    let key = if filter.rank_query().is_some() {
-        MessageListSort::Relevance
-    } else {
-        MessageListSort::Date
-    };
-    let order = [SortKey {
-        key,
-        direction: if key == MessageListSort::Relevance {
-            Direction::Asc
-        } else {
-            Direction::Desc
-        },
-    }];
-    load_message_list_page(conn, filter, &order, 50, 0)
-        .await
-        .map(|page| page.iter().any(|m| m.matched_earlier_version))
-        .map_err(|e| format!("the messages page: {e:?}"))
+/// What running an answered query on SQLite showed.
+#[derive(PartialEq, Eq)]
+enum Ran {
+    /// It ran without an error.
+    Clean,
+    /// It ran, and the messages page held a message found only by an
+    /// earlier version.
+    FoundByEarlierVersion,
 }
 
-/// Run the statements the messages route builds from a Messages `filter`
-/// beyond its WHERE fragment, each over every message rather than only the
-/// rows the filter matches: SQLite reads the rank join, and so asks the
-/// full-text index, only when a row reaches it, and most swept queries
-/// match no message.
-async fn run_messages_statements(
+/// Run a Messages `filter` as the messages route does, in its default
+/// order, and also run the rank join over every message: SQLite reads the
+/// rank join, and so asks the full-text index, only when a row reaches it,
+/// and most swept queries match no message.
+async fn run_on_messages_route(
     conn: &mut SqliteConnection,
     filter: &Filter,
-) -> Result<(), String> {
-    use crate::db::conversation_messages::{RANK_JOIN_SQL, messages_from_sql};
+) -> Result<Ran, String> {
+    use crate::db::conversation_messages::{
+        default_message_list_sort, load_message_list_page, ranked_messages_from_sql,
+    };
     use crate::db::sql::SqlParam;
-    let mut statements: Vec<(&str, String, Vec<SqlParam>)> = Vec::new();
+    let mut statements = Vec::new();
     if let Some(rank_query) = filter.rank_query() {
         statements.push((
-            "the rank query",
-            format!("SELECT m.id FROM messages m {RANK_JOIN_SQL}"),
+            "the rank join",
+            format!("SELECT m.id {}", ranked_messages_from_sql()),
             vec![SqlParam::Text(rank_query)],
-        ));
-    }
-    if let Some((final_where, params)) = filter.final_text() {
-        statements.push((
-            "the final-text filter",
-            format!("SELECT m.id {} WHERE {final_where}", messages_from_sql()),
-            params.to_vec(),
         ));
     }
     if let Some((sql, params)) = filter.matching_earlier_version_ids() {
@@ -341,7 +318,15 @@ async fn run_messages_statements(
             .await
             .map_err(|e| format!("{what}: {e}"))?;
     }
-    Ok(())
+    let order = default_message_list_sort(!filter.ranked_terms().is_empty());
+    let page = load_message_list_page(conn, filter, &order, 50, 0)
+        .await
+        .map_err(|e| format!("the messages page: {e:?}"))?;
+    Ok(if page.iter().any(|m| m.matched_earlier_version) {
+        Ran::FoundByEarlierVersion
+    } else {
+        Ran::Clean
+    })
 }
 
 /// Every cut and mutated query is answered or refused in the `detail` form
@@ -395,19 +380,15 @@ async fn truncated_and_corrupted_queries_are_answered_or_refused() {
         };
         for (list, filter) in compiled {
             let ran = match list {
-                ListKind::Messages => match run_messages_statements(&mut conn, &filter).await {
-                    Ok(()) => load_messages_page(&mut conn, &filter).await,
-                    Err(e) => Err(e),
-                },
+                ListKind::Messages => run_on_messages_route(&mut conn, &filter).await,
                 _ => run_filter(&mut conn, list, &filter)
                     .await
-                    .map(|_| false)
+                    .map(|_| Ran::Clean)
                     .map_err(|e| e.to_string()),
             };
             match ran {
-                Ok(by_earlier_version) => {
-                    found_by_earlier_version += usize::from(by_earlier_version);
-                }
+                Ok(Ran::FoundByEarlierVersion) => found_by_earlier_version += 1,
+                Ok(Ran::Clean) => {}
                 Err(e) => failures.push(format!("{how}: {list:?}: {e}\n  input {text:?}")),
             }
         }
