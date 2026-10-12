@@ -596,12 +596,28 @@ impl DemoBuild {
     /// - The server stops ([`DemoBuild::stop`]): it is dropped where it is,
     ///   the Demo Account it left is removed, and the build's record stays
     ///   in the database, so the next start reports the build as failed.
+    ///
+    /// Returns `false`, and runs nothing, once the server has been told to
+    /// stop. [`DemoBuild::stop`] runs as the stop signal comes, while a
+    /// request that marked a build may still be on its way here, and a
+    /// build started after it would be one the stop never waits for
+    /// (#2122). The task slot stays locked from the check to the store, so
+    /// a stop either finds the task or is seen here.
+    #[must_use]
     pub(crate) fn run(
         &self,
         cfg: std::sync::Arc<crate::config::Config>,
         db: sqlx::SqlitePool,
         building: impl std::future::Future<Output = anyhow::Result<u64>> + Send + 'static,
-    ) {
+    ) -> bool {
+        let mut slot = self
+            .0
+            .task
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.0.stopping.is_cancelled() {
+            return false;
+        }
         let build = self.clone();
         let stopping = self.0.stopping.clone();
         let task = crate::request_id::spawn_in_current_span(async move {
@@ -655,11 +671,8 @@ impl DemoBuild {
             };
             build.set(state);
         });
-        *self
-            .0
-            .task
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(task);
+        *slot = Some(task);
+        true
     }
 
     /// The flag that stops the conversions of a build, for
@@ -678,9 +691,12 @@ impl DemoBuild {
             .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// Stop a running build and wait until it has removed what it wrote.
-    /// The server calls this once it has stopped serving, so the build does
-    /// not end part-way when the process exits.
+    /// Stop a running build and wait until it has removed what it wrote,
+    /// and refuse every build after it ([`DemoBuild::run`]). The server
+    /// calls this as the stop signal comes and waits for it alongside the
+    /// requests in flight, within `STOP_DRAIN_LIMIT`, so the build does not
+    /// end part-way when the process exits. A build still removing what it
+    /// wrote at the limit is cut off, and the next start removes the rest.
     pub(crate) async fn stop(&self) {
         self.stop_conversions();
         self.0.stopping.cancel();
@@ -808,7 +824,8 @@ pub async fn get_demo_account(
     request_body = ReplaceDemoAccountRequest,
     responses(
         (status = 202, description = "The build has started", body = DemoAccount),
-        crate::problem::openapi::StateConflict
+        crate::problem::openapi::StateConflict,
+        crate::problem::openapi::ServerStopping,
     )
 )]
 pub async fn replace_demo_account(
@@ -834,9 +851,20 @@ pub async fn replace_demo_account(
         state.demo_bundle_generator,
         state.demo_build.conversions_stopped(),
     );
-    state
+    // A server told to stop after the build was marked starts no build the
+    // stop would not wait for. The build's record is written, so the next
+    // start reports it as stopped, as it reports a build cut off part-way.
+    if !state
         .demo_build
-        .run(state.cfg.clone(), state.db.clone(), building);
+        .run(state.cfg.clone(), state.db.clone(), building)
+    {
+        state
+            .demo_build
+            .set(DemoBuildState::Failed(STOPPED_DURING_BUILD.into()));
+        return Err(ApiError::ServerStopping(
+            "the server is stopping, so it did not start the Demo Account build; start it again once the server is running".into(),
+        ));
+    }
     Ok((
         axum::http::StatusCode::ACCEPTED,
         Json(DemoAccount {

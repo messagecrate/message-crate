@@ -22,9 +22,10 @@ The steps match the server started in [Run Message Crate with Docker](/docs/user
 
 `docker stop` and `docker rm` remove the running server.
 They leave the volume alone, so the messages stay.
+`-t 40` gives the server 40 seconds to stop, whatever the old container was started with, because a stopping server waits up to 30 seconds for the work in progress, such as an import.
 
 ```bash title="Remove the old server"
-docker stop message-crate
+docker stop -t 40 message-crate
 docker rm message-crate
 ```
 
@@ -38,6 +39,7 @@ The same command as the first time starts the new server on the same volume.
 
 ```bash title="Start the new server"
 docker run -d --name message-crate \
+  --stop-timeout 40 \
   --restart unless-stopped \
   -p 127.0.0.1:8080:8080 \
   -v message-crate-data:/app/data \

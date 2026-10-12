@@ -23,13 +23,14 @@ Without it, Docker publishes port 8080 on every network the computer is connecte
 
 ```bash title="Start a Message Crate that the network can reach"
 docker run -d --name message-crate \
+  --stop-timeout 40 \
   --restart unless-stopped \
   -p 8080:8080 \
   -v message-crate-data:/app/data \
   bitrealm/message-crate:latest
 ```
 
-A server that is already running with the first-time command is removed first with `docker stop message-crate` and `docker rm message-crate`.
+A server that is already running with the first-time command is removed first with `docker stop -t 40 message-crate` and `docker rm message-crate`.
 Both leave the `message-crate-data` volume alone, so the messages stay.
 
 ### Only on a trusted network
@@ -104,7 +105,7 @@ A newer server that finds an older database layout rebuilds the database empty, 
 The server must be stopped first, because a database copied while the server is writing to it can be incomplete.
 
 ```bash title="On the old computer: stop the server"
-docker stop message-crate
+docker stop -t 40 message-crate
 ```
 
 The next command starts a temporary container that packs the volume into `message-crate-data.tar.gz` in the current directory.

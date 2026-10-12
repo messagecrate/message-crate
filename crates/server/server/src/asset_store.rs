@@ -820,9 +820,12 @@ impl Abandonment {
 /// ([`crate::asset_uploads::unless_in_use`]).
 ///
 /// `stall` is `[server] upload_stall_secs`, the longest the server lets an
-/// upload's body go with no byte arriving. A part is held in memory until
-/// the whole of it has arrived, and a completion writes nothing to the
-/// manifest, so a request using an upload keeps it whatever its files say.
+/// upload's body go with no byte arriving. An upload's age is its
+/// manifest's, and neither a part nor a completion rewrites the manifest
+/// while it runs: a part streams into a temp file of its own and is
+/// recorded only once the whole of it has arrived, and a completion writes
+/// nothing to the manifest. So a request using an upload keeps it whatever
+/// its files say.
 /// Between two requests nothing holds it: nothing resumes an upload once
 /// its client stops, because the client keeps the upload id in memory only,
 /// and the desktop app sends each part as soon as the one before it is

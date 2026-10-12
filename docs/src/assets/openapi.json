@@ -11995,6 +11995,19 @@
             "x-problem-types": [
               "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
             ]
+          },
+          "503": {
+            "description": "[`server-stopping`](https://messagecrate.app/docs/developer/reference/errors/server-stopping): The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/server-stopping"
+            ]
           }
         },
         "security": [

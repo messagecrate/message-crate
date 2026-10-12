@@ -639,6 +639,25 @@ once an earlier batch ended and import in full, so the stop waited for a
 whole batch more
 ([#2203](https://github.com/messagecrate/message-crate/issues/2203)).
 
+The stop then waits for the requests in flight, every route alike, and for
+the stop of a Demo Account build and of the Thumbnail and Preview pass, for
+up to 30 seconds (`STOP_DRAIN_LIMIT` in `crates/server/server/src/server.rs`).
+A request still running then is cut off, and the server exits after one
+`WARN` line naming each such request by its id, method and path
+(`crate::in_flight` tracks every request until its answer's body is sent).
+An import batch cut off this way is rolled back by SQLite and stores
+nothing, and the Upload, which gets no answer, pauses and sends it again
+when the run resumes. Why: an import batch can run for minutes, and
+`docker stop` killed the server after Docker's 10 seconds, so the batch was
+lost all the same, with a log that ended mid-request
+([#2122](https://github.com/messagecrate/message-crate/issues/2122)). Both
+Compose files set `stop_grace_period: 40s`, and the documented `docker run`
+commands `--stop-timeout 40`, so Docker never has to kill a server that
+keeps to its own limit. `docker_stop_waits_longer_than_the_drain` fails when
+either is no longer than the limit. Rejected: a config key for the limit,
+because Docker's stop time would have to follow every value it could be
+set to.
+
 ## Content negotiation
 
 `406 Not Acceptable` is answered only when an `Accept` header is present and no
@@ -1000,6 +1019,20 @@ What each reaches:
   limit as it is now. Why: an upload in progress keeps the limit it started
   with. Lowering the limit mid-upload otherwise refused every remaining part
   with `413 Payload Too Large`, and the push failed the conversation (#1179).
+- A part's body is written to a temp file in its upload's directory as it
+  arrives, and the server holds one buffer of it at a time, as the HTTP
+  library hands the body over, never the whole part. Once all of it is in,
+  a part of exactly its size takes the part's name and the manifest
+  records it; a part of any other size is refused and its temp file
+  removed. Why: a part read whole into memory held a whole part size
+  (`[server] asset_part_size`) of the server's memory per request, and
+  nothing limited how many requests one account with the import permission
+  sent at once, so it could take the server's memory from every other
+  account (#2114). With the parts on disk, a part request costs the server
+  the memory of one buffer of the body as the HTTP library hands it over,
+  whatever the client sends. The part size no longer sets it, so the server
+  sets no limit of its own on parts in flight, and the desktop app's 64
+  uploads at once cost 64 such buffers.
 - An account may have at most 128 multipart uploads open at once. The start
   of one more answers `409 Conflict` (`state-conflict`), with `detail`
   naming the limit, until one of them is completed, aborted, or abandoned.
@@ -1021,8 +1054,9 @@ What each reaches:
   to a day (#2652). The stall limit is safe because a live upload never goes
   that long between requests: the app sends each part as soon as the one
   before it is answered. A request still running keeps its upload however
-  old its files are, because a part arrives into memory before any of it is
-  written, and a completion writes no manifest. Only `serve` removes them,
+  old its manifest is, because a part streams into a temp file of its own
+  and the manifest records it only once all of it has arrived, and a
+  completion writes no manifest. Only `serve` removes them,
   not `process-assets` or `imports discard`: those commands may run beside
   `serve` and cannot see its requests.
 

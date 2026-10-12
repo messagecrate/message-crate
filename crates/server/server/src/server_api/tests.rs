@@ -1472,6 +1472,34 @@ fn stopping_the_server_during_generation_stops_the_generator_and_leaves_no_bundl
     );
 }
 
+/// A build asked for once the server has been told to stop is refused with
+/// `server-stopping` and never runs. The stop waits for the build it found
+/// as the signal came, and one started after it would be cut off when the
+/// process exits (#2122).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_demo_build_asked_for_after_the_stop_is_refused_and_never_runs() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+
+    state.demo_build.stop().await;
+    let (status, body) = start_demo_build(&state, &owner.token).await;
+    crate::test_support::expect_problem(status, &body, ProblemType::ServerStopping);
+    assert!(!state.demo_build.is_building());
+
+    let ran = std::sync::Arc::new(AtomicBool::new(false));
+    assert!(state.demo_build.start(DemoDataSize::Medium));
+    let started = state.demo_build.run(state.cfg.clone(), state.db.clone(), {
+        let ran = std::sync::Arc::clone(&ran);
+        async move {
+            ran.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(0)
+        }
+    });
+    assert!(!started, "a build after the stop must not start");
+    assert!(!ran.load(std::sync::atomic::Ordering::SeqCst));
+}
+
 /// A build task that panics ends the build as failed, and the next build
 /// starts. Otherwise the Demo Account would stay `building`, and every build
 /// and every delete of it would answer `409 Conflict` until a restart
@@ -1484,11 +1512,13 @@ async fn a_demo_build_that_panics_fails_and_the_next_build_starts() {
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
     assert!(state.demo_build.start(DemoDataSize::Medium));
-    state
-        .demo_build
-        .run(state.cfg.clone(), state.db.clone(), async {
-            panic!("the build broke")
-        });
+    assert!(
+        state
+            .demo_build
+            .run(state.cfg.clone(), state.db.clone(), async {
+                panic!("the build broke")
+            })
+    );
 
     let demo = demo_account_after_build(&state, &owner.token).await;
     assert_eq!(demo.status, DemoAccountStatus::Failed);
