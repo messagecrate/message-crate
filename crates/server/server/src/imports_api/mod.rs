@@ -97,7 +97,9 @@ pub struct ImportOptions<'a> {
     /// Where the import says how far it has got: standard output for the
     /// `import` command, the server's log for everything else.
     pub progress: Progress,
-    /// The instant the import stamps on each contact it changes.
+    /// The instant the import stamps on each contact it changes: when the
+    /// batch, or the `import` command's run, started, however long it then
+    /// takes.
     pub now: chrono::DateTime<chrono::Utc>,
 }
 
