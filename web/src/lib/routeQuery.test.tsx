@@ -13,7 +13,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { freshEntries, seedEntries } from "../test/staleEntries";
-import { ApiError, REQUEST_TIMEOUT_MS, requestTimeoutError } from "./api";
+import { ApiError, noAnswerError, REQUEST_TIMEOUT_MS, requestTimeoutError } from "./api";
 import type { OffsetPage } from "./routeQuery";
 import {
   createQueryClient,
@@ -130,7 +130,7 @@ describe("createQueryClient", () => {
   });
 
   it("asks again once when the request never reached the server", async () => {
-    expect(await callsUntilError(new TypeError("Failed to fetch"))).toBe(2);
+    expect(await callsUntilError(noAnswerError())).toBe(2);
   });
 });
 

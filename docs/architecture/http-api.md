@@ -457,6 +457,11 @@ on its screen, because it may show the sentence alone or joined with others.
 The web app joins a validation failure's `errors` with `; ` into one line, and
 a screen that shows a sentence on a line of its own capitalises its first
 letter with `errorLine` or `sentenceCase` (`web/src/lib/apiErrorMessage.ts`).
+For a `5xx`, the web app ends the sentence with the problem's `request_id`, as
+`internal server error (request 4f3c…)` (`problemFromBody` in
+`web/src/lib/api.ts`). Why: a `5xx` names no cause to the client, so the id is
+what a person can quote to find the failure's line in the server's log
+([The server's log, "A request's lines carry its id, spawned work included"](server-log.md#a-requests-lines-carry-its-id-spawned-work-included)).
 
 `type` is the URL of a page under
 `messagecrate.app/docs/developer/reference/errors/`, one page per problem type.
