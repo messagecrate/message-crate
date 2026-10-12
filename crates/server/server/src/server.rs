@@ -1232,12 +1232,7 @@ async fn limit_request_body(
     } else {
         MAX_REQUEST_BODY_BYTES
     };
-    let declared = request
-        .headers()
-        .get(header::CONTENT_LENGTH)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<u64>().ok());
-    if declared.is_some_and(|bytes| bytes > limit as u64) {
+    if declared_over(request.headers(), limit) {
         return ApiError::PayloadTooLarge.into_response();
     }
     let request =
@@ -1647,6 +1642,8 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     }
     // Uploads a stopped server left open, which no upload start sweeps (#2261).
     crate::asset_store::sweep_incoming_at_start(&state.db, &state.cfg.paths).await;
+    // Import batch bodies a stopped server left, before any batch can start.
+    crate::imports_api::batch_bodies::sweep_at_start(&state.cfg.paths.data_dir);
     // Works through what earlier Import Runs queued, a server stopped
     // part-way included, then waits for the next run to end.
     state
@@ -1975,6 +1972,66 @@ pub(crate) fn upload_content_type(headers: &HeaderMap) -> Option<String> {
     } else {
         Some(base.to_string())
     }
+}
+
+/// Whether the request's `Content-Length` declares a body over `limit`
+/// bytes. A request that declares no length, or one that does not read as a
+/// number, is not over: its body is cut off as it is read.
+pub(crate) fn declared_over(headers: &HeaderMap, limit: usize) -> bool {
+    headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+        .is_some_and(|bytes| bytes > limit as u64)
+}
+
+/// How long an import batch's body may go without a byte arriving before
+/// the read gives up. The batch holds an import slot while it reads, and
+/// there are only two, so a client that stops sending part-way, such as a
+/// laptop that goes to sleep, must not hold one for good.
+pub(crate) const BATCH_BODY_IDLE: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// How long an import batch's whole body may take to arrive. A client that
+/// sends a byte now and then never meets [`BATCH_BODY_IDLE`], so this bounds
+/// how long it can hold a slot. Ten minutes is the Upload's own timeout for
+/// one batch request, so no Upload is still sending a body after it.
+pub(crate) const BATCH_BODY_DEADLINE: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// Why the read of an import batch's body ended before the body did.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum BodyTooSlow {
+    /// Nothing arrived for [`BATCH_BODY_IDLE`].
+    #[error("no bytes arrived for {} seconds", BATCH_BODY_IDLE.as_secs())]
+    Stalled,
+    /// The body was still arriving at [`BATCH_BODY_DEADLINE`].
+    #[error("the body took longer than {} seconds to arrive", BATCH_BODY_DEADLINE.as_secs())]
+    Overdue,
+}
+
+/// An import batch's `body`, ending with a [`BodyTooSlow`] error once
+/// [`BATCH_BODY_IDLE`] passes with no chunk arriving, or
+/// [`BATCH_BODY_DEADLINE`] passes from the start of the read. Reading it
+/// answers `400 Bad Request` then, as a body that stops arriving for any
+/// other reason does.
+pub(crate) fn batch_body_bounded(body: axum::body::Body) -> axum::body::Body {
+    type BoxError = Box<dyn std::error::Error + Send + Sync>;
+    let deadline = tokio::time::Instant::now() + BATCH_BODY_DEADLINE;
+    let chunks =
+        futures_util::stream::unfold(Some(body.into_data_stream()), move |stream| async move {
+            let mut stream = stream?;
+            let idle_end = tokio::time::Instant::now() + BATCH_BODY_IDLE;
+            let (wait_until, too_slow) = if idle_end < deadline {
+                (idle_end, BodyTooSlow::Stalled)
+            } else {
+                (deadline, BodyTooSlow::Overdue)
+            };
+            match tokio::time::timeout_at(wait_until, stream.next()).await {
+                Ok(Some(chunk)) => Some((chunk.map_err(BoxError::from), Some(stream))),
+                Ok(None) => None,
+                Err(_) => Some((Err(BoxError::from(too_slow)), None)),
+            }
+        });
+    axum::body::Body::from_stream(chunks)
 }
 
 /// True when the request body is JSON Lines (one JSON object per line).

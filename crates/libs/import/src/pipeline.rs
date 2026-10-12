@@ -25,7 +25,8 @@ use crate::progress::{FileStatus, Reporter};
 use crate::report::{
     FileResult, MessageAccounting, UploadProfile, elapsed_ms, format_profile_line,
 };
-use crate::run::{ImportConfig, MAX_IMPORT_BODY_BYTES, Session};
+use crate::run::{ImportConfig, Session};
+use message_crate_api_types::MAX_IMPORT_BATCH_BYTES;
 
 /// If the pending message batch is at least this many messages, start its HTTP
 /// import now instead of waiting until the next chat is prepared.
@@ -358,7 +359,7 @@ impl<'a> ImportPipeline<'a> {
         chunk: ImportChunk,
         out: &mut Reporter<'_, '_>,
     ) -> Result<ChunkStep> {
-        let limits = (self.batch_size, MAX_IMPORT_BODY_BYTES);
+        let limits = (self.batch_size, MAX_IMPORT_BATCH_BYTES);
         let must_flush_first = self
             .pending
             .as_ref()

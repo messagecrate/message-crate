@@ -61,25 +61,36 @@ pub fn read_records(path: &Path) -> Result<Vec<ExportRecord>, ReadRecordsError> 
     };
     let file = File::open(path).map_err(|source| unreadable(None, source))?;
     let reader = BufReader::new(file);
-    let mut lines = Vec::new();
-    for (line_no, line) in reader.lines().enumerate() {
-        let line = match line {
-            Ok(line) => line,
+    // Each line is parsed as it is read, so the file's text is never held
+    // whole beside its records (#2075). A line that cannot be read ends the
+    // lines early, and its error, kept here, is the answer.
+    let mut read_error = None;
+    let lines = reader
+        .lines()
+        .enumerate()
+        .map_while(|(line_no, line)| match line {
+            Ok(line) => Some(line),
             // Bytes that are not UTF-8 are not text, so not JSON: the
             // sender's to fix, like any other line that cannot be read.
             Err(err) if err.kind() == std::io::ErrorKind::InvalidData => {
-                return Err(rejected(ImportFailure::NotJson {
+                read_error = Some(rejected(ImportFailure::NotJson {
                     line: line_no + 1,
                     detail: "the line is not valid UTF-8".into(),
                 }));
+                None
             }
-            Err(err) => return Err(unreadable(Some(line_no + 1), err)),
-        };
-        // A blank line is kept: `parse_ir_lines` skips it but still counts
-        // it, so a failure names the line as it is numbered in the file.
-        lines.push(line);
+            Err(err) => {
+                read_error = Some(unreadable(Some(line_no + 1), err));
+                None
+            }
+        });
+    // A blank line is passed on: `parse_ir_lines` skips it but still counts
+    // it, so a failure names the line as it is numbered in the file.
+    let parsed = records::parse_ir_lines(lines);
+    match read_error {
+        Some(error) => Err(error),
+        None => parsed.map_err(rejected),
     }
-    records::parse_ir_lines(lines).map_err(rejected)
 }
 
 #[cfg(test)]

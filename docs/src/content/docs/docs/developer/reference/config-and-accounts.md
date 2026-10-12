@@ -74,7 +74,7 @@ The server refuses only a limit of zero, or one above 9223372036854775807, with 
 
 No other request body is held to the attachment size limit.
 Each part of a multipart upload is held to the part size the upload was given when it started.
-Every other request body has a cap fixed in the server: 32 KiB for `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/claim`, 32 MiB for any other JSON body, 8 MiB for an address book loaded with `POST /v1/contacts`, and 512 MiB for an import batch or any other body.
+Every other request body has a cap fixed in the server: 32 KiB for `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/claim`, 32 MiB for any other JSON body, 8 MiB for an address book loaded with `POST /v1/contacts`, 64 MiB for an import batch, the most the desktop app sends in one, and 512 MiB for any other body.
 Why: the Owner's limit must never reach the login, or the settings change that would raise it again.
 A body over its cap is refused with `413 Payload Too Large` and the [`payload-too-large`](/docs/developer/reference/errors/payload-too-large/) problem type.
 
