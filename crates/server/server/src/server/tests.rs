@@ -1397,6 +1397,7 @@ fn every_api_error_answers_the_status_its_problem_type_declares() {
             ApiError::AuthenticationRequired("x".into()),
             StatusCode::UNAUTHORIZED,
         ),
+        (ApiError::TokenRefused("x".into()), StatusCode::UNAUTHORIZED),
         (
             ApiError::RateLimited {
                 retry_after_secs: 30,
@@ -1448,6 +1449,53 @@ fn every_api_error_answers_the_status_its_problem_type_declares() {
     ];
     for (error, status) in cases {
         assert_eq!(error.status(), status, "{error:?}");
+    }
+}
+
+/// Every `401` carries a `WWW-Authenticate` challenge, as RFC 9110, section
+/// 15.5.2, requires, and names `invalid_token` (RFC 6750) only when the
+/// request sent a Bearer token that was refused. No other status carries one.
+#[test]
+fn every_401_carries_a_bearer_challenge_and_nothing_else_does() {
+    let challenge = |error: ApiError| {
+        let response = error.into_response();
+        response
+            .headers()
+            .get(header::WWW_AUTHENTICATE)
+            .map(|v| (response.status(), v.to_str().unwrap().to_string()))
+    };
+    let plain = r#"Bearer realm="message-crate""#;
+    for error in [
+        ApiError::AuthenticationRequired("x".into()),
+        ApiError::InvalidCredentials("x".into()),
+        ApiError::MediaLinkInvalid("x".into()),
+    ] {
+        assert_eq!(
+            challenge(error),
+            Some((StatusCode::UNAUTHORIZED, plain.to_string()))
+        );
+    }
+    assert_eq!(
+        challenge(ApiError::TokenRefused("x".into())),
+        Some((
+            StatusCode::UNAUTHORIZED,
+            r#"Bearer realm="message-crate", error="invalid_token""#.to_string()
+        ))
+    );
+    assert_eq!(
+        challenge(ApiError::account_gone()).map(|(_, value)| value),
+        Some(r#"Bearer realm="message-crate", error="invalid_token""#.to_string()),
+        "a token whose account is gone was sent and refused"
+    );
+    for error in [
+        ApiError::InsufficientScope("x".into()),
+        ApiError::AccountDisabled("x".into()),
+        ApiError::NotFound("x".into()),
+        ApiError::RateLimited {
+            retry_after_secs: 30,
+        },
+    ] {
+        assert_eq!(challenge(error), None);
     }
 }
 
@@ -1503,6 +1551,7 @@ fn every_message_variant_answers_its_sentence_as_the_detail() {
         ApiError::UnsupportedMediaType,
         ApiError::InvalidCredentials,
         ApiError::AuthenticationRequired,
+        ApiError::TokenRefused,
         ApiError::UsernameTaken,
         ApiError::NameTaken,
         ApiError::DemoAccountProtected,

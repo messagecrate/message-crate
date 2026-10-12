@@ -12,3 +12,5 @@ editUrl: false
 | Type | `https://messagecrate.app/docs/developer/reference/errors/authentication-required` |
 
 The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. Log in again, or issue a new API token, and send the new token.
+
+Every `401` answer carries `WWW-Authenticate: Bearer realm="message-crate"`. When the request sent a Bearer token and the server refused it, the challenge adds `error="invalid_token"`.

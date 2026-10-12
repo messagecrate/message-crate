@@ -573,8 +573,13 @@ pub enum ApiError {
     PayloadTooLarge,
     /// `401` — a username, password or current-password check failed.
     InvalidCredentials(String),
-    /// `401` — no usable bearer token.
+    /// `401` — no usable bearer token: none sent, or a header that is not
+    /// `Bearer <token>`.
     AuthenticationRequired(String),
+    /// `401` — a bearer token was sent and refused: unknown, expired, or its
+    /// account is gone. An `authentication-required` whose challenge names
+    /// `error="invalid_token"` (RFC 6750, section 3.1).
+    TokenRefused(String),
     /// `429` — the auth rate limiter refused the attempt; `Retry-After` in seconds.
     RateLimited {
         /// Seconds until an attempt may succeed.
@@ -669,7 +674,7 @@ impl ApiError {
     /// account row has its id any more. It answers as a credential that names
     /// no account, because to the caller the two are the same.
     pub(crate) fn account_gone() -> Self {
-        Self::AuthenticationRequired("account no longer exists".into())
+        Self::TokenRefused("account no longer exists".into())
     }
 
     /// The sentence of a variant that carries nothing else, or `None` for a
@@ -683,6 +688,7 @@ impl ApiError {
             | Self::UnsupportedMediaType(m)
             | Self::InvalidCredentials(m)
             | Self::AuthenticationRequired(m)
+            | Self::TokenRefused(m)
             | Self::UsernameTaken(m)
             | Self::NameTaken(m)
             | Self::DemoAccountProtected(m)
@@ -731,7 +737,9 @@ impl ApiError {
             Self::UnsupportedMediaType(_) => ProblemType::UnsupportedMediaType,
             Self::PayloadTooLarge => ProblemType::PayloadTooLarge,
             Self::InvalidCredentials(_) => ProblemType::InvalidCredentials,
-            Self::AuthenticationRequired(_) => ProblemType::AuthenticationRequired,
+            Self::AuthenticationRequired(_) | Self::TokenRefused(_) => {
+                ProblemType::AuthenticationRequired
+            }
             Self::RateLimited { .. } => ProblemType::RateLimited,
             Self::UsernameTaken(_) => ProblemType::UsernameTaken,
             Self::NameTaken(_) => ProblemType::NameTaken,
@@ -906,6 +914,20 @@ impl IntoResponse for ApiError {
             response.headers_mut().insert(
                 header::CONTENT_RANGE,
                 HeaderValue::from_str(&content_range).expect("digits are a valid header value"),
+            );
+        }
+        // RFC 9110, section 15.5.2: every `401` names how to authenticate.
+        // RFC 6750, section 3.1: a Bearer token that was sent and refused is
+        // `invalid_token`; a request that sent none gets no error code.
+        if status == StatusCode::UNAUTHORIZED {
+            let challenge = if matches!(self, Self::TokenRefused(_)) {
+                r#"Bearer realm="message-crate", error="invalid_token""#
+            } else {
+                r#"Bearer realm="message-crate""#
+            };
+            response.headers_mut().insert(
+                header::WWW_AUTHENTICATE,
+                HeaderValue::from_static(challenge),
             );
         }
         response
@@ -1826,7 +1848,7 @@ pub async fn resolve_auth_on_conn(
     };
 
     let Some((account_id, credential, used)) = resolved else {
-        return Err(ApiError::AuthenticationRequired("invalid API token".into()));
+        return Err(ApiError::TokenRefused("invalid API token".into()));
     };
 
     let auth = account_profile::load_account_auth(&mut *conn, account_id)

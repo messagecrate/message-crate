@@ -7,8 +7,10 @@ import {
   EMPTY_RUN_RECORD,
   filesSkippedOverRun,
   IMPORT_ERROR_TEXT_MAX_CHARS,
+  IMPORT_NOTE_TEXT_MAX_CHARS,
   issueRequests,
   issuesToDiscard,
+  noteRequests,
   notesToDiscard,
   parseRunRecord,
   type RunPart,
@@ -517,6 +519,40 @@ describe("issueRequests (#2183)", () => {
         { kind: "error", stage: "upload", item: " a.jsonl ", reason: atCap, conversation: "c" },
       ]),
     ).toEqual([{ kind: "error", stage: "upload", item: "a.jsonl", reason: atCap }]);
+  });
+});
+
+describe("noteRequests (#2668)", () => {
+  it("cuts an item or text over the server's cap, so the completion is not refused", () => {
+    const [sent] = noteRequests([
+      {
+        stage: "staging",
+        item: ` ${"\u{1F4F7}".repeat(2500)} `,
+        text: "kept with a caveat ".repeat(200),
+      },
+    ]);
+    for (const text of [sent.item, sent.text]) {
+      expect(Array.from(text)).toHaveLength(IMPORT_NOTE_TEXT_MAX_CHARS);
+      expect(text.endsWith("…")).toBe(true);
+    }
+    expect(sent.item.startsWith("\u{1F4F7}")).toBe(true);
+  });
+
+  it("cuts to the cap the server's reference states", () => {
+    const path = fileURLToPath(
+      new URL("../../../../docs/src/assets/openapi.json", import.meta.url),
+    );
+    const doc = JSON.parse(readFileSync(path, "utf8"));
+    const fields = doc.components.schemas.ImportNoteRequest.properties;
+    expect(fields.item.maxLength).toBe(IMPORT_NOTE_TEXT_MAX_CHARS);
+    expect(fields.text.maxLength).toBe(IMPORT_NOTE_TEXT_MAX_CHARS);
+  });
+
+  it("sends text at or under the cap as it is, trimmed", () => {
+    const atCap = "t".repeat(IMPORT_NOTE_TEXT_MAX_CHARS);
+    expect(noteRequests([{ stage: "media", item: " IMG_1.heic ", text: atCap }])).toEqual([
+      { stage: "media", item: "IMG_1.heic", text: atCap },
+    ]);
   });
 });
 

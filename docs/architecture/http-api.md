@@ -259,6 +259,19 @@ current one, because that account reaches every other.
   caller does not hold breaks a rule rather than completing with an empty
   result.
 - `429 Too Many Requests` carries `Retry-After`.
+- Every `401 Unauthorized` carries `WWW-Authenticate: Bearer
+  realm="message-crate"`, whichever problem type it answers:
+  `authentication-required`, `invalid-credentials` or `media-link-invalid`.
+  When the request sent a Bearer token and the server refused it (unknown,
+  expired, or its account gone), the challenge adds `error="invalid_token"`.
+  A request that sent no token, or an `Authorization` header that is not
+  `Bearer <token>`, gets no error code. Why: RFC 9110, section 15.5.2,
+  requires the header on every `401`, and RFC 6750, section 3.1, gives the
+  error code and says a request that carried no token gets none. The
+  OpenAPI document declares Bearer schemes, so generic HTTP tooling reads
+  the challenge. The web app and the desktop app read the problem `type`
+  instead. A refused Media Link gets the plain challenge, because a Media
+  Link is not a Bearer token and the challenge names the way to send one.
 - The three routes that answer an asset's bytes, `GET /v1/assets/{sha256}`,
   `GET /v1/assets/{sha256}/preview` and `GET /v1/assets/{sha256}/thumbnail`,
   answer a `Range` of one byte range
@@ -796,9 +809,12 @@ What each reaches:
 - Free text a route stores has a cap of its own, stated in the field's
   OpenAPI description: a name a person types (an account's display name, a
   contact's name) at most 200 characters, an identity address it links at
-  most 320, an Import Error's `item` and `reason` at most 2,000 each, and
-  each JSON value an Import Run stores as it is created at most 65,536
-  bytes. The value is trimmed first, and one over its cap is
+  most 320, an Import Error's `item` and `reason` and an Import Run note's
+  `item` and `text` at most 2,000 each, the `tool` and `device_id` a new
+  Import Run names at most 64 each, its `run_dir` at most 4,096, the
+  `PATH_MAX` of Linux, and each JSON value an Import Run stores as it is
+  created at most 65,536 bytes. The value is trimmed first, except a path,
+  whose spaces at either end are part of its name, and one over its cap is
   `validation-failed`, never cut short. Why: the value is stored, shown on
   every list that holds it, and written into the Audit Trail and the
   server's log, so the 32 MiB body cap is no bound on it (#2183). An address

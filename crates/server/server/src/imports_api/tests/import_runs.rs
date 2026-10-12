@@ -505,6 +505,181 @@ async fn creating_an_import_with_an_oversized_json_value_is_a_validation_failure
     assert_eq!(runs["total"], 0, "no run was created: {runs}");
 }
 
+/// `tool`, `run_dir` and `device_id` each have a cap, and a value one
+/// character over it creates no run. They were stored at any length a JSON
+/// body could carry (#2668).
+#[tokio::test]
+async fn creating_an_import_with_an_oversized_text_field_is_a_validation_failure() {
+    let (state, _fixture, token) = importer().await;
+    for (field, cap) in [
+        ("tool", crate::text_caps::MAX_IMPORT_TOOL_CHARS),
+        ("run_dir", crate::text_caps::MAX_PATH_CHARS),
+        ("device_id", crate::text_caps::MAX_DEVICE_ID_CHARS),
+    ] {
+        let (status, text) = crate::test_support::post_json_raw(
+            &state,
+            "/v1/imports",
+            &token,
+            serde_json::json!({ "source": "imessage", field: "é".repeat(cap + 1) }),
+        )
+        .await;
+        crate::test_support::expect_problem(
+            status,
+            &text,
+            crate::problem::ProblemType::ValidationFailed,
+        );
+        let errors: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(
+            errors["errors"],
+            serde_json::json!([format!("{field}: must be at most {cap} characters")]),
+            "{text}"
+        );
+    }
+    let runs: serde_json::Value = get_json(&state, "/v1/imports", &token).await;
+    assert_eq!(runs["total"], 0, "no run was created: {runs}");
+}
+
+/// A value at its cap is stored. `tool` and `device_id` are stored trimmed,
+/// and `run_dir` as given, because a space at either end of a path is part
+/// of its name and the desktop app finds the directory by it.
+#[tokio::test]
+async fn an_import_stores_its_text_fields_at_the_cap() {
+    let (state, _fixture, token) = importer().await;
+    let tool = "t".repeat(crate::text_caps::MAX_IMPORT_TOOL_CHARS);
+    let device_id = "d".repeat(crate::text_caps::MAX_DEVICE_ID_CHARS);
+    let run_dir = format!(" {} ", "p".repeat(crate::text_caps::MAX_PATH_CHARS - 2));
+    let (_, created): (String, serde_json::Value) = post_created_json(
+        &state,
+        "/v1/imports",
+        &token,
+        serde_json::json!({
+            "source": "imessage",
+            "tool": format!(" {tool} "),
+            "run_dir": run_dir,
+            "device_id": format!(" {device_id} "),
+        }),
+    )
+    .await;
+    let id = created["id"].as_i64().unwrap();
+    let run: serde_json::Value = get_json(&state, &format!("/v1/imports/{id}"), &token).await;
+    assert_eq!(run["tool"], tool.as_str());
+    assert_eq!(run["run_dir"], run_dir.as_str());
+    assert_eq!(run["device_id"], device_id.as_str());
+}
+
+/// A note's `item` and `text` are each at most 2,000 characters, on a
+/// completion and a discard alike, and a body over the cap leaves the run
+/// running. They were stored at any length a JSON body could carry (#2668).
+#[tokio::test]
+async fn a_note_over_the_text_cap_is_refused_and_the_run_stays_running() {
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    let (_, created): (String, serde_json::Value) = post_created_json(
+        state,
+        "/v1/imports",
+        token,
+        serde_json::json!({ "source": "imessage" }),
+    )
+    .await;
+    let id = created["id"].as_i64().unwrap();
+    let long = "x".repeat(crate::text_caps::MAX_IMPORT_NOTE_TEXT_CHARS + 1);
+
+    for route in ["complete", "discard"] {
+        let mut body = serde_json::json!({
+            "issues": [],
+            "notes": [
+                { "stage": "staging", "item": "a", "text": "kept" },
+                { "stage": "staging", "item": long, "text": long }
+            ]
+        });
+        if route == "complete" {
+            body["status"] = "completed".into();
+        }
+        let (status, text) = crate::test_support::post_json_raw(
+            state,
+            &format!("/v1/imports/{id}/{route}"),
+            token,
+            body,
+        )
+        .await;
+        crate::test_support::expect_problem(
+            status,
+            &text,
+            crate::problem::ProblemType::ValidationFailed,
+        );
+        let errors: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(
+            errors["errors"],
+            serde_json::json!([
+                "notes[1].item: must be at most 2000 characters",
+                "notes[1].text: must be at most 2000 characters"
+            ]),
+            "{route}: {text}"
+        );
+    }
+    let run: serde_json::Value = get_json(state, &format!("/v1/imports/{id}"), token).await;
+    assert_eq!(run["status"], "running", "{run}");
+    assert_eq!(run["notes"], serde_json::json!([]), "{run}");
+}
+
+/// The reference states each cap on the text an Import Run stores, so the
+/// desktop app, which keeps within them, reads the numbers the server holds.
+#[test]
+fn the_reference_states_the_import_run_text_caps() {
+    let doc: serde_json::Value =
+        serde_json::from_str(&crate::openapi::dump_openapi_json()).unwrap();
+    let schemas = &doc["components"]["schemas"];
+    // Each description states its cap as the reference writes a number.
+    for (schema, field, cap, stated) in [
+        (
+            "CreateImportRequest",
+            "tool",
+            crate::text_caps::MAX_IMPORT_TOOL_CHARS,
+            "over 64 characters",
+        ),
+        (
+            "CreateImportRequest",
+            "run_dir",
+            crate::text_caps::MAX_PATH_CHARS,
+            "over 4,096 characters",
+        ),
+        (
+            "CreateImportRequest",
+            "device_id",
+            crate::text_caps::MAX_DEVICE_ID_CHARS,
+            "over 64 characters",
+        ),
+        (
+            "ImportNoteRequest",
+            "item",
+            crate::text_caps::MAX_IMPORT_NOTE_TEXT_CHARS,
+            "over 2,000 characters",
+        ),
+        (
+            "ImportNoteRequest",
+            "text",
+            crate::text_caps::MAX_IMPORT_NOTE_TEXT_CHARS,
+            "over 2,000 characters",
+        ),
+    ] {
+        let property = &schemas[schema]["properties"][field];
+        assert_eq!(property["maxLength"], cap, "{schema}.{field}: {property}");
+        // The description keeps the doc comment's line breaks.
+        let described = property["description"]
+            .as_str()
+            .unwrap_or_default()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase();
+        assert!(
+            described.contains(stated),
+            "{schema}.{field} does not say {stated:?}: {described}"
+        );
+    }
+}
+
 /// An Import Error's `item` and `reason` are each at most 2,000 characters,
 /// on a completion and a discard alike, and a body over the cap leaves the
 /// run running. They were stored at any length a JSON body could carry
