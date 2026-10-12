@@ -753,6 +753,15 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-12: **An Upload pauses when the server stops or drops out.** When
+  the server was told to stop during an Upload, or could not be reached for
+  more than about four seconds, such as while Wi-Fi reconnected, the Upload
+  recorded every conversation it then tried to send as failed, and its
+  report listed failures that were nobody's fault. The Upload now waits at
+  least 15 seconds before its last try, and if the server is still away it
+  pauses, records no failure, and says in its log that the server stopped
+  or could not be reached. Resuming the import sends what it did not
+  (#2727, #2092).
 - 2026-10-12: **Two stopped Uploads no longer block large attachments for a
   day.** When the desktop app was closed or stopped during an Upload, the
   large attachments it was sending in parts stayed open on the server for a

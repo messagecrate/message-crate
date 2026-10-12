@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 
 use httpmock::prelude::*;
 use message_crate_import::{
-    AuthError, FileStatus, ImportConfig, ImportReport, ProgressEvent, authenticate, run,
+    AuthError, FileStatus, ImportConfig, ImportReport, ProgressEvent, ServerAway, authenticate, run,
 };
 use message_ir::testutil::sample_document;
 use message_ir::{ConversationDocument, IrAttachment};
@@ -1848,7 +1848,7 @@ fn shared_attachment_uploaded_once_across_conversations() {
 fn a_failed_upload_frees_a_shared_file_for_the_next_conversation() {
     const ASSET_BYTES: &[u8] = b"shared attachment bytes";
     let digest = file_io::sha256_hex(ASSET_BYTES);
-    let (base_url, events) = serve_a_held_first_upload("503 Service Unavailable");
+    let (base_url, events) = serve_a_held_first_upload("500 Internal Server Error");
 
     let dir = tempdir().unwrap();
     fs::create_dir(dir.path().join("attachments")).unwrap();
@@ -1885,8 +1885,8 @@ fn a_failed_upload_frees_a_shared_file_for_the_next_conversation() {
 const UPLOAD_HOLD: std::time::Duration = std::time::Duration::from_millis(1_000);
 
 /// A server that holds the first asset PUT open for [`UPLOAD_HOLD`] and then
-/// answers it with `first_put` (a status line such as `503 Service
-/// Unavailable`). Every later PUT answers `200 OK` at once. Each connection
+/// answers it with `first_put` (a status line such as `500 Internal Server
+/// Error`). Every later PUT answers `200 OK` at once. Each connection
 /// is served on its own thread, so a batch can arrive while the first PUT is
 /// held. Returns the base URL and what the server saw, in order: `put held`,
 /// `put answered`, `put` for each later PUT, and `batch guid-a guid-b` for
@@ -1971,7 +1971,7 @@ fn serve_a_held_first_upload(first_put: &'static str) -> (String, Arc<Mutex<Vec<
                         } else {
                             answer(
                                 first_put,
-                                r#"{"type":"about:blank","title":"Service unavailable","status":503,"detail":"the server is busy"}"#,
+                                r#"{"type":"about:blank","title":"Internal server error","status":500,"detail":"intentional upload failure"}"#,
                             )
                         }
                     }
@@ -2061,7 +2061,7 @@ fn a_conversation_waits_for_a_shared_attachment_another_is_uploading() {
 /// (#1076).
 #[test]
 fn a_conversation_uploads_a_shared_attachment_whose_upload_failed_elsewhere() {
-    let (base_url, events) = serve_a_held_first_upload("503 Service Unavailable");
+    let (base_url, events) = serve_a_held_first_upload("500 Internal Server Error");
     let dir = tempdir().unwrap();
     two_conversations_sharing_a_file(dir.path());
     let cfg = ImportConfig {
@@ -2503,9 +2503,14 @@ fn conversations_from_two_sources_go_out_in_separate_requests() {
     assert_eq!(whatsapp.calls(), 1);
 }
 
-/// The journal rows of one kind (`file_ok`, `message_batch_ok`, …).
+/// The journal rows of one kind (`file_ok`, `message_batch_ok`, …). A
+/// journal the run never wrote to holds none.
 fn journal_events(dir: &Path, event: &str) -> Vec<serde_json::Value> {
-    fs::read_to_string(dir.join(".import-state.jsonl"))
+    let path = dir.join(".import-state.jsonl");
+    if !path.exists() {
+        return Vec::new();
+    }
+    fs::read_to_string(path)
         .unwrap()
         .lines()
         .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
@@ -3082,6 +3087,17 @@ fn an_unreadable_2xx_answer_is_not_retried() {
 /// import calls, the run's completion among them, get their usual answers.
 /// Returns the base URL and a count of batch POSTs.
 fn serve_a_200_that_drops_the_batch_body() -> (String, Arc<AtomicUsize>) {
+    serve_answering_batches_with(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 4096\r\nConnection: close\r\n\r\n{\"messages\":",
+    )
+}
+
+/// A server that answers each request on its own connection and closes it.
+/// The batch POST gets `batch_answer` written as it is, and nothing at all
+/// when it is empty; the other routes an import calls, the run's completion
+/// among them, get their usual answers. Returns the base URL and a count of
+/// batch POSTs.
+fn serve_answering_batches_with(batch_answer: &'static str) -> (String, Arc<AtomicUsize>) {
     use std::io::{BufRead, BufReader, Read};
     use std::net::TcpListener;
 
@@ -3128,7 +3144,7 @@ fn serve_a_200_that_drops_the_batch_body() -> (String, Arc<AtomicUsize>) {
                 answer("201 Created", r#"{"id":7}"#)
             } else if request_line.starts_with("POST /v1/imports/7/batches ") {
                 counted.fetch_add(1, Ordering::SeqCst);
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 4096\r\nConnection: close\r\n\r\n{\"messages\":".to_string()
+                batch_answer.to_string()
             } else if request_line.starts_with("POST /v1/imports/7/complete ") {
                 answer("200 OK", r#"{"id":7}"#)
             } else {
@@ -3139,6 +3155,180 @@ fn serve_a_200_that_drops_the_batch_body() -> (String, Arc<AtomicUsize>) {
         }
     });
     (base_url, batches)
+}
+
+/// The sentence the Upload's log and the desktop app show when the server
+/// it sends to is stopping.
+const SERVER_STOPPING_LINE: &str = "The server is stopping, so the Upload paused. \
+                                    The next Upload sends what this one did not.";
+
+/// A batch the server refuses because it was told to stop is not the
+/// batch's fault: the Upload pauses as it does for a refused session,
+/// records no conversation as failed, sends nothing more, and the next
+/// Upload sends what this one did not (#2727).
+#[test]
+fn a_server_told_to_stop_pauses_the_upload_and_fails_no_conversation() {
+    let server = mock_server();
+    let _auth = mock_session(&server);
+    let accepted = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/imports/7/batches")
+            .body_includes("guid-1");
+        then.status(200).json_body(json!({
+            "messages": 1,
+            "messages_appended": 1,
+            "conversations": 1
+        }));
+    });
+    let mut stopping = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/imports/7/batches")
+            .body_excludes("guid-1");
+        then.status(503)
+            .header("Content-Type", "application/problem+json")
+            .json_body(json!({
+                "type": "https://messagecrate.app/docs/developer/reference/errors/server-stopping",
+                "title": "Server stopping",
+                "status": 503,
+                "detail": "The server is stopping, so it did not start this request."
+            }));
+    });
+
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    let cfg = ImportConfig {
+        batch_size: 1,
+        prepare_ahead: 1,
+        prepare_workers: 1,
+        import_id: Some(7),
+        ..mock_server_config(dir.path(), server.base_url())
+    };
+
+    let (report, shown) = run_showing(&cfg);
+
+    assert_eq!(report.server_away, Some(ServerAway::Stopping));
+    assert!(report.cancelled, "a stopping server pauses the Upload");
+    assert!(!report.session_refused, "the session is still good");
+    assert!(!report.ok);
+    assert_eq!(report.conversations_failed, 0, "{:?}", report.results);
+    assert_eq!(report.messages_failed, 0);
+    assert_eq!(report.conversations_ok, 1);
+    assert_eq!(report.conversations_cancelled, 2, "{:?}", report.results);
+    assert_eq!(accepted.calls(), 1);
+    assert_eq!(stopping.calls(), 1, "nothing is sent after the refusal");
+    assert!(journal_events(dir.path(), "fail").is_empty());
+    let log = read_log(dir.path());
+    assert!(log.contains(SERVER_STOPPING_LINE), "{log}");
+    assert!(log.contains(", because the server is stopping.\n"), "{log}");
+    assert!(
+        shown.iter().any(|line| line == SERVER_STOPPING_LINE),
+        "{shown:?}"
+    );
+
+    stopping.delete();
+    let resumed_import = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/imports/7/batches")
+            .body_excludes("guid-1");
+        then.status(200).json_body(json!({
+            "messages": 1,
+            "messages_appended": 1,
+            "conversations": 1
+        }));
+    });
+    let resumed = run(&cfg, None).unwrap();
+
+    assert!(resumed.ok, "{:?}", resumed.results);
+    assert_eq!(resumed.server_away, None);
+    assert_eq!(resumed.conversations_skipped, 1);
+    assert_eq!(resumed.conversations_ok, 2);
+    assert_eq!(resumed_import.calls(), 2);
+}
+
+/// A server that cannot be reached fails every batch the same way, so the
+/// Upload stops at the first one rather than recording every conversation
+/// after it as failed: the journal records no failure, and the next Upload
+/// sends them all (#2092).
+#[test]
+fn a_server_that_cannot_be_reached_pauses_the_upload_and_fails_no_conversation() {
+    // Every batch's connection is closed with no answer.
+    let (base_url, batches) = serve_answering_batches_with("");
+
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    let cfg = ImportConfig {
+        batch_size: 1,
+        prepare_ahead: 1,
+        prepare_workers: 1,
+        ..mock_server_config(dir.path(), base_url)
+    };
+
+    let (report, shown) = run_showing(&cfg);
+
+    assert_eq!(
+        batches.load(Ordering::SeqCst),
+        1,
+        "the run stops at the first"
+    );
+    assert_eq!(report.server_away, Some(ServerAway::Unavailable));
+    assert!(report.cancelled, "an unreachable server pauses the Upload");
+    assert!(!report.session_refused);
+    assert!(!report.ok);
+    assert_eq!(report.conversations_failed, 0, "{:?}", report.results);
+    assert_eq!(report.messages_failed, 0);
+    assert_eq!(report.conversations_cancelled, 3, "{:?}", report.results);
+    assert!(journal_events(dir.path(), "fail").is_empty());
+    assert!(journal_events(dir.path(), "file_ok").is_empty());
+    let stopped = "The server could not be reached, so the Upload paused. \
+                   The next Upload sends what this one did not.";
+    assert!(shown.iter().any(|line| line == stopped), "{shown:?}");
+    assert!(
+        read_log(dir.path()).contains(", because the server could not be reached.\n"),
+        "{}",
+        read_log(dir.path())
+    );
+}
+
+/// An attachment upload the server cannot take because it is away stops the
+/// Upload the same way: the conversation the attachment belongs to is left
+/// for the next Upload, not recorded as failed (#2092).
+#[test]
+fn an_attachment_upload_to_an_unavailable_server_pauses_the_upload() {
+    let server = mock_server();
+    let _auth = mock_session(&server);
+    let _head = server.mock(|when, then| {
+        when.method("HEAD").path_includes("/v1/assets/");
+        then.status(502);
+    });
+    let batches = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/7/batches");
+        then.status(200).json_body(json!({
+            "messages": 1,
+            "messages_appended": 1,
+            "conversations": 1
+        }));
+    });
+
+    let dir = tempdir().unwrap();
+    two_attachment_docs(dir.path(), "a.txt", b"first file", "b.txt", b"second file");
+    let cfg = ImportConfig {
+        import_id: Some(7),
+        ..mock_server_config(dir.path(), server.base_url())
+    };
+
+    let report = run(&cfg, None).unwrap();
+
+    assert_eq!(report.server_away, Some(ServerAway::Unavailable));
+    assert!(report.cancelled);
+    assert!(!report.session_refused);
+    assert_eq!(report.conversations_failed, 0, "{:?}", report.results);
+    assert_eq!(report.conversations_cancelled, 1, "{:?}", report.results);
+    assert_eq!(batches.calls(), 0);
+    assert!(journal_events(dir.path(), "fail").is_empty());
 }
 
 /// A `200 OK` whose body is cut off means the server committed the batch,

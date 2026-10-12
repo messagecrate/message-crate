@@ -37,14 +37,14 @@
 use message_crate_api_types::ImportMode;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use jsonl_journal::ServerTarget;
 use message_crate_core::{CancelFlag, Cancelled, RunLogLevel, check_cancel};
+use message_crate_http::ServerAway;
 
 use crate::AuthInfo;
 use crate::directory::{detect_source, file_label, input_directory, list_jsonl_files};
@@ -162,6 +162,10 @@ pub(crate) struct Session {
     /// Set once the server refuses the session token. It is this run's own,
     /// and stops the run as the caller's cancel flag does.
     pub refused: Arc<AtomicBool>,
+    /// Set once a request fails because the server was not there to take
+    /// it, with why: it is stopping, or it could not be reached. Like
+    /// `refused`, it stops the run as a cancel does.
+    pub away: Arc<OnceLock<ServerAway>>,
     /// How long a request that sends a piece (an import batch, an
     /// attachment, or a part of one) waits for its answer, from the limit
     /// the server states ([`crate::http::piece_wait`]).
@@ -170,7 +174,8 @@ pub(crate) struct Session {
 
 impl Session {
     /// Run `op` against the server with retries, and stop the run when the
-    /// server refuses the session token. Every request that sends
+    /// server refuses the session token or is not there to take the request.
+    /// Every request that sends
     /// conversations or attachments goes through here, so none of them can
     /// miss the refusal. Starting and completing the Upload's own Import Run
     /// do not: the desktop app hands over its run, so the Upload does neither.
@@ -184,17 +189,22 @@ impl Session {
         mut op: impl FnMut(&Self) -> Result<T>,
     ) -> Result<T> {
         message_crate_http::with_retries(max_retries, || op(self))
-            .inspect_err(|error| self.note_refusal(error))
+            .inspect_err(|error| self.note_halt(error))
     }
 
-    /// Stop the run when `error` is the server refusing the session token.
+    /// Stop the run when `error` is the server refusing the session token,
+    /// or the server not being there to take the request.
     ///
-    /// A refused session refuses every later request too, so the run stops
-    /// as it would for a cancel, and what it did not send stays for the next
-    /// Upload rather than being recorded as failed.
-    fn note_refusal(&self, error: &anyhow::Error) {
+    /// A refused session refuses every later request too, and a server that
+    /// is stopping or cannot be reached fails every later request until it
+    /// is back. So the run stops as it would for a cancel, and what it did
+    /// not send stays for the next Upload rather than being recorded as
+    /// failed. The first reason the server was away is the one kept.
+    fn note_halt(&self, error: &anyhow::Error) {
         if message_crate_http::is_session_refused(error) {
             self.refused.store(true, Ordering::SeqCst);
+        } else if let Some(away) = message_crate_http::server_away(error) {
+            let _ = self.away.set(away);
         }
     }
 
@@ -203,14 +213,21 @@ impl Session {
         self.refused.load(Ordering::SeqCst)
     }
 
-    /// Whether the run must stop: the caller cancelled it, or the server
-    /// refused the session token.
+    /// Why the server was not there to take a request, once one failed for
+    /// that.
+    pub(crate) fn away(&self) -> Option<ServerAway> {
+        self.away.get().copied()
+    }
+
+    /// Whether the run must stop: the caller cancelled it, the server
+    /// refused the session token, or the server was not there to take a
+    /// request.
     ///
     /// # Errors
     ///
     /// Returns [`Cancelled`] when the run must stop.
     pub(crate) fn check_stop(&self) -> std::result::Result<(), Cancelled> {
-        if self.is_refused() {
+        if self.is_refused() || self.away().is_some() {
             return Err(Cancelled);
         }
         check_cancel(&self.cancel)
@@ -312,13 +329,9 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
     let halted = drive(&ctx, &files, &mut pipeline, &mut assets, &mut out)?;
     settle(&session, &mut pipeline, halted, &mut out)?;
     let session_refused = session.is_refused();
-    if session_refused {
-        out.show_at(
-            RunLogLevel::Warn,
-            "The server no longer accepts this session, so the Upload paused. \
-             The next Upload sends what this one did not."
-                .into(),
-        );
+    let away = session.away();
+    if let Some(line) = halt_line(session_refused, away) {
+        out.show_at(RunLogLevel::Warn, line.into());
     }
     pipeline.record_cancelled(&files, &mut out);
     out.flush_file_counter();
@@ -331,8 +344,9 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
     // conversation for the next Upload: one that came after the last
     // request went out halted nothing, so that Upload completed (#1903). A
     // refused session always halts the run, even when the batch it refused
-    // carried only a conversation that had already failed.
-    let cancelled = counted.cancelled > 0 || session_refused;
+    // carried only a conversation that had already failed, and so does a
+    // server that was not there to take a request.
+    let cancelled = counted.cancelled > 0 || session_refused || away.is_some();
     // Only shrink/rewrite the journal after a clean run so a failed run can retry.
     if counted.failed == 0 && !cancelled {
         let _ = journal.compact();
@@ -341,6 +355,7 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
         ok: counted.failed == 0 && !cancelled,
         cancelled,
         session_refused,
+        server_away: away,
         completion_refused: false,
         account: session.auth.account_id,
         username: session.username.clone(),
@@ -420,6 +435,29 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
     Ok(report)
 }
 
+/// The sentence that says why the server halted the run, if it did: it
+/// refused the session, it is stopping, or it could not be reached. A
+/// refused session outranks the server being away, because the desktop app
+/// ends the session for it.
+fn halt_line(session_refused: bool, away: Option<ServerAway>) -> Option<&'static str> {
+    if session_refused {
+        return Some(
+            "The server no longer accepts this session, so the Upload paused. \
+             The next Upload sends what this one did not.",
+        );
+    }
+    away.map(|away| match away {
+        ServerAway::Stopping => {
+            "The server is stopping, so the Upload paused. \
+             The next Upload sends what this one did not."
+        }
+        ServerAway::Unavailable => {
+            "The server could not be reached, so the Upload paused. \
+             The next Upload sends what this one did not."
+        }
+    })
+}
+
 /// Check the session token and pick the account name the rest of the run uses.
 ///
 /// The session token decides which account this run uses, and the run names
@@ -447,6 +485,7 @@ fn login(cfg: &ImportConfig, out: &mut Reporter<'_, '_>) -> Result<Session> {
         auth,
         cancel: cfg.cancel.clone(),
         refused: Arc::new(AtomicBool::new(false)),
+        away: Arc::new(OnceLock::new()),
         piece_wait,
     })
 }
@@ -684,13 +723,15 @@ fn absorb_prepared(prepared: &PreparedFile, assets: &mut AssetTotals, out: &mut 
 }
 
 /// End of run: send any leftover batch and wait for the last import. A
-/// halted run (`halted`, a cancel, or a refused session) sends nothing
+/// halted run (`halted`, a cancel, a refused session, or a server that was
+/// not there to take a request) sends nothing
 /// more, and still waits for the in-flight import so the journal stays
 /// consistent.
 ///
 /// Whether the run halted is not decided here: a cancel that arrives while
 /// the last request is in flight halts nothing, so the caller reads the halt
-/// from the conversations left unsent and from a refused session instead.
+/// from the conversations left unsent, a refused session, and a server that
+/// was not there instead.
 ///
 /// # Errors
 ///

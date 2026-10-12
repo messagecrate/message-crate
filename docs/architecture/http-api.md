@@ -626,8 +626,14 @@ but is still reading its body stops reading at once and is refused the same
 way, so the stop never waits for the rest of a body that a client sends
 slowly or has stopped sending
 ([#2878](https://github.com/messagecrate/message-crate/issues/2878)).
-The Upload retries it as it retries any `5xx`; if the server is not back in
-time, the Upload pauses, and resuming the run sends the batch. A batch whose
+The Upload retries it as it retries any `5xx`, waiting at least 15 seconds
+before its last try (`LAST_RETRY_WAIT` in `crates/libs/http`). If the server
+is not back by then, the Upload pauses without recording the batch's
+conversations as failed, and resuming the run sends the batch
+([#2727](https://github.com/messagecrate/message-crate/issues/2727)). A
+server that cannot be reached, or answers `502 Bad Gateway`,
+`503 Service Unavailable` or `504 Gateway Timeout`, pauses it the same way
+([#2092](https://github.com/messagecrate/message-crate/issues/2092)). A batch whose
 import has started is not refused. Why: a waiting batch used to take a slot
 once an earlier batch ended and import in full, so the stop waited for a
 whole batch more

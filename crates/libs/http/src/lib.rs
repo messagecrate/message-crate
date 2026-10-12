@@ -17,7 +17,10 @@ mod session;
 
 pub use auth_error::{AuthError, SESSION_REFUSED, session_refused};
 pub use response::{error_sentence, ok_json, read_body};
-pub use retry::{HttpError, RetryKind, classify_retry, is_session_refused, with_retries};
+pub use retry::{
+    HttpError, LAST_RETRY_WAIT, RetryKind, ServerAway, classify_retry, is_session_refused,
+    server_away, with_retries,
+};
 pub use session::{HttpSession, auth_check, bearer_header, looks_like_html, trim_base_url};
 
 use anyhow::{Context, Result};

@@ -116,6 +116,68 @@ pub fn classify_retry(error: &anyhow::Error) -> RetryKind {
     RetryKind::Transient
 }
 
+/// Why a request failed because the server was not there to take it, rather
+/// than because of what the request carried.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ServerAway {
+    /// The server answered `server-stopping`: it was told to stop.
+    Stopping,
+    /// No answer came (the connection was refused, dropped, or timed out),
+    /// or the answer was `502 Bad Gateway`, `503 Service Unavailable` or
+    /// `504 Gateway Timeout`, which a server or the proxy before it gives
+    /// when it cannot take requests.
+    Unavailable,
+}
+
+/// The problem type a server told to stop answers with.
+const SERVER_STOPPING: &str = "server-stopping";
+
+/// Whether `error` says the server was not there to take the request, and
+/// why. Every request fails the same way until the server is back, so a run
+/// that sees one stops rather than recording each request it could not
+/// send as failed. A `500 Internal Server Error` is not one: the server took
+/// the request and failed on it, and the next request may succeed.
+pub fn server_away(error: &anyhow::Error) -> Option<ServerAway> {
+    if let Some(http) = error.downcast_ref::<HttpError>() {
+        if http
+            .problem()
+            .is_some_and(|problem| problem.slug() == Some(SERVER_STOPPING))
+        {
+            return Some(ServerAway::Stopping);
+        }
+        return matches!(http.status, 502..=504).then_some(ServerAway::Unavailable);
+    }
+    // A reqwest error with no status is a request that got no answer, or
+    // whose answer broke off. One that could not be built never left.
+    error
+        .downcast_ref::<reqwest::Error>()
+        .filter(|reqwest| reqwest.status().is_none() && !reqwest.is_builder())
+        .map(|_| ServerAway::Unavailable)
+}
+
+/// The least the last retry waits before it tries again, so a server or a
+/// network that is away for several seconds, such as Wi-Fi reconnecting or
+/// a server restarting, is back before the request is given up.
+pub const LAST_RETRY_WAIT: Duration = Duration::from_secs(15);
+
+/// How long the `attempt`th try (counted from 1) waits before the next one,
+/// out of `max_retries` retries, with `jitter` in [0.0, 1.0).
+///
+/// Each wait doubles from half a second, with up to a quarter more for
+/// jitter. The wait before the last retry is at least [`LAST_RETRY_WAIT`].
+fn retry_wait(attempt: u32, max_retries: u32, jitter: f64) -> Duration {
+    let base_ms = 500u64.saturating_mul(2u64.saturating_pow(attempt.saturating_sub(1)));
+    let jitter_ms = (base_ms / 4).min(5000);
+    let wait_ms = base_ms + (jitter_ms / 2) + (jitter_ms as f64 * jitter) as u64;
+    let wait = Duration::from_millis(wait_ms.min(30_000));
+    if attempt == max_retries {
+        wait.max(LAST_RETRY_WAIT)
+    } else {
+        wait
+    }
+}
+
 /// Run `op` again on transient failures, with backoff, up to `max_retries`
 /// extra tries.
 ///
@@ -123,10 +185,26 @@ pub fn classify_retry(error: &anyhow::Error) -> RetryKind {
 ///
 /// Returns the last error from `op` when retries are exhausted or the error is
 /// permanent.
-pub fn with_retries<T, F>(max_retries: u32, mut op: F) -> Result<T>
+pub fn with_retries<T, F>(max_retries: u32, op: F) -> Result<T>
 where
     F: FnMut() -> Result<T>,
 {
+    retry_with_waits(
+        max_retries,
+        |attempt| {
+            thread::sleep(retry_wait(attempt, max_retries, rand_factor()));
+        },
+        op,
+    )
+}
+
+/// [`with_retries`], with `wait(attempt)` called before each retry in place
+/// of the sleep, so a test can see the waits without taking them.
+fn retry_with_waits<T>(
+    max_retries: u32,
+    mut wait: impl FnMut(u32),
+    mut op: impl FnMut() -> Result<T>,
+) -> Result<T> {
     let mut attempt = 0u32;
     loop {
         attempt += 1;
@@ -136,11 +214,7 @@ where
                 if attempt > max_retries || classify_retry(&e) == RetryKind::Permanent {
                     return Err(e);
                 }
-                // Exponential backoff with jitter.
-                let base_ms = 500u64 * 2u64.saturating_pow(attempt.saturating_sub(1));
-                let jitter_ms = (base_ms / 4).min(5000);
-                let wait_ms = base_ms + (jitter_ms / 2) + (jitter_ms as f64 * rand_factor()) as u64;
-                thread::sleep(Duration::from_millis(wait_ms.min(30_000)));
+                wait(attempt);
             }
         }
     }
@@ -284,21 +358,30 @@ mod tests {
         assert!(!classified(classify_retry(&anyhow!("something odd"))));
     }
 
+    /// Run `op` through [`retry_with_waits`] with `max_retries`, and return
+    /// its result with the attempts each wait came after.
+    fn retried<T>(max_retries: u32, op: impl FnMut() -> Result<T>) -> (Result<T>, Vec<u32>) {
+        let mut waits = Vec::new();
+        let result = retry_with_waits(max_retries, |attempt| waits.push(attempt), op);
+        (result, waits)
+    }
+
     #[test]
     fn with_retries_gives_up_on_permanent_immediately() {
         let mut calls = 0;
-        let result = with_retries(3, || -> Result<u32> {
+        let (result, waits) = retried(3, || -> Result<u32> {
             calls += 1;
             Err(anyhow::Error::from(HttpError::new(404, "gone")))
         });
         assert!(result.is_err());
         assert_eq!(calls, 1);
+        assert!(waits.is_empty());
     }
 
     #[test]
     fn with_retries_retries_transient_then_succeeds() {
         let mut calls = 0;
-        let result = with_retries(2, || -> Result<u32> {
+        let (result, waits) = retried(2, || -> Result<u32> {
             calls += 1;
             if calls < 2 {
                 Err(anyhow::Error::from(io::Error::other("flaky")))
@@ -308,28 +391,120 @@ mod tests {
         });
         assert_eq!(result.unwrap(), 42);
         assert_eq!(calls, 2);
+        assert_eq!(waits, vec![1]);
     }
 
     /// `max_retries` counts extra tries: one retry means two calls in all.
     #[test]
     fn with_retries_makes_one_extra_call_per_retry() {
         let mut calls = 0;
-        let result = with_retries(1, || -> Result<u32> {
+        let (result, waits) = retried(1, || -> Result<u32> {
             calls += 1;
             Err(anyhow::Error::from(io::Error::other("flaky")))
         });
         assert!(result.is_err());
         assert_eq!(calls, 2);
+        assert_eq!(waits, vec![1]);
     }
 
     #[test]
     fn with_retries_gives_up_when_exhausted() {
         let mut calls = 0;
-        let result = with_retries(0, || -> Result<u32> {
+        let (result, waits) = retried(0, || -> Result<u32> {
             calls += 1;
             Err(anyhow::Error::from(io::Error::other("flaky")))
         });
         assert!(result.is_err());
         assert_eq!(calls, 1);
+        assert!(waits.is_empty());
+    }
+
+    /// The waits double from half a second, and the one before the last
+    /// retry is long enough for a server or network away for several
+    /// seconds to come back (#2092): three retries used to give up after
+    /// about four seconds in all.
+    #[test]
+    fn the_wait_before_the_last_retry_outlasts_a_short_outage() {
+        let waits: Vec<Duration> = (1..=3).map(|attempt| retry_wait(attempt, 3, 0.0)).collect();
+        assert_eq!(
+            waits,
+            vec![
+                Duration::from_millis(562),
+                Duration::from_millis(1125),
+                LAST_RETRY_WAIT,
+            ]
+        );
+        assert!(waits.iter().sum::<Duration>() >= Duration::from_secs(15));
+        // With one retry, that retry is the last.
+        assert_eq!(retry_wait(1, 1, 0.0), LAST_RETRY_WAIT);
+        // A wait longer than the floor keeps its own length.
+        assert_eq!(retry_wait(7, 7, 0.0), Duration::from_secs(30));
+    }
+
+    /// A problem document with type `slug` and `status`, as the server
+    /// answers.
+    fn problem(slug: &str, status: u16) -> Problem {
+        serde_json::from_value(serde_json::json!({
+            "type": format!("https://messagecrate.app/docs/developer/reference/errors/{slug}"),
+            "title": slug,
+            "status": status,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_server_told_to_stop_is_away_because_it_is_stopping() {
+        let stopping = anyhow::Error::from(
+            HttpError::new(503, "Import Run 7 batch failed")
+                .with_problem(problem(SERVER_STOPPING, 503)),
+        )
+        .context("POST /v1/imports/7/batches");
+        assert_eq!(server_away(&stopping), Some(ServerAway::Stopping));
+    }
+
+    #[test]
+    fn a_gateway_or_unavailable_answer_is_a_server_away() {
+        for status in [502, 503, 504] {
+            let error = anyhow::Error::from(HttpError::new(status, "batch failed"));
+            assert_eq!(
+                server_away(&error),
+                Some(ServerAway::Unavailable),
+                "{status}"
+            );
+        }
+        let busy = anyhow::Error::from(
+            HttpError::new(503, "batch failed").with_problem(problem("database-busy", 503)),
+        );
+        assert_eq!(server_away(&busy), Some(ServerAway::Unavailable));
+    }
+
+    /// The server took the request and failed on it, or refused it: the
+    /// next request may go through, so the run goes on.
+    #[test]
+    fn an_answer_about_the_request_is_not_a_server_away() {
+        for status in [200, 400, 401, 404, 413, 500, 501] {
+            let error = anyhow::Error::from(HttpError::new(status, "batch failed"));
+            assert_eq!(server_away(&error), None, "{status}");
+        }
+        assert_eq!(server_away(&anyhow!("something odd")), None);
+        assert_eq!(
+            server_away(&anyhow::Error::from(io::Error::other("disk"))),
+            None
+        );
+    }
+
+    #[test]
+    fn a_refused_connection_is_a_server_away() {
+        // A port that was just free and is not listened on refuses at once.
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let refused = reqwest::blocking::Client::new()
+            .get(format!("http://{address}/v1/session"))
+            .send()
+            .unwrap_err();
+        let error = anyhow::Error::from(refused).context("Import Run 7 batch failed");
+        assert_eq!(server_away(&error), Some(ServerAway::Unavailable));
     }
 }
