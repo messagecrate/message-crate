@@ -107,7 +107,7 @@ A body over its cap is refused with `413 Payload Too Large` and the [`payload-to
 ### Stopping the server
 
 `serve` stops on Ctrl-C, on SIGTERM (what `docker stop` and a service manager send), and, under `--exit-with-parent`, once the process it names is gone.
-It stops taking connections, refuses an import batch that has not started its import with [`server-stopping`](/docs/developer/reference/errors/server-stopping/), and waits up to 30 seconds for the requests in flight and for a running Demo Account build and Thumbnail and Preview pass to stop.
+It stops taking connections, refuses an import batch that has not started its import, and a Demo Account build not yet started, with [`server-stopping`](/docs/developer/reference/errors/server-stopping/), and waits up to 30 seconds for the requests in flight and for a running Demo Account build and Thumbnail and Preview pass to stop.
 The 30 seconds are fixed in the server, not a config key, because Docker's stop time has to be longer than them, and the Compose files and the documented `docker run` commands set that time to 40 seconds (`stop_grace_period: 40s`, `--stop-timeout 40`).
 A server run any other way, such as under a service manager, needs at least that long between SIGTERM and a kill too.
 

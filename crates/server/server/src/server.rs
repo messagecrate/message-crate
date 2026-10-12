@@ -1854,7 +1854,7 @@ impl Stopped {
             Self::GaveUp => {
                 let running = in_flight.running();
                 tracing::warn!(
-                    "The server stopped waiting {} seconds after it was told to stop, and exits without the work still running. Requests still running: {}. A Demo Account build or Thumbnail and Preview pass that had not ended stops with it. An import batch among the requests is rolled back, and the Upload sends it again",
+                    "The server stopped waiting {} seconds after it was told to stop, and exits without the work still running. Requests still running: {}. An import batch among the requests is rolled back, and the Upload sends it again",
                     STOP_DRAIN_LIMIT.as_secs(),
                     running.len()
                 );
