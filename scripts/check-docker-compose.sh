@@ -11,9 +11,12 @@
 # that the server still works under them: the health check passes, the Demo
 # Account logs in, and an account the owner creates imports a conversation
 # with a video, waits for the media pass to make its Thumbnail and Preview,
-# and exports it again (#2658). A server that writes outside /app/data or
-# /tmp at start, during an import, in the media pass or during an export
-# fails here rather than in a self-hoster's container. The conversation is
+# and exports it again (#2658). Last, it stops the stack and checks the
+# server exited on its own within the stop_grace_period both files set,
+# rather than being killed by Docker (#2122). A server that writes outside
+# /app/data or /tmp at start, during an import, in the media pass or during
+# an export fails here rather than in a self-hoster's container. The
+# conversation is
 # tests/fixtures/docker-compose-check/conversation.jsonl, and its video is
 # the server's own test fixture crates/server/server/tests/fixtures/media/hevc.mov,
 # an HEVC video, which needs both a Thumbnail and a Preview.
@@ -89,6 +92,18 @@ published="$(hardening docker/compose.yml)"
 if [[ "${release}" != "${published}" ]]; then
   echo "docker/compose.yml and docker/compose.release.yml drop different privileges:" >&2
   diff <(echo "${published}") <(echo "${release}") >&2 || true
+  failures=$((failures + 1))
+fi
+
+# The time Docker gives the server to stop before it kills it, which must
+# be the same in both files (#2122).
+grace() {
+  docker compose -f "$1" config --format json | jq -r '.services.server.stop_grace_period // "unset"'
+}
+release_grace="$(grace docker/compose.release.yml)"
+published_grace="$(grace docker/compose.yml)"
+if [[ "${release_grace}" == "unset" || "${release_grace}" != "${published_grace}" ]]; then
+  echo "docker/compose.yml and docker/compose.release.yml must set the same stop_grace_period, not ${published_grace} and ${release_grace}" >&2
   failures=$((failures + 1))
 fi
 
@@ -258,8 +273,19 @@ if ! import_media_export; then
   failures=$((failures + 1))
 fi
 
+# docker compose stop sends SIGTERM and kills the server after the
+# stop_grace_period. A server that exits on its own exits 0; one Docker had
+# to kill exits 137.
+compose stop server >/dev/null
+exit_code="$(docker inspect --format '{{.State.ExitCode}}' "${container}")"
+if [[ "${exit_code}" != "0" ]]; then
+  echo "The server exited ${exit_code} when the stack was stopped, not 0. Its log:" >&2
+  compose logs >&2 || true
+  failures=$((failures + 1))
+fi
+
 if [[ ${failures} -gt 0 ]]; then
   echo "Docker Compose check failed (${failures} failure(s))." >&2
   exit 1
 fi
-echo "The release Compose stack runs with its privileges dropped, serves ${served}, and imports, makes the Thumbnail and Preview and exports under them."
+echo "The release Compose stack runs with its privileges dropped, serves ${served}, imports, makes the Thumbnail and Preview and exports under them, and stops on its own."

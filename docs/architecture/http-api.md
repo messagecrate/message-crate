@@ -639,6 +639,25 @@ once an earlier batch ended and import in full, so the stop waited for a
 whole batch more
 ([#2203](https://github.com/messagecrate/message-crate/issues/2203)).
 
+The stop then waits for the requests in flight, every route alike, and for
+the stop of a Demo Account build and of the Thumbnail and Preview pass, for
+up to 30 seconds (`STOP_DRAIN_LIMIT` in `crates/server/server/src/server.rs`).
+A request still running then is cut off, and the server exits after one
+`WARN` line naming each such request by its id, method and path
+(`crate::in_flight` tracks every request until its answer's body is sent).
+An import batch cut off this way is rolled back by SQLite and stores
+nothing, and the Upload, which gets no answer, pauses and sends it again
+when the run resumes. Why: an import batch can run for minutes, and
+`docker stop` killed the server after Docker's 10 seconds, so the batch was
+lost all the same, with a log that ended mid-request
+([#2122](https://github.com/messagecrate/message-crate/issues/2122)). Both
+Compose files set `stop_grace_period: 40s`, and the documented `docker run`
+commands `--stop-timeout 40`, so Docker never has to kill a server that
+keeps to its own limit. `docker_stop_waits_longer_than_the_drain` fails when
+either is no longer than the limit. Rejected: a config key for the limit,
+because Docker's stop time would have to follow every value it could be
+set to.
+
 ## Content negotiation
 
 `406 Not Acceptable` is answered only when an `Accept` header is present and no

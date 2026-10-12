@@ -44,6 +44,11 @@ services:
     volumes:
       - message-crate-data:/app/data
       - ../staging:/app/staging
+    # A stopping server waits for the requests in flight, such as an import
+    # batch, up to STOP_DRAIN_LIMIT in crates/server/server/src/server.rs.
+    # Docker's own 10 seconds would kill it part-way, so it gets 10 seconds
+    # more than that limit.
+    stop_grace_period: 40s
 
 volumes:
   message-crate-data:
