@@ -404,12 +404,14 @@ struct SmsBackupRead {
     /// The payloads the read spooled; `None` when the run does not copy
     /// attachments. The spool is removed when this is dropped.
     spool: Option<AttachmentSpool>,
-    /// The log and progress a pass that reports nothing sends to.
-    nowhere: (LogSink, ProgressSink),
+    /// The log and progress a pass that reports nothing sends to, held here
+    /// because the [`ReadOptions`] a pass is given borrows them.
+    no_log: LogSink,
+    no_progress: ProgressSink,
 }
 
 /// Where a pass of an [`SmsBackupRead`] sends its lines and counts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 enum Reports {
     /// Nowhere: the pass reports nothing.
     Nowhere,
@@ -431,7 +433,8 @@ impl SmsBackupRead {
             // while the backup is read, so the copy is checked once, before
             // the clean, counting what the clean frees.
             spool: copy_attachments.then(|| AttachmentSpool::new(scratch_dir)),
-            nowhere: (LogSink::none(), ProgressSink::none()),
+            no_log: LogSink::none(),
+            no_progress: ProgressSink::none(),
         }
     }
 
@@ -440,7 +443,7 @@ impl SmsBackupRead {
     /// attachments in the spool, for [`SmsBackupRead::stage`].
     fn options<'a>(&'a self, context: &'a RunContext, reports: Reports) -> ReadOptions<'a> {
         let (log, progress) = match reports {
-            Reports::Nowhere => (&self.nowhere.0, &self.nowhere.1),
+            Reports::Nowhere => (&self.no_log, &self.no_progress),
             Reports::ToTheRun => (&context.log, &context.progress),
         };
         ReadOptions {
