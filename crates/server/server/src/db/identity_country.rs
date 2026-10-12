@@ -13,6 +13,7 @@
 //! the identity that holds the `+` form, and the first identity goes.
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use sqlx::SqliteConnection;
 
 use message_crate_api_types::IdentityHolder;
@@ -146,7 +147,7 @@ async fn messages_keyed_by(
 /// was a contact's: the merged identity goes on it, from whatever contact
 /// held the `+` form, because the person said on this contact's screen that
 /// the two are this person's one number. A contact with no name left with no
-/// identity goes.
+/// identity goes. Each contact the merge changes is stamped `now`.
 ///
 /// # Errors
 ///
@@ -156,6 +157,7 @@ pub async fn give_country(
     account_id: i64,
     form: &PlusForm,
     edited_contact: Option<i64>,
+    now: DateTime<Utc>,
 ) -> Result<Vec<i64>> {
     let mut changed = messages_keyed_by(conn, account_id, form.handle_id).await?;
     match form.existing {
@@ -164,7 +166,7 @@ pub async fn give_country(
             changed.extend(messages_keyed_by(conn, account_id, into).await?);
             changed.sort_unstable();
             changed.dedup();
-            merge_into(conn, account_id, form.handle_id, into, edited_contact).await?;
+            merge_into(conn, account_id, form.handle_id, into, edited_contact, now).await?;
         }
     }
     Ok(changed)
@@ -184,6 +186,7 @@ async fn merge_into(
     from: i64,
     into: i64,
     edited_contact: Option<i64>,
+    now: DateTime<Utc>,
 ) -> Result<()> {
     merge_conversation(conn, account_id, from, into).await?;
 
@@ -247,10 +250,10 @@ async fn merge_into(
             if let Some(held) = into_contact
                 && !contacts::delete_if_empty(conn, account_id, held).await?
             {
-                contacts::touch_contact(conn, account_id, held).await?;
+                contacts::touch_contact(conn, account_id, held, now).await?;
             }
         }
-        contacts::touch_contact(conn, account_id, contact_id).await?;
+        contacts::touch_contact(conn, account_id, contact_id, now).await?;
     }
     if let Some(contact_id) = from_contact.filter(|&c| Some(c) != keep_on) {
         contacts::delete_if_empty(conn, account_id, contact_id).await?;

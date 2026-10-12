@@ -341,13 +341,17 @@ pub async fn update_password_hash(
     Ok(())
 }
 
-/// Record that the account logged in just now. Called by every route that
+/// Record that the account logged in at `now`. Called by every route that
 /// opens a Session for a person: login, claiming the server, and
 /// registering. Rotating a token on a password change is not a login.
-pub async fn record_login(conn: &mut SqliteConnection, account_id: i64) -> Result<()> {
-    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+pub async fn record_login(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<()> {
+    let last_login_at = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     sqlx::query("UPDATE accounts SET last_login_at = $1 WHERE id = $2")
-        .bind(now)
+        .bind(last_login_at)
         .bind(account_id)
         .execute(&mut *conn)
         .await
@@ -373,16 +377,17 @@ pub async fn load_last_login(
 /// `account_handles/emails/api_tokens`). Its Audit Trail stays: entries and
 /// runs are unlinked, keep its username, and gain an `account_deleted` entry
 /// (`docs/adr/0020-the-audit-trail-outlives-the-account.md`). One
-/// transaction, so the record and the deletion land together. Returns
-/// whether there was an account to delete.
+/// transaction, so the record and the deletion land together; the record is
+/// stamped `now`. Returns whether there was an account to delete.
 pub async fn delete_account(
     conn: &mut SqliteConnection,
     account_id: i64,
     actor: crate::db::audit_trail::AuditActor,
+    now: chrono::DateTime<chrono::Utc>,
 ) -> Result<bool> {
     let mut tx = begin_write(conn).await?;
     let existed =
-        crate::db::audit_trail::prepare_account_deletion(&mut tx, account_id, actor).await?;
+        crate::db::audit_trail::prepare_account_deletion(&mut tx, account_id, actor, now).await?;
     sqlx::query("DELETE FROM accounts WHERE id = $1")
         .bind(account_id)
         .execute(&mut *tx)
@@ -581,12 +586,14 @@ pub struct DeletedMessagesStats {
 
 /// Permanently delete one account's conversations (cascades to messages,
 /// attachments, participants, tapbacks), staging rows, and trash markers,
-/// in one write transaction: all of it is deleted or none of it.
+/// in one write transaction: all of it is deleted or none of it, and the
+/// Audit Trail entry for it is stamped `now`.
 /// Contacts, groups, login details, and import tokens are retained.
 pub async fn delete_all_messages_for_account(
     conn: &mut SqliteConnection,
     account_id: i64,
     actor: crate::db::audit_trail::AuditActor,
+    now: chrono::DateTime<chrono::Utc>,
 ) -> Result<DeletedMessagesStats> {
     let mut tx = begin_write(conn).await?;
     let attachment_count: i64 = sqlx::query_scalar(
@@ -626,6 +633,7 @@ pub async fn delete_all_messages_for_account(
             attachments: Some(attachment_count),
             ..crate::db::audit_trail::Details::default()
         },
+        now,
     )
     .await?;
     tx.commit().await?;
@@ -662,17 +670,9 @@ pub async fn set_time_zone(
     Ok(())
 }
 
-/// The account's zone and today's date in it: what every search compile and
-/// every year boundary needs.
+/// The account's zone and the date `now` falls on in it: what every search
+/// compile and every year boundary needs.
 pub async fn account_clock(
-    conn: &mut SqliteConnection,
-    account_id: i64,
-) -> Result<(chrono_tz::Tz, chrono::NaiveDate)> {
-    account_clock_at(conn, account_id, chrono::Utc::now()).await
-}
-
-/// [`account_clock`] at the instant `now`, so a test names the instant.
-async fn account_clock_at(
     conn: &mut SqliteConnection,
     account_id: i64,
     now: chrono::DateTime<chrono::Utc>,
@@ -981,7 +981,7 @@ mod tests {
             .unwrap();
         let now = chrono::Utc.with_ymd_and_hms(2026, 9, 1, 10, 0, 0).unwrap();
 
-        let clock = account_clock_at(&mut conn, ACCOUNT_ID, now).await.unwrap();
+        let clock = account_clock(&mut conn, ACCOUNT_ID, now).await.unwrap();
 
         assert_eq!(
             clock,
@@ -1075,20 +1075,35 @@ mod tests {
             .await
             .unwrap();
         let bob = insert_account(&mut conn, "bob", None, None).await.unwrap();
-        delete_account(&mut conn, bob, crate::db::audit_trail::AuditActor::Owner)
-            .await
-            .unwrap();
+        delete_account(
+            &mut conn,
+            bob,
+            crate::db::audit_trail::AuditActor::Owner,
+            crate::test_support::fixed_instant(),
+        )
+        .await
+        .unwrap();
         let carol = insert_account(&mut conn, "carol", None, None)
             .await
             .unwrap();
         assert!(carol > bob, "carol got {carol}, after bob's {bob}");
         // With every generated account gone, the next id still climbs.
-        delete_account(&mut conn, carol, crate::db::audit_trail::AuditActor::Owner)
-            .await
-            .unwrap();
-        delete_account(&mut conn, alice, crate::db::audit_trail::AuditActor::Owner)
-            .await
-            .unwrap();
+        delete_account(
+            &mut conn,
+            carol,
+            crate::db::audit_trail::AuditActor::Owner,
+            crate::test_support::fixed_instant(),
+        )
+        .await
+        .unwrap();
+        delete_account(
+            &mut conn,
+            alice,
+            crate::db::audit_trail::AuditActor::Owner,
+            crate::test_support::fixed_instant(),
+        )
+        .await
+        .unwrap();
         let dave = insert_account(&mut conn, "dave", None, None).await.unwrap();
         assert!(dave > carol, "dave got {dave}, after carol's {carol}");
     }
@@ -1271,6 +1286,7 @@ mod tests {
             &mut conn,
             ACCOUNT_ID,
             crate::db::audit_trail::AuditActor::Holder,
+            crate::test_support::fixed_instant(),
         )
         .await;
 
@@ -1331,6 +1347,7 @@ mod tests {
             &mut conn,
             ACCOUNT_ID,
             crate::db::audit_trail::AuditActor::Holder,
+            crate::test_support::fixed_instant(),
         )
         .await
         .unwrap();

@@ -31,6 +31,7 @@ async fn name_only_participant_becomes_an_other_identity_on_a_contact() {
         account_id: TEST_ACCOUNT,
         import_id: None,
         phone_country: None,
+        now: crate::test_support::fixed_instant(),
     });
     import_jsonl_files(&db, &[path], &opts).await.unwrap();
 
@@ -255,6 +256,7 @@ async fn a_participant_with_no_address_and_no_name_is_never_created() {
         account_id: TEST_ACCOUNT,
         import_id: None,
         phone_country: None,
+        now: crate::test_support::fixed_instant(),
     });
     import_jsonl_files(&db, &[path], &opts).await.unwrap();
 
@@ -287,6 +289,7 @@ async fn append_on_conn(conn: &mut SqliteConnection, path: &Path, root: &Path, s
             account_id: TEST_ACCOUNT,
             import_id: None,
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
         }),
     )
     .await

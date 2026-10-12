@@ -23,6 +23,7 @@
 //! identities have changed.
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use sqlx::SqliteConnection;
 
 use super::ImportCounts;
@@ -71,6 +72,7 @@ pub(crate) async fn before_identity_change(
 /// each contact an import made for the holder and nobody touched is deleted,
 /// unless something else refers to it
 /// ([`contacts::delete_untouched_holder_contact`]). Other participants stay.
+/// A contact it changes is stamped `now`.
 ///
 /// # Errors
 ///
@@ -78,6 +80,7 @@ pub(crate) async fn before_identity_change(
 pub(crate) async fn follow_identities(
     conn: &mut SqliteConnection,
     before: WithYourselfBefore,
+    now: DateTime<Utc>,
 ) -> Result<()> {
     let WithYourselfBefore {
         account_id,
@@ -98,8 +101,16 @@ pub(crate) async fn follow_identities(
         let contact_id = match contacts::contact_id_for_handle(conn, account_id, handle_id).await? {
             Some(contact_id) => Some(contact_id),
             None if handles::is_met_in_conversations(conn, account_id, handle_id).await? => Some(
-                ensure_contact_for_handle(conn, account_id, None, handle_id, None, &mut counts)
-                    .await?,
+                ensure_contact_for_handle(
+                    conn,
+                    account_id,
+                    None,
+                    handle_id,
+                    None,
+                    &mut counts,
+                    now,
+                )
+                .await?,
             ),
             None => None,
         };

@@ -12,6 +12,7 @@
 //! (`docs/adr/0020-the-audit-trail-outlives-the-account.md`).
 
 use axum::extract::State;
+use chrono::Utc;
 use serde::Deserialize;
 
 use crate::db::audit_trail::{self, AuditEntry, DeletedAccount, Scope};
@@ -67,7 +68,7 @@ pub(crate) async fn audit_trail_page(
     let params = trail_page_params(limit, offset)?;
     let mut conn = state.db.acquire().await?;
     let (mut items, total) =
-        audit_trail::page(&mut conn, scope, params.limit, params.offset).await?;
+        audit_trail::page(&mut conn, scope, params.limit, params.offset, Utc::now()).await?;
     for item in &mut items {
         if item.account_id != Some(reader) {
             item.api_token_hint = None;

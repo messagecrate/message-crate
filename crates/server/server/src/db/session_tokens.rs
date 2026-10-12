@@ -2,6 +2,7 @@
 //! Opening and ending a Session writes its entries in the Audit Trail.
 
 use anyhow::{Context, Result, bail};
+use chrono::{DateTime, Utc};
 pub use message_crate_api_types::AppKind;
 use rand::TryRng;
 use sqlx::SqliteConnection;
@@ -286,6 +287,7 @@ pub(crate) async fn live_login_entry(
 /// `logged_in` entry names the app the request named, and the session row
 /// records that app from the start. Called by every route that opens a
 /// Session for a person: login, claiming the Message Crate, and registering.
+/// The entries it writes are stamped `now`.
 ///
 /// # Errors
 ///
@@ -295,17 +297,18 @@ pub async fn open_session(
     account_id: i64,
     username: &str,
     app: Option<&ConnectingApp>,
+    now: DateTime<Utc>,
 ) -> Result<String> {
     let actor = AuditActor::logged_in_as(account_id);
     if let Some(previous) = live_login_entry(conn, account_id).await? {
-        audit_trail::record_session_end(conn, previous, AuditReason::Replaced, actor).await?;
+        audit_trail::record_session_end(conn, previous, AuditReason::Replaced, actor, now).await?;
     }
     let token = generate_session_token()?;
     let token_hash = hash_api_token(&token);
     let created_at = unix_secs_string();
     let expires = now_unix_secs().saturating_add(SESSION_TTL_SECS);
     let login_entry_id =
-        audit_trail::record_login(conn, (account_id, username), app, expires).await?;
+        audit_trail::record_login(conn, (account_id, username), app, expires, now).await?;
     sqlx::query(
         r"
         INSERT INTO account_session_tokens
@@ -381,12 +384,16 @@ pub async fn insert_account_session_token_with_ttl(
 /// ended. Returns whether the token named a Session. The lookup, the record
 /// and the delete run in one write transaction, so a login replacing the
 /// Session meanwhile, or a second logout with the same token, cannot record
-/// its end twice.
+/// its end twice. The end is stamped `now`.
 ///
 /// # Errors
 ///
 /// Returns an error when the lookup, the record or the delete fails.
-pub async fn revoke_session_token(conn: &mut SqliteConnection, token: &str) -> Result<bool> {
+pub async fn revoke_session_token(
+    conn: &mut SqliteConnection,
+    token: &str,
+    now: DateTime<Utc>,
+) -> Result<bool> {
     let token_hash = hash_api_token(token);
     let mut tx = crate::db::begin_write(conn).await?;
     let found: Option<(i64, Option<i64>)> = sqlx::query_as(
@@ -404,6 +411,7 @@ pub async fn revoke_session_token(conn: &mut SqliteConnection, token: &str) -> R
             login_entry_id,
             AuditReason::LoggedOut,
             AuditActor::logged_in_as(account_id),
+            now,
         )
         .await?;
     }
@@ -425,7 +433,8 @@ pub async fn revoke_session_token(conn: &mut SqliteConnection, token: &str) -> R
 /// carries on.
 ///
 /// It reads the Session and then writes, so it takes the caller's write
-/// transaction, and the end is recorded with whatever else the caller does.
+/// transaction, and the end is recorded with whatever else the caller does,
+/// stamped `now`.
 ///
 /// # Errors
 ///
@@ -434,9 +443,11 @@ pub async fn revoke_account_sessions(
     tx: &mut crate::db::WriteTx<'_>,
     account_id: i64,
     actor: AuditActor,
+    now: DateTime<Utc>,
 ) -> Result<()> {
     if let Some(login_entry_id) = live_login_entry(tx, account_id).await? {
-        audit_trail::record_session_end(tx, login_entry_id, AuditReason::Revoked, actor).await?;
+        audit_trail::record_session_end(tx, login_entry_id, AuditReason::Revoked, actor, now)
+            .await?;
     }
     sqlx::query("DELETE FROM account_session_tokens WHERE account_id = $1")
         .bind(account_id)
@@ -636,7 +647,11 @@ mod tests {
         crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
         let token = insert_account_session_token(&mut conn, 7).await.unwrap();
         assert!(lookup_session(&mut conn, &token).await.unwrap().is_some());
-        assert!(revoke_session_token(&mut conn, &token).await.unwrap());
+        assert!(
+            revoke_session_token(&mut conn, &token, crate::test_support::fixed_instant())
+                .await
+                .unwrap()
+        );
         assert!(lookup_session(&mut conn, &token).await.unwrap().is_none());
     }
 }

@@ -15,6 +15,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 use message_ir::{IdentityService, IdentityType};
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
@@ -758,7 +759,8 @@ fn plan(rows: &[FileRow], snapshot: &Snapshot) -> Result<Vec<FileContact>, Vec<S
 /// Load an address book into the account.
 ///
 /// The whole load is one transaction. A file that breaks a rule is refused
-/// whole, with one sentence for each bad row, and nothing is written.
+/// whole, with one sentence for each bad row, and nothing is written. Each
+/// contact the load changes is stamped `now`.
 ///
 /// # Errors
 ///
@@ -769,6 +771,7 @@ pub async fn load(
     account_id: i64,
     csv_text: &str,
     mode: LoadMode,
+    now: DateTime<Utc>,
 ) -> Result<LoadCounts, LoadError> {
     let rows = read_rows(csv_text).map_err(LoadError::Refused)?;
     // A write transaction from the first read: the plan is checked against
@@ -777,7 +780,7 @@ pub async fn load(
     let mut tx = begin_write(conn).await?;
     let snapshot = Snapshot::read(&mut tx, account_id).await?;
     let file = plan(&rows, &snapshot).map_err(LoadError::Refused)?;
-    let counts = apply(&mut tx, account_id, &snapshot, &file, mode).await?;
+    let counts = apply(&mut tx, account_id, &snapshot, &file, mode, now).await?;
     tx.commit().await?;
     Ok(counts)
 }
@@ -922,13 +925,15 @@ fn write_book(rows: impl IntoIterator<Item = [String; 6]>) -> Result<String> {
     String::from_utf8(bytes).context("the address book is not UTF-8")
 }
 
-/// Write a checked file. Nothing here refuses: [`plan`] already has.
+/// Write a checked file, stamping each contact it changes `now`. Nothing
+/// here refuses: [`plan`] already has.
 async fn apply(
     tx: &mut WriteTx<'_>,
     account_id: i64,
     snapshot: &Snapshot,
     file: &[FileContact],
     mode: LoadMode,
+    now: DateTime<Utc>,
 ) -> Result<LoadCounts> {
     let conn: &mut SqliteConnection = tx;
     let mut counts = LoadCounts::default();
@@ -955,7 +960,7 @@ async fn apply(
                 // The file is the person typing, so its name replaces
                 // whatever the contact carried; `propose_name` holds the rule.
                 if let Some((name, _)) = &contact.name
-                    && contacts::propose_name(conn, account_id, id, name, Origin::AddressBook)
+                    && contacts::propose_name(conn, account_id, id, name, Origin::AddressBook, now)
                         .await?
                 {
                     changed.insert(id);
@@ -1106,7 +1111,7 @@ async fn apply(
         })
         .collect();
     for contact_id in changed {
-        contacts::touch_contact(conn, account_id, contact_id).await?;
+        contacts::touch_contact(conn, account_id, contact_id, now).await?;
         if in_file.contains(&contact_id) {
             counts.contacts_updated += 1;
         }

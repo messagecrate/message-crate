@@ -357,7 +357,8 @@ pub(crate) async fn create_export(
     let account = auth.account_id;
     let tool = body.tool.as_deref().and_then(message_ir::trimmed);
     let mut conn = state.db.acquire().await?;
-    let clock = crate::db::account_profile::account_clock(&mut conn, account).await?;
+    let now = chrono::Utc::now();
+    let clock = crate::db::account_profile::account_clock(&mut conn, account, now).await?;
     let run = start_export_run(
         &mut conn,
         account,
@@ -365,7 +366,7 @@ pub(crate) async fn create_export(
         tool,
         clock,
         &auth.credential,
-        chrono::Utc::now(),
+        now,
     )
     .await?;
     Ok(Created {
