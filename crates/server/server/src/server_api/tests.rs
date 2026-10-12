@@ -639,6 +639,31 @@ async fn claiming_the_server_creates_exactly_one_owner() {
     assert_eq!(owners, 1);
 }
 
+/// The owner claimed through the route has 0 in its row's import, export
+/// and delete columns (`account_profile::insert_account_at` says why).
+#[tokio::test]
+async fn the_claimed_owner_row_holds_no_permission() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let server = crate::test_support::serve(&state).await;
+    let response = http_client()
+        .post(format!("{}/v1/server/claim", server.base()))
+        .json(&serde_json::json!({ "username": "keeper", "password": "hunter2hunter2" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let mut conn = state.db.acquire().await.unwrap();
+    let stored: (i64, i64, i64) =
+        sqlx::query_as("SELECT can_import, can_export, can_delete FROM accounts WHERE id = $1")
+            .bind(account_profile::OWNER_ACCOUNT_ID)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    assert_eq!(stored, (0, 0, 0));
+}
+
 /// The owner holds no messages, so profile setup would ask for a name
 /// shown against messages, a zone to read them in, and handles that mark one
 /// as theirs: three questions with no answer. The owner is never sent there.
