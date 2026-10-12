@@ -16,9 +16,10 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { deferred } from "../test/deferred";
 import { freshEntries, seedEntries } from "../test/staleEntries";
 import { ApiError } from "./api";
 import { contactGroups } from "./contactGroups";
@@ -106,20 +107,19 @@ describe("contact groups are wired to the lists that show a group name", () => {
 
   it("sends one create when a second ensure for the name starts before the first is answered", async () => {
     const { result } = renderHook(() => useNameCollectionActions(contactGroups), { wrapper });
-    let answer!: (set: { id: number; name: string }) => void;
-    vi.mocked(serverApi.createContactGroup).mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          answer = resolve;
-        }),
-    );
+    const created = deferred<{ id: number; name: string }>();
+    const createAsked = deferred();
+    vi.mocked(serverApi.createContactGroup).mockImplementationOnce(() => {
+      createAsked.resolve();
+      return created.promise;
+    });
 
     // The menu's first form sends "Family"; a new form sends "family" before
     // the server has answered, while the list still lacks it.
     const first = result.current.ensure("Family");
-    await vi.waitFor(() => expect(vi.mocked(serverApi.createContactGroup)).toHaveBeenCalled());
+    await act(() => createAsked.promise);
     const second = result.current.ensure("family");
-    answer({ id: 12, name: "Family" });
+    created.resolve({ id: 12, name: "Family" });
 
     await expect(first).resolves.toBe("Family");
     await expect(second).resolves.toBe("Family");

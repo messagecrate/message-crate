@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { useSelectAll } from "./useSelectAll";
 
@@ -21,7 +21,7 @@ describe("useSelectAll", () => {
     rerender({ q: "x" });
     expect(result.current.error).toBeNull();
     rerender({ q: "" });
-    await waitFor(() => expect(result.current.error).toBeNull());
+    expect(result.current.error).toBeNull();
     expect(onRows).not.toHaveBeenCalled();
   });
 
