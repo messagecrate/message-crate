@@ -360,6 +360,15 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-12: **A page asked for while an import keeps the database busy
+  loads once the server is ready.** The server says how many seconds to wait
+  when its database is too busy, and the app tried again at once, met the
+  same busy database, and showed the error. It now waits the seconds the
+  server named before it asks once more. A change you save is still not sent
+  again on its own: you read why it failed and send it again (#2891).
+- 2026-10-12: **The first page downloads less.** Settings was part of the
+  code every visit downloads first, through Owner Home. It is now downloaded
+  the first time Settings is opened, from the app or from Owner Home (#2879).
 - 2026-10-11: **Logging in often no longer locks you out.** Every login
   counted toward the limit of 20 attempts a minute for an account, the
   successful ones too, so an account that logged in often, such as the Demo

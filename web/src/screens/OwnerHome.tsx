@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Suspense, useState } from "react";
+import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import AppHeader from "../components/AppHeader";
 import { loadWidth } from "../components/columnResize";
+import ErrorBoundary from "../components/ErrorBoundary";
 import {
   LEFT_PANEL_DEFAULT_WIDTH,
   LEFT_PANEL_MAX_WIDTH,
@@ -14,13 +15,13 @@ import PlainButton from "../components/PlainButton";
 import { useAuth } from "../lib/authContext";
 import { parseSelectKey } from "../lib/selectKey";
 import { useWindowWidth } from "../lib/useWindowWidth";
+import { SettingsScreen } from "./lazySettingsScreen";
 import { JournalModeNotice } from "./owner/JournalModeNotice";
 import { OwnerAccountsPanel } from "./owner/OwnerAccountsPanel";
 import { OwnerAuditTrailPanel } from "./owner/OwnerAuditTrailPanel";
 import { OwnerDashboardPanel } from "./owner/OwnerDashboardPanel";
 import { OwnerLogsPanel } from "./owner/OwnerLogsPanel";
 import { ServerSettingsPanel } from "./owner/ServerSettingsPanel";
-import SettingsScreen from "./SettingsScreen";
 
 /** What the side panel lists, in its order. */
 const SECTIONS = ["dashboard", "settings", "accounts", "audit-trail", "logs"] as const;
@@ -63,6 +64,7 @@ function sectionLinkClass(active: boolean): string {
 export default function OwnerHome() {
   const { section: raw, accountId: rawAccountId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { accountId: ownAccountId } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const section = parseSelectKey(raw ?? null, SECTIONS);
@@ -135,15 +137,24 @@ export default function OwnerHome() {
         </nav>
 
         <main className="min-w-0 flex-1 overflow-auto bg-bg text-text">
-          {creatingAccount ? (
-            <SettingsScreen key="new" creating backToAccounts />
-          ) : openAccountId !== null ? (
-            // The owner's own row is the owner's own Settings, not a managed account's.
-            <SettingsScreen
-              key={openAccountId}
-              backToAccounts
-              managedAccountId={openAccountId === ownAccountId ? undefined : openAccountId}
-            />
+          {creatingAccount || openAccountId !== null ? (
+            // Settings' code is downloaded when it is first opened. Code that
+            // doesn't arrive shows why here, beside the side panel, which
+            // stays usable.
+            <ErrorBoundary scope="screen" resetKey={location.pathname}>
+              <Suspense fallback={null}>
+                {openAccountId === null ? (
+                  <SettingsScreen key="new" creating backToAccounts />
+                ) : (
+                  // The owner's own row is the owner's own Settings, not a managed account's.
+                  <SettingsScreen
+                    key={openAccountId}
+                    backToAccounts
+                    managedAccountId={openAccountId === ownAccountId ? undefined : openAccountId}
+                  />
+                )}
+              </Suspense>
+            </ErrorBoundary>
           ) : (
             <div className="max-w-[900px] p-6">
               {section === "dashboard" && <OwnerDashboardPanel />}

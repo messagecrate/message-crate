@@ -88,6 +88,11 @@ export class ApiError extends Error {
   readonly detail: string | null;
   readonly errors: string[];
   readonly requestId: string | null;
+  /**
+   * Seconds the server asked the client to wait before trying again, for
+   * `rate-limited` and `database-busy`; null when it named none.
+   */
+  readonly retryAfter: number | null;
   /** True when the call's time limit ended it and no answer arrived (`requestTimeoutError`). */
   readonly timedOut: boolean;
 
@@ -106,6 +111,7 @@ export class ApiError extends Error {
     this.detail = problem?.detail ?? null;
     this.errors = problem?.errors ?? [];
     this.requestId = problem?.request_id ?? null;
+    this.retryAfter = problem?.retry_after ?? null;
   }
 }
 
