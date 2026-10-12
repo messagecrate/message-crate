@@ -3873,6 +3873,8 @@ mod web_fixture {
     }
 }
 
+mod robustness;
+
 mod refusals {
     use super::*;
     use crate::search::error::QueryErrorKind;
