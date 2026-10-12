@@ -148,6 +148,18 @@ await settle();
 expect(result.current.error?.message).toBe("rename failed");
 ```
 
+When both stamps fall inside one chain the test does not step through, such
+as an Export Run's start time and its export step, the fake that stands for
+the earlier step moves the clock with `vi.setSystemTime`. That moves `Date`
+and fires no timer, so a time read after that step is later than it.
+
+```tsx
+invokeExport.mockImplementationOnce(async () => {
+  exportStepAt = Date.now();
+  vi.setSystemTime(exportStepAt + 1);
+});
+```
+
 ### A transition or other deferred render
 
 `startTransition`, `useDeferredValue`, a state update in an effect, and a
@@ -242,7 +254,11 @@ await act(() => cancelAsked.promise);
 ### A hook rendered with `renderHook`
 
 A hook test is told the same way as a screen test, and reads `result.current`
-where a screen test reads the screen.
+where a screen test reads the screen. A hook test file whose every wait is a
+promise it can await inside `act` (an action the hook returns, or a
+`deferred()` a fake resolves) needs no fake clock, as
+`useImportJob.test.tsx` shows. One that waits on a timer or a refetch starts
+the clock as above.
 
 ```tsx
 vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
@@ -260,7 +276,18 @@ real time too: it hopes everything queued lands before the timer fires. On the
 fake clock it never fires at all. `settle()` replaces it, because `settle()`
 runs what is queued rather than racing it. A sleep for a frame,
 `await new Promise((resolve) => requestAnimationFrame(resolve))`, becomes a
-call to `advanceToNextFrame()` ("An animation frame").
+call to `advanceToNextFrame()` ("An animation frame"). Where the calls the
+sleep waited on return promises, as a hook's actions do, the test awaits
+those inside `act` instead, and needs no clock at all.
+
+```tsx
+await act(async () => {
+  const first = result.current.approve();
+  const second = result.current.approve();
+  transcode.answer({ summary: "Transcode finished.", transcode: undefined });
+  await Promise.all([first, second]);
+});
+```
 
 ### Something the fake clock doesn't drive
 

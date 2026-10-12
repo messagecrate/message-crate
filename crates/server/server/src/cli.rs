@@ -383,7 +383,6 @@ fn validate_window_secs(window_secs: i64) -> Result<()> {
 /// Import a directory of conversation files, then print the counts.
 async fn run_import(args: ImportArgs) -> Result<()> {
     let cfg = Config::load_with_db(&args.config, args.db)?;
-    media::set_stall_wait(cfg.transcode_stall_wait());
     validate_window_secs(args.window_secs)?;
     if let Some(ref source) = args.source {
         validate_source_id(source)?;
@@ -728,7 +727,7 @@ fn serve_config(args: ServeArgs) -> Result<Config> {
 /// SIGTERM ends it at once.
 async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
     let cfg = Config::load_with_db(&args.config, args.db)?;
-    media::set_stall_wait(cfg.transcode_stall_wait());
+    let tools = cfg.media_tools();
     let opened = OpenDb::open(cfg).await?;
     let stop = Arc::new(AtomicBool::new(false));
     let stopper = crate::request_id::spawn_in_current_span({
@@ -748,6 +747,7 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
     });
     let stats = crate::process_assets::run(
         &opened,
+        &tools,
         &crate::process_assets::ProcessAssetsOptions {
             force: args.force,
             dry_run: args.dry_run,

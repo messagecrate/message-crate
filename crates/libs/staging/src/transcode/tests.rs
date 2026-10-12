@@ -53,13 +53,14 @@ fn options(mode: MediaMode, limit: u64) -> TranscodeOptions {
 
 #[test]
 fn a_converted_attachment_is_patched_before_its_final_name_exists() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     let (dir, jsonl, original) = staged_one("photo.png", PNG_1X1_RGB);
     let report = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -87,7 +88,7 @@ fn a_converted_attachment_is_patched_before_its_final_name_exists() {
 
 #[test]
 fn the_digest_and_size_are_recomputed_from_the_derivative() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     // ffmpeg output is not byte-identical across runs, so a
@@ -97,6 +98,7 @@ fn the_digest_and_size_are_recomputed_from_the_derivative() {
     transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -118,7 +120,7 @@ fn the_digest_and_size_are_recomputed_from_the_derivative() {
 
 #[test]
 fn an_interrupted_file_is_re_transcoded_not_adopted() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     // Nothing distinguishes a complete .in_progress from a
@@ -130,6 +132,7 @@ fn an_interrupted_file_is_re_transcoded_not_adopted() {
     transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -152,13 +155,14 @@ fn an_interrupted_file_is_re_transcoded_not_adopted() {
 
 #[test]
 fn an_already_converted_attachment_is_left_alone_on_a_second_run() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     let (dir, jsonl, _) = staged_one("photo.png", PNG_1X1_RGB);
     transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -170,6 +174,7 @@ fn an_already_converted_attachment_is_left_alone_on_a_second_run() {
     let second = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -191,7 +196,7 @@ fn an_already_converted_attachment_is_left_alone_on_a_second_run() {
 
 #[test]
 fn a_derivative_over_the_limit_becomes_too_large_and_keeps_the_message() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     // Skipped, not reverted. Falling back to the original would store the
@@ -200,6 +205,7 @@ fn a_derivative_over_the_limit_becomes_too_large_and_keeps_the_message() {
     let report = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, 1),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -225,13 +231,14 @@ fn a_conversion_failure_becomes_a_per_item_reason_carrying_the_detail() {
     // ffmpeg preflight check, an *absent* ffmpeg now fails the whole
     // Media stage (see without_ffmpeg_the_whole_media_stage_fails_and_touches_nothing)
     // rather than reaching this per-item path.
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     let (dir, jsonl, original) = staged_one("broken.png", b"not a png at all");
     let report = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -265,7 +272,7 @@ fn a_conversion_failure_becomes_a_per_item_reason_carrying_the_detail() {
 /// Before, the Media stage only counted it.
 #[test]
 fn a_file_the_media_stage_cannot_convert_is_sent_as_a_skip_import_error() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     let (dir, jsonl, _original) = staged_one("broken.png", b"not a png at all");
@@ -274,6 +281,7 @@ fn a_file_the_media_stage_cannot_convert_is_sent_as_a_skip_import_error() {
     let report = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &sink,
         &LogSink::none(),
@@ -317,7 +325,7 @@ fn a_file_the_media_stage_cannot_convert_is_sent_as_a_skip_import_error() {
 /// the conversation file records why it has no file.
 #[test]
 fn a_file_left_out_as_too_large_is_sent_as_a_skip_import_error() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     let (dir, jsonl, _original) = staged_one("photo.png", PNG_1X1_RGB);
@@ -326,6 +334,7 @@ fn a_file_left_out_as_too_large_is_sent_as_a_skip_import_error() {
     transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, 1),
+        &tools,
         &CancelFlag::default(),
         &sink,
         &LogSink::none(),
@@ -358,7 +367,7 @@ fn a_file_left_out_as_too_large_is_sent_as_a_skip_import_error() {
 /// row.
 #[test]
 fn a_file_tried_again_resolves_its_earlier_row_first() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     let (dir, jsonl, _original) = staged_one("broken.png", b"not a png at all");
@@ -366,6 +375,7 @@ fn a_file_tried_again_resolves_its_earlier_row_first() {
     transcode_staged(
         dir.path(),
         &opts,
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -377,6 +387,7 @@ fn a_file_tried_again_resolves_its_earlier_row_first() {
     transcode_staged(
         dir.path(),
         &opts,
+        &tools,
         &CancelFlag::default(),
         &sink,
         &LogSink::none(),
@@ -407,7 +418,7 @@ fn a_file_tried_again_resolves_its_earlier_row_first() {
 /// resolved all the same.
 #[test]
 fn a_failed_file_settled_by_a_repoint_resolves_its_earlier_row() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     let (dir, _jsonl, _original) = staged_one("photo.png", PNG_1X1_RGB);
@@ -425,6 +436,7 @@ fn a_failed_file_settled_by_a_repoint_resolves_its_earlier_row() {
     let report = transcode_staged(
         dir.path(),
         &opts,
+        &tools,
         &CancelFlag::default(),
         &sink,
         &LogSink::none(),
@@ -451,7 +463,7 @@ fn a_failed_file_settled_by_a_repoint_resolves_its_earlier_row() {
 
 #[test]
 fn a_convert_failed_attachment_keeps_its_path_and_is_retried_on_resume() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     // The original is still on disk after a transient ffmpeg failure;
@@ -461,6 +473,7 @@ fn a_convert_failed_attachment_keeps_its_path_and_is_retried_on_resume() {
     let first = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -482,6 +495,7 @@ fn a_convert_failed_attachment_keeps_its_path_and_is_retried_on_resume() {
     let second = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -496,6 +510,7 @@ fn a_convert_failed_attachment_keeps_its_path_and_is_retried_on_resume() {
 
 #[test]
 fn cancelling_stops_the_media_stage_without_corrupting_the_directory() {
+    let tools = media::testutil::FakeTools::new();
     let (dir, jsonl, _) = staged_one("photo.png", PNG_1X1_RGB);
     let cancel = CancelFlag::default();
     cancel.store(true, Ordering::Relaxed);
@@ -503,6 +518,7 @@ fn cancelling_stops_the_media_stage_without_corrupting_the_directory() {
     let err = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
+        &tools,
         &cancel,
         &IssueSink::none(),
         &LogSink::none(),
@@ -528,7 +544,7 @@ fn progress_counts_the_work_it_actually_has() {
     // Convert mode still probes for ffmpeg up front (parity with
     // process_attachment_files) even though a PDF alone needs no
     // transcode, so this needs the tools present to reach that far.
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     let (dir, _, _) = staged_one("notes.pdf", b"%PDF-1.4");
@@ -536,6 +552,7 @@ fn progress_counts_the_work_it_actually_has() {
     let report = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -549,7 +566,7 @@ fn progress_counts_the_work_it_actually_has() {
 
 #[test]
 fn a_crash_between_the_patch_and_the_rename_heals_by_re_transcoding_the_original() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     // Hand-simulate the crash window between the conversation file being
@@ -577,6 +594,7 @@ fn a_crash_between_the_patch_and_the_rename_heals_by_re_transcoding_the_original
     let report = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -610,7 +628,7 @@ fn a_crash_between_the_patch_and_the_rename_heals_by_re_transcoding_the_original
 
 #[test]
 fn a_heal_that_fails_to_transcode_repoints_at_the_original_before_recording_the_failure() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     // Same crash-window simulation as the other heal tests, but this
@@ -637,6 +655,7 @@ fn a_heal_that_fails_to_transcode_repoints_at_the_original_before_recording_the_
     let report = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -670,7 +689,7 @@ fn a_heal_that_fails_to_transcode_repoints_at_the_original_before_recording_the_
 
 #[test]
 fn a_heal_that_the_media_step_skips_repoints_at_the_original_deterministically() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     // A small mp4 under compress's min_size_bytes returns
@@ -700,6 +719,7 @@ fn a_heal_that_the_media_step_skips_repoints_at_the_original_deterministically()
     let report = transcode_staged(
         dir.path(),
         &options(MediaMode::Compress, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -728,7 +748,7 @@ fn a_crash_that_lost_both_the_marker_and_the_original_is_unrecoverable() {
     // The whole Media stage still needs ffmpeg present up front (the preflight
     // check runs before any per-attachment classification), even though
     // no transcode is ever attempted for this particular attachment.
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     let (dir, jsonl, original) = staged_one("photo.png", PNG_1X1_RGB);
@@ -748,6 +768,7 @@ fn a_crash_that_lost_both_the_marker_and_the_original_is_unrecoverable() {
     let report = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -766,7 +787,7 @@ fn a_crash_that_lost_both_the_marker_and_the_original_is_unrecoverable() {
 
 #[test]
 fn two_attachments_in_one_document_sharing_a_path_are_patched_together() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     let (dir, jsonl, original) = staged_one("photo.png", PNG_1X1_RGB);
@@ -784,6 +805,7 @@ fn two_attachments_in_one_document_sharing_a_path_are_patched_together() {
     let report = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -811,7 +833,7 @@ fn two_attachments_in_one_document_sharing_a_path_are_patched_together() {
 
 #[test]
 fn two_documents_sharing_one_original_both_end_pointing_at_the_committed_derivative() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     let (dir, jsonl_a, original) = staged_one("shared.png", PNG_1X1_RGB);
@@ -836,6 +858,7 @@ fn two_documents_sharing_one_original_both_end_pointing_at_the_committed_derivat
     let report = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -866,7 +889,7 @@ fn two_documents_sharing_one_original_both_end_pointing_at_the_committed_derivat
 #[cfg(unix)]
 #[test]
 fn a_write_failure_leaves_the_final_name_uncommitted_and_the_original_untouched() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     // The headline "patched before the final name exists" test only
@@ -885,6 +908,7 @@ fn a_write_failure_leaves_the_final_name_uncommitted_and_the_original_untouched(
     let result = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -949,7 +973,7 @@ fn jpeg_over_compress_floor_bytes() -> Vec<u8> {
 
 #[test]
 fn two_documents_sharing_one_compressed_original_both_end_pointing_at_the_committed_derivative() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     // The compress-mode variant of the convert-mode test above: this is
@@ -983,6 +1007,7 @@ fn two_documents_sharing_one_compressed_original_both_end_pointing_at_the_commit
     let report = transcode_staged(
         dir.path(),
         &options(MediaMode::Compress, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -1014,7 +1039,7 @@ fn two_documents_sharing_one_compressed_original_both_end_pointing_at_the_commit
 
 #[test]
 fn a_missing_original_with_no_committed_derivative_becomes_file_missing() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     // Covers the other half of the same bug: a recorded path that is
@@ -1032,6 +1057,7 @@ fn a_missing_original_with_no_committed_derivative_becomes_file_missing() {
     let report = transcode_staged(
         dir.path(),
         &options(MediaMode::Compress, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -1081,7 +1107,7 @@ fn only_attachments(jsonls: &[&Path]) -> Vec<IrAttachment> {
 
 #[test]
 fn two_documents_sharing_one_original_that_converts_too_large_both_record_too_large() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     let (dir, jsonl_a, original) = staged_one("shared.png", PNG_1X1_RGB);
@@ -1094,6 +1120,7 @@ fn two_documents_sharing_one_original_that_converts_too_large_both_record_too_la
     let report = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, 1),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -1122,7 +1149,7 @@ fn two_documents_sharing_one_original_that_converts_too_large_both_record_too_la
 
 #[test]
 fn a_too_large_drop_survives_a_stop_and_a_resume() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     let (dir, jsonl_a, original) = staged_one("shared.png", PNG_1X1_RGB);
@@ -1137,6 +1164,7 @@ fn a_too_large_drop_survives_a_stop_and_a_resume() {
     let err = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, 1),
+        &tools,
         &cancel,
         &IssueSink::none(),
         &LogSink::none(),
@@ -1156,6 +1184,7 @@ fn a_too_large_drop_survives_a_stop_and_a_resume() {
     let resumed = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, 1),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -1244,12 +1273,13 @@ fn without_ffmpeg_the_whole_media_stage_fails_and_touches_nothing() {
         "two conversation files and three originals"
     );
 
-    let _hidden = media::testutil::hide_ffmpeg();
+    let tools = media::testutil::no_ffmpeg();
     for mode in [MediaMode::Convert, MediaMode::Compress] {
         let mut progress_calls = 0usize;
         let err = transcode_staged(
             dir.path(),
             &options(mode, u64::MAX),
+            &tools,
             &CancelFlag::default(),
             &IssueSink::none(),
             &LogSink::none(),
@@ -1324,7 +1354,7 @@ fn crash_recovery_finds_only_an_original_with_the_same_stem() {
 /// note the drop left and records `too_large`, not `file_missing`.
 #[test]
 fn a_crash_heal_whose_original_was_dropped_too_large_records_too_large() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     let (dir, jsonl, original) = staged_one("x.mov", b"not really a video");
@@ -1341,6 +1371,7 @@ fn a_crash_heal_whose_original_was_dropped_too_large_records_too_large() {
     let report = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, 1),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),
@@ -1384,12 +1415,9 @@ fn crash_recovery_reads_only_the_too_large_note_of_its_own_original() {
 #[test]
 fn a_cancel_while_ffmpeg_runs_ends_the_stage_as_canceled_not_as_a_failed_file() {
     use std::os::unix::fs::PermissionsExt;
-    // The mocks hang only on this test's own file, so another test that
-    // runs them while this one has the tools located fails at once rather
-    // than waiting out a limit.
-    let tools = tempfile::tempdir().unwrap();
+    let mocks = tempfile::tempdir().unwrap();
     for name in ["ffmpeg", "ffprobe"] {
-        let program = tools.path().join(name);
+        let program = mocks.path().join(name);
         std::fs::write(
             &program,
             "#!/bin/sh\n[ \"$1\" = -version ] && exit 0\n\
@@ -1399,14 +1427,13 @@ fn a_cancel_while_ffmpeg_runs_ends_the_stage_as_canceled_not_as_a_failed_file() 
         .unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
-    let _located =
-        media::testutil::locate_tools(std::ffi::OsString::new(), tools.path().to_path_buf());
+    let tools = media::InstalledTools::new(Some(mocks.path().to_path_buf())).searching("");
     let (dir, jsonl, original) = staged_one("cancel-me.png", PNG_1X1_RGB);
     let (issues, rows) = collecting_sink();
     let cancel = CancelFlag::default();
     let canceler = {
         let cancel = std::sync::Arc::clone(&cancel);
-        let started = tools.path().join("started");
+        let started = mocks.path().join("started");
         std::thread::spawn(move || {
             while !started.exists() {
                 std::thread::sleep(std::time::Duration::from_millis(5));
@@ -1418,6 +1445,7 @@ fn a_cancel_while_ffmpeg_runs_ends_the_stage_as_canceled_not_as_a_failed_file() 
     let err = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
+        &tools,
         &cancel,
         &issues,
         &LogSink::none(),
@@ -1446,11 +1474,9 @@ fn a_cancel_while_ffmpeg_runs_ends_the_stage_as_canceled_not_as_a_failed_file() 
 #[test]
 fn a_failed_conversion_records_why_ffmpeg_failed() {
     use std::os::unix::fs::PermissionsExt;
-    // The mocks fail only on this test's own file, so another test that
-    // runs them while this one has the tools located is not misled.
-    let tools = tempfile::tempdir().unwrap();
+    let mocks = tempfile::tempdir().unwrap();
     for name in ["ffmpeg", "ffprobe"] {
-        let program = tools.path().join(name);
+        let program = mocks.path().join(name);
         std::fs::write(
             &program,
             "#!/bin/sh\n[ \"$1\" = -version ] && exit 0\n\
@@ -1461,13 +1487,13 @@ fn a_failed_conversion_records_why_ffmpeg_failed() {
         .unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
-    let _located =
-        media::testutil::locate_tools(std::ffi::OsString::new(), tools.path().to_path_buf());
+    let tools = media::InstalledTools::new(Some(mocks.path().to_path_buf())).searching("");
     let (dir, jsonl, _) = staged_one("fail-me.png", PNG_1X1_RGB);
 
     let report = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
+        &tools,
         &CancelFlag::default(),
         &IssueSink::none(),
         &LogSink::none(),

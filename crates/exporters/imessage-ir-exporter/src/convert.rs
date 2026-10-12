@@ -833,6 +833,7 @@ fn drain_conversations(
     let queue = WriteQueueOptions {
         media: options.convert_run.transforms.media,
         compress: options.convert_run.transforms.compress.clone(),
+        tools: std::sync::Arc::clone(&options.convert_run.transforms.tools),
         resume: options.convert_run.resume,
         writer_count: 0,
     };
@@ -894,6 +895,7 @@ fn stage_attachments(
     let media = MediaConfig {
         mode: options.convert_run.transforms.media,
         compress: options.convert_run.transforms.compress.clone(),
+        tools: std::sync::Arc::clone(&options.convert_run.transforms.tools),
     };
     let encrypted = collected.encrypted;
     let mut loads = Vec::new();

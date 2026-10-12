@@ -186,7 +186,8 @@ pub struct ServerConfig {
     #[serde(default = "default_static_dir")]
     pub static_dir: PathBuf,
     /// The desktop app's Tools Directory, where ffmpeg and ffprobe are
-    /// looked for after `PATH`. Only `serve --tools-dir` sets it, and the
+    /// looked for after `PATH` ([`Config::media_tools`]). Only
+    /// `serve --tools-dir` sets it, and the
     /// config file has no key for it: a server started by hand finds ffmpeg
     /// on `PATH` or makes no Previews or Thumbnails (#1053).
     #[serde(skip)]
@@ -498,6 +499,21 @@ impl Config {
             .map_or(media::DEFAULT_STALL_WAIT, |server| {
                 server.transcode_stall_wait()
             })
+    }
+
+    /// The ffmpeg and ffprobe this process runs: on `PATH`, then in the
+    /// Tools Directory `serve --tools-dir` names, with
+    /// [`Config::transcode_stall_wait`] as the no-progress wait. The one
+    /// place the server turns its configuration into the tools it passes to
+    /// the `media` crate.
+    #[must_use]
+    pub fn media_tools(&self) -> media::InstalledTools {
+        media::InstalledTools::new(
+            self.server
+                .as_ref()
+                .and_then(|server| server.tools_dir.clone()),
+        )
+        .with_stall_wait(self.transcode_stall_wait())
     }
 
     /// Server settings for `serve`. Fails if `[server]` is missing.

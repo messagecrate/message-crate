@@ -208,6 +208,7 @@ async fn source_from_jsonl_stamps_export_source_and_assets() {
             import_id: None,
             source_from_jsonl: true,
             media: MediaMode::Clone,
+            media_tools: &media::testutil::FakeTools::missing(),
             wipe_sources: Some(vec!["go-sms-pro".into()]),
             phone_country: None,
             progress: Progress::Log,

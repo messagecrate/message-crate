@@ -31,7 +31,7 @@ use crate::db::engine;
 use crate::db::imports::{self, CompleteImportArgs};
 use crate::db::maintenance;
 use crate::progress::Progress;
-use media::MediaMode;
+use media::{MediaMode, MediaTools, NoTools};
 use message_crate_api_types::{MAX_IMPORT_BATCH_BYTES, RunIssueKind};
 
 pub(crate) mod batch_bodies;
@@ -86,6 +86,8 @@ pub struct ImportOptions<'a> {
     pub source_from_jsonl: bool,
     /// Attachment handling mode: copy, none, convert, compress.
     pub media: MediaMode,
+    /// The ffmpeg and ffprobe that convert and compress run.
+    pub media_tools: &'a dyn MediaTools,
     /// When `source_from_jsonl` + Replace: wipe these sources before import.
     pub wipe_sources: Option<Vec<String>>,
     /// The country the run states for every phone number its files write
@@ -117,6 +119,10 @@ pub struct FixedImportArgs<'a> {
     pub phone_country: Option<&'static phone::Country>,
 }
 
+/// The tools an import that copies its media as it is
+/// ([`ImportOptions::fixed`]) is given: none, since it runs neither program.
+static COPIED_AS_IS: NoTools = NoTools;
+
 impl<'a> ImportOptions<'a> {
     /// HTTP / tests / reset-demo: fixed source + assets dir, copy media,
     /// progress in the server's log.
@@ -130,6 +136,7 @@ impl<'a> ImportOptions<'a> {
             import_id: args.import_id,
             source_from_jsonl: false,
             media: MediaMode::Clone,
+            media_tools: &COPIED_AS_IS,
             wipe_sources: None,
             phone_country: args.phone_country,
             progress: Progress::Log,

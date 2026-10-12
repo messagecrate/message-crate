@@ -305,6 +305,7 @@ fn staging_media(transforms: &ExportTransforms) -> MediaConfig {
     MediaConfig {
         mode: transforms.media,
         compress: transforms.compress.clone(),
+        tools: std::sync::Arc::clone(&transforms.tools),
     }
 }
 
@@ -456,6 +457,8 @@ impl SmsBackupRead {
                 MediaMode::Disabled
             },
             compress: CompressOptions::default(),
+            // Read with Clone or Disabled, which run no program.
+            tools: MediaConfig::default().tools,
             log,
             progress,
             cancel: &context.cancel,

@@ -81,13 +81,13 @@ fn safe_source(
 /// Convert/compress when requested; `None` means fall through to claimed-sha / path store.
 fn try_store_converted(
     att: &mut AttachmentRecord,
-    export_dir: Option<&Path>,
+    opts: &ImportOptions<'_>,
     assets_dir: &Path,
     asset_stats: &mut AssetStats,
-    media: MediaMode,
     media_work: &Path,
     line: usize,
 ) -> Result<Option<StoredAsset>, StagingError> {
+    let (export_dir, media) = (opts.asset_root, opts.media);
     if !matches!(media, MediaMode::Convert | MediaMode::Compress) {
         return Ok(None);
     }
@@ -102,9 +102,14 @@ fn try_store_converted(
     if !source.is_file() {
         return Ok(None);
     }
-    let Some(resolved) =
-        import_media::resolve_for_store(&source, att.mime_type.as_deref(), media, media_work)
-            .map_err(StagingError::Internal)?
+    let Some(resolved) = import_media::resolve_for_store(
+        opts.media_tools,
+        &source,
+        att.mime_type.as_deref(),
+        media,
+        media_work,
+    )
+    .map_err(StagingError::Internal)?
     else {
         return Ok(None);
     };
@@ -235,15 +240,15 @@ fn store_claimed_or_path(
 
 /// Stage every attachment of one message into the asset store, converting first when the media mode asks for it.
 fn prepare_attachments(
-    export_dir: Option<&Path>,
+    opts: &ImportOptions<'_>,
     assets_dir: &Path,
     attachments: Vec<AttachmentRecord>,
     asset_stats: &mut AssetStats,
-    media: MediaMode,
     media_work: &Path,
     line: usize,
 ) -> Result<Vec<PreparedAttachment>, StagingError> {
-    if media == MediaMode::Disabled {
+    let export_dir = opts.asset_root;
+    if opts.media == MediaMode::Disabled {
         return Ok(Vec::new());
     }
 
@@ -251,18 +256,11 @@ fn prepare_attachments(
     for mut att in attachments {
         // Before a conversion, which drops the stated fingerprint.
         stated_sha256(&att, line)?;
-        let stored = match try_store_converted(
-            &mut att,
-            export_dir,
-            assets_dir,
-            asset_stats,
-            media,
-            media_work,
-            line,
-        )? {
-            Some(stored) => Some(stored),
-            None => store_claimed_or_path(&att, export_dir, assets_dir, asset_stats, line)?,
-        };
+        let stored =
+            match try_store_converted(&mut att, opts, assets_dir, asset_stats, media_work, line)? {
+                Some(stored) => Some(stored),
+                None => store_claimed_or_path(&att, export_dir, assets_dir, asset_stats, line)?,
+            };
         prepared.push(PreparedAttachment {
             record: att,
             stored,
@@ -665,11 +663,10 @@ fn prepare_message_attachments(
     let mut prepared = Vec::with_capacity(messages.len());
     for mut msg in messages {
         let attachments = prepare_attachments(
-            opts.asset_root,
+            opts,
             assets_dir,
             std::mem::take(&mut msg.attachments),
             asset_stats,
-            opts.media,
             media_work,
             msg.line,
         )?;
