@@ -28,3 +28,14 @@ export async function advanceTimersAndSettle(ms: number): Promise<void> {
     await vi.advanceTimersByTimeAsync(0);
   });
 }
+
+/**
+ * Let Testing Library's events run on Vitest's fake clock. Testing Library
+ * ends each event with a setTimeout(0), which it moves past itself only
+ * through a `jest` global, so this lends it one that moves Vitest's clock.
+ * Call it after `vi.useFakeTimers` fakes `setTimeout`; `vi.unstubAllGlobals`
+ * takes it back.
+ */
+export function lendTestingLibraryTheFakeClock(): void {
+  vi.stubGlobal("jest", { advanceTimersByTime: (ms: number) => vi.advanceTimersByTime(ms) });
+}

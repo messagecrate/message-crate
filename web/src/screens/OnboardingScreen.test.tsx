@@ -2,6 +2,7 @@
 
 import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { lendTestingLibraryTheFakeClock } from "../test/fakeTimers";
 import { renderWithProviders as render } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 
@@ -426,11 +427,9 @@ describe("OnboardingScreen", () => {
     // fake clock, so the blank line is read before the timer can fire however
     // long the click takes, and the message comes back when the test moves the
     // clock, not when the machine gets to it. `delay: null` keeps user-event
-    // off the faked setTimeout. Testing Library ends each event with a
-    // setTimeout(0), which it moves past itself only through a `jest` global,
-    // so the test lends it one that moves Vitest's clock.
+    // off the faked setTimeout.
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
-    vi.stubGlobal("jest", { advanceTimersByTime: (ms: number) => vi.advanceTimersByTime(ms) });
+    lendTestingLibraryTheFakeClock();
     const user = setupUser();
     render(<OnboardingScreen />);
 

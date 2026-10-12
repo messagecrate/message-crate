@@ -72,7 +72,7 @@ import {
   HEALTH_URL_DEBOUNCE_MS,
 } from "../lib/serverHealth";
 import type { ServerState } from "../lib/useServerState";
-import { advanceTimersAndSettle } from "../test/fakeTimers";
+import { advanceTimersAndSettle, lendTestingLibraryTheFakeClock } from "../test/fakeTimers";
 import { Providers } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 import LoginScreen from "./LoginScreen";
@@ -410,12 +410,9 @@ describe("LoginScreen", () => {
     authState.serverUrl = A;
     serveAt((address) => (address.startsWith(A) ? { state: "closed" } : "down"));
     // The card's own health probe waits out a debounce before it asks, so
-    // the test moves the clock past it rather than waiting. Testing Library
-    // ends each event with a setTimeout(0), which it moves past itself only
-    // through a `jest` global, so the test lends it one that moves Vitest's
-    // clock.
+    // the test moves the clock past it rather than waiting.
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    vi.stubGlobal("jest", { advanceTimersByTime: (ms: number) => vi.advanceTimersByTime(ms) });
+    lendTestingLibraryTheFakeClock();
     const user = setupUser();
     renderScreen();
 
