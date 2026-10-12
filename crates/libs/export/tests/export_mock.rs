@@ -4,7 +4,8 @@
 //!
 //! The mock answers the five routes `run` calls — `GET /v1/session`,
 //! `POST /v1/exports`, `GET /v1/exports/{id}/messages`,
-//! `POST /v1/exports/{id}/complete` or `/cancel`, and `GET /v1/assets/{sha256}`
+//! `POST /v1/exports/{id}/complete` (with `completed` or `failed`) or
+//! `/cancel`, and `GET /v1/assets/{sha256}`
 //! — with the JSON the server serializes (`message-crate-api-types`,
 //! `docs/src/assets/openapi.json`). Every request derives from
 //! `ExportConfig::base_url`, so the mock's address is the only seam.
@@ -18,7 +19,8 @@ use std::sync::atomic::AtomicBool;
 
 use httpmock::prelude::*;
 use message_crate_export::{
-    ExportConfig, ExportJournalState, ExportQueryList, ExportReport, ProgressEvent, journal, run,
+    AssetFailure, ExportConfig, ExportJournalState, ExportQueryList, ExportReport, ProgressEvent,
+    journal, run,
 };
 use message_ir::{Deletion, EarlierVersion, Reaction};
 use message_ir_format::{EXPORT_SENTINEL, read_conversation_jsonl};
@@ -144,14 +146,26 @@ fn mock_create<'a>(server: &'a MockServer, scope: Value) -> httpmock::Mock<'a> {
     })
 }
 
-/// `POST /v1/exports/{id}/complete`, answering the closed run.
-fn mock_complete(server: &MockServer) -> httpmock::Mock<'_> {
+/// `POST /v1/exports/{id}/complete` with `status`, answering the run closed
+/// that way.
+fn mock_close_as<'a>(server: &'a MockServer, status: &'static str) -> httpmock::Mock<'a> {
     server.mock(|when, then| {
         when.method(POST)
-            .path(format!("/v1/exports/{EXPORT_ID}/complete"));
+            .path(format!("/v1/exports/{EXPORT_ID}/complete"))
+            .json_body(json!({ "status": status }));
         then.status(200)
-            .json_body(export_run(json!({ "kind": "everything" }), "completed"));
+            .json_body(export_run(json!({ "kind": "everything" }), status));
     })
+}
+
+/// `POST /v1/exports/{id}/complete` with `completed`.
+fn mock_complete(server: &MockServer) -> httpmock::Mock<'_> {
+    mock_close_as(server, "completed")
+}
+
+/// `POST /v1/exports/{id}/complete` with `failed`.
+fn mock_fail(server: &MockServer) -> httpmock::Mock<'_> {
+    mock_close_as(server, "failed")
 }
 
 /// `POST /v1/exports/{id}/cancel`, answering the closed run.
@@ -288,6 +302,7 @@ fn report_for(out_dir: &Path, fetched: u64, kept: u64) -> ExportReport {
         messages: 3,
         assets_fetched: fetched,
         assets_kept: kept,
+        assets_failed: Vec::new(),
         refused_attachment_paths: Vec::new(),
         out_dir: out_dir.display().to_string(),
     }
@@ -966,11 +981,16 @@ fn a_query_for_the_conversations_list_names_that_list_in_the_scope() {
     )));
 }
 
+/// One Asset the server does not have no longer throws the Export away
+/// (#2070): the conversation file and every other Asset are written, the
+/// report and the log name the missing one, the journal does not list it, and
+/// the run is closed as completed.
 #[test]
-fn an_asset_the_server_does_not_have_fails_the_run_and_cancels_it_on_the_server() {
+fn an_asset_the_server_does_not_have_is_named_in_the_report_and_every_conversation_is_written() {
     let server = MockServer::start();
     let _auth = mock_auth(&server);
     let (create, complete) = mock_run(&server);
+    let fail = mock_fail(&server);
     let cancel = mock_cancel(&server);
     let _pages = mock_pages(&server, "sms-backup-restore");
     let menu = server.mock(|when, then| {
@@ -982,36 +1002,67 @@ fn an_asset_the_server_does_not_have_fails_the_run_and_cancels_it_on_the_server(
             "detail": "asset not found"
         }));
     });
-    let _photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
+    let photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
     let dir = tempdir().unwrap();
     let out = dir.path().join("exported");
+    let mut events = Vec::new();
+    let mut on_progress = |event: ProgressEvent| events.push(event);
 
-    let error = run(&config(&out, server.base_url()), None).unwrap_err();
+    let report = run(&config(&out, server.base_url()), Some(&mut on_progress)).unwrap();
 
+    let reason = format!("Asset {MENU_SHA} fetch failed (HTTP 404 Not Found): asset not found");
     assert_eq!(
-        error.to_string(),
-        format!("Asset {MENU_SHA} fetch failed (HTTP 404 Not Found): asset not found")
+        report,
+        ExportReport {
+            assets_failed: vec![AssetFailure {
+                sha256: MENU_SHA.into(),
+                path: "attachments/menu.pdf".into(),
+                reason: reason.clone(),
+            }],
+            ..report_for(&out, 1, 0)
+        }
     );
     assert_eq!(menu.calls(), 1, "a 404 Not Found is not retried");
+    photo.assert();
     create.assert();
-    cancel.assert();
-    assert_eq!(complete.calls(), 0);
+    complete.assert();
+    assert_eq!(fail.calls(), 0);
+    assert_eq!(cancel.calls(), 0);
     assert!(!out.join("attachments/menu.pdf").exists());
-    assert!(!out.join(CONVERSATION_FILE).exists());
+    assert_eq!(
+        fs::read(out.join("attachments").join(PHOTO_SHA)).unwrap(),
+        PHOTO_BYTES
+    );
+    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    assert_eq!(doc.messages.len(), 3, "every message is written");
+    for line in [
+        format!("{reason}, so attachments/menu.pdf is not written"),
+        "1 Asset could not be fetched, so its file is missing from the Export. \
+         The lines above name each one"
+            .to_string(),
+    ] {
+        assert!(
+            events.contains(&ProgressEvent::Log(line.clone())),
+            "{line}: {events:?}"
+        );
+    }
     let state = load_journal(&out, &server);
-    assert!(!state.export_complete);
+    assert!(
+        !state.assets.contains(MENU_SHA),
+        "the menu is not journaled"
+    );
+    assert!(state.assets.contains(PHOTO_SHA));
 }
 
 /// An access proxy whose session has expired answers the asset request with
-/// its login page and `200 OK`. Those bytes are not the photo, so the run
-/// fails naming the photo's fingerprint, and nothing at the photo's path or in
-/// the journal lets a later run skip it.
+/// its login page and `200 OK`. Those bytes are not the photo, so the photo
+/// is reported as not fetched, and nothing at the photo's path or in the
+/// journal lets a later run skip it.
 #[test]
-fn bytes_whose_sha256_is_not_the_one_asked_for_fail_the_run_and_are_not_kept() {
+fn bytes_whose_sha256_is_not_the_one_asked_for_are_not_kept() {
     let server = MockServer::start();
     let _auth = mock_auth(&server);
     let (create, complete) = mock_run(&server);
-    let cancel = mock_cancel(&server);
     let _pages = mock_pages(&server, "sms-backup-restore");
     let _menu = mock_asset(&server, MENU_SHA, MENU_BYTES);
     let photo = mock_asset(
@@ -1022,14 +1073,18 @@ fn bytes_whose_sha256_is_not_the_one_asked_for_fail_the_run_and_are_not_kept() {
     let dir = tempdir().unwrap();
     let out = dir.path().join("exported");
 
-    let error = run(&config(&out, server.base_url()), None).unwrap_err();
+    let report = run(&config(&out, server.base_url()), None).unwrap();
 
-    let message = error.to_string();
+    let [failure] = report.assets_failed.as_slice() else {
+        panic!("one Asset fails: {report:?}");
+    };
+    assert_eq!(failure.sha256, PHOTO_SHA);
     assert!(
-        message.starts_with(&format!(
+        failure.reason.starts_with(&format!(
             "the server's answer to Asset {PHOTO_SHA} fetch is bytes whose SHA-256 is "
         )),
-        "{message}"
+        "{}",
+        failure.reason
     );
     assert_eq!(
         photo.calls(),
@@ -1037,8 +1092,7 @@ fn bytes_whose_sha256_is_not_the_one_asked_for_fail_the_run_and_are_not_kept() {
         "the same answer would come back, so it is not retried"
     );
     create.assert();
-    cancel.assert();
-    assert_eq!(complete.calls(), 0);
+    complete.assert();
     let photo_path = out.join("attachments").join(PHOTO_SHA);
     assert!(
         !photo_path.exists(),
@@ -1052,9 +1106,111 @@ fn bytes_whose_sha256_is_not_the_one_asked_for_fail_the_run_and_are_not_kept() {
     let state = load_journal(&out, &server);
     assert!(
         !state.assets.contains(PHOTO_SHA),
-        "the photo is not journalled"
+        "the photo is not journaled"
     );
-    assert!(!state.export_complete);
+}
+
+/// A page the server cannot hand over ends the run with an error, and the
+/// run is recorded as failed, never as cancelled: nobody cancelled it
+/// (#2069).
+#[test]
+fn a_page_that_cannot_be_fetched_closes_the_run_as_failed() {
+    let server = MockServer::start();
+    let _auth = mock_auth(&server);
+    let (create, complete) = mock_run(&server);
+    let fail = mock_fail(&server);
+    let cancel = mock_cancel(&server);
+    let page = server.mock(|when, then| {
+        when.method(GET)
+            .path(format!("/v1/exports/{EXPORT_ID}/messages"));
+        then.status(404).json_body(json!({
+            "type": "https://messagecrate.app/docs/developer/reference/errors/not-found",
+            "title": "Not found",
+            "status": 404,
+            "detail": "export 7 not found for this account"
+        }));
+    });
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("exported");
+
+    let error = run(&config(&out, server.base_url()), None).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Export Run {EXPORT_ID} page failed (HTTP 404 Not Found): \
+             export 7 not found for this account"
+        )
+    );
+    assert_eq!(page.calls(), 1, "a 404 Not Found is not retried");
+    create.assert();
+    fail.assert();
+    assert_eq!(complete.calls(), 0);
+    assert_eq!(cancel.calls(), 0);
+    assert!(!out.join(CONVERSATION_FILE).exists());
+    assert!(!load_journal(&out, &server).export_complete);
+}
+
+/// A session the server refuses while the Assets are fetched (it expired, or
+/// was ended from another window) refuses every other fetch too. The run
+/// ends with the sentence that says to log in again, closed as failed,
+/// rather than finishing with every Asset listed as missing.
+#[test]
+fn a_session_refused_while_fetching_assets_fails_the_run() {
+    let server = MockServer::start();
+    let _auth = mock_auth(&server);
+    let (create, complete) = mock_run(&server);
+    let fail = mock_fail(&server);
+    let cancel = mock_cancel(&server);
+    let _pages = mock_pages(&server, "sms-backup-restore");
+    let _assets = server.mock(|when, then| {
+        when.method(GET).path_prefix("/v1/assets/");
+        then.status(401).body("unauthorized");
+    });
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("exported");
+
+    let message = format!(
+        "{:#}",
+        run(&config(&out, server.base_url()), None).unwrap_err()
+    );
+
+    assert!(message.contains("Log in again"), "{message}");
+    create.assert();
+    fail.assert();
+    assert_eq!(complete.calls(), 0);
+    assert_eq!(cancel.calls(), 0);
+    assert!(!out.join(CONVERSATION_FILE).exists());
+}
+
+/// A cancel that arrives while the pages are read closes the run as
+/// cancelled, the one way a run is recorded as cancelled.
+#[test]
+fn a_cancel_during_the_run_closes_it_as_cancelled() {
+    let server = MockServer::start();
+    let _auth = mock_auth(&server);
+    let (create, complete) = mock_run(&server);
+    let fail = mock_fail(&server);
+    let cancel = mock_cancel(&server);
+    let _pages = mock_pages(&server, "sms-backup-restore");
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("exported");
+    let cfg = config(&out, server.base_url());
+    let flag = cfg.cancel.clone();
+    let mut on_progress = |event: ProgressEvent| {
+        // The first page has arrived; the person presses Cancel.
+        if matches!(event, ProgressEvent::Page { .. }) {
+            flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    };
+
+    let error = run(&cfg, Some(&mut on_progress)).unwrap_err();
+
+    assert_eq!(error.to_string(), "cancelled");
+    create.assert();
+    cancel.assert();
+    assert_eq!(fail.calls(), 0);
+    assert_eq!(complete.calls(), 0);
 }
 
 #[test]
@@ -1126,7 +1282,7 @@ fn a_refused_completion_is_a_warning_that_names_the_run_once() {
     assert!(
         events.contains(&ProgressEvent::Log(format!(
             "Export Run {EXPORT_ID} completion failed (HTTP 409 Conflict): \
-             the run is already closed. The Export wrote every file all the same"
+             the run is already closed. The Export wrote its files all the same"
         ))),
         "{events:?}"
     );

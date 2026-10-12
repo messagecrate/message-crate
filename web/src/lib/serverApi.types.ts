@@ -977,7 +977,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Record that the client finished reading the run. */
+        /**
+         * Record how the client's reading of the run ended: `completed`, or `failed` when an error stopped it.
+         * @description Any other `status` is `validation-failed`.
+         */
         post: operations["complete_export"];
         delete?: never;
         options?: never;
@@ -2071,6 +2074,25 @@ export interface components {
             /** @description Login username for the owner. */
             username: string;
         };
+        /**
+         * @description Body of `POST /v1/exports/{id}/complete`: how the run ended. The outcome
+         *     is stated once, as `status`.
+         */
+        CompleteExportRequest: {
+            /**
+             * @description `completed` when the client wrote what it read, or `failed` when an
+             *     error stopped it. A run the person gave up is closed with `cancel`.
+             */
+            status: components["schemas"]["CompleteExportStatus"];
+        };
+        /**
+         * @description How a client says its reading of an Export Run ended, in the body of
+         *     `POST /v1/exports/{id}/complete`: the two statuses that route records. A
+         *     run the person gave up is closed with `cancel`, and only the server sets
+         *     `running`, so neither is a value here.
+         * @enum {string}
+         */
+        CompleteExportStatus: "completed" | "failed";
         /**
          * @description Final stats and issues for a running Import Run. The outcome is stated
          *     once, as `status`. The run's message and attachment counts are not part
@@ -11020,7 +11042,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompleteExportRequest"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -11029,6 +11055,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExportRun"];
+                };
+            };
+            /** @description [`malformed-body`](https://messagecrate.app/docs/developer/reference/errors/malformed-body): The request could not be read at all: the body is not valid JSON, an import line is not JSON or not UTF-8, or the body failed to arrive. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */
@@ -11073,6 +11108,24 @@ export interface operations {
             };
             /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, an asset upload started by an account that already has as many in progress as it may have open at once, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`payload-too-large`](https://messagecrate.app/docs/developer/reference/errors/payload-too-large): The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`unsupported-media-type`](https://messagecrate.app/docs/developer/reference/errors/unsupported-media-type): The request's `Content-Type` is absent or not one this route accepts. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
