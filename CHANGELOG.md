@@ -911,8 +911,8 @@ released versions carry their date on the heading.
   even when it was wrong. The server now reads the start of each stored
   file: a video, photo or recording is treated as what it is, whatever it
   was called, gets its thumbnail and, where a browser needs one, its
-  playable copy, and is downloaded under its real type. A type that is not
-  a valid media type is no longer stored at all, so such a file downloads
+  playable copy, and is downloaded under its real type. A file type an
+  import gave in a broken form is no longer kept, so such a file downloads
   as plain bytes instead of without a type. An attachment whose file has
   gone missing keeps what the server last decided about it.
 - 2026-10-11: **An attachment is opened as it is only when its contents

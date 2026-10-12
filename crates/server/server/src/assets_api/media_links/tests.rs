@@ -193,6 +193,29 @@ fn media_link_routes() -> Vec<String> {
         .collect()
 }
 
+/// Every `GET` that reads an Asset's bytes or one of its versions, which is
+/// every `GET` under `/v1/assets/{sha256}` but the multipart upload routes,
+/// opens to a Media Link, so it takes `AssetReadAccess`, answers through
+/// `AssetReadAccess::answer`, and is walked by
+/// [`an_asset_read_with_a_media_link_is_never_stored_by_a_cache`]. A read
+/// route added with another credential fails here (#2585).
+#[test]
+fn every_asset_read_route_opens_to_a_media_link() {
+    let doc: Value = serde_json::from_str(&crate::openapi::dump_openapi_json()).unwrap();
+    let opened = media_link_routes();
+    for (path, item) in doc["paths"].as_object().unwrap() {
+        let reads_an_asset = path.starts_with("/v1/assets/{sha256}")
+            && !path.starts_with("/v1/assets/{sha256}/uploads")
+            && item.get("get").is_some();
+        if reads_an_asset {
+            assert!(
+                opened.contains(path),
+                "GET {path} reads an Asset but does not open to a Media Link, so nothing makes it send the read's Cache-Control"
+            );
+        }
+    }
+}
+
 /// A media link names one asset. Put on another asset's address, even one
 /// the same account holds, it opens nothing.
 #[tokio::test]

@@ -1197,32 +1197,35 @@ async fn upload_in_parts(
         .await
 }
 
-/// The MIME type recorded for an asset the store already holds. The export's
-/// claim wins, then what the source file's name says. A blank claim is not a
-/// claim. The stored file has no extension, so it never has a say.
+/// The MIME type recorded for an asset whose bytes show no type. The
+/// export's claim wins, then what the source file's name says. A blank
+/// claim, or one that is not a media type, is not a claim. The stored file
+/// has no extension, so it never has a say.
 #[test]
 fn mime_for_a_stored_asset_is_the_claim_then_the_source_name() {
     let dir = tempdir().unwrap();
     let root = dir.path();
-    let sha = Sha256::of_bytes(b"stored-asset");
-    let dest = root.join(shard_rel_path(&sha, ""));
-    fs::create_dir_all(dest.parent().unwrap()).unwrap();
-    fs::write(&dest, b"stored-asset").unwrap();
     let source = root.join("source.png");
-    fs::write(&source, b"stored-asset").unwrap();
 
-    let stored = |export_mime: Option<&str>| {
-        let (stored, present) = store_verified(&source, &sha, root, export_mime, false).unwrap();
-        assert!(present, "the asset is already stored");
+    let stored = |n: usize, export_mime: Option<&str>| {
+        let bytes = format!("stored-asset-{n}");
+        fs::write(&source, &bytes).unwrap();
+        let sha = Sha256::of_bytes(bytes.as_bytes());
+        let (stored, _) = store_verified(&source, &sha, root, export_mime, false).unwrap();
         stored.mime_type
     };
 
-    assert_eq!(stored(Some("audio/amr")).as_deref(), Some("audio/amr"));
-    assert_eq!(stored(None).as_deref(), Some("image/png"));
+    assert_eq!(stored(0, Some("audio/amr")).as_deref(), Some("audio/amr"));
+    assert_eq!(stored(1, None).as_deref(), Some("image/png"));
     assert_eq!(
-        stored(Some("")).as_deref(),
+        stored(2, Some("")).as_deref(),
         Some("image/png"),
         "an empty claim must fall through to the source file's name"
+    );
+    assert_eq!(
+        stored(3, Some("text/html<script>")).as_deref(),
+        Some("image/png"),
+        "a claim that is not a media type must fall through as an empty one does"
     );
 }
 
@@ -1431,10 +1434,29 @@ async fn the_stored_bytes_decide_the_type_over_the_first_declared() {
     let words_sha = Sha256::of_bytes(words);
     fs::write(&source, words).unwrap();
     store_verified(&source, &words_sha, root, Some("audio/amr"), false).unwrap();
-    store_verified(&source, &words_sha, root, Some("image/heic"), false).unwrap();
+    let (again, _) = store_verified(&source, &words_sha, root, Some("image/heic"), false).unwrap();
     assert_eq!(
         read_mime_metadata(root, &words_sha).as_deref(),
         Some("audio/amr")
+    );
+    assert_eq!(
+        again.mime_type.as_deref(),
+        Some("audio/amr"),
+        "the rows of a later store name the type the Asset is served under"
+    );
+
+    // Of the types one signature fits, the first declared stays: a later
+    // import cannot flip the Asset from an `.m4a` to an MP4.
+    let mut m4a = b"\0\0\0\x20ftypisom".to_vec();
+    m4a.extend_from_slice(&[0; 32]);
+    let m4a_sha = Sha256::of_bytes(&m4a);
+    fs::write(&source, &m4a).unwrap();
+    store_verified(&source, &m4a_sha, root, Some("audio/mp4"), false).unwrap();
+    let (later, _) = store_verified(&source, &m4a_sha, root, Some("video/mp4"), false).unwrap();
+    assert_eq!(later.mime_type.as_deref(), Some("audio/mp4"));
+    assert_eq!(
+        read_mime_metadata(root, &m4a_sha).as_deref(),
+        Some("audio/mp4")
     );
 }
 

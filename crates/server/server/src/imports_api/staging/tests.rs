@@ -92,11 +92,12 @@ fn claimed(sha256: &str, mime_type: Option<&str>) -> AttachmentRecord {
 }
 
 /// An Asset the store already holds under `image/png` is reused when an
-/// attachment claims its sha256. The export's MIME type wins over the stored
-/// one when the record has one, and the stored one stands when it does not,
-/// because the export saw the original file and the store only guessed.
+/// attachment claims its sha256, and keeps that type whatever the record
+/// declares: its bytes show no type, so the first type declared for it
+/// stays, and every row of one Asset names the type it is served under
+/// (#2804).
 #[test]
-fn a_reused_asset_takes_the_export_mime_type_when_the_record_has_one() {
+fn a_reused_asset_keeps_the_type_it_is_stored_under() {
     let tmp = TempDir::new().unwrap();
     let export_dir = tmp.path().join("export");
     let assets_dir = tmp.path().join("assets");
@@ -117,7 +118,7 @@ fn a_reused_asset_takes_the_export_mime_type_when_the_record_has_one() {
     .unwrap()
     .expect("the stored Asset is reused");
     assert_eq!(stored.sha256, sha.as_str());
-    assert_eq!(stored.mime_type.as_deref(), Some("image/jpeg"));
+    assert_eq!(stored.mime_type.as_deref(), Some("image/png"));
 
     let stored = store_claimed_or_path(
         &claimed(sha.as_str(), None),

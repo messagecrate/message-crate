@@ -534,15 +534,19 @@ fn read_mime_metadata(assets_root: &Path, sha: &Sha256) -> Option<String> {
 /// MIME sidecar, and answer it (`docs/architecture/media.md`, rule 2).
 ///
 /// The stored bytes decide when they match a signature
-/// ([`media::media_type_in_file`]): that type is written over whatever the
-/// sidecar held, so a wrong first claim does not stay the Asset's type. A
-/// file whose bytes say nothing keeps the first type declared for it, and
-/// `declared` is written only when the sidecar holds none. `declared` is
-/// taken only when it is a media type ([`media::checked_media_type`]);
-/// `application/octet-stream` says nothing and is not recorded.
+/// ([`media::media_type_in_file`]). A recorded type the bytes allow stays,
+/// so of the types one signature fits (an MP4 or an `.m4a`) the first
+/// declared is kept and a later import cannot flip it. A recorded type the
+/// bytes rule out is replaced by the one they show, with `declared` choosing
+/// among a signature's types, so a wrong first claim does not stay the
+/// Asset's type. A file whose bytes say nothing keeps the first type
+/// declared for it, and `declared` is written only when the sidecar holds
+/// none. `declared` is taken only when it is a media type
+/// ([`media::checked_media_type`]); `application/octet-stream` says nothing
+/// and is not recorded.
 ///
-/// The answer is the type the bytes show, else `declared`, else the type
-/// already recorded.
+/// The answer is the type the sidecar holds afterwards, so every
+/// attachment row of the Asset names the type it is served under.
 ///
 /// # Errors
 ///
@@ -557,18 +561,24 @@ pub(crate) fn record_media_type(
         .filter(|mime| mime != "application/octet-stream");
     let stored = assets_root.join(shard_rel_path(sha, ""));
     let recorded = read_mime_metadata(assets_root, sha);
+    if let Some(recorded) = recorded.as_deref()
+        && media::media_type_in_file(&stored, Some(recorded)) == Some(recorded)
+    {
+        return Ok(Some(recorded.to_string()));
+    }
     if let Some(shown) = media::media_type_in_file(&stored, declared.as_deref()) {
-        if recorded.as_deref() != Some(shown) {
-            write_mime_metadata(assets_root, sha, shown, true)?;
-        }
+        write_mime_metadata(assets_root, sha, shown, true)?;
         return Ok(Some(shown.to_string()));
     }
-    if let Some(declared) = declared.as_deref()
-        && recorded.is_none()
-    {
+    if let Some(recorded) = recorded {
+        return Ok(Some(recorded));
+    }
+    if let Some(declared) = declared.as_deref() {
         write_mime_metadata(assets_root, sha, declared, false)?;
     }
-    Ok(declared.or(recorded))
+    // A racing store may have written its own first; the sidecar holds the
+    // answer either way.
+    Ok(read_mime_metadata(assets_root, sha).or(declared))
 }
 
 /// Write `mime` as the MIME sidecar of `sha`: over the one there when
@@ -596,12 +606,12 @@ fn write_mime_metadata(assets_root: &Path, sha: &Sha256, mime: &str, replace: bo
     }
 }
 
-/// The export's MIME claim when it has one, else a guess from the file extension.
+/// The export's MIME claim when it is a media type
+/// ([`media::checked_media_type`]), else a guess from the file extension: a
+/// claim that is not a type says no more than a missing one (#2101).
 fn resolve_mime(export_mime: Option<&str>, source: &Path) -> Option<String> {
-    if let Some(mime) = export_mime
-        && !mime.trim().is_empty()
-    {
-        return Some(mime.to_string());
+    if let Some(mime) = export_mime.and_then(media::checked_media_type) {
+        return Some(mime);
     }
     let ext = source.extension().and_then(|e| e.to_str());
     guess_mime(ext)

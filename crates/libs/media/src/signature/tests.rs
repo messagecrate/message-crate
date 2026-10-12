@@ -66,6 +66,25 @@ fn a_declared_type_the_signature_carries_is_kept() {
         media_type_from_bytes(b"OggSrest", Some("audio/opus")),
         Some("audio/opus")
     );
+    // An alias is read in its usual spelling.
+    assert_eq!(
+        media_type_from_bytes(&iso(b"isom"), Some("audio/aac")),
+        Some("audio/mp4")
+    );
+    // A declared audio type keeps an audio file audio, in a container that
+    // also carries video.
+    assert_eq!(
+        media_type_from_bytes(&iso(b"3gp4"), Some("audio/3gpp")),
+        Some("audio/3gpp")
+    );
+    assert_eq!(
+        media_type_from_bytes(&iso(b"mp42"), Some("audio/x-m4a")),
+        Some("audio/mp4")
+    );
+    assert_eq!(
+        media_type_from_bytes(&iso(b"3gp4"), Some("audio/amr")),
+        Some("audio/3gpp")
+    );
     // A brand that names one type is that type, whatever was declared.
     assert_eq!(
         media_type_from_bytes(&iso(b"qt  "), Some("video/mp4")),
@@ -81,6 +100,11 @@ fn bytes_that_match_no_signature_say_nothing() {
         b"just some words",
         b"BMW is a car maker",
         b"\xFF\xF1\x50\x80rest",
+        // UTF-16LE text: its byte order mark is a frame sync.
+        b"\xFF\xFEB\0E\0G\0I\0N\0",
+        b"\xFF\xFF\xFF\xFF",
+        // A frame header whose bitrate is the reserved value.
+        b"\xFF\xFB\xF0\x00",
         b"\0\0\0\x20ftypavif",
         b"BEGIN:VCARD",
     ] {

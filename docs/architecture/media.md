@@ -54,14 +54,16 @@ gets a Preview. A declared type is only a claim, so the type comes first
 from the file's first bytes, where they match a known signature
 (`media::media_type_from_bytes`): a video declared
 `application/octet-stream` is a video, gets a Thumbnail, and gets a Preview
-when rule 2 says it needs one (#2805). Where one signature fits several
+when `media::browser_shows` says it needs one (#2805). Where one signature fits several
 types, as an MP4 and an `.m4a` share one, the declared type is kept when it
 is one of them. Bytes that match no signature fall back to the stored
 file's extension, then the type the import declared, then the name the
 export gave the file. The server stores and serves the Asset under the same
-type: each store decides it from the bytes and writes it over a wrong first
-claim, and only bytes that show no type keep the first type declared for
-them (#2804). A declared type that is not a `type/subtype` pair of tokens
+type: each store decides it from the bytes and writes it over a first
+claim the bytes rule out. A first claim the bytes allow stays, so a later
+import cannot flip an `.m4a` to an MP4, and bytes that show no type keep
+the first type declared for them. Every attachment row of the Asset names
+the type it is served under (#2804). A declared type that is not a `type/subtype` pair of tokens
 of at most 255 bytes is no type at all, so such an Asset is served as
 `application/octet-stream` (#2101). So a JPEG, PNG, GIF,
 WebP or MP3 is shown as it is only when its first bytes are that type's

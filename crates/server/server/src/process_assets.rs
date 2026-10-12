@@ -195,39 +195,48 @@ fn media_type(row: &StoredOriginal) -> Option<String> {
     )
 }
 
-/// The media type the first bytes of `row`'s original, stored under
-/// `assets_dir`, show it to be ([`media::media_type_in_file`]). `None` when
-/// it cannot be read, is an incomplete `.part`, or its bytes match no
-/// signature: then what its rows say decides ([`media_type`]).
-fn type_by_bytes(assets_dir: &Path, row: &StoredOriginal) -> Option<&'static str> {
-    if is_part_path(&row.assets_path) {
-        return None;
-    }
-    media::media_type_in_file(
-        &assets_dir.join(&row.assets_path),
-        media_type(row).as_deref(),
-    )
+/// What the pass reads of one stored original's type, from its file and
+/// its rows ([`read_original`]).
+struct ReadOriginal {
+    /// The media type the original's first bytes show
+    /// ([`media::media_type_in_file`]); `None` when it cannot be read, is an
+    /// incomplete `.part`, or its bytes match no signature.
+    by_bytes: Option<&'static str>,
+    /// The original's media type: the one its bytes show, else the one its
+    /// rows say ([`media_type`]). A declared type is only a claim, so a
+    /// video declared `application/octet-stream` is still a video (#2805).
+    media_type: Option<String>,
+    /// Whether every browser shows the original as it is
+    /// ([`media::browser_shows`]): the decision that both spares it a
+    /// Preview and is answered as the `/v1` Attachment's `shown_as_is`.
+    /// `None` when nothing can be known, as for an original that cannot be
+    /// read or an MP4 while ffprobe is missing, so a decision an earlier
+    /// pass recorded stays.
+    decided: Option<bool>,
 }
 
-/// The original's media type: the one its bytes show, else the one its
-/// rows say. A declared type is only a claim, so a video declared
-/// `application/octet-stream` is still a video (#2805).
-fn original_media_type(by_bytes: Option<&'static str>, row: &StoredOriginal) -> Option<String> {
-    by_bytes.map(str::to_string).or_else(|| media_type(row))
-}
-
-/// Whether every browser shows `row`'s original, stored under `assets_dir`
-/// and of `media_type`, as it is ([`media::browser_shows`]): the decision
-/// that both spares it a Preview and is answered as the `/v1` Attachment's
-/// `shown_as_is`. An incomplete `.part` original is never handed to
-/// ffprobe, and is not. `None` when nothing can be known, as for an
-/// original that cannot be read or an MP4 while ffprobe is missing, so a
-/// decision an earlier pass recorded stays.
-fn shown_as_is(assets_dir: &Path, row: &StoredOriginal, media_type: Option<&str>) -> Option<bool> {
+/// Read `row`'s original, stored under `assets_dir`, for its type and
+/// whether every browser shows it as it is: the one reading both
+/// [`decide_shown_as_is`] and the pass make. An incomplete `.part` original
+/// is never read nor handed to ffprobe: its rows say its type, and it is
+/// not shown as it is.
+fn read_original(assets_dir: &Path, row: &StoredOriginal) -> ReadOriginal {
+    let declared = media_type(row);
     if is_part_path(&row.assets_path) {
-        return Some(false);
+        return ReadOriginal {
+            by_bytes: None,
+            media_type: declared,
+            decided: Some(false),
+        };
     }
-    media::browser_shows(&assets_dir.join(&row.assets_path), media_type)
+    let path = assets_dir.join(&row.assets_path);
+    let by_bytes = media::media_type_in_file(&path, declared.as_deref());
+    let media_type = by_bytes.map(str::to_string).or(declared);
+    ReadOriginal {
+        by_bytes,
+        decided: media::browser_shows(&path, media_type.as_deref()),
+        media_type,
+    }
 }
 
 /// Record `decided` on every one of `rows`, the one write of the decision.
@@ -276,8 +285,7 @@ pub(crate) async fn decide_shown_as_is(
                 account_id,
                 original_sha: &row.sha256,
             };
-            let media_type = original_media_type(type_by_bytes(&assets_dir, row), row);
-            let decided = shown_as_is(&assets_dir, row, media_type.as_deref());
+            let decided = read_original(&assets_dir, row).decided;
             record_decision_if_known(db, original, decided).await?;
         }
     }
@@ -692,9 +700,11 @@ impl<'a> AccountPass<'a> {
                 &version.describe_of(&row.sha256),
             )
         };
-        let by_bytes = type_by_bytes(&self.assets_dir, row);
-        let media_type = original_media_type(by_bytes, row);
-        let decided = shown_as_is(&self.assets_dir, row, media_type.as_deref());
+        let ReadOriginal {
+            by_bytes,
+            media_type,
+            decided,
+        } = read_original(&self.assets_dir, row);
         let on_disk = OnDisk {
             original_exists: source_path.is_file(),
             preview: state(Version::Preview),

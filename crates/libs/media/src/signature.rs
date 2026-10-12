@@ -49,12 +49,29 @@ fn riff(head: &[u8], form: &[u8; 4]) -> bool {
     head.starts_with(b"RIFF") && head.get(8..12) == Some(&form[..])
 }
 
-/// Whether `head` starts an MP3: an `ID3` tag, or an MPEG audio frame sync
-/// of layer I, II or III. An AAC ADTS frame, whose layer bits are `00`, is
-/// not an MP3.
+/// Whether `head` starts an MP3: an `ID3` tag, or a whole MPEG audio frame
+/// header of layer I, II or III. An AAC ADTS frame, whose layer bits are
+/// `00`, is not an MP3. Neither is a file that starts `FF FE` or `FF FF`,
+/// the byte order mark of UTF-16 text and a run of padding, which a frame
+/// sync alone would let through; and a header whose version, bitrate or
+/// sample rate is the reserved value is not one.
 fn is_mp3(head: &[u8]) -> bool {
-    head.starts_with(b"ID3")
-        || matches!(head, [0xFF, second, ..] if second & 0xE0 == 0xE0 && second & 0x06 != 0)
+    if head.starts_with(b"ID3") {
+        return true;
+    }
+    let [0xFF, second, third, ..] = *head else {
+        return false;
+    };
+    let sync = second & 0xE0 == 0xE0;
+    let version_known = (second >> 3) & 0b11 != 0b01;
+    let layer_known = (second >> 1) & 0b11 != 0;
+    let bitrate_known = third >> 4 != 0b1111;
+    let sample_rate_known = (third >> 2) & 0b11 != 0b11;
+    sync && !matches!(second, 0xFE | 0xFF)
+        && version_known
+        && layer_known
+        && bitrate_known
+        && sample_rate_known
 }
 
 /// Every signature known, each of a type in the extension table
@@ -98,7 +115,7 @@ const SIGNATURES: &[Signature] = &[
         starts_as: |head| {
             iso_brand(head).is_some_and(|b| b.starts_with(b"3gp") || b.starts_with(b"3g2"))
         },
-        types: &["video/3gpp"],
+        types: &["video/3gpp", "audio/3gpp"],
     },
     Signature {
         starts_as: |head| matches!(iso_brand(head), Some(b"M4A " | b"M4B " | b"M4P ")),
@@ -106,7 +123,13 @@ const SIGNATURES: &[Signature] = &[
     },
     Signature {
         starts_as: |head| iso_brand_in(head, GENERIC_ISO_BRANDS),
-        types: &["video/mp4", "audio/mp4", "video/quicktime", "video/3gpp"],
+        types: &[
+            "video/mp4",
+            "audio/mp4",
+            "video/quicktime",
+            "video/3gpp",
+            "audio/3gpp",
+        ],
     },
     Signature {
         // EBML: Matroska, and WebM, which is Matroska under another name.
@@ -152,14 +175,28 @@ const SIGNATURES: &[Signature] = &[
 /// `None` when they match no signature known here.
 ///
 /// Where a signature fits several types (an ISO file with a generic brand
-/// is an MP4 or an `.m4a`), `declared` is kept when it is one of them;
-/// otherwise the signature's usual type is the answer. `declared` is
-/// compared as it is, so a caller passes it lowercased and without
-/// parameters, as [`media_type_of`](crate::media_type_of) gives it.
+/// is an MP4 or an `.m4a`), `declared` is kept when it is one of them,
+/// read in its usual spelling (`audio/aac` is `audio/mp4`). A declared
+/// audio type the signature's types do not name still keeps the file audio:
+/// it is the signature's first audio type, so a voice note in a 3GP or an
+/// MP4 container declared `audio/x-m4a` is never made a video. Otherwise the
+/// signature's usual type is the answer. `declared` is lowercased and
+/// without parameters, as [`media_type_of`](crate::media_type_of) gives it.
 #[must_use]
 pub fn media_type_from_bytes(head: &[u8], declared: Option<&str>) -> Option<&'static str> {
     let signature = SIGNATURES.iter().find(|s| (s.starts_as)(head))?;
-    let kept = declared.and_then(|declared| signature.types.iter().find(|t| **t == declared));
+    let Some(declared) = declared else {
+        return Some(signature.types[0]);
+    };
+    let usual = crate::ext_for_mime(declared)
+        .and_then(crate::mime_for_ext)
+        .unwrap_or(declared);
+    let kept = signature.types.iter().find(|t| **t == usual).or_else(|| {
+        usual
+            .starts_with("audio/")
+            .then(|| signature.types.iter().find(|t| t.starts_with("audio/")))
+            .flatten()
+    });
     Some(kept.copied().unwrap_or(signature.types[0]))
 }
 
