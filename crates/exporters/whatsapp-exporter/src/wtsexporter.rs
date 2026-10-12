@@ -100,7 +100,8 @@ pub fn wtsexporter_path() -> Result<Option<PathBuf>> {
 }
 
 /// [`wtsexporter_path`] in `tools_dir`, counting only a file whose SHA-256
-/// is `pinned_sha256` where that is `Some`, so a test can name the pin.
+/// is `pinned_sha256` where that is `Some`. The desktop app's status passes
+/// the pin its download uses, and a test passes a pin of its own.
 ///
 /// # Errors
 ///

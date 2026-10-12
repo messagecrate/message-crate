@@ -34,9 +34,9 @@
 //!   names the pinned release and its stamp is the one recorded, so ffmpeg
 //!   and ffprobe are not read again at start-up. wtsexporter is read once
 //!   per start, because its lookup counts it only by its SHA-256 (#2692).
-//!   One that does not run is not downloaded
-//!   again, because the download would be the same file: Settings says it
-//!   doesn't run until a newer pin or another file changes that.
+//!   One that does not run is not downloaded again, because the download
+//!   would be the same file: Settings says it doesn't run until a newer pin
+//!   or another file changes that.
 //! - **A pinned file with no entry is adopted.** A file with no entry, or
 //!   whose stamp changed, whose SHA-256 is the pinned program's gets an
 //!   entry and stays. The pinned program's SHA-256 is carried beside the
@@ -376,6 +376,7 @@ fn failure_reason(pin: &Pinned, dir: &Path, err: &DownloadError) -> String {
         err.to_string()
     }
 }
+
 /// The advice that ends the text of a program in the Tools Directory that
 /// does not run: ffmpeg and ffprobe are found on `PATH` too. wtsexporter
 /// has none here, because the run's error and Settings add its
