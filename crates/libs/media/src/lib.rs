@@ -30,9 +30,9 @@ pub use mime::{
 };
 pub use probe::MediaProbe;
 pub use process::{
-    HevcFallback, MediaReport, TranscodeOutcome, classify, collect_media_files, derivative_name,
-    derivative_name_for_missing, done_line, format_bytes, kind_of, process_attachment_files,
-    transcode_file, transcode_file_as,
+    HevcFallback, MediaReport, NotConverted, TranscodeOutcome, classify, collect_media_files,
+    derivative_name, derivative_name_for_missing, done_line, format_bytes, kind_of,
+    process_attachment_files, transcode_file, transcode_file_as, why_not_converted,
 };
 pub use signature::{SIGNATURE_LEN, media_type_from_bytes, media_type_in_file};
 pub use tools::{
