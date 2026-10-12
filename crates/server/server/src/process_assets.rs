@@ -1075,8 +1075,9 @@ struct MissingOriginal;
 
 /// Why a version was not made, from `err`, the failure of making it, as the
 /// `/v1` Attachment answers it: what ffmpeg said about the file, with each
-/// path under one of `dirs` made relative to it, or a phrase of the server's
-/// when ffmpeg did not read the file. Nothing else of `err` is kept: its
+/// path under one of `dirs` made relative to it, that ffmpeg ran too long
+/// and was stopped, or a phrase of the server's when ffmpeg did not read
+/// the file. Nothing else of `err` is kept: its
 /// context names the original by its full path, and a missing ffmpeg's
 /// error names every directory the server looked in. The `dirs` are the
 /// account's originals directory and the pass's work directory, both under
@@ -1093,6 +1094,9 @@ fn not_made_reason(err: &anyhow::Error, dirs: &[&Path]) -> String {
             return "ffmpeg could not read the file and said nothing about it".to_string();
         }
         return said;
+    }
+    if let Some(too_long) = err.downcast_ref::<media::RanTooLong>() {
+        return too_long.to_string();
     }
     if err.downcast_ref::<MissingOriginal>().is_some() {
         return "the original file is missing".to_string();

@@ -2241,3 +2241,17 @@ fn the_failures_name_each_count_and_nothing_at_zero() {
         )
     );
 }
+
+/// An ffmpeg killed because it ran too long gives that as the reason, and
+/// nothing of the error's context, which names the original's full path
+/// (#2059).
+#[test]
+fn an_ffmpeg_that_ran_too_long_is_the_reason_no_version_was_made() {
+    let err = media::testutil::ffmpeg_ran_too_long(std::time::Duration::from_secs(10 * 60))
+        .context("preview of /srv/data/accounts/1/assets/clip.mov");
+
+    assert_eq!(
+        not_made_reason(&err, &[]),
+        "ffmpeg did not finish within 10 minutes, so it was stopped"
+    );
+}
