@@ -528,7 +528,7 @@ fn json_refuses_a_version_3_file_by_name() {
     assert_eq!(
         refusal.to_string(),
         format!(
-            "This file is schema version 3; Message Crate reads version {}",
+            "this file is schema version 3; Message Crate reads version {}",
             message_ir::SCHEMA_VERSION
         )
     );
@@ -580,7 +580,7 @@ fn jsonl_refuses_a_version_9_file_by_name() {
     assert_eq!(
         refusal.to_string(),
         format!(
-            "This file is schema version 9; Message Crate reads version {}",
+            "this file is schema version 9; Message Crate reads version {}",
             message_ir::SCHEMA_VERSION
         )
     );

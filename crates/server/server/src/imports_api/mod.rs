@@ -823,11 +823,13 @@ fn empty_as_none(value: Option<&str>) -> Option<&str> {
 
 /// The issues and notes a completion or a discard carries, as the database
 /// records them. Refuses the request naming every rule [`import_issue_inputs`]
-/// and [`note_rows`] find broken, in both lists. Checked before a connection
-/// is opened, so a refused request writes nothing.
+/// and [`note_rows`] find broken, in both lists, after `errors`, the rules
+/// the rest of the body broke. Checked before a connection is opened, so a
+/// refused request writes nothing.
 fn issues_and_notes(
     issues: &[ImportIssueRequest],
     notes: &[ImportNoteRequest],
+    mut errors: Vec<String>,
 ) -> Result<
     (
         Vec<crate::db::imports::ImportIssueInput>,
@@ -835,7 +837,6 @@ fn issues_and_notes(
     ),
     ApiError,
 > {
-    let mut errors = Vec::new();
     let issues = import_issue_inputs(issues, &mut errors);
     let notes = note_rows(notes, &mut errors);
     ApiError::unless_broken(errors)?;
@@ -903,12 +904,13 @@ fn import_issue_inputs(
     inputs
 }
 
-fn validate_import_status(status: &str) -> Result<(), ApiError> {
+/// The sentence refusing `status`, or none when a completion takes it.
+fn import_status_refusal(status: &str) -> Option<String> {
     match status {
-        "completed" | "completed_with_issues" | "failed" => Ok(()),
-        other => Err(ApiError::validation(format!(
+        "completed" | "completed_with_issues" | "failed" => None,
+        other => Some(format!(
             "invalid import status '{other}'; expected 'completed', 'completed_with_issues', or 'failed'"
-        ))),
+        )),
     }
 }
 
@@ -947,14 +949,18 @@ fn optional_json_string(
 }
 
 /// [`optional_json_string`] for a value an Import Run stores as it is
-/// created, refused when over [`MAX_IMPORT_RUN_JSON_BYTES`].
+/// created. Adds to `errors` the sentence refusing it when it is over
+/// [`MAX_IMPORT_RUN_JSON_BYTES`].
 fn capped_json_string(
     value: Option<&serde_json::Value>,
     field: &str,
+    errors: &mut Vec<String>,
 ) -> Result<Option<String>, ApiError> {
     let json = optional_json_string(value, field)?;
-    if let Some(json) = &json {
-        capped_json(field, json, MAX_IMPORT_RUN_JSON_BYTES)?;
+    if let Some(json) = &json
+        && let Err(too_long) = capped_json(field, json, MAX_IMPORT_RUN_JSON_BYTES)
+    {
+        errors.push(too_long.to_string());
     }
     Ok(json)
 }
@@ -1404,22 +1410,24 @@ pub(crate) async fn create_import(
     ImportAccess(auth): ImportAccess,
     Json(body): Json<CreateImportRequest>,
 ) -> Result<Created<CreateImportResponse>, ApiError> {
+    // Every rule the body breaks, in the order of its fields, so one
+    // refusal names them all.
+    let mut errors = Vec::new();
     if body.source.trim().is_empty() {
-        // Blank answers as missing does: one validation failure.
-        return Err(ApiError::validation("source is required"));
+        // Blank answers as missing does.
+        errors.push("source is required".to_string());
+    } else if let Err(e) = validate_source_id(&body.source) {
+        errors.push(e.to_string());
     }
-    validate_source_id(&body.source).map_err(|e| ApiError::validation(e.to_string()))?;
-    let phone_country = body
-        .phone_country
-        .as_deref()
-        .map(|code| {
-            phone::country(code).ok_or_else(|| {
-                ApiError::validation(format!(
-                    "phone_country {code:?} is not a country GET /v1/phone-countries lists"
-                ))
-            })
-        })
-        .transpose()?;
+    let phone_country = body.phone_country.as_deref().and_then(|code| {
+        let country = phone::country(code);
+        if country.is_none() {
+            errors.push(format!(
+                "phone_country {code:?} is not a country GET /v1/phone-countries lists"
+            ));
+        }
+        country
+    });
     let tool = body
         .tool
         .as_deref()
@@ -1435,23 +1443,31 @@ pub(crate) async fn create_import(
         .as_deref()
         .map(|id| capped_text("device_id", id, MAX_DEVICE_ID_CHARS))
         .transpose();
-    let errors: Vec<String> = too_long_sentences([&tool, &run_dir, &device_id]).collect();
+    errors.extend(too_long_sentences([&tool, &run_dir, &device_id]));
+    let account = resolve_import_account(&auth);
+    let stage = body.stage.unwrap_or(crate::db::imports::ImportStage::Parse);
+    // Credentials never reach the row, whoever the client is.
+    let form = body.form.as_ref().map(strip_form_credentials);
+    let form_json = capped_json_string(form.as_ref(), "form", &mut errors)?;
+    let fingerprint_json = capped_json_string(
+        body.source_fingerprint.as_ref(),
+        "source_fingerprint",
+        &mut errors,
+    )?;
+    let identities_json = capped_json_string(
+        body.source_identities.as_ref(),
+        "source_identities",
+        &mut errors,
+    )?;
     let (Ok(tool), Ok(run_dir), Ok(device_id)) = (tool, run_dir, device_id) else {
         return Err(ApiError::ValidationFailed(errors));
     };
+    ApiError::unless_broken(errors)?;
     let (tool, run_dir, device_id) = (
         empty_as_none(tool),
         empty_as_none(run_dir),
         empty_as_none(device_id),
     );
-    let account = resolve_import_account(&auth);
-    let stage = body.stage.unwrap_or(crate::db::imports::ImportStage::Parse);
-    // Credentials never reach the row, whoever the client is.
-    let form = body.form.as_ref().map(strip_form_credentials);
-    let form_json = capped_json_string(form.as_ref(), "form")?;
-    let fingerprint_json =
-        capped_json_string(body.source_fingerprint.as_ref(), "source_fingerprint")?;
-    let identities_json = capped_json_string(body.source_identities.as_ref(), "source_identities")?;
 
     let mut conn = state.db.acquire().await?;
     let args = crate::db::imports::StartImportArgs {
@@ -1508,8 +1524,9 @@ pub(crate) async fn complete_import(
     Json(body): Json<CompleteImportRequest>,
 ) -> Result<Json<ImportRun>, ApiError> {
     let account = resolve_import_account(&auth);
-    let (issues, notes) = issues_and_notes(&body.issues, &body.notes)?;
-    validate_import_status(&body.status)?;
+    // A status it does not take is named with every issue and note refused.
+    let status_errors = import_status_refusal(&body.status).into_iter().collect();
+    let (issues, notes) = issues_and_notes(&body.issues, &body.notes, status_errors)?;
     let summary_json =
         match body.summary {
             Some(summary) => Some(serde_json::to_string(&summary).map_err(|e| {
@@ -1832,7 +1849,7 @@ pub(crate) async fn discard_import(
     Json(body): Json<DiscardImportRequest>,
 ) -> Result<Json<ImportRun>, ApiError> {
     let account = resolve_import_account(&auth);
-    let (issues, notes) = issues_and_notes(&body.issues, &body.notes)?;
+    let (issues, notes) = issues_and_notes(&body.issues, &body.notes, Vec::new())?;
     let now = chrono::Utc::now();
     let mut conn = state.db.acquire().await?;
     crate::db::imports::discard_import(&mut conn, account, import_id, &issues, &notes, now).await?;

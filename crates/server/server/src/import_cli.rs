@@ -531,7 +531,7 @@ mod tests {
                 assert_eq!(refused_line, line);
                 assert_eq!(
                     printed,
-                    format!("{}: Line {line} of the file: {detail}.", path.display())
+                    format!("{}: line {line} of the file: {detail}", path.display())
                 );
                 detail
             }

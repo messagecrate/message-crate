@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { apiErrorMessage, errorText, rejectionMessage } from "./apiErrorMessage";
+import { apiErrorMessage, errorText, rejectionMessage, searchErrorLine } from "./apiErrorMessage";
 
 describe("apiErrorMessage", () => {
   it("gives the message of an Error", () => {
@@ -35,5 +35,28 @@ describe("rejectionMessage", () => {
 describe("errorText", () => {
   it("gives the String form of an Error whose message is empty", () => {
     expect(errorText(new Error(""))).toBe("Error");
+  });
+});
+
+describe("searchErrorLine", () => {
+  it("starts a refusal that is not about one word with a capital", () => {
+    expect(searchErrorLine(new Error("the search has too many parts"), "Fallback.")).toBe(
+      "The search has too many parts",
+    );
+  });
+
+  it("keeps a refusal that starts with a search word as the word is typed", () => {
+    expect(
+      searchErrorLine(new Error("from: is not a Contacts word; it works on Messages"), "Fallback."),
+    ).toBe("from: is not a Contacts word; it works on Messages");
+    expect(searchErrorLine(new Error("first-message: needs a value"), "Fallback.")).toBe(
+      "first-message: needs a value",
+    );
+  });
+
+  it("gives the fallback for anything that is not an Error", () => {
+    expect(searchErrorLine(null, "Could not load conversations.")).toBe(
+      "Could not load conversations.",
+    );
   });
 });

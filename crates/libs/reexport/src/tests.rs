@@ -1179,7 +1179,7 @@ fn a_directory_of_version_3_files_is_refused_by_name() {
         let message = format!("{error:#}");
         assert!(
             message.contains(&format!(
-                "This file is schema version 3; Message Crate reads version {}",
+                "this file is schema version 3; Message Crate reads version {}",
                 message_ir::SCHEMA_VERSION
             )),
             "{message}"
@@ -1211,7 +1211,7 @@ fn a_version_3_file_among_current_files_stops_the_run_and_writes_nothing() {
     let message = format!("{error:#}");
     assert!(
         message.contains(&format!(
-            "This file is schema version 3; Message Crate reads version {}",
+            "this file is schema version 3; Message Crate reads version {}",
             message_ir::SCHEMA_VERSION
         )),
         "{message}"

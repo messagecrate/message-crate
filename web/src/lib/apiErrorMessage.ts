@@ -47,3 +47,15 @@ export function sentenceCase(text: string): string {
 export function errorLine(err: unknown): string {
   return sentenceCase(errorText(err));
 }
+
+/**
+ * A failure on a screen that runs a search, as a line of its own. A search
+ * refusal that is about one word starts with that word as it is typed
+ * (`from: is not a Contacts word; it works on Messages`), and a capital would
+ * change the word, so it is shown as it is. Any other sentence starts with a
+ * capital, as `errorLine` gives it.
+ */
+export function searchErrorLine(err: unknown, fallback: string): string {
+  const text = apiErrorMessage(err, fallback);
+  return /^[a-z][a-z-]*:/.test(text) ? text : sentenceCase(text);
+}

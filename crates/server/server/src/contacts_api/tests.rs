@@ -3611,7 +3611,7 @@ async fn a_long_comma_list_is_refused_as_too_many_parts() {
     let problem = expect_problem_response(response, ProblemType::SearchQueryInvalid).await;
     assert_eq!(
         problem.detail.as_deref(),
-        Some("The search has too many parts."),
+        Some("the search has too many parts"),
         "{problem:?}"
     );
 }
