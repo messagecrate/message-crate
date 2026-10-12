@@ -64,7 +64,7 @@ A directory that holds more than one is refused with `unsupported input: mixed f
 A directory that holds none is refused with `unsupported input: no Message Crate IR export found`.
 A directory that holds more than one Android XML file is refused, naming each, because a conversion reads one backup.
 
-A `.json` or `.jsonl` export of another schema version, such as an export written before version 10, is refused with "This file is schema version 9; Message Crate reads version 10" and the file's name.
+A `.json` or `.jsonl` export of another schema version, such as an export written before version 10, is refused with "this file is schema version 9; Message Crate reads version 10" and the file's name.
 Nothing is upgraded: export the conversations again with the current app.
 Convert reads every file before it writes, so a refused file stops the whole run and the output directory is left as it was.
 

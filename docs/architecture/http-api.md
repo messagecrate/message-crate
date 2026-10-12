@@ -497,6 +497,10 @@ on its screen, because it may show the sentence alone or joined with others.
 The web app joins a validation failure's `errors` with `; ` into one line, and
 a screen that shows a sentence on a line of its own capitalises its first
 letter with `errorLine` or `sentenceCase` (`web/src/lib/apiErrorMessage.ts`).
+A screen that runs a search uses `searchErrorLine` there instead: a
+`search-query-invalid` refusal about one word starts with that word, as
+`from: is not a Contacts word; it works on Messages`, and a capital would
+change the word, so that sentence is shown as it is.
 For a `5xx`, the web app ends the sentence with the problem's `request_id`, as
 `internal server error (request 4f3c…)` (`problemFromBody` in
 `web/src/lib/api.ts`). Why: a `5xx` names no cause to the client, so the id is
@@ -1253,10 +1257,14 @@ No other endings: no `Body`, `Payload`, `Input`, `Patch`, `Item`, `Info`,
 `Message` next to `MessageResponse` would leave a reader asking whether they
 are one thing or two.
 
-A wire type whose Rust name would clash with a shared crate's type takes the
-`Api` prefix in Rust and keeps its wire name through `#[schema(as = …)]`:
+A wire type whose Rust name would clash with a shared crate's type, or with
+the `db/` struct it carries whole, takes the `Api` prefix in Rust and keeps
+its wire name through `#[schema(as = …)]`:
 `ApiIdentityService` in `db/handles.rs` is `IdentityService` on the wire,
-beside the conversation file's `message_ir::IdentityService`. Why: two types
+beside the conversation file's `message_ir::IdentityService`, and
+`ApiServerSettings` in `server_api.rs` is `ServerSettings` on the wire,
+carrying `db/server_settings.rs`'s `ServerSettings` and the database's
+journal. Why: two types
 under one bare name mean one or the other depending on a file's imports, and
 those two read the same word differently.
 

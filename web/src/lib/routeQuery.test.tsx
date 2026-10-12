@@ -9,11 +9,10 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { deferred } from "../test/deferred";
-import { advanceTimersAndSettle } from "../test/fakeTimers";
+import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { freshEntries, seedEntries } from "../test/staleEntries";
 import {
   ApiError,
@@ -43,10 +42,15 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 beforeEach(() => {
+  startFakeClock();
   account.current = 7;
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
   });
+});
+
+afterEach(() => {
+  stopFakeClock();
 });
 
 describe("useRouteQuery", () => {
@@ -54,7 +58,8 @@ describe("useRouteQuery", () => {
     const { result } = renderHook(() => useRouteQuery(["contact-groups"], async () => ["Family"]), {
       wrapper,
     });
-    await waitFor(() => expect(result.current.data).toEqual(["Family"]));
+    await settle();
+    expect(result.current.data).toEqual(["Family"]);
     expect(client.getQueryData(["server", 7, "contact-groups"])).toEqual(["Family"]);
   });
 
@@ -75,7 +80,8 @@ describe("useRouteQuery", () => {
 
     const fetchGroups = vi.fn(async () => ["Family"]);
     const first = renderHook(() => useRouteQuery(["contact-groups"], fetchGroups), { wrapper });
-    await waitFor(() => expect(first.result.current.data).toEqual(["Family"]));
+    await settle();
+    expect(first.result.current.data).toEqual(["Family"]);
     first.unmount();
 
     // A different account asks for the same thing.
@@ -83,7 +89,8 @@ describe("useRouteQuery", () => {
     fetchGroups.mockResolvedValue(["Work"]);
     const second = renderHook(() => useRouteQuery(["contact-groups"], fetchGroups), { wrapper });
 
-    await waitFor(() => expect(second.result.current.data).toEqual(["Work"]));
+    await settle();
+    expect(second.result.current.data).toEqual(["Work"]);
     expect(second.result.current.data).not.toEqual(["Family"]);
     expect(fetchGroups).toHaveBeenCalledTimes(2);
   });
@@ -96,7 +103,8 @@ describe("useRouteQuery", () => {
         }),
       { wrapper },
     );
-    await waitFor(() => expect(result.current.error?.message).toBe("nope"));
+    await settle();
+    expect(result.current.error?.message).toBe("nope");
     expect(result.current.data).toBeUndefined();
   });
 });
@@ -116,7 +124,8 @@ describe("createQueryClient", () => {
       () => useRouteQuery(["contact-groups"], fetchGroups, { retryDelay: 0 }),
       { wrapper },
     );
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await settle();
+    expect(result.current.isError).toBe(true);
     return fetchGroups.mock.calls.length;
   }
 
@@ -155,39 +164,26 @@ describe("createQueryClient", () => {
   }
 
   describe("with a database too busy to answer", () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-    });
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
     it("waits the seconds the server named before it asks again, once", async () => {
       client = createQueryClient();
-      const askedAgain = deferred();
       const fetchGroups = vi
         .fn<() => Promise<string[]>>()
         .mockRejectedValueOnce(databaseBusy(5))
-        .mockImplementationOnce(async () => {
-          askedAgain.resolve();
-          return ["Family"];
-        });
+        .mockResolvedValueOnce(["Family"]);
       const { result } = renderHook(() => useRouteQuery(["contact-groups"], fetchGroups), {
         wrapper,
       });
 
-      await advanceTimersAndSettle(0);
+      await settle();
       expect(fetchGroups).toHaveBeenCalledTimes(1);
 
       await advanceTimersAndSettle(4_999);
       expect(fetchGroups).toHaveBeenCalledTimes(1);
 
+      // The retry's answer lands with the move that starts it: startFakeClock
+      // has TanStack Query tell the hook in a microtask, not a zero-delay timer.
       await advanceTimersAndSettle(1);
-      await act(() => askedAgain.promise);
       expect(fetchGroups).toHaveBeenCalledTimes(2);
-      // TanStack Query tells the screen on a zero-delay timer, which the fake
-      // clock sets a millisecond out when it is set while timers are running.
-      await advanceTimersAndSettle(1);
       expect(result.current.data).toEqual(["Family"]);
     });
 
@@ -228,12 +224,14 @@ describe("useRoutePagedList", () => {
       { wrapper },
     );
 
-    await waitFor(() => expect(ids(result.current.items)).toEqual([0, 1]));
+    await settle();
+    expect(ids(result.current.items)).toEqual([0, 1]);
     expect(result.current.total).toBe(5);
     expect(result.current.hasMore).toBe(true);
 
     act(() => result.current.loadMore());
-    await waitFor(() => expect(ids(result.current.items)).toEqual([0, 1, 2, 3]));
+    await settle();
+    expect(ids(result.current.items)).toEqual([0, 1, 2, 3]);
   });
 
   it("has no next page once the loaded rows cover the total", async () => {
@@ -242,7 +240,8 @@ describe("useRoutePagedList", () => {
       () => useRoutePagedList(["rows"], fetchPage, { firstPageSize: 2, fillPageSize: 2 }),
       { wrapper },
     );
-    await waitFor(() => expect(ids(result.current.items)).toEqual([0, 1]));
+    await settle();
+    expect(ids(result.current.items)).toEqual([0, 1]);
     expect(result.current.hasMore).toBe(false);
   });
 
@@ -255,9 +254,11 @@ describe("useRoutePagedList", () => {
         useRoutePagedList(["rows"], fetchPage, { firstPageSize: 2, fillPageSize: 2, maxOffset: 3 }),
       { wrapper },
     );
-    await waitFor(() => expect(ids(result.current.items)).toEqual([0, 1]));
+    await settle();
+    expect(ids(result.current.items)).toEqual([0, 1]);
     act(() => result.current.loadMore());
-    await waitFor(() => expect(ids(result.current.items)).toEqual([0, 1, 2, 3]));
+    await settle();
+    expect(ids(result.current.items)).toEqual([0, 1, 2, 3]);
     expect(result.current.total).toBe(100);
     expect(result.current.hasMore).toBe(false);
     expect(fetchPage).toHaveBeenCalledTimes(2);
@@ -269,9 +270,11 @@ describe("useRoutePagedList", () => {
       () => useRoutePagedList(["rows"], fetchPage, { firstPageSize: 3, fillPageSize: 7 }),
       { wrapper },
     );
-    await waitFor(() => expect(result.current.items).toHaveLength(3));
+    await settle();
+    expect(result.current.items).toHaveLength(3);
     act(() => result.current.loadMore());
-    await waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(2));
+    await settle();
+    expect(fetchPage).toHaveBeenCalledTimes(2);
 
     expect(fetchPage.mock.calls[0]?.[0]).toMatchObject({ limit: 3, offset: 0 });
     expect(fetchPage.mock.calls[1]?.[0]).toMatchObject({ limit: 7, offset: 3 });
@@ -294,16 +297,19 @@ describe("useRoutePagedList", () => {
     );
 
     expect(result.current.loading).toBe(true);
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await settle();
+    expect(result.current.loading).toBe(false);
 
     act(() => result.current.loadMore());
     // A later page is loading, and the rows already on screen stay put.
-    await waitFor(() => expect(result.current.filling).toBe(true));
+    await settle();
+    expect(result.current.filling).toBe(true);
     expect(result.current.loading).toBe(false);
     expect(ids(result.current.items)).toEqual([0, 1]);
 
     act(() => release?.());
-    await waitFor(() => expect(result.current.filling).toBe(false));
+    await settle();
+    expect(result.current.filling).toBe(false);
   });
 
   it("starts over when the key changes, rather than appending to the old list", async () => {
@@ -313,12 +319,15 @@ describe("useRoutePagedList", () => {
         useRoutePagedList(["rows", q], fetchPage, { firstPageSize: 2, fillPageSize: 2 }),
       { wrapper, initialProps: { q: "first" } },
     );
-    await waitFor(() => expect(ids(result.current.items)).toEqual([0, 1]));
+    await settle();
+    expect(ids(result.current.items)).toEqual([0, 1]);
     act(() => result.current.loadMore());
-    await waitFor(() => expect(ids(result.current.items)).toEqual([0, 1, 2, 3]));
+    await settle();
+    expect(ids(result.current.items)).toEqual([0, 1, 2, 3]);
 
     rerender({ q: "second" });
-    await waitFor(() => expect(ids(result.current.items)).toEqual([0, 1]));
+    await settle();
+    expect(ids(result.current.items)).toEqual([0, 1]);
   });
 
   it("does not ask for another page while one is already loading", async () => {
@@ -335,16 +344,19 @@ describe("useRoutePagedList", () => {
       () => useRoutePagedList(["rows"], fetchPage, { firstPageSize: 2, fillPageSize: 2 }),
       { wrapper },
     );
-    await waitFor(() => expect(ids(result.current.items)).toEqual([0, 1]));
+    await settle();
+    expect(ids(result.current.items)).toEqual([0, 1]);
 
     act(() => result.current.loadMore());
-    await waitFor(() => expect(result.current.filling).toBe(true));
+    await settle();
+    expect(result.current.filling).toBe(true);
     act(() => result.current.loadMore());
     act(() => result.current.loadMore());
 
     expect(fetchPage).toHaveBeenCalledTimes(2);
     act(() => release?.());
-    await waitFor(() => expect(result.current.filling).toBe(false));
+    await settle();
+    expect(result.current.filling).toBe(false);
   });
 
   it("shows a row once when the next page repeats it", async () => {
@@ -358,11 +370,13 @@ describe("useRoutePagedList", () => {
       () => useRoutePagedList(["rows"], fetchPage, { firstPageSize: 2, fillPageSize: 2 }),
       { wrapper },
     );
-    await waitFor(() => expect(ids(result.current.items)).toEqual([0, 1]));
+    await settle();
+    expect(ids(result.current.items)).toEqual([0, 1]);
 
     act(() => result.current.loadMore());
-    await waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(result.current.filling).toBe(false));
+    await settle();
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+    expect(result.current.filling).toBe(false);
     expect(ids(result.current.items)).toEqual([0, 1, 2]);
   });
 
@@ -376,14 +390,16 @@ describe("useRoutePagedList", () => {
       () => useRoutePagedList(["rows"], fetchPage, { firstPageSize: 2, fillPageSize: 2 }),
       { wrapper },
     );
-    await waitFor(() => expect(ids(result.current.items)).toEqual([0, 1]));
+    await settle();
+    expect(ids(result.current.items)).toEqual([0, 1]);
 
     total = 6;
     act(() => result.current.loadMore());
 
-    await waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(4));
+    await settle();
+    expect(fetchPage).toHaveBeenCalledTimes(4);
     expect(fetchPage.mock.calls.map(([args]) => args.offset)).toEqual([0, 2, 0, 2]);
-    await waitFor(() => expect(result.current.refreshing).toBe(false));
+    expect(result.current.refreshing).toBe(false);
     expect(ids(result.current.items)).toEqual([0, 1, 2, 3]);
     expect(result.current.total).toBe(6);
   });

@@ -9,9 +9,10 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { getAccountProfile, updateAccountProfile } from "./serverApi";
 import { useAccountProfile, useUpdateAccountProfile } from "./useAccountProfile";
 
@@ -39,10 +40,15 @@ function profile(name: string) {
 }
 
 beforeEach(() => {
+  startFakeClock();
   vi.clearAllMocks();
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
   });
+});
+
+afterEach(() => {
+  stopFakeClock();
 });
 
 describe("useUpdateAccountProfile", () => {
@@ -57,14 +63,16 @@ describe("useUpdateAccountProfile", () => {
       () => ({ profile: useAccountProfile(), update: useUpdateAccountProfile() }),
       { wrapper },
     );
-    await waitFor(() => expect(both.result.current.profile.profile?.preferred_name).toBe("Ada"));
+    await settle();
+    expect(both.result.current.profile.profile?.preferred_name).toBe("Ada");
 
-    await both.result.current.update.mutateAsync({ preferred_name: "Ada Lovelace" });
+    act(() => {
+      both.result.current.update.mutate({ preferred_name: "Ada Lovelace" });
+    });
+    await settle();
 
     expect(write).toHaveBeenCalledWith({ preferred_name: "Ada Lovelace" });
-    await waitFor(() =>
-      expect(both.result.current.profile.profile?.preferred_name).toBe("Ada Lovelace"),
-    );
+    expect(both.result.current.profile.profile?.preferred_name).toBe("Ada Lovelace");
   });
 
   it("leaves the profile alone when the server refuses", async () => {
@@ -75,7 +83,8 @@ describe("useUpdateAccountProfile", () => {
       () => ({ profile: useAccountProfile(), update: useUpdateAccountProfile() }),
       { wrapper },
     );
-    await waitFor(() => expect(both.result.current.profile.profile?.preferred_name).toBe("Ada"));
+    await settle();
+    expect(both.result.current.profile.profile?.preferred_name).toBe("Ada");
 
     await expect(
       both.result.current.update.mutateAsync({

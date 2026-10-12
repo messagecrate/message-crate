@@ -10,10 +10,11 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { deferred } from "../test/deferred";
+import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { freshEntries, seedEntries } from "../test/staleEntries";
 import {
   type ChipTarget,
@@ -98,16 +99,20 @@ function detailGroups(): string[] | undefined {
 }
 
 beforeEach(() => {
+  startFakeClock();
   client = new QueryClient({
     // Not 0: the chip targets below are patched but never observed by a
     // `useQuery` in this file, and with `gcTime: 0` the library's own
-    // garbage collector removes an unobserved entry on a real timer shortly
-    // after it is created — a race that can fire while `waitFor` is still
-    // polling for the optimistic chip, independent of anything the mutation
-    // does. A hook that does observe (rendered elsewhere) is unaffected by
-    // this either way.
+    // garbage collector removes an unobserved entry on a zero-delay timer,
+    // which the `settle()` before the test reads the optimistic chip runs.
+    // A hook that does observe (rendered elsewhere) is unaffected by this
+    // either way.
     defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: 0 } },
   });
+});
+
+afterEach(() => {
+  stopFakeClock();
 });
 
 describe("useNameCollection", () => {
@@ -118,7 +123,8 @@ describe("useNameCollection", () => {
       { id: 1, name: "Work" },
     ]);
     const { result } = renderHook(() => useNameCollection(groupsOver(routes)), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await settle();
+    expect(result.current.loading).toBe(false);
     expect(result.current.names).toEqual(["Family", "Work"]);
   });
 });
@@ -198,11 +204,13 @@ describe("useNameCollectionActions", () => {
     act(() => {
       write = result.current.create("Work");
     });
-    await waitFor(() => expect(result.current.pending).toBe(true));
+    await settle();
+    expect(result.current.pending).toBe(true);
 
     answer.resolve({ id: 3, name: "Work" });
-    await write;
-    await waitFor(() => expect(result.current.pending).toBe(false));
+    await settle();
+    expect(result.current.pending).toBe(false);
+    await expect(write).resolves.toBe("Work");
   });
 
   it("reports the failure a write ended in", async () => {
@@ -210,7 +218,8 @@ describe("useNameCollectionActions", () => {
     routes.create.mockRejectedValue(new Error("server said no"));
     const { result } = renderHook(() => useNameCollectionActions(groupsOver(routes)), { wrapper });
     await expect(result.current.create("Work")).rejects.toThrow("server said no");
-    await waitFor(() => expect(result.current.error?.message).toBe("server said no"));
+    await settle();
+    expect(result.current.error?.message).toBe("server said no");
   });
 
   it("clears an earlier failure once a later write succeeds", async () => {
@@ -221,10 +230,15 @@ describe("useNameCollectionActions", () => {
 
     const { result } = renderHook(() => useNameCollectionActions(groupsOver(routes)), { wrapper });
     await expect(result.current.create("Work")).rejects.toThrow("create failed");
-    await waitFor(() => expect(result.current.error?.message).toBe("create failed"));
+    await settle();
+    expect(result.current.error?.message).toBe("create failed");
 
+    // The rename starts later: the hook orders writes by when each started
+    // (`submittedAt`, a `Date.now()`), and the fake clock stands still.
+    await advanceTimersAndSettle(1);
     await expect(result.current.rename("Family", "Fam")).resolves.toBe("Fam");
-    await waitFor(() => expect(result.current.error).toBeNull());
+    await settle();
+    expect(result.current.error).toBeNull();
   });
 
   it("reports the newer of two failures, not the first one to happen", async () => {
@@ -235,10 +249,14 @@ describe("useNameCollectionActions", () => {
 
     const { result } = renderHook(() => useNameCollectionActions(groupsOver(routes)), { wrapper });
     await expect(result.current.create("Work")).rejects.toThrow("create failed");
-    await waitFor(() => expect(result.current.error?.message).toBe("create failed"));
+    await settle();
+    expect(result.current.error?.message).toBe("create failed");
 
+    // The rename starts later, as in the test before.
+    await advanceTimersAndSettle(1);
     await expect(result.current.rename("Family", "Fam")).rejects.toThrow("rename failed");
-    await waitFor(() => expect(result.current.error?.message).toBe("rename failed"));
+    await settle();
+    expect(result.current.error?.message).toBe("rename failed");
   });
 });
 
@@ -256,7 +274,8 @@ describe("useSetNamedSetMembers", () => {
       write = result.current.mutateAsync({ name: "Family", patch: { add: [1] } });
     });
 
-    await waitFor(() => expect(pageGroups("1")).toEqual(["Family"]));
+    await settle();
+    expect(pageGroups("1")).toEqual(["Family"]);
     expect(detailGroups()).toEqual(["Family"]);
     expect(pageGroups("2")).toEqual(["Work"]);
 

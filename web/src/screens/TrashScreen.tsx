@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import Button from "../components/Button";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ContactLabel from "../components/ContactLabel";
-import { apiErrorMessage } from "../lib/apiErrorMessage";
+import { apiErrorMessage, searchErrorLine } from "../lib/apiErrorMessage";
 import { contactLabelText } from "../lib/contactLabel";
 import { isNearEnd } from "../lib/listPaging";
 import { countOf } from "../lib/plural";
@@ -294,7 +294,7 @@ export default function TrashScreen() {
           <section className="mb-8">
             <h3 className={sectionHeadingClass}>Conversations</h3>
             {error && (
-              <div className={errorBoxClass}>{apiErrorMessage(error, "Could not load Trash.")}</div>
+              <div className={errorBoxClass}>{searchErrorLine(error, "Could not load Trash.")}</div>
             )}
             {selectedId !== null ? (
               selectedLoading ? (
@@ -344,7 +344,7 @@ export default function TrashScreen() {
             <h3 className={sectionHeadingClass}>Contacts</h3>
             {contactsError && (
               <div className={errorBoxClass}>
-                {apiErrorMessage(contactsError, "Could not load trashed contacts.")}
+                {searchErrorLine(contactsError, "Could not load trashed contacts.")}
               </div>
             )}
             {restoreContact.error && (

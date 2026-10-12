@@ -170,7 +170,7 @@ fn a_path_that_leaves_the_export_directory_is_refused_whether_or_not_its_fingerp
         assert_eq!(
             err.to_string(),
             format!(
-                "Line 2 of the file: {}: ../escape.txt.",
+                "line 2 of the file: {}: ../escape.txt",
                 message_ir::UNSAFE_ATTACHMENT_PATH
             )
         );
@@ -477,7 +477,7 @@ async fn a_file_with_messages_and_no_header_is_refused() {
         let result = import_one(&mut conn, name, &incoming("g1", "+15555550100")).await;
         assert_eq!(
             refusal(result),
-            "Line 1 of the file: a message appears before the conversation header.",
+            "line 1 of the file: a message appears before the conversation header",
             "{name}"
         );
     }
@@ -490,7 +490,7 @@ async fn a_file_with_neither_header_nor_messages_is_refused() {
     let result = import_one(&mut conn, "+15555550100.jsonl", "\n").await;
     assert_eq!(
         refusal(result),
-        "Line 1 of the file: the file has no conversation header."
+        "line 1 of the file: the file has no conversation header"
     );
 }
 

@@ -9,9 +9,10 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { freshEntries, seedEntries } from "../test/staleEntries";
 import { useContactDetail, useUpdateContact } from "./contactDetail";
 import { keys } from "./queryKeys";
@@ -49,10 +50,15 @@ function contact(name: string) {
 }
 
 beforeEach(() => {
+  startFakeClock();
   vi.clearAllMocks();
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
   });
+});
+
+afterEach(() => {
+  stopFakeClock();
 });
 
 describe("useUpdateContact", () => {
@@ -66,16 +72,17 @@ describe("useUpdateContact", () => {
     const both = renderHook(() => ({ detail: useContactDetail("7"), update: useUpdateContact() }), {
       wrapper,
     });
-    await waitFor(() => expect(both.result.current.detail.detail?.name).toBe("Ada"));
+    await settle();
+    expect(both.result.current.detail.detail?.name).toBe("Ada");
     expect(read).toHaveBeenCalledTimes(1);
 
-    await both.result.current.update.mutateAsync({
-      contactId: "7",
-      body: { name: "Ada Lovelace" },
+    act(() => {
+      both.result.current.update.mutate({ contactId: "7", body: { name: "Ada Lovelace" } });
     });
+    await settle();
 
     expect(write).toHaveBeenCalledWith("7", { name: "Ada Lovelace" });
-    await waitFor(() => expect(both.result.current.detail.detail?.name).toBe("Ada Lovelace"));
+    expect(both.result.current.detail.detail?.name).toBe("Ada Lovelace");
   });
 
   it("marks the contact list and the conversations stale, which show the contact's name", async () => {

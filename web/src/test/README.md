@@ -105,6 +105,27 @@ expect(screen.getByRole("button", { name: "Reset Demo Account" })).toBeEnabled()
 A screen that decides with `Date.now()` how long to keep polling reads the
 fake clock too, so moving the clock moves it.
 
+### Two things stamped with `Date.now()`
+
+The fake clock stands still between moves, so two things the code stamps with
+`Date.now()` get the same time unless the test moves the clock between them.
+No timer is waiting here. TanStack Query stamps each write with the time it
+started (`submittedAt`), and a hook that reports the newer of two writes'
+errors compares those stamps. The test moves the clock by 1 ms before the
+second write, which stands for the person starting it later. It reads the
+first error before the second write starts, so the last check shows the newer
+error replacing one already reported, not the only error there.
+
+```tsx
+await expect(result.current.create("Work")).rejects.toThrow("create failed");
+await settle();
+expect(result.current.error?.message).toBe("create failed");
+await advanceTimersAndSettle(1);
+await expect(result.current.rename("Family", "Fam")).rejects.toThrow("rename failed");
+await settle();
+expect(result.current.error?.message).toBe("rename failed");
+```
+
 ### A transition or other deferred render
 
 `startTransition`, `useDeferredValue`, a state update in an effect, and a

@@ -17,6 +17,7 @@ use tokio::sync::Semaphore;
 
 use crate::db::{account_profile, api_tokens, session_tokens};
 use crate::server::ApiError;
+use crate::text_caps::{MAX_USERNAME_CHARS, capped_text};
 
 /// Max password bytes accepted before hashing (creation, login, change).
 pub(crate) const MAX_PASSWORD_BYTES: usize = 1024;
@@ -249,31 +250,27 @@ pub(crate) fn normalize_username(raw: &str) -> String {
     raw.trim().to_string()
 }
 
-/// True for 1 to 128 characters of ASCII letters, digits, `_`, `-`, or `.`.
+/// The trimmed username, or the `validation-failed` every route that takes
+/// one answers when it is malformed: over [`MAX_USERNAME_CHARS`] characters
+/// in the wording of every length cap ([`capped_text`]), or blank or holding
+/// a character other than an ASCII letter, a digit, `_`, `-` or `.`.
 ///
 /// ASCII only, because the account lookup (`COLLATE NOCASE`) folds ASCII
 /// letters only: a letter from another script would make an account whose
 /// name looks like another's, such as `аdmin` with a Cyrillic `а` beside
 /// `admin`. A preferred name carries a person's name in any script.
-pub(crate) fn is_valid_username(s: &str) -> bool {
-    let s = s.trim();
-    if s.is_empty() || s.len() > 128 {
-        return false;
-    }
-    s.chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
-}
-
-/// The trimmed username, or the `validation-failed` every route that takes
-/// one answers when it is malformed.
 pub(crate) fn require_valid_username(raw: &str) -> Result<String, ApiError> {
-    let username = normalize_username(raw);
-    if !is_valid_username(&username) {
+    let username = capped_text("username", raw, MAX_USERNAME_CHARS)?;
+    if username.is_empty()
+        || !username
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+    {
         return Err(ApiError::validation(
-            "username must be 1–128 characters: letters A to Z, digits, _, - or .",
+            "username must be one or more letters A to Z, digits, _, - or .",
         ));
     }
-    Ok(username)
+    Ok(username.to_string())
 }
 
 /// Refuse a username another account already has, and the Demo Account's

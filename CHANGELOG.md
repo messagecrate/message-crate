@@ -387,6 +387,14 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-12: **Every name that is too long is refused in the same words.**
+  A Contact Group, Message Tag or Saved Search name over 80 characters, an
+  API Token label over 120 and a username over 128 now get the message
+  every other length limit gives, such as "name: must be at most 80
+  characters", in place of wordings of their own. A blank name or label is
+  refused as "name required" or "label required". An API Token label is
+  counted in characters, so a label in a script that takes several bytes a
+  letter is no longer refused short of 120 (#2665).
 - 2026-10-12: **The Demo Account's refusals read like every other error.**
   When the Demo Account refuses something, such as setting its password or
   deleting itself, the message is now one short sentence that names what
@@ -730,6 +738,16 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-12: **A refused Import Run names every problem at once.** When
+  the server refuses to start or finish an Import Run, it now lists every
+  problem it found, rather than only the first, so fixing one no longer
+  leads straight to the next (#2868).
+- 2026-10-12: **A refused import reads as one line.** The reason the server
+  gives for refusing part of an import, such as a message with no guid or a
+  file from another schema version, no longer starts with a capital or ends
+  with a period, so the line the app shows for the file reads as one
+  sentence. Convert words a file from another schema version the same way
+  (#2815).
 - 2026-10-12: **SMS Backup+ dates are read in the unit the app wrote.**
   SMS Backup+ records a text message's time in milliseconds and an MMS's in
   seconds, but the import guessed the unit from the size of the number and
@@ -1052,6 +1070,11 @@ carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-12: **A refused search is one sentence.** A search the lists
+  cannot run is now refused in one sentence, such as "from: is not a
+  Contacts word; it works on Messages", rather than two. The list starts it
+  with a capital, unless it starts with the search word you typed, which is
+  shown as you typed it (#2816).
 - 2026-10-11: **An attachment's type comes from its contents, not only
   from what the import called it.** A video an export called a plain file
   showed as a download and never got a thumbnail or a copy a browser can
