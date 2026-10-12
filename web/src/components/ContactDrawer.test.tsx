@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render as rtlRender, screen, within } from "@testing-library/react";
+import { cleanup, render as rtlRender, screen, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/api";
@@ -9,7 +9,7 @@ import type { ContactDetail } from "../lib/contactDetail";
 import { keys } from "../lib/queryKeys";
 import { routeQueryKey } from "../lib/routeQueryKey";
 import { focusRingClass } from "../lib/uiStyles";
-import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { advanceToNextFrame, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { inTimeZone } from "../test/timeZone";
 import { fill, setupUser } from "../test/user";
 import ContactDrawer from "./ContactDrawer";
@@ -875,17 +875,13 @@ describe("ContactDrawer", () => {
 
       // The frame the drawer scheduled when it found the column runs when the
       // fake clock moves to it.
-      act(() => {
-        vi.advanceTimersToNextFrame();
-      });
+      advanceToNextFrame();
 
       // A sideways scroll moves the column 200 px left without resizing it.
       right = 181;
       row.dispatchEvent(new Event("scroll"));
       expect(drawer.style.left).toContain("min(381px,");
-      act(() => {
-        vi.advanceTimersToNextFrame();
-      });
+      advanceToNextFrame();
       expect(drawer.style.left).toContain("min(181px,");
     } finally {
       row.remove();
@@ -905,20 +901,18 @@ describe("ContactDrawer", () => {
     column.getBoundingClientRect = () => ({ right: 412.4 }) as DOMRect;
     document.body.append(column);
 
-    // The page's MutationObserver reports the column in a microtask, and the
-    // drawer measures it on the frame after.
+    // The drawer's MutationObserver on the page reports the column in a
+    // microtask, and the drawer measures it on the frame after.
     await settle();
-    act(() => {
-      vi.advanceTimersToNextFrame();
-    });
+    expect(drawer.style.left).toContain("min(14rem,");
+    advanceToNextFrame();
     expect(drawer.style.left).toContain("min(412px,");
     expect(drawer.className).not.toMatch(/\bml-auto\b/);
 
     column.remove();
     await settle();
-    act(() => {
-      vi.advanceTimersToNextFrame();
-    });
+    expect(drawer.style.left).toContain("min(412px,");
+    advanceToNextFrame();
     expect(drawer.style.left).toContain("min(14rem,");
     expect(drawer.className).toMatch(/\bml-auto\b/);
   });

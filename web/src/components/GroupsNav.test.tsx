@@ -3,7 +3,7 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { advanceToNextFrame, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { mockedAuth, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
 import GroupsNav from "./GroupsNav";
@@ -122,9 +122,7 @@ describe("GroupsNav", () => {
     // React Aria puts focus back a frame after the menu unmounts, and the
     // frame comes when the fake clock moves to it.
     expect(document.activeElement).not.toBe(trigger);
-    act(() => {
-      vi.advanceTimersToNextFrame();
-    });
+    advanceToNextFrame();
     expect(document.activeElement).toBe(trigger);
   });
 });
