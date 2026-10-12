@@ -381,6 +381,25 @@ describe("apiClient request shape", () => {
     });
   });
 
+  it("says the server stopped answering when an answer's body stops arriving", async () => {
+    setBaseUrl("http://127.0.0.1:8080");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        blob: () => Promise.reject(new TypeError("network error")),
+      }),
+    );
+
+    const err = await apiClient.getBlob("/v1/assets/abc").catch((e: unknown) => e);
+
+    expect(err).toMatchObject({
+      status: 0,
+      message: "The server at http://127.0.0.1:8080 stopped answering.",
+    });
+  });
+
   it("names this page's own address when the server is on the same host", async () => {
     vi.stubGlobal("location", { origin: "https://crate.example.org" });
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Load failed")));

@@ -158,6 +158,7 @@ afterEach(() => {
   cleanup();
   desktop.on = false;
   broken.settings = false;
+  vi.restoreAllMocks();
   sets.groups = [];
   sets.groupsLoading = false;
   sets.tags = [];
@@ -295,8 +296,9 @@ describe("Each route under the app layout", () => {
 
 describe("AppLayout when a screen throws", () => {
   it("shows why in the screen's place, and the navigation panel still opens another screen", async () => {
-    // React reports the caught error on the console; the test reads the screen.
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    // React reports the caught error on the console. The test reads the
+    // screen instead, and `afterEach` restores the console.
+    vi.spyOn(console, "error").mockImplementation(() => {});
     broken.settings = true;
     const user = setupUser();
     renderLayout("/settings");
@@ -306,7 +308,6 @@ describe("AppLayout when a screen throws", () => {
     await user.click(screen.getByRole("button", { name: "Contacts" }));
     expect(screen.queryByRole("alert")).toBeNull();
     expect(await screen.findByTestId("contact-list")).toBeTruthy();
-    consoleError.mockRestore();
   });
 });
 

@@ -142,7 +142,8 @@ function parseProblem(text: string): Problem | null {
  * not the status code and not the envelope around it. A `5xx` hides its cause
  * from the client, so its sentence ends with the problem's request id, which
  * a person can quote to find the matching line in the server's log
- * (`docs/architecture/http-api.md`, "Failures"). Anything else (a
+ * (`docs/architecture/server-log.md`, "A failed request names the step that
+ * failed"). Anything else (a
  * proxy's HTML error page, an empty body) falls back to the raw text — clamped
  * to `RAW_BODY_FALLBACK_LIMIT` characters, since a reverse proxy or other
  * host can answer with a whole HTML page — then to a generic sentence.
@@ -220,8 +221,20 @@ export function requestTimeoutError(ms: number): ApiError {
  * means this page's own host, so that is the address named.
  */
 export function noAnswerError(): ApiError {
-  const address = baseUrl || location.origin;
-  return new ApiError(0, `The server at ${address} didn't answer.`);
+  return new ApiError(0, `The server at ${serverAddress()} didn't answer.`);
+}
+
+/**
+ * The error for a call whose answer started and then stopped arriving, such
+ * as a server that restarted partway through a long list or a download.
+ */
+function stoppedAnsweringError(): ApiError {
+  return new ApiError(0, `The server at ${serverAddress()} stopped answering.`);
+}
+
+/** The server's address as a person reads it: the base URL, or this page's own host. */
+function serverAddress(): string {
+  return baseUrl || location.origin;
 }
 
 /**
@@ -249,7 +262,8 @@ function callHeaders(contentType: string | null): Record<string, string> {
  * A call the limit ends rejects with `requestTimeoutError`. A call its
  * caller's signal ends rejects with that abort, as before, since a cancel is
  * not a failure to show. A request that reaches no server, which `fetch`
- * rejects with a `TypeError`, rejects with `noAnswerError`.
+ * rejects with a `TypeError`, rejects with `noAnswerError`, and an answer
+ * whose body stops arriving with `stoppedAnsweringError`.
  */
 async function exchange<T>(
   method: string,
@@ -273,7 +287,11 @@ async function exchange<T>(
       throw limit.signal.aborted ? e : noAnswerError();
     });
     if (untilHeaders) limit.stopClock();
-    return await read(res);
+    return await read(res).catch((e: unknown) => {
+      // A body that stops arriving rejects with the browser's `TypeError`
+      // too. A body that is not the JSON it claims to be is a `SyntaxError`.
+      throw !limit.signal.aborted && e instanceof TypeError ? stoppedAnsweringError() : e;
+    });
   } catch (e: unknown) {
     if (limit.timedOut()) throw requestTimeoutError(timeoutMs);
     throw e;

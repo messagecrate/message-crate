@@ -4,12 +4,12 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { Suspense } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { problemFromBody } from "../lib/api";
-import { reloadPage } from "../lib/pageReload";
+import { pageAnswers, reloadPage } from "../lib/pageReload";
 import { lazyScreen, ScreenLoadError } from "../lib/screenLoad";
 import { setupUser } from "../test/user";
 import ErrorBoundary from "./ErrorBoundary";
 
-vi.mock("../lib/pageReload", () => ({ reloadPage: vi.fn() }));
+vi.mock("../lib/pageReload", () => ({ reloadPage: vi.fn(), pageAnswers: vi.fn() }));
 
 /** A child that throws `error` while it renders. */
 function Throws({ error }: { error: unknown }): never {
@@ -18,6 +18,8 @@ function Throws({ error }: { error: unknown }): never {
 
 beforeEach(() => {
   sessionStorage.clear();
+  // The page this app came from answers, unless a test says otherwise.
+  vi.mocked(pageAnswers).mockResolvedValue(true);
   // React reports every error a boundary catches on the console; the test
   // asserts what the person sees instead.
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -84,7 +86,7 @@ describe("ErrorBoundary", () => {
     expect(screen.getByText("Contacts")).toBeInTheDocument();
   });
 
-  it("reloads the page once for a screen that didn't load", () => {
+  it("reloads the page once for a screen that didn't load", async () => {
     render(
       <ErrorBoundary scope="screen">
         <Throws
@@ -93,8 +95,34 @@ describe("ErrorBoundary", () => {
       </ErrorBoundary>,
     );
 
-    expect(reloadPage).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(reloadPage).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("keeps the app and says why when the page itself no longer answers", async () => {
+    vi.mocked(pageAnswers).mockResolvedValue(false);
+    render(
+      <ErrorBoundary scope="screen">
+        <Throws
+          error={new ScreenLoadError(new TypeError("Failed to fetch dynamically imported module"))}
+        />
+      </ErrorBoundary>,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("This screen didn't load");
+    expect(reloadPage).not.toHaveBeenCalled();
+  });
+
+  it("says which panel failed for a panel over a screen", () => {
+    render(
+      <ErrorBoundary scope="panel">
+        <Throws error={new Error("broken")} />
+      </ErrorBoundary>,
+    );
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("Something went wrong in this panel");
+    expect(alert).toHaveTextContent("Reload to try again.");
   });
 
   it("reloads for a lazy screen whose download fails, and again after one that arrives", async () => {
@@ -124,10 +152,10 @@ describe("ErrorBoundary", () => {
         <Throws error={new ScreenLoadError(new TypeError("Importing a module script failed."))} />
       </ErrorBoundary>,
     );
-    expect(reloadPage).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(reloadPage).toHaveBeenCalledTimes(2));
   });
 
-  it("says the screen didn't load when it still doesn't after the reload", () => {
+  it("says the screen didn't load when it still doesn't after the reload", async () => {
     const failed = new ScreenLoadError(
       new TypeError("Failed to fetch dynamically imported module"),
     );
@@ -136,6 +164,7 @@ describe("ErrorBoundary", () => {
         <Throws error={failed} />
       </ErrorBoundary>,
     );
+    await waitFor(() => expect(reloadPage).toHaveBeenCalledTimes(1));
     first.unmount();
     vi.mocked(reloadPage).mockClear();
 
@@ -145,8 +174,8 @@ describe("ErrorBoundary", () => {
       </ErrorBoundary>,
     );
 
+    const alert = await screen.findByRole("alert");
     expect(reloadPage).not.toHaveBeenCalled();
-    const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent("This screen didn't load");
     expect(alert).toHaveTextContent("Failed to fetch dynamically imported module");
   });
