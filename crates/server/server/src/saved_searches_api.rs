@@ -356,7 +356,7 @@ mod tests {
         )
         .await;
 
-        assert_eq!(sentence, "A parenthesis never closes.");
+        assert_eq!(sentence, "a parenthesis never closes");
         let read: serde_json::Value = get_json(&state, &location, &user.token).await;
         assert_eq!(read["query"], "group:Family");
     }

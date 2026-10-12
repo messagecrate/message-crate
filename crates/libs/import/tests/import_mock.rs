@@ -876,7 +876,7 @@ fn a_refused_line_of_a_batch_is_reported_as_the_line_of_its_staged_file() {
                 "type": "https://messagecrate.app/docs/developer/reference/errors/malformed-body",
                 "title": "Malformed body",
                 "status": 400,
-                "detail": "Could not read line 4 of the batch: the message is not valid: boom.",
+                "detail": "could not read line 4 of the batch: the message is not valid: boom",
                 "request_id": "3f2b1c0e-8d4a-4b6e-9f21-5c7d8e9a0b1c",
                 "line": 4
             }));
@@ -917,7 +917,7 @@ fn a_refused_line_of_a_batch_is_reported_as_the_line_of_its_staged_file() {
             result.file
         );
         assert!(
-            error.contains("Could not read line 4 of the batch"),
+            error.contains("could not read line 4 of the batch"),
             "the server's own sentence stays: {error}"
         );
     }

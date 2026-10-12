@@ -109,21 +109,21 @@ impl ImportFailure {
     fn sentence(&self, whole: &str) -> String {
         match self {
             Self::NotJson { line, detail } => {
-                format!("Could not read line {line} of {whole}: {detail}.")
+                format!("could not read line {line} of {whole}: {detail}")
             }
             Self::SchemaVersion { refusal, line } => {
-                format!("{refusal} (line {line} of {whole}).")
+                format!("{refusal} (line {line} of {whole})")
             }
-            Self::Invalid { line, detail } => format!("Line {line} of {whole}: {detail}."),
+            Self::Invalid { line, detail } => format!("line {line} of {whole}: {detail}"),
             Self::Empty => {
-                "The batch is empty: send at least one conversation header and its messages."
+                "the batch is empty: send at least one conversation header and its messages"
                     .to_string()
             }
             Self::UnsafeAttachmentPath { refusal, line } => {
-                format!("Line {line} of {whole}: {refusal}.")
+                format!("line {line} of {whole}: {refusal}")
             }
             Self::AttachmentSha256Invalid { path, stated, line } => format!(
-                "Line {line} of {whole}: the attachment {path} states the SHA-256 {stated}, which is not 64 hex digits."
+                "line {line} of {whole}: the attachment {path} states the SHA-256 {stated}, which is not 64 hex digits"
             ),
             Self::AttachmentMismatch {
                 path,
@@ -131,23 +131,23 @@ impl ImportFailure {
                 actual,
                 line,
             } => format!(
-                "Line {line} of {whole}: the bytes of the attachment {path} hash to {actual}, not to the SHA-256 {stated} the line states."
+                "line {line} of {whole}: the bytes of the attachment {path} hash to {actual}, not to the SHA-256 {stated} the line states"
             ),
             Self::MissingGuid { lines, total } => {
                 let named: Vec<String> = lines.iter().map(ToString::to_string).collect();
                 let rest = total.saturating_sub(lines.len());
                 let which = match (named.as_slice(), rest) {
-                    ([one], 0) => format!("The message on line {one} of {whole} has"),
+                    ([one], 0) => format!("the message on line {one} of {whole} has"),
                     ([init @ .., last], 0) => format!(
-                        "The messages on lines {} and {last} of {whole} have",
+                        "the messages on lines {} and {last} of {whole} have",
                         init.join(", ")
                     ),
                     (named, rest) => format!(
-                        "The messages on lines {} and {rest} more of {whole} have",
+                        "the messages on lines {} and {rest} more of {whole} have",
                         named.join(", ")
                     ),
                 };
-                format!("{which} no guid; every message needs one.")
+                format!("{which} no guid; every message needs one")
             }
         }
     }
@@ -222,7 +222,7 @@ mod tests {
         assert_eq!(
             f.to_string(),
             format!(
-                "This file is schema version 3; Message Crate reads version {} (line 1 of the file).",
+                "this file is schema version 3; Message Crate reads version {} (line 1 of the file)",
                 message_ir::SCHEMA_VERSION
             )
         );
@@ -237,7 +237,7 @@ mod tests {
         assert_eq!(f.line(), Some(3));
         assert_eq!(
             f.batch_sentence(),
-            "Could not read line 3 of the batch: boom."
+            "could not read line 3 of the batch: boom"
         );
     }
 
@@ -249,7 +249,7 @@ mod tests {
         };
         assert_eq!(
             f.to_string(),
-            "Could not read line 12 of the file: expected value at line 1 column 1."
+            "could not read line 12 of the file: expected value at line 1 column 1"
         );
     }
 
@@ -262,7 +262,7 @@ mod tests {
         assert_eq!(f.line(), Some(3));
         assert_eq!(
             f.to_string(),
-            "The message on line 3 of the file has no guid; every message needs one."
+            "the message on line 3 of the file has no guid; every message needs one"
         );
     }
 
@@ -275,7 +275,7 @@ mod tests {
         assert_eq!(f.line(), Some(2));
         assert_eq!(
             f.batch_sentence(),
-            "The messages on lines 2, 5 and 9 of the batch have no guid; every message needs one."
+            "the messages on lines 2, 5 and 9 of the batch have no guid; every message needs one"
         );
     }
 
@@ -287,7 +287,7 @@ mod tests {
         };
         assert_eq!(
             f.to_string(),
-            "The messages on lines 2, 3 and 40 more of the file have no guid; every message needs one."
+            "the messages on lines 2, 3 and 40 more of the file have no guid; every message needs one"
         );
     }
 
@@ -304,7 +304,7 @@ mod tests {
         });
         assert_eq!(
             format!("{err:#}"),
-            "export/+15555550101.jsonl: Line 2 of the file: boom."
+            "export/+15555550101.jsonl: line 2 of the file: boom"
         );
     }
 }

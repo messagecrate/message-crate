@@ -52,7 +52,7 @@ describe("ExportAddressBookButton", () => {
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
 
     expect((await screen.findByRole("alert")).textContent).toBe(
-      "the search has a word Contacts does not know",
+      "The search has a word Contacts does not know",
     );
     expect(saveMock).not.toHaveBeenCalled();
   });

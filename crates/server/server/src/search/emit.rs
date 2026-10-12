@@ -414,7 +414,7 @@ fn emit_one(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result
 
 /// A refusal naming `term`'s word, for a value shape the word does not
 /// accept. `what` is the tail of the sentence: `"needs text, a prefix, or
-/// none/any."`, `"needs a name or #id."`, and so on.
+/// none/any"`, `"needs a name or #id"`, and so on.
 fn bad_value(term: &FieldTerm, what: &str) -> QueryError {
     QueryError::new(
         QueryErrorKind::BadValue,
@@ -451,7 +451,7 @@ fn text_match(out: &mut Sql, column: &str, term: &FieldTerm, v: &Value) -> Resul
             out.push(&format!("NULLIF(trim({column}), '') IS NOT NULL"));
             Ok(())
         }
-        _ => Err(bad_value(term, "needs text, a prefix, or none/any.")),
+        _ => Err(bad_value(term, "needs text, a prefix, or none/any")),
     }
 }
 
@@ -549,7 +549,7 @@ fn emit_text_word(
                 out.push("))");
             }
             _ => {
-                result = Err(bad_value(term, "needs text, a prefix, or none/any."));
+                result = Err(bad_value(term, "needs text, a prefix, or none/any"));
             }
         },
         ("identity", _) => ctx.conversation(out, |o| match v {
@@ -581,7 +581,7 @@ fn emit_text_word(
                 o.push("))");
             }
             _ => {
-                result = Err(bad_value(term, "needs text, a prefix, or none/any."));
+                result = Err(bad_value(term, "needs text, a prefix, or none/any"));
             }
         }),
         ("filename", _) => ctx.message(out, |o| {
@@ -593,7 +593,7 @@ fn emit_text_word(
             result = Err(QueryError::new(
                 QueryErrorKind::BadValue,
                 term.span.clone(),
-                format!("{}: is not built yet.", term.spec.word),
+                format!("{}: is not built yet", term.spec.word),
             ));
         }
     }
@@ -638,7 +638,7 @@ fn person_matches(
             out.push("))");
             Ok(())
         }
-        _ => Err(bad_value(term, "needs a name, an identity, or #id.")),
+        _ => Err(bad_value(term, "needs a name, an identity, or #id")),
     }
 }
 
@@ -658,7 +658,7 @@ fn participant_matches(out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<(),
             like_contains(out, PARTICIPANT_NAME, t, prefix);
             Ok(())
         }
-        _ => Err(bad_value(term, "needs a name, an identity, or #id.")),
+        _ => Err(bad_value(term, "needs a name, an identity, or #id")),
     }
 }
 
@@ -860,7 +860,7 @@ impl NamedSet {
                 like_contains(out, "ns.name", t, true);
                 Ok(())
             }
-            _ => Err(bad_value(term, "needs a name or #id.")),
+            _ => Err(bad_value(term, "needs a name or #id")),
         };
         out.push(")");
         result
@@ -899,7 +899,7 @@ fn emit_people_word(
         "group" => emit_set_word(ctx, out, term, v, CONTACT_GROUPS),
         "tag" => emit_set_word(ctx, out, term, v, MESSAGE_TAGS),
         "import" => emit_import(ctx, out, term, v),
-        _ => Err(bad_value(term, "is not built yet.")),
+        _ => Err(bad_value(term, "is not built yet")),
     }
 }
 
@@ -954,7 +954,7 @@ fn emit_in(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<
             });
             Ok(())
         }
-        _ => Err(bad_value(term, "needs a name or #id.")),
+        _ => Err(bad_value(term, "needs a name or #id")),
     }
 }
 
@@ -1012,7 +1012,7 @@ fn emit_import(
     let run = match v {
         Value::Keyword("last") => None,
         Value::Id(id) => Some(*id),
-        _ => return Err(bad_value(term, "needs #id or last.")),
+        _ => return Err(bad_value(term, "needs #id or last")),
     };
     let on_messages = ctx.list == ListKind::Messages;
     let alias = if on_messages { "m" } else { "mi" };
@@ -1096,7 +1096,7 @@ fn emit_kind_word(
                 "direct" => IrConversationType::Individual,
                 "group" => IrConversationType::Group,
                 "orphaned" => IrConversationType::Orphaned,
-                _ => return Err(bad_value(term, "needs a value this word accepts.")),
+                _ => return Err(bad_value(term, "needs a value this word accepts")),
             }
             .as_str();
             ctx.conversation(out, |o| {
@@ -1187,7 +1187,7 @@ fn emit_kind_word(
             }
             Ok(())
         }
-        _ => Err(bad_value(term, "needs a value this word accepts.")),
+        _ => Err(bad_value(term, "needs a value this word accepts")),
     }
 }
 
@@ -1213,7 +1213,7 @@ fn emit_deletion_word(
             out.push(&format!("m.deletion IS NOT '{}'", mark.as_str()));
             Ok(())
         }
-        _ => Err(bad_value(term, "needs yes or no.")),
+        _ => Err(bad_value(term, "needs yes or no")),
     }
 }
 
@@ -1332,6 +1332,6 @@ fn emit_measure_word(
             );
             Ok(())
         }
-        _ => Err(bad_value(term, "needs a value this word accepts.")),
+        _ => Err(bad_value(term, "needs a value this word accepts")),
     }
 }

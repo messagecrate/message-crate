@@ -738,6 +738,16 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-12: **A refused Import Run names every problem at once.** When
+  the server refuses to start or finish an Import Run, it now lists every
+  problem it found, rather than only the first, so fixing one no longer
+  leads straight to the next (#2868).
+- 2026-10-12: **A refused import reads as one line.** The reason the server
+  gives for refusing part of an import, such as a message with no guid or a
+  file from another schema version, no longer starts with a capital or ends
+  with a period, so the line the app shows for the file reads as one
+  sentence. Convert words a file from another schema version the same way
+  (#2815).
 - 2026-10-12: **SMS Backup+ dates are read in the unit the app wrote.**
   SMS Backup+ records a text message's time in milliseconds and an MMS's in
   seconds, but the import guessed the unit from the size of the number and
@@ -1060,6 +1070,11 @@ carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-12: **A refused search is one sentence.** A search the lists
+  cannot run is now refused in one sentence, such as "from: is not a
+  Contacts word; it works on Messages", rather than two. The list starts it
+  with a capital, unless it starts with the search word you typed, which is
+  shown as you typed it (#2816).
 - 2026-10-11: **An attachment's type comes from its contents, not only
   from what the import called it.** A video an export called a plain file
   showed as a download and never got a thumbnail or a copy a browser can

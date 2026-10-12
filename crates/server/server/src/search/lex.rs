@@ -97,7 +97,7 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, QueryError> {
         return Err(QueryError::new(
             QueryErrorKind::TooLong,
             0..input.len(),
-            format!("The search is longer than {MAX_QUERY_BYTES} bytes."),
+            format!("the search is longer than {MAX_QUERY_BYTES} bytes"),
         ));
     }
     // A NUL byte separates words like a space. SQLite's FTS5 reads it as
@@ -209,7 +209,7 @@ impl Lexer<'_> {
             QueryError::new(
                 QueryErrorKind::Unbalanced,
                 quote..self.bytes.len(),
-                "A quote never closes.",
+                "a quote never closes",
             )
         })
     }
