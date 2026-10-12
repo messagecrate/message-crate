@@ -148,6 +148,16 @@ pub struct ServerConfig {
     /// Setting the owner changes in the app and has no key in this file.
     #[serde(default = "default_asset_part_size")]
     pub asset_part_size: usize,
+    /// Seconds an upload body (an import batch, an attachment, or a part of
+    /// one) may go with no byte arriving before the server stops reading it
+    /// and answers `upload-stalled`. Default 60. Must be greater than 0.
+    #[serde(default = "default_upload_stall_secs")]
+    pub upload_stall_secs: u64,
+    /// Seconds a whole upload body may take to arrive, from the start of the
+    /// read, before the server stops reading it and answers
+    /// `upload-stalled`. Default 300. Must be greater than 0.
+    #[serde(default = "default_upload_piece_secs")]
+    pub upload_piece_secs: u64,
     /// Cross-Origin Resource Sharing (CORS) origins allowed to call this API,
     /// on top of the packaged desktop app's own origins, which are always
     /// allowed. CORS is the browser rule that decides which other websites may
@@ -180,6 +190,8 @@ impl Default for ServerConfig {
         Self {
             bind: default_server_bind(),
             asset_part_size: default_asset_part_size(),
+            upload_stall_secs: default_upload_stall_secs(),
+            upload_piece_secs: default_upload_piece_secs(),
             cors_origins: Vec::new(),
             openapi_ui: default_openapi_ui(),
             static_dir: default_static_dir(),
@@ -201,6 +213,16 @@ fn default_server_bind() -> String {
 /// serde default for `[server] asset_part_size` (64 MiB).
 fn default_asset_part_size() -> usize {
     64 * 1024 * 1024
+}
+
+/// serde default for `[server] upload_stall_secs` (one minute).
+fn default_upload_stall_secs() -> u64 {
+    60
+}
+
+/// serde default for `[server] upload_piece_secs` (five minutes).
+fn default_upload_piece_secs() -> u64 {
+    300
 }
 
 /// serde default for `[server] openapi_ui`.
@@ -446,6 +468,14 @@ impl Config {
             .context("config missing [server] section (needed for serve)")?;
         if server.asset_part_size == 0 {
             bail!("server.asset_part_size must be > 0");
+        }
+        for (key, secs) in [
+            ("upload_stall_secs", server.upload_stall_secs),
+            ("upload_piece_secs", server.upload_piece_secs),
+        ] {
+            if secs == 0 {
+                bail!("[server] {key} must be greater than 0");
+            }
         }
         Ok(server)
     }

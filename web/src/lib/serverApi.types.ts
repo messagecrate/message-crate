@@ -5333,6 +5333,23 @@ export interface components {
              */
             state: components["schemas"]["ServerState"];
             /**
+             * Format: int64
+             * @description Seconds a whole upload body may take to arrive, from the start of the
+             *     read, before the server stops reading it and answers
+             *     `408 Request Timeout` (`upload-stalled`): the config file's
+             *     `[server] upload_piece_secs`, 300 unless it sets one. The desktop
+             *     app's Upload sizes its wait for each upload from it.
+             */
+            upload_piece_secs: number;
+            /**
+             * Format: int64
+             * @description Seconds an upload body (an import batch, an attachment, or a part of
+             *     one) may go with no byte arriving before the server stops reading it
+             *     and answers `408 Request Timeout` (`upload-stalled`): the config
+             *     file's `[server] upload_stall_secs`, 60 unless it sets one.
+             */
+            upload_stall_secs: number;
+            /**
              * @description The server's Build: its Product Version, plus the commit it was built
              *     from unless it is a release. An app compares the Product Version with
              *     its own and says so when they differ; the server serves it either way.
@@ -7548,6 +7565,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of an upload stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             /** @description [`payload-too-large`](https://messagecrate.app/docs/developer/reference/errors/payload-too-large): The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading. */
             413: {
                 headers: {
@@ -8390,6 +8416,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of an upload stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11471,6 +11506,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of an upload stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. */
+            408: {
                 headers: {
                     [name: string]: unknown;
                 };

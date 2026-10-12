@@ -27,7 +27,7 @@ use crate::asset_uploads;
 use crate::server::{
     ApiError, AppState, AuthIdentity, Created, ImportAccess, ImportOrExportAccess,
     content_type_base, discard_body, read_body_limited, resolve_import_account, run_blocking,
-    stream_body_to_file, upload_content_type,
+    stream_body_to_file, upload_body_bounded, upload_content_type,
 };
 
 pub(crate) mod media_links;
@@ -1032,7 +1032,8 @@ fn require_content_type(headers: &HeaderMap) -> Result<(), ApiError> {
             headers(("Location" = String, description = "Path of the stored asset"))
         ),
         (status = 200, body = Asset, description = "The server already held the asset"),
-        crate::problem::openapi::AssetUploadInvalid
+        crate::problem::openapi::AssetUploadInvalid,
+        crate::problem::openapi::UploadStalled
     )
 )]
 pub(crate) async fn replace_asset(
@@ -1048,8 +1049,12 @@ pub(crate) async fn replace_asset(
     let mime = upload_content_type(&headers);
     let max_body_bytes = usize::try_from(state.asset_max_bytes().await?).unwrap_or(usize::MAX);
 
+    // The body is held to the server's upload time limits, as an import
+    // batch's is: a client that stops sending part-way, or sends a byte now
+    // and then, holds the connection and the temp file only so long.
+    let body = upload_body_bounded(request.into_body(), state.upload_time_limits);
     if let Some(stored) = existing {
-        discard_body(request.into_body(), max_body_bytes).await?;
+        discard_body(body, max_body_bytes).await?;
         return Ok(Asset::stored(stored, true).into_response());
     }
 
@@ -1068,7 +1073,7 @@ pub(crate) async fn replace_asset(
     .await?;
     // An empty body is checked like any other: the empty file is stored when
     // the claim is its fingerprint and refused when it is not.
-    if let Err(err) = stream_body_to_file(request.into_body(), &tmp_path, max_body_bytes).await {
+    if let Err(err) = stream_body_to_file(body, &tmp_path, max_body_bytes).await {
         let _ = tokio::fs::remove_file(&tmp_path).await;
         return Err(err);
     }
@@ -1260,7 +1265,8 @@ pub(crate) async fn create_asset_upload(
     responses(
         (status = 200, body = ReplaceAssetUploadPartResponse),
         crate::problem::openapi::AssetUploadInvalid,
-        crate::problem::openapi::StateConflict
+        crate::problem::openapi::StateConflict,
+        crate::problem::openapi::UploadStalled
     )
 )]
 pub(crate) async fn replace_asset_upload_part(
@@ -1290,7 +1296,11 @@ pub(crate) async fn replace_asset_upload_part(
     if crate::server::declared_over(&headers, part_size) {
         return Err(ApiError::PayloadTooLarge);
     }
-    let body = read_body_limited(request.into_body(), part_size).await?;
+    let body = read_body_limited(
+        upload_body_bounded(request.into_body(), state.upload_time_limits),
+        part_size,
+    )
+    .await?;
     let sha = sha256.clone();
     let uid = upload_id.clone();
     let written = run_blocking("upload part", move || {

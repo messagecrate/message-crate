@@ -160,6 +160,10 @@ pub(crate) struct Session {
     /// Set once the server refuses the session token. It is this run's own,
     /// and stops the run as the caller's cancel flag does.
     pub refused: Arc<AtomicBool>,
+    /// How long a request that sends a piece (an import batch, an
+    /// attachment, or a part of one) waits for its answer, from the limit
+    /// the server states ([`crate::http::piece_wait`]).
+    pub piece_wait: std::time::Duration,
 }
 
 impl Session {
@@ -432,6 +436,7 @@ fn login(cfg: &ImportConfig, out: &mut Reporter<'_, '_>) -> Result<Session> {
         username: username.clone(),
     });
     out.show(format!("Authenticated as {username} ({})", auth.account_id));
+    let piece_wait = crate::http::piece_wait(&http, &url, &cfg.token)?;
     Ok(Session {
         http,
         url,
@@ -440,6 +445,7 @@ fn login(cfg: &ImportConfig, out: &mut Reporter<'_, '_>) -> Result<Session> {
         auth,
         cancel: cfg.cancel.clone(),
         refused: Arc::new(AtomicBool::new(false)),
+        piece_wait,
     })
 }
 

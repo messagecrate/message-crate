@@ -2377,65 +2377,133 @@ async fn a_limited_body_streamed_to_a_file_over_the_cap_is_too_large() {
     assert_eq!(error.status(), StatusCode::PAYLOAD_TOO_LARGE, "{error}");
 }
 
-/// A body that stops arriving part-way ends the read once the idle bound
-/// passes, as a `400 Bad Request` naming the wait, so an import batch from a
-/// client that went away never holds its import slot for good. Time is
-/// paused, so the bound passes as soon as nothing else can run.
+/// Upload time limits other than the defaults, so a test shows the
+/// configured limits are the ones applied.
+const TEST_UPLOAD_TIMES: UploadTimeLimits = UploadTimeLimits {
+    stall: std::time::Duration::from_secs(7),
+    piece: std::time::Duration::from_secs(45),
+};
+
+/// The defaults are the ones `config-and-accounts.md` states, and an
+/// `AppState` holds the limits its `[server]` section sets.
+#[test]
+fn the_upload_time_limits_come_from_the_server_section() {
+    let defaults = UploadTimeLimits::of(&crate::config::ServerConfig::default());
+    assert_eq!(defaults.stall.as_secs(), 60);
+    assert_eq!(defaults.piece.as_secs(), 300);
+
+    let set = crate::config::ServerConfig {
+        upload_stall_secs: 7,
+        upload_piece_secs: 45,
+        ..crate::config::ServerConfig::default()
+    };
+    assert_eq!(UploadTimeLimits::of(&set), TEST_UPLOAD_TIMES);
+}
+
+/// A body that stops arriving part-way ends the read once the stall limit
+/// passes, as `upload-stalled` naming the limit, so an upload from a client
+/// that went away never holds its import slot or its file for good. Before
+/// #2897 it answered `malformed-body`, as though the data were bad. Time is
+/// paused, so the limit passes as soon as nothing else can run.
 #[tokio::test(start_paused = true)]
-async fn a_body_that_stops_arriving_ends_the_read_after_the_idle_bound() {
+async fn a_body_that_stops_arriving_is_upload_stalled_at_the_stall_limit() {
     let dir = TempDir::new().unwrap();
     let first: Result<axum::body::Bytes, std::io::Error> =
         Ok(axum::body::Bytes::from_static(b"{}\n"));
     let stalled = futures_util::stream::iter([first]).chain(futures_util::stream::pending());
-    let body = batch_body_bounded(axum::body::Body::from_stream(stalled));
+    let body = upload_body_bounded(axum::body::Body::from_stream(stalled), TEST_UPLOAD_TIMES);
+    let started = tokio::time::Instant::now();
 
     let error = stream_body_to_file(body, &dir.path().join("upload"), 1024)
         .await
         .unwrap_err();
 
-    assert_eq!(error.status(), StatusCode::BAD_REQUEST, "{error}");
-    assert!(
-        error
-            .to_string()
-            .contains("no bytes arrived for 60 seconds"),
+    assert_eq!(started.elapsed(), TEST_UPLOAD_TIMES.stall);
+    assert_eq!(
+        error.problem_type(),
+        Some(ProblemType::UploadStalled),
         "{error}"
+    );
+    assert_eq!(error.status(), StatusCode::REQUEST_TIMEOUT, "{error}");
+    let text = error.to_string();
+    assert!(
+        text.contains("no bytes of the body arrived for 7 seconds"),
+        "{text}"
+    );
+    assert!(
+        text.contains("running the import again continues it"),
+        "{text}"
     );
 }
 
-/// A body that sends a byte every 30 seconds never meets the idle bound,
-/// but ends at the deadline for the whole body, so a client that trickles
+/// A body that sends a byte every 5 seconds never meets the stall limit,
+/// but ends at the limit for the whole body, so a client that trickles
 /// cannot hold an import slot for good either. Time is paused, so each wait
 /// passes as soon as nothing else can run.
 #[tokio::test(start_paused = true)]
-async fn a_body_that_trickles_ends_the_read_at_the_deadline() {
+async fn a_body_that_trickles_is_upload_stalled_at_the_piece_limit() {
     let dir = TempDir::new().unwrap();
     let trickle = futures_util::stream::unfold((), |()| async {
-        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         let byte: Result<axum::body::Bytes, std::io::Error> =
             Ok(axum::body::Bytes::from_static(b"\n"));
         Some((byte, ()))
     });
-    let body = batch_body_bounded(axum::body::Body::from_stream(trickle));
+    let body = upload_body_bounded(axum::body::Body::from_stream(trickle), TEST_UPLOAD_TIMES);
+    let started = tokio::time::Instant::now();
 
     let error = stream_body_to_file(body, &dir.path().join("upload"), 1024 * 1024)
         .await
         .unwrap_err();
 
-    assert_eq!(error.status(), StatusCode::BAD_REQUEST, "{error}");
-    assert!(
-        error
-            .to_string()
-            .contains("the body took longer than 600 seconds to arrive"),
+    assert_eq!(started.elapsed(), TEST_UPLOAD_TIMES.piece);
+    assert_eq!(
+        error.problem_type(),
+        Some(ProblemType::UploadStalled),
         "{error}"
+    );
+    let text = error.to_string();
+    assert!(
+        text.contains("the body was still arriving 45 seconds after it started"),
+        "{text}"
     );
 }
 
-/// The bounds pass `Limited`'s error through, so a body with no declared
-/// length over its cap is still too large, not malformed.
+/// A body read into memory, as a multipart part is, and one read and
+/// dropped, as an attachment the server already holds is, answer
+/// `upload-stalled` the same way.
+#[tokio::test(start_paused = true)]
+async fn every_upload_read_answers_upload_stalled() {
+    let stalled = || {
+        upload_body_bounded(
+            axum::body::Body::from_stream(futures_util::stream::pending::<
+                Result<axum::body::Bytes, std::io::Error>,
+            >()),
+            TEST_UPLOAD_TIMES,
+        )
+    };
+
+    let read = read_body_limited(stalled(), 1024).await.unwrap_err();
+    let discarded = discard_body(stalled(), 1024).await.unwrap_err();
+
+    assert_eq!(
+        read.problem_type(),
+        Some(ProblemType::UploadStalled),
+        "{read}"
+    );
+    assert_eq!(
+        discarded.problem_type(),
+        Some(ProblemType::UploadStalled),
+        "{discarded}"
+    );
+}
+
+/// The limits pass `Limited`'s error through, so a body with no declared
+/// length over its cap is still too large, not stalled or malformed.
 #[tokio::test]
-async fn a_bounded_batch_body_over_the_cap_is_too_large() {
+async fn a_bounded_upload_body_over_the_cap_is_too_large() {
     let dir = TempDir::new().unwrap();
-    let body = batch_body_bounded(limited_chunked_body(5));
+    let body = upload_body_bounded(limited_chunked_body(5), TEST_UPLOAD_TIMES);
 
     let error = stream_body_to_file(body, &dir.path().join("upload"), 5)
         .await

@@ -399,6 +399,16 @@ pub struct AppState {
     /// it is a Server Setting, read from the database when a request needs it
     /// ([`AppState::asset_max_bytes`]).
     pub(crate) asset_part_size: usize,
+    /// How long an upload body may go with no byte arriving, and may take in
+    /// all, from `[server] upload_stall_secs` and `upload_piece_secs`.
+    /// `GET /v1/server` states them, so the Upload sizes its own wait from
+    /// what the server holds.
+    pub(crate) upload_time_limits: UploadTimeLimits,
+    /// Cancelled the moment the server is told to stop
+    /// ([`AppState::on_stop_signal`]), so an import batch still reading its
+    /// body stops reading and is refused with `server-stopping` at once,
+    /// rather than making the stop wait for the rest of the body (#2878).
+    pub(crate) stopping: tokio_util::sync::CancellationToken,
     /// The Demo Account build the owner started, if one is running or the
     /// last one failed. One per server: a second cannot start while one runs.
     pub(crate) demo_build: crate::server_api::DemoBuild,
@@ -419,7 +429,11 @@ impl AppState {
     /// The state every handler shares, over an opened database. `serve` and the
     /// test harness both come through here, so the locks and the rate limits
     /// are assembled in one place.
-    pub fn new(opened: OpenDb, asset_part_size: usize) -> Self {
+    pub fn new(
+        opened: OpenDb,
+        asset_part_size: usize,
+        upload_time_limits: UploadTimeLimits,
+    ) -> Self {
         Self {
             cfg: Arc::new(opened.cfg),
             db: opened.db,
@@ -428,6 +442,8 @@ impl AppState {
             auth_rate_limits: crate::credentials::AuthRateLimits::default(),
             import_slots: crate::imports_api::import_slots(),
             asset_part_size,
+            upload_time_limits,
+            stopping: tokio_util::sync::CancellationToken::new(),
             demo_build: crate::server_api::DemoBuild::default(),
             demo_bundle_generator: crate::reset_demo::generate_bundle,
             media_link_key: crate::assets_api::media_links::MediaLinkKey::random(),
@@ -455,17 +471,22 @@ impl AppState {
     /// start the next one (#1729). It closes the import slots, so an import
     /// batch still waiting for one is refused with `server-stopping`, which
     /// the Upload retries, rather than taking a slot when an earlier batch
-    /// ends and making the stop wait for a whole batch more (#2203). A batch
-    /// that already holds a slot is not refused, and the stop waits for it
+    /// ends and making the stop wait for a whole batch more (#2203). It
+    /// cancels `stopping`, so a batch that holds a slot and is still reading
+    /// its body stops reading and is refused the same way at once, rather
+    /// than making the stop wait for the rest of the body (#2878). A batch
+    /// whose import has started is not refused, and the stop waits for it
     /// to finish (#2122 is about bounding that wait).
     pub(crate) fn on_stop_signal(&self) -> impl FnOnce() + Send + 'static {
         let media_queue = self.media_queue.clone();
         let demo_build = self.demo_build.clone();
         let import_slots = Arc::clone(&self.import_slots);
+        let stopping = self.stopping.clone();
         move || {
             media_queue.ask_to_stop();
             demo_build.stop_conversions();
             import_slots.close();
+            stopping.cancel();
         }
     }
 
@@ -624,6 +645,8 @@ pub enum ApiError {
         /// The file's length in bytes.
         length: u64,
     },
+    /// `408` — an upload body stopped arriving, or took too long to arrive.
+    UploadStalled(String),
     /// `503` — the server is stopping and refused work it had not started.
     ServerStopping(String),
     /// `500` — unexpected failure. The whole context chain goes to the log;
@@ -693,6 +716,7 @@ impl ApiError {
             | Self::MethodNotAllowed(m)
             | Self::NotAcceptable(m)
             | Self::MediaLinkInvalid(m)
+            | Self::UploadStalled(m)
             | Self::ServerStopping(m) => Some(m),
             Self::PayloadTooLarge => Some("the request body is too large"),
             Self::ValidationFailed(_)
@@ -748,6 +772,7 @@ impl ApiError {
             Self::NotAcceptable(_) => ProblemType::NotAcceptable,
             Self::MediaLinkInvalid(_) => ProblemType::MediaLinkInvalid,
             Self::RangeNotSatisfiable { .. } => ProblemType::RangeNotSatisfiable,
+            Self::UploadStalled(_) => ProblemType::UploadStalled,
             Self::ServerStopping(_) => ProblemType::ServerStopping,
             Self::Internal(err) if is_database_busy(err) => ProblemType::DatabaseBusy,
             Self::Internal(_) => return None,
@@ -1717,7 +1742,11 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
         "The database at {} is open, in journal mode {mode}",
         opened.cfg.paths.db.display()
     );
-    let state = AppState::new(opened, server.asset_part_size);
+    let state = AppState::new(
+        opened,
+        server.asset_part_size,
+        UploadTimeLimits::of(&server),
+    );
     if crate::server_api::recover_stopped_demo_build(&state).await? {
         tracing::warn!(
             "The server stopped during a Demo Account build, so the part-built Demo Account was removed"
@@ -2077,45 +2106,67 @@ pub(crate) fn declared_over(headers: &HeaderMap, limit: usize) -> bool {
         .is_some_and(|bytes| bytes > limit as u64)
 }
 
-/// How long an import batch's body may go without a byte arriving before
-/// the read gives up. The batch holds an import slot while it reads, and
-/// there are only two, so a client that stops sending part-way, such as a
-/// laptop that goes to sleep, must not hold one for good.
-pub(crate) const BATCH_BODY_IDLE: std::time::Duration = std::time::Duration::from_secs(60);
-
-/// How long an import batch's whole body may take to arrive. A client that
-/// sends a byte now and then never meets [`BATCH_BODY_IDLE`], so this bounds
-/// how long it can hold a slot. Ten minutes is the Upload's own timeout for
-/// one batch request, so no Upload is still sending a body after it.
-pub(crate) const BATCH_BODY_DEADLINE: std::time::Duration = std::time::Duration::from_secs(600);
-
-/// Why the read of an import batch's body ended before the body did.
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum BodyTooSlow {
-    /// Nothing arrived for [`BATCH_BODY_IDLE`].
-    #[error("no bytes arrived for {} seconds", BATCH_BODY_IDLE.as_secs())]
-    Stalled,
-    /// The body was still arriving at [`BATCH_BODY_DEADLINE`].
-    #[error("the body took longer than {} seconds to arrive", BATCH_BODY_DEADLINE.as_secs())]
-    Overdue,
+/// How long the server waits for one upload body to arrive: an import
+/// batch, an attachment, or a part of one. Each holds a connection and a
+/// file while it reads, and an import batch holds one of the two import
+/// slots too, so a client that stops sending part-way, such as a laptop that
+/// goes to sleep, or one that sends a byte now and then, must not hold them
+/// for good.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UploadTimeLimits {
+    /// How long a body may go with no byte arriving: `[server]
+    /// upload_stall_secs`.
+    pub(crate) stall: std::time::Duration,
+    /// How long a whole body may take to arrive, from the start of the read:
+    /// `[server] upload_piece_secs`.
+    pub(crate) piece: std::time::Duration,
 }
 
-/// An import batch's `body`, ending with a [`BodyTooSlow`] error once
-/// [`BATCH_BODY_IDLE`] passes with no chunk arriving, or
-/// [`BATCH_BODY_DEADLINE`] passes from the start of the read. Reading it
-/// answers `400 Bad Request` then, as a body that stops arriving for any
-/// other reason does.
-pub(crate) fn batch_body_bounded(body: axum::body::Body) -> axum::body::Body {
+impl UploadTimeLimits {
+    /// The limits `server` sets.
+    pub fn of(server: &crate::config::ServerConfig) -> Self {
+        Self {
+            stall: std::time::Duration::from_secs(server.upload_stall_secs),
+            piece: std::time::Duration::from_secs(server.upload_piece_secs),
+        }
+    }
+}
+
+/// Why the read of an upload body ended before the body did.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum BodyTooSlow {
+    /// Nothing arrived for [`UploadTimeLimits::stall`].
+    #[error(
+        "no bytes of the body arrived for {} seconds, so the server stopped reading it and stored none of it",
+        .0.as_secs()
+    )]
+    Stalled(std::time::Duration),
+    /// The body was still arriving at [`UploadTimeLimits::piece`].
+    #[error(
+        "the body was still arriving {} seconds after it started, so the server stopped reading it and stored none of it",
+        .0.as_secs()
+    )]
+    Overdue(std::time::Duration),
+}
+
+/// An upload's `body`, ending with a [`BodyTooSlow`] error once
+/// `limits.stall` passes with no chunk arriving, or `limits.piece` passes
+/// from the start of the read. Reading it answers `408 Request Timeout`
+/// (`upload-stalled`) then ([`body_read_error`]).
+pub(crate) fn upload_body_bounded(
+    body: axum::body::Body,
+    limits: UploadTimeLimits,
+) -> axum::body::Body {
     type BoxError = Box<dyn std::error::Error + Send + Sync>;
-    let deadline = tokio::time::Instant::now() + BATCH_BODY_DEADLINE;
+    let deadline = tokio::time::Instant::now() + limits.piece;
     let chunks =
         futures_util::stream::unfold(Some(body.into_data_stream()), move |stream| async move {
             let mut stream = stream?;
-            let idle_end = tokio::time::Instant::now() + BATCH_BODY_IDLE;
+            let idle_end = tokio::time::Instant::now() + limits.stall;
             let (wait_until, too_slow) = if idle_end < deadline {
-                (idle_end, BodyTooSlow::Stalled)
+                (idle_end, BodyTooSlow::Stalled(limits.stall))
             } else {
-                (deadline, BodyTooSlow::Overdue)
+                (deadline, BodyTooSlow::Overdue(limits.piece))
             };
             match tokio::time::timeout_at(wait_until, stream.next()).await {
                 Ok(Some(chunk)) => Some((chunk.map_err(BoxError::from), Some(stream))),
@@ -2135,12 +2186,20 @@ pub(crate) fn is_jsonl_content_type(base: &str) -> bool {
 /// The problem a failed read of a request body answers. `limit_request_body`
 /// wraps a body with no `Content-Length` in `Limited`, which ends the stream
 /// with a `LengthLimitError` once the body passes its cap: that body is too
-/// large. Any other failure leaves the body unreadable.
+/// large. [`upload_body_bounded`] ends it with [`BodyTooSlow`] once it
+/// stalls or runs past its time: the connection failed, not the data, so it
+/// answers `upload-stalled`. Any other failure leaves the body unreadable.
 fn body_read_error(error: axum::Error) -> ApiError {
     let mut source: Option<&(dyn std::error::Error + 'static)> = Some(&error);
     while let Some(cause) = source {
         if cause.is::<http_body_util::LengthLimitError>() {
             return ApiError::PayloadTooLarge;
+        }
+        if let Some(too_slow) = cause.downcast_ref::<BodyTooSlow>() {
+            return ApiError::UploadStalled(format!(
+                "{too_slow}. The connection stopped delivering the body, and nothing is wrong \
+                 with the data: running the import again continues it"
+            ));
         }
         source = cause.source();
     }
@@ -2240,10 +2299,14 @@ pub(crate) fn test_app_state(pool: sqlx::SqlitePool, data_dir: &Path) -> AppStat
             cors_origins: Vec::new(),
             openapi_ui: false,
             static_dir: "static".into(),
-            tools_dir: None,
+            ..crate::config::ServerConfig::default()
         }),
     };
-    AppState::new(OpenDb { cfg, db: pool }, asset_uploads::DEFAULT_PART_SIZE)
+    AppState::new(
+        OpenDb { cfg, db: pool },
+        asset_uploads::DEFAULT_PART_SIZE,
+        UploadTimeLimits::of(&crate::config::ServerConfig::default()),
+    )
 }
 
 #[cfg(test)]

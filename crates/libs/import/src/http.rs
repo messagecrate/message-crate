@@ -59,6 +59,44 @@ pub(crate) struct ImportOutcome<'a> {
     pub bytes_uploaded: u64,
 }
 
+/// How long the Upload waits for the answer to a request that sends a piece
+/// (an import batch, an attachment, or a part of one) beyond the server's
+/// own limit for the piece to arrive: the server's wait for an import slot
+/// before it reads a batch, and its save of what it read. The server stops
+/// reading a piece at its limit, so the Upload never reports a piece still
+/// being saved as one that stalled. A full 16 MiB batch was saved in under 5
+/// seconds in a timed release build (#2897), so five minutes leaves room for
+/// a slow machine and for a slot held by another account's batch.
+const ANSWER_WAIT: Duration = Duration::from_secs(300);
+
+/// The part of the server's answer to `GET /v1/server` the Upload reads.
+#[derive(Debug, Deserialize)]
+struct ServerUploadTimes {
+    /// Seconds the server lets a whole piece take to arrive.
+    upload_piece_secs: u64,
+}
+
+/// How long a request that sends a piece waits for its answer: the time the
+/// server at `url` states it lets a whole piece take to arrive
+/// (`upload_piece_secs` in `GET /v1/server`), plus [`ANSWER_WAIT`]. Read
+/// from the server rather than kept here, because its config file sets it.
+///
+/// # Errors
+///
+/// Returns an error when the server cannot be reached or its answer does
+/// not state the limit.
+pub(crate) fn piece_wait(http: &HttpSession, url: &str, token: &str) -> Result<Duration> {
+    let what = "Reading the server's upload limits";
+    let response = http
+        .server_request(Method::GET, url, "/v1/server", token)
+        .timeout(Duration::from_secs(15))
+        .send()
+        .with_context(|| format!("{what} failed"))?;
+    let (status, text) = read_body(what, response)?;
+    let stated: ServerUploadTimes = ok_json(what, status, &text)?;
+    Ok(Duration::from_secs(stated.upload_piece_secs) + ANSWER_WAIT)
+}
+
 /// The answer to `POST /v1/imports`: the new Import Run's id.
 #[derive(Debug, Deserialize)]
 struct CreateImportResponse {
@@ -96,10 +134,11 @@ fn payload_too_large_message(kind: &str, bytes: Option<usize>) -> String {
     let size = bytes
         .map(|n| format!(" (request was {n} bytes)"))
         .unwrap_or_default();
+    let batch_mib = message_crate_api_types::MAX_IMPORT_BATCH_BYTES / (1024 * 1024);
     format!(
         "{kind} rejected: HTTP 413 Payload Too Large{size}. \
          Cloudflare Free/Pro caps proxied uploads at ~100 MB. \
-         message-crate-import chunks message imports under 64 MiB and large assets via multipart; \
+         message-crate-import chunks message imports under {batch_mib} MiB and large assets via multipart; \
          if this still fails, raise nginx client_max_body_size for /v1 (need ≥100m for 64 MiB parts) \
          or tunnel to the server on :8080."
     )
@@ -199,7 +238,7 @@ impl Session {
         let response = self
             .http
             .request_url(Method::PUT, url, &self.token)
-            .timeout(Duration::from_secs(600))
+            .timeout(self.piece_wait)
             .header("Content-Type", content_type)
             .body(bytes)
             .send()
@@ -278,7 +317,7 @@ impl Session {
         let response = self
             .http
             .server_request(Method::POST, &self.url, &path, &self.token)
-            .timeout(Duration::from_secs(600))
+            .timeout(self.piece_wait)
             .header("Content-Type", "application/jsonl")
             .body(ndjson)
             .send()
@@ -445,7 +484,7 @@ impl<'a> MultipartUpload<'a> {
             .session
             .http
             .request_url(Method::PUT, part_url, &self.session.token)
-            .timeout(Duration::from_secs(600))
+            .timeout(self.session.piece_wait)
             .header("Content-Type", "application/octet-stream")
             .body(buf)
             .send()
@@ -520,6 +559,7 @@ mod tests {
             },
             cancel: Default::default(),
             refused: Default::default(),
+            piece_wait: Duration::from_secs(5),
         }
     }
 
@@ -647,12 +687,47 @@ mod tests {
     }
 
     #[test]
-    fn payload_too_large_mentions_64_mib_import_chunks() {
+    fn payload_too_large_names_the_import_chunk_size() {
         let msg = payload_too_large_message("Import Run 42 batch", Some(10));
         assert!(
-            msg.contains("imports under 64 MiB"),
+            msg.contains("imports under 16 MiB"),
             "413 help must name the import chunk size, got {msg}"
         );
+    }
+
+    /// The Upload waits for a piece's answer as long as the server says a
+    /// piece may take to arrive, and the time it allows for the save on top,
+    /// so a server whose config file sets another limit gets another wait.
+    #[test]
+    fn the_wait_for_a_piece_comes_from_the_limit_the_server_states() {
+        let server = MockServer::start();
+        let _limits = server.mock(|when, then| {
+            when.method(GET).path("/v1/server");
+            then.status(200).json_body(serde_json::json!({
+                "upload_stall_secs": 5,
+                "upload_piece_secs": 45,
+            }));
+        });
+
+        let wait = piece_wait(&HttpSession::new().unwrap(), &server.base_url(), "t").unwrap();
+
+        assert_eq!(wait, Duration::from_secs(45) + ANSWER_WAIT);
+    }
+
+    /// A server that states no limit stops the Upload before it sends
+    /// anything, rather than leaving it to guess one.
+    #[test]
+    fn a_server_that_states_no_piece_limit_is_an_error() {
+        let server = MockServer::start();
+        let _limits = server.mock(|when, then| {
+            when.method(GET).path("/v1/server");
+            then.status(200)
+                .json_body(serde_json::json!({ "asset_max_bytes": 1 }));
+        });
+
+        let error = piece_wait(&HttpSession::new().unwrap(), &server.base_url(), "t").unwrap_err();
+
+        assert!(format!("{error:#}").contains("upload limits"), "{error:#}");
     }
 
     #[test]

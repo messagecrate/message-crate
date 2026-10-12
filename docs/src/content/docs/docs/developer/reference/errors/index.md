@@ -49,5 +49,6 @@ A `500 Internal Server Error` has no page: its `type` is `about:blank`, and its 
 | [`not-acceptable`](./not-acceptable/) | `406 Not Acceptable` | Not acceptable |
 | [`media-link-invalid`](./media-link-invalid/) | `401 Unauthorized` | Media link invalid |
 | [`range-not-satisfiable`](./range-not-satisfiable/) | `416 Range Not Satisfiable` | Range not satisfiable |
+| [`upload-stalled`](./upload-stalled/) | `408 Request Timeout` | Upload stalled |
 | [`server-stopping`](./server-stopping/) | `503 Service Unavailable` | Server stopping |
 | [`database-busy`](./database-busy/) | `503 Service Unavailable` | Database busy |

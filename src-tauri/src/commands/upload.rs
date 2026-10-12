@@ -138,7 +138,7 @@ fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<ImportConf
         // already recorded as sent.
         force: false,
         max_retries: 3,
-        // Pack until message_crate_api_types::MAX_IMPORT_BATCH_BYTES (64 MiB); do not stop at a message count.
+        // Pack until message_crate_api_types::MAX_IMPORT_BATCH_BYTES (16 MiB); do not stop at a message count.
         batch_size: message_crate_import::NO_MESSAGE_COUNT_LIMIT,
         // Above DEFAULT_ASSET_UPLOAD_WORKERS (8): desktop imports are often many small files.
         asset_upload_workers: 16,
@@ -317,8 +317,9 @@ mod tests {
         assert!(format!("{err:#}").contains("no media settings"), "{err:#}");
     }
 
-    /// A server that answers the session check. [`take_batches`] has it
-    /// take import 7's batches.
+    /// A server that answers the session check and states its upload time
+    /// limits, as every Upload reads them. [`take_batches`] has it take
+    /// import 7's batches.
     fn upload_server() -> MockServer {
         let server = MockServer::start();
         server.mock(|when, then| {
@@ -326,6 +327,13 @@ mod tests {
             then.status(200).json_body(json!({
                 "account_id": 1,
                 "username": "alice",
+            }));
+        });
+        server.mock(|when, then| {
+            when.method(GET).path("/v1/server");
+            then.status(200).json_body(json!({
+                "upload_stall_secs": 60,
+                "upload_piece_secs": 300,
             }));
         });
         server

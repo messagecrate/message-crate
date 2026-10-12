@@ -240,12 +240,22 @@ current one, because that account reaches every other.
   whose body is optional, a request with no body is read as no body, and a
   body sent without a `Content-Type` is still `415 Unsupported Media Type`.
 - A request that cannot be read is `400 Bad Request` (`malformed-body`): JSON
-  that does not parse, a body of the wrong type, or a body that failed to
-  arrive, an import batch body that stalled or ran past its deadline among
-  them. Nothing else is `400 Bad Request`. A body that failed to arrive is
-  this type and not one of its own because the server has no request to
-  judge: the client that sent it has usually gone, and one that is still
-  there sends the body again, as it would after any broken connection.
+  that does not parse, a body of the wrong type, or a body whose connection
+  broke before it arrived. Nothing else is `400 Bad Request`. A broken
+  connection is this type and not one of its own because the server has no
+  request to judge: the client that sent it has usually gone, and one that
+  is still there sends the body again, as it would after any broken
+  connection.
+- An upload body that the server stopped reading because it took too long
+  is `408 Request Timeout` (`upload-stalled`): an import batch, an
+  attachment or a part of one that went `[server] upload_stall_secs` (60)
+  with no byte arriving, or was still arriving `upload_piece_secs` (300)
+  after the read started. Why: the connection failed, not the data, and
+  `malformed-body` told the person their data was bad. The client is still
+  there to read the answer, so the answer says that running the import
+  again continues it. The desktop app shows it and does not send the piece
+  again by itself, as it does not for any `4xx`
+  ([#2897](https://github.com/messagecrate/message-crate/issues/2897)).
 - A request that was read and broke a rule is `422 Unprocessable Entity`,
   whether the rule was on a query parameter, a path segment or a body field: a
   field or parameter missing or blank, a value out of range, an id that names
@@ -582,8 +592,10 @@ A server told to stop closes its import slots
 (`AppState::on_stop_signal` in `crates/server/server/src/server.rs`), so an
 import batch still waiting for a slot is refused with `server-stopping`,
 having read none of its body, and stores nothing. A batch that holds a slot
-but is still reading its body is refused the same way once the body has
-arrived, before its import starts.
+but is still reading its body stops reading at once and is refused the same
+way, so the stop never waits for the rest of a body that a client sends
+slowly or has stopped sending
+([#2878](https://github.com/messagecrate/message-crate/issues/2878)).
 The Upload retries it as it retries any `5xx`; if the server is not back in
 time, the Upload pauses, and resuming the run sends the batch. A batch whose
 import has started is not refused. Why: a waiting batch used to take a slot
@@ -862,22 +874,44 @@ What each reaches:
   other route has a body cap fixed in the code. Why: the owner may set any
   limit of 1 byte or more, and a limit that held every body would refuse
   the login and the settings change that raise it again.
-- An import batch body is held to 64 MiB, the most the desktop app's Upload
+- An import batch body is held to 16 MiB, the most the desktop app's Upload
   packs into one (`MAX_IMPORT_BATCH_BYTES` in `message-crate-api-types`, the
   one figure both sides read), and a larger one answers
-  `413 Payload Too Large`. A batch takes its import slot before it reads its
+  `413 Payload Too Large`. Why 16 MiB: the server saves a batch in one write
+  transaction, and every other writer, a login included, waits 15 seconds
+  for the write lock before it answers `database-busy`. A full 16 MiB batch
+  saved in under 5 seconds in a timed release build. A 64 MiB batch held
+  the lock four times as long
+  ([#2062](https://github.com/messagecrate/message-crate/issues/2062)).
+  A batch takes its import slot before it reads its
   body, and writes the body under the Data Directory
   (`data_dir/.import-batches/`), which `serve` empties as it starts. A body
-  that goes 60 seconds with no byte arriving, or is still arriving after
-  600 seconds, the Upload's own timeout for one batch, ends the read with
-  `400 Bad Request`, which frees the slot. Why: the server accepted eight
+  that goes `[server] upload_stall_secs` (60) with no byte arriving, or is
+  still arriving `upload_piece_secs` (300) after the read started, ends the
+  read with `408 Request Timeout` (`upload-stalled`), which frees the slot.
+  An attachment body and a part of one are held to the same two limits,
+  though they take no slot, because each holds a connection and a file
+  while it reads. At 16 MiB, a full batch arrives inside 5 minutes at about
+  0.45 Mbit/s. Why: the server accepted eight
   times what its client sends, and held a batch's whole text in memory
   beside its parsed records (#2075); every batch waiting for a slot held its
   body on disk (#2095); and that disk was the operating system's temporary
   directory, often small or held in memory, where nothing removed what a
   stopped server left (#2123). Only two slots exist, so without the bounds
   two clients that went to sleep part-way through a body, or sent a byte
-  now and then, would stop every import on the server.
+  now and then, would stop every import on the server. A 10-minute limit for
+  a whole body held a slot that long
+  ([#2897](https://github.com/messagecrate/message-crate/issues/2897)).
+- `GET /v1/server` states the two upload time limits, in seconds, as
+  `upload_stall_secs` and `upload_piece_secs`, to any client. The desktop
+  app's Upload reads them once it has logged in, and waits for the answer to
+  each batch, attachment or part for `upload_piece_secs` plus 5 minutes for
+  the server's wait for a slot and its save. Why: the limits are config
+  keys, and an Upload that kept its own copy, as it once kept a 10-minute
+  timeout written beside the server's, drifts from them. They are stated
+  there, not in the answer that starts an Import Run, because the desktop
+  app's web screens start the run and the Upload only posts into it, often
+  after a restart.
 - `GET /v1/server` reports the journal mode SQLite runs the database in,
   `journal_mode`, read when the request is answered, to any client. Owner
   Home says so when it is not `wal`. It is `null` when the mode cannot be

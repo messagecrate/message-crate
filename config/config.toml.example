@@ -36,6 +36,13 @@ bind = "127.0.0.1:8080"
 # chunk size, the server uses chunks the size of the limit.
 # asset_part_size = 67108864
 
+# How long the server waits for an upload (an import batch, an attachment, or
+# a part of one): seconds with no byte arriving, and seconds for the whole
+# upload. An upload that meets either is refused (408, upload-stalled) and
+# running the import again continues it. Each must be greater than 0.
+# upload_stall_secs = 60
+# upload_piece_secs = 300
+
 # Extra CORS allowed origins. Two kinds of UI need no entry here: the website
 # this process serves (same origin), and the packaged desktop app, whose three
 # origins — tauri://localhost (Linux AppImage / macOS), http://tauri.localhost

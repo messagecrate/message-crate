@@ -462,6 +462,24 @@ async fn the_attachment_size_limit_reads_as_512_mib_until_the_owner_sets_it() {
     assert_eq!(server["asset_max_bytes"], DEFAULT_LIMIT);
 }
 
+/// `GET /v1/server` states the upload time limits the server holds, to a
+/// client with no credential, so the Upload sizes its wait for each piece
+/// from the server's config rather than a copy of its own.
+#[tokio::test]
+async fn the_server_states_its_upload_time_limits() {
+    let fixture = test_fixture().await;
+    let mut state = fixture.state.clone();
+    state.upload_time_limits = crate::server::UploadTimeLimits {
+        stall: std::time::Duration::from_secs(7),
+        piece: std::time::Duration::from_secs(45),
+    };
+
+    let server: serde_json::Value = get_json(&state, "/v1/server", "").await;
+
+    assert_eq!(server["upload_stall_secs"], 7);
+    assert_eq!(server["upload_piece_secs"], 45);
+}
+
 /// The owner changes the limit, and `GET /v1/server` reports the new number
 /// to a client that holds no credential: the desktop app reads it there
 /// before Staging. The registration setting the request did not name is
