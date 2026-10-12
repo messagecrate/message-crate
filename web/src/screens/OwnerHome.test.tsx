@@ -154,8 +154,7 @@ beforeEach(() => {
   getServerSettings.mockResolvedValue({
     public_registration: false,
     asset_max_bytes: 512 * MIB,
-    journal_mode: "wal",
-    wal_error: null,
+    journal: { mode: "wal", wal_error: null },
   });
   getDemoAccount.mockResolvedValue({ status: "ready", size: null, error: null });
   getServerStorage.mockResolvedValue({
@@ -197,7 +196,11 @@ beforeEach(() => {
     version: APP_BUILD,
     schema_fingerprint: 1234567890,
   });
-  updateServerSettings.mockResolvedValue({ public_registration: true });
+  updateServerSettings.mockResolvedValue({
+    public_registration: true,
+    asset_max_bytes: 512 * MIB,
+    journal: { mode: "wal", wal_error: null },
+  });
   updateAccount.mockResolvedValue({ ...anAccount, disabled: true });
   setAccountPassword.mockResolvedValue(undefined);
   // A new account has no profile yet, so the row comes back with no name.
@@ -845,8 +848,7 @@ describe("OwnerHome", () => {
     getServerSettings.mockResolvedValue({
       public_registration: false,
       asset_max_bytes: 512 * MIB,
-      journal_mode: "delete",
-      wal_error: "database is locked",
+      journal: { mode: "delete", wal_error: "database is locked" },
     });
     renderHome(["/owner/dashboard"]);
 
@@ -871,8 +873,7 @@ describe("OwnerHome", () => {
     getServerSettings.mockResolvedValue({
       public_registration: false,
       asset_max_bytes: 512 * MIB,
-      journal_mode: "memory",
-      wal_error: null,
+      journal: { mode: "memory", wal_error: null },
     });
     renderHome(["/owner/dashboard"]);
 
@@ -887,8 +888,7 @@ describe("OwnerHome", () => {
     getServerSettings.mockResolvedValue({
       public_registration: false,
       asset_max_bytes: 512 * MIB,
-      journal_mode: null,
-      wal_error: null,
+      journal: { mode: null, wal_error: null },
     });
     renderHome();
 
@@ -897,12 +897,26 @@ describe("OwnerHome", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
+  it("quotes SQLite's error when the server refused write-ahead logging and cannot read the mode now", async () => {
+    getServerSettings.mockResolvedValue({
+      public_registration: false,
+      asset_max_bytes: 512 * MIB,
+      journal: { mode: null, wal_error: "disk I/O error" },
+    });
+    renderHome(["/owner/dashboard"]);
+
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveTextContent(
+      "The server could not turn on write-ahead logging when it started",
+    );
+    expect(notice).toHaveTextContent("SQLite answered: disk I/O error.");
+  });
+
   it("shows the journal mode as unknown in Server Settings when the server could not read it", async () => {
     getServerSettings.mockResolvedValue({
       public_registration: false,
       asset_max_bytes: 512 * MIB,
-      journal_mode: null,
-      wal_error: null,
+      journal: { mode: null, wal_error: null },
     });
     renderHome(["/owner/settings"]);
     expect((await screen.findByText("Journal mode")).nextElementSibling).toHaveTextContent(

@@ -234,8 +234,8 @@ pub async fn claim_server(
     })
 }
 
-/// The server settings the owner controls, and how the database is stored,
-/// which the owner reads beside them.
+/// The server settings the owner controls, with the database's journal
+/// beside them, which the owner reads and cannot change.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ServerSettings {
     /// Anyone reaching the server may create their own account.
@@ -243,13 +243,22 @@ pub struct ServerSettings {
     /// The attachment size limit, in bytes: the largest asset the server
     /// accepts. 536870912 (512 MiB) until the owner changes it.
     pub asset_max_bytes: u64,
+    /// The journal SQLite keeps the database with. Not a setting: the
+    /// server reports it here because only the owner may read it.
+    pub journal: DatabaseJournal,
+}
+
+/// The journal SQLite keeps the database with, and why it is not
+/// write-ahead logging when it is not.
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct DatabaseJournal {
     /// The journal mode SQLite runs the database in now, read when the
     /// request is answered. The server asks for `wal` on every start. Any
     /// other mode means it could not have it, as when another program held
     /// the database file, and then every page waits while an import writes.
     /// Owner Home says so. `null` when the mode could not be read; the
     /// server's log says why.
-    pub journal_mode: Option<crate::db::engine::JournalMode>,
+    pub mode: Option<crate::db::engine::JournalMode>,
     /// The error SQLite gave when the server asked for write-ahead logging
     /// as it started, in SQLite's words, such as `database is locked`.
     /// `null` when SQLite gave none: it turned write-ahead logging on, or
@@ -258,7 +267,7 @@ pub struct ServerSettings {
 }
 
 /// The settings as the owner reads them: `settings` from the database, and
-/// how the database is stored, read on `conn`.
+/// the database's journal, read on `conn`.
 async fn settings_body(
     state: &AppState,
     conn: &mut sqlx::SqliteConnection,
@@ -267,8 +276,10 @@ async fn settings_body(
     ServerSettings {
         public_registration: settings.public_registration,
         asset_max_bytes: settings.asset_max_bytes,
-        journal_mode: crate::db::engine::journal_mode_or_warn(&mut *conn).await,
-        wal_error: state.wal_error.as_deref().map(str::to_owned),
+        journal: DatabaseJournal {
+            mode: crate::db::engine::journal_mode_or_warn(&mut *conn).await,
+            wal_error: state.wal_error.as_deref().map(str::to_owned),
+        },
     }
 }
 

@@ -151,7 +151,7 @@ export function ServerSettingsPanel() {
         ) : null}
         <dt className="text-muted">Journal mode</dt>
         <dd className="m-0 font-mono text-[0.813rem] text-text">
-          {data.journal_mode ?? "unknown (the server's log says why)"}
+          {data.journal.mode ?? "unknown (the server's log says why)"}
         </dd>
       </dl>
     </section>

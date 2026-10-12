@@ -2689,6 +2689,28 @@ export interface components {
             /** @description The username the account logs in with. */
             username: string;
         };
+        /**
+         * @description The journal SQLite keeps the database with, and why it is not
+         *     write-ahead logging when it is not.
+         */
+        DatabaseJournal: {
+            /**
+             * @description The journal mode SQLite runs the database in now, read when the
+             *     request is answered. The server asks for `wal` on every start. Any
+             *     other mode means it could not have it, as when another program held
+             *     the database file, and then every page waits while an import writes.
+             *     Owner Home says so. `null` when the mode could not be read; the
+             *     server's log says why.
+             */
+            mode: components["schemas"]["JournalMode"] | null;
+            /**
+             * @description The error SQLite gave when the server asked for write-ahead logging
+             *     as it started, in SQLite's words, such as `database is locked`.
+             *     `null` when SQLite gave none: it turned write-ahead logging on, or
+             *     kept another mode without an error.
+             */
+            wal_error: string | null;
+        };
         /** @description What one dedupe did. */
         DedupeCounts: {
             /**
@@ -5476,8 +5498,8 @@ export interface components {
             version: string;
         };
         /**
-         * @description The server settings the owner controls, and how the database is stored,
-         *     which the owner reads beside them.
+         * @description The server settings the owner controls, with the database's journal
+         *     beside them, which the owner reads and cannot change.
          */
         ServerSettings: {
             /**
@@ -5487,23 +5509,12 @@ export interface components {
              */
             asset_max_bytes: number;
             /**
-             * @description The journal mode SQLite runs the database in now, read when the
-             *     request is answered. The server asks for `wal` on every start. Any
-             *     other mode means it could not have it, as when another program held
-             *     the database file, and then every page waits while an import writes.
-             *     Owner Home says so. `null` when the mode could not be read; the
-             *     server's log says why.
+             * @description The journal SQLite keeps the database with. Not a setting: the
+             *     server reports it here because only the owner may read it.
              */
-            journal_mode: components["schemas"]["JournalMode"] | null;
+            journal: components["schemas"]["DatabaseJournal"];
             /** @description Anyone reaching the server may create their own account. */
             public_registration: boolean;
-            /**
-             * @description The error SQLite gave when the server asked for write-ahead logging
-             *     as it started, in SQLite's words, such as `database is locked`.
-             *     `null` when SQLite gave none: it turned write-ahead logging on, or
-             *     kept another mode without an error.
-             */
-            wal_error: string | null;
         };
         /**
          * @description What state a Message Crate is in, from outside.

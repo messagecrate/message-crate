@@ -14,7 +14,10 @@ import { useServerSettings } from "../../lib/useServerSettings";
  */
 export function JournalModeNotice() {
   const { data } = useServerSettings();
-  if (!data?.journal_mode || data.journal_mode === "wal") return null;
+  const journal = data?.journal;
+  // SQLite's error says write-ahead logging was refused even when the mode
+  // could not be read since.
+  if (!journal || (!journal.wal_error && (!journal.mode || journal.mode === "wal"))) return null;
 
   return (
     <p
@@ -23,12 +26,12 @@ export function JournalModeNotice() {
     >
       The server could not turn on write-ahead logging when it started, so every page waits while an
       import is writing.{" "}
-      {data.wal_error ? (
+      {journal.wal_error ? (
         <>
-          SQLite answered: <span className="font-mono">{data.wal_error}</span>.
+          SQLite answered: <span className="font-mono">{journal.wal_error}</span>.
         </>
       ) : (
-        <>SQLite kept the database in journal mode {data.journal_mode} without giving an error.</>
+        <>SQLite kept the database in journal mode {journal.mode} without giving an error.</>
       )}{" "}
       If another program has the database file open, close it. Then restart the server.
     </p>

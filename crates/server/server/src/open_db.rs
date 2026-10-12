@@ -9,6 +9,7 @@
 //! caller holds one value and never re-derives the file.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use sqlx::pool::PoolConnection;
@@ -28,7 +29,7 @@ pub struct OpenDb {
     /// The error SQLite gave when the pool asked for write-ahead logging, in
     /// SQLite's words. `None` when it gave none. `GET /v1/server/settings`
     /// reports it, so Owner Home can name the cause beside the journal mode.
-    pub wal_error: Option<String>,
+    pub wal_error: Option<Arc<str>>,
 }
 
 /// What is at `path`: `None` when no file is there, or else what the file is.
@@ -106,7 +107,10 @@ impl OpenDb {
 
     /// Open the pool on the file `cfg` names and make sure of the schema.
     async fn open_pool(cfg: Config) -> Result<Self> {
-        let (db, wal_error) = engine::open_pool_keeping_wal_error(&cfg.paths.db).await?;
+        let engine::OpenedPool {
+            pool: db,
+            wal_error,
+        } = engine::open_pool_keeping_wal_error(&cfg.paths.db).await?;
         {
             let mut conn = db.acquire().await?;
             schema::ensure_schema(&mut conn).await?;

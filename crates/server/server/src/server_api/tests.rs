@@ -134,7 +134,7 @@ async fn the_state_route_leaves_the_journal_mode_out() {
     let fixture = test_fixture().await;
     let body: serde_json::Value = get_json(&fixture.state, "/v1/server", "").await;
     assert!(body.get("journal_mode").is_none(), "{body}");
-    assert!(body.get("wal_error").is_none(), "{body}");
+    assert!(body.get("journal").is_none(), "{body}");
 }
 
 /// The owner's settings carry the journal mode the database runs in when
@@ -149,8 +149,8 @@ async fn the_settings_carry_the_journal_mode_the_database_runs_in() {
     let fixture = test_fixture().await;
     let owner = claim_as_owner(&fixture.state, "keeper", "hunter2hunter2").await;
     let body: ServerSettings = get_json(&fixture.state, "/v1/server/settings", &owner.token).await;
-    assert_eq!(body.journal_mode, Some(JournalMode::Wal));
-    assert_eq!(body.wal_error, None);
+    assert_eq!(body.journal.mode, Some(JournalMode::Wal));
+    assert_eq!(body.journal.wal_error, None);
 
     // A database left in a rollback journal, as one is when the server could
     // not turn write-ahead logging on, with the error SQLite gave then.
@@ -172,8 +172,11 @@ async fn the_settings_carry_the_journal_mode_the_database_runs_in() {
     state.wal_error = Some("database is locked".into());
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let body: ServerSettings = get_json(&state, "/v1/server/settings", &owner.token).await;
-    assert_eq!(body.journal_mode, Some(JournalMode::Delete));
-    assert_eq!(body.wal_error.as_deref(), Some("database is locked"));
+    assert_eq!(body.journal.mode, Some(JournalMode::Delete));
+    assert_eq!(
+        body.journal.wal_error.as_deref(),
+        Some("database is locked")
+    );
 
     let changed: ServerSettings = crate::test_support::patch_json(
         &state,
@@ -182,8 +185,11 @@ async fn the_settings_carry_the_journal_mode_the_database_runs_in() {
         serde_json::json!({ "public_registration": true }),
     )
     .await;
-    assert_eq!(changed.journal_mode, Some(JournalMode::Delete));
-    assert_eq!(changed.wal_error.as_deref(), Some("database is locked"));
+    assert_eq!(changed.journal.mode, Some(JournalMode::Delete));
+    assert_eq!(
+        changed.journal.wal_error.as_deref(),
+        Some("database is locked")
+    );
 }
 
 /// Two Message Crates have different ids, though both start their account

@@ -14832,6 +14832,34 @@
           }
         }
       },
+      "DatabaseJournal": {
+        "type": "object",
+        "description": "The journal SQLite keeps the database with, and why it is not\nwrite-ahead logging when it is not.",
+        "required": [
+          "mode",
+          "wal_error"
+        ],
+        "properties": {
+          "mode": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/JournalMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The journal mode SQLite runs the database in now, read when the\nrequest is answered. The server asks for `wal` on every start. Any\nother mode means it could not have it, as when another program held\nthe database file, and then every page waits while an import writes.\nOwner Home says so. `null` when the mode could not be read; the\nserver's log says why."
+          },
+          "wal_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The error SQLite gave when the server asked for write-ahead logging\nas it started, in SQLite's words, such as `database is locked`.\n`null` when SQLite gave none: it turned write-ahead logging on, or\nkept another mode without an error."
+          }
+        }
+      },
       "DedupeCounts": {
         "type": "object",
         "description": "What one dedupe did.",
@@ -19607,12 +19635,11 @@
       },
       "ServerSettings": {
         "type": "object",
-        "description": "The server settings the owner controls, and how the database is stored,\nwhich the owner reads beside them.",
+        "description": "The server settings the owner controls, with the database's journal\nbeside them, which the owner reads and cannot change.",
         "required": [
           "public_registration",
           "asset_max_bytes",
-          "journal_mode",
-          "wal_error"
+          "journal"
         ],
         "properties": {
           "asset_max_bytes": {
@@ -19621,27 +19648,13 @@
             "description": "The attachment size limit, in bytes: the largest asset the server\naccepts. 536870912 (512 MiB) until the owner changes it.",
             "minimum": 0
           },
-          "journal_mode": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/JournalMode"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The journal mode SQLite runs the database in now, read when the\nrequest is answered. The server asks for `wal` on every start. Any\nother mode means it could not have it, as when another program held\nthe database file, and then every page waits while an import writes.\nOwner Home says so. `null` when the mode could not be read; the\nserver's log says why."
+          "journal": {
+            "$ref": "#/components/schemas/DatabaseJournal",
+            "description": "The journal SQLite keeps the database with. Not a setting: the\nserver reports it here because only the owner may read it."
           },
           "public_registration": {
             "type": "boolean",
             "description": "Anyone reaching the server may create their own account."
-          },
-          "wal_error": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The error SQLite gave when the server asked for write-ahead logging\nas it started, in SQLite's words, such as `database is locked`.\n`null` when SQLite gave none: it turned write-ahead logging on, or\nkept another mode without an error."
           }
         }
       },

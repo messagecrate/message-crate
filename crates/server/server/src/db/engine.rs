@@ -1,6 +1,7 @@
 //! Pool construction for the SQLite database file.
 
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -238,7 +239,7 @@ struct WalAnswer {
     /// The error SQLite gave for the request, in SQLite's words. `None` when
     /// it gave none: it turned write-ahead logging on, or kept another mode
     /// without an error.
-    error: Option<String>,
+    error: Option<Arc<str>>,
 }
 
 /// Ask SQLite for write-ahead logging, and return what it answered: the mode
@@ -261,9 +262,10 @@ async fn try_enable_wal(pool: &SqlitePool) -> WalAnswer {
             tracing::warn!(error = %err, "Write-ahead logging could not be turned on, so the database goes on without it");
             // SQLite's own words when the error is SQLite's, without sqlx's
             // prefix and code; sqlx's whole message otherwise.
-            let error = err
+            let error: Arc<str> = err
                 .as_database_error()
-                .map_or_else(|| err.to_string(), |db| db.message().to_owned());
+                .map_or_else(|| err.to_string(), |db| db.message().to_owned())
+                .into();
             return WalAnswer {
                 mode: journal_mode_or_warn(pool).await,
                 error: Some(error),
@@ -287,24 +289,35 @@ async fn try_enable_wal(pool: &SqlitePool) -> WalAnswer {
 ///
 /// Returns an error when the file cannot be opened or created.
 pub async fn open_pool_for_path(path: &Path) -> Result<SqlitePool> {
-    Ok(open_pool_keeping_wal_error(path).await?.0)
+    Ok(open_pool_keeping_wal_error(path).await?.pool)
 }
 
-/// [`open_pool_for_path`], also returning the error SQLite gave when the
-/// pool asked for write-ahead logging, in SQLite's words: `None` when it
-/// gave none. The server keeps it so Owner Home can say why the database
-/// runs without write-ahead logging.
+/// A pool [`open_pool_keeping_wal_error`] opened, with the error SQLite gave
+/// when the pool asked for write-ahead logging.
+#[derive(Debug)]
+pub struct OpenedPool {
+    /// The pool, usable whatever SQLite answered.
+    pub pool: SqlitePool,
+    /// The error SQLite gave, in SQLite's words, such as `database is
+    /// locked`. `None` when it gave none: it turned write-ahead logging on,
+    /// or kept another mode without an error.
+    pub wal_error: Option<Arc<str>>,
+}
+
+/// [`open_pool_for_path`], keeping the error SQLite gave when the pool
+/// asked for write-ahead logging, so Owner Home can say why the database
+/// runs without it.
 ///
 /// # Errors
 ///
 /// Returns an error when the file cannot be opened or created.
-pub async fn open_pool_keeping_wal_error(path: &Path) -> Result<(SqlitePool, Option<String>)> {
+pub async fn open_pool_keeping_wal_error(path: &Path) -> Result<OpenedPool> {
     let pool = sqlite_pool_options(BUSY_TIMEOUT)
         .connect_with(connect_options(path))
         .await
         .with_context(|| format!("failed to open database {}", path.display()))?;
-    let answer = try_enable_wal(&pool).await;
-    Ok((pool, answer.error))
+    let wal_error = try_enable_wal(&pool).await.error;
+    Ok(OpenedPool { pool, wal_error })
 }
 
 /// Close `pool` and every connection it opened, so none is left attached to

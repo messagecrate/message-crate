@@ -451,7 +451,7 @@ impl AppState {
             demo_bundle_generator: crate::reset_demo::generate_bundle,
             media_link_key: crate::assets_api::media_links::MediaLinkKey::random(),
             media_queue: crate::media_queue::MediaQueue::default(),
-            wal_error: opened.wal_error.map(Arc::from),
+            wal_error: opened.wal_error,
         }
     }
 

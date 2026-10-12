@@ -946,15 +946,17 @@ What each reaches:
   there, not in the answer that starts an Import Run, because the desktop
   app's web screens start the run and the Upload only posts into it, often
   after a restart.
-- `/v1/server/settings` reports the journal mode SQLite runs the database
-  in, `journal_mode`, read when the request is answered, and `wal_error`,
-  the error SQLite gave when the server asked for write-ahead logging as it
-  started, in SQLite's words. `GET` and `PATCH` answer both, so the answer
-  to a change replaces the one the screen read without losing them. Owner
-  Home says so when the mode is not `wal`, and names SQLite's error when
-  there is one. `journal_mode` is `null` when the mode cannot be read, and
-  the route still answers. `wal_error` is `null` when SQLite gave no error:
-  it turned write-ahead logging on, or kept another mode without one. Why:
+- `/v1/server/settings` reports the database's journal as `journal`: the
+  journal mode SQLite runs the database in, `mode`, read when the request
+  is answered, and `wal_error`, the error SQLite gave when the server asked
+  for write-ahead logging as it started, in SQLite's words. `journal` is not
+  a setting, so it sits in an object of its own beside the settings, and
+  the owner cannot change it. `GET` and `PATCH` answer it, so the answer to
+  a change replaces the one the screen read without losing it. Owner Home
+  says so when the mode is not `wal` or SQLite gave an error, and names
+  that error. `mode` is `null` when it cannot be read, and the route still
+  answers. `wal_error` is `null` when SQLite gave no error: it turned
+  write-ahead logging on, or kept another mode without one. Why:
   in any other mode every page waits while an import writes, and a warning
   in the server's log was the only sign of it (#2201). Neither is on
   `GET /v1/server`, which answers anyone: that route carries only what a
