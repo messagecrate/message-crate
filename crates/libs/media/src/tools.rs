@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{Context, Result, bail};
 
@@ -258,9 +258,17 @@ pub(crate) trait MediaTools {
     fn probe(&self, path: &Path) -> Result<crate::MediaProbe>;
 
     /// Run ffmpeg with `args` to write `dest`, which goes after them on
-    /// ffmpeg's command line. With `stop`, setting it kills ffmpeg and fails
-    /// the run ([`run_ffmpeg_with`]).
-    fn transcode(&self, args: &[String], dest: &Path, stop: Option<&AtomicBool>) -> Result<()>;
+    /// ffmpeg's command line. ffmpeg is killed and the run fails when it
+    /// runs longer than what it `reads` allows ([`ffmpeg_time_limit`]).
+    /// With `stop`, setting it kills ffmpeg and fails the run
+    /// ([`run_ffmpeg_with`]).
+    fn transcode(
+        &self,
+        args: &[String],
+        dest: &Path,
+        reads: Reads<'_>,
+        stop: Option<&AtomicBool>,
+    ) -> Result<()>;
 }
 
 /// The ffmpeg and ffprobe this process finds on `PATH` or in the Tools
@@ -281,8 +289,20 @@ impl MediaTools for InstalledTools {
         crate::probe_media(path)
     }
 
-    fn transcode(&self, args: &[String], dest: &Path, stop: Option<&AtomicBool>) -> Result<()> {
-        run_ffmpeg_with(&ffmpeg_command_line(args, dest), stop)
+    fn transcode(
+        &self,
+        args: &[String],
+        dest: &Path,
+        reads: Reads<'_>,
+        stop: Option<&AtomicBool>,
+    ) -> Result<()> {
+        if is_set(stop) {
+            bail!("stopped before ffmpeg started");
+        }
+        let limit = reads.source().map_or(SHORTEST_FFMPEG_TIME_LIMIT, |src| {
+            ffmpeg_time_limit(crate::probe::played_for(src, stop))
+        });
+        run_ffmpeg_with(&ffmpeg_command_line(args, dest), stop, limit)
     }
 }
 
@@ -494,22 +514,93 @@ const STDERR_TAIL_BYTES: usize = 8 * 1024;
 /// carries the lines that say why it failed, not kilobytes of preamble.
 const QUIET_FFMPEG: [&str; 4] = ["-hide_banner", "-nostats", "-loglevel", "error"];
 
-/// [`run_ffmpeg_with`] with no stop, for a test that makes its fixtures with
-/// the real ffmpeg or runs it on purpose.
+/// Flags after [`QUIET_FFMPEG`] on every ffmpeg run, and in front of every
+/// ffprobe run: open local files and pipes, and nothing else. The files
+/// come from phone backups, and a playlist or a container inside one can
+/// name a network address that ffmpeg would otherwise open.
+const LOCAL_FILES_ONLY: [&str; 2] = ["-protocol_whitelist", "file,pipe"];
+
+/// How long ffprobe may run on one file before it is killed. Reading a
+/// file's streams takes well under a second; this only ends a probe that
+/// hangs, on a damaged file or a stalled disk.
+const PROBE_TIME_LIMIT: Duration = Duration::from_secs(2 * 60);
+
+/// The least time one ffmpeg run is given before it is killed, and all a run
+/// that reads one frame or a still gets ([`Reads::OneFrame`]).
+pub(crate) const SHORTEST_FFMPEG_TIME_LIMIT: Duration = Duration::from_secs(10 * 60);
+
+/// The time one ffmpeg run that reads a whole file is given when ffprobe
+/// reads no length for the file, as for a WebM a browser recorded, whose
+/// header often carries none. Longer than [`SHORTEST_FFMPEG_TIME_LIMIT`],
+/// because such a file can be long, and far shorter than
+/// [`LONGEST_FFMPEG_TIME_LIMIT`], because a file that hangs ffmpeg often
+/// says nothing about its length either.
+const UNKNOWN_LENGTH_FFMPEG_TIME_LIMIT: Duration = Duration::from_secs(60 * 60);
+
+/// How many seconds one ffmpeg run that reads a whole file is given for
+/// each second the file plays ([`Reads::All`]). A conversion runs faster
+/// than the file plays on most computers; twenty times leaves room for a
+/// slow processor and a slow encoder.
+const FFMPEG_SECONDS_PER_SECOND_PLAYED: u32 = 20;
+
+/// The most time one ffmpeg run is given, whatever length a file claims.
+/// A damaged or crafted file can claim any length, and every Asset queued
+/// behind it waits this long. It stays well under the day after which a
+/// pass's work directory counts as left behind and is removed
+/// (`STALE_WORK_SECS` in the server).
+const LONGEST_FFMPEG_TIME_LIMIT: Duration = Duration::from_secs(6 * 60 * 60);
+
+/// How much of its source one ffmpeg run reads, which sets how long it may
+/// run before it is killed ([`ffmpeg_time_limit`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Reads<'a> {
+    /// A still image, or a video's first frame.
+    OneFrame,
+    /// Every frame or sample of the file at this path.
+    All(&'a Path),
+}
+
+impl<'a> Reads<'a> {
+    /// The file a run reads whole, whose length sets its time limit; `None`
+    /// for a run that reads one frame.
+    pub(crate) fn source(self) -> Option<&'a Path> {
+        match self {
+            Self::OneFrame => None,
+            Self::All(src) => Some(src),
+        }
+    }
+}
+
+/// How long an ffmpeg run that reads a whole file playing for `played` may
+/// take: [`FFMPEG_SECONDS_PER_SECOND_PLAYED`] times its length, at least
+/// [`SHORTEST_FFMPEG_TIME_LIMIT`] and at most [`LONGEST_FFMPEG_TIME_LIMIT`],
+/// rounded up to whole minutes. [`UNKNOWN_LENGTH_FFMPEG_TIME_LIMIT`] when
+/// the length is not known.
+pub(crate) fn ffmpeg_time_limit(played: Option<Duration>) -> Duration {
+    let limit = played.map_or(UNKNOWN_LENGTH_FFMPEG_TIME_LIMIT, |played| {
+        played
+            .saturating_mul(FFMPEG_SECONDS_PER_SECOND_PLAYED)
+            .clamp(SHORTEST_FFMPEG_TIME_LIMIT, LONGEST_FFMPEG_TIME_LIMIT)
+    });
+    Duration::from_secs(limit.as_secs().div_ceil(60) * 60)
+}
+
+/// [`run_ffmpeg_with`] with no stop and the shortest time limit, for a test
+/// that makes its fixtures with the real ffmpeg or runs it on purpose.
 #[cfg(test)]
 pub(crate) fn run_ffmpeg(args: &[String]) -> Result<()> {
-    run_ffmpeg_with(args, None)
+    run_ffmpeg_with(args, None, SHORTEST_FFMPEG_TIME_LIMIT)
 }
 
 /// [`run_ffmpeg_with`] with `stop`, for a test of stopping the real ffmpeg.
 #[cfg(test)]
 pub(crate) fn run_ffmpeg_until(args: &[String], stop: &AtomicBool) -> Result<()> {
-    run_ffmpeg_with(args, Some(stop))
+    run_ffmpeg_with(args, Some(stop), SHORTEST_FFMPEG_TIME_LIMIT)
 }
 
-/// How long the wait for a stoppable ffmpeg sleeps between looks, at most.
-/// It starts at a millisecond and doubles, so a quick conversion is not held
-/// up and a long one is stopped within this.
+/// How long the wait for a program sleeps between looks, at most. It starts
+/// at a millisecond and doubles, so a quick run is not held up and a long
+/// one is stopped within this.
 const STOP_POLL_MAX: Duration = Duration::from_millis(25);
 
 /// How long a failed stoppable run waits for a stop before it reports the
@@ -520,20 +611,20 @@ const STOP_GRACE: Duration = Duration::from_millis(200);
 
 /// Whether `stopped` turns true within [`STOP_GRACE`].
 fn stop_follows(stopped: impl Fn() -> bool) -> bool {
-    let deadline = std::time::Instant::now() + STOP_GRACE;
+    let deadline = Instant::now() + STOP_GRACE;
     loop {
         if stopped() {
             return true;
         }
-        if std::time::Instant::now() >= deadline {
+        if Instant::now() >= deadline {
             return false;
         }
         std::thread::sleep(Duration::from_millis(5));
     }
 }
 
-/// Run ffmpeg with [`QUIET_FFMPEG`] and `args`, failing with the end of its
-/// stderr when it exits non-zero.
+/// Run ffmpeg with [`QUIET_FFMPEG`], `-nostdin`, [`LOCAL_FILES_ONLY`] and
+/// `args`, failing with the end of its stderr when it exits non-zero.
 ///
 /// A thread reads stderr while ffmpeg runs. [`QUIET_FFMPEG`] turns the stats
 /// line off, but nothing limits how much else ffmpeg writes: a failure can
@@ -541,64 +632,274 @@ fn stop_follows(stopped: impl Fn() -> bool) -> bool {
 /// stderr whatever `-loglevel` says. A pipe nobody reads fills at 64 KiB on
 /// Linux, after which ffmpeg blocks on the write and never exits (#1178).
 ///
-/// With `stop`, setting it kills ffmpeg, waits for it, and fails the run. A
-/// run asked for after `stop` is set never starts ffmpeg. What ffmpeg wrote
-/// before it was killed is the caller's to remove.
-fn run_ffmpeg_with(args: &[String], stop: Option<&AtomicBool>) -> Result<()> {
-    let stopped = || stop.is_some_and(|stop| stop.load(Ordering::Relaxed));
-    if stopped() {
-        bail!("stopped before ffmpeg started");
-    }
+/// ffmpeg still running after `limit` is killed and waited for, and the run
+/// fails with [`RanTooLong`], so a file that ffmpeg never finishes cannot
+/// hold up the files after it (#2059). With `stop`, setting it kills ffmpeg,
+/// waits for it, and fails the run. A run asked for after `stop` is set never
+/// starts ffmpeg. What ffmpeg wrote before it was killed is the caller's to
+/// remove.
+fn run_ffmpeg_with(args: &[String], stop: Option<&AtomicBool>, limit: Duration) -> Result<()> {
+    let started = Instant::now();
+    run_ffmpeg_watched(args, stop, limit, &|| started.elapsed() >= limit)
+}
+
+/// [`run_ffmpeg_with`], with `expired` saying when `limit` has passed, so a
+/// test decides that rather than a clock.
+fn run_ffmpeg_watched(
+    args: &[String],
+    stop: Option<&AtomicBool>,
+    limit: Duration,
+    expired: &dyn Fn() -> bool,
+) -> Result<()> {
     let ffmpeg = resolve_tools()?
         .ffmpeg
         .ok_or_else(|| anyhow::anyhow!("ffmpeg not found {}", where_looked()))?;
-    let mut child = Command::new(ffmpeg)
+    let mut command = Command::new(ffmpeg);
+    command
         .args(QUIET_FFMPEG)
+        .arg("-nostdin")
+        .args(LOCAL_FILES_ONLY)
         .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("start ffmpeg")?;
-    let stderr = child.stderr.take().context("ffmpeg stderr")?;
-    let reader = std::thread::spawn(move || read_tail(stderr, STDERR_TAIL_BYTES));
-    let status = if stop.is_some() {
-        let mut pause = Duration::from_millis(1);
-        loop {
-            if let Some(status) = child.try_wait().context("wait for ffmpeg")? {
-                if !status.success() && stop_follows(stopped) {
-                    drop(reader);
-                    bail!("stopped while ffmpeg ran");
-                }
-                break status;
-            }
-            if stopped() {
-                // Killed and then waited for, so no process is left behind.
-                // The reader ends on its own once the pipe closes, and is
-                // not waited for: what ffmpeg said no longer matters.
-                let _ = child.kill();
-                let _ = child.wait();
-                drop(reader);
-                bail!("stopped while ffmpeg ran");
-            }
-            std::thread::sleep(pause);
-            pause = (pause * 2).min(STOP_POLL_MAX);
-        }
-    } else {
-        child.wait().context("wait for ffmpeg")?
-    };
-    let tail = reader
-        .join()
-        .map_err(|_| anyhow::anyhow!("the thread reading ffmpeg's stderr panicked"))?
-        .context("read ffmpeg stderr")?;
-    if status.success() {
+        .stdout(Stdio::null());
+    let ran = run_watched(
+        command,
+        &Watch {
+            program: Program::Ffmpeg,
+            stop,
+            limit,
+            expired,
+        },
+    )?;
+    if ran.status.success() {
         return Ok(());
     }
     Err(FfmpegFailed {
-        status,
-        said: String::from_utf8_lossy(&tail).trim().to_string(),
+        status: ran.status,
+        said: String::from_utf8_lossy(&ran.stderr_tail).trim().to_string(),
     }
     .into())
+}
+
+/// Run ffprobe with [`LOCAL_FILES_ONLY`], `args`, then `path`, and answer
+/// what it wrote to stdout. ffprobe still running after
+/// [`PROBE_TIME_LIMIT`] is killed and the run fails with [`RanTooLong`].
+/// With `stop`, setting it kills ffprobe and fails the run, and a run asked
+/// for after it is set never starts ffprobe.
+///
+/// # Errors
+///
+/// Returns an error when ffprobe is not found, cannot start, runs too long,
+/// is stopped, or exits non-zero, with the end of its stderr.
+pub(crate) fn run_ffprobe(
+    args: &[&str],
+    path: &Path,
+    stop: Option<&AtomicBool>,
+) -> Result<Vec<u8>> {
+    let started = Instant::now();
+    run_ffprobe_watched(args, path, stop, &|| started.elapsed() >= PROBE_TIME_LIMIT)
+}
+
+/// [`run_ffprobe`], with `expired` saying when [`PROBE_TIME_LIMIT`] has
+/// passed, so a test decides that rather than a clock.
+fn run_ffprobe_watched(
+    args: &[&str],
+    path: &Path,
+    stop: Option<&AtomicBool>,
+    expired: &dyn Fn() -> bool,
+) -> Result<Vec<u8>> {
+    let mut command = ffprobe_command()?;
+    command
+        .args(LOCAL_FILES_ONLY)
+        .args(args)
+        .arg(path)
+        .stdout(Stdio::piped());
+    let ran = run_watched(
+        command,
+        &Watch {
+            program: Program::Ffprobe,
+            stop,
+            limit: PROBE_TIME_LIMIT,
+            expired,
+        },
+    )
+    .with_context(|| format!("run ffprobe on {}", path.display()))?;
+    if !ran.status.success() {
+        bail!(
+            "ffprobe failed on {}: {}",
+            path.display(),
+            String::from_utf8_lossy(&ran.stderr_tail).trim()
+        );
+    }
+    Ok(ran.stdout.unwrap_or_default())
+}
+
+/// The program a [`Watch`] runs, named as the errors name it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Program {
+    Ffmpeg,
+    Ffprobe,
+}
+
+impl std::fmt::Display for Program {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Ffmpeg => "ffmpeg",
+            Self::Ffprobe => "ffprobe",
+        })
+    }
+}
+
+/// Whether `stop` is given and set.
+fn is_set(stop: Option<&AtomicBool>) -> bool {
+    stop.is_some_and(|stop| stop.load(Ordering::Relaxed))
+}
+
+/// What ends a run of ffmpeg or ffprobe early, and what the errors call it.
+struct Watch<'a> {
+    /// The program, as the errors name it.
+    program: Program,
+    /// Setting it kills the program and fails the run.
+    stop: Option<&'a AtomicBool>,
+    /// How long the program may run, as [`RanTooLong`] gives it.
+    limit: Duration,
+    /// True once `limit` has passed since the program started.
+    expired: &'a dyn Fn() -> bool,
+}
+
+/// How a program that exited ended, and what it wrote.
+struct Ran {
+    status: ExitStatus,
+    /// Everything it wrote to stdout, when the command piped stdout.
+    stdout: Option<Vec<u8>>,
+    /// The last [`STDERR_TAIL_BYTES`] it wrote to stderr.
+    stderr_tail: Vec<u8>,
+}
+
+/// Run `command` until it exits, reading its stderr, and its stdout when the
+/// command pipes it, on threads of their own so a full pipe never blocks
+/// it. When `watch` says it is stopped or its time is up, kill it and wait
+/// for it, so no process is left behind.
+fn run_watched(mut command: Command, watch: &Watch<'_>) -> Result<Ran> {
+    let program = watch.program;
+    let stopped = || is_set(watch.stop);
+    if stopped() {
+        bail!("stopped before {program} started");
+    }
+    let mut child = command
+        .stdin(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("start {program}"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .with_context(|| format!("{program} stderr"))?;
+    let stderr_reader = std::thread::spawn(move || read_tail(stderr, STDERR_TAIL_BYTES));
+    let stdout_reader = child.stdout.take().map(|mut stdout| {
+        std::thread::spawn(move || {
+            let mut out = Vec::new();
+            stdout.read_to_end(&mut out).map(|_| out)
+        })
+    });
+    let mut pause = Duration::from_millis(1);
+    let status = loop {
+        if let Some(status) = child
+            .try_wait()
+            .with_context(|| format!("wait for {program}"))?
+        {
+            if !status.success() && watch.stop.is_some() && stop_follows(stopped) {
+                bail!("stopped while {program} ran");
+            }
+            break status;
+        }
+        let ended: Option<anyhow::Error> = if stopped() {
+            Some(anyhow::anyhow!("stopped while {program} ran"))
+        } else if (watch.expired)() {
+            Some(
+                RanTooLong {
+                    program,
+                    limit: watch.limit,
+                }
+                .into(),
+            )
+        } else {
+            None
+        };
+        if let Some(error) = ended {
+            // Killed and then waited for, so no process is left behind. The
+            // readers end on their own once the pipes close, and are not
+            // waited for: what the program said no longer matters.
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
+        }
+        std::thread::sleep(pause);
+        pause = (pause * 2).min(STOP_POLL_MAX);
+    };
+    let stderr_tail = stderr_reader
+        .join()
+        .map_err(|_| anyhow::anyhow!("the thread reading {program}'s stderr panicked"))?
+        .with_context(|| format!("read {program} stderr"))?;
+    let stdout = stdout_reader
+        .map(|reader| {
+            reader
+                .join()
+                .map_err(|_| anyhow::anyhow!("the thread reading {program}'s stdout panicked"))?
+                .with_context(|| format!("read {program} stdout"))
+        })
+        .transpose()?;
+    Ok(Ran {
+        status,
+        stdout,
+        stderr_tail,
+    })
+}
+
+/// ffmpeg or ffprobe ran longer than it was given, and was killed. A caller
+/// that keeps the reason finds this in the error's chain
+/// (`anyhow::Error::downcast_ref`), as it finds [`FfmpegFailed`].
+#[derive(Debug)]
+pub struct RanTooLong {
+    program: Program,
+    limit: Duration,
+}
+
+impl std::fmt::Display for RanTooLong {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} did not finish within {}, so it was stopped",
+            self.program,
+            spoken(self.limit)
+        )
+    }
+}
+
+impl std::error::Error for RanTooLong {}
+
+#[cfg(any(test, feature = "testutil"))]
+impl RanTooLong {
+    /// ffmpeg killed after `limit`, for a test of what a caller makes of it.
+    pub(crate) fn ffmpeg(limit: Duration) -> Self {
+        Self {
+            program: Program::Ffmpeg,
+            limit,
+        }
+    }
+}
+
+/// `limit` as a sentence gives it: in hours when it is whole hours, else in
+/// minutes when it is whole minutes, else in seconds.
+fn spoken(limit: Duration) -> String {
+    let secs = limit.as_secs();
+    let (count, unit) = if secs >= 3600 && secs.is_multiple_of(3600) {
+        (secs / 3600, "hour")
+    } else if secs >= 60 && secs.is_multiple_of(60) {
+        (secs / 60, "minute")
+    } else {
+        (secs, "second")
+    };
+    format!("{count} {unit}{}", if count == 1 { "" } else { "s" })
 }
 
 /// ffmpeg ran and exited with a failure: its exit status and the end of
@@ -664,8 +965,8 @@ fn read_tail(mut source: impl Read, limit: usize) -> std::io::Result<Vec<u8>> {
 }
 
 /// Build a `Command` for ffprobe, resolved the same way as every other tool
-/// lookup in this module, for [`crate::probe_media`], the one function that
-/// runs ffprobe.
+/// lookup in this module, for [`run_ffprobe`], the one function that runs
+/// ffprobe.
 ///
 /// # Errors
 ///
