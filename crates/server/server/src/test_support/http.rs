@@ -24,13 +24,56 @@ pub struct RegisteredAccount {
 /// response body has been read. A helper must not hand back a response whose
 /// server has already been told to stop, so the body is always read before
 /// this value drops, regardless of how the runtime handles shutdown.
+///
+/// It builds each request a test sends it, [`Self::request`] and the verbs
+/// beside it, with its own client and its own address, so a test names only
+/// the method and the path.
 pub struct TestServer {
     base: String,
+    client: reqwest::Client,
     handle: tokio::task::JoinHandle<()>,
 }
 
 impl TestServer {
-    /// `http://127.0.0.1:<port>`, to prefix a path with.
+    /// A `method` request to `path` on this server. `path` starts with `/`
+    /// and may carry a query.
+    pub fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
+        self.client.request(method, format!("{}{path}", self.base))
+    }
+
+    /// A `GET` request to `path` on this server.
+    pub fn get(&self, path: &str) -> reqwest::RequestBuilder {
+        self.request(reqwest::Method::GET, path)
+    }
+
+    /// A `HEAD` request to `path` on this server.
+    pub fn head(&self, path: &str) -> reqwest::RequestBuilder {
+        self.request(reqwest::Method::HEAD, path)
+    }
+
+    /// A `POST` request to `path` on this server.
+    pub fn post(&self, path: &str) -> reqwest::RequestBuilder {
+        self.request(reqwest::Method::POST, path)
+    }
+
+    /// A `PUT` request to `path` on this server.
+    pub fn put(&self, path: &str) -> reqwest::RequestBuilder {
+        self.request(reqwest::Method::PUT, path)
+    }
+
+    /// A `PATCH` request to `path` on this server.
+    pub fn patch(&self, path: &str) -> reqwest::RequestBuilder {
+        self.request(reqwest::Method::PATCH, path)
+    }
+
+    /// A `DELETE` request to `path` on this server.
+    pub fn delete(&self, path: &str) -> reqwest::RequestBuilder {
+        self.request(reqwest::Method::DELETE, path)
+    }
+
+    /// `http://127.0.0.1:<port>`, for a test that reaches the server other
+    /// than through [`Self::request`]: over a raw socket, or with a URL it
+    /// builds itself.
     pub fn base(&self) -> &str {
         &self.base
     }
@@ -63,6 +106,7 @@ pub async fn serve_router(app: axum::Router) -> TestServer {
     });
     TestServer {
         base: format!("http://{address}"),
+        client: http_client(),
         handle,
     }
 }
@@ -77,7 +121,7 @@ async fn request(
     body: Option<(&str, reqwest::Body)>,
 ) -> (StatusCode, String) {
     let server = serve(state).await;
-    let mut req = http_client().request(method, format!("{}{path}", server.base()));
+    let mut req = server.request(method, path);
     if let Some(token) = token {
         req = req.bearer_auth(token);
     }
@@ -124,8 +168,8 @@ pub async fn register_via_api(
     password: &str,
 ) -> RegisteredAccount {
     let server = serve(state).await;
-    let response = http_client()
-        .post(format!("{}/v1/accounts", server.base()))
+    let response = server
+        .post("/v1/accounts")
         .json(&serde_json::json!({ "username": username, "password": password }))
         .send()
         .await
@@ -210,8 +254,8 @@ pub async fn log_in_raw(state: &AppState, username: &str, password: &str) -> (St
 /// (`token`, `account_id`, `username`).
 pub async fn log_in(state: &AppState, username: &str, password: &str) -> serde_json::Value {
     let server = serve(state).await;
-    let response = http_client()
-        .post(format!("{}/v1/session", server.base()))
+    let response = server
+        .post("/v1/session")
         .json(&serde_json::json!({ "username": username, "password": password }))
         .send()
         .await
@@ -267,8 +311,8 @@ pub async fn post_created_json<T: DeserializeOwned>(
     body: serde_json::Value,
 ) -> (String, T) {
     let server = serve(state).await;
-    let response = http_client()
-        .post(format!("{}{path}", server.base()))
+    let response = server
+        .post(path)
         .bearer_auth(token)
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .body(serde_json::to_vec(&body).expect("test JSON always serializes"))

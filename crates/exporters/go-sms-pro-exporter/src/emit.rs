@@ -11,6 +11,7 @@ use message_crate_core::{
     ConvertRun, Counter, ExportReport, ItemKind, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE,
     prepare_outputs, project_conversation,
 };
+use message_csv::write_guarded_record;
 use message_ir::{
     ExportMeta, IrService, IrSource, PendingAttachment, PendingConversation, PendingMessage,
     ProjectionHooks, ensure_conversation,
@@ -661,7 +662,9 @@ fn remove_if_exists(path: &Path) {
 
 /// Write `T`'s file in `output_dir` (or remove a stale one) with its header and one row per item
 /// of `details`. When `more` entries were left out, a last row says so in its final column,
-/// padded with empty columns to the header's width.
+/// padded with empty columns to the header's width. Every detail row's cells go through
+/// [`message_csv::written_cell`], because the addresses and text come from the backup and a
+/// spreadsheet would run one that starts with `=` as a formula.
 fn write_skipped_csv<const N: usize, T: SkippedCsv<N>>(
     output_dir: &Path,
     details: &[T],
@@ -676,7 +679,7 @@ fn write_skipped_csv<const N: usize, T: SkippedCsv<N>>(
         csv::Writer::from_path(&path).with_context(|| format!("create {}", path.display()))?;
     wtr.write_record(T::HEADER)?;
     for d in details {
-        wtr.write_record(d.row())?;
+        write_guarded_record(&mut wtr, d.row())?;
     }
     if more > 0 {
         let mut row: [String; N] = std::array::from_fn(|_| String::new());

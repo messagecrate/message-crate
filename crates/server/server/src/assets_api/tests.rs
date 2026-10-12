@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_support::{http_client, stored_time};
+use crate::test_support::stored_time;
 use file_io::sha256_hex;
 use std::io::Write;
 use std::path::PathBuf;
@@ -521,8 +521,8 @@ async fn an_asset_put_then_get_returns_the_same_bytes() {
     let path = format!("/v1/assets/{sha}");
     let server = crate::test_support::serve(&fixture.state).await;
     let put = |content_type: Option<&str>| {
-        let mut request = http_client()
-            .put(format!("{}{path}", server.base()))
+        let mut request = server
+            .put(&path)
             .bearer_auth(&user.token)
             .body(bytes.clone());
         if let Some(content_type) = content_type {
@@ -557,8 +557,8 @@ async fn an_asset_put_then_get_returns_the_same_bytes() {
     let again: serde_json::Value = response.json().await.unwrap();
     assert_eq!(again["already_present"], true);
 
-    let response = http_client()
-        .get(format!("{}{path}", server.base()))
+    let response = server
+        .get(&path)
         .bearer_auth(&user.token)
         .send()
         .await
@@ -584,8 +584,8 @@ async fn a_session_reads_an_attachment_without_export_and_a_token_needs_it() {
     let sha = Sha256::of_bytes(&bytes);
     let path = format!("/v1/assets/{sha}");
     let server = crate::test_support::serve(&state).await;
-    let response = http_client()
-        .put(format!("{}{path}", server.base()))
+    let response = server
+        .put(&path)
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
         .body(bytes.clone())
@@ -1093,8 +1093,8 @@ impl<'a> StartedUpload<'a> {
         mime: &str,
     ) -> Self {
         let sha = Sha256::of_bytes(bytes);
-        let response = http_client()
-            .post(format!("{}/v1/assets/{sha}/uploads", server.base()))
+        let response = server
+            .post(&format!("/v1/assets/{sha}/uploads"))
             .bearer_auth(token)
             .json(&serde_json::json!({ "bytes": bytes.len(), "mime": mime }))
             .send()
@@ -1112,19 +1112,22 @@ impl<'a> StartedUpload<'a> {
         }
     }
 
-    /// The asset's URL with `rest` appended.
-    fn asset_url(&self, rest: &str) -> String {
-        format!("{}/v1/assets/{}{rest}", self.server.base(), self.sha)
+    /// A `method` request to the asset's path with `rest` appended.
+    fn asset_request(&self, method: reqwest::Method, rest: &str) -> reqwest::RequestBuilder {
+        self.server
+            .request(method, &format!("/v1/assets/{}{rest}", self.sha))
     }
 
     /// `PUT` each part at the part size the upload opened with, each of which
     /// must answer `200 OK`.
     async fn send_parts(&self) {
-        let client = http_client();
         let upload_id = &self.upload_id;
         for (index, chunk) in self.bytes.chunks(self.part_size).enumerate() {
-            let response = client
-                .put(self.asset_url(&format!("/uploads/{upload_id}/parts/{}", index + 1)))
+            let response = self
+                .asset_request(
+                    reqwest::Method::PUT,
+                    &format!("/uploads/{upload_id}/parts/{}", index + 1),
+                )
                 .bearer_auth(self.token)
                 .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
                 .body(chunk.to_vec())
@@ -1139,10 +1142,12 @@ impl<'a> StartedUpload<'a> {
     /// `201 Created`, and read the asset back, which must answer `200 OK`.
     async fn send_parts_and_complete(self) -> UploadOutcome {
         self.send_parts().await;
-        let client = http_client();
         let upload_id = &self.upload_id;
-        let response = client
-            .post(self.asset_url(&format!("/uploads/{upload_id}/complete")))
+        let response = self
+            .asset_request(
+                reqwest::Method::POST,
+                &format!("/uploads/{upload_id}/complete"),
+            )
             .bearer_auth(self.token)
             .send()
             .await
@@ -1161,8 +1166,8 @@ impl<'a> StartedUpload<'a> {
             .map(str::to_string);
         let completed: serde_json::Value = response.json().await.unwrap();
 
-        let response = client
-            .get(self.asset_url(""))
+        let response = self
+            .asset_request(reqwest::Method::GET, "")
             .bearer_auth(self.token)
             .send()
             .await
@@ -1260,8 +1265,7 @@ fn lookup_ignores_a_file_named_with_an_extension() {
 async fn an_asset_put_keeps_its_media_type_but_not_octet_stream() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let server = crate::test_support::serve(&fixture.state).await;
-    let client = http_client();
-    let url = |sha: &str| format!("{}/v1/assets/{sha}", server.base());
+    let asset_path = |sha: &str| format!("/v1/assets/{sha}");
 
     let jpeg = b"jpeg-bytes".to_vec();
     let jpeg_sha = Sha256::of_bytes(&jpeg);
@@ -1275,8 +1279,8 @@ async fn an_asset_put_keeps_its_media_type_but_not_octet_stream() {
             "application/octet-stream",
         ),
     ] {
-        let response = client
-            .put(url(sha.as_str()))
+        let response = server
+            .put(&asset_path(sha.as_str()))
             .bearer_auth(&user.token)
             .header(reqwest::header::CONTENT_TYPE, content_type)
             .body(bytes)
@@ -1287,7 +1291,7 @@ async fn an_asset_put_keeps_its_media_type_but_not_octet_stream() {
     }
 
     let served_type = |sha: &str| {
-        let request = client.get(url(sha)).bearer_auth(&user.token);
+        let request = server.get(&asset_path(sha)).bearer_auth(&user.token);
         async move {
             let response = request.send().await.unwrap();
             assert_eq!(response.status(), StatusCode::OK);
@@ -1466,13 +1470,12 @@ async fn the_stored_bytes_decide_the_type_over_the_first_declared() {
 async fn starting_an_upload_for_a_stored_asset_answers_200_already_present() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let server = crate::test_support::serve(&fixture.state).await;
-    let client = http_client();
     let bytes = b"already-stored".to_vec();
     let sha = Sha256::of_bytes(&bytes);
-    let url = |rest: &str| format!("{}/v1/assets/{sha}{rest}", server.base());
+    let asset_path = |rest: &str| format!("/v1/assets/{sha}{rest}");
 
-    let response = client
-        .put(url(""))
+    let response = server
+        .put(&asset_path(""))
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
         .body(bytes.clone())
@@ -1482,8 +1485,8 @@ async fn starting_an_upload_for_a_stored_asset_answers_200_already_present() {
     assert_eq!(response.status(), StatusCode::CREATED);
     let created: serde_json::Value = response.json().await.unwrap();
 
-    let response = client
-        .post(url("/uploads"))
+    let response = server
+        .post(&asset_path("/uploads"))
         .bearer_auth(&user.token)
         .json(&serde_json::json!({ "bytes": bytes.len(), "mime": "image/png" }))
         .send()
@@ -1516,13 +1519,15 @@ async fn deleting_an_upload_answers_204_and_removes_its_files() {
     let mut state = fixture.state.clone();
     state.asset_part_size = 16;
     let server = crate::test_support::serve(&state).await;
-    let client = http_client();
     let bytes: Vec<u8> = (0u8..40).collect();
     let upload = StartedUpload::start(&server, &user.token, &bytes).await;
     let upload_id = &upload.upload_id;
 
-    let response = client
-        .put(upload.asset_url(&format!("/uploads/{upload_id}/parts/1")))
+    let response = upload
+        .asset_request(
+            reqwest::Method::PUT,
+            &format!("/uploads/{upload_id}/parts/1"),
+        )
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
         .body(bytes[..16].to_vec())
@@ -1536,8 +1541,8 @@ async fn deleting_an_upload_answers_204_and_removes_its_files() {
     assert!(session.join("manifest.json").is_file());
     assert!(session.join("part-0001").is_file());
 
-    let response = client
-        .delete(upload.asset_url(&format!("/uploads/{upload_id}")))
+    let response = upload
+        .asset_request(reqwest::Method::DELETE, &format!("/uploads/{upload_id}"))
         .bearer_auth(&user.token)
         .send()
         .await
@@ -1546,8 +1551,11 @@ async fn deleting_an_upload_answers_204_and_removes_its_files() {
     assert!(!session.exists(), "the session directory must be gone");
 
     // The session is gone, so a part for it has nowhere to go.
-    let response = client
-        .put(upload.asset_url(&format!("/uploads/{upload_id}/parts/2")))
+    let response = upload
+        .asset_request(
+            reqwest::Method::PUT,
+            &format!("/uploads/{upload_id}/parts/2"),
+        )
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
         .body(bytes[16..32].to_vec())
@@ -1567,10 +1575,9 @@ async fn an_asset_put_of_the_empty_file_is_stored() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let server = crate::test_support::serve(&fixture.state).await;
     let sha = Sha256::of_bytes(b"");
-    let url = format!("{}/v1/assets/{sha}", server.base());
-    let client = http_client();
-    let response = client
-        .put(&url)
+    let asset_path = format!("/v1/assets/{sha}");
+    let response = server
+        .put(&asset_path)
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
         .body(Vec::new())
@@ -1581,8 +1588,8 @@ async fn an_asset_put_of_the_empty_file_is_stored() {
     let text = response.text().await.unwrap();
     assert_eq!(status, StatusCode::CREATED, "empty file refused: {text}");
 
-    let response = client
-        .get(&url)
+    let response = server
+        .get(&asset_path)
         .bearer_auth(&user.token)
         .send()
         .await
@@ -1605,11 +1612,10 @@ async fn a_multipart_upload_of_the_empty_file_completes_with_no_parts() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let server = crate::test_support::serve(&fixture.state).await;
     let sha = Sha256::of_bytes(b"");
-    let url = |rest: &str| format!("{}/v1/assets/{sha}{rest}", server.base());
-    let client = http_client();
+    let asset_path = |rest: &str| format!("/v1/assets/{sha}{rest}");
 
-    let response = client
-        .post(url("/uploads"))
+    let response = server
+        .post(&asset_path("/uploads"))
         .bearer_auth(&user.token)
         .json(&serde_json::json!({ "bytes": 0 }))
         .send()
@@ -1621,8 +1627,8 @@ async fn a_multipart_upload_of_the_empty_file_completes_with_no_parts() {
     let started: serde_json::Value = serde_json::from_str(&text).unwrap();
     let upload_id = started["upload_id"].as_str().unwrap().to_string();
 
-    let response = client
-        .post(url(&format!("/uploads/{upload_id}/complete")))
+    let response = server
+        .post(&asset_path(&format!("/uploads/{upload_id}/complete")))
         .bearer_auth(&user.token)
         .send()
         .await
@@ -1649,8 +1655,8 @@ async fn an_asset_put_with_an_empty_body_answers_422() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let server = crate::test_support::serve(&fixture.state).await;
     let sha = Sha256::of_bytes(b"never-sent");
-    let response = http_client()
-        .put(format!("{}/v1/assets/{sha}", server.base()))
+    let response = server
+        .put(&format!("/v1/assets/{sha}"))
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
         .body(Vec::new())
@@ -1682,14 +1688,13 @@ async fn completing_an_upload_for_an_asset_a_put_stored_first_answers_200() {
     let mut state = fixture.state.clone();
     state.asset_part_size = 16;
     let server = crate::test_support::serve(&state).await;
-    let client = http_client();
     let bytes: Vec<u8> = (0u8..40).collect();
     let upload = StartedUpload::start(&server, &user.token, &bytes).await;
     let upload_id = &upload.upload_id;
     upload.send_parts().await;
 
-    let response = client
-        .put(upload.asset_url(""))
+    let response = upload
+        .asset_request(reqwest::Method::PUT, "")
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "image/png")
         .body(bytes.clone())
@@ -1698,8 +1703,11 @@ async fn completing_an_upload_for_an_asset_a_put_stored_first_answers_200() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::CREATED);
 
-    let response = client
-        .post(upload.asset_url(&format!("/uploads/{upload_id}/complete")))
+    let response = upload
+        .asset_request(
+            reqwest::Method::POST,
+            &format!("/uploads/{upload_id}/complete"),
+        )
         .bearer_auth(&user.token)
         .send()
         .await
@@ -1827,8 +1835,8 @@ pub(crate) async fn seed_attachment_with_preview(
 /// return the status, the `Content-Type` and the body.
 async fn get_bytes(state: &AppState, path: &str, token: &str) -> (StatusCode, String, Vec<u8>) {
     let server = crate::test_support::serve(state).await;
-    let response = http_client()
-        .get(format!("{}{path}", server.base()))
+    let response = server
+        .get(path)
         .bearer_auth(token)
         .header(reqwest::header::ACCEPT, "image/*")
         .send()
@@ -2075,10 +2083,9 @@ async fn a_head_of_a_preview_or_a_thumbnail_takes_any_accept() {
     let sha = &seeded.with_preview;
     give_thumbnail_the_preview_file(state, sha).await;
     let server = crate::test_support::serve(state).await;
-    let client = http_client();
     let head = |path: String, range: Option<&'static str>| {
-        let mut request = client
-            .head(format!("{}{path}", server.base()))
+        let mut request = server
+            .head(&path)
             .bearer_auth(&user.token)
             .header(reqwest::header::ACCEPT, "image/*");
         if let Some(range) = range {
@@ -2263,11 +2270,8 @@ async fn a_part_or_completion_for_an_unknown_upload_is_not_found() {
 async fn a_put_with_a_path_in_the_fingerprint_writes_nothing_outside_the_store() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let server = crate::test_support::serve(&fixture.state).await;
-    let response = http_client()
-        .put(format!(
-            "{}/v1/assets/..%2F..%2F..%2F..%2Fescaped%2Fjunk",
-            server.base()
-        ))
+    let response = server
+        .put("/v1/assets/..%2F..%2F..%2F..%2Fescaped%2Fjunk")
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
         .body(b"planted bytes".to_vec())
@@ -2317,8 +2321,8 @@ async fn a_put_whose_bytes_do_not_match_leaves_no_file() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let server = crate::test_support::serve(&fixture.state).await;
     let sha = Sha256::of_bytes(b"the bytes the client hashed");
-    let response = http_client()
-        .put(format!("{}/v1/assets/{sha}", server.base()))
+    let response = server
+        .put(&format!("/v1/assets/{sha}"))
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
         .body(b"the bytes the client sent".to_vec())
@@ -2352,8 +2356,8 @@ async fn a_fingerprint_with_surrounding_whitespace_is_refused_not_a_500() {
     let server = crate::test_support::serve(&fixture.state).await;
     let bytes = b"bytes under a padded fingerprint";
     let sha = Sha256::of_bytes(bytes);
-    let response = http_client()
-        .put(format!("{}/v1/assets/%0A{sha}", server.base()))
+    let response = server
+        .put(&format!("/v1/assets/%0A{sha}"))
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
         .body(bytes.to_vec())
@@ -2378,12 +2382,8 @@ async fn a_fingerprint_in_capitals_is_stored_under_its_lower_case_name() {
     let server = crate::test_support::serve(&fixture.state).await;
     let bytes = b"bytes under a capital fingerprint";
     let sha = Sha256::of_bytes(bytes);
-    let response = http_client()
-        .put(format!(
-            "{}/v1/assets/{}",
-            server.base(),
-            sha.as_str().to_ascii_uppercase()
-        ))
+    let response = server
+        .put(&format!("/v1/assets/{}", sha.as_str().to_ascii_uppercase()))
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
         .body(bytes.to_vec())
@@ -2424,9 +2424,7 @@ pub(crate) async fn fetch(
     headers: &[(&str, &str)],
 ) -> Fetched {
     let server = crate::test_support::serve(state).await;
-    let mut request = http_client()
-        .get(format!("{}{path}", server.base()))
-        .header(reqwest::header::ACCEPT, "*/*");
+    let mut request = server.get(path).header(reqwest::header::ACCEPT, "*/*");
     if let Some(token) = token {
         request = request.bearer_auth(token);
     }

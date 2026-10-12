@@ -13,9 +13,10 @@ Internal rework is mentioned only as far as it matters to you. The reasoning
 behind a decision lives in the architecture notes under `docs/adr/`, and the
 detail of any single change lives in its pull request.
 
-Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-Bullets under the version still in development carry the date they landed;
-released versions carry their date on the heading.
+Version numbers follow
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html). Bullets under the
+version still in development carry the date they landed; released versions
+carry their date on the heading.
 
 ## [0.11.0] — in development
 
@@ -334,9 +335,9 @@ released versions carry their date on the heading.
   from the same place. wtsexporter is found only in the Tools Directory.
   The Message Crate the app starts looks in the same places, so the app and
   the Message Crate it starts convert with the same ffmpeg. **Settings →
-  System → Media** has nothing to type any more. It shows the Tools Directory and, for ffmpeg, ffprobe and
-  wtsexporter, where each was found, that it is missing and where to put
-  it, or why it is not used (#1053).
+  System → Media** has nothing to type any more. It shows the Tools
+  Directory and, for ffmpeg, ffprobe and wtsexporter, where each was found,
+  that it is missing and where to put it, or why it is not used (#1053).
 - 2026-10-07: **Internal names were tidied.** Nothing changes on screen,
   on disk or in the HTTP API (#1715).
 - 2026-10-05: **A run's log lists its Import Errors and notes under
@@ -762,7 +763,6 @@ released versions carry their date on the heading.
   `0001400773261000` can only come from a file that was edited or damaged,
   and it was read as a real date. Such a message is now skipped and counted
   with the other messages whose date could not be read (#2602).
-
 - 2026-10-11: **The Import Run's log says why videos were compressed as H.264.**
   When ffmpeg could not compress a video as HEVC, most often because it was
   built without the HEVC encoder, the import compressed it as H.264 instead
@@ -808,8 +808,8 @@ released versions carry their date on the heading.
   an earlier batch ended and run in full before the server stopped. The
   server now turns it away at once, without storing any of it, and the
   Upload tries it again. If the server is not back in time, the Upload
-  pauses, and resuming it sends the batch. The server's log no longer reports the turned-away
-  batch as an internal error either (#2203).
+  pauses, and resuming it sends the batch. The server's log no longer
+  reports the turned-away batch as an internal error either (#2203).
 - 2026-10-11: **Messages about the backup password read as plain
   sentences.** An encrypted iPhone backup with no password is now refused
   with "The backup is encrypted. Fill in the Encryption password.", and a
@@ -998,6 +998,15 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-12: **A CSV export opens in a spreadsheet without running a
+  message as a formula.** A message, name or address that started with `=`,
+  `+`, `-` or `@` was written as it was, so Excel or LibreOffice Calc read
+  it as a formula, and a sender could place one such as `=HYPERLINK(...)` in
+  the export of whoever received it. Such a cell now starts with a `'`,
+  which the spreadsheet reads as text, and a phone number keeps its `+`.
+  Importing or converting the CSV again takes the `'` off, so every message
+  comes back as it was. The lists of skipped messages a GO SMS Pro import
+  writes follow the same rule (#2118).
 - 2026-10-12: **Converting an SMS Backup & Restore backup logs its
   attachments and moves the progress bar.** While a Convert of a backup
   copied its attachments, the log said nothing about one it could not find
@@ -1212,7 +1221,6 @@ released versions carry their date on the heading.
   filled the Audit Trail with refused logins. Past 120 such logins a minute
   in all, the server now turns them away without checking them or recording
   them, and the answer still doesn't say whether a username exists.
-
 - 2026-10-11: **No single attachment or error stops Thumbnails and Previews
   for good.** The server makes Thumbnails and Previews one attachment at a
   time, and three things could stop that work for every account. A file
@@ -1220,33 +1228,29 @@ released versions carry their date on the heading.
   forever, and again at every start. ffmpeg is now stopped once it runs far
   longer than the file plays, at least 10 minutes and at most 6 hours, or
   an hour when the file does not say how long it plays. The attachment
-  then says that ffmpeg did not finish in time. A fault in the server's own code ended the work until a restart, and
-  a moment when the database was busy ended it until the next import. Both
-  are now written to the server's log, and the work starts again 5 seconds
-  later, waiting twice as long after each failure in a row, up to 5
-  minutes. ffmpeg and ffprobe now also open only files on this
-  computer, never a network address named inside an attachment
-  (#2059, #2072, #2091).
-
+  then says that ffmpeg did not finish in time. A fault in the server's own
+  code ended the work until a restart, and a moment when the database was
+  busy ended it until the next import. Both are now written to the server's
+  log, and the work starts again 5 seconds later, waiting twice as long
+  after each failure in a row, up to 5 minutes. ffmpeg and ffprobe now also
+  open only files on this computer, never a network address named inside an
+  attachment (#2059, #2072, #2091).
 - 2026-10-11: **Two uploads of one attachment at the same moment both
   succeed.** The server named an upload's temporary file from the clock
   alone, so two uploads of the same file that started in one clock tick
   wrote into one temporary file and both failed. Each upload now gets a
   name of its own (#2260).
-
 - 2026-10-11: **Starting an upload no longer slows as unfinished uploads
   pile up.** Each attachment upload used to look through every upload the
   account had left unfinished, which slowed an import of many attachments.
   Uploads left unfinished for a day are now removed when an import ends and
   when the server starts instead (#2261).
-
 - 2026-10-11: **The server's log names a damaged Preview or Thumbnail
   location.** When the server makes or checks Previews and Thumbnails, it
   passes over one whose stored location points outside its directory, and
   now says so in its log with the account and the attachment. When the
   copies of one attachment name different Previews, the server always
   shows the same one and logs both (#2806).
-
 - 2026-10-11: **The server's log says each failure once.** A request the
   server failed on wrote two error lines to its log, and the second said
   nothing the first did not. It now writes one, with the whole
@@ -1257,7 +1261,6 @@ released versions carry their date on the heading.
   the requests that did something. A failed health check, a file the
   website doesn't have, and every other request still write theirs
   (#2254, #2675, #2274).
-
 - 2026-10-11: **The server warns when every website may call it.** A `*` in
   the server's list of websites allowed to call it lets a page on any
   website, opened by anyone on the network, reach the server through their
@@ -1369,77 +1372,79 @@ released versions carry their date on the heading.
 
 ### Upgrading
 
-- The **ffmpeg directory** field in Settings → System is gone, and the
-  `MESSAGE_CRATE_BIN` and `WTSEXPORTER` environment variables are no longer
-  read. ffmpeg and ffprobe beside the app, in a `lib/` directory beside it,
-  or in the directory the field or `MESSAGE_CRATE_BIN` named are no longer
-  found, and a WhatsApp import no longer finds wtsexporter on `PATH`. The
-  desktop app downloads all three into its Tools Directory when it starts,
-  ffmpeg and ffprobe only when they aren't installed on `PATH`, so nothing
-  needs doing. Without a connection, Troubleshooting in the user
+- 2026-10-08: The **ffmpeg directory** field in Settings → System is gone,
+  and the `MESSAGE_CRATE_BIN` and `WTSEXPORTER` environment variables are no
+  longer read. ffmpeg and ffprobe beside the app, in a `lib/` directory
+  beside it, or in the directory the field or `MESSAGE_CRATE_BIN` named are
+  no longer found, and a WhatsApp import no longer finds wtsexporter on
+  `PATH`. The desktop app downloads all three into its Tools Directory when
+  it starts, ffmpeg and ffprobe only when they aren't installed on `PATH`,
+  so nothing needs doing. Without a connection, Troubleshooting in the user
   guide says which files to put there by hand. If you start the server with
   a script, it takes `serve --tools-dir <directory>` for the same purpose
   (#1053).
-- A WhatsApp `result.json` that a `wtsexporter` from before this release
-  wrote is refused, because it records no group members and no sender's
-  name beside their number. The desktop app replaces an older `wtsexporter`
-  in its Tools Directory with Message Crate's own on its next start with an
-  internet connection, except on Linux on ARM, where it has no download of
-  its own and Troubleshooting in the user guide says how to install
-  wtsexporter by hand. Run the WhatsApp import again from the backup rather
-  than from an old `result.json` (#1092).
-- A phone number written without its country code is no longer read as a
-  US number. Import a US phone's backup with **Phone's country** set to the
-  United States, or pick the country of each such number on the Contacts
-  screen. If you have a program that creates Import Runs through the HTTP
-  API, it states the country in `phone_country` (#1676).
-- The database format changed. **An existing Message Crate is rebuilt empty
-  on first start and its messages must be imported again.**
-- A desktop app that was pointed at a Message Crate on another computer
-  opens on this computer's own once after upgrading, because the address is
-  now saved apart from the login. Enter the address again under **Change
-  server address** and log in. From then on the app keeps it.
-- Message files exported before replies moved onto the message itself are
-  refused when you import or convert them, rather than read with their
-  replies taken for plain messages. This holds for JSON, JSONL, CSV, EML and
-  mbox exports, and for an Import Run an earlier build left paused. Export
-  the backup again with this build, then import or convert the new files;
-  discard a paused run and start the import again.
-- If you have a program that reads messages from the HTTP API, it must read
-  a reply from `reply_to`, which names the quoted message's `guid` and part,
-  in place of `is_reply`, `thread_originator_guid` and
+- 2026-10-09: A WhatsApp `result.json` that a `wtsexporter` from before this
+  release wrote is refused, because it records no group members and no
+  sender's name beside their number. The desktop app replaces an older
+  `wtsexporter` in its Tools Directory with Message Crate's own on its next
+  start with an internet connection, except on Linux on ARM, where it has no
+  download of its own and Troubleshooting in the user guide says how to
+  install wtsexporter by hand. Run the WhatsApp import again from the backup
+  rather than from an old `result.json` (#1092).
+- 2026-10-08: A phone number written without its country code is no longer
+  read as a US number. Import a US phone's backup with **Phone's country**
+  set to the United States, or pick the country of each such number on the
+  Contacts screen. If you have a program that creates Import Runs through
+  the HTTP API, it states the country in `phone_country` (#1676).
+- 2026-10-05: The database format changed. **An existing Message Crate is
+  rebuilt empty on first start and its messages must be imported again.**
+- 2026-10-08: A desktop app that was pointed at a Message Crate on another
+  computer opens on this computer's own once after upgrading, because the
+  address is now saved apart from the login. Enter the address again under
+  **Change server address** and log in. From then on the app keeps it.
+- 2026-10-05: Message files exported before replies moved onto the message
+  itself are refused when you import or convert them, rather than read with
+  their replies taken for plain messages. This holds for JSON, JSONL, CSV,
+  EML and mbox exports, and for an Import Run an earlier build left paused.
+  Export the backup again with this build, then import or convert the new
+  files; discard a paused run and start the import again.
+- 2026-10-05: If you have a program that reads messages from the HTTP API,
+  it must read a reply from `reply_to`, which names the quoted message's
+  `guid` and part, in place of `is_reply`, `thread_originator_guid` and
   `thread_originator_part`, and a message's reply count from `reply_count`
   in place of `num_replies`.
-- A Saved Search that uses `deleted:yes` finds fewer messages than before:
-  it leaves unsent messages out. Add `or unsent:yes` to it to find both.
-- If you have a program that reads messages from the HTTP API, a message's
-  `timestamp` and an earlier version's `edited_at` now carry three digits of
-  milliseconds, such as `2015-03-12T18:04:22.250Z`, where they had none.
-- Message files exported before they said when their backup was made are
-  refused when you import or convert them. Export the backup again with
-  this build. A program that reads the HTTP API finds the backup's date in
-  a message's `backup_taken_at` and an Import Run's `backup_taken_at`.
-- Message files exported before each message said whether its time has
-  milliseconds are refused when you import or convert them. Export the
-  backup again with this build. A program that reads the HTTP API finds it
-  in a message's `time_precision`, `seconds` or `milliseconds`.
-- Message files exported before Message Crate worked out each address's kind
-  itself are refused when you import or convert them. Export the backup
-  again with this build.
-- An SMS Backup & Restore backup imported before this release and imported
-  again afterwards makes a second copy of each group conversation, beside
-  the one the first import made. To keep one of each, delete the older
-  copy, or start from an empty Message Crate before importing again
-  (#2139).
-- If you have a program that reads conversations or messages from the HTTP
-  API, it must read the title a conversation is shown by from
+- 2026-10-05: A Saved Search that uses `deleted:yes` finds fewer messages
+  than before: it leaves unsent messages out. Add `or unsent:yes` to it to
+  find both.
+- 2026-10-06: If you have a program that reads messages from the HTTP API,
+  a message's `timestamp` and an earlier version's `edited_at` now carry
+  three digits of milliseconds, such as `2015-03-12T18:04:22.250Z`, where
+  they had none.
+- 2026-10-06: Message files exported before they said when their backup was
+  made are refused when you import or convert them. Export the backup again
+  with this build. A program that reads the HTTP API finds the backup's date
+  in a message's `backup_taken_at` and an Import Run's `backup_taken_at`.
+- 2026-10-06: Message files exported before each message said whether its
+  time has milliseconds are refused when you import or convert them. Export
+  the backup again with this build. A program that reads the HTTP API finds
+  it in a message's `time_precision`, `seconds` or `milliseconds`.
+- 2026-10-09: Message files exported before Message Crate worked out each
+  address's kind itself are refused when you import or convert them. Export
+  the backup again with this build.
+- 2026-10-10: An SMS Backup & Restore backup imported before this release
+  and imported again afterwards makes a second copy of each group
+  conversation, beside the one the first import made. To keep one of each,
+  delete the older copy, or start from an empty Message Crate before
+  importing again (#2139).
+- 2026-10-10: If you have a program that reads conversations or messages
+  from the HTTP API, it must read the title a conversation is shown by from
   `shown_title` in place of `label`, on the conversation list and on a
   message's `conversation`, and the export's title of a largest
   attachment's conversation in an account's storage from `group_title` in
   place of `conversation_title` (#2198).
-- A Docker Compose file saved from this release starts only the image of
-  this release or a later one. An older image fails to start under it,
-  because it wrote a file outside the data volume at every start. Pin
+- 2026-10-11: A Docker Compose file saved from this release starts only the
+  image of this release or a later one. An older image fails to start under
+  it, because it wrote a file outside the data volume at every start. Pin
   `bitrealm/message-crate` to this release or `latest`, and run
   `docker compose pull` before `docker compose up -d`, because Compose does
   not fetch a `latest` it already has (#2178).
@@ -2380,9 +2385,9 @@ released versions carry their date on the heading.
 - **An attachment too large after conversion says so in every
   conversation.** When two conversations shared one attachment that came
   out of Media over the size limit, the second recorded it as missing
-  instead of too large. Opening the link to an Import Run's directory not made yet
-  says nothing is there yet, instead of calling it outside the Staging
-  Directory when that directory is reached through a link.
+  instead of too large. Opening the link to an Import Run's directory not
+  made yet says nothing is there yet, instead of calling it outside the
+  Staging Directory when that directory is reached through a link.
 - **An Apple Messages reaction belongs to the person who made
   it.** Your heart on a friend's message was stored as theirs, and theirs on
   yours as yours. Each reaction also became an extra message of its own, and
@@ -2649,11 +2654,11 @@ released versions carry their date on the heading.
   attachment keeps its size and the reason it is missing, and a text or HTML
   attachment comes back with its own bytes instead of the next attachment's.
 - **An export stays inside its directory.** An attachment is never
-  written outside the output directory, whatever path it was stored under. An
-  export, or Convert, whose output directory is the backup or a directory above it
-  is refused before anything is written. An obfuscated export that can't
-  remove a real attachment fails and names the file, instead of reporting
-  success with the file still there.
+  written outside the output directory, whatever path it was stored under.
+  An export, or Convert, whose output directory is the backup or a directory
+  above it is refused before anything is written. An obfuscated export that
+  can't remove a real attachment fails and names the file, instead of
+  reporting success with the file still there.
 - **Exported attachments are checked.** A download that answers
   with something other than the attachment, such as a sign-in page from a
   proxy, is refused, instead of being saved as the attachment and skipped
@@ -3512,8 +3517,8 @@ of, and a search that reads the same everywhere.
   `0.9.0+343fe0d8`, so two dev builds can be told apart. When an app and its
   vault come from different releases, the app says so in a line under the
   header, "This vault is 0.10.0. This app is 0.9.0.", and the owner sees it
-  marked on that account's Profile. Nothing is blocked: the vault serves every app
-  whatever its version.
+  marked on that account's Profile. Nothing is blocked: the vault serves
+  every app whatever its version.
 - **User Accounts shows when each account last logged in.** A
   Last login column next to Status, in your own time zone, or "Never" for
   an account nobody has logged in to yet. Logging in, claiming the vault and
@@ -3568,9 +3573,9 @@ of, and a search that reads the same everywhere.
   deleted. If you forget its password, `create-owner` and
   `reset-owner-password` on the server put you back in.
 - **New accounts are closed by default.** A vault admits nobody the
-  owner has not admitted, until the owner turns on public registration. An account
-  the owner creates has to replace the owner's password the first time it
-  logs in, so the owner never keeps knowing it.
+  owner has not admitted, until the owner turns on public registration. An
+  account the owner creates has to replace the owner's password the first
+  time it logs in, so the owner never keeps knowing it.
 - **Permanent delete, from the trash only.** Deleting a trashed
   conversation removes it, its messages, and any attachment no other message
   still uses. Deleting a trashed contact does what a phone does: the name and
@@ -3733,7 +3738,8 @@ of, and a search that reads the same everywhere.
   contact, name, group memberships and handles included, and makes a new
   contact from the backup, the way a first import would. The forecast of new
   contacts shown before an import counts them. To keep someone out for good,
-  delete them from Trash. Why: `docs/adr/0013-an-import-replaces-a-trashed-contact.md`.
+  delete them from Trash. Why:
+  `docs/adr/0013-an-import-replaces-a-trashed-contact.md`.
 - **An Import Run says what it did to each contact.** The run
   records, as it goes, whether it created a contact, created one in place of
   a trashed contact, named one that had no name, or added a handle to one,

@@ -417,6 +417,8 @@ jobs:
   # ── Always: product version lockstep ──────────────────────────────────
   # The four version files and their lockfiles must agree; on a v* tag they
   # must also agree with the tag, and CHANGELOG.md must have a heading for it.
+  # The job also checks CHANGELOG.md's formatting: the step is cheap, and
+  # here it runs on every pull request without a job the ruleset must name.
   version:
     name: Product version lockstep
     needs: changes
@@ -429,6 +431,9 @@ jobs:
         env:
           TAG: ${{ needs.changes.outputs.release == 'true' && github.ref_name || '' }}
         run: ./scripts/check-version-lockstep.sh ${TAG:+"$TAG"}
+
+      - name: Check CHANGELOG.md's width, tight lists and dated entries
+        run: ./scripts/check-changelog.sh
 
   # ── Tag, or a manual run that asks for it: Docker image → DockerHub ───
   # On a tag or a manual run the changes job reports everything true, so

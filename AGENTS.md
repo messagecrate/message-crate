@@ -508,7 +508,8 @@ cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 # Rewrite Rust (workspace + src-tauri) and web/ (Biome)
 ./scripts/format-all.sh
 
-# Fast pre-flight: fmt --check, Clippy -D warnings, Biome ci, tsc.
+# Fast pre-flight: CHANGELOG.md format, fmt --check, Clippy -D warnings,
+# Biome ci, tsc.
 ./scripts/check-pr.sh
 
 # Everything CI runs, serially (build, tests, audits, docs, the lot).
@@ -570,7 +571,7 @@ npm run build             # tsc && vite build
 npm run dev               # Vite on http://localhost:5173 (proxies /v1 to :8080)
 ```
 
-From the repository root, `./scripts/format-all.sh` rewrites Rust and web sources to the formatters. `./scripts/check-pr.sh` is the fast pre-flight — `cargo fmt --check` and Clippy at `-D warnings` on both manifests, `biome ci`, the restricted-import list check, and the web type-check; it checks and never rewrites. `./scripts/check-all.sh` runs CI's checks serially on the machine it is started on, starting with `check-pr.sh`, except the Docker image build. On Linux or macOS it skips the Windows-only cases of the server config tests, which CI's `windows-config` job runs. Why the split: `docs/adr/0007-ci-is-the-only-gate.md`.
+From the repository root, `./scripts/format-all.sh` rewrites Rust and web sources to the formatters. `./scripts/check-pr.sh` is the fast pre-flight — the `CHANGELOG.md` formatting check, `cargo fmt --check` and Clippy at `-D warnings` on both manifests, `biome ci`, the restricted-import list check, and the web type-check; it checks and never rewrites. `./scripts/check-all.sh` runs CI's checks serially on the machine it is started on, starting with `check-pr.sh`, except the Docker image build. On Linux or macOS it skips the Windows-only cases of the server config tests, which CI's `windows-config` job runs. Why the split: `docs/adr/0007-ci-is-the-only-gate.md`.
 
 Do not start a separate `npm run dev` while `cargo tauri dev` is running. Tauri starts Vite itself.
 
@@ -594,7 +595,7 @@ The product follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (
 
 **`CHANGELOG.md` is written for the people who use Message Crate, not for developers.** Group every entry as **Features** (something a person can now do), **Fixes** (something that was wrong and now behaves correctly), or **Design** (a change in how the product works that is worth knowing about). Say what changed for the reader in plain language: no route paths, status codes, schema versions, type or crate names, or file paths. Internal rework earns a sentence about what it changes for the reader, or one line saying the internals were reworked with nothing visible — never a list of what was moved where. The developer-facing detail already lives in the pull request, the ADRs under `docs/adr/`, and the commit message.
 
-Bullets under the in-development heading start with an ISO date (`YYYY-MM-DD`), the day the change landed. Every list is tight: no blank line between two bullets, because one blank line makes the whole list render loose and each new entry copies whichever neighbor it lands beside. Released sections carry their date on the heading alone. Where a change forces someone to do something — a config key that must be deleted, a database that is rebuilt empty — put it under an **Upgrading** heading in that release, in a sentence they can act on.
+Bullets under the in-development heading start with an ISO date (`YYYY-MM-DD`), the day the change landed. Every list is tight: no blank line anywhere inside a list, bulleted or numbered, including before an item's second paragraph or nested list, because one blank line makes the whole list render loose and each new entry copies whichever neighbor it lands beside. Released sections carry their date on the heading alone. `./scripts/check-changelog.sh` enforces these rules and lines of at most 80 characters; `check-pr.sh` and CI's `version` job run it, and each failure names its line and rule. Where a change forces someone to do something — a config key that must be deleted, a database that is rebuilt empty — put it under an **Upgrading** heading in that release, in a sentence they can act on.
 
 Three version numbers are easy to mix up:
 

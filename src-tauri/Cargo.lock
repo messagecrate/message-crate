@@ -1406,6 +1406,7 @@ dependencies = [
  "go-sms-mms",
  "media",
  "message-crate-core",
+ "message-csv",
  "message-ir",
  "message-ir-format",
  "message-staging",

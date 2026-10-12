@@ -5,7 +5,7 @@ use super::*;
 use crate::problem::ProblemType;
 use crate::test_support::{
     SeedConversation, SeedMessage, claim_as_owner, expect_problem, get_json, get_raw, get_status,
-    http_client, patch_json_raw, post_json_raw, post_logged_out, post_status, register_via_api,
+    patch_json_raw, post_json_raw, post_logged_out, post_status, register_via_api,
     seed_conversation, stored_time, test_fixture,
 };
 
@@ -215,8 +215,8 @@ async fn claiming_an_unowned_server_creates_the_owner_and_signs_them_in() {
     let state = fixture.state.clone();
 
     let server = crate::test_support::serve(&state).await;
-    let response = http_client()
-        .post(format!("{}/v1/server/claim", server.base()))
+    let response = server
+        .post("/v1/server/claim")
         .json(&serde_json::json!({ "username": "keeper", "password": "hunter2hunter2" }))
         .send()
         .await
@@ -657,8 +657,8 @@ async fn the_claimed_owner_row_holds_no_permission() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
     let server = crate::test_support::serve(&state).await;
-    let response = http_client()
-        .post(format!("{}/v1/server/claim", server.base()))
+    let response = server
+        .post("/v1/server/claim")
         .json(&serde_json::json!({ "username": "keeper", "password": "hunter2hunter2" }))
         .send()
         .await
