@@ -54,15 +54,17 @@ date_re='^[-*+] [0-9]{4}-[0-9]{2}-[0-9]{2}'
 
 n=0
 in_development=false
+in_fence=false
 # Whether a blank line came since the last list item. A blank line anywhere
-# inside a list, even before an indented paragraph of an item, makes the
-# whole list render loose, so it counts until the next item.
+# inside a list, even before an indented paragraph or a nested list of an
+# item, makes the whole list render loose, so it counts until the next item.
 blank_in_list=false
-# The open lists, each as its indent and marker (" 0- 2. "), so an item
-# after a blank line can be told apart: one with an indent and marker
-# already open is a second item of the same list. A bullet character or an
-# ordered list's . or ) that changes starts a new list.
-list_indents=" "
+# The open lists, each as its indent and marker (" 0- 2. "). An item after a
+# blank line breaks the rule when it continues an open list (same indent and
+# marker) or starts a list nested in one (deeper indent). A bullet character
+# or an ordered list's . or ) that changes at the same indent starts a new
+# list.
+open_lists=" "
 
 while IFS= read -r line || [[ -n "${line}" ]]; do
   n=$((n + 1))
@@ -71,13 +73,23 @@ while IFS= read -r line || [[ -n "${line}" ]]; do
     fail "${n}" "width: ${#line} characters, more than ${max_width}"
   fi
 
+  # A fenced code block's lines are code: only their width is checked, and
+  # a blank line inside one does not loosen the list around it.
+  if [[ "${line}" =~ ^\ *(\`\`\`|~~~) ]]; then
+    if ${in_fence}; then in_fence=false; else in_fence=true; fi
+    continue
+  fi
+  if ${in_fence}; then
+    continue
+  fi
+
   if [[ -z "${line//[[:space:]]/}" ]]; then
     blank_in_list=true
     continue
   fi
 
   if [[ "${line}" =~ ^# ]]; then
-    list_indents=" "
+    open_lists=" "
     if [[ "${line}" =~ ^##\  ]]; then
       # Any dash, so "- in development" cannot turn the date rule off.
       if [[ "${line}" == *"in development"* ]]; then
@@ -89,31 +101,34 @@ while IFS= read -r line || [[ -n "${line}" ]]; do
   elif [[ "${line}" =~ ${item_re} ]]; then
     indent=${#BASH_REMATCH[1]}
     marker="${BASH_REMATCH[2]: -1}"
-    if ${blank_in_list} && [[ "${list_indents}" == *" ${indent}${marker} "* ]]; then
+    in_open_list=false
+    kept=" "
+    for open in ${open_lists}; do
+      if (( ${open%?} < indent )); then
+        in_open_list=true
+        kept+="${open} "
+      elif [[ "${open}" == "${indent}${marker}" ]]; then
+        in_open_list=true
+      fi
+    done
+    if ${blank_in_list} && ${in_open_list}; then
       fail "${n}" "tight lists: blank line inside the list before this item"
     fi
     # An item ends every list at its own indent or deeper.
-    kept=" "
-    for open in ${list_indents}; do
-      if (( ${open%?} < indent )); then
-        kept+="${open} "
-      fi
-    done
-    list_indents="${kept}${indent}${marker} "
+    open_lists="${kept}${indent}${marker} "
     if ${in_development} && [[ "${line}" =~ ${bullet_re} ]] \
       && ! [[ "${line}" =~ ${date_re} ]]; then
       fail "${n}" "dated entries: a bullet under the in-development heading starts with YYYY-MM-DD"
     fi
   elif ! [[ "${line}" =~ ^[[:space:]] ]]; then
     # A paragraph at the left margin ends the list.
-    list_indents=" "
+    open_lists=" "
   fi
   # Only an indented line inside an item keeps a blank line counting.
   if ! [[ "${line}" =~ ^[[:space:]] ]] || [[ "${line}" =~ ${item_re} ]]; then
     blank_in_list=false
   fi
 done < "${file}"
-
 
 if (( failures > 0 )); then
   echo "check-changelog: ${failures} problem(s) in ${file##*/}; the rules are in AGENTS.md, \"Releases and versions\"" >&2
