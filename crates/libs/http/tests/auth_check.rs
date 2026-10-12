@@ -76,7 +76,6 @@ fn each_failing_status_keeps_its_own_meaning() {
         (401, "unauthorized"),
         (403, "forbidden"),
         (404, "api_not_found"),
-        (429, "rate_limited"),
         (500, "server_error"),
         (503, "server_error"),
         (418, "http_status"),

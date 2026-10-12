@@ -135,19 +135,6 @@ mod tests {
     }
 
     #[test]
-    fn the_rate_limited_page_states_the_limit_and_the_window() {
-        let page = type_page(ProblemType::RateLimited);
-        assert!(page.contains(&format!(
-            "more than {} attempts",
-            crate::credentials::AUTH_RATE_MAX
-        )));
-        assert!(page.contains(&format!(
-            "inside {} seconds",
-            crate::credentials::AUTH_RATE_WINDOW.as_secs()
-        )));
-    }
-
-    #[test]
     fn committed_pages_match_the_generator() {
         // The twin of `cli_docs::tests::committed_page_matches_the_generator`:
         // a type added or reworded without regenerating, or a hand edit past

@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
 use crate::credentials::{
-    RateBucket, change_password_on_conn, hash_owner_password, hash_user_password, passwords_match,
+    change_password_on_conn, hash_owner_password, hash_user_password, passwords_match,
     require_username_free, require_valid_username,
 };
 use crate::db::audit_trail::{self, AuditAction, AuditActor, Details, NewEntry};
@@ -334,8 +334,7 @@ pub struct CreateAccountResponse {
             headers(("Location" = String, description = "Path of the new account"))
         ),
         crate::problem::openapi::RegistrationClosed,
-        crate::problem::openapi::UsernameTaken,
-        crate::problem::openapi::RateLimited
+        crate::problem::openapi::UsernameTaken
     )
 )]
 pub async fn create_account(
@@ -352,12 +351,7 @@ pub async fn create_account(
                 "only the owner creates accounts for others; a stranger creates their own with no credential while registration is open".into(),
             ));
         }
-        None => {
-            // One count for the whole server, like `claim`: a count per
-            // username lets a script that tries a new name each time through.
-            state.auth_rate_limits.count(&RateBucket::Register)?;
-            false
-        }
+        None => false,
     };
 
     let preferred_name = req
@@ -950,8 +944,7 @@ pub struct DeleteAccountRequest {
         crate::problem::openapi::InvalidCredentials,
         crate::problem::openapi::DemoAccountProtected,
         crate::problem::openapi::NotTheOwner,
-        crate::problem::openapi::StateConflict,
-        crate::problem::openapi::RateLimited
+        crate::problem::openapi::StateConflict
     )
 )]
 pub async fn delete_account(
@@ -1006,7 +999,7 @@ pub async fn delete_account(
             };
             // No pooled connection is held for the length of the Argon2 check.
             drop(conn);
-            require_current_password(&state, target, password_hash.as_deref(), pw).await?;
+            require_current_password(&state, password_hash.as_deref(), pw).await?;
             conn = state.db.acquire().await?;
         }
     }
@@ -1042,28 +1035,25 @@ pub async fn delete_account(
 // ---------------------------------------------------------------------------
 
 /// Check the `current_password` an account sent to confirm a change to
-/// itself. A wrong one counts in the same bucket as a failed login as that
-/// account, and past the login's limit the guess is refused unchecked: an open
-/// session must not be a way to guess the password faster than the login
-/// allows. The attempt is counted before the check, so guesses sent at once
-/// cannot all pass the limit, and a right one is given back.
+/// itself. A wrong one waits as a refused login does, then answers
+/// `invalid-credentials`: an open session must not be a way to guess the
+/// password faster than the login allows.
 ///
 /// Argon2 runs on the blocking thread pool. The caller holds no database
-/// connection across this call.
+/// connection across this call, so neither the check nor the wait holds
+/// one.
 async fn require_current_password(
     state: &AppState,
-    account_id: i64,
     password_hash: Option<&str>,
     current: &str,
 ) -> Result<(), ApiError> {
-    let bucket = RateBucket::Password(account_id);
-    let hit = state.auth_rate_limits.count(&bucket)?;
     if !passwords_match(password_hash, current).await? {
-        return Err(ApiError::InvalidCredentials(
-            "current password is incorrect".into(),
-        ));
+        return Err(state
+            .refusal_wait
+            .refuse("current password is incorrect")
+            .await);
     }
-    state.auth_rate_limits.give_back(&bucket, hit)
+    Ok(())
 }
 
 /// The new password.
@@ -1112,8 +1102,7 @@ pub struct ReplaceAccountPasswordResponse {
         (status = 204, description = "Password set by the owner"),
         crate::problem::openapi::InvalidCredentials,
         crate::problem::openapi::NotTheOwner,
-        crate::problem::openapi::DemoAccountProtected,
-        crate::problem::openapi::RateLimited
+        crate::problem::openapi::DemoAccountProtected
     )
 )]
 pub async fn replace_account_password(
@@ -1147,7 +1136,7 @@ pub async fn replace_account_password(
         };
         let password_hash =
             account_profile::load_password_hash(&mut *state.db.acquire().await?, target).await?;
-        require_current_password(&state, target, password_hash.as_deref(), current).await?;
+        require_current_password(&state, password_hash.as_deref(), current).await?;
         if req.password != req.password_confirmation {
             return Err(ApiError::validation("new passwords do not match"));
         }

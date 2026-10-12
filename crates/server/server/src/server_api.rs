@@ -178,8 +178,7 @@ pub async fn get_server(State(state): State<AppState>) -> Result<Json<Server>, A
             headers(("Location" = String, description = "`/v1/session`, the Session the claim made"))
         ),
         crate::problem::openapi::StateConflict,
-        crate::problem::openapi::UsernameTaken,
-        crate::problem::openapi::RateLimited
+        crate::problem::openapi::UsernameTaken
     )
 )]
 pub async fn claim_server(
@@ -188,9 +187,6 @@ pub async fn claim_server(
     Json(req): Json<ClaimServerRequest>,
 ) -> Result<Created<crate::session_api::CreateSessionResponse>, ApiError> {
     let username = crate::credentials::require_valid_username(&req.username)?;
-    state
-        .auth_rate_limits
-        .count(&crate::credentials::RateBucket::Claim)?;
     let password_hash = crate::credentials::hash_owner_password(&req.password).await?;
 
     let mut conn = state.db.acquire().await?;

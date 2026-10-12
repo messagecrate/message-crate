@@ -278,19 +278,6 @@
             "x-problem-types": [
               "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
             ]
-          },
-          "429": {
-            "description": "[`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/rate-limited"
-            ]
           }
         },
         "security": [
@@ -566,19 +553,6 @@
             },
             "x-problem-types": [
               "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
-            ]
-          },
-          "429": {
-            "description": "[`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/rate-limited"
             ]
           }
         },
@@ -2411,19 +2385,6 @@
             },
             "x-problem-types": [
               "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
-            ]
-          },
-          "429": {
-            "description": "[`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/rate-limited"
             ]
           }
         },
@@ -11815,19 +11776,6 @@
             "x-problem-types": [
               "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
             ]
-          },
-          "429": {
-            "description": "[`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/rate-limited"
-            ]
           }
         }
       }
@@ -12771,6 +12719,7 @@
           "Session"
         ],
         "summary": "Log in: verify a local username and password and answer the Session, a `201 Created` whose `Location` is the singleton itself.",
+        "description": "A refused login waits [`crate::credentials::REFUSAL_WAIT`], then answers\n`invalid-credentials`, whatever was wrong: a username nobody holds, a\nwrong or empty password, a disabled account. A login with the right\npassword does not wait.",
         "operationId": "create_session",
         "requestBody": {
           "content": {
@@ -12877,19 +12826,6 @@
             },
             "x-problem-types": [
               "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
-            ]
-          },
-          "429": {
-            "description": "[`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/rate-limited"
             ]
           }
         }
@@ -19280,7 +19216,7 @@
       },
       "Problem": {
         "type": "object",
-        "description": "An RFC 7807 problem document: the body of every failure the server answers,\nserved as `application/problem+json` (`docs/architecture/http-api.md`).\n\n`type` is the URL of the page describing this kind of failure, one page per\ntype, or `about:blank` for an internal error. A validation failure carries\n`errors`, every field that failed, in place of `detail`. Every problem\nrepeats the response's `x-request-id` as `request_id`, so the person\nreading the failure and the operator reading the log are looking at the\nsame request.\n\nThe extension members belong to the types named here: `word` and\n`did_you_mean` to `search-query-invalid`, `retry_after` to `rate-limited`\nand `database-busy`, `line` to `malformed-body` and `validation-failed` from an import batch,\n`holder` to `identity-exists`.",
+        "description": "An RFC 7807 problem document: the body of every failure the server answers,\nserved as `application/problem+json` (`docs/architecture/http-api.md`).\n\n`type` is the URL of the page describing this kind of failure, one page per\ntype, or `about:blank` for an internal error. A validation failure carries\n`errors`, every field that failed, in place of `detail`. Every problem\nrepeats the response's `x-request-id` as `request_id`, so the person\nreading the failure and the operator reading the log are looking at the\nsame request.\n\nThe extension members belong to the types named here: `word` and\n`did_you_mean` to `search-query-invalid`, `retry_after` to\n`database-busy`, `line` to `malformed-body` and `validation-failed` from an import batch,\n`holder` to `identity-exists`.",
         "required": [
           "type",
           "title",
@@ -19344,7 +19280,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "`rate-limited` and `database-busy`: seconds until the request may\nsucceed, the same figure as the `Retry-After` header.",
+            "description": "`database-busy`: seconds until the request may succeed, the same\nfigure as the `Retry-After` header.",
             "minimum": 0
           },
           "status": {
