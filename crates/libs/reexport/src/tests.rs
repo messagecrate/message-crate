@@ -17,10 +17,14 @@ fn write_fixture(dir: &Path, format: OutputFormat) {
     sink.finish(&mut ExportReport::default()).unwrap();
 }
 
+/// A conversion of `input` into `output` as `output_format`, whose media
+/// conversion runs a fake ffmpeg that writes a few bytes for every file.
 fn config(input: &Path, output: &Path, output_format: OutputFormat) -> TestRun<FormatConfig> {
+    let mut output = OutputConfig::new(output, output_format);
+    output.media.tools = Arc::new(media::testutil::FakeTools::new());
     TestRun {
         context: RunContext::new(std::env::temp_dir().join("message-crate-test-cache")),
-        output: OutputConfig::new(output, output_format),
+        output,
         inputs: vec![input.to_path_buf()],
         source: FormatConfig::default(),
     }
@@ -726,11 +730,6 @@ fn copy_dir_recursive_refuses_a_missing_source() {
 
 #[test]
 fn apply_reexport_convert_restages_attachments_and_marks_missing_files() {
-    // Media conversion refuses to start without ffmpeg, whatever the files
-    // are, so there is nothing to assert on a machine without it.
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
-        return;
-    };
     let output = tempfile::tempdir().unwrap();
     let attachments = output.path().join("attachments");
     fs::create_dir_all(&attachments).unwrap();
@@ -743,6 +742,7 @@ fn apply_reexport_convert_restages_attachments_and_marks_missing_files() {
     ];
     let transforms = ExportTransforms {
         media: MediaMode::Convert,
+        tools: Arc::new(media::testutil::FakeTools::new()),
         ..ExportTransforms::none()
     };
 
@@ -1361,10 +1361,6 @@ fn converting_a_mail_export_writes_its_attachments() {
 /// not come out `file_missing` because there was no file to read (#1072).
 #[test]
 fn converting_a_mail_export_with_media_conversion_writes_its_attachments() {
-    // Media conversion refuses to start without ffmpeg.
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
-        return;
-    };
     let source = tempfile::tempdir().unwrap();
     write_mail_fixture(source.path(), OutputFormat::Mbox, false);
     for media in [MediaMode::Convert, MediaMode::Compress] {
@@ -1620,10 +1616,6 @@ fn the_disk_check_of_a_conversion_leaves_out_an_attachment_with_no_file() {
 /// one the input gave a reason keeps it (#1743).
 #[test]
 fn a_converted_conversion_stages_from_the_sources_its_disk_check_counted() {
-    // Converting needs FFmpeg even when no attachment has a file.
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
-        return;
-    };
     let source = tempfile::tempdir().unwrap();
     write_huge_attachments_with_no_file(source.path(), "too_large");
     let destination = tempfile::tempdir().unwrap();
@@ -1648,10 +1640,6 @@ fn a_converted_conversion_stages_from_the_sources_its_disk_check_counted() {
 /// JPEG once the media is converted or compressed. A second file there is
 /// a copy the disk check did not count (#1759).
 fn assert_converted_writes_each_attachment_once(source: &Path) {
-    // Converting needs FFmpeg.
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
-        return;
-    };
     for mode in [MediaMode::Clone, MediaMode::Convert, MediaMode::Compress] {
         let destination = tempfile::tempdir().unwrap();
         let mut converted = config(source, destination.path(), OutputFormat::Jsonl);

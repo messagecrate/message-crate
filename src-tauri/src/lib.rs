@@ -57,14 +57,17 @@ pub fn run() {
         // sweep of the Scratch and Export Directories.
         .setup(|app| {
             // ffmpeg and ffprobe are looked for on PATH, then in the Tools
-            // Directory; wtsexporter only there (#1053). Named before the
-            // server is started, which is told it too.
+            // Directory; wtsexporter only there (#1053). Every command that
+            // runs them, and the server the app starts, gets them from the
+            // `InstalledTools` kept here.
             // What is missing there is downloaded in the background, and
             // nothing waits for it (`tool_downloads`).
-            if let Some(home) = dirs::home_dir() {
-                let tools = app_directories::use_tools_dir_in(&home);
-                tool_downloads::start(tools, app.state::<ToolDownloads>().inner());
+            let tools_dir = dirs::home_dir().map(|home| app_directories::make_tools_dir_in(&home));
+            let installed = media::InstalledTools::new(tools_dir.clone());
+            if let Some(dir) = tools_dir {
+                tool_downloads::start(dir, installed.clone(), app.state::<ToolDownloads>().inner());
             }
+            app.manage(installed);
             let app_data_dir = app.path().app_data_dir()?;
             let record = app_data_dir.join(run_directories::RECORD_FILE);
             app.manage(RunDirectories::at(

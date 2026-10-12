@@ -150,6 +150,22 @@ fn transcode_stall_secs_sets_the_no_progress_wait() {
     assert_eq!(data_dir.transcode_stall_wait(), media::DEFAULT_STALL_WAIT);
 }
 
+/// The tools the server runs are built from its configuration: the Tools
+/// Directory `serve --tools-dir` names and `transcode_stall_secs`, with no
+/// state anywhere else in the process (#2696).
+#[test]
+fn the_media_tools_come_from_the_configuration() {
+    let mut cfg =
+        load_text("[paths]\ndb = \"data/messagecrate.db\"\n[server]\ntranscode_stall_secs = 600\n")
+            .unwrap();
+    let tools = cfg.media_tools();
+    assert_eq!(tools.tools_dir(), None);
+    assert_eq!(tools.stall_wait(), std::time::Duration::from_secs(600));
+
+    cfg.server.as_mut().unwrap().tools_dir = Some(PathBuf::from("/app/tools"));
+    assert_eq!(cfg.media_tools().tools_dir(), Some(Path::new("/app/tools")));
+}
+
 /// A wait of zero would stop every conversion at once, so it is refused,
 /// naming the key.
 #[test]

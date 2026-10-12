@@ -7,8 +7,9 @@
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use media::{MaxResolution, MediaMode};
+use media::{InstalledTools, MaxResolution, MediaMode};
 
 use crate::config::{
     AppleConfig, ExporterConfig, GoSmsProConfig, ImazingConfig, MediaConfig, ObfuscateConfig,
@@ -141,7 +142,7 @@ impl AttachmentMedia {
 
     /// True when Convert or Compress is selected, which need ffmpeg and
     /// ffprobe, both on `PATH` or both in the Tools Directory
-    /// ([`media::ffmpeg_available`]).
+    /// ([`media::MediaTools::available`]).
     pub fn needs_ffmpeg(self) -> bool {
         matches!(self, Self::Convert | Self::Compress)
     }
@@ -288,10 +289,16 @@ pub struct FormContext<'a> {
     /// The Scratch Directory the run's scratch data goes under
     /// ([`ExporterConfig::scratch_dir`]).
     pub scratch_dir: &'a Path,
-    /// Whether ffmpeg and ffprobe can be used, as [`media::ffmpeg_available`]
-    /// answers. Without them the form refuses Convert and Compress unless it
-    /// obfuscates. It is read for no other choice, so a caller whose form
-    /// asks for neither may pass `false` without asking.
+    /// The ffmpeg and ffprobe the run's Convert and Compress use, and the
+    /// Tools Directory the WhatsApp exporter finds `wtsexporter` in
+    /// ([`RunContext::tools_dir`]). The form only passes them on: it runs
+    /// neither program.
+    pub tools: &'a InstalledTools,
+    /// Whether ffmpeg and ffprobe can be used, as
+    /// [`media::MediaTools::available`] answers for `tools`. Without them
+    /// the form refuses Convert and Compress unless it obfuscates. It is
+    /// read for no other choice, so a caller whose form asks for neither may
+    /// pass `false` without asking.
     pub ffmpeg_available: bool,
 }
 
@@ -349,7 +356,8 @@ impl Form {
 
     /// The [`ExporterConfig`] every source builder ends in. The caller gives
     /// the source's `inputs`, `obfuscate`, `media`, and `source`, and the
-    /// Scratch Directory. The output directory and output format come from
+    /// form's context, which names the Scratch Directory and the tools the
+    /// media and the WhatsApp exporter use. The output directory and output format come from
     /// the form. A run started from the form does not resume. Its sinks drop
     /// what they get until the caller sets its own, and nothing sets its
     /// cancel flag ([`RunContext::new`]).
@@ -357,7 +365,7 @@ impl Form {
         &self,
         inputs: Vec<PathBuf>,
         obfuscate: ObfuscateConfig,
-        scratch_dir: &Path,
+        ctx: FormContext<'_>,
         media: MediaConfig,
         source: SourceConfig,
     ) -> ExporterConfig {
@@ -365,10 +373,16 @@ impl Form {
             inputs,
             output: OutputConfig {
                 obfuscate,
-                media,
+                media: MediaConfig {
+                    tools: Arc::new(ctx.tools.clone()),
+                    ..media
+                },
                 ..OutputConfig::new(self.output.trim(), self.output_format)
             },
-            context: RunContext::new(scratch_dir),
+            context: RunContext {
+                tools_dir: ctx.tools.tools_dir().map(Path::to_path_buf),
+                ..RunContext::new(ctx.scratch_dir)
+            },
             source,
         }
     }
@@ -400,7 +414,7 @@ impl Form {
         self.exporter_config(
             inputs,
             obfuscate,
-            ctx.scratch_dir,
+            ctx,
             media,
             SourceConfig::Apple(AppleConfig {
                 platform,
@@ -448,7 +462,7 @@ impl Form {
         self.exporter_config(
             inputs,
             obfuscate,
-            ctx.scratch_dir,
+            ctx,
             media,
             SourceConfig::Whatsapp(WhatsappConfig {
                 platform: Some(self.whatsapp_platform),
@@ -482,7 +496,7 @@ impl Form {
         self.exporter_config(
             input.into_iter().collect(),
             obfuscate,
-            ctx.scratch_dir,
+            ctx,
             media,
             SourceConfig::Imazing(ImazingConfig {
                 timezone: message_ir::nonempty(&self.timezone),
@@ -503,7 +517,7 @@ impl Form {
         self.exporter_config(
             input.into_iter().collect(),
             obfuscate,
-            ctx.scratch_dir,
+            ctx,
             media,
             SourceConfig::OpenExtract(OpenExtractConfig {}),
         )
@@ -520,7 +534,7 @@ impl Form {
         self.exporter_config(
             inputs,
             obfuscate,
-            ctx.scratch_dir,
+            ctx,
             media,
             SourceConfig::GoSmsPro(GoSmsProConfig { owner_phones }),
         )
@@ -545,7 +559,7 @@ impl Form {
         self.exporter_config(
             inputs,
             obfuscate,
-            ctx.scratch_dir,
+            ctx,
             media,
             SourceConfig::SmsBackupRestore(SmsBackupRestoreConfig { owner_phones }),
         )
@@ -569,7 +583,7 @@ impl Form {
         self.exporter_config(
             inputs,
             obfuscate,
-            ctx.scratch_dir,
+            ctx,
             media,
             SourceConfig::SmsBackupPlus(SmsBackupPlusConfig {
                 owner_phones,
@@ -639,7 +653,11 @@ impl Form {
         } else {
             media::CompressOptions::default()
         };
-        MediaConfig { mode, compress }
+        MediaConfig {
+            mode,
+            compress,
+            ..MediaConfig::default()
+        }
     }
 
     /// Compress options parsed from the form; checked while the form becomes a config.

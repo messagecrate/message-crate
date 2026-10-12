@@ -49,7 +49,7 @@
 //!   fork's pinned build, so a wtsexporter with any other SHA-256, such as
 //!   a copy still being written or another build, is treated as missing
 //!   until the download replaces it, by the import's lookup
-//!   (`whatsapp_exporter::wtsexporter_path`) and by the check alike
+//!   (`whatsapp_exporter::wtsexporter_in_dir`) and by the check alike
 //!   ([`in_place`]). A failed download says so in its reason.
 
 use std::collections::{BTreeMap, HashMap};
@@ -61,6 +61,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::Duration;
+
+use media::InstalledTools;
 
 mod fetch;
 mod pins;
@@ -810,6 +812,7 @@ fn lock_check(dir: &Path) -> io::Result<Option<File>> {
 /// network: [`std::thread::sleep`] in the app.
 fn download_missing(
     dir: &Path,
+    installed: &InstalledTools,
     fetch: &dyn Fetch,
     pinned: &[Pinned],
     mut run: CheckRun,
@@ -820,7 +823,7 @@ fn download_missing(
         Ok(None) => return,
         Err(_) => None,
     };
-    check(dir, fetch, pinned, &mut run, lock, wait);
+    check(dir, installed, fetch, pinned, &mut run, lock, wait);
 }
 
 /// What [`retry`] did.
@@ -850,17 +853,26 @@ pub enum Retry {
 /// started: [`Retry::AlreadyRunning`] or [`Retry::CouldNotStart`].
 pub fn retry(
     dir: PathBuf,
+    installed: InstalledTools,
     base: String,
     pinned: Vec<Pinned>,
     downloads: &ToolDownloads,
     not_found: &[Program],
 ) -> Retry {
     let fetch = Box::new(HttpFetch::new(base));
-    retry_with(dir, fetch, pinned, downloads, not_found, |work| {
-        std::thread::Builder::new()
-            .name("tool-downloads-retry".into())
-            .spawn(work)
-    })
+    retry_with(
+        dir,
+        installed,
+        fetch,
+        pinned,
+        downloads,
+        not_found,
+        |work| {
+            std::thread::Builder::new()
+                .name("tool-downloads-retry".into())
+                .spawn(work)
+        },
+    )
 }
 
 /// The work [`retry`] hands to a new thread.
@@ -870,6 +882,7 @@ type Work = Box<dyn FnOnce() + Send>;
 /// thread with `spawn`, so a test can make the start fail.
 fn retry_with(
     dir: PathBuf,
+    installed: InstalledTools,
     fetch: Box<dyn Fetch>,
     pinned: Vec<Pinned>,
     downloads: &ToolDownloads,
@@ -897,7 +910,15 @@ fn retry_with(
     let (hand_over, handed) = std::sync::mpsc::sync_channel::<CheckRun>(1);
     let spawned = spawn(Box::new(move || {
         if let Ok(mut run) = handed.recv() {
-            check(&dir, &*fetch, &pinned, &mut run, lock, &std::thread::sleep);
+            check(
+                &dir,
+                &installed,
+                &*fetch,
+                &pinned,
+                &mut run,
+                lock,
+                &std::thread::sleep,
+            );
         }
     }));
     match spawned {
@@ -931,6 +952,7 @@ fn retry_with(
 /// download that found no network is tried again.
 fn check(
     dir: &Path,
+    installed: &InstalledTools,
     fetch: &dyn Fetch,
     pinned: &[Pinned],
     run: &mut CheckRun,
@@ -941,7 +963,7 @@ fn check(
     // below to mark the programs wanted as downloading.
     let downloads = &run.downloads.clone();
     delete_leftovers(dir);
-    let ffmpeg_on_path = media::ffmpeg_on_path();
+    let ffmpeg_on_path = installed.on_path();
     let mut manifest = read_manifest(dir);
     let mut wanted = Vec::new();
     for pin in pinned {
@@ -1133,7 +1155,7 @@ fn try_until_answered<T>(
 ///
 /// The check counts as running from before the thread starts, so a window
 /// that asks for the status at once keeps asking until the check ends.
-pub fn start(dir: PathBuf, downloads: &ToolDownloads) {
+pub fn start(dir: PathBuf, installed: InstalledTools, downloads: &ToolDownloads) {
     let pinned = pinned_for(std::env::consts::OS, std::env::consts::ARCH);
     let run = downloads.begin_check();
     let _ = std::thread::Builder::new()
@@ -1141,6 +1163,7 @@ pub fn start(dir: PathBuf, downloads: &ToolDownloads) {
         .spawn(move || {
             download_missing(
                 &dir,
+                &installed,
                 &HttpFetch::new(GITHUB),
                 &pinned,
                 run,

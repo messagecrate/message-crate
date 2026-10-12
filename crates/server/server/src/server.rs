@@ -428,6 +428,10 @@ pub struct AppState {
     /// each Import Run. `serve` starts the pass; the test harness does not,
     /// so a test sees the queue as an Import Run leaves it.
     pub(crate) media_queue: crate::media_queue::MediaQueue,
+    /// The ffmpeg and ffprobe the server runs, from [`Config::media_tools`]:
+    /// on `PATH`, then in the Tools Directory the desktop app names, as the
+    /// app looks (#1053). A test swaps in a fake.
+    pub(crate) media_tools: Arc<dyn media::MediaTools>,
     /// The error SQLite gave when the server asked for write-ahead logging
     /// as it opened the database ([`OpenDb::wal_error`]), which
     /// `GET /v1/server/settings` reports to the owner.
@@ -443,7 +447,9 @@ impl AppState {
         asset_part_size: usize,
         upload_time_limits: UploadTimeLimits,
     ) -> Self {
+        let media_tools: Arc<dyn media::MediaTools> = Arc::new(opened.cfg.media_tools());
         Self {
+            media_tools,
             cfg: Arc::new(opened.cfg),
             db: opened.db,
             account_import_locks: KeyedLocks::default(),
@@ -1704,12 +1710,6 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     // Before anything is written to the Data Directory, so a layout that
     // would publish it never gets a log or a database there (#2175).
     cfg.require_static_dir_apart()?;
-    // The desktop app names its Tools Directory; ffmpeg is looked for on
-    // PATH first and there second, as the app looks (#1053).
-    media::set_tools_dir(server.tools_dir.clone());
-    // How long a conversion may go without progress before ffmpeg is
-    // stopped (#2898).
-    media::set_stall_wait(server.transcode_stall_wait());
     let bind = server.bind.clone();
     // Before the database is opened, so a database that fails to open is in
     // the server's log as well as on stderr: from here on, `main` writes the
@@ -1755,9 +1755,11 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     crate::imports_api::batch_bodies::sweep_at_start(&state.cfg.paths.data_dir);
     // Works through what earlier Import Runs queued, a server stopped
     // part-way included, then waits for the next run to end.
-    state
-        .media_queue
-        .start(state.db.clone(), Arc::clone(&state.cfg));
+    state.media_queue.start(
+        state.db.clone(),
+        Arc::clone(&state.cfg),
+        Arc::clone(&state.media_tools),
+    );
     // Reported as they stand now; each upload reads them again. Any stored
     // limit starts the server: a part is never larger than the limit.
     let upload_limits = state.upload_limits().await?;

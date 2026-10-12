@@ -194,6 +194,7 @@ async fn import_under_session(
     )
     .await?;
 
+    let media_tools = cfg.media_tools();
     let import_opts = ImportOptions {
         assets_dir: &assets_dir,
         asset_root: Some(&opts.input_dir),
@@ -203,6 +204,7 @@ async fn import_under_session(
         import_id: Some(import_run.id),
         source_from_jsonl: plan.from_jsonl,
         media: opts.media,
+        media_tools: &media_tools,
         wipe_sources: Some(vec![source.to_string()]),
         phone_country: None,
         progress: opts.progress,

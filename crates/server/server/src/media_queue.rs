@@ -38,6 +38,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use futures_util::FutureExt;
+use media::MediaTools;
 use sqlx::SqlitePool;
 use tokio::sync::Notify;
 
@@ -80,7 +81,7 @@ impl MediaQueue {
     ///
     /// When the operating system cannot start a thread or a runtime, which
     /// leaves the server unable to serve anything either.
-    pub(crate) fn start(&self, pool: SqlitePool, cfg: Arc<Config>) {
+    pub(crate) fn start(&self, pool: SqlitePool, cfg: Arc<Config>, tools: Arc<dyn MediaTools>) {
         let wake = Arc::clone(&self.wake);
         let stop = Arc::clone(&self.stop);
         let thread = std::thread::Builder::new()
@@ -91,7 +92,7 @@ impl MediaQueue {
                     .build()
                     .expect("a runtime for the pass that makes Thumbnails and Previews");
                 runtime.block_on(keep_working(&wake, &stop, FIRST_RETRY, async || {
-                    work_through(&pool, &cfg, &stop).await
+                    work_through(&pool, &cfg, tools.as_ref(), &stop).await
                 }));
             })
             .expect("a thread for the pass that makes Thumbnails and Previews");
@@ -310,6 +311,7 @@ fn log_not_queued(account_id: i64, import_id: i64, error: &sqlx::Error) {
 async fn decide_queued(
     pool: &SqlitePool,
     cfg: &Config,
+    tools: &dyn MediaTools,
     stop: &AtomicBool,
     after: i64,
     stats: &mut ProcessAssetsStats,
@@ -321,6 +323,7 @@ async fn decide_queued(
         }
         if let Err(error) = unless_it_panics(crate::process_assets::decide_shown_as_is(
             cfg,
+            tools,
             pool,
             asset.account_id,
             Some(&asset.sha256),
@@ -365,11 +368,13 @@ async fn decide_queued(
 pub(crate) async fn work_through(
     pool: &SqlitePool,
     cfg: &Config,
+    tools: &dyn MediaTools,
     stop: &AtomicBool,
 ) -> Result<ProcessAssetsStats> {
-    work_through_with(pool, cfg, stop, async |work: &Path, asset| {
+    work_through_with(pool, cfg, tools, stop, async |work: &Path, asset| {
         crate::process_assets::process_one_asset(
             cfg,
+            tools,
             pool,
             work,
             asset.account_id,
@@ -386,6 +391,7 @@ pub(crate) async fn work_through(
 async fn work_through_with(
     pool: &SqlitePool,
     cfg: &Config,
+    tools: &dyn MediaTools,
     stop: &AtomicBool,
     mut make: impl AsyncFnMut(&Path, &media_queue::QueuedAsset) -> Result<ProcessAssetsStats>,
 ) -> Result<ProcessAssetsStats> {
@@ -394,8 +400,8 @@ async fn work_through_with(
     if waiting == 0 {
         return Ok(stats);
     }
-    let mut decided = decide_queued(pool, cfg, stop, 0, &mut stats).await?;
-    if let Some(why) = tools_unavailable(&media::ffmpeg_tools()) {
+    let mut decided = decide_queued(pool, cfg, tools, stop, 0, &mut stats).await?;
+    if let Some(why) = tools_unavailable(&tools.find()) {
         tracing::warn!(waiting, "{why}");
         return Ok(stats);
     }
@@ -405,7 +411,7 @@ async fn work_through_with(
     {
         // An Import Run that ended while the last Asset was converted
         // queued more, behind the videos already waiting.
-        decided = decide_queued(pool, cfg, stop, decided, &mut stats).await?;
+        decided = decide_queued(pool, cfg, tools, stop, decided, &mut stats).await?;
         let done = unless_it_panics(make(work.path(), &asset)).await;
         if stop.load(Ordering::Relaxed) {
             // Whatever it was making is gone with the work directory, so it

@@ -25,6 +25,7 @@ fn opts<'a>(
             MediaMode::Disabled
         },
         compress: CompressOptions::default(),
+        tools: std::sync::Arc::new(media::InstalledTools::default()),
         log: &NO_LOG,
         progress: &NO_PROGRESS,
         cancel: &NO_CANCEL,

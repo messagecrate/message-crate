@@ -142,13 +142,15 @@ fn staged_directory(
 pub async fn summarize_staging(
     app: tauri::AppHandle,
     directories: tauri::State<'_, RunDirectories>,
+    installed: tauri::State<'_, media::InstalledTools>,
     args: RunDirArgs,
 ) -> Result<StagingSummary, String> {
     let (run_dir, options) = staged_directory(&directories, &args.run_dir)?;
 
     let progress_app = app.clone();
+    let installed = installed.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        message_staging::summarize_staging(&run_dir, &options, &mut |progress| {
+        message_staging::summarize_staging(&run_dir, &options, &installed, &mut |progress| {
             events::emit(
                 &progress_app,
                 events::PROGRESS,
@@ -237,6 +239,7 @@ pub fn transcode_staging(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
     directories: tauri::State<'_, RunDirectories>,
     downloads: tauri::State<'_, ToolDownloads>,
+    installed: tauri::State<'_, media::InstalledTools>,
     app: tauri::AppHandle,
     args: RunDirArgs,
 ) -> Result<(), String> {
@@ -252,6 +255,7 @@ pub fn transcode_staging(
     let app_handle = app.clone();
     let issues = events::run_issue_sink(&app, &run_log);
     let downloads = downloads.inner().clone();
+    let installed = installed.inner().clone();
     spawn_job(app, job, move || {
         if media_stage_converts {
             // ffmpeg or ffprobe still downloading is waited for, and the
@@ -278,6 +282,7 @@ pub fn transcode_staging(
         let outcome = message_staging::transcode_staged(
             &run_dir,
             &options,
+            &installed,
             &cancel,
             &issues,
             &events::run_log_sink(&app_handle, &run_log),

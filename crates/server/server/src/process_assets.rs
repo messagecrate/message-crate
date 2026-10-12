@@ -6,9 +6,10 @@
 //! ([`media::browser_shows`]). Originals are never changed. Each version is
 //! stored under the fingerprint of its own bytes and named by the
 //! attachment rows of its original (`attachments.thumbnail_*` and
-//! `attachments.preview_*`). The conversions are the `media` crate's, which
-//! finds ffmpeg and ffprobe on `PATH`, then in the Tools Directory the
-//! desktop app names with `serve --tools-dir`.
+//! `attachments.preview_*`). The conversions are the `media` crate's, run
+//! with the ffmpeg and ffprobe the caller passes in: on `PATH`, then in the
+//! Tools Directory the desktop app names with `serve --tools-dir`
+//! ([`crate::config::Config::media_tools`]).
 //!
 //! Two callers run it: the `process-assets` command over every attachment,
 //! for rebuilding and repair, and the server's background pass over the
@@ -32,7 +33,7 @@ use crate::db::attachment_versions::{
 use crate::db::{account_profile, schema};
 use crate::open_db::OpenDb;
 use crate::progress::Progress;
-use media::Kind;
+use media::{Kind, MediaTools};
 
 /// Options for one processing pass.
 #[derive(Debug, Clone, Default)]
@@ -221,7 +222,7 @@ struct ReadOriginal {
 /// [`decide_shown_as_is`] and the pass make. An incomplete `.part` original
 /// is never read nor handed to ffprobe: its rows say its type, and it is
 /// not shown as it is.
-fn read_original(assets_dir: &Path, row: &StoredOriginal) -> ReadOriginal {
+fn read_original(tools: &dyn MediaTools, assets_dir: &Path, row: &StoredOriginal) -> ReadOriginal {
     let declared = media_type(row);
     if is_part_path(&row.assets_path) {
         return ReadOriginal {
@@ -235,7 +236,7 @@ fn read_original(assets_dir: &Path, row: &StoredOriginal) -> ReadOriginal {
     let media_type = by_bytes.map(str::to_string).or(declared);
     ReadOriginal {
         by_bytes,
-        decided: media::browser_shows(&path, media_type.as_deref()),
+        decided: media::browser_shows(tools, &path, media_type.as_deref()),
         media_type,
     }
 }
@@ -271,6 +272,7 @@ async fn record_decision_if_known(
 /// Returns an error when the rows cannot be read or written.
 pub(crate) async fn decide_shown_as_is(
     cfg: &Config,
+    tools: &dyn MediaTools,
     db: &SqlitePool,
     account_id: i64,
     only: Option<&str>,
@@ -286,7 +288,7 @@ pub(crate) async fn decide_shown_as_is(
                 account_id,
                 original_sha: &row.sha256,
             };
-            let decided = read_original(&assets_dir, row).decided;
+            let decided = read_original(tools, &assets_dir, row).decided;
             record_decision_if_known(db, original, decided).await?;
         }
     }
@@ -310,6 +312,7 @@ pub(crate) async fn decide_shown_as_is(
 /// `not_dropped`. Each is said through `progress`, and the run goes on.
 pub async fn run(
     opened: &OpenDb,
+    tools: &dyn MediaTools,
     opts: &ProcessAssetsOptions,
     stop: &AtomicBool,
     progress: Progress,
@@ -330,7 +333,8 @@ pub async fn run(
         if stop.load(Ordering::Relaxed) {
             break;
         }
-        let Some(pass) = AccountPass::open(cfg, opts, work.path(), account_id, stop, progress)?
+        let Some(pass) =
+            AccountPass::open(cfg, tools, opts, work.path(), account_id, stop, progress)?
         else {
             continue;
         };
@@ -417,6 +421,7 @@ fn done_line(stats: &ProcessAssetsStats, dry_run: bool) -> String {
 /// and logged.
 pub(crate) async fn process_one_asset(
     cfg: &Config,
+    tools: &dyn MediaTools,
     db: &SqlitePool,
     work_dir: &Path,
     account_id: i64,
@@ -424,7 +429,8 @@ pub(crate) async fn process_one_asset(
     stop: &AtomicBool,
 ) -> Result<ProcessAssetsStats> {
     let opts = ProcessAssetsOptions::default();
-    let Some(pass) = AccountPass::new(cfg, &opts, work_dir, account_id, stop, Progress::Log)?
+    let Some(pass) =
+        AccountPass::new(cfg, tools, &opts, work_dir, account_id, stop, Progress::Log)?
     else {
         return Ok(ProcessAssetsStats::default());
     };
@@ -542,6 +548,8 @@ impl Outcome {
 /// One account's asset directories being processed: where its originals
 /// are, where the versions go, and the options every attachment shares.
 struct AccountPass<'a> {
+    /// The ffmpeg and ffprobe that make the versions.
+    tools: &'a dyn MediaTools,
     opts: &'a ProcessAssetsOptions,
     work_dir: &'a Path,
     /// Set to stop the pass: the conversion that runs is killed, and no
@@ -574,6 +582,7 @@ impl<'a> AccountPass<'a> {
     /// pass.
     fn open(
         cfg: &Config,
+        tools: &'a dyn MediaTools,
         opts: &'a ProcessAssetsOptions,
         work_dir: &'a Path,
         account_id: i64,
@@ -615,7 +624,7 @@ impl<'a> AccountPass<'a> {
                 "{cleaned_verb} {files} a killed write left in the shard directories"
             ));
         }
-        Self::new(cfg, opts, work_dir, account_id, stop, progress)
+        Self::new(cfg, tools, opts, work_dir, account_id, stop, progress)
     }
 
     /// The pass over `account_id`'s directories, making the converted
@@ -627,6 +636,7 @@ impl<'a> AccountPass<'a> {
     /// Returns an error when the converted directory cannot be made.
     fn new(
         cfg: &Config,
+        tools: &'a dyn MediaTools,
         opts: &'a ProcessAssetsOptions,
         work_dir: &'a Path,
         account_id: i64,
@@ -641,6 +651,7 @@ impl<'a> AccountPass<'a> {
         fs::create_dir_all(&converted_dir)
             .with_context(|| format!("create converted dir {}", converted_dir.display()))?;
         Ok(Some(Self {
+            tools,
             opts,
             work_dir,
             stop,
@@ -711,7 +722,7 @@ impl<'a> AccountPass<'a> {
             by_bytes,
             media_type,
             decided,
-        } = read_original(&self.assets_dir, row);
+        } = read_original(self.tools, &self.assets_dir, row);
         let on_disk = OnDisk {
             original_exists: source_path.is_file(),
             preview: state(Version::Preview),
@@ -1049,8 +1060,8 @@ impl<'a> AccountPass<'a> {
         let token = row.sha256.get(..12).unwrap_or(&row.sha256);
         let out = self.work_dir.join(format!("{version}-{token}{ext}"));
         let made = match version {
-            Version::Thumbnail => media::make_thumbnail(source_path, &out, self.stop),
-            Version::Preview => media::make_preview(source_path, kind, &out, self.stop),
+            Version::Thumbnail => media::make_thumbnail(self.tools, source_path, &out, self.stop),
+            Version::Preview => media::make_preview(self.tools, source_path, kind, &out, self.stop),
         };
         if let Err(err) = made {
             let _ = fs::remove_file(&out);

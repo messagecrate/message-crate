@@ -1,10 +1,15 @@
 use super::*;
 
+/// The tools a form is validated with: on `PATH`, with no Tools Directory.
+/// Validating the form runs neither program.
+static PATH_ONLY: InstalledTools = InstalledTools::new(None);
+
 /// The context of a form validated with its Scratch Directory at `/cache`
 /// and no ffmpeg.
 fn no_ffmpeg() -> FormContext<'static> {
     FormContext {
         scratch_dir: Path::new("/cache"),
+        tools: &PATH_ONLY,
         ffmpeg_available: false,
     }
 }
@@ -378,6 +383,39 @@ fn whatsapp_passes_platform_and_media() {
 /// An Android crypt backup does not carry the account holder's number,
 /// so the form is the only source: an empty field is a validation
 /// problem, not an import that runs and records no owner.
+/// The tools the caller passes reach the run: the Tools Directory, where
+/// the WhatsApp exporter finds `wtsexporter`, and the ffmpeg and ffprobe
+/// the media passes run, looked for there (#2696).
+#[test]
+fn the_tools_the_caller_passes_reach_the_run() {
+    let tools_dir = PathBuf::from("/home/someone/message-crate/tools");
+    let tools = InstalledTools::new(Some(tools_dir.clone()));
+    let form = Form {
+        output: "out".into(),
+        owner_phones: "+15555550100".into(),
+        whatsapp_platform: WhatsappPlatform::Android,
+        whatsapp_backup: "/tmp/backup".into(),
+        ..Form::default()
+    };
+
+    let config = form
+        .to_config(
+            Exporter::Whatsapp,
+            FormContext {
+                tools: &tools,
+                ..no_ffmpeg()
+            },
+        )
+        .unwrap();
+
+    assert_eq!(config.context.tools_dir, Some(tools_dir.clone()));
+    assert!(
+        format!("{:?}", config.output.media.tools).contains(&tools_dir.display().to_string()),
+        "{:?}",
+        config.output.media.tools
+    );
+}
+
 #[test]
 fn whatsapp_android_requires_the_owner_number() {
     let form = Form {

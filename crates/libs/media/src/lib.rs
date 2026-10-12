@@ -7,10 +7,12 @@
 //! - **Compress** — re-encode to shrink files, with optional video settings
 //!
 //! Convert and compress need `ffmpeg` / `ffprobe`, both on `PATH` or both
-//! in the Tools Directory ([`set_tools_dir`]), and nowhere else.
+//! in the Tools Directory, and nowhere else. The caller says where the Tools
+//! Directory is by the [`InstalledTools`] it passes in; a test passes a fake
+//! [`MediaTools`] instead (`testutil::FakeTools`).
 
 mod estimate;
-#[cfg(test)]
+#[cfg(any(test, feature = "testutil"))]
 mod fake_tools;
 mod mime;
 mod probe;
@@ -26,7 +28,7 @@ pub use mime::{
     Kind, MEDIA_TYPE_MAX_LEN, checked_media_type, ext_for_mime, is_media_type, kind_for_ext,
     kind_for_mime, mime_for_ext, usual_media_type,
 };
-pub use probe::{MediaProbe, probe_media};
+pub use probe::MediaProbe;
 pub use process::{
     HevcFallback, MediaReport, TranscodeOutcome, classify, collect_media_files, derivative_name,
     derivative_name_for_missing, done_line, format_bytes, kind_of, process_attachment_files,
@@ -34,9 +36,8 @@ pub use process::{
 };
 pub use signature::{SIGNATURE_LEN, media_type_from_bytes, media_type_in_file};
 pub use tools::{
-    DEFAULT_STALL_WAIT, FfmpegFailed, FfmpegTools, KillReason, Killed, ffmpeg_available,
-    ffmpeg_on_path, ffmpeg_path, ffmpeg_tools, ffprobe_path, file_has_sha256, is_executable,
-    require_ffmpeg, set_stall_wait, set_tools_dir, tool_in_dir, tools_dir,
+    DEFAULT_STALL_WAIT, FfmpegFailed, FfmpegTools, InstalledTools, KillReason, Killed, MediaTools,
+    Reads, file_has_sha256, is_executable, tool_in_dir,
 };
 pub use versions::{
     THUMBNAIL_LONG_EDGE, browser_shows, make_preview, make_thumbnail, media_type_of,

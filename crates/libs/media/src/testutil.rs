@@ -3,27 +3,24 @@
 //! Compiled for this crate's own tests and, through the `testutil` feature,
 //! for the tests of every crate that lists `media` with that feature as a
 //! dev-dependency. Every test in the workspace that needs the real tools
-//! gates on [`real_ffmpeg_test_guard`], so the rule for a missing ffmpeg
-//! lives in one place.
+//! gets them from [`real_ffmpeg`], so the rule for a missing ffmpeg lives in
+//! one place.
 //!
-//! The tool location is process-wide ([`crate::set_tools_dir`] and the
-//! `PATH` tests put in place of the process's), so a test
-//! that points it somewhere else and a test that runs the real ffmpeg must
-//! not overlap. One lock serializes them: tests that only read the location
-//! share it, and a test that changes the location holds it alone.
+//! Where to look for the tools is part of the [`InstalledTools`] a test
+//! builds and passes in, never process-wide, so a test that points the
+//! lookup at a mock or empty directory and a test that runs the real ffmpeg
+//! never see each other's choice, and need no lock between them.
 //!
-//! A test in this crate of what the Media Stage or a Thumbnail or Preview
-//! decides, rather than of what ffmpeg makes of it, passes
-//! `fake_tools::FakeTools` instead and needs neither the real tools nor the
-//! lock.
+//! A test of what the Media Stage, the size forecast, or a Thumbnail or
+//! Preview decides, rather than of what ffmpeg makes of it, passes
+//! [`FakeTools`] instead and needs no ffmpeg installed.
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::sync::{OnceLock, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::path::Path;
 
-use std::ffi::OsString;
+use crate::tools::InstalledTools;
 
-use crate::tools::{ffmpeg_available, search_path, set_search_path, set_tools_dir, tools_dir};
+pub use crate::fake_tools::{FakeTools, video_probe};
 
 /// How many times [`crate::file_has_sha256`] read the file at a path, for a
 /// test that a file is not read again while it is unchanged.
@@ -55,55 +52,29 @@ pub fn ffmpeg_killed(why: crate::KillReason) -> anyhow::Error {
     crate::Killed::ffmpeg(why).into()
 }
 
-/// The lock over the process-wide tool location.
-fn tools_lock() -> &'static RwLock<()> {
-    static LOCK: OnceLock<RwLock<()>> = OnceLock::new();
-    LOCK.get_or_init(|| RwLock::new(()))
-}
-
-/// Hold the tool location still, for a test that changes it.
-///
-/// A test that changes where the tools are looked for must hold this for as long as
-/// the location differs from the one it found, and put that one back before
-/// releasing it. Otherwise a test that runs the real ffmpeg can resolve the
-/// tools in the instant another test has them pointed at an empty or mock
-/// directory. A test that changes the no-progress wait
-/// ([`crate::set_stall_wait`]) holds it the same way, and puts the default
-/// back before releasing it, because a short wait would stop the real
-/// ffmpeg of every test that runs meanwhile.
-pub fn tools_test_lock() -> RwLockWriteGuard<'static, ()> {
-    tools_lock().write().unwrap_or_else(PoisonError::into_inner)
-}
-
 /// Whether CI is running this process. GitHub Actions sets `CI=true`.
 fn running_in_ci() -> bool {
     std::env::var("CI").is_ok_and(|value| !value.is_empty() && value != "false" && value != "0")
 }
 
-/// Hold the tool location still for a test that needs the real ffmpeg, and
-/// say whether ffmpeg and ffprobe are there. `None` means they are not, and
-/// the test should return.
+/// ffmpeg and ffprobe as this machine has them on `PATH`, for a test that
+/// needs the real programs. `None` means they are not there, and the test
+/// should return.
 ///
 /// Under CI a missing ffmpeg panics instead. CI installs ffmpeg for every job
 /// that runs these tests, so a missing one there is a broken job, and a test
 /// that returned early would report a pass it never earned. On a developer
 /// machine the test skips, and says so on stderr.
 ///
-/// Taking the lock and asking whether ffmpeg is available are one call
-/// because doing either without the other lets a test be answered by an
-/// empty or mock directory another test has the location pointed at for
-/// that instant (#308).
-///
 /// # Panics
 ///
 /// When `CI` is set and ffmpeg or ffprobe cannot be found.
 #[must_use]
-pub fn real_ffmpeg_test_guard() -> Option<RwLockReadGuard<'static, ()>> {
-    let guard = tools_lock().read().unwrap_or_else(PoisonError::into_inner);
-    if ffmpeg_available() {
-        return Some(guard);
+pub fn real_ffmpeg() -> Option<InstalledTools> {
+    let tools = InstalledTools::default();
+    if tools.require().is_ok() {
+        return Some(tools);
     }
-    drop(guard);
     let current = std::thread::current();
     let test = current.name().unwrap_or("an unnamed test");
     assert!(
@@ -120,53 +91,15 @@ pub fn real_ffmpeg_test_guard() -> Option<RwLockReadGuard<'static, ()>> {
     None
 }
 
-/// The tool location made empty for as long as this lives.
-///
-/// Holds [`tools_test_lock`], searches an empty `PATH` and a Tools
-/// Directory that does not exist, and puts both back when dropped. Those are
-/// the only places the tools are looked for, so they are missing whether or
-/// not the machine has ffmpeg installed.
-pub struct ToolsHidden {
-    previous_tools_dir: Option<PathBuf>,
-    previous_search_path: Option<OsString>,
-    _lock: RwLockWriteGuard<'static, ()>,
-}
-
-/// Make ffmpeg and ffprobe unavailable to this process until the returned
-/// guard is dropped.
+/// ffmpeg and ffprobe looked for on an empty `PATH` and in a Tools
+/// Directory that does not exist. Those are the only places they are looked
+/// for, so they are missing whether or not the machine has ffmpeg installed.
 #[must_use]
-pub fn hide_ffmpeg() -> ToolsHidden {
-    let lock = tools_test_lock();
-    let previous_tools_dir = tools_dir();
-    let previous_search_path = search_path();
+pub fn no_ffmpeg() -> InstalledTools {
     let nowhere = std::env::temp_dir()
         .join(format!("message-crate-no-tools-{}", std::process::id()))
         .join("does-not-exist");
-    set_search_path(Some(OsString::new()));
-    set_tools_dir(Some(nowhere));
-    ToolsHidden {
-        previous_tools_dir,
-        previous_search_path,
-        _lock: lock,
-    }
-}
-
-/// Search `search_path` instead of the process's `PATH`, and `tools_dir`
-/// as the Tools Directory, until the returned guard is dropped. Holds
-/// [`tools_test_lock`], as [`hide_ffmpeg`] does.
-#[must_use]
-pub fn locate_tools(search_path: OsString, tools_dir: PathBuf) -> ToolsHidden {
-    let hidden = hide_ffmpeg();
-    set_search_path(Some(search_path));
-    set_tools_dir(Some(tools_dir));
-    hidden
-}
-
-impl Drop for ToolsHidden {
-    fn drop(&mut self) {
-        set_search_path(self.previous_search_path.take());
-        set_tools_dir(self.previous_tools_dir.take());
-    }
+    InstalledTools::new(Some(nowhere)).searching("")
 }
 
 /// Whether this account may read a file whose mode allows no one to, tried

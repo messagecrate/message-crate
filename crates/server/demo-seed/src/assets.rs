@@ -232,10 +232,10 @@ mod tests {
 
     #[test]
     fn mini_wav_is_readable_by_ffprobe() {
-        let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+        let Some(tools) = media::testutil::real_ffmpeg() else {
             return;
         };
-        let ffprobe = media::ffprobe_path().expect("the guard found ffprobe");
+        let ffprobe = tools.ffprobe_path().expect("real_ffmpeg found ffprobe");
 
         let dir = tempfile::tempdir().expect("temp dir");
         let path = dir.path().join("voice.wav");

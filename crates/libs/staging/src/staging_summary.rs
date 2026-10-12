@@ -29,7 +29,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
 
 use anyhow::Result;
-use media::{MediaMode, SizeVerdict, classify_probed, estimate_bytes, needs_probe, probe_media};
+use media::{MediaMode, MediaTools, SizeVerdict, classify_probed, estimate_bytes, needs_probe};
 use message_ir::{IrDirection, IrMessage};
 
 use crate::transcode::{COMMITTED_SUFFIX, TranscodeOptions, conversation_files};
@@ -179,6 +179,7 @@ pub struct SummaryProgress {
 pub fn summarize_staging(
     run_dir: &Path,
     options: &TranscodeOptions,
+    tools: &dyn MediaTools,
     on_progress: &mut dyn FnMut(SummaryProgress),
 ) -> Result<StagingSummary> {
     let files = conversation_files(run_dir)?;
@@ -251,6 +252,7 @@ pub fn summarize_staging(
                 rel,
                 att.original_name.as_deref(),
                 options,
+                tools,
                 has_media_step,
                 &mut summary,
             );
@@ -301,6 +303,7 @@ fn classify_one(
     rel: &str,
     original_name: Option<&str>,
     options: &TranscodeOptions,
+    tools: &dyn MediaTools,
     has_media_step: bool,
     summary: &mut StagingSummary,
 ) {
@@ -337,7 +340,7 @@ fn classify_one(
         let probe = if has_media_step && needs_probe(size_bytes, options.asset_max_bytes) {
             // Best-effort: an ffprobe failure classifies without a probe
             // rather than failing the whole summary.
-            probe_media(&abs).ok()
+            tools.probe(&abs).ok()
         } else {
             None
         };

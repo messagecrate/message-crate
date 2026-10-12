@@ -1547,11 +1547,9 @@ async fn the_demo_account_cannot_be_entered_while_it_is_built() {
 /// preview yet is left for its own pass (#1220).
 #[test]
 fn a_demo_build_converts_no_other_accounts_attachments() {
-    // Taken outside the runtime: holding the guard across an await is what
-    // Clippy's `await_holding_lock` refuses.
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    if media::testutil::real_ffmpeg().is_none() {
         return;
-    };
+    }
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

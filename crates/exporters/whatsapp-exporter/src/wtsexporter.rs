@@ -84,24 +84,14 @@ pub fn wtsexporter_file_name() -> &'static str {
     }
 }
 
-/// Where `wtsexporter` is: the app's own copy in the Tools Directory the
-/// desktop app named with [`media::set_tools_dir`]. `Ok(None)` when there is
-/// no Tools Directory or no file in it, and when the file there is not the
-/// pinned release's file for this computer ([`pinned_wtsexporter`]), such
-/// as a copy still being written or another build: it is treated as
-/// missing, and the desktop app downloads the pinned file over it.
-///
-/// # Errors
-///
-/// Returns an error when the file is there but is not executable by this
-/// account.
-pub fn wtsexporter_path() -> Result<Option<PathBuf>> {
-    wtsexporter_in_dir(media::tools_dir().as_deref(), pinned_sha256_here())
-}
-
-/// [`wtsexporter_path`] in `tools_dir`, counting only a file whose SHA-256
-/// is `pinned_sha256` where that is `Some`. The desktop app's status passes
-/// the pin its download uses, and a test passes a pin of its own.
+/// Where `wtsexporter` is: the app's own copy in `tools_dir`, the Tools
+/// Directory, counting only a file whose SHA-256 is `pinned_sha256` where
+/// that is `Some`. `Ok(None)` when there is no Tools Directory or no file in
+/// it, and when the file there is not the pinned file, such as a copy still
+/// being written or another build: it is treated as missing, and the
+/// desktop app downloads the pinned file over it. The desktop app's status
+/// passes the pin its download uses ([`pinned_wtsexporter`]), and a test
+/// passes a pin of its own.
 ///
 /// # Errors
 ///
@@ -118,13 +108,14 @@ pub fn wtsexporter_in_dir(
 }
 
 /// Locate `wtsexporter` (the Python WhatsApp export tool this crate shells
-/// out to) in the Tools Directory.
+/// out to) in `tools_dir`, the Tools Directory the run names
+/// ([`message_crate_core::RunContext::tools_dir`]).
 ///
 /// # Errors
 ///
 /// Returns an error when it is not there, or is not the pinned file.
-pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
-    wtsexporter_in(media::tools_dir().as_deref(), pinned_sha256_here())
+pub(crate) fn resolve_wtsexporter(tools_dir: Option<&Path>) -> Result<PathBuf> {
+    wtsexporter_in(tools_dir, pinned_sha256_here())
 }
 
 /// Why a wtsexporter in the Tools Directory that is not the file of

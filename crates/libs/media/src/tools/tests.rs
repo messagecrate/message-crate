@@ -1,22 +1,12 @@
 use super::*;
-use crate::testutil::{clock_from, progress_then_hang, tools_test_lock};
+use crate::testutil::{clock_from, progress_then_hang};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-/// Where the tools were looked for when a test started, put back when it ends.
-struct RestoreToolsDir(Option<PathBuf>, Option<OsString>);
-
-impl RestoreToolsDir {
-    fn capture() -> Self {
-        Self(tools_dir(), search_path())
-    }
-}
-
-impl Drop for RestoreToolsDir {
-    fn drop(&mut self) {
-        set_search_path(self.1.clone());
-        set_tools_dir(self.0.clone());
-    }
+/// The programs on an empty `PATH`, else in `dir`, so a test decides what
+/// is found whether or not the machine has ffmpeg installed.
+fn tools_in(dir: &Path) -> InstalledTools {
+    InstalledTools::new(Some(dir.to_path_buf())).searching("")
 }
 
 fn write_mock_tool(path: &Path) {
@@ -26,18 +16,19 @@ fn write_mock_tool(path: &Path) {
     fs::set_permissions(path, perms).unwrap();
 }
 
-/// Point the tool location at a Tools Directory holding an `ffmpeg` that
-/// runs `body` and an `ffprobe` that does nothing, with an empty `PATH`
-/// before it. Both answer `-version`, so the lookup accepts them.
-fn mock_ffmpeg_dir(body: &str) -> tempfile::TempDir {
+/// A Tools Directory holding an `ffmpeg` that runs `body` and an
+/// `ffprobe` that does nothing, and the programs looked for there with an
+/// empty `PATH` before it. Both answer `-version`, so the lookup accepts
+/// them.
+fn mock_ffmpeg_dir(body: &str) -> (tempfile::TempDir, InstalledTools) {
     mock_tools_dir(body, "exit 0")
 }
 
-/// Point the tool location at a Tools Directory holding an `ffmpeg` that
-/// runs `ffmpeg_body` and an `ffprobe` that runs `ffprobe_body`, with an
-/// empty `PATH` before it. Both answer `-version`, so the lookup accepts
-/// them.
-fn mock_tools_dir(ffmpeg_body: &str, ffprobe_body: &str) -> tempfile::TempDir {
+/// A Tools Directory holding an `ffmpeg` that runs `ffmpeg_body` and an
+/// `ffprobe` that runs `ffprobe_body`, and the programs looked for there
+/// with an empty `PATH` before it. Both answer `-version`, so the lookup
+/// accepts them.
+fn mock_tools_dir(ffmpeg_body: &str, ffprobe_body: &str) -> (tempfile::TempDir, InstalledTools) {
     let dir = tempfile::tempdir().unwrap();
     for (name, body) in [("ffmpeg", ffmpeg_body), ("ffprobe", ffprobe_body)] {
         let program = dir.path().join(name);
@@ -50,9 +41,8 @@ fn mock_tools_dir(ffmpeg_body: &str, ffprobe_body: &str) -> tempfile::TempDir {
         perms.set_mode(0o755);
         fs::set_permissions(&program, perms).unwrap();
     }
-    set_search_path(Some(OsString::new()));
-    set_tools_dir(Some(dir.path().to_path_buf()));
-    dir
+    let tools = tools_in(dir.path());
+    (dir, tools)
 }
 
 /// A mock program body that writes its process id to `pid` in its own
@@ -77,18 +67,17 @@ fn still_runs(pid: &str) -> bool {
 #[cfg(unix)]
 #[test]
 fn ffmpeg_that_never_finishes_one_frame_is_killed_after_the_short_step_limit() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
-    let dir = mock_ffmpeg_dir(WRITE_PID_AND_HANG);
+    let (dir, tools) = mock_ffmpeg_dir(WRITE_PID_AND_HANG);
     let pid_file = dir.path().join("pid");
 
-    let err = run_ffmpeg_watched(
-        &["out.jpg".to_string()],
-        Some(&AtomicBool::new(false)),
-        Limit::ShortStep,
-        &clock_from(&pid_file),
-    )
-    .expect_err("a run past its time fails");
+    let err = tools
+        .run_ffmpeg_watched(
+            &["out.jpg".to_string()],
+            Some(&AtomicBool::new(false)),
+            Limit::ShortStep,
+            &clock_from(&pid_file),
+        )
+        .expect_err("a run past its time fails");
 
     assert_eq!(
         err.downcast_ref::<Killed>().map(Killed::reason),
@@ -110,18 +99,17 @@ fn ffmpeg_that_never_finishes_one_frame_is_killed_after_the_short_step_limit() {
 #[cfg(unix)]
 #[test]
 fn ffprobe_that_never_finishes_is_killed_after_the_short_step_limit() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
-    let dir = mock_tools_dir("exit 0", WRITE_PID_AND_HANG);
+    let (dir, tools) = mock_tools_dir("exit 0", WRITE_PID_AND_HANG);
     let pid_file = dir.path().join("pid");
 
-    let err = run_ffprobe_watched(
-        &["-v", "error"],
-        Path::new("clip.mp4"),
-        None,
-        &clock_from(&pid_file),
-    )
-    .expect_err("a probe past its time fails");
+    let err = tools
+        .run_ffprobe_watched(
+            &["-v", "error"],
+            Path::new("clip.mp4"),
+            None,
+            &clock_from(&pid_file),
+        )
+        .expect_err("a probe past its time fails");
 
     assert!(err.downcast_ref::<Killed>().is_some(), "{err:#}");
     assert!(
@@ -138,19 +126,18 @@ fn ffprobe_that_never_finishes_is_killed_after_the_short_step_limit() {
 #[cfg(unix)]
 #[test]
 fn a_conversion_that_never_moves_is_killed_as_stalled_before_any_output() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
-    let dir = mock_ffmpeg_dir(WRITE_PID_AND_HANG);
+    let (dir, tools) = mock_ffmpeg_dir(WRITE_PID_AND_HANG);
     let pid_file = dir.path().join("pid");
     let wait = Duration::from_secs(120);
 
-    let err = run_ffmpeg_watched(
-        &["out.mp4".to_string()],
-        None,
-        Limit::Progress(StallWatch::new(wait, Some(Duration::from_secs(60)))),
-        &clock_from(&pid_file),
-    )
-    .expect_err("a stalled run fails");
+    let err = tools
+        .run_ffmpeg_watched(
+            &["out.mp4".to_string()],
+            None,
+            Limit::Progress(StallWatch::new(wait, Some(Duration::from_secs(60)))),
+            &clock_from(&pid_file),
+        )
+        .expect_err("a stalled run fails");
 
     assert_eq!(
         err.downcast_ref::<Killed>().map(Killed::reason),
@@ -167,20 +154,19 @@ fn a_conversion_that_never_moves_is_killed_as_stalled_before_any_output() {
 #[cfg(unix)]
 #[test]
 fn a_conversion_that_stops_moving_partway_is_killed_and_reaped() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
-    let dir = mock_ffmpeg_dir(&progress_then_hang(
+    let (dir, tools) = mock_ffmpeg_dir(&progress_then_hang(
         "out_time=00:00:01.000000\\nprogress=continue\\nout_time=00:00:42.000000\\nprogress=continue\\n",
     ));
     let wait = Duration::from_secs(120);
 
-    let err = run_ffmpeg_watched(
-        &["out.mp4".to_string()],
-        None,
-        Limit::Progress(StallWatch::new(wait, Some(Duration::from_secs(600)))),
-        &clock_from(&dir.path().join("started")),
-    )
-    .expect_err("a stalled run fails");
+    let err = tools
+        .run_ffmpeg_watched(
+            &["out.mp4".to_string()],
+            None,
+            Limit::Progress(StallWatch::new(wait, Some(Duration::from_secs(600)))),
+            &clock_from(&dir.path().join("started")),
+        )
+        .expect_err("a stalled run fails");
 
     assert_eq!(
         err.downcast_ref::<Killed>().map(Killed::reason),
@@ -203,27 +189,26 @@ fn a_conversion_that_stops_moving_partway_is_killed_and_reaped() {
 #[cfg(unix)]
 #[test]
 fn a_conversion_past_twice_its_length_is_killed() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
     // The pid is written before the progress, so it is there once the run
     // is killed.
-    let dir = mock_ffmpeg_dir(
+    let (dir, tools) = mock_ffmpeg_dir(
         "echo $$ > \"$(dirname \"$0\")/pid\"\n\
          printf 'out_time=-00:00:00.023220\\nprogress=continue\\n\
          out_time=00:00:03.000000\\nprogress=continue\\n'\nexec sleep 600",
     );
     let pid_file = dir.path().join("pid");
 
-    let err = run_ffmpeg_watched(
-        &["out.mp4".to_string()],
-        None,
-        Limit::Progress(StallWatch::new(
-            Duration::from_secs(120),
-            Some(Duration::from_secs(1)),
-        )),
-        &|| Duration::ZERO,
-    )
-    .expect_err("a run past twice its length fails");
+    let err = tools
+        .run_ffmpeg_watched(
+            &["out.mp4".to_string()],
+            None,
+            Limit::Progress(StallWatch::new(
+                Duration::from_secs(120),
+                Some(Duration::from_secs(1)),
+            )),
+            &|| Duration::ZERO,
+        )
+        .expect_err("a run past twice its length fails");
 
     assert_eq!(
         err.downcast_ref::<Killed>().map(Killed::reason),
@@ -246,23 +231,22 @@ fn a_conversion_past_twice_its_length_is_killed() {
 #[cfg(unix)]
 #[test]
 fn a_conversion_that_exits_after_its_progress_succeeds() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
-    let _dir = mock_ffmpeg_dir(
+    let (_dir, tools) = mock_ffmpeg_dir(
         "printf 'out_time=00:00:01.000000\\nprogress=continue\\n\
          out_time=00:00:02.000000\\nprogress=end\\n'\nexit 0",
     );
 
-    run_ffmpeg_watched(
-        &["out.mp4".to_string()],
-        None,
-        Limit::Progress(StallWatch::new(
-            Duration::from_secs(120),
-            Some(Duration::from_secs(2)),
-        )),
-        &|| Duration::ZERO,
-    )
-    .expect("a run that exits 0 succeeds");
+    tools
+        .run_ffmpeg_watched(
+            &["out.mp4".to_string()],
+            None,
+            Limit::Progress(StallWatch::new(
+                Duration::from_secs(120),
+                Some(Duration::from_secs(2)),
+            )),
+            &|| Duration::ZERO,
+        )
+        .expect("a run that exits 0 succeeds");
 }
 
 /// A program that never exits on `-version` is killed once the short
@@ -304,11 +288,11 @@ fn a_program_that_answers_version_runs() {
 #[cfg(unix)]
 #[test]
 fn ffprobe_answers_what_it_wrote_and_opens_only_local_files() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
-    let _dir = mock_tools_dir("exit 0", "echo \"$@\"");
+    let (_dir, tools) = mock_tools_dir("exit 0", "echo \"$@\"");
 
-    let out = run_ffprobe(&["-v", "error"], Path::new("clip.mp4"), None).unwrap();
+    let out = tools
+        .run_ffprobe(&["-v", "error"], Path::new("clip.mp4"), None)
+        .unwrap();
 
     assert_eq!(
         String::from_utf8(out).unwrap(),
@@ -322,16 +306,15 @@ fn ffprobe_answers_what_it_wrote_and_opens_only_local_files() {
 #[cfg(unix)]
 #[test]
 fn ffmpeg_reads_no_stdin_and_opens_only_local_files() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
-    let dir = mock_ffmpeg_dir("echo \"$@\" > \"$(dirname \"$0\")/args\"");
+    let (dir, tools) = mock_ffmpeg_dir("echo \"$@\" > \"$(dirname \"$0\")/args\"");
 
-    run_ffmpeg(&[
-        "-i".to_string(),
-        "in.mov".to_string(),
-        "out.mp4".to_string(),
-    ])
-    .unwrap();
+    tools
+        .run_ffmpeg(&[
+            "-i".to_string(),
+            "in.mov".to_string(),
+            "out.mp4".to_string(),
+        ])
+        .unwrap();
 
     assert_eq!(
         fs::read_to_string(dir.path().join("args")).unwrap(),
@@ -459,28 +442,23 @@ fn a_position_is_said_as_a_player_shows_it() {
     assert_eq!(clock(Duration::from_secs(3 * 3600 + 7)), "3:00:07");
 }
 
-/// The no-progress wait is the default until it is set, and a wait under a
-/// millisecond is taken as one.
+/// The no-progress wait is the default until one is named, and a wait under
+/// a millisecond is taken as one.
 #[test]
-fn the_no_progress_wait_is_the_default_until_set() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreStallWait;
-    assert_eq!(stall_wait(), DEFAULT_STALL_WAIT);
-    set_stall_wait(Duration::from_secs(30));
-    assert_eq!(stall_wait(), Duration::from_secs(30));
-    set_stall_wait(Duration::ZERO);
-    assert_eq!(stall_wait(), Duration::from_millis(1));
-}
-
-/// Puts the default no-progress wait back when dropped, so a test that
-/// fails partway does not leave every later conversion in this process
-/// stopped as stalled.
-struct RestoreStallWait;
-
-impl Drop for RestoreStallWait {
-    fn drop(&mut self) {
-        set_stall_wait(DEFAULT_STALL_WAIT);
-    }
+fn the_no_progress_wait_is_the_default_until_named() {
+    assert_eq!(InstalledTools::default().stall_wait(), DEFAULT_STALL_WAIT);
+    assert_eq!(
+        InstalledTools::default()
+            .with_stall_wait(Duration::from_secs(30))
+            .stall_wait(),
+        Duration::from_secs(30)
+    );
+    assert_eq!(
+        InstalledTools::default()
+            .with_stall_wait(Duration::ZERO)
+            .stall_wait(),
+        Duration::from_millis(1)
+    );
 }
 
 /// A conversion that reaches the end of its file is finishing it: with
@@ -541,11 +519,12 @@ fn mock_tools() -> tempfile::TempDir {
 
 /// `run_ffmpeg` on another thread, failing the test when it has not
 /// returned within a minute rather than hanging the test run.
-fn run_ffmpeg_within_a_minute(args: &[&str]) -> Result<()> {
+fn run_ffmpeg_within_a_minute(tools: &InstalledTools, args: &[&str]) -> Result<()> {
     let args: Vec<String> = args.iter().map(|a| (*a).to_string()).collect();
+    let tools = tools.clone();
     let (sender, receiver) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let _ = sender.send(run_ffmpeg(&args));
+        let _ = sender.send(tools.run_ffmpeg(&args));
     });
     receiver
         .recv_timeout(std::time::Duration::from_secs(60))
@@ -559,12 +538,10 @@ fn run_ffmpeg_within_a_minute(args: &[&str]) -> Result<()> {
 #[cfg(unix)]
 #[test]
 fn run_ffmpeg_returns_when_ffmpeg_writes_more_than_a_pipe_holds() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
-    let _dir =
+    let (_dir, tools) =
         mock_ffmpeg_dir("dd if=/dev/zero bs=1024 count=1024 2>/dev/null | tr '\\0' x >&2\nexit 0");
 
-    run_ffmpeg_within_a_minute(&["-i", "in.mov", "out.mp4"]).expect("ffmpeg exits 0");
+    run_ffmpeg_within_a_minute(&tools, &["-i", "in.mov", "out.mp4"]).expect("ffmpeg exits 0");
 }
 
 /// Setting the stop kills ffmpeg and waits for it, so a stopped server
@@ -573,15 +550,14 @@ fn run_ffmpeg_returns_when_ffmpeg_writes_more_than_a_pipe_holds() {
 #[cfg(unix)]
 #[test]
 fn run_ffmpeg_until_kills_ffmpeg_when_stopped() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
-    let dir = mock_ffmpeg_dir("echo $$ > \"$(dirname \"$0\")/pid\"\nexec sleep 600");
+    let (dir, tools) = mock_ffmpeg_dir("echo $$ > \"$(dirname \"$0\")/pid\"\nexec sleep 600");
     let pid_file = dir.path().join("pid");
     let stop = std::sync::Arc::new(AtomicBool::new(false));
 
     let running = {
         let stop = std::sync::Arc::clone(&stop);
-        std::thread::spawn(move || run_ffmpeg_until(&["out.mp4".to_string()], &stop))
+        let tools = tools.clone();
+        std::thread::spawn(move || tools.run_ffmpeg_until(&["out.mp4".to_string()], &stop))
     };
     let deadline = std::time::Instant::now() + Duration::from_secs(60);
     while !pid_file.is_file() {
@@ -600,7 +576,9 @@ fn run_ffmpeg_until_kills_ffmpeg_when_stopped() {
         .unwrap();
     assert!(!alive.success(), "ffmpeg {pid} still runs");
     fs::remove_file(&pid_file).unwrap();
-    let err = run_ffmpeg_until(&["out.mp4".to_string()], &stop).expect_err("stopped");
+    let err = tools
+        .run_ffmpeg_until(&["out.mp4".to_string()], &stop)
+        .expect_err("stopped");
     assert!(format!("{err:#}").contains("stopped"), "{err:#}");
     assert!(!pid_file.exists(), "no ffmpeg starts once the stop is set");
 }
@@ -612,9 +590,7 @@ fn run_ffmpeg_until_kills_ffmpeg_when_stopped() {
 #[cfg(unix)]
 #[test]
 fn a_failure_the_stop_follows_is_a_stop() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
-    let _dir = mock_ffmpeg_dir("exit 255");
+    let (_dir, tools) = mock_ffmpeg_dir("exit 255");
     let stop = std::sync::Arc::new(AtomicBool::new(false));
     let setter = {
         let stop = std::sync::Arc::clone(&stop);
@@ -624,7 +600,9 @@ fn a_failure_the_stop_follows_is_a_stop() {
         })
     };
 
-    let err = run_ffmpeg_until(&["out.mp4".to_string()], &stop).expect_err("ffmpeg exits 255");
+    let err = tools
+        .run_ffmpeg_until(&["out.mp4".to_string()], &stop)
+        .expect_err("ffmpeg exits 255");
     setter.join().unwrap();
 
     assert!(format!("{err:#}").contains("stopped"), "{err:#}");
@@ -633,12 +611,11 @@ fn a_failure_the_stop_follows_is_a_stop() {
 #[cfg(unix)]
 #[test]
 fn run_ffmpeg_failure_carries_what_ffmpeg_said() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
-    let _dir =
+    let (_dir, tools) =
         mock_ffmpeg_dir("echo 'in.mov: Invalid data found when processing input' >&2\nexit 1");
 
-    let err = run_ffmpeg_within_a_minute(&["-i", "in.mov", "out.mp4"]).expect_err("ffmpeg exits 1");
+    let err = run_ffmpeg_within_a_minute(&tools, &["-i", "in.mov", "out.mp4"])
+        .expect_err("ffmpeg exits 1");
     let message = format!("{err:#}");
     assert!(
         message.contains("in.mov: Invalid data found when processing input"),
@@ -654,9 +631,7 @@ fn run_ffmpeg_failure_carries_what_ffmpeg_said() {
 #[cfg(unix)]
 #[test]
 fn run_ffmpeg_failure_carries_the_cause_without_the_banner_or_stats() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
-    let _dir = mock_ffmpeg_dir(concat!(
+    let (_dir, tools) = mock_ffmpeg_dir(concat!(
         "[ \"$1 $2 $3 $4\" = '-hide_banner -nostats -loglevel error' ] || { ",
         "echo 'ffmpeg version 6.1.1 Copyright (c) 2000-2023 the FFmpeg developers' >&2; ",
         "echo '  configuration: --enable-gpl --enable-libx265' >&2; ",
@@ -665,7 +640,8 @@ fn run_ffmpeg_failure_carries_the_cause_without_the_banner_or_stats() {
         "echo 'in.mov: Invalid data found when processing input' >&2\nexit 1",
     ));
 
-    let err = run_ffmpeg_within_a_minute(&["-i", "in.mov", "out.mp4"]).expect_err("ffmpeg exits 1");
+    let err = run_ffmpeg_within_a_minute(&tools, &["-i", "in.mov", "out.mp4"])
+        .expect_err("ffmpeg exits 1");
 
     let message = format!("{err:#}");
     assert!(
@@ -687,14 +663,13 @@ fn run_ffmpeg_failure_carries_the_cause_without_the_banner_or_stats() {
 #[cfg(unix)]
 #[test]
 fn run_ffmpeg_failure_keeps_only_the_end_of_a_long_error_output() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
-    let _dir = mock_ffmpeg_dir(
+    let (_dir, tools) = mock_ffmpeg_dir(
         "i=0\nwhile [ $i -lt 20000 ]; do echo \"warning for frame $i\" >&2; i=$((i+1)); done\n\
          echo 'Conversion failed!' >&2\nexit 1",
     );
 
-    let err = run_ffmpeg_within_a_minute(&["-i", "in.mov", "out.mp4"]).expect_err("ffmpeg exits 1");
+    let err = run_ffmpeg_within_a_minute(&tools, &["-i", "in.mov", "out.mp4"])
+        .expect_err("ffmpeg exits 1");
     let message = format!("{err:#}");
     assert!(
         message.ends_with("Conversion failed!"),
@@ -716,20 +691,21 @@ fn run_ffmpeg_failure_keeps_only_the_end_of_a_long_error_output() {
 /// error says what it said.
 #[test]
 fn real_ffmpeg_failure_names_the_missing_input() {
-    let Some(_guard) = crate::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = crate::testutil::real_ffmpeg() else {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("missing.mov");
     let output = dir.path().join("out.mp4");
 
-    let err = run_ffmpeg(&[
-        "-y".to_string(),
-        "-i".to_string(),
-        missing.display().to_string(),
-        output.display().to_string(),
-    ])
-    .expect_err("the input does not exist");
+    let err = tools
+        .run_ffmpeg(&[
+            "-y".to_string(),
+            "-i".to_string(),
+            missing.display().to_string(),
+            output.display().to_string(),
+        ])
+        .expect_err("the input does not exist");
     let message = format!("{err:#}");
     assert!(
         message.contains("No such file or directory"),
@@ -944,21 +920,18 @@ fn runs_in(log: &Path) -> usize {
 #[cfg(unix)]
 #[test]
 fn a_second_lookup_in_two_places_runs_nothing() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
     let on_path = tempfile::tempdir().unwrap();
     let tools = tempfile::tempdir().unwrap();
     let log = tools.path().join("runs.log");
     counting_tool(&on_path.path().join("ffmpeg"), &log);
     counting_tool(&tools.path().join("ffprobe"), &log);
-    set_search_path(Some(on_path.path().as_os_str().to_owned()));
-    set_tools_dir(Some(tools.path().to_path_buf()));
+    let installed = tools_in(tools.path()).searching(on_path.path());
 
-    assert!(ffmpeg_tools().is_err());
+    assert!(installed.find().is_err());
     let first = runs_in(&log);
     assert_eq!(first, 2, "each program runs once to answer -version");
-    assert!(ffmpeg_tools().is_err());
-    assert!(ffprobe_path().is_none());
+    assert!(installed.find().is_err());
+    assert!(installed.ffprobe_path().is_none());
     assert_eq!(runs_in(&log), first);
 }
 
@@ -968,20 +941,17 @@ fn a_second_lookup_in_two_places_runs_nothing() {
 #[cfg(unix)]
 #[test]
 fn a_tool_made_executable_later_is_found() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
     let tools = mock_tools();
-    set_search_path(Some(OsString::new()));
-    set_tools_dir(Some(tools.path().to_path_buf()));
+    let installed = tools_in(tools.path());
     let ffprobe = tools.path().join("ffprobe");
     let mut perms = fs::metadata(&ffprobe).unwrap().permissions();
     perms.set_mode(0o644);
     fs::set_permissions(&ffprobe, perms.clone()).unwrap();
-    assert!(!ffmpeg_available());
+    assert!(!installed.available());
 
     perms.set_mode(0o755);
     fs::set_permissions(&ffprobe, perms).unwrap();
-    assert!(ffmpeg_available());
+    assert!(installed.available());
 }
 
 /// A pair found in one place and then moved to another, under the same
@@ -990,18 +960,15 @@ fn a_tool_made_executable_later_is_found() {
 #[cfg(unix)]
 #[test]
 fn a_pair_moved_to_another_directory_is_found_there() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
     let on_path = mock_tools();
     let tools = tempfile::tempdir().unwrap();
-    set_search_path(Some(on_path.path().as_os_str().to_owned()));
-    set_tools_dir(Some(tools.path().to_path_buf()));
-    assert_eq!(ffmpeg_tools().unwrap(), both_in(on_path.path()));
+    let installed = tools_in(tools.path()).searching(on_path.path());
+    assert_eq!(installed.find().unwrap(), both_in(on_path.path()));
 
     for name in ["ffmpeg", "ffprobe"] {
         fs::rename(on_path.path().join(name), tools.path().join(name)).unwrap();
     }
-    assert_eq!(ffmpeg_tools().unwrap(), both_in(tools.path()));
+    assert_eq!(installed.find().unwrap(), both_in(tools.path()));
 }
 
 /// A program whose `-version` fails, as one Gatekeeper blocks or one
@@ -1011,8 +978,6 @@ fn a_pair_moved_to_another_directory_is_found_there() {
 #[cfg(unix)]
 #[test]
 fn a_program_that_failed_once_is_found_when_it_answers() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
     let tools = mock_tools();
     let marker = tools.path().join("blocked");
     fs::write(&marker, "").unwrap();
@@ -1031,12 +996,11 @@ exit 0
     let mut perms = fs::metadata(&ffprobe).unwrap().permissions();
     perms.set_mode(0o755);
     fs::set_permissions(&ffprobe, perms).unwrap();
-    set_search_path(Some(OsString::new()));
-    set_tools_dir(Some(tools.path().to_path_buf()));
-    assert!(!ffmpeg_available());
+    let installed = tools_in(tools.path());
+    assert!(!installed.available());
 
     fs::remove_file(&marker).unwrap();
-    assert!(ffmpeg_available());
+    assert!(installed.available());
 }
 
 /// A program replaced in place by another file, with the same size,
@@ -1045,18 +1009,17 @@ exit 0
 #[cfg(unix)]
 #[test]
 fn a_program_replaced_in_place_is_run_again() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
     let tools = tempfile::tempdir().unwrap();
     let log = tools.path().join("runs.log");
     for name in ["ffmpeg", "ffprobe"] {
         counting_tool(&tools.path().join(name), &log);
     }
-    set_search_path(Some(OsString::new()));
-    set_tools_dir(Some(tools.path().to_path_buf()));
-    assert!(ffmpeg_available());
+    let installed = tools_in(tools.path());
+    assert!(installed.available());
     assert_eq!(runs_in(&log), 2);
-    assert!(ffmpeg_available());
+    // Another lookup in the same place, as a second process component
+    // builds, finds the answer kept for the file.
+    assert!(tools_in(tools.path()).available());
     assert_eq!(runs_in(&log), 2, "an unchanged file is not run again");
 
     let ffmpeg = tools.path().join("ffmpeg");
@@ -1071,7 +1034,7 @@ fn a_program_replaced_in_place_is_run_again() {
         .unwrap();
     fs::rename(&replacement, &ffmpeg).unwrap();
 
-    assert!(ffmpeg_available());
+    assert!(installed.available());
     assert_eq!(runs_in(&log), 3, "the replaced ffmpeg runs once more");
 }
 
@@ -1093,40 +1056,38 @@ fn a_lone_program_is_found_and_the_other_named_missing() {
 #[cfg(unix)]
 #[test]
 fn message_crate_bin_is_not_searched() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
     let elsewhere = mock_tools();
-    set_search_path(Some(OsString::new()));
-    set_tools_dir(None);
+    let installed = InstalledTools::new(None).searching("");
 
-    // SAFETY: test-only env mutation; this test holds tools_test_lock so no
-    // concurrent lookup runs.
+    // SAFETY: test-only env mutation. The tests in this crate read the
+    // environment only through `std::env` and start programs only through
+    // `std::process::Command`, which take std's lock over the environment,
+    // as `set_var` does.
     unsafe {
         std::env::set_var("MESSAGE_CRATE_BIN", elsewhere.path());
     }
-    let found = ffmpeg_path();
+    let found = installed.ffmpeg_path();
     unsafe {
         std::env::remove_var("MESSAGE_CRATE_BIN");
     }
     assert_eq!(found, None);
 }
 
-/// A new Tools Directory is searched at once: a tool found before is
-/// forgotten.
+/// Each Tools Directory is searched for itself: the programs found in one
+/// are not what a lookup in another finds, in the same process.
 #[cfg(unix)]
 #[test]
-fn set_tools_dir_clears_what_was_found() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
+fn each_tools_directory_finds_its_own_programs() {
     let first = mock_tools();
     let second = mock_tools();
-    set_search_path(Some(OsString::new()));
 
-    set_tools_dir(Some(first.path().to_path_buf()));
-    assert_eq!(ffmpeg_path(), Some(first.path().join("ffmpeg")));
-    set_tools_dir(Some(second.path().to_path_buf()));
-    assert_eq!(tools_dir(), Some(second.path().to_path_buf()));
-    assert_eq!(ffmpeg_path(), Some(second.path().join("ffmpeg")));
+    assert_eq!(
+        tools_in(first.path()).ffmpeg_path(),
+        Some(first.path().join("ffmpeg"))
+    );
+    let in_second = tools_in(second.path());
+    assert_eq!(in_second.tools_dir(), Some(second.path()));
+    assert_eq!(in_second.ffmpeg_path(), Some(second.path().join("ffmpeg")));
 }
 
 /// A tool not found is looked for again, so a copy that arrives in the
@@ -1134,17 +1095,14 @@ fn set_tools_dir_clears_what_was_found() {
 #[cfg(unix)]
 #[test]
 fn a_tool_that_arrives_later_is_found() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
     let tools = tempfile::tempdir().unwrap();
-    set_search_path(Some(OsString::new()));
-    set_tools_dir(Some(tools.path().to_path_buf()));
-    assert!(!ffmpeg_available());
+    let installed = tools_in(tools.path());
+    assert!(!installed.available());
 
     for name in ["ffmpeg", "ffprobe"] {
         write_mock_tool(&tools.path().join(name));
     }
-    assert!(ffmpeg_available());
+    assert!(installed.available());
 }
 
 #[cfg(unix)]
@@ -1154,15 +1112,13 @@ fn missing_ffprobe_names_the_tool_not_the_input_file() {
     // spawn with an IO error naming whatever path was passed as the
     // *input* — "No such file or directory" on `/path/to/IMG_0001.HEIC"
     // — which reads as a problem with the user's file, not the missing
-    // tool. `ffprobe_command` must fail before that, with a message that
-    // names ffprobe and where it was looked for.
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
+    // tool. The probe must fail before that, with a message that names
+    // ffprobe and where it was looked for.
     let empty = tempfile::tempdir().unwrap();
-    set_search_path(Some(OsString::new()));
-    set_tools_dir(Some(empty.path().to_path_buf()));
 
-    let err = ffprobe_command().expect_err("no ffprobe on PATH or in the Tools Directory");
+    let err = tools_in(empty.path())
+        .run_ffprobe(&["-v", "error"], Path::new("/path/to/IMG_0001.HEIC"), None)
+        .expect_err("no ffprobe on PATH or in the Tools Directory");
     let message = err.to_string();
     assert!(
         message.contains("ffprobe not found on PATH or in the Tools Directory"),
@@ -1232,12 +1188,10 @@ fn a_missing_file_is_not_executable() {
 #[cfg(unix)]
 #[test]
 fn a_stopped_transcode_runs_neither_program() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
     let ran = "touch \"$(dirname \"$0\")/ran\"";
-    let dir = mock_tools_dir(ran, ran);
+    let (dir, tools) = mock_tools_dir(ran, ran);
 
-    let err = InstalledTools
+    let err = tools
         .transcode(
             &["-i".to_string(), "in.mov".to_string()],
             Path::new("out.mp4"),

@@ -7,8 +7,9 @@
 
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use media::{CompressOptions, MediaMode};
+use media::{CompressOptions, InstalledTools, MediaMode, MediaTools};
 
 use crate::exporters::{ApplePlatform, Exporter, WhatsappPlatform};
 use crate::pipeline::IssueSink;
@@ -114,6 +115,11 @@ pub struct RunContext {
     /// each row to its window, so an app that closes mid-run keeps the rows
     /// that had arrived; a run that keeps no record holds [`IssueSink::none`].
     pub issues: IssueSink,
+    /// The Tools Directory, where the WhatsApp exporter finds the app's own
+    /// `wtsexporter`. The exporter crates do not know the app's
+    /// directories, so the app names it here; a run with none finds no
+    /// `wtsexporter`.
+    pub tools_dir: Option<PathBuf>,
 }
 
 impl RunContext {
@@ -127,6 +133,7 @@ impl RunContext {
             log: LogSink::none(),
             progress: ProgressSink::none(),
             issues: IssueSink::none(),
+            tools_dir: None,
         }
     }
 }
@@ -242,13 +249,20 @@ pub struct MediaConfig {
     pub mode: MediaMode,
     /// Compress-mode options (long-edge cap, max fps, min size).
     pub compress: CompressOptions,
+    /// The ffmpeg and ffprobe Convert and Compress run. The caller builds
+    /// them from where it keeps its tools ([`InstalledTools`]); a test
+    /// passes a fake.
+    pub tools: Arc<dyn MediaTools>,
 }
 
 impl Default for MediaConfig {
+    /// Clone, with the ffmpeg and ffprobe on `PATH`: a process with no
+    /// Tools Directory, as a server started by hand.
     fn default() -> Self {
         Self {
             mode: MediaMode::Clone,
             compress: CompressOptions::default(),
+            tools: Arc::new(InstalledTools::default()),
         }
     }
 }

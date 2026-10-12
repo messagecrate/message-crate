@@ -18,7 +18,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::Kind;
 use crate::signature::{media_type_from_bytes, read_head};
-use crate::tools::{InstalledTools, MediaTools, Reads};
+use crate::tools::{MediaTools, Reads};
 
 /// The longest side of a Thumbnail, in pixels. A smaller original keeps its
 /// own size.
@@ -93,16 +93,7 @@ pub fn media_type_of(
 /// cannot read counts as not shown, so it is given a Preview. `None` for an
 /// MP4 while ffprobe is missing, for the same reason.
 #[must_use]
-pub fn browser_shows(src: &Path, media_type: Option<&str>) -> Option<bool> {
-    browser_shows_with(&InstalledTools, src, media_type)
-}
-
-/// [`browser_shows`] with the ffprobe `tools` runs.
-pub(crate) fn browser_shows_with(
-    tools: &dyn MediaTools,
-    src: &Path,
-    media_type: Option<&str>,
-) -> Option<bool> {
+pub fn browser_shows(tools: &dyn MediaTools, src: &Path, media_type: Option<&str>) -> Option<bool> {
     let Some(media_type) = media_type else {
         return Some(false);
     };
@@ -139,12 +130,7 @@ pub fn shown_as_is_by_type(media_type: Option<&str>) -> bool {
 ///
 /// Returns an error when ffmpeg is missing or cannot read `src`, or `stop`
 /// is set.
-pub fn make_thumbnail(src: &Path, dest: &Path, stop: &AtomicBool) -> Result<()> {
-    make_thumbnail_with(&InstalledTools, src, dest, stop)
-}
-
-/// [`make_thumbnail`] with the ffmpeg `tools` runs.
-pub(crate) fn make_thumbnail_with(
+pub fn make_thumbnail(
     tools: &dyn MediaTools,
     src: &Path,
     dest: &Path,
@@ -196,12 +182,7 @@ pub fn preview_extension(kind: Kind) -> &'static str {
 ///
 /// Returns an error when ffmpeg is missing or cannot convert `src`, or
 /// `stop` is set.
-pub fn make_preview(src: &Path, kind: Kind, dest: &Path, stop: &AtomicBool) -> Result<()> {
-    make_preview_with(&InstalledTools, src, kind, dest, stop)
-}
-
-/// [`make_preview`] with the ffmpeg `tools` runs.
-pub(crate) fn make_preview_with(
+pub fn make_preview(
     tools: &dyn MediaTools,
     src: &Path,
     kind: Kind,

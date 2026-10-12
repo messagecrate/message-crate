@@ -94,7 +94,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use media::{CompressOptions, HevcFallback, MediaMode, TranscodeOutcome};
+use media::{CompressOptions, HevcFallback, MediaMode, MediaTools, TranscodeOutcome};
 use message_crate_core::{
     CancelFlag, IssueSink, LogSink, RunIssue, RunIssueKind, check_cancel, mime_for_rel,
 };
@@ -197,6 +197,7 @@ pub struct TranscodeReport {
 pub fn transcode_staged(
     run_dir: &Path,
     options: &TranscodeOptions,
+    tools: &dyn MediaTools,
     cancel: &CancelFlag,
     issues: &IssueSink,
     log: &LogSink,
@@ -211,7 +212,7 @@ pub fn transcode_staged(
     // Parity with `process_attachment_files`: fail the whole Media stage up front
     // when the tools are missing, rather than branding every attachment
     // `convert_failed: ffmpeg not found`.
-    media::require_ffmpeg()?;
+    tools.require()?;
 
     let files = conversation_files(run_dir)?;
     // Counting up front costs a second parse of each conversation file and
@@ -255,8 +256,15 @@ pub fn transcode_staged(
                         src: &src,
                         is_heal,
                     };
-                    let hevc_failure =
-                        apply_transcode(&target, &mut doc, options, cancel, issues, &mut report)?;
+                    let hevc_failure = apply_transcode(
+                        &target,
+                        &mut doc,
+                        options,
+                        tools,
+                        cancel,
+                        issues,
+                        &mut report,
+                    )?;
                     if let Some(line) = hevc_fallback.record(hevc_failure) {
                         log.warn(line);
                     }
@@ -670,6 +678,7 @@ fn apply_transcode(
     target: &TranscodeTarget<'_>,
     doc: &mut ConversationDocument,
     options: &TranscodeOptions,
+    tools: &dyn MediaTools,
     cancel: &CancelFlag,
     issues: &IssueSink,
     report: &mut TranscodeReport,
@@ -698,6 +707,7 @@ fn apply_transcode(
     };
 
     match media::transcode_file(
+        tools,
         src,
         &marker,
         options.mode,
