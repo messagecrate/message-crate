@@ -310,7 +310,7 @@ jobs:
       # timed-wait rule for test files could stop working without failing the
       # step above. Its canary turns that into a failure (web/src/test/README.md).
       - name: The timed-wait rule still catches every form
-        run: cd web && npx biome lint --error-on-warnings biome-plugins/noTimedWaitsInTests.canary.ts
+        run: cd web && npx biome lint --error-on-warnings src/test/noTimedWaitsInTests.canary.ts
 
       - name: Biome's restricted-import lists agree
         run: node scripts/check-biome-restricted-imports.mjs

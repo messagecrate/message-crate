@@ -187,7 +187,8 @@
         "src/**/*.test.tsx",
         "src/**/*.spec.ts",
         "src/**/*.spec.tsx",
-        "biome-plugins/noTimedWaitsInTests.canary.ts"
+        "src/test/**/*.ts",
+        "src/test/**/*.tsx"
       ],
       "plugins": ["./biome-plugins/noTimedWaitsInTests.grit"]
     },

@@ -27,11 +27,14 @@ busy machine it runs slower and passes the same way.
 ## The check
 
 `web/biome-plugins/noTimedWaitsInTests.grit` is a Biome plugin that
-`web/biome.json` runs on every test file in `web/src`. `biome ci` fails on each
-call to `waitFor`, `vi.waitFor`, `vi.waitUntil`, `waitForElementToBeRemoved`, a
-`findBy…` or `findAllBy…` query, `setTimeout` or `setInterval`. Each error names
-the file, the line, and the section of this page that says what to write
-instead. `check-pr.sh` and CI's web job run it.
+`web/biome.json` runs on every test file in `web/src` and every helper in this
+directory. `biome ci` fails on `waitFor`, `vi.waitFor`, `vi.waitUntil`,
+`expect.poll`, `waitForElementToBeRemoved`, a `findBy…` or `findAllBy…` query,
+`setTimeout`, `setInterval`, `setImmediate`, `requestAnimationFrame`, and an
+import from `timers/promises`. It matches the name wherever it appears, so an
+import, an alias, a typed or optional call, and a timer passed on as a value
+fail too. Each error names the file, the line, and the section of this page
+that says what to write instead. `check-pr.sh` and CI's web job run it.
 
 A test can still need a real timer on purpose. `SearchBar.test.tsx` has a
 parent that sets its value on a later task, because that lateness is the bug
@@ -43,12 +46,13 @@ reason, and the fake clock still runs the timer:
 setTimeout(() => setValue(q), 0);
 ```
 
-A string such as `toFake: ["setTimeout"]` is not a call, so the check passes
-it.
+A string such as `toFake: ["setTimeout"]` is not a name, so the check passes
+it. A query of Testing Library's own is caught by its full name, such as
+`findByRole`, so a helper of the test's such as `findByName` passes.
 
 Biome reports a plugin that fails to run as an info, not an error, so a
 broken pattern or a Biome upgrade could switch the check off without failing
-`biome ci`. `noTimedWaitsInTests.canary.ts` beside the plugin holds every form
+`biome ci`. `noTimedWaitsInTests.canary.ts` in this directory holds every form
 it catches, each with its error suppressed. A form the plugin stops catching
 leaves its suppression unused, and `check-pr.sh` and CI lint that file with
 `--error-on-warnings`, so the unused suppression fails them. A form added to

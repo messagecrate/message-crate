@@ -557,7 +557,7 @@ The `Nightly` workflow (`nightly.yml`) builds the release Dockerfile from `main`
 
 #### Frontend
 
-Frontend (`web/`) — Biome (`web/biome.json`) lints and formats TypeScript, JavaScript, CSS, JSON, and HTML. TypeScript (`npm run build` runs `tsc` then Vite). CI runs `biome ci .` (lint and format drift fail), the timed-wait rule's canary (`web/biome-plugins/noTimedWaitsInTests.canary.ts`, linted with `--error-on-warnings`; `web/src/test/README.md`, "The check", says why), and `scripts/check-biome-restricted-imports.mjs`. That script fails when an override of `noRestrictedImports` in `web/biome.json` keeps anything but the root rule's path list less the one path it lifts. An override's list replaces the root one, so a path added to the root rule must be added to each override too. Prefer a real fix over `biome-ignore`. Prefix unused bindings with `_`.
+Frontend (`web/`) — Biome (`web/biome.json`) lints and formats TypeScript, JavaScript, CSS, JSON, and HTML. TypeScript (`npm run build` runs `tsc` then Vite). CI runs `biome ci .` (lint and format drift fail), the timed-wait rule's canary (`web/src/test/noTimedWaitsInTests.canary.ts`, linted with `--error-on-warnings`; `web/src/test/README.md`, "The check", says why), and `scripts/check-biome-restricted-imports.mjs`. That script fails when an override of `noRestrictedImports` in `web/biome.json` keeps anything but the root rule's path list less the one path it lifts. An override's list replaces the root one, so a path added to the root rule must be added to each override too. Prefer a real fix over `biome-ignore`. Prefix unused bindings with `_`.
 
 ```bash
 cd web
