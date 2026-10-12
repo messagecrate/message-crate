@@ -21,6 +21,19 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-12: **The owner sees which attachments of an import have no
+  Thumbnail or Preview, and why.** In User Accounts, an account's Storage tab
+  opens each Import Run with a **Thumbnails and Previews** part. It counts the
+  run's attachments whose Thumbnail or Preview the server could not make, by
+  kind of failure: the conversion failed, it stopped making progress, a
+  damaged file ran past its length, a step took too long, the original file
+  is missing, or a problem on the server. Under the counts it lists each of
+  those attachments by file name, type and size, with the reason for each
+  version that was not made. The owner never sees the attachment itself, its
+  Thumbnail or its Preview. Nothing tries again on its own, and running
+  `process-assets` is still how to try again. The database format changed:
+  an existing Message Crate is rebuilt empty on first start and its messages
+  must be imported again (#2636).
 - 2026-10-11: **The owner's Logs panel shows refused logins.** A login
   refused for a wrong password, an unknown username or a disabled account
   now leaves a warning in the server's log naming the account and the
