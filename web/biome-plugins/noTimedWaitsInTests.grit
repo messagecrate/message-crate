@@ -1,0 +1,27 @@
+// No timed waits in web/src test files or test helpers (#2902). web/biome.json
+// runs it on them; Biome reports each name it matches as an error at its file
+// and line. The rule and its reasons: web/src/test/README.md, "The check".
+// src/test/noTimedWaitsInTests.canary.ts holds every form, so a form this
+// stops matching fails the lint.
+//
+// It matches a name wherever it appears, not only where it is called, so an
+// import, an alias (`waitFor as wf`), a typed call (`findByRole<T>()`), an
+// optional call (`screen.findByText?.()`) and a reference passed on
+// (`const t = window.setTimeout`) are all caught, and so is `poll`, which
+// catches `expect.poll`, `expect.soft.poll` and `const { poll } = expect`. A
+// string such as `toFake: ["setTimeout"]` is not a name, so it passes. A name
+// that starts no wait (`typeof setTimeout` in a type, a stub's `setTimeout`
+// key) is caught as well, and opts out with a biome-ignore comment.
+language js
+
+or {
+  r"^(?:waitFor|waitUntil|poll|waitForElementToBeRemoved|find(?:All)?By(?:Role|LabelText|PlaceholderText|Text|DisplayValue|AltText|Title|TestId))$" as $name where {
+    register_diagnostic(span=$name, message="This polls until a timeout, so the test depends on time. Tell the test when the state is reached and read it with getBy or queryBy: web/src/test/README.md, section 'Each kind of wait and how the test is told'.", severity="error")
+  },
+  r"^(?:setTimeout|setInterval|setImmediate|requestAnimationFrame|requestIdleCallback)$" as $timer where {
+    register_diagnostic(span=$timer, message="A real timer waits on real time. Use settle(), advanceTimersAndSettle() or advanceToNextFrame() on the fake clock: web/src/test/README.md, section 'A real sleep in the test'. A timer the test needs on purpose opts out with a biome-ignore comment that gives its reason.", severity="error")
+  },
+  r"^[\"'`](?:node:)?timers/promises[\"'`]$" as $module where {
+    register_diagnostic(span=$module, message="A real timer waits on real time. Use settle(), advanceTimersAndSettle() or advanceToNextFrame() on the fake clock: web/src/test/README.md, section 'A real sleep in the test'.", severity="error")
+  }
+}

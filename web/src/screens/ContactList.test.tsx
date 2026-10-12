@@ -18,6 +18,7 @@ import RightPane from "../components/RightPane";
 import { RightToolbarProvider } from "../components/RightToolbarContext";
 import { ApiError } from "../lib/api";
 import { groupListQuery } from "../lib/contactGroups";
+import { PAGE_SIZE_FIRST } from "../lib/listPaging";
 import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { mockedAuth, Providers } from "../test/providers";
 import ContactList, { FILTER_DEBOUNCE_MS } from "./ContactList";
@@ -38,6 +39,19 @@ vi.mock("../lib/serverApi", () => ({
 }));
 
 vi.mock("../lib/saveFile", () => ({ saveFile: vi.fn().mockResolvedValue(true) }));
+
+// A searched list's first page, such as a Contact Group's, holds 40 rows
+// (PAGE_SIZE_FIRST in lib/listPaging.ts). The mock below sets it to 15, so a
+// test of the rows past the first page draws 20 rows rather than 120, and
+// stays well inside Vitest's test timeout on a busy machine (#2955). It must
+// stay above the 10 rows from the end at which the list asks for the next
+// page (NEAR_END_THRESHOLD in InfiniteOffsetList.tsx), because jsdom lays
+// nothing out and every row reads as on screen, so a first page of 10 or
+// fewer loads the rest by itself.
+vi.mock("../lib/listPaging", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/listPaging")>()),
+  PAGE_SIZE_FIRST: 15,
+}));
 
 import { saveFile } from "../lib/saveFile";
 import {
@@ -488,7 +502,8 @@ describe("ContactList", () => {
   });
 
   describe("Select all over more contacts than the first page", () => {
-    const everyone = Array.from({ length: 120 }, (_, i) => ({
+    // The first page and five contacts past it.
+    const everyone = Array.from({ length: PAGE_SIZE_FIRST + 5 }, (_, i) => ({
       id: i + 1,
       name: `Person ${String(i + 1).padStart(4, "0")}`,
       identity_count: 1,
@@ -497,9 +512,10 @@ describe("ContactList", () => {
     }));
 
     beforeEach(() => {
-      // The server's paging: a group page's first page holds 40 of 120.
+      // The server's paging: a group page's first page holds PAGE_SIZE_FIRST of
+      // the PAGE_SIZE_FIRST + 5 in `everyone`.
       listContactsMock.mockImplementation(
-        async ({ limit = 40, offset = 0 }) =>
+        async ({ limit = PAGE_SIZE_FIRST, offset = 0 }) =>
           ({
             items: everyone.slice(offset, offset + limit),
             total: everyone.length,
@@ -517,7 +533,7 @@ describe("ContactList", () => {
     it("does not read as all while contacts past the loaded ones are unticked", async () => {
       renderAll();
       await settle();
-      // Every loaded row, 40 of 120, ticked by hand with one Shift + click.
+      // Every row of the first page, ticked by hand with one Shift + click.
       const rows = screen.getAllByRole("checkbox", { name: /^Select Person/ });
       fireEvent.click(rows[0]);
       fireEvent.click(rows[rows.length - 1], { shiftKey: true });
@@ -530,8 +546,8 @@ describe("ContactList", () => {
       await settle();
 
       const box = screen.getByRole("checkbox", { name: "Select all contacts" });
-      // Select all reads the 80 contacts past the first page from a mock that
-      // answers at once, then draws 120 ticks in a transition. `settle` lands
+      // Select all reads the contacts past the first page from a mock that
+      // answers at once, then draws every tick in a transition. `settle` lands
       // both, so the box is ticked by then.
       fireEvent.click(box);
       await settle();
@@ -547,7 +563,7 @@ describe("ContactList", () => {
 
     it("waits while the pages load, and says why when they do not", async () => {
       let refuse!: (error: Error) => void;
-      listContactsMock.mockImplementation(async ({ limit = 40, offset = 0 }) => {
+      listContactsMock.mockImplementation(async ({ limit = PAGE_SIZE_FIRST, offset = 0 }) => {
         if (offset > 0) {
           return new Promise((_, reject) => {
             refuse = reject;
