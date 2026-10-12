@@ -55,7 +55,7 @@ export function ThumbnailPicture({
       {note ? (
         <span
           title={note}
-          className="absolute inset-x-2 bottom-2 line-clamp-2 break-words text-[0.688rem]"
+          className="absolute inset-x-2 bottom-2 line-clamp-2 break-normal break-words text-[0.688rem]"
         >
           {note}
         </span>
