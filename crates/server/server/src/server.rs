@@ -772,7 +772,7 @@ impl ApiError {
     /// The problem document this failure answers with. Every failure is
     /// logged here, once: an internal error at `ERROR` with its whole chain,
     /// which the document says nothing of, and a refused request with
-    /// [`log_refusal`]'s line.
+    /// `log_refusal`'s line.
     #[must_use]
     pub fn to_problem(&self) -> Problem {
         let request_id = crate::request_id::current();

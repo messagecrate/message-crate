@@ -519,9 +519,9 @@ pub struct AccountAuth {
 /// The owner's permissions and the Demo Account's are known from their ids
 /// and never read from their rows: the owner holds none
 /// (`docs/adr/0008-the-owner-holds-no-messages.md`), and the Demo Account
-/// holds [`DEMO_ACCOUNT_PERMISSIONS`]. The owner's row keeps the columns'
-/// defaults, which are on, so reading it would report permissions no guard
-/// lets the owner use.
+/// holds [`DEMO_ACCOUNT_PERMISSIONS`]. [`insert_account_at`] writes 0 to the
+/// owner's three permission columns so its row agrees, but the id alone
+/// decides.
 pub async fn load_account_auth(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -857,6 +857,11 @@ pub const FIRST_GENERATED_ACCOUNT_ID: i64 = 100;
 
 /// Insert an account at a fixed id: the owner at [`OWNER_ACCOUNT_ID`], and a
 /// test's chosen row.
+///
+/// The owner's row holds 0 for `can_import`, `can_export` and `can_delete`,
+/// because [`load_account_auth`] gives the owner none of the three from its
+/// id, and the row must not say otherwise to someone reading the database.
+/// Every other row holds 1 for all three.
 pub async fn insert_account_at(
     conn: &mut SqliteConnection,
     id: i64,
@@ -865,13 +870,17 @@ pub async fn insert_account_at(
     preferred_name: Option<&str>,
 ) -> Result<()> {
     schema::ensure_accounts_schema(conn).await?;
+    let granted = i32::from(!is_server_owner(id));
     sqlx::query(
-        "INSERT INTO accounts (id, username, password_hash, preferred_name) VALUES ($1, $2, $3, $4)",
+        "INSERT INTO accounts (id, username, password_hash, preferred_name,
+                               can_import, can_export, can_delete)
+         VALUES ($1, $2, $3, $4, $5, $5, $5)",
     )
     .bind(id)
     .bind(username)
     .bind(password_hash)
     .bind(preferred_name)
+    .bind(granted)
     .execute(&mut *conn)
     .await
     .with_context(|| format!("insert account {username} at id {id}"))?;
@@ -1349,5 +1358,22 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
+    }
+
+    /// [`insert_account_at`] writes 0 to the owner's import, export and
+    /// delete columns and 1 to every other account's.
+    #[tokio::test]
+    async fn the_owner_row_holds_no_permission_and_other_rows_hold_all_three() {
+        let fixture = crate::test_support::test_fixture().await;
+        let mut conn = fixture.conn().await;
+        insert_account_at(&mut conn, OWNER_ACCOUNT_ID, "owner", None, None)
+            .await
+            .unwrap();
+        let alice = insert_account(&mut conn, "alice", None, None)
+            .await
+            .unwrap();
+        let stored = crate::test_support::stored_permissions;
+        assert_eq!(stored(&mut conn, OWNER_ACCOUNT_ID).await, (0, 0, 0));
+        assert_eq!(stored(&mut conn, alice).await, (1, 1, 1));
     }
 }

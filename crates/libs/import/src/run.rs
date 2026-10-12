@@ -64,8 +64,9 @@ use crate::report::{
 pub const DEFAULT_BATCH_SIZE: usize = 1_000;
 /// Soft max size of one import request body (about 64 MiB).
 ///
-/// Kept under Cloudflare's ~100 MiB upload cap so a large group chat is
-/// split into several requests instead of one giant one that gets rejected.
+/// Kept under Cloudflare's ~100 MiB upload cap so a large group conversation
+/// is split into several requests instead of one giant one that gets
+/// rejected.
 pub const MAX_IMPORT_BODY_BYTES: usize = 64 * 1024 * 1024;
 /// Sentinel for "do not flush import batches on message count; size only".
 ///
@@ -248,11 +249,11 @@ impl RunPaths {
 ///
 /// High-level flow:
 /// 1. Log in, open the journal, and list conversation files.
-/// 2. Start a few **prepare workers** ([`PrepareQueue`]). Each worker reads one
+/// 2. Start a few **prepare workers** (`PrepareQueue`). Each worker reads one
 ///    chat file, uploads its attachments, and builds message chunks.
 /// 3. The main thread **consumes prepare results in file order**, packs
 ///    message chunks into import batches, and sends those batches over HTTP
-///    ([`ImportPipeline`]). An import can start while prepare workers keep
+///    (`ImportPipeline`). An import can start while prepare workers keep
 ///    working on later chats.
 /// 4. Complete the Import Run this Upload started, then write the report.
 ///

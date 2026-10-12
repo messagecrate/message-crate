@@ -6,7 +6,7 @@ import type { Conversation } from "../../lib/types";
 import { useContactGroupMembers } from "./contactGroupMembers";
 
 /**
- * "Make a Contact Group from these people": a group chat is a grouping the
+ * "Make a Contact Group from these people": a group conversation is a grouping the
  * person already made in real life, so it is the one place a Contact Group
  * can be created from something other than a hand-picked selection (#322).
  *

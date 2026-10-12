@@ -2137,7 +2137,7 @@ export interface components {
         Contact: {
             /**
              * Format: int64
-             * @description 1:1 conversations the contact appears in.
+             * @description One-to-one conversations the contact appears in.
              */
             direct_conversations: number;
             /**
@@ -2217,12 +2217,12 @@ export interface components {
             id: number;
             /**
              * Format: int64
-             * @description 1:1 conversations with the contact.
+             * @description One-to-one conversations with the contact.
              */
             individual_conversations: number;
             /**
              * Format: int64
-             * @description Messages the contact sent in 1:1 conversations.
+             * @description Messages the contact sent in one-to-one conversations.
              */
             individual_message_count: number;
             /** @description The contact's preferred name; empty when it has none. */
@@ -2266,7 +2266,7 @@ export interface components {
              *     the contact's identities sent (RFC 3339, UTC), conversations in the
              *     trash and duplicate messages left out. Null when none of them ever
              *     sent a message. Not the contact's last activity: a message the
-             *     account owner sent, or another member of a group chat, does not
+             *     account owner sent, or another member of a group conversation, does not
              *     count. The same question `last-message:` asks on Contacts.
              */
             last_heard_at: string | null;
@@ -4149,12 +4149,12 @@ export interface components {
                 id: number;
                 /**
                  * Format: int64
-                 * @description 1:1 conversations with the contact.
+                 * @description One-to-one conversations with the contact.
                  */
                 individual_conversations: number;
                 /**
                  * Format: int64
-                 * @description Messages the contact sent in 1:1 conversations.
+                 * @description Messages the contact sent in one-to-one conversations.
                  */
                 individual_message_count: number;
                 /** @description The contact's preferred name; empty when it has none. */
@@ -4210,7 +4210,7 @@ export interface components {
                  *     the contact's identities sent (RFC 3339, UTC), conversations in the
                  *     trash and duplicate messages left out. Null when none of them ever
                  *     sent a message. Not the contact's last activity: a message the
-                 *     account owner sent, or another member of a group chat, does not
+                 *     account owner sent, or another member of a group conversation, does not
                  *     count. The same question `last-message:` asks on Contacts.
                  */
                 last_heard_at: string | null;

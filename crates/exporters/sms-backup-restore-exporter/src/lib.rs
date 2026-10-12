@@ -4,7 +4,7 @@
 //! [`SbrArchive`] writes the SMS and MMS of conversations back out as one
 //! `smses.xml`.
 //!
-//! Library entry: [`run`] for the full export pipeline.
+//! Library entry: [`run()`] for the full export pipeline.
 
 mod emit;
 mod read;

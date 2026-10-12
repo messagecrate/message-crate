@@ -501,7 +501,7 @@ struct DemoBuildShared {
     /// build runs it to its end without an `await`, so cancelling the task
     /// alone waits for the conversion (#1729).
     conversions_stopped: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    /// Told each time the state is set, so [`DemoBuild::ended`] looks again.
+    /// Told each time the state is set, so `DemoBuild::ended` looks again.
     ended: tokio::sync::Notify,
 }
 

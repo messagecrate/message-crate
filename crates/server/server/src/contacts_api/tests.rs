@@ -613,7 +613,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .await
     .unwrap();
 
-    // Direct conversation with 2 messages.
+    // One-to-one conversation with 2 messages.
     ConversationRow {
         id: Some(1),
         ..ConversationRow::new(account, peer)
@@ -1056,7 +1056,7 @@ async fn insert_held_message(
     .await;
 }
 
-/// Jane sent 40 of the 100 messages in her direct conversation with the
+/// Jane sent 40 of the 100 messages in her one-to-one conversation with the
 /// account holder and 10 of the 60 in a group with Bob. Her identity row and
 /// her selection summary both read 40 direct and 10 group, with her own
 /// first and last message as the dates: the holder's replies and Bob's
@@ -2408,7 +2408,7 @@ async fn list_contacts_sorts_by_last_heard_with_silent_contacts_last() {
         true,
     )
     .await;
-    // Older wrote again this year, in a group chat now in the trash: the
+    // Older wrote again this year, in a group conversation now in the trash: the
     // column leaves the trash out, as `last-message:` does (#725).
     let binned_chat = account_profile::link_account_handle(
         &mut conn,

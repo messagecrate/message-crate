@@ -1,7 +1,7 @@
 //! Convert OpenExtract conversation CSV into the shared conversation
 //! structure ([`message_ir::ConversationDocument`]) every exporter writes.
 //!
-//! Library entry: [`run`] for the full pipeline; the desktop app calls it
+//! Library entry: [`run()`] for the full pipeline; the desktop app calls it
 //! in process.
 
 mod emit;

@@ -4,7 +4,7 @@
 //! functions here only parse, validate, and print; the work lives in the
 //! module each one calls (`import_cli`, `dedupe`, `reset_demo`, and so on).
 //! Every command that reads the database opens it the same way: the config with
-//! `--db` applied, through [`OpenDb`].
+//! `--db` applied, through `OpenDb`.
 
 use std::fmt::Write as _;
 use std::path::PathBuf;

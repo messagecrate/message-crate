@@ -5,7 +5,7 @@
 //! regenerated with
 //! `cargo run -p message-crate-server -- dump-cli-docs --output <path>`.
 //!
-//! This sits beside [`crate::openapi::write_openapi`], which does the same job
+//! This sits beside `crate::openapi::write_openapi`, which does the same job
 //! for the OpenAPI document. Both write a generated artifact the docs site
 //! commits, so both live in the crate whose definitions they read rather than
 //! in a separate tool that would have to depend on this one.

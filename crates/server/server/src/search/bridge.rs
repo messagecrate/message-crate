@@ -358,7 +358,7 @@ pub(crate) fn contact_conversations_link(c2: &str) -> String {
 /// summary, and the contact's identity table all read it, so none of them
 /// can drift from the others (#725, #726, #913).
 ///
-/// Your own messages and other people's messages in a shared group chat are
+/// Your own messages and other people's messages in a shared group conversation are
 /// not the contact's, which is why this is not every message of every
 /// conversation the contact is in. `ix_messages_sender_timestamp` answers
 /// it per handle.
