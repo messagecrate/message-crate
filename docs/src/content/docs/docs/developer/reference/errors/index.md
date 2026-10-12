@@ -50,3 +50,4 @@ A `500 Internal Server Error` has no page: its `type` is `about:blank`, and its 
 | [`media-link-invalid`](./media-link-invalid/) | `401 Unauthorized` | Media link invalid |
 | [`range-not-satisfiable`](./range-not-satisfiable/) | `416 Range Not Satisfiable` | Range not satisfiable |
 | [`server-stopping`](./server-stopping/) | `503 Service Unavailable` | Server stopping |
+| [`database-busy`](./database-busy/) | `503 Service Unavailable` | Database busy |

@@ -1,6 +1,7 @@
 //! Pool construction for the SQLite database file.
 
 use std::path::Path;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -49,17 +50,37 @@ pub(crate) async fn connect_read_only(path: &Path) -> sqlx::Result<SqliteConnect
     Ok(conn)
 }
 
+/// How long a statement that needs the write lock waits for another
+/// writer's transaction, such as an import batch's, before SQLite answers
+/// `SQLITE_BUSY`. The request then answers `503 Service Unavailable`
+/// (`database-busy`).
+const BUSY_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// How many connections the pool opens at most. Up to two import batches
+/// (`MAX_CONCURRENT_IMPORTS`) hold one each for their whole run, and the
+/// Asset sweep after an Import Run holds one more, so eight leave five for
+/// every other request. Under write-ahead logging a reader never waits for a
+/// writer, so those five serve reads side by side. Each connection keeps a
+/// page cache of its own (`cache_size` in [`with_pragmas`]), which is why
+/// the count is not higher.
+const MAX_CONNECTIONS: u32 = 8;
+
+/// How long a request waits for a free connection before sqlx gives up with
+/// `PoolTimedOut`. The request then answers `503 Service Unavailable`
+/// (`database-busy`).
+const ACQUIRE_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// The server's pragma set, applied to each new connection: `trusted_schema`
-/// OFF first ([`distrust_schema`]), then the busy timeout (overlapping auth
-/// and UI writes wait), foreign keys on, synchronous NORMAL, `temp_store`
-/// MEMORY, `cache_size` -200000.
-fn with_pragmas(pool: SqlitePoolOptions) -> SqlitePoolOptions {
-    pool.after_connect(|conn, _meta| {
+/// OFF first ([`distrust_schema`]), then `busy_timeout` (overlapping auth and
+/// UI writes wait that long for the write lock), foreign keys on, synchronous
+/// NORMAL, `temp_store` MEMORY, `cache_size` -200000.
+fn with_pragmas(pool: SqlitePoolOptions, busy_timeout: Duration) -> SqlitePoolOptions {
+    let busy_timeout_sql = format!("PRAGMA busy_timeout = {}", busy_timeout.as_millis());
+    pool.after_connect(move |conn, _meta| {
+        let busy_timeout_sql = busy_timeout_sql.clone();
         Box::pin(async move {
             distrust_schema(conn).await?;
-            sqlx::query("PRAGMA busy_timeout = 15000")
-                .execute(&mut *conn)
-                .await?;
+            sqlx::query(&busy_timeout_sql).execute(&mut *conn).await?;
             sqlx::query("PRAGMA foreign_keys = ON")
                 .execute(&mut *conn)
                 .await?;
@@ -84,16 +105,23 @@ fn connect_options(path: &Path) -> SqliteConnectOptions {
         .create_if_missing(true)
 }
 
-/// Pool options for SQLite: four connections plus the pragmas. Every
-/// SQLite pool comes through here, so this is also where the server's SQL
-/// functions are registered for the connections the pool will open
-/// ([`crate::db::sqlite_functions`]), and, in tests, the guard that refuses
-/// a write to messages outside a transaction (`crate::db::write_guard`).
-fn sqlite_pool_options() -> SqlitePoolOptions {
+/// Pool options for SQLite: [`MAX_CONNECTIONS`] connections, a wait of
+/// [`ACQUIRE_TIMEOUT`] for one, and the pragmas with `busy_timeout` (the
+/// server's is [`BUSY_TIMEOUT`]). Every SQLite pool comes through here, so
+/// this is also where the server's SQL functions are registered for the
+/// connections the pool will open ([`crate::db::sqlite_functions`]), and, in
+/// tests, the guard that refuses a write to messages outside a transaction
+/// (`crate::db::write_guard`).
+fn sqlite_pool_options(busy_timeout: Duration) -> SqlitePoolOptions {
     crate::db::sqlite_functions::register();
     #[cfg(test)]
     crate::db::write_guard::register();
-    with_pragmas(SqlitePoolOptions::new().max_connections(4))
+    with_pragmas(
+        SqlitePoolOptions::new()
+            .max_connections(MAX_CONNECTIONS)
+            .acquire_timeout(ACQUIRE_TIMEOUT),
+        busy_timeout,
+    )
 }
 
 /// The journal mode SQLite runs a database in, as `PRAGMA journal_mode`
@@ -229,7 +257,7 @@ async fn try_enable_wal(pool: &SqlitePool) -> Option<JournalMode> {
 ///
 /// Returns an error when the file cannot be opened or created.
 pub async fn open_pool_for_path(path: &Path) -> Result<SqlitePool> {
-    let pool = sqlite_pool_options()
+    let pool = sqlite_pool_options(BUSY_TIMEOUT)
         .connect_with(connect_options(path))
         .await
         .with_context(|| format!("failed to open database {}", path.display()))?;
@@ -244,9 +272,18 @@ pub async fn open_pool_for_path(path: &Path) -> Result<SqlitePool> {
 /// rollback journal, and a test must see what the server sees.
 #[cfg(test)]
 pub(crate) async fn test_pool() -> (SqlitePool, tempfile::TempDir) {
+    test_pool_with_busy_timeout(BUSY_TIMEOUT).await
+}
+
+/// [`test_pool`] with `busy_timeout` in place of the server's, so a test
+/// meets `SQLITE_BUSY` at once rather than after a wait.
+#[cfg(test)]
+pub(crate) async fn test_pool_with_busy_timeout(
+    busy_timeout: Duration,
+) -> (SqlitePool, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("messagecrate.db");
-    let pool = sqlite_pool_options()
+    let pool = sqlite_pool_options(busy_timeout)
         .connect_with(connect_options(&path))
         .await
         .unwrap();
@@ -268,6 +305,14 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(busy_timeout, 15000, "busy_timeout");
+        // Two imports and the Asset sweep leave connections for every other
+        // request, and a request gives up waiting for one well before a
+        // browser or a proxy gives up on it (#2124).
+        assert_eq!(pool.options().get_max_connections(), 8);
+        assert_eq!(
+            pool.options().get_acquire_timeout(),
+            Duration::from_secs(10)
+        );
         let on: i64 = sqlx::query_scalar("SELECT foreign_keys FROM pragma_foreign_keys")
             .fetch_one(&pool)
             .await
@@ -315,7 +360,7 @@ mod tests {
     /// that one, not the one asked for.
     #[tokio::test]
     async fn a_turned_down_wal_request_returns_the_mode_kept() {
-        let pool = sqlite_pool_options()
+        let pool = sqlite_pool_options(BUSY_TIMEOUT)
             .connect_with(SqliteConnectOptions::new().in_memory(true))
             .await
             .unwrap();

@@ -1619,6 +1619,14 @@ fn every_api_error_answers_the_status_its_problem_type_declares() {
             StatusCode::NOT_ACCEPTABLE,
         ),
         (
+            ApiError::ServerStopping("x".into()),
+            StatusCode::SERVICE_UNAVAILABLE,
+        ),
+        (
+            ApiError::from(sqlx::Error::PoolTimedOut),
+            StatusCode::SERVICE_UNAVAILABLE,
+        ),
+        (
             ApiError::Internal(anyhow::anyhow!("x")),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
@@ -1750,6 +1758,67 @@ fn every_message_variant_answers_its_sentence_as_the_detail() {
         );
         assert_eq!(error.to_string(), "the sentence", "{error:?}");
     }
+}
+
+/// A request that waited for a pool connection until sqlx gave up is not a
+/// bug in the server: it answers `503 Service Unavailable` with
+/// `Retry-After`, whether the error arrives as it is or under the step that
+/// hit it (#2084, #2124).
+#[test]
+fn a_pool_timeout_answers_database_busy_with_retry_after() {
+    for error in [
+        ApiError::from(sqlx::Error::PoolTimedOut),
+        ApiError::from(anyhow::Error::new(sqlx::Error::PoolTimedOut).context("read the account")),
+    ] {
+        let problem = error.to_problem();
+        assert_eq!(problem.kind, ProblemType::DatabaseBusy.url(), "{error:?}");
+        assert_eq!(problem.status, 503);
+        assert_eq!(
+            problem.retry_after,
+            Some(crate::problem::DATABASE_BUSY_RETRY_AFTER_SECS)
+        );
+        assert_eq!(
+            problem.detail.as_deref(),
+            Some("the database is busy; try again in 5 seconds")
+        );
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(response.headers()[header::RETRY_AFTER], "5");
+    }
+}
+
+/// A write that meets another connection's write lock until the busy
+/// timeout runs out answers `503 Service Unavailable` (`database-busy`) with
+/// `Retry-After`, not `500 Internal Server Error` (#2084). The pool's busy
+/// timeout is zero, so SQLite answers `SQLITE_BUSY` at once and the test
+/// waits on nothing.
+#[tokio::test]
+async fn a_write_that_meets_a_held_write_lock_answers_database_busy() {
+    let fixture =
+        crate::test_support::test_fixture_with_busy_timeout(std::time::Duration::ZERO).await;
+    let account =
+        crate::test_support::register_via_api(&fixture.state, "alice", "hunter2hunter2").await;
+    let server = crate::test_support::serve(&fixture.state).await;
+    let mut writer = fixture.conn().await;
+    sqlx::query(crate::db::engine::BEGIN_IMMEDIATE_SQL)
+        .execute(&mut *writer)
+        .await
+        .unwrap();
+
+    let response = http_client()
+        .post(format!("{}/v1/saved-searches", server.base()))
+        .bearer_auth(&account.token)
+        .json(&serde_json::json!({"name": "Ada", "query": "ada"}))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.headers()[header::RETRY_AFTER], "5");
+    let status = response.status();
+    let text = response.text().await.unwrap();
+    let problem = expect_problem(status, &text, ProblemType::DatabaseBusy);
+    assert_eq!(problem.retry_after, Some(5));
+    sqlx::query("ROLLBACK").execute(&mut *writer).await.unwrap();
 }
 
 #[test]

@@ -81,17 +81,21 @@ written out a second time.
 ## A refused request names its problem type
 
 A request the server refuses with a registered problem type (a
-`4xx`, or `server-stopping`, the one `503`) leaves one more line,
+`4xx`, or one of the two `503`s, `server-stopping` and `database-busy`)
+leaves one more line,
 written where its problem document is built, with the problem type's slug
 and the status (`problem=invalid-credentials status=401`). It is at `WARN`
-for `401 Unauthorized`, `403 Forbidden` and `429 Too Many Requests`, and at
-`INFO` for every other refusal. The level follows from the status, in
+for `401 Unauthorized`, `403 Forbidden`, `429 Too Many Requests` and
+`database-busy`, and at `INFO` for every other refusal. The level follows from the status, in
 `crates/server/server/src/problem.rs`, where each problem type is declared.
 The problem's `detail` is never written.
 
-Why `WARN` for those three: a run of them is what a password guesser or an
-API token that lost its rights looks like, and the owner's Logs panel opens
-at warnings and up. A `404 Not Found` or a refused search is a client asking
+Why `WARN` for those three statuses: a run of them is what a password
+guesser or an API token that lost its rights looks like, and the owner's Logs
+panel opens at warnings and up. Why `WARN` for `database-busy`: a run of it
+says the server has more work than its database keeps up with, which the
+owner can act on, while one of them is no bug, so it is not an `ERROR` with
+the error's chain (below). A `404 Not Found` or a refused search is a client asking
 for something that is not there, which the owner has nothing to do about.
 
 Why not `detail`: it can repeat what a person typed, such as a search word or
@@ -102,7 +106,8 @@ the client received.
 ## A failed request names the step that failed
 
 A request that fails with `500 Internal Server Error` leaves one `ERROR`
-line, written where its problem document is built, with the error's whole
+line (a busy database answers `database-busy` instead, and leaves only the
+refusal's line, above), written where its problem document is built, with the error's whole
 chain, outermost first. Each database statement adds the step it does to
 that chain, in a few words (`read the attachments of a page of messages`),
 so the line reads as the step and then the database's own message. The

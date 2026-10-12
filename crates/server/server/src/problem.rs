@@ -120,22 +120,30 @@ problem_types! {
     RangeNotSatisfiable => ("range-not-satisfiable", RANGE_NOT_SATISFIABLE, "Range not satisfiable"),
     /// The server is stopping and refused work it had not started.
     ServerStopping => ("server-stopping", SERVICE_UNAVAILABLE, "Server stopping"),
+    /// The database stayed busy for longer than the request could wait.
+    DatabaseBusy => ("database-busy", SERVICE_UNAVAILABLE, "Database busy"),
 }
+
+/// The seconds a `database-busy` answer's `Retry-After` asks a client to
+/// wait before it sends the request again.
+pub const DATABASE_BUSY_RETRY_AFTER_SECS: u64 = 5;
 
 impl ProblemType {
     /// Whether the line a request refused with this type leaves in the
     /// server's log is a warning (`docs/architecture/server-log.md`): true
     /// for the types that answer `401 Unauthorized`, `403 Forbidden` and
     /// `429 Too Many Requests`, because a run of them is what a password
-    /// guesser or an API token that lost its rights looks like, and the
-    /// owner's Logs panel opens at warnings and up. Every other refusal is
-    /// logged at `INFO`.
+    /// guesser or an API token that lost its rights looks like, and for
+    /// `database-busy`, because a run of it says the server has more work
+    /// than its database keeps up with. The owner's Logs panel opens at
+    /// warnings and up. Every other refusal is logged at `INFO`.
     #[must_use]
     pub fn refusal_is_a_warning(self) -> bool {
-        matches!(
-            self.status(),
-            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
-        )
+        self == Self::DatabaseBusy
+            || matches!(
+                self.status(),
+                StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
+            )
     }
 
     /// The `type` URL: the page's address.
@@ -191,6 +199,8 @@ Every `401 Unauthorized` answer carries `WWW-Authenticate: Bearer realm=\"messag
             ),
             Self::RangeNotSatisfiable => "The request's `Range` selects no byte of the file: it starts at or past the end, or asks for a suffix of no bytes. The `Content-Range` header (`bytes */<length>`) says how long the file is. Ask for a range inside it, or send no `Range` to get the whole file. A `Range` the server does not serve as one range, such as several ranges or another unit, is not refused: it answers the whole file.".to_string(),
             Self::ServerStopping => "The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for. An import batch waiting for its turn answers this: nothing in it was stored. Send the same request once the server is running again.".to_string(),
+            Self::DatabaseBusy => "The database was too busy to take this request in time: another request, such as an import batch, held the write lock for longer than this one could wait for it, or every database connection stayed taken while it waited for one. Wait the number of seconds in the `Retry-After` header (repeated as `retry_after` in the body) and send the same request again.\n\n\
+Any route that reads or writes the database can answer this, so no route in the OpenAPI document lists it.".to_string(),
         }
     }
 }
@@ -294,6 +304,14 @@ mod tests {
         }
     }
 
+    /// A busy database is logged at `WARN`, so a run of them shows in the
+    /// owner's Logs panel, while a server told to stop is routine (#2084).
+    #[test]
+    fn a_busy_database_is_a_warning_and_a_stopping_server_is_not() {
+        assert!(ProblemType::DatabaseBusy.refusal_is_a_warning());
+        assert!(!ProblemType::ServerStopping.refusal_is_a_warning());
+    }
+
     #[test]
     fn every_type_has_a_distinct_slug_and_a_page() {
         let slugs: HashSet<&str> = ProblemType::ALL.iter().map(|t| t.slug()).collect();
@@ -301,9 +319,10 @@ mod tests {
         for t in ProblemType::ALL {
             assert!(!t.page().trim().is_empty(), "{} has no page text", t.slug());
             assert!(t.url().ends_with(t.slug()));
-            // `server-stopping` is the one type that is not the client's
-            // doing: its remedy is to send the same request again.
-            if t == ProblemType::ServerStopping {
+            // `server-stopping` and `database-busy` are the two types that
+            // are not the client's doing: the remedy for each is to send the
+            // same request again.
+            if matches!(t, ProblemType::ServerStopping | ProblemType::DatabaseBusy) {
                 assert_eq!(t.status(), StatusCode::SERVICE_UNAVAILABLE);
             } else {
                 assert!(t.status().is_client_error(), "{} is not a 4xx", t.slug());

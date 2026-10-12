@@ -32,7 +32,10 @@ mod logs;
 mod seed;
 
 pub use client::http_client;
-pub use fixture::{ImportingAccount, PASSWORD, TestFixture, fixture_with_account, test_fixture};
+pub use fixture::{
+    ImportingAccount, PASSWORD, TestFixture, fixture_with_account, test_fixture,
+    test_fixture_with_busy_timeout,
+};
 pub use http::{
     RegisteredAccount, TestServer, claim_as_owner, delete_json, delete_json_raw,
     delete_json_with_body, delete_raw, delete_status, delete_status_with_body,

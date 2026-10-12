@@ -1004,6 +1004,15 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-11: **A busy server says it is busy, and stays busy less often.**
+  While two imports ran, every other page and action shared what was left of
+  the server's database connections, and one that waited too long failed as
+  "internal server error", with an error in the server's log. The server now
+  keeps more connections free beside the imports, and a request that still
+  finds the database busy says so and to try again in a few seconds. An
+  import's upload sends it again by itself, and the server's log notes it as
+  a warning rather than an error (#2084, #2124).
+
 - 2026-10-11: **Two uploads of one attachment at the same moment both
   succeed.** The server named an upload's temporary file from the clock
   alone, so two uploads of the same file that started in one clock tick
