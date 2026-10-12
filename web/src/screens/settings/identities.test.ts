@@ -18,12 +18,14 @@ function identity(direct: number, group: number, orphaned: number): Identity {
 describe("messagesPhrase", () => {
   it("names all three kinds with commas and a final and", () => {
     expect(messagesPhrase(identity(1200, 30, 1))).toBe(
-      `${(1200).toLocaleString()} direct messages, 30 group messages and 1 orphaned message`,
+      `${(1200).toLocaleString()} one-to-one messages, 30 group messages and 1 orphaned message`,
     );
   });
 
   it("joins two kinds with and, leaving out the one with none", () => {
-    expect(messagesPhrase(identity(12, 0, 4))).toBe("12 direct messages and 4 orphaned messages");
+    expect(messagesPhrase(identity(12, 0, 4))).toBe(
+      "12 one-to-one messages and 4 orphaned messages",
+    );
   });
 
   it("names a single kind on its own", () => {

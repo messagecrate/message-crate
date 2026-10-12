@@ -378,8 +378,8 @@ fn a_group_with_no_member_table_has_its_senders_as_participants() {
     );
 }
 
-/// A one-to-one chat's participant and the sender of its incoming messages
-/// is the peer, named by the chat.
+/// A one-to-one conversation's participant and the sender of its incoming
+/// messages is the peer, named by its WhatsApp chat.
 #[test]
 fn a_one_to_one_participant_has_the_chat_name() {
     let documents = senders_fixture();
@@ -602,7 +602,7 @@ fn a_media_file_not_found_is_kept_as_file_missing_and_the_guid_does_not_change()
     assert_eq!(found.guid, missing.guid);
 }
 
-/// A one-to-one chat keyed by an internal `@lid` id has no phone number to
+/// A one-to-one conversation keyed by an internal `@lid` id has no phone number to
 /// write. Its one participant is the raw id, which the server types `other`
 /// because WhatsApp carries no email address (#1141, #1933).
 #[test]

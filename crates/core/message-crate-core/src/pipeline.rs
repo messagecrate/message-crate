@@ -115,11 +115,11 @@ pub struct RunIssue {
     pub conversation: Option<String>,
 }
 
-/// The note an exporter sends for a chat that names its person with no
-/// address, which it keeps under the name alone, counted as
-/// [`crate::NAME_ONLY_CHAT`].
-pub const NAME_ONLY_CHAT_NOTE: &str = "This chat names its person with no phone number or email \
-     address, so the conversation is kept under the name alone.";
+/// The note an exporter sends for a conversation that names its person with
+/// no address, which it keeps under the name alone, counted as
+/// [`crate::NAME_ONLY_CONVERSATION`].
+pub const NAME_ONLY_CONVERSATION_NOTE: &str = "This conversation names its person with no phone number \
+     or email address, so it is kept under the name alone.";
 
 /// The note an exporter sends for a message it kept with `n` parts left out
 /// because they could not be read.

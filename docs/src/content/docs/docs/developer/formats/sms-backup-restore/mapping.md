@@ -15,7 +15,7 @@ The input is one `.xml` file, because SMS Backup & Restore writes each backup as
 
 The desktop app's Import screen always writes JSON Lines, one file per conversation, because Import reads conversation files in that form. Every other format (JSON, CSV, EML, MBOX, SMS Backup & Restore XML) is a rewrite of that output through [Convert](/docs/developer/formats/convert/), which Export and **Settings → Convert** run.
 
-In CSV form: one file per conversation. Decoded MMS media under `attachments/` when copying/embedding. Filenames: 1:1 → `+E164.csv`; untitled groups → `group_+A_+B_….csv`. The XML form is a single SyncTech `smses.xml`.
+In CSV form: one file per conversation. Decoded MMS media under `attachments/` when copying/embedding. Filenames: one-to-one → `+E164.csv`; untitled groups → `group_+A_+B_….csv`. The XML form is a single SyncTech `smses.xml`.
 
 ## Source → shared fields
 
@@ -23,7 +23,7 @@ In CSV form: one file per conversation. Decoded MMS media under `attachments/` w
 |---------------|------------------|
 | `chat_identifier` | Peer's identity key, or `chat-group-…` for groups |
 | `conversation_type` | `individual` / `group` |
-| `group_title` | Derived for groups; empty for 1:1 |
+| `group_title` | Derived for groups; empty for one-to-one |
 | `participants_json` | Peer identities from SMS address / MMS `<addr>` list |
 | `guid` | SHA-256 of the message identity (`MessageGuid`): chat id, direction, sender, UTC milliseconds, collapsed text, sorted attachment digests |
 | `timestamp` / `timestamp_utc` / `timestamp_display` / `timestamp_unix_ms` | From `date` (Unix epoch milliseconds, UTC) |
@@ -56,11 +56,11 @@ Example: `<sms address="+15555550101" date="1400773261000" type="1" body="hello 
 ## How the exporter uses MMS fields
 
 - `date` → `timestamp*` / `timestamp_unix_ms` (bad dates skipped)
-- `msg_box` `2` → outgoing; `1` → incoming. The From addr (`type="137"`) is the sender, wherever that number sits in the `address` list. Without one, a 1:1 message is from its one peer and a group message has no sender: the app writes a From addr on every MMS, and guessing a group's sender from the address order would be wrong more often than right. Raw `msg_box` in `android_type`
+- `msg_box` `2` → outgoing; `1` → incoming. The From addr (`type="137"`) is the sender, wherever that number sits in the `address` list. Without one, a one-to-one message is from its one peer and a group message has no sender: the app writes a From addr on every MMS, and guessing a group's sender from the address order would be wrong more often than right. Raw `msg_box` in `android_type`
 - `msg_box` `3` (draft), `4` (outbox), `5` (failed) and `6` (queued) are skipped and counted as `skipped_never_sent` (not `skipped_unknown_type`, which is for unknown SMS `type` only)
 - `sub` → `subject`
-- `contact_name` names the peer and the sender of a 1:1 MMS, read as on an `<sms>`. On a group MMS it is the members' names joined by a comma and a space (such as `Ana, Lee`), which names the group rather than the sender, so a group message takes no name from it
-- `address` plus `<addr>` list → participants; one other person is a 1:1 chat, more than one is a group
+- `contact_name` names the peer and the sender of a one-to-one MMS, read as on an `<sms>`. On a group MMS it is the members' names joined by a comma and a space (such as `Ana, Lee`), which names the group rather than the sender, so a group message takes no name from it
+- `address` plus `<addr>` list → participants; one other person is a one-to-one conversation, more than one is a group
 - Every `text/plain` part → `text`, joined with a newline: the parts the SMIL (`application/smil`) names, by `name`, `cl`, `cid` or `fn`, in its order, then the rest in the order they are written. Nothing is sorted or removed for repeating another part
 - Every other part with content → files under `attachments/` and `attachments_json`, in the same order. A contact card (`ct="text/x-vcard" text="null" data="…"`) is an attachment, and two parts with one name, or with the same bytes, are two attachments. In `source_fields_json.parts`, `data` is replaced with `data_len` + `data_sha256`
 - Every `<mms>` / `<part>` / `<addr>` attribute → `source_fields_json`

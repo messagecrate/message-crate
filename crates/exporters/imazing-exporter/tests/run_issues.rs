@@ -109,7 +109,7 @@ Mystery Person,2020-01-01 12:01:00,SMS,Outgoing,,,Read,,,Hi,,,\n",
             kind: message_crate_core::RunIssueKind::Note,
             step: "parse".into(),
             item: format!("{csv} (Mystery Person)"),
-            reason: "This chat names its person with no phone number or email address, so the conversation is kept under the name alone.".into(),
+            reason: "This conversation names its person with no phone number or email address, so it is kept under the name alone.".into(),
             conversation: None,
         }]
     );

@@ -623,7 +623,7 @@ impl FlatAddresses {
     }
 
     /// A group when two or more other participants are named, else the
-    /// one-to-one chat with the peer. With no peer the chat key is empty:
+    /// one-to-one conversation with the peer. With no peer the chat key is empty:
     /// `chat_id_for` then keys the conversation by the subject's name, or
     /// as the conversation that names nobody.
     fn conversation(&self, headers: &MailHeaders, sent: bool) -> FlatConversation {

@@ -151,7 +151,7 @@ pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> 
 /// after 24 hours, and a Channel (`@newsletter`) is a one-way feed from a
 /// publisher. Neither has anyone in it to make a contact for, so neither is
 /// written, and each of its messages is counted so none is dropped silently.
-/// A reply to someone's Status is a message in the one-to-one chat with that
+/// A reply to someone's Status is a message in the one-to-one conversation with that
 /// person and is written as usual.
 fn skipped_chat_counter(jid: &str) -> Option<Counter> {
     if is_status_jid(jid) {
@@ -299,7 +299,7 @@ struct Person {
     jid: Option<String>,
     /// What they are written as: the phone number of a phone id, or else
     /// the raw id, which the server types `other` because WhatsApp carries
-    /// no email address. The one-to-one chat with the same person writes the
+    /// no email address. The one-to-one conversation with the same person writes the
     /// same id ([`Roster::add_peer`]), so both are one identity.
     identity: Option<(String, IdentityType)>,
     name: Option<String>,
@@ -431,7 +431,7 @@ impl<'a> Roster<'a> {
         });
     }
 
-    /// A one-to-one chat's one participant, named by the chat. A chat whose
+    /// A one-to-one conversation's one participant, named by its WhatsApp chat. A chat whose
     /// id is not a phone id, such as an internal `@lid` id, has its raw id,
     /// which the server types `other` because WhatsApp carries no email
     /// address (#1671).

@@ -188,12 +188,12 @@ Named stamps on whole conversation threads (not on individual messages). A
 thread can have several tags. New messages in a tagged thread stay under that
 tag. A new thread is untagged until someone adds a tag.
 
-## How chats meet people
+## How conversations meet people
 
 There is no `contact_id` on conversations. The link is the `handles` table:
 
-- 1:1 `conversations.chat_handle_id` and `participants.handle_id` on the chat
-  side
+- One-to-one `conversations.chat_handle_id` and `participants.handle_id` on the
+  conversation side
 - `contact_handles.handle_id` on the contact side
 
 Chat-side and contact-side reference the same per-account handle rows, so when

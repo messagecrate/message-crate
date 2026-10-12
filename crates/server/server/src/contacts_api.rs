@@ -111,7 +111,7 @@ pub struct Contact {
     /// Conversations of orphaned messages the contact appears in: the three
     /// conversation counts add up to every conversation the contact is in.
     pub orphaned_conversations: u64,
-    /// Messages the contact sent, in any of its conversations, direct,
+    /// Messages the contact sent, in any of its conversations, one-to-one,
     /// group, or orphaned: the account holder's own messages and other people's messages
     /// in a shared group are not counted, and neither are conversations in
     /// the trash or duplicate messages. `messages:` on Contacts counts the
@@ -135,7 +135,7 @@ pub struct ListContactSummariesRequest {
     pub ids: Vec<i64>,
 }
 
-/// Full contact view: per-identity service + date range + direct message count,
+/// Full contact view: per-identity service + date range + one-to-one message count,
 /// plus conversation and total-message stats across all the contact's identities.
 ///
 /// # Errors

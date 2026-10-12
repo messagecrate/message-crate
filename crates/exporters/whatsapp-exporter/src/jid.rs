@@ -74,7 +74,8 @@ pub(crate) fn phone_id_to_e164(jid: &str) -> Option<String> {
     }
 }
 
-/// Chat identifier for CSV: E.164 for 1:1 user JIDs; otherwise the raw JID.
+/// Chat identifier for CSV: E.164 for the user JID of a one-to-one
+/// conversation; otherwise the raw JID.
 pub(crate) fn chat_id_from_jid(jid: &str) -> String {
     if is_group_jid(jid) {
         jid.trim().to_string()

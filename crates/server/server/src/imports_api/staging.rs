@@ -385,7 +385,7 @@ impl StagingInserts {
         // can leave out someone who wrote in it. So the sender gets a contact
         // the same way a participant does, which also replaces a trashed one
         // (ADR-0013). A handle already in the cache went through here, or
-        // through a participant or a one-to-one chat, earlier in this run, and
+        // through a participant or a one-to-one conversation, earlier in this run, and
         // each of those gave it a contact unless it is one of the account's
         // identities. A sender at one is the holder, who never gets a contact
         // here (#1093); the message still records the address it came from.
@@ -597,7 +597,7 @@ impl FileStaging<'_> {
         // Conversation identity: the chat handle. A group's id is the group's
         // key and nobody's address, so it is `Other` whatever its shape (a
         // WhatsApp `…@g.us` has an `@`), and so is an orphaned conversation's
-        // `orphaned:` key. A one-to-one chat's id is an address, typed by the
+        // `orphaned:` key. A one-to-one conversation's id is an address, typed by the
         // service and its shape like every other (#1933).
         let chat_handle_type = if individual {
             handle_type_on(&conversation.chat_identifier, service)
@@ -616,7 +616,7 @@ impl FileStaging<'_> {
         if flagged {
             counts.phones_needing_review += 1;
         }
-        // Only a one-to-one chat's identifier is a person. A group's id, and
+        // Only a one-to-one conversation's identifier is a person. A group's id, and
         // the `orphaned:` key of a conversation of orphaned messages, name
         // the conversation, so they get a handle row and no contact; the
         // people in it get theirs as participants. The conversation's type
@@ -631,7 +631,7 @@ impl FileStaging<'_> {
         // participant record, an identity of type `other` holding the name,
         // so the key giving them a second contact would make one person two.
         //
-        // A one-to-one chat with one of the account's own identities is a
+        // A one-to-one conversation with one of the account's own identities is a
         // conversation the holder has with themselves (Apple Messages' chat
         // with the owner's number, WhatsApp's "Message yourself"). The holder
         // is never a participant and gets no contact, so the chat id gets
