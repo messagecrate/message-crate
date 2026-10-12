@@ -838,34 +838,19 @@ pub async fn replace_demo_account(
     ))
 }
 
-/// Record the owner's build of the Demo Account in the Audit Trail, then end
-/// every Session of the Demo Account, so nobody is inside it while it is
-/// removed and built again. A reset is about the Demo Account it replaces, so
-/// it stays in that account's record once the build deletes it. An add is
-/// about no account, since none exists yet: an entry with a username and no
-/// account reads as one whose account was deleted.
+/// Record the owner's build of the Demo Account in the Audit Trail
+/// ([`audit_trail::record_demo_build`]), then end every Session of the Demo
+/// Account, so nobody is inside it while it is removed and built again.
+///
+/// [`audit_trail::record_demo_build`]: crate::db::audit_trail::record_demo_build
 async fn record_build_and_end_demo_sessions(
     state: &AppState,
     size: DemoDataSize,
 ) -> Result<(), ApiError> {
-    use crate::db::audit_trail::{self, AuditAction, AuditActor, Details, NewEntry};
+    use crate::db::audit_trail::{self, AuditActor};
     let mut conn = state.db.acquire().await?;
     let mut tx = crate::db::begin_write(&mut conn).await?;
-    let demo =
-        account_profile::username_for_account(&mut tx, account_profile::DEMO_ACCOUNT_ID).await?;
-    let entry = match &demo {
-        Some(username) => NewEntry::about(
-            AuditAction::DemoAccountReset,
-            AuditActor::Owner,
-            (account_profile::DEMO_ACCOUNT_ID, username),
-        ),
-        None => NewEntry::about_no_account(AuditAction::DemoAccountAdded, AuditActor::Owner),
-    }
-    .with_details(Details {
-        demo_data_size: Some(size),
-        ..Details::default()
-    });
-    audit_trail::record(&mut tx, &entry).await?;
+    audit_trail::record_demo_build(&mut tx, AuditActor::Owner, size).await?;
     crate::db::session_tokens::revoke_account_sessions(
         &mut tx,
         account_profile::DEMO_ACCOUNT_ID,

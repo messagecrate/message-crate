@@ -22,9 +22,6 @@ pub const SBR_SOURCE: &str = "sms-backup-restore";
 /// The WhatsApp source.
 pub const WHATSAPP_SOURCE: &str = "whatsapp";
 
-/// The Demo Account's username, written into `seed.toml`.
-pub const DEMO_USERNAME: &str = "demo";
-
 /// The lines `write_seed_toml` puts above the values. `toml::to_string`
 /// writes no comments, so the header says what each key does.
 const SEED_TOML_HEADER: &str = "\
@@ -35,20 +32,22 @@ const SEED_TOML_HEADER: &str = "\
 # owner.handle_specs: (raw handle, handle type) pairs linked into
 #   `account_handles`.
 # owner.emails: each email is an identity too, linked into `account_handles`.
-# account.username: the name the Demo Account logs in with.
 
 ";
 
 /// `config/seed.toml` in a demo bundle. A key it does not use is an error,
-/// never ignored (`deny_unknown_fields` here and on both sections): a misspelt
+/// never ignored (`deny_unknown_fields` here and on its section): a misspelt
 /// key would seed the Demo Account without what the line asked for.
+///
+/// It names no username. The Demo Account's username is fixed in the server,
+/// which reserves it while the account is absent
+/// (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`), so an
+/// `[account]` section is refused like any other unknown key.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DemoSeed {
     /// The person the Demo Account belongs to.
     pub owner: DemoOwner,
-    /// The account row.
-    pub account: DemoAccount,
 }
 
 /// `[owner]` in `seed.toml`.
@@ -65,14 +64,6 @@ pub struct DemoOwner {
     pub emails: Vec<String>,
 }
 
-/// `[account]` in `seed.toml`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct DemoAccount {
-    /// The name the Demo Account logs in with.
-    pub username: String,
-}
-
 impl DemoSeed {
     /// The values every generated bundle carries: the owner's phone number
     /// and email address, which the conversations send from.
@@ -83,9 +74,6 @@ impl DemoSeed {
                 display_name: "Demo User".into(),
                 handle_specs: vec![(OWNER_PHONE.into(), IdentityType::Phone)],
                 emails: vec![OWNER_EMAIL.into()],
-            },
-            account: DemoAccount {
-                username: DEMO_USERNAME.into(),
             },
         }
     }
@@ -155,10 +143,29 @@ mod tests {
         assert!(text.contains("`email`"), "{text}");
         assert!(text.contains("seed.toml"), "{text}");
 
-        let text = refusal_of_written_seed_with("[account]\n", "[account]\npassword = \"x\"\n");
+        let text = refusal_of_written_seed_with("[owner]\n", "[owner]\npassword = \"x\"\n");
         assert!(text.contains("`password`"), "{text}");
 
-        let text = refusal_of_written_seed_with("[account]\n", "[acount]\nx = 1\n\n[account]\n");
-        assert!(text.contains("`acount`"), "{text}");
+        let text = refusal_of_written_seed_with("[owner]\n", "[ownr]\nx = 1\n\n[owner]\n");
+        assert!(text.contains("`ownr`"), "{text}");
+    }
+
+    /// The Demo Account's username is fixed in the server, not read from the
+    /// bundle, so a `seed.toml` that names one is refused (#2808): a name the
+    /// server built the account with but did not reserve could be taken by
+    /// another account and block the next build.
+    #[test]
+    fn a_seed_toml_with_an_account_section_is_refused() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        write_seed_toml(dir.path()).expect("write seed.toml");
+        let path = dir.path().join("seed.toml");
+        let text = fs::read_to_string(&path).expect("read seed.toml");
+        let text = format!("{text}\n[account]\nusername = \"demo\"\n");
+        fs::write(&path, text).expect("rewrite seed.toml");
+
+        let error = format!("{:#}", read_seed_toml(&path).unwrap_err());
+
+        assert!(error.contains("`account`"), "{error}");
+        assert!(error.contains("seed.toml"), "{error}");
     }
 }

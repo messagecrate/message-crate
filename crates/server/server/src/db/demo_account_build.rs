@@ -29,6 +29,15 @@ impl From<DemoDataSize> for demo_seed::DemoSize {
     }
 }
 
+impl From<demo_seed::DemoSize> for DemoDataSize {
+    fn from(size: demo_seed::DemoSize) -> Self {
+        match size {
+            demo_seed::DemoSize::Medium => Self::Medium,
+            demo_seed::DemoSize::Large => Self::Large,
+        }
+    }
+}
+
 /// Record that a Demo Account build has started. A record already there is
 /// replaced, since only one build runs at a time.
 ///

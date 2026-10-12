@@ -79,12 +79,13 @@ pub enum AuditAction {
     /// The owner changed the attachment size limit; `asset_max_bytes` is the
     /// new limit.
     AssetLimitChanged,
-    /// The owner added the Demo Account where there was none: a build
-    /// started; `demo_data_size` is the set of Demo Data asked for.
+    /// The Demo Account was added where there was none: a build started, by
+    /// the owner, the `reset-demo` command, or the server's first start;
+    /// `demo_data_size` is the set of Demo Data asked for.
     DemoAccountAdded,
-    /// The owner reset the Demo Account: a build started that removes it,
-    /// with all it holds, and builds it again; `demo_data_size` is the set of
-    /// Demo Data asked for.
+    /// The Demo Account was reset: a build started, by the owner or the
+    /// `reset-demo` command, that removes it, with all it holds, and builds it
+    /// again; `demo_data_size` is the set of Demo Data asked for.
     DemoAccountReset,
     /// The holder made an API token.
     ApiTokenCreated,
@@ -145,10 +146,14 @@ pub enum AuditActor {
     /// The account's own holder: the person logged in to it, or a program
     /// holding one of its API tokens.
     Holder,
-    /// A command run on the server, such as `reset-owner-password`.
+    /// A command run on the server, such as `reset-owner-password` or
+    /// `reset-demo`.
     CommandLine,
-    /// The server on its own: building the Demo Account, removing a build
-    /// that failed, or a session running out.
+    /// The server's first start on a new database, which adds the Demo
+    /// Account before the server listens.
+    StartUp,
+    /// The server on its own: removing a Demo Account build that failed, or
+    /// a session running out.
     Server,
     /// Someone at the login card, before any login: a refused login, or a
     /// stranger creating an account.
@@ -162,6 +167,7 @@ impl AuditActor {
             Self::Owner => "owner",
             Self::Holder => "holder",
             Self::CommandLine => "command_line",
+            Self::StartUp => "start_up",
             Self::Server => "server",
             Self::Anonymous => "anonymous",
         }
@@ -172,6 +178,7 @@ impl AuditActor {
             "owner" => Self::Owner,
             "holder" => Self::Holder,
             "command_line" => Self::CommandLine,
+            "start_up" => Self::StartUp,
             "anonymous" => Self::Anonymous,
             _ => Self::Server,
         }
@@ -663,6 +670,42 @@ pub async fn record_about(
         &NewEntry::about(action, actor, (account_id, &username)).with_details(details),
     )
     .await?;
+    Ok(())
+}
+
+/// Record that `actor` started a build of the Demo Account with the `size`
+/// set of Demo Data, before the build writes anything. Every build records
+/// it: the owner's from Owner Home, the `reset-demo` command's, and the one
+/// `serve` runs on a new database (#2686).
+///
+/// Where there is a Demo Account, the build resets it, and the entry is
+/// `demo_account_reset` about that account, so it stays in that account's
+/// record once the build deletes it. Where there is none, the build adds it,
+/// and the entry is `demo_account_added` about no account, since none exists
+/// yet: an entry with a username and no account reads as one whose account
+/// was deleted.
+///
+/// # Errors
+///
+/// Returns an error when the lookup or the insert fails.
+pub async fn record_demo_build(
+    conn: &mut SqliteConnection,
+    actor: AuditActor,
+    size: DemoDataSize,
+) -> Result<()> {
+    let demo_id = account_profile::DEMO_ACCOUNT_ID;
+    let demo = account_profile::username_for_account(conn, demo_id).await?;
+    let entry = match &demo {
+        Some(username) => {
+            NewEntry::about(AuditAction::DemoAccountReset, actor, (demo_id, username))
+        }
+        None => NewEntry::about_no_account(AuditAction::DemoAccountAdded, actor),
+    }
+    .with_details(Details {
+        demo_data_size: Some(size),
+        ..Details::default()
+    });
+    record(conn, &entry).await?;
     Ok(())
 }
 

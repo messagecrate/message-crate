@@ -367,9 +367,12 @@ _Avoid_: Console, Dashboard, Admin, Admin panel
 
 **Audit Trail**:
 The permanent record of what each user did on a Message Crate, and when:
-logging in, sessions ending, logins refused, Import Runs, Export Runs, and the
-owner's changes to accounts. It records that something happened and how much,
-never what the messages said. Nobody edits or deletes it, the owner included,
+logging in, sessions ending, logins refused, Import Runs, Export Runs, the
+owner's changes to accounts, and every build of the Demo Account. Each entry
+names who acted: the account holder, the owner, a server command such as
+`reset-demo`, the server's first start, which adds the Demo Account to a new
+Message Crate, the server on its own, or someone at the login card. It records
+that something happened and how much, never what the messages said. Nobody edits or deletes it, the owner included,
 and deleting an account does not remove its entries. The owner reads it for
 every account on Owner Home, and each account holder reads the entries about
 their own account under Settings. It is not the server's log output, which is Logs.

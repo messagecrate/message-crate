@@ -228,6 +228,9 @@ carry their date on the heading.
 - 2026-10-11: The messages about a password, such as a wrong current
   password or two new passwords that differ, are written the way the
   server's other messages are, so they no longer end with a full stop.
+- 2026-10-12: The Demo Account's username, `demo`, is fixed in the server
+  and no longer read from the Demo Data it is built from, with nothing
+  visible (#2808).
 - 2026-10-11: The way the Demo Account's generator and the server agree on
   what a demo bundle holds was reworked inside, with nothing visible (#2265).
 - 2026-10-11: The way an Upload and an Export remember what they already
@@ -384,6 +387,13 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-12: **The Audit Trail records every build of the Demo Account.**
+  Resetting or adding the Demo Account with the `reset-demo` server command
+  is now recorded, with the set of Demo Data, by **Server command**, and so
+  is the Demo Account a new Message Crate adds on its first start, by
+  **Server's first start**. Before, only a build from Owner Home left an
+  entry, and the command recorded only the deletion of the old Demo Account
+  (#2686).
 - 2026-10-12: **Disabling an account logs it out.** A person still logged
   in to an account the owner disabled was only refused while the account
   stayed disabled, so enabling it again let them carry on without logging
