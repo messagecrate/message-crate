@@ -15,7 +15,7 @@ async fn account() -> (
     let (pool, dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     crate::db::schema::ensure_schema(&mut conn).await.unwrap();
-    crate::db::account_profile::ensure_account_row(&mut conn, ACCOUNT)
+    crate::db::account_profile::create_account_row_if_missing(&mut conn, ACCOUNT)
         .await
         .unwrap();
     (conn, pool, dir)
@@ -1682,7 +1682,7 @@ async fn a_write_that_commits_while_the_load_reads_does_not_fail_it() {
     let (mut conn, pool, _dir) = account().await;
     let mut other_conn = pool.acquire().await.unwrap();
     let mut other = crate::db::begin_write(&mut other_conn).await.unwrap();
-    crate::db::account_profile::ensure_account_row(&mut other, ACCOUNT + 1)
+    crate::db::account_profile::create_account_row_if_missing(&mut other, ACCOUNT + 1)
         .await
         .unwrap();
     let text = file(&["ada,Ada,Family,phone,phone,+15555550100"]);

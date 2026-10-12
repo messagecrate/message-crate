@@ -276,7 +276,7 @@ async fn a_participant_with_no_address_and_no_name_is_never_created() {
 /// schema is in place.
 async fn append_on_conn(conn: &mut SqliteConnection, path: &Path, root: &Path, source: &str) {
     let assets = root.join("assets");
-    import_jsonl_files_on_conn(
+    crate::test_support::import_for_account(
         conn,
         &[path.to_path_buf()],
         &ImportOptions::fixed(FixedImportArgs {

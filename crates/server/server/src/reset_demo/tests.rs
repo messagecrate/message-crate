@@ -1117,7 +1117,7 @@ async fn seed_other_account_rows(conn: &mut SqliteConnection, account_id: i64) {
 }
 
 async fn seed_reset_test_account(conn: &mut SqliteConnection, account_id: i64, guid: &str) {
-    account_profile::ensure_account_row(conn, account_id)
+    account_profile::create_account_row_if_missing(conn, account_id)
         .await
         .expect("seed reset test account");
     let handle_id: i64 = sqlx::query_scalar(
@@ -1878,7 +1878,7 @@ fn write_overlap_conversation(bundle: &Path) {
 /// data directory. Returns the file's path.
 async fn seed_previous_demo(db: &Path, data_dir: &Path) -> PathBuf {
     let (pool, mut conn) = test_db(db).await;
-    account_profile::ensure_account_row(&mut conn, DEMO_ACCOUNT_ID)
+    account_profile::create_account_row_if_missing(&mut conn, DEMO_ACCOUNT_ID)
         .await
         .expect("seed the previous demo account");
     let handle_id: i64 = sqlx::query_scalar(
@@ -2731,7 +2731,7 @@ async fn free_pages(db: &Path) -> i64 {
 /// `VACUUM` takes out of the file.
 async fn seed_bulky_demo(db: &Path) {
     let (pool, mut conn) = test_db(db).await;
-    account_profile::ensure_account_row(&mut conn, DEMO_ACCOUNT_ID)
+    account_profile::create_account_row_if_missing(&mut conn, DEMO_ACCOUNT_ID)
         .await
         .expect("seed the previous demo account");
     let handle_id: i64 = sqlx::query_scalar(
@@ -2873,7 +2873,7 @@ async fn the_wipe_deletes_duplicates_before_the_messages_they_duplicate() {
     fs::create_dir_all(cfg.paths.db.parent().expect("database parent"))
         .expect("create database parent");
     let (pool, mut conn) = test_db(&cfg.paths.db).await;
-    account_profile::ensure_account_row(&mut conn, DEMO_ACCOUNT_ID)
+    account_profile::create_account_row_if_missing(&mut conn, DEMO_ACCOUNT_ID)
         .await
         .expect("seed the demo account");
     let handle_id: i64 = sqlx::query_scalar(

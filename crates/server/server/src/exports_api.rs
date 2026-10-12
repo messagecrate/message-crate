@@ -105,8 +105,8 @@ pub async fn start_export_run(
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<ExportRun, ApiError> {
     let mut tx = crate::db::begin_write(conn).await?;
+    crate::server::require_account_row(&mut tx, account_id).await?;
     let filter = scope_filter(&mut tx, account_id, scope, clock).await?;
-    crate::db::account_profile::ensure_account_row(&mut tx, account_id).await?;
     let export_id = exports::start_export(
         &mut tx,
         &StartExportArgs {

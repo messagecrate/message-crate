@@ -120,7 +120,7 @@ pub async fn run(opened: &OpenDb, opts: &CliImportOptions) -> Result<CliImportCo
     print_plan(opts, opened, &plan);
 
     let mut conn = opened.conn().await?;
-    account_profile::ensure_account_row(&mut conn, opts.account_id).await?;
+    account_profile::create_account_row_if_missing(&mut conn, opts.account_id).await?;
 
     let mut import_counts = ImportCounts {
         mode: opts.mode,

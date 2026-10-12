@@ -2210,7 +2210,7 @@ mod kind_words {
         .sender(chat);
         std::fs::write(&path, format!("{header}\n{line}\n")).unwrap();
         let assets = dir.join("assets");
-        let counts = crate::imports_api::import_jsonl_files_on_conn(
+        let counts = crate::test_support::import_for_account(
             conn,
             &[path],
             &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {

@@ -56,7 +56,10 @@ The app carries the SHA-256 checksum of every file it downloads, and refuses and
 
 The Tools Directory belongs to the app, and one rule holds for all three programs.
 A program in the Tools Directory whose checksum is the pinned program's is kept, whoever put it there, and anything else under its name is replaced by the pinned program.
-The old file is replaced only after the new one has arrived and passed its checksum, so with no internet, or after a failed download, the old one stays in use.
+The old file is replaced only after the new one has arrived and passed its checksum, so with no internet, or after a failed download, an old `ffmpeg` or `ffprobe` stays in use.
+A `wtsexporter` that isn't the pinned program isn't used at all, because the app needs the build that release made.
+It shows as not found until the pinned program replaces it, and so does a copy still being copied in.
+Where the app has no download, on Linux on ARM, any `wtsexporter` in the Tools Directory that may run is used.
 
 **Tools directory** shows the full path of the Tools Directory, `tools` in the Message Crate Directory, such as `/home/sam/message-crate/tools` on Linux.
 
@@ -76,12 +79,13 @@ One line per program reports the result:
 - A cross with `<program> download failed` and the reason: no connection to the download's server, the status the server answered, a checksum that didn't match, a file that couldn't be written to the Tools Directory, a download that was interrupted or couldn't be started, a program in the Tools Directory that couldn't be marked as a program that runs, or one that doesn't run on this computer.
   When a download finds no connection, the app tries again after 5, 15, 30 and 60 seconds, and shows the download as in progress while it waits.
   The programs share those four tries, so with no connection at all every download has failed about two minutes after the first one tried.
-  A copy put in the Tools Directory by hand during those waits ends them, and the app uses it.
+  A copy put in the Tools Directory by hand during those waits ends them, and the app uses it: for `wtsexporter`, once the whole pinned file is in place.
   A failed download is tried again the next time the app starts, or at once with **Try again** on the Import form or, for ffmpeg and ffprobe, at the Staging Review.
   The line ends with a link to the program's section in Troubleshooting, [Import can't find wtsexporter](/docs/user/features/owner/troubleshooting/#import-cant-find-wtsexporter) or [ffmpeg or ffprobe not found](/docs/user/features/owner/troubleshooting/#ffmpeg-or-ffprobe-not-found), which says what each reason means and where to put a copy by hand.
   A program that doesn't run is not downloaded again, because the download would be the same file.
   For ffmpeg and ffprobe, the reason says to install them with a package manager, because the app uses the copy on `PATH`.
-  While an older copy is in place, the line shows that copy as found instead, because the old copy is still the one used.
+  While an older `ffmpeg` or `ffprobe` is in place, the line shows that copy as found instead, because the old copy is still the one used.
+  A `wtsexporter` in the Tools Directory that isn't the pinned program shows as not found, so its failed download's reason starts by saying that file isn't used.
 
 On macOS, an app opened from the Dock or Finder doesn't see the `PATH` Homebrew sets in a terminal, so it doesn't find ffmpeg and ffprobe installed with Homebrew.
 It downloads its own copies into the Tools Directory instead, and nothing needs doing.

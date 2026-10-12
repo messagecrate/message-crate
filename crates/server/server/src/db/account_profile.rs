@@ -187,12 +187,18 @@ pub async fn account_identity_id(
     .await?)
 }
 
-/// Ensure an `accounts` row exists at `account_id`, with the id as its stub
-/// username. The demo reset and the tests use it to place a row at a chosen
-/// id, and the import and export paths call it before they write for an
-/// account; new accounts are made by [`insert_account`] and
-/// [`insert_account_at`].
-pub async fn ensure_account_row(conn: &mut SqliteConnection, account_id: i64) -> Result<()> {
+/// Create an `accounts` row at `account_id`, with the id as its stub
+/// username and every other column at its default, unless one is there. It
+/// makes an account on purpose: the Demo Account build, the `import` command
+/// and the tests use it to place a row at a chosen id. No HTTP route calls
+/// it: a credential proved its account existed, and a route that finds the
+/// row gone answers as for a credential that no longer holds, because a row
+/// put back here would carry no password (#2061). New accounts are made by
+/// [`insert_account`] and [`insert_account_at`].
+pub async fn create_account_row_if_missing(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+) -> Result<()> {
     sqlx::query(
         "INSERT INTO accounts (id, username) VALUES ($1, $2)
          ON CONFLICT DO NOTHING",
@@ -201,7 +207,7 @@ pub async fn ensure_account_row(conn: &mut SqliteConnection, account_id: i64) ->
     .bind(account_id.to_string())
     .execute(&mut *conn)
     .await
-    .with_context(|| format!("failed to ensure account row for {account_id}"))?;
+    .with_context(|| format!("failed to create the account row for {account_id}"))?;
     Ok(())
 }
 

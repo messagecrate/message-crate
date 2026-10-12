@@ -41,24 +41,46 @@ pub struct CreateSessionResponse {
     pub username: String,
 }
 
+/// What a login whose password was right finds under the write lock.
+enum LoginOpened {
+    /// The Session was opened.
+    Session(CreateSessionResponse),
+    /// The account is disabled, so no Session was opened.
+    Disabled,
+    /// The account is gone, so no Session was opened.
+    Gone,
+}
+
 impl CreateSessionResponse {
     /// Open the Session for an existing account, replacing the one it had,
-    /// and record the login. `username` is the one the account's row holds.
+    /// and record the login, unless the account is disabled or gone.
+    /// `username` is the one the account's row holds.
+    ///
+    /// The account is read under the write lock that opens the Session, so
+    /// an owner disabling it during the password check, whose write ends
+    /// every Session the account has, cannot be followed by a Session that
+    /// outlives the disable and works again once the account is enabled
+    /// (#2074).
     async fn for_existing_account(
         conn: &mut SqliteConnection,
         account_id: i64,
         username: String,
         app: Option<&ConnectingApp>,
-    ) -> anyhow::Result<CreateSessionResponse> {
+    ) -> anyhow::Result<LoginOpened> {
         let mut tx = crate::db::begin_write(conn).await?;
+        match account_profile::load_account_auth(&mut tx, account_id).await? {
+            None => return Ok(LoginOpened::Gone),
+            Some(auth) if auth.disabled => return Ok(LoginOpened::Disabled),
+            Some(_) => {}
+        }
         let token = session_tokens::open_session(&mut tx, account_id, &username, app).await?;
         account_profile::record_login(&mut tx, account_id).await?;
         tx.commit().await?;
-        Ok(CreateSessionResponse {
+        Ok(LoginOpened::Session(CreateSessionResponse {
             token,
             account_id,
             username,
-        })
+        }))
     }
 }
 
@@ -283,30 +305,34 @@ pub async fn create_session(
         return Err(invalid_login());
     }
 
-    let auth = account_profile::load_account_auth(&mut conn, account_id)
-        .await?
-        .ok_or_else(invalid_login)?;
     // A disabled account gets the answer every refused login gets. Its own
     // answer would come only after the right password, so a guesser would
     // learn which guess was right, and that password works again once the
     // owner enables the account. The Audit Trail still says why. The attempt
     // stays counted for the same reason: given back, it would show in the
     // count which guess was right.
-    if auth.disabled {
-        audit_trail::record_refused_login(
-            &mut conn,
-            &username,
-            account,
-            AuditReason::AccountDisabled,
-            app,
-        )
-        .await?;
-        return Err(invalid_login());
-    }
-
-    let body =
-        CreateSessionResponse::for_existing_account(&mut conn, account_id, stored_username, app)
+    let body = match CreateSessionResponse::for_existing_account(
+        &mut conn,
+        account_id,
+        stored_username.clone(),
+        app,
+    )
+    .await?
+    {
+        LoginOpened::Session(body) => body,
+        LoginOpened::Disabled => {
+            audit_trail::record_refused_login(
+                &mut conn,
+                &username,
+                account,
+                AuditReason::AccountDisabled,
+                app,
+            )
             .await?;
+            return Err(invalid_login());
+        }
+        LoginOpened::Gone => return Err(invalid_login()),
+    };
     // The holder's own login: it does not count against the account.
     if let Some((bucket, hit)) = counted {
         limits.give_back(&bucket, hit)?;
