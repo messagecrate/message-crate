@@ -54,7 +54,7 @@ A Message Crate database stamped with another Schema Fingerprint is still rebuil
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `asset_part_size` | `16777216` (16 MiB) | Largest chunk of a multipart upload. Must be greater than 0. Keep under ~100 MiB for Cloudflare-proxied setups, and small enough that a whole chunk arrives inside `upload_piece_secs`. The chunk size a client is told is this or the attachment size limit, whichever is smaller. |
+| `asset_part_size` | `16777216` (16 MiB) | Largest part of a multipart upload. Must be greater than 0. Keep under ~100 MiB for Cloudflare-proxied setups, and small enough that a whole part arrives inside `upload_piece_secs`: 16 MiB arrives inside the default at about 0.45 Mbit/s. The part size a client is told is this or the attachment size limit, whichever is smaller. |
 | `upload_stall_secs` | `60` | Seconds an upload (an import batch, an attachment, or a part of one) may go with no byte arriving before the server stops reading it. Must be greater than 0. |
 | `upload_piece_secs` | `300` (5 minutes) | Seconds a whole upload may take to arrive, from the start of the read, before the server stops reading it. Must be greater than 0. A full 16 MiB import batch arrives in time at about 0.45 Mbit/s. |
 

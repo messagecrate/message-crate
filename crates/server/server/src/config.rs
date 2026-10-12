@@ -142,11 +142,11 @@ pub struct ServerConfig {
     /// Bind address (default `127.0.0.1:8080`).
     #[serde(default = "default_server_bind")]
     pub bind: String,
-    /// Largest multipart part, in bytes. Default 16 MiB, the size of the
-    /// largest import batch, so a whole part arrives inside the default
-    /// `upload_piece_secs` at about 0.45 Mbit/s. The part size a client is told is this or the
-    /// attachment size limit, whichever is smaller. The limit is a Server
-    /// Setting the owner changes in the app and has no key in this file.
+    /// Largest multipart part, in bytes. Default
+    /// [`crate::asset_uploads::DEFAULT_PART_SIZE`]. The part size a client is
+    /// told is this or the attachment size limit, whichever is smaller. The
+    /// limit is a Server Setting the owner changes in the app and has no key
+    /// in this file.
     #[serde(default = "default_asset_part_size")]
     pub asset_part_size: usize,
     /// Seconds an upload body (an import batch, an attachment, or a part of

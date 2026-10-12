@@ -71,9 +71,9 @@ pub const NO_MESSAGE_COUNT_LIMIT: usize = usize::MAX;
 /// Max size for uploading an attachment in a single HTTP PUT.
 ///
 /// Bigger files use multipart upload (many smaller pieces), which proxies
-/// accept more reliably than one huge body. 16 MiB, the size of the largest
-/// import batch, so a whole PUT arrives inside the server's default
-/// 5-minute limit for one upload at about 0.45 Mbit/s (#2897).
+/// accept more reliably than one huge body. The largest import batch, so an
+/// attachment arrives at the speed a batch does
+/// (`docs/architecture/http-api.md`, "Credentials and reach").
 pub const MAX_PROXY_BODY_BYTES: usize = message_crate_api_types::MAX_IMPORT_BATCH_BYTES;
 /// What a server's attachment size limit reads as until its owner sets one.
 /// A caller that uploads to a real server reads the limit from `GET /v1/server`
