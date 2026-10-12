@@ -138,7 +138,7 @@ impl OpenDb {
 
     /// Close the pool, so a command line run ends with the file released.
     pub async fn close(self) {
-        self.db.close().await;
+        engine::close_pool(&self.db).await;
     }
 }
 

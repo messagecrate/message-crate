@@ -420,7 +420,7 @@ fn response_lines(lines: &[LogLine]) -> Vec<(LogLevel, String)> {
 async fn a_500_writes_one_error_line_and_an_info_response_line() {
     let fixture = test_fixture().await;
     // A closed pool fails the health check's statement.
-    fixture.state.db.close().await;
+    crate::db::engine::close_pool(&fixture.state.db).await;
     let lines = log_lines_serving(&fixture.state, "info", &["/health"]).await;
 
     let errors: Vec<_> = lines
@@ -1514,7 +1514,7 @@ async fn health_answers_a_probe_that_accepts_only_text() {
 async fn health_fails_when_the_database_cannot_be_reached() {
     let fixture = crate::test_support::test_fixture().await;
     let server = crate::test_support::serve(&fixture.state).await;
-    fixture.state.db.close().await;
+    crate::db::engine::close_pool(&fixture.state.db).await;
 
     let response = http_client()
         .get(format!("{}/health", server.base()))

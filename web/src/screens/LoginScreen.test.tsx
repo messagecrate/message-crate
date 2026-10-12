@@ -69,8 +69,10 @@ import {
   checkServerHealth,
   checkServerHealthWithRetry,
   HEALTH_RECHECK_AFTER_FAILURE_MS,
+  HEALTH_URL_DEBOUNCE_MS,
 } from "../lib/serverHealth";
 import type { ServerState } from "../lib/useServerState";
+import { advanceTimersAndSettle, lendTestingLibraryTheFakeClock } from "../test/fakeTimers";
 import { Providers } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 import LoginScreen from "./LoginScreen";
@@ -407,6 +409,10 @@ describe("LoginScreen", () => {
     const B = "http://crate-b.example:8080";
     authState.serverUrl = A;
     serveAt((address) => (address.startsWith(A) ? { state: "closed" } : "down"));
+    // The card's own health probe waits out a debounce before it asks, so
+    // the test moves the clock past it rather than waiting.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    lendTestingLibraryTheFakeClock();
     const user = setupUser();
     renderScreen();
 
@@ -420,11 +426,9 @@ describe("LoginScreen", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       `Nothing answered at ${B}. Still connected to ${A}.`,
     );
-    // Long enough for the card's own health probe (400ms debounce) to have
-    // run, had it gone back to watching A as a disconnected card.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 600));
-    });
+    // The probe has run by now, had the card gone back to watching A as a
+    // disconnected card.
+    await advanceTimersAndSettle(HEALTH_URL_DEBOUNCE_MS);
     expect(screen.getByRole("status")).toHaveTextContent("Connected to crate-a.example:8080");
     expect(screen.getByRole("button", { name: "Log in" })).toBeEnabled();
     expect(setServer).not.toHaveBeenCalledWith(B);

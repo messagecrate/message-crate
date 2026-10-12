@@ -13,7 +13,7 @@
  * anything.
  */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import RightPane from "../components/RightPane";
@@ -86,20 +86,25 @@ function loggedErrors(): string {
 
 describe("ConversationList", () => {
   it("registers the tag menu into the right toolbar without looping", async () => {
-    render(
-      <Providers>
-        <MemoryRouter>
-          <RightToolbarProvider>
-            <ConversationList selectedId={null} onSelect={() => {}} query="" />
-          </RightToolbarProvider>
-        </MemoryRouter>
-      </Providers>,
-    );
-
-    // Give the effect and any resulting re-renders a chance to settle. If the
-    // loop is present, React's nested-update guard trips well inside this
-    // window rather than the test just quietly hanging.
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // React's nested-update guard reports a loop through console.error and
+    // goes on looping, so `act` below would never return. Throwing from that
+    // report ends the loop and fails the test.
+    consoleErrorSpy.mockImplementation((...args: unknown[]) => {
+      const text = String(args[0]);
+      if (text.includes("Maximum update depth")) throw new Error(text);
+    });
+    // `act` runs every effect and every render they cause before it returns.
+    await act(async () => {
+      render(
+        <Providers>
+          <MemoryRouter>
+            <RightToolbarProvider>
+              <ConversationList selectedId={null} onSelect={() => {}} query="" />
+            </RightToolbarProvider>
+          </MemoryRouter>
+        </Providers>,
+      );
+    });
 
     const logged = loggedErrors();
     expect(logged).not.toMatch(/Maximum update depth/);

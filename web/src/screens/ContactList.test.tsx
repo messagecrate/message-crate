@@ -514,20 +514,18 @@ describe("ContactList", () => {
       expect(screen.getByRole("checkbox", { name: "Select all contacts" })).not.toBeChecked();
     });
 
-    // The whole test, from the first page to the export, takes about 0.6 s on
-    // an idle machine and up to 5.7 s at a load average near 100, past the
-    // 5000 ms test budget (#1594).
-    it("exports every contact the list holds", { timeout: 15_000 }, async () => {
+    it("exports every contact the list holds", async () => {
       renderAll();
       await screen.findByRole("checkbox", { name: "Select Person 0001" });
 
       const box = screen.getByRole("checkbox", { name: "Select all contacts" });
-      fireEvent.click(box);
-      // The box is ticked once Select all has read the 80 contacts past the
-      // first page and drawn 120 ticks, in a transition. That is about 230 ms
-      // on an idle machine, 1.5 s at a load average near 100 and over 3 s near
-      // 135, past `waitFor`'s 1000 ms default (#1594).
-      await waitFor(() => expect(box).toBeChecked(), { timeout: 10_000 });
+      // Select all reads the 80 contacts past the first page from a mock that
+      // answers at once, then draws 120 ticks in a transition. `act` finishes
+      // both before it returns, so the box is ticked by then.
+      await act(async () => {
+        fireEvent.click(box);
+      });
+      expect(box).toBeChecked();
 
       fireEvent.click(screen.getByRole("button", { name: "Export" }));
       await waitFor(() => expect(exportMock).toHaveBeenCalled());
