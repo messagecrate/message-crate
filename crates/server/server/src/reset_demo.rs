@@ -981,7 +981,7 @@ async fn prepare_database_snapshot(active: &Path, prepared: &Path) -> Result<()>
                 )
             })?;
         conn.close().await?;
-        pool.close().await;
+        engine::close_pool(&pool).await;
     } else {
         let pool = engine::open_pool_for_path(prepared)
             .await
@@ -992,7 +992,7 @@ async fn prepare_database_snapshot(active: &Path, prepared: &Path) -> Result<()>
             .with_context(|| format!("create prepared database {}", prepared.display()))?;
         schema::ensure_schema(&mut conn).await?;
         conn.close().await?;
-        pool.close().await;
+        engine::close_pool(&pool).await;
     }
     Ok(())
 }
@@ -1030,7 +1030,7 @@ async fn checkpoint_and_clean_sidecars(db: &Path, operation: &str) -> Result<()>
     conn.close().await?;
     // Close the pool so no connection stays attached to the database while
     // reset-demo replaces or renames it.
-    pool.close().await;
+    engine::close_pool(&pool).await;
     if busy != 0 {
         bail!(
             "cannot replace {} because its WAL could not be checkpointed; stop every process using the database and run reset-demo offline",
@@ -1188,7 +1188,7 @@ async fn with_check_conn<T>(
         .with_context(|| format!("open {} to verify non-demo accounts", db.display()))?;
     let result = read(&mut conn).await;
     conn.close().await?;
-    pool.close().await;
+    engine::close_pool(&pool).await;
     result
 }
 
