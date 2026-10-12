@@ -387,10 +387,11 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
-- 2026-10-12: **One-to-one, not direct or chat.** The identity tables on
-  Identities and in a contact's drawer, and the totals of checked contacts,
-  head their first message count **One-to-one messages**, and removing an
-  identity says "12 one-to-one messages" rather than "12 direct messages".
+- 2026-10-12: **One-to-one, not direct or chat.** My Identities on Settings →
+  Profile, the identities in a contact's drawer, and the totals of checked
+  contacts head their first message count "One-to-one messages" rather than
+  "Direct messages", and removing an identity says "12 one-to-one messages"
+  rather than "12 direct messages".
   An Import Run's summary says "Kept 3 conversations under a name alone"
   rather than "chats", and the note on each such conversation calls it a
   conversation (#2120, #2121).

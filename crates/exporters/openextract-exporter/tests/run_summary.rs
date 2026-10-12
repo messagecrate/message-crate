@@ -37,8 +37,8 @@ fn run_writes_the_conversation_and_counts_the_bad_date_row() {
     );
 }
 
-/// A CSV the run cannot read is an Import Error naming it, and a chat kept
-/// under a name alone is a note naming it (#1626, #1535).
+/// A CSV the run cannot read is an Import Error naming it, and a conversation
+/// kept under a name alone is a note naming it (#1626, #1535).
 #[test]
 fn run_sends_an_import_error_for_an_unreadable_csv_and_a_note_for_a_name_only_conversation() {
     let tmp = tempfile::tempdir().unwrap();

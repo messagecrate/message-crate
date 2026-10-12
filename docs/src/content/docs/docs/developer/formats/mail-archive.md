@@ -90,7 +90,7 @@ Do **not** use the `X-smssync-*` header namespace. This format is not Plus-compa
 - Phone: `+15555550119@sms.local` (E.164 in local-part; `+` allowed in addr-spec via quoting if required by the builder).
 - Email / Apple identity: `user=example.com@identity.local` or a documented safe encoding of the raw identity — never name-only as the sole identifier.
 - Display name may appear in the phrase (`Alice <+1555…@sms.local>`).
-- The local part is the identity, with its `@` written as `=` when it holds one `@` and no `=`. When that is not an RFC 5322 `dot-atom-text`, or holds a `%`, each byte outside `atext`, and each `%` and `.`, is written as `%XX`, as for `Message-ID` below: the identity `Ann Lee` is `Ann%20Lee@sms.local`. A space or line break written as it was would break the header. Two identities never share an address. The identity itself is read from its `X-ME-*` header, never from the address. The mbox `From_` line names the same address, and a group chat's `…@chat.local` address writes its chat identifier the same way.
+- The local part is the identity, with its `@` written as `=` when it holds one `@` and no `=`. When that is not an RFC 5322 `dot-atom-text`, or holds a `%`, each byte outside `atext`, and each `%` and `.`, is written as `%XX`, as for `Message-ID` below: the identity `Ann Lee` is `Ann%20Lee@sms.local`. A space or line break written as it was would break the header. Two identities never share an address. The identity itself is read from its `X-ME-*` header, never from the address. The mbox `From_` line names the same address, and a group conversation's `…@chat.local` address writes its chat identifier the same way.
 
 ### Message-ID
 

@@ -183,7 +183,7 @@ An Identity already in the list on the same service is refused.
 The same number on **Text Message** and on **WhatsApp** counts as two Identities, so both can be listed.
 
 The trash button on a row removes that Identity after a confirmation.
-The confirmation states how many direct and group messages will no longer be associated with the account.
+The confirmation states how many one-to-one and group messages will no longer be associated with the account.
 
 The Owner has no **My Identities** section, because the Owner holds no messages to match.
 

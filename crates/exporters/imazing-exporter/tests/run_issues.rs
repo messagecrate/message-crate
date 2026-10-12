@@ -95,10 +95,10 @@ fn run_messages_csv(rows: &str) -> (String, Vec<RunIssue>) {
     (csv.display().to_string(), issues)
 }
 
-/// A chat that names its person with no address is kept under the name
-/// alone, and the run says so for that chat (#1535).
+/// A conversation that names its person with no address is kept under the
+/// name alone, and the run says so for that conversation (#1535).
 #[test]
-fn a_chat_kept_under_a_name_alone_is_a_note() {
+fn a_conversation_kept_under_a_name_alone_is_a_note() {
     let (csv, rows) = run_messages_csv(
         "Mystery Person,2020-01-01 12:00:00,SMS,Incoming,,,Read,,,Hello,,,\n\
 Mystery Person,2020-01-01 12:01:00,SMS,Outgoing,,,Read,,,Hi,,,\n",

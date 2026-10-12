@@ -1,16 +1,16 @@
 ---
 title: Database tables
-description: SQLite tables in Message Crate and how chats, contacts, and messages link through typed handles.
+description: SQLite tables in Message Crate and how conversations, contacts, and messages link through typed handles.
 ---
 
 The Message Crate SQLite database falls into four groups:
 
-1. **Chats and texts** — threads, participants, messages, files, reactions
+1. **Conversations and messages** — conversations, participants, messages, files, reactions
 2. **People and groups** — handles, contacts, contact groups, accounts
 3. **Staging** — temporary copies used while importing
-4. **Trash markers** — soft-delete lists without removing chat data
+4. **Trash markers** — soft-delete lists without removing message data
 
-Chats and people are **not** joined by a shared person ID. They meet through
+Conversations and people are **not** joined by a shared person ID. They meet through
 the **`handles`** table: every phone number, email, or username appears once
 per account **per platform** (`phone` or `whatsapp`) as a typed handle, and
 conversations, participants, messages, and contacts all point at the same
@@ -35,7 +35,7 @@ erDiagram
     message_tags ||--o{ message_tag_members : "has"
 ```
 
-## Chats and texts
+## Conversations and messages
 
 ### `conversations`
 
@@ -196,9 +196,9 @@ There is no `contact_id` on conversations. The link is the `handles` table:
   conversation side
 - `contact_handles.handle_id` on the contact side
 
-Chat-side and contact-side reference the same per-account handle rows, so when
-a chat handle and a contact handle are the same identity, the UI treats that
-chat as belonging to that contact.
+The conversation side and the contact side reference the same per-account
+handle rows, so when a conversation's chat handle and a contact handle are the
+same identity, the UI treats that conversation as belonging to that contact.
 
 ```mermaid
 flowchart LR

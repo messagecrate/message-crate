@@ -165,8 +165,8 @@ person two contacts
 **A group's chat handle is `other`, whatever its shape.** A group's chat
 handle, and the key of a conversation of orphaned messages, is stored with
 the type `other`, whatever it looks like. The conversation's type says it is
-a group, and a group's id is nobody's address. A one-to-one chat handle is an
-address, typed by its service and shape like every other (below). Why: a
+a group, and a group's id is nobody's address. A one-to-one conversation's chat
+handle is an address, typed by its service and shape like every other (below). Why: a
 WhatsApp group id (`120363042@g.us`) holds an `@`, and typed by shape alone
 it was stored as an email identity that reaches nobody
 ([#1141](https://github.com/messagecrate/message-crate/issues/1141)).
@@ -201,7 +201,7 @@ deciding it. Now a new one does not compile until someone does
 
 **The server types every address; the conversation file states no type.**
 An import types each address it meets by the rule above (`db/handles.rs`,
-`handle_type_on`): a one-to-one chat handle, a participant, a message's
+`handle_type_on`): a one-to-one conversation's chat handle, a participant, a message's
 sender, a reaction's sender and the holder's own address. A participant, a
 message's sender and a reaction's sender go through one function,
 `HandleValue::handle_type_on` (`imports_api/records.rs`), which also
@@ -799,7 +799,7 @@ finds it. Why: the other person in it is the holder, and the holder is never a
 participant. A contact for the holder would be a second record of the account.
 
 Import decides it by the chat's own identity, against the identities it loads
-once per run: a one-to-one chat whose identifier is one of them gets no contact
+once per run: a one-to-one conversation whose identifier is one of them gets no contact
 for that identifier, drops the senders of its received rows, and marks a
 reaction in it as the holder's own (`imports_api/staging.rs`,
 `FileStaging::stage`). The header's participant, if the source lists the holder
@@ -841,7 +841,7 @@ identity it held.
 
 Removing an identity gives back what linking it set aside. Each participant
 set aside at it returns as it was, with its name. Each of its identities that
-a conversation holds as a participant, a one-to-one chat handle or a received
+a conversation holds as a participant, a one-to-one conversation's chat handle or a received
 row's sender gets a contact when it has none, as an import would make one.
 That contact takes the Import Run records and Contact Group memberships set
 aside for the identity. A conversation that is no longer with yourself also
@@ -906,7 +906,7 @@ name as the conversation shows it, so it follows a rename of the person's
 contact. The Apple Messages Reader writes these conversations for messages in
 no chat (`emit.rs`, `orphaned_conversation`). It reads the person from the
 row's `handle_id` in both directions: a received row's sender, and a sent
-row's recipient, which Apple records on a one-to-one chat's sent rows and
+row's recipient, which Apple records on a one-to-one conversation's sent rows and
 leaves 0 on a group's. OpenExtract writes the one that names nobody for a sent
 row that names no recipient, and those rows carry a vendor key so that the
 same text sent to several people in the same second stays several messages.
