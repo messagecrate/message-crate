@@ -3,12 +3,14 @@
 use std::collections::HashSet;
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use message_ir::{IdentityService, IdentityType, trimmed};
 use sqlx::SqliteConnection;
 
 use super::ImportCounts;
+use super::staging::StagingInserts;
 use crate::db::contacts;
-use crate::db::handles::{HandleIdCache, normalize_handle, upsert_handle_row_cached};
+use crate::db::handles::{normalize_handle, upsert_handle_row_cached};
 use crate::db::import_contacts::{self, ContactReason};
 use crate::db::trash;
 use crate::imports_api::records::HandleValue;
@@ -35,7 +37,8 @@ use crate::imports_api::records::HandleValue;
 ///
 /// Whatever the run does to the contact is recorded against `import_id`
 /// (`db::import_contacts`), so the run can say afterwards which contacts it
-/// created, named, or gave a handle, and why.
+/// created, named, or gave a handle, and why. A contact it changes is
+/// stamped `now`.
 pub(super) async fn ensure_contact_for_handle(
     tx: &mut SqliteConnection,
     account_id: i64,
@@ -43,23 +46,32 @@ pub(super) async fn ensure_contact_for_handle(
     handle_id: i64,
     backup_name: Option<&str>,
     counts: &mut ImportCounts,
+    now: DateTime<Utc>,
 ) -> Result<i64> {
     let name = backup_name.and_then(trimmed).unwrap_or("");
-    let trashed = match ensure_sibling_contact_link(tx, account_id, import_id, handle_id).await? {
-        Some(existing) if !trash::is_contact_trashed(tx, account_id, existing).await? => {
-            // An import names only a nameless contact, whatever made it;
-            // `contacts::propose_name` is where that rule and its two
-            // siblings live.
-            if contacts::propose_name(tx, account_id, existing, name, contacts::Origin::Import)
+    let trashed =
+        match ensure_sibling_contact_link(tx, account_id, import_id, handle_id, now).await? {
+            Some(existing) if !trash::is_contact_trashed(tx, account_id, existing).await? => {
+                // An import names only a nameless contact, whatever made it;
+                // `contacts::propose_name` is where that rule and its two
+                // siblings live.
+                if contacts::propose_name(
+                    tx,
+                    account_id,
+                    existing,
+                    name,
+                    contacts::Origin::Import,
+                    now,
+                )
                 .await?
-            {
-                import_contacts::record(tx, import_id, existing, ContactReason::Named).await?;
+                {
+                    import_contacts::record(tx, import_id, existing, ContactReason::Named).await?;
+                }
+                return Ok(existing);
             }
-            return Ok(existing);
-        }
-        Some(existing) => Some(existing),
-        None => None,
-    };
+            Some(existing) => Some(existing),
+            None => None,
+        };
     let contact_id =
         contacts::create_contact(tx, account_id, name, contacts::Origin::Import).await?;
     let goes = contacts::IdentityGoes::To(contact_id, contacts::Origin::Import);
@@ -128,13 +140,12 @@ pub(super) fn is_account_identity(
 /// The `handles` row for an incoming message's sender, creating it when this
 /// import is the first to meet that address, and the contact that owns it.
 /// `None` for a message the account owner sent, and for one whose source
-/// recorded no sender address.
+/// recorded no sender address. The run's insert state `stmts` gives the
+/// account, the run, the handle cache, the account's identities, and the
+/// instant stamped on a contact it changes.
 pub(super) async fn resolve_incoming_sender_handle(
     tx: &mut SqliteConnection,
-    cache: &mut HandleIdCache,
-    identities: &HashSet<(String, IdentityType)>,
-    account_id: i64,
-    import_id: Option<i64>,
+    stmts: &mut StagingInserts,
     sender: IncomingSender<'_>,
     counts: &mut ImportCounts,
 ) -> Result<Option<i64>> {
@@ -150,8 +161,8 @@ pub(super) async fn resolve_incoming_sender_handle(
     let handle_type = value.handle_type_on(sender.service);
     let (handle_id, flagged, cached) = upsert_handle_row_cached(
         tx,
-        cache,
-        account_id,
+        &mut stmts.handles,
+        stmts.account_id,
         address,
         handle_type,
         Some(sender.service.as_str()),
@@ -170,21 +181,38 @@ pub(super) async fn resolve_incoming_sender_handle(
     // each of those gave it a contact unless it is one of the account's
     // identities. A sender at one is the holder, who never gets a contact
     // here (#1093); the message still records the address it came from.
-    if !cached && !is_account_identity(identities, address, handle_type, cache.country()) {
-        ensure_contact_for_handle(tx, account_id, import_id, handle_id, None, counts).await?;
+    if !cached
+        && !is_account_identity(
+            &stmts.identities,
+            address,
+            handle_type,
+            stmts.handles.country(),
+        )
+    {
+        ensure_contact_for_handle(
+            tx,
+            stmts.account_id,
+            stmts.import_id,
+            handle_id,
+            None,
+            counts,
+            stmts.now,
+        )
+        .await?;
     }
     Ok(Some(handle_id))
 }
 
 /// If this handle has no contact but a sibling handle (same normalized value
 /// and type, different platform service) is already linked, attach this handle
-/// to that contact, and record against `import_id` that the run gave the
-/// contact a handle.
+/// to that contact, stamped `now`, and record against `import_id` that the
+/// run gave the contact a handle.
 async fn ensure_sibling_contact_link(
     conn: &mut SqliteConnection,
     account_id: i64,
     import_id: Option<i64>,
     handle_id: i64,
+    now: DateTime<Utc>,
 ) -> Result<Option<i64>> {
     if let Some(existing) = contacts::contact_id_for_handle(conn, account_id, handle_id).await? {
         return Ok(Some(existing));
@@ -203,7 +231,7 @@ async fn ensure_sibling_contact_link(
     )
     .await?
     {
-        contacts::touch_contact(conn, account_id, contact_id).await?;
+        contacts::touch_contact(conn, account_id, contact_id, now).await?;
         import_contacts::record(conn, import_id, contact_id, ContactReason::IdentityAdded).await?;
     }
     Ok(Some(contact_id))

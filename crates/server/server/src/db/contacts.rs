@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use message_ir::IdentityService;
 use sqlx::SqliteConnection;
 
@@ -12,16 +12,17 @@ use crate::search::emit::NOT_TRASHED_CONTACT;
 
 pub mod read;
 
-/// Bump `contacts.last_modified` after the contact's name, identities or
-/// Contact Groups change.
+/// Set `contacts.last_modified` to `now` after the contact's name,
+/// identities or Contact Groups change.
 pub async fn touch_contact(
     conn: &mut SqliteConnection,
     account_id: i64,
     contact_id: i64,
+    now: DateTime<Utc>,
 ) -> Result<()> {
-    let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let last_modified = now.format("%Y-%m-%d %H:%M:%S").to_string();
     sqlx::query("UPDATE contacts SET last_modified = $1 WHERE id = $2 AND account_id = $3")
-        .bind(now)
+        .bind(last_modified)
         .bind(contact_id)
         .bind(account_id)
         .execute(&mut *conn)
@@ -74,7 +75,7 @@ impl Origin {
 ///
 /// An empty `name` says nothing about who someone is, so it never overwrites
 /// anything; only [`create_contact`] stores an empty name, for a contact
-/// nothing has named yet.
+/// nothing has named yet. A name that changes sets `last_modified` to `now`.
 ///
 /// # Errors
 ///
@@ -85,6 +86,7 @@ pub async fn propose_name(
     contact_id: i64,
     name: &str,
     by: Origin,
+    now: DateTime<Utc>,
 ) -> Result<bool> {
     let name = name.trim();
     if name.is_empty() {
@@ -117,7 +119,7 @@ pub async fn propose_name(
         .rows_affected()
         > 0;
     if changed {
-        touch_contact(conn, account_id, contact_id).await?;
+        touch_contact(conn, account_id, contact_id, now).await?;
     }
     Ok(changed)
 }

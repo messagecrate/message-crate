@@ -38,6 +38,7 @@ async fn append_skips_existing_guids_and_keeps_id_map() {
             account_id: TEST_ACCOUNT,
             import_id: None,
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
         }),
     )
     .await
@@ -74,6 +75,7 @@ async fn append_skips_existing_guids_and_keeps_id_map() {
             account_id: TEST_ACCOUNT,
             import_id: None,
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
         }),
     )
     .await
@@ -309,6 +311,7 @@ async fn append_adds_a_later_deletion_mark_to_a_stored_message_and_keeps_it() {
         account_id: TEST_ACCOUNT,
         import_id: None,
         phone_country: None,
+        now: crate::test_support::fixed_instant(),
     });
 
     let before = write_jsonl(
@@ -526,6 +529,7 @@ async fn append_existing_guid_adds_missing_children() {
         account_id: TEST_ACCOUNT,
         import_id: None,
         phone_country: None,
+        now: crate::test_support::fixed_instant(),
     });
     import_jsonl_files(&db, &[first], &options).await.unwrap();
 
@@ -613,6 +617,7 @@ async fn append_with_a_found_file_fills_in_the_missing_attachment() {
         account_id: TEST_ACCOUNT,
         import_id: None,
         phone_country: None,
+        now: crate::test_support::fixed_instant(),
     });
 
     // The first import has no file on disk, so the attachment is stored as missing.

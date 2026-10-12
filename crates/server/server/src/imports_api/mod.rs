@@ -97,6 +97,8 @@ pub struct ImportOptions<'a> {
     /// Where the import says how far it has got: standard output for the
     /// `import` command, the server's log for everything else.
     pub progress: Progress,
+    /// The instant the import stamps on each contact it changes.
+    pub now: chrono::DateTime<chrono::Utc>,
 }
 
 /// Path/mode fields for [`ImportOptions::fixed`].
@@ -117,6 +119,8 @@ pub struct FixedImportArgs<'a> {
     /// The country the run states for phone numbers written without a `+`
     /// code, as [`ImportOptions::phone_country`] says.
     pub phone_country: Option<&'static phone::Country>,
+    /// As [`ImportOptions::now`] says.
+    pub now: chrono::DateTime<chrono::Utc>,
 }
 
 /// The tools an import that copies its media as it is
@@ -140,6 +144,7 @@ impl<'a> ImportOptions<'a> {
             wipe_sources: None,
             phone_country: args.phone_country,
             progress: Progress::Log,
+            now: args.now,
         }
     }
 }
@@ -295,7 +300,7 @@ async fn complete_run_at(
 ) -> std::result::Result<imports::ImportRow, imports::ImportLookupError> {
     let row = imports::complete_import(conn, account_id, import_id, outcome, now).await?;
     create_import_saved_search(conn, account_id, &row).await;
-    create_import_contact_group(conn, account_id, &row).await;
+    create_import_contact_group(conn, account_id, &row, now).await;
     Ok(row)
 }
 
@@ -499,6 +504,7 @@ async fn stage_all_files(
         opts.import_id,
         identities,
         opts.phone_country,
+        opts.now,
     );
 
     for (idx, path) in paths.iter().enumerate() {
@@ -1664,11 +1670,12 @@ pub(crate) async fn list_import_contacts(
 ///
 /// A failure here is reported and swallowed, the same as the saved search: the
 /// messages are already in the database, and losing a shortcut is not a reason to
-/// call the import failed.
+/// call the import failed. Each member's `last_modified` is set to `now`.
 async fn create_import_contact_group(
     conn: &mut sqlx::SqliteConnection,
     account_id: i64,
     row: &crate::db::imports::ImportRow,
+    now: chrono::DateTime<chrono::Utc>,
 ) {
     let touched = match crate::db::import_contacts::contact_ids(conn, row.id).await {
         Ok(ids) if ids.is_empty() => return,
@@ -1706,6 +1713,7 @@ async fn create_import_contact_group(
         group_id,
         &touched,
         &[],
+        now,
     )
     .await
     {
@@ -2080,6 +2088,7 @@ async fn run_import_path(
         account_id: account,
         import_id: Some(import_id),
         phone_country,
+        now: chrono::Utc::now(),
     });
     let import_result =
         imports_api::import_jsonl_files_on_conn(&mut conn, &[jsonl_path], &opts).await;

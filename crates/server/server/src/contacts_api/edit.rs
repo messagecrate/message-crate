@@ -3,6 +3,7 @@
 //! `db::handles`; this module decides which to run and what to refuse.
 
 use anyhow::Result as AnyResult;
+use chrono::{DateTime, Utc};
 use message_ir::IdentityService;
 use sqlx::SqliteConnection;
 
@@ -130,7 +131,8 @@ impl UpdateContactRequest {
 ///
 /// The existence check, the claim check and the write all run in `tx`, the
 /// caller's write transaction, so an address book load or a delete cannot
-/// change the contact or its identities between them.
+/// change the contact or its identities between them. Each contact the edit
+/// changes is stamped `now`.
 ///
 /// # Errors
 ///
@@ -140,11 +142,13 @@ pub async fn mutate_contact(
     account_id: i64,
     contact_id: i64,
     body: &UpdateContactRequest,
+    now: DateTime<Utc>,
 ) -> Result<bool, ContactEditError> {
     let mut editor = ContactEditor {
         conn: tx,
         account_id,
         contact_id,
+        now,
     };
     if !editor.exists().await? {
         return Ok(false);
@@ -153,12 +157,14 @@ pub async fn mutate_contact(
 }
 
 /// One contact of one account under edit. Every edit reads and writes the
-/// contact's handle links, so the three things they all need live here and
-/// the edits are methods.
+/// contact's handle links, so the things they all need live here and the
+/// edits are methods.
 struct ContactEditor<'a> {
     conn: &'a mut SqliteConnection,
     account_id: i64,
     contact_id: i64,
+    /// The instant stamped on each contact the edit changes.
+    now: DateTime<Utc>,
 }
 
 /// Whether a handle may come to the contact an edit is for.
@@ -194,7 +200,7 @@ impl ContactEditor<'_> {
         set: &SetIdentityCountryRequest,
     ) -> Result<bool, ContactEditError> {
         let whose = Whose::Contact(self.contact_id);
-        set_identity_country(&mut *self.conn, self.account_id, whose, set)
+        set_identity_country(&mut *self.conn, self.account_id, whose, set, self.now)
             .await
             .map_err(ContactEditError::Country)?;
         self.touched().await
@@ -216,6 +222,7 @@ impl ContactEditor<'_> {
             self.contact_id,
             name,
             contacts::Origin::User,
+            self.now,
         )
         .await?;
         Ok(true)
@@ -394,10 +401,11 @@ impl ContactEditor<'_> {
         Ok(())
     }
 
-    /// Bump the contact's updated-at and report success, for edits that
-    /// changed the links but not the contact row.
+    /// Set the contact's updated-at to the edit's instant and report success,
+    /// for edits that changed the links but not the contact row.
     async fn touched(&mut self) -> Result<bool, ContactEditError> {
-        contacts::touch_contact(&mut *self.conn, self.account_id, self.contact_id).await?;
+        contacts::touch_contact(&mut *self.conn, self.account_id, self.contact_id, self.now)
+            .await?;
         Ok(true)
     }
 }

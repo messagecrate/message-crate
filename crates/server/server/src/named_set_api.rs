@@ -143,7 +143,7 @@ pub(crate) async fn delete(
     id: i64,
 ) -> Result<StatusCode, ApiError> {
     let mut conn = state.db.acquire().await?;
-    named_membership::delete_set(spec, &mut conn, account_id, id).await?;
+    named_membership::delete_set(spec, &mut conn, account_id, id, chrono::Utc::now()).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -180,9 +180,16 @@ pub(crate) async fn members_update(
     body: UpdateMembersRequest,
 ) -> Result<Json<UpdateMembersResponse>, ApiError> {
     let mut conn = state.db.acquire().await?;
-    let (added, removed) =
-        named_membership::patch_members(spec, &mut conn, account_id, id, &body.add, &body.remove)
-            .await?;
+    let (added, removed) = named_membership::patch_members(
+        spec,
+        &mut conn,
+        account_id,
+        id,
+        &body.add,
+        &body.remove,
+        chrono::Utc::now(),
+    )
+    .await?;
     Ok(Json(UpdateMembersResponse { added, removed }))
 }
 

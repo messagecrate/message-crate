@@ -45,6 +45,7 @@ async fn promote_stamps_messages_with_import_id() {
             account_id: TEST_ACCOUNT,
             import_id: Some(import_id),
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
         }),
     )
     .await
@@ -142,6 +143,7 @@ async fn trunk_zero_phone_imports_digits_with_review_note() {
             account_id: TEST_ACCOUNT,
             import_id: None,
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
         }),
     )
     .await
@@ -211,6 +213,7 @@ async fn source_from_jsonl_stamps_export_source_and_assets() {
             media_tools: &media::testutil::FakeTools::missing(),
             wipe_sources: Some(vec!["go-sms-pro".into()]),
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
             progress: Progress::Log,
         },
     )
@@ -262,6 +265,7 @@ async fn failed_replace_keeps_existing_messages() {
             account_id: TEST_ACCOUNT,
             import_id: None,
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
         }),
     )
     .await
@@ -290,6 +294,7 @@ async fn failed_replace_keeps_existing_messages() {
             account_id: TEST_ACCOUNT,
             import_id: None,
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
         }),
     )
     .await
@@ -350,6 +355,7 @@ async fn failed_promote_keeps_the_trashed_contact_and_adds_no_contacts() {
         account_id: TEST_ACCOUNT,
         import_id: None,
         phone_country: None,
+        now: crate::test_support::fixed_instant(),
     });
 
     // A first import makes Ada's contact; the person names it, puts it in a

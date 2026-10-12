@@ -13,6 +13,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use anyhow::Result as AnyResult;
+use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, SqlSafeStr, SqlStr, SqliteConnection};
 
 use crate::db::begin_write;
@@ -64,6 +65,7 @@ type ChangeHook = for<'a> fn(
     &'a mut SqliteConnection,
     i64,
     i64,
+    DateTime<Utc>,
 ) -> Pin<Box<dyn Future<Output = AnyResult<()>> + Send + 'a>>;
 
 /// Table names, labels, reserved names, and messages for one named set.
@@ -95,7 +97,8 @@ pub struct MembershipSpec {
     /// A character a name may not hold, with the reason written to follow
     /// "because".
     pub refused_char: Option<(char, &'static str)>,
-    /// Extra work after a membership change (groups touch the contact row).
+    /// Extra work after a membership change, at the instant the change passes
+    /// (groups touch the contact row).
     pub on_change: Option<ChangeHook>,
 }
 
@@ -199,14 +202,15 @@ pub fn group_spec() -> &'static MembershipSpec {
     &SPEC
 }
 
-/// Bump the member contact's updated-at, boxed so the spec table can hold it as a plain function pointer.
+/// Set the member contact's updated-at to `now`, boxed so the spec table can hold it as a plain function pointer.
 fn touch_member_owner<'a>(
     conn: &'a mut SqliteConnection,
     account_id: i64,
     member_id: i64,
+    now: DateTime<Utc>,
 ) -> Pin<Box<dyn Future<Output = AnyResult<()>> + Send + 'a>> {
     Box::pin(crate::db::contacts::touch_contact(
-        conn, account_id, member_id,
+        conn, account_id, member_id, now,
     ))
 }
 
@@ -339,6 +343,7 @@ pub async fn set_membership(
     member_ids: &[i64],
     name: &str,
     enable: bool,
+    now: DateTime<Utc>,
 ) -> Result<u64, MembershipError> {
     let ids = clean_ids(member_ids);
     if ids.is_empty() {
@@ -401,7 +406,7 @@ pub async fn set_membership(
         if n > 0 {
             changed += 1;
             if let Some(hook) = spec.on_change {
-                hook(conn, account_id, id)
+                hook(conn, account_id, id, now)
                     .await
                     .map_err(MembershipError::Internal)?;
             }
@@ -531,13 +536,14 @@ pub async fn rename_set(
 }
 
 /// Delete a set by id, and its memberships, in one transaction. The
-/// `on_change` hook runs once for each member, as it does when
+/// `on_change` hook runs once for each member, at `now`, as it does when
 /// `patch_members` takes a member out, because each member's sets changed.
 pub async fn delete_set(
     spec: &MembershipSpec,
     conn: &mut SqliteConnection,
     account_id: i64,
     id: i64,
+    now: DateTime<Utc>,
 ) -> Result<(), MembershipError> {
     let mut tx = begin_write(conn).await?;
     get_set(spec, &mut tx, account_id, id).await?;
@@ -562,7 +568,7 @@ pub async fn delete_set(
         .await?;
     if let Some(hook) = spec.on_change {
         for member in members {
-            hook(&mut tx, account_id, member)
+            hook(&mut tx, account_id, member, now)
                 .await
                 .map_err(MembershipError::Internal)?;
         }
@@ -600,7 +606,7 @@ pub async fn list_member_ids_of(
 /// `removed` counts only the rows that were deleted. An id present in both
 /// `add` and `remove` nets to "removed": it is dropped from `add` so it is
 /// deleted, not inserted then deleted, and the `on_change` hook fires once
-/// for it rather than twice.
+/// for it rather than twice. The hook runs at `now`.
 pub async fn patch_members(
     spec: &MembershipSpec,
     conn: &mut SqliteConnection,
@@ -608,6 +614,7 @@ pub async fn patch_members(
     id: i64,
     add: &[i64],
     remove: &[i64],
+    now: DateTime<Utc>,
 ) -> Result<(u64, u64), MembershipError> {
     // The checks and the writes are one write transaction: the set and every
     // id to add are as they were checked when the rows go in, and a failure
@@ -658,7 +665,7 @@ pub async fn patch_members(
         if n > 0 {
             added += 1;
             if let Some(hook) = spec.on_change {
-                hook(conn, account_id, member)
+                hook(conn, account_id, member, now)
                     .await
                     .map_err(MembershipError::Internal)?;
             }
@@ -676,7 +683,7 @@ pub async fn patch_members(
         if n > 0 {
             removed += 1;
             if let Some(hook) = spec.on_change {
-                hook(conn, account_id, member)
+                hook(conn, account_id, member, now)
                     .await
                     .map_err(MembershipError::Internal)?;
             }

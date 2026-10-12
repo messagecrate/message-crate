@@ -24,6 +24,7 @@ async fn import_one_message(conn: &mut SqliteConnection, dir: &std::path::Path, 
             account_id: TEST_ACCOUNT,
             import_id: None,
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
         }),
     )
     .await

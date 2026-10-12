@@ -293,9 +293,17 @@ async fn an_import_leaves_a_hand_made_contact_group_with_its_name_alone() {
             .await
             .unwrap()
             .id;
-        crate::db::named_membership::patch_members(spec, &mut conn, account, group, &[friend], &[])
-            .await
-            .unwrap();
+        crate::db::named_membership::patch_members(
+            spec,
+            &mut conn,
+            account,
+            group,
+            &[friend],
+            &[],
+            crate::test_support::fixed_instant(),
+        )
+        .await
+        .unwrap();
     }
     drop(conn);
 

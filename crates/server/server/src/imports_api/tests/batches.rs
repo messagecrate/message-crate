@@ -959,6 +959,7 @@ async fn a_batch_for_an_account_deleted_while_it_waited_brings_no_account_back()
         &mut conn,
         account,
         crate::db::audit_trail::AuditActor::Owner,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -992,6 +993,7 @@ async fn an_import_run_for_a_deleted_account_brings_no_account_back() {
         &mut conn,
         account,
         crate::db::audit_trail::AuditActor::Owner,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();

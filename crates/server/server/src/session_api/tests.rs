@@ -273,7 +273,9 @@ async fn logout_on_conn_leaves_registered_account() {
         .await
         .unwrap();
 
-    logout_on_conn(&mut conn, &token).await.unwrap();
+    logout_on_conn(&mut conn, &token, crate::test_support::fixed_instant())
+        .await
+        .unwrap();
 
     assert_eq!(
         account_profile::username_for_account(&mut conn, TEST_ACCOUNT)
@@ -541,7 +543,13 @@ async fn a_login_whose_session_row_appears_meanwhile_still_signs_in() {
     let mut conn = fixture.conn().await;
     let created = crate::db::write_tx::commit_during(
         other,
-        CreateSessionResponse::for_existing_account(&mut conn, account, "alice".into(), None),
+        CreateSessionResponse::for_existing_account(
+            &mut conn,
+            account,
+            "alice".into(),
+            None,
+            crate::test_support::fixed_instant(),
+        ),
     )
     .await
     .expect("the second login signs in");
@@ -573,10 +581,15 @@ async fn a_login_to_an_account_disabled_during_its_password_check_opens_no_sessi
         .await
         .unwrap();
 
-    let opened =
-        CreateSessionResponse::for_existing_account(&mut conn, account, "alice".into(), None)
-            .await
-            .unwrap();
+    let opened = CreateSessionResponse::for_existing_account(
+        &mut conn,
+        account,
+        "alice".into(),
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
     assert!(matches!(opened, LoginOpened::Disabled));
     assert_eq!(session_rows(&mut conn, account).await, 0);

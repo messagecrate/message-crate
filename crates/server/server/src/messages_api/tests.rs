@@ -408,6 +408,7 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
             account_id,
             import_id: None,
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
         }),
     )
     .await
@@ -493,6 +494,7 @@ async fn import_conversation_file(
             account_id,
             import_id: None,
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
         }),
     )
     .await

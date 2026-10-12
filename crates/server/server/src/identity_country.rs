@@ -83,7 +83,8 @@ impl From<CountryError> for crate::server::ApiError {
 
 /// Give the identity `request` names the `+` form its country gives it, and
 /// merge it into the identity already holding that form when the request
-/// says to. Runs in the caller's write transaction.
+/// says to. Runs in the caller's write transaction, stamping each contact it
+/// changes `now`.
 ///
 /// # Errors
 ///
@@ -96,6 +97,7 @@ pub async fn set_identity_country(
     account_id: i64,
     whose: Whose,
     request: &SetIdentityCountryRequest,
+    now: chrono::DateTime<chrono::Utc>,
 ) -> Result<(), CountryError> {
     let Some(country) = phone::country(&request.country) else {
         return Err(CountryError::Refused(format!(
@@ -177,8 +179,9 @@ pub async fn set_identity_country(
     // one-to-one conversation, or a member of a group, so the with-yourself
     // rule runs again around it, as it does for any identity change (#1662).
     let before = with_yourself::before_identity_change(conn, account_id).await?;
-    let changed = identity_country::give_country(conn, account_id, &form, edited_contact).await?;
-    with_yourself::follow_identities(conn, before).await?;
+    let changed =
+        identity_country::give_country(conn, account_id, &form, edited_contact, now).await?;
+    with_yourself::follow_identities(conn, before, now).await?;
     // A merged conversation or sender changes the content keys of the
     // messages that moved, so their duplicate flags are worked out again.
     crate::dedupe::dedupe_changed_messages(

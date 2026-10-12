@@ -273,9 +273,11 @@ fn prepare_attachments(
 /// multi-row chunks. Handle ids are remembered so the same sender is not
 /// looked up on every message.
 pub(super) struct StagingInserts {
-    account_id: i64,
-    import_id: Option<i64>,
-    handles: HandleIdCache,
+    pub(super) account_id: i64,
+    pub(super) import_id: Option<i64>,
+    /// The instant stamped on each contact the run changes.
+    pub(super) now: chrono::DateTime<chrono::Utc>,
+    pub(super) handles: HandleIdCache,
     /// Handle ids of the account holder's own addresses met in this run, by
     /// address and service. Apart from `handles`, whose entries each have a
     /// contact: an owner's handle never gets one (ADR-0015).
@@ -283,7 +285,7 @@ pub(super) struct StagingInserts {
     /// The account's identities, as `(normalized address, handle type)`.
     /// A participant at one of them is the holder, who is never a
     /// participant (ADR-0015, #1093).
-    identities: HashSet<(String, IdentityType)>,
+    pub(super) identities: HashSet<(String, IdentityType)>,
 }
 
 impl StagingInserts {
@@ -291,15 +293,18 @@ impl StagingInserts {
     /// holds when the run starts.
     /// Every phone number the run writes without its `+` code is read in
     /// `phone_country`, the country the run states, when it states one.
+    /// Each contact the run changes is stamped `now`.
     pub(super) fn new(
         account_id: i64,
         import_id: Option<i64>,
         identities: HashSet<(String, IdentityType)>,
         phone_country: Option<&'static phone::Country>,
+        now: chrono::DateTime<chrono::Utc>,
     ) -> Self {
         Self {
             account_id,
             import_id,
+            now,
             handles: HandleIdCache::in_country(phone_country),
             owners: HashMap::new(),
             identities,
@@ -552,6 +557,7 @@ impl FileStaging<'_> {
                 chat_handle_id,
                 None,
                 &mut counts,
+                self.stmts.now,
             )
             .await?;
         }
@@ -724,6 +730,7 @@ async fn insert_participant(
         handle_id,
         backup_name.as_deref(),
         counts,
+        stmts.now,
     )
     .await?;
     // `participants.name_alias` keeps what this backup called them in this
@@ -768,10 +775,7 @@ async fn resolve_message_rows(
             .map_or(service, IdentityService::parse);
         let sender_handle_id = resolve_incoming_sender_handle(
             tx,
-            &mut stmts.handles,
-            &stmts.identities,
-            stmts.account_id,
-            stmts.import_id,
+            stmts,
             IncomingSender {
                 is_from_me: msg.is_from_me,
                 value: msg.sender.as_ref(),
@@ -1089,10 +1093,7 @@ async fn tapback_row(
     let reactor = tap.sender.clone().map(HandleValue::Address);
     let sender_handle_id = resolve_incoming_sender_handle(
         tx,
-        &mut stmts.handles,
-        &stmts.identities,
-        stmts.account_id,
-        stmts.import_id,
+        stmts,
         IncomingSender {
             is_from_me: tap.is_from_me,
             value: reactor.as_ref(),

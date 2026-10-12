@@ -23,7 +23,7 @@
 //! username. A password that is also a valid username is still kept.
 
 use anyhow::{Context, Result};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqliteConnection};
 
@@ -634,23 +634,27 @@ impl<'a> NewEntry<'a> {
     }
 }
 
-/// The time an entry is stamped with, written as `imports.started_at` is, so
-/// entries and runs sort together.
-fn now_text() -> String {
-    Utc::now().to_rfc3339()
+/// The time an entry is stamped with, `now` written as `imports.started_at`
+/// is, so entries and runs sort together.
+fn at_text(now: DateTime<Utc>) -> String {
+    now.to_rfc3339()
 }
 
-/// Write one entry and return its id.
+/// Write one entry, stamped `now`, and return its id.
 ///
 /// # Errors
 ///
 /// Returns an error when the insert fails.
-pub async fn record(conn: &mut SqliteConnection, entry: &NewEntry<'_>) -> Result<i64> {
-    insert(conn, entry, None, None).await
+pub async fn record(
+    conn: &mut SqliteConnection,
+    entry: &NewEntry<'_>,
+    now: DateTime<Utc>,
+) -> Result<i64> {
+    insert(conn, entry, None, None, now).await
 }
 
-/// Write one entry about the account `account_id`, looking its username up.
-/// Nothing is written when the account does not exist.
+/// Write one entry about the account `account_id`, looking its username up,
+/// stamped `now`. Nothing is written when the account does not exist.
 ///
 /// # Errors
 ///
@@ -661,6 +665,7 @@ pub async fn record_about(
     actor: AuditActor,
     account_id: i64,
     details: Details,
+    now: DateTime<Utc>,
 ) -> Result<()> {
     let Some(username) = account_profile::username_for_account(conn, account_id).await? else {
         return Ok(());
@@ -668,6 +673,7 @@ pub async fn record_about(
     record(
         conn,
         &NewEntry::about(action, actor, (account_id, &username)).with_details(details),
+        now,
     )
     .await?;
     Ok(())
@@ -682,7 +688,7 @@ pub async fn record_about(
 /// The entry is `demo_account_reset` when the build `replaced` a Demo
 /// Account and `demo_account_added` when there was none. It is about no
 /// account: the old Demo Account is deleted by then, and the new one not
-/// yet written.
+/// yet written. It is stamped `now`.
 ///
 /// # Errors
 ///
@@ -692,8 +698,9 @@ pub async fn record_demo_build_after_removal(
     actor: AuditActor,
     size: DemoDataSize,
     replaced: bool,
+    now: DateTime<Utc>,
 ) -> Result<()> {
-    record(conn, &demo_build_entry(actor, size, replaced, None)).await?;
+    record(conn, &demo_build_entry(actor, size, replaced, None), now).await?;
     Ok(())
 }
 
@@ -728,6 +735,7 @@ async fn insert(
     entry: &NewEntry<'_>,
     session_entry_id: Option<i64>,
     session_expires_at: Option<&str>,
+    now: DateTime<Utc>,
 ) -> Result<i64> {
     let details = (entry.details != Details::default())
         .then(|| serde_json::to_string(&entry.details))
@@ -739,7 +747,7 @@ async fn insert(
          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING id",
     )
-    .bind(now_text())
+    .bind(at_text(now))
     .bind(entry.action.as_str())
     .bind(entry.actor.as_str())
     .bind(entry.account_id)
@@ -764,7 +772,7 @@ fn expiry_text(expires_at_unix: u64) -> String {
         .to_rfc3339()
 }
 
-/// Write the `logged_in` entry for a Session that expires at
+/// Write the `logged_in` entry, stamped `now`, for a Session that expires at
 /// `expires_at_unix`, and return its id for the session row to keep.
 ///
 /// # Errors
@@ -775,6 +783,7 @@ pub async fn record_login(
     account: (i64, &str),
     app: Option<&ConnectingApp>,
     expires_at_unix: u64,
+    now: DateTime<Utc>,
 ) -> Result<i64> {
     let entry = NewEntry {
         app,
@@ -784,14 +793,14 @@ pub async fn record_login(
             account,
         )
     };
-    insert(conn, &entry, None, Some(&expiry_text(expires_at_unix))).await
+    insert(conn, &entry, None, Some(&expiry_text(expires_at_unix)), now).await
 }
 
-/// Write the `password_set` entry for a holder changing their own password.
-/// The change renews their Session, so when `renewed` names its `logged_in`
-/// entry and new expiry, this entry links to that login and holds the
-/// expiry: entries are never edited, so the read takes the latest expiry a
-/// login's entries hold.
+/// Write the `password_set` entry, stamped `now`, for a holder changing their
+/// own password. The change renews their Session, so when `renewed` names its
+/// `logged_in` entry and new expiry, this entry links to that login and holds
+/// the expiry: entries are never edited, so the read takes the latest expiry
+/// a login's entries hold.
 ///
 /// # Errors
 ///
@@ -800,6 +809,7 @@ pub async fn record_own_password_change(
     conn: &mut SqliteConnection,
     account_id: i64,
     renewed: Option<(i64, u64)>,
+    now: DateTime<Utc>,
 ) -> Result<()> {
     let Some(username) = account_profile::username_for_account(conn, account_id).await? else {
         return Ok(());
@@ -815,13 +825,14 @@ pub async fn record_own_password_change(
         &entry,
         renewed.map(|(login_entry_id, _)| login_entry_id),
         expiry.as_deref(),
+        now,
     )
     .await?;
     Ok(())
 }
 
-/// Write the `session_ended` entry for the Session whose `logged_in` entry is
-/// `login_entry_id`.
+/// Write the `session_ended` entry, stamped `now`, for the Session whose
+/// `logged_in` entry is `login_entry_id`.
 ///
 /// # Errors
 ///
@@ -831,6 +842,7 @@ pub async fn record_session_end(
     login_entry_id: i64,
     reason: AuditReason,
     actor: AuditActor,
+    now: DateTime<Utc>,
 ) -> Result<()> {
     let login: Option<(Option<i64>, Option<String>)> =
         sqlx::query_as("SELECT account_id, username FROM audit_entries WHERE id = $1")
@@ -849,13 +861,13 @@ pub async fn record_session_end(
         app: None,
         details: Details::default(),
     };
-    insert(conn, &entry, Some(login_entry_id), None).await?;
+    insert(conn, &entry, Some(login_entry_id), None, now).await?;
     Ok(())
 }
 
-/// Write the entry for a refused login. `account` is the account the
-/// username named, when it named one. Otherwise the entry belongs to no
-/// account and keeps the username, trimmed, only when
+/// Write the entry for a refused login, stamped `now`. `account` is the
+/// account the username named, when it named one. Otherwise the entry
+/// belongs to no account and keeps the username, trimmed, only when
 /// `require_valid_username` accepts it; the module comment says why. It also
 /// writes a warning to the server's log, with the account's id, the reason
 /// and the app.
@@ -869,6 +881,7 @@ pub async fn record_refused_login(
     account: Option<(i64, &str)>,
     reason: AuditReason,
     app: Option<&ConnectingApp>,
+    now: DateTime<Utc>,
 ) -> Result<()> {
     // The owner's Logs panel shows what the Audit Trail shows one account at
     // a time. The line names the account by its id, never the username
@@ -892,21 +905,20 @@ pub async fn record_refused_login(
         app,
         details: Details::default(),
     };
-    insert(conn, &entry, None, None).await?;
+    insert(conn, &entry, None, None, now).await?;
     Ok(())
 }
 
 /// Delete the refused logins as a username no account held that are older
-/// than [`UNKNOWN_USERNAME_RETENTION_DAYS`]. Run when a login is handled, so
-/// the record of them stays bounded with no sweeper. Nothing else in the
-/// Audit Trail is ever deleted.
+/// than [`UNKNOWN_USERNAME_RETENTION_DAYS`] at `now`. Run when a login is
+/// handled, so the record of them stays bounded with no sweeper. Nothing else
+/// in the Audit Trail is ever deleted.
 ///
 /// # Errors
 ///
 /// Returns an error when the delete fails.
-pub async fn trim_refused_logins(conn: &mut SqliteConnection) -> Result<u64> {
-    let cutoff =
-        (Utc::now() - chrono::Duration::days(UNKNOWN_USERNAME_RETENTION_DAYS)).to_rfc3339();
+pub async fn trim_refused_logins(conn: &mut SqliteConnection, now: DateTime<Utc>) -> Result<u64> {
+    let cutoff = (now - chrono::Duration::days(UNKNOWN_USERNAME_RETENTION_DAYS)).to_rfc3339();
     let deleted = sqlx::query(
         "DELETE FROM audit_entries
          WHERE action = 'login_refused' AND reason = 'unknown_username' AND at < $1",
@@ -930,7 +942,8 @@ pub async fn trim_refused_logins(conn: &mut SqliteConnection) -> Result<u64> {
 /// runs keep its username and lose what describes the person's messages
 /// ([`crate::db::imports::detach_from_account`],
 /// [`crate::db::exports::detach_from_account`]). The delete that follows
-/// sets `account_id` NULL on the runs and entries.
+/// sets `account_id` NULL on the runs and entries. Everything it writes is
+/// stamped `now`.
 ///
 /// # Errors
 ///
@@ -939,14 +952,16 @@ pub async fn prepare_account_deletion(
     tx: &mut crate::db::WriteTx<'_>,
     account_id: i64,
     actor: AuditActor,
+    now: DateTime<Utc>,
 ) -> Result<bool> {
     let Some(username) = account_profile::username_for_account(tx, account_id).await? else {
         return Ok(false);
     };
-    crate::db::session_tokens::revoke_account_sessions(tx, account_id, actor).await?;
+    crate::db::session_tokens::revoke_account_sessions(tx, account_id, actor, now).await?;
     let deletion = record(
         tx,
         &NewEntry::about(AuditAction::AccountDeleted, actor, (account_id, &username)),
+        now,
     )
     .await?;
     sqlx::query("UPDATE audit_entries SET deletion_entry_id = $2 WHERE account_id = $1")
@@ -955,7 +970,7 @@ pub async fn prepare_account_deletion(
         .execute(&mut **tx)
         .await
         .context("mark a deleted account's entries")?;
-    let now = now_text();
+    let now = at_text(now);
     crate::db::imports::detach_from_account(tx, account_id, &username, deletion, &now).await?;
     crate::db::exports::detach_from_account(tx, account_id, &username, deletion, &now).await?;
     Ok(true)
@@ -1058,7 +1073,8 @@ fn sources_sql() -> String {
 }
 
 /// One page of the Audit Trail, newest first, and how many entries it holds
-/// in all.
+/// in all, read at `now`: a Session that runs out after `now` is not shown
+/// as ended.
 ///
 /// # Errors
 ///
@@ -1068,8 +1084,9 @@ pub async fn page(
     scope: Scope,
     limit: usize,
     offset: usize,
+    now: DateTime<Utc>,
 ) -> Result<(Vec<AuditEntry>, u64)> {
-    let now = now_text();
+    let now = at_text(now);
     let (filter, id) = match scope {
         Scope::All => ("", None),
         Scope::Account(id) => ("WHERE account_id = $2", Some(id)),

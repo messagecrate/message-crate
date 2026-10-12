@@ -41,6 +41,7 @@ async fn a_file_two_messages_name_counts_once_in_storage() {
         account_id: TEST_ACCOUNT,
         import_id: None,
         phone_country: None,
+        now: crate::test_support::fixed_instant(),
     });
     import_jsonl_files(&db, std::slice::from_ref(&path), &options)
         .await
@@ -114,6 +115,7 @@ async fn media_none_skips_attachment_copy() {
             media_tools: &media::testutil::FakeTools::missing(),
             wipe_sources: Some(vec!["sms".into()]),
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
             progress: Progress::Log,
         },
     )
@@ -168,6 +170,7 @@ async fn media_convert_stores_the_converted_file_not_the_original() {
                 media_tools: &tools,
                 wipe_sources: Some(vec!["imessage".into()]),
                 phone_country: None,
+                now: crate::test_support::fixed_instant(),
                 progress: Progress::Log,
             },
         )
@@ -233,6 +236,7 @@ async fn the_hevc_fallback_warning_says_why_and_names_no_file() {
                 media_tools: &tools,
                 wipe_sources: Some(vec!["imessage".into()]),
                 phone_country: None,
+                now: crate::test_support::fixed_instant(),
                 progress: Progress::Log,
             },
         ),
@@ -296,6 +300,7 @@ async fn persists_missing_reason_with_null_sha256() {
             account_id: TEST_ACCOUNT,
             import_id: None,
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
         }),
     )
     .await
@@ -437,6 +442,7 @@ async fn claimed_import_rejects_corrupt_existing_asset() {
             account_id: TEST_ACCOUNT,
             import_id: None,
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
         }),
     )
     .await
@@ -486,6 +492,7 @@ async fn rejects_attachment_path_traversal() {
             account_id: TEST_ACCOUNT,
             import_id: None,
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
         }),
     )
     .await
@@ -530,6 +537,7 @@ async fn import_photo_stating(on_disk: &[u8], stated: &str) -> String {
             account_id: TEST_ACCOUNT,
             import_id: None,
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
         }),
     )
     .await
