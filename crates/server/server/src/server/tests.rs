@@ -2527,6 +2527,101 @@ fn a_logged_uri_hides_a_search_and_every_value_that_is_not_a_number_or_a_fixed_w
     }
 }
 
+/// A URI longer than the limit is cut on a character boundary and marked,
+/// so a request with a long path, which needs no credential, writes a line
+/// of a bounded length (#2088). One at the limit is kept whole.
+#[test]
+fn a_logged_uri_is_cut_at_its_limit_and_marked() {
+    for filler in ["a", "é"] {
+        // 60 KB of path, near the most a URI holds (64 KiB); `é` is two
+        // bytes, so the cut can land inside one.
+        let long: axum::http::Uri = format!("/{}?q=Ada", filler.repeat(60_000 / filler.len()))
+            .parse()
+            .unwrap();
+        let logged = logged_uri(&long);
+        assert!(logged.len() <= LOGGED_URI_BYTES, "{}", logged.len());
+        assert!(
+            logged.len() > LOGGED_URI_BYTES - LOGGED_URI_CUT.len() - filler.len(),
+            "{}",
+            logged.len()
+        );
+        assert!(logged.ends_with(LOGGED_URI_CUT), "{logged}");
+        assert!(logged.starts_with(&format!("/{filler}")), "{logged}");
+    }
+
+    let at_limit: axum::http::Uri = format!("/{}", "a".repeat(LOGGED_URI_BYTES - 1))
+        .parse()
+        .unwrap();
+    assert_eq!(logged_uri(&at_limit), at_limit.path());
+}
+
+/// A handler that panics is answered like any other internal failure: a
+/// `500 Internal Server Error` problem document carrying the request's id,
+/// the same id as the `x-request-id` header, and one `ERROR` line in the
+/// server's log that says the handler panicked, under that request's id
+/// (#2060). Without the catch, the connection closed with no answer at all.
+#[tokio::test]
+async fn a_handler_that_panics_answers_a_500_problem_with_its_request_id() {
+    use crate::logging::{LogFiles, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
+
+    async fn panics() -> StatusCode {
+        panic!("the handler this test makes panic");
+    }
+
+    let fixture = test_fixture().await;
+    let routes = Router::new().route("/v1/panics", axum::routing::get(panics));
+    let dir = TempDir::new().unwrap();
+    let log_dir = dir.path().join("logs");
+    let files = LogFiles::open(&log_dir, SERVER_LOG_LIMITS).unwrap();
+    let response = {
+        // The test's runtime has one thread, so the server's tasks write
+        // through this thread's subscriber too.
+        let _subscriber =
+            tracing::subscriber::set_default(crate::logging::subscriber_for(files, "info"));
+        let server =
+            crate::test_support::serve_router(with_server_layers(routes, fixture.state.clone()))
+                .await;
+        http_client()
+            .get(format!("{}/v1/panics", server.base()))
+            .send()
+            .await
+            .expect("the server answers a request whose handler panicked")
+    };
+
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let header_id = response
+        .headers()
+        .get(crate::request_id::HEADER)
+        .and_then(|v| v.to_str().ok())
+        .expect("the answer carries its request id")
+        .to_string();
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["status"], 500, "{body}");
+    assert_eq!(body["type"], crate::problem::INTERNAL_TYPE, "{body}");
+    assert_eq!(body["request_id"], header_id.as_str(), "{body}");
+
+    let lines = read_lines(
+        &log_dir,
+        &LogLinesQuery {
+            limit: 100,
+            ..LogLinesQuery::default()
+        },
+    )
+    .unwrap()
+    .0;
+    let errors: Vec<_> = lines
+        .iter()
+        .filter(|line| line.level == LogLevel::Error)
+        .collect();
+    assert_eq!(errors.len(), 1, "{lines:#?}");
+    assert!(
+        errors[0].text.contains("the request's handler panicked"),
+        "{}",
+        errors[0].text
+    );
+    assert!(errors[0].text.contains(&header_id), "{}", errors[0].text);
+}
+
 /// Every `/v1` answer that sets no `Cache-Control` of its own carries
 /// `no-store`, so neither a browser's disk cache nor a proxy keeps a Session
 /// token, message text or a refusal (#2295). That holds for an answer a

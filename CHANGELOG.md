@@ -1016,6 +1016,17 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-11: **The server's log holds what it was missing.** A request
+  that broke the server in an unexpected way closed the connection with no
+  answer and left nothing in the log. It now gets the same "internal server
+  error" answer, with a request id, as any other failure, and the log says
+  what went wrong, where. The same holds for any other part of the server
+  that breaks this way. The lines a starting server writes, and the reason
+  it stops or will not start, are now in the log as well, so the Logs panel
+  shows them, and so is every step of adding or rebuilding the Demo
+  Account. A request with a very long address now leaves a line of at most
+  2,048 characters, so nobody can fill the log with a few long requests and
+  push older lines out.
 - 2026-10-11: **Logins under made-up usernames are limited.** Each username
   that names no account had its own limit, so a script trying a new name
   each time was never slowed, kept the server busy checking passwords, and

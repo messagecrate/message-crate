@@ -53,3 +53,42 @@ fn any_other_failure_to_serve_is_not_the_lock_held_code() {
         "{status}"
     );
 }
+
+/// Everything in the server's log files in `data_dir`.
+fn log_text(data_dir: &std::path::Path) -> String {
+    let mut text = String::new();
+    for entry in std::fs::read_dir(data_dir.join("logs")).unwrap() {
+        text.push_str(&std::fs::read_to_string(entry.unwrap().path()).unwrap());
+    }
+    text
+}
+
+/// `serve`'s start-up lines and a failure to start reach the server's log,
+/// not stderr alone, so the owner of a Message Crate in Docker or in the
+/// desktop app can read why it would not start (#2079).
+#[test]
+fn serve_writes_its_start_and_a_failure_to_start_in_the_server_log() {
+    let root = tempfile::tempdir().unwrap();
+    let (data_dir, static_dir) = empty_message_crate(root.path());
+
+    let (_first, _address) = listen(&mut serve(&data_dir, &static_dir));
+    let started = log_text(&data_dir);
+    let open_line = started
+        .lines()
+        .find(|line| line.contains("is open, in journal mode"))
+        .unwrap_or_else(|| panic!("no line says the database is open:\n{started}"));
+    assert!(open_line.contains(" INFO "), "{open_line}");
+
+    // The first server holds the operation lock, so the second stops after
+    // it has opened the log.
+    let mut second = Running::spawn(&mut serve(&data_dir, &static_dir));
+    second
+        .exit_by(Instant::now() + WAIT)
+        .expect("the server never exited");
+    let after = log_text(&data_dir);
+    let failure = after
+        .lines()
+        .find(|line| line.contains("while reset-demo or another server is active"))
+        .unwrap_or_else(|| panic!("no line says why the second server stopped:\n{after}"));
+    assert!(failure.contains(" ERROR "), "{failure}");
+}

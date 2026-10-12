@@ -10,8 +10,7 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            // What `fn main() -> Result<()>` writes for an error.
-            eprintln!("Error: {error:?}");
+            message_crate_server::logging::write_failure(&error);
             ExitCode::from(message_crate_server::cli::exit_code(&error))
         }
     }

@@ -491,6 +491,15 @@ the sentence.
 Rejected: a request id on `5xx` only. A body whose members vary by status is
 the drift the one-shape rule exists to stop.
 
+A handler that panics answers the same `500 Internal Server Error` problem
+document, with its `request_id`, as any other internal failure: the
+innermost layer of the router catches the panic (`answer_panic` in
+`crates/server/server/src/server.rs`), so every layer outside it, CORS and
+the request's log line included, treats the answer as it treats any `500`.
+Why: an uncaught panic closed the connection with no answer, so the person
+saw a network error with no id to report
+([#2060](https://github.com/messagecrate/message-crate/issues/2060)).
+
 `/health` answers `ok` only when the server can take a database connection
 and run `SELECT 1` on it within 1.5 seconds (`HEALTH_DATABASE_LIMIT` in
 `crates/server/server/src/server.rs`). When it cannot, it fails as a `/v1`

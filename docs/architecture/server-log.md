@@ -34,9 +34,50 @@ read it.
 Rejected: a table in the database. It is the one store that is missing when
 the log is needed most.
 
+`serve` opens the log before anything else that can fail, then writes
+every line through it: where the log is, the database it opened and its
+journal mode, a part-built Demo Account it removed, the attachment limits,
+a SIGTERM it cannot catch, and the Demo Account build it runs on a new
+database or for the owner. An error that stops `serve` after the log is open,
+a database that cannot be opened, another server holding the operation lock,
+an address that cannot be bound, is written at `ERROR` with its whole chain
+(`logging::write_failure`). One line is on stderr alone: the one that says
+where the server listens (`LISTENING_LINE` in
+`crates/libs/serve-protocol`), which the desktop app and the tests read
+there by how it starts.
+
+Why: a Message Crate that will not start, or misbehaves from its first
+minute, is when the owner needs these lines, and stderr is the place the
+owner of Docker or the desktop app cannot read
+([#2079](https://github.com/messagecrate/message-crate/issues/2079),
+[#2018](https://github.com/messagecrate/message-crate/issues/2018)).
+
 The other subcommands (`import`, `reset-demo`, `process-assets`, and the rest)
 write to stderr only. They are run by hand from a shell that already shows
 their output, and they are not the server.
+
+## A panic is written as an `ERROR` line
+
+A panic on any thread of the server, in a request handler, the media pass or
+any other work, leaves one `ERROR` line, `A thread of the server panicked`,
+with the panic's message and the file and line it happened at. The panic hook
+`logging::init` installs writes it, under the span the panic happened in, so
+a handler's panic carries its request's id. Rust's own hook, which writes to
+stderr alone, runs as well only when `RUST_BACKTRACE` asks for a backtrace.
+A handler that panics is answered with a `500 Internal Server Error`
+([The HTTP interface, "Failures"](http-api.md#failures)), which writes its
+own `ERROR` line as every `500` does, so such a request leaves two.
+
+Why: a panic was the one failure that reached stderr alone, so the owner's
+Logs panel showed nothing for the request that broke
+([#2060](https://github.com/messagecrate/message-crate/issues/2060),
+[#2086](https://github.com/messagecrate/message-crate/issues/2086)).
+
+The panic's message is written as Rust gives it. The server's own panics
+carry fixed text, but a panic inside the standard library can quote a value,
+such as the text a string was sliced from. That is the one place a line can
+hold what the rule below keeps out, and it is accepted: a panic is a bug, and
+its message is what makes it possible to fix.
 
 ## One line per event
 
@@ -244,6 +285,14 @@ fixed word (`after`, `around`, `before`, `deleted_account_id`, `level`,
 credential; the log's own `text` filter; and any parameter added later, until
 someone adds it to the list. Every event the server writes is held to the same
 rule by whoever writes it.
+
+The path and query a line names are cut at 2,048 bytes, on a character
+boundary, and end in `...[cut]` when they are (`logged_uri` in
+`crates/server/server/src/server.rs`). Why: a request needs no credential to
+leave its line, and a URI can be 64 KiB long, so without the cut anyone who
+can reach the port could fill the 250 MB the log keeps with a few thousand
+requests and push every other line off the disk
+([#2088](https://github.com/messagecrate/message-crate/issues/2088)).
 
 `crates/server/server/tests/server_log.rs` checks it: it runs `serve` at
 `RUST_LOG=trace`, has an owner, an account and an API token log in, import a

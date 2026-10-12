@@ -65,7 +65,7 @@ struct PreparedBundle {
 /// [`DEMO_IMPORT_SOURCES`], so the sources, their order, and their
 /// Replace-then-Append modes are written down once.
 struct DemoImportSource {
-    /// Label printed in the table [`print_reset_header`] prints.
+    /// Label printed in the table [`say_reset_header`] says.
     label: &'static str,
     /// Source id recorded on the imported conversations.
     source: &'static str,
@@ -96,18 +96,23 @@ const DEMO_IMPORT_SOURCES: [DemoImportSource; 3] = [
     },
 ];
 
-/// Print the "preparing replacement" header every demo build prints.
-fn print_reset_header(account_id: i64, prepared: &PreparedBundle, db: &dyn std::fmt::Display) {
-    println!("The Demo Account is built from these files");
-    println!("  account:      {account_id}");
+/// Say, through `progress`, which files every demo build is built from.
+fn say_reset_header(
+    account_id: i64,
+    prepared: &PreparedBundle,
+    db: &dyn std::fmt::Display,
+    progress: Progress,
+) {
+    progress.heading("The Demo Account is built from these files");
+    progress.say(format_args!("account:      {account_id}"));
     for source in &DEMO_IMPORT_SOURCES {
-        println!(
-            "  {:<14}{}",
+        progress.say(format_args!(
+            "{:<14}{}",
             format!("{}:", source.label),
             (source.export_dir)(prepared).display()
-        );
+        ));
     }
-    println!("  database:     {db}");
+    progress.say(format_args!("database:     {db}"));
 }
 
 /// Shared post-import tail: fill dedupe content keys, convert the account's
@@ -130,13 +135,13 @@ async fn dedupe_and_process_assets(
     // ffmpeg for anything but an MP4, and the viewer opens an original only
     // when its rows say so, so that is still recorded.
     if !media::ffmpeg_available() {
-        println!(
-            "ffmpeg was not found, so the Demo Account's attachments get no Previews or Thumbnails"
+        progress.heading(
+            "ffmpeg was not found, so the Demo Account's attachments get no Previews or Thumbnails",
         );
         process_assets::decide_shown_as_is(cfg, db, account_id, None).await?;
         return Ok((dedupe_stats, process_assets::ProcessAssetsStats::default()));
     }
-    println!("Making the Demo Account's Previews and Thumbnails");
+    progress.heading("Making the Demo Account's Previews and Thumbnails");
     let opened = OpenDb {
         cfg: cfg.clone(),
         db: db.clone(),
@@ -152,11 +157,12 @@ async fn dedupe_and_process_assets(
             account: Some(account_id),
         },
         stop,
+        progress,
     )
     .await
     .context("process-assets after prepared demo import")?;
     if let Some(line) = not_done_line(&process_stats) {
-        eprintln!("{line}");
+        progress.warn(line);
     }
     Ok((dedupe_stats, process_stats))
 }
@@ -257,7 +263,9 @@ pub async fn database_is_new(cfg: &Config) -> Result<bool> {
 /// and the owner can add the Demo Account later.
 pub async fn seed_new_database(cfg: &Config) {
     let size = DemoSize::Medium;
-    eprintln!("The database is new, so the Demo Account is added, with the {size} Demo Data set…");
+    tracing::info!(
+        "The database is new, so the Demo Account is added, with the {size} Demo Data set…"
+    );
     let started = std::time::Instant::now();
     // Seeding runs before the server listens, on this thread, so no stop
     // can arrive while it generates and nothing sets the flag.
@@ -266,16 +274,14 @@ pub async fn seed_new_database(cfg: &Config) {
     })
     .await
     {
-        Ok(messages) => eprintln!(
+        Ok(messages) => tracing::info!(
             "The Demo Account was added, with {messages} messages, in {:.1} s",
             started.elapsed().as_secs_f64()
         ),
-        Err(error) => {
-            eprintln!("The Demo Account could not be added: {error:#}");
-            eprintln!(
-                "  This Message Crate starts without it. `message-crate-server reset-demo` adds it"
-            );
-        }
+        Err(error) => tracing::warn!(
+            error = %crate::server::error_chain(&error),
+            "The Demo Account could not be added. This Message Crate starts without it. `message-crate-server reset-demo` adds it"
+        ),
     }
 }
 
@@ -349,8 +355,9 @@ where
     if seeded.is_err()
         && let Err(error) = remove_any_if_exists(&seeding).and_then(|()| remove_sidecars(&seeding))
     {
-        eprintln!(
-            "The unfinished new database at {} could not be removed: {error:#}",
+        tracing::warn!(
+            error = %crate::server::error_chain(&error),
+            "The unfinished new database at {} could not be removed",
             seeding.display()
         );
     }
@@ -375,7 +382,7 @@ async fn begin_demo_build(db: &SqlitePool) -> Result<()> {
 ///
 /// Returns an error when the account or the record cannot be removed.
 pub async fn remove_failed_demo_build(cfg: &Config, db: &SqlitePool) -> Result<()> {
-    wipe_demo_account(cfg, db, DEMO_ACCOUNT_ID, AuditActor::Server).await?;
+    wipe_demo_account(cfg, db, DEMO_ACCOUNT_ID, AuditActor::Server, Progress::Log).await?;
     let mut conn = db.acquire().await?;
     demo_account_build::end(&mut conn).await
 }
@@ -395,7 +402,7 @@ pub async fn remove_part_built_demo_account(cfg: &Config, db: &SqlitePool) -> Re
         demo_account_build::is_unfinished(&mut conn).await?
     };
     if unfinished {
-        wipe_demo_account(cfg, db, DEMO_ACCOUNT_ID, AuditActor::Server).await?;
+        wipe_demo_account(cfg, db, DEMO_ACCOUNT_ID, AuditActor::Server, Progress::Log).await?;
     }
     Ok(unfinished)
 }
@@ -532,7 +539,10 @@ async fn whole_demo_account_or_none(
         Ok(stats) => Ok(stats.import.messages),
         Err(error) => {
             if let Err(error) = remove_failed_demo_build(cfg, db).await {
-                eprintln!("The partly built Demo Account could not be removed: {error:#}");
+                tracing::warn!(
+                    error = %crate::server::error_chain(&error),
+                    "The partly built Demo Account could not be removed"
+                );
             }
             Err(error)
         }
@@ -699,11 +709,11 @@ async fn rebuild_demo_account(
 ) -> Result<ResetPreparedStats> {
     let progress = run.progress();
     begin_demo_build(db).await?;
-    wipe_demo_account(cfg, db, account_id, actor).await?;
-    print_reset_header(account_id, prepared, &cfg.paths.db.display());
+    wipe_demo_account(cfg, db, account_id, actor, progress).await?;
+    say_reset_header(account_id, prepared, &cfg.paths.db.display(), progress);
     seed_demo_account(db, account_id, &prepared.seed).await?;
     let import = import_demo_sources(cfg, db, prepared, account_id, progress).await?;
-    let address_book = load_demo_address_book(db, prepared, account_id).await?;
+    let address_book = load_demo_address_book(db, prepared, account_id, progress).await?;
     let (dedupe_stats, process_stats) =
         dedupe_and_process_assets(cfg, db, account_id, stop, progress).await?;
     if run == BuildRun::Command {
@@ -906,6 +916,7 @@ async fn load_demo_address_book(
     db: &SqlitePool,
     prepared: &PreparedBundle,
     account_id: i64,
+    progress: Progress,
 ) -> Result<LoadCounts> {
     let text = fs::read_to_string(&prepared.contacts_csv)
         .with_context(|| format!("read {}", prepared.contacts_csv.display()))?;
@@ -915,8 +926,8 @@ async fn load_demo_address_book(
         .context("match the demo address book to the Unknowns the imports made")?;
     let loaded = address_book::load(&mut conn, account_id, &text, LoadMode::Append).await;
     let counts = loaded.map_err(|e| anyhow::anyhow!("load the demo address book: {e}"))?;
-    println!(
-        "  The demo address book named {}: {} named in place and {} new. It moved {} and added {}",
+    progress.say(format_args!(
+        "The demo address book named {}: {} named in place and {} new. It moved {} and added {}",
         words(counts.contacts_changed(), "1 contact", "{n} contacts"),
         words(counts.contacts_updated, "1 Unknown", "{n} Unknowns"),
         counts.contacts_created,
@@ -926,7 +937,7 @@ async fn load_demo_address_book(
             "{n} identities from Unknowns"
         ),
         words(counts.identities_added, "1 identity", "{n} identities")
-    );
+    ));
     Ok(counts)
 }
 
@@ -2094,8 +2105,18 @@ async fn wipe_demo_account(
     db: &SqlitePool,
     account_id: i64,
     actor: AuditActor,
+    progress: Progress,
 ) -> Result<()> {
-    wipe_demo_account_with(cfg, db, account_id, actor, WIPE_BATCH_ROWS, async || Ok(())).await
+    wipe_demo_account_with(
+        cfg,
+        db,
+        account_id,
+        actor,
+        progress,
+        WIPE_BATCH_ROWS,
+        async || Ok(()),
+    )
+    .await
 }
 
 /// [`wipe_demo_account`] in batches of at most `batch_rows` messages, calling
@@ -2106,13 +2127,14 @@ async fn wipe_demo_account_with(
     db: &SqlitePool,
     account_id: i64,
     actor: AuditActor,
+    progress: Progress,
     batch_rows: NonZeroU32,
     mut after_batch: impl AsyncFnMut() -> Result<()>,
 ) -> Result<()> {
-    println!(
+    progress.heading(format_args!(
         "Removing the Demo Account from the database at {}",
         cfg.paths.db.display()
-    );
+    ));
     let mut conn = db
         .acquire()
         .await
@@ -2131,9 +2153,9 @@ async fn wipe_demo_account_with(
     }
     let deleted = account_profile::delete_account(&mut conn, account_id, actor).await?;
     if deleted {
-        println!("  The Demo Account is removed from the database");
+        progress.say("The Demo Account is removed from the database");
     } else {
-        println!("  The database held no Demo Account to remove");
+        progress.say("The database held no Demo Account to remove");
     }
     drop(conn);
 

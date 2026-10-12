@@ -1718,7 +1718,7 @@ async fn the_demo_address_book_names_the_unknowns_the_imports_made() {
     assert!(!book_ids.is_empty(), "the book names an Unknown in place");
     close_test_db(pool, conn).await;
 
-    let counts = load_demo_address_book(&build, &prepared, DEMO_ACCOUNT_ID)
+    let counts = load_demo_address_book(&build, &prepared, DEMO_ACCOUNT_ID, Progress::Log)
         .await
         .expect("load the demo address book");
 
@@ -1901,9 +1901,15 @@ async fn the_wipe_removes_the_demo_rows_and_directory_and_leaves_other_accounts(
     let cfg = test_config(&db, &data_dir);
 
     let build = build_pool(&db).await;
-    wipe_demo_account(&cfg, &build, DEMO_ACCOUNT_ID, AuditActor::CommandLine)
-        .await
-        .expect("wipe the demo account");
+    wipe_demo_account(
+        &cfg,
+        &build,
+        DEMO_ACCOUNT_ID,
+        AuditActor::CommandLine,
+        Progress::Log,
+    )
+    .await
+    .expect("wipe the demo account");
     engine::close_pool(&build).await;
 
     let (pool, mut conn) = test_db(&db).await;
@@ -2313,6 +2319,61 @@ async fn a_first_start_stopped_after_the_account_row_is_seeded_whole_by_the_next
     );
 }
 
+/// The Demo Account build `serve` runs on a new database says every step
+/// through `tracing`, so each line reaches the server's log and the owner's
+/// Logs panel, from the removal of an old Demo Account to the Previews and
+/// Thumbnails, and none is printed past it (#2018).
+#[tokio::test]
+async fn the_build_under_serve_says_every_step_in_the_server_log() {
+    use crate::logging::{LogFiles, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
+
+    let temp = tempfile::tempdir().expect("create test directory");
+    let cfg = crate::open_db::fresh_config(&temp.path().join("crate"));
+    let log_dir = temp.path().join("logs");
+    let files = LogFiles::open(&log_dir, SERVER_LOG_LIMITS).expect("open the log");
+    {
+        // The test's runtime has one thread, so the build's tasks write
+        // through this thread's subscriber too.
+        let _subscriber =
+            tracing::subscriber::set_default(crate::logging::subscriber_for(files, "info"));
+        seed_new_database_with(&cfg, |bundle| {
+            write_tiny_reset_bundle(bundle);
+            Ok(())
+        })
+        .await
+        .expect("seed the new database");
+    }
+
+    let lines = read_lines(
+        &log_dir,
+        &LogLinesQuery {
+            limit: 1000,
+            ..LogLinesQuery::default()
+        },
+    )
+    .expect("read the log")
+    .0;
+    let text: Vec<&str> = lines.iter().map(|line| line.text.as_str()).collect();
+    let media_step = if media::ffmpeg_available() {
+        "Processing account"
+    } else {
+        "ffmpeg was not found"
+    };
+    for step in [
+        "Removing the Demo Account from the database",
+        "The database held no Demo Account to remove",
+        "The Demo Account is built from these files",
+        "database:",
+        "The demo address book named",
+        media_step,
+    ] {
+        assert!(
+            text.iter().any(|line| line.contains(step)),
+            "no line says {step:?}:\n{text:#?}"
+        );
+    }
+}
+
 /// A build that did not finish leaves its record in the database, and the
 /// next start removes the Demo Account it left, files and all, and the
 /// record with it. A whole build leaves no record, so the next start keeps
@@ -2565,6 +2626,7 @@ async fn another_account_writes_between_the_demo_wipes_delete_batches() {
         &build.db,
         DEMO_ACCOUNT_ID,
         AuditActor::Owner,
+        Progress::Log,
         NonZeroU32::MIN,
         async || {
             let mut conn = others.acquire().await?;
@@ -2819,6 +2881,7 @@ async fn the_wipe_deletes_duplicates_before_the_messages_they_duplicate() {
         &build,
         DEMO_ACCOUNT_ID,
         AuditActor::Server,
+        Progress::Log,
         NonZeroU32::MIN,
         async || {
             let left = sqlx::query_as(

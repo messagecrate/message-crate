@@ -44,6 +44,10 @@ static SERVER_LOG: RwLock<Option<LogFiles>> = RwLock::new(None);
 /// ignored so tests that build a server in-process do not panic. A unit
 /// test never calls it: the log capture of unit tests installs its own
 /// process-wide subscriber.
+///
+/// The call that installs the subscriber also installs the panic hook
+/// ([`write_panics`]), so a panic on any thread of the process reaches the
+/// log as well.
 pub fn init() {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let subscriber = tracing_subscriber::registry()
@@ -55,12 +59,49 @@ pub fn init() {
                 .with_target(false),
         )
         .with(file_layer(FileTarget::Process));
-    let _ = tracing::subscriber::set_global_default(subscriber);
+    if tracing::subscriber::set_global_default(subscriber).is_ok() {
+        write_panics();
+    }
+}
+
+/// Send every panic of the process through `tracing` at `ERROR`, with its
+/// message and the file and line it happened at, in place of Rust's default
+/// hook, which writes to stderr alone. A panic in a request handler, the
+/// media pass or any other thread of `serve` then leaves a line in the
+/// server's log, under the span it happened in, so a handler's panic carries
+/// its request's id (#2086). The default hook still runs when
+/// `RUST_BACKTRACE` asks for a backtrace, because only it writes one.
+fn write_panics() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        tracing::error!(panic = %info, "A thread of the server panicked");
+        if std::env::var_os("RUST_BACKTRACE").is_some_and(|value| value != "0") {
+            default(info);
+        }
+    }));
+}
+
+/// Write why the process ends with `error`. Once `serve` has opened the
+/// server's log, the line goes there at `ERROR`, with the error's whole
+/// chain, as well as to stderr, so the owner can read why a Message Crate
+/// would not start or why it stopped (#2079). Before then, and in every
+/// other subcommand, it goes to stderr alone, as `fn main() -> Result<()>`
+/// would write it.
+pub fn write_failure(error: &anyhow::Error) {
+    let writes_files = SERVER_LOG.read().is_ok_and(|slot| slot.is_some());
+    if writes_files {
+        tracing::error!(
+            error = %crate::server::error_chain(error),
+            "The server stopped with an error"
+        );
+    } else {
+        eprintln!("Error: {error:?}");
+    }
 }
 
 /// Open the server's log in `data_dir` and send every line from here on to it
 /// as well as to stderr. `serve` calls it before it touches the database, so
-/// a database that fails to open is in the log.
+/// a database that fails to open is in the log ([`write_failure`]).
 ///
 /// # Errors
 ///
