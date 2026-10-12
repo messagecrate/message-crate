@@ -104,6 +104,18 @@ Every other request body has a cap fixed in the server: 32 KiB for `POST /v1/ses
 Why: the Owner's limit must never reach the login, or the settings change that would raise it again.
 A body over its cap is refused with `413 Payload Too Large` and the [`payload-too-large`](/docs/developer/reference/errors/payload-too-large/) problem type.
 
+### Stopping the server
+
+`serve` stops on Ctrl-C, on SIGTERM (what `docker stop` and a service manager send), and, under `--exit-with-parent`, once the process it names is gone.
+It stops taking connections, refuses an import batch that has not started its import with [`server-stopping`](/docs/developer/reference/errors/server-stopping/), and waits up to 30 seconds for the requests in flight.
+The 30 seconds are fixed in the server, not a config key, because Docker's stop time has to be longer than them, and the Compose files and the documented `docker run` commands set that time to 40 seconds (`stop_grace_period: 40s`, `--stop-timeout 40`).
+A server run any other way, such as under a service manager, needs at least that long between SIGTERM and a kill too.
+
+A request still running after the 30 seconds is cut off, and the server exits.
+The log then holds one `WARN` line saying how many requests the server stopped without, and one `WARN` line for each, with its request id, method, path and how long it had run.
+An import batch cut off this way is rolled back by SQLite, so it stores nothing, and the desktop app's Upload pauses and sends it again when it resumes.
+The desktop app kills the server it started when it closes, without this wait, because the only work it can cut off is the app's own Upload.
+
 ### Logging
 
 The server writes its log to stderr through `tracing`: one `INFO` line per HTTP response with the method, path, status and latency (at `DEBUG` for a successful `GET /health` or file of the website), one `ERROR` line with the full cause chain behind every `500`, and `WARN` lines for work the server could not complete but did not fail the request over. `RUST_LOG` sets the level and accepts the usual filter syntax, for example `RUST_LOG=debug` or `RUST_LOG=message_crate_server=debug,tower_http=info`. Unset, the level is `info`. The `import`, `dedupe-cross-source`, `process-assets` and `reset-demo` subcommands print their progress to stdout as before; that is their output, not the log.

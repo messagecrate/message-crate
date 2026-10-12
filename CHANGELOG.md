@@ -1243,6 +1243,16 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-12: **A stopping server waits at most 30 seconds, and Docker
+  gives it 40.** A server told to stop waited as long as the longest
+  request still running, and an import could take minutes, so `docker stop`
+  killed it after Docker's 10 seconds with no line in the log saying why.
+  The server now waits up to 30 seconds for the work in progress, then
+  stops and names in its log each request it stopped without. An import
+  cut off this way stores nothing, and the Upload sends it again. Both
+  Compose files and every `docker run` command in the guide now give the
+  server 40 seconds to stop, and `docker stop -t 40` stops one started
+  before this release the same way (#2122).
 - 2026-10-12: **A database rebuilt for a new layout keeps a copy of what it
   held.** When a server finds a database from a release with another
   database layout, it still rebuilds it empty, but it first writes a copy of

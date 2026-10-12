@@ -2149,8 +2149,15 @@ async fn sigterm_drains_the_request_in_flight_then_stops_the_server() {
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let mut server =
-        crate::request_id::spawn_in_current_span(serve_until_shutdown(listener, app, None, || {}));
+    // A drain limit that never passes, so only the request's end lets the
+    // server stop.
+    let mut server = crate::request_id::spawn_in_current_span(serve_until_shutdown(
+        listener,
+        app,
+        shutdown_signal(None),
+        || {},
+        std::future::pending::<()>,
+    ));
 
     let request = crate::request_id::spawn_in_current_span(async move {
         http_client()
@@ -2188,11 +2195,165 @@ async fn sigterm_drains_the_request_in_flight_then_stops_the_server() {
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     assert_eq!(response.text().await.unwrap(), "done");
 
-    tokio::time::timeout(Duration::from_secs(10), server)
+    let stopped = tokio::time::timeout(Duration::from_secs(10), server)
         .await
         .expect("the server kept running after SIGTERM")
         .unwrap()
         .unwrap();
+    assert!(matches!(stopped, Stopped::Drained), "{stopped:?}");
+}
+
+/// A request that does not finish holds a stopping server only until the
+/// drain limit passes, and the server can then name it (#2122). The limit
+/// is a future the test resolves, so nothing here waits on the clock.
+#[tokio::test]
+async fn a_stopping_server_gives_up_on_a_request_still_running_at_the_drain_limit() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
+    use tokio::sync::{Notify, oneshot};
+
+    let in_flight = crate::in_flight::InFlight::default();
+    let entered = Arc::new(Notify::new());
+    let app = Router::new()
+        .route(
+            "/never",
+            axum::routing::post({
+                let entered = Arc::clone(&entered);
+                move || async move {
+                    entered.notify_one();
+                    std::future::pending::<&'static str>().await
+                }
+            }),
+        )
+        .layer(axum::middleware::from_fn_with_state(
+            in_flight.clone(),
+            crate::in_flight::track,
+        ));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (stop_tx, stop_rx) = oneshot::channel::<()>();
+    let (limit_tx, limit_rx) = oneshot::channel::<()>();
+    let limit_started = Arc::new(AtomicBool::new(false));
+    let server = crate::request_id::spawn_in_current_span(serve_until_shutdown(
+        listener,
+        app,
+        async move {
+            let _ = stop_rx.await;
+        },
+        || {},
+        {
+            let limit_started = Arc::clone(&limit_started);
+            move || {
+                limit_started.store(true, Ordering::SeqCst);
+                async move {
+                    let _ = limit_rx.await;
+                }
+            }
+        },
+    ));
+
+    let request = crate::request_id::spawn_in_current_span(async move {
+        http_client()
+            .post(format!("http://{addr}/never"))
+            .send()
+            .await
+    });
+    tokio::time::timeout(Duration::from_secs(10), entered.notified())
+        .await
+        .expect("the request never reached the handler");
+    assert!(
+        !limit_started.load(Ordering::SeqCst),
+        "the drain limit counts from the stop, not from the start"
+    );
+
+    stop_tx.send(()).unwrap();
+    limit_tx.send(()).unwrap();
+    let stopped = tokio::time::timeout(Duration::from_secs(10), server)
+        .await
+        .expect("the server kept waiting for the request after the drain limit")
+        .unwrap()
+        .unwrap();
+    assert!(matches!(stopped, Stopped::GaveUp), "{stopped:?}");
+    assert!(limit_started.load(Ordering::SeqCst));
+    let running = in_flight.running();
+    assert_eq!(running.len(), 1, "{running:?}");
+    assert_eq!(
+        (running[0].method.as_str(), running[0].uri.as_str()),
+        ("POST", "/never")
+    );
+    request.abort();
+}
+
+/// `docker stop` kills a container that has not exited when its stop time
+/// is up, so every way the documentation starts a Message Crate in Docker
+/// must give the server longer than its own drain limit (#2122): a kill
+/// would cut off what the limit lets finish, and leave no line in the log
+/// saying why.
+#[test]
+fn docker_stop_waits_longer_than_the_drain() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let read = |path: &str| {
+        std::fs::read_to_string(root.join(path)).unwrap_or_else(|e| panic!("read {path}: {e}"))
+    };
+    let limit = STOP_DRAIN_LIMIT.as_secs();
+    let longer = |seconds: &str, place: &str| {
+        let seconds: u64 = seconds
+            .parse()
+            .unwrap_or_else(|_| panic!("{place}: {seconds:?} is not a whole number of seconds"));
+        assert!(
+            seconds > limit,
+            "{place} gives the server {seconds} seconds to stop, not more than its {limit}-second drain limit"
+        );
+    };
+
+    for compose in ["docker/compose.yml", "docker/compose.release.yml"] {
+        let text = read(compose);
+        let periods: Vec<&str> = text
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("stop_grace_period:"))
+            .map(|value| value.trim().trim_end_matches('s'))
+            .collect();
+        assert_eq!(
+            periods.len(),
+            1,
+            "{compose} must set stop_grace_period once, in seconds"
+        );
+        longer(periods[0], compose);
+    }
+
+    let docs = "docs/src/content/docs/docs/user/features/owner";
+    let mut started = 0;
+    for page in [
+        "run-with-docker.md",
+        "run-on-another-machine.md",
+        "update.md",
+    ] {
+        let path = format!("{docs}/{page}");
+        let text = read(&path);
+        let lines: Vec<&str> = text.lines().collect();
+        for (at, line) in lines.iter().enumerate() {
+            let place = format!("{path}:{}", at + 1);
+            if line.starts_with("docker run -d ") {
+                started += 1;
+                let timeout = lines[at..]
+                    .iter()
+                    .take_while(|line| !line.starts_with("```"))
+                    .find_map(|line| line.trim().strip_prefix("--stop-timeout "))
+                    .unwrap_or_else(|| panic!("{place} starts a server without --stop-timeout"));
+                longer(timeout.trim_end_matches('\\').trim(), &place);
+            } else if let Some(rest) = line.strip_prefix("docker stop ") {
+                let timeout = rest
+                    .strip_prefix("-t ")
+                    .and_then(|rest| rest.split_whitespace().next())
+                    .unwrap_or_else(|| panic!("{place} stops the server without -t"));
+                longer(timeout, &place);
+            }
+        }
+    }
+    assert_eq!(
+        started, 3,
+        "the pages that start a server in Docker moved, or one was added"
+    );
 }
 
 /// The attachment size limit holds the attachment uploads and nothing else.
