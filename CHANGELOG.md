@@ -387,11 +387,6 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
-- 2026-10-12: **Try again on the Import form always checks the tools.**
-  Pressing **Try again** just as the desktop app started another program
-  could leave the check of ffmpeg, ffprobe and wtsexporter believing an
-  earlier check was still running, so it downloaded nothing. The earlier
-  check now lets go at once when it ends (#2944).
 - 2026-10-12: **Every error on a line of its own starts with a capital.**
   Where a screen shows why something failed as a sentence of its own, such
   as a wrong password, a refused Contact Group name, a failed Contact Group
@@ -660,6 +655,11 @@ carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-12: **Try again on the Import form always checks the tools.**
+  Pressing **Try again** just as the desktop app started another program
+  could leave the check of ffmpeg, ffprobe and wtsexporter believing an
+  earlier check was still running, so it downloaded nothing. The earlier
+  check now lets go at once when it ends (#2944).
 - 2026-10-12: **A wtsexporter still being copied in is no longer used
   halfway.** The desktop app took any `wtsexporter` in its Tools Directory
   that had permission to run as ready, so a copy put there by hand from a
