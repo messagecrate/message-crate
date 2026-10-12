@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use message_crate_core::{RunIssueKind, RunLogLevel, count_of, format_run_log};
 
 use crate::report::{
-    FileResult, ImportReport, UploadProfile, format_ms_seconds, format_profile_line,
+    FileResult, ImportReport, UploadProfile, format_ms_seconds, format_profile_line, ms_between,
 };
 
 /// How the Upload ended with one conversation file.
@@ -226,13 +226,7 @@ impl ProgressBatcher {
             line.push_str(&format!(
                 " In the last {} the Upload sent {} with {} and {} of Assets. \
                  Importing their messages took {}, added up across the conversations.",
-                format_ms_seconds(
-                    u64::try_from(
-                        now.saturating_duration_since(self.window_started)
-                            .as_millis()
-                    )
-                    .unwrap_or(u64::MAX)
-                ),
+                format_ms_seconds(ms_between(self.window_started, now)),
                 count_of(self.window_sent, "conversation", "conversations"),
                 count_of(self.window_messages, "message", "messages"),
                 media::format_bytes(self.window_bytes),
