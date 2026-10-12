@@ -1470,11 +1470,7 @@ pub(crate) async fn create_import(
     // The run and what started it land together, so a run never reads as
     // one the server started.
     let mut tx = crate::db::begin_write(&mut conn).await?;
-    // The credential proved the account existed when the request arrived;
-    // one deleted since gets no run, and no row put back for it (#2061).
-    if !crate::db::account_profile::account_exists(&mut tx, account).await? {
-        return Err(ApiError::account_gone());
-    }
+    crate::server::require_account_row(&mut tx, account).await?;
     let id = crate::db::imports::start_import(&mut tx, &args, chrono::Utc::now()).await?;
     crate::db::audit_trail::record_run_credential(
         &mut tx,
