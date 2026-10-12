@@ -19,7 +19,7 @@ describe("DateField", () => {
 
     const user = setupUser();
     await user.click(pick);
-    await screen.findAllByRole("button", { name: "Previous" });
+    expect(screen.getAllByRole("button", { name: "Previous" })).toHaveLength(1);
     const months = document.querySelectorAll('button[slot="previous"], button[slot="next"]');
     expect(months).toHaveLength(2);
     for (const button of months) {

@@ -8,9 +8,9 @@
  * except the one under test.
  */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { mockedAuth, Providers } from "../test/providers";
 import { fill, setupUser } from "../test/user";
@@ -40,6 +40,10 @@ vi.mock("../lib/serverApi", () => ({
   deleteMessageTag: routes.deleteMessageTag,
   updateMessageTagMembers: vi.fn(),
 }));
+
+beforeEach(() => {
+  startFakeClock();
+});
 
 afterEach(() => {
   cleanup();
@@ -107,9 +111,9 @@ describe("NavEntityList navigation", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     // The page moves once the rename is written and the cache has read the
-    // lists again, a few renders after Save. The location is on screen all
-    // along, so the test waits for its text rather than for the element.
-    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/group/Fam"));
+    // lists again, a few renders after Save, all of which `settle` lands.
+    await settle();
+    expect(screen.getByTestId("location").textContent).toBe("/group/Fam");
   });
 
   it("falls back to the group collection's home route after deleting the group being viewed", async () => {
@@ -121,7 +125,8 @@ describe("NavEntityList navigation", () => {
     await user.click(screen.getByRole("menuitem", { name: "Delete" }));
     await user.click(screen.getByRole("button", { name: "Delete" }));
 
-    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/contacts"));
+    await settle();
+    expect(screen.getByTestId("location").textContent).toBe("/contacts");
   });
 
   it("follows a renamed tag to its new slug when viewing that tag's page", async () => {
@@ -136,7 +141,8 @@ describe("NavEntityList navigation", () => {
     await fill(user, input, "Vacation");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/tag/Vacation"));
+    await settle();
+    expect(screen.getByTestId("location").textContent).toBe("/tag/Vacation");
   });
 
   it("falls back to the tag collection's home route after deleting the tag being viewed", async () => {
@@ -148,7 +154,8 @@ describe("NavEntityList navigation", () => {
     await user.click(screen.getByRole("menuitem", { name: "Delete" }));
     await user.click(screen.getByRole("button", { name: "Delete" }));
 
-    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/"));
+    await settle();
+    expect(screen.getByTestId("location").textContent).toBe("/");
   });
 
   it("asks before deleting a group, and says what goes and what stays", async () => {
@@ -178,7 +185,7 @@ describe("NavEntityList navigation", () => {
 
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(routes.deleteMessageTag).not.toHaveBeenCalled();
-    expect(screen.getByTestId("location")).toHaveTextContent("/tag/Holiday");
+    expect(screen.getByTestId("location").textContent).toBe("/tag/Holiday");
   });
 
   it("deletes the group once the confirmation is confirmed", async () => {
@@ -190,13 +197,13 @@ describe("NavEntityList navigation", () => {
     await user.click(screen.getByRole("menuitem", { name: "Delete" }));
     await user.click(screen.getByRole("button", { name: "Delete" }));
 
-    await waitFor(() => expect(routes.deleteContactGroup).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await settle();
+    expect(routes.deleteContactGroup).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("keeps the confirmation open with the server's message when the delete is refused", async () => {
     routes.deleteContactGroup.mockRejectedValue(new Error("group not found"));
-    startFakeClock();
     const user = setupUser();
     renderGroups("/group/Family", ["Family"]);
 
@@ -207,7 +214,7 @@ describe("NavEntityList navigation", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("Group not found");
     expect(screen.getByRole("dialog", { name: "Delete Family?" })).toBeTruthy();
-    expect(screen.getByTestId("location")).toHaveTextContent("/group/Family");
+    expect(screen.getByTestId("location").textContent).toBe("/group/Family");
   });
 
   it("links each group by its whole name, so names that differ only in punctuation open their own page", async () => {
@@ -236,8 +243,7 @@ describe("NavEntityList navigation", () => {
     await fill(user, input, "Old Friends");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    await waitFor(() =>
-      expect(screen.getByTestId("location").textContent).toBe("/group/Old%20Friends"),
-    );
+    await settle();
+    expect(screen.getByTestId("location").textContent).toBe("/group/Old%20Friends");
   });
 });
