@@ -4,7 +4,9 @@ use crate::fake_tools::{FakeTools, video_probe};
 use crate::kind_for_mime;
 use crate::testutil::PNG_1X1_RGB;
 use crate::testutil::{clock_from, progress_then_hang};
-use crate::tools::{InstalledTools, Limit, MediaTools, Reads, StallWatch, ffmpeg_command_line};
+use crate::tools::{
+    FfmpegFailed, InstalledTools, Limit, MediaTools, Reads, StallWatch, ffmpeg_command_line,
+};
 
 /// The one ffmpeg run `tools` made, failing the test when there were more
 /// or none.
@@ -641,9 +643,149 @@ fn compress_reports_why_hevc_failed_when_h264_stands_in() {
     assert_eq!(report.processed, 2, "{:?}", report.errors);
     let line = report.hevc_fallback.line().expect("a fallback reason");
     assert!(
-        line.contains("ffmpeg failed (fake)") && line.contains("libx265"),
+        line.ends_with("libx265: fake failure on '<input>'"),
         "the line carries ffmpeg's HEVC error: {line}"
     );
+}
+
+/// Why HEVC failed names no file: ffmpeg's error names the video it read
+/// and the file it wrote by their full paths, and the server logs the
+/// reason, which may hold no file name (#2802).
+#[test]
+fn why_hevc_failed_names_no_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let (files, opts) = two_large_videos(dir.path());
+    let tools = FakeTools::new()
+        .probing(video_probe("h264", 30.0))
+        .failing_on("libx265");
+
+    let (report, _) = process_attachment_files(
+        &tools,
+        dir.path(),
+        &files[..1],
+        MediaMode::Compress,
+        &opts,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let reason = report.hevc_fallback.reason().expect("a fallback reason");
+    let hevc_run = &tools.runs()[0];
+    assert!(
+        hevc_run.iter().any(|arg| arg.ends_with("one.mov")),
+        "{hevc_run:?}"
+    );
+    for name in ["one.mov", "one.msgmedia", dir.path().to_str().unwrap()] {
+        assert!(!reason.contains(name), "{name:?} survives in {reason:?}");
+    }
+    // All of what ffmpeg wrote, not only its last line, because the cause
+    // can come before it.
+    assert!(
+        reason.starts_with("ffmpeg failed (")
+            && reason.ends_with(
+                "): Input #0, from '<input>':\nOutput #0, to '<output>':\n\
+                 libx265: fake failure on '<input>'"
+            ),
+        "{reason:?}"
+    );
+}
+
+/// A file the pass could not convert records ffmpeg's last line, with no
+/// path in it, the same reason the desktop app's Media Stage records (#2801).
+#[test]
+fn a_file_that_fails_records_ffmpegs_last_line_without_its_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let (files, opts) = two_large_videos(dir.path());
+    let tools = FakeTools::new()
+        .probing(video_probe("h264", 30.0))
+        .failing_on("libx265")
+        .failing_on("libx264");
+
+    let (report, _) = process_attachment_files(
+        &tools,
+        dir.path(),
+        &files[..1],
+        MediaMode::Compress,
+        &opts,
+        None,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(
+        report.not_converted,
+        vec![NotConverted {
+            path: files[0].clone(),
+            reason: "libx264: fake failure on '<input>'".into(),
+        }]
+    );
+    let logged = &report.errors[0];
+    assert!(
+        logged.contains(&files[0].display().to_string()) && logged.contains("HEVC failed"),
+        "the log keeps the whole error: {logged}"
+    );
+}
+
+/// What a stopped run says is its reason as it stands, and neither an
+/// ffmpeg that wrote nothing nor an error from outside ffmpeg lets the
+/// contexts around it, which name the file by its path, onto the attachment.
+#[test]
+fn why_not_converted_names_no_path_however_the_conversion_failed() {
+    let file = Path::new("/home/someone/attachments/IMG_0001.heic");
+    let killed = crate::testutil::ffmpeg_killed(KillReason::RanPastLength {
+        length: std::time::Duration::from_secs(5),
+    });
+    assert_eq!(why_not_converted(&killed, file), killed.to_string());
+
+    // Killed by a signal, say, with nothing on stderr.
+    let silent = anyhow::Error::from(FfmpegFailed::new(
+        std::process::ExitStatus::default(),
+        b"",
+        &[
+            "-i".to_string(),
+            file.display().to_string(),
+            "/tmp/out.jpg".to_string(),
+        ],
+    ))
+    .context(format!("convert image {}", file.display()));
+    let reason = why_not_converted(&silent, file);
+    assert!(reason.starts_with("ffmpeg failed ("), "{reason:?}");
+    assert!(!reason.contains("IMG_0001"), "{reason:?}");
+
+    // A step that names the temporary file beside it is left out; the
+    // steps that name no other file stay, so the reason still says what
+    // went wrong where.
+    let io = anyhow::Error::from(std::io::Error::other("no room left\nsecond line"))
+        .context("/home/someone/attachments/IMG_0001.msgmedia.tmp.jpg: write the copy")
+        .context("start ffmpeg")
+        .context(format!("convert image {}", file.display()));
+    assert_eq!(
+        why_not_converted(&io, file),
+        "convert image <input>: start ffmpeg: no room left"
+    );
+
+    let named = anyhow::anyhow!("ffprobe reported no stream for {}", file.display())
+        .context(format!("compress video {}", file.display()));
+    assert_eq!(
+        why_not_converted(&named, file),
+        "compress video <input>: ffprobe reported no stream for <input>"
+    );
+}
+
+/// A file whose path starts with another file's path is replaced whole.
+#[test]
+fn without_files_replaces_the_longest_path_first() {
+    let failed = FfmpegFailed::new(
+        std::process::ExitStatus::default(),
+        b"/d/a.mov.mp4 and /d/a.mov",
+        &[
+            "-i".to_string(),
+            "/d/a.mov".to_string(),
+            "/d/a.mov.mp4".to_string(),
+        ],
+    );
+    assert_eq!(failed.without_files(failed.said()), "<output> and <input>");
 }
 
 /// A pass where HEVC works reports no fallback.

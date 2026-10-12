@@ -1239,3 +1239,56 @@ fn a_parallel_drain_names_each_conversation_file_it_writes() {
         .collect();
     assert_eq!(done, written);
 }
+
+/// A drain that compresses sends why HEVC failed to its log's warnings,
+/// once, from the Media pass after the drain (#2801).
+#[test]
+fn a_compressing_drain_warns_why_hevc_failed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = tmp.path().join("out");
+    fs::create_dir_all(&out).unwrap();
+    let mut doc = doc_with(&test_number(7), 1);
+    doc.messages[0].attachments[0].original_name = Some("clip.mov".into());
+    let units = vec![unit_from(
+        doc,
+        vec![AttachmentSource::Bytes(b"an h264 video".to_vec())],
+    )];
+    let options = WriteQueueOptions {
+        compress: CompressOptions {
+            min_size_bytes: 0,
+            ..CompressOptions::default()
+        },
+        tools: Arc::new(
+            media::testutil::FakeTools::new()
+                .probing(media::testutil::video_probe("h264", 30.0))
+                .failing_on("libx265"),
+        ),
+        ..options(MediaMode::Compress, false)
+    };
+    let warnings = Arc::new(Mutex::new(Vec::<String>::new()));
+    let sink_warnings = Arc::clone(&warnings);
+    let log =
+        LogSink::none().with_warnings(move |w| sink_warnings.lock().unwrap().push(w.to_string()));
+
+    let report = drain_write_queue_with_loader(
+        &out,
+        units,
+        &options,
+        &mut |_: &str, source: &mut AttachmentSource| load_attachment_source(source),
+        Sinks {
+            log: &log,
+            ..no_sinks()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(report.media.processed, 1);
+    let warnings = warnings.lock().unwrap();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(
+        warnings[0]
+            .starts_with("HEVC encoding failed, so videos were compressed as H.264 instead: ")
+            && warnings[0].ends_with("libx265: fake failure on '<input>'"),
+        "{warnings:?}"
+    );
+}
