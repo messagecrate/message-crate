@@ -436,6 +436,7 @@ mod tests {
             ok: true,
             cancelled: false,
             session_refused: false,
+            server_away: None,
             completion_refused: false,
             account: 1,
             username: "user".into(),

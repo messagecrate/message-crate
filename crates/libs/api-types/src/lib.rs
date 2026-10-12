@@ -52,6 +52,18 @@ pub const APP_VERSION_HEADER: &str = "x-message-crate-version";
 /// server's default 5-minute limit for one at about 0.45 Mbit/s.
 pub const MAX_IMPORT_BATCH_BYTES: usize = 16 * 1024 * 1024;
 
+/// The slugs of the problem types a client branches on, the last segment
+/// of a problem's `type` URL ([`Problem::slug`]). The server's own list of
+/// types is checked against these, so a renamed type fails a test rather
+/// than a client.
+pub mod problem_slug {
+    /// The server was told to stop, so it refused the request.
+    pub const SERVER_STOPPING: &str = "server-stopping";
+    /// Every database connection, or the write lock, stayed taken for
+    /// longer than the request could wait.
+    pub const DATABASE_BUSY: &str = "database-busy";
+}
+
 /// The id each exporter writes into a conversation file's `export.source`,
 /// one constant per backup type. `message-crate-core`'s
 /// `Exporter::source_id` returns these, and each exporter writes what it
