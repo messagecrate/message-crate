@@ -207,3 +207,19 @@ pub(crate) fn clock_from(started: &Path) -> impl Fn() -> std::time::Duration + '
         std::time::Duration::from_secs(hours.get() * 3600)
     }
 }
+
+/// A mock ffmpeg body that writes its pid, then `progress` on its progress
+/// stream, then marks itself `started` and never exits. Between the two it
+/// writes 256 KiB of progress lines that carry no position: a pipe holds 64
+/// KiB, so the mock gets past them only once the reader has read, and so
+/// recorded, the position before them. The test's clock starts only then,
+/// with no race between the reader and the watch.
+#[cfg(test)]
+pub(crate) fn progress_then_hang(progress: &str) -> String {
+    format!(
+        "echo $$ > \"$(dirname \"$0\")/pid\"\n\
+         printf '{progress}'\n\
+         yes frame=1 | head -c 262144\n\
+         touch \"$(dirname \"$0\")/started\"\nexec sleep 600"
+    )
+}

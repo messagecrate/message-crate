@@ -2,7 +2,7 @@ use super::*;
 use crate::fake_tools::{FakeTools, video_probe};
 use crate::kind_for_mime;
 use crate::testutil::PNG_1X1_RGB;
-use crate::testutil::clock_from;
+use crate::testutil::{clock_from, progress_then_hang};
 use crate::tools::{
     Limit, MediaTools, Reads, StallWatch, ffmpeg_command_line, run_ffmpeg, run_ffmpeg_watched,
 };
@@ -1565,13 +1565,8 @@ fn compress_tries_h264_after_hevc_stalled_before_any_output() {
 #[cfg(unix)]
 #[test]
 fn compress_does_not_try_h264_after_hevc_stalled_partway() {
-    // 256 KiB of lines with no position, past what a pipe holds, before
-    // the mock marks itself started: the reader has read the position by
-    // then, so the clock starts after it.
     let tools = ScriptedTools::new(
-        "printf 'out_time=00:00:02.000000\\nprogress=continue\\n'\n\
-         yes frame=1 | head -c 262144\n\
-         touch \"$dir/started\"\nexec sleep 600",
+        &progress_then_hang("out_time=00:00:02.000000\\nprogress=continue\\n"),
         true,
     );
 
@@ -1672,7 +1667,7 @@ fn a_stopped_compression_starts_neither_hevc_nor_h264() {
     .expect_err("a stopped compression fails");
 
     assert!(
-        err.downcast_ref::<Killed>().is_some_and(Killed::is_stop),
+        err.downcast_ref::<Killed>().map(Killed::reason) == Some(KillReason::StoppedBeforeStart),
         "{err:#}"
     );
     assert_eq!(tools.runs(), Vec::<Vec<String>>::new());
@@ -1699,7 +1694,7 @@ fn a_stopped_pass_fails_as_stopped() {
     .expect_err("a stopped pass fails");
 
     assert!(
-        err.downcast_ref::<Killed>().is_some_and(Killed::is_stop),
+        err.downcast_ref::<Killed>().map(Killed::reason) == Some(KillReason::Stopped),
         "{err:#}"
     );
     assert_eq!(tools.runs(), Vec::<Vec<String>>::new());

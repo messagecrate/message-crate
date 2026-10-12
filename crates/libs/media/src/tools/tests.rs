@@ -1,5 +1,5 @@
 use super::*;
-use crate::testutil::{clock_from, tools_test_lock};
+use crate::testutil::{clock_from, progress_then_hang, tools_test_lock};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
@@ -159,21 +159,6 @@ fn a_conversion_that_never_moves_is_killed_as_stalled_before_any_output() {
     );
     let pid = fs::read_to_string(&pid_file).unwrap().trim().to_string();
     assert!(!still_runs(&pid), "ffmpeg {pid} still runs");
-}
-
-/// A mock ffmpeg body that writes its pid, then `progress` on its progress
-/// stream, then marks itself `started` and never exits. Between the two it
-/// writes 256 KiB of progress lines that carry no position: a pipe holds 64
-/// KiB, so the mock gets past them only once the reader has read, and so
-/// recorded, the position before them. The test's clock starts only then,
-/// with no race between the reader and the watch.
-fn progress_then_hang(progress: &str) -> String {
-    format!(
-        "echo $$ > \"$(dirname \"$0\")/pid\"\n\
-         printf '{progress}'\n\
-         yes frame=1 | head -c 262144\n\
-         touch \"$(dirname \"$0\")/started\"\nexec sleep 600"
-    )
 }
 
 /// A conversion whose position moves and then stops is killed once the
@@ -488,7 +473,7 @@ fn the_no_progress_wait_is_the_default_until_set() {
 }
 
 /// Puts the default no-progress wait back when dropped, so a test that
-/// fails part way does not leave every later conversion in this process
+/// fails partway does not leave every later conversion in this process
 /// stopped as stalled.
 struct RestoreStallWait;
 
@@ -1262,7 +1247,7 @@ fn a_stopped_transcode_runs_neither_program() {
         .expect_err("a stopped run fails");
 
     assert!(
-        err.downcast_ref::<Killed>().is_some_and(Killed::is_stop),
+        err.downcast_ref::<Killed>().map(Killed::reason) == Some(KillReason::StoppedBeforeStart),
         "{err:#}"
     );
     assert!(!dir.path().join("ran").exists(), "a program ran");

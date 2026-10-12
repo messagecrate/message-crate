@@ -951,7 +951,7 @@ fn read_progress(source: impl Read, position: &AtomicU64) -> io::Result<()> {
     for line in io::BufReader::new(source).lines() {
         if let Some(at) = out_time(&line?) {
             let micros = u64::try_from(at.as_micros()).unwrap_or(NO_POSITION - 1);
-            position.store(micros.min(NO_POSITION - 1), Ordering::Relaxed);
+            position.store(micros.min(NO_POSITION - 1), Ordering::Release);
         }
     }
     Ok(())
@@ -1002,9 +1002,14 @@ fn run_watched(mut command: Command, watch: Watch<'_>) -> Result<Ran> {
         match &mut limit {
             Limit::ShortStep => short_step_over(now()),
             Limit::Progress(watch) => {
-                let micros = position.load(Ordering::Relaxed);
+                // The time first, then the position: a position stored
+                // before the time was read is always seen with it, so a
+                // test's clock that starts once the mock has written its
+                // progress never meets a position not yet loaded.
+                let ran = now();
+                let micros = position.load(Ordering::Acquire);
                 let at = (micros != NO_POSITION).then(|| Duration::from_micros(micros));
-                watch.observe(at, now())
+                watch.observe(at, ran)
             }
         }
     })
@@ -1135,16 +1140,6 @@ impl Killed {
     #[must_use]
     pub fn reason(&self) -> KillReason {
         self.why
-    }
-
-    /// True when the run was stopped, before or after it started, rather
-    /// than ended for something wrong with it.
-    #[cfg(test)]
-    pub(crate) fn is_stop(&self) -> bool {
-        matches!(
-            self.why,
-            KillReason::Stopped | KillReason::StoppedBeforeStart
-        )
     }
 }
 

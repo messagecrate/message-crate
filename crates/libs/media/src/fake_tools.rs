@@ -37,7 +37,7 @@ pub(crate) struct FakeTools {
     /// What ffmpeg writes to the file it is asked to write.
     output: Vec<u8>,
     /// A run whose arguments hold any of these fails, after writing its
-    /// output, as an ffmpeg that fails part way leaves a partial file.
+    /// output, as an ffmpeg that fails partway leaves a partial file.
     failing: Vec<String>,
     /// The arguments of every ffmpeg run, in order.
     runs: RefCell<Vec<Vec<String>>>,
