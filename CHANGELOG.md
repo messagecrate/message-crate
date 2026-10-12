@@ -1068,8 +1068,8 @@ released versions carry their date on the heading.
 - 2026-10-12: **A database rebuilt for a new layout keeps a copy of what it
   held.** When a server finds a database from a release with another
   database layout, it still rebuilds it empty, but it first writes a copy of
-  the database beside it, named after the database and the old Schema
-  Fingerprint, and the log line names the copy. Running the earlier release
+  the database beside it, named after the database with "before-rebuild"
+  and a number, and the log line names the copy. Running the earlier release
   on that copy brings everything back. If the copy can't be written, as on a
   full disk, the server leaves the database as it is and does not start.
   Resetting the Demo Account from the command line refuses such a database

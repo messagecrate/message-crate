@@ -650,33 +650,58 @@ async fn a_second_rebuild_from_the_same_fingerprint_keeps_both_copies() {
     assert_eq!(std::fs::read(&first).unwrap(), b"an earlier copy");
 }
 
-/// When the copy can't be written, the rebuild does not run: the database
-/// keeps its tables, its rows and its stamp, and no file under the copy's
-/// name is left to be mistaken for a whole copy.
+/// When the copy can't be written, here because the database's directory
+/// can't be written, the rebuild does not run: the database keeps its rows
+/// and its stamp, and no file is left beside it.
+#[cfg(unix)]
 #[tokio::test]
 async fn a_copy_that_fails_leaves_the_database_as_it_is() {
     let (pool, _fixture) = seeded_schema_fixture().await;
     let mut conn = pool.acquire().await.unwrap();
     let other = SCHEMA_FINGERPRINT ^ 1;
     let db = file_of(&mut conn).await;
-    // A directory where the copy is written makes `VACUUM INTO` fail.
-    let partial = std::path::PathBuf::from(format!(
-        "{}.partial",
-        rebuild_copy_path(&db, other).display()
-    ));
-    std::fs::create_dir(&partial).unwrap();
     stamp_user_version(&mut conn, other).await.unwrap();
 
-    let error = ensure_schema(&mut conn).await.unwrap_err().to_string();
+    let Some(result) = crate::process_assets::tests::with_read_only(
+        db.parent().unwrap(),
+        ensure_schema(&mut conn),
+    )
+    .await
+    else {
+        return;
+    };
 
-    assert!(error.contains("could not keep a copy"), "{error}");
+    let error = format!("{:#}", result.unwrap_err());
+    assert!(error.contains("so it was left as it is"), "{error}");
     assert_eq!(user_version(&mut conn).await.unwrap(), other);
     let accounts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts")
         .fetch_one(&mut *conn)
         .await
         .unwrap();
     assert_eq!(accounts, 2, "the database keeps its rows");
-    assert_eq!(rebuild_copies(&db), vec![partial]);
+    assert_eq!(rebuild_copies(&db), Vec::<std::path::PathBuf>::new());
+}
+
+/// A copy cut off while it was written, as by the server being stopped,
+/// leaves only its `.partial` file. The next rebuild passes over that name
+/// and keeps its copy under the next one, and leaves the `.partial` file as
+/// it is.
+#[tokio::test]
+async fn a_copy_cut_off_earlier_is_passed_over() {
+    let (pool, _fixture) = seeded_schema_fixture().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let other = SCHEMA_FINGERPRINT ^ 1;
+    let db = file_of(&mut conn).await;
+    let first = rebuild_copy_path(&db, other);
+    let cut_off = std::path::PathBuf::from(format!("{}.partial", first.display()));
+    std::fs::write(&cut_off, b"a copy cut off").unwrap();
+    stamp_user_version(&mut conn, other).await.unwrap();
+
+    ensure_schema(&mut conn).await.unwrap();
+
+    let second = std::path::PathBuf::from(format!("{}-2", first.display()));
+    assert_eq!(rebuild_copies(&db), vec![second, cut_off.clone()]);
+    assert_eq!(std::fs::read(&cut_off).unwrap(), b"a copy cut off");
 }
 
 /// A file that holds no table has nothing to keep, so building the schema

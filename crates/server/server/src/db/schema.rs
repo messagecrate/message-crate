@@ -227,20 +227,20 @@ pub(crate) async fn database_file(
 /// that name followed by `-2`, `-3` and so on when the name is taken, so no
 /// copy is ever written over.
 ///
-/// The name is claimed by creating it empty with `create_new`, which only
-/// one process can do, so two servers rebuilding at once never share one.
-/// `VACUUM INTO` then writes `<copy>.partial`, and only a whole copy is
-/// renamed onto the claimed name: a process killed while copying leaves a
-/// file named partial and an empty one, never one that looks whole.
-/// `VACUUM INTO` reads the database in one transaction, so the copy is
-/// whole even while the write-ahead log holds pages the file does not.
+/// The copy is written as `<copy>.partial`, a name claimed first by
+/// creating it empty with `create_new`, which only one process can do, so
+/// two servers rebuilding at once never share one. `VACUUM INTO` accepts
+/// that empty file, and only a whole copy is renamed to `<copy>`: a process
+/// killed while copying leaves only the `.partial` file, and the copy's own
+/// name is never taken by a file that is not whole. `VACUUM INTO` reads the
+/// database in one transaction, so the copy is whole even while the
+/// write-ahead log holds pages the file does not.
 ///
 /// # Errors
 ///
 /// Returns an error, naming the copy, when the database has no file (an
-/// in-memory one), or the copy cannot be written, as on a full disk. The
-/// files this call made are removed, and the caller leaves the database as
-/// it is.
+/// in-memory one), or the copy cannot be written, as on a full disk. Then
+/// the caller leaves the database as it is.
 async fn keep_copy_before_rebuild(
     conn: &mut SqliteConnection,
     stamped: i64,
@@ -251,54 +251,61 @@ async fn keep_copy_before_rebuild(
         );
     };
     let first = format!("{}.before-rebuild-{stamped}", file.display());
-    let copy = claim_free_name(&first).with_context(|| {
+    let (copy, partial) = claim_copy_name(&first).with_context(|| {
         format!("could not claim a name for a copy of the database beside {first}, so it was left as it is")
     })?;
-    let partial = std::path::PathBuf::from(format!("{}.partial", copy.display()));
-    let written = match sqlx::query("VACUUM INTO $1")
+    if let Err(error) = sqlx::query("VACUUM INTO $1")
         .bind(partial.to_string_lossy().as_ref())
         .execute(&mut *conn)
         .await
     {
-        Ok(_) => std::fs::rename(&partial, &copy).map_err(anyhow::Error::from),
-        Err(error) => {
-            // A file `VACUUM INTO` began is removed; anything else at that
-            // name, which made it fail, is left alone.
-            if partial.is_file() {
-                let _ = std::fs::remove_file(&partial);
-            }
-            Err(error.into())
-        }
-    };
-    if let Err(error) = written {
-        let _ = std::fs::remove_file(&copy);
+        // This call created the `.partial` file, so it is removed with
+        // whatever `VACUUM INTO` began in it.
+        let _ = std::fs::remove_file(&partial);
         anyhow::bail!(
             "could not keep a copy of the database at {} before rebuilding its schema, \
              so it was left as it is: {error}",
             copy.display()
         );
     }
+    if let Err(error) = std::fs::rename(&partial, &copy) {
+        // The copy is whole, so it is kept under the name it was written as.
+        anyhow::bail!(
+            "could not rename the copy of the database at {} to {} before rebuilding its schema, \
+             so it was left as it is: {error}",
+            partial.display(),
+            copy.display()
+        );
+    }
     Ok(copy)
 }
 
-/// Create `first`, or else the first of `first-2`, `first-3` and so on that
-/// does not exist, empty, and return its path. `create_new` fails on a name
-/// that exists, so the name returned is one this call made.
-fn claim_free_name(first: &str) -> std::io::Result<std::path::PathBuf> {
+/// Claim the first of `first`, `first-2`, `first-3` and so on where neither
+/// the copy nor its `.partial` file exists, by creating the `.partial` file
+/// empty, and return both paths. `create_new` fails on a name that exists,
+/// so the `.partial` file returned is one this call made, and a `.partial`
+/// file left by a copy that was cut off is passed over, never reused.
+fn claim_copy_name(first: &str) -> std::io::Result<(std::path::PathBuf, std::path::PathBuf)> {
     let mut n = 1;
     loop {
-        let path = if n == 1 {
-            std::path::PathBuf::from(first)
+        let copy = if n == 1 {
+            first.to_owned()
         } else {
-            std::path::PathBuf::from(format!("{first}-{n}"))
+            format!("{first}-{n}")
         };
+        n += 1;
+        let partial = std::path::PathBuf::from(format!("{copy}.partial"));
+        let copy = std::path::PathBuf::from(copy);
+        if copy.exists() {
+            continue;
+        }
         match std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(&path)
+            .open(&partial)
         {
-            Ok(_) => return Ok(path),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => n += 1,
+            Ok(_) => return Ok((copy, partial)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(error) => return Err(error),
         }
     }
