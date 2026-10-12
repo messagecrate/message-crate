@@ -20,7 +20,7 @@ use sha2::{Digest, Sha256};
 
 use crate::part_file::write_asset;
 
-use message_crate_api_types::{ExportRun, ExportScope, Message, Page};
+use message_crate_api_types::{ExportRun, ExportScope, ExportStatus, Message, Page};
 
 pub use message_crate_http::HttpSession;
 
@@ -100,11 +100,12 @@ pub fn export_messages(http: &HttpSession, args: ExportMessagesArgs<'_>) -> Resu
     ok_json(&what, status, &body)
 }
 
-/// How an Export ends its run on the server: with every file written, or
-/// given up.
+/// How an Export ends its run on the server: with the conversation files
+/// written, stopped by an error, or given up by the person.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CloseAction {
     Complete,
+    Fail,
     Cancel,
 }
 
@@ -112,8 +113,18 @@ impl CloseAction {
     /// The last segment of the route that closes the run this way.
     fn path_segment(self) -> &'static str {
         match self {
-            Self::Complete => "complete",
+            Self::Complete | Self::Fail => "complete",
             Self::Cancel => "cancel",
+        }
+    }
+
+    /// The outcome `complete` records, or `None` for `cancel`, whose route
+    /// names its outcome and takes no body.
+    fn status(self) -> Option<ExportStatus> {
+        match self {
+            Self::Complete => Some(ExportStatus::Completed),
+            Self::Fail => Some(ExportStatus::Failed),
+            Self::Cancel => None,
         }
     }
 
@@ -121,13 +132,20 @@ impl CloseAction {
     fn noun(self) -> &'static str {
         match self {
             Self::Complete => "completion",
+            Self::Fail => "failure record",
             Self::Cancel => "cancellation",
         }
     }
 }
 
-/// `POST /v1/exports/{id}/complete` or `.../cancel`: close the run and
-/// return it as it now stands.
+/// The body of `POST /v1/exports/{id}/complete`: how the run ended.
+#[derive(Debug, serde::Serialize)]
+struct CompleteExportBody {
+    status: ExportStatus,
+}
+
+/// `POST /v1/exports/{id}/complete` with the run's outcome, or
+/// `.../cancel`: close the run and return it as it now stands.
 ///
 /// # Errors
 ///
@@ -142,11 +160,15 @@ pub fn close_export(
 ) -> Result<ExportRun> {
     let what = format!("Export Run {export_id} {}", action.noun());
     let path = format!("/v1/exports/{export_id}/{}", action.path_segment());
-    let response = http
+    let mut request = http
         .server_request(Method::POST, base_url, &path, token)
-        .timeout(JSON_CALL_TIMEOUT)
-        .send()
-        .with_context(|| format!("{what} failed"))?;
+        .timeout(JSON_CALL_TIMEOUT);
+    if let Some(status) = action.status() {
+        request = request
+            .header("Content-Type", "application/json")
+            .body(serde_json::to_vec(&CompleteExportBody { status })?);
+    }
+    let response = request.send().with_context(|| format!("{what} failed"))?;
     let status = response.status();
     let text = response.text().unwrap_or_default();
     ok_json(&what, status, &text)
@@ -405,6 +427,37 @@ mod tests {
             err.to_string(),
             "Export Run 7 cancellation failed (HTTP 409 Conflict): the run is already closed"
         );
+    }
+
+    /// A failed run is recorded through `complete` with `failed`, never
+    /// through `cancel`, which would say the person gave the run up (#2069).
+    #[test]
+    fn a_failed_run_closes_through_complete_with_the_failed_status() {
+        let server = httpmock::MockServer::start();
+        let failed = server.mock(|when, then| {
+            when.method("POST")
+                .path("/v1/exports/7/complete")
+                .json_body(serde_json::json!({ "status": "failed" }));
+            then.status(200).json_body(serde_json::json!({
+                "id": 7,
+                "scope": { "kind": "everything" },
+                "tool": "message-crate-export",
+                "status": "failed",
+                "started_at": "2026-09-08T12:00:00Z",
+                "finished_at": "2026-09-08T12:00:09Z",
+                "message_count": 3,
+                "conversation_count": 1,
+                "attachment_count": 2,
+                "total_bytes": 22,
+                "messages_delivered": 2
+            }));
+        });
+        let http = HttpSession::new().unwrap();
+
+        let run = close_export(&http, &server.base_url(), "mc_test", 7, CloseAction::Fail).unwrap();
+
+        failed.assert();
+        assert_eq!(run.status, ExportStatus::Failed);
     }
 
     #[test]

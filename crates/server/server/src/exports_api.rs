@@ -1,7 +1,7 @@
 //! Export Runs: `POST /v1/exports` records what was asked for, lists the
 //! messages it matches and counts them, `GET /v1/exports/{id}/messages` pages
-//! that list, and `complete` or `cancel` closes the run and drops the list
-//! (`docs/architecture/http-api.md`, "Runs").
+//! that list, and `complete` (as `completed` or `failed`) or `cancel` closes
+//! the run and drops the list (`docs/architecture/http-api.md`, "Runs").
 //!
 //! Every route here takes the `export` scope on a session or an API token.
 //! A program with an export token reads messages only through a run it
@@ -241,6 +241,15 @@ pub(crate) struct CreateExportRequest {
     /// Client/tool name recorded on the run, e.g. `message-crate-export`.
     #[serde(default)]
     pub(crate) tool: Option<String>,
+}
+
+/// Body of `POST /v1/exports/{id}/complete`: how the run ended. The outcome
+/// is stated once, as `status`.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub(crate) struct CompleteExportRequest {
+    /// `completed` when the client wrote what it read, or `failed` when an
+    /// error stopped it. A run the person gave up is closed with `cancel`.
+    pub(crate) status: ExportStatus,
 }
 
 /// Query string of `GET /v1/exports`.
@@ -512,13 +521,16 @@ pub(crate) async fn list_export_messages(
     Ok(Json(body))
 }
 
-/// Record that the client finished reading the run.
+/// Record how the client's reading of the run ended: `completed`, or
+/// `failed` when an error stopped it. Any other `status` is
+/// `validation-failed`.
 #[utoipa::path(
     post,
     path = "/v1/exports/{id}/complete",
     tag = "Export",
     security(("session" = ["export"]), ("api-token" = ["export"])),
     params(("id" = i64, Path, description = "Export Run id")),
+    request_body = CompleteExportRequest,
     responses(
         (status = 200, body = ExportRun),
         crate::problem::openapi::StateConflict
@@ -528,8 +540,18 @@ pub(crate) async fn complete_export(
     State(state): State<AppState>,
     ExportAccess(auth): ExportAccess,
     AxumPath(export_id): AxumPath<i64>,
+    Json(body): Json<CompleteExportRequest>,
 ) -> Result<Json<ExportRun>, ApiError> {
-    close_export(&state, auth.account_id, export_id, ExportStatus::Completed).await
+    let status = match body.status {
+        ExportStatus::Completed | ExportStatus::Failed => body.status,
+        other => {
+            return Err(ApiError::validation(format!(
+                "invalid export status '{other}'; expected 'completed' or 'failed' \
+                 (cancel closes a run the person gave up)"
+            )));
+        }
+    };
+    close_export(&state, auth.account_id, export_id, status).await
 }
 
 /// Record that the client gave the run up.

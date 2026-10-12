@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use message_crate_core::{CancelFlag, check_cancel, count_of, parallel_for_each};
+use message_crate_core::{CancelFlag, Cancelled, check_cancel, count_of, parallel_for_each};
 use message_crate_http::{auth_check as authenticate, with_retries};
 use message_ir_format::mark_export_directory;
 use serde::Serialize;
@@ -79,12 +79,26 @@ pub struct ExportReport {
     pub assets_fetched: u64,
     /// Assets already on disk, kept without fetching them.
     pub assets_kept: u64,
+    /// Assets this run could not fetch, by fingerprint. The conversation
+    /// files still name each one, and the directory does not hold its file.
+    pub assets_failed: Vec<AssetFailure>,
     /// Attachment paths the server sent that would leave the output directory,
     /// as the server sent them. Each such attachment is written at
     /// `attachments/{sha256}` instead.
     pub refused_attachment_paths: Vec<String>,
     /// The output directory, as given.
     pub out_dir: String,
+}
+
+/// One Asset an Export Run could not fetch, and why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AssetFailure {
+    /// The Asset's SHA-256 fingerprint.
+    pub sha256: String,
+    /// The path under the output directory its file was to be written at.
+    pub path: String,
+    /// The fetch's error, as the progress log shows it.
+    pub reason: String,
 }
 
 /// Live progress sent to the desktop app during an Export Run.
@@ -169,10 +183,14 @@ fn prepare_out_dir(out_dir: &Path, skip_attachments: bool) -> Result<()> {
 /// (`.message-crate-export-state.jsonl`) records which Assets were already fetched so a
 /// later run can skip them.
 ///
+/// An Asset that cannot be fetched does not end the run: the report and the
+/// progress log name it, and every conversation file is still written.
+///
 /// # Errors
 ///
-/// Returns an error when the session token or output directory is missing, login fails, a
-/// page or Asset fetch fails, or a conversation file cannot be written.
+/// Returns an error when the session token or output directory is missing,
+/// login fails, a page fetch fails, a conversation file cannot be written, or
+/// the run is cancelled.
 pub fn run(
     cfg: &ExportConfig,
     mut on_progress: Option<&mut ProgressFn<'_>>,
@@ -199,19 +217,17 @@ pub fn run(
     let export = exporter.start_export(&mut on_progress)?;
     let outcome = exporter.export_into_directory(&export, &mut on_progress);
     // The client closes the run either way, so the server's record says how
-    // it ended. A close that fails after the files are written is a warning,
+    // it ended: cancelled only when the person asked, failed for any other
+    // error. A close that fails after the files are written is a warning,
     // not a failed export: the directory is complete, only the record is not.
-    let action = if outcome.is_ok() {
-        CloseAction::Complete
-    } else {
-        CloseAction::Cancel
-    };
+    let action = close_action(&outcome);
     if let Err(error) = exporter.close_export(export.id, action) {
         // A refused completion follows a run whose files are all written; a
-        // refused cancellation follows the failure the run returns below.
+        // refused failure record or cancellation follows the error the run
+        // returns below.
         let line = match action {
-            CloseAction::Complete => format!("{error:#}. The Export wrote every file all the same"),
-            CloseAction::Cancel => format!("{error:#}"),
+            CloseAction::Complete => format!("{error:#}. The Export wrote its files all the same"),
+            CloseAction::Fail | CloseAction::Cancel => format!("{error:#}"),
         };
         emit(&mut on_progress, ProgressEvent::Log(line));
     }
@@ -230,6 +246,7 @@ pub fn run(
         messages,
         assets_fetched: assets.fetched,
         assets_kept: assets.kept,
+        assets_failed: assets.failed,
         refused_attachment_paths: refused_paths.into_iter().collect(),
         out_dir: cfg.out_dir.display().to_string(),
     };
@@ -242,8 +259,39 @@ pub fn run(
             report.out_dir
         )),
     );
+    if !report.assets_failed.is_empty() {
+        emit(
+            &mut on_progress,
+            ProgressEvent::Log(missing_assets_line(report.assets_failed.len())),
+        );
+    }
     emit(&mut on_progress, ProgressEvent::Done(report.clone()));
     Ok(report)
+}
+
+/// How a run that returned `outcome` is closed on the server: completed when
+/// it wrote its conversation files, cancelled when the person stopped it,
+/// and failed for every other error.
+fn close_action<T>(outcome: &Result<T>) -> CloseAction {
+    match outcome {
+        Ok(_) => CloseAction::Complete,
+        Err(error) if error.is::<Cancelled>() => CloseAction::Cancel,
+        Err(_) => CloseAction::Fail,
+    }
+}
+
+/// The progress line that ends a run with `count` Assets it could not fetch.
+fn missing_assets_line(count: usize) -> String {
+    let files = if count == 1 {
+        "its file is"
+    } else {
+        "their files are"
+    };
+    format!(
+        "{} could not be fetched, so {files} missing from the Export. \
+         The lines above name each one",
+        count_of(count as u64, "Asset", "Assets")
+    )
 }
 
 /// Everything the server handed back while paging: messages grouped by
@@ -262,11 +310,14 @@ struct Fetched {
     total_messages: u64,
 }
 
-/// How many Assets this run fetched and kept, for the report.
-#[derive(Debug, Default, Clone, Copy)]
+/// How many Assets this run fetched and kept, and the ones it could not
+/// fetch, for the report.
+#[derive(Debug, Default, Clone)]
 struct AssetCounts {
     fetched: u64,
     kept: u64,
+    /// Sorted by fingerprint.
+    failed: Vec<AssetFailure>,
 }
 
 /// What one run left on disk.
@@ -409,19 +460,25 @@ impl<'a> Export<'a> {
     ///
     /// # Errors
     ///
-    /// Returns an error when a page or Asset fetch fails after retries, a
-    /// message cannot be converted, a file cannot be written, or the run is
-    /// cancelled.
+    /// Returns an error when a page fetch fails after retries, a message
+    /// cannot be converted, a file cannot be written, or the run is
+    /// cancelled. An Asset that cannot be fetched is counted in the result
+    /// instead.
     fn export_into_directory(
         &self,
         export: &ExportRun,
         out: &mut Option<&mut ProgressFn<'_>>,
     ) -> Result<Written> {
-        let fetched = self.fetch_all_messages(export, out)?;
+        let mut fetched = self.fetch_all_messages(export, out)?;
         let assets = if self.cfg.skip_attachments {
             AssetCounts::default()
         } else {
             let counts = self.fetch_assets(&fetched.assets, out)?;
+            // An Asset that could not be fetched has no file to place at its
+            // other paths, and the journal must not list it as on disk.
+            for failure in &counts.failed {
+                fetched.assets.remove(&failure.sha256);
+            }
             place_other_paths(&self.cfg.out_dir, &fetched.assets, &fetched.other_paths)?;
             counts
         };
@@ -520,11 +577,13 @@ impl<'a> Export<'a> {
     ///
     /// A file at its path is kept whether or not the journal lists it, so the
     /// "Fetching" line counts as already on disk the same Assets the
-    /// "Fetched" line counts as kept.
+    /// "Fetched" line counts as kept. An Asset whose fetch fails after
+    /// retries gets one line in the progress log, is counted as failed, and
+    /// is not journaled.
     ///
     /// # Errors
     ///
-    /// Returns an error when a fetch fails after retries or the run is cancelled.
+    /// Returns an error when the run is cancelled.
     fn fetch_assets(
         &self,
         assets: &HashMap<String, String>,
@@ -533,8 +592,8 @@ impl<'a> Export<'a> {
         let cfg = self.cfg;
         let to_fetch = assets_to_fetch(assets, &cfg.out_dir);
         let kept = assets.len() as u64 - to_fetch.len() as u64;
-        let fetched = if to_fetch.is_empty() {
-            0
+        let (fetched, failed) = if to_fetch.is_empty() {
+            (0, Vec::new())
         } else {
             emit(
                 out,
@@ -554,6 +613,24 @@ impl<'a> Export<'a> {
                 workers: cfg.asset_fetch_workers,
                 cancel: &cfg.cancel,
             })?;
+            let failed: Vec<AssetFailure> = stats
+                .failed
+                .into_iter()
+                .map(|(sha256, reason)| AssetFailure {
+                    path: to_fetch[&sha256].clone(),
+                    sha256,
+                    reason,
+                })
+                .collect();
+            for failure in &failed {
+                emit(
+                    out,
+                    ProgressEvent::Log(format!(
+                        "{}, so {} is not written",
+                        failure.reason, failure.path
+                    )),
+                );
+            }
             emit(
                 out,
                 ProgressEvent::Log(format!(
@@ -563,10 +640,11 @@ impl<'a> Export<'a> {
                     kept
                 )),
             );
-            stats.fetched
+            (stats.fetched, failed)
         };
+        let failed_shas: BTreeSet<&str> = failed.iter().map(|f| f.sha256.as_str()).collect();
         for sha in assets.keys() {
-            if !self.journal.assets.contains(sha) {
+            if !self.journal.assets.contains(sha) && !failed_shas.contains(sha.as_str()) {
                 let event = ExportJournalEvent::AssetOk {
                     target: self.target.clone(),
                     sha256: sha.clone(),
@@ -583,7 +661,11 @@ impl<'a> Export<'a> {
                 }
             }
         }
-        Ok(AssetCounts { fetched, kept })
+        Ok(AssetCounts {
+            fetched,
+            kept,
+            failed,
+        })
     }
 
     /// Write one JSON Lines file per conversation and return how many.
@@ -624,8 +706,10 @@ impl<'a> Export<'a> {
     }
 
     /// Record that this Export Run finished, then rewrite the journal in its
-    /// shortest form. Every Asset this run saw is on disk: it was fetched
-    /// above, or an earlier run had already fetched it. A journal write
+    /// shortest form. Every Asset in `seen_assets` is on disk: it was fetched
+    /// above, or an earlier run had already fetched it. An Asset this run
+    /// could not fetch is left out of the journal, even when an earlier
+    /// run's line listed it, because its file is not there. A journal write
     /// failure does not fail a run whose files are already written, so it
     /// goes to the progress log. A next run into the same directory still
     /// skips each Asset whose file is there, journal or not.
@@ -655,6 +739,9 @@ impl<'a> Export<'a> {
         }
         let mut recorded_assets = self.journal.assets.clone();
         recorded_assets.extend(seen_assets.into_keys());
+        for failure in &assets.failed {
+            recorded_assets.remove(&failure.sha256);
+        }
         let final_state = ExportJournalState {
             assets: recorded_assets,
             export_complete: true,
@@ -791,6 +878,9 @@ struct AssetFetchStats {
     /// The bytes this run fetched.
     bytes: u64,
     fetched: u64,
+    /// Each Asset whose fetch failed after retries, as (SHA-256, the error),
+    /// sorted by SHA-256.
+    failed: Vec<(String, String)>,
 }
 
 /// The Assets in `assets` (SHA-256 to path under `out_dir`) whose file is not
@@ -818,17 +908,18 @@ struct FetchAssetsParallelArgs<'a> {
     cancel: &'a CancelFlag,
 }
 
-/// Fetch each Asset in `assets` on `workers` threads and return the counts and
-/// the bytes fetched.
+/// Fetch each Asset in `assets` on `workers` threads and return the counts,
+/// the bytes fetched, and the Assets that could not be fetched.
 ///
 /// The same pattern as the Upload's `upload_assets`: the jobs are collected,
 /// then [`parallel_for_each`] runs them. `assets` holds only Assets whose file
 /// is not at its path ([`assets_to_fetch`]). Each fetch retries a transient
-/// HTTP failure, as the Upload does.
+/// HTTP failure, as the Upload does, and a fetch that still fails is one
+/// entry in `failed`, as an Upload's failed Asset is one row of its summary.
 ///
 /// # Errors
 ///
-/// Returns an error when a fetch fails after retries or the run is cancelled.
+/// Returns [`Cancelled`] when the run is cancelled.
 fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetchStats> {
     let FetchAssetsParallelArgs {
         session,
@@ -854,11 +945,19 @@ fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetch
         })
     });
 
-    for result in results {
-        let bytes = result?;
-        stats.bytes = stats.bytes.saturating_add(bytes);
-        stats.fetched += 1;
+    for (job, result) in jobs.iter().zip(results) {
+        match result {
+            Ok(bytes) => {
+                stats.bytes = stats.bytes.saturating_add(bytes);
+                stats.fetched += 1;
+            }
+            Err(error) if error.is::<Cancelled>() => return Err(error),
+            Err(error) => stats
+                .failed
+                .push((job.sha256.clone(), format!("{error:#}"))),
+        }
     }
+    stats.failed.sort();
     Ok(stats)
 }
 

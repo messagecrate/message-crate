@@ -976,8 +976,12 @@ export function createExport(body: Schema["CreateExportRequest"]): Promise<Schem
   return apiClient.post<Schema["ExportRun"]>("/v1/exports", body);
 }
 
-export function completeExport(id: number): Promise<Schema["ExportRun"]> {
-  return apiClient.post<Schema["ExportRun"]>(`/v1/exports/${id}/complete`, {});
+/** Close an Export Run as `completed`, or as `failed` when an error stopped it. */
+export function completeExport(
+  id: number,
+  body: Schema["CompleteExportRequest"],
+): Promise<Schema["ExportRun"]> {
+  return apiClient.post<Schema["ExportRun"]>(`/v1/exports/${id}/complete`, body);
 }
 
 export function cancelExport(id: number): Promise<Schema["ExportRun"]> {
