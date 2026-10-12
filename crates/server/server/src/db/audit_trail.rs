@@ -79,12 +79,13 @@ pub enum AuditAction {
     /// The owner changed the attachment size limit; `asset_max_bytes` is the
     /// new limit.
     AssetLimitChanged,
-    /// The owner added the Demo Account where there was none: a build
-    /// started; `demo_data_size` is the set of Demo Data asked for.
+    /// The Demo Account was added where there was none: a build started, by
+    /// the owner, the `reset-demo` command, or the server's first start;
+    /// `demo_data_size` is the set of Demo Data asked for.
     DemoAccountAdded,
-    /// The owner reset the Demo Account: a build started that removes it,
-    /// with all it holds, and builds it again; `demo_data_size` is the set of
-    /// Demo Data asked for.
+    /// The Demo Account was reset: a build started, by the owner or the
+    /// `reset-demo` command, that removes it, with all it holds, and builds it
+    /// again; `demo_data_size` is the set of Demo Data asked for.
     DemoAccountReset,
     /// The holder made an API token.
     ApiTokenCreated,
@@ -145,10 +146,14 @@ pub enum AuditActor {
     /// The account's own holder: the person logged in to it, or a program
     /// holding one of its API tokens.
     Holder,
-    /// A command run on the server, such as `reset-owner-password`.
+    /// A command run on the server, such as `reset-owner-password` or
+    /// `reset-demo`.
     CommandLine,
-    /// The server on its own: building the Demo Account, removing a build
-    /// that failed, or a session running out.
+    /// The server's first start on a new database, which adds the Demo
+    /// Account before the server listens.
+    StartUp,
+    /// The server on its own: removing a Demo Account build that failed, or
+    /// a session running out.
     Server,
     /// Someone at the login card, before any login: a refused login, or a
     /// stranger creating an account.
@@ -162,6 +167,7 @@ impl AuditActor {
             Self::Owner => "owner",
             Self::Holder => "holder",
             Self::CommandLine => "command_line",
+            Self::StartUp => "start_up",
             Self::Server => "server",
             Self::Anonymous => "anonymous",
         }
@@ -172,6 +178,7 @@ impl AuditActor {
             "owner" => Self::Owner,
             "holder" => Self::Holder,
             "command_line" => Self::CommandLine,
+            "start_up" => Self::StartUp,
             "anonymous" => Self::Anonymous,
             _ => Self::Server,
         }
@@ -664,6 +671,56 @@ pub async fn record_about(
     )
     .await?;
     Ok(())
+}
+
+/// Record that `actor` is building the Demo Account with the `size` set of
+/// Demo Data, once the build has removed the Demo Account it replaces, if
+/// any: the `reset-demo` command and the build `serve` runs on a new
+/// database (#2686). The owner's build from Owner Home records its own entry
+/// when the owner asks for it, before the build starts.
+///
+/// The entry is `demo_account_reset` when the build `replaced` a Demo
+/// Account and `demo_account_added` when there was none. It is about no
+/// account: the old Demo Account is deleted by then, and the new one not
+/// yet written.
+///
+/// # Errors
+///
+/// Returns an error when the insert fails.
+pub async fn record_demo_build_after_removal(
+    conn: &mut SqliteConnection,
+    actor: AuditActor,
+    size: DemoDataSize,
+    replaced: bool,
+) -> Result<()> {
+    record(conn, &demo_build_entry(actor, size, replaced, None)).await?;
+    Ok(())
+}
+
+/// The entry that records a build of the Demo Account by `actor` with the
+/// `size` set: `demo_account_reset` when it `replaced` a Demo Account,
+/// `demo_account_added` when there was none. It is about `account` when one
+/// is given, and about no account otherwise.
+#[must_use]
+pub fn demo_build_entry<'a>(
+    actor: AuditActor,
+    size: DemoDataSize,
+    replaced: bool,
+    account: Option<(i64, &'a str)>,
+) -> NewEntry<'a> {
+    let action = if replaced {
+        AuditAction::DemoAccountReset
+    } else {
+        AuditAction::DemoAccountAdded
+    };
+    let entry = match account {
+        Some(account) => NewEntry::about(action, actor, account),
+        None => NewEntry::about_no_account(action, actor),
+    };
+    entry.with_details(Details {
+        demo_data_size: Some(size),
+        ..Details::default()
+    })
 }
 
 async fn insert(

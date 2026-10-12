@@ -6,7 +6,7 @@ use crate::test_support::{
     ConversationRow, MessageRow, conversation_header, message_line, stored_time,
     with_trigger_lifted,
 };
-use demo_seed::bundle::{DemoAccount, DemoOwner};
+use demo_seed::bundle::DemoOwner;
 use sqlx::SqliteConnection;
 use std::collections::BTreeSet;
 
@@ -104,9 +104,6 @@ async fn the_demo_account_row_says_the_grant_its_id_gives() {
             handle_specs: Vec::new(),
             emails: Vec::new(),
         },
-        account: DemoAccount {
-            username: "demo".into(),
-        },
     };
 
     seed_demo_account_on_conn(&mut conn, DEMO_ACCOUNT_ID, &seed)
@@ -142,9 +139,6 @@ async fn a_build_refused_by_another_account_named_demo_names_that_account() {
             display_name: "Demo User".into(),
             handle_specs: Vec::new(),
             emails: Vec::new(),
-        },
-        account: DemoAccount {
-            username: "demo".into(),
         },
     };
 
@@ -190,7 +184,7 @@ async fn failed_reset_preserves_existing_demo_account() {
     .expect("write unreadable jsonl");
     let cfg = test_config(&db, &data_dir);
 
-    let result = reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID).await;
+    let result = reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID, DemoDataSize::Medium).await;
 
     let error = format!(
         "{:#}",
@@ -243,7 +237,7 @@ async fn a_reset_whose_rebuild_fails_leaves_the_database_and_server_ready_in_pla
     .expect("write unreadable jsonl");
     let cfg = test_config(&db, &temp.path().join("data"));
 
-    let result = reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID).await;
+    let result = reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID, DemoDataSize::Medium).await;
 
     assert!(
         result.is_err(),
@@ -275,7 +269,7 @@ async fn a_reset_builds_in_the_configured_database_and_leaves_the_config_as_it_i
     fs::write(&config_path, &config_text).expect("write the operator's config");
 
     let cfg = Config::load(&config_path).expect("load the operator's config");
-    let stats = reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID)
+    let stats = reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID, DemoDataSize::Medium)
         .await
         .expect("a complete bundle resets");
 
@@ -444,12 +438,18 @@ async fn a_reset_that_renames_another_accounts_contact_is_refused() {
     write_tiny_reset_bundle(&bundle);
     let cfg = test_config(&db, &temp.path().join("data"));
 
-    let result = reset_prepared_bundle_with(&cfg, &bundle, DEMO_ACCOUNT_ID, async |db| {
-        sqlx::query("UPDATE contacts SET preferred_name = 'Renamed' WHERE account_id = 9")
-            .execute(db)
-            .await?;
-        Ok(())
-    })
+    let result = reset_prepared_bundle_with(
+        &cfg,
+        &bundle,
+        DEMO_ACCOUNT_ID,
+        DemoDataSize::Medium,
+        async |db| {
+            sqlx::query("UPDATE contacts SET preferred_name = 'Renamed' WHERE account_id = 9")
+                .execute(db)
+                .await?;
+            Ok(())
+        },
+    )
     .await;
 
     let error = format!("{:#}", result.err().expect("the reset is refused"));
@@ -599,17 +599,23 @@ async fn reset_check_refuses_a_reset_that_loses_the_old_demo_accounts_audit_trai
 
     // The schema refuses the delete, so the trigger is lifted for it: the
     // check still has to catch a reset that gets past it.
-    let result = reset_prepared_bundle_with(&cfg, &bundle, DEMO_ACCOUNT_ID, async |db| {
-        let mut conn = db.acquire().await?;
-        with_trigger_lifted(&mut conn, "audit_entries_never_deleted", async |conn| {
-            sqlx::query("DELETE FROM audit_entries WHERE id = $1")
-                .bind(entry)
-                .execute(conn)
-                .await
-        })
-        .await?;
-        Ok(())
-    })
+    let result = reset_prepared_bundle_with(
+        &cfg,
+        &bundle,
+        DEMO_ACCOUNT_ID,
+        DemoDataSize::Medium,
+        async |db| {
+            let mut conn = db.acquire().await?;
+            with_trigger_lifted(&mut conn, "audit_entries_never_deleted", async |conn| {
+                sqlx::query("DELETE FROM audit_entries WHERE id = $1")
+                    .bind(entry)
+                    .execute(conn)
+                    .await
+            })
+            .await?;
+            Ok(())
+        },
+    )
     .await;
 
     let error = format!("{:#}", result.err().expect("the reset is refused"));
@@ -700,10 +706,16 @@ async fn a_reset_that_changes_another_accounts_directory_is_refused() {
         write_tiny_reset_bundle(&bundle);
         let cfg = test_config(&db, &data_dir);
 
-        let result = reset_prepared_bundle_with(&cfg, &bundle, DEMO_ACCOUNT_ID, async |_| {
-            change(&account);
-            Ok(())
-        })
+        let result = reset_prepared_bundle_with(
+            &cfg,
+            &bundle,
+            DEMO_ACCOUNT_ID,
+            DemoDataSize::Medium,
+            async |_| {
+                change(&account);
+                Ok(())
+            },
+        )
         .await;
 
         let error = format!("{:#}", result.err().expect("the reset is refused"));
@@ -734,7 +746,7 @@ async fn reset_refuses_while_server_holds_database_lock() {
     let cfg = test_config(&db, &data_dir);
     let _serve_lock = crate::operation_lock::acquire_for_serve(&db).expect("acquire server lock");
 
-    let result = reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID).await;
+    let result = reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID, DemoDataSize::Medium).await;
 
     let error = format!(
         "{:#}",
@@ -774,7 +786,7 @@ async fn reset_refuses_a_database_with_another_layout() {
     write_tiny_reset_bundle(&bundle);
     let cfg = test_config(&db, &temp.path().join("data"));
 
-    let result = reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID).await;
+    let result = reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID, DemoDataSize::Medium).await;
 
     let error = format!("{:#}", result.err().expect("the reset is refused"));
     assert!(error.contains("another database layout"), "{error}");
@@ -2013,7 +2025,7 @@ async fn a_reset_leaves_a_demo_that_logs_in_and_holds_nothing_old() {
         close_test_db(pool, conn).await;
     }
 
-    let stats = reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID)
+    let stats = reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID, DemoDataSize::Medium)
         .await
         .expect("reset the demo");
 
@@ -2182,7 +2194,7 @@ async fn a_new_database_is_seeded_once_with_the_demo_account_and_no_owner() {
             .expect("read a missing database")
     );
 
-    let messages = seed_new_database_with(&cfg, |bundle| {
+    let messages = seed_new_database_with(&cfg, DemoDataSize::Medium, |bundle| {
         write_tiny_reset_bundle(bundle);
         Ok(())
     })
@@ -2260,7 +2272,9 @@ async fn another_programs_sqlite_file_is_not_new_and_reset_demo_refuses_it() {
     assert!(!database_is_new(&cfg).await.expect("read the file"));
     let bundle = temp.path().join("bundle");
     write_tiny_reset_bundle(&bundle);
-    let Err(err) = reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID).await else {
+    let Err(err) =
+        reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID, DemoDataSize::Medium).await
+    else {
         panic!("reset-demo refuses another program's file");
     };
     let err = err.to_string();
@@ -2278,7 +2292,7 @@ async fn a_first_start_seed_that_fails_partway_leaves_no_demo_account() {
     let temp = tempfile::tempdir().expect("create test directory");
     let cfg = crate::open_db::fresh_config(temp.path());
 
-    let seeded = seed_new_database_with(&cfg, |bundle| {
+    let seeded = seed_new_database_with(&cfg, DemoDataSize::Medium, |bundle| {
         write_tiny_reset_bundle(bundle);
         fs::write(
             bundle.join("staging").join(SBR_SOURCE).join("broken.jsonl"),
@@ -2356,12 +2370,12 @@ async fn a_first_start_stopped_after_the_account_row_is_seeded_whole_by_the_next
         write_tiny_reset_bundle(bundle);
         Ok(())
     };
-    let messages = seed_new_database_with(&cfg, tiny)
+    let messages = seed_new_database_with(&cfg, DemoDataSize::Medium, tiny)
         .await
         .expect("the next start seeds the Demo Account");
 
     let reference = crate::open_db::fresh_config(&temp.path().join("reference"));
-    let reference_messages = seed_new_database_with(&reference, tiny)
+    let reference_messages = seed_new_database_with(&reference, DemoDataSize::Medium, tiny)
         .await
         .expect("a start that was never stopped seeds the Demo Account");
     assert_eq!(messages, reference_messages);
@@ -2383,7 +2397,7 @@ async fn the_build_under_serve_says_every_step_in_the_server_log() {
     let cfg = crate::open_db::fresh_config(&temp.path().join("crate"));
     let (seeded, lines) = crate::test_support::lines_written_by(
         "info",
-        seed_new_database_with(&cfg, |bundle| {
+        seed_new_database_with(&cfg, DemoDataSize::Medium, |bundle| {
             write_tiny_reset_bundle(bundle);
             Ok(())
         }),
@@ -2423,7 +2437,7 @@ async fn the_next_start_removes_a_demo_account_whose_build_did_not_finish() {
     let opened = OpenDb::create_or_open(cfg.clone())
         .await
         .expect("open the database");
-    build_demo_account_with(&cfg, &opened.db, |bundle| {
+    build_demo_account_with(&cfg, &opened.db, DemoDataSize::Medium, |bundle| {
         write_tiny_reset_bundle(bundle);
         Ok(())
     })
@@ -2590,7 +2604,10 @@ async fn every_import_contact_group_of_a_built_demo_has_members() {
         &build,
         &prepared,
         DEMO_ACCOUNT_ID,
-        AuditActor::CommandLine,
+        BuildBy {
+            actor: AuditActor::CommandLine,
+            record_with_size: None,
+        },
         BuildRun::Serve,
         &AtomicBool::new(false),
     )
@@ -2646,7 +2663,10 @@ async fn another_account_writes_between_the_demo_wipes_delete_batches() {
         &build.db,
         &prepared,
         DEMO_ACCOUNT_ID,
-        AuditActor::Server,
+        BuildBy {
+            actor: AuditActor::Server,
+            record_with_size: None,
+        },
         BuildRun::Serve,
         &AtomicBool::new(false),
     )
@@ -2821,7 +2841,7 @@ async fn a_first_start_seed_runs_no_vacuum() {
     let mut cfg = crate::open_db::fresh_config(temp.path());
     cfg.paths.db = temp.path().join("new/messagecrate.db");
 
-    seed_new_database_with(&cfg, |bundle| {
+    seed_new_database_with(&cfg, DemoDataSize::Medium, |bundle| {
         write_tiny_reset_bundle(bundle);
         let imessage = bundle.join("staging").join(IMESSAGE_SOURCE).join("a.jsonl");
         let first = fs::read_to_string(&imessage)?;
@@ -2859,7 +2879,7 @@ async fn the_reset_demo_command_runs_vacuum() {
         .expect("create database parent");
     seed_bulky_demo(&cfg.paths.db).await;
 
-    reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID)
+    reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID, DemoDataSize::Medium)
         .await
         .expect("a complete bundle resets");
 
@@ -2941,4 +2961,128 @@ async fn the_wipe_deletes_duplicates_before_the_messages_they_duplicate() {
         Some(&vec![(original, None)]),
         "the first batch deletes the duplicate {duplicate} and leaves the original"
     );
+}
+
+/// One Audit Trail entry, with what a Demo Account build writes in it.
+#[derive(Debug, sqlx::FromRow)]
+struct BuildEntry {
+    id: i64,
+    action: String,
+    actor: String,
+    account_id: Option<i64>,
+    username: Option<String>,
+    deletion_entry_id: Option<i64>,
+    demo_data_size: Option<String>,
+}
+
+/// Every Audit Trail entry in the database at `db`, in the order written.
+async fn audit_entries_of(db: &Path) -> Vec<BuildEntry> {
+    let pool = engine::open_pool_for_path(db)
+        .await
+        .expect("open the database");
+    let entries = sqlx::query_as(
+        "SELECT id, action, actor, account_id, username, deletion_entry_id,
+                json_extract(details, '$.demo_data_size') AS demo_data_size
+         FROM audit_entries ORDER BY id",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("read the Audit Trail");
+    pool.close().await;
+    entries
+}
+
+/// Assert that `entry` records a Demo Account build: `action` by `actor`
+/// with the `size` set, about no account.
+fn assert_build_entry(entry: &BuildEntry, action: &str, actor: &str, size: &str) {
+    assert_eq!(
+        (entry.action.as_str(), entry.actor.as_str()),
+        (action, actor),
+        "{entry:#?}"
+    );
+    assert_eq!(entry.demo_data_size.as_deref(), Some(size), "{entry:#?}");
+    assert_eq!(
+        (entry.account_id, &entry.username, entry.deletion_entry_id),
+        (None, &None, None),
+        "the build's entry is about no account: {entry:#?}"
+    );
+}
+
+/// `reset-demo` on a database that holds a Demo Account records the old
+/// account's deletion, then the reset, by the command and with its set of
+/// Demo Data (#2686). The check that the reset changed nothing outside the
+/// Demo Account accepts the reset's entry, so the reset is installed.
+#[tokio::test]
+async fn the_reset_demo_command_records_its_reset_after_the_deletion() {
+    let temp = tempfile::tempdir().expect("create test directory");
+    let db = temp.path().join("messagecrate.db");
+    let data_dir = temp.path().join("data");
+    seed_previous_demo(&db, &data_dir).await;
+    let bundle = temp.path().join("bundle");
+    write_tiny_reset_bundle(&bundle);
+    let cfg = test_config(&db, &data_dir);
+
+    reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID, DemoDataSize::Large)
+        .await
+        .expect("a complete bundle resets");
+
+    let entries = audit_entries_of(&db).await;
+    let [deleted, reset] = entries.as_slice() else {
+        panic!("a deletion and a reset: {entries:#?}");
+    };
+    assert_eq!(
+        (deleted.action.as_str(), deleted.actor.as_str()),
+        ("account_deleted", "command_line"),
+        "{deleted:#?}"
+    );
+    assert_eq!(deleted.deletion_entry_id, Some(deleted.id));
+    assert_build_entry(reset, "demo_account_reset", "command_line", "large");
+}
+
+/// `reset-demo` on a database with no Demo Account adds one, and records the
+/// add by the command with its set of Demo Data. The reset is installed, so
+/// the install check accepts that entry too (#2686).
+#[tokio::test]
+async fn the_reset_demo_command_records_its_add_of_the_demo_account() {
+    let temp = tempfile::tempdir().expect("create test directory");
+    let db = temp.path().join("messagecrate.db");
+    let data_dir = temp.path().join("data");
+    let (pool, mut conn) = test_db(&db).await;
+    crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
+    close_test_db(pool, conn).await;
+    let bundle = temp.path().join("bundle");
+    write_tiny_reset_bundle(&bundle);
+    let cfg = test_config(&db, &data_dir);
+
+    reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID, DemoDataSize::Medium)
+        .await
+        .expect("a reset adds the Demo Account");
+
+    let entries = audit_entries_of(&db).await;
+    let [added] = entries.as_slice() else {
+        panic!("one entry: {entries:#?}");
+    };
+    assert_build_entry(added, "demo_account_added", "command_line", "medium");
+}
+
+/// The build `serve` runs on a new database records the add of the Demo
+/// Account by the server's first start, with its set of Demo Data, and
+/// nothing else (#2686).
+#[tokio::test]
+async fn the_first_start_records_its_add_of_the_demo_account() {
+    let temp = tempfile::tempdir().expect("create test directory");
+    let cfg = crate::open_db::fresh_config(temp.path());
+
+    seed_new_database_with(&cfg, DemoDataSize::Medium, |bundle| {
+        write_tiny_reset_bundle(bundle);
+        Ok(())
+    })
+    .await
+    .expect("seed the new database");
+
+    let entries = audit_entries_of(&cfg.paths.db).await;
+    let [added] = entries.as_slice() else {
+        panic!("one entry: {entries:#?}");
+    };
+    assert_build_entry(added, "demo_account_added", "start_up", "medium");
 }
