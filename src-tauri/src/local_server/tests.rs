@@ -935,6 +935,14 @@ mod with_a_script {
             open_to_network: true,
             ..launch_at(address, &program, dir.path())
         });
+        // The app asks the address before it starts anything. Only a start
+        // brings a writer to the pipe, so anything else fails here rather
+        // than leave the read below waiting.
+        assert_eq!(
+            server.phase_after(|phase| *phase == Phase::Probing),
+            Phase::Starting { open: true },
+            "the app started no server"
+        );
         assert_eq!(
             next_bind(),
             SocketAddr::from(([0, 0, 0, 0], address.port())).to_string(),
