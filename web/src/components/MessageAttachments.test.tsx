@@ -120,6 +120,44 @@ describe("a photo in the conversation", () => {
     expect(fetchAssetObjectUrl).not.toHaveBeenCalled();
   });
 
+  it("says why the server could not make its Thumbnail, beside its file name", () => {
+    const reason = "Error opening input file aa/aaa.jpg.";
+    const { container } = renderWithProviders(
+      <MessageAttachments
+        message={message([
+          { ...photo, thumbnail_mime_type: null, thumbnail_not_made_reason: reason },
+        ])}
+      />,
+    );
+    scrollNear(container);
+
+    const tile = screen.getByRole("button", { name: "Open cat.jpg" });
+    expect(tile).toHaveTextContent("cat.jpg");
+    expect(tile).toHaveTextContent(`No Thumbnail could be made: ${reason}`);
+    expect(fetchAssetObjectUrl).not.toHaveBeenCalled();
+  });
+
+  it("says why there is no Thumbnail once a damaged one fails to load, and not before", async () => {
+    // A row can still name a Thumbnail whose file the pass found damaged.
+    const reason = "Invalid data found when processing input";
+    let fail: (error: Error) => void = () => {};
+    vi.mocked(fetchAssetObjectUrl).mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          fail = reject;
+        }),
+    );
+    const { container } = renderWithProviders(
+      <MessageAttachments message={message([{ ...photo, thumbnail_not_made_reason: reason }])} />,
+    );
+    scrollNear(container);
+    expect(screen.queryByText(`No Thumbnail could be made: ${reason}`)).not.toBeInTheDocument();
+
+    fail(new Error("404"));
+
+    expect(await screen.findByText(`No Thumbnail could be made: ${reason}`)).toBeInTheDocument();
+  });
+
   it("opens the viewer when pressed", async () => {
     const user = setupUser();
     const onAttachmentClick = vi.fn();
@@ -286,6 +324,22 @@ describe("a video in the conversation", () => {
     expect(screen.getByText(CANNOT_PLAY_HERE)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Play damaged.mp4" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download damaged.mp4" })).toBeInTheDocument();
+  });
+
+  it("says why the server could not make its Thumbnail, and still offers play", () => {
+    const reason = "Error opening input file cc/ccc.mov.";
+    const { container } = renderWithProviders(
+      <MessageAttachments
+        message={message([
+          { ...mov, thumbnail_mime_type: null, thumbnail_not_made_reason: reason },
+        ])}
+      />,
+    );
+    scrollNear(container);
+
+    expect(screen.getByText(`No Thumbnail could be made: ${reason}`)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Play clip.mov" })).toBeInTheDocument();
+    expect(fetchAssetObjectUrl).not.toHaveBeenCalled();
   });
 
   it("says a HEVC MP4 with no Preview yet cannot be played, and never streams the original", () => {

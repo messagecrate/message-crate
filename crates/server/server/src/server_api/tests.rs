@@ -1636,14 +1636,14 @@ fn a_demo_build_converts_no_other_accounts_attachments() {
 
             assert!(part.is_file(), "the other account's Upload keeps its .part");
             let mut conn = fixture.conn().await;
-            let derived: Option<String> =
-                sqlx::query_scalar("SELECT derived_assets_path FROM attachments WHERE id = $1")
+            let preview: Option<String> =
+                sqlx::query_scalar("SELECT preview_assets_path FROM attachments WHERE id = $1")
                     .bind(attachment)
                     .fetch_one(&mut *conn)
                     .await
                     .unwrap();
             assert_eq!(
-                derived, None,
+                preview, None,
                 "the other account's attachment is not converted"
             );
             assert!(

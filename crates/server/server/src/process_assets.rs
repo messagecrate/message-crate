@@ -6,7 +6,7 @@
 //! ([`media::browser_shows`]). Originals are never changed. Each version is
 //! stored under the fingerprint of its own bytes and named by the
 //! attachment rows of its original (`attachments.thumbnail_*` and
-//! `attachments.derived_*`). The conversions are the `media` crate's, which
+//! `attachments.preview_*`). The conversions are the `media` crate's, which
 //! finds ffmpeg and ffprobe on `PATH`, then in the Tools Directory the
 //! desktop app names with `serve --tools-dir`.
 //!
@@ -62,7 +62,7 @@ pub struct ProcessAssetsStats {
     /// Stored originals examined.
     pub scanned: u64,
     /// Previews written (JPEG/MP4/MP3).
-    pub derived: u64,
+    pub previews: u64,
     /// Thumbnails written.
     pub thumbnails: u64,
     /// Incomplete originals (`.part` files left by a transfer that never
@@ -93,7 +93,7 @@ impl ProcessAssetsStats {
     /// Add the counts of another pass.
     pub(crate) fn add(&mut self, other: &Self) {
         self.scanned += other.scanned;
-        self.derived += other.derived;
+        self.previews += other.previews;
         self.thumbnails += other.thumbnails;
         self.removed += other.removed;
         self.dropped += other.dropped;
@@ -109,7 +109,7 @@ impl ProcessAssetsStats {
     fn count(&mut self, outcome: &Outcome) {
         self.scanned += 1;
         if outcome.preview {
-            self.derived += 1;
+            self.previews += 1;
         }
         if outcome.thumbnail {
             self.thumbnails += 1;
@@ -360,7 +360,7 @@ fn done_line(stats: &ProcessAssetsStats, dry_run: bool) -> String {
         words(stats.scanned, "read 1 original", "read {n} originals"),
         format!(
             "made {} and {}",
-            words(stats.derived, "1 Preview", "{n} Previews"),
+            words(stats.previews, "1 Preview", "{n} Previews"),
             words(stats.thumbnails, "1 Thumbnail", "{n} Thumbnails"),
         ),
     ];
