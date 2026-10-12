@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { mockedAuth, renderWithProviders as render } from "../../test/providers";
 import { inTimeZone } from "../../test/timeZone";
 import { fill, setupUser } from "../../test/user";
@@ -65,11 +66,15 @@ const identities: Identity[] = [
 ];
 
 beforeEach(() => {
+  startFakeClock();
   mutateAsync.mockReset();
   listAccountIdentities.mockReset();
   listAccountIdentities.mockResolvedValue(identities);
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  stopFakeClock();
+});
 
 describe("IdentitiesSection", () => {
   it("says what identities are for, then lists them with dates and counts from the server", async () => {
@@ -97,7 +102,8 @@ describe("IdentitiesSection", () => {
     expect(within(table).getByText("Text Message")).toBeInTheDocument();
     expect(within(table).getByText("bob@example.com")).toBeInTheDocument();
     // The counts are the server's answer, read for this account.
-    expect(await within(table).findByText("30")).toBeInTheDocument();
+    await settle();
+    expect(within(table).getByText("30")).toBeInTheDocument();
     expect(within(table).getByText("12")).toBeInTheDocument();
     expect(within(table).getByText("2020-01-01")).toBeInTheDocument();
     expect(within(table).queryByText("Summary")).not.toBeInTheDocument();
@@ -142,7 +148,8 @@ describe("IdentitiesSection", () => {
 
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Add identity" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add identity" });
+    await settle();
+    const dialog = screen.getByRole("dialog", { name: "Add identity" });
     await user.click(within(dialog).getByRole("button", { name: /Service/ }));
     await user.click(screen.getByRole("option", { name: "Email" }));
     await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "new@example.com");
@@ -153,7 +160,8 @@ describe("IdentitiesSection", () => {
     expect(mutateAsync).toHaveBeenCalledWith({
       identities: [{ address: "new@example.com", service: "phone" }],
     });
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await settle();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByText("The server did not add that identity.")).not.toBeInTheDocument();
   });
 
@@ -162,15 +170,18 @@ describe("IdentitiesSection", () => {
     mutateAsync.mockResolvedValue({ ...profile, emails: ["bob@example.com"] });
     render(<IdentitiesSection profile={profile} />);
 
-    await screen.findByText("30");
+    await settle();
+    expect(screen.getByText("30")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Remove archer@example.com (Email)" }));
-    const dialog = await screen.findByRole("dialog", { name: "Remove identity?" });
+    await settle();
+    const dialog = screen.getByRole("dialog", { name: "Remove identity?" });
     await user.click(within(dialog).getByRole("button", { name: "Remove" }));
 
     expect(mutateAsync).toHaveBeenCalledWith({
       remove_identities: [{ address: "archer@example.com", service: "phone" }],
     });
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await settle();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByText("The server did not remove that identity.")).not.toBeInTheDocument();
   });
 
@@ -180,13 +191,13 @@ describe("IdentitiesSection", () => {
     render(<IdentitiesSection profile={profile} />);
 
     await user.click(screen.getByRole("button", { name: "Add identity" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add identity" });
+    await settle();
+    const dialog = screen.getByRole("dialog", { name: "Add identity" });
     await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "+1 555 555 0199");
     await user.click(within(dialog).getByRole("button", { name: "Add" }));
 
-    expect(
-      await within(dialog).findByText("The server did not add that identity."),
-    ).toBeInTheDocument();
+    await settle();
+    expect(within(dialog).getByText("The server did not add that identity.")).toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "Add identity" })).toBeInTheDocument();
   });
 
@@ -195,11 +206,13 @@ describe("IdentitiesSection", () => {
     mutateAsync.mockResolvedValue({ ...profile, phones: [] });
     render(<IdentitiesSection profile={profile} />);
 
-    await screen.findByText("30");
+    await settle();
+    expect(screen.getByText("30")).toBeInTheDocument();
     const remove = screen.getByRole("button", { name: "Remove +15555550100 (Text Message)" });
     expect(remove.className).not.toMatch(/opacity-0/);
     await user.click(remove);
-    const dialog = await screen.findByRole("dialog", { name: "Remove identity?" });
+    await settle();
+    const dialog = screen.getByRole("dialog", { name: "Remove identity?" });
     expect(
       within(dialog).getByText(
         "12 direct messages and 30 group messages will no longer be associated with this account.",
@@ -212,7 +225,8 @@ describe("IdentitiesSection", () => {
     expect(mutateAsync).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Remove +15555550100 (Text Message)" }));
-    const again = await screen.findByRole("dialog", { name: "Remove identity?" });
+    await settle();
+    const again = screen.getByRole("dialog", { name: "Remove identity?" });
     await user.click(within(again).getByRole("button", { name: "Remove" }));
     expect(mutateAsync).toHaveBeenCalledWith({
       remove_identities: [{ address: "+15555550100", service: "phone" }],
@@ -224,13 +238,16 @@ describe("IdentitiesSection", () => {
     listAccountIdentities.mockResolvedValue([{ ...identities[0], service: "sms" }]);
     render(<IdentitiesSection profile={profile} />);
 
-    await screen.findByText("30");
+    await settle();
+    expect(screen.getByText("30")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /^Remove \+15555550100/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Remove identity?" });
+    await settle();
+    const dialog = screen.getByRole("dialog", { name: "Remove identity?" });
     await user.click(within(dialog).getByRole("button", { name: "Remove" }));
 
+    await settle();
     expect(
-      await within(dialog).findByText(
+      within(dialog).getByText(
         "The server listed +15555550100 on a service it does not take: sms.",
       ),
     ).toBeInTheDocument();
@@ -261,7 +278,8 @@ describe("IdentitiesSection", () => {
     render(<IdentitiesSection profile={profile} />);
 
     await user.click(screen.getByRole("button", { name: "Add identity" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add identity" });
+    await settle();
+    const dialog = screen.getByRole("dialog", { name: "Add identity" });
     await user.click(within(dialog).getByRole("button", { name: /Service/ }));
     await user.click(screen.getByRole("option", { name: "WhatsApp" }));
     await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "+1 555 555 0100");
@@ -270,7 +288,8 @@ describe("IdentitiesSection", () => {
     expect(mutateAsync).toHaveBeenCalledWith({
       identities: [{ address: "+1 555 555 0100", service: "whatsapp" }],
     });
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await settle();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("keeps the dialog open when a WhatsApp add of a number on Text Message added nothing", async () => {
@@ -281,7 +300,8 @@ describe("IdentitiesSection", () => {
     render(<IdentitiesSection profile={profile} />);
 
     await user.click(screen.getByRole("button", { name: "Add identity" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add identity" });
+    await settle();
+    const dialog = screen.getByRole("dialog", { name: "Add identity" });
     await user.click(within(dialog).getByRole("button", { name: /Service/ }));
     await user.click(screen.getByRole("option", { name: "WhatsApp" }));
     await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "+15555550100");
@@ -290,9 +310,8 @@ describe("IdentitiesSection", () => {
     expect(mutateAsync).toHaveBeenCalledWith({
       identities: [{ address: "+15555550100", service: "whatsapp" }],
     });
-    expect(
-      await within(dialog).findByText("The server did not add that identity."),
-    ).toBeInTheDocument();
+    await settle();
+    expect(within(dialog).getByText("The server did not add that identity.")).toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "Add identity" })).toBeInTheDocument();
   });
 
@@ -303,15 +322,18 @@ describe("IdentitiesSection", () => {
     render(<IdentitiesSection profile={both} />);
 
     // The server's rows replace the placeholder rows, buttons and all.
-    await screen.findAllByText("30");
+    await settle();
+    expect(screen.getAllByText("30").length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "Remove +15555550100 (WhatsApp)" }));
-    const dialog = await screen.findByRole("dialog", { name: "Remove identity?" });
+    await settle();
+    const dialog = screen.getByRole("dialog", { name: "Remove identity?" });
     await user.click(within(dialog).getByRole("button", { name: "Remove" }));
 
     expect(mutateAsync).toHaveBeenCalledWith({
       remove_identities: [{ address: "+15555550100", service: "whatsapp" }],
     });
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await settle();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByText("The server did not remove that identity.")).not.toBeInTheDocument();
   });
 
@@ -322,13 +344,16 @@ describe("IdentitiesSection", () => {
     render(<IdentitiesSection profile={both} />);
 
     // The server's rows replace the placeholder rows, buttons and all.
-    await screen.findAllByText("30");
+    await settle();
+    expect(screen.getAllByText("30").length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "Remove +15555550100 (WhatsApp)" }));
-    const dialog = await screen.findByRole("dialog", { name: "Remove identity?" });
+    await settle();
+    const dialog = screen.getByRole("dialog", { name: "Remove identity?" });
     await user.click(within(dialog).getByRole("button", { name: "Remove" }));
 
+    await settle();
     expect(
-      await within(dialog).findByText("The server did not remove that identity."),
+      within(dialog).getByText("The server did not remove that identity."),
     ).toBeInTheDocument();
   });
 });

@@ -3,8 +3,10 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiTokenRevealProvider } from "../components/ApiTokenRevealDialog";
 import { getAccountProfile } from "../lib/serverApi";
 import { account } from "../test/apiShapes";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { mockedAuth, Providers } from "../test/providers";
 import SettingsScreen from "./SettingsScreen";
 
@@ -39,9 +41,11 @@ vi.mock("../lib/authContext", () => ({
 
 afterEach(() => {
   cleanup();
+  stopFakeClock();
 });
 
 beforeEach(() => {
+  startFakeClock();
   tauriState.isTauri = false;
   getAccountProfileMock.mockReset();
   getAccountProfileMock.mockResolvedValue(baseProfile());
@@ -51,12 +55,15 @@ function baseProfile(): Awaited<ReturnType<typeof getAccountProfile>> {
   return account({ account_id: 7, username: "bob" });
 }
 
+/** The app renders the API Token reveal dialog above Settings, so the tests do too. */
 function renderSettings(initialEntries: string[]) {
   return render(
     <Providers>
-      <MemoryRouter initialEntries={initialEntries}>
-        <SettingsScreen />
-      </MemoryRouter>
+      <ApiTokenRevealProvider>
+        <MemoryRouter initialEntries={initialEntries}>
+          <SettingsScreen />
+        </MemoryRouter>
+      </ApiTokenRevealProvider>
     </Providers>,
   );
 }
@@ -84,8 +91,10 @@ describe("SettingsScreen has no account management", () => {
 describe("SettingsScreen tabs follow the account it reads", () => {
   it("keeps Storage for an ordinary account", async () => {
     renderSettings(["/settings"]);
+    await settle();
 
-    expect(await screen.findByRole("tab", { name: "Storage" })).toBeInTheDocument();
+    expect(getAccountProfileMock).toHaveBeenCalled();
+    expect(screen.getByRole("tab", { name: "Storage" })).toBeInTheDocument();
   });
 
   it("drops Storage once the account read is the owner's", async () => {
@@ -93,9 +102,9 @@ describe("SettingsScreen tabs follow the account it reads", () => {
     renderSettings(["/settings"]);
 
     // Storage shows until the account arrives, then goes.
-    await vi.waitFor(() => {
-      expect(screen.queryByRole("tab", { name: "Storage" })).not.toBeInTheDocument();
-    });
+    expect(screen.getByRole("tab", { name: "Storage" })).toBeInTheDocument();
+    await settle();
+    expect(screen.queryByRole("tab", { name: "Storage" })).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Account" })).toBeInTheDocument();
     expect(getAccountProfileMock).toHaveBeenCalled();
   });
