@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use media::{Kind, MediaMode, TranscodeOutcome};
+use media::{Kind, MediaMode, MediaTools, TranscodeOutcome};
 
 use crate::media_options::server_compress_options;
 
@@ -45,8 +45,9 @@ impl ResolvedMedia {
 /// # Errors
 ///
 /// Returns an error when a conversion fails, or when the mode needs ffmpeg
-/// and the `media` crate cannot find it.
+/// and `tools` cannot find it.
 pub fn resolve_for_store(
+    tools: &dyn MediaTools,
     source_path: &Path,
     mime: Option<&str>,
     mode: MediaMode,
@@ -55,12 +56,15 @@ pub fn resolve_for_store(
     match mode {
         MediaMode::Disabled => Ok(None),
         MediaMode::Clone => Ok(Some(ResolvedMedia::as_is(source_path, mime))),
-        MediaMode::Convert | MediaMode::Compress => transform(source_path, mime, mode, work_dir),
+        MediaMode::Convert | MediaMode::Compress => {
+            transform(tools, source_path, mime, mode, work_dir)
+        }
     }
 }
 
 /// Convert or compress one media file by kind; anything else is stored as it is.
 fn transform(
+    tools: &dyn MediaTools,
     source_path: &Path,
     mime: Option<&str>,
     mode: MediaMode,
@@ -79,6 +83,7 @@ fn transform(
     };
     let out = work_dir.join(format!("{tag}-{}.{target}", stem_token(source_path)));
     let outcome = media::transcode_file_as(
+        tools,
         source_path,
         kind,
         &out,
@@ -121,6 +126,7 @@ fn stem_token(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use media::testutil::FakeTools;
 
     #[test]
     fn stem_token_keeps_alphanumerics_and_caps_the_length() {
@@ -149,6 +155,7 @@ mod tests {
     fn disabled_stores_nothing() {
         let work = tempfile::tempdir().unwrap();
         let resolved = resolve_for_store(
+            &FakeTools::new(),
             Path::new("x/photo.heic"),
             Some("image/heic"),
             MediaMode::Disabled,
@@ -162,6 +169,7 @@ mod tests {
     fn clone_stores_the_source_as_it_is() {
         let work = tempfile::tempdir().unwrap();
         let resolved = resolve_for_store(
+            &FakeTools::new(),
             Path::new("x/photo.heic"),
             Some("image/heic"),
             MediaMode::Clone,
@@ -177,10 +185,15 @@ mod tests {
     fn convert_stores_a_missing_source_as_it_is() {
         let work = tempfile::tempdir().unwrap();
         let missing = work.path().join("gone.mp4");
-        let resolved =
-            resolve_for_store(&missing, Some("video/mp4"), MediaMode::Convert, work.path())
-                .unwrap()
-                .unwrap();
+        let resolved = resolve_for_store(
+            &FakeTools::new(),
+            &missing,
+            Some("video/mp4"),
+            MediaMode::Convert,
+            work.path(),
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(resolved.path, missing);
         assert_eq!(resolved.mime_type.as_deref(), Some("video/mp4"));
     }
@@ -190,10 +203,15 @@ mod tests {
         let work = tempfile::tempdir().unwrap();
         let card = work.path().join("contact.vcf");
         std::fs::write(&card, b"BEGIN:VCARD\nEND:VCARD\n").unwrap();
-        let resolved =
-            resolve_for_store(&card, Some("text/vcard"), MediaMode::Compress, work.path())
-                .unwrap()
-                .unwrap();
+        let resolved = resolve_for_store(
+            &FakeTools::new(),
+            &card,
+            Some("text/vcard"),
+            MediaMode::Compress,
+            work.path(),
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(resolved.path, card);
         assert_eq!(resolved.mime_type.as_deref(), Some("text/vcard"));
     }
@@ -203,10 +221,41 @@ mod tests {
         let work = tempfile::tempdir().unwrap();
         let gif = work.path().join("sticker.gif");
         std::fs::write(&gif, b"GIF89a").unwrap();
-        let resolved = resolve_for_store(&gif, None, MediaMode::Convert, work.path())
-            .unwrap()
-            .unwrap();
+        let resolved = resolve_for_store(
+            &FakeTools::new(),
+            &gif,
+            None,
+            MediaMode::Convert,
+            work.path(),
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(resolved.path, gif);
         assert_eq!(resolved.mime_type, None);
+    }
+
+    /// Convert stores the file ffmpeg wrote in place of the original, with
+    /// the type of the format it wrote.
+    #[test]
+    fn convert_stores_what_ffmpeg_wrote_with_its_type() {
+        let work = tempfile::tempdir().unwrap();
+        let photo = work.path().join("photo.heic");
+        std::fs::write(&photo, b"heic bytes").unwrap();
+        let tools = FakeTools::new().writing("the jpeg");
+
+        let resolved = resolve_for_store(
+            &tools,
+            &photo,
+            Some("image/heic"),
+            MediaMode::Convert,
+            work.path(),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_ne!(resolved.path, photo);
+        assert_eq!(std::fs::read(&resolved.path).unwrap(), b"the jpeg");
+        assert_eq!(resolved.mime_type.as_deref(), Some("image/jpeg"));
+        assert_eq!(tools.runs().len(), 1);
     }
 }

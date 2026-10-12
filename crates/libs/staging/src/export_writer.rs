@@ -9,13 +9,14 @@ use crate::write_queue::{
     load_attachment_source,
 };
 use anyhow::Result;
-use media::{CompressOptions, MediaMode};
+use media::{CompressOptions, MediaMode, MediaTools};
 use message_crate_core::{
     CancelFlag, ExportReport, ExportTransforms, LogSink, OutputFormat, ProgressSink,
 };
 use message_ir::{ConversationDocument, IrAttachment};
 use message_ir_format::{FormatSink, MergedArchive, write_documents_through_sink};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Owns the write tail of an exporter run: output preparation, the
 /// queue-or-sink decision, attachment staging, and the format write.
@@ -36,6 +37,7 @@ pub struct ExportWriter {
     attachments_dir: PathBuf,
     media_mode: MediaMode,
     compress: CompressOptions,
+    tools: Arc<dyn MediaTools>,
     log: LogSink,
     progress: ProgressSink,
     resume: bool,
@@ -63,6 +65,8 @@ pub struct ExportWriterParts {
     pub copy_attachments: bool,
     /// Compression options from the transforms.
     pub compress: CompressOptions,
+    /// The ffmpeg and ffprobe from the transforms.
+    pub tools: Arc<dyn MediaTools>,
     /// Log sink captured from the transforms.
     pub log: LogSink,
     /// Progress sink captured from the transforms.
@@ -95,6 +99,7 @@ impl ExportWriter {
             MediaMode::Disabled
         };
         let compress = transforms.compress.clone();
+        let tools = Arc::clone(&transforms.tools);
         let log = transforms.log.clone();
         let progress = transforms.progress.clone();
         // The queue path is for the import, which is JSONL and never
@@ -113,6 +118,7 @@ impl ExportWriter {
             attachments_dir,
             media_mode,
             compress,
+            tools,
             log,
             progress,
             resume,
@@ -197,6 +203,7 @@ impl ExportWriter {
             media_mode: self.media_mode,
             copy_attachments: self.copy_attachments,
             compress: self.compress,
+            tools: self.tools,
             log: self.log,
             progress: self.progress,
         }
@@ -243,6 +250,7 @@ impl ExportWriter {
             let options = WriteQueueOptions {
                 media: self.media_mode,
                 compress: self.compress.clone(),
+                tools: Arc::clone(&self.tools),
                 resume: self.resume,
                 writer_count: 0,
             };
@@ -269,6 +277,7 @@ impl ExportWriter {
             message_crate_core::MediaConfig {
                 mode: self.media_mode,
                 compress: self.compress.clone(),
+                tools: Arc::clone(&self.tools),
             },
             PathSources::OnDisk,
             &mut source_for,

@@ -4,7 +4,9 @@
 use crate::config::{OutputConfig, RunContext};
 use crate::process::LogSink;
 use crate::progress::ProgressSink;
-use media::{CompressOptions, MediaMode};
+use std::sync::Arc;
+
+use media::{CompressOptions, MediaMode, MediaTools, NoTools};
 
 /// The transforms a run applies at write time, handed to the format sink.
 #[derive(Debug, Clone)]
@@ -13,6 +15,9 @@ pub struct ExportTransforms {
     pub media: MediaMode,
     /// Video/audio compression options used with Compress mode.
     pub compress: CompressOptions,
+    /// The ffmpeg and ffprobe Convert and Compress run
+    /// ([`crate::MediaConfig::tools`]).
+    pub tools: Arc<dyn MediaTools>,
     /// Whether to replace PII and media with obfuscated placeholders.
     pub obfuscate: bool,
     /// Seed for deterministic obfuscation; `None` generates one.
@@ -28,6 +33,7 @@ impl Default for ExportTransforms {
         Self {
             media: MediaMode::Clone,
             compress: CompressOptions::default(),
+            tools: Arc::new(NoTools),
             obfuscate: false,
             obfuscate_seed: None,
             log: LogSink::none(),
@@ -45,6 +51,7 @@ impl ExportTransforms {
         Self {
             media: output.media.mode,
             compress: output.media.compress.clone(),
+            tools: Arc::clone(&output.media.tools),
             obfuscate: output.obfuscate_active(),
             obfuscate_seed: output.obfuscate.seed.clone(),
             log: context.log.clone(),
@@ -139,6 +146,7 @@ mod tests {
             MediaConfig {
                 mode: MediaMode::Compress,
                 compress: compress.clone(),
+                ..MediaConfig::default()
             },
         );
         let mut context = RunContext::new("/cache");

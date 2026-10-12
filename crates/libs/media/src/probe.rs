@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 
-use crate::tools::{run_ffprobe, run_ffprobe_with_stderr};
+use crate::tools::InstalledTools;
 
 /// What ffprobe reports about one media file's first video stream.
 ///
@@ -36,8 +36,8 @@ pub struct MediaProbe {
 ///
 /// Returns an error when ffprobe is missing, exits non-zero, or reports a
 /// line this cannot read.
-pub fn probe_media(path: &Path) -> Result<MediaProbe> {
-    let out = run_ffprobe(
+pub(crate) fn probe_media(tools: &InstalledTools, path: &Path) -> Result<MediaProbe> {
+    let out = tools.run_ffprobe(
         &[
             "-v",
             "error",
@@ -62,20 +62,25 @@ pub fn probe_media(path: &Path) -> Result<MediaProbe> {
 /// How long the media file at `path` plays, as its container says. `None`
 /// when ffprobe is missing, fails, reports no length, as for a still,
 /// reports only a length it estimated, or `stop` is set.
-pub(crate) fn played_for(path: &Path, stop: Option<&AtomicBool>) -> Option<Duration> {
-    let (out, said) = run_ffprobe_with_stderr(
-        &[
-            "-v",
-            "warning",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "csv=p=0",
-        ],
-        path,
-        stop,
-    )
-    .ok()?;
+pub(crate) fn played_for(
+    tools: &InstalledTools,
+    path: &Path,
+    stop: Option<&AtomicBool>,
+) -> Option<Duration> {
+    let (out, said) = tools
+        .run_ffprobe_with_stderr(
+            &[
+                "-v",
+                "warning",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "csv=p=0",
+            ],
+            path,
+            stop,
+        )
+        .ok()?;
     length_read(&String::from_utf8_lossy(&out), &said)
 }
 
@@ -217,7 +222,7 @@ mod tests {
     }
 
     /// Write a short H.264 clip, `width` by `height` pixels at 25 fps, to `path`.
-    fn make_h264_clip(path: &Path, width: u32, height: u32) {
+    fn make_h264_clip(tools: &InstalledTools, path: &Path, width: u32, height: u32) {
         let args: Vec<String> = [
             "-y",
             "-f",
@@ -235,7 +240,7 @@ mod tests {
         .map(String::from)
         .chain(std::iter::once(path.to_string_lossy().into_owned()))
         .collect();
-        crate::tools::run_ffmpeg(&args).expect("generate probe fixture");
+        tools.run_ffmpeg(&args).expect("generate probe fixture");
     }
 
     /// The parsing tests above never touch ffprobe itself: they hand-craft
@@ -244,17 +249,14 @@ mod tests {
     /// generated fixture with a known codec, resolution, and frame rate.
     #[test]
     fn probes_a_real_video_file() {
-        // Holds the tools lock: this test runs the real ffmpeg, and the tests
-        // in `tools` point the process-wide override at mock and empty
-        // directories while they run.
-        let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
+        let Some(tools) = crate::testutil::real_ffmpeg() else {
             return;
         };
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("clip.mp4");
-        make_h264_clip(&path, 64, 48);
+        make_h264_clip(&tools, &path, 64, 48);
 
-        let probe = probe_media(&path).expect("probe the generated fixture");
+        let probe = probe_media(&tools, &path).expect("probe the generated fixture");
         assert_eq!(probe.codec, "h264");
         assert_eq!(probe.width, 64);
         assert_eq!(probe.height, 48);
@@ -273,18 +275,18 @@ mod tests {
         use std::ffi::OsStr;
         use std::os::unix::ffi::OsStrExt;
 
-        let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
+        let Some(tools) = crate::testutil::real_ffmpeg() else {
             return;
         };
         let dir = tempfile::tempdir().unwrap();
         // ffmpeg is handed its output name as text, so the clip is made
         // under a UTF-8 name and then renamed.
         let made = dir.path().join("clip.mp4");
-        make_h264_clip(&made, 32, 24);
+        make_h264_clip(&tools, &made, 32, 24);
         let path = dir.path().join(OsStr::from_bytes(b"clip-\xff.mp4"));
         std::fs::rename(&made, &path).unwrap();
 
-        let probe = probe_media(&path).expect("probe a file with a non-UTF-8 name");
+        let probe = probe_media(&tools, &path).expect("probe a file with a non-UTF-8 name");
         assert_eq!(probe.codec, "h264");
         assert_eq!((probe.width, probe.height), (32, 24));
     }

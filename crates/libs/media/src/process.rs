@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 
-use crate::tools::{InstalledTools, MediaTools, Reads};
+use crate::tools::{MediaTools, Reads};
 use crate::{CompressOptions, KillReason, Killed, MediaMode};
 
 /// Aggregate counts and errors from one media convert/compress pass.
@@ -89,26 +89,6 @@ const MP3_COMPRESS_FLOOR: u64 = 100 * 1024;
 /// Returns an error when ffmpeg/ffprobe are missing or fail, an input path
 /// escapes the output directory, IO fails, or `stop` is set ([`Killed`]).
 pub fn process_attachment_files(
-    output_dir: &Path,
-    files: &[PathBuf],
-    mode: MediaMode,
-    compress: &CompressOptions,
-    log: Option<&mut dyn FnMut(&str)>,
-    stop: Option<&AtomicBool>,
-) -> Result<(MediaReport, HashMap<String, String>)> {
-    process_attachment_files_with(
-        &InstalledTools,
-        output_dir,
-        files,
-        mode,
-        compress,
-        log,
-        stop,
-    )
-}
-
-/// [`process_attachment_files`] with the programs `tools` runs.
-pub(crate) fn process_attachment_files_with(
     tools: &dyn MediaTools,
     output_dir: &Path,
     files: &[PathBuf],
@@ -677,17 +657,6 @@ fn derivative_name_impl(
 /// Returns an error when ffmpeg/ffprobe are missing or fail, IO fails, or
 /// `stop` is set.
 pub fn transcode_file(
-    src: &Path,
-    dest: &Path,
-    mode: MediaMode,
-    compress: &CompressOptions,
-    stop: Option<&AtomicBool>,
-) -> Result<TranscodeOutcome> {
-    transcode_file_with(&InstalledTools, src, dest, mode, compress, stop)
-}
-
-/// [`transcode_file`] with the programs `tools` runs.
-pub(crate) fn transcode_file_with(
     tools: &dyn MediaTools,
     src: &Path,
     dest: &Path,
@@ -737,18 +706,6 @@ pub(crate) fn transcode_file_with(
 /// Returns an error when ffmpeg/ffprobe are missing or fail, IO fails, or
 /// `stop` is set.
 pub fn transcode_file_as(
-    src: &Path,
-    kind: Kind,
-    dest: &Path,
-    mode: MediaMode,
-    compress: &CompressOptions,
-    stop: Option<&AtomicBool>,
-) -> Result<TranscodeOutcome> {
-    transcode_file_as_with(&InstalledTools, src, kind, dest, mode, compress, stop)
-}
-
-/// [`transcode_file_as`] with the programs `tools` runs.
-pub(crate) fn transcode_file_as_with(
     tools: &dyn MediaTools,
     src: &Path,
     kind: Kind,

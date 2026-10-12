@@ -11,6 +11,10 @@ use media::testutil::PNG_1X1_RGB;
 /// A stop that is never set, for a pass that runs to its end.
 static NOT_STOPPED: AtomicBool = AtomicBool::new(false);
 
+/// ffmpeg and ffprobe on `PATH`, where a test that runs the real programs
+/// finds them ([`with_real_ffmpeg`]). The other tests never run them.
+static ON_PATH: media::InstalledTools = media::InstalledTools::new(None);
+
 const SHA: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
 
 /// A row for a stored Asset named `assets_path`, with nothing else known.
@@ -66,6 +70,7 @@ fn pass<'a>(
     converted_dir: &Path,
 ) -> AccountPass<'a> {
     AccountPass {
+        tools: &ON_PATH,
         opts,
         work_dir,
         stop: &NOT_STOPPED,
@@ -754,14 +759,13 @@ async fn preview_of(
     Some((sha?, path?, mime?))
 }
 
-/// Run `test` on its own runtime with the real ffmpeg held available, or
-/// skip it the way every ffmpeg test in the workspace skips (and fail under
-/// CI). The guard is taken outside the async block: holding it across an
-/// await is what Clippy's `await_holding_lock` refuses.
+/// Run `test` on its own runtime when the real ffmpeg is on `PATH`
+/// ([`ON_PATH`]), or skip it the way every ffmpeg test in the workspace
+/// skips (and fail under CI).
 fn with_real_ffmpeg(test: impl Future<Output = ()>) {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    if media::testutil::real_ffmpeg().is_none() {
         return;
-    };
+    }
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -860,7 +864,7 @@ fn a_run_writes_a_jpeg_preview_under_the_converted_directory_and_records_it() {
         let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
         let opts = ProcessAssetsOptions::default();
 
-        let first = run(&opened, &opts, &NOT_STOPPED, Progress::Print)
+        let first = run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
             .await
             .unwrap();
 
@@ -885,7 +889,7 @@ fn a_run_writes_a_jpeg_preview_under_the_converted_directory_and_records_it() {
 
         // A second run leaves the preview alone; `force` makes it again.
         assert_eq!(
-            run(&opened, &opts, &NOT_STOPPED, Progress::Print)
+            run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
                 .await
                 .unwrap(),
             stats(1, 0, 0, 1, 0)
@@ -895,7 +899,7 @@ fn a_run_writes_a_jpeg_preview_under_the_converted_directory_and_records_it() {
             ..Default::default()
         };
         assert_eq!(
-            run(&opened, &force, &NOT_STOPPED, Progress::Print)
+            run(&opened, &ON_PATH, &force, &NOT_STOPPED, Progress::Print)
                 .await
                 .unwrap(),
             stats(1, 1, 1, 0, 0)
@@ -913,7 +917,7 @@ fn a_dry_run_counts_the_preview_it_would_write_and_writes_nothing() {
         };
 
         assert_eq!(
-            run(&opened, &opts, &NOT_STOPPED, Progress::Print)
+            run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
                 .await
                 .unwrap(),
             stats(1, 1, 1, 0, 0)
@@ -950,7 +954,7 @@ fn a_plain_run_converts_again_a_preview_cut_short() {
         let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
         let opts = ProcessAssetsOptions::default();
         assert_eq!(
-            run(&opened, &opts, &NOT_STOPPED, Progress::Print)
+            run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
                 .await
                 .unwrap(),
             stats(1, 1, 1, 0, 0)
@@ -960,7 +964,7 @@ fn a_plain_run_converts_again_a_preview_cut_short() {
         fs::write(&preview, &whole[..whole.len() / 2]).unwrap();
 
         assert_eq!(
-            run(&opened, &opts, &NOT_STOPPED, Progress::Print)
+            run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
                 .await
                 .unwrap(),
             stats(1, 1, 0, 0, 0)
@@ -985,7 +989,7 @@ fn a_plain_run_skips_a_preview_that_hashes_to_its_name() {
         let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
         let opts = ProcessAssetsOptions::default();
         assert_eq!(
-            run(&opened, &opts, &NOT_STOPPED, Progress::Print)
+            run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
                 .await
                 .unwrap(),
             stats(1, 1, 1, 0, 0)
@@ -994,7 +998,7 @@ fn a_plain_run_skips_a_preview_that_hashes_to_its_name() {
         let written = fs::metadata(&preview).unwrap().modified().unwrap();
 
         assert_eq!(
-            run(&opened, &opts, &NOT_STOPPED, Progress::Print)
+            run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
                 .await
                 .unwrap(),
             stats(1, 0, 0, 1, 0)
@@ -1018,7 +1022,7 @@ fn a_second_source_imported_after_the_preview_was_made_gets_the_preview() {
         let (opened, _dir, imessage_attachment) = fixture_with_bmp("imessage").await;
         let opts = ProcessAssetsOptions::default();
         assert_eq!(
-            run(&opened, &opts, &NOT_STOPPED, Progress::Print)
+            run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
                 .await
                 .unwrap(),
             stats(1, 1, 1, 0, 0)
@@ -1032,7 +1036,7 @@ fn a_second_source_imported_after_the_preview_was_made_gets_the_preview() {
         // The Thumbnail and the Preview are shared with the new rows, so the
         // original is not left as it was (#1849).
         assert_eq!(
-            run(&opened, &opts, &NOT_STOPPED, Progress::Print)
+            run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
                 .await
                 .unwrap(),
             ProcessAssetsStats {
@@ -1041,7 +1045,7 @@ fn a_second_source_imported_after_the_preview_was_made_gets_the_preview() {
             }
         );
         assert_eq!(
-            run(&opened, &opts, &NOT_STOPPED, Progress::Print)
+            run(&opened, &ON_PATH, &opts, &NOT_STOPPED, Progress::Print)
                 .await
                 .unwrap(),
             stats(1, 0, 0, 1, 0),
@@ -1072,6 +1076,7 @@ fn a_png_gets_a_thumbnail_and_no_preview() {
         assert_eq!(
             run(
                 &opened,
+                &ON_PATH,
                 &ProcessAssetsOptions::default(),
                 &NOT_STOPPED,
                 Progress::Print
@@ -1122,6 +1127,7 @@ fn one_asset_is_processed_alone() {
 
         let made = process_one_asset(
             &opened.cfg,
+            &ON_PATH,
             &opened.db,
             work.path(),
             ACCOUNT,
@@ -1152,6 +1158,7 @@ fn a_file_two_sources_share_is_converted_once_for_both() {
         assert_eq!(
             run(
                 &opened,
+                &ON_PATH,
                 &ProcessAssetsOptions::default(),
                 &NOT_STOPPED,
                 Progress::Print
@@ -1176,6 +1183,7 @@ async fn a_stopped_run_fails_and_converts_nothing_more() {
 
     let err = run(
         &opened,
+        &ON_PATH,
         &ProcessAssetsOptions::default(),
         &AtomicBool::new(true),
         Progress::Print,
@@ -1195,6 +1203,7 @@ async fn a_database_without_accounts_is_an_error() {
 
     let err = run(
         &opened,
+        &ON_PATH,
         &ProcessAssetsOptions::default(),
         &NOT_STOPPED,
         Progress::Print,
@@ -1217,6 +1226,7 @@ async fn an_account_without_an_assets_directory_is_passed_over() {
     assert_eq!(
         run(
             &opened,
+            &ON_PATH,
             &ProcessAssetsOptions::default(),
             &NOT_STOPPED,
             Progress::Print
@@ -1239,6 +1249,7 @@ async fn an_asset_that_is_not_media_is_left_as_is_by_the_run() {
     assert_eq!(
         run(
             &opened,
+            &ON_PATH,
             &ProcessAssetsOptions::default(),
             &NOT_STOPPED,
             Progress::Print
@@ -1274,6 +1285,7 @@ async fn a_missing_original_is_counted_as_a_failure_and_the_run_goes_on() {
     assert_eq!(
         run(
             &opened,
+            &ON_PATH,
             &ProcessAssetsOptions::default(),
             &NOT_STOPPED,
             Progress::Print
@@ -1309,6 +1321,7 @@ async fn a_missing_original_of_a_type_shown_as_is_wants_no_preview() {
 
         run(
             &opened,
+            &ON_PATH,
             &ProcessAssetsOptions::default(),
             &NOT_STOPPED,
             Progress::Print,
@@ -1343,7 +1356,7 @@ async fn a_missing_original_is_planned_from_the_decision_recorded_for_it() {
         b"not a jpeg at all",
     )
     .await;
-    decide_shown_as_is(&opened.cfg, &opened.db, ACCOUNT, None)
+    decide_shown_as_is(&opened.cfg, &ON_PATH, &opened.db, ACCOUNT, None)
         .await
         .unwrap();
     let shown: Option<i64> =
@@ -1368,6 +1381,7 @@ async fn a_missing_original_is_planned_from_the_decision_recorded_for_it() {
 
     run(
         &opened,
+        &ON_PATH,
         &ProcessAssetsOptions::default(),
         &NOT_STOPPED,
         Progress::Print,
@@ -1433,7 +1447,7 @@ fn why_a_version_was_not_made_is_kept_until_it_is_made() {
             ..Default::default()
         };
 
-        run(&opened, &dry_run, &NOT_STOPPED, Progress::Print)
+        run(&opened, &ON_PATH, &dry_run, &NOT_STOPPED, Progress::Print)
             .await
             .unwrap();
         assert_eq!(
@@ -1443,6 +1457,7 @@ fn why_a_version_was_not_made_is_kept_until_it_is_made() {
 
         run(
             &opened,
+            &ON_PATH,
             &ProcessAssetsOptions::default(),
             &NOT_STOPPED,
             Progress::Print,
@@ -1465,6 +1480,7 @@ fn why_a_version_was_not_made_is_kept_until_it_is_made() {
         assert_eq!(
             run(
                 &opened,
+                &ON_PATH,
                 &ProcessAssetsOptions::default(),
                 &NOT_STOPPED,
                 Progress::Print
@@ -1490,6 +1506,7 @@ fn a_failed_remake_of_a_working_version_records_no_reason() {
         let mut conn = opened.conn().await.unwrap();
         run(
             &opened,
+            &ON_PATH,
             &ProcessAssetsOptions::default(),
             &NOT_STOPPED,
             Progress::Print,
@@ -1509,7 +1526,7 @@ fn a_failed_remake_of_a_working_version_records_no_reason() {
             ..Default::default()
         };
 
-        let stats = run(&opened, &force, &NOT_STOPPED, Progress::Print)
+        let stats = run(&opened, &ON_PATH, &force, &NOT_STOPPED, Progress::Print)
             .await
             .unwrap();
 
@@ -1548,6 +1565,7 @@ async fn a_named_preview_whose_file_is_gone_gets_the_reason_with_its_original_mi
 
     run(
         &opened,
+        &ON_PATH,
         &ProcessAssetsOptions::default(),
         &NOT_STOPPED,
         Progress::Print,
@@ -1655,7 +1673,7 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
         ..stats(1, 0, 0, 0, 1)
     };
     assert_eq!(
-        run(&opened, &dry_run, &NOT_STOPPED, Progress::Print)
+        run(&opened, &ON_PATH, &dry_run, &NOT_STOPPED, Progress::Print)
             .await
             .unwrap(),
         dropped_and_not_made
@@ -1666,6 +1684,7 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
     assert_eq!(
         run(
             &opened,
+            &ON_PATH,
             &ProcessAssetsOptions::default(),
             &NOT_STOPPED,
             Progress::Print
@@ -1786,7 +1805,7 @@ async fn an_incomplete_original_removed_is_counted_as_removed() {
     };
 
     assert_eq!(
-        run(&opened, &dry_run, &NOT_STOPPED, Progress::Print)
+        run(&opened, &ON_PATH, &dry_run, &NOT_STOPPED, Progress::Print)
             .await
             .unwrap(),
         removed(1, 1)
@@ -1796,6 +1815,7 @@ async fn an_incomplete_original_removed_is_counted_as_removed() {
     assert_eq!(
         run(
             &opened,
+            &ON_PATH,
             &ProcessAssetsOptions::default(),
             &NOT_STOPPED,
             Progress::Print
@@ -1807,6 +1827,7 @@ async fn an_incomplete_original_removed_is_counted_as_removed() {
     assert_eq!(
         run(
             &opened,
+            &ON_PATH,
             &ProcessAssetsOptions::default(),
             &NOT_STOPPED,
             Progress::Print
@@ -1839,6 +1860,7 @@ async fn an_incomplete_original_that_cannot_be_removed_is_counted_apart() {
         &shard,
         run(
             &opened,
+            &ON_PATH,
             &ProcessAssetsOptions::default(),
             &NOT_STOPPED,
             Progress::Print,
@@ -1882,7 +1904,7 @@ async fn a_damaged_preview_the_original_no_longer_gets_is_counted_as_dropped() {
     };
 
     assert_eq!(
-        run(&opened, &dry_run, &NOT_STOPPED, Progress::Print)
+        run(&opened, &ON_PATH, &dry_run, &NOT_STOPPED, Progress::Print)
             .await
             .unwrap(),
         dropped(1, 1)
@@ -1902,6 +1924,7 @@ async fn a_damaged_preview_the_original_no_longer_gets_is_counted_as_dropped() {
     assert_eq!(
         run(
             &opened,
+            &ON_PATH,
             &ProcessAssetsOptions::default(),
             &NOT_STOPPED,
             Progress::Print
@@ -1947,6 +1970,7 @@ async fn an_existing_thumbnail_given_to_more_attachments_is_counted_as_shared() 
     assert_eq!(
         run(
             &opened,
+            &ON_PATH,
             &ProcessAssetsOptions::default(),
             &NOT_STOPPED,
             Progress::Print
@@ -1965,6 +1989,7 @@ async fn an_existing_thumbnail_given_to_more_attachments_is_counted_as_shared() 
     assert_eq!(
         run(
             &opened,
+            &ON_PATH,
             &ProcessAssetsOptions::default(),
             &NOT_STOPPED,
             Progress::Print
@@ -2007,6 +2032,7 @@ async fn a_damaged_preview_that_cannot_be_dropped_is_counted_apart() {
         &shard,
         run(
             &opened,
+            &ON_PATH,
             &ProcessAssetsOptions::default(),
             &NOT_STOPPED,
             Progress::Print,
@@ -2063,6 +2089,7 @@ async fn opening_an_account_without_an_assets_directory_gives_nothing_to_process
 
     let pass = AccountPass::open(
         &opened.cfg,
+        &ON_PATH,
         &opts,
         work.path(),
         ACCOUNT,
@@ -2097,6 +2124,7 @@ async fn opening_an_account_makes_its_converted_directory_and_cleans_its_incomin
 
     let pass = AccountPass::open(
         &opened.cfg,
+        &ON_PATH,
         &opts,
         work.path(),
         ACCOUNT,
@@ -2144,6 +2172,7 @@ async fn opening_an_account_removes_temporary_files_a_killed_run_left_in_the_sha
 
     AccountPass::open(
         &opened.cfg,
+        &ON_PATH,
         &opts,
         work.path(),
         ACCOUNT,
@@ -2183,6 +2212,7 @@ async fn a_dry_run_leaves_temporary_files_in_the_shards() {
 
     AccountPass::open(
         &opened.cfg,
+        &ON_PATH,
         &opts,
         work.path(),
         ACCOUNT,
@@ -2250,6 +2280,7 @@ fn a_version_made_after_its_rows_were_deleted_is_left_for_the_sweep() {
         let work = tempfile::tempdir().unwrap();
         let pass = AccountPass::new(
             &opened.cfg,
+            &ON_PATH,
             &opts,
             work.path(),
             ACCOUNT,
@@ -2284,6 +2315,7 @@ fn nothing_is_stored_once_the_account_directory_is_gone() {
         let work = tempfile::tempdir().unwrap();
         let pass = AccountPass::new(
             &opened.cfg,
+            &ON_PATH,
             &opts,
             work.path(),
             ACCOUNT,
@@ -2367,6 +2399,7 @@ async fn a_live_pass_keeps_its_work_directory_young() {
     let opts = ProcessAssetsOptions::default();
     let pass = AccountPass::new(
         &opened.cfg,
+        &ON_PATH,
         &opts,
         work.path(),
         ACCOUNT,

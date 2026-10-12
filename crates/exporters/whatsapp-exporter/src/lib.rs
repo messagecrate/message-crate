@@ -16,7 +16,6 @@ pub use run::run;
 pub use wtsexporter::{
     WTSEXPORTER_RELEASE, WTSEXPORTER_REPO, WTSEXPORTER_TROUBLESHOOTING, WtsexporterFile,
     not_pinned_reason, pinned_wtsexporter, wtsexporter_file_name, wtsexporter_in_dir,
-    wtsexporter_path,
 };
 
 #[cfg(test)]

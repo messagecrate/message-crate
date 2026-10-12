@@ -49,7 +49,7 @@ mod tests {
     use super::*;
     use crate::config::{MediaConfig, ObfuscateConfig, OutputFormat};
     use crate::pipeline::{IssueSink, RunIssue, RunIssueKind};
-    use media::{CompressOptions, MediaMode};
+    use media::MediaMode;
     use std::sync::{Arc, Mutex};
 
     fn output(mode: MediaMode, obfuscate: bool) -> OutputConfig {
@@ -60,7 +60,7 @@ mod tests {
             },
             media: MediaConfig {
                 mode,
-                compress: CompressOptions::default(),
+                ..MediaConfig::default()
             },
             ..OutputConfig::new("out", OutputFormat::Jsonl)
         }

@@ -55,10 +55,13 @@ fn unit_from(doc: ConversationDocument, sources: Vec<AttachmentSource>) -> Conve
     })
 }
 
+/// A drain in `media` mode, whose convert and compress run a fake ffmpeg
+/// that writes a few bytes for every file.
 fn options(media: MediaMode, resume: bool) -> WriteQueueOptions {
     WriteQueueOptions {
         media,
         compress: CompressOptions::default(),
+        tools: std::sync::Arc::new(media::testutil::FakeTools::new()),
         resume,
         writer_count: 1,
     }
@@ -1035,9 +1038,6 @@ fn clone_mode_converts_nothing() {
 
 #[test]
 fn convert_runs_after_the_drain_stages_originals() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
-        return;
-    };
     let tmp = tempfile::tempdir().unwrap();
     let out = tmp.path().join("out");
     fs::create_dir_all(&out).unwrap();
