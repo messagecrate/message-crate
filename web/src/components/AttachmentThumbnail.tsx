@@ -28,7 +28,7 @@ export default function AttachmentThumbnail({
         aria-label={`Open ${name}`}
         className={`block h-full cursor-pointer overflow-hidden rounded-md border border-border bg-transparent p-0 ${focusRingClass}`}
       >
-        <ThumbnailPicture name={name} url={thumbnail.url} note={thumbnail.note} />
+        <ThumbnailPicture name={name} thumbnail={thumbnail} />
       </PlainButton>
       <DownloadAttachmentButton attachment={attachment} look="overlay" />
     </ThumbnailTile>

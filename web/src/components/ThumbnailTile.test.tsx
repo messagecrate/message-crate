@@ -17,7 +17,10 @@ describe("ThumbnailTile", () => {
   it("is never wider than the message it sits in, nor wider than 280 px", () => {
     render(
       <ThumbnailTile tileRef={() => {}}>
-        <ThumbnailPicture name="photo.jpg" url="blob:photo" />
+        <ThumbnailPicture
+          name="photo.jpg"
+          thumbnail={{ url: "blob:photo", error: null, loading: false, note: null }}
+        />
       </ThumbnailTile>,
     );
     const picture = screen.getByRole("img", { name: "photo.jpg" });
