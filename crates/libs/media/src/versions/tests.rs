@@ -293,3 +293,28 @@ fn a_preview_is_written_only_under_its_own_extension() {
     assert!(format!("{err:#}").contains(".mp4"), "{err:#}");
     assert_eq!(tools.runs(), Vec::<Vec<String>>::new());
 }
+
+/// ffmpeg is given time by what it reads (#2059): a Thumbnail and an image
+/// Preview read one frame, and a video or audio Preview reads the whole
+/// original, so its time limit follows the original's length rather than
+/// killing a long video's conversion part-way.
+#[test]
+fn a_preview_of_a_video_or_audio_is_given_time_for_the_whole_original() {
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("original");
+    let tools = FakeTools::new();
+    let thumbnail = dir.path().join("thumbnail.jpg");
+    make_thumbnail_with(&tools, &src, &thumbnail, &NOT_STOPPED).unwrap();
+    for (kind, dest) in [
+        (Kind::Image, "preview.jpg"),
+        (Kind::Video, "preview.mp4"),
+        (Kind::Audio, "preview.mp3"),
+    ] {
+        make_preview_with(&tools, &src, kind, &dir.path().join(dest), &NOT_STOPPED).unwrap();
+    }
+
+    assert_eq!(
+        tools.reads(),
+        vec![None, None, Some(src.clone()), Some(src.clone())]
+    );
+}
