@@ -3094,9 +3094,6 @@ async fn guessing_the_owners_current_password_is_rate_limited() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    // Logging in to open the session counted against the same limit; start
-    // the count from nothing so the loop below counts only the guesses.
-    state.auth_rate_limits.lock().unwrap().clear();
     let path = format!("{}/password", member(owner.account_id));
     let change = |current: &str| {
         serde_json::json!({

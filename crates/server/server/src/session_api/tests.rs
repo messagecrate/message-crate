@@ -565,3 +565,168 @@ async fn session_rows(conn: &mut sqlx::SqliteConnection, account: i64) -> i64 {
         .await
         .unwrap()
 }
+
+// ---------------------------------------------------------------------------
+// The login's rate limit
+// ---------------------------------------------------------------------------
+
+/// `fixture`'s state with a rate limiter whose clock stands still, so every
+/// attempt a test sends lands in one window however long the test runs.
+fn with_a_stopped_clock(fixture: &crate::test_support::TestFixture) -> crate::server::AppState {
+    let mut state = fixture.state.clone();
+    state.auth_rate_limits =
+        crate::credentials::AuthRateLimits::frozen_at(std::time::Instant::now());
+    state
+}
+
+/// How many refused logins the Audit Trail holds.
+async fn refused_logins(state: &crate::server::AppState) -> i64 {
+    let mut conn = state.db.acquire().await.unwrap();
+    sqlx::query_scalar("SELECT COUNT(*) FROM audit_entries WHERE action = 'login_refused'")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap()
+}
+
+/// The holder's own logins never fill the account's count, so logging in
+/// more often than the limit in one window still works (#2116).
+#[tokio::test]
+async fn logins_with_the_right_password_never_fill_the_accounts_count() {
+    let (fixture, _alice) = fixture_with_account().await;
+    let state = with_a_stopped_clock(&fixture);
+    for attempt in 0..=crate::credentials::AUTH_RATE_MAX {
+        let (status, text) = log_in_raw(&state, "alice", crate::test_support::PASSWORD).await;
+        assert_eq!(status, StatusCode::CREATED, "login {attempt}: {text}");
+    }
+}
+
+/// Wrong passwords fill the account's count, and past it even the right
+/// password is refused until the window passes: the cost of counting per
+/// account, which `docs/architecture/http-api.md` accepts (#2116).
+#[tokio::test]
+async fn wrong_passwords_fill_the_accounts_count_and_refuse_the_right_one_too() {
+    let (fixture, _alice) = fixture_with_account().await;
+    let state = with_a_stopped_clock(&fixture);
+    for attempt in 0..crate::credentials::AUTH_RATE_MAX {
+        let (status, text) = log_in_raw(&state, "alice", "not-it-at-all").await;
+        expect_problem_for(
+            &format!("attempt {attempt}"),
+            status,
+            &text,
+            ProblemType::InvalidCredentials,
+        );
+    }
+    let (status, text) = log_in_raw(&state, "alice", crate::test_support::PASSWORD).await;
+    expect_problem(status, &text, ProblemType::RateLimited);
+}
+
+/// A login with the right password to a disabled account stays counted, so
+/// the count cannot show a guesser which guess was right.
+#[tokio::test]
+async fn the_right_password_to_a_disabled_account_stays_counted() {
+    let (fixture, alice) = fixture_with_account().await;
+    let state = with_a_stopped_clock(&fixture);
+    let mut conn = state.db.acquire().await.unwrap();
+    sqlx::query("UPDATE accounts SET disabled = 1 WHERE id = $1")
+        .bind(alice.account_id)
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    drop(conn);
+    for attempt in 0..crate::credentials::AUTH_RATE_MAX {
+        let (status, text) = log_in_raw(&state, "alice", crate::test_support::PASSWORD).await;
+        expect_problem_for(
+            &format!("attempt {attempt}"),
+            status,
+            &text,
+            ProblemType::InvalidCredentials,
+        );
+    }
+    let (status, text) = log_in_raw(&state, "alice", crate::test_support::PASSWORD).await;
+    expect_problem(status, &text, ProblemType::RateLimited);
+}
+
+/// Logins as usernames nobody holds are counted once for the whole server
+/// as well as per username. Past the server's count, a script that tries a
+/// new username each time is refused unchecked: Argon2 does not run and the
+/// Audit Trail gets no entry (#2078). The answer is the one a wrong password
+/// to a real account gets, so a full count does not tell a stranger which
+/// usernames name an account.
+#[tokio::test]
+async fn logins_as_ever_new_unknown_usernames_are_refused_unchecked_past_the_servers_count() {
+    let (fixture, _alice) = fixture_with_account().await;
+    let state = with_a_stopped_clock(&fixture);
+    let max = crate::credentials::UNKNOWN_USERNAME_RATE_MAX;
+    for attempt in 0..max {
+        let (status, text) = log_in_raw(&state, &format!("nobody{attempt}"), "guess").await;
+        expect_problem_for(
+            &format!("attempt {attempt}"),
+            status,
+            &text,
+            ProblemType::InvalidCredentials,
+        );
+    }
+    for (username, why) in [
+        ("one-more-nobody", "an unknown username past the count"),
+        ("alice", "a wrong password to a real account"),
+    ] {
+        let (status, text) = log_in_raw(&state, username, "guess").await;
+        expect_problem_for(why, status, &text, ProblemType::InvalidCredentials);
+    }
+    // The `max` unknown usernames and alice's wrong password; nothing for the
+    // login refused unchecked.
+    assert_eq!(
+        refused_logins(&state).await,
+        i64::try_from(max).unwrap() + 1
+    );
+
+    // An unknown username and a real account still reach `429` at the same
+    // attempt, so the full count tells nothing either way.
+    for username in ["another-nobody", "alice"] {
+        let already = usize::from(username == "alice");
+        for attempt in already..crate::credentials::AUTH_RATE_MAX {
+            let (status, text) = log_in_raw(&state, username, "guess").await;
+            expect_problem_for(
+                &format!("{username}, attempt {attempt}"),
+                status,
+                &text,
+                ProblemType::InvalidCredentials,
+            );
+        }
+        let (status, text) = log_in_raw(&state, username, "guess").await;
+        expect_problem_for(
+            &format!("{username}, past the limit"),
+            status,
+            &text,
+            ProblemType::RateLimited,
+        );
+    }
+}
+
+/// A login the username's own count refuses is given back to the server's
+/// count, so one username guessed past its limit does not use up the
+/// server's count for everyone else.
+#[tokio::test]
+async fn a_login_refused_by_its_usernames_count_leaves_the_servers_count_alone() {
+    let fixture = test_fixture().await;
+    let state = with_a_stopped_clock(&fixture);
+    for _ in 0..crate::credentials::AUTH_RATE_MAX {
+        log_in_raw(&state, "nobody", "guess").await;
+    }
+    for attempt in 0..crate::credentials::UNKNOWN_USERNAME_RATE_MAX {
+        let (status, text) = log_in_raw(&state, "nobody", "guess").await;
+        expect_problem_for(
+            &format!("past the username's limit, attempt {attempt}"),
+            status,
+            &text,
+            ProblemType::RateLimited,
+        );
+    }
+    let (status, text) = log_in_raw(&state, "somebody-else", "guess").await;
+    expect_problem(status, &text, ProblemType::InvalidCredentials);
+    assert_eq!(
+        refused_logins(&state).await,
+        i64::try_from(crate::credentials::AUTH_RATE_MAX).unwrap() + 1,
+        "the other username was checked and recorded"
+    );
+}

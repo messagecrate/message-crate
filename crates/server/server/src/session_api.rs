@@ -4,14 +4,15 @@
 //! reading it says which account the bearer token names, and logging out
 //! ends it. The password rules it applies live in `credentials`.
 
+use std::time::Instant;
+
 use axum::extract::State;
 use axum::http::HeaderMap;
 use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::credentials::{
-    MAX_PASSWORD_BYTES, check_auth_rate_limit, normalize_username, password_bucket,
-    unknown_username_bucket, verify_login_password,
+    AuthRateLimits, MAX_PASSWORD_BYTES, RateBucket, normalize_username, verify_login_password,
 };
 use crate::db::audit_trail::{self, AuditReason};
 use crate::db::session_tokens::ConnectingApp;
@@ -125,6 +126,33 @@ fn invalid_login() -> ApiError {
     ApiError::InvalidCredentials("invalid username or password".into())
 }
 
+/// Count a login as `username`, which names no account: once for the whole
+/// server, then under the username. `Ok(false)` when the server's count is
+/// full, and the login is to be refused unchecked.
+///
+/// A login the username's count refuses is given back to the server's
+/// count, because a refused attempt is not counted. The username's count is
+/// kept past the server's count too, so its `429` comes at the same attempt
+/// as a real account's whether or not the server's count is full, and does
+/// not tell a stranger which usernames name an account.
+fn count_unknown_username(limits: &AuthRateLimits, username: &str) -> Result<bool, ApiError> {
+    let own = RateBucket::unknown_username(username);
+    match limits.count(&RateBucket::UnknownUsernames) {
+        Ok(server_hit) => {
+            if let Err(err) = limits.count(&own) {
+                limits.give_back(&RateBucket::UnknownUsernames, server_hit)?;
+                return Err(err);
+            }
+            Ok(true)
+        }
+        Err(ApiError::RateLimited { .. }) => {
+            limits.count(&own)?;
+            Ok(false)
+        }
+        Err(err) => Err(err),
+    }
+}
+
 /// Log in: verify a local username and password and answer the Session, a
 /// `201 Created` whose `Location` is the singleton itself.
 #[utoipa::path(
@@ -152,22 +180,49 @@ pub async fn create_session(
     if username.is_empty() {
         return Err(ApiError::validation("username is required"));
     }
+    // Before any count, so the answer is the same whether or not the
+    // username names an account and whatever its count holds.
+    if req.password.len() > MAX_PASSWORD_BYTES {
+        return Err(ApiError::validation("password is too long"));
+    }
     let app = crate::server::connecting_app(&headers);
     let app = app.as_ref();
     let mut conn = state.db.acquire().await?;
     let account_id = account_profile::lookup_account_by_username(&mut conn, &username).await?;
-    // Counted per account, not per username as typed: the lookup ignores
-    // case, so every spelling of a username guesses at the same password.
-    let bucket = match account_id {
-        Some(id) => password_bucket(id),
-        None => unknown_username_bucket(&username),
-    };
     // A rate-limited attempt is turned away before anything is checked, and
-    // the Audit Trail records nothing of it.
-    check_auth_rate_limit(&state.auth_rate_limits, &bucket)?;
-    if req.password.len() > MAX_PASSWORD_BYTES {
-        return Err(ApiError::validation("password is too long"));
-    }
+    // the Audit Trail records nothing of it. Every attempt is counted before
+    // its password is checked, so guesses sent at once cannot all pass the
+    // limit; a login with the right password is given back below, so the
+    // holder's own logins never fill the count.
+    //
+    // Counted per account, not per username as typed: the lookup ignores
+    // case, so every spelling of a username guesses at the same password. A
+    // username nobody holds is counted under that username, and once more for
+    // the whole server, so a script trying a new username each time cannot
+    // run Argon2 and write to the Audit Trail as fast as it likes.
+    //
+    // Past the server's count a login as a username nobody holds is refused
+    // unchecked: no Argon2, no Audit Trail entry, no log line. Its answer is
+    // the one a wrong password gets, after about as long, not `429`, because
+    // a `429` that only unknown usernames get would tell a stranger which
+    // usernames name an account.
+    let limits = &state.auth_rate_limits;
+    let counted = match account_id {
+        Some(id) => {
+            let bucket = RateBucket::Password(id);
+            let hit = limits.count(&bucket)?;
+            Some((bucket, hit))
+        }
+        None => {
+            if !count_unknown_username(limits, &username)? {
+                drop(conn);
+                limits.wait_as_long_as_an_unknown_refusal().await;
+                return Err(invalid_login());
+            }
+            None
+        }
+    };
+    let counted_at = Instant::now();
     // Refused logins for usernames nobody holds are kept for a fixed time,
     // and a login is when the old ones go.
     audit_trail::trim_refused_logins(&mut conn).await?;
@@ -197,6 +252,7 @@ pub async fn create_session(
             app,
         )
         .await?;
+        limits.record_unknown_refusal(counted_at.elapsed());
         return Err(invalid_login());
     };
 
@@ -234,7 +290,9 @@ pub async fn create_session(
     // A disabled account gets the answer every refused login gets. Its own
     // answer would come only after the right password, so a guesser would
     // learn which guess was right, and that password works again once the
-    // owner enables the account. The Audit Trail still says why.
+    // owner enables the account. The Audit Trail still says why. The attempt
+    // stays counted for the same reason: given back, it would show in the
+    // count which guess was right.
     if auth.disabled {
         audit_trail::record_refused_login(
             &mut conn,
@@ -250,6 +308,10 @@ pub async fn create_session(
     let body =
         CreateSessionResponse::for_existing_account(&mut conn, account_id, stored_username, app)
             .await?;
+    // The holder's own login: it does not count against the account.
+    if let Some((bucket, hit)) = counted {
+        limits.give_back(&bucket, hit)?;
+    }
 
     Ok(Created {
         location: "/v1/session".to_string(),

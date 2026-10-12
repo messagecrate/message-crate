@@ -22,8 +22,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
 use crate::credentials::{
-    change_password_on_conn, check_auth_rate_limit, count_auth_failure, hash_owner_password,
-    hash_user_password, password_bucket, passwords_match, refuse_when_rate_limited,
+    RateBucket, change_password_on_conn, hash_owner_password, hash_user_password, passwords_match,
     require_username_free, require_valid_username,
 };
 use crate::db::audit_trail::{self, AuditAction, AuditActor, Details, NewEntry};
@@ -354,7 +353,7 @@ pub async fn create_account(
         None => {
             // One count for the whole server, like `claim`: a count per
             // username lets a script that tries a new name each time through.
-            check_auth_rate_limit(&state.auth_rate_limits, "register")?;
+            state.auth_rate_limits.count(&RateBucket::Register)?;
             false
         }
     };
@@ -1037,7 +1036,8 @@ pub async fn delete_account(
 /// itself. A wrong one counts in the same bucket as a failed login as that
 /// account, and past the login's limit the guess is refused unchecked: an open
 /// session must not be a way to guess the password faster than the login
-/// allows.
+/// allows. The attempt is counted before the check, so guesses sent at once
+/// cannot all pass the limit, and a right one is given back.
 ///
 /// Argon2 runs on the blocking thread pool. The caller holds no database
 /// connection across this call.
@@ -1047,15 +1047,14 @@ async fn require_current_password(
     password_hash: Option<&str>,
     current: &str,
 ) -> Result<(), ApiError> {
-    let bucket = password_bucket(account_id);
-    refuse_when_rate_limited(&state.auth_rate_limits, &bucket)?;
+    let bucket = RateBucket::Password(account_id);
+    let hit = state.auth_rate_limits.count(&bucket)?;
     if !passwords_match(password_hash, current).await? {
-        count_auth_failure(&state.auth_rate_limits, &bucket)?;
         return Err(ApiError::InvalidCredentials(
             "current password is incorrect".into(),
         ));
     }
-    Ok(())
+    state.auth_rate_limits.give_back(&bucket, hit)
 }
 
 /// The new password.

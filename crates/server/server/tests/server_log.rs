@@ -411,6 +411,26 @@ async fn a_refused_request_leaves_a_line_with_its_problem_type() {
     assert_eq!(status, S::FORBIDDEN, "{answer}");
 
     let (log, _) = log_text(&data_dir);
+    // The refused login leaves a warning naming the account by its id and
+    // the reason, and never the username typed. The warning a full count
+    // writes is checked in `credentials/tests.rs`, with a stopped clock.
+    let refused_logins = log
+        .lines()
+        .filter(|line| {
+            line.contains(" WARN ")
+                && line.contains("A login was refused")
+                && line.contains("reason=\"wrong_password\"")
+                && line.contains("account_id=")
+        })
+        .count();
+    assert_eq!(
+        refused_logins, 1,
+        "one warning for the wrong password:\n{log}"
+    );
+    assert!(
+        !log.contains("username=") && !log.contains("\"alice\""),
+        "a refused login's lines never name the username typed:\n{log}"
+    );
     let refusal = |level: &str, problem: &str, status: u16, path: &str| {
         log.lines().any(|line| {
             line.contains(&format!(" {level} "))
