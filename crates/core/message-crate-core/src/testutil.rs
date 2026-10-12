@@ -103,6 +103,11 @@ pub fn csv_files(root: &Path) -> Vec<PathBuf> {
 /// whole file is satisfied by the header line, so `contains("direction")`
 /// passes whether or not a single message was written.
 ///
+/// Each cell is the value as `message_csv::read_cell` reads it, without the
+/// `'` the writer puts in front of a cell a spreadsheet would run as a
+/// formula, so a test compares a phone number such as `+15555550100` as it
+/// is.
+///
 /// # Panics
 ///
 /// Panics when the file cannot be read or is not CSV — a test asserting on a
@@ -116,7 +121,10 @@ pub fn csv_rows(path: &Path) -> Vec<BTreeMap<String, String>> {
             headers
                 .iter()
                 .enumerate()
-                .map(|(i, h)| (h.clone(), rec.get(i).unwrap_or("").trim().to_string()))
+                .map(|(i, h)| {
+                    let cell = message_csv::field(&rec, i);
+                    (h.clone(), message_csv::read_cell(&cell).to_string())
+                })
                 .collect()
         })
         .collect()

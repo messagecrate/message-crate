@@ -198,6 +198,34 @@ fn run_names_the_first_twenty_bad_address_rows_and_counts_the_rest() {
     assert_eq!(rows[21], ",,,,,...and 2 more entries not shown");
 }
 
+/// The skipped-row file lists text from the backup, and a spreadsheet runs a
+/// cell that starts with `=`, `+`, `-` or `@` as a formula. Such a cell gets a
+/// `'` in front, so the spreadsheet shows it as text.
+#[test]
+fn a_skipped_row_that_starts_like_a_formula_is_listed_as_text() {
+    let Backup {
+        _tmp,
+        input: _,
+        output,
+        config,
+    } = backup(&go_sms_xml(&format!(
+        "{HELLO_SMS}<SMS><address></address><contactName>@Ada</contactName>\
+         <date>1609459300000</date><type>1</type><body>=1+1</body></SMS>\n"
+    )));
+
+    config.run(crate::run).expect("run");
+
+    let skipped = fs::read_to_string(output.join("skipped_invalid_address.csv")).unwrap();
+    let rows: Vec<&str> = skipped.lines().collect();
+    assert_eq!(
+        rows,
+        [
+            "xml_file,address,contact_name,android_type,date_ms,body",
+            "gosms_sys_1.xml,,'@Ada,1,1609459300000,'=1+1"
+        ]
+    );
+}
+
 /// A resumed run with no row to list in a skipped-row file removes the one the
 /// earlier run left, so the file never lists rows the new run did not skip. A
 /// fresh run clears every CSV file in the output directory before it starts;

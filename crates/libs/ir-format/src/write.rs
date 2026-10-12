@@ -4,7 +4,9 @@ use crate::util;
 use anyhow::{Context, Result, bail};
 use mail::{MailAttachment, MailMessage, MailPackage, Participant, write_mail_package};
 use message_crate_core::OutputFormat;
-use message_csv::{AttachmentCell, ParticipantCell, format_local_ts, json_cell};
+use message_csv::{
+    AttachmentCell, ParticipantCell, format_local_ts, json_cell, write_guarded_record,
+};
 use message_ir::{
     ConversationDocument, ConversationHeader, Deletion, IdentityService, IrImessage, IrMessage,
     IrMessageKind, IrService,
@@ -234,13 +236,12 @@ pub(crate) fn write_conversation_csv(
             .with_context(|| format!("write header {}", path.display()))?;
         for msg in &doc.messages {
             let cells = MessageCells::new(msg)?;
-            wtr.write_record(csv_record(
-                doc,
-                &participants_json,
-                &backup_taken_at,
-                msg,
-                &cells,
-            ))
+            // Every cell goes through `written_cell`, so a spreadsheet shows a
+            // message that starts with `=` as text rather than running it.
+            write_guarded_record(
+                &mut wtr,
+                csv_record(doc, &participants_json, &backup_taken_at, msg, &cells),
+            )
             .with_context(|| format!("write row {}", path.display()))?;
         }
         wtr.flush()?;
