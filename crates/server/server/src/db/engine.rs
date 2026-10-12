@@ -51,6 +51,30 @@ pub(crate) async fn connect_read_only(path: &Path) -> sqlx::Result<SqliteConnect
     Ok(conn)
 }
 
+/// A connection of its own to the database file at `path`, for a
+/// write-ahead log checkpoint ([`crate::db::erase`]): `trusted_schema` OFF
+/// ([`distrust_schema`]) and `busy_timeout` at `wait`, and none of the
+/// pool's other pragmas, which a checkpoint does not use. It never creates
+/// the file. The caller closes it after the checkpoint, so the short wait
+/// never reaches a pooled connection.
+///
+/// # Errors
+///
+/// Returns an error when the file cannot be opened, or the pragma fails.
+pub(crate) async fn connect_for_checkpoint(
+    path: &Path,
+    wait: Duration,
+) -> sqlx::Result<SqliteConnection> {
+    crate::db::sqlite_functions::register();
+    let mut conn = SqliteConnectOptions::new()
+        .filename(path)
+        .busy_timeout(wait)
+        .connect()
+        .await?;
+    distrust_schema(&mut conn).await?;
+    Ok(conn)
+}
+
 /// How long a statement that needs the write lock waits for another
 /// writer's transaction, such as an import batch's, before SQLite answers
 /// `SQLITE_BUSY`. The request then answers `503 Service Unavailable`
@@ -82,7 +106,10 @@ const ACQUIRE_TIMEOUT: Duration = Duration::from_secs(10);
 /// The server's pragma set, applied to each new connection: `trusted_schema`
 /// OFF first ([`distrust_schema`]), then `busy_timeout` (overlapping auth and
 /// UI writes wait that long for the write lock), foreign keys on, synchronous
-/// NORMAL, `temp_store` MEMORY, `cache_size` -[`CACHE_KIB`].
+/// NORMAL, `temp_store` MEMORY, `cache_size` -[`CACHE_KIB`], and
+/// `secure_delete` ON, which makes SQLite write zeros over deleted content
+/// and freed pages, so text deleted for good does not stay readable in the
+/// file. What else erasing takes: [`crate::db::erase`].
 fn with_pragmas(pool: SqlitePoolOptions, busy_timeout: Duration) -> SqlitePoolOptions {
     let busy_timeout_sql = format!("PRAGMA busy_timeout = {}", busy_timeout.as_millis());
     let cache_size_sql = format!("PRAGMA cache_size = -{CACHE_KIB}");
@@ -104,6 +131,9 @@ fn with_pragmas(pool: SqlitePoolOptions, busy_timeout: Duration) -> SqlitePoolOp
                 .execute(&mut *conn)
                 .await?;
             sqlx::query(sqlx::AssertSqlSafe(cache_size_sql))
+                .execute(&mut *conn)
+                .await?;
+            sqlx::query("PRAGMA secure_delete = ON")
                 .execute(&mut *conn)
                 .await?;
             Ok(())
@@ -407,6 +437,14 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(trusted_schema, 0, "trusted_schema must be OFF");
+        // Deleted content and freed pages are written over with zeros, so
+        // text deleted for good does not stay in the file (#2108).
+        let secure_delete: i64 =
+            sqlx::query_scalar("SELECT secure_delete FROM pragma_secure_delete")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(secure_delete, 1, "secure_delete must be ON");
         // The tests run in the journal mode the server runs in, so a test can
         // show what WAL does to a write that lands between a read and a write.
         let journal_mode: String = sqlx::query_scalar("PRAGMA journal_mode")

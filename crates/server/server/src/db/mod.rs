@@ -11,6 +11,7 @@ pub mod conversations;
 pub mod dedupe;
 pub mod demo_account_build;
 pub mod engine;
+pub mod erase;
 pub mod exports;
 pub mod free_name;
 pub mod handles;
