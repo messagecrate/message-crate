@@ -3,7 +3,7 @@
 //! JSON Lines means one JSON object per line. Message Crate is the HTTP server
 //! that stores imported messages.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -480,6 +480,7 @@ impl<'a> Export<'a> {
             place_other_paths(&self.cfg.out_dir, &fetched.assets, &fetched.other_paths)?;
             counts
         };
+        mark_unfetched(&mut fetched.by_conv, &assets.failed);
         let conversations = self.write_conversations(fetched.by_conv)?;
         self.finish_journal(
             out,
@@ -755,6 +756,43 @@ impl<'a> Export<'a> {
     }
 }
 
+/// Mark each attachment whose Asset this run could not fetch `not_fetched`,
+/// so the conversation file itself says the file is not there, and a later
+/// Import or Convert of the directory does not meet an unexplained missing
+/// file once the run's log is gone. The path and fingerprint stay, so a next
+/// Export into the same directory still knows what to fetch.
+fn mark_unfetched(
+    by_conv: &mut BTreeMap<String, (Message, Vec<message_ir::IrMessage>)>,
+    failed: &[AssetFailure],
+) {
+    if failed.is_empty() {
+        return;
+    }
+    let failed: HashSet<&str> = failed.iter().map(|f| f.sha256.as_str()).collect();
+    for att in by_conv
+        .values_mut()
+        .flat_map(|(_, messages)| messages.iter_mut())
+        .flat_map(|msg| msg.attachments.iter_mut())
+    {
+        let unfetched = att
+            .digest_sha256
+            .as_deref()
+            .and_then(asset_key)
+            .is_some_and(|sha| failed.contains(sha.as_str()));
+        if unfetched {
+            att.missing_reason = Some(message_ir::NOT_FETCHED.to_string());
+        }
+    }
+}
+
+/// The key an Asset is fetched, journaled and reported under: its trimmed
+/// SHA-256 in lowercase, so one fingerprint in two cases is one fetch, never
+/// two fetches writing one temporary file on a case-insensitive file system.
+/// `None` for a blank fingerprint.
+fn asset_key(sha256: &str) -> Option<String> {
+    message_ir::trimmed(sha256).map(str::to_ascii_lowercase)
+}
+
 /// Remember where each attachment a message references should land on disk,
 /// and return each attachment path [`export_path`] refused, with the path
 /// used in its place.
@@ -778,14 +816,9 @@ fn note_asset_refs(
         if let Some(path) = refused_path {
             refused.push((path, rel.clone()));
         }
-        let (Some(sha), Some(rel)) = (att.sha256.as_deref().and_then(message_ir::trimmed), rel)
-        else {
+        let (Some(sha), Some(rel)) = (att.sha256.as_deref().and_then(asset_key), rel) else {
             continue;
         };
-        // Lowercase, so one fingerprint in two cases is one fetch, never two
-        // fetches writing one temporary file on a case-insensitive file
-        // system.
-        let sha = sha.to_ascii_lowercase();
         let first = assets.entry(sha.clone()).or_insert_with(|| rel.clone());
         if *first != rel {
             other_paths.entry(sha).or_default().insert(rel);

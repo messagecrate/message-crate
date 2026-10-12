@@ -1035,6 +1035,29 @@ fn an_asset_the_server_does_not_have_is_named_in_the_report_and_every_conversati
     );
     let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
     assert_eq!(doc.messages.len(), 3, "every message is written");
+    let attachments: Vec<_> = doc
+        .messages
+        .iter()
+        .flat_map(|msg| msg.attachments.iter())
+        .collect();
+    let menus: Vec<_> = attachments
+        .iter()
+        .filter(|att| att.digest_sha256.as_deref() == Some(MENU_SHA))
+        .collect();
+    assert!(!menus.is_empty(), "the menu is in the conversation file");
+    for menu in menus {
+        assert_eq!(
+            menu.missing_reason.as_deref(),
+            Some(message_ir::NOT_FETCHED),
+            "the conversation file says the Export could not fetch the menu"
+        );
+    }
+    for photo in attachments
+        .iter()
+        .filter(|att| att.digest_sha256.as_deref() == Some(PHOTO_SHA))
+    {
+        assert_eq!(photo.missing_reason, None, "the photo was fetched");
+    }
     for line in [
         format!("{reason}, so attachments/menu.pdf is not written"),
         "1 Asset could not be fetched, so its file is missing from the Export. \
