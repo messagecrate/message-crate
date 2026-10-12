@@ -1,0 +1,26 @@
+// No timed waits in web/src test files (#2902): waitFor, vi.waitFor,
+// vi.waitUntil, waitForElementToBeRemoved, every findBy and findAllBy query,
+// and real setTimeout and setInterval calls. web/biome.json runs it on test
+// files; Biome reports each call it matches as an error at its file and line.
+// The rule and its reasons: web/src/test/README.md. noTimedWaitsInTests.canary.ts
+// holds every form, so a form this stops matching fails the lint.
+language js
+
+or {
+  `$fn($args)` where {
+    $fn <: or {
+      r"^(?:waitFor|waitForElementToBeRemoved|find(?:All)?By[A-Za-z]+)$",
+      `$obj.$name` where {
+        $name <: r"^(?:waitFor|waitUntil|waitForElementToBeRemoved|find(?:All)?By[A-Za-z]+)$"
+      }
+    },
+    register_diagnostic(span=$fn, message="This polls the screen until a timeout, so the test depends on time. Tell the test when the state is reached and read it with getBy or queryBy: web/src/test/README.md, section 'Each kind of wait and how the test is told'.", severity="error")
+  },
+  `$fn($args)` where {
+    $fn <: or {
+      r"^(?:setTimeout|setInterval)$",
+      `$obj.$name` where { $name <: r"^(?:setTimeout|setInterval)$" }
+    },
+    register_diagnostic(span=$fn, message="A real timer in a test file waits on real time. Use settle() or the fake clock: web/src/test/README.md, section 'A real sleep in the test'. A timer the test needs on purpose opts out with a biome-ignore comment that gives its reason.", severity="error")
+  }
+}

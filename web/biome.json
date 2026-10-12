@@ -182,6 +182,16 @@
       }
     },
     {
+      "includes": [
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx",
+        "src/**/*.spec.ts",
+        "src/**/*.spec.tsx",
+        "biome-plugins/noTimedWaitsInTests.canary.ts"
+      ],
+      "plugins": ["./biome-plugins/noTimedWaitsInTests.grit"]
+    },
+    {
       "includes": ["**/*.test.tsx"],
       "linter": {
         "rules": {

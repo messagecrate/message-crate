@@ -557,7 +557,7 @@ The `Nightly` workflow (`nightly.yml`) builds the release Dockerfile from `main`
 
 #### Frontend
 
-Frontend (`web/`) — Biome (`web/biome.json`) lints and formats TypeScript, JavaScript, CSS, JSON, and HTML. TypeScript (`npm run build` runs `tsc` then Vite). CI runs `biome ci .` (lint and format drift fail) and `scripts/check-biome-restricted-imports.mjs`. That script fails when an override of `noRestrictedImports` in `web/biome.json` keeps anything but the root rule's path list less the one path it lifts. An override's list replaces the root one, so a path added to the root rule must be added to each override too. Prefer a real fix over `biome-ignore`. Prefix unused bindings with `_`.
+Frontend (`web/`) — Biome (`web/biome.json`) lints and formats TypeScript, JavaScript, CSS, JSON, and HTML. TypeScript (`npm run build` runs `tsc` then Vite). CI runs `biome ci .` (lint and format drift fail), the timed-wait rule's canary (`web/biome-plugins/noTimedWaitsInTests.canary.ts`, linted with `--error-on-warnings`; `web/src/test/README.md`, "The check", says why), and `scripts/check-biome-restricted-imports.mjs`. That script fails when an override of `noRestrictedImports` in `web/biome.json` keeps anything but the root rule's path list less the one path it lifts. An override's list replaces the root one, so a path added to the root rule must be added to each override too. Prefer a real fix over `biome-ignore`. Prefix unused bindings with `_`.
 
 ```bash
 cd web
@@ -571,7 +571,7 @@ npm run build             # tsc && vite build
 npm run dev               # Vite on http://localhost:5173 (proxies /v1 to :8080)
 ```
 
-From the repository root, `./scripts/format-all.sh` rewrites Rust and web sources to the formatters. `./scripts/check-pr.sh` is the fast pre-flight — the `CHANGELOG.md` formatting check, `cargo fmt --check` and Clippy at `-D warnings` on both manifests, `biome ci`, the restricted-import list check, and the web type-check; it checks and never rewrites. `./scripts/check-all.sh` runs CI's checks serially on the machine it is started on, starting with `check-pr.sh`, except the Docker image build. On Linux or macOS it skips the Windows-only cases of the server config tests, which CI's `windows-config` job runs. Why the split: `docs/adr/0007-ci-is-the-only-gate.md`.
+From the repository root, `./scripts/format-all.sh` rewrites Rust and web sources to the formatters. `./scripts/check-pr.sh` is the fast pre-flight — the `CHANGELOG.md` formatting check, `cargo fmt --check` and Clippy at `-D warnings` on both manifests, `biome ci`, the timed-wait rule's canary, the restricted-import list check, and the web type-check; it checks and never rewrites. `./scripts/check-all.sh` runs CI's checks serially on the machine it is started on, starting with `check-pr.sh`, except the Docker image build. On Linux or macOS it skips the Windows-only cases of the server config tests, which CI's `windows-config` job runs. Why the split: `docs/adr/0007-ci-is-the-only-gate.md`.
 
 Do not start a separate `npm run dev` while `cargo tauri dev` is running. Tauri starts Vite itself.
 

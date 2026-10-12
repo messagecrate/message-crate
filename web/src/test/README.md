@@ -3,8 +3,7 @@
 A unit test in `web/src` never depends on time. It is told when the thing it
 waits for has happened, then reads the screen at once with `getBy…` or
 `queryBy…`. It does not poll the screen, and a timeout is never widened to make
-a test pass. The test files that still poll are being converted under #2902,
-and a new test follows this page from the start.
+a test pass. A Biome check enforces this ("The check").
 
 *The short version: `startFakeClock()` before `render`, `await settle()` after
 anything that starts work, `advanceTimersAndSettle(ms)` past a debounce or a
@@ -24,6 +23,36 @@ timeout only moves the load at which the test fails.
 
 A test that is told when the state is reached has no timeout to lose to. On a
 busy machine it runs slower and passes the same way.
+
+## The check
+
+`web/biome-plugins/noTimedWaitsInTests.grit` is a Biome plugin that
+`web/biome.json` runs on every test file in `web/src`. `biome ci` fails on each
+call to `waitFor`, `vi.waitFor`, `vi.waitUntil`, `waitForElementToBeRemoved`, a
+`findBy…` or `findAllBy…` query, `setTimeout` or `setInterval`. Each error names
+the file, the line, and the section of this page that says what to write
+instead. `check-pr.sh` and CI's web job run it.
+
+A test can still need a real timer on purpose. `SearchBar.test.tsx` has a
+parent that sets its value on a later task, because that lateness is the bug
+the test guards (#1000). Such a call opts out with a comment that gives its
+reason, and the fake clock still runs the timer:
+
+```tsx
+// biome-ignore lint/plugin/noTimedWaitsInTests: the parent under test is late on purpose (#1000); the fake clock runs this timer when the test moves it
+setTimeout(() => setValue(q), 0);
+```
+
+A string such as `toFake: ["setTimeout"]` is not a call, so the check passes
+it.
+
+Biome reports a plugin that fails to run as an info, not an error, so a
+broken pattern or a Biome upgrade could switch the check off without failing
+`biome ci`. `noTimedWaitsInTests.canary.ts` beside the plugin holds every form
+it catches, each with its error suppressed. A form the plugin stops catching
+leaves its suppression unused, and `check-pr.sh` and CI lint that file with
+`--error-on-warnings`, so the unused suppression fails them. A form added to
+the plugin gets a line in the canary.
 
 ## The setup
 
