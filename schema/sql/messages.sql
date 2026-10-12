@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     id INTEGER PRIMARY KEY,
     -- Owning account (`accounts.id`).
     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-    -- Thread identity handle (`handles.id`); peer for 1:1, group chat id for groups.
+    -- Thread identity handle (`handles.id`); peer for 1:1, the group's chat id for groups.
     chat_handle_id INTEGER NOT NULL REFERENCES handles(id) ON DELETE CASCADE,
     -- Thread shape: 'individual' | 'group' (and any other values the importer writes).
     conversation_type TEXT NOT NULL,

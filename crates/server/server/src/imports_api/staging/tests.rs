@@ -516,7 +516,7 @@ async fn handle_types(conn: &mut SqliteConnection) -> Vec<(String, String)> {
 /// the group's key and nobody's address. Typed by its shape it was stored as
 /// an email identity (#1141).
 #[tokio::test]
-async fn a_group_chat_id_is_stored_as_other_whatever_its_shape() {
+async fn a_group_conversation_id_is_stored_as_other_whatever_its_shape() {
     let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("whatsapp", "120363042@g.us")

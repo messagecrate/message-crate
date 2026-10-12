@@ -28,7 +28,7 @@ use crate::{
 /// Setup steps `MailSession::new` runs before any message is read.
 const CACHE_STEPS: u64 = 4;
 
-/// Apple's `chat.style` for a group chat.
+/// Apple's `chat.style` for a group conversation.
 const STYLE_GROUP: i64 = 43;
 /// Apple's `chat.style` for a one-to-one chat.
 const STYLE_ONE_TO_ONE: i64 = 45;
@@ -236,7 +236,7 @@ mod tests {
     use super::*;
     use crate::test_support::FixtureDb;
     use chat_db_fixture::{
-        FRIEND_EMAIL, FRIEND_PHONE, FRIEND_PHONE_EMAIL, GROUP_CHAT_IDENTIFIER, OWNER, OWNER_EMAIL,
+        FRIEND_EMAIL, FRIEND_PHONE, FRIEND_PHONE_EMAIL, GROUP_IDENTIFIER, OWNER, OWNER_EMAIL,
         REACTED_GUID,
     };
 
@@ -250,7 +250,7 @@ mod tests {
         let session = fixture.session();
 
         assert_eq!(session.chatrooms.len(), 6);
-        assert_eq!(session.chatrooms[&2].chat_identifier, GROUP_CHAT_IDENTIFIER);
+        assert_eq!(session.chatrooms[&2].chat_identifier, GROUP_IDENTIFIER);
         assert_eq!(session.chat_members[&1], BTreeSet::from([1]));
         assert_eq!(session.chat_members[&2], BTreeSet::from([1, 2, 4]));
         assert!(!session.chat_members.contains_key(&5));
