@@ -4,9 +4,9 @@ use crate::{
 use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
 use futures_util::{stream, FutureExt, StreamExt, TryFutureExt, TryStreamExt};
-use sqlx_core::describe::Describe;
 use sqlx_core::error::Error;
 use sqlx_core::executor::{Execute, Executor};
+use sqlx_core::sql_str::SqlStr;
 use sqlx_core::Either;
 use std::{future, pin::pin};
 
@@ -23,12 +23,12 @@ impl<'c> Executor<'c> for &'c mut SqliteConnection {
         'q: 'e,
         E: 'q,
     {
-        let sql = query.sql();
         let arguments = match query.take_arguments().map_err(Error::Encode) {
             Ok(arguments) => arguments,
             Err(error) => return stream::once(future::ready(Err(error))).boxed(),
         };
         let persistent = query.persistent() && arguments.is_some();
+        let sql = query.sql();
 
         Box::pin(
             self.worker
@@ -48,7 +48,6 @@ impl<'c> Executor<'c> for &'c mut SqliteConnection {
         'q: 'e,
         E: 'q,
     {
-        let sql = query.sql();
         let arguments = match query.take_arguments().map_err(Error::Encode) {
             Ok(arguments) => arguments,
             Err(error) => return future::ready(Err(error)).boxed(),
@@ -56,6 +55,7 @@ impl<'c> Executor<'c> for &'c mut SqliteConnection {
         let persistent = query.persistent() && arguments.is_some();
 
         Box::pin(async move {
+            let sql = query.sql();
             let mut stream = pin!(self
                 .worker
                 .execute(sql, arguments, self.row_channel_size, persistent, Some(1))
@@ -72,29 +72,30 @@ impl<'c> Executor<'c> for &'c mut SqliteConnection {
         })
     }
 
-    fn prepare_with<'e, 'q: 'e>(
+    fn prepare_with<'e>(
         self,
-        sql: &'q str,
+        sql: SqlStr,
         _parameters: &[SqliteTypeInfo],
-    ) -> BoxFuture<'e, Result<SqliteStatement<'q>, Error>>
+    ) -> BoxFuture<'e, Result<SqliteStatement, Error>>
     where
         'c: 'e,
     {
         Box::pin(async move {
             let statement = self.worker.prepare(sql).await?;
 
-            Ok(SqliteStatement {
-                sql: sql.into(),
-                ..statement
-            })
+            Ok(statement)
         })
     }
 
     #[doc(hidden)]
-    fn describe<'e, 'q: 'e>(self, sql: &'q str) -> BoxFuture<'e, Result<Describe<Sqlite>, Error>>
+    #[cfg(feature = "offline")]
+    fn describe<'e>(
+        self,
+        sql: SqlStr,
+    ) -> BoxFuture<'e, Result<sqlx_core::describe::Describe<Sqlite>, Error>>
     where
         'c: 'e,
     {
-        Box::pin(self.worker.describe(sql))
+        Box::pin(async move { self.worker.describe(sql).await })
     }
 }

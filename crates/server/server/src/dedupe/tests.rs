@@ -1462,13 +1462,15 @@ async fn a_failed_dedupe_keeps_the_previous_duplicates_hidden() {
             .unwrap();
         assert_eq!((stats.exact_flagged, stats.near_flagged), (1, 1));
 
-        sqlx::query(&format!("CREATE TEMP TABLE {broken_table} (id BIGINT)"))
-            .execute(&mut *conn)
-            .await
-            .unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "CREATE TEMP TABLE {broken_table} (id BIGINT)"
+        )))
+        .execute(&mut *conn)
+        .await
+        .unwrap();
         let result = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2, Progress::Log).await;
         assert!(result.is_err(), "{broken_table}: the pass should fail");
-        sqlx::query(&format!("DROP TABLE {broken_table}"))
+        sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE {broken_table}")))
             .execute(&mut *conn)
             .await
             .unwrap();

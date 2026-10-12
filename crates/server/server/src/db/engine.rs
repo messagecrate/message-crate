@@ -91,7 +91,9 @@ fn with_pragmas(pool: SqlitePoolOptions, busy_timeout: Duration) -> SqlitePoolOp
         let cache_size_sql = cache_size_sql.clone();
         Box::pin(async move {
             distrust_schema(conn).await?;
-            sqlx::query(&busy_timeout_sql).execute(&mut *conn).await?;
+            sqlx::query(sqlx::AssertSqlSafe(busy_timeout_sql))
+                .execute(&mut *conn)
+                .await?;
             sqlx::query("PRAGMA foreign_keys = ON")
                 .execute(&mut *conn)
                 .await?;
@@ -101,7 +103,9 @@ fn with_pragmas(pool: SqlitePoolOptions, busy_timeout: Duration) -> SqlitePoolOp
             sqlx::query("PRAGMA temp_store = MEMORY")
                 .execute(&mut *conn)
                 .await?;
-            sqlx::query(&cache_size_sql).execute(&mut *conn).await?;
+            sqlx::query(sqlx::AssertSqlSafe(cache_size_sql))
+                .execute(&mut *conn)
+                .await?;
             Ok(())
         })
     })
@@ -318,37 +322,6 @@ pub async fn open_pool_keeping_wal_error(path: &Path) -> Result<OpenedPool> {
         .with_context(|| format!("failed to open database {}", path.display()))?;
     let wal_error = try_enable_wal(&pool).await.error;
     Ok(OpenedPool { pool, wal_error })
-}
-
-/// Close `pool` and every connection it opened, so none is left attached to
-/// the database file when this returns.
-///
-/// sqlx 0.8.6's `Pool::close` alone can return with a connection still
-/// open. A dropped connection goes back to the pool through a task that
-/// pings it first. The close waits for every connection's permit, but each
-/// idle connection it closes hands back one permit more than it held, so
-/// the wait can end while that task is still pinging. The task then puts
-/// the connection among the idle ones, open, after the close has taken
-/// them. So this closes again, letting that task run in between, until the
-/// pool counts no connection. Each pass ends: once the pool is closed a
-/// connection on its way back is either closed by its task or left idle for
-/// the next pass, and none can be checked out.
-///
-/// The connection left open matters before the file is removed, replaced or
-/// renamed. When it closes later as the last connection on its file, SQLite
-/// deletes the `-wal` and `-shm` files by name, and by then those names can
-/// be another database's: the next start's new database lost its
-/// write-ahead log, and the tables in it, that way (#2592).
-///
-/// This goes once a sqlx release's `Pool::close` closes every connection
-/// (#2884).
-#[allow(clippy::disallowed_methods)] // the one place that calls Pool::close
-pub async fn close_pool(pool: &SqlitePool) {
-    pool.close().await;
-    while pool.size() > 0 {
-        tokio::task::yield_now().await;
-        pool.close().await;
-    }
 }
 
 /// Shared test pool: file-backed SQLite in a fresh temp dir, returned with

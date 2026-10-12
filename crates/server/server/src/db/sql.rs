@@ -5,9 +5,9 @@ use std::future::Future;
 use std::pin::Pin;
 
 use crate::models::StoredTime;
-use sqlx::Arguments;
-use sqlx::SqliteConnection;
+use sqlx::query::Query;
 use sqlx::sqlite::{SqliteArguments, SqliteRow};
+use sqlx::{Arguments, SqlSafeStr, Sqlite, SqliteConnection};
 
 /// One bound parameter in a dynamic query, whose binds are of mixed types
 /// and counted only at run time.
@@ -24,7 +24,7 @@ pub enum SqlParam {
 ///
 /// `String`/`i64` cannot fail to encode; an encode
 /// failure is unreachable and panics like sqlx's own `Query::bind`.
-pub fn bind_args<'q>(params: &[SqlParam]) -> SqliteArguments<'q> {
+pub fn bind_args(params: &[SqlParam]) -> SqliteArguments {
     let mut args = SqliteArguments::default();
     for p in params {
         match p {
@@ -39,15 +39,10 @@ pub fn bind_args<'q>(params: &[SqlParam]) -> SqliteArguments<'q> {
 
 /// Build a query from `sql` with all params bound, in order. Placeholders in
 /// the SQL must match this order.
-///
-/// sqlx 0.8.6 does not re-export `Query` at the crate root (the root
-/// `sqlx::Query` re-export is 0.9-only), so the concrete query type is
-/// unnameable; this builds the arguments through the public `Arguments` API
-/// instead.
-pub fn bind_all<'q>(
-    sql: &'q str,
+pub fn bind_all(
+    sql: impl SqlSafeStr,
     params: &[SqlParam],
-) -> impl sqlx::Execute<'q, sqlx::Sqlite> + 'q {
+) -> Query<'static, Sqlite, SqliteArguments> {
     sqlx::query_with(sql, bind_args(params))
 }
 
@@ -114,7 +109,7 @@ where
     let mut map: HashMap<i64, Vec<T>> = HashMap::new();
     for chunk in ids.chunks(SQLITE_IN_CHUNK) {
         let sql = build_sql(&in_placeholders(1, chunk.len()));
-        let mut q = sqlx::query(&sql);
+        let mut q = sqlx::query(sqlx::AssertSqlSafe(sql));
         for id in chunk {
             q = q.bind(*id);
         }

@@ -723,7 +723,7 @@ async fn insert_handle(conn: &mut sqlx::SqliteConnection, raw: &str, service: &s
 }
 
 /// `sql` is a `SELECT COUNT(*)` with one `$1` bind, `id`.
-async fn count(conn: &mut sqlx::SqliteConnection, sql: &str, id: i64) -> i64 {
+async fn count(conn: &mut sqlx::SqliteConnection, sql: &'static str, id: i64) -> i64 {
     sqlx::query_scalar(sql)
         .bind(id)
         .fetch_one(&mut *conn)

@@ -93,9 +93,9 @@ async fn version_hits(db: &Path, word: &str) -> i64 {
 /// at `db`.
 async fn fts_hits(db: &Path, table: &str, word: &str) -> i64 {
     let (_pool, mut conn) = open_verify(db).await;
-    sqlx::query_scalar(&format!(
+    sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT COUNT(*) FROM {table} WHERE {table} MATCH $1"
-    ))
+    )))
     .bind(word)
     .fetch_one(&mut *conn)
     .await

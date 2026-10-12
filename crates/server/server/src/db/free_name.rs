@@ -15,7 +15,7 @@
 //! inserts nothing instead of failing. `ON CONFLICT DO NOTHING` covers the
 //! exact name through the table's own `UNIQUE(account_id, name)`.
 
-use sqlx::SqliteConnection;
+use sqlx::{AssertSqlSafe, SqlSafeStr, SqlStr, SqliteConnection};
 
 /// Insert a row under `name` and answer its id, or `None` when the account
 /// already has a row under `name` in any letter case.
@@ -31,7 +31,7 @@ pub async fn insert_if_name_free(
     columns: &[(&str, &str)],
 ) -> sqlx::Result<Option<i64>> {
     let sql = insert_sql(table, columns);
-    insert(conn, &sql, account_id, name, columns).await
+    insert(conn, sql, account_id, name, columns).await
 }
 
 /// Insert a row for an Import Run's shortcut under the first free name and
@@ -55,7 +55,7 @@ pub async fn insert_under_free_name(
         } else {
             format!("{base} {n}")
         };
-        if let Some(id) = insert(conn, &sql, account_id, &name, columns).await? {
+        if let Some(id) = insert(conn, sql.clone(), account_id, &name, columns).await? {
             return Ok(Some((id, name)));
         }
     }
@@ -64,7 +64,7 @@ pub async fn insert_under_free_name(
 
 /// The statement that inserts a row under a free name: `$1` is the account,
 /// `$2` the name, and the `columns` follow from `$3`.
-fn insert_sql(table: &str, columns: &[(&str, &str)]) -> String {
+fn insert_sql(table: &str, columns: &[(&str, &str)]) -> SqlStr {
     let mut names = String::new();
     let mut placeholders = String::new();
     for (i, (column, _)) in columns.iter().enumerate() {
@@ -72,7 +72,7 @@ fn insert_sql(table: &str, columns: &[(&str, &str)]) -> String {
         names.push_str(column);
         placeholders.push_str(&format!(", ${}", i + 3));
     }
-    format!(
+    AssertSqlSafe(format!(
         "INSERT INTO {table} (account_id, name{names})
          SELECT $1, $2{placeholders}
          WHERE NOT EXISTS (
@@ -80,13 +80,14 @@ fn insert_sql(table: &str, columns: &[(&str, &str)]) -> String {
          )
          ON CONFLICT DO NOTHING
          RETURNING id",
-    )
+    ))
+    .into_sql_str()
 }
 
 /// Run [`insert_sql`]'s statement for one name.
 async fn insert(
     conn: &mut SqliteConnection,
-    sql: &str,
+    sql: SqlStr,
     account_id: i64,
     name: &str,
     columns: &[(&str, &str)],

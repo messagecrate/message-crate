@@ -300,7 +300,7 @@ pub async fn record_shown_as_is(
     } = rows;
     let [reason_column, kind_column] = Version::Preview.not_made_columns();
     let mut tx = begin_write(conn).await?;
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE attachments
          SET shown_as_is = $1,
              {reason_column} = CASE WHEN $1 THEN NULL ELSE {reason_column} END,
@@ -308,7 +308,7 @@ pub async fn record_shown_as_is(
          WHERE sha256 = $2
            AND (shown_as_is IS NOT $1 OR ($1 AND {reason_column} IS NOT NULL))
            AND message_id IN (SELECT id FROM messages WHERE account_id = $3)"
-    ))
+    )))
     .bind(shown_as_is)
     .bind(original_sha)
     .bind(account_id)
@@ -357,14 +357,14 @@ pub async fn record_not_made(
     let [_, path_column, _] = version.columns();
     let [reason_column, kind_column] = version.not_made_columns();
     let mut tx = begin_write(conn).await?;
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE attachments
          SET {reason_column} = $1, {kind_column} = $5
          WHERE sha256 = $2
            AND (COALESCE({path_column}, '') = '' OR {path_column} = $4)
            AND ({reason_column} IS NOT $1 OR {kind_column} IS NOT $5)
            AND message_id IN (SELECT id FROM messages WHERE account_id = $3)"
-    ))
+    )))
     .bind(reason)
     .bind(original_sha)
     .bind(account_id)
@@ -417,14 +417,14 @@ async fn point_rows(
         String::new()
     };
     let mut tx = begin_write(conn).await?;
-    let done = sqlx::query(&format!(
+    let done = sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE attachments
          SET {sha_column} = $1, {path_column} = $2, {mime_column} = $3,
              {reason_column} = NULL, {kind_column} = NULL
          WHERE sha256 = $4
            {unset_filter}
            AND message_id IN (SELECT id FROM messages WHERE account_id = $5)"
-    ))
+    )))
     .bind(&file.sha256)
     .bind(&file.assets_path)
     .bind(&file.mime_type)
@@ -451,12 +451,12 @@ pub async fn clear(
 ) -> Result<(), sqlx::Error> {
     let [sha_column, path_column, mime_column] = version.columns();
     let mut tx = begin_write(conn).await?;
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE attachments
          SET {sha_column} = NULL, {path_column} = NULL, {mime_column} = NULL
          WHERE {path_column} = $1
            AND message_id IN (SELECT id FROM messages WHERE account_id = $2)"
-    ))
+    )))
     .bind(assets_path)
     .bind(account_id)
     .execute(&mut *tx)
@@ -494,8 +494,9 @@ pub async fn file_of(
     // type column from the row that holds the minimum, so each file comes
     // with its oldest row's media type, and rows that differ only in media
     // type are not a disagreement about the file.
-    let mut named = sqlx::query_as::<_, (String, Option<String>, i64)>(&format!(
-        "SELECT a.{path_column}, a.{mime_column}, MIN(a.id)
+    let mut named =
+        sqlx::query_as::<_, (String, Option<String>, i64)>(sqlx::AssertSqlSafe(format!(
+            "SELECT a.{path_column}, a.{mime_column}, MIN(a.id)
          FROM attachments a
          JOIN messages m ON m.id = a.message_id
          WHERE m.account_id = $1 AND a.sha256 = $2
@@ -503,13 +504,13 @@ pub async fn file_of(
          GROUP BY a.{path_column}
          ORDER BY MIN(a.id)
          LIMIT 2"
-    ))
-    .bind(account_id)
-    .bind(original_sha)
-    .fetch_all(&mut *conn)
-    .await?
-    .into_iter()
-    .map(|(path, mime, _oldest)| (path, mime));
+        )))
+        .bind(account_id)
+        .bind(original_sha)
+        .fetch_all(&mut *conn)
+        .await?
+        .into_iter()
+        .map(|(path, mime, _oldest)| (path, mime));
     let first = named.next();
     if let (Some((first_path, _)), Some((other_path, _))) = (&first, named.next()) {
         tracing::warn!(
@@ -546,7 +547,7 @@ pub async fn converted_file_is_named(
     };
     let promoted = any_of("a", false);
     let staged = any_of("sa", true);
-    let found: Option<i64> = sqlx::query_scalar(&format!(
+    let found: Option<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT 1 FROM attachments a
          JOIN messages m ON m.id = a.message_id
          WHERE m.account_id = $1 AND ({promoted})
@@ -555,7 +556,7 @@ pub async fn converted_file_is_named(
          JOIN staging_messages sm ON sm.id = sa.message_id
          WHERE sm.account_id = $1 AND ({staged})
          LIMIT 1"
-    ))
+    )))
     .bind(account_id)
     .bind(sha256)
     .fetch_optional(&mut *conn)
@@ -663,7 +664,7 @@ pub async fn not_made_for_import(
 ) -> Result<Vec<NotMadeAttachment>, sqlx::Error> {
     let [thumbnail_reason, thumbnail_kind] = Version::Thumbnail.not_made_columns();
     let [preview_reason, preview_kind] = Version::Preview.not_made_columns();
-    let rows: Vec<NotMadeRow> = sqlx::query_as(&format!(
+    let rows: Vec<NotMadeRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT id, original_name, mime_type, size_bytes,
                 {thumbnail_kind} AS thumbnail_kind, {thumbnail_reason} AS thumbnail_reason,
                 {preview_kind} AS preview_kind, {preview_reason} AS preview_reason
@@ -671,7 +672,7 @@ pub async fn not_made_for_import(
          WHERE import_id = $1
            AND ({thumbnail_kind} IS NOT NULL OR {preview_kind} IS NOT NULL)
          ORDER BY id"
-    ))
+    )))
     .bind(import_id)
     .fetch_all(&mut *conn)
     .await?;

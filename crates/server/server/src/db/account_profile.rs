@@ -147,10 +147,10 @@ pub async fn is_account_identity(
     account_id: i64,
     handle_id: i64,
 ) -> Result<bool> {
-    Ok(sqlx::query_scalar(&format!(
+    Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT EXISTS (SELECT 1 FROM handles h WHERE h.account_id = $1 AND h.id = $2 AND {})",
         is_account_identity_sql("h", "$1"),
-    ))
+    )))
     .bind(account_id)
     .bind(handle_id)
     .fetch_one(&mut *conn)
