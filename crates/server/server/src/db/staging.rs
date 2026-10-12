@@ -384,7 +384,7 @@ pub async fn insert_messages(
         ",
         values_tuples(rows.len(), MESSAGE_BIND_COLUMNS)
     );
-    let mut q = sqlx::query(sqlx::AssertSqlSafe(sql));
+    let mut q = sqlx::query(AssertSqlSafe(sql));
     for row in rows {
         q = q
             .bind(row.conversation_id)
@@ -466,7 +466,7 @@ pub async fn insert_attachments(
             ATTACHMENT_COLUMNS.join(", "),
             values_tuples(chunk.len(), ATTACHMENT_BIND_COLUMNS)
         );
-        bind_attachments(sqlx::query(sqlx::AssertSqlSafe(sql)), chunk)
+        bind_attachments(sqlx::query(AssertSqlSafe(sql)), chunk)
             .execute(&mut *conn)
             .await?;
         inserted += chunk.len() as u64;
@@ -509,7 +509,7 @@ pub async fn insert_tapbacks(conn: &mut SqliteConnection, rows: &[StagingTapback
             TAPBACK_COLUMNS.join(", "),
             values_tuples(chunk.len(), TAPBACK_BIND_COLUMNS)
         );
-        bind_tapbacks(sqlx::query(sqlx::AssertSqlSafe(sql)), chunk)
+        bind_tapbacks(sqlx::query(AssertSqlSafe(sql)), chunk)
             .execute(&mut *conn)
             .await?;
         inserted += chunk.len() as u64;
@@ -538,7 +538,7 @@ pub async fn insert_earlier_versions(
             ",
             values_tuples(chunk.len(), EARLIER_VERSION_BIND_COLUMNS)
         );
-        let mut q = sqlx::query(sqlx::AssertSqlSafe(sql));
+        let mut q = sqlx::query(AssertSqlSafe(sql));
         for row in chunk {
             q = q
                 .bind(row.message_id)
@@ -648,7 +648,7 @@ pub async fn add_staged_copy_mark(
         undated = kept_undated_mark_sql(&copy, &held),
         later = later_dated_backup_sql("$1", "backup_taken_at"),
     );
-    sqlx::query(sqlx::AssertSqlSafe(sql))
+    sqlx::query(AssertSqlSafe(sql))
         .bind(backup_taken_at)
         .bind(deletion.map(message_ir::Deletion::as_str))
         .bind(undated_deletion.map(message_ir::Deletion::as_str))
@@ -685,7 +685,7 @@ pub async fn take_later_staged_copy(
         .iter()
         .filter_map(|v| v.edited_at.as_ref())
         .max();
-    let later: bool = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+    let later: bool = sqlx::query_scalar(AssertSqlSafe(format!(
         "SELECT {} FROM staging_message_versions WHERE message_id = $3",
         later_edit_sql("$1", "$2", "COUNT(*)", "MAX(edited_at)")
     )))
@@ -723,7 +723,7 @@ pub async fn note_backed_staged_text(
         backed = backs_undated_sql("$3", "backup_taken_at"),
         held_versions = versions_json_sql("staging_message_versions", "$1"),
     );
-    sqlx::query(sqlx::AssertSqlSafe(sql))
+    sqlx::query(AssertSqlSafe(sql))
         .bind(staged)
         .bind(copy.body)
         .bind(backup_taken_at)
@@ -809,7 +809,7 @@ pub async fn add_copy_attachments(
     for chunk in rows.chunks(size) {
         let copies = bound_rows_sql(ATTACHMENT_COLUMNS, chunk.len());
         let fill = fill_attachments_sql("staging_attachments", &copies);
-        bind_attachments(sqlx::query(sqlx::AssertSqlSafe(fill)), chunk)
+        bind_attachments(sqlx::query(fill), chunk)
             .execute(&mut *conn)
             .await?;
         let insert = insert_new_attachments_sql("staging_attachments", &copies);
@@ -866,11 +866,11 @@ async fn reset_id_map(
     let create = format!(
         "CREATE TEMP TABLE IF NOT EXISTS {table} (staging_id BIGINT PRIMARY KEY, prod_id BIGINT NOT NULL{extra})"
     );
-    sqlx::query(sqlx::AssertSqlSafe(create))
+    sqlx::query(AssertSqlSafe(create))
         .execute(&mut *conn)
         .await?;
     let clear = format!("DELETE FROM {table}");
-    sqlx::query(sqlx::AssertSqlSafe(clear))
+    sqlx::query(AssertSqlSafe(clear))
         .execute(&mut *conn)
         .await?;
     Ok(())
@@ -1185,7 +1185,7 @@ pub async fn promote_messages_in_range(
     hi: i64,
 ) -> Result<u64> {
     let sql = format!("{INSERT_MESSAGES_FROM_STAGING}{IN_ID_RANGE}");
-    Ok(sqlx::query(sqlx::AssertSqlSafe(sql))
+    Ok(sqlx::query(AssertSqlSafe(sql))
         .bind(account_id)
         .bind(lo)
         .bind(hi)
@@ -1211,7 +1211,7 @@ pub async fn promote_new_messages_in_range(
     hi: i64,
 ) -> Result<u64> {
     let sql = format!("{INSERT_MESSAGES_FROM_STAGING}{IN_ID_RANGE} ON CONFLICT DO NOTHING");
-    Ok(sqlx::query(sqlx::AssertSqlSafe(sql))
+    Ok(sqlx::query(AssertSqlSafe(sql))
         .bind(account_id)
         .bind(lo)
         .bind(hi)
@@ -1233,7 +1233,7 @@ pub async fn staged_message_ids_in_range(
     hi: i64,
 ) -> Result<Vec<i64>> {
     let sql = format!("{STAGED_MESSAGE_IDS}{IN_ID_RANGE}");
-    Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
+    Ok(sqlx::query_scalar(AssertSqlSafe(sql))
         .bind(account_id)
         .bind(lo)
         .bind(hi)
@@ -1281,7 +1281,7 @@ pub async fn write_message_map(
             "INSERT INTO _promote_msg_map (staging_id, prod_id) VALUES {}",
             values_tuples(chunk.len(), 2)
         );
-        let mut q = sqlx::query(sqlx::AssertSqlSafe(sql));
+        let mut q = sqlx::query(AssertSqlSafe(sql));
         for &(staging_id, prod_id) in chunk {
             q = q.bind(staging_id).bind(prod_id);
         }
@@ -1502,9 +1502,7 @@ pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> 
             },
         ),
     );
-    sqlx::query(sqlx::AssertSqlSafe(sql))
-        .execute(&mut *conn)
-        .await?;
+    sqlx::query(AssertSqlSafe(sql)).execute(&mut *conn).await?;
     // Before the mark changes: the rule reads the mark held.
     let undated = kept_undated_mark_sql(
         &staged,
@@ -1514,7 +1512,7 @@ pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> 
             undated_deletion: "messages.undated_deletion",
         },
     );
-    sqlx::query(sqlx::AssertSqlSafe(format!(
+    sqlx::query(AssertSqlSafe(format!(
         r"
         UPDATE messages
         SET undated_deletion = {undated}
@@ -1557,7 +1555,7 @@ pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> 
 /// Returns an error when the update fails.
 pub async fn promote_backup_dates(conn: &mut SqliteConnection) -> Result<u64> {
     let backed = backs_undated_sql("sm.backup_taken_at", "messages.backup_taken_at");
-    sqlx::query(sqlx::AssertSqlSafe(format!(
+    sqlx::query(AssertSqlSafe(format!(
         r"
         UPDATE messages
         SET undated_body = 0
@@ -1586,7 +1584,7 @@ pub async fn promote_backup_dates(conn: &mut SqliteConnection) -> Result<u64> {
         ",
         later = later_dated_backup_sql("sm.backup_taken_at", "messages.backup_taken_at"),
     );
-    Ok(sqlx::query(sqlx::AssertSqlSafe(sql))
+    Ok(sqlx::query(AssertSqlSafe(sql))
         .execute(&mut *conn)
         .await?
         .rows_affected())
@@ -1752,7 +1750,7 @@ pub async fn write_edit_map(conn: &mut SqliteConnection, messages_before: i64) -
         held_versions = versions("message_versions", "mm.prod_id"),
         later_edit = later_edit_sql("n", "newest", "held_n", "held_newest"),
     );
-    Ok(sqlx::query(sqlx::AssertSqlSafe(sql))
+    Ok(sqlx::query(AssertSqlSafe(sql))
         .bind(messages_before)
         .execute(&mut *conn)
         .await?
@@ -1857,8 +1855,8 @@ pub struct PromotedAttachments {
 /// when their message, path, original name and sticker flag match, the
 /// held row has no file and the copy has one. So importing again after
 /// the file turns up fills the row in instead of adding a second one.
-fn fill_attachments_sql(held: &str, copies: &str) -> String {
-    format!(
+fn fill_attachments_sql(held: &str, copies: &str) -> SqlStr {
+    AssertSqlSafe(format!(
         r"
         UPDATE {held} AS a
         SET sha256 = f.sha256,
@@ -1875,7 +1873,8 @@ fn fill_attachments_sql(held: &str, copies: &str) -> String {
           AND a.is_sticker = f.is_sticker
           AND a.sha256 IS NULL
         "
-    )
+    ))
+    .into_sql_str()
 }
 
 /// The statement that inserts into `held` each attachment row of `copies`
@@ -1979,9 +1978,9 @@ fn staged_by_production_message(table: &str, columns: &[&str]) -> String {
 pub async fn promote_attachments(conn: &mut SqliteConnection) -> Result<PromotedAttachments> {
     let attachments_before = max_attachment_id(conn).await?;
     let staged = staged_by_production_message("staging_attachments", ATTACHMENT_COLUMNS);
-    let filled_ids: Vec<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+    let filled_ids: Vec<i64> = sqlx::query_scalar(AssertSqlSafe(format!(
         "{} RETURNING id",
-        fill_attachments_sql("attachments", &staged)
+        fill_attachments_sql("attachments", &staged).as_str()
     )))
     .fetch_all(&mut *conn)
     .await?;

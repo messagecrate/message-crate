@@ -765,12 +765,10 @@ async fn reset_refuses_a_database_with_another_layout() {
     let pool = engine::open_pool_for_path(&db)
         .await
         .expect("open test database");
-    sqlx::query(sqlx::AssertSqlSafe(format!(
-        "PRAGMA user_version = {other}"
-    )))
-    .execute(&pool)
-    .await
-    .expect("stamp another fingerprint");
+    sqlx::query(AssertSqlSafe(format!("PRAGMA user_version = {other}")))
+        .execute(&pool)
+        .await
+        .expect("stamp another fingerprint");
     pool.close().await;
     let bundle = temp.path().join("bundle");
     write_tiny_reset_bundle(&bundle);
@@ -2073,7 +2071,7 @@ async fn a_reset_leaves_a_demo_that_logs_in_and_holds_nothing_old() {
     );
     // Issue #1107: each of the build's runs has its Contact Group and its
     // Saved Search, as a run a person imports does.
-    let runs: Vec<(String, i64, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+    let runs: Vec<(String, i64, i64)> = sqlx::query_as(AssertSqlSafe(format!(
         "SELECT i.source,
                 (SELECT COUNT(*) FROM contact_groups g
                  WHERE g.account_id = i.account_id AND g.kind = 'import'
@@ -2601,7 +2599,7 @@ async fn every_import_contact_group_of_a_built_demo_has_members() {
     build.close().await;
 
     let (pool, mut conn) = test_db(&db_path).await;
-    let groups: Vec<(String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+    let groups: Vec<(String, i64)> = sqlx::query_as(AssertSqlSafe(format!(
         "SELECT i.source,
                 (SELECT COUNT(*) FROM contact_group_members m
                  JOIN contact_groups g ON g.id = m.group_id
