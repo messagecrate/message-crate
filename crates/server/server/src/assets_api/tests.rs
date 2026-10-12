@@ -941,7 +941,7 @@ async fn an_upload_over_the_limit_the_owner_just_set_is_refused() {
 /// broken server: the part size the server hands out is never larger than the
 /// limit, so a file exactly at the limit goes up as a multipart upload and is
 /// served back, and a file one byte over is refused. The part size in this
-/// state is the 64 MiB default; the limit is 40 bytes.
+/// state is the 16 MiB default; the limit is 40 bytes.
 #[tokio::test]
 async fn a_multipart_upload_works_under_a_limit_below_the_configured_part_size() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;

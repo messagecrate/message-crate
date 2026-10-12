@@ -64,11 +64,19 @@ Why the rules: `docs/architecture/media.md`.
 
 ### Server asset limits
 
-`[server]` also accepts one optional upload setting:
+`[server]` also accepts three optional upload settings:
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `asset_part_size` | `67108864` (64 MiB) | Largest chunk of a multipart upload. Must be greater than 0. Keep under ~100 MiB for Cloudflare-proxied setups. The chunk size a client is told is this or the attachment size limit, whichever is smaller. |
+| `asset_part_size` | `16777216` (16 MiB) | Largest part of a multipart upload. Must be greater than 0. Keep under ~100 MiB for Cloudflare-proxied setups, and small enough that a whole part arrives inside `upload_piece_secs`: 16 MiB arrives inside the default at about 0.45 Mbit/s. The part size a client is told is this or the attachment size limit, whichever is smaller. |
+| `upload_stall_secs` | `60` | Seconds an upload (an import batch, an attachment, or a part of one) may go with no byte arriving before the server stops reading it. Must be greater than 0. |
+| `upload_piece_secs` | `300` (5 minutes) | Seconds a whole upload may take to arrive, from the start of the read, before the server stops reading it. Must be greater than 0. A full 16 MiB import batch arrives in time at about 0.45 Mbit/s. |
+
+The server refuses a config file that sets either time to 0, naming the key.
+An upload that meets either limit is refused with `408 Request Timeout` and the [`upload-stalled`](/docs/developer/reference/errors/upload-stalled/) problem type, and none of it is stored. Running the import again continues it.
+Why: an import batch holds one of the server's two import slots while it arrives, so a client that stops sending part-way, such as a laptop that goes to sleep, must not hold it for long.
+`GET /v1/server` states both limits as `upload_stall_secs` and `upload_piece_secs`, and the desktop app's Upload waits for each upload's answer as long as the server says it may take, plus 5 minutes for the server to save it.
+A server started with `--data-dir`, as the desktop app starts its own, uses the defaults.
 
 The server refuses a config file that carries a section or key it does not use.
 Every command that loads the file, `serve` included, stops with an error that names each unknown key and its section, for example ``[server] has a key the server does not use: `bnd` ``.
@@ -88,7 +96,7 @@ The server refuses only a limit of zero, or one above 9223372036854775807, with 
 
 No other request body is held to the attachment size limit.
 Each part of a multipart upload is held to the part size the upload was given when it started.
-Every other request body has a cap fixed in the server: 32 KiB for `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/claim`, 32 MiB for any other JSON body, 8 MiB for an address book loaded with `POST /v1/contacts`, 64 MiB for an import batch, the most the desktop app sends in one, and 512 MiB for any other body.
+Every other request body has a cap fixed in the server: 32 KiB for `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/claim`, 32 MiB for any other JSON body, 8 MiB for an address book loaded with `POST /v1/contacts`, 16 MiB for an import batch, the most the desktop app sends in one, and 512 MiB for any other body.
 Why: the Owner's limit must never reach the login, or the settings change that would raise it again.
 A body over its cap is refused with `413 Payload Too Large` and the [`payload-too-large`](/docs/developer/reference/errors/payload-too-large/) problem type.
 

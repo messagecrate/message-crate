@@ -2844,6 +2844,19 @@
               "https://messagecrate.app/docs/developer/reference/errors/not-acceptable"
             ]
           },
+          "408": {
+            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of an upload stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+            ]
+          },
           "413": {
             "description": "[`payload-too-large`](https://messagecrate.app/docs/developer/reference/errors/payload-too-large): The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading.",
             "content": {
@@ -4174,6 +4187,19 @@
             },
             "x-problem-types": [
               "https://messagecrate.app/docs/developer/reference/errors/not-acceptable"
+            ]
+          },
+          "408": {
+            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of an upload stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
             ]
           },
           "409": {
@@ -8844,6 +8870,19 @@
             },
             "x-problem-types": [
               "https://messagecrate.app/docs/developer/reference/errors/not-acceptable"
+            ]
+          },
+          "408": {
+            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of an upload stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
             ]
           },
           "409": {
@@ -19291,6 +19330,8 @@
           "version",
           "schema_fingerprint",
           "asset_max_bytes",
+          "upload_stall_secs",
+          "upload_piece_secs",
           "journal_mode"
         ],
         "properties": {
@@ -19327,6 +19368,18 @@
           "state": {
             "$ref": "#/components/schemas/ServerState",
             "description": "`unclaimed` shows Create Owner alone; `closed` shows Login alone;\n`open` shows Login and Create Account."
+          },
+          "upload_piece_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Seconds a whole upload body may take to arrive, from the start of the\nread, before the server stops reading it and answers\n`408 Request Timeout` (`upload-stalled`): the config file's\n`[server] upload_piece_secs`, 300 unless it sets one. The desktop\napp's Upload sizes its wait for each upload from it.",
+            "minimum": 0
+          },
+          "upload_stall_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Seconds an upload body (an import batch, an attachment, or a part of\none) may go with no byte arriving before the server stops reading it\nand answers `408 Request Timeout` (`upload-stalled`): the config\nfile's `[server] upload_stall_secs`, 60 unless it sets one.",
+            "minimum": 0
           },
           "version": {
             "type": "string",
