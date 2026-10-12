@@ -529,9 +529,9 @@ async fn stage_all_files(
         }
     }
     if let Some(reason) = asset_stats.hevc_fallback.reason() {
-        // The reason is the last line ffmpeg wrote, with the files it was
-        // given written as `<input>` and `<output>` rather than by their
-        // paths, so the log holds no file name (`media::why_not_converted`).
+        // The reason names the files ffmpeg was given as `<input>` and
+        // `<output>`, never by their paths, so the log holds no file name
+        // (`media::HevcFallback::reason`).
         tracing::warn!(
             import_id = opts.import_id,
             reason,

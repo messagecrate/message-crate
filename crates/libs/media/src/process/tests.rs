@@ -679,7 +679,16 @@ fn why_hevc_failed_names_no_file() {
     for name in ["one.mov", "one.msgmedia", dir.path().to_str().unwrap()] {
         assert!(!reason.contains(name), "{name:?} survives in {reason:?}");
     }
-    assert_eq!(reason, "libx265: fake failure on '<input>'");
+    // All of what ffmpeg wrote, not only its last line, because the cause
+    // can come before it.
+    assert!(
+        reason.starts_with("ffmpeg failed (")
+            && reason.ends_with(
+                "): Input #0, from '<input>':\nOutput #0, to '<output>':\n\
+                 libx265: fake failure on '<input>'"
+            ),
+        "{reason:?}"
+    );
 }
 
 /// A file the pass could not convert records ffmpeg's last line, with no
@@ -744,16 +753,23 @@ fn why_not_converted_names_no_path_however_the_conversion_failed() {
     assert!(reason.starts_with("ffmpeg failed ("), "{reason:?}");
     assert!(!reason.contains("IMG_0001"), "{reason:?}");
 
+    // A step that names the temporary file beside it is left out; the
+    // steps that name no other file stay, so the reason still says what
+    // went wrong where.
     let io = anyhow::Error::from(std::io::Error::other("no room left\nsecond line"))
-        .context(format!("copy {} to /tmp/out.jpg", file.display()))
+        .context("/home/someone/attachments/IMG_0001.msgmedia.tmp.jpg: write the copy")
+        .context("start ffmpeg")
         .context(format!("convert image {}", file.display()));
-    assert_eq!(why_not_converted(&io, file), "no room left");
+    assert_eq!(
+        why_not_converted(&io, file),
+        "convert image <input>: start ffmpeg: no room left"
+    );
 
     let named = anyhow::anyhow!("ffprobe reported no stream for {}", file.display())
         .context(format!("compress video {}", file.display()));
     assert_eq!(
         why_not_converted(&named, file),
-        "ffprobe reported no stream for <input>"
+        "compress video <input>: ffprobe reported no stream for <input>"
     );
 }
 

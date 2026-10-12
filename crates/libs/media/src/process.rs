@@ -46,23 +46,22 @@ pub struct NotConverted {
 }
 
 /// Why ffmpeg did not convert `file`, short enough to keep on the
-/// attachment as `convert_failed: <reason>`, and with no path in it:
+/// attachment as `convert_failed: <reason>`, and naming neither `file` nor
+/// any other file in its directory by its path:
 ///
 /// - why ffmpeg was stopped ([`Killed`]);
 /// - the last line ffmpeg wrote before it failed, with each file it was
 ///   given written as `<input>` or `<output>`
 ///   ([`FfmpegFailed::without_files`]);
 /// - how ffmpeg exited, when it failed and wrote nothing;
-/// - otherwise the first line of the innermost error, such as the operating
-///   system's reason a file could not be written, with `file` written as
-///   `<input>`. The contexts around it are left out, because they name the
-///   files by their full paths.
+/// - otherwise the error's first line, with `file` written as `<input>`,
+///   and without each step of it that names another file in `file`'s
+///   directory, such as the temporary file a conversion writes.
 ///
 /// The desktop app's Media Stage and the convert pass of an Import Run that
 /// converts as it stages both record this, so one failure reads alike on
 /// either path. The whole error, with everything ffmpeg wrote, goes to the
-/// run's log. Why HEVC failed is worded the same way
-/// ([`HevcFallback`]).
+/// run's log.
 #[must_use]
 pub fn why_not_converted(err: &anyhow::Error, file: &Path) -> String {
     if let Some(killed) = err.downcast_ref::<Killed>() {
@@ -79,13 +78,39 @@ pub fn why_not_converted(err: &anyhow::Error, file: &Path) -> String {
             None => failed.to_string(),
         };
     }
-    let innermost = err.root_cause().to_string();
-    let first = innermost.lines().next().unwrap_or_default();
-    let file = file.display().to_string();
-    if file.is_empty() {
-        first.to_string()
-    } else {
-        first.replace(&file, "<input>")
+    let file_text = file.display().to_string();
+    let dir = file
+        .parent()
+        .map(|dir| dir.display().to_string())
+        .unwrap_or_default();
+    let steps: Vec<String> = err
+        .chain()
+        .map(|step| {
+            let step = step.to_string();
+            if file_text.is_empty() {
+                step
+            } else {
+                step.replace(&file_text, "<input>")
+            }
+        })
+        .filter(|step| dir.is_empty() || !step.contains(&dir))
+        .collect();
+    steps
+        .join(": ")
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// `err` on one line, with its whole chain, and each file a failed ffmpeg
+/// run in it was given written as `<input>` or `<output>`
+/// ([`FfmpegFailed::without_files`]).
+fn error_line_without_files(err: &anyhow::Error) -> String {
+    let line = format!("{err:#}");
+    match err.downcast_ref::<FfmpegFailed>() {
+        Some(failed) => failed.without_files(&line),
+        None => line,
     }
 }
 
@@ -110,9 +135,10 @@ impl HevcFallback {
         self.line()
     }
 
-    /// Why HEVC failed, or `None` when no video fell back. It is one short
-    /// line that names no file ([`why_not_converted`]), so the server's log
-    /// can hold it.
+    /// Why HEVC failed, or `None` when no video fell back: everything
+    /// ffmpeg wrote, with the files it was given written as `<input>` and
+    /// `<output>` ([`FfmpegFailed::without_files`]), so the server's log can
+    /// hold it.
     #[must_use]
     pub fn reason(&self) -> Option<&str> {
         self.reason.as_deref()
@@ -616,7 +642,10 @@ pub enum TranscodeOutcome {
     /// A derivative was written to the destination the caller named.
     Produced {
         /// Why HEVC failed, when a compressed video was written as H.264
-        /// instead, worded by [`why_not_converted`]. A caller keeps it in a
+        /// instead: the whole HEVC error, with the files ffmpeg was given
+        /// written as `<input>` and `<output>`. Not only its last line,
+        /// because ffmpeg writes why an encoder would not open before the
+        /// lines that follow from it. A caller keeps it in a
         /// [`HevcFallback`] for the run and logs what that returns, so the
         /// run says it once.
         hevc_failure: Option<String>,
@@ -1193,7 +1222,7 @@ fn compress_video(
                 .transcode(&avc_args, &tmp, Reads::All(path), stop)
                 .with_context(|| format!("HEVC failed ({hevc_err:#}), and then H.264 failed"))
                 .with_context(|| format!("compress video {}", path.display()))?;
-            *hevc_failure = Some(why_not_converted(&hevc_err, path));
+            *hevc_failure = Some(error_line_without_files(&hevc_err));
         }
         Ok(Some(commit_produced(commit, path, &tmp)?))
     })

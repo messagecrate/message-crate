@@ -244,15 +244,16 @@ The Media Stage compresses a video with HEVC first, and tries H.264 after a HEVC
 | Stopped by the person or the server | No: nothing is wrong, and the run ends as stopped, not as a failure |
 
 When H.264 stands in, the run says why HEVC failed once, as a warning: in the Import Run's log, and in the server's log for an import the server converts.
-The reason is the short one a file that could not be converted records (below): one line, with no path in it.
-Why: ffmpeg names the files by their full paths, and the server's log holds only what the owner may see, which an attachment's file name is not (`docs/architecture/server-log.md`, "What a line never holds").
-Only the last line, because everything else ffmpeg wrote is text from the file's own processing, and the log holds no more of it than it needs.
+The reason is everything ffmpeg wrote for the HEVC run, with each file ffmpeg was given written as `<input>` or `<output>` rather than by its path (`FfmpegFailed::without_files`).
+Why all of it: ffmpeg writes why an encoder would not open first, and the lines after it, such as that nothing was written, only follow from it.
+Why no path: ffmpeg names the files by their full paths, and the server's log holds only what the owner may see, which an attachment's file name is not (`docs/architecture/server-log.md`, "What a line never holds").
 
 A file the desktop app could not convert records `convert_failed:` and a short reason on its attachment, the same on either path that converts it: the Media Stage and the convert pass of a run that converts as it stages (`media::why_not_converted`).
-The reason is why ffmpeg was stopped, or the last line ffmpeg wrote, with each file ffmpeg was given written as `<input>` or `<output>` (`FfmpegFailed::without_files`).
-An ffmpeg that wrote nothing gives how it exited, and any other failure gives its innermost error, such as the operating system's reason a file could not be written, never the contexts around it, which name the file by its path.
+The reason is why ffmpeg was stopped, or the last line ffmpeg wrote, with each file ffmpeg was given written as `<input>` or `<output>`.
+An ffmpeg that wrote nothing gives how it exited.
+Any other failure gives the error's first line, with the file written as `<input>` and without each step that names another file in its directory, such as the temporary file a conversion writes.
 The whole error goes to the Import Run's log.
-Why: the reason is the label the attachment shows, so it has to fit on one line and hold no path, and the same failure must read the same whichever path met it (#2801).
+Why: the reason is the label the attachment shows, so it has to fit on one line and must not spell out the file's path, and the same failure must read the same whichever path met it (#2801).
 
 Every ffmpeg and ffprobe run reads nothing from standard input and opens only local files and pipes (`-nostdin`, `-protocol_whitelist file,pipe`).
 An Asset whose work panics fails the same way: it leaves the queue, the panic is logged at `error`, and the pass goes on to the next Asset.
