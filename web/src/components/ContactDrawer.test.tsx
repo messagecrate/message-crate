@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render as rtlRender, screen, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/api";
@@ -9,7 +9,7 @@ import type { ContactDetail } from "../lib/contactDetail";
 import { keys } from "../lib/queryKeys";
 import { routeQueryKey } from "../lib/routeQueryKey";
 import { focusRingClass } from "../lib/uiStyles";
-import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { advanceToNextFrame, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { inTimeZone } from "../test/timeZone";
 import { fill, setupUser } from "../test/user";
 import ContactDrawer from "./ContactDrawer";
@@ -85,6 +85,7 @@ describe("ContactDrawer", () => {
   });
 
   beforeEach(() => {
+    startFakeClock();
     get.mockReset();
     post.mockReset();
     post.mockResolvedValue(undefined);
@@ -130,10 +131,9 @@ describe("ContactDrawer", () => {
       />,
     );
 
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: a.name })).toBeTruthy();
-      expect(screen.getByText("Group-1")).toBeTruthy();
-    });
+    await settle();
+    expect(screen.getByRole("heading", { name: a.name })).toBeTruthy();
+    expect(screen.getByText("Group-1")).toBeTruthy();
 
     rerender(
       <ContactDrawer
@@ -159,10 +159,9 @@ describe("ContactDrawer", () => {
     expect(dashes.length).toBeGreaterThanOrEqual(4);
 
     resolveB(detail(2, { name: "Contact b", groups: ["Family"] }));
-    await waitFor(() => {
-      expect(dialog.getAttribute("aria-busy")).toBeNull();
-      expect(screen.getAllByText("42").length).toBeGreaterThan(0);
-    });
+    await settle();
+    expect(dialog.getAttribute("aria-busy")).toBeNull();
+    expect(screen.getAllByText("42").length).toBeGreaterThan(0);
   });
 
   it("shows cached counts and groups on first paint when switching to a cached contact", async () => {
@@ -201,9 +200,8 @@ describe("ContactDrawer", () => {
       />,
     );
 
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: a.name })).toBeTruthy();
-    });
+    await settle();
+    expect(screen.getByRole("heading", { name: a.name })).toBeTruthy();
 
     rerender(
       <ContactDrawer
@@ -231,7 +229,8 @@ describe("ContactDrawer", () => {
 
     render(<ContactDrawer variant="docked" contactId="5" preview={null} onClose={() => {}} />);
 
-    const heading = await screen.findByRole("heading", { name: "+15550105" });
+    await settle();
+    const heading = screen.getByRole("heading", { name: "+15550105" });
     expect(heading.querySelector("em")?.textContent).toBe("+15550105");
     expect(screen.getByRole("dialog", { name: "+15550105" })).toBeTruthy();
     expect(screen.getByText("Unknown")).toBeTruthy();
@@ -243,7 +242,8 @@ describe("ContactDrawer", () => {
 
     render(<ContactDrawer variant="docked" contactId="6" preview={null} onClose={() => {}} />);
 
-    const heading = await screen.findByRole("heading", { name: "Grace" });
+    await settle();
+    const heading = screen.getByRole("heading", { name: "Grace" });
     expect(heading.querySelector("em")).toBeNull();
     expect(screen.queryByText("Unknown")).toBeNull();
     expect(screen.getByText("No Contact Groups")).toBeTruthy();
@@ -264,11 +264,10 @@ describe("ContactDrawer", () => {
     expect(screen.getByText("…")).toBeTruthy();
 
     resolveDetail(detail(26, { name: "Zed", groups: ["Work"] }));
-    await waitFor(() => {
-      expect(screen.getByRole("dialog", { name: "Zed" })).toBeTruthy();
-      expect(screen.getByText("Work")).toBeTruthy();
-      expect(screen.queryByText("No Contact Groups")).toBeNull();
-    });
+    await settle();
+    expect(screen.getByRole("dialog", { name: "Zed" })).toBeTruthy();
+    expect(screen.getByText("Work")).toBeTruthy();
+    expect(screen.queryByText("No Contact Groups")).toBeNull();
   });
 
   it("says a contact could not be loaded, stops claiming to load, and loads it on Try again", async () => {
@@ -285,16 +284,16 @@ describe("ContactDrawer", () => {
       />,
     );
 
-    const alert = await screen.findByRole("alert");
+    await settle();
+    const alert = screen.getByRole("alert");
     expect(alert.textContent).toContain("This contact could not be loaded.");
     expect(alert.textContent).toContain("The server could not answer.");
     expect(screen.getByRole("dialog").getAttribute("aria-busy")).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Try again" }));
 
-    await waitFor(() => {
-      expect(screen.getByText("Group-26")).toBeTruthy();
-    });
+    await settle();
+    expect(screen.getByText("Group-26")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("dialog").getAttribute("aria-busy")).toBeNull();
   });
@@ -304,7 +303,8 @@ describe("ContactDrawer", () => {
 
     render(<ContactDrawer variant="overlay" contactId="26" preview={null} onClose={() => {}} />);
 
-    const alert = await screen.findByRole("alert");
+    await settle();
+    const alert = screen.getByRole("alert");
     expect(alert.textContent).toContain("This contact is no longer in your contacts.");
     expect(screen.queryByText("Loading…")).toBeNull();
     expect(screen.getByRole("dialog").getAttribute("aria-busy")).toBeNull();
@@ -316,7 +316,8 @@ describe("ContactDrawer", () => {
   it("draws the focus ring on the close button and sortable headers of a loaded contact", async () => {
     seed(detail(6, { name: "Grace", groups: [] }));
     render(<ContactDrawer variant="docked" contactId="6" preview={null} onClose={() => {}} />);
-    await screen.findByRole("heading", { name: "Grace" });
+    await settle();
+    expect(screen.getByRole("heading", { name: "Grace" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Close" }).className).toContain(focusRingClass);
     const sortable = screen
       .getAllByRole("columnheader")
@@ -330,7 +331,8 @@ describe("ContactDrawer", () => {
   it("draws the focus ring on the close button of a contact that failed to load", async () => {
     get.mockRejectedValue(new ApiError(404, "No contact with id 26."));
     render(<ContactDrawer variant="overlay" contactId="26" preview={null} onClose={() => {}} />);
-    await screen.findByRole("alert");
+    await settle();
+    expect(screen.getByRole("alert")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Close" }).className).toContain(focusRingClass);
   });
 
@@ -384,10 +386,9 @@ describe("ContactDrawer", () => {
         ],
       }),
     );
-    await waitFor(() => {
-      expect(dialog.getAttribute("aria-busy")).toBeNull();
-      expect(table.querySelectorAll('[role="row"]').length).toBe(3);
-    });
+    await settle();
+    expect(dialog.getAttribute("aria-busy")).toBeNull();
+    expect(table.querySelectorAll('[role="row"]').length).toBe(3);
   });
 
   it("stubs overlay addresses from the conversation preview while detail is pending", async () => {
@@ -436,9 +437,8 @@ describe("ContactDrawer", () => {
         ],
       }),
     );
-    await waitFor(() => {
-      expect(table.querySelectorAll('[role="row"]').length).toBe(3);
-    });
+    await settle();
+    expect(table.querySelectorAll('[role="row"]').length).toBe(3);
   });
 
   it("stubs one overlay identity row when the conversation preview has no handle strings", async () => {
@@ -470,9 +470,8 @@ describe("ContactDrawer", () => {
     expect(table.textContent).toContain("…");
 
     resolveDetail(detail(2, { name: "Ada Lovelace" }));
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Ada Lovelace" })).toBeTruthy();
-    });
+    await settle();
+    expect(screen.getByRole("heading", { name: "Ada Lovelace" })).toBeTruthy();
   });
 
   it("stubs two identities when preview lists raw then normalized for each", async () => {
@@ -534,9 +533,8 @@ describe("ContactDrawer", () => {
         ],
       }),
     );
-    await waitFor(() => {
-      expect(table.querySelectorAll('[role="row"]').length).toBe(4);
-    });
+    await settle();
+    expect(table.querySelectorAll('[role="row"]').length).toBe(4);
   });
 
   it("keeps the edit-name control mounted and disabled while detail is loading", async () => {
@@ -565,9 +563,8 @@ describe("ContactDrawer", () => {
     expect(edit).toBeDisabled();
 
     resolveDetail(detail(2, { name: "Contact b", groups: ["Family"] }));
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Edit name" })).not.toBeDisabled();
-    });
+    await settle();
+    expect(screen.getByRole("button", { name: "Edit name" })).not.toBeDisabled();
   });
 
   async function openNameEditor(user: ReturnType<typeof setupUser>) {
@@ -585,9 +582,9 @@ describe("ContactDrawer", () => {
         onClose={() => {}}
       />,
     );
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Edit name" })).not.toBeDisabled();
-    });
+    await settle();
+    expect(screen.getByRole("button", { name: "Edit name" })).not.toBeDisabled();
+
     await user.click(screen.getByRole("button", { name: "Edit name" }));
     return screen.getByRole("textbox", { name: "Contact name" });
   }
@@ -610,9 +607,8 @@ describe("ContactDrawer", () => {
     await user.clear(input);
     await fill(user, input, "Renamed");
     await user.keyboard("{Escape}");
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Contact a" })).toBeTruthy();
-    });
+    await settle();
+    expect(screen.getByRole("heading", { name: "Contact a" })).toBeTruthy();
     expect(post).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Edit name" })).toBeTruthy();
   });
@@ -623,9 +619,8 @@ describe("ContactDrawer", () => {
     await user.clear(input);
     await fill(user, input, "Renamed");
     await user.tab();
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Contact a" })).toBeTruthy();
-    });
+    await settle();
+    expect(screen.getByRole("heading", { name: "Contact a" })).toBeTruthy();
     expect(post).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Edit name" })).toBeTruthy();
   });
@@ -636,9 +631,8 @@ describe("ContactDrawer", () => {
     await user.clear(input);
     await fill(user, input, "Renamed");
     await user.click(screen.getByText("Contact Groups"));
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Contact a" })).toBeTruthy();
-    });
+    await settle();
+    expect(screen.getByRole("heading", { name: "Contact a" })).toBeTruthy();
     expect(post).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Edit name" })).toBeTruthy();
   });
@@ -650,13 +644,11 @@ describe("ContactDrawer", () => {
     await fill(user, input, "Renamed");
     await user.keyboard("{Enter}");
     input.blur();
-    await waitFor(() => {
-      expect(post).toHaveBeenCalledWith("1", { name: "Renamed" });
-    });
+    await settle();
+    expect(post).toHaveBeenCalledWith("1", { name: "Renamed" });
   });
 
   it("shows why an empty name was refused and keeps the editor open", async () => {
-    startFakeClock();
     post.mockRejectedValue(new Error("name must not be empty"));
     const user = setupUser();
     const input = await openNameEditor(user);
@@ -685,9 +677,8 @@ describe("ContactDrawer", () => {
       />,
     );
 
-    await waitFor(() => {
-      expect(screen.getByRole("grid", { name: "Contact identities" })).toBeTruthy();
-    });
+    await settle();
+    expect(screen.getByRole("grid", { name: "Contact identities" })).toBeTruthy();
 
     for (const name of [/Service/i, /^Identity/i]) {
       const header = screen.getByRole("columnheader", { name });
@@ -713,7 +704,8 @@ describe("ContactDrawer", () => {
     const headers = screen.getAllByRole("columnheader");
     expect(headers[headers.length - 1].textContent).toBe("");
     // Once the detail is in, the row carries its service and counts.
-    await waitFor(() => expect(screen.getAllByText("42").length).toBeGreaterThan(0));
+    await settle();
+    expect(screen.getAllByText("42").length).toBeGreaterThan(0);
     const remove = screen.getByRole("button", { name: "Remove +15550101 (Text Message)" });
     expect(remove.closest("[role=row]")?.lastElementChild).toContainElement(remove);
     expect(screen.getByText("Summary")).toBeTruthy();
@@ -745,7 +737,8 @@ describe("ContactDrawer", () => {
     );
     render(inTimeZone("UTC", <ContactDrawer variant="docked" contactId="1" onClose={() => {}} />));
 
-    const summary = (await screen.findByText("Summary")).closest("[role=row]");
+    await settle();
+    const summary = screen.getByText("Summary").closest("[role=row]");
     const cells = within(summary as HTMLElement).getAllByRole("gridcell");
     expect(cells.map((c) => c.textContent)).toEqual([
       "Summary",
@@ -777,16 +770,13 @@ describe("ContactDrawer", () => {
       />,
     );
 
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Contact a" })).toBeTruthy();
-    });
+    expect(screen.getByRole("heading", { name: "Contact a" })).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: "Move to trash" }));
 
-    await waitFor(() => {
-      expect(trash).toHaveBeenCalledWith("1", expect.anything());
-      expect(onClose).toHaveBeenCalled();
-    });
+    await settle();
+    expect(trash).toHaveBeenCalledWith("1", expect.anything());
+    expect(onClose).toHaveBeenCalled();
   });
 
   it("shows an error and leaves the drawer open when trashing fails", async () => {
@@ -809,13 +799,12 @@ describe("ContactDrawer", () => {
       />,
     );
 
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Contact a" })).toBeTruthy();
-    });
+    expect(screen.getByRole("heading", { name: "Contact a" })).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: "Move to trash" }));
 
-    expect(await screen.findByText("Could not move this contact.")).toBeTruthy();
+    await settle();
+    expect(screen.getByText("Could not move this contact.")).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
   });
 
@@ -826,12 +815,15 @@ describe("ContactDrawer", () => {
     const onClose = vi.fn();
 
     const { rerender } = render(<ContactDrawer variant="docked" contactId="1" onClose={onClose} />);
-    await screen.findByRole("heading", { name: "Contact 1" });
+    await settle();
+    expect(screen.getByRole("heading", { name: "Contact 1" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Move to trash" }));
-    await screen.findByText("Trash refused.");
+    await settle();
+    expect(screen.getByText("Trash refused.")).toBeInTheDocument();
 
     rerender(<ContactDrawer variant="docked" contactId="2" onClose={onClose} />);
-    await screen.findByRole("heading", { name: "Contact 2" });
+    await settle();
+    expect(screen.getByRole("heading", { name: "Contact 2" })).toBeInTheDocument();
     expect(screen.queryByText("Trash refused.")).toBeNull();
   });
 
@@ -847,17 +839,20 @@ describe("ContactDrawer", () => {
     const onClose = vi.fn();
 
     const { rerender } = render(<ContactDrawer variant="docked" contactId="1" onClose={onClose} />);
-    await screen.findByRole("heading", { name: "Contact 1" });
+    await settle();
+    expect(screen.getByRole("heading", { name: "Contact 1" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Move to trash" }));
-    await waitFor(() => expect(trash).toHaveBeenCalledWith("1", expect.anything()));
+    await settle();
+    expect(trash).toHaveBeenCalledWith("1", expect.anything());
 
     rerender(<ContactDrawer variant="docked" contactId="2" onClose={onClose} />);
-    await screen.findByRole("heading", { name: "Contact 2" });
+    await settle();
+    expect(screen.getByRole("heading", { name: "Contact 2" })).toBeInTheDocument();
     // Contact 2 has nothing pending, so its button is live.
     expect(screen.getByRole("button", { name: "Move to trash" })).not.toBeDisabled();
 
     finishTrash();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await settle();
     expect(onClose).not.toHaveBeenCalled();
   });
 
@@ -878,15 +873,16 @@ describe("ContactDrawer", () => {
       expect(drawer.style.left).toContain("min(381px,");
       expect(drawer.style.left).toContain("320px");
 
-      // The frame the drawer scheduled when it found the column has run.
-      await act(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+      // The frame the drawer scheduled when it found the column runs when the
+      // fake clock moves to it.
+      advanceToNextFrame();
 
       // A sideways scroll moves the column 200 px left without resizing it.
       right = 181;
       row.dispatchEvent(new Event("scroll"));
-      await waitFor(() => {
-        expect(drawer.style.left).toContain("min(181px,");
-      });
+      expect(drawer.style.left).toContain("min(381px,");
+      advanceToNextFrame();
+      expect(drawer.style.left).toContain("min(181px,");
     } finally {
       row.remove();
     }
@@ -905,15 +901,19 @@ describe("ContactDrawer", () => {
     column.getBoundingClientRect = () => ({ right: 412.4 }) as DOMRect;
     document.body.append(column);
 
-    await waitFor(() => {
-      expect(drawer.style.left).toContain("min(412px,");
-    });
+    // The drawer's MutationObserver on the page reports the column in a
+    // microtask, and the drawer measures it on the frame after.
+    await settle();
+    expect(drawer.style.left).toContain("min(14rem,");
+    advanceToNextFrame();
+    expect(drawer.style.left).toContain("min(412px,");
     expect(drawer.className).not.toMatch(/\bml-auto\b/);
 
     column.remove();
-    await waitFor(() => {
-      expect(drawer.style.left).toContain("min(14rem,");
-    });
+    await settle();
+    expect(drawer.style.left).toContain("min(412px,");
+    advanceToNextFrame();
+    expect(drawer.style.left).toContain("min(14rem,");
     expect(drawer.className).toMatch(/\bml-auto\b/);
   });
 
@@ -958,13 +958,16 @@ describe("ContactDrawer", () => {
       .mockResolvedValueOnce(merged);
     render(<ContactDrawer variant="docked" contactId="5" onClose={() => {}} />);
 
-    expect(await screen.findByText(/Country unknown/)).toBeTruthy();
+    await settle();
+    expect(screen.getByText(/Country unknown/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Pick the country of 07700900123" }));
-    await user.click(await screen.findByRole("button", { name: /Country/ }));
-    await user.click(await screen.findByRole("option", { name: /\(\+44\)/ }));
+    await settle();
+    await user.click(screen.getByRole("button", { name: /Country/ }));
+    await user.click(screen.getByRole("option", { name: /\(\+44\)/ }));
     await user.click(screen.getByRole("button", { name: "Set country" }));
 
-    expect(await screen.findByText(question)).toBeTruthy();
+    await settle();
+    expect(screen.getByText(question)).toBeTruthy();
     expect(post).toHaveBeenLastCalledWith("5", {
       set_identity_country: {
         address: "07700900123",
@@ -975,18 +978,15 @@ describe("ContactDrawer", () => {
     });
     get.mockResolvedValue(merged);
     await user.click(screen.getByRole("button", { name: "Merge" }));
-    await waitFor(() => {
-      expect(post).toHaveBeenLastCalledWith("5", {
-        set_identity_country: {
-          address: "07700900123",
-          service: "phone",
-          country: "GB",
-          merge: true,
-        },
-      });
+    await settle();
+    expect(post).toHaveBeenLastCalledWith("5", {
+      set_identity_country: {
+        address: "07700900123",
+        service: "phone",
+        country: "GB",
+        merge: true,
+      },
     });
-    await waitFor(() => {
-      expect(screen.queryByText(/Country unknown/)).toBeNull();
-    });
+    expect(screen.queryByText(/Country unknown/)).toBeNull();
   });
 });

@@ -1,7 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { renderWithProviders } from "../test/providers";
 import SourcesPanel from "./SourcesPanel";
 
@@ -18,9 +19,14 @@ function renderPanel() {
 }
 
 describe("SourcesPanel", () => {
+  beforeEach(() => {
+    startFakeClock();
+  });
+
   afterEach(() => {
     cleanup();
     getSources.mockReset();
+    stopFakeClock();
   });
 
   it("puts each share of unique messages beside the unique count it was computed from", async () => {
@@ -32,7 +38,8 @@ describe("SourcesPanel", () => {
     ]);
     renderPanel();
 
-    expect(await screen.findByText("2 unique (66.7% of unique messages)")).toBeTruthy();
+    await settle();
+    expect(screen.getByText("2 unique (66.7% of unique messages)")).toBeTruthy();
     expect(screen.getByText("1 unique (33.3% of unique messages)")).toBeTruthy();
     expect(screen.getAllByText("2 messages")).toHaveLength(2);
   });
@@ -41,6 +48,7 @@ describe("SourcesPanel", () => {
     getSources.mockResolvedValue([]);
     renderPanel();
 
-    expect(await screen.findByText("No source data available")).toBeTruthy();
+    await settle();
+    expect(screen.getByText("No source data available")).toBeTruthy();
   });
 });

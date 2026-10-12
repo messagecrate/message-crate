@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { useLayoutEffect } from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -62,6 +62,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  startFakeClock();
   localStorage.clear();
   profileState.profile = null;
   tauriState.isTauri = false;
@@ -170,7 +171,8 @@ describe("LeftPanel", () => {
     await fill(user, screen.getByRole("textbox", { name: "Query" }), "from:alice");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    await settle();
+    expect(screen.getByRole("alert")).toHaveTextContent(
       "A saved search named 'From Alice' already exists",
     );
     expect(savedSearchActions.create).toHaveBeenCalledWith("From Alice", "from:alice");
@@ -186,7 +188,8 @@ describe("LeftPanel", () => {
     await fill(user, screen.getByRole("textbox", { name: "Query" }), "from:alice");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await settle();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("shows why a Saved Search edit was refused and keeps the form open", async () => {
@@ -205,7 +208,8 @@ describe("LeftPanel", () => {
     await fill(user, name, "Work");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    await settle();
+    expect(screen.getByRole("alert")).toHaveTextContent(
       "A saved search named 'Work' already exists",
     );
     expect(savedSearchActions.update).toHaveBeenCalledWith(1, "Work", "from:alice");
@@ -217,7 +221,6 @@ describe("LeftPanel", () => {
       { id: 1, name: "From Alice", query: "from:alice", kind: "manual" },
     ];
     savedSearchActions.remove.mockRejectedValue(new Error("saved search not found"));
-    startFakeClock();
     const user = setupUser();
     renderPanel();
     await user.click(screen.getByRole("button", { name: "Saved search options for From Alice" }));

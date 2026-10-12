@@ -11,14 +11,14 @@
  * right away.
  */
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import RightPane from "../components/RightPane";
 import { RightToolbarProvider } from "../components/RightToolbarContext";
 import { ApiError } from "../lib/api";
 import { groupListQuery } from "../lib/contactGroups";
-import { advanceTimersAndSettle } from "../test/fakeTimers";
+import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { mockedAuth, Providers } from "../test/providers";
 import ContactList, { FILTER_DEBOUNCE_MS } from "./ContactList";
 
@@ -47,7 +47,6 @@ import {
   listContacts,
   updateContactGroupMembers,
 } from "../lib/serverApi";
-import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { setupUser } from "../test/user";
 
 const listContactsMock = vi.mocked(listContacts);
@@ -60,6 +59,7 @@ const createGroupMock = vi.mocked(createContactGroup);
 let familyRemoved = false;
 
 beforeEach(() => {
+  startFakeClock();
   vi.clearAllMocks();
   familyRemoved = false;
   // Mirrors what the server would answer: the write below flips this, and the
@@ -112,20 +112,21 @@ describe("ContactList", () => {
     });
 
     renderList({ groupFilter: "Family" });
+    await settle();
 
-    const rowCheckbox = await screen.findByRole("checkbox", { name: "Select Alice" });
+    const rowCheckbox = screen.getByRole("checkbox", { name: "Select Alice" });
     act(() => {
       rowCheckbox.click();
     });
-    await waitFor(() => expect(rowCheckbox).toBeChecked());
+    expect(rowCheckbox).toBeChecked();
 
-    const menuButton = await screen.findByRole("button", { name: "Contact Groups" });
+    const menuButton = screen.getByRole("button", { name: "Contact Groups" });
     act(() => {
       menuButton.click();
     });
 
-    const familyCheckbox = await screen.findByRole("checkbox", { name: "Family" });
-    await waitFor(() => expect(familyCheckbox).toBeChecked());
+    const familyCheckbox = screen.getByRole("checkbox", { name: "Family" });
+    expect(familyCheckbox).toBeChecked();
 
     // Untick Family on the only checked contact, on the Family group page
     // itself: the row leaves the list, the checked set empties, and the menu
@@ -134,17 +135,15 @@ describe("ContactList", () => {
       familyCheckbox.click();
     });
 
-    await waitFor(() =>
-      expect(updateMembersMock).toHaveBeenCalledWith(10, { add: [], remove: [1] }),
-    );
-    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Family" })).not.toBeChecked());
+    await settle();
+    expect(updateMembersMock).toHaveBeenCalledWith(10, { add: [], remove: [1] });
+    expect(screen.getByRole("checkbox", { name: "Family" })).not.toBeChecked();
   });
 
   it("shows the server's refusal of a Contact Group created from the Groups menu", async () => {
     const refusal =
       'name can\'t hold ";", because the address book separates Contact Group names with it';
     createGroupMock.mockRejectedValue(new ApiError(422, refusal));
-    startFakeClock();
     const user = setupUser();
 
     renderList();
@@ -170,13 +169,15 @@ describe("ContactList", () => {
     const user = setupUser();
 
     renderList();
+    await settle();
 
-    await user.click(await screen.findByRole("checkbox", { name: "Select Alice" }));
+    await user.click(screen.getByRole("checkbox", { name: "Select Alice" }));
     await user.click(screen.getByRole("button", { name: "Contact Groups" }));
     await user.click(screen.getByRole("button", { name: /Create Contact Group$/ }));
     await user.type(screen.getByPlaceholderText("Contact Group name"), "Trash{Enter}");
 
-    expect(await screen.findByText("Trash is a reserved Contact Group")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText("Trash is a reserved Contact Group")).toBeInTheDocument();
     expect(createGroupMock).not.toHaveBeenCalled();
     expect(updateMembersMock).not.toHaveBeenCalled();
   });
@@ -184,17 +185,20 @@ describe("ContactList", () => {
   it("exports the group the list shows, or the checked rows when there are any", async () => {
     exportMock.mockResolvedValue("contact_id,display_name,groups,service,identity_type,identity\n");
     renderList({ groupFilter: "Family" });
-    const rowCheckbox = await screen.findByRole("checkbox", { name: "Select Alice" });
+    await settle();
+    const rowCheckbox = screen.getByRole("checkbox", { name: "Select Alice" });
 
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
-    await waitFor(() => expect(saveFile).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(saveFile).toHaveBeenCalledTimes(1);
     // The same search the list sends the server for this group.
     expect(exportMock).toHaveBeenLastCalledWith({ q: groupListQuery("Family", "") });
 
     fireEvent.click(rowCheckbox);
-    await waitFor(() => expect(rowCheckbox).toBeChecked());
+    expect(rowCheckbox).toBeChecked();
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
-    await waitFor(() => expect(saveFile).toHaveBeenCalledTimes(2));
+    await settle();
+    expect(saveFile).toHaveBeenCalledTimes(2);
     expect(exportMock).toHaveBeenLastCalledWith({ ids: [1] });
   });
 
@@ -221,13 +225,15 @@ describe("ContactList", () => {
     updateMembersMock.mockResolvedValue({ added: 0, removed: 2 });
 
     renderList();
+    await settle();
     const user = setupUser();
-    await user.click(await screen.findByRole("checkbox", { name: "Select Alice" }));
+    await user.click(screen.getByRole("checkbox", { name: "Select Alice" }));
     await user.click(screen.getByRole("checkbox", { name: "Select Bob" }));
     await user.click(screen.getByRole("button", { name: "Contact Groups" }));
-    await user.click(await screen.findByRole("button", { name: "Clear all" }));
+    await user.click(screen.getByRole("button", { name: "Clear all" }));
 
-    await waitFor(() => expect(updateMembersMock).toHaveBeenCalledTimes(2));
+    await settle();
+    expect(updateMembersMock).toHaveBeenCalledTimes(2);
     const writes = updateMembersMock.mock.calls
       .map(([id, body]) => ({ id, remove: [...(body?.remove ?? [])].sort((a, b) => a - b) }))
       .sort((a, b) => a.id - b.id);
@@ -257,23 +263,23 @@ describe("ContactList", () => {
     const box = (name: string) => screen.getByRole("checkbox", { name: `Select ${name}` });
     const checkedNames = () => names.filter((name) => (box(name) as HTMLInputElement).checked);
 
-    await screen.findByRole("checkbox", { name: "Select Erin" });
+    await settle();
     fireEvent.click(box("Bob"));
-    await waitFor(() => expect(checkedNames()).toEqual(["Bob"]));
+    expect(checkedNames()).toEqual(["Bob"]);
 
     // Checks from the last clicked row to the shift-clicked one.
     fireEvent.click(box("Erin"), { shiftKey: true });
-    await waitFor(() => expect(checkedNames()).toEqual(["Bob", "Carol", "Dave", "Erin"]));
+    expect(checkedNames()).toEqual(["Bob", "Carol", "Dave", "Erin"]);
 
     // Unchecks the same way: uncheck one end, shift-click the other.
     fireEvent.click(box("Dave"));
     fireEvent.click(box("Carol"), { shiftKey: true });
-    await waitFor(() => expect(checkedNames()).toEqual(["Bob", "Erin"]));
+    expect(checkedNames()).toEqual(["Bob", "Erin"]);
 
     // The range starts at the last clicked row (Carol), not at the furthest
     // checked one (Erin), so Dave stays unchecked.
     fireEvent.click(box("Alice"), { shiftKey: true });
-    await waitFor(() => expect(checkedNames()).toEqual(["Alice", "Bob", "Carol", "Erin"]));
+    expect(checkedNames()).toEqual(["Alice", "Bob", "Carol", "Erin"]);
   });
 
   it("lists the server's Unknown and No group contacts once the full list is loaded", async () => {
@@ -315,26 +321,19 @@ describe("ContactList", () => {
         .filter((name) => screen.queryByRole("checkbox", { name: `Select ${name}` }) !== null);
 
     const { rerender } = render(page(null));
-    await waitFor(() => expect(listed()).toEqual(["Alice", "Bob", "Carol", "Dave"]));
+    await settle();
+    expect(listed()).toEqual(["Alice", "Bob", "Carol", "Dave"]);
 
     rerender(page("unknown"));
-    await waitFor(() => expect(listed()).toEqual(["Bob", "Dave"]));
+    await settle();
+    expect(listed()).toEqual(["Bob", "Dave"]);
 
     rerender(page("none"));
-    await waitFor(() => expect(listed()).toEqual(["Alice"]));
+    await settle();
+    expect(listed()).toEqual(["Alice"]);
   });
 
   describe("the search the server is asked", () => {
-    beforeEach(() => {
-      vi.useFakeTimers({
-        toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame"],
-      });
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
     const page = (filter: string, groupFilter: string | null = null) => (
       <Providers>
         <RightToolbarProvider>
@@ -349,7 +348,7 @@ describe("ContactList", () => {
 
     it("asks once, for the search as it stands when typing stops", async () => {
       const { rerender } = render(page(""));
-      await advanceTimersAndSettle(0);
+      await settle();
       expect(asked()).toEqual([""]);
 
       // A `word:` token only the server can apply, so the loaded list is not enough.
@@ -373,7 +372,7 @@ describe("ContactList", () => {
 
     it("keeps the full list a cleared search went back to while the next search waits", async () => {
       const { rerender } = render(page(""));
-      await advanceTimersAndSettle(0);
+      await settle();
       rerender(page("name:a"));
       await advanceTimersAndSettle(FILTER_DEBOUNCE_MS);
       expect(asked()).toEqual(["", "name:a"]);
@@ -391,7 +390,7 @@ describe("ContactList", () => {
 
     it("keeps the full list when the next search is typed before any timer runs", async () => {
       const { rerender } = render(page(""));
-      await advanceTimersAndSettle(0);
+      await settle();
       rerender(page("name:a"));
       await advanceTimersAndSettle(FILTER_DEBOUNCE_MS);
 
@@ -407,13 +406,13 @@ describe("ContactList", () => {
 
     it("asks for a Contact Group's page without waiting", async () => {
       render(page("", "Family"));
-      await advanceTimersAndSettle(0);
+      await settle();
       expect(asked().at(-1)).toBe(groupListQuery("Family", ""));
     });
 
     it("stops asking once the search is cleared before the wait ends", async () => {
       const { rerender } = render(page(""));
-      await advanceTimersAndSettle(0);
+      await settle();
 
       rerender(page("name:al"));
       await advanceTimersAndSettle(FILTER_DEBOUNCE_MS - 1);
@@ -426,7 +425,8 @@ describe("ContactList", () => {
   it("names the search box's text a search when no contact matches it", async () => {
     renderList({ filter: "zzz" });
 
-    expect(await screen.findByText("No contacts match this search")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText("No contacts match this search")).toBeInTheDocument();
   });
 
   it("checks a contact from its avatar in the desktop list without opening it", async () => {
@@ -437,14 +437,15 @@ describe("ContactList", () => {
     try {
       const onSelect = vi.fn();
       renderList({ onSelect });
-      const box = await screen.findByRole("checkbox", { name: "Select Alice" });
+      await settle();
+      const box = screen.getByRole("checkbox", { name: "Select Alice" });
       const avatar = box.closest("label");
       expect(avatar).not.toBeNull();
 
       const user = setupUser();
       await user.click(avatar as HTMLElement);
 
-      await waitFor(() => expect(box).toBeChecked());
+      expect(box).toBeChecked();
       expect(onSelect).not.toHaveBeenCalled();
     } finally {
       heights.mockRestore();
@@ -475,13 +476,14 @@ describe("ContactList", () => {
         .filter((el) => el.hasAttribute("aria-current"))
         .map((el) => el.textContent);
 
-    const bob = await screen.findByRole("checkbox", { name: "Select Bob" });
+    await settle();
+    const bob = screen.getByRole("checkbox", { name: "Select Bob" });
     expect(current()).toEqual(["Alice"]);
 
     // Checking Bob draws the checked rows highlighted, not the open one,
     // but the open contact is still Alice.
     fireEvent.click(bob);
-    await waitFor(() => expect(bob).toBeChecked());
+    expect(bob).toBeChecked();
     expect(current()).toEqual(["Alice"]);
   });
 
@@ -514,30 +516,30 @@ describe("ContactList", () => {
 
     it("does not read as all while contacts past the loaded ones are unticked", async () => {
       renderAll();
-      await screen.findByRole("checkbox", { name: "Select Person 0001" });
+      await settle();
       // Every loaded row, 40 of 120, ticked by hand with one Shift + click.
       const rows = screen.getAllByRole("checkbox", { name: /^Select Person/ });
       fireEvent.click(rows[0]);
       fireEvent.click(rows[rows.length - 1], { shiftKey: true });
-      await waitFor(() => expect(rows[rows.length - 1]).toBeChecked());
+      expect(rows[rows.length - 1]).toBeChecked();
       expect(screen.getByRole("checkbox", { name: "Select all contacts" })).not.toBeChecked();
     });
 
     it("exports every contact the list holds", async () => {
       renderAll();
-      await screen.findByRole("checkbox", { name: "Select Person 0001" });
+      await settle();
 
       const box = screen.getByRole("checkbox", { name: "Select all contacts" });
       // Select all reads the 80 contacts past the first page from a mock that
-      // answers at once, then draws 120 ticks in a transition. `act` finishes
-      // both before it returns, so the box is ticked by then.
-      await act(async () => {
-        fireEvent.click(box);
-      });
+      // answers at once, then draws 120 ticks in a transition. `settle` lands
+      // both, so the box is ticked by then.
+      fireEvent.click(box);
+      await settle();
       expect(box).toBeChecked();
 
       fireEvent.click(screen.getByRole("button", { name: "Export" }));
-      await waitFor(() => expect(exportMock).toHaveBeenCalled());
+      await settle();
+      expect(exportMock).toHaveBeenCalled();
       const body = exportMock.mock.calls.at(-1)?.[0] as { ids?: number[] } | undefined;
       const ids = body?.ids ?? [];
       expect([...ids].sort((a, b) => a - b)).toEqual(everyone.map((c) => c.id));
@@ -559,14 +561,16 @@ describe("ContactList", () => {
         } as unknown as Awaited<ReturnType<typeof listContacts>>;
       });
       renderAll();
-      await screen.findByRole("checkbox", { name: "Select Person 0001" });
+      await settle();
 
       const box = screen.getByRole("checkbox", { name: "Select all contacts" });
       fireEvent.click(box);
-      await waitFor(() => expect(box).toBeDisabled());
+      await settle();
+      expect(box).toBeDisabled();
 
       refuse(new Error("offset is past the end of the list"));
-      expect(await screen.findByRole("alert")).toHaveTextContent(
+      await settle();
+      expect(screen.getByRole("alert")).toHaveTextContent(
         "Select all could not read every row: offset is past the end of the list",
       );
       expect(box).not.toBeDisabled();

@@ -8,8 +8,9 @@ and a new test follows this page from the start.
 
 *The short version: `startFakeClock()` before `render`, `await settle()` after
 anything that starts work, `advanceTimersAndSettle(ms)` past a debounce or a
-poll, and `deferred()` when the test decides when a fake answers. The helpers
-are in `fakeTimers.ts` and `deferred.ts` in this directory.*
+poll, `advanceToNextFrame()` past an animation frame, and `deferred()` when the
+test decides when a fake answers. The helpers are in `fakeTimers.ts` and
+`deferred.ts` in this directory.*
 
 ## Why `waitFor` and `findBy…` aren't used
 
@@ -104,6 +105,27 @@ expect(screen.getByRole("button", { name: "Reset Demo Account" })).toBeEnabled()
 
 A screen that decides with `Date.now()` how long to keep polling reads the
 fake clock too, so moving the clock moves it.
+
+### An animation frame
+
+Some work waits for the next animation frame. React Aria puts focus back on a
+menu's trigger a frame after the menu closes. A drawer measures a column on the
+frame after a scroll. `startFakeClock()` fakes `requestAnimationFrame`, so the
+frame comes only when the test moves the clock to it. `advanceToNextFrame()`
+makes that move inside `act`.
+
+The source has no constant for a frame to move the clock by, as "A timer: a
+debounce, a poll, or a delay the screen waits out" has. `settle()` doesn't move the clock, so `settle()`
+never runs a frame. Reading the screen before the move shows that the screen
+waits for the frame. Where a promise or a `MutationObserver` report schedules
+the frame, `settle()` lands that report first.
+
+```tsx
+await user.keyboard("{Escape}");
+expect(document.activeElement).not.toBe(trigger);
+advanceToNextFrame();
+expect(document.activeElement).toBe(trigger);
+```
 
 ### Two things stamped with `Date.now()`
 
@@ -223,7 +245,9 @@ expect(result.current).toBe("ok");
 `await new Promise((resolve) => setTimeout(resolve, 0))` inside `act` waits for
 real time too: it hopes everything queued lands before the timer fires. On the
 fake clock it never fires at all. `settle()` replaces it, because `settle()`
-runs what is queued rather than racing it.
+runs what is queued rather than racing it. A sleep for a frame,
+`await new Promise((resolve) => requestAnimationFrame(resolve))`, becomes a
+call to `advanceToNextFrame()` ("An animation frame").
 
 ### Something the fake clock doesn't drive
 
