@@ -30,7 +30,7 @@ const CACHE_STEPS: u64 = 4;
 
 /// Apple's `chat.style` for a group conversation.
 const STYLE_GROUP: i64 = 43;
-/// Apple's `chat.style` for a one-to-one chat.
+/// Apple's `chat.style` for a one-to-one conversation.
 const STYLE_ONE_TO_ONE: i64 = 45;
 
 /// Cached chats, handles, contacts, and tapbacks for one conversion run.

@@ -1086,7 +1086,7 @@ Alice Example,2020-01-01 12:01:00,iMessage,Incoming,+15555550111,Alice Example,R
     assert_eq!(
         documents.len(),
         2,
-        "the group merged into Alice's direct chat"
+        "the group merged into Alice's one-to-one conversation"
     );
 }
 
