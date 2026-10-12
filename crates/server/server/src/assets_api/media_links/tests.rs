@@ -7,14 +7,14 @@ use crate::assets_api::tests::{
     seed_attachment_with_preview,
 };
 use crate::problem::ProblemType;
-use crate::test_support::{RegisteredAccount, expect_problem, http_client};
+use crate::test_support::{RegisteredAccount, expect_problem};
 
 /// `POST /v1/assets/{sha256}/media-links` as `token`: the status, the
 /// `Location`, and the body.
 async fn mint(state: &AppState, sha256: &str, token: &str) -> (StatusCode, Option<String>, String) {
     let server = crate::test_support::serve(state).await;
-    let response = http_client()
-        .post(format!("{}/v1/assets/{sha256}/media-links", server.base()))
+    let response = server
+        .post(&format!("/v1/assets/{sha256}/media-links"))
         .bearer_auth(token)
         .send()
         .await

@@ -13,7 +13,7 @@ use crate::problem::ProblemType;
 use crate::server::AppState;
 use crate::test_support::{
     RegisteredAccount, TestFixture, attachment, conversation_header, expect_problem,
-    fixture_with_account, http_client, message_line,
+    fixture_with_account, message_line,
 };
 
 /// The three synthetic files the tests import: an 800x600 PNG, a half-second
@@ -82,14 +82,12 @@ async fn import_files(
     files: &[(&str, &str, Vec<u8>)],
 ) -> (Vec<String>, i64) {
     let state = &fixture.state;
-    let (_, run): (String, serde_json::Value) = crate::test_support::post_created_json(
+    let (run, _) = crate::test_support::start_import_run(
         state,
-        "/v1/imports",
         &alice.token,
         serde_json::json!({ "source": "imessage" }),
     )
     .await;
-    let run = run["id"].as_i64().unwrap();
     let mut shas = Vec::new();
     for (name, mime, bytes) in files {
         let sha = file_io::sha256_hex(bytes);
@@ -105,23 +103,8 @@ async fn import_files(
         shas.push(sha);
     }
     let names: Vec<(&str, &str)> = files.iter().map(|(name, mime, _)| (*name, *mime)).collect();
-    let (status, text) = crate::test_support::post_raw(
-        state,
-        &format!("/v1/imports/{run}/batches"),
-        &alice.token,
-        "application/jsonl",
-        batch(&names, &shas),
-    )
-    .await;
-    assert!(status.is_success(), "batch: {status} {text}");
-    let completed: serde_json::Value = crate::test_support::post_json(
-        state,
-        &format!("/v1/imports/{run}/complete"),
-        &alice.token,
-        serde_json::json!({ "status": "completed" }),
-    )
-    .await;
-    assert_eq!(completed["status"], "completed", "{completed}");
+    crate::test_support::post_import_batch(state, &alice.token, run, batch(&names, &shas)).await;
+    crate::test_support::complete_import_run(state, &alice.token, run).await;
 
     let conversation_id: i64 =
         sqlx::query_scalar("SELECT id FROM conversations WHERE account_id = $1")
@@ -155,9 +138,7 @@ async fn get_bytes(
     token: Option<&str>,
 ) -> (StatusCode, String, Vec<u8>) {
     let server = crate::test_support::serve(state).await;
-    let mut request = http_client()
-        .get(format!("{}{path}", server.base()))
-        .header(reqwest::header::ACCEPT, "image/*");
+    let mut request = server.get(path).header(reqwest::header::ACCEPT, "image/*");
     if let Some(token) = token {
         request = request.bearer_auth(token);
     }
@@ -302,12 +283,8 @@ fn the_pass_makes_a_thumbnail_of_each_image_and_video_and_a_preview_only_for_hev
         assert_eq!(&bytes[..2], [0xff, 0xd8], "a JPEG starts with SOI");
 
         let server = crate::test_support::serve(state).await;
-        let link: serde_json::Value = http_client()
-            .post(format!(
-                "{}/v1/assets/{}/media-links",
-                server.base(),
-                imported.h264
-            ))
+        let link: serde_json::Value = server
+            .post(&format!("/v1/assets/{}/media-links", imported.h264))
             .bearer_auth(&alice.token)
             .send()
             .await
@@ -878,14 +855,12 @@ async fn import_photo_run(
     let state = &fixture.state;
     let bytes = fixture_bytes("photo.jpg");
     let sha = file_io::sha256_hex(&bytes);
-    let (_, run): (String, serde_json::Value) = crate::test_support::post_created_json(
+    let (run, _) = crate::test_support::start_import_run(
         state,
-        "/v1/imports",
         &alice.token,
         serde_json::json!({ "source": "imessage", "mode": "append" }),
     )
     .await;
-    let run = run["id"].as_i64().unwrap();
     let listed = attachment("attachments/photo.jpg", "photo.jpg", "image/jpeg");
     let attached = match photo {
         Photo::Present => {
@@ -915,23 +890,14 @@ async fn import_photo_run(
         Some(attached) => message.attachment(attached),
         None => message,
     };
-    let (status, text) = crate::test_support::post_raw(
+    crate::test_support::post_import_batch(
         state,
-        &format!("/v1/imports/{run}/batches"),
         &alice.token,
-        "application/jsonl",
+        run,
         format!("{header}\n{message}\n"),
     )
     .await;
-    assert!(status.is_success(), "batch: {status} {text}");
-    let completed: serde_json::Value = crate::test_support::post_json(
-        state,
-        &format!("/v1/imports/{run}/complete"),
-        &alice.token,
-        serde_json::json!({ "status": "completed" }),
-    )
-    .await;
-    assert_eq!(completed["status"], "completed", "{completed}");
+    crate::test_support::complete_import_run(state, &alice.token, run).await;
     sha
 }
 

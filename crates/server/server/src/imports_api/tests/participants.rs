@@ -641,7 +641,12 @@ async fn an_account_identity_listed_among_a_groups_members_is_not_a_participant(
         ("sms-backup-restore", "trip-sms"),
         ("whatsapp", "trip-whatsapp"),
     ] {
-        let path = batches_path(&state, &token, source).await;
+        let (run, _) = crate::test_support::start_import_run(
+            &state,
+            &token,
+            serde_json::json!({ "source": source }),
+        )
+        .await;
         let header = conversation_header(source, chat)
             .group()
             .title("Trip")
@@ -661,9 +666,7 @@ async fn an_account_identity_listed_among_a_groups_members_is_not_a_participant(
             .sender("+15555550199")
             .sender_display_name("Me");
         let body = format!("{header}\n{from_ada}\n{from_holder}\n");
-        let (status, text) =
-            crate::test_support::post_raw(&state, &path, &token, "application/jsonl", body).await;
-        assert!(status.is_success(), "{source}: {status} {text}");
+        crate::test_support::post_import_batch(&state, &token, run, body).await;
 
         let mut conn = fixture.conn().await;
         let members: Vec<String> = sqlx::query_scalar(
@@ -681,14 +684,7 @@ async fn an_account_identity_listed_among_a_groups_members_is_not_a_participant(
         .unwrap();
         assert_eq!(members, ["+15555550101", "+15555550102"], "{source}");
 
-        let complete = path.replace("/batches", "/complete");
-        let _: serde_json::Value = post_json(
-            &state,
-            &complete,
-            &token,
-            serde_json::json!({ "status": "completed" }),
-        )
-        .await;
+        crate::test_support::complete_import_run(&state, &token, run).await;
     }
 
     let holder_contacts: i64 = sqlx::query_scalar(
