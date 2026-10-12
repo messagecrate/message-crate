@@ -1,7 +1,8 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settle, startFakeClock, stopFakeClock } from "../../../test/fakeTimers";
 import { renderWithProviders } from "../../../test/providers";
 import { setupUser } from "../../../test/user";
 import { StorageSection } from "../StorageSection";
@@ -41,6 +42,7 @@ function anExport(id: number) {
 
 describe("Export history", () => {
   beforeEach(() => {
+    startFakeClock();
     vi.clearAllMocks();
     getAccountProfile.mockResolvedValue({ account_id: 7, message_count: 0 });
     getAccountStorage.mockResolvedValue({
@@ -59,18 +61,20 @@ describe("Export history", () => {
 
   afterEach(() => {
     cleanup();
+    stopFakeClock();
   });
 
   it("asks the server for each page of 50 and stops at the last", async () => {
     const user = setupUser();
     renderWithProviders(<StorageSection />);
+    await settle();
 
-    const heading = await screen.findByRole("heading", { name: "Export history" });
+    const heading = screen.getByRole("heading", { name: "Export history" });
     const section = within(heading.parentElement as HTMLElement);
     const back = () => section.getByRole("button", { name: "Back" });
     const next = () => section.getByRole("button", { name: "Next" });
 
-    expect(await section.findByText("Page 1 of 3")).toBeInTheDocument();
+    expect(section.getByText("Page 1 of 3")).toBeInTheDocument();
     expect(listAccountExports).toHaveBeenCalledWith(
       { limit: 50, offset: 0 },
       expect.anything(),
@@ -80,26 +84,30 @@ describe("Export history", () => {
     expect(next()).toBeEnabled();
 
     await user.click(next());
-    expect(await section.findByText("Page 2 of 3")).toBeInTheDocument();
+    await settle();
+    expect(section.getByText("Page 2 of 3")).toBeInTheDocument();
     expect(listAccountExports).toHaveBeenCalledWith(
       { limit: 50, offset: 50 },
       expect.anything(),
       undefined,
     );
-    expect(await section.findByText("Messages found by: run-51")).toBeInTheDocument();
+    expect(section.getByText("Messages found by: run-51")).toBeInTheDocument();
     expect(back()).toBeEnabled();
 
     await user.click(next());
-    expect(await section.findByText("Page 3 of 3")).toBeInTheDocument();
-    await waitFor(() => expect(next()).toBeDisabled());
+    await settle();
+    expect(section.getByText("Page 3 of 3")).toBeInTheDocument();
+    expect(section.getByText("Messages found by: run-101")).toBeInTheDocument();
+    expect(next()).toBeDisabled();
   });
 
   it("says when no Export Run has been recorded", async () => {
     listAccountExports.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
     renderWithProviders(<StorageSection />);
+    await settle();
 
-    const heading = await screen.findByRole("heading", { name: "Export history" });
+    const heading = screen.getByRole("heading", { name: "Export history" });
     const section = within(heading.parentElement as HTMLElement);
-    expect(await section.findByText("No exports recorded yet")).toBeInTheDocument();
+    expect(section.getByText("No exports recorded yet")).toBeInTheDocument();
   });
 });

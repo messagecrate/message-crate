@@ -1,11 +1,12 @@
 /** @vitest-environment jsdom */
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { Suspense } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { problemFromBody } from "../lib/api";
 import { ChunkLoadError, lazyChunk } from "../lib/chunkLoad";
 import { pageAnswers, reloadPage } from "../lib/pageReload";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { setupUser } from "../test/user";
 import ErrorBoundary from "./ErrorBoundary";
 
@@ -22,6 +23,7 @@ function chunkFailed(chunk: string): ChunkLoadError {
 }
 
 beforeEach(() => {
+  startFakeClock();
   sessionStorage.clear();
   // The page this app came from answers, unless a test says otherwise.
   vi.mocked(pageAnswers).mockResolvedValue(true);
@@ -33,6 +35,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.mocked(reloadPage).mockClear();
   vi.restoreAllMocks();
+  stopFakeClock();
 });
 
 describe("ErrorBoundary", () => {
@@ -98,7 +101,8 @@ describe("ErrorBoundary", () => {
       </ErrorBoundary>,
     );
 
-    await waitFor(() => expect(reloadPage).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(reloadPage).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -110,7 +114,8 @@ describe("ErrorBoundary", () => {
       </ErrorBoundary>,
     );
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("This screen didn't load");
+    await settle();
+    expect(screen.getByRole("alert")).toHaveTextContent("This screen didn't load");
     expect(reloadPage).not.toHaveBeenCalled();
   });
 
@@ -137,7 +142,8 @@ describe("ErrorBoundary", () => {
         </Suspense>
       </ErrorBoundary>,
     );
-    await waitFor(() => expect(reloadPage).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(reloadPage).toHaveBeenCalledTimes(1);
     first.unmount();
 
     const Arrives = lazyChunk("SettingsScreen", async () => ({
@@ -148,14 +154,16 @@ describe("ErrorBoundary", () => {
         <Arrives />
       </Suspense>,
     );
-    expect(await screen.findByText("Settings")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText("Settings")).toBeInTheDocument();
 
     render(
       <ErrorBoundary scope="screen">
         <Throws error={chunkFailed("SettingsScreen")} />
       </ErrorBoundary>,
     );
-    await waitFor(() => expect(reloadPage).toHaveBeenCalledTimes(2));
+    await settle();
+    expect(reloadPage).toHaveBeenCalledTimes(2);
   });
 
   it("does not reload again for a chunk that failed, when another chunk loads in between", async () => {
@@ -164,7 +172,8 @@ describe("ErrorBoundary", () => {
         <Throws error={chunkFailed("AdvancedSearchForm")} />
       </ErrorBoundary>,
     );
-    await waitFor(() => expect(reloadPage).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(reloadPage).toHaveBeenCalledTimes(1);
     first.unmount();
 
     const Settings = lazyChunk("SettingsScreen", async () => ({
@@ -175,14 +184,16 @@ describe("ErrorBoundary", () => {
         <Settings />
       </Suspense>,
     );
-    expect(await screen.findByText("Settings")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText("Settings")).toBeInTheDocument();
 
     render(
       <ErrorBoundary scope="panel">
         <Throws error={chunkFailed("AdvancedSearchForm")} />
       </ErrorBoundary>,
     );
-    expect(await screen.findByRole("alert")).toHaveTextContent("This panel didn't load");
+    await settle();
+    expect(screen.getByRole("alert")).toHaveTextContent("This panel didn't load");
     expect(reloadPage).toHaveBeenCalledTimes(1);
   });
 
@@ -192,7 +203,8 @@ describe("ErrorBoundary", () => {
         <Throws error={chunkFailed("TrashScreen")} />
       </ErrorBoundary>,
     );
-    await waitFor(() => expect(reloadPage).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(reloadPage).toHaveBeenCalledTimes(1);
     first.unmount();
     vi.mocked(reloadPage).mockClear();
 
@@ -202,23 +214,19 @@ describe("ErrorBoundary", () => {
       </ErrorBoundary>,
     );
 
-    const alert = await screen.findByRole("alert");
+    await settle();
+    const alert = screen.getByRole("alert");
     expect(reloadPage).not.toHaveBeenCalled();
     expect(alert).toHaveTextContent("This screen didn't load");
     expect(alert).toHaveTextContent("Failed to fetch dynamically imported module");
   });
 });
 
+// The file's `beforeEach` starts the fake clock that this test moves.
 describe("pageAnswers", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
-  });
-
   it("counts a page that never answers as one that doesn't", async () => {
     const { pageAnswers: realPageAnswers, PAGE_ANSWER_TIMEOUT_MS } =
       await vi.importActual<typeof import("../lib/pageReload")>("../lib/pageReload");
-    vi.useFakeTimers();
     vi.stubGlobal(
       "fetch",
       vi.fn(
