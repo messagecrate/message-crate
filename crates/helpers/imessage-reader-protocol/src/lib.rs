@@ -645,9 +645,12 @@ pub enum AttachmentSource {
 mod tests {
     use super::*;
 
-    /// The person reads these sentences as they are, from the Apple Messages
-    /// Reader and from the WhatsApp import alike, and every other test
-    /// compares against the constants. This one pins the wording itself.
+    /// Every other test compares against the constants, so only this one
+    /// fails when a sentence's wording changes. The wording is repeated
+    /// outside Rust and must change with it: the troubleshooting page
+    /// (`docs/.../owner/troubleshooting.md`) heads a section with each of
+    /// the first two, and the Import form shows the first from its own
+    /// copy in `web/src/lib/encryptedBackup.ts`.
     #[test]
     fn the_backup_password_sentences_are_the_ones_the_person_reads() {
         assert_eq!(
