@@ -7,9 +7,10 @@
 //! directory: the lookup is this process's, and nothing it is told changes
 //! where a program is run from.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 
+use media::{InstalledTools, MediaTools};
 use message_crate_core::{CancelFlag, Cancelled};
 use tauri::AppHandle;
 
@@ -117,8 +118,11 @@ pub struct ToolsStatus {
 /// Look for ffmpeg, ffprobe and wtsexporter where this process runs them from,
 /// and say how each one's download stands.
 #[tauri::command]
-pub fn tools_status(downloads: tauri::State<'_, ToolDownloads>) -> ToolsStatus {
-    tools_status_with(&downloads, &pinned_here())
+pub fn tools_status(
+    downloads: tauri::State<'_, ToolDownloads>,
+    installed: tauri::State<'_, InstalledTools>,
+) -> ToolsStatus {
+    tools_status_with(&downloads, &installed, &pinned_here())
 }
 
 /// The downloads the app has for this computer.
@@ -150,12 +154,15 @@ pub enum RetryResult {
 /// on a thread of its own, and the window follows it through
 /// [`tools_status`].
 #[tauri::command]
-pub fn retry_tool_downloads(downloads: tauri::State<'_, ToolDownloads>) -> RetryResult {
-    let Some(dir) = media::tools_dir() else {
+pub fn retry_tool_downloads(
+    downloads: tauri::State<'_, ToolDownloads>,
+    installed: tauri::State<'_, InstalledTools>,
+) -> RetryResult {
+    let Some(dir) = installed.tools_dir().map(Path::to_path_buf) else {
         return RetryResult::NoToolsDirectory;
     };
     let pinned = pinned_here();
-    let status = tools_status_with(&downloads, &pinned);
+    let status = tools_status_with(&downloads, &installed, &pinned);
     let not_found: Vec<Program> = [
         (Program::Ffmpeg, &status.ffmpeg),
         (Program::Ffprobe, &status.ffprobe),
@@ -167,6 +174,7 @@ pub fn retry_tool_downloads(downloads: tauri::State<'_, ToolDownloads>) -> Retry
     .collect();
     match tool_downloads::retry(
         dir,
+        installed.inner().clone(),
         tool_downloads::GITHUB.to_string(),
         pinned,
         &downloads,
@@ -237,17 +245,22 @@ fn worth_sending(
     program != now.0 || total != now.2 || now.1.abs_diff(received) >= WAITING_STEP_BYTES
 }
 
-/// [`tools_status`], with the downloads in `downloads` and `pinned` as the
-/// downloads for this computer. A wtsexporter counts only when it is the
-/// pinned one, where there is one (#2692).
-fn tools_status_with(downloads: &ToolDownloads, pinned: &[Pinned]) -> ToolsStatus {
+/// [`tools_status`], with the downloads in `downloads`, the programs where
+/// `installed` looks, and `pinned` as the downloads for this computer. A
+/// wtsexporter counts only when it is the pinned one, where there is one
+/// (#2692).
+fn tools_status_with(
+    downloads: &ToolDownloads,
+    installed: &InstalledTools,
+    pinned: &[Pinned],
+) -> ToolsStatus {
     let pin = |program: Program| pinned.iter().find(|pin| pin.program == program);
     let status = |program: Program, found: ToolStatus| {
         found
             .with_pin(pin(program).is_some())
             .with_download(downloads.get(program))
     };
-    let (ffmpeg, ffprobe) = match media::ffmpeg_tools() {
+    let (ffmpeg, ffprobe) = match installed.find() {
         Ok(tools) => (ToolStatus::of(tools.ffmpeg), ToolStatus::of(tools.ffprobe)),
         // Found in two places: neither is used, and both say why.
         Err(err) => {
@@ -258,7 +271,7 @@ fn tools_status_with(downloads: &ToolDownloads, pinned: &[Pinned]) -> ToolsStatu
         }
     };
     let wtsexporter = match whatsapp_exporter::wtsexporter_in_dir(
-        media::tools_dir().as_deref(),
+        installed.tools_dir(),
         pin(Program::Wtsexporter).map(|pin| pin.program_sha256),
     ) {
         Ok(path) => ToolStatus::of(path),
@@ -267,7 +280,7 @@ fn tools_status_with(downloads: &ToolDownloads, pinned: &[Pinned]) -> ToolsStatu
         },
     };
     ToolsStatus {
-        tools_dir: media::tools_dir().map(|dir| dir.display().to_string()),
+        tools_dir: installed.tools_dir().map(|dir| dir.display().to_string()),
         checking: downloads.checking(),
         ffmpeg: status(Program::Ffmpeg, ffmpeg),
         ffprobe: status(Program::Ffprobe, ffprobe),
@@ -358,23 +371,20 @@ mod tests {
     /// found.
     #[test]
     fn wtsexporter_is_reported_from_the_tools_directory() {
-        let _lock = media::testutil::tools_test_lock();
-        let previous = media::tools_dir();
         let tools = tempfile::tempdir().unwrap();
         let name = whatsapp_exporter::wtsexporter_file_name();
         let program = tools.path().join(name);
-        media::set_tools_dir(Some(tools.path().to_path_buf()));
+        let installed = InstalledTools::new(Some(tools.path().to_path_buf()));
         let downloads = ToolDownloads::default();
         let pinned = [wtsexporter_pinned_to(b"the pinned file")];
-        let missing = tools_status_with(&downloads, &pinned).wtsexporter;
-        let unavailable = tools_status_with(&downloads, &[]).wtsexporter;
+        let missing = tools_status_with(&downloads, &installed, &pinned).wtsexporter;
+        let unavailable = tools_status_with(&downloads, &installed, &[]).wtsexporter;
         media::testutil::write_with_mode(&program, 0o755);
         std::fs::write(&program, b"the pinned").unwrap();
-        let truncated = tools_status_with(&downloads, &pinned).wtsexporter;
-        let found_by_hand = tools_status_with(&downloads, &[]).wtsexporter;
+        let truncated = tools_status_with(&downloads, &installed, &pinned).wtsexporter;
+        let found_by_hand = tools_status_with(&downloads, &installed, &[]).wtsexporter;
         std::fs::write(&program, b"the pinned file").unwrap();
-        let found = tools_status_with(&downloads, &pinned).wtsexporter;
-        media::set_tools_dir(previous);
+        let found = tools_status_with(&downloads, &installed, &pinned).wtsexporter;
 
         assert_eq!(missing, ToolStatus::Missing);
         // No download for this computer: told apart, so the form offers no

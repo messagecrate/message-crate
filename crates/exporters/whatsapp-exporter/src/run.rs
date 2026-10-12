@@ -99,7 +99,7 @@ pub fn run(
         };
 
         message_crate_core::check_cancel(&context.cancel)?;
-        let bin = resolve_wtsexporter()?;
+        let bin = resolve_wtsexporter(output.media.tools.tools_dir())?;
         let work = mark_output_and_make_work_directory(context, output)?;
         let json_out = work.path().join("result.json");
 

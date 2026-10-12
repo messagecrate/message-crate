@@ -58,6 +58,7 @@ fn read_options<'a>(owners: &'a [String], spool: &'a AttachmentSpool) -> crate::
         spool: Some(spool),
         media: media::MediaMode::Disabled,
         compress: media::CompressOptions::default(),
+        tools: std::sync::Arc::new(media::InstalledTools::default()),
         log: &NO_LOG,
         progress: &NO_PROGRESS,
         cancel: &NO_CANCEL,

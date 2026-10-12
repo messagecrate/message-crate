@@ -1,18 +1,28 @@
 use super::*;
 
+use std::sync::LazyLock;
+
+use media::testutil::FakeTools;
+
+/// Neither ffmpeg nor ffprobe.
+static MISSING: LazyLock<Arc<dyn MediaTools>> = LazyLock::new(|| Arc::new(FakeTools::missing()));
+
+/// ffmpeg and ffprobe, both found.
+static FOUND: LazyLock<Arc<dyn MediaTools>> = LazyLock::new(|| Arc::new(FakeTools::new()));
+
 /// The context of a form validated with its Scratch Directory at `/cache`
 /// and no ffmpeg.
 fn no_ffmpeg() -> FormContext<'static> {
     FormContext {
         scratch_dir: Path::new("/cache"),
-        ffmpeg_available: false,
+        tools: Arc::clone(&MISSING),
     }
 }
 
 /// [`no_ffmpeg`], with ffmpeg available.
 fn with_ffmpeg() -> FormContext<'static> {
     FormContext {
-        ffmpeg_available: true,
+        tools: Arc::clone(&FOUND),
         ..no_ffmpeg()
     }
 }
@@ -372,6 +382,38 @@ fn whatsapp_passes_platform_and_media() {
     assert!(
         err.iter()
             .any(|e| e.contains("Backup path is required for iOS"))
+    );
+}
+
+/// The tools the caller passes reach the run, as the ffmpeg and ffprobe the
+/// media passes run and the Tools Directory the WhatsApp exporter finds
+/// `wtsexporter` in (#2696).
+#[test]
+fn the_tools_the_caller_passes_reach_the_run() {
+    let tools_dir = PathBuf::from("/home/someone/message-crate/tools");
+    let tools: Arc<dyn MediaTools> = Arc::new(media::InstalledTools::new(Some(tools_dir.clone())));
+    let form = Form {
+        output: "out".into(),
+        owner_phones: "+15555550100".into(),
+        whatsapp_platform: WhatsappPlatform::Android,
+        whatsapp_backup: "/tmp/backup".into(),
+        ..Form::default()
+    };
+
+    let config = form
+        .to_config(
+            Exporter::Whatsapp,
+            FormContext {
+                tools: Arc::clone(&tools),
+                ..no_ffmpeg()
+            },
+        )
+        .unwrap();
+
+    assert!(Arc::ptr_eq(&config.output.media.tools, &tools));
+    assert_eq!(
+        config.output.media.tools.tools_dir(),
+        Some(tools_dir.as_path())
     );
 }
 

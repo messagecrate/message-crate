@@ -14,31 +14,23 @@ pub use digest::file_has_sha256;
 #[cfg(any(test, feature = "testutil"))]
 pub use digest::times_read;
 
-/// Where this process looks for ffmpeg and ffprobe, and which files there
-/// answered `-version`.
-struct ToolsState {
-    /// The Tools Directory, searched after `PATH`. The desktop app sets it
-    /// for itself and passes it to the server it starts (`serve
-    /// --tools-dir`); a server started by hand has none.
-    tools_dir: Option<PathBuf>,
-    /// The `PATH` searched instead of the process's own. Only tests set it
-    /// (`set_search_path`), so a test decides what is found whether or
-    /// not the machine has ffmpeg installed.
-    search_path: Option<OsString>,
-    generation: u64,
-    /// The files that answered `-version`, by path, each beside the file as
-    /// it was when it answered. Every lookup searches `PATH` and the Tools
-    /// Directory again, which only reads file metadata, and a lookup runs
-    /// once per file staged and once per Asset shown; the answer kept here
-    /// means a file that answered is not run again until it changes.
-    ///
-    /// Only an answer is kept, never a failure. A file Gatekeeper blocks, one
-    /// missing a shared library, or one that failed to start for a passing
-    /// reason is run again on the next lookup, because what fixes it (an
-    /// approval in System Settings, an installed library, the passing cause
-    /// going away) leaves the file's modified time, size and permissions as
-    /// they were, and a kept failure would hide the fix until a restart.
-    answered: HashMap<PathBuf, FileStamp>,
+/// The files that answered `-version`, by path, each beside the file as it
+/// was when it answered. Every lookup searches `PATH` and the Tools Directory
+/// again, which only reads file metadata, and a lookup runs once per file
+/// staged and once per Asset shown; the answer kept here means a file that
+/// answered is not run again until it changes. It is a fact about the file,
+/// not about where anyone looks, so one map serves every [`InstalledTools`]
+/// in the process.
+///
+/// Only an answer is kept, never a failure. A file Gatekeeper blocks, one
+/// missing a shared library, or one that failed to start for a passing
+/// reason is run again on the next lookup, because what fixes it (an
+/// approval in System Settings, an installed library, the passing cause
+/// going away) leaves the file's modified time, size and permissions as
+/// they were, and a kept failure would hide the fix until a restart.
+fn answered() -> &'static Mutex<HashMap<PathBuf, FileStamp>> {
+    static ANSWERED: OnceLock<Mutex<HashMap<PathBuf, FileStamp>>> = OnceLock::new();
+    ANSWERED.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// What tells one version of a file from another without reading it: a
@@ -77,63 +69,6 @@ impl FileStamp {
     }
 }
 
-impl ToolsState {
-    /// Forget which files answered, so the next lookup runs them again.
-    fn forget(&mut self) {
-        self.generation = self.generation.wrapping_add(1);
-        self.answered.clear();
-    }
-}
-
-/// The process-wide tool cache.
-fn tools_state() -> &'static Mutex<ToolsState> {
-    static STATE: OnceLock<Mutex<ToolsState>> = OnceLock::new();
-    STATE.get_or_init(|| {
-        Mutex::new(ToolsState {
-            tools_dir: None,
-            search_path: None,
-            generation: 0,
-            answered: HashMap::new(),
-        })
-    })
-}
-
-/// Name the Tools Directory, searched for ffmpeg and ffprobe after `PATH`,
-/// and forget which files answered `-version` before.
-pub fn set_tools_dir(dir: Option<PathBuf>) {
-    let mut state = tools_state().lock().expect("tools state lock");
-    state.tools_dir = dir;
-    state.forget();
-}
-
-/// The Tools Directory [`set_tools_dir`] named, if any.
-pub fn tools_dir() -> Option<PathBuf> {
-    tools_state()
-        .lock()
-        .expect("tools state lock")
-        .tools_dir
-        .clone()
-}
-
-/// Search `path` instead of the process's `PATH`, or the process's own
-/// again with `None`, and forget which files answered `-version` before.
-#[cfg(any(test, feature = "testutil"))]
-pub(crate) fn set_search_path(path: Option<OsString>) {
-    let mut state = tools_state().lock().expect("tools state lock");
-    state.search_path = path;
-    state.forget();
-}
-
-/// The `PATH` [`set_search_path`] put in place of the process's, if any.
-#[cfg(any(test, feature = "testutil"))]
-pub(crate) fn search_path() -> Option<OsString> {
-    tools_state()
-        .lock()
-        .expect("tools state lock")
-        .search_path
-        .clone()
-}
-
 /// Where ffmpeg and ffprobe are. Either is `None` when it was not found.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FfmpegTools {
@@ -154,121 +89,77 @@ impl FfmpegTools {
     }
 }
 
-/// Where ffmpeg and ffprobe are: both on `PATH`, else both in the Tools
-/// Directory.
-///
-/// # Errors
-///
-/// Returns an error naming both paths when one is found only on `PATH` and
-/// the other only in the Tools Directory, because two builds of different
-/// versions would then work on one file.
-pub fn ffmpeg_tools() -> Result<FfmpegTools> {
-    resolve_tools()
-}
-
-/// Where ffmpeg is, by [`ffmpeg_tools`]. `None` when it is not found, does
-/// not run, or is in a different place from ffprobe.
-pub fn ffmpeg_path() -> Option<PathBuf> {
-    resolve_tools().ok().and_then(|tools| tools.ffmpeg)
-}
-
-/// Where ffprobe is, by [`ffmpeg_tools`]. `None` when it is not found, does
-/// not run, or is in a different place from ffmpeg.
-pub fn ffprobe_path() -> Option<PathBuf> {
-    resolve_tools().ok().and_then(|tools| tools.ffprobe)
-}
-
-/// True when ffmpeg and ffprobe are both found, in one place.
-pub fn ffmpeg_available() -> bool {
-    resolve_tools().is_ok_and(|tools| tools.missing().is_empty())
-}
-
-/// True when ffmpeg and ffprobe are both on `PATH` and answer `-version`.
-/// The desktop app downloads neither then, because a person who installed
-/// ffmpeg chose it (`docs/adr/0019`).
-pub fn ffmpeg_on_path() -> bool {
-    let search_path = searched_path();
-    ["ffmpeg", "ffprobe"]
-        .iter()
-        .all(|name| find_on_path(name, search_path.as_deref()).is_some())
-}
-
-/// The `PATH` the lookup searches: the one a test put in place
-/// (`set_search_path`), else the process's own.
-fn searched_path() -> Option<OsString> {
-    tools_state()
-        .lock()
-        .expect("tools state lock")
-        .search_path
-        .clone()
-        .or_else(|| std::env::var_os("PATH"))
-}
-
-/// True when ffprobe is found.
-pub(crate) fn ffprobe_available() -> bool {
-    ffprobe_path().is_some()
-}
-
-/// The places ffmpeg and ffprobe are looked for, as an error names them.
-fn where_looked() -> String {
-    match tools_dir() {
-        Some(dir) => format!("on PATH or in the Tools Directory, {}", dir.display()),
-        None => "on PATH".to_string(),
-    }
-}
-
-/// Fail, naming which tool is missing and where it was looked for, when
-/// ffmpeg or ffprobe is not found.
-///
-/// # Errors
-///
-/// Returns an error when either tool is missing, or when the two are in
-/// different places ([`ffmpeg_tools`]).
-pub fn require_ffmpeg() -> Result<()> {
-    let missing = resolve_tools()?.missing();
-    if missing.is_empty() {
-        return Ok(());
-    }
-    bail!(
-        "ffmpeg and ffprobe are required to convert or compress attachments. {} {} not found {}.",
-        missing.join(" and "),
-        if missing.len() == 1 { "was" } else { "were" },
-        where_looked()
-    )
-}
-
 /// ffmpeg and ffprobe, as the code that decides what to do with a file uses
-/// them: the Media Stage's convert and compress passes ([`crate::process`])
-/// and the Thumbnail and Preview the server makes ([`crate::versions`]).
+/// them: the Media Stage's convert and compress passes ([`crate::process`]),
+/// the size forecast's probe, and the Thumbnail and Preview the server makes
+/// ([`crate::versions`]).
 ///
 /// That code only decides which file to re-encode, with which arguments,
-/// and what to keep. Running the programs is behind this trait, so a test of
-/// a decision passes a fake that answers fixed probes and writes fixed
-/// output, and needs neither ffmpeg installed nor the lock over the tool
-/// location (`testutil::real_ffmpeg_test_guard`). [`InstalledTools`] is
-/// the one implementation outside tests.
+/// and what to keep. Running the programs is behind this trait, and the
+/// caller passes the implementation in, so a test of a decision, in this
+/// crate or another, passes a fake that answers fixed probes and writes
+/// fixed output (`testutil::FakeTools`) and needs no ffmpeg installed.
+/// [`InstalledTools`] is the one implementation outside tests.
 ///
 /// [`MediaTools::probe`] and [`MediaTools::transcode`] run the programs;
-/// [`MediaTools::require`] and [`MediaTools::can_probe`] say whether the
-/// programs were found where they were looked for and answered `-version`.
-pub(crate) trait MediaTools {
+/// [`MediaTools::find`], [`MediaTools::require`] and
+/// [`MediaTools::can_probe`] say whether the programs were found where they
+/// were looked for and answered `-version`. [`MediaTools::tools_dir`] says
+/// where the app's own copies are kept, which is also where the WhatsApp
+/// exporter finds `wtsexporter`.
+pub trait MediaTools: Send + Sync + std::fmt::Debug {
+    /// The Tools Directory these programs are looked for in after `PATH`,
+    /// if any. `None` unless an implementation names one.
+    fn tools_dir(&self) -> Option<&Path> {
+        None
+    }
+
+    /// Where ffmpeg and ffprobe are.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the two are found in different places, which
+    /// leaves neither used ([`MediaTools::find`]).
+    fn find(&self) -> Result<FfmpegTools>;
+
     /// Fail, naming what is missing and where it was looked for, when
-    /// ffmpeg or ffprobe cannot be used ([`require_ffmpeg`]).
+    /// ffmpeg or ffprobe cannot be used.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when either program is missing, or when the two are
+    /// in different places.
     fn require(&self) -> Result<()>;
+
+    /// True when ffmpeg and ffprobe can both be used ([`MediaTools::require`]).
+    fn available(&self) -> bool {
+        self.require().is_ok()
+    }
 
     /// True when ffprobe can be used, so [`MediaTools::probe`] can answer.
     fn can_probe(&self) -> bool;
 
-    /// What ffprobe reports about `path` ([`crate::probe_media`]).
+    /// What ffprobe reports about `path`'s first video stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when ffprobe is missing, exits non-zero, or reports
+    /// a line that cannot be read.
     fn probe(&self, path: &Path) -> Result<crate::MediaProbe>;
 
     /// Run ffmpeg with `args` to write `dest`, which goes after them on
     /// ffmpeg's command line. What it `reads` decides when ffmpeg is killed
-    /// and the run fails ([`Killed`]): a run that reads one frame after
-    /// [`SHORT_STEP_LIMIT`], and one that reads the whole file once it makes
-    /// no progress for the no-progress wait ([`set_stall_wait`]) or runs
-    /// past twice the file's length. With `stop`, setting it kills ffmpeg
-    /// and fails the run as stopped.
+    /// and the run fails ([`Killed`]): a run that reads one frame after the
+    /// short-step limit of 15 seconds, and one that reads the whole file once it makes
+    /// no progress for the no-progress wait
+    /// ([`InstalledTools::with_stall_wait`]) or runs past twice the file's
+    /// length. With `stop`, setting it kills ffmpeg and fails the run as
+    /// stopped.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when ffmpeg is missing, fails, is killed, or is
+    /// stopped.
     fn transcode(
         &self,
         args: &[String],
@@ -278,22 +169,222 @@ pub(crate) trait MediaTools {
     ) -> Result<()>;
 }
 
-/// The ffmpeg and ffprobe this process finds on `PATH` or in the Tools
-/// Directory ([`ffmpeg_tools`]), looked up again on every call, so a
-/// program that arrives, moves or leaves is seen at once.
-pub(crate) struct InstalledTools;
+/// No ffmpeg or ffprobe at all: what a run is given when its caller passes
+/// none, as one that only copies its attachments does. Every lookup fails,
+/// saying no tools were given, so a caller that forgets to pass its tools to
+/// a run that converts fails at once rather than looking somewhere it was
+/// not told to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct NoTools;
 
-impl MediaTools for InstalledTools {
+impl NoTools {
+    /// The error every lookup fails with.
+    fn error() -> anyhow::Error {
+        anyhow::anyhow!("no ffmpeg or ffprobe was given to this run")
+    }
+}
+
+impl MediaTools for NoTools {
+    fn find(&self) -> Result<FfmpegTools> {
+        Err(Self::error())
+    }
+
     fn require(&self) -> Result<()> {
-        require_ffmpeg()
+        Err(Self::error())
     }
 
     fn can_probe(&self) -> bool {
-        ffprobe_available()
+        false
+    }
+
+    fn probe(&self, _path: &Path) -> Result<crate::MediaProbe> {
+        Err(Self::error())
+    }
+
+    fn transcode(
+        &self,
+        _args: &[String],
+        _dest: &Path,
+        _reads: Reads<'_>,
+        _stop: Option<&AtomicBool>,
+    ) -> Result<()> {
+        Err(Self::error())
+    }
+}
+
+/// The ffmpeg and ffprobe installed on this computer: both on `PATH`, else
+/// both in the Tools Directory the caller names, looked up again on every
+/// call, so a program that arrives, moves or leaves is seen at once.
+///
+/// The caller builds it from what it was told: the desktop app from its own
+/// Tools Directory, the server from `--tools-dir` and `[server]
+/// transcode_stall_secs`. Nothing else in the process says where to look.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstalledTools {
+    /// The Tools Directory, searched after `PATH`. The desktop app names its
+    /// own and passes it to the server it starts (`serve --tools-dir`); a
+    /// server started by hand has none.
+    tools_dir: Option<PathBuf>,
+    /// The `PATH` searched instead of the process's own. Only tests set it
+    /// ([`InstalledTools::searching`]), so a test decides what is found
+    /// whether or not the machine has ffmpeg installed.
+    search_path: Option<OsString>,
+    /// How long a conversion that reads a whole file may go without moving
+    /// forward before it is killed.
+    stall_wait: Duration,
+}
+
+impl Default for InstalledTools {
+    /// ffmpeg and ffprobe on `PATH` only, with the default no-progress wait.
+    fn default() -> Self {
+        Self::new(None)
+    }
+}
+
+impl InstalledTools {
+    /// The programs on `PATH`, else in `tools_dir`, with the default
+    /// no-progress wait ([`DEFAULT_STALL_WAIT`]).
+    #[must_use]
+    pub const fn new(tools_dir: Option<PathBuf>) -> Self {
+        Self {
+            tools_dir,
+            search_path: None,
+            stall_wait: DEFAULT_STALL_WAIT,
+        }
+    }
+
+    /// These programs, with a conversion that reads a whole file killed
+    /// once it goes `wait` without moving forward (#2898). The server passes
+    /// `[server] transcode_stall_secs`. A wait under a millisecond is taken
+    /// as one.
+    #[must_use]
+    pub fn with_stall_wait(mut self, wait: Duration) -> Self {
+        self.stall_wait = wait.max(Duration::from_millis(1));
+        self
+    }
+
+    /// These programs, searched for on `search_path` instead of the
+    /// process's `PATH`, so a test decides what is found.
+    #[cfg(any(test, feature = "testutil"))]
+    #[must_use]
+    pub fn searching(mut self, search_path: impl Into<OsString>) -> Self {
+        self.search_path = Some(search_path.into());
+        self
+    }
+
+    /// The no-progress wait ([`InstalledTools::with_stall_wait`]).
+    #[must_use]
+    pub fn stall_wait(&self) -> Duration {
+        self.stall_wait
+    }
+
+    /// Where ffmpeg is, by [`MediaTools::find`]. `None` when it is not
+    /// found, does not run, or is in a different place from ffprobe.
+    #[must_use]
+    pub fn ffmpeg_path(&self) -> Option<PathBuf> {
+        self.find().ok().and_then(|tools| tools.ffmpeg)
+    }
+
+    /// Where ffprobe is, by [`MediaTools::find`]. `None` when it is not
+    /// found, does not run, or is in a different place from ffmpeg.
+    #[must_use]
+    pub fn ffprobe_path(&self) -> Option<PathBuf> {
+        self.find().ok().and_then(|tools| tools.ffprobe)
+    }
+
+    /// True when ffmpeg and ffprobe are both on `PATH` and answer
+    /// `-version`. The desktop app downloads neither then, because a person
+    /// who installed ffmpeg chose it (`docs/adr/0019`).
+    #[must_use]
+    pub fn on_path(&self) -> bool {
+        let search_path = self.searched_path();
+        ["ffmpeg", "ffprobe"]
+            .iter()
+            .all(|name| find_on_path(name, search_path.as_deref()).is_some())
+    }
+
+    /// The `PATH` the lookup searches: the one a test put in place
+    /// ([`InstalledTools::searching`]), else the process's own.
+    fn searched_path(&self) -> Option<OsString> {
+        self.search_path
+            .clone()
+            .or_else(|| std::env::var_os("PATH"))
+    }
+
+    /// The places ffmpeg and ffprobe are looked for, as an error names them.
+    fn where_looked(&self) -> String {
+        match self.tools_dir() {
+            Some(dir) => format!("on PATH or in the Tools Directory, {}", dir.display()),
+            None => "on PATH".to_string(),
+        }
+    }
+
+    /// Where ffmpeg is, or an error naming where it was looked for.
+    fn ffmpeg(&self) -> Result<PathBuf> {
+        self.find()?
+            .ffmpeg
+            .ok_or_else(|| anyhow::anyhow!("ffmpeg not found {}", self.where_looked()))
+    }
+
+    /// Where ffprobe is, or a named "ffprobe not found…" error when it
+    /// cannot be resolved anywhere this looks — deliberately, rather than
+    /// falling back to a bare `ffprobe` command name: a bare name that then
+    /// fails to spawn surfaces as an IO error pointing at the *input file*
+    /// ("No such file or directory"), which reads as a problem with the
+    /// user's file rather than a missing tool.
+    fn ffprobe(&self) -> Result<PathBuf> {
+        self.find()?
+            .ffprobe
+            .ok_or_else(|| anyhow::anyhow!("ffprobe not found {}", self.where_looked()))
+    }
+}
+
+impl MediaTools for InstalledTools {
+    fn tools_dir(&self) -> Option<&Path> {
+        self.tools_dir.as_deref()
+    }
+
+    /// Both on `PATH`, else both in the Tools Directory ([`find_tools`]).
+    /// Every call searches again, so a program that arrives, moves or leaves
+    /// is seen at once without a restart; only the `-version` answer of a
+    /// file is kept ([`answered`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error naming both paths when one is found only on `PATH`
+    /// and the other only in the Tools Directory, because two builds of
+    /// different versions would then work on one file.
+    fn find(&self) -> Result<FfmpegTools> {
+        let search_path = self.searched_path();
+        find_tools(search_path.as_deref(), self.tools_dir())
+    }
+
+    /// Fail, naming which tool is missing and where it was looked for, when
+    /// ffmpeg or ffprobe is not found.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when either tool is missing, or when the two are in
+    /// different places ([`MediaTools::find`]).
+    fn require(&self) -> Result<()> {
+        let missing = self.find()?.missing();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        bail!(
+            "ffmpeg and ffprobe are required to convert or compress attachments. {} {} not found {}.",
+            missing.join(" and "),
+            if missing.len() == 1 { "was" } else { "were" },
+            self.where_looked()
+        )
+    }
+
+    fn can_probe(&self) -> bool {
+        self.ffprobe_path().is_some()
     }
 
     fn probe(&self, path: &Path) -> Result<crate::MediaProbe> {
-        crate::probe_media(path)
+        crate::probe::probe_media(self, path)
     }
 
     fn transcode(
@@ -309,12 +400,12 @@ impl MediaTools for InstalledTools {
         let limit = match reads {
             Reads::OneFrame => Limit::ShortStep,
             Reads::All(src) => Limit::Progress(StallWatch::new(
-                stall_wait(),
-                crate::probe::played_for(src, stop),
+                self.stall_wait,
+                crate::probe::played_for(self, src, stop),
             )),
         };
         let started = Instant::now();
-        run_ffmpeg_watched(&ffmpeg_command_line(args, dest), stop, limit, &|| {
+        self.run_ffmpeg_watched(&ffmpeg_command_line(args, dest), stop, limit, &|| {
             started.elapsed()
         })
     }
@@ -396,15 +487,6 @@ fn command_runs_watched(bin: &Path, args: &[&str], now: &dyn Fn() -> Duration) -
     matches!(waited, Ok(Ok(status)) if status.success())
 }
 
-/// Where ffmpeg and ffprobe are, by [`find_tools`] over this process's
-/// `PATH` and Tools Directory. Every call searches again, so a program that
-/// arrives, moves or leaves is seen at once without a restart; only the
-/// `-version` answer of a file is kept ([`ToolsState::answered`]).
-fn resolve_tools() -> Result<FfmpegTools> {
-    let search_path = searched_path();
-    find_tools(search_path.as_deref(), tools_dir().as_deref())
-}
-
 /// The program `name` in `dir`, `.exe` added on Windows, when it is a file
 /// that answers `-version`. The desktop app also asks this of a program in
 /// the Tools Directory, to know that the file it keeps there runs.
@@ -437,23 +519,19 @@ pub fn is_executable(path: &Path) -> bool {
 }
 
 /// True when `candidate`, as `file` describes it, answers `-version`. An
-/// answer is kept in [`ToolsState::answered`], so the same file is run once
-/// until it changes or the lookup is forgotten; a failure is not kept, so
-/// the file is run again on the next lookup. No lock is held while it runs.
+/// answer is kept in [`answered`], so the same file is run once until it
+/// changes; a failure is not kept, so the file is run again on the next
+/// lookup. No lock is held while it runs.
 fn candidate_runs(candidate: &Path, file: FileStamp) -> bool {
-    let generation = {
-        let state = tools_state().lock().expect("tools state lock");
-        if state.answered.get(candidate) == Some(&file) {
-            return true;
-        }
-        state.generation
-    };
+    if answered().lock().expect("answered lock").get(candidate) == Some(&file) {
+        return true;
+    }
     let runs = command_runs(candidate, &["-version"]);
     if runs {
-        let mut state = tools_state().lock().expect("tools state lock");
-        if state.generation == generation {
-            state.answered.insert(candidate.to_path_buf(), file);
-        }
+        answered()
+            .lock()
+            .expect("answered lock")
+            .insert(candidate.to_path_buf(), file);
     }
     runs
 }
@@ -560,36 +638,15 @@ const LOCAL_FILES_ONLY: [&str; 2] = ["-protocol_whitelist", "file,pipe"];
 /// setting (#2898).
 pub(crate) const SHORT_STEP_LIMIT: Duration = Duration::from_secs(15);
 
-/// [`DEFAULT_STALL_WAIT`] in milliseconds, which the process-wide wait
-/// starts at.
-const DEFAULT_STALL_WAIT_MILLIS: u64 = 120_000;
-
 /// How long a conversion that reads a whole file may go without moving
-/// forward before it is killed, when nothing set another ([`set_stall_wait`]).
-pub const DEFAULT_STALL_WAIT: Duration = Duration::from_millis(DEFAULT_STALL_WAIT_MILLIS);
-
-/// The no-progress wait in milliseconds, process-wide, as [`set_stall_wait`]
-/// set it.
-static STALL_WAIT_MILLIS: AtomicU64 = AtomicU64::new(DEFAULT_STALL_WAIT_MILLIS);
-
-/// Set how long a conversion that reads a whole file may go without moving
-/// forward before it is killed (#2898). The server sets it from
-/// `[server] transcode_stall_secs`; a process that sets nothing uses
-/// [`DEFAULT_STALL_WAIT`]. A wait under a millisecond is taken as one.
-pub fn set_stall_wait(wait: Duration) {
-    let millis = u64::try_from(wait.as_millis()).unwrap_or(u64::MAX).max(1);
-    STALL_WAIT_MILLIS.store(millis, Ordering::Relaxed);
-}
-
-/// The no-progress wait [`set_stall_wait`] set.
-fn stall_wait() -> Duration {
-    Duration::from_millis(STALL_WAIT_MILLIS.load(Ordering::Relaxed))
-}
+/// forward before it is killed, when the caller names no other
+/// ([`InstalledTools::with_stall_wait`]).
+pub const DEFAULT_STALL_WAIT: Duration = Duration::from_secs(120);
 
 /// How much of its source one ffmpeg run reads, which decides what ends it
 /// early ([`MediaTools::transcode`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Reads<'a> {
+pub enum Reads<'a> {
     /// A still image, or a video's first frame: a short step.
     OneFrame,
     /// Every frame or sample of the file at this path, watched for progress.
@@ -598,8 +655,8 @@ pub(crate) enum Reads<'a> {
 
 impl<'a> Reads<'a> {
     /// The file a run reads whole; `None` for a run that reads one frame.
-    #[cfg(test)]
-    pub(crate) fn source(self) -> Option<&'a Path> {
+    #[must_use]
+    pub fn source(self) -> Option<&'a Path> {
         match self {
             Self::OneFrame => None,
             Self::All(src) => Some(src),
@@ -735,21 +792,6 @@ pub(crate) fn out_time(line: &str) -> Option<Duration> {
     Duration::from_secs(whole).checked_add(Duration::try_from_secs_f64(seconds).ok()?)
 }
 
-/// Run ffmpeg as a short step, with no stop, for a test that makes its
-/// fixtures with the real ffmpeg or runs it on purpose.
-#[cfg(test)]
-pub(crate) fn run_ffmpeg(args: &[String]) -> Result<()> {
-    let started = Instant::now();
-    run_ffmpeg_watched(args, None, Limit::ShortStep, &|| started.elapsed())
-}
-
-/// [`run_ffmpeg`] with `stop`, for a test of stopping the real ffmpeg.
-#[cfg(test)]
-pub(crate) fn run_ffmpeg_until(args: &[String], stop: &AtomicBool) -> Result<()> {
-    let started = Instant::now();
-    run_ffmpeg_watched(args, Some(stop), Limit::ShortStep, &|| started.elapsed())
-}
-
 /// How long the wait for a program sleeps between looks, at most. It starts
 /// at a millisecond and doubles, so a quick run is not held up and a long
 /// one is stopped within this.
@@ -775,130 +817,153 @@ fn stop_follows(stopped: impl Fn() -> bool) -> bool {
     }
 }
 
-/// Run ffmpeg with [`QUIET_FFMPEG`], [`PROGRESS_ON_STDOUT`], `-nostdin`,
-/// [`LOCAL_FILES_ONLY`] and `args`, failing with the end of its stderr when
-/// it exits non-zero ([`FfmpegFailed`]).
-///
-/// A thread reads stderr while ffmpeg runs. [`QUIET_FFMPEG`] turns the stats
-/// line off, but nothing limits how much else ffmpeg writes: a failure can
-/// repeat an error for every frame, and an encoder such as libx265 writes to
-/// stderr whatever `-loglevel` says. A pipe nobody reads fills at 64 KiB on
-/// Linux, after which ffmpeg blocks on the write and never exits (#1178).
-/// Another thread reads the progress ffmpeg writes to stdout.
-///
-/// `limit` decides when ffmpeg is killed early, and `now` says how long it
-/// has run, so a test decides that rather than a clock. ffmpeg killed is
-/// waited for, and the run fails with [`Killed`], so a file ffmpeg never
-/// finishes cannot hold up the files after it (#2059, #2898). With `stop`,
-/// setting it kills ffmpeg, waits for it, and fails the run. A run asked
-/// for after `stop` is set never starts ffmpeg. What ffmpeg wrote before it
-/// was killed is the caller's to remove.
-pub(crate) fn run_ffmpeg_watched(
-    args: &[String],
-    stop: Option<&AtomicBool>,
-    limit: Limit,
-    now: &dyn Fn() -> Duration,
-) -> Result<()> {
-    let ffmpeg = resolve_tools()?
-        .ffmpeg
-        .ok_or_else(|| anyhow::anyhow!("ffmpeg not found {}", where_looked()))?;
-    let mut command = Command::new(ffmpeg);
-    command
-        .args(QUIET_FFMPEG)
-        .args(PROGRESS_ON_STDOUT)
-        .arg("-nostdin")
-        .args(LOCAL_FILES_ONLY)
-        .args(args)
-        .stdout(Stdio::piped());
-    let ran = run_watched(
-        command,
-        Watch {
-            program: Program::Ffmpeg,
-            stop,
-            limit,
-            now,
-        },
-    )?;
-    if ran.status.success() {
-        return Ok(());
+impl InstalledTools {
+    /// Run ffmpeg as a short step, with no stop, for a test that makes its
+    /// fixtures with the real ffmpeg or runs it on purpose.
+    #[cfg(test)]
+    pub(crate) fn run_ffmpeg(&self, args: &[String]) -> Result<()> {
+        let started = Instant::now();
+        self.run_ffmpeg_watched(args, None, Limit::ShortStep, &|| started.elapsed())
     }
-    Err(FfmpegFailed {
-        status: ran.status,
-        said: String::from_utf8_lossy(&ran.stderr_tail).trim().to_string(),
+
+    /// [`InstalledTools::run_ffmpeg`] with `stop`, for a test of stopping
+    /// the real ffmpeg.
+    #[cfg(test)]
+    pub(crate) fn run_ffmpeg_until(&self, args: &[String], stop: &AtomicBool) -> Result<()> {
+        let started = Instant::now();
+        self.run_ffmpeg_watched(args, Some(stop), Limit::ShortStep, &|| started.elapsed())
     }
-    .into())
-}
 
-/// Run ffprobe with [`LOCAL_FILES_ONLY`], `args`, then `path`, and answer
-/// what it wrote to stdout. ffprobe still running after
-/// [`SHORT_STEP_LIMIT`] is killed and the run fails with [`Killed`].
-/// With `stop`, setting it kills ffprobe and fails the run, and a run asked
-/// for after it is set never starts ffprobe.
-///
-/// # Errors
-///
-/// Returns an error when ffprobe is not found, cannot start, runs too long,
-/// is stopped, or exits non-zero, with the end of its stderr.
-pub(crate) fn run_ffprobe(
-    args: &[&str],
-    path: &Path,
-    stop: Option<&AtomicBool>,
-) -> Result<Vec<u8>> {
-    let started = Instant::now();
-    run_ffprobe_watched(args, path, stop, &|| started.elapsed()).map(|ran| ran.stdout)
-}
-
-/// [`run_ffprobe`], answering what ffprobe wrote to stderr beside what it
-/// wrote to stdout, for a run whose warnings matter.
-///
-/// # Errors
-///
-/// As [`run_ffprobe`].
-pub(crate) fn run_ffprobe_with_stderr(
-    args: &[&str],
-    path: &Path,
-    stop: Option<&AtomicBool>,
-) -> Result<(Vec<u8>, String)> {
-    let started = Instant::now();
-    let ran = run_ffprobe_watched(args, path, stop, &|| started.elapsed())?;
-    Ok((
-        ran.stdout,
-        String::from_utf8_lossy(&ran.stderr_tail).into_owned(),
-    ))
-}
-
-/// [`run_ffprobe`], with `now` saying how long ffprobe has run, so a test
-/// decides that rather than a clock.
-fn run_ffprobe_watched(
-    args: &[&str],
-    path: &Path,
-    stop: Option<&AtomicBool>,
-    now: &dyn Fn() -> Duration,
-) -> Result<Ran> {
-    let mut command = ffprobe_command()?;
-    command
-        .args(LOCAL_FILES_ONLY)
-        .args(args)
-        .arg(path)
-        .stdout(Stdio::piped());
-    let ran = run_watched(
-        command,
-        Watch {
-            program: Program::Ffprobe,
-            stop,
-            limit: Limit::ShortStep,
-            now,
-        },
-    )
-    .with_context(|| format!("run ffprobe on {}", path.display()))?;
-    if !ran.status.success() {
-        bail!(
-            "ffprobe failed on {}: {}",
-            path.display(),
-            String::from_utf8_lossy(&ran.stderr_tail).trim()
-        );
+    /// Run ffmpeg with [`QUIET_FFMPEG`], [`PROGRESS_ON_STDOUT`], `-nostdin`,
+    /// [`LOCAL_FILES_ONLY`] and `args`, failing with the end of its stderr
+    /// when it exits non-zero ([`FfmpegFailed`]).
+    ///
+    /// A thread reads stderr while ffmpeg runs. [`QUIET_FFMPEG`] turns the
+    /// stats line off, but nothing limits how much else ffmpeg writes: a
+    /// failure can repeat an error for every frame, and an encoder such as
+    /// libx265 writes to stderr whatever `-loglevel` says. A pipe nobody
+    /// reads fills at 64 KiB on Linux, after which ffmpeg blocks on the
+    /// write and never exits (#1178). Another thread reads the progress
+    /// ffmpeg writes to stdout.
+    ///
+    /// `limit` decides when ffmpeg is killed early, and `now` says how long
+    /// it has run, so a test decides that rather than a clock. ffmpeg killed
+    /// is waited for, and the run fails with [`Killed`], so a file ffmpeg
+    /// never finishes cannot hold up the files after it (#2059, #2898).
+    /// With `stop`, setting it kills ffmpeg, waits for it, and fails the
+    /// run. A run asked for after `stop` is set never starts ffmpeg. What
+    /// ffmpeg wrote before it was killed is the caller's to remove.
+    pub(crate) fn run_ffmpeg_watched(
+        &self,
+        args: &[String],
+        stop: Option<&AtomicBool>,
+        limit: Limit,
+        now: &dyn Fn() -> Duration,
+    ) -> Result<()> {
+        let mut command = Command::new(self.ffmpeg()?);
+        command
+            .args(QUIET_FFMPEG)
+            .args(PROGRESS_ON_STDOUT)
+            .arg("-nostdin")
+            .args(LOCAL_FILES_ONLY)
+            .args(args)
+            .stdout(Stdio::piped());
+        let ran = run_watched(
+            command,
+            Watch {
+                program: Program::Ffmpeg,
+                stop,
+                limit,
+                now,
+            },
+        )?;
+        if ran.status.success() {
+            return Ok(());
+        }
+        Err(FfmpegFailed {
+            status: ran.status,
+            said: String::from_utf8_lossy(&ran.stderr_tail).trim().to_string(),
+        }
+        .into())
     }
-    Ok(ran)
+
+    /// Run ffprobe with [`LOCAL_FILES_ONLY`], `args`, then `path`, and
+    /// answer what it wrote to stdout. ffprobe still running after
+    /// [`SHORT_STEP_LIMIT`] is killed and the run fails with [`Killed`].
+    /// With `stop`, setting it kills ffprobe and fails the run, and a run
+    /// asked for after it is set never starts ffprobe.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when ffprobe is not found, cannot start, runs too
+    /// long, is stopped, or exits non-zero, with the end of its stderr.
+    pub(crate) fn run_ffprobe(
+        &self,
+        args: &[&str],
+        path: &Path,
+        stop: Option<&AtomicBool>,
+    ) -> Result<Vec<u8>> {
+        let started = Instant::now();
+        self.run_ffprobe_watched(args, path, stop, &|| started.elapsed())
+            .map(|ran| ran.stdout)
+    }
+
+    /// [`InstalledTools::run_ffprobe`], answering what ffprobe wrote to
+    /// stderr beside what it wrote to stdout, for a run whose warnings
+    /// matter.
+    ///
+    /// # Errors
+    ///
+    /// As [`InstalledTools::run_ffprobe`].
+    pub(crate) fn run_ffprobe_with_stderr(
+        &self,
+        args: &[&str],
+        path: &Path,
+        stop: Option<&AtomicBool>,
+    ) -> Result<(Vec<u8>, String)> {
+        let started = Instant::now();
+        let ran = self.run_ffprobe_watched(args, path, stop, &|| started.elapsed())?;
+        Ok((
+            ran.stdout,
+            String::from_utf8_lossy(&ran.stderr_tail).into_owned(),
+        ))
+    }
+
+    /// [`InstalledTools::run_ffprobe`], with `now` saying how long ffprobe
+    /// has run, so a test decides that rather than a clock.
+    fn run_ffprobe_watched(
+        &self,
+        args: &[&str],
+        path: &Path,
+        stop: Option<&AtomicBool>,
+        now: &dyn Fn() -> Duration,
+    ) -> Result<Ran> {
+        let mut command = Command::new(self.ffprobe()?);
+        command
+            .stdin(Stdio::null())
+            .args(LOCAL_FILES_ONLY)
+            .args(args)
+            .arg(path)
+            .stdout(Stdio::piped());
+        let ran = run_watched(
+            command,
+            Watch {
+                program: Program::Ffprobe,
+                stop,
+                limit: Limit::ShortStep,
+                now,
+            },
+        )
+        .with_context(|| format!("run ffprobe on {}", path.display()))?;
+        if !ran.status.success() {
+            bail!(
+                "ffprobe failed on {}: {}",
+                path.display(),
+                String::from_utf8_lossy(&ran.stderr_tail).trim()
+            );
+        }
+        Ok(ran)
+    }
 }
 
 /// The program a [`Watch`] runs, named as the errors name it.
@@ -1281,27 +1346,6 @@ fn read_tail(mut source: impl Read, limit: usize) -> std::io::Result<Vec<u8>> {
         tail.drain(..=line_end);
     }
     Ok(tail)
-}
-
-/// Build a `Command` for ffprobe, resolved the same way as every other tool
-/// lookup in this module, for [`run_ffprobe`], the one function that runs
-/// ffprobe.
-///
-/// # Errors
-///
-/// Returns a named "ffprobe not found…" error when ffprobe cannot be
-/// resolved anywhere this module looks — deliberately, rather than falling
-/// back to a bare `ffprobe` command name: a bare name that then fails to
-/// spawn surfaces as an IO error pointing at the *input file* ("No such file
-/// or directory"), which reads as a problem with the user's file rather than
-/// a missing tool.
-pub(crate) fn ffprobe_command() -> Result<Command> {
-    let ffprobe = resolve_tools()?
-        .ffprobe
-        .ok_or_else(|| anyhow::anyhow!("ffprobe not found {}", where_looked()))?;
-    let mut cmd = Command::new(ffprobe);
-    cmd.stdin(Stdio::null());
-    Ok(cmd)
 }
 
 #[cfg(test)]

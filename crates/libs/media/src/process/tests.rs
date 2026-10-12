@@ -1,12 +1,10 @@
 use super::*;
+use crate::MediaProbe;
 use crate::fake_tools::{FakeTools, video_probe};
 use crate::kind_for_mime;
 use crate::testutil::PNG_1X1_RGB;
 use crate::testutil::{clock_from, progress_then_hang};
-use crate::tools::{
-    Limit, MediaTools, Reads, StallWatch, ffmpeg_command_line, run_ffmpeg, run_ffmpeg_watched,
-};
-use crate::{MediaProbe, probe_media};
+use crate::tools::{InstalledTools, Limit, MediaTools, Reads, StallWatch, ffmpeg_command_line};
 
 /// The one ffmpeg run `tools` made, failing the test when there were more
 /// or none.
@@ -42,7 +40,7 @@ fn compress_keeps_the_original_jpeg_when_the_re_encode_is_not_smaller() {
     // The re-encode comes out the same size: not smaller, so not kept.
     let tools = FakeTools::new().writing(vec![0; before.len()]);
 
-    let (report, remap) = process_attachment_files_with(
+    let (report, remap) = process_attachment_files(
         &tools,
         dir.path(),
         std::slice::from_ref(&jpeg),
@@ -86,7 +84,7 @@ fn transcode_file_writes_the_derivative_and_leaves_the_original_alone() {
     let dest = dir.path().join(format!("{name}.in_progress"));
     let tools = FakeTools::new().writing("the jpeg");
 
-    let outcome = transcode_file_with(
+    let outcome = transcode_file(
         &tools,
         &src,
         &dest,
@@ -136,7 +134,7 @@ fn derivative_name_is_none_for_a_file_the_mode_leaves_alone() {
 
 #[test]
 fn derivative_name_matches_what_the_media_step_actually_produces() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = crate::testutil::real_ffmpeg() else {
         return;
     };
     // The forecast and the patch both trust derivative_name. If it disagrees
@@ -147,6 +145,7 @@ fn derivative_name_matches_what_the_media_step_actually_produces() {
     let name = derivative_name(&src, MediaMode::Convert).unwrap();
     let dest = dir.path().join("out").join(&name);
     let outcome = transcode_file(
+        &tools,
         &src,
         &dest,
         MediaMode::Convert,
@@ -189,6 +188,7 @@ fn transcode_file_clears_scratch_beside_the_source_only() {
     // Clone mode returns before any ffmpeg work, which is enough to show what
     // the entry point sweeps.
     let _ = transcode_file(
+        &FakeTools::new(),
         &src,
         &dir.path().join("photo.jpg.in_progress"),
         MediaMode::Clone,
@@ -275,6 +275,7 @@ fn sweeps_leftover_msgmedia_temps() {
 fn clone_is_noop() {
     let dir = tempfile::tempdir().unwrap();
     let (report, remap) = process_attachment_files(
+        &FakeTools::new(),
         dir.path(),
         &[],
         MediaMode::Clone,
@@ -329,6 +330,7 @@ fn clone_with_log_emits_nothing() {
     let mut lines = Vec::new();
     let mut log = |line: &str| lines.push(line.to_string());
     let _ = process_attachment_files(
+        &FakeTools::new(),
         dir.path(),
         &[],
         MediaMode::Clone,
@@ -387,7 +389,9 @@ fn write_test_video_at(path: &Path, codec: &[&str], rate: u32) {
         .collect();
     args.extend(codec.iter().map(|s| (*s).to_string()));
     args.push(path_str(path));
-    run_ffmpeg(&args).expect("generate test video");
+    InstalledTools::default()
+        .run_ffmpeg(&args)
+        .expect("generate test video");
 }
 
 /// One file through media conversion with `tools`: its remap target, or
@@ -400,7 +404,7 @@ fn process_single(
     opts: &CompressOptions,
 ) -> Option<String> {
     let (report, mut remap) =
-        process_attachment_files_with(tools, dir, &[file.to_path_buf()], mode, opts, None, None)
+        process_attachment_files(tools, dir, &[file.to_path_buf()], mode, opts, None, None)
             .unwrap();
     assert_eq!(report.errors, Vec::<String>::new());
     let old_rel = rel_path(dir, file).unwrap();
@@ -412,7 +416,7 @@ fn process_single(
 
 #[test]
 fn convert_turns_a_mov_into_an_mp4_and_removes_the_original() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = crate::testutil::real_ffmpeg() else {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
@@ -422,7 +426,7 @@ fn convert_turns_a_mov_into_an_mp4_and_removes_the_original() {
     write_test_video(&mov, &["-c:v", "libx264"]);
 
     let new_rel = process_single(
-        &InstalledTools,
+        &tools,
         dir.path(),
         &mov,
         MediaMode::Convert,
@@ -431,7 +435,7 @@ fn convert_turns_a_mov_into_an_mp4_and_removes_the_original() {
 
     assert_eq!(new_rel.as_deref(), Some("attachments/clip.mp4"));
     assert!(!mov.exists(), "the .mov was left behind");
-    let probe = probe_media(&attachments.join("clip.mp4")).unwrap();
+    let probe = tools.probe(&attachments.join("clip.mp4")).unwrap();
     assert_eq!(probe.codec, "h264", "a remux keeps the stream");
 }
 
@@ -474,7 +478,7 @@ fn compress_only_remuxes_a_video_under_the_minimum_size() {
 
 #[test]
 fn compress_re_encodes_a_large_h264_video_to_hevc_at_the_capped_frame_rate() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = crate::testutil::real_ffmpeg() else {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
@@ -488,16 +492,10 @@ fn compress_re_encodes_a_large_h264_video_to_hevc_at_the_capped_frame_rate() {
         ..CompressOptions::default()
     };
 
-    let new_rel = process_single(
-        &InstalledTools,
-        dir.path(),
-        &avc,
-        MediaMode::Compress,
-        &opts,
-    );
+    let new_rel = process_single(&tools, dir.path(), &avc, MediaMode::Compress, &opts);
 
     assert_eq!(new_rel.as_deref(), Some("attachments/avc.mp4"));
-    let probe = crate::probe_media(&avc).unwrap();
+    let probe = tools.probe(&avc).unwrap();
     assert_eq!(probe.codec, "hevc", "a large H.264 video is re-encoded");
     assert_eq!(probe.fps, Some(5.0), "the frame rate is capped at max_fps");
 }
@@ -629,7 +627,7 @@ fn compress_reports_why_hevc_failed_when_h264_stands_in() {
         .probing(video_probe("h264", 30.0))
         .failing_on("libx265");
 
-    let (report, _) = process_attachment_files_with(
+    let (report, _) = process_attachment_files(
         &tools,
         dir.path(),
         &files,
@@ -655,7 +653,7 @@ fn compress_reports_no_fallback_when_hevc_works() {
     let (files, opts) = two_large_videos(dir.path());
     let tools = FakeTools::new().probing(video_probe("h264", 30.0));
 
-    let (report, _) = process_attachment_files_with(
+    let (report, _) = process_attachment_files(
         &tools,
         dir.path(),
         &files,
@@ -680,7 +678,7 @@ fn compress_reports_both_errors_when_h264_fails_after_hevc() {
         .failing_on("libx265")
         .failing_on("libx264");
 
-    let (report, _) = process_attachment_files_with(
+    let (report, _) = process_attachment_files(
         &tools,
         dir.path(),
         &files[..1],
@@ -727,7 +725,7 @@ fn transcode_file_returns_why_hevc_failed_when_h264_stands_in() {
         .failing_on("libx265");
 
     let outcome =
-        transcode_file_with(&tools, &files[0], &dest, MediaMode::Compress, &opts, None).unwrap();
+        transcode_file(&tools, &files[0], &dest, MediaMode::Compress, &opts, None).unwrap();
 
     let TranscodeOutcome::Produced {
         hevc_failure: Some(reason),
@@ -742,7 +740,7 @@ fn transcode_file_returns_why_hevc_failed_when_h264_stands_in() {
 /// Max FPS is a ceiling: it never adds frames to a slower video (#965).
 #[test]
 fn compress_keeps_a_frame_rate_under_the_maximum_and_lowers_one_over_it() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = crate::testutil::real_ffmpeg() else {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
@@ -756,60 +754,49 @@ fn compress_keeps_a_frame_rate_under_the_maximum_and_lowers_one_over_it() {
 
     let slow = attachments.join("slow.mp4");
     write_test_video_at(&slow, &["-c:v", "libx264"], 24);
-    let new_rel = process_single(
-        &InstalledTools,
-        dir.path(),
-        &slow,
-        MediaMode::Compress,
-        &opts,
-    );
+    let new_rel = process_single(&tools, dir.path(), &slow, MediaMode::Compress, &opts);
     assert_eq!(new_rel.as_deref(), Some("attachments/slow.mp4"));
-    let probe = crate::probe_media(&slow).unwrap();
+    let probe = tools.probe(&slow).unwrap();
     assert_eq!(probe.codec, "hevc", "the video was re-encoded");
     assert_eq!(probe.fps, Some(24.0), "a 24 fps video stays at 24");
 
     let fast = attachments.join("fast.mp4");
     write_test_video_at(&fast, &["-c:v", "libx264"], 60);
-    let new_rel = process_single(
-        &InstalledTools,
-        dir.path(),
-        &fast,
-        MediaMode::Compress,
-        &opts,
-    );
+    let new_rel = process_single(&tools, dir.path(), &fast, MediaMode::Compress, &opts);
     assert_eq!(new_rel.as_deref(), Some("attachments/fast.mp4"));
-    let probe = crate::probe_media(&fast).unwrap();
+    let probe = tools.probe(&fast).unwrap();
     assert_eq!(probe.codec, "hevc", "the video was re-encoded");
     assert_eq!(probe.fps, Some(30.0), "a 60 fps video comes down to 30");
 }
 
 #[test]
 fn compress_re_encodes_a_large_mp3_when_the_result_is_smaller() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = crate::testutil::real_ffmpeg() else {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
     let attachments = dir.path().join("attachments");
     fs::create_dir_all(&attachments).unwrap();
     let mp3 = attachments.join("song.mp3");
-    run_ffmpeg(&[
-        "-y".into(),
-        "-f".into(),
-        "lavfi".into(),
-        "-i".into(),
-        "sine=frequency=440:duration=10".into(),
-        "-ac".into(),
-        "2".into(),
-        "-b:a".into(),
-        "320k".into(),
-        path_str(&mp3),
-    ])
-    .expect("generate mp3 fixture");
+    tools
+        .run_ffmpeg(&[
+            "-y".into(),
+            "-f".into(),
+            "lavfi".into(),
+            "-i".into(),
+            "sine=frequency=440:duration=10".into(),
+            "-ac".into(),
+            "2".into(),
+            "-b:a".into(),
+            "320k".into(),
+            path_str(&mp3),
+        ])
+        .expect("generate mp3 fixture");
     let before = fs::metadata(&mp3).unwrap().len();
     assert!(before > MP3_COMPRESS_FLOOR, "fixture must clear the floor");
 
     let new_rel = process_single(
-        &InstalledTools,
+        &tools,
         dir.path(),
         &mp3,
         MediaMode::Compress,
@@ -823,7 +810,7 @@ fn compress_re_encodes_a_large_mp3_when_the_result_is_smaller() {
     let bytes = fs::read(&mp3).unwrap();
     assert_eq!(
         process_single(
-            &InstalledTools,
+            &tools,
             dir.path(),
             &mp3,
             MediaMode::Convert,
@@ -846,7 +833,7 @@ fn process_attachment_files_touches_only_the_listed_files() {
     let unlisted_before = fs::read(&unlisted).unwrap();
     let tools = FakeTools::new();
 
-    let (_report, remap) = process_attachment_files_with(
+    let (_report, remap) = process_attachment_files(
         &tools,
         dir.path(),
         std::slice::from_ref(&listed),
@@ -888,7 +875,7 @@ fn transcode_file_as_converts_an_extensionless_source_by_the_given_kind() {
     let dest = dir.path().join("3b1f.jpg.in_progress");
     let tools = FakeTools::new().writing("the jpeg");
 
-    let outcome = transcode_file_as_with(
+    let outcome = transcode_file_as(
         &tools,
         &src,
         Kind::Image,
@@ -903,7 +890,7 @@ fn transcode_file_as_converts_an_extensionless_source_by_the_given_kind() {
     assert_eq!(fs::read(&dest).unwrap(), b"the jpeg");
     assert!(src.exists(), "the original is never touched");
     assert_eq!(
-        transcode_file_as_with(
+        transcode_file_as(
             &tools,
             &src,
             Kind::Image,
@@ -1031,7 +1018,7 @@ fn convert_never_overwrites_a_file_that_already_has_the_target_name() {
         .collect();
     let tools = FakeTools::new().writing("a converted jpeg");
 
-    let (report, remap) = process_attachment_files_with(
+    let (report, remap) = process_attachment_files(
         &tools,
         dir.path(),
         &files,
@@ -1077,7 +1064,7 @@ fn convert_never_overwrites_a_file_that_already_has_the_target_name() {
 /// arguments through the real ffmpeg to show it accepts them.
 #[test]
 fn compress_turns_a_png_into_a_jpeg_with_the_real_ffmpeg() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = crate::testutil::real_ffmpeg() else {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
@@ -1086,6 +1073,7 @@ fn compress_turns_a_png_into_a_jpeg_with_the_real_ffmpeg() {
     let dest = dir.path().join("still.jpg.in_progress");
 
     let outcome = transcode_file(
+        &tools,
         &src,
         &dest,
         MediaMode::Compress,
@@ -1118,7 +1106,7 @@ fn compress_shrinks_large_jpegs_converts_pngs_and_leaves_gifs_and_small_jpegs() 
     let files = vec![large.clone(), png, gif.clone(), small.clone()];
     let tools = FakeTools::new().writing("a smaller jpeg");
 
-    let (report, remap) = process_attachment_files_with(
+    let (report, remap) = process_attachment_files(
         &tools,
         dir.path(),
         &files,
@@ -1231,7 +1219,7 @@ fn audio_becomes_mp3_and_a_small_mp3_is_left_alone() {
         fs::write(&mp3, b"ID3 small mp3").unwrap();
         let tools = FakeTools::new().writing("the mp3");
 
-        let (report, remap) = process_attachment_files_with(
+        let (report, remap) = process_attachment_files(
             &tools,
             dir.path(),
             &[m4a.clone(), mp3.clone()],
@@ -1257,27 +1245,28 @@ fn audio_becomes_mp3_and_a_small_mp3_is_left_alone() {
 
 #[test]
 fn convert_turns_an_m4a_into_an_mp3() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = crate::testutil::real_ffmpeg() else {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
     let attachments = dir.path().join("attachments");
     fs::create_dir_all(&attachments).unwrap();
     let m4a = attachments.join("voice.m4a");
-    run_ffmpeg(&[
-        "-y".into(),
-        "-f".into(),
-        "lavfi".into(),
-        "-i".into(),
-        "sine=frequency=440:duration=1".into(),
-        "-c:a".into(),
-        "aac".into(),
-        path_str(&m4a),
-    ])
-    .expect("generate m4a fixture");
+    tools
+        .run_ffmpeg(&[
+            "-y".into(),
+            "-f".into(),
+            "lavfi".into(),
+            "-i".into(),
+            "sine=frequency=440:duration=1".into(),
+            "-c:a".into(),
+            "aac".into(),
+            path_str(&m4a),
+        ])
+        .expect("generate m4a fixture");
 
     let new_rel = process_single(
-        &InstalledTools,
+        &tools,
         dir.path(),
         &m4a,
         MediaMode::Convert,
@@ -1418,10 +1407,11 @@ const WAIT: std::time::Duration = std::time::Duration::from_secs(120);
 /// Every run appends its arguments to `runs`. The HEVC run's clock starts
 /// once the script marks itself `started` ([`clock_from`]) when `stalls`,
 /// and never moves otherwise; the H.264 run's clock never moves.
+#[derive(Debug)]
 struct ScriptedTools {
     dir: tempfile::TempDir,
     stalls: bool,
-    _located: crate::testutil::ToolsHidden,
+    tools: InstalledTools,
 }
 
 /// How long the scripted source plays.
@@ -1445,13 +1435,8 @@ impl ScriptedTools {
         .unwrap();
         fs::set_permissions(&ffmpeg, fs::Permissions::from_mode(0o755)).unwrap();
         fs::copy(&ffmpeg, dir.path().join("ffprobe")).unwrap();
-        let located =
-            crate::testutil::locate_tools(std::ffi::OsString::new(), dir.path().to_path_buf());
-        Self {
-            dir,
-            stalls,
-            _located: located,
-        }
+        let tools = InstalledTools::new(Some(dir.path().to_path_buf())).searching("");
+        Self { dir, stalls, tools }
     }
 
     /// The arguments of every ffmpeg run so far, one line each.
@@ -1472,6 +1457,10 @@ impl ScriptedTools {
 }
 
 impl MediaTools for ScriptedTools {
+    fn find(&self) -> Result<crate::FfmpegTools> {
+        self.tools.find()
+    }
+
     fn require(&self) -> Result<()> {
         Ok(())
     }
@@ -1498,9 +1487,11 @@ impl MediaTools for ScriptedTools {
         let line = ffmpeg_command_line(args, dest);
         let started = self.dir.path().join("started");
         if self.stalls && has(args, "libx265") {
-            run_ffmpeg_watched(&line, stop, limit, &clock_from(&started))
+            self.tools
+                .run_ffmpeg_watched(&line, stop, limit, &clock_from(&started))
         } else {
-            run_ffmpeg_watched(&line, stop, limit, &|| std::time::Duration::ZERO)
+            self.tools
+                .run_ffmpeg_watched(&line, stop, limit, &|| std::time::Duration::ZERO)
         }
     }
 }
@@ -1512,7 +1503,7 @@ const HANG: &str = "touch \"$dir/started\"\nexec sleep 600";
 fn compress_scripted(tools: &ScriptedTools) -> MediaReport {
     let dir = tempfile::tempdir().unwrap();
     let (files, opts) = two_large_videos(dir.path());
-    process_attachment_files_with(
+    process_attachment_files(
         tools,
         dir.path(),
         &files[..1],
@@ -1627,7 +1618,7 @@ fn compress_does_not_try_h264_after_hevc_was_stopped() {
         })
     };
 
-    let err = transcode_file_with(
+    let err = transcode_file(
         &tools,
         &files[0],
         &dest,
@@ -1656,7 +1647,7 @@ fn a_stopped_compression_starts_neither_hevc_nor_h264() {
     let tools = FakeTools::new().probing(video_probe("h264", 30.0));
     let stop = AtomicBool::new(true);
 
-    let err = transcode_file_with(
+    let err = transcode_file(
         &tools,
         &files[0],
         &dest,
@@ -1682,7 +1673,7 @@ fn a_stopped_pass_fails_as_stopped() {
     let tools = FakeTools::new().probing(video_probe("h264", 30.0));
     let stop = AtomicBool::new(true);
 
-    let err = process_attachment_files_with(
+    let err = process_attachment_files(
         &tools,
         dir.path(),
         &files,

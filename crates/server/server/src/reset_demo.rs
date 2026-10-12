@@ -134,11 +134,12 @@ async fn dedupe_and_process_assets(
     // once instead (#1018). Whether each original is shown as it is needs no
     // ffmpeg for anything but an MP4, and the viewer opens an original only
     // when its rows say so, so that is still recorded.
-    if !media::ffmpeg_available() {
+    let tools = cfg.media_tools();
+    if !media::MediaTools::available(&tools) {
         progress.heading(
             "ffmpeg was not found, so the Demo Account's attachments get no Previews or Thumbnails",
         );
-        process_assets::decide_shown_as_is(cfg, db, account_id, None).await?;
+        process_assets::decide_shown_as_is(cfg, &tools, db, account_id, None).await?;
         return Ok((dedupe_stats, process_assets::ProcessAssetsStats::default()));
     }
     progress.heading("Making the Demo Account's Previews and Thumbnails");
@@ -149,6 +150,7 @@ async fn dedupe_and_process_assets(
     };
     let process_stats = process_assets::run(
         &opened,
+        &tools,
         &ProcessAssetsOptions {
             force: false,
             dry_run: false,

@@ -371,7 +371,7 @@ pub fn jsonl_test_run<S>(inputs: &[&Path], output: &Path, source: S) -> TestRun<
         output: OutputConfig {
             media: crate::MediaConfig {
                 mode: media::MediaMode::Disabled,
-                compress: media::CompressOptions::default(),
+                ..crate::MediaConfig::default()
             },
             ..OutputConfig::new(output, crate::OutputFormat::Jsonl)
         },

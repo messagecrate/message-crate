@@ -3,8 +3,7 @@ use std::path::Path;
 
 use super::*;
 use crate::fake_tools::{FakeTools, video_probe};
-use crate::probe_media;
-use crate::tools::run_ffmpeg;
+use crate::tools::InstalledTools;
 
 /// A stop that is never set, for a conversion that runs to its end.
 static NOT_STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -17,7 +16,9 @@ fn generate(path: &Path, source: &str, codec: &[&str]) {
         .collect();
     args.extend(codec.iter().map(|s| (*s).to_string()));
     args.push(path_str(path));
-    run_ffmpeg(&args).expect("generate a test file");
+    InstalledTools::default()
+        .run_ffmpeg(&args)
+        .expect("generate a test file");
 }
 
 fn picture(path: &Path, width: u32, height: u32) {
@@ -36,7 +37,9 @@ fn video(path: &Path, codec: &[&str]) {
 
 /// `codec,width,height` of the first video stream, as ffprobe reads it.
 fn shape(path: &Path) -> (String, u32, u32) {
-    let probe = probe_media(path).expect("ffprobe reads the file");
+    let probe = InstalledTools::default()
+        .probe(path)
+        .expect("ffprobe reads the file");
     (probe.codec, probe.width, probe.height)
 }
 
@@ -90,7 +93,11 @@ fn every_browser_shows_jpeg_png_gif_webp_and_mp3_as_they_are() {
     let dir = tempfile::tempdir().unwrap();
     for (index, (shown, bytes)) in SIGNATURES.iter().enumerate() {
         let src = write_file(dir.path(), &index.to_string(), bytes);
-        assert_eq!(browser_shows(&src, Some(shown)), Some(true), "{shown}");
+        assert_eq!(
+            browser_shows(&FakeTools::new(), &src, Some(shown)),
+            Some(true),
+            "{shown}"
+        );
     }
     let nowhere = Path::new("no/such/file");
     for preview in [
@@ -104,13 +111,13 @@ fn every_browser_shows_jpeg_png_gif_webp_and_mp3_as_they_are() {
         "audio/x-caf",
     ] {
         assert_eq!(
-            browser_shows(nowhere, Some(preview)),
+            browser_shows(&FakeTools::new(), nowhere, Some(preview)),
             Some(false),
             "{preview}"
         );
     }
     assert_eq!(
-        browser_shows(nowhere, None),
+        browser_shows(&FakeTools::new(), nowhere, None),
         Some(false),
         "a file of no known type gets a Preview"
     );
@@ -141,14 +148,18 @@ fn a_file_whose_bytes_are_not_its_declared_type_is_not_shown_as_it_is() {
         (&wave, "image/webp"),
     ] {
         assert_eq!(
-            browser_shows(src, Some(declared)),
+            browser_shows(&FakeTools::new(), src, Some(declared)),
             Some(false),
             "{} declared {declared}",
             src.display()
         );
     }
     assert_eq!(
-        browser_shows(Path::new("no/such/file"), Some("image/jpeg")),
+        browser_shows(
+            &FakeTools::new(),
+            Path::new("no/such/file"),
+            Some("image/jpeg")
+        ),
         None,
         "nothing is known about a file that cannot be read, so a caller keeps \
          what it knew before"
@@ -161,18 +172,15 @@ fn an_mp4_is_shown_as_it_is_only_with_h264_video() {
     let video = |codec: &str| video_probe(codec, 10.0);
 
     let h264 = FakeTools::new().probing(video("h264"));
-    assert_eq!(
-        browser_shows_with(&h264, clip, Some("video/mp4")),
-        Some(true)
-    );
+    assert_eq!(browser_shows(&h264, clip, Some("video/mp4")), Some(true));
     let hevc = FakeTools::new().probing(video("hevc"));
     assert_eq!(
-        browser_shows_with(&hevc, clip, Some("video/mp4")),
+        browser_shows(&hevc, clip, Some("video/mp4")),
         Some(false),
         "HEVC in an MP4 needs a Preview"
     );
     assert_eq!(
-        browser_shows_with(&FakeTools::new(), clip, Some("video/mp4")),
+        browser_shows(&FakeTools::new(), clip, Some("video/mp4")),
         Some(false),
         "an MP4 ffprobe cannot read gets a Preview"
     );
@@ -188,20 +196,17 @@ fn without_ffprobe_an_mp4_is_not_known() {
     let dir = tempfile::tempdir().unwrap();
     let jpeg = write_file(dir.path(), "photo", SIGNATURES[0].1);
 
-    assert_eq!(browser_shows_with(&tools, nowhere, Some("video/mp4")), None);
+    assert_eq!(browser_shows(&tools, nowhere, Some("video/mp4")), None);
+    assert_eq!(browser_shows(&tools, &jpeg, Some("image/jpeg")), Some(true));
     assert_eq!(
-        browser_shows_with(&tools, &jpeg, Some("image/jpeg")),
-        Some(true)
-    );
-    assert_eq!(
-        browser_shows_with(&tools, nowhere, Some("image/heic")),
+        browser_shows(&tools, nowhere, Some("image/heic")),
         Some(false)
     );
 }
 
 #[test]
 fn a_thumbnail_is_a_jpeg_scaled_to_560_pixels_on_its_long_side() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = crate::testutil::real_ffmpeg() else {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
@@ -218,7 +223,7 @@ fn a_thumbnail_is_a_jpeg_scaled_to_560_pixels_on_its_long_side() {
         (&small, (100, 50)),
     ] {
         let dest = dir.path().join("thumbnail.jpg");
-        make_thumbnail(src, &dest, &NOT_STOPPED).unwrap();
+        make_thumbnail(&tools, src, &dest, &NOT_STOPPED).unwrap();
         let (codec, width, height) = shape(&dest);
         assert_eq!(codec, "mjpeg", "{}", src.display());
         assert_eq!((width, height), want, "{}", src.display());
@@ -228,7 +233,7 @@ fn a_thumbnail_is_a_jpeg_scaled_to_560_pixels_on_its_long_side() {
 
 #[test]
 fn a_video_thumbnail_is_its_first_frame() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = crate::testutil::real_ffmpeg() else {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
@@ -236,14 +241,14 @@ fn a_video_thumbnail_is_its_first_frame() {
     video(&src, &["-c:v", "libx265", "-tag:v", "hvc1"]);
     let dest = dir.path().join("thumbnail.jpg");
 
-    make_thumbnail(&src, &dest, &NOT_STOPPED).unwrap();
+    make_thumbnail(&tools, &src, &dest, &NOT_STOPPED).unwrap();
 
     assert_eq!(shape(&dest), ("mjpeg".to_string(), 320, 240));
 }
 
 #[test]
 fn a_hevc_video_preview_is_h264_that_every_browser_plays() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = crate::testutil::real_ffmpeg() else {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
@@ -251,15 +256,15 @@ fn a_hevc_video_preview_is_h264_that_every_browser_plays() {
     video(&src, &["-c:v", "libx265", "-tag:v", "hvc1"]);
     let dest = dir.path().join("preview.mp4");
 
-    make_preview(&src, Kind::Video, &dest, &NOT_STOPPED).unwrap();
+    make_preview(&tools, &src, Kind::Video, &dest, &NOT_STOPPED).unwrap();
 
     assert_eq!(shape(&dest), ("h264".to_string(), 320, 240));
-    assert_eq!(browser_shows(&dest, Some("video/mp4")), Some(true));
+    assert_eq!(browser_shows(&tools, &dest, Some("video/mp4")), Some(true));
 }
 
 #[test]
 fn an_image_preview_is_a_jpeg_and_an_audio_preview_an_mp3() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = crate::testutil::real_ffmpeg() else {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
@@ -269,11 +274,11 @@ fn an_image_preview_is_a_jpeg_and_an_audio_preview_an_mp3() {
     generate(&audio, "sine=duration=0.5", &[]);
 
     let jpeg = dir.path().join("preview.jpg");
-    make_preview(&image, Kind::Image, &jpeg, &NOT_STOPPED).unwrap();
+    make_preview(&tools, &image, Kind::Image, &jpeg, &NOT_STOPPED).unwrap();
     assert_eq!(shape(&jpeg).0, "mjpeg");
 
     let mp3 = dir.path().join("preview.mp3");
-    make_preview(&audio, Kind::Audio, &mp3, &NOT_STOPPED).unwrap();
+    make_preview(&tools, &audio, Kind::Audio, &mp3, &NOT_STOPPED).unwrap();
     assert!(fs::read(&mp3).unwrap().len() > 100, "an MP3 was written");
 }
 
@@ -281,7 +286,7 @@ fn an_image_preview_is_a_jpeg_and_an_audio_preview_an_mp3() {
 fn a_preview_is_written_only_under_its_own_extension() {
     let dir = tempfile::tempdir().unwrap();
     let tools = FakeTools::new();
-    let err = make_preview_with(
+    let err = make_preview(
         &tools,
         &dir.path().join("clip.mov"),
         Kind::Video,
@@ -304,13 +309,13 @@ fn a_preview_of_a_video_or_audio_is_given_time_for_the_whole_original() {
     let src = dir.path().join("original");
     let tools = FakeTools::new();
     let thumbnail = dir.path().join("thumbnail.jpg");
-    make_thumbnail_with(&tools, &src, &thumbnail, &NOT_STOPPED).unwrap();
+    make_thumbnail(&tools, &src, &thumbnail, &NOT_STOPPED).unwrap();
     for (kind, dest) in [
         (Kind::Image, "preview.jpg"),
         (Kind::Video, "preview.mp4"),
         (Kind::Audio, "preview.mp3"),
     ] {
-        make_preview_with(&tools, &src, kind, &dir.path().join(dest), &NOT_STOPPED).unwrap();
+        make_preview(&tools, &src, kind, &dir.path().join(dest), &NOT_STOPPED).unwrap();
     }
 
     assert_eq!(
