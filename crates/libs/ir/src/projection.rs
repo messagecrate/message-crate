@@ -87,11 +87,11 @@ pub trait ProjectionHooks {
     fn export(&self) -> ExportMeta;
 
     /// Transport of one message (e.g. a constant `IrService::Sms`).
-    fn service(&self, msg: &PendingMessage) -> IrService;
+    fn service(&self, message: &PendingMessage) -> IrService;
 
     /// Vendor leftovers for one message. The projection applies
     /// [`IrSource::into_option`], so an empty bag becomes `None`.
-    fn source(&self, conversation: &PendingConversation, msg: &PendingMessage) -> IrSource;
+    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> IrSource;
 
     /// Normalize a raw non-owner sender handle (e.g. guard phone digits).
     /// The default keeps the handle as-is.
@@ -102,8 +102,9 @@ pub trait ProjectionHooks {
     /// What tells the message's attachments apart, for its [`MessageGuid`]
     /// and for the dedupe step ([`one_copy_per_message`]). The default uses
     /// each attachment's digest; an unknown digest counts as none.
-    fn attachment_digests(&self, msg: &PendingMessage) -> Vec<String> {
-        msg.attachments
+    fn attachment_digests(&self, message: &PendingMessage) -> Vec<String> {
+        message
+            .attachments
             .iter()
             .filter_map(|a| a.digest_sha256.clone())
             .collect()
@@ -158,8 +159,8 @@ pub trait ProjectionHooks {
 
     /// Classify one message. The default maps `is_from_me` to
     /// [`ProjectedRole::Outgoing`] / [`ProjectedRole::Incoming`].
-    fn role(&self, msg: &PendingMessage) -> ProjectedRole {
-        if msg.is_from_me {
+    fn role(&self, message: &PendingMessage) -> ProjectedRole {
+        if message.is_from_me {
             ProjectedRole::Outgoing
         } else {
             ProjectedRole::Incoming
@@ -185,8 +186,8 @@ pub trait ProjectionHooks {
 
     /// Row shape of one message. The default maps attachment-less rows to
     /// [`IrMessageKind::Sms`] and the rest to [`IrMessageKind::Mms`].
-    fn message_kind(&self, msg: &PendingMessage) -> IrMessageKind {
-        if msg.attachments.is_empty() {
+    fn message_kind(&self, message: &PendingMessage) -> IrMessageKind {
+        if message.attachments.is_empty() {
             IrMessageKind::Sms
         } else {
             IrMessageKind::Mms
@@ -222,12 +223,15 @@ pub trait ProjectionHooks {
 /// A sort key in milliseconds is the time. Otherwise a `date_ms` extra that
 /// holds a number is the time to the millisecond, and without one the time
 /// is the sort key's whole second.
-pub fn message_time(msg: &PendingMessage, unit: SortKeyUnit) -> (i64, TimePrecision) {
+pub fn message_time(message: &PendingMessage, unit: SortKeyUnit) -> (i64, TimePrecision) {
     match unit {
-        SortKeyUnit::Milliseconds => (msg.sort_key, TimePrecision::Milliseconds),
-        SortKeyUnit::Seconds => match msg.extra_str("date_ms").trim().parse::<i64>() {
+        SortKeyUnit::Milliseconds => (message.sort_key, TimePrecision::Milliseconds),
+        SortKeyUnit::Seconds => match message.extra_str("date_ms").trim().parse::<i64>() {
             Ok(ms) => (ms, TimePrecision::Milliseconds),
-            Err(_) => (msg.sort_key.saturating_mul(1000), TimePrecision::Seconds),
+            Err(_) => (
+                message.sort_key.saturating_mul(1000),
+                TimePrecision::Seconds,
+            ),
         },
     }
 }
@@ -264,15 +268,15 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
     let prepared: Vec<Prepared> = conversation
         .messages
         .iter()
-        .map(|msg| {
-            let (timestamp_unix_ms, precision) = message_time(msg, unit);
+        .map(|message| {
+            let (timestamp_unix_ms, precision) = message_time(message, unit);
             Prepared {
-                sender: (!msg.sender_identity.is_empty())
-                    .then(|| hooks.normalize_handle(&msg.sender_identity)),
+                sender: (!message.sender_identity.is_empty())
+                    .then(|| hooks.normalize_handle(&message.sender_identity)),
                 timestamp_unix_ms,
                 precision,
-                attachment_digests: hooks.attachment_digests(msg),
-                vendor_key: hooks.vendor_key(msg),
+                attachment_digests: hooks.attachment_digests(message),
+                vendor_key: hooks.vendor_key(message),
             }
         })
         .collect();
@@ -280,12 +284,12 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
         .messages
         .iter()
         .zip(&prepared)
-        .map(|(msg, p)| MessageCopy {
-            is_from_me: msg.is_from_me,
+        .map(|(message, p)| MessageCopy {
+            is_from_me: message.is_from_me,
             sender: p.sender.as_deref(),
             timestamp_unix_ms: p.timestamp_unix_ms,
             precision: p.precision,
-            text: &msg.text,
+            text: &message.text,
             attachment_digests: &p.attachment_digests,
             vendor_key: p.vendor_key.as_deref(),
         })
@@ -296,12 +300,12 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
     let mut messages = Vec::with_capacity(conversation.messages.len());
     let mut replies: Vec<(usize, PendingReply)> = Vec::new();
     let mut guid_by_reply_key: HashMap<String, Option<String>> = HashMap::new();
-    for ((msg, p), kept) in conversation.messages.iter().zip(&prepared).zip(kept) {
+    for ((message, p), kept) in conversation.messages.iter().zip(&prepared).zip(kept) {
         let Some((timestamp_unix_ms, time_precision)) = kept else {
             tally.duplicates += 1;
             continue;
         };
-        let role = hooks.role(msg);
+        let role = hooks.role(message);
         tally.messages += 1;
         match role {
             ProjectedRole::Outgoing => tally.sent += 1,
@@ -311,22 +315,22 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
 
         let guid = MessageGuid::new(&MessageIdentity {
             chat: chat_id,
-            is_from_me: msg.is_from_me,
+            is_from_me: message.is_from_me,
             sender: p.sender.as_deref(),
             timestamp_unix_ms,
-            text: &msg.text,
+            text: &message.text,
             attachment_digests: &p.attachment_digests,
             vendor_key: p.vendor_key.as_deref(),
         })
         .into_string();
-        if let Some(key) = hooks.reply_key(msg) {
+        if let Some(key) = hooks.reply_key(message) {
             // A key two kept messages share names neither of them.
             guid_by_reply_key
                 .entry(key)
                 .and_modify(|guid| *guid = None)
                 .or_insert_with(|| Some(guid.clone()));
         }
-        if let Some(reply) = hooks.reply(msg) {
+        if let Some(reply) = hooks.reply(message) {
             replies.push((messages.len(), reply));
         }
 
@@ -334,12 +338,12 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
         let (sender_identity, sender_display_name) = if outgoing {
             (owner_sender_identity.clone(), owner_sender_display.clone())
         } else {
-            (p.sender.clone(), msg.sender_display_name.clone())
+            (p.sender.clone(), message.sender_display_name.clone())
         };
-        let attachments: Vec<IrAttachment> = msg
+        let attachments: Vec<IrAttachment> = message
             .attachments
             .iter()
-            .map(|a| hooks.attachment_to_ir(a, msg))
+            .map(|a| hooks.attachment_to_ir(a, message))
             .collect();
 
         messages.push(IrMessage {
@@ -351,21 +355,21 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
             } else {
                 IrDirection::Incoming
             },
-            service: hooks.service(msg),
-            message_kind: hooks.message_kind(msg),
+            service: hooks.service(message),
+            message_kind: hooks.message_kind(message),
             sender_identity,
             sender_display_name,
             owner_identity: None,
-            subject: hooks.subject(msg),
-            text: msg.text.clone(),
+            subject: hooks.subject(message),
+            text: message.text.clone(),
             attachments,
-            reactions: hooks.reactions(msg),
-            deletion: hooks.deletion(msg),
-            edits: hooks.edits(msg),
+            reactions: hooks.reactions(message),
+            deletion: hooks.deletion(message),
+            edits: hooks.edits(message),
             // Linked below, once every guid is known.
             reply_to: None,
             imessage: None,
-            source: hooks.source(conversation, msg).into_option(),
+            source: hooks.source(conversation, message).into_option(),
         });
     }
     for (index, reply) in replies {
@@ -385,7 +389,7 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
         });
     }
 
-    let doc = ConversationDocument {
+    let document = ConversationDocument {
         schema_version: SCHEMA_VERSION,
         export,
         conversation: ConversationMeta {
@@ -402,7 +406,7 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
         messages,
         packaging_stem_suffix: hooks.packaging_stem_suffix(conversation),
     };
-    (doc, tally)
+    (document, tally)
 }
 
 /// Map of handle → display name from message extras and sender fields.
@@ -414,15 +418,19 @@ pub fn display_names_for_handles(
     normalize_handle: &dyn Fn(&str) -> String,
 ) -> HashMap<String, String> {
     let mut names = HashMap::new();
-    for msg in &conversation.messages {
-        if !msg.sender_identity.is_empty() {
-            let handle = normalize_handle(&msg.sender_identity);
-            if let Some(name) = msg.sender_display_name.as_deref().and_then(crate::trimmed) {
+    for message in &conversation.messages {
+        if !message.sender_identity.is_empty() {
+            let handle = normalize_handle(&message.sender_identity);
+            if let Some(name) = message
+                .sender_display_name
+                .as_deref()
+                .and_then(crate::trimmed)
+            {
                 names.entry(handle).or_insert_with(|| name.to_string());
             }
         }
         if !conversation.is_group {
-            let name = msg.extra_str("contact_name").trim();
+            let name = message.extra_str("contact_name").trim();
             if !name.is_empty() {
                 for peer in &conversation.participant_e164s {
                     names
@@ -554,7 +562,7 @@ mod tests {
         }
     }
 
-    fn msg(secs: i64, from_me: bool, text: &str) -> PendingMessage {
+    fn pending_message(secs: i64, from_me: bool, text: &str) -> PendingMessage {
         PendingMessage {
             sort_key: secs,
             is_from_me: from_me,
@@ -588,19 +596,19 @@ mod tests {
             IrSource::default()
         }
 
-        fn reply_key(&self, msg: &PendingMessage) -> Option<String> {
-            crate::trimmed(msg.extra_str("key")).map(str::to_string)
+        fn reply_key(&self, message: &PendingMessage) -> Option<String> {
+            crate::trimmed(message.extra_str("key")).map(str::to_string)
         }
 
-        fn reply(&self, msg: &PendingMessage) -> Option<PendingReply> {
-            msg.extra.get("quotes").map(|quoted| PendingReply {
+        fn reply(&self, message: &PendingMessage) -> Option<PendingReply> {
+            message.extra.get("quotes").map(|quoted| PendingReply {
                 quoted_key: crate::trimmed(quoted).map(str::to_string),
             })
         }
     }
 
     fn keyed(secs: i64, text: &str, key: &str, quotes: Option<&str>) -> PendingMessage {
-        let mut m = msg(secs, false, text);
+        let mut m = pending_message(secs, false, text);
         m.extra.insert("key".into(), key.into());
         if let Some(quoted) = quotes {
             m.extra.insert("quotes".into(), quoted.into());
@@ -627,9 +635,10 @@ mod tests {
             keyed(1_609_459_207, "itself", "K7", Some("K7")),
         ];
 
-        let (doc, _) = pending_to_document("+15555550122", &conversation, &KeyedHooks);
+        let (document, _) = pending_to_document("+15555550122", &conversation, &KeyedHooks);
         let reply_of = |text: &str| {
-            doc.messages
+            document
+                .messages
                 .iter()
                 .find(|m| m.text == text)
                 .unwrap()
@@ -641,7 +650,7 @@ mod tests {
         assert_eq!(
             reply_of("links"),
             Some(ReplyTo {
-                guid: Some(doc.messages[0].guid.clone()),
+                guid: Some(document.messages[0].guid.clone()),
                 part_index: None,
             })
         );
@@ -656,33 +665,38 @@ mod tests {
         let mut conversation =
             PendingConversation::new("+15555550122", false, None, vec!["+15555550122".into()]);
         conversation.messages = vec![
-            msg(1_609_459_200, false, "hi"),
-            msg(1_609_459_260, true, "yo"),
+            pending_message(1_609_459_200, false, "hi"),
+            pending_message(1_609_459_260, true, "yo"),
         ];
 
-        let (doc, tally) = pending_to_document("+15555550122", &conversation, &TestHooks);
+        let (document, tally) = pending_to_document("+15555550122", &conversation, &TestHooks);
         assert_eq!(tally.messages, 2);
         assert_eq!(tally.sent, 1);
         assert_eq!(tally.received, 1);
-        assert_eq!(doc.messages.len(), 2);
-        assert_eq!(doc.messages[0].direction, IrDirection::Incoming);
+        assert_eq!(document.messages.len(), 2);
+        assert_eq!(document.messages[0].direction, IrDirection::Incoming);
         assert_eq!(
-            doc.messages[0].sender_identity.as_deref(),
+            document.messages[0].sender_identity.as_deref(),
             Some("+15555550122")
         );
-        assert_eq!(doc.messages[1].direction, IrDirection::Outgoing);
+        assert_eq!(document.messages[1].direction, IrDirection::Outgoing);
         assert_eq!(
-            doc.messages[1].sender_identity.as_deref(),
+            document.messages[1].sender_identity.as_deref(),
             Some("+15555550100")
         );
-        assert_eq!(doc.messages[1].sender_display_name.as_deref(), Some("Me"));
         assert_eq!(
-            doc.messages[0].timestamp_unix_ms, 1_609_459_200_000,
+            document.messages[1].sender_display_name.as_deref(),
+            Some("Me")
+        );
+        assert_eq!(
+            document.messages[0].timestamp_unix_ms, 1_609_459_200_000,
             "seconds sort keys fall back to secs * 1000"
         );
-        assert_eq!(doc.conversation.participants.len(), 1);
+        assert_eq!(document.conversation.participants.len(), 1);
         assert_eq!(
-            doc.conversation.participants[0].display_name.as_deref(),
+            document.conversation.participants[0]
+                .display_name
+                .as_deref(),
             Some("Peer")
         );
     }
@@ -690,20 +704,22 @@ mod tests {
     #[test]
     fn single_peer_fallback_uses_chat_id_and_contact_name() {
         let mut conversation = PendingConversation::new("+15555550122", false, None, Vec::new());
-        let mut m = msg(1_609_459_200, false, "hi");
+        let mut m = pending_message(1_609_459_200, false, "hi");
         m.sender_identity = String::new();
         m.sender_display_name = None;
         m.extra.insert("contact_name".into(), "Bob".into());
         conversation.messages = vec![m];
 
-        let (doc, _) = pending_to_document("+15555550122", &conversation, &TestHooks);
-        assert_eq!(doc.conversation.participants.len(), 1);
+        let (document, _) = pending_to_document("+15555550122", &conversation, &TestHooks);
+        assert_eq!(document.conversation.participants.len(), 1);
         assert_eq!(
-            doc.conversation.participants[0].identity.as_deref(),
+            document.conversation.participants[0].identity.as_deref(),
             Some("+15555550122")
         );
         assert_eq!(
-            doc.conversation.participants[0].display_name.as_deref(),
+            document.conversation.participants[0]
+                .display_name
+                .as_deref(),
             Some("Bob")
         );
     }
@@ -714,15 +730,15 @@ mod tests {
     fn the_conversation_that_names_nobody_has_no_fallback_participant() {
         let mut conversation =
             PendingConversation::new(crate::NAMELESS_CHAT_ID, false, None, Vec::new());
-        let mut m = msg(1_609_459_200, true, "hi");
+        let mut m = pending_message(1_609_459_200, true, "hi");
         m.sender_identity = String::new();
         conversation.messages = vec![m];
 
-        let (doc, _) = pending_to_document(crate::NAMELESS_CHAT_ID, &conversation, &TestHooks);
+        let (document, _) = pending_to_document(crate::NAMELESS_CHAT_ID, &conversation, &TestHooks);
         assert!(
-            doc.conversation.participants.is_empty(),
+            document.conversation.participants.is_empty(),
             "{:?}",
-            doc.conversation.participants
+            document.conversation.participants
         );
     }
 
@@ -732,7 +748,7 @@ mod tests {
     #[test]
     fn a_contact_name_on_a_sent_message_names_the_peer_of_a_one_to_one_conversation() {
         let named = |name: &str| {
-            let mut m = msg(1_609_459_200, true, "hi");
+            let mut m = pending_message(1_609_459_200, true, "hi");
             m.extra.insert("contact_name".into(), name.into());
             m
         };
@@ -769,9 +785,9 @@ mod tests {
     fn prepare_conversation_sorts_prunes_and_counts() {
         let mut conversation = PendingConversation::new("x", false, None, Vec::new());
         conversation.messages = vec![
-            msg(1_609_459_260, true, "later"),
-            msg(i64::MAX, false, "unrepresentable"),
-            msg(1_609_459_200, false, "earlier"),
+            pending_message(1_609_459_260, true, "later"),
+            pending_message(i64::MAX, false, "unrepresentable"),
+            pending_message(1_609_459_200, false, "earlier"),
         ];
         let (keep, skipped) =
             prepare_conversation(&mut conversation, |a, b| a.sort_key.cmp(&b.sort_key), |k| k);
@@ -789,12 +805,12 @@ mod tests {
             TestHooks.export()
         }
 
-        fn service(&self, msg: &PendingMessage) -> IrService {
-            TestHooks.service(msg)
+        fn service(&self, message: &PendingMessage) -> IrService {
+            TestHooks.service(message)
         }
 
-        fn source(&self, conversation: &PendingConversation, msg: &PendingMessage) -> IrSource {
-            TestHooks.source(conversation, msg)
+        fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> IrSource {
+            TestHooks.source(conversation, message)
         }
 
         fn sort_key_unit(&self) -> SortKeyUnit {
@@ -814,10 +830,10 @@ mod tests {
     #[test]
     fn millisecond_sort_keys_keep_their_milliseconds() {
         let mut conversation = PendingConversation::new("+15555550122", false, None, Vec::new());
-        conversation.messages = vec![msg(1_609_459_200_123, false, "hi")];
+        conversation.messages = vec![pending_message(1_609_459_200_123, false, "hi")];
 
-        let (doc, _) = pending_to_document("+15555550122", &conversation, &MillisecondHooks);
-        assert_eq!(doc.messages[0].timestamp_unix_ms, 1_609_459_200_123);
+        let (document, _) = pending_to_document("+15555550122", &conversation, &MillisecondHooks);
+        assert_eq!(document.messages[0].timestamp_unix_ms, 1_609_459_200_123);
         // The GUID is built from the message's millisecond.
         let guid = MessageGuid::new(&MessageIdentity {
             chat: "+15555550122",
@@ -828,7 +844,7 @@ mod tests {
             attachment_digests: &[],
             vendor_key: None,
         });
-        assert_eq!(doc.messages[0].guid, guid.as_str());
+        assert_eq!(document.messages[0].guid, guid.as_str());
     }
 
     /// GO SMS Pro writes an MMS once to its XML backup, with milliseconds and
@@ -836,9 +852,9 @@ mod tests {
     /// attachments. One message comes out, with both.
     #[test]
     fn an_xml_row_and_its_pdu_file_are_one_message_with_the_attachments_and_the_milliseconds() {
-        let mut xml = msg(1_609_459_200, false, "look");
+        let mut xml = pending_message(1_609_459_200, false, "look");
         xml.extra.insert("date_ms".into(), "1609459200250".into());
-        let mut pdu = msg(1_609_459_200, false, "look");
+        let mut pdu = pending_message(1_609_459_200, false, "look");
         pdu.attachments = vec![PendingAttachment {
             rel_path: String::new(),
             content_type: "image/jpeg".into(),
@@ -850,19 +866,19 @@ mod tests {
             let mut conversation =
                 PendingConversation::new("+15555550122", false, None, Vec::new());
             conversation.messages = order;
-            let (doc, tally) = pending_to_document("+15555550122", &conversation, &TestHooks);
-            assert_eq!(doc.messages.len(), 1);
+            let (document, tally) = pending_to_document("+15555550122", &conversation, &TestHooks);
+            assert_eq!(document.messages.len(), 1);
             assert_eq!(tally.duplicates, 1);
             assert_eq!(tally.messages, 1);
-            assert_eq!(doc.messages[0].attachments.len(), 1);
-            assert_eq!(doc.messages[0].timestamp_unix_ms, 1_609_459_200_250);
+            assert_eq!(document.messages[0].attachments.len(), 1);
+            assert_eq!(document.messages[0].timestamp_unix_ms, 1_609_459_200_250);
         }
     }
 
     #[test]
     fn photo_only_messages_in_the_same_second_get_their_own_guids() {
         let photo = |digest: &str| {
-            let mut m = msg(1_609_459_200, true, "");
+            let mut m = pending_message(1_609_459_200, true, "");
             m.attachments = vec![PendingAttachment {
                 rel_path: format!("attachments/{digest}.jpg"),
                 content_type: "image/jpeg".into(),
@@ -875,22 +891,22 @@ mod tests {
         let mut conversation = PendingConversation::new("+15555550122", false, None, Vec::new());
         conversation.messages = vec![photo(&"a".repeat(64)), photo(&"b".repeat(64))];
 
-        let (doc, _) = pending_to_document("+15555550122", &conversation, &TestHooks);
-        assert_ne!(doc.messages[0].guid, doc.messages[1].guid);
+        let (document, _) = pending_to_document("+15555550122", &conversation, &TestHooks);
+        assert_ne!(document.messages[0].guid, document.messages[1].guid);
     }
 
     #[test]
     fn p1_1_two_senders_same_second_same_text_get_their_own_guids() {
         let mut conversation = PendingConversation::new("group-1", true, None, Vec::new());
-        let mut alice = msg(1_609_459_200, false, "lol");
+        let mut alice = pending_message(1_609_459_200, false, "lol");
         alice.sender_identity = "+15555550122".into();
-        let mut bob = msg(1_609_459_200, false, "lol");
+        let mut bob = pending_message(1_609_459_200, false, "lol");
         bob.sender_identity = "+15555550133".into();
         conversation.messages = vec![alice, bob];
-        let (doc, _) = pending_to_document("group-1", &conversation, &TestHooks);
-        assert_eq!(doc.messages.len(), 2);
+        let (document, _) = pending_to_document("group-1", &conversation, &TestHooks);
+        assert_eq!(document.messages.len(), 2);
         assert_ne!(
-            doc.messages[0].guid, doc.messages[1].guid,
+            document.messages[0].guid, document.messages[1].guid,
             "Alice's and Bob's 'lol' in the same second share one GUID"
         );
     }
@@ -900,9 +916,9 @@ mod tests {
     #[ignore = "run by p1_2_guid_does_not_depend_on_the_computer_time_zone"]
     fn p1_2_child_print_guid() {
         let mut conversation = PendingConversation::new("+15555550122", false, None, Vec::new());
-        conversation.messages = vec![msg(1_609_459_200, false, "hi")];
-        let (doc, _) = pending_to_document("+15555550122", &conversation, &TestHooks);
-        println!("GUID={}", doc.messages[0].guid);
+        conversation.messages = vec![pending_message(1_609_459_200, false, "hi")];
+        let (document, _) = pending_to_document("+15555550122", &conversation, &TestHooks);
+        println!("GUID={}", document.messages[0].guid);
     }
 
     #[test]

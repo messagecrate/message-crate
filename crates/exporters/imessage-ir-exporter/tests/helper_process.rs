@@ -87,13 +87,13 @@ fn exports_a_mac_chat_db_through_the_helper_process() {
     // `chat.db` records times below the second, so every message says
     // milliseconds.
     for path in &files {
-        let doc = read_conversation_jsonl(path).unwrap();
-        for msg in &doc.messages {
+        let document = read_conversation_jsonl(path).unwrap();
+        for message in &document.messages {
             assert_eq!(
-                msg.time_precision,
+                message.time_precision,
                 TimePrecision::Milliseconds,
                 "{}",
-                msg.guid
+                message.guid
             );
         }
     }
@@ -130,15 +130,15 @@ fn a_seconds_stamp_and_an_unreadable_date_are_whole_seconds() {
     let others = jsonl_files(&output)
         .iter()
         .flat_map(|path| read_conversation_jsonl(path).unwrap().messages)
-        .filter(|msg| msg.guid != "guid-3" && msg.guid != "guid-8")
+        .filter(|other| other.guid != "guid-3" && other.guid != "guid-8")
         .collect::<Vec<_>>();
     assert!(!others.is_empty());
-    for msg in others {
+    for other in others {
         assert_eq!(
-            msg.time_precision,
+            other.time_precision,
             TimePrecision::Milliseconds,
             "{}",
-            msg.guid
+            other.guid
         );
     }
 }
@@ -188,16 +188,22 @@ fn document_for(output: &Path, chat_identifier: &str) -> ConversationDocument {
     jsonl_files(output)
         .iter()
         .map(|path| read_conversation_jsonl(path).unwrap())
-        .find(|doc| doc.conversation.chat_identifier == chat_identifier)
+        .find(|document| document.conversation.chat_identifier == chat_identifier)
         .unwrap_or_else(|| panic!("no exported conversation for {chat_identifier}"))
 }
 
 /// The message with `guid`, from a document.
-fn message<'a>(doc: &'a ConversationDocument, guid: &str) -> &'a IrMessage {
-    doc.messages
+fn message<'a>(document: &'a ConversationDocument, guid: &str) -> &'a IrMessage {
+    document
+        .messages
         .iter()
         .find(|m| m.guid == guid)
-        .unwrap_or_else(|| panic!("no message {guid} in {}", doc.conversation.chat_identifier))
+        .unwrap_or_else(|| {
+            panic!(
+                "no message {guid} in {}",
+                document.conversation.chat_identifier
+            )
+        })
 }
 
 /// The owner sends from a phone in one chat and from an email in another.

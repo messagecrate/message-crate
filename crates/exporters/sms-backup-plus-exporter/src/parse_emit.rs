@@ -74,7 +74,7 @@ fn in_skipped_dir(input: &Path, path: &Path) -> bool {
 /// Per-file parse result produced in parallel; merged serially into conversations.
 pub(super) enum ParsedEmlKind {
     Flat {
-        msg: Box<ParsedMessage>,
+        message: Box<ParsedMessage>,
     },
     FlatNone,
     /// A call from the phone's call log; Message Crate has no model for a call.
@@ -124,9 +124,11 @@ pub(super) fn parse_one_eml(eml_path: &Path, rel_path: String, owner: &Owner) ->
         ParsedEmlKind::CallLog
     } else if is_flat_sms_eml(&headers) {
         match parse_flat_eml_mail(eml_path, &mail, &headers, owner) {
-            Some(mut msg) => {
-                msg.eml_path = rel_path;
-                ParsedEmlKind::Flat { msg: Box::new(msg) }
+            Some(mut message) => {
+                message.eml_path = rel_path;
+                ParsedEmlKind::Flat {
+                    message: Box::new(message),
+                }
             }
             None => ParsedEmlKind::FlatNone,
         }

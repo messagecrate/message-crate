@@ -44,8 +44,8 @@ fn export_fresh(dir: &Path, documents: Vec<ConversationDocument>) {
     )
     .unwrap();
     sink = sink.with_archive(Box::new(archive()));
-    for doc in documents {
-        sink.write_document(doc).unwrap();
+    for document in documents {
+        sink.write_document(document).unwrap();
     }
     sink.finish(&mut ExportReport::default()).unwrap();
 }
@@ -67,8 +67,8 @@ fn header(raw: &[u8], name: &str) -> Option<String> {
 /// A 1:1 SMS conversation with Sam: an incoming SMS, an outgoing SMS, an
 /// incoming MMS with a photo and an outgoing MMS with a photo, a second apart.
 fn sms_and_mms_document() -> ConversationDocument {
-    let mut doc = sample_document("incoming sms");
-    let base = doc.messages[0].clone();
+    let mut document = sample_document("incoming sms");
+    let base = document.messages[0].clone();
     let message = |i: i64, direction, kind, text: &str, attachments| {
         let mut m = base.clone();
         m.guid = format!("{i:032x}");
@@ -83,7 +83,7 @@ fn sms_and_mms_document() -> ConversationDocument {
         }
         m
     };
-    doc.messages = vec![
+    document.messages = vec![
         message(
             1,
             IrDirection::Incoming,
@@ -113,7 +113,7 @@ fn sms_and_mms_document() -> ConversationDocument {
             vec![photo(b"\xff\xd8\xffout")],
         ),
     ];
-    doc
+    document
 }
 
 #[test]
@@ -229,21 +229,25 @@ fn no_mail_claims_a_value_the_database_does_not_keep() {
 
 #[test]
 fn a_group_lists_every_peer_and_names_the_sender() {
-    let mut doc = sample_document("hello group");
-    doc.conversation.chat_identifier = "chat-group-1".into();
-    doc.conversation.conversation_type = IrConversationType::Group;
-    doc.conversation.participants.push(IrParticipant {
+    let mut document = sample_document("hello group");
+    document.conversation.chat_identifier = "chat-group-1".into();
+    document.conversation.conversation_type = IrConversationType::Group;
+    document.conversation.participants.push(IrParticipant {
         identity: Some("+15555550102".into()),
         display_name: Some("Bo".into()),
     });
-    doc.messages[0].sender_identity = Some("+15555550102".into());
-    doc.messages[0].sender_display_name = Some("Bo".into());
+    document.messages[0].sender_identity = Some("+15555550102".into());
+    document.messages[0].sender_display_name = Some("Bo".into());
     let tmp = tempfile::tempdir().unwrap();
     archive()
-        .write(tmp.path(), &[doc.clone()], &mut ExportReport::default())
+        .write(
+            tmp.path(),
+            &[document.clone()],
+            &mut ExportReport::default(),
+        )
         .unwrap();
 
-    let written = mails(tmp.path(), &message_ir_format::filename_stem(&doc));
+    let written = mails(tmp.path(), &message_ir_format::filename_stem(&document));
     let raw = &written[0].1;
     assert_eq!(
         header(raw, "X-smssync-address").unwrap(),
@@ -360,13 +364,15 @@ fn a_conversation_with_an_empty_chat_id_writes_into_a_directory_a_fresh_export_r
 /// `unknown` is, is written like any SMS, as the XML export writes it.
 #[test]
 fn a_message_of_unknown_service_and_sms_kind_is_written() {
-    let mut doc = sample_document("an sms of unknown service");
-    doc.messages[0].service = message_ir::IrService::Unknown;
-    doc.messages[0].message_kind = message_ir::IrMessageKind::Sms;
+    let mut document = sample_document("an sms of unknown service");
+    document.messages[0].service = message_ir::IrService::Unknown;
+    document.messages[0].message_kind = message_ir::IrMessageKind::Sms;
     let tmp = tempfile::tempdir().unwrap();
     let mut report = ExportReport::default();
 
-    archive().write(tmp.path(), &[doc], &mut report).unwrap();
+    archive()
+        .write(tmp.path(), &[document], &mut report)
+        .unwrap();
 
     assert_eq!(report.extra(NOT_SMS_OR_MMS_LEFT_OUT), 0);
     let directory = tmp.path().join("+15555550101");
@@ -384,18 +390,22 @@ fn a_message_of_unknown_service_and_sms_kind_is_written() {
 /// is still the owner, not a second person in a group with the peer.
 #[test]
 fn the_owner_under_another_spelling_is_not_a_peer() {
-    let mut doc = sample_document("hello");
-    doc.export.owner_identity = Some("+15555550100".into());
-    doc.conversation.participants.push(IrParticipant {
+    let mut document = sample_document("hello");
+    document.export.owner_identity = Some("+15555550100".into());
+    document.conversation.participants.push(IrParticipant {
         identity: Some("+1 (555) 555-0100".into()),
         display_name: Some("Me".into()),
     });
     let tmp = tempfile::tempdir().unwrap();
     archive()
-        .write(tmp.path(), &[doc.clone()], &mut ExportReport::default())
+        .write(
+            tmp.path(),
+            &[document.clone()],
+            &mut ExportReport::default(),
+        )
         .unwrap();
 
-    let written = mails(tmp.path(), &message_ir_format::filename_stem(&doc));
+    let written = mails(tmp.path(), &message_ir_format::filename_stem(&document));
     assert_eq!(
         header(&written[0].1, "X-smssync-address").unwrap(),
         "+15555550101"
@@ -405,15 +415,17 @@ fn the_owner_under_another_spelling_is_not_a_peer() {
 /// An attachment whose file is gone is counted, so the run's log says so.
 #[test]
 fn an_attachment_whose_file_is_gone_is_counted_as_missing() {
-    let mut doc = sample_document("a photo that is gone");
+    let mut document = sample_document("a photo that is gone");
     let mut gone = photo(b"");
     gone.bytes = None;
     gone.path = Some("attachments/gone.jpg".into());
-    doc.messages[0].attachments.push(gone);
+    document.messages[0].attachments.push(gone);
     let tmp = tempfile::tempdir().unwrap();
     let mut report = ExportReport::default();
 
-    archive().write(tmp.path(), &[doc], &mut report).unwrap();
+    archive()
+        .write(tmp.path(), &[document], &mut report)
+        .unwrap();
 
     assert_eq!(report.extra(ATTACHMENTS_MISSING), 1);
 }
@@ -424,24 +436,28 @@ fn an_attachment_whose_file_is_gone_is_counted_as_missing() {
 #[test]
 fn a_sent_group_message_names_no_one_in_its_subject() {
     let subject_of = |handles: &[&str]| {
-        let mut doc = sample_document("hello group");
-        doc.conversation.chat_identifier = "chat-group-1".into();
-        doc.conversation.conversation_type = IrConversationType::Group;
-        doc.conversation.participants = handles
+        let mut document = sample_document("hello group");
+        document.conversation.chat_identifier = "chat-group-1".into();
+        document.conversation.conversation_type = IrConversationType::Group;
+        document.conversation.participants = handles
             .iter()
             .map(|handle| IrParticipant {
                 identity: Some((*handle).into()),
                 display_name: Some("Carol".into()),
             })
             .collect();
-        doc.messages[0].direction = IrDirection::Outgoing;
-        doc.messages[0].sender_identity = None;
+        document.messages[0].direction = IrDirection::Outgoing;
+        document.messages[0].sender_identity = None;
         let tmp = tempfile::tempdir().unwrap();
         archive()
-            .write(tmp.path(), &[doc.clone()], &mut ExportReport::default())
+            .write(
+                tmp.path(),
+                &[document.clone()],
+                &mut ExportReport::default(),
+            )
             .unwrap();
         header(
-            &mails(tmp.path(), &message_ir_format::filename_stem(&doc))[0].1,
+            &mails(tmp.path(), &message_ir_format::filename_stem(&document))[0].1,
             "Subject",
         )
         .unwrap()
@@ -460,21 +476,25 @@ fn a_sent_group_message_names_no_one_in_its_subject() {
 /// for, so the chat id's `name:` prefix is written nowhere.
 #[test]
 fn a_conversation_keyed_by_a_name_is_written_with_the_bare_name() {
-    let mut doc = sample_document("hi");
-    doc.conversation.chat_identifier =
+    let mut document = sample_document("hi");
+    document.conversation.chat_identifier =
         message_ir::ConversationKey::NameOnly("Alice".into()).chat_id();
-    doc.conversation.participants = vec![IrParticipant {
+    document.conversation.participants = vec![IrParticipant {
         identity: None,
         display_name: Some("Alice".into()),
     }];
-    doc.messages[0].sender_identity = None;
-    doc.messages[0].sender_display_name = Some("Alice".into());
+    document.messages[0].sender_identity = None;
+    document.messages[0].sender_display_name = Some("Alice".into());
     let tmp = tempfile::tempdir().unwrap();
     archive()
-        .write(tmp.path(), &[doc.clone()], &mut ExportReport::default())
+        .write(
+            tmp.path(),
+            &[document.clone()],
+            &mut ExportReport::default(),
+        )
         .unwrap();
 
-    let written = mails(tmp.path(), &message_ir_format::filename_stem(&doc));
+    let written = mails(tmp.path(), &message_ir_format::filename_stem(&document));
     let raw = &written[0].1;
     assert_eq!(header(raw, "X-smssync-address").unwrap_or_default(), "");
     assert_eq!(header(raw, "Subject").unwrap(), "SMS with Alice");

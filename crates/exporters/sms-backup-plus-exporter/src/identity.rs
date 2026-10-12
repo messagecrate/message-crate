@@ -22,24 +22,24 @@ use message_ir::{ConversationKey, NAMELESS_CHAT_ID};
 /// names nobody, so it can never take a person's key. The export writes that
 /// conversation's mail with an empty `X-smssync-address` and the subject
 /// `SMS`, so a second import keys it here again (#1591).
-pub(crate) fn chat_id_for(msg: &ParsedMessage) -> String {
-    if msg.is_group() {
-        format!("chat-{}", msg.chat_key)
-    } else if msg.chat_key.is_empty() {
-        name_only_key(msg).map_or_else(|| NAMELESS_CHAT_ID.to_string(), |key| key.chat_id())
+pub(crate) fn chat_id_for(message: &ParsedMessage) -> String {
+    if message.is_group() {
+        format!("chat-{}", message.chat_key)
+    } else if message.chat_key.is_empty() {
+        name_only_key(message).map_or_else(|| NAMELESS_CHAT_ID.to_string(), |key| key.chat_id())
     } else {
-        msg.chat_key.clone()
+        message.chat_key.clone()
     }
 }
 
 /// The key of a chat with a peer the mail named and recorded no address
 /// for. `None` when the mail is a group's, records an address, or has no
 /// usable name either.
-fn name_only_key(msg: &ParsedMessage) -> Option<ConversationKey> {
-    if msg.is_group() || !msg.chat_key.is_empty() {
+fn name_only_key(message: &ParsedMessage) -> Option<ConversationKey> {
+    if message.is_group() || !message.chat_key.is_empty() {
         return None;
     }
-    let name = msg.name_alias.as_deref().map_or("", str::trim);
+    let name = message.name_alias.as_deref().map_or("", str::trim);
     if name.is_empty() {
         return None;
     }
@@ -88,8 +88,8 @@ mod tests {
 
     #[test]
     fn a_mail_that_names_nobody_is_keyed_nameless() {
-        let msg = sample_msg("", 1_609_459_200.0, false, "hi");
-        assert_eq!(chat_id_for(&msg), NAMELESS_CHAT_ID);
+        let message = sample_msg("", 1_609_459_200.0, false, "hi");
+        assert_eq!(chat_id_for(&message), NAMELESS_CHAT_ID);
     }
 
     /// A person named "unknown" is not the chat of the mails that name
@@ -135,8 +135,8 @@ mod tests {
 
     #[test]
     fn a_chat_known_only_by_name_is_keyed_on_the_trimmed_name() {
-        let mut msg = sample_msg("", 1.0, false, "hi");
-        msg.name_alias = Some("  José Ramírez \t".into());
-        assert_eq!(chat_id_for(&msg), "name:José Ramírez");
+        let mut message = sample_msg("", 1.0, false, "hi");
+        message.name_alias = Some("  José Ramírez \t".into());
+        assert_eq!(chat_id_for(&message), "name:José Ramírez");
     }
 }

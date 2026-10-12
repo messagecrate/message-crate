@@ -174,7 +174,7 @@ fn convert_with_owner(
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
         .map(|path| message_ir_format::read_conversation_json(&path).expect("read back"))
-        .map(|doc| (doc.conversation.chat_identifier.clone(), doc))
+        .map(|document| (document.conversation.chat_identifier.clone(), document))
         .collect();
     (report, documents)
 }
@@ -227,8 +227,8 @@ fn messages_keep_their_time_and_their_identity() {
 
     let (report, documents) = convert_to_documents(&json);
     assert_eq!(report.skipped_invalid_date, 1);
-    let doc = &documents["+15555550122"];
-    let times: Vec<(i64, &str)> = doc
+    let document = &documents["+15555550122"];
+    let times: Vec<(i64, &str)> = document
         .messages
         .iter()
         .map(|m| (m.timestamp_unix_ms, m.text.as_str()))
@@ -246,17 +246,19 @@ fn messages_keep_their_time_and_their_identity() {
     // WhatsApp stores milliseconds, and the seconds wtsexporter writes carry
     // them as a fraction, so every time has milliseconds, whole or not.
     assert!(
-        doc.messages
+        document
+            .messages
             .iter()
             .all(|m| m.time_precision == message_ir::TimePrecision::Milliseconds),
         "{:?}",
-        doc.messages
+        document
+            .messages
             .iter()
             .map(|m| m.time_precision)
             .collect::<Vec<_>>()
     );
     assert_ne!(
-        doc.messages[1].guid, doc.messages[2].guid,
+        document.messages[1].guid, document.messages[2].guid,
         "the same text in the same second is two messages"
     );
 }
@@ -272,24 +274,25 @@ fn senders_fixture() -> std::collections::BTreeMap<String, message_ir::Conversat
 }
 
 /// Each participant as (identity, name).
-fn roster(doc: &message_ir::ConversationDocument) -> Vec<(Option<&str>, Option<&str>)> {
-    doc.conversation
+fn roster(document: &message_ir::ConversationDocument) -> Vec<(Option<&str>, Option<&str>)> {
+    document
+        .conversation
         .participants
         .iter()
         .map(|p| (p.identity.as_deref(), p.display_name.as_deref()))
         .collect()
 }
 
-/// The message in `doc` whose text is `text`, as (sender identity, sender
+/// The message in `document` whose text is `text`, as (sender identity, sender
 /// name).
 fn sender_of<'a>(
-    doc: &'a message_ir::ConversationDocument,
+    document: &'a message_ir::ConversationDocument,
     text: &str,
 ) -> (Option<&'a str>, Option<&'a str>) {
-    let msg = message_of(doc, text);
+    let message = message_of(document, text);
     (
-        msg.sender_identity.as_deref(),
-        msg.sender_display_name.as_deref(),
+        message.sender_identity.as_deref(),
+        message.sender_display_name.as_deref(),
     )
 }
 
@@ -612,8 +615,8 @@ fn a_lid_chat_has_its_id_as_its_participant() {
     });
 
     let (_, documents) = convert_to_documents(&json);
-    let doc = &documents["123456@lid"];
-    let participants: Vec<_> = doc
+    let document = &documents["123456@lid"];
+    let participants: Vec<_> = document
         .conversation
         .participants
         .iter()
@@ -621,7 +624,7 @@ fn a_lid_chat_has_its_id_as_its_participant() {
         .collect();
     assert_eq!(participants, vec![Some("123456@lid")]);
     assert_eq!(
-        doc.messages[0].sender_identity.as_deref(),
+        document.messages[0].sender_identity.as_deref(),
         Some("123456@lid")
     );
 }
@@ -657,17 +660,18 @@ fn status_updates_and_channel_posts_are_skipped_and_counted() {
     assert_eq!(report.extra(crate::emit::SKIPPED_CHANNEL_POSTS), 1);
 }
 
-/// The guid of the message in `doc` whose text is `text`.
-fn guid_of<'a>(doc: &'a message_ir::ConversationDocument, text: &str) -> &'a str {
-    &message_of(doc, text).guid
+/// The guid of the message in `document` whose text is `text`.
+fn guid_of<'a>(document: &'a message_ir::ConversationDocument, text: &str) -> &'a str {
+    &message_of(document, text).guid
 }
 
-/// The message in `doc` whose text is `text`.
+/// The message in `document` whose text is `text`.
 fn message_of<'a>(
-    doc: &'a message_ir::ConversationDocument,
+    document: &'a message_ir::ConversationDocument,
     text: &str,
 ) -> &'a message_ir::IrMessage {
-    doc.messages
+    document
+        .messages
         .iter()
         .find(|m| m.text == text)
         .unwrap_or_else(|| panic!("no message {text:?}"))
@@ -794,7 +798,7 @@ fn reactions_are_on_the_message_under_the_reactors_id() {
 
     let group = documents
         .values()
-        .find(|doc| doc.conversation.group_title.as_deref() == Some("Family Chat"))
+        .find(|document| document.conversation.group_title.as_deref() == Some("Family Chat"))
         .expect("the group");
     assert_eq!(
         message_of(group, "Who likes this?").reactions,

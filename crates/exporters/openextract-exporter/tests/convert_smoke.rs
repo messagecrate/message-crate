@@ -130,14 +130,15 @@ fn convert_to_documents(
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
         .map(|path| message_ir_format::read_conversation_json(&path).expect("read back"))
-        .map(|doc| (doc.conversation.chat_identifier.clone(), doc))
+        .map(|document| (document.conversation.chat_identifier.clone(), document))
         .collect();
     (report, documents)
 }
 
 /// The phone handles on a conversation's roster.
-fn roster(doc: &message_ir::ConversationDocument) -> Vec<&str> {
-    doc.conversation
+fn roster(document: &message_ir::ConversationDocument) -> Vec<&str> {
+    document
+        .conversation
         .participants
         .iter()
         .filter_map(|p| p.identity.as_deref())
@@ -157,9 +158,9 @@ fn a_named_chat_is_keyed_by_its_peers_number() {
     )]);
     let keys: Vec<_> = documents.keys().map(String::as_str).collect();
     assert_eq!(keys, vec!["+15555550122"]);
-    let doc = &documents["+15555550122"];
-    assert_eq!(doc.messages.len(), 2);
-    assert_eq!(roster(doc), vec!["+15555550122"]);
+    let document = &documents["+15555550122"];
+    assert_eq!(document.messages.len(), 2);
+    assert_eq!(roster(document), vec!["+15555550122"]);
 }
 
 /// A row with no conversation named, or one named only `Me`, belongs to
@@ -255,8 +256,9 @@ fn an_attachments_csv_is_not_read_as_a_conversation() {
 
 /// The sender handle of each message in a conversation, in order; `None` for
 /// a sent message.
-fn senders(doc: &message_ir::ConversationDocument) -> Vec<Option<&str>> {
-    doc.messages
+fn senders(document: &message_ir::ConversationDocument) -> Vec<Option<&str>> {
+    document
+        .messages
         .iter()
         .map(|m| m.sender_identity.as_deref().filter(|h| !h.is_empty()))
         .collect()
@@ -277,14 +279,14 @@ fn a_per_chat_file_with_three_senders_is_one_group() {
 2020-01-01T12:03:00+00:00,Me,Great,True,False\n",
     )]);
     assert_eq!(report.conversations, 1);
-    let doc = documents.values().next().unwrap();
-    assert!(doc.conversation.chat_identifier.starts_with("group:"));
+    let document = documents.values().next().unwrap();
+    assert!(document.conversation.chat_identifier.starts_with("group:"));
     assert_eq!(
-        doc.conversation.conversation_type,
+        document.conversation.conversation_type,
         message_ir::IrConversationType::Group
     );
-    assert_eq!(roster(doc), vec!["+15555550122", "+15555550133"]);
-    let named: Vec<_> = doc
+    assert_eq!(roster(document), vec!["+15555550122", "+15555550133"]);
+    let named: Vec<_> = document
         .conversation
         .participants
         .iter()
@@ -292,18 +294,18 @@ fn a_per_chat_file_with_three_senders_is_one_group() {
         .collect();
     assert_eq!(named, vec!["Cathy Arp"]);
     assert_eq!(
-        senders(doc),
+        senders(document),
         vec![Some("+15555550122"), Some("+15555550133"), None, None]
     );
     assert_eq!(
-        doc.messages[2].sender_display_name.as_deref(),
+        document.messages[2].sender_display_name.as_deref(),
         Some("Cathy Arp")
     );
 }
 
 /// The account holder's messages that name no recipient: the guid of each.
-fn guids(doc: &message_ir::ConversationDocument) -> std::collections::BTreeSet<&str> {
-    doc.messages.iter().map(|m| m.guid.as_str()).collect()
+fn guids(document: &message_ir::ConversationDocument) -> std::collections::BTreeSet<&str> {
+    document.messages.iter().map(|m| m.guid.as_str()).collect()
 }
 
 /// A per-chat file in which only the owner sent records no recipient, so
@@ -322,11 +324,11 @@ fn files_of_only_sent_messages_go_to_unknown_person() {
     ]);
     let keys: Vec<_> = documents.keys().map(String::as_str).collect();
     assert_eq!(keys, vec!["orphaned:"]);
-    let doc = &documents["orphaned:"];
-    assert_eq!(doc.conversation.conversation_type.as_str(), "orphaned");
-    assert!(doc.conversation.participants.is_empty());
+    let document = &documents["orphaned:"];
+    assert_eq!(document.conversation.conversation_type.as_str(), "orphaned");
+    assert!(document.conversation.participants.is_empty());
     assert_eq!(report.duplicates_dropped, 0);
-    assert_eq!(guids(doc).len(), 2);
+    assert_eq!(guids(document).len(), 2);
 }
 
 /// Sent rows of the all-conversations CSV that name no recipient go to
@@ -343,14 +345,14 @@ fn sent_rows_that_name_no_recipient_are_never_collapsed() {
     let (report, documents) = convert_to_documents(&[("all_conversations.csv", csv)]);
     let keys: Vec<_> = documents.keys().map(String::as_str).collect();
     assert_eq!(keys, vec!["orphaned:"]);
-    let doc = &documents["orphaned:"];
-    assert_eq!(doc.conversation.conversation_type.as_str(), "orphaned");
-    assert!(doc.conversation.participants.is_empty());
+    let document = &documents["orphaned:"];
+    assert_eq!(document.conversation.conversation_type.as_str(), "orphaned");
+    assert!(document.conversation.participants.is_empty());
     assert_eq!(report.duplicates_dropped, 0);
-    assert_eq!(guids(doc).len(), 3);
+    assert_eq!(guids(document).len(), 3);
 
     let (_, again) = convert_to_documents(&[("all_conversations.csv", csv)]);
-    assert_eq!(guids(&again["orphaned:"]), guids(doc));
+    assert_eq!(guids(&again["orphaned:"]), guids(document));
 }
 
 /// In the all-conversations CSV a `Conversation` value two people wrote in
@@ -415,8 +417,8 @@ fn a_per_chat_groups_key_comes_from_its_rows_and_name_not_its_directory() {
     let trip_key = |documents: &std::collections::BTreeMap<String, _>| {
         documents
             .iter()
-            .find(|(_, doc): &(_, &message_ir::ConversationDocument)| {
-                doc.messages[0].text == "Trip?"
+            .find(|(_, document): &(_, &message_ir::ConversationDocument)| {
+                document.messages[0].text == "Trip?"
             })
             .map(|(key, _)| key.clone())
             .unwrap()
@@ -438,9 +440,9 @@ fn a_number_and_an_email_are_two_people() {
 2020-01-01T17:02:00+00:00,+1 555-555-0122,Jo again,False,False\n",
     )]);
     assert_eq!(documents.len(), 1);
-    let doc = documents.values().next().unwrap();
-    assert!(doc.conversation.chat_identifier.starts_with("group:"));
-    let members: Vec<_> = doc
+    let document = documents.values().next().unwrap();
+    assert!(document.conversation.chat_identifier.starts_with("group:"));
+    let members: Vec<_> = document
         .conversation
         .participants
         .iter()
@@ -451,7 +453,7 @@ fn a_number_and_an_email_are_two_people() {
         vec![Some("+15555550122"), Some("pat@example.com"),]
     );
     assert_eq!(
-        senders(doc),
+        senders(document),
         vec![
             Some("+15555550122"),
             Some("pat@example.com"),

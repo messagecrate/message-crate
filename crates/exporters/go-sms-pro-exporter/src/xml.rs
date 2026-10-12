@@ -105,7 +105,7 @@ pub(crate) fn parse_xml_str(text: &str) -> Result<(Vec<XmlMessage>, XmlParseStat
             .map(|s| s.trim().to_string())
             .unwrap_or_default();
 
-        let msg = match typ.as_str() {
+        let message = match typ.as_str() {
             "2" => {
                 let Some(other) = addr else {
                     push_bad_addr(&mut stats, &fields, &contact, &typ, &date_ms, &body);
@@ -153,7 +153,7 @@ pub(crate) fn parse_xml_str(text: &str) -> Result<(Vec<XmlMessage>, XmlParseStat
             }
         };
 
-        out.push(msg);
+        out.push(message);
     }
 
     Ok((out, stats))

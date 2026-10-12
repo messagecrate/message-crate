@@ -237,8 +237,8 @@ pub(crate) fn load_chat_store(path: &Path) -> Result<ChatStoreFile> {
 }
 
 /// True when the message's `media` field is the boolean `true`.
-fn has_media_flag(msg: &MessageJson) -> bool {
-    matches!(&msg.media, Value::Bool(true))
+fn has_media_flag(message: &MessageJson) -> bool {
+    matches!(&message.media, Value::Bool(true))
 }
 
 /// True for the text wtsexporter writes when a media file was not in the backup.
@@ -250,19 +250,19 @@ fn is_missing_media_placeholder(s: &str) -> bool {
 ///
 /// When `media` is true, wtsexporter stores the file path in `data`, so only
 /// `caption` (if any) is treated as message text.
-pub(crate) fn message_text(msg: &MessageJson) -> String {
-    if has_media_flag(msg) {
-        return msg.caption.clone().unwrap_or_default();
+pub(crate) fn message_text(message: &MessageJson) -> String {
+    if has_media_flag(message) {
+        return message.caption.clone().unwrap_or_default();
     }
-    let body = match &msg.data {
+    let body = match &message.data {
         Some(Value::String(s)) => s.clone(),
         Some(Value::Number(n)) => n.to_string(),
         Some(Value::Bool(b)) => b.to_string(),
         _ => String::new(),
     };
     if body.is_empty() {
-        msg.caption.clone().unwrap_or_default()
-    } else if let Some(cap) = msg.caption.as_deref().filter(|c| !c.is_empty()) {
+        message.caption.clone().unwrap_or_default()
+    } else if let Some(cap) = message.caption.as_deref().filter(|c| !c.is_empty()) {
         if body.contains(cap) {
             body
         } else {
@@ -284,18 +284,19 @@ pub(crate) fn key_string(value: Option<&Value>) -> Option<String> {
 
 /// True when the message quotes another: it names the quoted message by
 /// `reply` or by `reply_key_id`.
-pub(crate) fn is_reply(msg: &MessageJson) -> bool {
-    key_string(msg.reply.as_ref()).is_some() || key_string(msg.reply_key_id.as_ref()).is_some()
+pub(crate) fn is_reply(message: &MessageJson) -> bool {
+    key_string(message.reply.as_ref()).is_some()
+        || key_string(message.reply_key_id.as_ref()).is_some()
 }
 
 /// Path hint for an attachment.
 ///
 /// Upstream sets `media: true` and puts the path in `data` (Android/iOS). Older
 /// or alternate dumps may put a path string directly in `media`.
-pub(crate) fn media_path(msg: &MessageJson) -> Option<&str> {
-    match &msg.media {
+pub(crate) fn media_path(message: &MessageJson) -> Option<&str> {
+    match &message.media {
         Value::String(s) if !s.is_empty() && !is_missing_media_placeholder(s) => Some(s.as_str()),
-        Value::Bool(true) => match &msg.data {
+        Value::Bool(true) => match &message.data {
             Some(Value::String(s)) if !s.is_empty() && !is_missing_media_placeholder(s) => {
                 Some(s.as_str())
             }

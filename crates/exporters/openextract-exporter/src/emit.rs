@@ -90,13 +90,13 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
             export: &export,
             key: &pending.key,
         };
-        if let Some(mut doc) =
+        if let Some(mut document) =
             project_conversation(&chat_id, &mut pending.conversation, &hooks, &mut report)
         {
             if matches!(pending.key, Key::UnknownPerson) {
-                doc.conversation.conversation_type = IrConversationType::Orphaned;
+                document.conversation.conversation_type = IrConversationType::Orphaned;
             }
-            documents.push(doc);
+            documents.push(document);
         }
     }
 
@@ -576,16 +576,19 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
         IrService::Sms
     }
 
-    fn vendor_key(&self, msg: &PendingMessage) -> Option<String> {
-        msg.extra.get(VENDOR_KEY).cloned()
+    fn vendor_key(&self, message: &PendingMessage) -> Option<String> {
+        message.extra.get(VENDOR_KEY).cloned()
     }
 
-    fn source(&self, conversation: &PendingConversation, msg: &PendingMessage) -> IrSource {
+    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> IrSource {
         let mut fields = Map::new();
-        fields.insert("source_kind".into(), json!(msg.extra_str("source_kind")));
+        fields.insert(
+            "source_kind".into(),
+            json!(message.extra_str("source_kind")),
+        );
         fields.insert(
             "has_attachments".into(),
-            json!(msg.extra_flag("has_attachments")),
+            json!(message.extra_flag("has_attachments")),
         );
         // A group's `Conversation` value is kept as data, not as its title:
         // the export does not say whether it is a name or a list of people.

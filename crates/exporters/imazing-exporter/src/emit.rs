@@ -181,11 +181,12 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
             sources: RefCell::new(Vec::new()),
         };
         let chat_id = pending.chat_id.clone();
-        let Some(doc) = project_conversation(&chat_id, &mut pending, &hooks, &mut report) else {
+        let Some(document) = project_conversation(&chat_id, &mut pending, &hooks, &mut report)
+        else {
             continue;
         };
         sources.extend(hooks.sources.into_inner());
-        documents.push(doc);
+        documents.push(document);
     }
 
     let mut source_iter = sources.into_iter();
@@ -927,33 +928,33 @@ impl ProjectionHooks for ImazingProjection<'_> {
         self.export.clone()
     }
 
-    fn service(&self, msg: &PendingMessage) -> IrService {
-        IrService::parse(msg.extra_str("service"))
+    fn service(&self, message: &PendingMessage) -> IrService {
+        IrService::parse(message.extra_str("service"))
     }
 
-    fn role(&self, msg: &PendingMessage) -> ProjectedRole {
-        if msg.extra_flag("is_notification") {
+    fn role(&self, message: &PendingMessage) -> ProjectedRole {
+        if message.extra_flag("is_notification") {
             ProjectedRole::Notification
-        } else if msg.is_from_me {
+        } else if message.is_from_me {
             ProjectedRole::Outgoing
         } else {
             ProjectedRole::Incoming
         }
     }
 
-    fn subject(&self, msg: &PendingMessage) -> Option<String> {
-        msg.extra_opt("subject")
+    fn subject(&self, message: &PendingMessage) -> Option<String> {
+        message.extra_opt("subject")
     }
 
-    fn attachment_digests(&self, msg: &PendingMessage) -> Vec<String> {
-        attachment_digests(msg)
+    fn attachment_digests(&self, message: &PendingMessage) -> Vec<String> {
+        attachment_digests(message)
     }
 
     /// Every message is quotable by its second: a reply names the quoted
     /// message by its Message Date, and iMazing writes whole seconds. Two
     /// kept messages in one second name neither, as the projection rules.
-    fn reply_key(&self, msg: &PendingMessage) -> Option<String> {
-        Some(msg.sort_key.to_string())
+    fn reply_key(&self, message: &PendingMessage) -> Option<String> {
+        Some(message.sort_key.to_string())
     }
 
     /// A row with a `Replying to` cell is a reply, linked to the message of
@@ -963,8 +964,8 @@ impl ProjectionHooks for ImazingProjection<'_> {
     /// export's zone, as every Message Date is, so the two compare as
     /// instants. A cell with no date, or one that names a second no row of
     /// the export has, is a reply with no link.
-    fn reply(&self, msg: &PendingMessage) -> Option<PendingReply> {
-        let cell = msg.extra_opt("replying_to_cell")?;
+    fn reply(&self, message: &PendingMessage) -> Option<PendingReply> {
+        let cell = message.extra_opt("replying_to_cell")?;
         Some(PendingReply {
             quoted_key: row_marks::quoted_date(&cell)
                 .and_then(|date| parse_message_date(date, self.tz))
@@ -974,19 +975,19 @@ impl ProjectionHooks for ImazingProjection<'_> {
 
     /// The reactions the row's `Reactions` cell holds, each under its
     /// reactor's display name and no address.
-    fn reactions(&self, msg: &PendingMessage) -> Vec<Reaction> {
-        row_marks::parse_reactions(msg.extra_str("reactions_cell"))
+    fn reactions(&self, message: &PendingMessage) -> Vec<Reaction> {
+        row_marks::parse_reactions(message.extra_str("reactions_cell"))
     }
 
     /// A row with a `Deleted Date` was deleted in Messages; never Unsent.
-    fn deletion(&self, msg: &PendingMessage) -> Option<Deletion> {
-        row_marks::deletion(msg.extra_str("deleted_date_cell"))
+    fn deletion(&self, message: &PendingMessage) -> Option<Deletion> {
+        row_marks::deletion(message.extra_str("deleted_date_cell"))
     }
 
     /// A row with an `Edited Date` has one earlier version, with no text:
     /// iMazing writes the final text only.
-    fn edits(&self, msg: &PendingMessage) -> Vec<EarlierVersion> {
-        let Some(cell) = msg.extra_opt("edited_date_cell") else {
+    fn edits(&self, message: &PendingMessage) -> Vec<EarlierVersion> {
+        let Some(cell) = message.extra_opt("edited_date_cell") else {
             return Vec::new();
         };
         vec![row_marks::textless_edit(
@@ -994,18 +995,18 @@ impl ProjectionHooks for ImazingProjection<'_> {
         )]
     }
 
-    fn attachment_to_ir(&self, att: &PendingAttachment, msg: &PendingMessage) -> IrAttachment {
+    fn attachment_to_ir(&self, att: &PendingAttachment, message: &PendingMessage) -> IrAttachment {
         // A message's attachments have different names: the row's file, and
         // a Live Photo video named as the picture with the video's extension.
-        let source = msg
+        let source = message
             .attachments
             .iter()
             .position(|held| held.rel_path == att.rel_path)
-            .map(|index| msg.extra_str(&attachment_source_key(index)))
+            .map(|index| message.extra_str(&attachment_source_key(index)))
             .filter(|source| !source.is_empty())
             .map(PathBuf::from);
         self.sources.borrow_mut().push(source);
-        pending_attachment_to_ir(att, msg)
+        pending_attachment_to_ir(att, message)
     }
 
     /// A group's members come from its key, never from its chat id. A
@@ -1030,7 +1031,7 @@ impl ProjectionHooks for ImazingProjection<'_> {
         imazing_packaging_stem_suffix(pending.extra_str("source_kind"))
     }
 
-    fn source(&self, pending: &PendingConversation, msg: &PendingMessage) -> IrSource {
+    fn source(&self, pending: &PendingConversation, message: &PendingMessage) -> IrSource {
         let mut fields = Map::new();
         // Session string is not a real group title: stored as data only
         // (the document's `group_title` stays `None`, matching the previous
@@ -1053,7 +1054,7 @@ impl ProjectionHooks for ImazingProjection<'_> {
             "read_date",
             "sent_date",
         ] {
-            let val = msg.extra_str(key);
+            let val = message.extra_str(key);
             if !val.is_empty() {
                 fields.insert(key.into(), serde_json::Value::String(val.to_string()));
             }

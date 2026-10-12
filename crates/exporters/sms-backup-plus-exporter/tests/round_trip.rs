@@ -275,7 +275,7 @@ fn a_conversation_keyed_by_a_name_survives_an_export_and_a_second_import() {
     let ids = |documents: &[ConversationDocument]| -> Vec<String> {
         documents
             .iter()
-            .map(|doc| doc.conversation.chat_identifier.clone())
+            .map(|document| document.conversation.chat_identifier.clone())
             .collect()
     };
     assert_eq!(ids(&before), ["name:AMAZON"]);
@@ -296,31 +296,31 @@ fn a_name_keyed_conversation_stays_one_when_its_sender_has_another_name() {
     let staged = tempfile::tempdir().unwrap();
     let exported = tempfile::tempdir().unwrap();
     let second = tempfile::tempdir().unwrap();
-    let mut doc = message_ir::testutil::sample_document("from Mary");
-    doc.conversation.chat_identifier =
+    let mut document = message_ir::testutil::sample_document("from Mary");
+    document.conversation.chat_identifier =
         message_ir::ConversationKey::NameOnly("Mom".into()).chat_id();
-    doc.conversation.participants = vec![message_ir::IrParticipant {
+    document.conversation.participants = vec![message_ir::IrParticipant {
         identity: None,
         display_name: Some("Mom".into()),
     }];
-    doc.messages[0].direction = IrDirection::Incoming;
-    doc.messages[0].sender_identity = None;
-    doc.messages[0].sender_display_name = Some("Mary".into());
-    let mut sent = doc.messages[0].clone();
+    document.messages[0].direction = IrDirection::Incoming;
+    document.messages[0].sender_identity = None;
+    document.messages[0].sender_display_name = Some("Mary".into());
+    let mut sent = document.messages[0].clone();
     sent.guid = format!("{:032x}", 2);
     sent.timestamp_unix_ms += 1000;
     sent.direction = IrDirection::Outgoing;
     sent.sender_display_name = None;
     sent.text = "to Mom".into();
-    doc.messages.push(sent);
+    document.messages.push(sent);
 
     fs::create_dir_all(staged.path().join("attachments")).unwrap();
-    export(vec![doc], staged.path(), exported.path());
+    export(vec![document], staged.path(), exported.path());
     let after = import(exported.path(), second.path());
 
     let ids: Vec<&str> = after
         .iter()
-        .map(|doc| doc.conversation.chat_identifier.as_str())
+        .map(|imported| imported.conversation.chat_identifier.as_str())
         .collect();
     assert_eq!(ids, ["name:Mom"]);
     assert_eq!(after[0].messages.len(), 2);
@@ -346,25 +346,25 @@ fn two_way_document(
     chat_id: String,
     participants: Vec<message_ir::IrParticipant>,
 ) -> ConversationDocument {
-    let mut doc = message_ir::testutil::sample_document("received");
-    doc.conversation.chat_identifier = chat_id;
-    doc.conversation.participants = participants;
-    doc.messages[0].sender_identity = None;
-    doc.messages[0].sender_display_name = None;
-    let mut sent = doc.messages[0].clone();
+    let mut document = message_ir::testutil::sample_document("received");
+    document.conversation.chat_identifier = chat_id;
+    document.conversation.participants = participants;
+    document.messages[0].sender_identity = None;
+    document.messages[0].sender_display_name = None;
+    let mut sent = document.messages[0].clone();
     sent.guid = format!("{:032x}", 2);
     sent.timestamp_unix_ms += 1000;
     sent.direction = IrDirection::Outgoing;
     sent.text = "sent".into();
-    doc.messages.push(sent);
-    doc
+    document.messages.push(sent);
+    document
 }
 
 /// The texts of every message in `documents`, sorted.
 fn texts(documents: &[ConversationDocument]) -> Vec<String> {
     let mut texts: Vec<String> = documents
         .iter()
-        .flat_map(|doc| doc.messages.iter().map(|m| m.text.trim().to_string()))
+        .flat_map(|document| document.messages.iter().map(|m| m.text.trim().to_string()))
         .collect();
     texts.sort();
     texts
@@ -378,10 +378,10 @@ fn the_conversation_that_names_nobody_survives_an_export_and_a_second_import() {
     let staged = tempfile::tempdir().unwrap();
     let exported = tempfile::tempdir().unwrap();
     let second = tempfile::tempdir().unwrap();
-    let doc = two_way_document(message_ir::NAMELESS_CHAT_ID.to_string(), Vec::new());
+    let document = two_way_document(message_ir::NAMELESS_CHAT_ID.to_string(), Vec::new());
 
     fs::create_dir_all(staged.path().join("attachments")).unwrap();
-    export(vec![doc], staged.path(), exported.path());
+    export(vec![document], staged.path(), exported.path());
     let mail = exported_mail(exported.path());
     assert_eq!(mail.len(), 2);
     for eml in &mail {
@@ -393,7 +393,7 @@ fn the_conversation_that_names_nobody_survives_an_export_and_a_second_import() {
 
     let ids: Vec<&str> = after
         .iter()
-        .map(|doc| doc.conversation.chat_identifier.as_str())
+        .map(|imported| imported.conversation.chat_identifier.as_str())
         .collect();
     assert_eq!(ids, [message_ir::NAMELESS_CHAT_ID]);
     assert!(
@@ -419,7 +419,7 @@ fn a_name_written_like_a_number_survives_an_export_and_a_second_import() {
         let staged = tempfile::tempdir().unwrap();
         let exported = tempfile::tempdir().unwrap();
         let second = tempfile::tempdir().unwrap();
-        let doc = two_way_document(
+        let document = two_way_document(
             message_ir::ConversationKey::NameOnly(name.into()).chat_id(),
             vec![message_ir::IrParticipant {
                 identity: None,
@@ -428,12 +428,12 @@ fn a_name_written_like_a_number_survives_an_export_and_a_second_import() {
         );
 
         fs::create_dir_all(staged.path().join("attachments")).unwrap();
-        export(vec![doc], staged.path(), exported.path());
+        export(vec![document], staged.path(), exported.path());
         let after = import(exported.path(), second.path());
 
         let ids: Vec<&str> = after
             .iter()
-            .map(|doc| doc.conversation.chat_identifier.as_str())
+            .map(|imported| imported.conversation.chat_identifier.as_str())
             .collect();
         assert_eq!(ids, [format!("name:{name}")], "{name}");
         assert_eq!(texts(&after), ["received", "sent"], "{name}");

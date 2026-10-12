@@ -442,8 +442,8 @@ fn inline_and_missing_attachments_reach_a_file_backed_export() {
         result.messages
     );
 
-    let doc = read_conversation_json(&config.output.join("+15555550122.json")).unwrap();
-    let attachments = &doc.messages[0].attachments;
+    let document = read_conversation_json(&config.output.join("+15555550122.json")).unwrap();
+    let attachments = &document.messages[0].attachments;
     let path = attachments[0].path.as_deref().expect("the SVG was staged");
     assert_eq!(fs::read_to_string(config.output.join(path)).unwrap(), SVG);
     assert_eq!(attachments[1].path, None);

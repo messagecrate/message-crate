@@ -23,11 +23,11 @@ Hello from Alice\r\n",
     let headers = MailHeaders::from_mail(&mail);
     let owners = OwnerHandleSet::from_phones(&["5555550100".to_string()]).unwrap();
     let owner = Owner::new(owners, &[]).in_country(phone::country("US"));
-    let msg = parse_flat_eml_mail(&path, &mail, &headers, &owner).unwrap();
-    assert!(!msg.is_from_me);
-    assert_eq!(msg.text.trim(), "Hello from Alice");
-    assert_eq!(msg.chat_key, "+14075550107");
-    assert!((msg.timestamp_secs - 1_609_459_200.0).abs() < 0.001);
+    let message = parse_flat_eml_mail(&path, &mail, &headers, &owner).unwrap();
+    assert!(!message.is_from_me);
+    assert_eq!(message.text.trim(), "Hello from Alice");
+    assert_eq!(message.chat_key, "+14075550107");
+    assert!((message.timestamp_secs - 1_609_459_200.0).abs() < 0.001);
 }
 
 #[test]
@@ -51,15 +51,15 @@ Hello\r\n",
     let mail = mailparse::parse_mail(&bytes).unwrap();
     let headers = MailHeaders::from_mail(&mail);
     let owners = OwnerHandleSet::from_phones(&["5555550100".to_string()]).unwrap();
-    let msg = parse_flat_eml_mail(
+    let message = parse_flat_eml_mail(
         &path,
         &mail,
         &headers,
         &Owner::new(owners, &["me@example.com".into()]).in_country(phone::country("US")),
     )
     .unwrap();
-    assert_eq!(msg.chat_key, "+14075550107");
-    assert!(msg.is_from_me);
+    assert_eq!(message.chat_key, "+14075550107");
+    assert!(message.is_from_me);
 }
 
 #[test]
@@ -88,8 +88,8 @@ old message\r\n"
     let mail = mailparse::parse_mail(&bytes).unwrap();
     let headers = MailHeaders::from_mail(&mail);
     let owners = OwnerHandleSet::from_phones(&["5555550100".to_string()]).unwrap();
-    let msg = parse_flat_eml_mail(&path, &mail, &headers, &Owner::new(owners, &[])).unwrap();
-    assert!((msg.timestamp_secs - 978_307_200.0).abs() < 0.001);
+    let message = parse_flat_eml_mail(&path, &mail, &headers, &Owner::new(owners, &[])).unwrap();
+    assert!((message.timestamp_secs - 978_307_200.0).abs() < 0.001);
 }
 
 #[test]
@@ -205,11 +205,11 @@ fn mms_mail(body: &str) -> ParsedMessage {
 /// parts, and nothing is removed for repeating another.
 #[test]
 fn every_text_part_is_kept_in_order() {
-    let msg = mms_mail(
+    let message = mms_mail(
         "--b\nContent-Type: text/plain; charset=utf-8\n\nTickets attached\n--b\nContent-Type: text/plain; charset=utf-8\n\nAll three are for Friday\n--b\nContent-Type: text/plain; charset=utf-8\n\nTickets attached\n",
     );
     assert_eq!(
-        msg.text,
+        message.text,
         "Tickets attached\nAll three are for Friday\nTickets attached"
     );
 }
@@ -217,48 +217,51 @@ fn every_text_part_is_kept_in_order() {
 /// A contact card is a text type, and an attachment all the same.
 #[test]
 fn a_contact_card_is_an_attachment() {
-    let msg = mms_mail(
+    let message = mms_mail(
         "--b\nContent-Type: text/plain; charset=utf-8\n\ncard\n--b\nContent-Type: text/x-vcard; name=\"sam.vcf\"\n\nBEGIN:VCARD\nFN:Sam\nEND:VCARD\n",
     );
-    assert_eq!(msg.text, "card");
-    assert_eq!(msg.attachments.len(), 1);
-    assert_eq!(msg.attachments[0].original_name.as_deref(), Some("sam.vcf"));
-    assert!(msg.attachments[0].data.starts_with(b"BEGIN:VCARD"));
+    assert_eq!(message.text, "card");
+    assert_eq!(message.attachments.len(), 1);
+    assert_eq!(
+        message.attachments[0].original_name.as_deref(),
+        Some("sam.vcf")
+    );
+    assert!(message.attachments[0].data.starts_with(b"BEGIN:VCARD"));
 }
 
 /// A part whose bytes cannot be decoded is neither text nor an
 /// attachment, and it is counted.
 #[test]
 fn a_part_that_cannot_be_decoded_is_counted() {
-    let msg = mms_mail(
+    let message = mms_mail(
         "--b\nContent-Type: text/plain; charset=utf-8\n\nhi\n--b\nContent-Type: image/jpeg\nContent-Transfer-Encoding: base64\n\n@@@@\n",
     );
-    assert_eq!(msg.text, "hi");
-    assert!(msg.attachments.is_empty());
-    assert_eq!(msg.unreadable_parts, 1);
+    assert_eq!(message.text, "hi");
+    assert!(message.attachments.is_empty());
+    assert_eq!(message.unreadable_parts, 1);
 }
 
 /// SMS Backup+ writes `X-smssync-type` on a call-log mail too, holding
 /// the call's type, so only `X-smssync-datatype` tells a call from a text.
 #[test]
 fn a_call_log_mail_is_not_a_text_message() {
-    let msg = parse(
+    let message = parse(
         "From: x@unknown.email\nTo: me@example.com\nSubject: Call with Alice\nX-smssync-datatype: CALLLOG\nX-smssync-type: 1\nX-smssync-address: 4075550107\nX-smssync-date: 1609459200000\nContent-Type: text/plain; charset=utf-8\n\n123s (00:02:03)\n4075550107 (incoming call)\n",
         &["5555550100"],
     );
-    assert!(msg.is_none(), "{:?}", msg.map(|m| m.text));
+    assert!(message.is_none(), "{:?}", message.map(|m| m.text));
 }
 
 /// An MMS whose address list names the owner in national form
 /// (`07700900123` for `+447700900123`) is one-to-one with the other number.
 #[test]
 fn the_owner_in_national_form_is_not_a_peer() {
-    let msg = parse(
+    let message = parse(
         "From: x@unknown.email\nTo: me@example.com\nSubject: MMS with X\nX-smssync-type: 132\nX-smssync-address: 07700900123~+447700900456\nX-smssync-date: 1609459200000\nContent-Type: text/plain; charset=utf-8\n\nhi\n",
         &["+447700900123"],
     )
     .unwrap();
-    assert_eq!(msg.conversation_type, IrConversationType::Individual);
+    assert_eq!(message.conversation_type, IrConversationType::Individual);
 }
 
 fn received_from(address: &str) -> ParsedMessage {
@@ -273,44 +276,47 @@ fn received_from(address: &str) -> ParsedMessage {
 fn an_international_number_keeps_its_country() {
     // +65 5555 0100 is no one's number. The note on the `phone` crate's `mod
     // tests` says why.
-    let msg = received_from("+6555550100");
-    assert_eq!(crate::identity::chat_id_for(&msg), "+6555550100");
+    let message = received_from("+6555550100");
+    assert_eq!(crate::identity::chat_id_for(&message), "+6555550100");
 }
 
 #[test]
 fn an_email_address_and_a_sender_name_are_not_numbers() {
-    let msg = received_from("john1985@example.com");
-    assert_eq!(crate::identity::chat_id_for(&msg), "john1985@example.com");
-    let sender = msg.sender.unwrap();
+    let from_an_address = received_from("john1985@example.com");
+    assert_eq!(
+        crate::identity::chat_id_for(&from_an_address),
+        "john1985@example.com"
+    );
+    let sender = from_an_address.sender.unwrap();
     assert_eq!(sender.kind(), IdentityType::Email);
-    let msg = received_from("AMAZON");
-    assert_eq!(crate::identity::chat_id_for(&msg), "AMAZON");
-    assert_eq!(msg.sender.unwrap().kind(), IdentityType::Other);
+    let from_a_name = received_from("AMAZON");
+    assert_eq!(crate::identity::chat_id_for(&from_a_name), "AMAZON");
+    assert_eq!(from_a_name.sender.unwrap().kind(), IdentityType::Other);
 }
 
 /// The `From` of a group message names its sender inside the address,
 /// `"Bob" <+447700900789@unknown.email>`.
 #[test]
 fn a_group_sender_is_read_from_the_from_address() {
-    let msg = parse(
+    let message = parse(
         "From: \"Bob\" <+447700900789@unknown.email>\nTo: me@example.com\nSubject: MMS with X\nX-smssync-type: 132\nX-smssync-address: +447700900456~+447700900789\nX-smssync-date: 1609459200000\nContent-Type: text/plain; charset=utf-8\n\nhi\n",
         &["+447700900123"],
     )
     .unwrap();
-    assert_eq!(msg.sender.unwrap().key(), "+447700900789");
+    assert_eq!(message.sender.unwrap().key(), "+447700900789");
 }
 
 /// A digit in the display name of `From` is not part of the number:
 /// `"Mom 2" <+14075550108@unknown.email>` is from 4075550108.
 #[test]
 fn a_name_with_a_digit_does_not_move_the_sender() {
-    let msg = parse(
+    let message = parse(
         "From: \"Mom 2\" <+14075550108@unknown.email>\nTo: me@example.com\nSubject: SMS with group\nX-smssync-type: 132\nX-smssync-address: 4075550150~4075550108~5555550100\nX-smssync-date: 1609459200000\nContent-Type: text/plain; charset=utf-8\n\nhi\n",
         &["5555550100"],
     )
     .unwrap();
-    assert_eq!(msg.conversation_type, IrConversationType::Group);
-    assert_eq!(msg.sender.unwrap().key(), "+14075550108");
+    assert_eq!(message.conversation_type, IrConversationType::Group);
+    assert_eq!(message.sender.unwrap().key(), "+14075550108");
 }
 
 /// A received group message whose `From` names nobody in the group has
@@ -321,13 +327,17 @@ fn a_group_message_from_nobody_in_the_group_has_no_sender() {
         "Bob <bob@example.com>",
         "\"Carol\" <+14075550152@unknown.email>",
     ] {
-        let msg = parse(
+        let message = parse(
             &format!("From: {from}\nTo: me@example.com\nSubject: SMS with group\nX-smssync-type: 132\nX-smssync-address: 4075550150~4075550108\nX-smssync-date: 1609459200000\nContent-Type: text/plain; charset=utf-8\n\nhi\n"),
             &["5555550100"],
         )
         .unwrap();
-        assert_eq!(msg.conversation_type, IrConversationType::Group, "{from}");
-        assert!(msg.sender.is_none(), "{from}: {:?}", msg.sender);
+        assert_eq!(
+            message.conversation_type,
+            IrConversationType::Group,
+            "{from}"
+        );
+        assert!(message.sender.is_none(), "{from}: {:?}", message.sender);
     }
 }
 
@@ -335,17 +345,17 @@ fn a_group_message_from_nobody_in_the_group_has_no_sender() {
 /// and every recipient in `To`, so `To` is what makes it a group.
 #[test]
 fn a_sent_mms_to_three_recipients_is_a_group_of_three() {
-    let msg = parse(
+    let message = parse(
         "From: me@example.com\nTo: \"Alice\" <+14075550150@unknown.email>, Bob <4075550151@unknown.email>,\n \"Carol\" <carol@example.org>\nSubject: SMS with Alice\nX-smssync-type: 128\nX-smssync-address: 4075550150\nX-smssync-date: 1609459200000\nContent-Type: text/plain; charset=utf-8\n\nhi all\n",
         &["5555550100"],
     )
     .unwrap();
-    assert!(msg.is_from_me);
-    assert_eq!(msg.conversation_type, IrConversationType::Group);
-    let mut keys: Vec<&str> = msg.participants.iter().map(Handle::key).collect();
+    assert!(message.is_from_me);
+    assert_eq!(message.conversation_type, IrConversationType::Group);
+    let mut keys: Vec<&str> = message.participants.iter().map(Handle::key).collect();
     keys.sort_unstable();
     assert_eq!(keys, ["+14075550150", "+14075550151", "carol@example.org"]);
-    assert!(msg.sender.is_none());
+    assert!(message.sender.is_none());
 }
 
 /// SMS Backup+ names the sender of a received MMS in `From` and every
@@ -377,19 +387,19 @@ fn a_received_group_mms_joins_the_group_the_owner_sent_to() {
 /// peer nor the subject's name is taken for its sender.
 #[test]
 fn a_received_group_mms_that_does_not_name_the_owner_is_filed_under_its_from() {
-    let msg = parse(
+    let message = parse(
         "From: carol@example.org\nTo: <me@icloud.example>, <+14075550150@unknown.email>\nSubject: SMS with Alice\nX-smssync-type: 132\nX-smssync-address: 4075550150\nX-smssync-date: 1609459260000\nContent-Type: text/plain; charset=utf-8\n\nhello\n",
         &["5555550100"],
     )
     .unwrap();
-    assert_eq!(msg.conversation_type, IrConversationType::Individual);
-    assert_eq!(msg.chat_key, "carol@example.org");
+    assert_eq!(message.conversation_type, IrConversationType::Individual);
+    assert_eq!(message.chat_key, "carol@example.org");
     assert_eq!(
-        msg.sender.map(Handle::into_key).as_deref(),
+        message.sender.map(Handle::into_key).as_deref(),
         Some("carol@example.org")
     );
-    assert_eq!(msg.name_alias, None);
-    assert!(msg.owner_not_named);
+    assert_eq!(message.name_alias, None);
+    assert!(message.owner_not_named);
 }
 
 /// When a received group MMS names neither the owner nor, in `From`, its
@@ -397,29 +407,29 @@ fn a_received_group_mms_that_does_not_name_the_owner_is_filed_under_its_from() {
 /// sender: the peer there is not known to have written it.
 #[test]
 fn a_received_group_mms_naming_neither_the_owner_nor_a_sender_has_no_sender() {
-    let msg = parse(
+    let message = parse(
         "From: \nTo: <me@icloud.example>, <+14075550150@unknown.email>\nSubject: SMS with Alice\nX-smssync-type: 132\nX-smssync-address: 4075550150\nX-smssync-date: 1609459260000\nContent-Type: text/plain; charset=utf-8\n\nhello\n",
         &["5555550100"],
     )
     .unwrap();
-    assert_eq!(msg.conversation_type, IrConversationType::Individual);
-    assert_eq!(msg.chat_key, "+14075550150");
-    assert!(msg.sender.is_none(), "{:?}", msg.sender);
-    assert_eq!(msg.name_alias, None);
-    assert!(msg.owner_not_named);
+    assert_eq!(message.conversation_type, IrConversationType::Individual);
+    assert_eq!(message.chat_key, "+14075550150");
+    assert!(message.sender.is_none(), "{:?}", message.sender);
+    assert_eq!(message.name_alias, None);
+    assert!(message.owner_not_named);
 }
 
 /// A received MMS from one person names only the owner in `To`, so it
 /// stays one-to-one with the number in `X-smssync-address`.
 #[test]
 fn a_received_mms_from_one_person_stays_one_to_one() {
-    let msg = parse(
+    let message = parse(
         "From: \"Alice\" <alice@example.org>\nTo: <+15555550100@unknown.email>\nSubject: SMS with Alice\nX-smssync-type: 132\nX-smssync-address: 4075550150\nX-smssync-date: 1609459200000\nContent-Type: text/plain; charset=utf-8\n\nhi\n",
         &["5555550100"],
     )
     .unwrap();
-    assert_eq!(msg.conversation_type, IrConversationType::Individual);
-    assert_eq!(msg.chat_key, "+14075550150");
+    assert_eq!(message.conversation_type, IrConversationType::Individual);
+    assert_eq!(message.chat_key, "+14075550150");
 }
 
 /// A sent message with one recipient in `To` stays one-to-one with the
@@ -427,13 +437,13 @@ fn a_received_mms_from_one_person_stays_one_to_one() {
 /// email address instead of the number.
 #[test]
 fn a_sent_message_to_one_recipient_stays_one_to_one() {
-    let msg = parse(
+    let message = parse(
         "From: me@example.com\nTo: \"Alice\" <alice@example.org>\nSubject: SMS with Alice\nX-smssync-type: 2\nX-smssync-address: 4075550150\nX-smssync-date: 1609459200000\nContent-Type: text/plain; charset=utf-8\n\nhi\n",
         &["5555550100"],
     )
     .unwrap();
-    assert_eq!(msg.conversation_type, IrConversationType::Individual);
-    assert_eq!(msg.chat_key, "+14075550150");
+    assert_eq!(message.conversation_type, IrConversationType::Individual);
+    assert_eq!(message.chat_key, "+14075550150");
 }
 
 /// A received group MMS that does not name the owner is filed under the
@@ -441,17 +451,17 @@ fn a_sent_message_to_one_recipient_stays_one_to_one() {
 /// never the subject's, which names the `X-smssync-address` contact (#1547).
 #[test]
 fn a_group_mms_not_naming_the_owner_names_its_sender_from_the_from_header() {
-    let msg = parse(
+    let message = parse(
         "From: \"Carol\" <carol@example.com>\nTo: <me@icloud.example>, <+14075550150@unknown.email>\nSubject: SMS with Alice\nX-smssync-type: 132\nX-smssync-address: 4075550150\nX-smssync-date: 1609459260000\nContent-Type: text/plain; charset=utf-8\n\nhello\n",
         &["5555550100"],
     )
     .unwrap();
-    assert_eq!(msg.chat_key, "carol@example.com");
+    assert_eq!(message.chat_key, "carol@example.com");
     assert_eq!(
-        msg.sender.map(Handle::into_key).as_deref(),
+        message.sender.map(Handle::into_key).as_deref(),
         Some("carol@example.com")
     );
-    assert_eq!(msg.name_alias.as_deref(), Some("Carol"));
+    assert_eq!(message.name_alias.as_deref(), Some("Carol"));
 }
 
 /// SMS Backup+ gives a sender it has no name for their number as the
@@ -464,12 +474,12 @@ fn a_from_display_name_written_like_a_number_is_no_name() {
         "407-555-0111",
         "(407) 555-0111",
     ] {
-        let msg = parse(
+        let message = parse(
             &format!("From: \"{name}\" <carol@example.com>\nTo: <me@icloud.example>, <+14075550150@unknown.email>\nSubject: SMS with Alice\nX-smssync-type: 132\nX-smssync-address: 4075550150\nX-smssync-date: 1609459260000\nContent-Type: text/plain; charset=utf-8\n\nhello\n"),
             &["5555550100"],
         )
         .unwrap();
-        assert_eq!(msg.name_alias, None, "{name}");
+        assert_eq!(message.name_alias, None, "{name}");
     }
 }
 
@@ -479,12 +489,15 @@ fn a_from_display_name_written_like_a_number_is_no_name() {
 #[test]
 fn a_mail_with_no_address_is_keyed_by_a_name_written_like_a_number() {
     for name in ["+1 555 0101", "5550101"] {
-        let msg = parse(
+        let message = parse(
             &format!("From: me@example.com\nTo: x@unknown.email\nSubject: SMS with {name}\nX-smssync-type: 2\nX-smssync-address: \nX-smssync-date: 1609459200000\nContent-Type: text/plain; charset=utf-8\n\nhi\n"),
             &["5555550100"],
         )
         .unwrap_or_else(|| panic!("{name}: skipped"));
-        assert_eq!(crate::identity::chat_id_for(&msg), format!("name:{name}"));
+        assert_eq!(
+            crate::identity::chat_id_for(&message),
+            format!("name:{name}")
+        );
     }
 }
 
@@ -497,17 +510,21 @@ fn a_mail_that_names_nobody_is_kept_in_the_conversation_that_names_nobody() {
         ("2", "me@example.com", ""),
         ("1", "unknown@unknown.email", "me@example.com"),
     ] {
-        let msg = parse(
+        let message = parse(
             &format!("From: {from}\nTo: {to}\nSubject: SMS\nX-smssync-type: {typ}\nX-smssync-address: \nX-smssync-date: 1609459200000\nContent-Type: text/plain; charset=utf-8\n\nhi\n"),
             &["5555550100"],
         )
         .unwrap_or_else(|| panic!("type {typ}: skipped"));
         assert_eq!(
-            crate::identity::chat_id_for(&msg),
+            crate::identity::chat_id_for(&message),
             message_ir::NAMELESS_CHAT_ID
         );
-        assert!(msg.participants.is_empty(), "{:?}", msg.participants);
-        assert!(msg.sender.is_none(), "{:?}", msg.sender);
-        assert_eq!(msg.name_alias, None);
+        assert!(
+            message.participants.is_empty(),
+            "{:?}",
+            message.participants
+        );
+        assert!(message.sender.is_none(), "{:?}", message.sender);
+        assert_eq!(message.name_alias, None);
     }
 }
