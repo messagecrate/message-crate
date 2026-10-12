@@ -11,6 +11,7 @@ import { errorText } from "../lib/apiErrorMessage";
 import type { ActiveImportRun } from "../lib/importRun";
 import type { MediaToolName, StagingSummary } from "../lib/tauri";
 import { activeImportRun } from "../test/apiShapes";
+import { deferred } from "../test/deferred";
 import { mockedAuth, renderWithProviders } from "../test/providers";
 import { storedForm } from "../test/storedForm";
 import { MIB } from "../test/units";
@@ -206,17 +207,6 @@ function stagingSummary(overrides: Partial<StagingSummary> = {}): StagingSummary
     mediaMode: "copy",
     ...overrides,
   };
-}
-
-/** A promise plus the functions to settle it later, for controlling when the check resolves. */
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
 }
 
 describe("ImportScreen entering Import", () => {

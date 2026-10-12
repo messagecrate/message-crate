@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { listConversationMessages, listMessages } from "../../lib/serverApi";
 import type { Message } from "../../lib/types";
 import { message as baseMessage } from "../../test/apiShapes";
+import { deferred as settleLater } from "../../test/deferred";
 import { mockedAuth, Providers } from "../../test/providers";
 import { conversationYears, useConversationMessages } from "./useConversationMessages";
 
@@ -40,17 +41,12 @@ function message(id: number): Message {
   });
 }
 
-/** A promise plus the handles that settle it, so a test can control landing order. */
+/** A request's answer that the test settles, so a test can control landing order. */
 function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
+  const answer = settleLater<T>();
   // Nothing else awaits this promise once the request is superseded.
-  promise.catch(() => {});
-  return { promise, resolve, reject };
+  answer.promise.catch(() => {});
+  return answer;
 }
 
 /** What `GET /v1/messages` says of a Find search: newest first, as Find asks. */

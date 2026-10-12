@@ -26,6 +26,7 @@ import { ApiError, getAccountId, getBaseUrl, getToken } from "../../lib/api";
 import { useAuth } from "../../lib/authContext";
 import { isUploadRunning } from "../../lib/runningUpload";
 import type { DesktopJobResult, UploadFinishedReport } from "../../lib/tauri";
+import { deferred } from "../../test/deferred";
 import { advanceTimersAndSettle, lendTestingLibraryTheFakeClock } from "../../test/fakeTimers";
 import { importForm } from "../../test/importForm";
 import { setupUser } from "../../test/user";
@@ -33,15 +34,6 @@ import { createImportRunStore, initialImportRunState } from "./importRunStore";
 import type { ImportRunDeps } from "./run/context";
 import { createImportRunService, type ImportRunService } from "./run/service";
 import { useImportJob } from "./useImportJob";
-
-/** A promise and the function that settles it, for a fake to tell the test it was reached. */
-function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => void } {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((settle) => {
-    resolve = settle;
-  });
-  return { promise, resolve };
-}
 
 /** Every call that matters to the order, in the order it was made. */
 const calls: string[] = [];
@@ -63,12 +55,18 @@ let cancelAsked = deferred();
 /** Settled once logout has told the server to end the session. */
 let sessionRevoked = deferred();
 
+/**
+ * Deleting a run directory, which `AuthProvider` asks through `lib/tauri` for
+ * a deleted account's runs, and the run asks through its own dependencies.
+ */
+async function fakeDeleteRunDir({ run_dir }: { run_dir: string }): Promise<void> {
+  calls.push(`deleted ${run_dir}`);
+  await deleteRunDirMock(run_dir);
+}
+
 vi.mock("../../lib/tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/tauri")>()),
-  invokeDeleteRunDir: async ({ run_dir }: { run_dir: string }) => {
-    calls.push(`deleted ${run_dir}`);
-    await deleteRunDirMock(run_dir);
-  },
+  invokeDeleteRunDir: fakeDeleteRunDir,
 }));
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
@@ -111,10 +109,7 @@ function fakeDeps(): ImportRunDeps {
       },
       onDesktopJobEvents: notCalled("onDesktopJobEvents"),
       invokeCreateRunDir: notCalled("invokeCreateRunDir"),
-      invokeDeleteRunDir: async ({ run_dir }) => {
-        calls.push(`deleted ${run_dir}`);
-        await deleteRunDirMock(run_dir);
-      },
+      invokeDeleteRunDir: fakeDeleteRunDir,
       invokeExtract: notCalled("invokeExtract"),
       invokeImessageBackupIdentities: notCalled("invokeImessageBackupIdentities"),
       invokePathStat: notCalled("invokePathStat"),

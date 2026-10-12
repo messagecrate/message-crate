@@ -45,8 +45,9 @@ const SNAPSHOT_FIELDS = [
 /**
  * The record `formSnapshot` writes, field by field: the form fields in
  * `SNAPSHOT_FIELDS`, and whether a backup password or WhatsApp key was
- * given. Tests write their stored snapshots to this type, so a field added
- * to `SNAPSHOT_FIELDS` fails to compile until each of them gives it a value.
+ * given. `formSnapshot` returns it, and tests write their stored snapshots
+ * to it, so a field added to the record fails to compile until each of them
+ * gives it a value.
  */
 export type StoredFormSnapshot = Pick<ImportJobFormValues, (typeof SNAPSHOT_FIELDS)[number]> & {
   backupPasswordGiven: boolean;
@@ -66,15 +67,19 @@ export type StoredFormSnapshot = Pick<ImportJobFormValues, (typeof SNAPSHOT_FIEL
  * source's descriptor says: the iPhone backup password (iMessage and
  * WhatsApp from an iPhone backup) and the Android WhatsApp key.
  */
-export function formSnapshot(form: ImportJobFormValues): Record<string, unknown> {
-  const snapshot: Record<string, unknown> = {};
-  for (const field of SNAPSHOT_FIELDS) {
-    snapshot[field] = form[field];
-  }
+export function formSnapshot(form: ImportJobFormValues): StoredFormSnapshot {
+  // Each field is copied from the form under its own name, so the record
+  // holds exactly the type's form fields.
+  const settings = Object.fromEntries(SNAPSHOT_FIELDS.map((field) => [field, form[field]])) as Pick<
+    ImportJobFormValues,
+    (typeof SNAPSHOT_FIELDS)[number]
+  >;
   const secret = findImportSource(form.source)?.snapshotSecret(form.source) ?? null;
-  snapshot.backupPasswordGiven = secret === "backupPassword" && form.backupPassword.trim() !== "";
-  snapshot.whatsappKeyGiven = secret === "whatsappKey" && form.whatsappKey.trim() !== "";
-  return snapshot;
+  return {
+    ...settings,
+    backupPasswordGiven: secret === "backupPassword" && form.backupPassword.trim() !== "",
+    whatsappKeyGiven: secret === "whatsappKey" && form.whatsappKey.trim() !== "",
+  };
 }
 
 /**
