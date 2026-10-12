@@ -119,12 +119,12 @@ pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> 
     let mut media_sources: Vec<Option<PathBuf>> = Vec::new();
     for (chat_id, mut conversation) in conversations {
         message_crate_core::check_cancel(&cancel)?;
-        let Some(doc) = project_conversation(&chat_id, &mut conversation, &hooks, &mut report)
+        let Some(document) = project_conversation(&chat_id, &mut conversation, &hooks, &mut report)
         else {
             continue;
         };
         collect_media_sources(&conversation, &mut media_sources);
-        documents.push(doc);
+        documents.push(document);
     }
 
     let mut source_iter = media_sources.into_iter();
@@ -206,8 +206,8 @@ fn ingest_chat(
     let mut pending = PendingConversation::new(chat_id.clone(), group, group_title, Vec::new());
     pending.extra.insert("whatsapp_jid".into(), jid.to_string());
 
-    for msg in chat.messages.values() {
-        let Some(ts_raw) = msg.timestamp else {
+    for message in chat.messages.values() {
+        let Some(ts_raw) = message.timestamp else {
             report.skipped_invalid_date += 1;
             continue;
         };
@@ -217,11 +217,11 @@ fn ingest_chat(
             continue;
         }
 
-        let is_from_me = msg.from_me;
+        let is_from_me = message.from_me;
         let (sender_identity, sender_display_name) = if is_from_me {
             (String::new(), None)
         } else if group {
-            let sender = Person::sender(msg);
+            let sender = Person::sender(message);
             let identity = sender
                 .identity
                 .as_ref()
@@ -234,14 +234,14 @@ fn ingest_chat(
             (chat_id.clone(), chat_name.clone())
         };
 
-        let text = message_text(msg);
-        let (attachments, media_source) = match media_path(msg) {
+        let text = message_text(message);
+        let (attachments, media_source) = match media_path(message) {
             Some(src) => queue_media(
                 src,
                 chat.media_base.as_deref(),
                 media_search_roots,
                 copy_attachments,
-                msg,
+                message,
                 report,
             ),
             None => (Vec::new(), None),
@@ -256,23 +256,23 @@ fn ingest_chat(
             attachments,
             extra: {
                 let mut e = BTreeMap::new();
-                e.insert("key_id".into(), key_id_string(msg));
+                e.insert("key_id".into(), key_id_string(message));
                 e.insert(
                     "full_key_id".into(),
-                    key_string(msg.full_key_id.as_ref()).unwrap_or_default(),
+                    key_string(message.full_key_id.as_ref()).unwrap_or_default(),
                 );
-                if is_reply(msg) {
+                if is_reply(message) {
                     e.insert("is_reply".into(), "true".into());
                 }
-                if let Some(quoted) = key_string(msg.reply_key_id.as_ref()) {
+                if let Some(quoted) = key_string(message.reply_key_id.as_ref()) {
                     e.insert("reply_key_id".into(), quoted);
                 }
-                if let Some(reactions) = reactions_json(msg) {
+                if let Some(reactions) = reactions_json(message) {
                     e.insert("reactions".into(), reactions);
                 }
                 e.insert(
                     "is_sticker".into(),
-                    if msg.sticker { "true" } else { "false" }.into(),
+                    if message.sticker { "true" } else { "false" }.into(),
                 );
                 if let Some(path) = media_source {
                     e.insert("media_source".into(), path.to_string_lossy().into_owned());
@@ -333,13 +333,13 @@ impl Person {
     /// as a number, because its digits may be an `@lid` id's. The name is
     /// the first of `sender_contact_name`, `sender` when it is a name, and
     /// `sender_push_name`.
-    fn sender(msg: &MessageJson) -> Self {
+    fn sender(message: &MessageJson) -> Self {
         Self::new(
-            msg.sender_jid.get().map(String::as_str),
+            message.sender_jid.get().map(String::as_str),
             first_name([
-                msg.sender_contact_name.get().map(String::as_str),
-                msg.sender.as_deref().filter(|sender| is_a_name(sender)),
-                msg.sender_push_name.get().map(String::as_str),
+                message.sender_contact_name.get().map(String::as_str),
+                message.sender.as_deref().filter(|sender| is_a_name(sender)),
+                message.sender_push_name.get().map(String::as_str),
             ]),
         )
     }
@@ -464,7 +464,7 @@ fn queue_media(
     media_base: Option<&str>,
     media_search_roots: &[PathBuf],
     copy_attachments: bool,
-    msg: &MessageJson,
+    message: &MessageJson,
     report: &mut ExportReport,
 ) -> (Vec<PendingAttachment>, Option<PathBuf>) {
     let name = Path::new(src)
@@ -472,7 +472,7 @@ fn queue_media(
         .map(|n| n.to_string_lossy().into_owned());
     let pending = PendingAttachment {
         rel_path: String::new(),
-        content_type: msg.mime.clone().unwrap_or_default(),
+        content_type: message.mime.clone().unwrap_or_default(),
         digest_sha256: None,
         name_hint: name,
         size_bytes: None,
@@ -494,12 +494,12 @@ fn queue_media(
 
 /// Collect source paths in the same order attachments will appear on documents.
 fn collect_media_sources(conversation: &PendingConversation, out: &mut Vec<Option<PathBuf>>) {
-    for msg in &conversation.messages {
-        if msg.attachments.is_empty() {
+    for message in &conversation.messages {
+        if message.attachments.is_empty() {
             continue;
         }
-        let source = msg.extra_str("media_source").to_string();
-        for _ in &msg.attachments {
+        let source = message.extra_str("media_source").to_string();
+        for _ in &message.attachments {
             out.push((!source.is_empty()).then(|| PathBuf::from(&source)));
         }
     }
@@ -571,8 +571,8 @@ fn path_within_any(path: &Path, roots: &[PathBuf]) -> bool {
 }
 
 /// WhatsApp `key_id` as a string (empty when missing).
-fn key_id_string(msg: &MessageJson) -> String {
-    match &msg.key_id {
+fn key_id_string(message: &MessageJson) -> String {
+    match &message.key_id {
         Some(serde_json::Value::String(s)) => s.clone(),
         Some(v) => v.to_string(),
         None => String::new(),
@@ -582,8 +582,8 @@ fn key_id_string(msg: &MessageJson) -> String {
 /// The message's reactions as the conversation model carries them, serialized
 /// for the `reactions` extra the projection reads back; `None` when the
 /// message has none, or when they are not known.
-fn reactions_json(msg: &MessageJson) -> Option<String> {
-    let reactions: Vec<Reaction> = msg
+fn reactions_json(message: &MessageJson) -> Option<String> {
+    let reactions: Vec<Reaction> = message
         .reaction_details
         .as_deref()?
         .iter()
@@ -631,7 +631,7 @@ impl ProjectionHooks for WhatsappProjection {
         self.export.clone()
     }
 
-    fn service(&self, _msg: &PendingMessage) -> IrService {
+    fn service(&self, _message: &PendingMessage) -> IrService {
         IrService::Whatsapp
     }
 
@@ -648,49 +648,49 @@ impl ProjectionHooks for WhatsappProjection {
 
     /// None: whether a media file was found must leave the GUID unchanged,
     /// and `key_id` already tells WhatsApp messages apart.
-    fn attachment_digests(&self, _msg: &PendingMessage) -> Vec<String> {
+    fn attachment_digests(&self, _message: &PendingMessage) -> Vec<String> {
         Vec::new()
     }
 
     /// `key_id`: it tells WhatsApp messages apart, including same-millisecond
     /// messages with identical text.
-    fn vendor_key(&self, msg: &PendingMessage) -> Option<String> {
-        message_ir::trimmed(msg.extra_str("key_id")).map(str::to_string)
+    fn vendor_key(&self, message: &PendingMessage) -> Option<String> {
+        message_ir::trimmed(message.extra_str("key_id")).map(str::to_string)
     }
 
     /// `full_key_id`, the whole id a reply names in its `reply_key_id`.
     /// `key_id` is not used: on an iPhone it is a 17-character prefix that
     /// two messages can share.
-    fn reply_key(&self, msg: &PendingMessage) -> Option<String> {
-        message_ir::trimmed(msg.extra_str("full_key_id")).map(str::to_string)
+    fn reply_key(&self, message: &PendingMessage) -> Option<String> {
+        message_ir::trimmed(message.extra_str("full_key_id")).map(str::to_string)
     }
 
     /// A message that quotes another, linked by `reply_key_id` to the message
     /// of the same chat whose `full_key_id` it equals. A reply from a JSON
     /// with no `reply_key_id` is still a reply, with no link.
-    fn reply(&self, msg: &PendingMessage) -> Option<PendingReply> {
-        (msg.extra_str("is_reply") == "true").then(|| PendingReply {
-            quoted_key: message_ir::trimmed(msg.extra_str("reply_key_id")).map(str::to_string),
+    fn reply(&self, message: &PendingMessage) -> Option<PendingReply> {
+        (message.extra_str("is_reply") == "true").then(|| PendingReply {
+            quoted_key: message_ir::trimmed(message.extra_str("reply_key_id")).map(str::to_string),
         })
     }
 
     /// The reactions `ingest_chat` read from the fork's `reaction_details`,
     /// each under the reactor's WhatsApp id ([`reaction_from_json`]).
-    fn reactions(&self, msg: &PendingMessage) -> Vec<Reaction> {
-        match msg.extra.get("reactions") {
+    fn reactions(&self, message: &PendingMessage) -> Vec<Reaction> {
+        match message.extra.get("reactions") {
             Some(json) => serde_json::from_str(json).expect("reactions written by ingest_chat"),
             None => Vec::new(),
         }
     }
 
-    fn attachment_to_ir(&self, att: &PendingAttachment, msg: &PendingMessage) -> IrAttachment {
+    fn attachment_to_ir(&self, att: &PendingAttachment, message: &PendingMessage) -> IrAttachment {
         IrAttachment {
             // No path yet: the writer sets it when it stages the file.
             path: None,
             original_name: att.name_hint.clone(),
             mime_type: att.mime_type(),
             digest_sha256: att.digest_sha256.clone(),
-            is_sticker: msg.extra_flag("is_sticker"),
+            is_sticker: message.extra_flag("is_sticker"),
             transcription: None,
             sticker_effect: None,
             size_bytes: None,
@@ -724,7 +724,7 @@ impl ProjectionHooks for WhatsappProjection {
     /// nor `reply_key_id` is stored beside it. Nor is a reaction copied
     /// here: `reactions` records each on the message, and the fork's
     /// name-to-emoji `reactions` map is not read at all.
-    fn source(&self, conversation: &PendingConversation, msg: &PendingMessage) -> IrSource {
+    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> IrSource {
         let mut fields = Map::new();
         let whatsapp_jid = conversation.extra_str("whatsapp_jid");
         if !whatsapp_jid.is_empty() {
@@ -733,7 +733,7 @@ impl ProjectionHooks for WhatsappProjection {
                 serde_json::Value::String(whatsapp_jid.to_string()),
             );
         }
-        let key_id = msg.extra_str("key_id");
+        let key_id = message.extra_str("key_id");
         if !key_id.is_empty() {
             fields.insert(
                 "key_id".into(),

@@ -709,14 +709,14 @@ fn write_conversations(
             continue;
         }
         kept += 1;
-        let doc = chat_to_document(
+        let document = chat_to_document(
             chat_identifier,
             conversation,
             options.use_caller_id,
             backup_taken_at_unix_ms,
         );
-        let document_id = doc.conversation.chat_identifier.clone();
-        sink.write_document(doc)
+        let document_id = document.conversation.chat_identifier.clone();
+        sink.write_document(document)
             .map_err(|e| anyhow!("write {} for {}: {e:#}", format.as_str(), document_id))?;
         if written.is_multiple_of(CONVERSATION_PROGRESS_EVERY) || written == total {
             options.log.emit(format!("  preparing {written}/{total}"));
@@ -753,10 +753,10 @@ fn chat_to_document(
     // owner fills in only where the database recorded none.
     let (owner_identity, owner_display_name) = owner_sender(&export);
     let mut messages = conversation.messages;
-    for msg in &mut messages {
-        if msg.direction == IrDirection::Outgoing && msg.sender_identity.is_none() {
-            msg.sender_identity.clone_from(&owner_identity);
-            msg.sender_display_name.clone_from(&owner_display_name);
+    for message in &mut messages {
+        if message.direction == IrDirection::Outgoing && message.sender_identity.is_none() {
+            message.sender_identity.clone_from(&owner_identity);
+            message.sender_display_name.clone_from(&owner_display_name);
         }
     }
     ConversationDocument {
@@ -786,14 +786,14 @@ fn chat_to_unit(
     backup_taken_at_unix_ms: Option<i64>,
 ) -> ConversationUnit {
     let loads = std::mem::take(&mut conversation.attachment_loads);
-    let doc = chat_to_document(
+    let document = chat_to_document(
         chat_identifier,
         conversation,
         use_caller_id,
         backup_taken_at_unix_ms,
     );
     let mut loads = loads.into_iter();
-    ConversationUnit::from_doc(doc, |_, att| attachment_source(loads.next(), att))
+    ConversationUnit::from_doc(document, |_, att| attachment_source(loads.next(), att))
 }
 
 /// The source and size hint of the attachment `load` was collected for.
@@ -1257,9 +1257,9 @@ mod tests {
             attachment_loads: Vec::new(),
         };
 
-        let doc = chat_to_document("+15555550122".into(), conversation, false, None);
+        let document = chat_to_document("+15555550122".into(), conversation, false, None);
 
-        let senders: Vec<_> = doc
+        let senders: Vec<_> = document
             .messages
             .iter()
             .map(|m| m.sender_identity.as_deref())
@@ -1288,7 +1288,7 @@ mod tests {
             participants: Vec::new(),
             owner_identity: String::new(),
             owner_display_name: None,
-            messages: vec![msg_with_attachments(1000, 3)],
+            messages: vec![message_with_attachments(1000, 3)],
             attachment_loads: vec![
                 AttachmentLoad::Path {
                     path: present,
@@ -1331,7 +1331,7 @@ mod tests {
     }
 
     /// A bare message carrying `count` attachments, for pairing tests.
-    fn msg_with_attachments(timestamp_ms: i64, count: usize) -> IrMessage {
+    fn message_with_attachments(timestamp_ms: i64, count: usize) -> IrMessage {
         IrMessage {
             guid: format!("guid-{timestamp_ms}"),
             timestamp_unix_ms: timestamp_ms,
@@ -1372,7 +1372,10 @@ mod tests {
             participants: Vec::new(),
             owner_identity: String::new(),
             owner_display_name: None,
-            messages: vec![msg_with_attachments(1000, 1), msg_with_attachments(2000, 1)],
+            messages: vec![
+                message_with_attachments(1000, 1),
+                message_with_attachments(2000, 1),
+            ],
             attachment_loads: vec![
                 AttachmentLoad::Path {
                     path: first.clone(),

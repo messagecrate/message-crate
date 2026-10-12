@@ -11,8 +11,8 @@ const OWNER: &str = "+15555550100";
 fn round_trip(docs: &[ConversationDocument]) -> Vec<ConversationDocument> {
     let tmp = tempfile::tempdir().unwrap();
     let mut session = SbrBackupSession::create(tmp.path()).unwrap();
-    for doc in docs {
-        session.append_document(doc).unwrap();
+    for document in docs {
+        session.append_document(document).unwrap();
     }
     let path = session.finish().unwrap();
     let owners = [OWNER.to_string()];
@@ -32,8 +32,8 @@ fn read_with_bytes(
     let (mut docs, report) = crate::read_backup(path, read_options(owners, &spool)).unwrap();
     for att in docs
         .iter_mut()
-        .flat_map(|doc| doc.messages.iter_mut())
-        .flat_map(|msg| msg.attachments.iter_mut())
+        .flat_map(|document| document.messages.iter_mut())
+        .flat_map(|message| message.attachments.iter_mut())
     {
         att.bytes = att
             .digest_sha256
@@ -65,8 +65,8 @@ fn read_options<'a>(owners: &'a [String], spool: &'a AttachmentSpool) -> crate::
 }
 
 /// Each `<addr>` of an MMS as (address, type).
-fn addrs(msg: &IrMessage) -> Vec<(String, String)> {
-    msg.source.as_ref().unwrap().fields["addrs"]
+fn addrs(message: &IrMessage) -> Vec<(String, String)> {
+    message.source.as_ref().unwrap().fields["addrs"]
         .as_array()
         .unwrap()
         .iter()
@@ -80,15 +80,16 @@ fn addrs(msg: &IrMessage) -> Vec<(String, String)> {
 }
 
 /// Each MMS part's name with the bytes its `data` decoded to, if any.
-fn part_payloads(msg: &IrMessage) -> Vec<(String, Option<Vec<u8>>)> {
-    msg.source.as_ref().unwrap().fields["parts"]
+fn part_payloads(message: &IrMessage) -> Vec<(String, Option<Vec<u8>>)> {
+    message.source.as_ref().unwrap().fields["parts"]
         .as_array()
         .unwrap()
         .iter()
         .map(|p| {
             let name = p["name"].as_str().or(p["ct"].as_str()).unwrap();
             let bytes = p["data_sha256"].as_str().map(|digest| {
-                msg.attachments
+                message
+                    .attachments
                     .iter()
                     .find(|a| a.digest_sha256.as_deref() == Some(digest))
                     .and_then(|a| a.bytes.clone())
@@ -100,13 +101,13 @@ fn part_payloads(msg: &IrMessage) -> Vec<(String, Option<Vec<u8>>)> {
 }
 
 /// The element attributes the message was written with.
-fn attrs(msg: &IrMessage) -> &Value {
-    &msg.source.as_ref().unwrap().fields["attrs"]
+fn attrs(message: &IrMessage) -> &Value {
+    &message.source.as_ref().unwrap().fields["attrs"]
 }
 
 /// The `contact_name` attribute the message was written with, if any.
-fn contact_name(msg: &IrMessage) -> Option<&str> {
-    attrs(msg).get("contact_name").and_then(|v| v.as_str())
+fn contact_name(message: &IrMessage) -> Option<&str> {
+    attrs(message).get("contact_name").and_then(|v| v.as_str())
 }
 
 fn ir_attachment(name: &str, bytes: &[u8]) -> IrAttachment {
@@ -123,10 +124,10 @@ fn pair(address: &str, addr_type: &str) -> (String, String) {
 
 #[test]
 fn a_group_mms_keeps_its_addresses_and_attachment() {
-    let mut doc = message_ir::testutil::sample_document("look");
-    doc.conversation.chat_identifier = "chat-group".into();
-    doc.conversation.conversation_type = IrConversationType::Group;
-    doc.conversation.participants = vec![
+    let mut document = message_ir::testutil::sample_document("look");
+    document.conversation.chat_identifier = "chat-group".into();
+    document.conversation.conversation_type = IrConversationType::Group;
+    document.conversation.participants = vec![
         message_ir::IrParticipant {
             identity: Some("+15555550101".into()),
             display_name: Some("Ana".into()),
@@ -136,7 +137,7 @@ fn a_group_mms_keeps_its_addresses_and_attachment() {
             display_name: Some("Lee".into()),
         },
     ];
-    let incoming = &mut doc.messages[0];
+    let incoming = &mut document.messages[0];
     incoming.message_kind = IrMessageKind::Mms;
     incoming.source = None;
     incoming.sender_identity = Some("+15555550102".into());
@@ -150,9 +151,9 @@ fn a_group_mms_keeps_its_addresses_and_attachment() {
     outgoing.sender_display_name = None;
     outgoing.text = "nice".into();
     outgoing.attachments.clear();
-    doc.messages.push(outgoing);
+    document.messages.push(outgoing);
 
-    let read = round_trip(&[doc]);
+    let read = round_trip(&[document]);
     assert_eq!(read.len(), 1, "both messages land in one group");
     let [incoming, outgoing] = read[0].messages.as_slice() else {
         panic!("two messages: {:?}", read[0].messages)
@@ -196,9 +197,9 @@ fn a_group_mms_keeps_its_addresses_and_attachment() {
 
 #[test]
 fn an_incoming_sms_keeps_its_sender_and_contact_name() {
-    let mut doc = message_ir::testutil::sample_document("hello ir");
-    doc.messages[0].source = None;
-    let read = round_trip(&[doc]);
+    let mut document = message_ir::testutil::sample_document("hello ir");
+    document.messages[0].source = None;
+    let read = round_trip(&[document]);
     let conversation = &read[0].conversation;
     assert_eq!(conversation.participants.len(), 1);
     assert_eq!(
@@ -209,16 +210,16 @@ fn an_incoming_sms_keeps_its_sender_and_contact_name() {
         conversation.participants[0].display_name.as_deref(),
         Some("Sam")
     );
-    let msg = &read[0].messages[0];
+    let message = &read[0].messages[0];
     assert_eq!(
-        msg.message_kind,
+        message.message_kind,
         IrMessageKind::Sms,
         "a text stays an <sms>"
     );
-    assert_eq!(msg.direction, IrDirection::Incoming);
-    assert_eq!(msg.sender_identity.as_deref(), Some("+15555550101"));
-    assert_eq!(contact_name(msg), Some("Sam"));
-    assert_eq!(msg.text, "hello ir");
+    assert_eq!(message.direction, IrDirection::Incoming);
+    assert_eq!(message.sender_identity.as_deref(), Some("+15555550101"));
+    assert_eq!(contact_name(message), Some("Sam"));
+    assert_eq!(message.text, "hello ir");
 }
 
 /// An SMS from another app, such as iMessage's SMS fallback, has no SBR
@@ -227,17 +228,17 @@ fn an_incoming_sms_keeps_its_sender_and_contact_name() {
 /// called the message.
 #[test]
 fn a_direct_photo_from_another_app_keeps_its_chat_sender_subject_and_bytes() {
-    let mut doc = message_ir::testutil::sample_document("look at this");
-    let msg = &mut doc.messages[0];
-    msg.source = None;
-    msg.message_kind = IrMessageKind::Sms;
-    msg.subject = Some("Holiday".into());
-    msg.attachments = vec![IrAttachment {
+    let mut document = message_ir::testutil::sample_document("look at this");
+    let message = &mut document.messages[0];
+    message.source = None;
+    message.message_kind = IrMessageKind::Sms;
+    message.subject = Some("Holiday".into());
+    message.attachments = vec![IrAttachment {
         mime_type: Some("image/png".into()),
         ..ir_attachment("beach.png", b"png bytes")
     }];
 
-    let read = round_trip(&[doc]);
+    let read = round_trip(&[document]);
     assert_eq!(read.len(), 1);
     let conversation = &read[0].conversation;
     assert_eq!(conversation.chat_identifier, "+15555550101");
@@ -249,13 +250,13 @@ fn a_direct_photo_from_another_app_keeps_its_chat_sender_subject_and_bytes() {
         conversation.participants[0].display_name.as_deref(),
         Some("Sam")
     );
-    let msg = &read[0].messages[0];
-    assert_eq!(msg.direction, IrDirection::Incoming);
-    assert_eq!(msg.sender_identity.as_deref(), Some("+15555550101"));
-    assert_eq!(msg.subject.as_deref(), Some("Holiday"));
-    assert_eq!(msg.text, "look at this");
-    assert_eq!(msg.attachments.len(), 1);
-    let photo = &msg.attachments[0];
+    let read_back = &read[0].messages[0];
+    assert_eq!(read_back.direction, IrDirection::Incoming);
+    assert_eq!(read_back.sender_identity.as_deref(), Some("+15555550101"));
+    assert_eq!(read_back.subject.as_deref(), Some("Holiday"));
+    assert_eq!(read_back.text, "look at this");
+    assert_eq!(read_back.attachments.len(), 1);
+    let photo = &read_back.attachments[0];
     assert_eq!(photo.original_name.as_deref(), Some("beach.png"));
     assert_eq!(photo.mime_type.as_deref(), Some("image/png"));
     assert_eq!(photo.bytes.as_deref(), Some(b"png bytes".as_slice()));
@@ -265,16 +266,17 @@ fn a_direct_photo_from_another_app_keeps_its_chat_sender_subject_and_bytes() {
 /// one address and would land in a 1:1 chat with whoever sent it.
 #[test]
 fn a_text_only_group_message_from_another_app_stays_in_its_group() {
-    let mut doc = message_ir::testutil::sample_document("who is in?");
-    doc.conversation.chat_identifier = "chat-group".into();
-    doc.conversation.conversation_type = IrConversationType::Group;
-    doc.conversation
+    let mut document = message_ir::testutil::sample_document("who is in?");
+    document.conversation.chat_identifier = "chat-group".into();
+    document.conversation.conversation_type = IrConversationType::Group;
+    document
+        .conversation
         .participants
         .push(message_ir::IrParticipant {
             identity: Some("+15555550102".into()),
             display_name: Some("Lee".into()),
         });
-    let incoming = &mut doc.messages[0];
+    let incoming = &mut document.messages[0];
     incoming.source = None;
     incoming.message_kind = IrMessageKind::Sms;
     incoming.sender_identity = Some("+15555550102".into());
@@ -285,9 +287,9 @@ fn a_text_only_group_message_from_another_app_stays_in_its_group() {
     outgoing.sender_identity = Some(OWNER.into());
     outgoing.sender_display_name = None;
     outgoing.text = "me".into();
-    doc.messages.push(outgoing);
+    document.messages.push(outgoing);
 
-    let read = round_trip(&[doc]);
+    let read = round_trip(&[document]);
     assert_eq!(read.len(), 1, "both messages land in one group");
     let conversation = &read[0].conversation;
     assert_eq!(conversation.conversation_type, IrConversationType::Group);
@@ -318,26 +320,27 @@ fn a_text_only_group_message_from_another_app_stays_in_its_group() {
 /// is the one-to-one value and not every participant's name.
 #[test]
 fn a_group_with_one_identified_participant_is_named_as_one_to_one() {
-    let mut doc = message_ir::testutil::sample_document("hi");
-    doc.conversation.chat_identifier = "chat-group".into();
-    doc.conversation.conversation_type = IrConversationType::Group;
-    doc.conversation
+    let mut document = message_ir::testutil::sample_document("hi");
+    document.conversation.chat_identifier = "chat-group".into();
+    document.conversation.conversation_type = IrConversationType::Group;
+    document
+        .conversation
         .participants
         .push(message_ir::IrParticipant {
             identity: None,
             display_name: Some("Lee".into()),
         });
-    doc.messages[0].source = None;
+    document.messages[0].source = None;
 
-    let read = round_trip(&[doc]);
+    let read = round_trip(&[document]);
     assert_eq!(read.len(), 1);
     assert_eq!(
         read[0].conversation.conversation_type,
         IrConversationType::Individual
     );
-    let msg = &read[0].messages[0];
-    assert_eq!(contact_name(msg), Some("Sam"));
-    assert_eq!(msg.sender_display_name.as_deref(), Some("Sam"));
+    let message = &read[0].messages[0];
+    assert_eq!(contact_name(message), Some("Sam"));
+    assert_eq!(message.sender_display_name.as_deref(), Some("Sam"));
 }
 
 /// Two participants with one identity written two ways, or the owner listed
@@ -347,27 +350,32 @@ fn a_group_with_one_identified_participant_is_named_as_one_to_one() {
 #[test]
 fn a_group_the_reader_finds_one_peer_in_is_named_as_one_to_one() {
     for (handle, name) in [("+1 555-555-0101", "Sam (work)"), (OWNER, "Me")] {
-        let mut doc = message_ir::testutil::sample_document("hi");
-        doc.conversation.chat_identifier = "chat-group".into();
-        doc.conversation.conversation_type = IrConversationType::Group;
-        doc.conversation
+        let mut document = message_ir::testutil::sample_document("hi");
+        document.conversation.chat_identifier = "chat-group".into();
+        document.conversation.conversation_type = IrConversationType::Group;
+        document
+            .conversation
             .participants
             .push(message_ir::IrParticipant {
                 identity: Some(handle.into()),
                 display_name: Some(name.into()),
             });
-        doc.messages[0].source = None;
+        document.messages[0].source = None;
 
-        let read = round_trip(&[doc]);
+        let read = round_trip(&[document]);
         assert_eq!(read.len(), 1, "{handle}");
         assert_eq!(
             read[0].conversation.conversation_type,
             IrConversationType::Individual,
             "{handle}"
         );
-        let msg = &read[0].messages[0];
-        assert_eq!(contact_name(msg), Some("Sam"), "{handle}");
-        assert_eq!(msg.sender_display_name.as_deref(), Some("Sam"), "{handle}");
+        let message = &read[0].messages[0];
+        assert_eq!(contact_name(message), Some("Sam"), "{handle}");
+        assert_eq!(
+            message.sender_display_name.as_deref(),
+            Some("Sam"),
+            "{handle}"
+        );
     }
 }
 
@@ -375,15 +383,15 @@ fn a_group_the_reader_finds_one_peer_in_is_named_as_one_to_one() {
 /// sent message. The `<sms>` is still addressed to the other person.
 #[test]
 fn a_sent_sms_carrying_the_owners_address_stays_in_the_peers_chat() {
-    let mut doc = message_ir::testutil::sample_document("on my way");
-    let msg = &mut doc.messages[0];
-    msg.source = None;
-    msg.direction = IrDirection::Outgoing;
-    msg.sender_identity = Some(OWNER.into());
-    msg.sender_display_name = Some("Me".into());
-    msg.subject = Some("Tonight".into());
+    let mut document = message_ir::testutil::sample_document("on my way");
+    let message = &mut document.messages[0];
+    message.source = None;
+    message.direction = IrDirection::Outgoing;
+    message.sender_identity = Some(OWNER.into());
+    message.sender_display_name = Some("Me".into());
+    message.subject = Some("Tonight".into());
 
-    let read = round_trip(&[doc]);
+    let read = round_trip(&[document]);
     assert_eq!(read.len(), 1);
     let conversation = &read[0].conversation;
     assert_eq!(conversation.chat_identifier, "+15555550101");
@@ -396,28 +404,28 @@ fn a_sent_sms_carrying_the_owners_address_stays_in_the_peers_chat() {
         conversation.participants[0].display_name.as_deref(),
         Some("Sam")
     );
-    let msg = &read[0].messages[0];
-    assert_eq!(msg.message_kind, IrMessageKind::Sms);
-    assert_eq!(msg.direction, IrDirection::Outgoing);
-    assert_eq!(msg.subject.as_deref(), Some("Tonight"));
-    assert_eq!(msg.text, "on my way");
+    let read_back = &read[0].messages[0];
+    assert_eq!(read_back.message_kind, IrMessageKind::Sms);
+    assert_eq!(read_back.direction, IrDirection::Outgoing);
+    assert_eq!(read_back.subject.as_deref(), Some("Tonight"));
+    assert_eq!(read_back.text, "on my way");
 }
 
 /// A received message whose sender address is an empty string is from the
 /// chat's other person, as an `<sms>` and as an `<mms>`.
 #[test]
 fn a_received_message_with_an_empty_sender_address_is_from_the_peer() {
-    let mut doc = message_ir::testutil::sample_document("text");
-    let text = &mut doc.messages[0];
+    let mut document = message_ir::testutil::sample_document("text");
+    let text = &mut document.messages[0];
     text.source = None;
     text.sender_identity = Some(String::new());
     let mut photo = text.clone();
     photo.timestamp_unix_ms += 1000;
     photo.text = "photo".into();
     photo.attachments = vec![ir_attachment("pic.jpg", b"image")];
-    doc.messages.push(photo);
+    document.messages.push(photo);
 
-    let read = round_trip(&[doc]);
+    let read = round_trip(&[document]);
     assert_eq!(read.len(), 1, "both messages land in the peer's chat");
     assert_eq!(read[0].conversation.chat_identifier, "+15555550101");
     let [text, photo] = read[0].messages.as_slice() else {
@@ -548,9 +556,9 @@ fn the_archive_writes_only_sms_and_mms_and_counts_the_rest() {
 
 #[test]
 fn the_archive_restores_source_fields_as_attrs() {
-    let mut doc = message_ir::testutil::sample_document("hello ir");
+    let mut document = message_ir::testutil::sample_document("hello ir");
     // SyncTech-shaped bag (the same shape the reader stores).
-    if let Some(source) = doc.messages[0].source.as_mut() {
+    if let Some(source) = document.messages[0].source.as_mut() {
         let mut attrs = Map::new();
         attrs.insert("protocol".into(), json!("0"));
         attrs.insert("address".into(), json!("+15555550101"));
@@ -570,7 +578,7 @@ fn the_archive_restores_source_fields_as_attrs() {
     SbrArchive
         .write(
             tmp.path(),
-            std::slice::from_ref(&doc),
+            std::slice::from_ref(&document),
             &mut message_crate_core::ExportReport::default(),
         )
         .unwrap();
@@ -582,11 +590,11 @@ fn the_archive_restores_source_fields_as_attrs() {
 
 #[test]
 fn the_archive_counts_the_characters_xml_cannot_carry() {
-    let doc = message_ir::testutil::sample_document("bell\u{7} and escape\u{1b}");
+    let document = message_ir::testutil::sample_document("bell\u{7} and escape\u{1b}");
     let tmp = tempfile::tempdir().unwrap();
     let mut report = message_crate_core::ExportReport::default();
     SbrArchive
-        .write(tmp.path(), std::slice::from_ref(&doc), &mut report)
+        .write(tmp.path(), std::slice::from_ref(&document), &mut report)
         .unwrap();
     assert_eq!(report.extra(CHARACTERS_LEFT_OUT), 2);
     let path = sbr::default_backup_path(tmp.path());

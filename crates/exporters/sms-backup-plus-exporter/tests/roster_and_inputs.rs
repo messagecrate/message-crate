@@ -56,8 +56,8 @@ fn documents(output_dir: &Path) -> BTreeMap<String, ConversationDocument> {
         .map(|e| e.path())
         .filter(|p| p.extension().is_some_and(|x| x == "jsonl"))
         .map(|p| {
-            let doc = read_conversation_jsonl(&p).expect("read jsonl");
-            (doc.conversation.chat_identifier.clone(), doc)
+            let document = read_conversation_jsonl(&p).expect("read jsonl");
+            (document.conversation.chat_identifier.clone(), document)
         })
         .collect()
 }
@@ -97,9 +97,9 @@ fn one_to_one_roster_holds_the_peer_named_from_the_subject() {
         .collect();
     assert_eq!(roster, vec![(Some("+14075550107"), Some("Alice"))]);
 
-    let msg = &alice.messages[0];
-    assert_eq!(msg.sender_identity.as_deref(), Some("+14075550107"));
-    assert_eq!(msg.sender_display_name.as_deref(), Some("Alice"));
+    let message = &alice.messages[0];
+    assert_eq!(message.sender_identity.as_deref(), Some("+14075550107"));
+    assert_eq!(message.sender_display_name.as_deref(), Some("Alice"));
 }
 
 /// A group holds every peer, and an incoming message names the peer whose
@@ -130,9 +130,9 @@ fn group_roster_holds_both_peers_and_the_sender_is_the_one_in_from() {
     handles.sort_unstable();
     assert_eq!(handles, vec!["+14075550107", "+14075550108"]);
 
-    let msg = &group.messages[0];
-    assert_eq!(msg.text.trim(), "Hello group from Bob");
-    assert_eq!(msg.sender_identity.as_deref(), Some("+14075550108"));
+    let message = &group.messages[0];
+    assert_eq!(message.text.trim(), "Hello group from Bob");
+    assert_eq!(message.sender_identity.as_deref(), Some("+14075550108"));
 }
 
 /// A mail that names the peer but records no address still gets its own
@@ -210,7 +210,7 @@ fn people_known_only_by_non_ascii_names_get_a_conversation_each() {
     let docs = documents(&out);
     let texts: Vec<(&str, &str)> = docs
         .iter()
-        .map(|(id, doc)| (id.as_str(), doc.messages[0].text.trim()))
+        .map(|(id, document)| (id.as_str(), document.messages[0].text.trim()))
         .collect();
     assert_eq!(
         texts,
@@ -406,7 +406,7 @@ fn a_group_member_named_by_email_address_is_keyed_by_their_number() {
     let groups: Vec<&ConversationDocument> = docs
         .iter()
         .filter(|(id, _)| id.starts_with("chat-"))
-        .map(|(_, doc)| doc)
+        .map(|(_, document)| document)
         .collect();
     assert_eq!(groups.len(), 1, "{:?}", docs.keys().collect::<Vec<_>>());
     let group = groups[0];
@@ -517,7 +517,7 @@ fn an_address_given_one_number_in_both_spellings_has_one_number_in_a_stated_coun
     let docs = documents(&out);
     let group = docs
         .values()
-        .find(|doc| doc.conversation.chat_identifier.starts_with("chat-"))
+        .find(|document| document.conversation.chat_identifier.starts_with("chat-"))
         .expect("the group");
     let mut members: Vec<&str> = group
         .conversation

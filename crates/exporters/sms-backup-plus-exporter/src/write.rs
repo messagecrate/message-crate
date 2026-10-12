@@ -66,21 +66,21 @@ impl MergedArchive for SmsBackupPlusArchive {
         fs::create_dir_all(output_dir)
             .with_context(|| format!("create {}", output_dir.display()))?;
         let directories = conversation_directories(documents)?;
-        for (doc, directory) in documents.iter().zip(directories) {
-            let messages: Vec<IrMessage> = doc
+        for (document, directory) in documents.iter().zip(directories) {
+            let messages: Vec<IrMessage> = document
                 .messages
                 .iter()
                 .filter(|message| message.is_sms_or_mms())
                 .cloned()
                 .collect();
-            let left_out = doc.messages.len() - messages.len();
+            let left_out = document.messages.len() - messages.len();
             if left_out > 0 {
                 report.bump(NOT_SMS_OR_MMS_LEFT_OUT, left_out as u64);
             }
             let Some(directory) = directory else {
                 continue;
             };
-            let kept = with_messages(doc, messages);
+            let kept = with_messages(document, messages);
             self.write_conversation(output_dir, &directory, &kept, report)?;
         }
         Ok(())
@@ -112,47 +112,51 @@ fn conversation_directories(documents: &[ConversationDocument]) -> Result<Vec<Op
     let mut written: Vec<(usize, ConversationDocument)> = documents
         .iter()
         .enumerate()
-        .filter(|(_, doc)| doc.messages.iter().any(IrMessage::is_sms_or_mms))
-        .map(|(index, doc)| (index, with_messages(doc, Vec::new())))
+        .filter(|(_, document)| document.messages.iter().any(IrMessage::is_sms_or_mms))
+        .map(|(index, document)| (index, with_messages(document, Vec::new())))
         .collect();
-    let mut docs: Vec<&mut ConversationDocument> = written.iter_mut().map(|(_, doc)| doc).collect();
+    let mut docs: Vec<&mut ConversationDocument> =
+        written.iter_mut().map(|(_, document)| document).collect();
     give_each_document_its_own_file(&mut docs).map_err(anyhow::Error::msg)?;
     let mut directories = vec![None; documents.len()];
-    for (index, doc) in written {
-        directories[index] = Some(filename_stem(&doc));
+    for (index, document) in written {
+        directories[index] = Some(filename_stem(&document));
     }
     Ok(directories)
 }
 
-/// `doc` with `messages` in place of its own. The directory names and the
+/// `document` with `messages` in place of its own. The directory names and the
 /// mail are both made from copies built here, so they come from the same
 /// conversation.
-fn with_messages(doc: &ConversationDocument, messages: Vec<IrMessage>) -> ConversationDocument {
+fn with_messages(
+    document: &ConversationDocument,
+    messages: Vec<IrMessage>,
+) -> ConversationDocument {
     ConversationDocument {
-        schema_version: doc.schema_version,
-        export: doc.export.clone(),
-        conversation: doc.conversation.clone(),
+        schema_version: document.schema_version,
+        export: document.export.clone(),
+        conversation: document.conversation.clone(),
         messages,
-        packaging_stem_suffix: doc.packaging_stem_suffix.clone(),
+        packaging_stem_suffix: document.packaging_stem_suffix.clone(),
     }
 }
 
 impl SmsBackupPlusArchive {
-    /// Write the messages of `doc` into the directory `directory` of
+    /// Write the messages of `document` into the directory `directory` of
     /// `output_dir`, one `.eml` each, named and ordered as the EML archive
     /// names and orders its own.
     fn write_conversation(
         &self,
         output_dir: &Path,
         directory: &str,
-        doc: &ConversationDocument,
+        document: &ConversationDocument,
         report: &mut ExportReport,
     ) -> Result<()> {
         let directory = output_dir.join(directory);
         fs::create_dir_all(&directory)
             .with_context(|| format!("create {}", directory.display()))?;
-        let conversation = Conversation::of(doc);
-        let mut ordered: Vec<&IrMessage> = doc.messages.iter().collect();
+        let conversation = Conversation::of(document);
+        let mut ordered: Vec<&IrMessage> = document.messages.iter().collect();
         ordered.sort_by(|a, b| {
             a.timestamp_unix_ms
                 .cmp(&b.timestamp_unix_ms)
@@ -256,7 +260,7 @@ impl SmsBackupPlusArchive {
 
 /// What every mail of one conversation shares.
 struct Conversation<'a> {
-    doc: &'a ConversationDocument,
+    document: &'a ConversationDocument,
     /// The other people's handles, the owner's left out. For a conversation
     /// keyed by a name, the name.
     peers: Vec<&'a str>,
@@ -269,14 +273,14 @@ struct Conversation<'a> {
 }
 
 impl<'a> Conversation<'a> {
-    fn of(doc: &'a ConversationDocument) -> Self {
-        let owner = doc
+    fn of(document: &'a ConversationDocument) -> Self {
+        let owner = document
             .export
             .owner_identity
             .as_deref()
             .and_then(trimmed)
             .map(handle_key);
-        let mut peers: Vec<&str> = doc
+        let mut peers: Vec<&str> = document
             .conversation
             .participants
             .iter()
@@ -291,16 +295,18 @@ impl<'a> Conversation<'a> {
         // instead of making `nameless:` a person's address (#1591).
         let mut name_only = false;
         if peers.is_empty()
-            && let Some(id) = trimmed(&doc.conversation.chat_identifier)
+            && let Some(id) = trimmed(&document.conversation.chat_identifier)
                 .filter(|id| *id != message_ir::NAMELESS_CHAT_ID)
         {
             let name = message_ir::name_of_chat_id(id);
             name_only = name.is_some();
             peers.push(name.unwrap_or(id));
         }
-        let digest = hex::encode(Sha256::digest(doc.conversation.chat_identifier.as_bytes()));
+        let digest = hex::encode(Sha256::digest(
+            document.conversation.chat_identifier.as_bytes(),
+        ));
         Self {
-            doc,
+            document,
             peers,
             name_only,
             thread: digest[..32].to_string(),
@@ -308,7 +314,7 @@ impl<'a> Conversation<'a> {
     }
 
     fn is_group(&self) -> bool {
-        self.doc.conversation.conversation_type == IrConversationType::Group
+        self.document.conversation.conversation_type == IrConversationType::Group
     }
 
     /// `X-smssync-address`: the peer, or a group's peers joined by `~` as
@@ -325,7 +331,7 @@ impl<'a> Conversation<'a> {
 
     /// The display name the roster gives `handle`, if any.
     fn display_name(&self, handle: &str) -> Option<&'a str> {
-        self.doc
+        self.document
             .conversation
             .participants
             .iter()
@@ -401,10 +407,16 @@ impl<'a> Conversation<'a> {
             .owner_identity
             .as_deref()
             .and_then(trimmed)
-            .or_else(|| self.doc.export.owner_identity.as_deref().and_then(trimmed))
+            .or_else(|| {
+                self.document
+                    .export
+                    .owner_identity
+                    .as_deref()
+                    .and_then(trimmed)
+            })
             .unwrap_or("me");
         let owner_name = self
-            .doc
+            .document
             .export
             .owner_display_name
             .as_deref()

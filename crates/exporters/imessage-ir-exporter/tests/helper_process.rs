@@ -87,13 +87,13 @@ fn exports_a_mac_chat_db_through_the_helper_process() {
     // `chat.db` records times below the second, so every message says
     // milliseconds.
     for path in &files {
-        let doc = read_conversation_jsonl(path).unwrap();
-        for msg in &doc.messages {
+        let document = read_conversation_jsonl(path).unwrap();
+        for message in &document.messages {
             assert_eq!(
-                msg.time_precision,
+                message.time_precision,
                 TimePrecision::Milliseconds,
                 "{}",
-                msg.guid
+                message.guid
             );
         }
     }
@@ -117,7 +117,7 @@ fn a_seconds_stamp_and_an_unreadable_date_are_whole_seconds() {
     imessage_ir_exporter::run(&config(&db_path, &output, CancelFlag::default())).unwrap();
 
     let group = document_for(&output, GROUP_CHAT_IDENTIFIER);
-    let seconds = message(&group, "guid-3");
+    let seconds = message_with_guid(&group, "guid-3");
     assert_eq!(seconds.time_precision, TimePrecision::Seconds);
     assert_eq!(
         seconds.timestamp_unix_ms,
@@ -125,20 +125,20 @@ fn a_seconds_stamp_and_an_unreadable_date_are_whole_seconds() {
         "a seconds stamp reads the same instant as a nanoseconds one"
     );
     let shrunk = document_for(&output, "chat200");
-    let unreadable = message(&shrunk, "guid-8");
+    let unreadable = message_with_guid(&shrunk, "guid-8");
     assert_eq!(unreadable.time_precision, TimePrecision::Seconds);
     let others = jsonl_files(&output)
         .iter()
         .flat_map(|path| read_conversation_jsonl(path).unwrap().messages)
-        .filter(|msg| msg.guid != "guid-3" && msg.guid != "guid-8")
+        .filter(|message| message.guid != "guid-3" && message.guid != "guid-8")
         .collect::<Vec<_>>();
     assert!(!others.is_empty());
-    for msg in others {
+    for message in others {
         assert_eq!(
-            msg.time_precision,
+            message.time_precision,
             TimePrecision::Milliseconds,
             "{}",
-            msg.guid
+            message.guid
         );
     }
 }
@@ -188,16 +188,22 @@ fn document_for(output: &Path, chat_identifier: &str) -> ConversationDocument {
     jsonl_files(output)
         .iter()
         .map(|path| read_conversation_jsonl(path).unwrap())
-        .find(|doc| doc.conversation.chat_identifier == chat_identifier)
+        .find(|document| document.conversation.chat_identifier == chat_identifier)
         .unwrap_or_else(|| panic!("no exported conversation for {chat_identifier}"))
 }
 
 /// The message with `guid`, from a document.
-fn message<'a>(doc: &'a ConversationDocument, guid: &str) -> &'a IrMessage {
-    doc.messages
+fn message_with_guid<'a>(document: &'a ConversationDocument, guid: &str) -> &'a IrMessage {
+    document
+        .messages
         .iter()
         .find(|m| m.guid == guid)
-        .unwrap_or_else(|| panic!("no message {guid} in {}", doc.conversation.chat_identifier))
+        .unwrap_or_else(|| {
+            panic!(
+                "no message {guid} in {}",
+                document.conversation.chat_identifier
+            )
+        })
 }
 
 /// The owner sends from a phone in one chat and from an email in another.
@@ -215,18 +221,18 @@ fn messages_from_either_owner_address_are_sent_by_the_owner() {
 
     let phone_chat = document_for(&output, FRIEND_PHONE);
     assert_eq!(phone_chat.export.owner_identity.as_deref(), Some(OWNER));
-    let nice = message(&phone_chat, "guid-2");
+    let nice = message_with_guid(&phone_chat, "guid-2");
     assert_eq!(nice.direction, IrDirection::Outgoing);
     assert_eq!(nice.sender_identity.as_deref(), Some(OWNER));
     assert_eq!(nice.owner_identity.as_deref(), Some(OWNER));
-    let still_me = message(&phone_chat, "guid-5");
+    let still_me = message_with_guid(&phone_chat, "guid-5");
     assert_eq!(still_me.direction, IrDirection::Outgoing);
     assert_eq!(
         still_me.sender_identity.as_deref(),
         Some(OWNER),
         "a NULL caller id falls back to the conversation's owner"
     );
-    let from_the_car = message(&phone_chat, "guid-6");
+    let from_the_car = message_with_guid(&phone_chat, "guid-6");
     assert_eq!(from_the_car.direction, IrDirection::Outgoing);
     assert_eq!(
         from_the_car.sender_identity.as_deref(),
@@ -235,7 +241,7 @@ fn messages_from_either_owner_address_are_sent_by_the_owner() {
          the identities list spells it (#686)"
     );
     assert_eq!(from_the_car.owner_identity.as_deref(), Some(OWNER));
-    let photo = message(&phone_chat, "guid-1");
+    let photo = message_with_guid(&phone_chat, "guid-1");
     assert_eq!(photo.direction, IrDirection::Incoming);
     assert_eq!(photo.sender_identity.as_deref(), Some(FRIEND_PHONE));
 
@@ -245,7 +251,7 @@ fn messages_from_either_owner_address_are_sent_by_the_owner() {
         Some(OWNER_EMAIL),
         "the email account's chat is owned by the email, with no `E:` prefix"
     );
-    let from_mac = message(&email_chat, "guid-4");
+    let from_mac = message_with_guid(&email_chat, "guid-4");
     assert_eq!(from_mac.direction, IrDirection::Outgoing);
     assert_eq!(from_mac.sender_identity.as_deref(), Some(OWNER_EMAIL));
     assert_eq!(from_mac.owner_identity.as_deref(), Some(OWNER_EMAIL));
@@ -369,7 +375,7 @@ fn a_message_keeps_its_apple_fields_in_the_document() {
     imessage_ir_exporter::run(&config(&db_path, &output, CancelFlag::default())).unwrap();
 
     let phone_chat = document_for(&output, FRIEND_PHONE);
-    let nice = message(&phone_chat, "guid-2");
+    let nice = message_with_guid(&phone_chat, "guid-2");
     let fields = nice.imessage.as_ref().expect("the row has Apple fields");
     assert_eq!(
         fields.parts,
@@ -413,16 +419,19 @@ fn a_csv_export_writes_each_conversation_and_copies_the_photo() {
     let phone_chat = read_conversation_csv(&output.join(format!("{FRIEND_PHONE}.csv"))).unwrap();
     assert_eq!(phone_chat.messages.len(), 7);
     assert_eq!(
-        message(&phone_chat, DELETED_GUID).deletion,
+        message_with_guid(&phone_chat, DELETED_GUID).deletion,
         Some(Deletion::DeletedInSourceApp),
         "the CSV keeps the mark"
     );
     assert_eq!(
-        message(&phone_chat, UNSENT_GUID).deletion,
+        message_with_guid(&phone_chat, UNSENT_GUID).deletion,
         Some(Deletion::Unsent)
     );
-    assert_eq!(message(&phone_chat, PARTLY_UNSENT_GUID).deletion, None);
-    let photo = message(&phone_chat, "guid-1");
+    assert_eq!(
+        message_with_guid(&phone_chat, PARTLY_UNSENT_GUID).deletion,
+        None
+    );
+    let photo = message_with_guid(&phone_chat, "guid-1");
     assert_eq!(photo.attachments.len(), 1);
     let path = photo.attachments[0]
         .path

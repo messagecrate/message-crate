@@ -128,13 +128,16 @@ fn group_mms_sender_direction_and_conversation() {
     let (docs, report) = read_backup(&fixture, opts(&[], None, None)).unwrap();
     assert!(report.errors.is_empty(), "{:?}", report.errors);
     assert_eq!(docs.len(), 1, "every message lands in the same group");
-    let doc = &docs[0];
+    let document = &docs[0];
     assert_eq!(
-        doc.conversation.chat_identifier,
+        document.conversation.chat_identifier,
         "chat-group-12:+15555550101_12:+15555550102_12:+15555550103"
     );
-    assert_eq!(doc.export.owner_identity.as_deref(), Some("+15555550100"));
-    let mut participants: Vec<_> = doc
+    assert_eq!(
+        document.export.owner_identity.as_deref(),
+        Some("+15555550100")
+    );
+    let mut participants: Vec<_> = document
         .conversation
         .participants
         .iter()
@@ -146,7 +149,7 @@ fn group_mms_sender_direction_and_conversation() {
         ["+15555550101", "+15555550102", "+15555550103"],
         "the owner is not a participant, in any spelling"
     );
-    let seen: Vec<(&str, IrDirection, Option<&str>)> = doc
+    let seen: Vec<(&str, IrDirection, Option<&str>)> = document
         .messages
         .iter()
         .map(|m| (m.text.as_str(), m.direction, m.sender_identity.as_deref()))
@@ -274,8 +277,9 @@ fn read_xml(messages: &str) -> Vec<ConversationDocument> {
     docs
 }
 
-fn roster(doc: &ConversationDocument) -> Vec<(&str, Option<&str>)> {
-    doc.conversation
+fn roster(document: &ConversationDocument) -> Vec<(&str, Option<&str>)> {
+    document
+        .conversation
         .participants
         .iter()
         .map(|p| (p.identity.as_deref().unwrap(), p.display_name.as_deref()))
@@ -564,10 +568,10 @@ fn backup_dates(input: &Path) -> Vec<(String, Option<i64>)> {
     let owners = ["+15555550100".to_string()];
     let (docs, _) = read_backup(input, opts(&owners, None, None)).unwrap();
     docs.into_iter()
-        .map(|doc| {
+        .map(|document| {
             (
-                doc.conversation.chat_identifier,
-                doc.export.backup_taken_at_unix_ms,
+                document.conversation.chat_identifier,
+                document.export.backup_taken_at_unix_ms,
             )
         })
         .collect()

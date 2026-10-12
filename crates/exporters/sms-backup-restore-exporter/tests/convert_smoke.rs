@@ -295,21 +295,24 @@ fn convert_export_json_and_jsonl_use_pristine_v4() {
         .find(|p| p.extension().and_then(|x| x.to_str()) == Some("json"))
         .expect("expected .json");
     let raw = fs::read_to_string(&json_path).unwrap();
-    let doc: serde_json::Value = serde_json::from_str(&raw).unwrap();
-    assert_eq!(doc["schema_version"], message_ir::SCHEMA_VERSION);
+    let document: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(document["schema_version"], message_ir::SCHEMA_VERSION);
     assert!(
-        doc["conversation"]["stats"]["message_count"]
+        document["conversation"]["stats"]["message_count"]
             .as_u64()
             .unwrap()
             >= 1
     );
     assert!(!raw.contains("filename_suffix"));
     assert!(!raw.contains("\"bytes\""));
-    let msg = &doc["messages"][0];
-    assert!(msg["source"]["fields"].is_object());
-    assert!(msg["source"].get("contact_name").is_none());
-    assert!(msg["source"]["android_type"].is_number() || msg["source"]["android_type"].is_null());
-    assert!(msg["service"].as_str() == Some("sms"));
+    let message = &document["messages"][0];
+    assert!(message["source"]["fields"].is_object());
+    assert!(message["source"].get("contact_name").is_none());
+    assert!(
+        message["source"]["android_type"].is_number()
+            || message["source"]["android_type"].is_null()
+    );
+    assert!(message["service"].as_str() == Some("sms"));
     // Outgoing rows carry owner identity. The fixture includes an SMS type=2
     // (sent) and an MMS where the owner is a recipient; both must share the same
     // individual conversation after owner-filtered peer resolution.
@@ -317,7 +320,7 @@ fn convert_export_json_and_jsonl_use_pristine_v4() {
         report.conversations, 1,
         "MMS must not fragment into a group chat"
     );
-    let has_outgoing = doc["messages"].as_array().unwrap().iter().any(|m| {
+    let has_outgoing = document["messages"].as_array().unwrap().iter().any(|m| {
         m["direction"] == "outgoing" && m["sender_identity"].as_str() == Some("+15555550100")
     });
     assert!(has_outgoing, "expected outgoing message with owner sender");
@@ -349,8 +352,8 @@ fn convert_export_json_and_jsonl_use_pristine_v4() {
             .unwrap()
             >= 1
     );
-    let msg_line: serde_json::Value = serde_json::from_str(lines.next().unwrap()).unwrap();
-    assert!(msg_line["source"]["fields"].is_object());
+    let message_line: serde_json::Value = serde_json::from_str(lines.next().unwrap()).unwrap();
+    assert!(message_line["source"]["fields"].is_object());
 }
 
 #[test]

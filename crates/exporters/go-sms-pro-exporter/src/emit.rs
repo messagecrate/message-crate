@@ -175,28 +175,28 @@ fn add_xml_messages(
     conversations: &mut BTreeMap<String, PendingConversation>,
     msgs: Vec<XmlMessage>,
 ) {
-    for msg in msgs {
-        let chat_id = msg.other.key();
+    for message in msgs {
+        let chat_id = message.other.key();
         let conversation = ensure_conversation(conversations, chat_id, false, None, Vec::new());
         conversation.messages.push(PendingMessage {
-            sort_key: msg.timestamp_secs as i64,
-            is_from_me: msg.is_from_me,
-            sender_identity: if msg.is_from_me {
+            sort_key: message.timestamp_secs as i64,
+            is_from_me: message.is_from_me,
+            sender_identity: if message.is_from_me {
                 String::new()
             } else {
-                msg.other.into_key()
+                message.other.into_key()
             },
-            sender_display_name: msg.name_alias.clone(),
-            text: msg.text,
+            sender_display_name: message.name_alias.clone(),
+            text: message.text,
             attachments: Vec::new(),
             extra: {
                 let mut e = BTreeMap::new();
                 e.insert("source_kind".into(), "xml".to_string());
-                e.insert("android_type".into(), msg.android_type);
-                e.insert("date_ms".into(), msg.date_ms);
-                e.insert("contact_name".into(), msg.contact_name);
+                e.insert("android_type".into(), message.android_type);
+                e.insert("date_ms".into(), message.date_ms);
+                e.insert("contact_name".into(), message.contact_name);
                 // XML rows carry no PDU diagnostics; absent keys read back empty.
-                for (k, v) in msg.xml_fields {
+                for (k, v) in message.xml_fields {
                     e.insert(format!("xml:{k}"), v);
                 }
                 e
@@ -390,7 +390,7 @@ impl ProjectionHooks for GoSmsProjection {
         self.export.clone()
     }
 
-    fn service(&self, _msg: &PendingMessage) -> IrService {
+    fn service(&self, _message: &PendingMessage) -> IrService {
         IrService::Sms
     }
 
@@ -399,34 +399,34 @@ impl ProjectionHooks for GoSmsProjection {
         raw.to_string()
     }
 
-    fn source(&self, conversation: &PendingConversation, msg: &PendingMessage) -> IrSource {
+    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> IrSource {
         let mut fields = serde_json::Map::new();
         fields.insert(
             "source_kind".into(),
-            serde_json::Value::String(msg.extra_str("source_kind").to_string()),
+            serde_json::Value::String(message.extra_str("source_kind").to_string()),
         );
-        let pdu_filename = msg.extra_str("pdu_filename");
+        let pdu_filename = message.extra_str("pdu_filename");
         if !pdu_filename.is_empty() {
             fields.insert(
                 "pdu_filename".into(),
                 serde_json::Value::String(pdu_filename.to_string()),
             );
         }
-        let pdu_fields = msg.extra_str("pdu_fields");
+        let pdu_fields = message.extra_str("pdu_fields");
         if !pdu_fields.is_empty() {
             fields.insert(
                 "pdu_fields".into(),
                 serde_json::from_str(pdu_fields).unwrap_or(serde_json::Value::Null),
             );
         }
-        for (k, v) in &msg.extra {
+        for (k, v) in &message.extra {
             if let Some(k) = k.strip_prefix("xml:") {
                 fields
                     .entry(k.to_string())
                     .or_insert_with(|| serde_json::Value::String(v.clone()));
             }
         }
-        android_source(conversation, msg, fields)
+        android_source(conversation, message, fields)
     }
 }
 
@@ -521,8 +521,10 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     };
     let mut documents = Vec::new();
     for (chat_id, mut conversation) in conversations {
-        if let Some(doc) = project_conversation(&chat_id, &mut conversation, &hooks, &mut report) {
-            documents.push(doc);
+        if let Some(document) =
+            project_conversation(&chat_id, &mut conversation, &hooks, &mut report)
+        {
+            documents.push(document);
         }
     }
 
@@ -815,14 +817,14 @@ mod tests {
         let mut conversation = PendingConversation::new("+15555550122", false, None, Vec::new());
         conversation.messages = messages;
         let mut report = ExportReport::default();
-        let doc =
+        let document =
             project_conversation("+15555550122", &mut conversation, &hooks, &mut report).unwrap();
-        (doc.messages, report)
+        (document.messages, report)
     }
 
     /// An XML row (milliseconds, no attachments) or a PDU row (whole
     /// seconds) with `digests` as its attachments.
-    fn test_msg(source_kind: &str, text: &str, digests: &[&str]) -> PendingMessage {
+    fn test_message(source_kind: &str, text: &str, digests: &[&str]) -> PendingMessage {
         let mut extra = BTreeMap::new();
         extra.insert("source_kind".into(), source_kind.to_string());
         if source_kind == "xml" {
@@ -852,8 +854,8 @@ mod tests {
     fn xml_and_pdu_mms_rows_collapse_keeping_attachments_and_milliseconds() {
         // The same MMS appears in the XML backup (no attachments) and as a PDU
         // file with media, in either order.
-        let xml = || test_msg("xml", "hello", &[]);
-        let pdu = || test_msg("pdu", "hello", &["a1"]);
+        let xml = || test_message("xml", "hello", &[]);
+        let pdu = || test_message("pdu", "hello", &["a1"]);
         for rows in [vec![xml(), pdu()], vec![pdu(), xml()]] {
             let (msgs, report) = project(rows);
             assert_eq!(msgs.len(), 1);
@@ -872,8 +874,8 @@ mod tests {
         // Two MMS sharing second, direction, and caption but with different
         // media are distinct messages: both rows survive.
         let (msgs, _) = project(vec![
-            test_msg("pdu", "photo", &["a1"]),
-            test_msg("pdu", "photo", &["a2"]),
+            test_message("pdu", "photo", &["a1"]),
+            test_message("pdu", "photo", &["a2"]),
         ]);
         assert_eq!(msgs.len(), 2);
         assert_ne!(msgs[0].guid, msgs[1].guid);
@@ -881,7 +883,10 @@ mod tests {
 
     #[test]
     fn plain_sms_duplicates_dropped() {
-        let (msgs, report) = project(vec![test_msg("xml", "hi", &[]), test_msg("xml", "hi", &[])]);
+        let (msgs, report) = project(vec![
+            test_message("xml", "hi", &[]),
+            test_message("xml", "hi", &[]),
+        ]);
         assert_eq!(msgs.len(), 1);
         assert_eq!(report.duplicates_dropped, 1);
     }

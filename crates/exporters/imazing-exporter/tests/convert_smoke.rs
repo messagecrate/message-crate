@@ -99,10 +99,11 @@ fn reactions_replies_deletions_and_edits_reach_the_message() {
         convert_run: ConvertRun::default(),
     })
     .expect("convert");
-    let doc = message_ir_format::read_conversation_json(&tmp.path().join("+13215550100.json"))
+    let document = message_ir_format::read_conversation_json(&tmp.path().join("+13215550100.json"))
         .expect("read the conversation back");
     let by_text = |text: &str| {
-        doc.messages
+        document
+            .messages
             .iter()
             .find(|m| m.text == text)
             .unwrap_or_else(|| panic!("no message reads {text:?}"))
@@ -151,7 +152,7 @@ fn reactions_replies_deletions_and_edits_reach_the_message() {
             edited_at_unix_ms: Some(1_577_880_600_000),
         }]
     );
-    for message in &doc.messages {
+    for message in &document.messages {
         assert_eq!(message.deletion.is_some(), message.text == "Deleted later");
         assert_eq!(message.edits.is_empty(), message.text != "See you at noon");
         assert_eq!(

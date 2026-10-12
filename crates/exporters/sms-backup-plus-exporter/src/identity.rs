@@ -22,24 +22,24 @@ use message_ir::{ConversationKey, NAMELESS_CHAT_ID};
 /// names nobody, so it can never take a person's key. The export writes that
 /// conversation's mail with an empty `X-smssync-address` and the subject
 /// `SMS`, so a second import keys it here again (#1591).
-pub(crate) fn chat_id_for(msg: &ParsedMessage) -> String {
-    if msg.is_group() {
-        format!("chat-{}", msg.chat_key)
-    } else if msg.chat_key.is_empty() {
-        name_only_key(msg).map_or_else(|| NAMELESS_CHAT_ID.to_string(), |key| key.chat_id())
+pub(crate) fn chat_id_for(message: &ParsedMessage) -> String {
+    if message.is_group() {
+        format!("chat-{}", message.chat_key)
+    } else if message.chat_key.is_empty() {
+        name_only_key(message).map_or_else(|| NAMELESS_CHAT_ID.to_string(), |key| key.chat_id())
     } else {
-        msg.chat_key.clone()
+        message.chat_key.clone()
     }
 }
 
 /// The key of a chat with a peer the mail named and recorded no address
 /// for. `None` when the mail is a group's, records an address, or has no
 /// usable name either.
-fn name_only_key(msg: &ParsedMessage) -> Option<ConversationKey> {
-    if msg.is_group() || !msg.chat_key.is_empty() {
+fn name_only_key(message: &ParsedMessage) -> Option<ConversationKey> {
+    if message.is_group() || !message.chat_key.is_empty() {
         return None;
     }
-    let name = msg.name_alias.as_deref().map_or("", str::trim);
+    let name = message.name_alias.as_deref().map_or("", str::trim);
     if name.is_empty() {
         return None;
     }
@@ -55,7 +55,7 @@ pub(crate) fn timestamp_ms(timestamp_secs: f64) -> i64 {
 mod tests {
     use super::*;
 
-    fn sample_msg(
+    fn sample_message(
         address: &str,
         timestamp_secs: f64,
         is_from_me: bool,
@@ -88,15 +88,15 @@ mod tests {
 
     #[test]
     fn a_mail_that_names_nobody_is_keyed_nameless() {
-        let msg = sample_msg("", 1_609_459_200.0, false, "hi");
-        assert_eq!(chat_id_for(&msg), NAMELESS_CHAT_ID);
+        let message = sample_message("", 1_609_459_200.0, false, "hi");
+        assert_eq!(chat_id_for(&message), NAMELESS_CHAT_ID);
     }
 
     /// A person named "unknown" is not the chat of the mails that name
     /// nobody.
     #[test]
     fn a_person_named_unknown_has_a_chat_of_their_own() {
-        let nobody = sample_msg("", 1.0, false, "hi");
+        let nobody = sample_message("", 1.0, false, "hi");
         let mut named = nobody.clone();
         named.name_alias = Some("unknown".into());
         assert_ne!(chat_id_for(&named), chat_id_for(&nobody));
@@ -107,8 +107,8 @@ mod tests {
     #[test]
     fn a_name_never_shares_the_chat_of_an_address_it_spells() {
         for address in ["AMAZON", "+15555550101"] {
-            let from_address = sample_msg(address, 1.0, false, "hi");
-            let mut named = sample_msg("", 1.0, false, "hi");
+            let from_address = sample_message(address, 1.0, false, "hi");
+            let mut named = sample_message("", 1.0, false, "hi");
             named.name_alias = Some(address.into());
             assert_ne!(chat_id_for(&named), chat_id_for(&from_address), "{address}");
         }
@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     fn two_people_known_only_by_name_have_two_chats() {
-        let mut a = sample_msg("", 1.0, false, "hi");
+        let mut a = sample_message("", 1.0, false, "hi");
         a.name_alias = Some("张伟".into());
         let mut b = a.clone();
         b.name_alias = Some("李娜".into());
@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn names_that_differ_only_in_an_accent_have_two_chats() {
-        let mut a = sample_msg("", 1.0, false, "hi");
+        let mut a = sample_message("", 1.0, false, "hi");
         a.name_alias = Some("José".into());
         let mut b = a.clone();
         b.name_alias = Some("Josè".into());
@@ -135,8 +135,8 @@ mod tests {
 
     #[test]
     fn a_chat_known_only_by_name_is_keyed_on_the_trimmed_name() {
-        let mut msg = sample_msg("", 1.0, false, "hi");
-        msg.name_alias = Some("  José Ramírez \t".into());
-        assert_eq!(chat_id_for(&msg), "name:José Ramírez");
+        let mut message = sample_message("", 1.0, false, "hi");
+        message.name_alias = Some("  José Ramírez \t".into());
+        assert_eq!(chat_id_for(&message), "name:José Ramírez");
     }
 }
