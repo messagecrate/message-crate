@@ -26,9 +26,9 @@ use chat_db_fixture::{
 };
 use common::{config, helper_binary};
 use imessage_reader_protocol::IOS_BACKUP_PASSWORD_INCORRECT;
+use message_crate_core::testutil::TestRun;
 use message_crate_core::{
-    AppleConfig, ApplePlatform, ExporterConfig, IMESSAGE_READER_DIRECTORY, LogSink, ProgressSink,
-    SourceConfig,
+    AppleConfig, ApplePlatform, IMESSAGE_READER_DIRECTORY, LogSink, ProgressSink,
 };
 
 /// A backup and the run's output, in one directory that lives as long as
@@ -66,13 +66,13 @@ impl Run {
         &self,
         password: Option<&str>,
         cancel_when: Option<Arc<AtomicBool>>,
-    ) -> ExporterConfig {
-        let base = config(
+    ) -> TestRun<AppleConfig> {
+        let mut config = config(
             &self.backup(),
             &self.output(),
             cancel_when.clone().unwrap_or_default(),
         );
-        let scratch = base.scratch_dir.clone();
+        let scratch = config.context.scratch_dir.clone();
         let seen = Arc::clone(&self.seen_in_scratch);
         let look = move || {
             let names = file_names_under(&scratch);
@@ -84,16 +84,14 @@ impl Run {
             seen.lock().unwrap().extend(names);
         };
         let on_log = look.clone();
-        ExporterConfig {
-            log: LogSink::new(move |_| on_log()),
-            progress: ProgressSink::unpaced(move |_| look()),
-            source: SourceConfig::Apple(AppleConfig {
-                platform: Some(ApplePlatform::Ios),
-                backup_password: password.map(str::to_string),
-                ..AppleConfig::default()
-            }),
-            ..base
-        }
+        config.context.log = LogSink::new(move |_| on_log());
+        config.context.progress = ProgressSink::unpaced(move |_| look());
+        config.source = AppleConfig {
+            platform: Some(ApplePlatform::Ios),
+            backup_password: password.map(str::to_string),
+            ..AppleConfig::default()
+        };
+        config
     }
 
     /// The run's directory under the Scratch Directory, which holds a
@@ -161,7 +159,9 @@ fn an_encrypted_backup_exports_through_the_scratch_directory() {
     let run = Run::new(Encryption::Password(BACKUP_PASSWORD));
     let backup_before = files_under(&run.backup());
 
-    imessage_ir_exporter::run(&run.config(Some(BACKUP_PASSWORD), None)).unwrap();
+    run.config(Some(BACKUP_PASSWORD), None)
+        .run(imessage_ir_exporter::run)
+        .unwrap();
 
     let all = exported_text(&run.output());
     assert!(all.contains("\"Saturday works\""), "{all}");
@@ -190,7 +190,9 @@ fn an_unencrypted_backup_exports_without_a_password() {
     helper_binary();
     let run = Run::new(Encryption::None);
 
-    imessage_ir_exporter::run(&run.config(None, None)).unwrap();
+    run.config(None, None)
+        .run(imessage_ir_exporter::run)
+        .unwrap();
 
     assert!(exported_text(&run.output()).contains("\"Saturday works\""));
     assert_eq!(staged_photo(&run.output()), PHOTO_BYTES);
@@ -211,7 +213,10 @@ fn a_wrong_password_is_refused_in_the_readers_words() {
     helper_binary();
     let run = Run::new(Encryption::Password(BACKUP_PASSWORD));
 
-    let err = imessage_ir_exporter::run(&run.config(Some("not-the-password"), None)).unwrap_err();
+    let err = run
+        .config(Some("not-the-password"), None)
+        .run(imessage_ir_exporter::run)
+        .unwrap_err();
 
     assert_eq!(err.to_string(), IOS_BACKUP_PASSWORD_INCORRECT);
     run.assert_scratch_is_gone();
@@ -226,9 +231,10 @@ fn a_run_that_fails_after_decrypting_leaves_no_scratch_directory() {
     let run = Run::new(Encryption::Password(BACKUP_PASSWORD));
     let cancel = Arc::new(AtomicBool::new(false));
 
-    let err =
-        imessage_ir_exporter::run(&run.config(Some(BACKUP_PASSWORD), Some(Arc::clone(&cancel))))
-            .unwrap_err();
+    let err = run
+        .config(Some(BACKUP_PASSWORD), Some(Arc::clone(&cancel)))
+        .run(imessage_ir_exporter::run)
+        .unwrap_err();
 
     assert!(
         cancel.load(Ordering::Relaxed),

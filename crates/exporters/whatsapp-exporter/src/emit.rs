@@ -22,7 +22,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const EXPORT_SOURCE: &str = "whatsapp";
+const EXPORT_SOURCE: &str = message_crate_core::Exporter::Whatsapp.source_id();
 const EXPORT_TOOL: &str = "WhatsApp Chat Exporter";
 /// Pinned documented upstream version (JSON convert path; shell-out may differ).
 pub(crate) const EXPORT_TOOL_VERSION: &str = "0.13.0";

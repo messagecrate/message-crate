@@ -4,20 +4,20 @@
 //! [`run_log_lines`] (behind `testutil`).
 
 use crate::{
-    ExportReport, ExporterConfig, IssueSink, ProgressEvent, ProgressSink, RunIssue, RunLogLevel,
-    parse_run_log_line,
+    ExportReport, IssueSink, OutputConfig, ProgressEvent, ProgressSink, RunContext, RunIssue,
+    RunLogLevel, parse_run_log_line,
 };
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-/// Give `config` an issue sink, and return the rows it receives, in the
+/// Give `context` an issue sink, and return the rows it receives, in the
 /// order the run sent them.
-pub fn collect_issues(config: &mut ExporterConfig) -> Arc<Mutex<Vec<RunIssue>>> {
+pub fn collect_issues(context: &mut RunContext) -> Arc<Mutex<Vec<RunIssue>>> {
     let issues = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&issues);
-    config.issues = IssueSink::new(move |issue| {
+    context.issues = IssueSink::new(move |issue| {
         sink.lock().unwrap().push(issue);
     });
     issues
@@ -331,34 +331,43 @@ pub fn test_scratch_dir() -> PathBuf {
     std::env::temp_dir().join("message-crate-test-cache")
 }
 
-/// The config an exporter's `run()` test passes: read `inputs`, write JSONL
-/// into `output`, copy no attachments and keep every name, so the result
-/// shows only what the exporter itself did. Scratch data goes under
-/// [`test_scratch_dir`].
-pub fn jsonl_run_config(
-    inputs: &[&Path],
-    output: &Path,
-    source: crate::SourceConfig,
-) -> crate::ExporterConfig {
-    crate::ExporterConfig {
+/// What an exporter's `run()` test passes: the [`RunContext`], the
+/// [`OutputConfig`], the inputs, and the exporter's own config `S`, the four
+/// arguments every exporter's `run` takes.
+#[derive(Debug, Clone)]
+pub struct TestRun<S> {
+    /// The run's plumbing.
+    pub context: RunContext,
+    /// What the run writes.
+    pub output: OutputConfig,
+    /// The paths the run reads.
+    pub inputs: Vec<PathBuf>,
+    /// The exporter's own config.
+    pub source: S,
+}
+
+impl<S> TestRun<S> {
+    /// Call `run`, an exporter's `run`, with this run's four parts.
+    pub fn run<R>(&self, run: impl FnOnce(&RunContext, &OutputConfig, &[PathBuf], &S) -> R) -> R {
+        run(&self.context, &self.output, &self.inputs, &self.source)
+    }
+}
+
+/// The run an exporter's `run()` test passes: read `inputs` with `source`,
+/// write JSONL into `output`, copy no attachments and keep every name, so
+/// the result shows only what the exporter itself did. Scratch data goes
+/// under [`test_scratch_dir`].
+pub fn jsonl_test_run<S>(inputs: &[&Path], output: &Path, source: S) -> TestRun<S> {
+    TestRun {
+        context: RunContext::new(test_scratch_dir()),
+        output: OutputConfig {
+            media: crate::MediaConfig {
+                mode: media::MediaMode::Disabled,
+                compress: media::CompressOptions::default(),
+            },
+            ..OutputConfig::new(output, crate::OutputFormat::Jsonl)
+        },
         inputs: inputs.iter().map(|p| p.to_path_buf()).collect(),
-        output: output.to_path_buf(),
-        scratch_dir: test_scratch_dir(),
-        timezone: None,
-        obfuscate: crate::ObfuscateConfig {
-            enabled: false,
-            seed: None,
-        },
-        media: crate::MediaConfig {
-            mode: media::MediaMode::Disabled,
-            compress: media::CompressOptions::default(),
-        },
-        cancel: crate::CancelFlag::default(),
-        log: crate::LogSink::none(),
-        progress: ProgressSink::none(),
-        issues: IssueSink::none(),
-        output_format: crate::OutputFormat::Jsonl,
-        resume: false,
         source,
     }
 }

@@ -1,28 +1,33 @@
 //! Full export pipeline; the desktop app calls it in process.
 
 use crate::emit::{ConvertExportArgs, convert_export};
-use anyhow::{Result, bail};
-use message_crate_core::{ExporterConfig, RunResult, SourceConfig, prepare_outputs};
+use anyhow::Result;
+use message_crate_core::{
+    OutputConfig, RunContext, RunResult, SmsBackupRestoreConfig, prepare_outputs, require_input,
+};
+use std::path::PathBuf;
 
 /// Convert, then apply media transforms and obfuscation.
 ///
 /// # Errors
 ///
-/// Returns an error when the source is not SMS Backup & Restore, the output
+/// Returns an error when there is not exactly one input, the output
 /// directory holds the input, conversion fails, media processing fails for
 /// every candidate file, or the user cancels.
-pub fn run(config: &ExporterConfig) -> Result<RunResult> {
-    let SourceConfig::SmsBackupRestore(source) = &config.source else {
-        bail!("sms-backup-restore-exporter requires SourceConfig::SmsBackupRestore");
-    };
-    message_crate_core::check_cancel(&config.cancel)?;
-    let input = config.require_input().map_err(anyhow::Error::msg)?;
-    let (inputs, output_dir) = prepare_outputs(&[input.to_path_buf()], &config.output)?;
-    message_crate_core::run_pipeline(config, |convert_run| {
+pub fn run(
+    context: &RunContext,
+    output: &OutputConfig,
+    inputs: &[PathBuf],
+    source: &SmsBackupRestoreConfig,
+) -> Result<RunResult> {
+    message_crate_core::check_cancel(&context.cancel)?;
+    let input = require_input(inputs).map_err(anyhow::Error::msg)?;
+    let (inputs, output_dir) = prepare_outputs(&[input.to_path_buf()], &output.directory)?;
+    message_crate_core::run_pipeline(context, output, |convert_run| {
         convert_export(ConvertExportArgs {
             input: &inputs[0],
             output_dir: &output_dir,
-            scratch_dir: &config.scratch_dir,
+            scratch_dir: &context.scratch_dir,
             owner_phones: &source.owner_phones,
             convert_run,
         })
@@ -31,7 +36,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
 
 #[cfg(test)]
 mod tests {
-    use message_crate_core::{SmsBackupRestoreConfig, SourceConfig, testutil::jsonl_run_config};
+    use message_crate_core::{SmsBackupRestoreConfig, testutil::jsonl_test_run};
     use std::fs;
     use std::path::Path;
 
@@ -60,15 +65,15 @@ mod tests {
         .unwrap();
 
         for output in [input.clone(), tmp.path().to_path_buf()] {
-            let config = jsonl_run_config(
+            let config = jsonl_test_run(
                 &[&xml],
                 &output,
-                SourceConfig::SmsBackupRestore(SmsBackupRestoreConfig {
+                SmsBackupRestoreConfig {
                     owner_phones: vec!["+15555550100".into()],
-                }),
+                },
             );
             let before = entries(&output);
-            let err = crate::run(&config).unwrap_err().to_string();
+            let err = config.run(crate::run).unwrap_err().to_string();
             assert!(
                 err.contains("must not be the same as, or contain, the input"),
                 "{}: {err}",

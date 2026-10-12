@@ -6,7 +6,8 @@
 
 mod common;
 
-use message_crate_core::{CancelFlag, ExporterConfig, OutputFormat};
+use message_crate_core::testutil::TestRun;
+use message_crate_core::{AppleConfig, CancelFlag, OutputFormat};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -46,8 +47,9 @@ fn exports_a_mac_chat_db_through_the_helper_process() {
     let db_path = write_chat_db(dir.path());
     let output = dir.path().join("out");
 
-    let result =
-        imessage_ir_exporter::run(&config(&db_path, &output, CancelFlag::default())).unwrap();
+    let result = config(&db_path, &output, CancelFlag::default())
+        .run(imessage_ir_exporter::run)
+        .unwrap();
     assert!(
         result
             .messages
@@ -114,7 +116,9 @@ fn a_seconds_stamp_and_an_unreadable_date_are_whole_seconds() {
     // reads a date in.
     set_message_date(&db_path, "guid-8", -10_000_000_000_000);
     let output = dir.path().join("out");
-    imessage_ir_exporter::run(&config(&db_path, &output, CancelFlag::default())).unwrap();
+    config(&db_path, &output, CancelFlag::default())
+        .run(imessage_ir_exporter::run)
+        .unwrap();
 
     let group = document_for(&output, GROUP_CHAT_IDENTIFIER);
     let seconds = message_with_guid(&group, "guid-3");
@@ -156,7 +160,9 @@ fn every_conversation_file_says_when_the_chat_db_was_last_written() {
     set_modified_unix_ms(&db_path, TEST_BACKUP_TAKEN_AT_UNIX_MS);
     let output = dir.path().join("out");
 
-    imessage_ir_exporter::run(&config(&db_path, &output, CancelFlag::default())).unwrap();
+    config(&db_path, &output, CancelFlag::default())
+        .run(imessage_ir_exporter::run)
+        .unwrap();
     let dates = jsonl_backup_dates(&output);
     assert_eq!(dates.len(), 7, "{dates:?}");
     assert!(
@@ -217,7 +223,9 @@ fn messages_from_either_owner_address_are_sent_by_the_owner() {
     let db_path = write_chat_db(dir.path());
     let output = dir.path().join("out");
 
-    imessage_ir_exporter::run(&config(&db_path, &output, CancelFlag::default())).unwrap();
+    config(&db_path, &output, CancelFlag::default())
+        .run(imessage_ir_exporter::run)
+        .unwrap();
 
     let phone_chat = document_for(&output, FRIEND_PHONE);
     assert_eq!(phone_chat.export.owner_identity.as_deref(), Some(OWNER));
@@ -279,7 +287,9 @@ fn a_tapback_and_an_emoji_reaction_are_the_messages_reactions() {
     let db_path = write_chat_db(dir.path());
     let output = dir.path().join("out");
 
-    imessage_ir_exporter::run(&config(&db_path, &output, CancelFlag::default())).unwrap();
+    config(&db_path, &output, CancelFlag::default())
+        .run(imessage_ir_exporter::run)
+        .unwrap();
 
     // Read the line as written, so the test checks the file's own shape.
     let group = jsonl_files(&output)
@@ -329,7 +339,9 @@ fn a_deleted_and_an_unsent_message_carry_their_mark_in_the_file() {
     let db_path = write_chat_db(dir.path());
     let output = dir.path().join("out");
 
-    imessage_ir_exporter::run(&config(&db_path, &output, CancelFlag::default())).unwrap();
+    config(&db_path, &output, CancelFlag::default())
+        .run(imessage_ir_exporter::run)
+        .unwrap();
 
     // Read the lines as written, so the test checks the file's own shape.
     let chat = jsonl_files(&output)
@@ -356,11 +368,10 @@ fn a_deleted_and_an_unsent_message_carry_their_mark_in_the_file() {
 }
 
 /// The exporter's config for `format` rather than JSON Lines.
-fn config_for(db_path: &Path, output: &Path, format: OutputFormat) -> ExporterConfig {
-    ExporterConfig {
-        output_format: format,
-        ..config(db_path, output, CancelFlag::default())
-    }
+fn config_for(db_path: &Path, output: &Path, format: OutputFormat) -> TestRun<AppleConfig> {
+    let mut config = config(db_path, output, CancelFlag::default());
+    config.output.format = format;
+    config
 }
 
 /// The Apple-specific fields the program reads travel into the document:
@@ -372,7 +383,9 @@ fn a_message_keeps_its_apple_fields_in_the_document() {
     let db_path = write_chat_db(dir.path());
     let output = dir.path().join("out");
 
-    imessage_ir_exporter::run(&config(&db_path, &output, CancelFlag::default())).unwrap();
+    config(&db_path, &output, CancelFlag::default())
+        .run(imessage_ir_exporter::run)
+        .unwrap();
 
     let phone_chat = document_for(&output, FRIEND_PHONE);
     let nice = message_with_guid(&phone_chat, "guid-2");
@@ -393,8 +406,9 @@ fn a_csv_export_writes_each_conversation_and_copies_the_photo() {
     let db_path = write_chat_db(dir.path());
     let output = dir.path().join("out");
 
-    let result =
-        imessage_ir_exporter::run(&config_for(&db_path, &output, OutputFormat::Csv)).unwrap();
+    let result = config_for(&db_path, &output, OutputFormat::Csv)
+        .run(imessage_ir_exporter::run)
+        .unwrap();
     assert!(
         result.messages.iter().any(|l| l == "  Saved 1 attachment"),
         "{:#?}",
@@ -450,7 +464,9 @@ fn a_mail_archive_export_embeds_the_photo() {
 
     for format in [OutputFormat::Mbox, OutputFormat::Eml] {
         let output = dir.path().join(format.as_str());
-        imessage_ir_exporter::run(&config_for(&db_path, &output, format)).unwrap();
+        config_for(&db_path, &output, format)
+            .run(imessage_ir_exporter::run)
+            .unwrap();
 
         let phone_chat = if format == OutputFormat::Mbox {
             read_conversation_mbox(&output.join(format!("{FRIEND_PHONE}.mbox"))).unwrap()
@@ -480,8 +496,9 @@ fn an_unreadable_database_is_reported_in_the_helpers_words() {
     fs::write(&db_path, b"this is not sqlite").unwrap();
     let output = dir.path().join("out");
 
-    let err =
-        imessage_ir_exporter::run(&config(&db_path, &output, CancelFlag::default())).unwrap_err();
+    let err = config(&db_path, &output, CancelFlag::default())
+        .run(imessage_ir_exporter::run)
+        .unwrap_err();
     let text = format!("{err:#}");
     assert!(
         text.contains("not a database") || text.contains("file is not a database"),
@@ -497,9 +514,13 @@ fn a_second_run_reuses_the_cancelled_flag_only_when_set() {
     let output = dir.path().join("out");
     let cancel = Arc::new(AtomicBool::new(false));
 
-    imessage_ir_exporter::run(&config(&db_path, &output, cancel.clone())).unwrap();
+    config(&db_path, &output, cancel.clone())
+        .run(imessage_ir_exporter::run)
+        .unwrap();
     assert_eq!(jsonl_files(&output).len(), 7);
     cancel.store(true, Ordering::Relaxed);
-    let err = imessage_ir_exporter::run(&config(&db_path, &output, cancel)).unwrap_err();
+    let err = config(&db_path, &output, cancel)
+        .run(imessage_ir_exporter::run)
+        .unwrap_err();
     assert_eq!(err.to_string(), "cancelled");
 }

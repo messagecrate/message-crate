@@ -38,7 +38,7 @@ use message_staging::{
 
 use crate::run::{AttachmentEmbed, ExportOptions};
 
-const EXPORT_SOURCE: &str = "imessage";
+const EXPORT_SOURCE: &str = message_crate_core::Exporter::Imessage.source_id();
 const EXPORT_TOOL: &str = "imessage-ir-exporter";
 const CONVERSATION_PROGRESS_EVERY: usize = 100;
 /// The run result's count of rows the program read but could not convert.

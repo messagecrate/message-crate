@@ -31,7 +31,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-const EXPORT_SOURCE: &str = "imazing";
+const EXPORT_SOURCE: &str = message_crate_core::Exporter::Imazing.source_id();
 const EXPORT_TOOL: &str = "iMazing";
 const EXPORT_TOOL_VERSION: &str = "3.5.5";
 

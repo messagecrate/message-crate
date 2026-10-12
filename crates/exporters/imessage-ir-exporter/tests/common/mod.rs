@@ -4,9 +4,9 @@
 
 use std::path::Path;
 
+use message_crate_core::testutil::TestRun;
 use message_crate_core::{
-    AppleConfig, ApplePlatform, CancelFlag, ExporterConfig, IssueSink, LogSink, MediaConfig,
-    OutputFormat, ProgressSink, SourceConfig,
+    AppleConfig, ApplePlatform, CancelFlag, OutputConfig, OutputFormat, RunContext,
 };
 
 /// Build `imessage-reader` once per test binary, name it in
@@ -17,23 +17,17 @@ pub fn helper_binary() -> &'static Path {
 }
 
 /// A JSON Lines export of the Mac `chat.db` at `db_path` into `output`.
-pub fn config(db_path: &Path, output: &Path, cancel: CancelFlag) -> ExporterConfig {
-    ExporterConfig {
+pub fn config(db_path: &Path, output: &Path, cancel: CancelFlag) -> TestRun<AppleConfig> {
+    TestRun {
+        context: RunContext {
+            cancel,
+            ..RunContext::new(output.with_extension("cache"))
+        },
+        output: OutputConfig::new(output, OutputFormat::Jsonl),
         inputs: vec![db_path.to_path_buf()],
-        output: output.to_path_buf(),
-        scratch_dir: output.with_extension("cache"),
-        timezone: None,
-        obfuscate: Default::default(),
-        media: MediaConfig::default(),
-        cancel,
-        log: LogSink::none(),
-        progress: ProgressSink::none(),
-        issues: IssueSink::none(),
-        output_format: OutputFormat::Jsonl,
-        resume: false,
-        source: SourceConfig::Apple(AppleConfig {
+        source: AppleConfig {
             platform: Some(ApplePlatform::MacOs),
             ..AppleConfig::default()
-        }),
+        },
     }
 }
