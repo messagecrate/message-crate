@@ -799,10 +799,11 @@ impl ApiError {
                 holder: None,
             };
         };
-        match self {
-            Self::Internal(err) => log_refusal(kind, Some(err)),
-            _ => log_refusal(kind, None),
-        }
+        let cause = match self {
+            Self::Internal(err) => Some(err),
+            _ => None,
+        };
+        log_refusal(kind, cause);
         let mut problem = Problem {
             kind: kind.url(),
             title: kind.title().to_string(),
@@ -846,16 +847,17 @@ impl ApiError {
                 problem.errors = Some(errors.clone());
                 problem.line = Some(*line as u64);
             }
-            Self::Internal(_) if kind == ProblemType::DatabaseBusy => {
-                problem.retry_after = Some(crate::problem::DATABASE_BUSY_RETRY_AFTER_SECS);
-                problem.detail = Some(format!(
-                    "the database is busy, so try again in {} seconds",
-                    crate::problem::DATABASE_BUSY_RETRY_AFTER_SECS
-                ));
-            }
-            Self::Internal(_) => unreachable!("{kind:?} is no type of an internal error"),
+            // An internal error's answer follows from its type, below.
+            Self::Internal(_) => {}
             // The variants that carry only a sentence, which `message` lists.
             _ => problem.detail = Some(self.sentence().to_string()),
+        }
+        if kind == ProblemType::DatabaseBusy {
+            problem.retry_after = Some(crate::problem::DATABASE_BUSY_RETRY_AFTER_SECS);
+            problem.detail = Some(format!(
+                "the database is busy, so try again in {} seconds",
+                crate::problem::DATABASE_BUSY_RETRY_AFTER_SECS
+            ));
         }
         problem
     }
@@ -867,19 +869,19 @@ impl ApiError {
 /// `INFO` otherwise. The problem's
 /// `detail` is never written: it can repeat what a person typed, and a log
 /// line holds only ids, counts, routes and outcomes
-/// (`docs/architecture/server-log.md`). A refusal whose cause is an internal
-/// error, a busy database, carries that error's chain as `error`, as the
-/// `ERROR` line of a `500` does, so a lock that never clears names the step
-/// that met it.
+/// (`docs/architecture/server-log.md`). A refusal whose `cause` is an
+/// internal error (a busy database) also carries that error's chain as
+/// `error`, as the `ERROR` line of a `500` does, so a lock that never clears
+/// names the step that met it.
 fn log_refusal(kind: ProblemType, cause: Option<&anyhow::Error>) {
     let status = kind.status();
     let problem = kind.slug();
-    if let Some(cause) = cause {
-        tracing::warn!(%problem, status = status.as_u16(), error = %error_chain(cause), "The server refused a request");
-    } else if kind.refusal_is_a_warning() {
-        tracing::warn!(%problem, status = status.as_u16(), "The server refused a request");
+    let error = cause.map(error_chain);
+    let error = error.as_deref();
+    if kind.refusal_is_a_warning() {
+        tracing::warn!(%problem, status = status.as_u16(), error, "The server refused a request");
     } else {
-        tracing::info!(%problem, status = status.as_u16(), "The server refused a request");
+        tracing::info!(%problem, status = status.as_u16(), error, "The server refused a request");
     }
 }
 

@@ -113,10 +113,11 @@ the client received.
 A request that fails with `500 Internal Server Error` leaves one `ERROR`
 line, written where its problem document is built, with the error's whole
 chain, outermost first. A busy database answers `database-busy` instead,
-and its refusal line, above, carries the chain at `WARN`. Each database statement adds the step it does to
-that chain, in a few words (`read the attachments of a page of messages`),
-so the line reads as the step and then the database's own message. The
-step is a fixed phrase: it never holds a value bound into the statement.
+and its refusal line, above, carries the chain at `WARN`. Each database
+statement adds the step it does to that chain, in a few words (`read the
+attachments of a page of messages`), so the line reads as the step and then
+the database's own message. The step is a fixed phrase: it never holds a
+value bound into the statement.
 The trace layer writes no second `ERROR` line for the `5xx`, only the
 response's `INFO` line.
 

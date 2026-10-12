@@ -63,7 +63,9 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(15);
 /// every other request. Under write-ahead logging a reader never waits for a
 /// writer, so those five serve reads side by side. Each connection keeps a
 /// page cache of its own of up to [`CACHE_KIB`], so the pool's caches can
-/// hold `MAX_CONNECTIONS * CACHE_KIB` in all; the two are set together.
+/// hold `MAX_CONNECTIONS * CACHE_KIB` in all; the two are set together. The
+/// count is no higher because more connections would raise that total past
+/// about 800 MB, or shrink each connection's cache further.
 const MAX_CONNECTIONS: u32 = 8;
 
 /// The most page cache one connection keeps, in KiB (`PRAGMA cache_size`
@@ -311,9 +313,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(busy_timeout, 15000, "busy_timeout");
-        // Two imports and the sweep after an Import Run leave connections for every other
-        // request, and a request gives up waiting for one well before a
-        // browser or a proxy gives up on it (#2124).
+        // Two imports and the sweep after an Import Run leave connections
+        // for every other request, and a request gives up waiting for one
+        // well before a browser or a proxy gives up on it (#2124).
         assert_eq!(pool.options().get_max_connections(), 8);
         assert_eq!(
             pool.options().get_acquire_timeout(),

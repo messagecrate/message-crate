@@ -552,7 +552,10 @@ so no handler has to map it. The refusal leaves one `WARN` line naming the
 type and carrying the chain, and no `ERROR` line
 ([The server's log](server-log.md#a-refused-request-names-its-problem-type)).
 The desktop app's HTTP client (`classify_retry` in `crates/libs/http`)
-retries a `5xx`, so it retries this with no change of its own. The pool
+retries a `5xx`, so it retries this with no change of its own. The web app
+tries a read that failed with a `5xx` once more (`retry` in
+`web/src/lib/routeQuery.ts`), without waiting for `Retry-After`, and shows a
+write's failure with its `detail`. The pool
 (`crates/server/server/src/db/engine.rs`) holds 8 connections: two import
 batches and the sweep of unreferenced files after an Import Run
 (`asset_store::sweep_after_run`) can each hold one for a whole run, and
@@ -563,14 +566,15 @@ left one for every other request, and a request waited sqlx's default 30
 seconds for it before answering `500 Internal Server Error`
 ([#2124](https://github.com/messagecrate/message-crate/issues/2124)). Each
 connection's page cache is capped at about 100 MB, half what it was, so the
-8 hold no more memory in all than the 4 did.
+8 hold no more memory in all than the 4 did. Not more than 8, because more
+connections would raise that total, or shrink each cache further.
 
 A server told to stop closes its import slots
 (`AppState::on_stop_signal` in `crates/server/server/src/server.rs`), so an
 import batch still waiting for a slot is refused with `server-stopping`,
-having read none of its body, and stores nothing. A batch that holds a slot but is still reading
-its body is refused the same way once the body has arrived, before its import
-starts.
+having read none of its body, and stores nothing. A batch that holds a slot
+but is still reading its body is refused the same way once the body has
+arrived, before its import starts.
 The Upload retries it as it retries any `5xx`; if the server is not back in
 time, the Upload pauses, and resuming the run sends the batch. A batch whose
 import has started is not refused. Why: a waiting batch used to take a slot
