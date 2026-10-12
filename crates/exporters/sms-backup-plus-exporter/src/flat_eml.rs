@@ -41,29 +41,43 @@ pub(crate) enum Datatype {
     Other,
 }
 
+/// Each datatype SMS Backup+ writes, with the name it writes for it.
+const DATATYPE_NAMES: [(Datatype, &str); 4] = [
+    (Datatype::Sms, "SMS"),
+    (Datatype::Mms, "MMS"),
+    (Datatype::CallLog, "CALLLOG"),
+    (Datatype::WhatsApp, "WHATSAPP"),
+];
+
 impl Datatype {
     /// The datatype a header value names.
     pub(crate) fn from_header(value: &str) -> Self {
-        [Self::Sms, Self::Mms, Self::CallLog, Self::WhatsApp]
+        DATATYPE_NAMES
             .into_iter()
-            .find(|datatype| value.eq_ignore_ascii_case(datatype.name()))
-            .unwrap_or(if value.is_empty() {
-                Self::Missing
-            } else {
-                Self::Other
-            })
+            .find(|(_, name)| value.eq_ignore_ascii_case(name))
+            .map_or(
+                if value.is_empty() {
+                    Self::Missing
+                } else {
+                    Self::Other
+                },
+                |(datatype, _)| datatype,
+            )
     }
 
-    /// The name SMS Backup+ writes in the header; empty for a mail without
-    /// one or with a name it never writes.
-    pub(crate) fn name(self) -> &'static str {
-        match self {
-            Self::Sms => "SMS",
-            Self::Mms => "MMS",
-            Self::CallLog => "CALLLOG",
-            Self::WhatsApp => "WHATSAPP",
-            Self::Missing | Self::Other => "",
-        }
+    /// The name SMS Backup+ writes in the header, or `None` for a mail
+    /// without one or with a name it never writes.
+    pub(crate) fn name(self) -> Option<&'static str> {
+        DATATYPE_NAMES
+            .into_iter()
+            .find(|(datatype, _)| *datatype == self)
+            .map(|(_, name)| name)
+    }
+
+    /// True when SMS Backup+ writes the date of a mail of this datatype in
+    /// seconds, as Android stores an MMS's, rather than milliseconds.
+    pub(crate) fn dates_in_seconds(self) -> bool {
+        self == Self::Mms
     }
 }
 
@@ -393,8 +407,8 @@ pub(crate) fn group_key(members: &[Handle]) -> (String, String) {
 /// read in its unit leaves the time to `Date`, which SMS Backup+ writes on
 /// every mail from the same moment, to the second.
 fn timestamp_seconds(headers: &MailHeaders) -> Option<(f64, bool)> {
-    let sent = date_header_seconds(headers);
-    smssync_date_seconds(headers, sent).or(sent.map(|secs| (secs, false)))
+    let date_header_secs = date_header_seconds(headers);
+    smssync_date_seconds(headers, date_header_secs).or(date_header_secs.map(|secs| (secs, false)))
 }
 
 /// Unix seconds from the `Date` header, whole seconds only.
@@ -410,7 +424,7 @@ fn date_header_seconds(headers: &MailHeaders) -> Option<f64> {
 
 /// Unix seconds from `X-smssync-date`, read in the unit its
 /// `X-smssync-datatype` gives, and whether the time carries milliseconds.
-/// `sent` is the time in the `Date` header, if it has one.
+/// `date_header_secs` is the time in the `Date` header, if it has one.
 ///
 /// SMS Backup+ copies the date straight from Android's database, where an
 /// SMS's and a call's `date` are milliseconds and an MMS's is seconds
@@ -425,20 +439,23 @@ fn date_header_seconds(headers: &MailHeaders) -> Option<f64> {
 /// read in the unit that agrees with `Date`, which SMS Backup+ wrote from
 /// the same date to the second. With no `Date` to compare, it is read in
 /// milliseconds, the unit of nearly every such mail.
-fn smssync_date_seconds(headers: &MailHeaders, sent: Option<f64>) -> Option<(f64, bool)> {
+fn smssync_date_seconds(
+    headers: &MailHeaders,
+    date_header_secs: Option<f64>,
+) -> Option<(f64, bool)> {
     let date = headers.smssync_date.as_str();
-    let millis = || android_fields::unix_secs_from_date_ms(date).map(|secs| (secs, true));
-    let secs = || android_fields::unix_secs_from_date_secs(date).map(|secs| (secs, false));
+    let in_millis = || android_fields::unix_secs_from_date_ms(date).map(|time| (time, true));
+    let in_secs = || android_fields::unix_secs_from_date_secs(date).map(|time| (time, false));
     match headers.smssync_datatype {
-        Datatype::Sms | Datatype::CallLog | Datatype::WhatsApp => millis(),
-        Datatype::Mms => secs(),
-        Datatype::Missing => match sent {
-            None => millis(),
-            Some(sent) => millis()
-                .filter(|(secs, _)| secs.floor() == sent)
-                .or_else(|| secs().filter(|(secs, _)| *secs == sent)),
+        Datatype::Missing => match date_header_secs {
+            None => in_millis(),
+            Some(sent_at) => in_millis()
+                .filter(|(time, _)| time.floor() == sent_at)
+                .or_else(|| in_secs().filter(|(time, _)| *time == sent_at)),
         },
         Datatype::Other => None,
+        datatype if datatype.dates_in_seconds() => in_secs(),
+        Datatype::Sms | Datatype::Mms | Datatype::CallLog | Datatype::WhatsApp => in_millis(),
     }
 }
 

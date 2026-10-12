@@ -224,7 +224,7 @@ impl SmsBackupPlusArchive {
         // SMS Backup+ copies Android's `date`: milliseconds for an SMS, and
         // seconds for an MMS, so an MMS goes out to the second.
         let datatype = if is_mms { Datatype::Mms } else { Datatype::Sms };
-        let smssync_date = if datatype == Datatype::Mms {
+        let smssync_date = if datatype.dates_in_seconds() {
             message.timestamp_unix_ms.div_euclid(1000)
         } else {
             message.timestamp_unix_ms
@@ -237,7 +237,10 @@ impl SmsBackupPlusArchive {
             .date(Date::new(message.timestamp_unix_ms.div_euclid(1000)))
             .message_id(format!("{}@{DOMAIN}", message.guid))
             .references(format!("{}@{DOMAIN}", conversation.thread))
-            .header("X-smssync-datatype", Text::new(datatype.name()))
+            .header(
+                "X-smssync-datatype",
+                Text::new(datatype.name().unwrap_or_default()),
+            )
             .header("X-smssync-address", Text::new(conversation.address()))
             .header("X-smssync-date", Text::new(smssync_date.to_string()))
             .header("X-smssync-type", Text::new(android_type))
