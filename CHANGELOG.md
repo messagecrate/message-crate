@@ -1020,9 +1020,9 @@ released versions carry their date on the heading.
 
 #### The server
 
-- 2026-10-11: **The server's log says each failure once.** A request that
-  failed with `500 Internal Server Error` wrote two error lines, and the
-  second said nothing the first did not. It now writes one, with the whole
+- 2026-10-11: **The server's log says each failure once.** A request the
+  server failed on wrote two error lines to its log, and the second said
+  nothing the first did not. It now writes one, with the whole
   cause. A database error's message used to appear twice in that line, and
   now appears once. A successful health check and a file of the website no
   longer write a line at the default level, because the web app checks the
