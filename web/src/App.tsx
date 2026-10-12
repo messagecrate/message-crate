@@ -20,6 +20,7 @@ import { TimeZoneProvider } from "./lib/TimeZoneProvider";
 import { useIsOwner } from "./lib/useIsOwner";
 import { useNeedsProfileSetup } from "./lib/useNeedsProfileSetup";
 import LoginScreen from "./screens/LoginScreen";
+import { SettingsScreen } from "./screens/lazySettingsScreen";
 import OnboardingScreen from "./screens/OnboardingScreen";
 import OwnerHome from "./screens/OwnerHome";
 
@@ -31,8 +32,10 @@ import OwnerHome from "./screens/OwnerHome";
 const ImportScreen = lazyChunk("ImportScreen", () => import("./screens/ImportScreen"));
 const ExportScreen = lazyChunk("ExportScreen", () => import("./screens/ExportScreen"));
 
-/** Settings and trash are their own routes and are not on the first paint path. */
-const SettingsScreen = lazyChunk("SettingsScreen", () => import("./screens/SettingsScreen"));
+/**
+ * Trash is its own route and is not on the first paint path. Neither is
+ * Settings, which Owner Home opens too (`lazySettingsScreen`).
+ */
 const TrashScreen = lazyChunk("TrashScreen", () => import("./screens/TrashScreen"));
 
 /** Every route of the app; exported so tests drive the real route table. */
