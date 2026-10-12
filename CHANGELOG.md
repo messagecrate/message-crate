@@ -367,6 +367,16 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-12: **Disabling an account logs it out.** A person still logged
+  in to an account the owner disabled was only refused while the account
+  stayed disabled, so enabling it again let them carry on without logging
+  in, and every media link opened before worked again. Disabling now logs
+  them out, and they log in again once the account is enabled.
+- 2026-10-12: **A deleted account no longer comes back.** An import or an
+  export that was already under way when its account was deleted made the
+  account again, named by a number and with no password, so anyone could log
+  in to it. The import or export is now refused, and the account stays
+  deleted.
 - 2026-10-12: **A page asked for while an import keeps the database busy
   loads once the server is ready.** The server says how many seconds to wait
   when its database is too busy, and the app tried again at once, met the
@@ -595,6 +605,15 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-12: **A wtsexporter still being copied in is no longer used
+  halfway.** The desktop app took any `wtsexporter` in its Tools Directory
+  that had permission to run as ready, so a copy put there by hand from a
+  slow disk could be picked up before it was whole, and the WhatsApp import
+  then failed with an unclear error. Only the file of the pinned release
+  counts now, checked against the checksum the app carries. Anything else,
+  a copy still being written or another build, shows as not found until the
+  app's download replaces it, and a failed download says the file there
+  isn't used. Linux on ARM, which has no download, is unchanged (#2692).
 - 2026-10-11: **A wtsexporter the app's account can't run no longer shows
   as found.** The desktop app took a `wtsexporter` in its Tools Directory as
   ready when the file had permission to run for any account, so a copy that
@@ -963,6 +982,12 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-12: **Converting an SMS Backup & Restore backup logs its
+  attachments and moves the progress bar.** While a Convert of a backup
+  copied its attachments, the log said nothing about one it could not find
+  or copy, and the progress bar stood still until the copying was done. The
+  log now names each such attachment once, and the progress bar follows the
+  copying (#2644).
 - 2026-10-12: **An export to SMS Backup+ mail writes an MMS's time in
   seconds.** SMS Backup+ itself records an MMS's time in seconds, and the
   import now reads it that way, so an MMS exported to SMS Backup+ mail goes

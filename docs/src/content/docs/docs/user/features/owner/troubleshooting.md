@@ -54,9 +54,10 @@ The Owner may have set the account's **Status** to **Disabled**.
 A disabled account's login gets the same answer as a wrong password, so someone guessing passwords can't tell which guess was right.
 The Owner checks the **Status** under **User Accounts**, in the account's [User Settings](/docs/user/features/owner/owner-home/#account), and sets it back to **Active**.
 
-### "this account is disabled"
+### A program reports "this account is disabled"
 
-The Owner set the account's **Status** to **Disabled** while the account was logged in.
+The Owner set the account's **Status** to **Disabled**, and the program used one of the account's API tokens.
+A person using the account sees the login card instead, because disabling the account logs them out.
 The Owner sets it back to **Active** under **User Accounts**, in the account's [User Settings](/docs/user/features/owner/owner-home/#account).
 
 ### An account's password is forgotten
@@ -159,7 +160,12 @@ The account that owns the file runs `chmod +x` on it, or gives the account that 
 The same reason shows when the disk the Tools Directory is on is mounted `noexec`, which lets no program on it run.
 Mounting it without `noexec` fixes that.
 
-The app keeps a file put there by hand when it is this pinned file, and replaces anything else once a download succeeds.
+The file put there must be this release's file for the computer, unchanged, because the app needs the build this release made.
+The app checks the file's SHA-256 checksum against the one it carries.
+A `wtsexporter` with any other contents isn't used, whether it is another build or a copy still being copied in.
+The Import form and **Settings → System** show it as not found until the whole file is in place, and the app downloads the pinned file over it.
+When that download fails, its reason starts with `The wtsexporter in the Tools Directory is not the file of release 0.13.0-mc.2`.
+The app keeps the pinned file, whoever put it there.
 [Settings → System](/docs/user/features/settings/system/#media) states the rule.
 
 #### Linux on ARM
@@ -245,6 +251,7 @@ A failed download is tried again the next time the app starts, or at once with *
 | `The downloaded file could not be unpacked` | The file arrived and passed its checksum, and isn't a gzip file the app can unpack. A damaged file on GitHub, or a checksum this app carries for the wrong file, does this. | **Try again**. A failure that repeats belongs in an issue on [GitHub](https://github.com/messagecrate/message-crate/issues), with the reason it names, and meanwhile a copy put in the Tools Directory by hand is used. |
 | `ffmpeg in the Tools Directory doesn't run on this computer`, or ffprobe or wtsexporter | The file passed its checksum and is in place, and the computer won't run it. The app doesn't download it again, because the download would be the same file. | For ffmpeg and ffprobe on Linux and Windows, the system's package manager, above, as the reason itself says. On macOS the app doesn't see Homebrew's copy, so [macOS blocks a program](#macos-blocks-a-program) is the fix there. For `wtsexporter`, `chmod +x` on Linux and macOS, and on macOS [macOS blocks a program](#macos-blocks-a-program) too. |
 | `ffmpeg in the Tools Directory could not be marked as a program that runs`, or ffprobe or wtsexporter | A copy found in the Tools Directory that the app didn't put there passed its checksum, doesn't run, and the app couldn't mark it as a program that runs. The reason ends with the operating system's words, most often that the file belongs to another account. The app tries again each time it starts. | Give the account that runs the app ownership of the file, or run `chmod +x` on it as its owner, then start the app again. For ffmpeg and ffprobe, the system's package manager, above, works too. |
+| `The wtsexporter in the Tools Directory is not the file of release`, then the release and the download's own reason | A `wtsexporter` is in the Tools Directory and isn't the pinned release's file, so it isn't used. Another build, or a copy still being copied in, does this. The rest of the reason says why the download that would replace it failed. | The fix for the rest of the reason, in this table. Or the pinned file, put there by hand as [Import can't find wtsexporter](#import-cant-find-wtsexporter) says, which the app uses once the whole file is in place. |
 | `The download was interrupted` | The download stopped partway through. | **Try again**. |
 | `The download could not be started` | The app couldn't start the download at all. | Starting the app again. |
 

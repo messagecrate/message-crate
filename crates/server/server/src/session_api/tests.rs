@@ -549,12 +549,41 @@ async fn a_login_whose_session_row_appears_meanwhile_still_signs_in() {
     )
     .await
     .expect("the second login signs in");
+    let LoginOpened::Session(created) = created else {
+        panic!("the second login must open a Session");
+    };
 
     let auth = crate::server::resolve_auth_on_conn(&mut conn, &created.token, None)
         .await
         .unwrap();
     assert_eq!(auth.account_id, account);
     assert_eq!(session_rows(&mut conn, account).await, 1);
+}
+
+/// A login whose password was right, and whose account the owner disabled
+/// while the password was checked, opens no Session: the disabled flag is
+/// read again under the write lock that would open it. Before, the login
+/// opened a Session after the owner's disable had ended the old one, and
+/// that Session worked again once the account was enabled (#2074).
+#[tokio::test]
+async fn a_login_to_an_account_disabled_during_its_password_check_opens_no_session() {
+    let fixture = test_fixture().await;
+    let account = fixture.account("alice").await;
+    let mut conn = fixture.conn().await;
+    // The owner's disable, landing after the login's first check.
+    sqlx::query("UPDATE accounts SET disabled = 1 WHERE id = $1")
+        .bind(account)
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+
+    let opened =
+        CreateSessionResponse::for_existing_account(&mut conn, account, "alice".into(), None)
+            .await
+            .unwrap();
+
+    assert!(matches!(opened, LoginOpened::Disabled));
+    assert_eq!(session_rows(&mut conn, account).await, 0);
 }
 
 /// How many session rows `account` holds.

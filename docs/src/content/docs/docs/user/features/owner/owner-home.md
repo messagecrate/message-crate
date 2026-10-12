@@ -133,7 +133,8 @@ The screen has three tabs: **Account**, **Profile**, and **Storage**.
 **Username** shows the username. It can't be changed.
 
 **Status** is **Active** or **Disabled**.
-The server refuses a disabled account's login, and refuses every request from a Session the account already has open.
+The server refuses a disabled account's login.
+Disabling the account ends any Session it has open, so the person logs in again after the account is enabled.
 The login answers a disabled account the same way it answers a wrong password.
 The Owner tells the account's holder that the account is disabled.
 The account's messages stay where they are.

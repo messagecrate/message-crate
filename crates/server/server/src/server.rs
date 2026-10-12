@@ -1115,6 +1115,7 @@ impl From<crate::imports_api::ImportError> for ApiError {
         match e {
             crate::imports_api::ImportError::Rejected { failure, .. } => failure.into(),
             crate::imports_api::ImportError::Run(err) => err.into(),
+            crate::imports_api::ImportError::AccountGone => Self::account_gone(),
             crate::imports_api::ImportError::Internal(err) => Self::Internal(err),
         }
     }
@@ -2066,6 +2067,28 @@ pub async fn resolve_auth_on_conn(
         capability,
         credential: used,
     })
+}
+
+/// `Ok` while `account_id` still has its row, else
+/// [`ApiError::account_gone`]. A route that starts a run for the account its
+/// credential named calls it inside its write transaction: the credential
+/// proved the row existed when the request arrived, and an account deleted
+/// since gets no run and no row put back for it, which would carry no
+/// password (#2061).
+///
+/// # Errors
+///
+/// [`ApiError::account_gone`] when the row is gone, or an internal error
+/// when the statement fails.
+pub(crate) async fn require_account_row(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+) -> Result<(), ApiError> {
+    if account_profile::account_exists(conn, account_id).await? {
+        Ok(())
+    } else {
+        Err(ApiError::account_gone())
+    }
 }
 
 /// The account an import or asset route writes to: the one the credential

@@ -1067,6 +1067,40 @@ async fn the_owner_clears_a_permission_and_it_takes_effect() {
     assert!(auth.permissions().delete, "delete was left alone");
 }
 
+/// Disabling an account ends its Session, so enabling it again does not
+/// bring the old token back: it answers `401 Unauthorized`, and the holder
+/// logs in again. Before #2074 the token only answered `403 Forbidden` while
+/// the account was disabled, and worked again once it was enabled.
+#[tokio::test]
+async fn disabling_an_account_ends_its_session_for_good() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+    let path = member(bob.account_id);
+
+    for disabled in [true, false] {
+        assert_eq!(
+            crate::test_support::patch_status(
+                &state,
+                &path,
+                &owner.token,
+                serde_json::json!({ "disabled": disabled }),
+            )
+            .await,
+            StatusCode::OK
+        );
+    }
+
+    let (status, text) = get_raw(&state, &path, &bob.token).await;
+    expect_problem(status, &text, ProblemType::AuthenticationRequired);
+    assert_eq!(
+        login_status(&state, "bob", "hunter2hunter2").await,
+        StatusCode::CREATED,
+        "the enabled account logs in again"
+    );
+}
+
 /// The owner's own row is the one row its flags do not reach: it holds no
 /// messages, so permissions mean nothing, and it cannot lock itself out.
 /// Nor can anyone delete it.

@@ -29,6 +29,7 @@ message-crate-core = { path = "../../core/message-crate-core", features = ["test
 ios-backup = { path = "../../libs/ios-backup", features = ["testutil"] }
 media = { path = "../../libs/media", features = ["testutil"] }
 tempfile = { workspace = true }
+file-io = { workspace = true }
 
 [lints]
 workspace = true

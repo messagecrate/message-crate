@@ -17,7 +17,8 @@ outbound connections exist, both from the desktop app:
   (`https://github.com`), the one outbound host written in the code. The check
   runs in the background at every start and downloads a program only when it
   is missing or different from the pinned release, and each file is checked
-  against a SHA-256 carried in `tool_downloads/pins.rs`. The rules for that
+  against a SHA-256 carried in `tool_downloads/pins.rs`, which takes
+  wtsexporter's from the WhatsApp exporter's `wtsexporter/pin.rs`. The rules for that
   download are in
   [ADR 0019](../adr/0019-the-desktop-app-downloads-the-programs-it-needs.md).
 

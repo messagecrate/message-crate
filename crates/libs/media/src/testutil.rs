@@ -25,6 +25,10 @@ use std::ffi::OsString;
 
 use crate::tools::{ffmpeg_available, search_path, set_search_path, set_tools_dir, tools_dir};
 
+/// How many times [`crate::file_has_sha256`] read the file at a path, for a
+/// test that a file is not read again while it is unchanged.
+pub use crate::tools::times_read;
+
 /// A 1x1 PNG, which the convert pass turns into a JPEG in both Convert and
 /// Compress.
 ///

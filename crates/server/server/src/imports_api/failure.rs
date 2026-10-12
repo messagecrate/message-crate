@@ -177,6 +177,11 @@ pub enum ImportError {
     /// refused as the check before the body refuses it.
     #[error(transparent)]
     Run(#[from] crate::db::imports::ImportLookupError),
+    /// The account has no row, found under the write lock: it was deleted
+    /// after its credential was checked. It is refused as a credential whose
+    /// account is gone, and nothing puts the row back (#2061).
+    #[error("account no longer exists")]
+    AccountGone,
     /// I/O, the database, or a bug: nothing the sender can change.
     #[error(transparent)]
     Internal(anyhow::Error),

@@ -47,7 +47,7 @@ pub use http::{
 };
 pub use imports::{
     assert_every_person_is_on_a_contact, at_current_schema_version, import_ada_conversation,
-    import_jsonl_text,
+    import_for_account, import_jsonl_text,
 };
 pub use lines::{
     ConversationHeaderLine, MessageLine, attachment, conversation_header, message_line,
