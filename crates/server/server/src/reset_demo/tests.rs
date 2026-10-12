@@ -2337,9 +2337,17 @@ async fn a_first_start_stopped_after_the_account_row_is_seeded_whole_by_the_next
     // seed above leaves its pool closing in the background, so it is closed
     // here, before the next start removes and recreates the file (#1949).
     // The close must close every connection: one left open would delete the
-    // new database's `-wal` file when it closes later (#2592).
+    // new database's `-wal` file when it closes later (#2592). The pool's
+    // own count cannot show one, because sqlx's close sets it to 0 whatever
+    // is still open. SQLite deletes a database's `-wal` file when the last
+    // connection on it closes, so the file being gone shows none is left.
+    let seeding_wal = sqlite_sidecar(&seeding_path(&cfg.paths.db), "-wal");
+    assert!(
+        seeding_wal.exists(),
+        "the stopped seed writes through its -wal file"
+    );
     stopped_pool.close().await;
-    assert_eq!(stopped_pool.size(), 0, "no connection is left on the file");
+    assert!(!seeding_wal.exists(), "no connection is left on the file");
 
     assert!(
         !cfg.paths.db.exists(),

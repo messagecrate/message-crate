@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 use sqlx::query::Query;
 use sqlx::sqlite::SqliteArguments;
-use sqlx::{Row, Sqlite, SqliteConnection};
+use sqlx::{AssertSqlSafe, Row, SqlSafeStr, SqlStr, Sqlite, SqliteConnection};
 
 use super::sql::{SQLITE_IN_CHUNK, max_rows_for_bind_limit, values_tuples};
 use crate::imports_api::records::EarlierVersionRecord;
@@ -813,7 +813,7 @@ pub async fn add_copy_attachments(
             .execute(&mut *conn)
             .await?;
         let insert = insert_new_attachments_sql("staging_attachments", &copies);
-        inserted += bind_attachments(sqlx::query(sqlx::AssertSqlSafe(insert)), chunk)
+        inserted += bind_attachments(sqlx::query(insert), chunk)
             .execute(&mut *conn)
             .await?
             .rows_affected();
@@ -840,7 +840,7 @@ pub async fn add_copy_tapbacks(
     for chunk in rows.chunks(size) {
         let copies = bound_rows_sql(TAPBACK_COLUMNS, chunk.len());
         let sql = insert_new_tapbacks_sql("staging_tapbacks", &copies);
-        inserted += bind_tapbacks(sqlx::query(sqlx::AssertSqlSafe(sql)), chunk)
+        inserted += bind_tapbacks(sqlx::query(sql), chunk)
             .execute(&mut *conn)
             .await?
             .rows_affected();
@@ -1887,9 +1887,9 @@ fn fill_attachments_sql(held: &str, copies: &str) -> String {
 /// one import ([`add_copy_attachments`]): an attachment with a path is the
 /// same attachment when its message, path, original name and sticker flag
 /// match; one without a path is the same only when every field matches.
-fn insert_new_attachments_sql(held: &str, copies: &str) -> String {
+fn insert_new_attachments_sql(held: &str, copies: &str) -> SqlStr {
     let columns = ATTACHMENT_COLUMNS.join(", ");
-    format!(
+    AssertSqlSafe(format!(
         r"
         INSERT INTO {held} ({columns})
         SELECT {columns}
@@ -1914,7 +1914,8 @@ fn insert_new_attachments_sql(held: &str, copies: &str) -> String {
               )
         )
         "
-    )
+    ))
+    .into_sql_str()
 }
 
 /// The statement that inserts into `held` each tapback row of `copies`
@@ -1923,9 +1924,9 @@ fn insert_new_attachments_sql(held: &str, copies: &str) -> String {
 /// row of `held`'s message. The one rule for when another copy of a
 /// reaction is new, for a stored message ([`promote_tapbacks`]) and for
 /// two copies staged in one import ([`add_copy_tapbacks`]).
-fn insert_new_tapbacks_sql(held: &str, copies: &str) -> String {
+fn insert_new_tapbacks_sql(held: &str, copies: &str) -> SqlStr {
     let columns = TAPBACK_COLUMNS.join(", ");
-    format!(
+    AssertSqlSafe(format!(
         r"
         INSERT INTO {held} ({columns})
         SELECT {columns}
@@ -1941,7 +1942,8 @@ fn insert_new_tapbacks_sql(held: &str, copies: &str) -> String {
               AND t.sender_handle_id IS NOT DISTINCT FROM st.sender_handle_id
         )
         "
-    )
+    ))
+    .into_sql_str()
 }
 
 /// The rows of the staging table `table`, whose columns are `columns`
@@ -1984,13 +1986,10 @@ pub async fn promote_attachments(conn: &mut SqliteConnection) -> Result<Promoted
     .fetch_all(&mut *conn)
     .await?;
     let filled = filled_ids.len() as u64;
-    let inserted = sqlx::query(sqlx::AssertSqlSafe(insert_new_attachments_sql(
-        "attachments",
-        &staged,
-    )))
-    .execute(&mut *conn)
-    .await?
-    .rows_affected();
+    let inserted = sqlx::query(insert_new_attachments_sql("attachments", &staged))
+        .execute(&mut *conn)
+        .await?
+        .rows_affected();
     sqlx::query(
         r"
         UPDATE attachments
@@ -2021,12 +2020,10 @@ pub async fn promote_attachments(conn: &mut SqliteConnection) -> Result<Promoted
 /// Returns an error when the statement fails.
 pub async fn promote_tapbacks(conn: &mut SqliteConnection) -> Result<u64> {
     let staged = staged_by_production_message("staging_tapbacks", TAPBACK_COLUMNS);
-    Ok(sqlx::query(sqlx::AssertSqlSafe(insert_new_tapbacks_sql(
-        "tapbacks", &staged,
-    )))
-    .execute(&mut *conn)
-    .await?
-    .rows_affected())
+    Ok(sqlx::query(insert_new_tapbacks_sql("tapbacks", &staged))
+        .execute(&mut *conn)
+        .await?
+        .rows_affected())
 }
 
 /// Insert the staged earlier versions under the production messages this

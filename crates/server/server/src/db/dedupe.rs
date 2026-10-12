@@ -151,7 +151,7 @@ pub async fn content_key_inputs(
         ",
         sender = sender_for_key_sql(),
     );
-    let mut query = sqlx::query_as(sqlx::AssertSqlSafe(sql)).bind(account_id);
+    let mut query = sqlx::query_as(AssertSqlSafe(sql)).bind(account_id);
     if let KeyScope::Changed(ids) = scope {
         query = query.bind(serde_json::to_string(ids)?);
     }
@@ -176,7 +176,7 @@ pub async fn content_key_inputs(
         ",
         holder = super::account_profile::is_account_identity_sql("h", "c.account_id"),
     );
-    let participant_rows: Vec<(i64, String)> = sqlx::query_as(sqlx::AssertSqlSafe(participant_sql))
+    let participant_rows: Vec<(i64, String)> = sqlx::query_as(AssertSqlSafe(participant_sql))
         .bind(account_id)
         .fetch_all(&mut *conn)
         .await?;
@@ -281,9 +281,7 @@ pub async fn write_content_keys(
         DELETE FROM _content_keys;
         ",
     ) {
-        sqlx::query(sqlx::AssertSqlSafe(stmt))
-            .execute(&mut *conn)
-            .await?;
+        sqlx::query(AssertSqlSafe(stmt)).execute(&mut *conn).await?;
     }
     let mut written = 0usize;
     for chunk in keys.chunks(SQLITE_IN_CHUNK) {
@@ -320,7 +318,7 @@ async fn insert_content_key_rows(
         }
         let _ = write!(sql, "(${}, ${})", i * 2 + 1, i * 2 + 2);
     }
-    let mut q = sqlx::query(sqlx::AssertSqlSafe(sql));
+    let mut q = sqlx::query(AssertSqlSafe(sql));
     for (id, key) in chunk {
         q = q.bind(*id).bind(key);
     }
@@ -352,7 +350,7 @@ pub struct ExactRow {
 pub async fn exact_rows(conn: &mut SqliteConnection, account_id: i64) -> Result<Vec<ExactRow>> {
     // One scan of messages + one aggregated attachment pass, then group in Rust.
     // Avoids N round-trips (one SELECT + several UPDATEs per duplicate key).
-    Ok(sqlx::query_as(sqlx::AssertSqlSafe(format!(
+    Ok(sqlx::query_as(AssertSqlSafe(format!(
         r"
         SELECT m.id, m.source, m.content_key, COALESCE(ac.n, 0) AS att_count,
                m.time_precision, COALESCE(rc.n, 0) AS run_messages
@@ -434,7 +432,7 @@ pub async fn near_message_rows(
             NearRows::Keyed => format!("AND {HAS_CONTENT_KEY_SQL}"),
         },
     );
-    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    Ok(sqlx::query_as(AssertSqlSafe(sql))
         .bind(account_id)
         .fetch_all(&mut *conn)
         .await?)
@@ -557,9 +555,7 @@ pub async fn write_duplicate_flags(
         );
         DELETE FROM {table};"
     )) {
-        sqlx::query(sqlx::AssertSqlSafe(stmt))
-            .execute(&mut *conn)
-            .await?;
+        sqlx::query(AssertSqlSafe(stmt)).execute(&mut *conn).await?;
     }
     {
         let insert_sql = AssertSqlSafe(format!("INSERT INTO {table} (id, winner) VALUES ($1, $2)"))
@@ -572,7 +568,7 @@ pub async fn write_duplicate_flags(
                 .await?;
         }
     }
-    sqlx::query(sqlx::AssertSqlSafe(format!(
+    sqlx::query(AssertSqlSafe(format!(
         "UPDATE messages AS m
          SET duplicate_of = f.winner
          FROM {table} AS f
@@ -581,9 +577,7 @@ pub async fn write_duplicate_flags(
     .execute(&mut *conn)
     .await?;
     for stmt in schema::split_ddl(&format!("DROP TABLE IF EXISTS {table};")) {
-        sqlx::query(sqlx::AssertSqlSafe(stmt))
-            .execute(&mut *conn)
-            .await?;
+        sqlx::query(AssertSqlSafe(stmt)).execute(&mut *conn).await?;
     }
     Ok(())
 }

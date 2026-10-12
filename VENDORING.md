@@ -1,8 +1,8 @@
 # Vendored sqlx-sqlite fork
 
 `vendor/sqlx-sqlite/` is a copy of the `sqlx-sqlite` 0.9.0 source from
-crates.io, with one change that matters: `libsqlite3-sys` is set to `0.38.0`
-so the workspace unifies on a single native SQLite bindings version
+crates.io. Its manifest sets `libsqlite3-sys` to `0.38.0`, so the workspace
+unifies on a single native SQLite bindings version
 (rusqlite 0.40 / crabapple 0.4.7 use 0.38). Cargo's `links` rule permits only
 one libsqlite3-sys per dependency graph. Released `sqlx-sqlite` 0.9.0 asks for
 `>=0.30.1, <0.38.0`, so without this change sqlx 0.9 and rusqlite 0.40 cannot

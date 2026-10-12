@@ -1065,9 +1065,8 @@ async fn checkpoint_and_clean_sidecars(db: &Path, operation: &str) -> Result<()>
     let busy: i64 = row.try_get(0)?;
     let _log: i64 = row.try_get(1)?;
     let _checkpointed: i64 = row.try_get(2)?;
-    // Close the connection deterministically: `pool.close()` only waits for
-    // checked-out connections to be *returned*, and the sqlx worker thread
-    // runs `sqlite3_close` later. A close that lands after the TRUNCATE
+    // Close the connection itself, so its `sqlite3_close` has run before
+    // anything else touches the files: a close that lands after the TRUNCATE
     // checkpoint can read the truncated `-shm` mapping and crash the process.
     conn.close().await?;
     // Close the pool so no connection stays attached to the database while
@@ -1302,7 +1301,7 @@ async fn outliving_rows(
     .await?;
     let mut rows = BTreeMap::new();
     for table in tables {
-        let ids: Vec<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        let ids: Vec<i64> = sqlx::query_scalar(AssertSqlSafe(format!(
             "SELECT id FROM {} WHERE {filter}",
             quote_ident(&table)
         )))
@@ -1409,7 +1408,7 @@ async fn non_demo_state_on_conn(
             None => selection,
         };
         let sql = format!("SELECT {row_text} {selection} ORDER BY 1");
-        let query = sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(sql));
+        let query = sqlx::query_scalar::<_, String>(AssertSqlSafe(sql));
         // Only a table whose rows belong to accounts leaves the Demo
         // Account's rows out.
         let query = match (&owner, unlinked) {
@@ -1510,7 +1509,7 @@ async fn search_index_digest(
          ORDER BY d.id",
         join = index.owner_join("d.id"),
     );
-    let rows = sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(sql))
+    let rows = sqlx::query_scalar::<_, String>(AssertSqlSafe(sql))
         .bind(demo_id)
         .fetch(&mut *conn);
     digest_rows(rows)
