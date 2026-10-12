@@ -429,7 +429,8 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     -- The account the entry is about (`accounts.id`). NULL when it is about
     -- no account (a refused login for an unknown username, opening or closing
     -- registration, changing the attachment size limit, adding the Demo
-    -- Account) or once the account is deleted.
+    -- Account, a Demo Account build by `reset-demo` or the first start) or
+    -- once the account is deleted.
     account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
     -- That account's username when the entry was written; for a refused
     -- login, the username as typed, trimmed and cut to 128 characters.

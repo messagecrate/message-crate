@@ -17,7 +17,7 @@ Each row has three columns:
 |---|---|
 | **Date** | When it happened. |
 | **What happened** | The act, with its counts. |
-| **By** | Who acted: the **Account holder**, the **Owner**, a **Server command** such as `reset-owner-password` or `reset-demo`, the **Server's first start**, which adds the Demo Account to a new Message Crate, the **Server** on its own, or the **Login screen** for a refused login. |
+| **By** | Who acted: the **Account holder**, the **Owner**, a **Server command** such as `reset-owner-password` or `reset-demo`, the **Server's first start**, the **Server** on its own, or the **Login screen** for a refused login. The server's first start is the one that adds the Demo Account to a new Message Crate. |
 
 An entry says that something happened and how much.
 It never says what a message said or which conversation it was in.

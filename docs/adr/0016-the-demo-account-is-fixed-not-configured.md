@@ -44,3 +44,9 @@ account from inside it. A new act that could damage Demo Data, or open the
 account to real messages, needs the same check. So does making a credential:
 every visitor is the same account, so an API Token would outlive the visit,
 and every later visitor would see its hint and could revoke it.
+
+Its username, `demo`, is fixed in the server too, and never read from the
+Demo Data it is built from. The server reserves that name while the Demo
+Account is absent, so no other account can take it and block the next build.
+A name read from the Demo Data could differ from the reserved one, and
+nothing would hold it (#2808).

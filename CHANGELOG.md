@@ -217,6 +217,9 @@ carry their date on the heading.
   is no longer limited to 20 tries a minute. The wait is not protection for a
   Message Crate reachable from the internet: that needs a proxy with its own
   login in front of it (#2893, #2894).
+- 2026-10-12: The Demo Account's username, `demo`, is fixed in the server
+  and no longer read from the Demo Data it is built from, with nothing
+  visible (#2808).
 - 2026-10-11: **The guide says what leaves the computer.** "What Message
   Crate is" now says that Message Crate sends no telemetry, crash reports, or
   usage data, and that the desktop app connects only to the Message Crate
@@ -228,9 +231,6 @@ carry their date on the heading.
 - 2026-10-11: The messages about a password, such as a wrong current
   password or two new passwords that differ, are written the way the
   server's other messages are, so they no longer end with a full stop.
-- 2026-10-12: The Demo Account's username, `demo`, is fixed in the server
-  and no longer read from the Demo Data it is built from, with nothing
-  visible (#2808).
 - 2026-10-11: The way the Demo Account's generator and the server agree on
   what a demo bundle holds was reworked inside, with nothing visible (#2265).
 - 2026-10-11: The way an Upload and an Export remember what they already

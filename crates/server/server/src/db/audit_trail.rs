@@ -673,35 +673,32 @@ pub async fn record_about(
     Ok(())
 }
 
-/// Record that `actor` started a build of the Demo Account with the `size`
-/// set of Demo Data, before the build writes anything. Every build records
-/// it: the owner's from Owner Home, the `reset-demo` command's, and the one
-/// `serve` runs on a new database (#2686).
+/// Record that `actor` is building the Demo Account with the `size` set of
+/// Demo Data, once the build has removed the Demo Account it replaces, if
+/// any: the `reset-demo` command and the build `serve` runs on a new
+/// database (#2686). The owner's build from Owner Home records its own entry
+/// when the owner asks for it, before the build starts.
 ///
-/// Where there is a Demo Account, the build resets it, and the entry is
-/// `demo_account_reset` about that account, so it stays in that account's
-/// record once the build deletes it. Where there is none, the build adds it,
-/// and the entry is `demo_account_added` about no account, since none exists
-/// yet: an entry with a username and no account reads as one whose account
-/// was deleted.
+/// The entry is `demo_account_reset` when the build `replaced` a Demo
+/// Account and `demo_account_added` when there was none. It is about no
+/// account: the old Demo Account is deleted by then, and the new one not
+/// yet written.
 ///
 /// # Errors
 ///
-/// Returns an error when the lookup or the insert fails.
-pub async fn record_demo_build(
+/// Returns an error when the insert fails.
+pub async fn record_demo_build_after_removal(
     conn: &mut SqliteConnection,
     actor: AuditActor,
     size: DemoDataSize,
+    replaced: bool,
 ) -> Result<()> {
-    let demo_id = account_profile::DEMO_ACCOUNT_ID;
-    let demo = account_profile::username_for_account(conn, demo_id).await?;
-    let entry = match &demo {
-        Some(username) => {
-            NewEntry::about(AuditAction::DemoAccountReset, actor, (demo_id, username))
-        }
-        None => NewEntry::about_no_account(AuditAction::DemoAccountAdded, actor),
-    }
-    .with_details(Details {
+    let action = if replaced {
+        AuditAction::DemoAccountReset
+    } else {
+        AuditAction::DemoAccountAdded
+    };
+    let entry = NewEntry::about_no_account(action, actor).with_details(Details {
         demo_data_size: Some(size),
         ..Details::default()
     });

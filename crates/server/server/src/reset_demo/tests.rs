@@ -2604,7 +2604,10 @@ async fn every_import_contact_group_of_a_built_demo_has_members() {
         &build,
         &prepared,
         DEMO_ACCOUNT_ID,
-        AuditActor::CommandLine,
+        BuildBy {
+            actor: AuditActor::CommandLine,
+            records: None,
+        },
         BuildRun::Serve,
         &AtomicBool::new(false),
     )
@@ -2660,7 +2663,10 @@ async fn another_account_writes_between_the_demo_wipes_delete_batches() {
         &build.db,
         &prepared,
         DEMO_ACCOUNT_ID,
-        AuditActor::Server,
+        BuildBy {
+            actor: AuditActor::Server,
+            records: None,
+        },
         BuildRun::Serve,
         &AtomicBool::new(false),
     )
@@ -2957,17 +2963,17 @@ async fn the_wipe_deletes_duplicates_before_the_messages_they_duplicate() {
     );
 }
 
-/// One Audit Trail entry as a Demo Account build writes it: its id, action,
-/// actor, account, username, `account_deleted` entry, and Demo Data set.
-type BuildEntry = (
-    i64,
-    String,
-    String,
-    Option<i64>,
-    Option<String>,
-    Option<i64>,
-    Option<String>,
-);
+/// One Audit Trail entry, with what a Demo Account build writes in it.
+#[derive(Debug, sqlx::FromRow)]
+struct BuildEntry {
+    id: i64,
+    action: String,
+    actor: String,
+    account_id: Option<i64>,
+    username: Option<String>,
+    deletion_entry_id: Option<i64>,
+    demo_data_size: Option<String>,
+}
 
 /// Every Audit Trail entry in the database at `db`, in the order written.
 async fn audit_entries_of(db: &Path) -> Vec<BuildEntry> {
@@ -2976,7 +2982,7 @@ async fn audit_entries_of(db: &Path) -> Vec<BuildEntry> {
         .expect("open the database");
     let entries = sqlx::query_as(
         "SELECT id, action, actor, account_id, username, deletion_entry_id,
-                json_extract(details, '$.demo_data_size')
+                json_extract(details, '$.demo_data_size') AS demo_data_size
          FROM audit_entries ORDER BY id",
     )
     .fetch_all(&pool)
@@ -2986,12 +2992,28 @@ async fn audit_entries_of(db: &Path) -> Vec<BuildEntry> {
     entries
 }
 
-/// `reset-demo` on a database that holds a Demo Account records the reset,
-/// by the command and with its set of Demo Data, about the account it
-/// replaces, then the deletion of that account. Both stay in the old
-/// account's record, as the owner's reset from Owner Home does (#2686).
+/// Assert that `entry` records a Demo Account build: `action` by `actor`
+/// with the `size` set, about no account.
+fn assert_build_entry(entry: &BuildEntry, action: &str, actor: &str, size: &str) {
+    assert_eq!(
+        (entry.action.as_str(), entry.actor.as_str()),
+        (action, actor),
+        "{entry:#?}"
+    );
+    assert_eq!(entry.demo_data_size.as_deref(), Some(size), "{entry:#?}");
+    assert_eq!(
+        (entry.account_id, &entry.username, entry.deletion_entry_id),
+        (None, &None, None),
+        "the build's entry is about no account: {entry:#?}"
+    );
+}
+
+/// `reset-demo` on a database that holds a Demo Account records the old
+/// account's deletion, then the reset, by the command and with its set of
+/// Demo Data (#2686). The check that the reset changed nothing outside the
+/// Demo Account accepts the reset's entry, so the reset is installed.
 #[tokio::test]
-async fn the_reset_demo_command_records_its_reset_of_the_demo_account() {
+async fn the_reset_demo_command_records_its_reset_after_the_deletion() {
     let temp = tempfile::tempdir().expect("create test directory");
     let db = temp.path().join("messagecrate.db");
     let data_dir = temp.path().join("data");
@@ -3005,33 +3027,21 @@ async fn the_reset_demo_command_records_its_reset_of_the_demo_account() {
         .expect("a complete bundle resets");
 
     let entries = audit_entries_of(&db).await;
-    let [reset, deleted] = entries.as_slice() else {
-        panic!("a reset and a deletion: {entries:#?}");
+    let [deleted, reset] = entries.as_slice() else {
+        panic!("a deletion and a reset: {entries:#?}");
     };
-    let previous_username = Some(DEMO_ACCOUNT_ID.to_string());
     assert_eq!(
-        reset,
-        &(
-            reset.0,
-            "demo_account_reset".to_owned(),
-            "command_line".to_owned(),
-            None,
-            previous_username.clone(),
-            Some(deleted.0),
-            Some("large".to_owned()),
-        ),
-        "the reset is the command's, about the Demo Account it replaced"
+        (deleted.action.as_str(), deleted.actor.as_str()),
+        ("account_deleted", "command_line"),
+        "{deleted:#?}"
     );
-    assert_eq!(
-        (deleted.1.as_str(), deleted.2.as_str(), &deleted.4),
-        ("account_deleted", "command_line", &previous_username)
-    );
+    assert_eq!(deleted.deletion_entry_id, Some(deleted.id));
+    assert_build_entry(reset, "demo_account_reset", "command_line", "large");
 }
 
 /// `reset-demo` on a database with no Demo Account adds one, and records the
-/// add by the command, about no account, with its set of Demo Data. The
-/// check that the reset changed nothing outside the Demo Account accepts
-/// that entry, so the reset is installed (#2686).
+/// add by the command with its set of Demo Data. The reset is installed, so
+/// the install check accepts that entry too (#2686).
 #[tokio::test]
 async fn the_reset_demo_command_records_its_add_of_the_demo_account() {
     let temp = tempfile::tempdir().expect("create test directory");
@@ -3049,22 +3059,10 @@ async fn the_reset_demo_command_records_its_add_of_the_demo_account() {
         .expect("a reset adds the Demo Account");
 
     let entries = audit_entries_of(&db).await;
-    let [entry] = entries.as_slice() else {
+    let [added] = entries.as_slice() else {
         panic!("one entry: {entries:#?}");
     };
-    assert_eq!(
-        entry,
-        &(
-            entry.0,
-            "demo_account_added".to_owned(),
-            "command_line".to_owned(),
-            None,
-            None,
-            None,
-            Some("medium".to_owned()),
-        ),
-        "the add is about no account, since none existed yet"
-    );
+    assert_build_entry(added, "demo_account_added", "command_line", "medium");
 }
 
 /// The build `serve` runs on a new database records the add of the Demo
@@ -3083,19 +3081,8 @@ async fn the_first_start_records_its_add_of_the_demo_account() {
     .expect("seed the new database");
 
     let entries = audit_entries_of(&cfg.paths.db).await;
-    let [entry] = entries.as_slice() else {
+    let [added] = entries.as_slice() else {
         panic!("one entry: {entries:#?}");
     };
-    assert_eq!(
-        entry,
-        &(
-            entry.0,
-            "demo_account_added".to_owned(),
-            "start_up".to_owned(),
-            None,
-            None,
-            None,
-            Some("medium".to_owned()),
-        )
-    );
+    assert_build_entry(added, "demo_account_added", "start_up", "medium");
 }

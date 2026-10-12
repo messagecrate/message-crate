@@ -379,15 +379,6 @@ async fn begin_demo_build(db: &SqlitePool) -> Result<()> {
         .context("record that the Demo Account build has started")
 }
 
-/// Record in `db`'s Audit Trail that `actor` started a build of the Demo
-/// Account with the `size` set ([`audit_trail::record_demo_build`]).
-///
-/// [`audit_trail::record_demo_build`]: crate::db::audit_trail::record_demo_build
-async fn record_demo_build(db: &SqlitePool, actor: AuditActor, size: DemoDataSize) -> Result<()> {
-    let mut conn = db.acquire().await?;
-    crate::db::audit_trail::record_demo_build(&mut conn, actor, size).await
-}
-
 /// Remove what a failed build wrote: the Demo Account, then the build's
 /// record. The record stays when the account cannot be removed, so the next
 /// start tries again.
@@ -507,7 +498,10 @@ pub async fn build_demo_account(
             &cfg,
             &db,
             &work.path().join("bundle"),
-            AuditActor::Owner,
+            BuildBy {
+                actor: AuditActor::Owner,
+                records: None,
+            },
             &stop,
         )
         .await
@@ -516,10 +510,10 @@ pub async fn build_demo_account(
     whole_demo_account_or_none(&cfg, &db, outcome).await
 }
 
-/// The build `serve` runs on a new database: record it in the Audit Trail as
-/// the server's first start's, generate a bundle of the `size` set with
-/// `generate`, and build the Demo Account from it in the database `db`, the
-/// one `cfg` names.
+/// The build `serve` runs on a new database: generate a bundle of the `size`
+/// set with `generate`, and build the Demo Account from it in the database
+/// `db`, the one `cfg` names, recording the build in the Audit Trail as the
+/// server's first start's.
 async fn build_demo_account_with<G>(
     cfg: &Config,
     db: &SqlitePool,
@@ -530,7 +524,6 @@ where
     G: FnOnce(&Path) -> Result<()>,
 {
     let outcome = async {
-        record_demo_build(db, AuditActor::StartUp, size).await?;
         let work = tempfile::tempdir().context("create temporary demo bundle directory")?;
         let bundle = work.path().join("bundle");
         generate(&bundle).context("generate demo bundle (demo-seed)")?;
@@ -540,7 +533,10 @@ where
             cfg,
             db,
             &bundle,
-            AuditActor::StartUp,
+            BuildBy {
+                actor: AuditActor::StartUp,
+                records: Some(size),
+            },
             &AtomicBool::new(false),
         )
         .await
@@ -582,7 +578,7 @@ async fn build_from_bundle(
     cfg: &Config,
     db: &SqlitePool,
     bundle: &Path,
-    actor: AuditActor,
+    by: BuildBy,
     stop: &AtomicBool,
 ) -> Result<ResetPreparedStats> {
     let prepared = validate_prepared_bundle(bundle)?;
@@ -591,7 +587,7 @@ async fn build_from_bundle(
         db,
         &prepared,
         DEMO_ACCOUNT_ID,
-        actor,
+        by,
         BuildRun::Serve,
         stop,
     )
@@ -600,8 +596,9 @@ async fn build_from_bundle(
 
 /// The `reset-demo` command's build from the bundle of the `size` set: build
 /// the new state in a prepared database next to the active one, recording
-/// the build in its Audit Trail as the command's, prove nothing outside the
-/// demo account changed, then swap it in.
+/// the build in its Audit Trail as the command's after the deletion of the
+/// old Demo Account, prove nothing outside the demo account changed, then
+/// swap it in.
 async fn reset_prepared_bundle(
     cfg: &Config,
     bundle: &Path,
@@ -650,21 +647,20 @@ async fn reset_prepared_bundle_with(
     temporary_cfg.paths.db = prepared_db.clone();
     temporary_cfg.paths.data_dir = data_work.path().to_path_buf();
     let opened = OpenDb::create_or_open(temporary_cfg.clone()).await?;
-    let rebuilt = async {
-        record_demo_build(&opened.db, AuditActor::CommandLine, size).await?;
-        rebuild_demo_account(
-            &temporary_cfg,
-            &opened.db,
-            &prepared,
-            account_id,
-            AuditActor::CommandLine,
-            BuildRun::Command,
-            &AtomicBool::new(false),
-        )
-        .await
-    }
-    .await;
-    let stats = match rebuilt {
+    let stats = match rebuild_demo_account(
+        &temporary_cfg,
+        &opened.db,
+        &prepared,
+        account_id,
+        BuildBy {
+            actor: AuditActor::CommandLine,
+            records: Some(size),
+        },
+        BuildRun::Command,
+        &AtomicBool::new(false),
+    )
+    .await
+    {
         Ok(stats) => after_rebuild(&opened.db).await.map(|()| stats),
         Err(error) => Err(error),
     };
@@ -734,13 +730,20 @@ async fn rebuild_demo_account(
     db: &SqlitePool,
     prepared: &PreparedBundle,
     account_id: i64,
-    actor: AuditActor,
+    by: BuildBy,
     run: BuildRun,
     stop: &AtomicBool,
 ) -> Result<ResetPreparedStats> {
     let progress = run.progress();
     begin_demo_build(db).await?;
-    wipe_demo_account(cfg, db, account_id, actor, progress).await?;
+    let replaced = wipe_demo_account(cfg, db, account_id, by.actor, progress).await?;
+    if let Some(size) = by.records {
+        let mut conn = db.acquire().await?;
+        crate::db::audit_trail::record_demo_build_after_removal(
+            &mut conn, by.actor, size, replaced,
+        )
+        .await?;
+    }
     say_reset_header(account_id, prepared, &cfg.paths.db.display(), progress);
     seed_demo_account(db, account_id, &prepared.seed).await?;
     let import = import_demo_sources(cfg, db, prepared, account_id, progress).await?;
@@ -761,6 +764,22 @@ async fn rebuild_demo_account(
         dedupe_keys_filled: dedupe_stats.keys_filled,
         process_assets: process_stats,
     })
+}
+
+/// Who builds the Demo Account, and what the build records of itself in the
+/// Audit Trail.
+#[derive(Debug, Clone, Copy)]
+struct BuildBy {
+    /// Who acts: the wipe's `account_deleted` entry names them, and so does
+    /// the build's own entry.
+    actor: AuditActor,
+    /// The set of Demo Data the build records itself with, right after the
+    /// wipe ([`audit_trail::record_demo_build_after_removal`]): the
+    /// `reset-demo` command and the build on a new database do. `None` for
+    /// the owner's build, which the owner's request recorded already.
+    ///
+    /// [`audit_trail::record_demo_build_after_removal`]: crate::db::audit_trail::record_demo_build_after_removal
+    records: Option<DemoDataSize>,
 }
 
 /// What runs a Demo Account build, which decides two things: whether it ends
@@ -1272,8 +1291,8 @@ async fn last_audit_entry(conn: &mut sqlx::SqliteConnection) -> Result<i64> {
 /// entries and runs keep no account id; they name the `account_deleted`
 /// entry instead (ADR 0020). An `account_deleted` entry after
 /// `last_entry_before_reset`, the last entry of the active database, is the
-/// one the reset wrote when it deleted the Demo Account. So is a
-/// `demo_account_added` entry after it ([`ADDED_BY_RESET_SQL`]).
+/// one the reset wrote when it deleted the Demo Account. So is the entry
+/// after it that records the reset's build ([`build_recorded_by_reset_sql`]).
 #[derive(Debug, Clone, Copy)]
 struct DemoRows {
     account: i64,
@@ -1294,13 +1313,20 @@ fn unlinked_by_reset_sql(column: &str, param: &str) -> String {
     )
 }
 
-/// The SQL condition that an `audit_entries` row, `t`, is the
-/// `demo_account_added` entry a reset wrote, after the entry id bound to
-/// `$2`, when the database held no Demo Account to reset. It is about no
-/// account, since none existed yet, so nothing else marks it as the reset's
-/// own ([`crate::db::audit_trail::record_demo_build`]).
-const ADDED_BY_RESET_SQL: &str =
-    "t.action = 'demo_account_added' AND t.actor = 'command_line' AND t.id > $2";
+/// The SQL condition that an `audit_entries` row, `t`, is the entry a reset
+/// wrote of its own build, after the entry id bound to `param`:
+/// `demo_account_reset`, or `demo_account_added` when the database held no
+/// Demo Account. It is about no account, since the reset writes it once the
+/// old Demo Account is deleted and before the new one is
+/// ([`crate::db::audit_trail::record_demo_build_after_removal`]), so nothing
+/// else marks it as the reset's own.
+fn build_recorded_by_reset_sql(param: &str) -> String {
+    format!(
+        "t.action IN ('demo_account_reset', 'demo_account_added')
+         AND t.actor = 'command_line' AND t.account_id IS NULL
+         AND t.{DELETION_ENTRY_COLUMN} IS NULL AND t.id > {param}"
+    )
+}
 
 /// Which rows [`outliving_rows`] reads.
 #[derive(Debug, Clone, Copy)]
@@ -1443,7 +1469,10 @@ async fn non_demo_state_on_conn(
             None => selection,
         };
         let selection = if table == "audit_entries" && unlinked.is_some() {
-            format!("{selection} AND NOT ({ADDED_BY_RESET_SQL})")
+            format!(
+                "{selection} AND NOT ({})",
+                build_recorded_by_reset_sql("$2")
+            )
         } else {
             selection
         };
@@ -2175,13 +2204,14 @@ const WIPE_BATCH_ROWS: NonZeroU32 = NonZeroU32::new(5_000).expect("5,000 is not 
 /// (#1404). The rest of its rows follow the account row via CASCADE; its
 /// Audit Trail stays, unlinked, with an `account_deleted` entry, as any
 /// account's does (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`).
+/// Returns whether there was a Demo Account to delete.
 async fn wipe_demo_account(
     cfg: &Config,
     db: &SqlitePool,
     account_id: i64,
     actor: AuditActor,
     progress: Progress,
-) -> Result<()> {
+) -> Result<bool> {
     wipe_demo_account_with(
         cfg,
         db,
@@ -2205,7 +2235,7 @@ async fn wipe_demo_account_with(
     progress: Progress,
     batch_rows: NonZeroU32,
     mut after_batch: impl AsyncFnMut() -> Result<()>,
-) -> Result<()> {
+) -> Result<bool> {
     progress.heading(format_args!(
         "Removing the Demo Account from the database at {}",
         cfg.paths.db.display()
@@ -2239,7 +2269,8 @@ async fn wipe_demo_account_with(
             "remove {}",
             crate::asset_store::account_dir(&cfg.paths, account_id).display()
         )
-    })
+    })?;
+    Ok(deleted)
 }
 
 #[cfg(test)]
