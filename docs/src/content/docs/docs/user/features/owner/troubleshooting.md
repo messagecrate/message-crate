@@ -56,7 +56,8 @@ The Owner checks the **Status** under **User Accounts**, in the account's [User 
 
 ### "this account is disabled"
 
-The Owner set the account's **Status** to **Disabled** while the account was logged in.
+The Owner set the account's **Status** to **Disabled**, and a program used one of the account's API tokens.
+Disabling the account also logs out the person using it, so they see the login card instead.
 The Owner sets it back to **Active** under **User Accounts**, in the account's [User Settings](/docs/user/features/owner/owner-home/#account).
 
 ### An account's password is forgotten
