@@ -599,6 +599,117 @@ fn a_full_disk_before_wtsexporter_starts_is_the_free_space_error() {
     assert_eq!(denied.to_string(), "create work/decryption.key");
 }
 
+/// The SHA-256 of an empty file, which [`write_with_mode`] writes: the
+/// pinned file in the tests that look at its permissions.
+const EMPTY_FILE_PIN: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+/// The pinned file's bytes in the tests of the pin (#2692).
+const PINNED: &[u8] = b"the pinned wtsexporter release file";
+
+/// Write `bytes` at `path` as a program this account may run.
+fn write_program(path: &Path, bytes: &[u8]) {
+    write_with_mode(path, 0o755);
+    fs::write(path, bytes).unwrap();
+}
+
+/// A copy still being written, cut off partway, is not the pinned file: it
+/// is treated as missing, and the import's error says why. Once the copy
+/// is whole it is found (#2692).
+#[test]
+fn a_truncated_wtsexporter_is_treated_as_missing() {
+    let tools = tempdir().unwrap();
+    let program = tools.path().join(wtsexporter_file_name());
+    write_program(&program, &PINNED[..PINNED.len() / 2]);
+    let pin = file_io::sha256_hex(PINNED);
+
+    let truncated = find_wtsexporter(Some(tools.path()), Some(&pin)).unwrap();
+    let message = wtsexporter_in(Some(tools.path()), Some(&pin))
+        .expect_err("not the pinned file")
+        .to_string();
+    write_program(&program, PINNED);
+    let whole = wtsexporter_in(Some(tools.path()), Some(&pin)).unwrap();
+
+    assert_eq!(truncated, Lookup::NotPinned(program.clone()));
+    assert!(
+        message.starts_with(&not_pinned_reason(WTSEXPORTER_RELEASE)),
+        "{message}"
+    );
+    assert!(
+        message.contains("The Import form's Try again downloads that file."),
+        "{message}"
+    );
+    assert!(message.ends_with(WTSEXPORTER_TROUBLESHOOTING), "{message}");
+    assert_eq!(whole, program);
+}
+
+/// Another build of wtsexporter is not a working copy: it is treated as
+/// missing too (#2692).
+#[test]
+fn a_different_wtsexporter_is_treated_as_missing() {
+    let tools = tempdir().unwrap();
+    let program = tools.path().join(wtsexporter_file_name());
+    write_program(&program, b"#!/bin/sh\nexit 0\n");
+    let pin = file_io::sha256_hex(PINNED);
+
+    assert_eq!(
+        find_wtsexporter(Some(tools.path()), Some(&pin)).unwrap(),
+        Lookup::NotPinned(program)
+    );
+    assert!(wtsexporter_in(Some(tools.path()), Some(&pin)).is_err());
+}
+
+/// The pinned file is found, and a second lookup of it unchanged does not
+/// read it again (#2692).
+#[test]
+fn the_pinned_wtsexporter_is_found_and_read_once() {
+    let tools = tempdir().unwrap();
+    let program = tools.path().join(wtsexporter_file_name());
+    write_program(&program, PINNED);
+    let pin = file_io::sha256_hex(PINNED);
+
+    let first = find_wtsexporter(Some(tools.path()), Some(&pin)).unwrap();
+    let second = find_wtsexporter(Some(tools.path()), Some(&pin)).unwrap();
+
+    assert_eq!(first, Lookup::Found(program.clone()));
+    assert_eq!(second, first);
+    assert_eq!(media::testutil::times_read(&program), 1);
+}
+
+/// Where the app has no download for the computer, as on Linux on ARM, any
+/// file this account may run is found: a `pipx` install linked there is
+/// what the guide says to use.
+#[test]
+fn with_no_pin_any_runnable_wtsexporter_is_found() {
+    let tools = tempdir().unwrap();
+    let program = tools.path().join(wtsexporter_file_name());
+    write_program(&program, b"#!/bin/sh\nexit 0\n");
+
+    assert_eq!(wtsexporter_in(Some(tools.path()), None).unwrap(), program);
+}
+
+/// Every platform the app downloads wtsexporter for has a pinned file with
+/// a whole SHA-256, Linux on ARM has none, and the hint for a copy put
+/// there by hand names the pinned release.
+#[test]
+fn every_platform_but_linux_on_arm_has_a_pinned_wtsexporter() {
+    for (os, arch) in [
+        ("linux", "x86_64"),
+        ("macos", "x86_64"),
+        ("macos", "aarch64"),
+        ("windows", "x86_64"),
+        ("windows", "aarch64"),
+    ] {
+        let file = pinned_wtsexporter(os, arch).expect("pinned");
+        assert!(
+            file.sha256.len() == 64 && file.sha256.chars().all(|c| c.is_ascii_hexdigit()),
+            "{}",
+            file.asset
+        );
+    }
+    assert_eq!(pinned_wtsexporter("linux", "aarch64"), None);
+    assert!(RELEASE_FILE_HINT.contains(&format!("{WTSEXPORTER_REPO} {WTSEXPORTER_RELEASE}")));
+}
+
 /// wtsexporter is always the app's own copy in the Tools Directory.
 #[test]
 fn wtsexporter_is_found_in_the_tools_directory() {
@@ -606,7 +717,10 @@ fn wtsexporter_is_found_in_the_tools_directory() {
     let program = tools.path().join(wtsexporter_file_name());
     write_with_mode(&program, 0o755);
 
-    assert_eq!(wtsexporter_in(Some(tools.path())).unwrap(), program);
+    assert_eq!(
+        wtsexporter_in(Some(tools.path()), Some(EMPTY_FILE_PIN)).unwrap(),
+        program
+    );
 }
 
 /// A release file put in the Tools Directory without `chmod +x` cannot
@@ -618,12 +732,12 @@ fn a_wtsexporter_that_is_not_executable_is_refused() {
     let program = tools.path().join(wtsexporter_file_name());
     write_with_mode(&program, 0o644);
 
-    let err = wtsexporter_in(Some(tools.path())).expect_err("not executable");
+    let err = wtsexporter_in(Some(tools.path()), Some(EMPTY_FILE_PIN)).expect_err("not executable");
     let message = err.to_string();
     assert!(message.contains("is not executable"), "{message}");
     assert!(message.contains("chmod +x"), "{message}");
     assert!(
-        super::find_wtsexporter(Some(tools.path())).is_err(),
+        super::find_wtsexporter(Some(tools.path()), Some(EMPTY_FILE_PIN)).is_err(),
         "the status lookup refuses it too"
     );
 }
@@ -642,7 +756,8 @@ fn a_wtsexporter_this_account_may_not_run_is_refused() {
     let program = tools.path().join(wtsexporter_file_name());
     write_with_mode(&program, 0o611);
 
-    let err = wtsexporter_in(Some(tools.path())).expect_err("not executable by this account");
+    let err = wtsexporter_in(Some(tools.path()), Some(EMPTY_FILE_PIN))
+        .expect_err("not executable by this account");
     let message = err.to_string();
     assert!(
         message.contains("is not executable by this account"),
@@ -650,7 +765,7 @@ fn a_wtsexporter_this_account_may_not_run_is_refused() {
     );
     assert!(message.contains("another account owns"), "{message}");
     assert!(
-        super::find_wtsexporter(Some(tools.path())).is_err(),
+        super::find_wtsexporter(Some(tools.path()), Some(EMPTY_FILE_PIN)).is_err(),
         "the status lookup refuses it too"
     );
 }
@@ -663,8 +778,9 @@ fn wtsexporter_is_looked_for_nowhere_but_the_tools_directory() {
     let elsewhere = tempfile::tempdir().unwrap();
     write_with_mode(&elsewhere.path().join(wtsexporter_file_name()), 0o755);
 
-    let err = wtsexporter_in(Some(tools.path())).expect_err("not in the Tools Directory");
-    let no_dir = wtsexporter_in(None).expect_err("no Tools Directory");
+    let err = wtsexporter_in(Some(tools.path()), Some(EMPTY_FILE_PIN))
+        .expect_err("not in the Tools Directory");
+    let no_dir = wtsexporter_in(None, Some(EMPTY_FILE_PIN)).expect_err("no Tools Directory");
 
     let message = err.to_string();
     assert!(message.contains("Tools Directory"), "{message}");

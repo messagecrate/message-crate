@@ -566,7 +566,8 @@ version. ffmpeg and ffprobe are looked for on `PATH` and then here,
 wtsexporter only here, by the app and by the server it starts. The app
 downloads what is missing here at every start, each file pinned to one
 release and checksum, and keeps a record beside the programs of what it
-wrote.
+wrote. Where the app has a wtsexporter download, only the pinned file counts
+as wtsexporter here.
 _Avoid_: Tools Folder, Bin Directory, ffmpeg directory
 
 **Apple Messages Reader**:

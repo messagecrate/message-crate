@@ -9,6 +9,11 @@ use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{Context, Result, bail};
 
+mod digest;
+pub use digest::file_has_sha256;
+#[cfg(any(test, feature = "testutil"))]
+pub use digest::times_read;
+
 /// Where this process looks for ffmpeg and ffprobe, and which files there
 /// answered `-version`.
 struct ToolsState {

@@ -82,7 +82,8 @@ mkdir -p ~/message-crate/tools
 ln -sf "$(pipx environment --value PIPX_BIN_DIR)/wtsexporter" ~/message-crate/tools/
 ```
 
-The desktop app replaces that link with its own download of the same release the next time it starts with a connection, because a link isn't the pinned file. The link serves until then, and wherever the app has no download, such as Linux on ARM.
+The link is used only where the app has no download, such as Linux on ARM.
+Everywhere else only the pinned release's file counts as `wtsexporter` in the Tools Directory, so the app shows the link as not found and replaces it with its own download the next time it starts with a connection.
 
 ### Fork and clone
 

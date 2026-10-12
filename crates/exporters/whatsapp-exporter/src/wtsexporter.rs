@@ -9,6 +9,10 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+mod pin;
+use pin::pinned_sha256_here;
+pub use pin::{WTSEXPORTER_RELEASE, WTSEXPORTER_REPO, WtsexporterFile, pinned_wtsexporter};
+
 /// Where a copy of `wtsexporter` put in the Tools Directory by hand comes
 /// from: a `wtsexporter_<platform>` file of Message Crate's fork at release
 /// `0.13.0-mc.2`, the first that records `full_key_id` and `reply_key_id`, the
@@ -82,14 +86,35 @@ pub fn wtsexporter_file_name() -> &'static str {
 
 /// Where `wtsexporter` is: the app's own copy in the Tools Directory the
 /// desktop app named with [`media::set_tools_dir`]. `Ok(None)` when there is
-/// no Tools Directory or no file in it.
+/// no Tools Directory or no file in it, and when the file there is not the
+/// pinned release's file for this computer ([`pinned_wtsexporter`]), such
+/// as a copy still being written or another build: it is treated as
+/// missing, and the desktop app downloads the pinned file over it.
 ///
 /// # Errors
 ///
 /// Returns an error when the file is there but is not executable by this
 /// account.
 pub fn wtsexporter_path() -> Result<Option<PathBuf>> {
-    find_wtsexporter(media::tools_dir().as_deref())
+    wtsexporter_in_dir(media::tools_dir().as_deref(), pinned_sha256_here())
+}
+
+/// [`wtsexporter_path`] in `tools_dir`, counting only a file whose SHA-256
+/// is `pinned_sha256` where that is `Some`. The desktop app's status passes
+/// the pin its download uses, and a test passes a pin of its own.
+///
+/// # Errors
+///
+/// Returns an error when the file is there but is not executable by this
+/// account.
+pub fn wtsexporter_in_dir(
+    tools_dir: Option<&Path>,
+    pinned_sha256: Option<&str>,
+) -> Result<Option<PathBuf>> {
+    Ok(match find_wtsexporter(tools_dir, pinned_sha256)? {
+        Lookup::Found(path) => Some(path),
+        Lookup::Missing | Lookup::NotPinned(_) => None,
+    })
 }
 
 /// Locate `wtsexporter` (the Python WhatsApp export tool this crate shells
@@ -97,33 +122,65 @@ pub fn wtsexporter_path() -> Result<Option<PathBuf>> {
 ///
 /// # Errors
 ///
-/// Returns an error when it is not there.
+/// Returns an error when it is not there, or is not the pinned file.
 pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
-    wtsexporter_in(media::tools_dir().as_deref())
+    wtsexporter_in(media::tools_dir().as_deref(), pinned_sha256_here())
+}
+
+/// Why a wtsexporter in the Tools Directory that is not the file of
+/// `release` is not used (#2692). The import's error and the desktop app's
+/// failed download both start with it, so it reads the same in each.
+pub fn not_pinned_reason(release: &str) -> String {
+    format!(
+        "The wtsexporter in the Tools Directory is not the file of release {release}, or is \
+         still being copied there, so it is not used."
+    )
+}
+
+/// What [`find_wtsexporter`] found.
+#[derive(Debug, PartialEq, Eq)]
+enum Lookup {
+    /// No Tools Directory, or no file in it.
+    Missing,
+    /// A file that is not the pinned one: a copy still being written, or
+    /// another build. It is not used.
+    NotPinned(PathBuf),
+    /// The file to run.
+    Found(PathBuf),
 }
 
 /// `wtsexporter` in `tools_dir`, and nowhere else: it is always the app's
 /// own copy, so neither `PATH` nor an environment variable is read (#1053).
-/// `Ok(None)` when there is no Tools Directory or no file in it.
 ///
-/// On Unix the file must have an executable bit this account may run. It
+/// Where the app has a download for this computer, `pinned_sha256` is the
+/// pinned file's SHA-256, and a file with any other is
+/// [`Lookup::NotPinned`] (#2692). The file is read once per version of it
+/// ([`media::file_has_sha256`]), so a lookup of an unchanged file reads
+/// nothing.
+///
+/// Where the app has none, such as Linux on ARM, `pinned_sha256` is `None`
+/// and the file must only have an executable bit this account may run. It
 /// is not run here: a `pipx` shim is slow to start. A shim is what is
-/// linked there on a computer the app has no download for, such as Linux
-/// on ARM. So a link to a `pipx` shim whose Python has gone is found, and
-/// fails only when it is run, with the hint [`run_wtsexporter`] gives
-/// (`docs/adr/0019`).
+/// linked there on such a computer. So a link to a `pipx` shim whose Python
+/// has gone is found, and fails only when it is run, with the hint
+/// [`run_wtsexporter`] gives (`docs/adr/0019`).
 ///
 /// # Errors
 ///
-/// Returns an error when the file is there but is not executable by this
-/// account.
-fn find_wtsexporter(tools_dir: Option<&Path>) -> Result<Option<PathBuf>> {
+/// Returns an error when the file is there, is the pinned one where there
+/// is one, and is not executable by this account.
+fn find_wtsexporter(tools_dir: Option<&Path>, pinned_sha256: Option<&str>) -> Result<Lookup> {
     let Some(tools_dir) = tools_dir else {
-        return Ok(None);
+        return Ok(Lookup::Missing);
     };
     let candidate = tools_dir.join(wtsexporter_file_name());
     if !candidate.is_file() {
-        return Ok(None);
+        return Ok(Lookup::Missing);
+    }
+    if let Some(sha256) = pinned_sha256
+        && !media::file_has_sha256(&candidate, sha256)
+    {
+        return Ok(Lookup::NotPinned(candidate));
     }
     if !media::is_executable(&candidate) {
         bail!(
@@ -134,31 +191,39 @@ fn find_wtsexporter(tools_dir: Option<&Path>) -> Result<Option<PathBuf>> {
             candidate.display()
         );
     }
-    Ok(Some(candidate))
+    Ok(Lookup::Found(candidate))
 }
 
-/// [`find_wtsexporter`], with a missing file as an error.
+/// [`find_wtsexporter`], with a missing file, or one that is not the pinned
+/// file, as an error.
 ///
 /// # Errors
 ///
 /// Returns an error naming the Tools Directory when the file is not in it,
-/// saying there is none, or saying the file is not executable.
-fn wtsexporter_in(tools_dir: Option<&Path>) -> Result<PathBuf> {
-    if let Some(found) = find_wtsexporter(tools_dir)? {
-        return Ok(found);
-    }
+/// saying there is none, saying the file there is not the pinned one, or
+/// saying the file is not executable.
+fn wtsexporter_in(tools_dir: Option<&Path>, pinned_sha256: Option<&str>) -> Result<PathBuf> {
     let executable = wtsexporter_file_name();
-    let Some(tools_dir) = tools_dir else {
-        bail!(
-            "Could not find {executable}: no Tools Directory is set. The desktop app keeps \
-             {executable} in its Tools Directory."
-        );
-    };
-    bail!(
-        "Could not find {executable} in the Tools Directory, {}. Put {RELEASE_FILE_HINT} there. \
-         {WTSEXPORTER_TROUBLESHOOTING}",
-        tools_dir.display()
-    );
+    match find_wtsexporter(tools_dir, pinned_sha256)? {
+        Lookup::Found(found) => Ok(found),
+        Lookup::NotPinned(path) => bail!(
+            "{} It is {}, and must be {RELEASE_FILE_HINT}. The Import form's Try again \
+             downloads that file. {WTSEXPORTER_TROUBLESHOOTING}",
+            not_pinned_reason(WTSEXPORTER_RELEASE),
+            path.display()
+        ),
+        Lookup::Missing => match tools_dir {
+            None => bail!(
+                "Could not find {executable}: no Tools Directory is set. The desktop app keeps \
+                 {executable} in its Tools Directory."
+            ),
+            Some(tools_dir) => bail!(
+                "Could not find {executable} in the Tools Directory, {}. Put {RELEASE_FILE_HINT} \
+                 there. {WTSEXPORTER_TROUBLESHOOTING}",
+                tools_dir.display()
+            ),
+        },
+    }
 }
 
 /// Run wtsexporter in `args.work_dir`; write JSON to `json_out`.
