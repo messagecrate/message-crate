@@ -1263,6 +1263,18 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-12: **Deleting for good erases the text from the database's
+  files.** Deleting a conversation or a contact from Trash, emptying Trash,
+  deleting all of an account's messages, and deleting an account left the
+  deleted text readable in the database file, its search index, and the
+  write-ahead log beside it, so anyone who copied the files later could
+  still read it. Now the server writes over it, writes the search index
+  again without it, and clears the log. Each delete takes up to about a
+  second longer on a Message Crate of 636,000 messages. Attachment files,
+  backups and exports made earlier, the copy kept before a database
+  rebuild, and the backups the messages were imported from still hold what
+  they held; the Trash page of the user guide says what covers them
+  (#2108).
 - 2026-10-12: **An attachment sent in parts no longer fills the server's
   memory.** The server held each part of a large attachment in memory until
   all of it had arrived, up to 16 MiB a part, and nothing limited how many
@@ -1501,6 +1513,11 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-12: Text deleted for good before this release can still be in
+  the database file's free space and in its search index. The first delete
+  for good after the update writes the search index again without those
+  words, and the Trash page of the user guide gives the command that
+  erases both with the server stopped (#2108).
 - 2026-10-12: A Message Crate started with `docker run` before this release
   keeps Docker's 10 seconds to stop, which can cut off an import. Stop it
   with `docker stop -t 40 message-crate`, and start it again with the
