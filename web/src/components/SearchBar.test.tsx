@@ -112,6 +112,7 @@ function LaggingSearch({ onSubmit }: { onSubmit: (q: string) => void }) {
         {...messageBox}
         value={value}
         onChange={(q) => {
+          // biome-ignore lint/plugin/noTimedWaitsInTests: the parent under test is late on purpose (#1000); the fake clock runs this timer when the test moves it
           setTimeout(() => setValue(q), 0);
         }}
         onSubmit={onSubmit}
@@ -136,6 +137,7 @@ function MergingSearch({ onSubmit }: { onSubmit: (q: string) => void }) {
         value={value}
         onChange={(q) => {
           if (latest.current === null) {
+            // biome-ignore lint/plugin/noTimedWaitsInTests: the parent under test is late on purpose (#1000); the fake clock runs this timer when the test moves it
             setTimeout(() => {
               setValue(latest.current ?? "");
               latest.current = null;
