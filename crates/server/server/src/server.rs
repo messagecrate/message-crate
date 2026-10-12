@@ -627,7 +627,10 @@ pub enum ApiError {
     /// `503` — the server is stopping and refused work it had not started.
     ServerStopping(String),
     /// `500` — unexpected failure. The whole context chain goes to the log;
-    /// the client sees a fixed sentence and `about:blank`.
+    /// the client sees a fixed sentence and `about:blank`. One whose chain
+    /// holds a busy database ([`is_database_busy`]) is no failure of the
+    /// server: it answers `503 Service Unavailable` (`database-busy`) with
+    /// `Retry-After`, and its chain goes on the refusal's `WARN` line.
     Internal(anyhow::Error),
 }
 
@@ -746,6 +749,7 @@ impl ApiError {
             Self::MediaLinkInvalid(_) => ProblemType::MediaLinkInvalid,
             Self::RangeNotSatisfiable { .. } => ProblemType::RangeNotSatisfiable,
             Self::ServerStopping(_) => ProblemType::ServerStopping,
+            Self::Internal(err) if is_database_busy(err) => ProblemType::DatabaseBusy,
             Self::Internal(_) => return None,
         })
     }
@@ -759,8 +763,8 @@ impl ApiError {
 
     /// The problem document this failure answers with. Every failure is
     /// logged here, once: an internal error at `ERROR` with its whole chain,
-    /// which the document says nothing of, and a refused request with
-    /// `log_refusal`'s line.
+    /// which the document says nothing of, and a refused request, a busy
+    /// database's included, with `log_refusal`'s line.
     #[must_use]
     pub fn to_problem(&self) -> Problem {
         let request_id = crate::request_id::current();
@@ -783,7 +787,11 @@ impl ApiError {
                 holder: None,
             };
         };
-        log_refusal(kind);
+        let cause = match self {
+            Self::Internal(err) => Some(err),
+            _ => None,
+        };
+        log_refusal(kind, cause);
         let mut problem = Problem {
             kind: kind.url(),
             title: kind.title().to_string(),
@@ -827,9 +835,17 @@ impl ApiError {
                 problem.errors = Some(errors.clone());
                 problem.line = Some(*line as u64);
             }
-            Self::Internal(_) => unreachable!("handled above"),
+            // An internal error's answer follows from its type, below.
+            Self::Internal(_) => {}
             // The variants that carry only a sentence, which `message` lists.
             _ => problem.detail = Some(self.sentence().to_string()),
+        }
+        if kind == ProblemType::DatabaseBusy {
+            problem.retry_after = Some(crate::problem::DATABASE_BUSY_RETRY_AFTER_SECS);
+            problem.detail = Some(format!(
+                "the database is busy, so try again in {} seconds",
+                crate::problem::DATABASE_BUSY_RETRY_AFTER_SECS
+            ));
         }
         problem
     }
@@ -841,14 +857,19 @@ impl ApiError {
 /// `INFO` otherwise. The problem's
 /// `detail` is never written: it can repeat what a person typed, and a log
 /// line holds only ids, counts, routes and outcomes
-/// (`docs/architecture/server-log.md`).
-fn log_refusal(kind: ProblemType) {
+/// (`docs/architecture/server-log.md`). A refusal whose `cause` is an
+/// internal error (a busy database) also carries that error's chain as
+/// `error`, as the `ERROR` line of a `500` does, so a lock that never clears
+/// names the step that met it.
+fn log_refusal(kind: ProblemType, cause: Option<&anyhow::Error>) {
     let status = kind.status();
     let problem = kind.slug();
+    let error = cause.map(error_chain);
+    let error = error.as_deref();
     if kind.refusal_is_a_warning() {
-        tracing::warn!(%problem, status = status.as_u16(), "The server refused a request");
+        tracing::warn!(%problem, status = status.as_u16(), error, "The server refused a request");
     } else {
-        tracing::info!(%problem, status = status.as_u16(), "The server refused a request");
+        tracing::info!(%problem, status = status.as_u16(), error, "The server refused a request");
     }
 }
 
@@ -929,6 +950,31 @@ impl IntoResponse for ApiError {
         }
         response
     }
+}
+
+/// SQLite's primary result code `SQLITE_BUSY`. Its extended codes, such as
+/// `SQLITE_BUSY_SNAPSHOT`, carry it in their low byte.
+const SQLITE_BUSY: i32 = 5;
+
+/// Whether `err`, anywhere in its chain, is a database too busy to take the
+/// request: SQLite answered `SQLITE_BUSY` once the busy timeout ran out, or
+/// no pool connection came free before sqlx's acquire timeout
+/// (`PoolTimedOut`). Both pass once the import batch or the requests holding
+/// the database finish, so the request answers `database-busy` rather than
+/// `500 Internal Server Error` (#2084, #2124).
+fn is_database_busy(err: &anyhow::Error) -> bool {
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<sqlx::Error>()
+            .is_some_and(|sqlx_error| match sqlx_error {
+                sqlx::Error::PoolTimedOut => true,
+                sqlx::Error::Database(db) => db
+                    .code()
+                    .and_then(|code| code.parse::<i32>().ok())
+                    .is_some_and(|code| code & 0xff == SQLITE_BUSY),
+                _ => false,
+            })
+    })
 }
 
 /// An error's whole context chain on one line, outermost first, so the log
