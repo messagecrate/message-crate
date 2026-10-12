@@ -1080,7 +1080,7 @@ carry their date on the heading.
   each failed request up to three more times after you pressed **Cancel**,
   waiting 15 seconds before the last try, before it noticed. It now stops
   trying as soon as you press **Cancel**, as an Upload already did on
-  **Pause**, and the Export Run is recorded as cancelled rather than failed
+  **Pause**, and the Export Run is recorded as canceled rather than failed
   (#2111).
 - 2026-10-12: **A CSV export opens in a spreadsheet without running a
   message as a formula.** A message, name or address that started with `=`,

@@ -1723,10 +1723,10 @@ fn answer_login_and_create(request: &str) -> Option<String> {
 
 /// A cancel that arrives while a page is failing makes no further retry of
 /// it: the wait before the next try ends at once, and the run is closed as
-/// cancelled, not failed, since a later try might have passed (#2111). The
+/// canceled, not failed, since a later try might have passed (#2111). The
 /// server sets the cancel flag as the page request arrives, before it
 /// answers, so the retry wait that follows always sees it. The close of the
-/// cancelled run fails too, and is tried once.
+/// canceled run fails too, and is tried once.
 #[test]
 fn a_cancel_while_a_page_fails_makes_no_further_retry_and_cancels_the_run() {
     let dir = tempdir().unwrap();
@@ -1759,7 +1759,7 @@ fn a_cancel_while_a_page_fails_makes_no_further_retry_and_cancels_the_run() {
 }
 
 /// A cancel that arrives while an Asset fetch is failing makes no further
-/// retry of it, and the run is closed as cancelled rather than finishing
+/// retry of it, and the run is closed as canceled rather than finishing
 /// with the Asset listed as missing (#2111).
 #[test]
 fn a_cancel_while_an_asset_fetch_fails_makes_no_further_retry_and_cancels_the_run() {
@@ -1814,7 +1814,7 @@ fn a_cancel_while_an_asset_fetch_fails_makes_no_further_retry_and_cancels_the_ru
 }
 
 /// A cancel that arrives while the run is being recorded makes no further
-/// try to record it, and ends the Export as cancelled (#2111).
+/// try to record it, and ends the Export as canceled (#2111).
 #[test]
 fn a_cancel_while_the_run_cannot_be_recorded_makes_no_further_retry() {
     let dir = tempdir().unwrap();
@@ -1841,4 +1841,65 @@ fn a_cancel_while_the_run_cannot_be_recorded_makes_no_further_retry() {
         ],
         "no retry after the cancel, and no run to close"
     );
+}
+
+/// A Cancel pressed while the close of a finished run is failing does not
+/// cut its retries short: nothing on the server closes a run left running,
+/// so the run would stay recorded as running for good. The close is tried
+/// again and the run is recorded as completed. The retry takes the real
+/// first backoff, about half a second; nothing here depends on its length.
+#[test]
+fn a_cancel_while_a_finished_run_is_closed_keeps_the_close_retrying() {
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("exported");
+    let cfg = ExportConfig {
+        skip_attachments: true,
+        ..config(&out, String::new())
+    };
+    let pressed = cfg.cancel.clone();
+    let closes = std::sync::atomic::AtomicUsize::new(0);
+    let (base_url, seen) = serve_by_hand(move |request| {
+        answer_login_and_create(request).unwrap_or_else(|| {
+            if request.starts_with(&format!("GET /v1/exports/{EXPORT_ID}/messages")) {
+                response(
+                    "200 OK",
+                    &json!({
+                        "items": [message(
+                            1, "sms-backup-restore", "guid-1", "2015-03-12T18:05:01Z",
+                            "dinner at seven?", json!([])
+                        )],
+                        "total": 1,
+                        "limit": 2,
+                        "offset": 0
+                    }),
+                )
+            } else if request.starts_with(&format!("POST /v1/exports/{EXPORT_ID}/complete")) {
+                if closes.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                    pressed.store(true, std::sync::atomic::Ordering::SeqCst);
+                    server_error()
+                } else {
+                    response(
+                        "200 OK",
+                        &export_run(json!({ "kind": "everything" }), "completed"),
+                    )
+                }
+            } else {
+                server_error()
+            }
+        })
+    });
+    let cfg = ExportConfig { base_url, ..cfg };
+
+    let report = run(&cfg, None).unwrap();
+
+    assert_eq!(report.messages, 1);
+    let complete = format!("POST /v1/exports/{EXPORT_ID}/complete");
+    assert_eq!(
+        requests_to(&seen, &complete),
+        2,
+        "{:?}",
+        seen.lock().unwrap()
+    );
+    let cancel = format!("POST /v1/exports/{EXPORT_ID}/cancel");
+    assert_eq!(requests_to(&seen, &cancel), 0);
 }

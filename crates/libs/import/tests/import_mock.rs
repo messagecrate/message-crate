@@ -3303,9 +3303,8 @@ fn a_server_that_cannot_be_reached_pauses_the_upload_and_fails_no_conversation()
 
 /// The person pausing an Upload while a batch fails makes no further retry
 /// of it: the wait before the next try ends at once, the batch is not
-/// recorded as failed, and its conversation is left for the next Upload.
-/// #2958 built this and #2111 asks it of the Upload; this test holds it.
-/// The server sets the cancel flag as the batch arrives, before it answers,
+/// recorded as failed, and its conversation is left for the next Upload
+/// (#2111). The server sets the cancel flag as the batch arrives, before it answers,
 /// so the retry wait that follows always sees it.
 #[test]
 fn a_pause_while_a_batch_fails_makes_no_further_retry() {
