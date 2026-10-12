@@ -409,8 +409,62 @@ async fn a_refused_request_leaves_a_line_with_its_problem_type() {
     )
     .await;
     assert_eq!(status, S::FORBIDDEN, "{answer}");
+    // Wrong passwords until alice's count is full, then two attempts past it.
+    let wrong_login = || {
+        call(
+            base,
+            Method::POST,
+            "/v1/session",
+            None,
+            json_body(&json!({ "username": "alice", "password": WRONG_PASSWORD })),
+        )
+    };
+    let mut wrong = 1;
+    loop {
+        let (status, answer) = wrong_login().await;
+        if status == S::TOO_MANY_REQUESTS {
+            break;
+        }
+        assert_eq!(status, S::UNAUTHORIZED, "{answer}");
+        wrong += 1;
+        assert!(
+            wrong <= 100,
+            "100 wrong passwords and none refused as too many"
+        );
+    }
+    let (status, answer) = wrong_login().await;
+    assert_eq!(status, S::TOO_MANY_REQUESTS, "{answer}");
 
     let (log, _) = log_text(&data_dir);
+    // Each refused login leaves a warning naming the account by id and the
+    // reason, and the full count leaves one, not one per refused attempt.
+    let refused_logins = log
+        .lines()
+        .filter(|line| {
+            line.contains(" WARN ")
+                && line.contains("A login was refused")
+                && line.contains("reason=\"wrong_password\"")
+                && line.contains("account_id=")
+        })
+        .count();
+    assert_eq!(
+        refused_logins, wrong,
+        "one warning per wrong password:\n{log}"
+    );
+    let full = log
+        .lines()
+        .filter(|line| {
+            line.contains(" WARN ")
+                && line.contains("Too many authentication attempts")
+                && line.contains("bucket=\"password\"")
+                && line.contains("retry_after_secs=")
+        })
+        .count();
+    assert_eq!(full, 1, "one warning when the count fills:\n{log}");
+    assert!(
+        !log.contains("username=") && !log.contains("\"alice\""),
+        "a refused login's lines never name the username typed:\n{log}"
+    );
     let refusal = |level: &str, problem: &str, status: u16, path: &str| {
         log.lines().any(|line| {
             line.contains(&format!(" {level} "))

@@ -9,7 +9,6 @@
 //! resolution, body-streaming helpers, and `http_app`, which assembles the
 //! router.
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -437,7 +436,7 @@ impl AppState {
             db: opened.db,
             account_import_locks: KeyedLocks::default(),
             asset_complete_locks: KeyedLocks::default(),
-            auth_rate_limits: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            auth_rate_limits: crate::credentials::AuthRateLimits::default(),
             import_slots: crate::imports_api::import_slots(),
             asset_part_size,
             demo_build: crate::server_api::DemoBuild::default(),

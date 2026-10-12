@@ -10,8 +10,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::credentials::{
-    MAX_PASSWORD_BYTES, check_auth_rate_limit, normalize_username, password_bucket,
-    unknown_username_bucket, verify_login_password,
+    MAX_PASSWORD_BYTES, RateBucket, normalize_username, verify_login_password,
 };
 use crate::db::audit_trail::{self, AuditReason};
 use crate::db::session_tokens::ConnectingApp;
@@ -125,6 +124,30 @@ fn invalid_login() -> ApiError {
     ApiError::InvalidCredentials("invalid username or password".into())
 }
 
+/// Record a refused login in the Audit Trail and write a warning to the
+/// server's log, then answer [`invalid_login`]. The log line names the
+/// account by its id, never the username typed, and never the password: the
+/// log holds ids and outcomes only (`docs/architecture/server-log.md`).
+async fn refuse_login(
+    conn: &mut SqliteConnection,
+    typed_username: &str,
+    account: Option<(i64, &str)>,
+    reason: AuditReason,
+    app: Option<&ConnectingApp>,
+) -> ApiError {
+    tracing::warn!(
+        account_id = account.map(|(id, _)| id),
+        reason = reason.as_str(),
+        app = app.map(|app| app.kind.as_str()),
+        app_build = app.map(|app| app.build.as_str()),
+        "A login was refused"
+    );
+    match audit_trail::record_refused_login(conn, typed_username, account, reason, app).await {
+        Ok(()) => invalid_login(),
+        Err(err) => ApiError::Internal(err),
+    }
+}
+
 /// Log in: verify a local username and password and answer the Session, a
 /// `201 Created` whose `Location` is the singleton itself.
 #[utoipa::path(
@@ -156,15 +179,30 @@ pub async fn create_session(
     let app = app.as_ref();
     let mut conn = state.db.acquire().await?;
     let account_id = account_profile::lookup_account_by_username(&mut conn, &username).await?;
-    // Counted per account, not per username as typed: the lookup ignores
-    // case, so every spelling of a username guesses at the same password.
-    let bucket = match account_id {
-        Some(id) => password_bucket(id),
-        None => unknown_username_bucket(&username),
-    };
     // A rate-limited attempt is turned away before anything is checked, and
-    // the Audit Trail records nothing of it.
-    check_auth_rate_limit(&state.auth_rate_limits, &bucket)?;
+    // the Audit Trail records nothing of it. Every attempt is counted before
+    // its password is checked, so guesses sent at once cannot all pass the
+    // limit; a login with the right password is given back below, so the
+    // holder's own logins never fill the count.
+    //
+    // Counted per account, not per username as typed: the lookup ignores
+    // case, so every spelling of a username guesses at the same password. A
+    // username nobody holds is counted under that username, and once more for
+    // the whole server, so a script trying a new username each time cannot
+    // run Argon2 and write to the Audit Trail as fast as it likes.
+    let limits = &state.auth_rate_limits;
+    let counted = match account_id {
+        Some(id) => {
+            let bucket = RateBucket::Password(id);
+            let hit = limits.count(&bucket)?;
+            Some((bucket, hit))
+        }
+        None => {
+            limits.count(&RateBucket::unknown_username(&username))?;
+            limits.count(&RateBucket::UnknownUsernames)?;
+            None
+        }
+    };
     if req.password.len() > MAX_PASSWORD_BYTES {
         return Err(ApiError::validation("password is too long"));
     }
@@ -189,15 +227,14 @@ pub async fn create_session(
         drop(conn);
         let _ = verify_login_password(None, &password).await?;
         let mut conn = state.db.acquire().await?;
-        audit_trail::record_refused_login(
+        return Err(refuse_login(
             &mut conn,
             &username,
             None,
             AuditReason::UnknownUsername,
             app,
         )
-        .await?;
-        return Err(invalid_login());
+        .await);
     };
 
     // The Demo Account cannot be entered while it is being built: until the
@@ -217,15 +254,14 @@ pub async fn create_session(
     let verified = verify_login_password(password_hash.as_deref(), &password).await?;
     let mut conn = state.db.acquire().await?;
     if !verified {
-        audit_trail::record_refused_login(
+        return Err(refuse_login(
             &mut conn,
             &username,
             account,
             AuditReason::WrongPassword,
             app,
         )
-        .await?;
-        return Err(invalid_login());
+        .await);
     }
 
     let auth = account_profile::load_account_auth(&mut conn, account_id)
@@ -234,22 +270,27 @@ pub async fn create_session(
     // A disabled account gets the answer every refused login gets. Its own
     // answer would come only after the right password, so a guesser would
     // learn which guess was right, and that password works again once the
-    // owner enables the account. The Audit Trail still says why.
+    // owner enables the account. The Audit Trail still says why. The attempt
+    // stays counted for the same reason: given back, it would show in the
+    // count which guess was right.
     if auth.disabled {
-        audit_trail::record_refused_login(
+        return Err(refuse_login(
             &mut conn,
             &username,
             account,
             AuditReason::AccountDisabled,
             app,
         )
-        .await?;
-        return Err(invalid_login());
+        .await);
     }
 
     let body =
         CreateSessionResponse::for_existing_account(&mut conn, account_id, stored_username, app)
             .await?;
+    // The holder's own login: it does not count against the account.
+    if let Some((bucket, hit)) = counted {
+        limits.give_back(&bucket, hit)?;
+    }
 
     Ok(Created {
         location: "/v1/session".to_string(),

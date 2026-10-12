@@ -341,6 +341,23 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-11: **Logging in often no longer locks you out.** Every login
+  counted toward the limit of 20 attempts a minute for an account, the
+  successful ones too, so an account that logged in often, such as the Demo
+  Account on a shared server, could be told to wait. Only failed logins
+  count now. Twenty wrong passwords in a minute still make the account wait,
+  even with the right password, until the minute passes.
+- 2026-10-11: **Logins under made-up usernames are limited.** Each username
+  that names no account had its own limit, so a script trying a new name
+  each time was never slowed, kept the server busy checking passwords, and
+  filled the Audit Trail with refused logins. The server now also refuses
+  more than 120 such logins a minute in all.
+- 2026-10-11: **Refused logins show in the server's log.** A login refused
+  for a wrong password, an unknown username or a disabled account now
+  leaves a warning in the server's log naming the account and the reason,
+  and so does an account whose limit of attempts fills, so the owner's Logs
+  panel shows someone guessing a password. The username typed and the
+  password are never written.
 - 2026-10-11: **A screen that fails says why instead of going blank.** A
   screen that broke while showing itself, or whose code didn't arrive, left
   an empty page with no message. It now shows what went wrong and a Reload

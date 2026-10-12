@@ -22,123 +22,211 @@ pub(crate) const MAX_PASSWORD_BYTES: usize = 1024;
 /// Sliding window for the routes a stranger may call with a credential.
 pub(crate) const AUTH_RATE_WINDOW: Duration = Duration::from_secs(60);
 /// The most hits one bucket may count within [`AUTH_RATE_WINDOW`]. The next
-/// attempt is refused as `rate-limited`. A stranger's register, claim and
-/// login count every attempt. A route that checks a `current_password`
-/// counts only a wrong one.
+/// attempt is refused as `rate-limited`. Every bucket but
+/// [`RateBucket::UnknownUsernames`] holds this many.
 pub(crate) const AUTH_RATE_MAX: usize = 20;
+/// The most logins as usernames that name no account the whole server takes
+/// within [`AUTH_RATE_WINDOW`], whichever usernames they are. Well above what
+/// people mistyping their usernames produce, and low enough that a script
+/// trying a new username each time cannot keep Argon2 busy or fill the Audit
+/// Trail.
+pub(crate) const UNKNOWN_USERNAME_RATE_MAX: usize = 120;
 
 static DUMMY_PASSWORD_HASH: OnceLock<String> = OnceLock::new();
 
-/// Sliding-window hit counts for the credential routes, keyed by bucket
-/// (`register`, `claim`, and one per account for its password, from
-/// [`password_bucket`] and [`unknown_username_bucket`]).
+/// One count the rate limiter keeps.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum RateBucket {
+    /// Registrations, once for the whole server.
+    Register,
+    /// Claims, once for the whole server.
+    Claim,
+    /// Guesses at one account's password: a login as it, and a
+    /// `current_password` sent to change the owner's password or to delete
+    /// the account. Keyed by the id, so every spelling of the username counts
+    /// here.
+    Password(i64),
+    /// Logins as one username that names no account, folded the way the
+    /// account lookup folds it (`COLLATE NOCASE`, which folds ASCII letters
+    /// only), so its spellings share one count as an account's do. Build it
+    /// with [`RateBucket::unknown_username`].
+    UnknownUsername(String),
+    /// Logins as any username that names no account, once for the whole
+    /// server, so a script that tries a new username each time is counted.
+    UnknownUsernames,
+}
+
+impl RateBucket {
+    /// The bucket for logins as `username`, which names no account.
+    pub(crate) fn unknown_username(username: &str) -> Self {
+        Self::UnknownUsername(username.to_ascii_lowercase())
+    }
+
+    /// The key the bucket's hits are kept under.
+    fn key(&self) -> String {
+        match self {
+            Self::Register => "register".to_string(),
+            Self::Claim => "claim".to_string(),
+            Self::Password(account_id) => format!("password:{account_id}"),
+            Self::UnknownUsername(folded) => format!("password:unknown:{folded}"),
+            Self::UnknownUsernames => "password:unknown".to_string(),
+        }
+    }
+
+    /// The most hits the bucket holds in [`AUTH_RATE_WINDOW`].
+    fn max(&self) -> usize {
+        match self {
+            Self::UnknownUsernames => UNKNOWN_USERNAME_RATE_MAX,
+            _ => AUTH_RATE_MAX,
+        }
+    }
+
+    /// The bucket's kind as the server's log names it. A username is never
+    /// written: the log holds ids and outcomes only.
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::Register => "register",
+            Self::Claim => "claim",
+            Self::Password(_) => "password",
+            Self::UnknownUsername(_) => "unknown_username",
+            Self::UnknownUsernames => "unknown_usernames",
+        }
+    }
+
+    /// The account whose password the bucket guards, for the log.
+    fn account_id(&self) -> Option<i64> {
+        match self {
+            Self::Password(account_id) => Some(*account_id),
+            _ => None,
+        }
+    }
+}
+
+/// One counted attempt, which [`AuthRateLimits::give_back`] takes back when
+/// the attempt turned out to be the holder's own.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Hit(Instant);
+
+/// One bucket's hits inside the window, and whether the log has been told it
+/// filled.
+#[derive(Debug, Default)]
+struct Hits {
+    times: VecDeque<Instant>,
+    warned: bool,
+}
+
+/// Sliding-window hit counts for the credential routes, one per
+/// [`RateBucket`].
 ///
 /// This lives on `AppState` rather than in a process-global static: a running
 /// server builds exactly one state, so the limiter still spans the whole server,
 /// while each test fixture gets its own counts and cannot rate-limit an unrelated
 /// test running beside it in the same binary.
-pub(crate) type AuthRateLimits = Arc<Mutex<HashMap<String, VecDeque<Instant>>>>;
-
-/// The bucket that counts guesses at one account's password: a login as it,
-/// and a wrong `current_password` sent to change the owner's password or to
-/// delete the account. Keyed by the id, so every spelling of the username
-/// counts here.
-pub(crate) fn password_bucket(account_id: i64) -> String {
-    format!("password:{account_id}")
+#[derive(Debug, Clone, Default)]
+pub(crate) struct AuthRateLimits {
+    buckets: Arc<Mutex<HashMap<String, Hits>>>,
+    /// The time every count reads, when a test has stopped the clock.
+    /// `None` reads the system clock.
+    frozen_at: Option<Instant>,
 }
 
-/// The bucket for logins as a username that names no account, folded the way
-/// the account lookup folds it (`COLLATE NOCASE`, which folds ASCII letters
-/// only), so its spellings share one count as an account's do.
-pub(crate) fn unknown_username_bucket(username: &str) -> String {
-    format!("password:unknown:{}", username.to_ascii_lowercase())
-}
-
-/// Reject when `bucket` has seen at least [`AUTH_RATE_MAX`] hits in
-/// [`AUTH_RATE_WINDOW`]; otherwise count this attempt as a hit.
-pub(crate) fn check_auth_rate_limit(limits: &AuthRateLimits, bucket: &str) -> Result<(), ApiError> {
-    check_auth_rate_limit_at(limits, bucket, Instant::now())
-}
-
-/// Reject when `bucket` has seen at least [`AUTH_RATE_MAX`] hits in
-/// [`AUTH_RATE_WINDOW`], without counting this attempt. A route that counts
-/// only failures calls this before checking a password and
-/// [`count_auth_failure`] after a wrong one.
-pub(crate) fn refuse_when_rate_limited(
-    limits: &AuthRateLimits,
-    bucket: &str,
-) -> Result<(), ApiError> {
-    with_bucket(limits, bucket, Instant::now(), |hits, now| {
-        refuse_when_full(hits, now)
-    })
-}
-
-/// Count one failed attempt in `bucket`.
-pub(crate) fn count_auth_failure(limits: &AuthRateLimits, bucket: &str) -> Result<(), ApiError> {
-    with_bucket(limits, bucket, Instant::now(), |hits, now| {
-        hits.push_back(now);
-        Ok(())
-    })
-}
-
-/// [`check_auth_rate_limit`] with the clock as an argument, so a test can move it.
-fn check_auth_rate_limit_at(
-    limits: &AuthRateLimits,
-    bucket: &str,
-    now: Instant,
-) -> Result<(), ApiError> {
-    with_bucket(limits, bucket, now, |hits, now| {
-        refuse_when_full(hits, now)?;
-        hits.push_back(now);
-        Ok(())
-    })
-}
-
-/// Run `f` on `bucket`'s hits inside the window, under the limiter's lock.
-fn with_bucket(
-    limits: &AuthRateLimits,
-    bucket: &str,
-    now: Instant,
-    f: impl FnOnce(&mut VecDeque<Instant>, Instant) -> Result<(), ApiError>,
-) -> Result<(), ApiError> {
-    let mut map = limits
-        .lock()
-        .map_err(|_| ApiError::Internal(anyhow::anyhow!("auth rate limiter poisoned")))?;
-    // Forget every bucket whose newest hit is outside the window. A login as
-    // an unknown username is counted under that username, so without this a
-    // client spraying usernames grows the map for the life of the process.
-    map.retain(|_, hits| {
-        hits.back()
-            .is_some_and(|newest| now.duration_since(*newest) <= AUTH_RATE_WINDOW)
-    });
-    let entry = map.entry(bucket.to_string()).or_default();
-    while let Some(oldest) = entry.front() {
-        if now.duration_since(*oldest) <= AUTH_RATE_WINDOW {
-            break;
+impl AuthRateLimits {
+    /// A limiter whose clock reads `now` for good, so a test can fill a
+    /// window with no wall-clock time passing.
+    #[cfg(test)]
+    pub(crate) fn frozen_at(now: Instant) -> Self {
+        Self {
+            buckets: Arc::default(),
+            frozen_at: Some(now),
         }
-        entry.pop_front();
     }
-    let result = f(entry, now);
-    // A peek at an empty bucket must not leave it behind.
-    if entry.is_empty() {
-        map.remove(bucket);
-    }
-    result
-}
 
-/// `rate-limited` when `hits` already holds [`AUTH_RATE_MAX`].
-fn refuse_when_full(hits: &VecDeque<Instant>, now: Instant) -> Result<(), ApiError> {
-    if hits.len() >= AUTH_RATE_MAX {
-        // The oldest hit inside the window is the next to leave it; until it
-        // does, every attempt is refused. Never zero: a client told to wait
-        // nothing would retry at once and be refused again.
-        let oldest = hits.front().copied().unwrap_or(now);
-        let remaining = AUTH_RATE_WINDOW.saturating_sub(now.duration_since(oldest));
-        return Err(ApiError::RateLimited {
-            retry_after_secs: remaining.as_secs().max(1),
-        });
+    fn now(&self) -> Instant {
+        self.frozen_at.unwrap_or_else(Instant::now)
     }
-    Ok(())
+
+    /// Count one attempt in `bucket`, or refuse it as `rate-limited` when
+    /// the bucket already holds its most hits inside [`AUTH_RATE_WINDOW`]. A
+    /// refused attempt is not counted. The answer is the hit, for
+    /// [`AuthRateLimits::give_back`].
+    ///
+    /// Every attempt is counted before its password is checked, so that many
+    /// attempts sent at once cannot all pass while none has been counted yet.
+    pub(crate) fn count(&self, bucket: &RateBucket) -> Result<Hit, ApiError> {
+        self.count_at(bucket, self.now())
+    }
+
+    /// [`AuthRateLimits::count`] with the clock as an argument, so a test can
+    /// move it.
+    fn count_at(&self, bucket: &RateBucket, now: Instant) -> Result<Hit, ApiError> {
+        let mut map = self.lock()?;
+        // Forget every bucket whose newest hit is outside the window. A login
+        // as an unknown username is counted under that username, so without
+        // this a client spraying usernames grows the map for the life of the
+        // process.
+        map.retain(|_, hits| {
+            hits.times
+                .back()
+                .is_some_and(|newest| now.duration_since(*newest) <= AUTH_RATE_WINDOW)
+        });
+        let hits = map.entry(bucket.key()).or_default();
+        while let Some(oldest) = hits.times.front() {
+            if now.duration_since(*oldest) <= AUTH_RATE_WINDOW {
+                break;
+            }
+            hits.times.pop_front();
+        }
+        if hits.times.len() >= bucket.max() {
+            // The oldest hit inside the window is the next to leave it; until
+            // it does, every attempt is refused. Never zero: a client told to
+            // wait nothing would retry at once and be refused again.
+            let oldest = hits.times.front().copied().unwrap_or(now);
+            let remaining = AUTH_RATE_WINDOW.saturating_sub(now.duration_since(oldest));
+            let retry_after_secs = remaining.as_secs().max(1);
+            // One line when the bucket fills, not one per refused attempt:
+            // each refusal already leaves its own `rate-limited` line, and a
+            // sustained attack must not write the rest of the log away. The
+            // bucket forgets it warned once it empties.
+            if !hits.warned {
+                hits.warned = true;
+                tracing::warn!(
+                    bucket = bucket.kind(),
+                    account_id = bucket.account_id(),
+                    retry_after_secs,
+                    "Too many authentication attempts: the rate limit refuses more until the window passes"
+                );
+            }
+            return Err(ApiError::RateLimited { retry_after_secs });
+        }
+        hits.times.push_back(now);
+        Ok(Hit(now))
+    }
+
+    /// Take back `hit` from `bucket`: the attempt was the holder's own, such
+    /// as a login with the right password, so it does not count against the
+    /// account. Only an attempt whose answer already tells the caller it
+    /// succeeded is given back; giving back any other would let a guesser
+    /// read from the count which guess was right.
+    pub(crate) fn give_back(&self, bucket: &RateBucket, hit: Hit) -> Result<(), ApiError> {
+        let mut map = self.lock()?;
+        let key = bucket.key();
+        let Some(hits) = map.get_mut(&key) else {
+            return Ok(());
+        };
+        if let Some(at) = hits.times.iter().position(|time| *time == hit.0) {
+            hits.times.remove(at);
+        }
+        if hits.times.is_empty() {
+            map.remove(&key);
+        }
+        Ok(())
+    }
+
+    fn lock(&self) -> Result<std::sync::MutexGuard<'_, HashMap<String, Hits>>, ApiError> {
+        self.buckets
+            .lock()
+            .map_err(|_| ApiError::Internal(anyhow::anyhow!("auth rate limiter poisoned")))
+    }
 }
 
 // ---------------------------------------------------------------------------

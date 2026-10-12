@@ -870,14 +870,41 @@ over a 60-second window; the limit is documented in the developer reference.
 `POST /v1/session` counts per account, because it guards one account's
 password: by the account's id when the username names one, and otherwise by
 the username folded the way the lookup folds it, so no spelling of a username
-gets a count of its own. A wrong `current_password` sent to
+gets a count of its own. A `current_password` sent to
 `PUT /v1/accounts/{id}/password` or `DELETE /v1/accounts/{id}` counts in the
 same per-account count, and past the limit those routes answer
 `429 Too Many Requests` without checking the guess: an open session must not
-guess faster than the login. `POST /v1/accounts` and `POST /v1/server/claim`
+guess faster than the login. Each attempt is counted before its password is
+checked, so many guesses sent at once cannot all pass while none has been
+counted, and a login that succeeds, or a right `current_password`, is taken
+back out of the count, so the holder's own logins never fill it. A right
+password to a disabled account stays counted, because taking it back would
+show a guesser which guess was right.
+
+A full per-account count refuses the holder's right password too, until the
+window passes: anyone who knows a username can keep that account from logging
+in by sending wrong passwords as fast as the limit allows. That is accepted as
+the cost of counting per account. Counting by the caller's address instead is
+rejected below, and a count that let the holder past it would be a count a
+guesser could pass too.
+
+Logins as usernames that name no account are also counted once for the whole
+server, at a higher limit than an account's (the developer reference gives
+both), checked before the Argon2 run that keeps their timing equal with a
+real account's and before the Audit Trail entry. A count per username alone
+lets a script that tries a new username each time run Argon2 and write to the
+Audit Trail as fast as it likes. The limit is well above what people mistyping
+their usernames produce, so the count never stops a person.
+`POST /v1/accounts` and `POST /v1/server/claim`
 count once for the whole server, because they guard against a flood of new
 accounts, and a count per name lets a script that tries a new name each time
 straight through.
+
+Each refused login writes a warning to the server's log with the account's id
+(none for an unknown username), the reason and the connecting app, and a
+count that fills writes one warning with its kind and `retry_after_secs`, not
+one per attempt it refuses. The username typed and the password are never
+written ([The server's log](server-log.md)).
 
 Rejected: counting registrations by the caller's address. Behind a reverse
 proxy every visitor shares one address, and believing a forwarded address

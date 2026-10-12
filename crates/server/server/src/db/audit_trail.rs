@@ -211,7 +211,8 @@ pub enum AuditReason {
 }
 
 impl AuditReason {
-    fn as_str(self) -> &'static str {
+    /// The value as the database and the server's log spell it.
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::LoggedOut => "logged_out",
             Self::Replaced => "replaced",
