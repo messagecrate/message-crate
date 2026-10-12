@@ -192,11 +192,12 @@ fn write_manifest(session: &Path, manifest: &UploadManifest) -> Result<()> {
 /// many: a multipart upload's directory while a part or the completion runs,
 /// and a single-request `.part` temp while its body arrives and is stored.
 /// The sweep of abandoned uploads leaves each one alone
-/// ([`crate::asset_store::sweep_incoming`]), because a part arrives into
-/// memory and a completion rewrites no manifest, so the files of an upload
-/// in use can say nothing was written to it for longer than
-/// `[server] upload_stall_secs`. It is in the server's memory for the reason
-/// [`LOCKED_SESSIONS`] is.
+/// ([`crate::asset_store::sweep_incoming`]), because the sweep goes by the
+/// manifest's time, and a part arriving writes only its own temp file
+/// ([`begin_part`]) until all of it is in, while a completion rewrites no
+/// manifest. So the manifest of an upload in use can say nothing was
+/// written to it for longer than `[server] upload_stall_secs`. It is in the
+/// server's memory for the reason [`LOCKED_SESSIONS`] is.
 static IN_USE: LazyLock<Mutex<HashMap<PathBuf, usize>>> = LazyLock::new(Mutex::default);
 
 /// [`IN_USE`], which no panic can leave half-changed: each change is one
@@ -467,24 +468,143 @@ fn make_session_dir(
     })
 }
 
-/// The part size an upload started with, from its manifest. The part route
-/// caps a body at this size, not at the part size the Server Settings give
-/// now, so an upload in progress keeps the limits it started with when the
-/// owner lowers the attachment size limit.
+/// A part on its way in ([`begin_part`]): a new file in its upload's
+/// directory, which the part's body is streamed into
+/// ([`PartTemp::receive`]), so the server holds one buffer of a part's body
+/// at a time and never the whole of it (#2114). The file is removed when
+/// this is dropped, as when the part is refused or its client goes away
+/// part-way, unless [`put_part`] has given it the part's name.
+#[derive(Debug)]
+pub struct PartTemp {
+    /// The fingerprint the upload was started for.
+    sha: Sha256,
+    /// The upload's directory, which holds the file.
+    session: PathBuf,
+    /// The part number the file is for.
+    part: u32,
+    /// The part size the upload started with. A body is capped at this
+    /// size, not at the part size the Server Settings give now, so an upload
+    /// in progress keeps the limits it started with when the owner lowers
+    /// the attachment size limit.
+    part_size: usize,
+    /// Where the file is.
+    path: PathBuf,
+    /// The file open for writing, until [`PartTemp::receive`] writes the
+    /// body into it.
+    file: Option<File>,
+    /// Whether [`put_part`] gave the file the part's name, so it is no
+    /// longer this temp's to remove.
+    kept: bool,
+}
+
+impl PartTemp {
+    /// The part size the upload started with.
+    pub fn part_size(&self) -> usize {
+        self.part_size
+    }
+
+    /// Stream `body` into the file, one read at a time, refusing a body
+    /// over [`PartTemp::part_size`], and return the bytes written.
+    ///
+    /// # Errors
+    ///
+    /// Returns the error of a body that is too large, stalls, or cannot be
+    /// read, or of a file that cannot be written; and an internal error
+    /// when the body was already received.
+    pub(crate) async fn receive(
+        &mut self,
+        body: axum::body::Body,
+    ) -> Result<u64, crate::server::ApiError> {
+        let Some(file) = self.file.take() else {
+            return Err(crate::server::ApiError::Internal(anyhow::anyhow!(
+                "the body of {} was already received",
+                self.path.display()
+            )));
+        };
+        crate::server::stream_body_into(
+            body,
+            tokio::fs::File::from_std(file),
+            &self.path,
+            self.part_size,
+        )
+        .await
+    }
+}
+
+impl Drop for PartTemp {
+    fn drop(&mut self) {
+        // Closed first, so Windows can delete it, when the body never
+        // arrived; `receive` closes it once the body is in.
+        drop(self.file.take());
+        if !self.kept {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
+
+/// Make a new, empty file in the directory of upload `upload_id` for the
+/// body of part `part`, which [`put_part`] then checks and records. The
+/// file is named `part-NNNN.{id}.tmp` with a new id, so two requests sending
+/// the same part never write into one file, and it is readable by the
+/// server's user alone ([`file_io::owner_only`]).
 ///
 /// # Errors
 ///
-/// Returns [`AssetError::Invalid`] when the upload id is invalid,
-/// [`AssetError::UploadNotFound`] when no such upload is in progress, and
-/// [`AssetError::Internal`] when its manifest is unreadable.
-pub fn session_part_size(
+/// Returns [`AssetError::Invalid`] when the upload id is invalid or the
+/// part number is out of range, [`AssetError::UploadNotFound`] when no such
+/// upload is in progress or it is removed meanwhile, and
+/// [`AssetError::Internal`] when its manifest is unreadable or the file
+/// cannot be made.
+pub fn begin_part(
     assets_root: &Path,
     sha: &Sha256,
     upload_id: &str,
-) -> Result<usize, AssetError> {
+    part: u32,
+) -> Result<PartTemp, AssetError> {
     let session = existing_session(assets_root, sha, upload_id)?;
-    let manifest = read_manifest(&session).map_err(|e| gone_if_removed(&session, e.into()))?;
-    Ok(manifest.part_size)
+    let manifest = read_manifest_for(&session, sha).map_err(|e| gone_if_removed(&session, e))?;
+    check_part_number(&manifest, part)?;
+    loop {
+        let path = session.join(format!("part-{part:04}.{}.tmp", new_upload_id()));
+        let mut options = fs::OpenOptions::new();
+        match file_io::owner_only(options.write(true).create_new(true)).open(&path) {
+            Ok(file) => {
+                return Ok(PartTemp {
+                    sha: sha.clone(),
+                    session,
+                    part,
+                    part_size: manifest.part_size,
+                    path,
+                    file: Some(file),
+                    kept: false,
+                });
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+            // The directory went: the upload was completed, aborted or swept.
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                return Err(AssetError::UploadNotFound);
+            }
+            Err(err) => {
+                return Err(anyhow::Error::from(err)
+                    .context(format!("create {}", path.display()))
+                    .into());
+            }
+        }
+    }
+}
+
+/// Refuse a part number the upload has no part for.
+fn check_part_number(manifest: &UploadManifest, part: u32) -> Result<(), AssetError> {
+    if part == 0 {
+        return Err(AssetError::Invalid("part number must be >= 1".into()));
+    }
+    let count = expected_part_count(manifest.bytes, manifest.part_size);
+    if part > count {
+        return Err(AssetError::Invalid(format!(
+            "part {part} out of range (expected 1..={count})"
+        )));
+    }
+    Ok(())
 }
 
 /// An upload's directory can be removed while a request to it runs: by the
@@ -549,53 +669,53 @@ pub fn read_upload(
     read_manifest_for(&session, sha).map_err(|e| gone_if_removed(&session, e))
 }
 
-/// Write (or overwrite) one part. `body` is the full part payload.
-pub fn put_part(
-    assets_root: &Path,
-    sha: &Sha256,
-    upload_id: &str,
-    part: u32,
-    body: &[u8],
-) -> Result<u64, AssetError> {
-    if part == 0 {
-        return Err(AssetError::Invalid("part number must be >= 1".into()));
-    }
-    let session = existing_session(assets_root, sha, upload_id)?;
-    // The directory existed when the request arrived, and may be removed while
-    // it runs.
-    write_part(&session, sha, part, body).map_err(|e| gone_if_session_file_removed(&session, e))
+/// Record the part whose whole body is now in `temp`'s file
+/// ([`PartTemp::receive`]) in its upload, and return its size. A body of
+/// exactly the part's size takes the part's name, replacing any copy of the
+/// part sent before, and the manifest records it. A body of any other size
+/// is refused, and dropping `temp` removes its file.
+///
+/// # Errors
+///
+/// Returns [`AssetError::Invalid`] for a part of the wrong size,
+/// [`AssetError::Locked`] while another request to the upload holds its
+/// lock, [`AssetError::UploadNotFound`] when the upload was removed while
+/// the part arrived, and [`AssetError::Internal`] when the part cannot be
+/// stored.
+pub fn put_part(temp: PartTemp) -> Result<u64, AssetError> {
+    // `begin_part` made the file in the upload's directory, which may have
+    // been removed since.
+    let session = temp.session.clone();
+    write_part(temp).map_err(|e| gone_if_session_file_removed(&session, e))
 }
 
-/// [`put_part`] on the directory of its upload.
-fn write_part(session: &Path, sha: &Sha256, part: u32, body: &[u8]) -> Result<u64, AssetError> {
+/// [`put_part`]. The part number is not checked again: [`begin_part`]
+/// checked it against the same manifest, whose size and part size never
+/// change.
+fn write_part(mut temp: PartTemp) -> Result<u64, AssetError> {
+    let session = temp.session.as_path();
     let _lock = lock_session(session)?;
-    let mut manifest = read_manifest_for(session, sha)?;
-    if body.len() > manifest.part_size {
-        return Err(AssetError::Invalid(format!(
-            "part body {} bytes exceeds session part_size {}",
-            body.len(),
-            manifest.part_size
-        )));
-    }
-    let count = expected_part_count(manifest.bytes, manifest.part_size);
-    if part > count {
-        return Err(AssetError::Invalid(format!(
-            "part {part} out of range (expected 1..={count})"
-        )));
-    }
+    let mut manifest = read_manifest_for(session, &temp.sha)?;
+    let part = temp.part;
+    // Closed before it is measured and renamed.
+    drop(temp.file.take());
+    let len = fs::metadata(&temp.path)
+        .with_context(|| format!("read {}", temp.path.display()))?
+        .len();
     let expect = expected_part_len(manifest.bytes, manifest.part_size, part);
-    if body.len() as u64 != expect {
+    if len != expect {
         return Err(AssetError::Invalid(format!(
-            "part {part} length {} does not match expected {expect}",
-            body.len()
+            "part {part} length {len} does not match expected {expect}"
         )));
     }
 
     let path = part_path(session, part);
-    fs::write(&path, body).with_context(|| format!("write {}", path.display()))?;
+    fs::rename(&temp.path, &path)
+        .with_context(|| format!("rename {} → {}", temp.path.display(), path.display()))?;
+    temp.kept = true;
     manifest.received.insert(part);
     write_manifest(session, &manifest)?;
-    Ok(body.len() as u64)
+    Ok(len)
 }
 
 /// Concatenate parts, check the claimed SHA-256 fingerprint, and install into

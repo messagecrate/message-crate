@@ -1019,6 +1019,20 @@ What each reaches:
   limit as it is now. Why: an upload in progress keeps the limit it started
   with. Lowering the limit mid-upload otherwise refused every remaining part
   with `413 Payload Too Large`, and the push failed the conversation (#1179).
+- A part's body is written to a temp file in its upload's directory as it
+  arrives, and the server holds one buffer of it at a time, as the HTTP
+  library hands the body over, never the whole part. Once all of it is in,
+  a part of exactly its size takes the part's name and the manifest
+  records it; a part of any other size is refused and its temp file
+  removed. Why: a part read whole into memory held a whole part size
+  (`[server] asset_part_size`) of the server's memory per request, and
+  nothing limited how many requests one account with the import permission
+  sent at once, so it could take the server's memory from every other
+  account (#2114). With the parts on disk, a part request costs the server
+  the memory of one buffer of the body as the HTTP library hands it over,
+  whatever the client sends. The part size no longer sets it, so the server
+  sets no limit of its own on parts in flight, and the desktop app's 64
+  uploads at once cost 64 such buffers.
 - An account may have at most 128 multipart uploads open at once. The start
   of one more answers `409 Conflict` (`state-conflict`), with `detail`
   naming the limit, until one of them is completed, aborted, or abandoned.
@@ -1040,8 +1054,9 @@ What each reaches:
   to a day (#2652). The stall limit is safe because a live upload never goes
   that long between requests: the app sends each part as soon as the one
   before it is answered. A request still running keeps its upload however
-  old its files are, because a part arrives into memory before any of it is
-  written, and a completion writes no manifest. Only `serve` removes them,
+  old its manifest is, because a part streams into a temp file of its own
+  and the manifest records it only once all of it has arrived, and a
+  completion writes no manifest. Only `serve` removes them,
   not `process-assets` or `imports discard`: those commands may run beside
   `serve` and cannot see its requests.
 

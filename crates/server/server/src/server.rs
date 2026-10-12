@@ -2379,7 +2379,19 @@ pub(crate) async fn stream_body_to_file(
     dest: &Path,
     max_body_bytes: usize,
 ) -> Result<u64, ApiError> {
-    let mut file = create_dest_file(dest).await?;
+    let file = create_dest_file(dest).await?;
+    stream_body_into(body, file, dest, max_body_bytes).await
+}
+
+/// Stream a request body into `file`, already open at `dest`, failing once
+/// it passes `max_body_bytes`, and return the bytes written. The body is
+/// held one chunk at a time, never whole.
+pub(crate) async fn stream_body_into(
+    body: axum::body::Body,
+    mut file: tokio::fs::File,
+    dest: &Path,
+    max_body_bytes: usize,
+) -> Result<u64, ApiError> {
     let mut written = 0u64;
     let mut stream = body.into_data_stream();
     while let Some(chunk) = stream.next().await {

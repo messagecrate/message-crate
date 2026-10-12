@@ -26,8 +26,8 @@ use crate::asset_store::sidecar_path;
 use crate::asset_uploads;
 use crate::server::{
     ApiError, AppState, AuthIdentity, Created, ImportAccess, ImportOrExportAccess,
-    content_type_base, discard_body, read_body_limited, resolve_import_account, run_blocking,
-    stream_body_to_file, upload_body_bounded, upload_content_type,
+    content_type_base, discard_body, resolve_import_account, run_blocking, stream_body_to_file,
+    upload_body_bounded, upload_content_type,
 };
 
 pub(crate) mod media_links;
@@ -1342,39 +1342,36 @@ pub(crate) async fn replace_asset_upload_part(
 ) -> Result<Json<ReplaceAssetUploadPartResponse>, ApiError> {
     require_content_type(&headers)?;
     let account = resolve_import_account(&auth);
-    if part == 0 {
-        return Err(ApiError::validation("part number must be >= 1"));
-    }
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
-    // The part arrives into memory, so nothing is written to the upload until
-    // all of it is in: the sweep of abandoned uploads must leave it alone
-    // meanwhile (#2652).
+    // The part streams into a temp file of its own, and the manifest records
+    // it only once all of it is in, so the manifest can look abandoned while
+    // the part arrives: the sweep of abandoned uploads must leave the upload
+    // alone meanwhile (#2652).
     let _in_use = asset_uploads::hold_upload(&assets_dir, &sha256, &upload_id)?;
-    // The part size this upload started with, not the one the Server
-    // Settings give now: lowering the limit holds from the next upload.
-    let part_size = {
-        let assets_dir = assets_dir.clone();
+    // Refuses a part number the upload has no part for before the body is
+    // read. Dropping the temp, on any early return or when the client goes
+    // away part-way, removes its file.
+    let mut temp = {
         let sha = sha256.clone();
         let uid = upload_id.clone();
         run_blocking("upload part", move || {
-            asset_uploads::session_part_size(&assets_dir, &sha, &uid)
+            asset_uploads::begin_part(&assets_dir, &sha, &uid, part)
         })
         .await?
     };
-    if crate::server::declared_over(&headers, part_size) {
+    // The part size this upload started with, not the one the Server
+    // Settings give now: lowering the limit holds from the next upload.
+    if crate::server::declared_over(&headers, temp.part_size()) {
         return Err(ApiError::PayloadTooLarge);
     }
-    let body = read_body_limited(
-        upload_body_bounded(request.into_body(), state.upload_time_limits),
-        part_size,
-    )
+    // One read of the body is in memory at a time, never the whole part
+    // (#2114).
+    temp.receive(upload_body_bounded(
+        request.into_body(),
+        state.upload_time_limits,
+    ))
     .await?;
-    let sha = sha256.clone();
-    let uid = upload_id.clone();
-    let written = run_blocking("upload part", move || {
-        asset_uploads::put_part(&assets_dir, &sha, &uid, part, &body)
-    })
-    .await?;
+    let written = run_blocking("upload part", move || asset_uploads::put_part(temp)).await?;
     Ok(Json(ReplaceAssetUploadPartResponse {
         part,
         bytes: written,
