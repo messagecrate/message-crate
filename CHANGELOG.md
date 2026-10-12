@@ -1075,6 +1075,13 @@ carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-12: **Cancel stops an Export at once while the server is away.**
+  When the server stopped answering during an Export, the Export kept trying
+  each failed request up to three more times after you pressed **Cancel**,
+  waiting 15 seconds before the last try, before it noticed. It now stops
+  trying as soon as you press **Cancel**, as an Upload already did on
+  **Pause**, and the Export Run is recorded as cancelled rather than failed
+  (#2111).
 - 2026-10-12: **A CSV export opens in a spreadsheet without running a
   message as a formula.** A message, name or address that started with `=`,
   `+`, `-` or `@` was written as it was, so Excel or LibreOffice Calc read

@@ -1615,3 +1615,224 @@ fn an_exported_message_keeps_its_earlier_versions() {
         ]
     );
 }
+
+/// A server that answers each request on its own connection and closes it,
+/// for a test that must act while a request is in hand: `answer` gets the
+/// request line and returns the whole response to write. Returns the base
+/// URL and every request line it saw, in order, without the HTTP version.
+fn serve_by_hand(
+    answer: impl Fn(&str) -> String + Send + 'static,
+) -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&seen);
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { return };
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut request_line = String::new();
+            if reader.read_line(&mut request_line).is_err() {
+                continue;
+            }
+            let mut content_length = 0usize;
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                    break;
+                }
+                if let Some((name, value)) = line.split_once(':')
+                    && name.eq_ignore_ascii_case("content-length")
+                {
+                    content_length = value.trim().parse().unwrap_or(0);
+                }
+            }
+            let mut body = vec![0u8; content_length];
+            let _ = reader.read_exact(&mut body);
+            let request = request_line
+                .trim_end()
+                .trim_end_matches(" HTTP/1.1")
+                .to_string();
+            let response = answer(&request);
+            recorded.lock().unwrap().push(request);
+            let _ = stream.write_all(response.as_bytes());
+            let _ = stream.shutdown(std::net::Shutdown::Both);
+        }
+    });
+    (base_url, seen)
+}
+
+/// A whole HTTP response with `status` and the JSON `body`.
+fn response(status: &str, body: &Value) -> String {
+    let body = body.to_string();
+    format!(
+        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )
+}
+
+/// The `500 Internal Server Error` a request that may pass on a later try
+/// gets.
+fn server_error() -> String {
+    response(
+        "500 Internal Server Error",
+        &json!({
+            "type": "about:blank",
+            "title": "Internal server error",
+            "status": 500,
+            "detail": "intentional failure"
+        }),
+    )
+}
+
+/// How many of the requests `seen` start with `prefix`.
+fn requests_to(seen: &std::sync::Mutex<Vec<String>>, prefix: &str) -> usize {
+    seen.lock()
+        .unwrap()
+        .iter()
+        .filter(|request| request.starts_with(prefix))
+        .count()
+}
+
+/// The routes every run below calls before the one that fails: login, and
+/// the run recorded with every message.
+fn answer_login_and_create(request: &str) -> Option<String> {
+    if request == "GET /v1/session" {
+        Some(response(
+            "200 OK",
+            &json!({ "account_id": 1, "username": "alice" }),
+        ))
+    } else if request == "POST /v1/exports" {
+        Some(response(
+            "201 Created",
+            &export_run(json!({ "kind": "everything" }), "running"),
+        ))
+    } else {
+        None
+    }
+}
+
+/// A cancel that arrives while a page is failing makes no further retry of
+/// it: the wait before the next try ends at once, and the run is closed as
+/// cancelled, not failed, since a later try might have passed (#2111). The
+/// server sets the cancel flag as the page request arrives, before it
+/// answers, so the retry wait that follows always sees it. The close of the
+/// cancelled run fails too, and is tried once.
+#[test]
+fn a_cancel_while_a_page_fails_makes_no_further_retry_and_cancels_the_run() {
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("exported");
+    let cfg = config(&out, String::new());
+    let pressed = cfg.cancel.clone();
+    let (base_url, seen) = serve_by_hand(move |request| {
+        answer_login_and_create(request).unwrap_or_else(|| {
+            if request.starts_with(&format!("GET /v1/exports/{EXPORT_ID}/messages")) {
+                pressed.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+            server_error()
+        })
+    });
+    let cfg = ExportConfig { base_url, ..cfg };
+
+    let error = run(&cfg, None).unwrap_err();
+
+    assert_eq!(error.to_string(), "cancelled");
+    let messages = format!("GET /v1/exports/{EXPORT_ID}/messages");
+    assert_eq!(
+        requests_to(&seen, &messages),
+        1,
+        "no retry after the cancel"
+    );
+    let cancel = format!("POST /v1/exports/{EXPORT_ID}/cancel");
+    assert_eq!(requests_to(&seen, &cancel), 1, "{:?}", seen.lock().unwrap());
+    let complete = format!("POST /v1/exports/{EXPORT_ID}/complete");
+    assert_eq!(requests_to(&seen, &complete), 0);
+}
+
+/// A cancel that arrives while an Asset fetch is failing makes no further
+/// retry of it, and the run is closed as cancelled rather than finishing
+/// with the Asset listed as missing (#2111).
+#[test]
+fn a_cancel_while_an_asset_fetch_fails_makes_no_further_retry_and_cancels_the_run() {
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("exported");
+    let cfg = config(&out, String::new());
+    let pressed = cfg.cancel.clone();
+    let (base_url, seen) = serve_by_hand(move |request| {
+        answer_login_and_create(request).unwrap_or_else(|| {
+            if request.starts_with(&format!("GET /v1/exports/{EXPORT_ID}/messages")) {
+                response(
+                    "200 OK",
+                    &json!({
+                        "items": [message(
+                            1, "sms-backup-restore", "guid-1", "2015-03-12T18:05:01Z",
+                            "dinner at seven?",
+                            json!([menu_attachment(json!("attachments/menu.pdf"))])
+                        )],
+                        "total": 1,
+                        "limit": 2,
+                        "offset": 0
+                    }),
+                )
+            } else if request.starts_with(&format!("POST /v1/exports/{EXPORT_ID}/cancel")) {
+                response(
+                    "200 OK",
+                    &export_run(json!({ "kind": "everything" }), "cancelled"),
+                )
+            } else {
+                if request.starts_with("GET /v1/assets/") {
+                    pressed.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
+                server_error()
+            }
+        })
+    });
+    let cfg = ExportConfig { base_url, ..cfg };
+
+    let error = run(&cfg, None).unwrap_err();
+
+    assert_eq!(error.to_string(), "cancelled");
+    assert_eq!(
+        requests_to(&seen, &format!("GET /v1/assets/{MENU_SHA}")),
+        1,
+        "no retry after the cancel"
+    );
+    let cancel = format!("POST /v1/exports/{EXPORT_ID}/cancel");
+    assert_eq!(requests_to(&seen, &cancel), 1, "{:?}", seen.lock().unwrap());
+    let complete = format!("POST /v1/exports/{EXPORT_ID}/complete");
+    assert_eq!(requests_to(&seen, &complete), 0);
+    assert!(!out.join(CONVERSATION_FILE).exists());
+}
+
+/// A cancel that arrives while the run is being recorded makes no further
+/// try to record it, and ends the Export as cancelled (#2111).
+#[test]
+fn a_cancel_while_the_run_cannot_be_recorded_makes_no_further_retry() {
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("exported");
+    let cfg = config(&out, String::new());
+    let pressed = cfg.cancel.clone();
+    let (base_url, seen) = serve_by_hand(move |request| {
+        if request == "POST /v1/exports" {
+            pressed.store(true, std::sync::atomic::Ordering::SeqCst);
+            return server_error();
+        }
+        answer_login_and_create(request).unwrap_or_else(server_error)
+    });
+    let cfg = ExportConfig { base_url, ..cfg };
+
+    let error = run(&cfg, None).unwrap_err();
+
+    assert_eq!(error.to_string(), "cancelled");
+    assert_eq!(
+        *seen.lock().unwrap(),
+        vec![
+            "GET /v1/session".to_string(),
+            "POST /v1/exports".to_string()
+        ],
+        "no retry after the cancel, and no run to close"
+    );
+}
