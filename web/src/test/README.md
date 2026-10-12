@@ -180,6 +180,19 @@ expands, a form drawn before anything answers. The test reads it at once with
 `getBy…`. Such a test can't be checked by dropping a `settle()`, because it
 has none to drop. Breaking the source is what shows it guards something.
 
+A mock that answers still lands in such a test, after the test returns and
+before `cleanup`, because `startFakeClock` has TanStack Query tell the screen
+in a microtask. When that answer draws more than the test reads, the test
+spends time drawing it, and the screen may need providers the test never gave
+it. The mock for a test that reads the first draw returns a promise that
+never settles, and a test about the answer gives one.
+
+```tsx
+beforeEach(() => {
+  getAccountProfileMock.mockReturnValue(new Promise(() => {}));
+});
+```
+
 ### A store outside React that the test changes
 
 When the test changes a store the screen subscribes to (such as releasing a

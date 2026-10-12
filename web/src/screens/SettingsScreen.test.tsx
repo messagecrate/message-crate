@@ -3,7 +3,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiTokenRevealProvider } from "../components/ApiTokenRevealDialog";
 import { getAccountProfile } from "../lib/serverApi";
 import { account } from "../test/apiShapes";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
@@ -48,22 +47,22 @@ beforeEach(() => {
   startFakeClock();
   tauriState.isTauri = false;
   getAccountProfileMock.mockReset();
-  getAccountProfileMock.mockResolvedValue(baseProfile());
+  // A test that reads the screen as it is first drawn gets no answer, so the
+  // Account tab's sections are never drawn for it. A test about what the
+  // account's answer changes gives one.
+  getAccountProfileMock.mockReturnValue(new Promise(() => {}));
 });
 
 function baseProfile(): Awaited<ReturnType<typeof getAccountProfile>> {
   return account({ account_id: 7, username: "bob" });
 }
 
-/** The app renders the API Token reveal dialog above Settings, so the tests do too. */
 function renderSettings(initialEntries: string[]) {
   return render(
     <Providers>
-      <ApiTokenRevealProvider>
-        <MemoryRouter initialEntries={initialEntries}>
-          <SettingsScreen />
-        </MemoryRouter>
-      </ApiTokenRevealProvider>
+      <MemoryRouter initialEntries={initialEntries}>
+        <SettingsScreen />
+      </MemoryRouter>
     </Providers>,
   );
 }
@@ -89,8 +88,11 @@ describe("SettingsScreen has no account management", () => {
  * account keeps Storage.
  */
 describe("SettingsScreen tabs follow the account it reads", () => {
+  // Both open on Audit Trail, so the account's answer doesn't draw the
+  // Account tab's sections, which the tests have no use for.
   it("keeps Storage for an ordinary account", async () => {
-    renderSettings(["/settings"]);
+    getAccountProfileMock.mockResolvedValue(baseProfile());
+    renderSettings(["/settings?tab=audit-trail"]);
     await settle();
 
     expect(getAccountProfileMock).toHaveBeenCalled();
@@ -99,7 +101,7 @@ describe("SettingsScreen tabs follow the account it reads", () => {
 
   it("drops Storage once the account read is the owner's", async () => {
     getAccountProfileMock.mockResolvedValue({ ...baseProfile(), is_owner: true });
-    renderSettings(["/settings"]);
+    renderSettings(["/settings?tab=audit-trail"]);
 
     // Storage shows until the account arrives, then goes.
     expect(screen.getByRole("tab", { name: "Storage" })).toBeInTheDocument();
