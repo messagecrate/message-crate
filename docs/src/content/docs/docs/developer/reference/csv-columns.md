@@ -5,6 +5,24 @@ description: Read the shared columns written for every conversation CSV.
 
 CSV output contains one row per message. Conversation and export identity are repeated on every row, so there is no separate metadata file.
 
+## Cells that start like a formula
+
+A spreadsheet runs a cell that starts with `=`, `+`, `-`, `@`, a tab, or a carriage return as a formula.
+A message's sender writes its text, so a message such as `=HYPERLINK(...)` would run when the export is opened.
+Every such cell is written with a `'` in front, which Excel and LibreOffice Calc read as "this cell is text".
+The `'` also keeps the `+` of a phone number such as `+15551234567`, and the `-` of a negative number.
+
+A cell that already starts with one or more `'` and then one of those characters gets one more `'`.
+Reading the file back takes exactly one `'` off a cell whose next character, after any further `'`, is one of them.
+So a CSV export imported or converted again gives back each cell exactly as it was.
+A spreadsheet that keeps the `'` when it saves the file, or drops it, gives the same result for every cell that does not itself start with `'`.
+A cell that does can lose its own `'`, because the spreadsheet reads that `'` as its text mark too.
+A cell `'hello` is written as it is, and a spreadsheet that drops the mark saves `hello`.
+A cell `'=x` is written `''=x`, and a spreadsheet that drops the outer mark saves `'=x`.
+That reads back as `=x`.
+Any other cell, a JSON column included, is written as it is.
+The diagnostic CSV files the GO SMS Pro import writes (`skipped_*.csv`) follow the same rule.
+
 ## Conversation and message identity
 
 | Column | Meaning |

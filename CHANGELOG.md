@@ -998,6 +998,15 @@ carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-12: **A CSV export opens in a spreadsheet without running a
+  message as a formula.** A message, name or address that started with `=`,
+  `+`, `-` or `@` was written as it was, so Excel or LibreOffice Calc read
+  it as a formula, and a sender could place one such as `=HYPERLINK(...)` in
+  the export of whoever received it. Such a cell now starts with a `'`,
+  which the spreadsheet reads as text, and a phone number keeps its `+`.
+  Importing or converting the CSV again takes the `'` off, so every message
+  comes back as it was. The lists of skipped messages a GO SMS Pro import
+  writes follow the same rule (#2118).
 - 2026-10-12: **Converting an SMS Backup & Restore backup logs its
   attachments and moves the progress bar.** While a Convert of a backup
   copied its attachments, the log said nothing about one it could not find

@@ -12,6 +12,7 @@ csv = { workspace = true }
 file-io = { workspace = true }
 go-sms-mms = { path = "../../libs/go-sms-mms" }
 message-crate-core = { path = "../../core/message-crate-core" }
+message-csv = { path = "../../libs/csv" }
 message-ir = { path = "../../libs/ir" }
 message-ir-format = { path = "../../libs/ir-format" }
 message-staging = { path = "../../libs/staging" }
