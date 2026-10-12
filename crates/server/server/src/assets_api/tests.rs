@@ -450,6 +450,26 @@ fn store_verified_persists_the_bytes_that_were_hashed() {
     assert_eq!(fs::read(source).unwrap(), b"mutated-after-copy");
 }
 
+/// #2260: two raw uploads of one fingerprint that are given the same id, as
+/// two uploads in one clock tick were, get a temp each. The second takes
+/// the next id rather than emptying the first one's temp.
+#[test]
+fn two_raw_uploads_given_the_same_id_get_a_temp_each() {
+    let dir = tempdir().unwrap();
+    let sha = Sha256::of_bytes(b"one asset");
+    let mut ids = ["aa", "aa", "bb"].into_iter().map(String::from);
+    let mut next_id = || ids.next().unwrap();
+
+    let first = reserve_upload_temp(dir.path(), &sha, &mut next_id).unwrap();
+    fs::write(&first, b"the first upload's bytes").unwrap();
+    let second = reserve_upload_temp(dir.path(), &sha, &mut next_id).unwrap();
+
+    assert_eq!(first, dir.path().join(format!("{sha}-aa.part")));
+    assert_eq!(second, dir.path().join(format!("{sha}-bb.part")));
+    assert_eq!(fs::read(&first).unwrap(), b"the first upload's bytes");
+    assert_eq!(fs::read(&second).unwrap(), b"");
+}
+
 #[test]
 fn store_verified_renames_same_filesystem_temp() {
     let dir = tempdir().unwrap();
@@ -1789,6 +1809,107 @@ async fn a_preview_or_thumbnail_path_outside_the_converted_directory_is_not_serv
             );
         }
     }
+}
+
+/// What `file_of` answers for the Preview of [`seed_attachment_with_preview`]'s
+/// original once a second row of it names `derived_path` with
+/// `derived_mime`, each an SQL expression over the first row, and the
+/// warnings it wrote to the server's log meanwhile. Returns the answer, the
+/// log lines, the original's fingerprint and the first row's Preview path.
+async fn file_of_with_a_second_row(
+    derived_path: &str,
+    derived_mime: &str,
+) -> (
+    Option<(String, Option<String>)>,
+    Vec<crate::logging::LogLine>,
+    String,
+    String,
+) {
+    use crate::logging::{LogFiles, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
+
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let state = &fixture.state;
+    let seeded = seed_attachment_with_preview(state, user.account_id).await;
+    let sha = seeded.with_preview;
+    let mut conn = state.db.acquire().await.unwrap();
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    sqlx::query(&format!(
+        "INSERT INTO attachments (
+            message_id, original_name, mime_type, sha256, assets_path,
+            derived_sha256, derived_assets_path, derived_mime_type
+         )
+         SELECT message_id, original_name, mime_type, sha256, assets_path,
+            derived_sha256, {derived_path}, {derived_mime}
+         FROM attachments WHERE sha256 = $1"
+    ))
+    .bind(&sha)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let log_dir = tempdir().unwrap();
+    let files = LogFiles::open(log_dir.path(), SERVER_LOG_LIMITS).unwrap();
+
+    let file = {
+        let _subscriber =
+            tracing::subscriber::set_default(crate::logging::subscriber_for(files, "warn"));
+        crate::db::attachment_versions::file_of(
+            &mut conn,
+            Version::Preview,
+            OriginalRows {
+                account_id: user.account_id,
+                original_sha: &sha,
+            },
+        )
+        .await
+        .unwrap()
+    };
+    let (lines, _) = read_lines(
+        log_dir.path(),
+        &LogLinesQuery {
+            limit: 10,
+            ..LogLinesQuery::default()
+        },
+    )
+    .unwrap();
+    let preview_path = shard_rel_path(&Sha256::of_bytes(PREVIEW_BYTES), ".jpg");
+    (file, lines, sha, preview_path)
+}
+
+/// #2806: two rows of one original that name different Previews are a
+/// damaged store. The oldest row's Preview answers on every read, rather
+/// than whichever row SQLite reads first, and the disagreement goes to the
+/// server's log with both paths.
+#[tokio::test]
+async fn rows_that_name_different_previews_answer_the_oldest_rows_and_log_it() {
+    let (file, lines, sha, preview_path) =
+        file_of_with_a_second_row("'ab/a-damaged-preview.jpg'", "derived_mime_type").await;
+
+    assert_eq!(
+        file,
+        Some((preview_path.clone(), Some("image/jpeg".into())))
+    );
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(lines[0].level, crate::logging::LogLevel::Warn);
+    for part in [
+        preview_path.as_str(),
+        "ab/a-damaged-preview.jpg",
+        sha.as_str(),
+    ] {
+        assert!(lines[0].text.contains(part), "{part}: {}", lines[0].text);
+    }
+}
+
+/// #2806: rows of one original that name one Preview file but disagree on
+/// its media type do not disagree about the file. The oldest row's media
+/// type answers, and nothing is logged.
+#[tokio::test]
+async fn rows_that_name_one_preview_with_different_media_types_log_nothing() {
+    let (file, lines, _, preview_path) =
+        file_of_with_a_second_row("derived_assets_path", "NULL").await;
+
+    assert_eq!(file, Some((preview_path, Some("image/jpeg".into()))));
+    assert!(lines.is_empty(), "{lines:?}");
 }
 
 /// A `HEAD` of a Preview or a Thumbnail is how a media element probes the

@@ -358,11 +358,14 @@ fn preview_file_hashes_the_preview_against_its_name() {
     let dest = dir.path().join(&rel);
     fs::create_dir_all(dest.parent().unwrap()).unwrap();
     fs::write(&dest, bytes).unwrap();
-    assert_eq!(preview_file(Some(&rel), dir.path()), PreviewFile::Intact);
+    assert_eq!(
+        preview_file(Some(&rel), dir.path(), 7, "Preview"),
+        PreviewFile::Intact
+    );
 
     fs::write(&dest, &bytes[..4]).unwrap();
     assert_eq!(
-        preview_file(Some(&rel), dir.path()),
+        preview_file(Some(&rel), dir.path(), 7, "Preview"),
         PreviewFile::Damaged,
         "a Preview cut short does not hash to its name"
     );
@@ -371,19 +374,63 @@ fn preview_file_hashes_the_preview_against_its_name() {
     fs::create_dir_all(dir.path().join("ab")).unwrap();
     fs::write(dir.path().join(unnamed), bytes).unwrap();
     assert_eq!(
-        preview_file(Some(unnamed), dir.path()),
+        preview_file(Some(unnamed), dir.path(), 7, "Preview"),
         PreviewFile::Damaged
     );
     assert_eq!(
-        preview_file(Some("missing.jpg"), dir.path()),
+        preview_file(Some("missing.jpg"), dir.path(), 7, "Preview"),
         PreviewFile::Missing
     );
     assert_eq!(
-        preview_file(Some("../escape.jpg"), dir.path()),
+        preview_file(Some("../escape.jpg"), dir.path(), 7, "Preview"),
         PreviewFile::Missing
     );
-    assert_eq!(preview_file(Some(""), dir.path()), PreviewFile::Missing);
-    assert_eq!(preview_file(None, dir.path()), PreviewFile::Missing);
+    assert_eq!(
+        preview_file(Some(""), dir.path(), 7, "Preview"),
+        PreviewFile::Missing
+    );
+    assert_eq!(
+        preview_file(None, dir.path(), 7, "Preview"),
+        PreviewFile::Missing
+    );
+}
+
+/// #2806: the media pass passes over a version whose stored path leaves the
+/// converted directory, and says so in the server's log with the account,
+/// the path and what it is, so the damaged row can be found. An empty path
+/// is no version at all and is not logged.
+#[test]
+fn preview_file_logs_a_stored_path_it_refuses() {
+    use crate::logging::{LogFiles, LogLevel, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
+
+    let dir = tempfile::tempdir().unwrap();
+    let converted = dir.path().join("converted");
+    fs::create_dir_all(&converted).unwrap();
+    let log_dir = dir.path().join("logs");
+    let files = LogFiles::open(&log_dir, SERVER_LOG_LIMITS).unwrap();
+
+    let states =
+        tracing::subscriber::with_default(crate::logging::subscriber_for(files, "warn"), || {
+            [
+                preview_file(Some("../escape.jpg"), &converted, 7, "Preview of abc"),
+                preview_file(Some(""), &converted, 7, "Thumbnail of abc"),
+            ]
+        });
+
+    assert_eq!(states, [PreviewFile::Missing, PreviewFile::Missing]);
+    let (lines, _) = read_lines(
+        &log_dir,
+        &LogLinesQuery {
+            limit: 10,
+            ..LogLinesQuery::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(lines[0].level, LogLevel::Warn);
+    for part in ["account_id=7", "../escape.jpg", "Preview of abc"] {
+        assert!(lines[0].text.contains(part), "{part}: {}", lines[0].text);
+    }
 }
 
 #[test]

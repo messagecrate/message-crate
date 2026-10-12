@@ -60,7 +60,9 @@
 //!   run can belong to a missing account, so it needs no run check.
 //! - [`sweep_unreferenced`]: every unnamed Asset of an account, when a run
 //!   ends.
-//! - [`sweep_incoming`]: abandoned upload temps, by age.
+//! - [`sweep_incoming`]: abandoned upload temps, by age, when a run ends,
+//!   when the server starts, and when an upload start finds the account at
+//!   its open-upload limit.
 //! - [`sweep_shard_temps`]: temporary files a killed write left in the
 //!   shard directories, by age.
 //!
@@ -253,8 +255,9 @@ pub(crate) fn join_under(dir: &Path, relative: &str) -> Option<PathBuf> {
 /// [`join_under`] for a path read from the database, logging a path it
 /// refuses with the account and `describes`, which says as much as the
 /// caller knows of what the row stores (such as `Preview of <sha256>`), so
-/// the damaged row can be found. Serving a Preview or Thumbnail and removing
-/// a deleted attachment's files go through it.
+/// the damaged row can be found. Serving a Preview or Thumbnail, removing
+/// a deleted attachment's files, and the media pass's check and removal of
+/// a Preview or Thumbnail go through it.
 pub(crate) fn join_stored(
     dir: &Path,
     assets_path: &str,
@@ -267,7 +270,7 @@ pub(crate) fn join_stored(
             account_id,
             assets_path,
             describes,
-            "A stored path is not a plain relative path, so the server neither serves nor removes its file"
+            "A stored path is not a plain relative path, so the server neither opens nor removes its file"
         );
     }
     path
@@ -611,8 +614,9 @@ async fn take_out_unnamed(
 }
 
 /// [`sweep_unreferenced`] once an Import Run of `account_id` has ended, so
-/// the files it was told about or uploaded and never named go. A failure is
-/// logged: the run's end is what the caller answers for.
+/// the files it was told about or uploaded and never named go, then
+/// [`sweep_incoming`] of the account, so do the uploads left for a day. A
+/// failure is logged: the run's end is what the caller answers for.
 pub(crate) async fn sweep_after_run(pool: &SqlitePool, paths: &PathsConfig, account_id: i64) {
     if let Err(error) = sweep_unreferenced(pool, paths, account_id).await {
         tracing::warn!(
@@ -620,6 +624,42 @@ pub(crate) async fn sweep_after_run(pool: &SqlitePool, paths: &PathsConfig, acco
             error = format!("{error:#}"),
             "Unreferenced files could not be swept after an Import Run"
         );
+    }
+    sweep_incoming_of(paths, vec![account_id]).await;
+}
+
+/// [`sweep_incoming`] of every account, once as `serve` starts, so the
+/// uploads a stopped server left go even when no Import Run ends after it.
+/// A failure is logged: the server starts either way.
+pub(crate) async fn sweep_incoming_at_start(pool: &SqlitePool, paths: &PathsConfig) {
+    let account_ids = match pool.acquire().await {
+        Ok(mut conn) => crate::db::account_profile::account_ids(&mut conn).await,
+        Err(error) => Err(error.into()),
+    };
+    match account_ids {
+        Ok(account_ids) => sweep_incoming_of(paths, account_ids).await,
+        Err(error) => tracing::warn!(
+            error = format!("{error:#}"),
+            "Abandoned uploads could not be swept as the server started"
+        ),
+    }
+}
+
+/// [`sweep_incoming`] of the assets directory of each of `account_ids`, on
+/// the blocking pool, because it walks the directory.
+async fn sweep_incoming_of(paths: &PathsConfig, account_ids: Vec<i64>) {
+    let dirs: Vec<PathBuf> = account_ids
+        .into_iter()
+        .map(|account_id| paths.assets_dir_for_account(account_id))
+        .collect();
+    let swept = crate::request_id::spawn_blocking_in_current_span(move || {
+        for dir in &dirs {
+            sweep_incoming(dir, false);
+        }
+    })
+    .await;
+    if let Err(error) = swept {
+        tracing::warn!(error = %error, "The sweep of abandoned uploads stopped");
     }
 }
 

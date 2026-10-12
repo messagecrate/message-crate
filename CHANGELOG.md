@@ -978,6 +978,25 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-11: **Two uploads of one attachment at the same moment both
+  succeed.** The server named an upload's temporary file from the clock
+  alone, so two uploads of the same file that started in one clock tick
+  wrote into one temporary file and both failed. Each upload now gets a
+  name of its own (#2260).
+
+- 2026-10-11: **Starting an upload no longer slows as unfinished uploads
+  pile up.** Each attachment upload used to look through every upload the
+  account had left unfinished, which slowed an import of many attachments.
+  Uploads left unfinished for a day are now removed when an import ends and
+  when the server starts instead (#2261).
+
+- 2026-10-11: **The server's log names a damaged Preview or Thumbnail
+  location.** When the server makes or checks Previews and Thumbnails, it
+  passes over one whose stored location points outside its directory, and
+  now says so in its log with the account and the attachment. When the
+  copies of one attachment name different Previews, the server always
+  shows the same one and logs both (#2806).
+
 - 2026-10-11: **The server's log says each failure once.** A request the
   server failed on wrote two error lines to its log, and the second said
   nothing the first did not. It now writes one, with the whole

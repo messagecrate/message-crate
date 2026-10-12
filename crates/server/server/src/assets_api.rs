@@ -9,7 +9,7 @@
 use std::fmt;
 use std::fs;
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -858,7 +858,7 @@ async fn stream_version(
             &converted_dir,
             &path,
             account,
-            &format!("{version} of {sha256}"),
+            &version.describe_of(sha256.as_str()),
         ) else {
             return Err(no_version());
         };
@@ -1057,19 +1057,15 @@ pub(crate) async fn replace_asset(
     // place and then removes it (`consume_source`).
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
     let incoming_dir = assets_dir.join(".incoming");
-    tokio::fs::create_dir_all(&incoming_dir)
-        .await
-        .map_err(|e| {
-            ApiError::Internal(anyhow::anyhow!("mkdir {}: {e}", incoming_dir.display()))
-        })?;
-    // Named from the checked fingerprint, so the file is always inside
-    // `incoming_dir`.
-    let tmp_path = incoming_dir.join(format!(
-        "{sha256}-{}.part",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_nanos())
-    ));
+    let sha = sha256.clone();
+    let tmp_path = run_blocking("asset upload temp", move || {
+        reserve_upload_temp(
+            &incoming_dir,
+            &sha,
+            &mut crate::asset_uploads::new_upload_id,
+        )
+    })
+    .await?;
     // An empty body is checked like any other: the empty file is stored when
     // the claim is its fingerprint and refused when it is not.
     if let Err(err) = stream_body_to_file(request.into_body(), &tmp_path, max_body_bytes).await {
@@ -1108,6 +1104,29 @@ pub(crate) async fn replace_asset(
         body,
     }
     .into_response())
+}
+
+/// A new, empty `{sha256}-{id}.part` temp in `incoming_dir` for a raw upload,
+/// named with an id from `next_id` through
+/// [`crate::asset_uploads::create_with_new_id`]. Named from the checked
+/// fingerprint, so the file is always inside `incoming_dir`. The file is made
+/// with `create_new`, which fails on one that exists, so no two uploads write
+/// into one temp. `next_id` is a parameter only so a test can hand two
+/// uploads the same id.
+fn reserve_upload_temp(
+    incoming_dir: &Path,
+    sha256: &Sha256,
+    next_id: &mut impl FnMut() -> String,
+) -> Result<PathBuf> {
+    let (_, path) = crate::asset_uploads::create_with_new_id(incoming_dir, next_id, |id| {
+        let path = incoming_dir.join(format!("{sha256}-{id}.part"));
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map(|_| path)
+    })?;
+    Ok(path)
 }
 
 /// Total bytes and optional MIME type for a chunked upload.
