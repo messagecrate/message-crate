@@ -389,11 +389,14 @@ carry their date on the heading.
 
 - 2026-10-12: **Every error on a line of its own starts with a capital.**
   Where a screen shows why something failed as a sentence of its own, such
-  as a refused display name, a failed Contact Group delete, the login card's
-  **Open data directory**, or a refused address book row, the sentence now
-  starts with a capital letter instead of the lowercase the server writes
-  it in. A search refusal that starts with a search word, such as `from:`,
-  still shows the word as it is typed (#2818).
+  as a wrong password, a refused Contact Group name, a failed Contact Group
+  delete, the login card's **Open data directory**, a refused address book
+  row, or an Import Run's own failure in its table of issues, the sentence
+  now starts with a capital letter instead of the lowercase the server
+  writes it in. A search refusal that starts with a search word, such as
+  `from:`, still shows the word as it is typed, and a refusal that starts
+  with the name of the setting it refuses keeps that name as the server
+  spells it (#2818).
 - 2026-10-12: **Every name that is too long is refused in the same words.**
   A Contact Group, Message Tag or Saved Search name over 80 characters, an
   API Token label over 120 and a username over 128 now get the message

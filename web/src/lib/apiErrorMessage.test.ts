@@ -87,16 +87,22 @@ describe("errorLine", () => {
     );
   });
 
-  it("keeps a sentence that starts with a field's snake_case name as the API spells it", () => {
+  it("keeps a server refusal that starts with a field's API name as the API spells it", () => {
     expect(errorLine(refusal("validation-failed", "asset_max_bytes must be at most 9"))).toBe(
       "asset_max_bytes must be at most 9",
     );
-    expect(errorLine(new Error("run_dir: must be at most 4 characters"))).toBe(
-      "run_dir: must be at most 4 characters",
-    );
-    expect(errorLine(new Error("name: must be at most 80 characters"))).toBe(
+    expect(
+      errorLine(
+        refusal("validation-failed", "identities[0].address: must be at most 320 characters"),
+      ),
+    ).toBe("identities[0].address: must be at most 320 characters");
+    expect(errorLine(refusal("validation-failed", "name: must be at most 80 characters"))).toBe(
       "Name: must be at most 80 characters",
     );
+  });
+
+  it("capitalizes a desktop or network error even when its first word holds an underscore", () => {
+    expect(errorLine(new Error("os_error 2: no such file"))).toBe("Os_error 2: no such file");
   });
 
   it("starts a desktop command's string rejection with a capital", () => {

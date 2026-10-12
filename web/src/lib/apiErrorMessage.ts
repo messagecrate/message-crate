@@ -50,8 +50,9 @@ function sentenceCase(text: string): string {
  * starts with a name a capital would change is kept as it is: a
  * `search-query-invalid` refusal about one search word starts with that word
  * as it is typed (`from: is not a Contacts word; it works on Messages`), and a
- * sentence that starts with a field's snake_case name
- * (`asset_max_bytes must be at most …`) names the field as the API spells it.
+ * server refusal that starts with a field's snake_case name or indexed path
+ * (`asset_max_bytes must be at most …`, `identities[0].address: …`) names the
+ * field as the API spells it.
  * Any other sentence that names something first, such as
  * `sort: unknown key …`, starts with a capital.
  *
@@ -63,6 +64,6 @@ export function errorLine(err: unknown, fallback?: string): string {
   const text = rejectionMessage(err, fallback ?? String(err));
   const aboutAWord =
     err instanceof ApiError && err.type === "search-query-invalid" && /^[a-z][a-z-]*:/.test(text);
-  const aboutAField = /^[a-z][a-z0-9]*_[a-z0-9_]*\b/.test(text);
+  const aboutAField = err instanceof ApiError && /^[a-z][a-z0-9]*(?:_|\[\d+\])/.test(text);
   return aboutAWord || aboutAField ? text : sentenceCase(text);
 }
