@@ -82,6 +82,45 @@ async fn a_batch_waiting_for_a_slot_when_the_server_stops_is_refused_and_stores_
     assert_eq!(stored, 0, "the refused batch stored a message");
 }
 
+/// A batch waiting for an import slot has not read its body: the slot
+/// comes first, so batches queued behind the running imports hold no disk.
+/// With the slots closed, even an empty body, which reading would refuse,
+/// is refused as `server-stopping`, and nothing is written under the Data
+/// Directory. Before #2095 the body was written out first, so every waiting
+/// batch held its body on disk while two imported.
+#[tokio::test]
+async fn a_batch_waiting_for_a_slot_has_not_read_its_body() {
+    let (state, _fixture, token) = importer().await;
+    let path = batches_path(&state, &token, "imessage").await;
+    state.on_stop_signal()();
+
+    let (status, text) =
+        crate::test_support::post_raw(&state, &path, &token, "application/jsonl", "").await;
+    crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::ServerStopping);
+    assert!(
+        !crate::imports_api::batch_bodies::root(&state.cfg.paths.data_dir).exists(),
+        "the waiting batch wrote its body"
+    );
+}
+
+/// A batch over the Upload's own cap is refused with `413 Payload Too
+/// Large`, so the server never reads more than its client sends. It used to
+/// accept up to the 512 MiB every other body may reach (#2075).
+#[tokio::test]
+async fn a_batch_one_byte_over_the_cap_is_payload_too_large() {
+    let (state, _fixture, token) = importer().await;
+    let path = batches_path(&state, &token, "imessage").await;
+    let body = vec![b'\n'; message_crate_api_types::MAX_IMPORT_BATCH_BYTES + 1];
+
+    let (status, text) =
+        crate::test_support::post_raw(&state, &path, &token, "application/jsonl", body).await;
+    crate::test_support::expect_problem(
+        status,
+        &text,
+        crate::problem::ProblemType::PayloadTooLarge,
+    );
+}
+
 /// One iMessage conversation with one message.
 fn one_message_batch() -> String {
     format!(

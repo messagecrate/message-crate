@@ -1232,12 +1232,7 @@ async fn limit_request_body(
     } else {
         MAX_REQUEST_BODY_BYTES
     };
-    let declared = request
-        .headers()
-        .get(header::CONTENT_LENGTH)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<u64>().ok());
-    if declared.is_some_and(|bytes| bytes > limit as u64) {
+    if declared_length(request.headers()).is_some_and(|bytes| bytes > limit as u64) {
         return ApiError::PayloadTooLarge.into_response();
     }
     let request =
@@ -1647,6 +1642,8 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     }
     // Uploads a stopped server left open, which no upload start sweeps (#2261).
     crate::asset_store::sweep_incoming_at_start(&state.db, &state.cfg.paths).await;
+    // Import batch bodies a stopped server left, before any batch can start.
+    crate::imports_api::batch_bodies::sweep_at_start(&state.cfg.paths.data_dir);
     // Works through what earlier Import Runs queued, a server stopped
     // part-way included, then waits for the next run to end.
     state
@@ -1975,6 +1972,15 @@ pub(crate) fn upload_content_type(headers: &HeaderMap) -> Option<String> {
     } else {
         Some(base.to_string())
     }
+}
+
+/// The body length the request's `Content-Length` declares, or `None` when it
+/// declares none that reads as a number.
+pub(crate) fn declared_length(headers: &HeaderMap) -> Option<u64> {
+    headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
 }
 
 /// True when the request body is JSON Lines (one JSON object per line).

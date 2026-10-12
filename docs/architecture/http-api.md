@@ -520,7 +520,8 @@ its own database is the `500 Internal Server Error` no page could help with.
 Every registered problem type is a `4xx` but one: `server-stopping`, a
 `503 Service Unavailable`. A server told to stop closes its import slots
 (`AppState::on_stop_signal` in `crates/server/server/src/server.rs`), so an
-import batch still waiting for a slot is refused with it and stores nothing.
+import batch still waiting for a slot is refused with it, having read none of
+its body, and stores nothing.
 The Upload retries it as it retries any `5xx`; if the server is not back in
 time, the Upload pauses, and resuming the run sends the batch. A batch that already holds a slot is not
 refused. Why: a waiting batch used to take a slot once an earlier
@@ -801,6 +802,17 @@ What each reaches:
   other route has a body cap fixed in the code. Why: the owner may set any
   limit of 1 byte or more, and a limit that held every body would refuse
   the login and the settings change that raise it again.
+- An import batch body is held to 64 MiB, the most the desktop app's Upload
+  packs into one (`MAX_IMPORT_BATCH_BYTES` in `message-crate-api-types`, the
+  one figure both sides read), and a larger one answers
+  `413 Payload Too Large`. A batch takes its import slot before it reads its
+  body, and writes the body under the Data Directory
+  (`data_dir/.import-batches/`), which `serve` empties as it starts. Why: the
+  server accepted eight times what its client sends, and held a batch's
+  whole text in memory beside its parsed records (#2075); every batch waiting for a slot held its body on
+  disk (#2095); and that disk was the operating system's temporary
+  directory, often small or held in memory, where nothing removed what a
+  stopped server left (#2123).
 - `GET /v1/server` reports the journal mode SQLite runs the database in,
   `journal_mode`, read when the request is answered, to any client. Owner
   Home says so when it is not `wal`. It is `null` when the mode cannot be
