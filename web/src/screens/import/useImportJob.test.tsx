@@ -40,6 +40,7 @@ import type {
 import { account } from "../../test/apiShapes";
 import { importForm } from "../../test/importForm";
 import { seedImportRun } from "../../test/importRun";
+import { storedForm } from "../../test/storedForm";
 import { MIB } from "../../test/units";
 import { fill, setupUser } from "../../test/user";
 import { ConvertSection } from "../settings/ConvertSection";
@@ -3132,29 +3133,11 @@ describe("useImportJob resume path", () => {
   });
 });
 
-const validSnapshot = {
-  source: "imessage-ios",
-  backupPath: "/backups/iphone.tar",
-  attachmentMedia: "copy",
-  maxResolution: "720p",
-  maxFps: "30",
-  minSizeMb: "20",
-  ownerPhones: ["+15555550119"],
-  ownerEmails: [],
-  obfuscate: false,
-  attachmentRoot: "",
-  appleContacts: "",
-  whatsappWa: "",
-  whatsappMedia: "",
-  whatsappDb: "",
-  isBusinessApp: false,
-  whatsappOwnerPhone: "",
-  timeZone: "America/New_York",
-  phoneCountry: "GB",
-  backupPasswordGiven: false,
-  whatsappKeyGiven: false,
-  assetMaxBytes: 512 * MIB,
-};
+/**
+ * A stored snapshot with an owner phone and a phone country, values a
+ * restore that dropped them would not give back.
+ */
+const validSnapshot = storedForm({ ownerPhones: ["+15555550119"], phoneCountry: "GB" });
 
 describe("restoreFormFromSnapshot", () => {
   it("rebuilds form values from a stored snapshot, with the secrets left empty", () => {

@@ -43,6 +43,17 @@ const SNAPSHOT_FIELDS = [
 >[];
 
 /**
+ * The record `formSnapshot` writes, field by field: the form fields in
+ * `SNAPSHOT_FIELDS`, and whether a backup password or WhatsApp key was
+ * given. Tests write their stored snapshots to this type, so a field added
+ * to `SNAPSHOT_FIELDS` fails to compile until each of them gives it a value.
+ */
+export type StoredFormSnapshot = Pick<ImportJobFormValues, (typeof SNAPSHOT_FIELDS)[number]> & {
+  backupPasswordGiven: boolean;
+  whatsappKeyGiven: boolean;
+};
+
+/**
  * Form snapshot for the run record, without the secrets: the fields in
  * `SNAPSHOT_FIELDS` and nothing else.
  *
