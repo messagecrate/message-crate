@@ -231,17 +231,19 @@ current one, because that account reaches every other.
   `403 Forbidden`. A login is the exception: every refused login, a
   disabled account's included, answers the same `401 Unauthorized`
   (`invalid-credentials`).
-  Disabling an account ends its Session, so the Session token it held
-  answers `401 Unauthorized` from then on, after the account is enabled
-  again too; only its API tokens answer `403 Forbidden` (`account-disabled`)
-  while it stays disabled. Why: an owner who learns that someone else holds
-  the Session token can shut it out and give the account back to its holder,
-  and enabling the account brings back neither the token nor the Media Links
-  signed under it (#2074).
-  Why the login answers the same: a disabled account's own answer would come only after the right
+  Why: a disabled account's own answer would come only after the right
   password, so a guesser would learn which guess was right, and the password
   works again once the owner enables the account. The Audit Trail records the
   real reason.
+- Disabling an account ends its Session, so the Session token it held
+  answers `401 Unauthorized` from then on, after the account is enabled
+  again too; only its API tokens answer `403 Forbidden` (`account-disabled`)
+  while it stays disabled. A login whose password check the disable
+  overtook opens no Session.
+  Why: an owner who learns that someone else holds the Session token can
+  shut it out and give the account back to its holder, and enabling the
+  account brings back neither the token nor the Media Links signed under it
+  (#2074).
 - A `Content-Type` that is absent or unaccepted answers
   `415 Unsupported Media Type`, on every route that takes a body. On a route
   whose body is optional, a request with no body is read as no body, and a
