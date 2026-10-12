@@ -56,7 +56,10 @@ from the file's first bytes, where they match a known signature
 `application/octet-stream` is a video, gets a Thumbnail, and gets a Preview
 when `media::browser_shows` says it needs one (#2805). Where one signature fits several
 types, as an MP4 and an `.m4a` share one, the declared type is kept when it
-is one of them. Bytes that match no signature fall back to the stored
+is one of them, read in its usual spelling (`audio/aac` is `audio/mp4`). A
+declared audio type the signature does not name still keeps the file audio,
+as the signature's first audio type, because a voice note in a 3GP or MP4
+container is audio and a video player would show it as an empty frame. Bytes that match no signature fall back to the stored
 file's extension, then the type the import declared, then the name the
 export gave the file. The server stores and serves the Asset under the same
 type: each store decides it from the bytes and writes it over a first
@@ -64,7 +67,8 @@ claim the bytes rule out. A first claim the bytes allow stays, so a later
 import cannot flip an `.m4a` to an MP4, and bytes that show no type keep
 the first type declared for them. Every attachment row of the Asset names
 the type it is served under (#2804). A declared type that is not a `type/subtype` pair of tokens
-of at most 255 bytes is no type at all, so such an Asset is served as
+of at most 255 bytes counts as no type at all, so the file's name decides as
+it would for a missing one, and with nothing known the Asset is served as
 `application/octet-stream` (#2101). So a JPEG, PNG, GIF,
 WebP or MP3 is shown as it is only when its first bytes are that type's
 signature. One that starts as anything else gets a Preview, a file called a

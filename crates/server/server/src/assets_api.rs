@@ -609,7 +609,7 @@ fn write_mime_metadata(assets_root: &Path, sha: &Sha256, mime: &str, replace: bo
 /// The export's MIME claim when it is a media type
 /// ([`media::checked_media_type`]), else a guess from the file extension: a
 /// claim that is not a type says no more than a missing one (#2101).
-fn resolve_mime(export_mime: Option<&str>, source: &Path) -> Option<String> {
+pub(crate) fn resolve_mime(export_mime: Option<&str>, source: &Path) -> Option<String> {
     if let Some(mime) = export_mime.and_then(media::checked_media_type) {
         return Some(mime);
     }

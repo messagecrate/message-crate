@@ -912,8 +912,9 @@ released versions carry their date on the heading.
   file: a video, photo or recording is treated as what it is, whatever it
   was called, gets its thumbnail and, where a browser needs one, its
   playable copy, and is downloaded under its real type. A file type an
-  import gave in a broken form is no longer kept, so such a file downloads
-  as plain bytes instead of without a type. An attachment whose file has
+  import gave in a broken form is no longer kept: the file's name decides
+  its type instead, and with nothing to go on it downloads as plain bytes
+  rather than with no type at all. An attachment whose file has
   gone missing keeps what the server last decided about it.
 - 2026-10-11: **An attachment is opened as it is only when its contents
   match its type.** A file an import called a JPEG, PNG, GIF, WebP or MP3

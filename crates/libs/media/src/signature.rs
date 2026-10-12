@@ -54,7 +54,9 @@ fn riff(head: &[u8], form: &[u8; 4]) -> bool {
 /// `00`, is not an MP3. Neither is a file that starts `FF FE` or `FF FF`,
 /// the byte order mark of UTF-16 text and a run of padding, which a frame
 /// sync alone would let through; and a header whose version, bitrate or
-/// sample rate is the reserved value is not one.
+/// sample rate is the reserved value is not one. An MPEG-1 layer I frame
+/// starts `FF FE` or `FF FF` too, so it is given up: no phone writes one,
+/// and its name or declared type still says what it is.
 fn is_mp3(head: &[u8]) -> bool {
     if head.starts_with(b"ID3") {
         return true;
@@ -188,9 +190,7 @@ pub fn media_type_from_bytes(head: &[u8], declared: Option<&str>) -> Option<&'st
     let Some(declared) = declared else {
         return Some(signature.types[0]);
     };
-    let usual = crate::ext_for_mime(declared)
-        .and_then(crate::mime_for_ext)
-        .unwrap_or(declared);
+    let usual = crate::usual_media_type(declared).unwrap_or(declared);
     let kept = signature.types.iter().find(|t| **t == usual).or_else(|| {
         usual
             .starts_with("audio/")

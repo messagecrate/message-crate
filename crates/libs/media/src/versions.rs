@@ -68,9 +68,7 @@ pub fn media_type_of(
             .trim()
             .to_ascii_lowercase();
         // The usual spelling of an alias, through the one table.
-        let usual = crate::ext_for_mime(&base)
-            .and_then(crate::mime_for_ext)
-            .map_or(base, str::to_string);
+        let usual = crate::usual_media_type(&base).map_or(base, str::to_string);
         return Some(usual);
     }
     name_hints

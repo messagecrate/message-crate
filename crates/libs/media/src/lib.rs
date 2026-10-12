@@ -24,7 +24,7 @@ mod versions;
 pub use estimate::{SizeVerdict, classify_probed, estimate_bytes, needs_probe};
 pub use mime::{
     Kind, MEDIA_TYPE_MAX_LEN, checked_media_type, ext_for_mime, is_media_type, kind_for_ext,
-    kind_for_mime, mime_for_ext,
+    kind_for_mime, mime_for_ext, usual_media_type,
 };
 pub use probe::{MediaProbe, probe_media};
 pub use process::{

@@ -109,6 +109,28 @@ pub fn ext_for_mime(mime: &str) -> Option<&'static str> {
         .map(|(ext, _, _)| *ext)
 }
 
+/// The usual spelling of a media type the table knows, an alias read as the
+/// type it names (`image/jpg` is `image/jpeg`, `audio/aac` is `audio/mp4`);
+/// `None` for a type the table does not know. Parameters after `;` are
+/// ignored and matching is case-insensitive, as in [`ext_for_mime`].
+#[must_use]
+pub fn usual_media_type(mime: &str) -> Option<&'static str> {
+    let base = mime
+        .split(';')
+        .next()
+        .unwrap_or(mime)
+        .trim()
+        .to_ascii_lowercase();
+    let base = MIME_ALIASES
+        .iter()
+        .find(|(alias, _)| *alias == base)
+        .map_or(base.as_str(), |(_, canonical)| canonical);
+    EXT_TABLE
+        .iter()
+        .find(|(_, m, _)| *m == base)
+        .map(|(_, mime, _)| *mime)
+}
+
 /// The longest media type [`is_media_type`] accepts, in bytes: RFC 6838
 /// section 4.2 allows 127 for the type and 127 for the subtype.
 pub const MEDIA_TYPE_MAX_LEN: usize = 255;
