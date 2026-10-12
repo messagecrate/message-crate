@@ -1155,6 +1155,39 @@ mod tests {
         assert_eq!(lines, [&[1, 2, 3][..], &[1, 4, 5], &[1, 6]]);
     }
 
+    /// The Upload packs at most 16 MiB into one batch, the most the server
+    /// reads from one, so the write transaction the server saves a batch in
+    /// stays short (#2062): sixteen 1 MiB messages beside a header go out as
+    /// two batches, the first holding fifteen.
+    #[test]
+    fn chunks_split_at_16_mib() {
+        assert_eq!(MAX_IMPORT_BATCH_BYTES, 16 * 1024 * 1024);
+        let header = b"{\"h\":1}\n".to_vec();
+        let mut builder = ChunkBuilder::new(header, NO_MESSAGE_COUNT_LIMIT, MAX_IMPORT_BATCH_BYTES);
+        let mut message = vec![b'x'; 1024 * 1024 - 1];
+        message.push(b'\n');
+        for i in 0..16 {
+            builder.push(
+                &message,
+                JournalMessage {
+                    file: "c.jsonl".into(),
+                    guid: format!("g{i}"),
+                },
+                i + 2,
+            );
+        }
+
+        let chunks = builder.finish();
+
+        let counts: Vec<usize> = chunks.iter().map(|c| c.messages.len()).collect();
+        assert_eq!(counts, [15, 1]);
+        assert!(
+            chunks
+                .iter()
+                .all(|c| c.body.len() <= MAX_IMPORT_BATCH_BYTES)
+        );
+    }
+
     /// A message fits a chunk only when it fits beside the header the chunk
     /// repeats. A message under the limit alone, but over it with the header,
     /// used to go out as a body over the limit, which the server refuses.

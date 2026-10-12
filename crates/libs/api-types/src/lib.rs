@@ -45,8 +45,12 @@ pub const APP_VERSION_HEADER: &str = "x-message-crate-version";
 ///
 /// Kept under Cloudflare's ~100 MiB upload cap so a large group conversation
 /// is split into several requests instead of one giant one that gets
-/// rejected.
-pub const MAX_IMPORT_BATCH_BYTES: usize = 64 * 1024 * 1024;
+/// rejected. Kept to 16 MiB so the server's save of one batch, a single
+/// write transaction, holds the write lock for far less than the 15 seconds
+/// every other writer waits for it: a full batch saved in under 5 seconds in
+/// a timed release build (#2062). A whole batch then arrives inside the
+/// server's default 5-minute limit for one at about 0.45 Mbit/s.
+pub const MAX_IMPORT_BATCH_BYTES: usize = 16 * 1024 * 1024;
 
 /// The id each exporter writes into a conversation file's `export.source`,
 /// one constant per backup type. `message-crate-core`'s

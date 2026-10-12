@@ -11,4 +11,4 @@ editUrl: false
 | Status | `503 Service Unavailable` |
 | Type | `https://messagecrate.app/docs/developer/reference/errors/server-stopping` |
 
-The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for. An import batch waiting for its turn answers this: nothing in it was stored. Send the same request once the server is running again.
+The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for. An import batch waiting for its turn, or whose body was still arriving, answers this: nothing in it was stored. Send the same request once the server is running again.

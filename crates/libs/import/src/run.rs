@@ -71,8 +71,10 @@ pub const NO_MESSAGE_COUNT_LIMIT: usize = usize::MAX;
 /// Max size for uploading an attachment in a single HTTP PUT.
 ///
 /// Bigger files use multipart upload (many smaller pieces), which proxies
-/// accept more reliably than one huge body.
-pub const MAX_PROXY_BODY_BYTES: usize = 90 * 1024 * 1024;
+/// accept more reliably than one huge body. The largest import batch, so an
+/// attachment arrives at the speed a batch does
+/// (`docs/architecture/http-api.md`, "Credentials and reach").
+pub const MAX_PROXY_BODY_BYTES: usize = message_crate_api_types::MAX_IMPORT_BATCH_BYTES;
 /// What a server's attachment size limit reads as until its owner sets one.
 /// A caller that uploads to a real server reads the limit from `GET /v1/server`
 /// and passes that; this is for tests.
@@ -160,6 +162,10 @@ pub(crate) struct Session {
     /// Set once the server refuses the session token. It is this run's own,
     /// and stops the run as the caller's cancel flag does.
     pub refused: Arc<AtomicBool>,
+    /// How long a request that sends a piece (an import batch, an
+    /// attachment, or a part of one) waits for its answer, from the limit
+    /// the server states ([`crate::http::piece_wait`]).
+    pub piece_wait: std::time::Duration,
 }
 
 impl Session {
@@ -432,6 +438,7 @@ fn login(cfg: &ImportConfig, out: &mut Reporter<'_, '_>) -> Result<Session> {
         username: username.clone(),
     });
     out.show(format!("Authenticated as {username} ({})", auth.account_id));
+    let piece_wait = crate::http::piece_wait(&http, &url, &cfg.token)?;
     Ok(Session {
         http,
         url,
@@ -440,6 +447,7 @@ fn login(cfg: &ImportConfig, out: &mut Reporter<'_, '_>) -> Result<Session> {
         auth,
         cancel: cfg.cancel.clone(),
         refused: Arc::new(AtomicBool::new(false)),
+        piece_wait,
     })
 }
 

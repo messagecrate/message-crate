@@ -93,6 +93,17 @@ pub struct Server {
     /// The owner sets it in the server settings. An app reads it here before
     /// it prepares attachments for upload.
     pub asset_max_bytes: u64,
+    /// Seconds an upload body (an import batch, an attachment, or a part of
+    /// one) may go with no byte arriving before the server stops reading it
+    /// and answers `408 Request Timeout` (`upload-stalled`): the config
+    /// file's `[server] upload_stall_secs`, 60 unless it sets one.
+    pub upload_stall_secs: u64,
+    /// Seconds a whole upload body may take to arrive, from the start of the
+    /// read, before the server stops reading it and answers
+    /// `408 Request Timeout` (`upload-stalled`): the config file's
+    /// `[server] upload_piece_secs`, 300 unless it sets one. The desktop
+    /// app's Upload sizes its wait for each upload from it.
+    pub upload_piece_secs: u64,
 }
 
 /// Body for claiming a Message Crate.
@@ -141,6 +152,8 @@ pub async fn get_server(State(state): State<AppState>) -> Result<Json<Server>, A
         schema_fingerprint: crate::db::schema::SCHEMA_FINGERPRINT,
         journal_mode: crate::db::engine::journal_mode_or_warn(&mut *conn).await,
         asset_max_bytes: server_settings::load(&mut conn).await?.asset_max_bytes,
+        upload_stall_secs: state.upload_time_limits.stall.as_secs(),
+        upload_piece_secs: state.upload_time_limits.piece.as_secs(),
     }))
 }
 
