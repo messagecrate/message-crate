@@ -99,6 +99,12 @@ impl StoredOriginal {
         [self.original_name.as_deref(), self.source_path.as_deref()]
     }
 
+    /// What the `version` of this original is, as a log line names it, such
+    /// as `Preview of <sha256>`.
+    pub(crate) fn describe(&self, version: Version) -> String {
+        format!("{version} of {}", self.sha256)
+    }
+
     /// What the rows say about `version`.
     pub(crate) fn named(&self, version: Version) -> Named {
         let (sha256, assets_path, mime_type, rows_without) = match version {
@@ -406,6 +412,10 @@ pub async fn clear(
 /// when the account holds no attachment with that fingerprint, or none of
 /// its rows names such a version yet.
 ///
+/// The rows should all name one file. When they name more than one, the
+/// file the oldest row names answers, with that row's media type, and a
+/// warning naming two of the files goes to the server's log.
+///
 /// # Errors
 ///
 /// Returns a database error when the query fails.
@@ -422,14 +432,18 @@ pub async fn file_of(
     // The media pass points every row that names the fingerprint at one
     // version, so they agree. Rows that do not are a damaged store: the
     // oldest row's version answers, so the answer does not change from one
-    // read to the next, and the disagreement is logged (#2806).
-    let mut named = sqlx::query_as::<_, (String, Option<String>)>(&format!(
-        "SELECT a.{path_column}, a.{mime_column}
+    // read to the next, and the disagreement is logged (#2806). One row per
+    // file: with `MIN(a.id)` the only aggregate, SQLite takes the bare media
+    // type column from the row that holds the minimum, so each file comes
+    // with its oldest row's media type, and rows that differ only in media
+    // type are not a disagreement about the file.
+    let mut named = sqlx::query_as::<_, (String, Option<String>, i64)>(&format!(
+        "SELECT a.{path_column}, a.{mime_column}, MIN(a.id)
          FROM attachments a
          JOIN messages m ON m.id = a.message_id
          WHERE m.account_id = $1 AND a.sha256 = $2
            AND a.{path_column} IS NOT NULL AND a.{path_column} != ''
-         GROUP BY a.{path_column}, a.{mime_column}
+         GROUP BY a.{path_column}
          ORDER BY MIN(a.id)
          LIMIT 2"
     ))
@@ -437,7 +451,8 @@ pub async fn file_of(
     .bind(original_sha)
     .fetch_all(&mut *conn)
     .await?
-    .into_iter();
+    .into_iter()
+    .map(|(path, mime, _oldest)| (path, mime));
     let first = named.next();
     if let (Some((first_path, _)), Some((other_path, _))) = (&first, named.next()) {
         tracing::warn!(

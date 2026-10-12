@@ -1024,12 +1024,20 @@ released versions carry their date on the heading.
   succeed.** The server named an upload's temporary file from the clock
   alone, so two uploads of the same file that started in one clock tick
   wrote into one temporary file and both failed. Each upload now gets a
-  name of its own. Starting an upload no longer looks through every upload
-  the account left unfinished, which slowed an import of many attachments.
-  Those left for a day are now removed when an import ends and when the
-  server starts. A Preview or Thumbnail the server will not open because
-  its stored location is damaged is now named in the server's log
-  (#2260, #2261, #2806).
+  name of its own (#2260).
+
+- 2026-10-11: **Starting an upload no longer slows as unfinished uploads
+  pile up.** Each attachment upload used to look through every upload the
+  account had left unfinished, which slowed an import of many attachments.
+  Uploads left unfinished for a day are now removed when an import ends and
+  when the server starts instead (#2261).
+
+- 2026-10-11: **The server's log names a damaged Preview or Thumbnail
+  location.** When the server makes or checks Previews and Thumbnails, it
+  passes over one whose stored location points outside its directory, and
+  now says so in its log with the account and the attachment. When the
+  copies of one attachment name different Previews, the server always
+  shows the same one and logs both (#2806).
 
 - 2026-10-11: **The server warns when every website may call it.** A `*` in
   the server's list of websites allowed to call it lets a page on any
