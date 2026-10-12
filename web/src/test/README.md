@@ -112,7 +112,9 @@ The fake clock stands still between moves, so two things the code stamps with
 No timer is waiting here. TanStack Query stamps each write with the time it
 started (`submittedAt`), and a hook that reports the newer of two writes'
 errors compares those stamps. The test moves the clock by 1 ms before the
-second write, which stands for the person starting it later.
+second write, which stands for the person starting it later. It reads the
+first error before the second write starts, so the last check shows the newer
+error replacing one already reported, not the only error there.
 
 ```tsx
 await expect(result.current.create("Work")).rejects.toThrow("create failed");
