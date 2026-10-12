@@ -202,7 +202,8 @@ pub fn group_spec() -> &'static MembershipSpec {
     &SPEC
 }
 
-/// Set the member contact's updated-at to `now`, boxed so the spec table can hold it as a plain function pointer.
+/// Set the member contact's updated-at to `now`, boxed so the spec table can
+/// hold it as a plain function pointer.
 fn touch_member_owner<'a>(
     conn: &'a mut SqliteConnection,
     account_id: i64,
