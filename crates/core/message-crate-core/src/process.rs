@@ -90,10 +90,10 @@ pub fn is_cancelled(cancel: &CancelFlag) -> bool {
 
 /// Error returned by [`check_cancel`] when cancel was requested.
 ///
-/// Displays as `cancelled`, so callers at a `String` edge can use
+/// Displays as `canceled`, so callers at a `String` edge can use
 /// `.map_err(|e| e.to_string())` and `anyhow` callers can use `?`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-#[error("cancelled")]
+#[error("canceled")]
 pub struct Cancelled;
 
 /// Return `Err(Cancelled)` if cancel was requested.
@@ -167,10 +167,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cancelled_displays_as_cancelled() {
+    fn cancelled_displays_as_canceled() {
         let flag: CancelFlag = Arc::new(AtomicBool::new(true));
         let err = check_cancel(&flag).unwrap_err();
-        assert_eq!(err.to_string(), "cancelled");
+        assert_eq!(err.to_string(), "canceled");
     }
 
     #[test]

@@ -761,6 +761,11 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-12: **A wrong iPhone backup password names the field to fix.** A
+  password that does not open an encrypted iPhone backup is now refused with
+  "The Encryption password is incorrect.", in the same words as the other
+  two backup password messages, rather than "The iOS backup password was
+  incorrect." (#2917).
 - 2026-10-12: **An Upload pauses when the server stops or drops out.** When
   the server was told to stop during an Upload, or could not be reached for
   more than about four seconds, such as while Wi-Fi reconnected, the Upload

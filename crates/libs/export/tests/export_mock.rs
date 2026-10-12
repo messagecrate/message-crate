@@ -766,7 +766,7 @@ fn a_cancel_requested_before_the_run_records_nothing_on_the_server() {
 
     let error = run(&cfg, None).unwrap_err();
 
-    assert_eq!(error.to_string(), "cancelled");
+    assert_eq!(error.to_string(), "canceled");
     assert_eq!(auth.calls(), 1);
     assert_eq!(
         create.calls(),
@@ -1229,7 +1229,7 @@ fn a_cancel_during_the_run_closes_it_as_cancelled() {
 
     let error = run(&cfg, Some(&mut on_progress)).unwrap_err();
 
-    assert_eq!(error.to_string(), "cancelled");
+    assert_eq!(error.to_string(), "canceled");
     create.assert();
     cancel.assert();
     assert_eq!(fail.calls(), 0);
@@ -1745,7 +1745,7 @@ fn a_cancel_while_a_page_fails_makes_no_further_retry_and_cancels_the_run() {
 
     let error = run(&cfg, None).unwrap_err();
 
-    assert_eq!(error.to_string(), "cancelled");
+    assert_eq!(error.to_string(), "canceled");
     let messages = format!("GET /v1/exports/{EXPORT_ID}/messages");
     assert_eq!(
         requests_to(&seen, &messages),
@@ -1800,7 +1800,7 @@ fn a_cancel_while_an_asset_fetch_fails_makes_no_further_retry_and_cancels_the_ru
 
     let error = run(&cfg, None).unwrap_err();
 
-    assert_eq!(error.to_string(), "cancelled");
+    assert_eq!(error.to_string(), "canceled");
     assert_eq!(
         requests_to(&seen, &format!("GET /v1/assets/{MENU_SHA}")),
         1,
@@ -1832,7 +1832,7 @@ fn a_cancel_while_the_run_cannot_be_recorded_makes_no_further_retry() {
 
     let error = run(&cfg, None).unwrap_err();
 
-    assert_eq!(error.to_string(), "cancelled");
+    assert_eq!(error.to_string(), "canceled");
     assert_eq!(
         *seen.lock().unwrap(),
         vec![

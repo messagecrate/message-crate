@@ -368,7 +368,7 @@ pub fn spooled_attachments<'a>(
 /// # Errors
 ///
 /// Returns the error when it is [`Cancelled`]. A cancel is told from a
-/// failure by its type, so a failure whose text is `cancelled` is recorded.
+/// failure by its type, so a failure whose text is `canceled` is recorded.
 fn keep_parse_error(parse_result: Result<()>, input: &Path, report: &mut ReadReport) -> Result<()> {
     if let Err(error) = parse_result {
         if error.is::<Cancelled>() {

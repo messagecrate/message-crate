@@ -200,7 +200,7 @@ fn cancel_during_the_write_phase_stops_the_export() {
     })
     .expect_err("cancel must be honored during the write phase");
     assert!(
-        err.to_string().contains("cancelled"),
+        err.to_string().contains("canceled"),
         "unexpected error: {err:#}"
     );
 

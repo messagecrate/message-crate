@@ -1965,7 +1965,7 @@ describe("useImportJob wiring", () => {
     // failure, so run() rejects here exactly as it would for a real error.
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
-      throw new Error("cancelled");
+      throw new Error("canceled");
     });
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
@@ -1989,7 +1989,7 @@ describe("useImportJob wiring", () => {
     // "cancelled" outcome is still shown locally.
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
-      throw new Error("cancelled");
+      throw new Error("canceled");
     });
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
@@ -2023,7 +2023,7 @@ describe("useImportJob wiring", () => {
     runMock.mockReset();
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
-      throw new Error("cancelled");
+      throw new Error("canceled");
     });
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
@@ -2187,7 +2187,7 @@ describe("useImportJob wiring", () => {
     runMock.mockReset();
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
-      throw new Error("cancelled");
+      throw new Error("canceled");
     });
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "copy" })));
@@ -3827,7 +3827,7 @@ describe("one desktop app, two accounts (#1085)", () => {
       await fn();
       extractOfARunning.resolve();
       await extractOfAStopped.promise;
-      throw new Error("cancelled");
+      throw new Error("canceled");
     });
     runMock.mockImplementationOnce(runResult(EXTRACT_RESULT));
     cancelMock.mockImplementation(async () => extractOfAStopped.resolve());

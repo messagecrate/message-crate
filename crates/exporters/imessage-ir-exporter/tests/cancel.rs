@@ -52,7 +52,7 @@ fn readers_started_by_this_process() -> Vec<u32> {
 
 /// The run is cancelled once the reader has sent its first log line or
 /// progress count, so the reader is running when cancel is set. The run must
-/// return `cancelled`, and the reader must be gone: killed and waited for by
+/// return `canceled`, and the reader must be gone: killed and waited for by
 /// the exporter, not left running with the Messages database open.
 #[test]
 fn a_cancelled_run_stops_and_kills_the_reader() {
@@ -102,7 +102,7 @@ fn a_cancelled_run_stops_and_kills_the_reader() {
         "one reader was running when cancel was set: {running_at_cancel:?}"
     );
     let err = result.expect_err("the run was cancelled");
-    assert_eq!(err.to_string(), "cancelled");
+    assert_eq!(err.to_string(), "canceled");
     assert!(
         readers_started_by_this_process().is_empty(),
         "the reader {running_at_cancel:?} is still running, or exited and was never waited for"

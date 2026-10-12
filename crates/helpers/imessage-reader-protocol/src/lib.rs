@@ -135,7 +135,7 @@ pub fn bare_address(raw: &str) -> Option<String> {
 /// message to the person as it is (`ios_backup::Helper` turns it into the
 /// request's error unchanged), so this sentence is part of what the two
 /// sides agree on, and it sits here with the rest of that agreement.
-pub const IOS_BACKUP_PASSWORD_INCORRECT: &str = "The iOS backup password was incorrect.";
+pub const IOS_BACKUP_PASSWORD_INCORRECT: &str = "The Encryption password is incorrect.";
 
 /// The [`Event::Error`] message the helper sends when an encrypted iPhone
 /// backup comes with no password. The WhatsApp import from an iPhone backup
@@ -663,7 +663,7 @@ mod tests {
         );
         assert_eq!(
             IOS_BACKUP_PASSWORD_INCORRECT,
-            "The iOS backup password was incorrect."
+            "The Encryption password is incorrect."
         );
     }
 

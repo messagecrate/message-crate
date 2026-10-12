@@ -240,6 +240,6 @@ fn a_run_that_fails_after_decrypting_leaves_no_scratch_directory() {
         cancel.load(Ordering::Relaxed),
         "the database was never seen"
     );
-    assert_eq!(err.to_string(), "cancelled");
+    assert_eq!(err.to_string(), "canceled");
     run.assert_scratch_is_gone();
 }

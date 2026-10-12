@@ -601,10 +601,11 @@ The desktop app's HTTP client (`classify_retry` in `crates/libs/http`)
 retries a `5xx`, so it retries this with no change of its own. The web app
 tries a read that failed with a `5xx` once more (`retry` in
 `web/src/lib/routeQuery.ts`). For `database-busy` it first waits the
-`retry_after` seconds the server named (`retryDelay` there), because the
-import holding the write lock will not let go sooner and a second try at
-once meets the same lock. It never tries a write again: it shows the
-write's failure with its `detail`. The pool
+`retry_after` seconds the server named (`retryDelay` there). The database
+was busy because another request, such as an import batch, held the write
+lock, or because every database connection stayed in use, and either way a
+second try at once meets the same busy database. It never tries a write
+again: it shows the write's failure with its `detail`. The pool
 (`crates/server/server/src/db/engine.rs`) holds 8 connections: two import
 batches and the sweep of unreferenced files after an Import Run
 (`asset_store::sweep_after_run`) can each hold one for a whole run, and
