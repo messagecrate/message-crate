@@ -4,7 +4,7 @@ import { resizeHandleGutterClass } from "../lib/tw";
 import { useColumnResizing } from "./columnResizeState";
 
 /** How often the x–y of z label may update while scrolling. */
-const RANGE_REPORT_MS = 50;
+export const RANGE_REPORT_MS = 50;
 
 export type VisibleRange = {
   /** 1-based inclusive index of the first row intersecting the viewport. */

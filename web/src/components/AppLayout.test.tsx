@@ -3,9 +3,10 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { type ReactNode, Suspense } from "react";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
 import type { SearchList } from "../lib/searchFields";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { mockedAuth, Providers } from "../test/providers";
 import { searchFieldsFor } from "../test/searchFields";
 import { setupUser } from "../test/user";
@@ -154,8 +155,25 @@ vi.mock("../lib/savedSearches", () => ({
   }),
 }));
 
+// The routes load these screens as lazy chunks. A chunk's first import reads
+// files, which the fake clock doesn't drive, so the file imports each once on
+// the real clock and a route's import finds it loaded within a `settle()`.
+beforeAll(async () => {
+  await Promise.all([
+    import("../screens/TrashScreen"),
+    import("../screens/SettingsScreen"),
+    import("../screens/ImportScreen"),
+    import("../screens/ExportScreen"),
+  ]);
+});
+
+beforeEach(() => {
+  startFakeClock();
+});
+
 afterEach(() => {
   cleanup();
+  stopFakeClock();
   desktop.on = false;
   broken.settings = false;
   vi.restoreAllMocks();
@@ -214,7 +232,8 @@ describe("AppLayout", () => {
     renderLayout(`/${search}`);
 
     // A search with a `word:` waits for the lists' words.
-    await user.click(await screen.findByRole("button", { name: "First result" }));
+    await settle();
+    await user.click(screen.getByRole("button", { name: "First result" }));
     expect(screen.getByTestId("location").textContent).toBe(`/messages/6${search}`);
   });
 });
@@ -235,7 +254,8 @@ describe("Each route under the app layout", () => {
     sets.tags = ["Holiday"];
     sets.groups = ["Family"];
     renderLayout(entry);
-    expect((await screen.findByTestId(list)).textContent).toBe(filter);
+    await settle();
+    expect(screen.getByTestId(list).textContent).toBe(filter);
   });
 
   // #2480: the route says which item it is on, so a new route needs no
@@ -259,19 +279,20 @@ describe("Each route under the app layout", () => {
     renderLayout(entry);
     const current = () =>
       Array.from(document.querySelectorAll('button[aria-current="page"]'), (b) => b.textContent);
-    await vi.waitFor(() => expect(current()).toEqual([item]));
+    expect(current()).toEqual([item]);
   });
 
   it("highlights no navigation item on Settings", async () => {
     desktop.on = true;
     renderLayout("/settings");
-    await act(async () => {});
+    await settle();
     expect(document.querySelector('button[aria-current="page"]')).toBeNull();
   });
 
   it("shows the Trash screen beside the trashed conversations", async () => {
     renderLayout("/trash");
-    expect(await screen.findByTestId("trash-screen")).toBeTruthy();
+    await settle();
+    expect(screen.getByTestId("trash-screen")).toBeTruthy();
   });
 
   it("shows an open conversation on /messages/:id, with no list of its own", () => {
@@ -303,11 +324,13 @@ describe("AppLayout when a screen throws", () => {
     const user = setupUser();
     renderLayout("/settings");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Settings broke");
+    await settle();
+    expect(screen.getByRole("alert")).toHaveTextContent("Settings broke");
 
     await user.click(screen.getByRole("button", { name: "Contacts" }));
+    await settle();
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(await screen.findByTestId("contact-list")).toBeTruthy();
+    expect(screen.getByTestId("contact-list")).toBeTruthy();
   });
 });
 
@@ -316,25 +339,23 @@ describe("AppLayout's Conversations / Messages switch", () => {
     // #1561: switching used to show the server's refusal of `from:`.
     const user = setupUser();
     renderLayout("/?q=from%3Aann+hello&view=messages");
-    expect((await screen.findByTestId("message-search-list")).textContent).toBe(
-      "query: from:ann hello",
-    );
+    await settle();
+    expect(screen.getByTestId("message-search-list").textContent).toBe("query: from:ann hello");
 
     await user.click(screen.getByRole("radio", { name: "Conversations" }));
-    expect((await screen.findByTestId("conversation-list")).textContent).toBe("query: hello");
+    await settle();
+    expect(screen.getByTestId("conversation-list").textContent).toBe("query: hello");
     expect(screen.getByTestId("location").textContent).toBe("/?q=from%3Aann+hello");
 
     await user.click(screen.getByRole("radio", { name: "Messages" }));
-    expect((await screen.findByTestId("message-search-list")).textContent).toBe(
-      "query: from:ann hello",
-    );
+    await settle();
+    expect(screen.getByTestId("message-search-list").textContent).toBe("query: from:ann hello");
   });
 
   it("says why Messages lists nothing when every word works only in Conversations", async () => {
     renderLayout("/?q=messages%3A%3E5&view=messages");
-    expect(
-      await screen.findByText(/Every word of this search works only in Conversations/),
-    ).toBeTruthy();
+    await settle();
+    expect(screen.getByText(/Every word of this search works only in Conversations/)).toBeTruthy();
     expect(screen.queryByTestId("message-search-list")).toBeNull();
   });
 
@@ -342,7 +363,8 @@ describe("AppLayout's Conversations / Messages switch", () => {
     desktop.on = true;
     const user = setupUser();
     renderLayout("/?q=from%3Aann+hello");
-    await screen.findByTestId("conversation-list");
+    await settle();
+    expect(screen.getByTestId("conversation-list")).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: "Export" }));
     expect(screen.getByTestId("location").textContent).toBe("/export?q=hello&list=conversations");
@@ -435,13 +457,15 @@ describe("AppLayout on a Contact Group or Message Tag page", () => {
   it("on a tag page with nothing typed, the Messages list asks for a search", async () => {
     sets.tags = ["Holiday"];
     renderLayout("/tag/Holiday?view=messages");
-    expect((await screen.findByTestId("message-search-list")).textContent).toBe("query: ");
+    await settle();
+    expect(screen.getByTestId("message-search-list").textContent).toBe("query: ");
   });
 
   it("on a tag page with a typed search, the Messages list searches the tag", async () => {
     sets.tags = ["Holiday"];
     renderLayout("/tag/Holiday?q=ada&view=messages");
-    const list = (await screen.findByTestId("message-search-list")).textContent ?? "";
+    await settle();
+    const list = screen.getByTestId("message-search-list").textContent ?? "";
     expect(list).toContain("Holiday");
     expect(list).toContain("ada");
   });
@@ -458,7 +482,8 @@ describe("AppLayout on a Contact Group or Message Tag page", () => {
     renderLayout(page);
     expect(screen.getByTestId("header-search").textContent).toBe("");
 
-    await user.click(await screen.findByRole("button", { name: "First result" }));
+    await settle();
+    await user.click(screen.getByRole("button", { name: "First result" }));
     expect(screen.getByTestId("location").textContent).toBe(`/messages/6${search}`);
     expect(screen.getByTestId("header-search").textContent).toBe("");
   });
@@ -468,7 +493,8 @@ describe("AppLayout on a Contact Group or Message Tag page", () => {
     const user = setupUser();
     renderLayout("/tag/Holiday?q=ada");
 
-    await user.click(await screen.findByRole("button", { name: "First result" }));
+    await settle();
+    await user.click(screen.getByRole("button", { name: "First result" }));
     expect(screen.getByTestId("location").textContent).toBe("/messages/6?q=ada&tag=Holiday");
     expect(screen.getByTestId("header-search").textContent).toBe("ada");
   });
@@ -478,7 +504,8 @@ describe("AppLayout on a Contact Group or Message Tag page", () => {
     const user = setupUser();
     renderLayout("/tag/Holiday?q=ada&view=messages");
 
-    await user.click(await screen.findByRole("button", { name: "Message result" }));
+    await settle();
+    await user.click(screen.getByRole("button", { name: "Message result" }));
     expect(screen.getByTestId("location").textContent).toBe(
       "/messages/6?q=ada&tag=Holiday&view=messages&at=77",
     );
