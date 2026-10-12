@@ -9,9 +9,8 @@
 //!
 //! It also reports the attachment size limit, because a program that uploads
 //! has to know it before it starts and only the owner reads the settings.
-//! And it reports the journal mode SQLite runs the database in, so Owner Home
-//! can say so when the server could not turn on write-ahead logging, rather
-//! than leave it to a warning in the server's log.
+//! How the database is stored is not part of it: the journal mode SQLite
+//! runs the database in is on the owner's `GET /v1/server/settings` (#2703).
 //!
 //! These are the server's only unauthenticated routes besides logging in and
 //! a stranger's `POST /v1/accounts`, and the first read routes that do not
@@ -80,14 +79,6 @@ pub struct Server {
     pub version: String,
     /// The Schema Fingerprint, the number this server stamps into its database.
     pub schema_fingerprint: i64,
-    /// The journal mode SQLite runs the database in now. The server asks for
-    /// `wal` on every start. Any other mode means it could not have it, as
-    /// when another program held the database file, and then every page
-    /// waits while an import writes. Owner Home says so, and the server's
-    /// log holds what SQLite answered. `null` when the
-    /// mode could not be read. The route still answers, because the entry
-    /// screen reads it before anyone can log in.
-    pub journal_mode: Option<crate::db::engine::JournalMode>,
     /// The attachment size limit, in bytes: the largest asset the server
     /// accepts, as one `PUT` or as the declared total of a multipart upload.
     /// The owner sets it in the server settings. An app reads it here before
@@ -131,8 +122,8 @@ async fn state_on_conn(conn: &mut sqlx::SqliteConnection) -> Result<ServerState,
 /// Report whether this Message Crate is unclaimed, closed, or open.
 ///
 /// Also reports this Message Crate's id, the server's Build, its Schema
-/// Fingerprint, the database's journal mode, whether the Demo Account
-/// exists, and the attachment size limit.
+/// Fingerprint, whether the Demo Account exists, the attachment size limit,
+/// and the upload time limits.
 #[utoipa::path(
     get,
     path = "/v1/server",
@@ -150,7 +141,6 @@ pub async fn get_server(State(state): State<AppState>) -> Result<Json<Server>, A
                 .is_some(),
         version: crate::BUILD.to_string(),
         schema_fingerprint: crate::db::schema::SCHEMA_FINGERPRINT,
-        journal_mode: crate::db::engine::journal_mode_or_warn(&mut *conn).await,
         asset_max_bytes: server_settings::load(&mut conn).await?.asset_max_bytes,
         upload_stall_secs: state.upload_time_limits.stall.as_secs(),
         upload_piece_secs: state.upload_time_limits.piece.as_secs(),
@@ -244,7 +234,8 @@ pub async fn claim_server(
     })
 }
 
-/// The server settings the owner controls.
+/// The server settings the owner controls, and how the database is stored,
+/// which the owner reads beside them.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ServerSettings {
     /// Anyone reaching the server may create their own account.
@@ -252,14 +243,32 @@ pub struct ServerSettings {
     /// The attachment size limit, in bytes: the largest asset the server
     /// accepts. 536870912 (512 MiB) until the owner changes it.
     pub asset_max_bytes: u64,
+    /// The journal mode SQLite runs the database in now, read when the
+    /// request is answered. The server asks for `wal` on every start. Any
+    /// other mode means it could not have it, as when another program held
+    /// the database file, and then every page waits while an import writes.
+    /// Owner Home says so. `null` when the mode could not be read; the
+    /// server's log says why.
+    pub journal_mode: Option<crate::db::engine::JournalMode>,
+    /// The error SQLite gave when the server asked for write-ahead logging
+    /// as it started, in SQLite's words, such as `database is locked`.
+    /// `null` when SQLite gave none: it turned write-ahead logging on, or
+    /// kept another mode without an error.
+    pub wal_error: Option<String>,
 }
 
-impl From<server_settings::ServerSettings> for ServerSettings {
-    fn from(settings: server_settings::ServerSettings) -> Self {
-        Self {
-            public_registration: settings.public_registration,
-            asset_max_bytes: settings.asset_max_bytes,
-        }
+/// The settings as the owner reads them: `settings` from the database, and
+/// how the database is stored, read on `conn`.
+async fn settings_body(
+    state: &AppState,
+    conn: &mut sqlx::SqliteConnection,
+    settings: server_settings::ServerSettings,
+) -> ServerSettings {
+    ServerSettings {
+        public_registration: settings.public_registration,
+        asset_max_bytes: settings.asset_max_bytes,
+        journal_mode: crate::db::engine::journal_mode_or_warn(&mut *conn).await,
+        wal_error: state.wal_error.as_deref().map(str::to_owned),
     }
 }
 
@@ -290,7 +299,9 @@ fn asset_max_bytes_problem(bytes: u64) -> Option<String> {
     None
 }
 
-/// Read the server settings.
+/// Read the server settings, and how the database is stored: its journal
+/// mode, and the error SQLite gave when the server asked for write-ahead
+/// logging.
 #[utoipa::path(
     get,
     path = "/v1/server/settings",
@@ -305,7 +316,8 @@ pub async fn get_server_settings(
     Owner(_auth): Owner,
 ) -> Result<Json<ServerSettings>, ApiError> {
     let mut conn = state.db.acquire().await?;
-    Ok(Json(server_settings::load(&mut conn).await?.into()))
+    let settings = server_settings::load(&mut conn).await?;
+    Ok(Json(settings_body(&state, &mut conn, settings).await))
 }
 
 /// Change the server settings.
@@ -366,7 +378,7 @@ pub async fn update_server_settings(
     }
     let settings = server_settings::load(&mut tx).await?;
     tx.commit().await?;
-    Ok(Json(settings.into()))
+    Ok(Json(settings_body(&state, &mut conn, settings).await))
 }
 
 /// What the whole database holds, summed over every account.

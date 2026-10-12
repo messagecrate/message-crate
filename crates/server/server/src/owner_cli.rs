@@ -140,6 +140,7 @@ mod tests {
         let shell = OpenDb {
             cfg: (*state.cfg).clone(),
             db: state.db.clone(),
+            wal_error: None,
         };
         let username = reset_owner_password(&shell, "a new owner password")
             .await

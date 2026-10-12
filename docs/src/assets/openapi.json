@@ -11658,7 +11658,7 @@
           "Server"
         ],
         "summary": "Report whether this Message Crate is unclaimed, closed, or open.",
-        "description": "Also reports this Message Crate's id, the server's Build, its Schema\nFingerprint, the database's journal mode, whether the Demo Account\nexists, and the attachment size limit.",
+        "description": "Also reports this Message Crate's id, the server's Build, its Schema\nFingerprint, whether the Demo Account exists, the attachment size limit,\nand the upload time limits.",
         "operationId": "get_server",
         "responses": {
           "200": {
@@ -12394,7 +12394,7 @@
         "tags": [
           "Server"
         ],
-        "summary": "Read the server settings.",
+        "summary": "Read the server settings, and how the database is stored: its journal mode, and the error SQLite gave when the server asked for write-ahead logging.",
         "operationId": "get_server_settings",
         "responses": {
           "200": {
@@ -19561,8 +19561,7 @@
           "schema_fingerprint",
           "asset_max_bytes",
           "upload_stall_secs",
-          "upload_piece_secs",
-          "journal_mode"
+          "upload_piece_secs"
         ],
         "properties": {
           "asset_max_bytes": {
@@ -19578,17 +19577,6 @@
           "id": {
             "type": "string",
             "description": "This Message Crate's id: 32 random hexadecimal digits written when\nits database is made, and never changed. An app tells two Message\nCrates at one address apart by it, such as one rebuilt with\n`create-database`, whose account and Import Run ids start again at\nthe same numbers."
-          },
-          "journal_mode": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/JournalMode"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The journal mode SQLite runs the database in now. The server asks for\n`wal` on every start. Any other mode means it could not have it, as\nwhen another program held the database file, and then every page\nwaits while an import writes. Owner Home says so, and the server's\nlog holds what SQLite answered. `null` when the\nmode could not be read. The route still answers, because the entry\nscreen reads it before anyone can log in."
           },
           "schema_fingerprint": {
             "type": "integer",
@@ -19619,10 +19607,12 @@
       },
       "ServerSettings": {
         "type": "object",
-        "description": "The server settings the owner controls.",
+        "description": "The server settings the owner controls, and how the database is stored,\nwhich the owner reads beside them.",
         "required": [
           "public_registration",
-          "asset_max_bytes"
+          "asset_max_bytes",
+          "journal_mode",
+          "wal_error"
         ],
         "properties": {
           "asset_max_bytes": {
@@ -19631,9 +19621,27 @@
             "description": "The attachment size limit, in bytes: the largest asset the server\naccepts. 536870912 (512 MiB) until the owner changes it.",
             "minimum": 0
           },
+          "journal_mode": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/JournalMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The journal mode SQLite runs the database in now, read when the\nrequest is answered. The server asks for `wal` on every start. Any\nother mode means it could not have it, as when another program held\nthe database file, and then every page waits while an import writes.\nOwner Home says so. `null` when the mode could not be read; the\nserver's log says why."
+          },
           "public_registration": {
             "type": "boolean",
             "description": "Anyone reaching the server may create their own account."
+          },
+          "wal_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The error SQLite gave when the server asked for write-ahead logging\nas it started, in SQLite's words, such as `database is locked`.\n`null` when SQLite gave none: it turned write-ahead logging on, or\nkept another mode without an error."
           }
         }
       },

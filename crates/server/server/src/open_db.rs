@@ -25,6 +25,10 @@ pub struct OpenDb {
     pub cfg: Config,
     /// Connection pool for the database `cfg` names.
     pub db: SqlitePool,
+    /// The error SQLite gave when the pool asked for write-ahead logging, in
+    /// SQLite's words. `None` when it gave none. `GET /v1/server/settings`
+    /// reports it, so Owner Home can name the cause beside the journal mode.
+    pub wal_error: Option<String>,
 }
 
 /// What is at `path`: `None` when no file is there, or else what the file is.
@@ -102,12 +106,12 @@ impl OpenDb {
 
     /// Open the pool on the file `cfg` names and make sure of the schema.
     async fn open_pool(cfg: Config) -> Result<Self> {
-        let db = engine::open_pool_for_path(&cfg.paths.db).await?;
+        let (db, wal_error) = engine::open_pool_keeping_wal_error(&cfg.paths.db).await?;
         {
             let mut conn = db.acquire().await?;
             schema::ensure_schema(&mut conn).await?;
         }
-        Ok(Self { cfg, db })
+        Ok(Self { cfg, db, wal_error })
     }
 
     /// The database file, for status lines and errors.

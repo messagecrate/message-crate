@@ -21,6 +21,13 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-12: **Owner Home quotes SQLite's error when write-ahead logging is
+  off.** When the server could not turn write-ahead logging on as it
+  started, the notice above every Owner Home section now says what SQLite
+  answered, such as that the database is locked, rather than sending the
+  owner to the server's log for it. Only the owner learns the journal mode
+  now: the screen anyone sees before logging in no longer receives it
+  (#2691, #2703).
 - 2026-10-12: **The owner sees which attachments of an import have no
   Thumbnail or Preview, and why.** In User Accounts, an account's Storage tab
   opens each Import Run with a **Thumbnails and Previews** part. It counts the

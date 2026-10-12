@@ -151,7 +151,12 @@ beforeEach(() => {
   deleteAccountById.mockResolvedValue(undefined);
   deleteAccountMessages.mockResolvedValue(undefined);
   listAccounts.mockResolvedValue([theOwner, anAccount]);
-  getServerSettings.mockResolvedValue({ public_registration: false });
+  getServerSettings.mockResolvedValue({
+    public_registration: false,
+    asset_max_bytes: 512 * MIB,
+    journal_mode: "wal",
+    wal_error: null,
+  });
   getDemoAccount.mockResolvedValue({ status: "ready", size: null, error: null });
   getServerStorage.mockResolvedValue({
     message_count: 5678,
@@ -191,7 +196,6 @@ beforeEach(() => {
     state: "closed",
     version: APP_BUILD,
     schema_fingerprint: 1234567890,
-    journal_mode: "wal",
   });
   updateServerSettings.mockResolvedValue({ public_registration: true });
   updateAccount.mockResolvedValue({ ...anAccount, disabled: true });
@@ -285,7 +289,7 @@ describe("OwnerHome", () => {
     expect(screen.getByText(/5,678 messages, 21 attachments/)).toBeInTheDocument();
     expect(screen.getByText(/90 conversations, 120 contacts/)).toBeInTheDocument();
     expect(listAccounts).not.toHaveBeenCalled();
-    expect(getServerSettings).not.toHaveBeenCalled();
+    expect(screen.queryByRole("heading", { name: "Server Settings" })).not.toBeInTheDocument();
   });
 
   it("shows the database's size, the messages' share of it and the search index on the Dashboard", async () => {
@@ -348,7 +352,7 @@ describe("OwnerHome", () => {
       expect.objectContaining({ level: "warn" }),
       expect.anything(),
     );
-    expect(getServerSettings).not.toHaveBeenCalled();
+    expect(screen.queryByRole("heading", { name: "Server Settings" })).not.toBeInTheDocument();
   });
 
   it("lists every account's Audit Trail, a deleted account's under its old username, and narrows it to one account", async () => {
@@ -675,7 +679,6 @@ describe("OwnerHome", () => {
       state: "closed",
       version: "0.10.0+343fe0d8",
       schema_fingerprint: 1234567890,
-      journal_mode: "wal",
     });
     getAccount.mockResolvedValue({
       ...anAccount,
@@ -838,12 +841,12 @@ describe("OwnerHome", () => {
     expect(screen.getByText("Journal mode").nextElementSibling).toHaveTextContent("wal");
   });
 
-  it("says so on every section, and what to do, when the database runs without write-ahead logging", async () => {
-    getServerState.mockResolvedValue({
-      state: "closed",
-      version: APP_BUILD,
-      schema_fingerprint: 1234567890,
+  it("says so on every section, with SQLite's error and what to do, when the database runs without write-ahead logging", async () => {
+    getServerSettings.mockResolvedValue({
+      public_registration: false,
+      asset_max_bytes: 512 * MIB,
       journal_mode: "delete",
+      wal_error: "database is locked",
     });
     renderHome(["/owner/dashboard"]);
 
@@ -851,8 +854,11 @@ describe("OwnerHome", () => {
     expect(notice).toHaveTextContent(
       "The server could not turn on write-ahead logging when it started",
     );
+    expect(notice).toHaveTextContent("SQLite answered: database is locked.");
     expect(notice).toHaveTextContent("If another program has the database file open, close it.");
     expect(notice).toHaveTextContent("Then restart the server");
+    // The mode is the owner's to read, never on the route anyone may ask.
+    expect(getServerSettings).toHaveBeenCalled();
     cleanup();
 
     renderHome(["/owner/accounts"]);
@@ -861,26 +867,42 @@ describe("OwnerHome", () => {
     expect(await screen.findByText("bob")).toBeInTheDocument();
   });
 
+  it("names the mode SQLite kept when it turned write-ahead logging down without an error", async () => {
+    getServerSettings.mockResolvedValue({
+      public_registration: false,
+      asset_max_bytes: 512 * MIB,
+      journal_mode: "memory",
+      wal_error: null,
+    });
+    renderHome(["/owner/dashboard"]);
+
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveTextContent(
+      "SQLite kept the database in journal mode memory without giving an error.",
+    );
+    expect(notice).not.toHaveTextContent("SQLite answered");
+  });
+
   it("says nothing about write-ahead logging when the server could not read the mode", async () => {
-    getServerState.mockResolvedValue({
-      state: "closed",
-      version: APP_BUILD,
-      schema_fingerprint: 1234567890,
+    getServerSettings.mockResolvedValue({
+      public_registration: false,
+      asset_max_bytes: 512 * MIB,
       journal_mode: null,
+      wal_error: null,
     });
     renderHome();
 
     await screen.findByText("bob");
-    await waitFor(() => expect(getServerState).toHaveBeenCalled());
+    await waitFor(() => expect(getServerSettings).toHaveBeenCalled());
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("shows the journal mode as unknown in Server Settings when the server could not read it", async () => {
-    getServerState.mockResolvedValue({
-      state: "closed",
-      version: APP_BUILD,
-      schema_fingerprint: 1234567890,
+    getServerSettings.mockResolvedValue({
+      public_registration: false,
+      asset_max_bytes: 512 * MIB,
       journal_mode: null,
+      wal_error: null,
     });
     renderHome(["/owner/settings"]);
     expect((await screen.findByText("Journal mode")).nextElementSibling).toHaveTextContent(
@@ -901,7 +923,6 @@ describe("OwnerHome", () => {
       state: "closed",
       version: "99.0.0",
       schema_fingerprint: 1234567890,
-      journal_mode: "wal",
     });
     renderHome();
 

@@ -422,6 +422,10 @@ pub struct AppState {
     /// each Import Run. `serve` starts the pass; the test harness does not,
     /// so a test sees the queue as an Import Run leaves it.
     pub(crate) media_queue: crate::media_queue::MediaQueue,
+    /// The error SQLite gave when the server asked for write-ahead logging
+    /// as it opened the database ([`OpenDb::wal_error`]), which
+    /// `GET /v1/server/settings` reports to the owner.
+    pub(crate) wal_error: Option<Arc<str>>,
 }
 
 impl AppState {
@@ -447,6 +451,7 @@ impl AppState {
             demo_bundle_generator: crate::reset_demo::generate_bundle,
             media_link_key: crate::assets_api::media_links::MediaLinkKey::random(),
             media_queue: crate::media_queue::MediaQueue::default(),
+            wal_error: opened.wal_error.map(Arc::from),
         }
     }
 
@@ -2303,7 +2308,11 @@ pub(crate) fn test_app_state(pool: sqlx::SqlitePool, data_dir: &Path) -> AppStat
         }),
     };
     AppState::new(
-        OpenDb { cfg, db: pool },
+        OpenDb {
+            cfg,
+            db: pool,
+            wal_error: None,
+        },
         asset_uploads::DEFAULT_PART_SIZE,
         UploadTimeLimits::of(&crate::config::ServerConfig::default()),
     )
