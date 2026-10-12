@@ -1023,11 +1023,12 @@ with TLS and a login of its own, and what the server itself must do there is
 a separate design (#2894).
 
 Rejected: counting attempts, per account, per username or for the whole
-server, and answering `429 Too Many Requests` past the count (#2893). A count per account let
-anyone who knew a username lock its holder out by sending wrong passwords. A
-count per username needed timing machinery so that it would not tell a
-stranger which usernames name an account, and kept a count for every
-username tried, so a script trying new names grew it without end (#2885).
+server, and answering `429 Too Many Requests` past the count (#2893). A
+count per account let anyone who knew a username lock its holder out by
+sending wrong passwords. A count per username needed timing machinery so
+that it would not tell a stranger which usernames name an account, and kept
+a count for every username tried, so a script trying new names grew it
+without end (#2885).
 
 Each refused login writes a warning to the server's log with the account's id
 (none for an unknown username), the reason and the connecting app. The

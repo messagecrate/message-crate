@@ -377,11 +377,10 @@ async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_stand
 
 /// A refused request leaves a line with its problem type and status, at
 /// `WARN` when it is about who may do what (`401 Unauthorized`,
-/// `403 Forbidden`) and at
-/// `INFO` for the rest, so the owner's Logs panel, which opens at warnings
-/// and up, shows a password guesser or a token that lost its rights (#2168).
-/// The line never holds the problem's `detail`, which can repeat what a
-/// person typed.
+/// `403 Forbidden`) and at `INFO` for the rest, so the owner's Logs panel,
+/// which opens at warnings and up, shows a password guesser or a token that
+/// lost its rights (#2168). The line never holds the problem's `detail`,
+/// which can repeat what a person typed.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_refused_request_leaves_a_line_with_its_problem_type() {
     use reqwest::Method;

@@ -134,8 +134,9 @@ impl ProblemType {
     /// for the types that answer `401 Unauthorized` and `403 Forbidden`,
     /// because a run of them is what a password guesser or an API token that
     /// lost its rights looks like, and for `database-busy`, because a run of
-    /// it says the server has more work than its database keeps up with. The owner's Logs panel opens at
-    /// warnings and up. Every other refusal is logged at `INFO`.
+    /// it says the server has more work than its database keeps up with.
+    /// The owner's Logs panel opens at warnings and up. Every other refusal
+    /// is logged at `INFO`.
     #[must_use]
     pub fn refusal_is_a_warning(self) -> bool {
         self == Self::DatabaseBusy
