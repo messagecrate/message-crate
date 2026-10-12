@@ -1,11 +1,12 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MessageSearchSort } from "../lib/messageSearchSort";
 import { listMessages } from "../lib/serverApi";
 import type { MessageSearch } from "../lib/types";
 import { message } from "../test/apiShapes";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { mockedAuth, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
 import MessageSearchList from "./MessageSearchList";
@@ -42,6 +43,7 @@ class StubResizeObserver {
 }
 
 beforeEach(() => {
+  startFakeClock();
   vi.stubGlobal("ResizeObserver", StubResizeObserver);
   listMessagesMock.mockReset();
   answer({ sort: "relevance", terms: [{ text: "photo", prefix: false }] });
@@ -53,8 +55,8 @@ function answer(search: MessageSearch, items = [] as ReturnType<typeof message>[
 }
 
 afterEach(() => {
-  vi.unstubAllGlobals();
   cleanup();
+  stopFakeClock();
 });
 
 function renderList(query: string, sortPick: MessageSearchSort | null = null) {
@@ -76,7 +78,7 @@ function renderList(query: string, sortPick: MessageSearchSort | null = null) {
 /** The labels of the sort menu's choices, Sort By then Order, once it is open. */
 async function sortChoices(): Promise<string[]> {
   await setupUser().click(screen.getByRole("button", { name: /^Sort messages by/ }));
-  const menu = await screen.findByRole("menu");
+  const menu = screen.getByRole("menu");
   return [...menu.querySelectorAll('[role="menuitemradio"]')].map((item) => item.textContent ?? "");
 }
 
@@ -89,7 +91,8 @@ describe("MessageSearchList", () => {
 
   it("sends no sort, and shows the order the server applied", async () => {
     renderList("from:Alice photo");
-    expect(await screen.findByText("12,408 messages")).toBeVisible();
+    await settle();
+    expect(screen.getByText("12,408 messages")).toBeVisible();
     expect(listMessagesMock).toHaveBeenCalledWith(
       { q: "from:Alice photo", limit: 40, offset: 0 },
       expect.anything(),
@@ -101,8 +104,9 @@ describe("MessageSearchList", () => {
   it("offers only Date when the server returns no terms to rank by", async () => {
     answer({ sort: "-date", terms: [] });
     renderList("from:Alice date:2024");
+    await settle();
     expect(
-      await screen.findByRole("button", { name: "Sort messages by Date, Newest first" }),
+      screen.getByRole("button", { name: "Sort messages by Date, Newest first" }),
     ).toBeVisible();
     expect(listMessagesMock).toHaveBeenCalledWith(
       { q: "from:Alice date:2024", limit: 40, offset: 0 },
@@ -116,8 +120,9 @@ describe("MessageSearchList", () => {
     // server, and offers no Relevance.
     answer({ sort: "-date", terms: [] });
     renderList("photo");
+    await settle();
     expect(
-      await screen.findByRole("button", { name: "Sort messages by Date, Newest first" }),
+      screen.getByRole("button", { name: "Sort messages by Date, Newest first" }),
     ).toBeVisible();
     expect(await sortChoices()).toEqual(["Date", "Oldest first", "Newest first"]);
   });
@@ -127,23 +132,21 @@ describe("MessageSearchList", () => {
       message({ id: 7, text: "Here is the photo from the dentist" }),
     ]);
     renderList("whatever was typed");
-    const row = await screen.findByRole("button", { name: /photo from the dentist/ });
+    await settle();
+    const row = screen.getByRole("button", { name: /photo from the dentist/ });
     expect([...row.querySelectorAll("strong")].map((b) => b.textContent)).toEqual(["dentist"]);
   });
 
   it("sends a picked date order, and hands a new pick to the caller", async () => {
     answer({ sort: "date", terms: [{ text: "photo", prefix: false }] });
     const { onSortPick } = renderList("photo", { sort: "date", order: "asc" });
-    await waitFor(() =>
-      expect(listMessagesMock).toHaveBeenCalledWith(
-        expect.objectContaining({ sort: "date" }),
-        expect.anything(),
-      ),
+    await settle();
+    expect(listMessagesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ sort: "date" }),
+      expect.anything(),
     );
     const user = setupUser();
-    await user.click(
-      await screen.findByRole("button", { name: "Sort messages by Date, Oldest first" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Sort messages by Date, Oldest first" }));
     await user.click(screen.getByRole("menuitemradio", { name: "Relevance" }));
     expect(onSortPick).toHaveBeenCalledWith({ sort: "relevance", order: "asc" });
   });

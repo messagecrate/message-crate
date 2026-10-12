@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchAssetObjectUrl } from "../../lib/serverApi";
 import type { Message } from "../../lib/types";
 import { attachment, imessageMessage, participant } from "../../test/apiShapes";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import {
   installIntersectionObserver,
   observersWithin,
@@ -161,6 +162,14 @@ describe("ConversationView landing on a message", () => {
  * loading only once it was already on screen.
  */
 describe("ConversationView and attachments", () => {
+  beforeEach(() => {
+    startFakeClock();
+  });
+
+  afterEach(() => {
+    stopFakeClock();
+  });
+
   function withPhoto(id: number, sha256: string): Message {
     return imessageMessage({
       id,
@@ -191,8 +200,9 @@ describe("ConversationView and attachments", () => {
     expect(observersWithin(row)).toEqual([{ root: scrollArea, rootMargin: "800px 0px" }]);
 
     scrollNear(row);
+    await settle();
 
-    expect(await screen.findByRole("img", { name: "bbb.jpg" })).toHaveAttribute(
+    expect(screen.getByRole("img", { name: "bbb.jpg" })).toHaveAttribute(
       "src",
       "blob:thumbnail-bbb",
     );
