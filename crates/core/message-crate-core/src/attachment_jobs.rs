@@ -77,7 +77,7 @@ impl std::error::Error for LoadError {}
 ///
 /// # Errors
 ///
-/// Returns `"cancelled"` when the flag is set before a job starts. Returns
+/// Returns `"canceled"` when the flag is set before a job starts. Returns
 /// the message of a [`LoadError::Fatal`] from `load(i)`, leaving that job and
 /// every later one untouched. Returns an I/O or convert error string when the
 /// staging directory cannot be created or the conversion cannot run.
@@ -121,7 +121,7 @@ pub fn run_attachment_jobs(
 
     for (i, job) in jobs.iter_mut().enumerate() {
         if cancel.load(Ordering::Relaxed) {
-            return Err("cancelled".into());
+            return Err("canceled".into());
         }
 
         let loaded = match load(i) {
@@ -181,7 +181,7 @@ pub fn run_attachment_jobs(
 
     if matches!(media.mode, MediaMode::Convert | MediaMode::Compress) {
         if cancel.load(Ordering::Relaxed) {
-            return Err("cancelled".into());
+            return Err("canceled".into());
         }
         apply_convert_or_compress(jobs, attachments_dir, media, log, cancel)?;
         on_progress(AttachmentProgress {
@@ -215,7 +215,7 @@ pub fn run_attachment_jobs(
 ///
 /// # Errors
 ///
-/// Returns `"cancelled"` when the user cancels, the message of a
+/// Returns `"canceled"` when the user cancels, the message of a
 /// [`LoadError::Fatal`] from `load(i)`, or an I/O / convert error string when
 /// the staging directory cannot be used.
 pub fn stage_attachment_jobs(
@@ -362,7 +362,7 @@ fn apply_convert_or_compress(
     .map_err(|e| {
         // A conversion the cancel killed ends the run as canceled.
         if cancel.load(Ordering::Relaxed) {
-            "cancelled".to_string()
+            "canceled".to_string()
         } else {
             format!("{e:#}")
         }

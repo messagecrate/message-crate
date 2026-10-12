@@ -2,10 +2,10 @@ import { invokeCancel } from "./tauri";
 
 /**
  * The error a job refused by a Cancel throws: the same word the desktop side
- * reports for a job it cancelled (`message-crate-core`'s `check_cancel`), so
+ * reports for a job it canceled (`message-crate-core`'s `check_cancel`), so
  * a caller handles both alike.
  */
-export const CANCELLED_MESSAGE = "cancelled";
+export const CANCELLED_MESSAGE = "canceled";
 
 /**
  * The Cancel of one run of desktop jobs: an Import Run, or an Export's export step

@@ -622,13 +622,13 @@ fn a_parse_stopped_by_a_cancel_returns_cancelled() {
     assert!(report.errors.is_empty());
 }
 
-/// A parse error whose text is `cancelled` is recorded as an error in the
+/// A parse error whose text is `canceled` is recorded as an error in the
 /// file, not taken for a cancel: a cancel is told by its type.
 #[test]
 fn a_parse_error_reading_cancelled_is_recorded_not_taken_for_a_cancel() {
     let mut report = ReadReport::default();
     keep_parse_error(
-        Err(anyhow::anyhow!("cancelled")),
+        Err(anyhow::anyhow!("canceled")),
         Path::new("input.xml"),
         &mut report,
     )

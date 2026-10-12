@@ -528,8 +528,8 @@ fn cancelling_stops_the_media_stage_without_corrupting_the_directory() {
     let err = err.expect_err("a cancel requested before the call must surface as Err");
     assert_eq!(
         err.to_string(),
-        "cancelled",
-        "the same word every other cancelled stage returns; the import screen matches it"
+        "canceled",
+        "the same word every other canceled stage returns; the import screen matches it"
     );
     let doc = read_conversation_jsonl(&jsonl).unwrap();
     assert_eq!(
@@ -1175,7 +1175,7 @@ fn a_too_large_drop_survives_a_stop_and_a_resume() {
         },
     )
     .expect_err("the Media stage stops after the first attachment");
-    assert_eq!(err.to_string(), "cancelled");
+    assert_eq!(err.to_string(), "canceled");
     assert!(
         !original.exists(),
         "the first conversation dropped the file"
@@ -1454,7 +1454,7 @@ fn a_cancel_while_ffmpeg_runs_ends_the_stage_as_canceled_not_as_a_failed_file() 
     .expect_err("a canceled Media stage fails");
     canceler.join().unwrap();
 
-    assert_eq!(err.to_string(), "cancelled");
+    assert_eq!(err.to_string(), "canceled");
     assert!(
         rows.lock().unwrap().is_empty(),
         "{:?}",

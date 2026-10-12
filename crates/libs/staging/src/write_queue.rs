@@ -310,7 +310,7 @@ pub struct Sinks<'a> {
     /// Where the drain sends its progress events.
     pub progress: &'a ProgressSink,
     /// Set to stop the drain. The drain then fails with
-    /// [`message_crate_core::Cancelled`], or with the text `cancelled` when
+    /// [`message_crate_core::Cancelled`], or with the text `canceled` when
     /// the cancel is seen while a conversation's attachments are staged
     /// (#2077).
     pub cancel: &'a CancelFlag,

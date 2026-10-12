@@ -694,7 +694,7 @@ impl fmt::Display for WaitError {
                 program.name(),
                 troubleshooting(*program)
             ),
-            Self::Cancelled => f.write_str("cancelled"),
+            Self::Cancelled => f.write_str("canceled"),
         }
     }
 }

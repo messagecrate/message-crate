@@ -298,7 +298,7 @@ fn cancel_stops_before_next_job() {
         )
         .unwrap_err()
     };
-    assert_eq!(err, "cancelled");
+    assert_eq!(err, "canceled");
     assert!(a.path.is_some());
     assert!(b.path.is_none());
 }

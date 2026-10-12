@@ -522,5 +522,5 @@ fn a_second_run_reuses_the_cancelled_flag_only_when_set() {
     let err = config(&db_path, &output, cancel)
         .run(imessage_ir_exporter::run)
         .unwrap_err();
-    assert_eq!(err.to_string(), "cancelled");
+    assert_eq!(err.to_string(), "canceled");
 }

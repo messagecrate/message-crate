@@ -73,9 +73,10 @@ function timedOut(error: unknown): boolean {
  * How long to wait before trying a failed read again.
  *
  * A database too busy to take the request (`database-busy`) says how many
- * seconds to wait, because the import holding the write lock will not let go
- * sooner, and a second try at once meets the same lock. Anything else waits
- * `tanstackDefaultRetryDelay`.
+ * seconds to wait. The database was busy because another request, such as an
+ * import batch, held the write lock, or because every database connection
+ * stayed in use. Either way a second try at once meets the same busy
+ * database. Anything else waits `tanstackDefaultRetryDelay`.
  */
 function retryDelay(failureCount: number, error: unknown): number {
   if (error instanceof ApiError && error.type === "database-busy" && error.retryAfter !== null) {
