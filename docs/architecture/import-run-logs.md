@@ -113,7 +113,12 @@ Who reads which log decides what each screen offers, not who can open a
 file. The window tells the desktop app which account is signed in, on which
 Message Crate, and whether it is the owner, and the desktop app takes its
 word. A run log is a plain file in the Logs Directory, which any program run
-by the computer's user can open.
+by the computer's user can open. No other user of the computer can: the
+desktop app makes the Logs Directory with mode `0700` and takes group and
+other access off one that has it, each time it opens a run's log, because a
+run log names the phone numbers and email addresses in its file names (below).
+Windows has no such modes, and there the Logs Directory takes the access of
+the user's own app-data directory it is in.
 
 Why that is enough: everything on the computer runs as one user of the
 operating system, who can read the Logs Directory with or without Message

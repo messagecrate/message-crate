@@ -1075,6 +1075,13 @@ carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-12: **Cancel stops an Export at once while the server is away.**
+  When the server stopped answering during an Export, the Export kept trying
+  each failed request up to three more times after you pressed **Cancel**,
+  waiting 15 seconds before the last try, before it noticed. It now stops
+  trying as soon as you press **Cancel**, as an Upload already did on
+  **Pause**, and the Export Run is recorded as canceled rather than failed
+  (#2111).
 - 2026-10-12: **A CSV export opens in a spreadsheet without running a
   message as a formula.** A message, name or address that started with `=`,
   `+`, `-` or `@` was written as it was, so Excel or LibreOffice Calc read
@@ -1253,6 +1260,16 @@ carry their date on the heading.
   Compose files and every `docker run` command in the guide now give the
   server 40 seconds to stop, and `docker stop -t 40` stops one started
   before this release the same way (#2122).
+- 2026-10-12: **Other people who log in to the same computer can no longer
+  read your messages.** The database, the directory with every account's
+  attachments, and the server's log were readable by every user of the
+  computer, so anyone with their own login on it could read every account's
+  messages without a password. Now only the user Message Crate runs as can
+  read them, whether the server runs on its own, in Docker or in the desktop
+  app, and the desktop app keeps its import logs the same way. An existing
+  Message Crate is closed off the next time it starts. On Windows, the files
+  take the access of the directory they are in, which for the desktop app
+  is your own user directory (#2097).
 - 2026-10-12: **A database rebuilt for a new layout keeps a copy of what it
   held.** When a server finds a database from a release with another
   database layout, it still rebuilds it empty, but it first writes a copy of
@@ -1470,6 +1487,11 @@ carry their date on the heading.
   `docker run` command in the user guide, which now carries
   `--stop-timeout 40`. The Compose files set the 40 seconds themselves
   (#2122).
+- 2026-10-12: The server now makes its data directory and its database
+  file readable by its own user alone each time it opens the database. A
+  backup job or another program that read either as a different user,
+  through its group, can no longer read it; run it as the user the server
+  runs as, or as root.
 - 2026-10-08: The **ffmpeg directory** field in Settings → System is gone,
   and the `MESSAGE_CRATE_BIN` and `WTSEXPORTER` environment variables are no
   longer read. ffmpeg and ffprobe beside the app, in a `lib/` directory

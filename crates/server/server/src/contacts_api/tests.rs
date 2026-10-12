@@ -2090,6 +2090,8 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
     assert_eq!(page.items[0].last_modified, detail.last_modified);
 
     const OLD: &str = "2000-01-01 00:00:00";
+    // `mutate_committed` edits at `fixed_instant`, written as this.
+    const TOUCHED: &str = "2026-03-14 12:00:00";
     set_contact_last_modified(&mut conn, account, contact_id, OLD).await;
     assert!(
         mutate_committed(
@@ -2108,7 +2110,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
         .unwrap()
     );
     let after_rename = contact_last_modified(&mut conn, account, contact_id).await;
-    assert_ne!(after_rename, OLD);
+    assert_eq!(after_rename, TOUCHED);
 
     set_contact_last_modified(&mut conn, account, contact_id, OLD).await;
     assert!(
@@ -2131,7 +2133,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
         .unwrap()
     );
     let after_add = contact_last_modified(&mut conn, account, contact_id).await;
-    assert_ne!(after_add, OLD);
+    assert_eq!(after_add, TOUCHED);
 
     // Re-adding the same handle is a no-op and must not bump.
     set_contact_last_modified(&mut conn, account, contact_id, OLD).await;
@@ -2179,9 +2181,9 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
         .await
         .unwrap()
     );
-    assert_ne!(
+    assert_eq!(
         contact_last_modified(&mut conn, account, contact_id).await,
-        OLD
+        TOUCHED
     );
 }
 
@@ -3030,6 +3032,7 @@ async fn list_contacts_filters_by_group_and_no_group() {
         &[family],
         "Family",
         true,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -3851,7 +3854,14 @@ async fn mutate_committed(
     body: &UpdateContactRequest,
 ) -> Result<bool, ContactEditError> {
     let mut tx = crate::db::begin_write(conn).await?;
-    let changed = mutate_contact(&mut tx, account_id, contact_id, body).await?;
+    let changed = mutate_contact(
+        &mut tx,
+        account_id,
+        contact_id,
+        body,
+        crate::test_support::fixed_instant(),
+    )
+    .await?;
     tx.commit().await?;
     Ok(changed)
 }

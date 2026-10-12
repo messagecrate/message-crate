@@ -1,17 +1,14 @@
 //! Contact linking and display-name merging during import.
 
-use std::collections::HashSet;
-
 use anyhow::Result;
-use message_ir::{IdentityService, IdentityType, trimmed};
+use chrono::{DateTime, Utc};
+use message_ir::trimmed;
 use sqlx::SqliteConnection;
 
 use super::ImportCounts;
 use crate::db::contacts;
-use crate::db::handles::{HandleIdCache, normalize_handle, upsert_handle_row_cached};
 use crate::db::import_contacts::{self, ContactReason};
 use crate::db::trash;
-use crate::imports_api::records::HandleValue;
 
 /// The contact that owns `handle_id`, creating one when nothing owns it yet.
 ///
@@ -35,7 +32,8 @@ use crate::imports_api::records::HandleValue;
 ///
 /// Whatever the run does to the contact is recorded against `import_id`
 /// (`db::import_contacts`), so the run can say afterwards which contacts it
-/// created, named, or gave a handle, and why.
+/// created, named, or gave a handle, and why. A contact it changes is
+/// stamped `now`.
 pub(super) async fn ensure_contact_for_handle(
     tx: &mut SqliteConnection,
     account_id: i64,
@@ -43,23 +41,32 @@ pub(super) async fn ensure_contact_for_handle(
     handle_id: i64,
     backup_name: Option<&str>,
     counts: &mut ImportCounts,
+    now: DateTime<Utc>,
 ) -> Result<i64> {
     let name = backup_name.and_then(trimmed).unwrap_or("");
-    let trashed = match ensure_sibling_contact_link(tx, account_id, import_id, handle_id).await? {
-        Some(existing) if !trash::is_contact_trashed(tx, account_id, existing).await? => {
-            // An import names only a nameless contact, whatever made it;
-            // `contacts::propose_name` is where that rule and its two
-            // siblings live.
-            if contacts::propose_name(tx, account_id, existing, name, contacts::Origin::Import)
+    let trashed =
+        match ensure_sibling_contact_link(tx, account_id, import_id, handle_id, now).await? {
+            Some(existing) if !trash::is_contact_trashed(tx, account_id, existing).await? => {
+                // An import names only a nameless contact, whatever made it;
+                // `contacts::propose_name` is where that rule and its two
+                // siblings live.
+                if contacts::propose_name(
+                    tx,
+                    account_id,
+                    existing,
+                    name,
+                    contacts::Origin::Import,
+                    now,
+                )
                 .await?
-            {
-                import_contacts::record(tx, import_id, existing, ContactReason::Named).await?;
+                {
+                    import_contacts::record(tx, import_id, existing, ContactReason::Named).await?;
+                }
+                return Ok(existing);
             }
-            return Ok(existing);
-        }
-        Some(existing) => Some(existing),
-        None => None,
-    };
+            Some(existing) => Some(existing),
+            None => None,
+        };
     let contact_id =
         contacts::create_contact(tx, account_id, name, contacts::Origin::Import).await?;
     let goes = contacts::IdentityGoes::To(contact_id, contacts::Origin::Import);
@@ -83,108 +90,16 @@ pub(super) async fn ensure_contact_for_handle(
     Ok(contact_id)
 }
 
-/// Count `handle_type` in `counts` when it is `Other` and this run meets the
-/// identity for the first time (`cached` is false). An identity of type
-/// `other` that is a person is a name with no address, or a sender such as
-/// `AMAZON`: something the exporter could not tie to an address, which the
-/// run's counts name.
-pub(super) fn count_other_identity(
-    handle_type: IdentityType,
-    cached: bool,
-    counts: &mut ImportCounts,
-) {
-    if handle_type == IdentityType::Other && !cached {
-        counts.other_identities += 1;
-    }
-}
-
-/// What one message says about who sent it. Its own type because these three
-/// facts travel together and come from the message, while the connection,
-/// handle cache, account and counts around them belong to the import run.
-pub(super) struct IncomingSender<'a> {
-    /// True when the account owner sent it, in which case there is no sender
-    /// handle to resolve.
-    pub is_from_me: bool,
-    /// The sender's address as the backup recorded it, or the name it gave
-    /// with no address, when it recorded either. Typed by
-    /// [`HandleValue::handle_type_on`].
-    pub value: Option<&'a HandleValue>,
-    /// Service the message arrived on: `phone` or `whatsapp`.
-    pub service: IdentityService,
-}
-
-/// True when `address`, read as `handle_type` in the run's `country`, is one
-/// of the account's identities: the account holder, on any service.
-pub(super) fn is_account_identity(
-    identities: &HashSet<(String, IdentityType)>,
-    address: &str,
-    handle_type: IdentityType,
-    country: Option<&'static phone::Country>,
-) -> bool {
-    let normalized = normalize_handle(address, handle_type, country).key;
-    identities.contains(&(normalized, handle_type))
-}
-
-/// The `handles` row for an incoming message's sender, creating it when this
-/// import is the first to meet that address, and the contact that owns it.
-/// `None` for a message the account owner sent, and for one whose source
-/// recorded no sender address.
-pub(super) async fn resolve_incoming_sender_handle(
-    tx: &mut SqliteConnection,
-    cache: &mut HandleIdCache,
-    identities: &HashSet<(String, IdentityType)>,
-    account_id: i64,
-    import_id: Option<i64>,
-    sender: IncomingSender<'_>,
-    counts: &mut ImportCounts,
-) -> Result<Option<i64>> {
-    if sender.is_from_me {
-        return Ok(None);
-    }
-    let Some(value) = sender.value else {
-        return Ok(None);
-    };
-    let Some(address) = trimmed(value.as_str()) else {
-        return Ok(None);
-    };
-    let handle_type = value.handle_type_on(sender.service);
-    let (handle_id, flagged, cached) = upsert_handle_row_cached(
-        tx,
-        cache,
-        account_id,
-        address,
-        handle_type,
-        Some(sender.service.as_str()),
-    )
-    .await?;
-    if flagged {
-        counts.phones_needing_review += 1;
-    }
-    count_other_identity(handle_type, cached, counts);
-    // A sender is a person the import met, whether or not a conversation
-    // header named them: `orphaned.jsonl` names nobody, and a group header
-    // can leave out someone who wrote in it. So the sender gets a contact
-    // the same way a participant does, which also replaces a trashed one
-    // (ADR-0013). A handle already in the cache went through here, or
-    // through a participant or a one-to-one chat, earlier in this run, and
-    // each of those gave it a contact unless it is one of the account's
-    // identities. A sender at one is the holder, who never gets a contact
-    // here (#1093); the message still records the address it came from.
-    if !cached && !is_account_identity(identities, address, handle_type, cache.country()) {
-        ensure_contact_for_handle(tx, account_id, import_id, handle_id, None, counts).await?;
-    }
-    Ok(Some(handle_id))
-}
-
 /// If this handle has no contact but a sibling handle (same normalized value
 /// and type, different platform service) is already linked, attach this handle
-/// to that contact, and record against `import_id` that the run gave the
-/// contact a handle.
+/// to that contact, stamped `now`, and record against `import_id` that the
+/// run gave the contact a handle.
 async fn ensure_sibling_contact_link(
     conn: &mut SqliteConnection,
     account_id: i64,
     import_id: Option<i64>,
     handle_id: i64,
+    now: DateTime<Utc>,
 ) -> Result<Option<i64>> {
     if let Some(existing) = contacts::contact_id_for_handle(conn, account_id, handle_id).await? {
         return Ok(Some(existing));
@@ -203,7 +118,7 @@ async fn ensure_sibling_contact_link(
     )
     .await?
     {
-        contacts::touch_contact(conn, account_id, contact_id).await?;
+        contacts::touch_contact(conn, account_id, contact_id, now).await?;
         import_contacts::record(conn, import_id, contact_id, ContactReason::IdentityAdded).await?;
     }
     Ok(Some(contact_id))

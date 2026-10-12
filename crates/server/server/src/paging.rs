@@ -280,7 +280,8 @@ impl<K: Copy + PartialEq> ListRequest<K> {
             accepted,
             default,
         )?;
-        let clock = crate::db::account_profile::account_clock(conn, account_id).await?;
+        let clock =
+            crate::db::account_profile::account_clock(conn, account_id, chrono::Utc::now()).await?;
         Ok(Self {
             q: query.q.unwrap_or_default(),
             page,

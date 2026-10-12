@@ -2271,6 +2271,7 @@ mod kind_words {
                 account_id: ACCOUNT,
                 import_id: None,
                 phone_country: None,
+                now: crate::test_support::fixed_instant(),
             }),
         )
         .await

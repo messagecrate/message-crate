@@ -991,7 +991,9 @@ fn spawn_server(
     output: &Output,
     listened: &Arc<AtomicBool>,
 ) -> Result<(ServerProcess, Vec<JoinHandle<()>>), String> {
-    std::fs::create_dir_all(&launch.data_dir)
+    // Owner-only (#2097). The server takes group and other access off one
+    // already there when it opens the database.
+    file_io::create_dir_all_owner_only(&launch.data_dir)
         .map_err(|e| format!("create {}: {e}", launch.data_dir.display()))?;
     let mut command = Command::new(&launch.program);
     command

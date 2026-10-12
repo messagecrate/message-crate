@@ -6,7 +6,10 @@
 //! streamed SHA-256 of a file ([`file_sha256`]), the same fingerprint of
 //! bytes already in memory ([`sha256_hex`]), and the open and hash that refuse
 //! a symlink rather than follow it, which the server's asset store reads
-//! through ([`open_nofollow`], [`file_sha256_nofollow`]).
+//! through ([`open_nofollow`], [`file_sha256_nofollow`]), and the
+//! directories and files only their owner can read, which hold every
+//! account's messages ([`create_dir_all_owner_only`], [`restrict_to_owner`],
+//! [`owner_only`]).
 //!
 //! [`sha256_hex`] lives here, not with its callers, so it stays beside
 //! [`file_sha256`] and the tests pin the two to one fingerprint format,
@@ -23,9 +26,11 @@ use std::path::Path;
 
 mod durable;
 mod nofollow;
+mod owner_only;
 
 pub use durable::{rename_into_place, write_atomic, write_atomic_via};
 pub use nofollow::{ensure_regular_file, file_sha256_nofollow, open_nofollow};
+pub use owner_only::{create_dir_all_owner_only, owner_only, restrict_to_owner};
 
 /// Stream a file through SHA-256 in 64 KB chunks (no full read into memory).
 ///

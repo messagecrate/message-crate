@@ -194,8 +194,9 @@ where
 
 /// [`with_retries`] for a run that can be told to stop: `stop` is asked
 /// before each retry and through each wait, and once it says `true` no
-/// retry is made. A person who pauses an Upload while the server is away
-/// is then not kept waiting for the rest of a retry's wait.
+/// retry is made. A person who pauses an Upload or cancels an Export while
+/// the server is away is then not kept waiting for the rest of a retry's
+/// wait.
 ///
 /// # Errors
 ///

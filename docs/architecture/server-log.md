@@ -27,6 +27,18 @@ have and to be allowed to write, in Docker (the volume) and in the desktop app
 (its app-data directory) alike, and a copy of it is already the whole
 installation.
 
+Only the operating-system user the server runs as can read the files. The
+server makes the Data Directory, and the `logs` directory in it, with mode
+`0700`, and takes group and other access off a Data Directory that already
+has it, each time it opens the database. Why: the log names every account's
+routes and ids, and the Data Directory beside it holds every account's
+attachments, so another user of the same computer must not read either. A
+directory with no access for anyone else keeps everything inside it from
+them, so the files in it keep the mode the umask gives them. Windows has no
+such modes; there the directories take the access of the one they are made
+in, which for the desktop app is the user's own app-data directory. Rules:
+`crates/server/server/src/owner_only.rs`.
+
 Rejected: stderr alone. Docker keeps it only as long as the container, and the
 desktop app has no window to show it in, so the owner of either had no way to
 read it.

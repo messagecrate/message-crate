@@ -87,6 +87,7 @@ async fn join_group(conn: &mut SqliteConnection, contact_id: i64, group: &str) {
         &[contact_id],
         group,
         true,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -156,16 +157,30 @@ async fn contact_named(conn: &mut SqliteConnection, name: &str) -> i64 {
 
 /// The sentences of a refused load.
 async fn refused(conn: &mut SqliteConnection, text: &str, mode: LoadMode) -> Vec<String> {
-    match load(conn, ACCOUNT, text, mode).await {
+    match load(
+        conn,
+        ACCOUNT,
+        text,
+        mode,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    {
         Err(LoadError::Refused(reasons)) => reasons,
         other => panic!("expected a refusal, got {other:?}"),
     }
 }
 
 async fn loaded(conn: &mut SqliteConnection, text: &str, mode: LoadMode) -> LoadCounts {
-    load(conn, ACCOUNT, text, mode)
-        .await
-        .unwrap_or_else(|e| panic!("load failed: {e}"))
+    load(
+        conn,
+        ACCOUNT,
+        text,
+        mode,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap_or_else(|e| panic!("load failed: {e}"))
 }
 
 // --- The rows of one contact ---
@@ -766,9 +781,16 @@ async fn a_known_id_renames_the_contact() {
 async fn a_load_replaces_a_name_the_person_typed() {
     let (mut conn, _pool, _dir) = account().await;
     let ada = imported(&mut conn, "ada l", &[("phone", "phone", "+15555550100")]).await;
-    contacts::propose_name(&mut conn, ACCOUNT, ada, "Ada L.", Origin::User)
-        .await
-        .unwrap();
+    contacts::propose_name(
+        &mut conn,
+        ACCOUNT,
+        ada,
+        "Ada L.",
+        Origin::User,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
     let exported = export_csv(&mut conn, ACCOUNT, None).await.unwrap().csv;
     for mode in [LoadMode::Append, LoadMode::Edit] {
@@ -804,9 +826,16 @@ async fn an_import_does_not_rename_a_contact_a_load_named() {
     let unknown = imported(&mut conn, "", &[("phone", "phone", "+15555550100")]).await;
     let text = file(&[&format!("{unknown},Ada Lovelace,,phone,phone,+15555550100")]);
     loaded(&mut conn, &text, LoadMode::Append).await;
-    let renamed = contacts::propose_name(&mut conn, ACCOUNT, unknown, "ADA", Origin::Import)
-        .await
-        .unwrap();
+    let renamed = contacts::propose_name(
+        &mut conn,
+        ACCOUNT,
+        unknown,
+        "ADA",
+        Origin::Import,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     assert!(!renamed);
     assert_eq!(
         name_of(&mut conn, unknown).await.as_deref(),
@@ -1357,7 +1386,14 @@ async fn s4_6_a_number_without_its_plus_keeps_the_real_identity() {
     let ada = imported(&mut conn, "Ada", &[("phone", "phone", "+6555550100")]).await;
     let before = identities_of(&mut conn, ada).await;
     let row = format!("{ada},Ada,,phone,phone,6555550100");
-    let _ = load(&mut conn, ACCOUNT, &file(&[&row]), LoadMode::Edit).await;
+    let _ = load(
+        &mut conn,
+        ACCOUNT,
+        &file(&[&row]),
+        LoadMode::Edit,
+        crate::test_support::fixed_instant(),
+    )
+    .await;
     assert_eq!(identities_of(&mut conn, ada).await, before);
 }
 
@@ -1688,7 +1724,13 @@ async fn a_write_that_commits_while_the_load_reads_does_not_fail_it() {
     let text = file(&["ada,Ada,Family,phone,phone,+15555550100"]);
     let counts = crate::db::write_tx::commit_during(
         other,
-        load(&mut conn, ACCOUNT, &text, LoadMode::Append),
+        load(
+            &mut conn,
+            ACCOUNT,
+            &text,
+            LoadMode::Append,
+            crate::test_support::fixed_instant(),
+        ),
     )
     .await
     .unwrap_or_else(|e| panic!("load failed: {e}"));

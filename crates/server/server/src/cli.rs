@@ -393,7 +393,7 @@ async fn run_import(args: ImportArgs) -> Result<()> {
             args.media
         )
     })?;
-    let opened = OpenDb::open(cfg).await?;
+    let opened = OpenDb::open_to_write_data_dir(cfg).await?;
     let account = opened.account_id(&args.account).await?;
 
     let counts = crate::import_cli::run(
@@ -731,7 +731,7 @@ fn serve_config(args: ServeArgs) -> Result<Config> {
 async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
     let cfg = Config::load_with_db(&args.config, args.db)?;
     let tools = cfg.media_tools();
-    let opened = OpenDb::open(cfg).await?;
+    let opened = OpenDb::open_to_write_data_dir(cfg).await?;
     let stop = Arc::new(AtomicBool::new(false));
     let stopper = crate::request_id::spawn_in_current_span({
         let stop = Arc::clone(&stop);

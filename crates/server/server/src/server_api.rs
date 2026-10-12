@@ -19,6 +19,7 @@
 //! `docs/adr/0008-the-owner-holds-no-messages.md`.
 
 use axum::extract::State;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 pub(crate) mod log_files;
@@ -192,6 +193,7 @@ pub async fn claim_server(
         ));
     }
     crate::credentials::require_username_free(&mut tx, &username).await?;
+    let now = Utc::now();
     account_profile::insert_account_at(
         &mut tx,
         account_profile::OWNER_ACCOUNT_ID,
@@ -208,6 +210,7 @@ pub async fn claim_server(
             crate::db::audit_trail::AuditActor::Owner,
             (account_profile::OWNER_ACCOUNT_ID, &username),
         ),
+        now,
     )
     .await?;
     let token = crate::db::session_tokens::open_session(
@@ -215,10 +218,11 @@ pub async fn claim_server(
         account_profile::OWNER_ACCOUNT_ID,
         &username,
         crate::server::connecting_app(&headers).as_ref(),
+        now,
     )
     .await
     .map_err(ApiError::Internal)?;
-    account_profile::record_login(&mut tx, account_profile::OWNER_ACCOUNT_ID).await?;
+    account_profile::record_login(&mut tx, account_profile::OWNER_ACCOUNT_ID, now).await?;
     tx.commit().await?;
 
     // The claim makes the owner's Session, and that is the resource it names.
@@ -359,6 +363,7 @@ pub async fn update_server_settings(
     // One write transaction, so each setting is compared with the value it
     // replaces and recorded once, however many requests arrive together.
     let mut tx = crate::db::begin_write(&mut conn).await?;
+    let now = Utc::now();
     let was = server_settings::load(&mut tx).await?;
     if let Some(enabled) = req.public_registration
         && enabled != was.public_registration
@@ -372,6 +377,7 @@ pub async fn update_server_settings(
         audit_trail::record(
             &mut tx,
             &NewEntry::about_no_account(action, AuditActor::Owner),
+            now,
         )
         .await?;
     }
@@ -384,7 +390,7 @@ pub async fn update_server_settings(
                 asset_max_bytes: Some(bytes),
                 ..Details::default()
             });
-        audit_trail::record(&mut tx, &entry).await?;
+        audit_trail::record(&mut tx, &entry, now).await?;
     }
     let settings = server_settings::load(&mut tx).await?;
     tx.commit().await?;
@@ -882,17 +888,19 @@ async fn record_build_and_end_demo_sessions(
     use crate::db::audit_trail::{self, AuditActor};
     let mut conn = state.db.acquire().await?;
     let mut tx = crate::db::begin_write(&mut conn).await?;
+    let now = Utc::now();
     let demo =
         account_profile::username_for_account(&mut tx, account_profile::DEMO_ACCOUNT_ID).await?;
     let about = demo
         .as_deref()
         .map(|username| (account_profile::DEMO_ACCOUNT_ID, username));
     let entry = audit_trail::demo_build_entry(AuditActor::Owner, size, about.is_some(), about);
-    audit_trail::record(&mut tx, &entry).await?;
+    audit_trail::record(&mut tx, &entry, now).await?;
     crate::db::session_tokens::revoke_account_sessions(
         &mut tx,
         account_profile::DEMO_ACCOUNT_ID,
         AuditActor::Owner,
+        now,
     )
     .await
     .map_err(ApiError::Internal)?;

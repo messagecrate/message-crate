@@ -27,6 +27,7 @@ async fn repeated_append_keeps_one_fts_posting_per_message() {
         account_id: TEST_ACCOUNT,
         import_id: None,
         phone_country: None,
+        now: crate::test_support::fixed_instant(),
     });
 
     import_jsonl_files(&db, std::slice::from_ref(&path), &options)
@@ -140,6 +141,7 @@ async fn deferred_fts_indexes_attachment_text_after_promote() {
             account_id: TEST_ACCOUNT,
             import_id: None,
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
         }),
     )
     .await

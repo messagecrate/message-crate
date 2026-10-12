@@ -3089,15 +3089,19 @@ fn an_unreadable_2xx_answer_is_not_retried() {
 fn serve_a_200_that_drops_the_batch_body() -> (String, Arc<AtomicUsize>) {
     serve_answering_batches_with(
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 4096\r\nConnection: close\r\n\r\n{\"messages\":",
+        || {},
     )
 }
 
 /// A server that answers each request on its own connection and closes it.
-/// The batch POST gets `batch_answer` written as it is, and nothing at all
-/// when it is empty; the other routes an import calls, the run's completion
-/// among them, get their usual answers. Returns the base URL and a count of
-/// batch POSTs.
-fn serve_answering_batches_with(batch_answer: &'static str) -> (String, Arc<AtomicUsize>) {
+/// The batch POST runs `on_batch`, then gets `batch_answer` written as it
+/// is, and nothing at all when it is empty; the other routes an import
+/// calls, the run's completion among them, get their usual answers. Returns
+/// the base URL and a count of batch POSTs.
+fn serve_answering_batches_with(
+    batch_answer: &'static str,
+    on_batch: impl Fn() + Send + 'static,
+) -> (String, Arc<AtomicUsize>) {
     use std::io::{BufRead, BufReader, Read};
     use std::net::TcpListener;
 
@@ -3144,6 +3148,7 @@ fn serve_answering_batches_with(batch_answer: &'static str) -> (String, Arc<Atom
                 answer("201 Created", r#"{"id":7}"#)
             } else if request_line.starts_with("POST /v1/imports/7/batches ") {
                 counted.fetch_add(1, Ordering::SeqCst);
+                on_batch();
                 batch_answer.to_string()
             } else if request_line.starts_with("POST /v1/imports/7/complete ") {
                 answer("200 OK", r#"{"id":7}"#)
@@ -3257,7 +3262,7 @@ fn a_server_told_to_stop_pauses_the_upload_and_fails_no_conversation() {
 #[test]
 fn a_server_that_cannot_be_reached_pauses_the_upload_and_fails_no_conversation() {
     // Every batch's connection is closed with no answer.
-    let (base_url, batches) = serve_answering_batches_with("");
+    let (base_url, batches) = serve_answering_batches_with("", || {});
 
     let dir = tempdir().unwrap();
     write_jsonl(dir.path(), &sample_doc());
@@ -3294,6 +3299,42 @@ fn a_server_that_cannot_be_reached_pauses_the_upload_and_fails_no_conversation()
         "{}",
         read_log(dir.path())
     );
+}
+
+/// The person pausing an Upload while a batch fails makes no further retry
+/// of it: the wait before the next try ends at once, the batch is not
+/// recorded as failed, and its conversation is left for the next Upload
+/// (#2111). The server sets the cancel flag as the batch arrives, before it
+/// answers, so the retry wait that follows always sees it.
+#[test]
+fn a_pause_while_a_batch_fails_makes_no_further_retry() {
+    let cancel = CancelFlag::default();
+    let pressed = cancel.clone();
+    let (base_url, batches) = serve_answering_batches_with(
+        "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+        move || pressed.store(true, Ordering::SeqCst),
+    );
+
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_doc());
+    let cfg = ImportConfig {
+        max_retries: 3,
+        cancel,
+        ..mock_server_config(dir.path(), base_url)
+    };
+
+    let report = run(&cfg, None).unwrap();
+
+    assert_eq!(
+        batches.load(Ordering::SeqCst),
+        1,
+        "no retry after the pause"
+    );
+    assert!(report.cancelled, "the Upload paused");
+    assert_eq!(report.server_away, None);
+    assert_eq!(report.conversations_failed, 0, "{:?}", report.results);
+    assert_eq!(report.conversations_cancelled, 1, "{:?}", report.results);
+    assert!(journal_events(dir.path(), "fail").is_empty());
 }
 
 /// An attachment upload the server cannot take because it is away stops the

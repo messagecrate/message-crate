@@ -5,7 +5,7 @@
 //! log file, the optional progress callback, and the [`ProgressBatcher`], so
 //! callers never juggle three separate borrows to say one thing.
 
-use std::fs::{self, File, OpenOptions};
+use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
@@ -116,7 +116,9 @@ impl LogWriter {
     /// Create or open the log file, making parent directories if needed.
     fn open(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
+            // The Logs Directory, owner-only as the desktop app makes it
+            // (#2097).
+            file_io::create_dir_all_owner_only(parent)?;
         }
         let file = OpenOptions::new()
             .create(true)
@@ -407,6 +409,7 @@ impl<'p, 'f> Reporter<'p, 'f> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     /// The time every test's batcher starts at, so a window's time is only
     /// what a test adds to it.

@@ -198,8 +198,7 @@ fn parent_dir_or_cwd(path: &Path) -> &Path {
 /// Work directory for the prepared account tree. Must live on the same mount
 /// as `data_dir` so the later install can `rename` into `data_dir/<account>`.
 fn reset_account_work_dir(data_dir: &Path) -> Result<tempfile::TempDir> {
-    fs::create_dir_all(data_dir)
-        .with_context(|| format!("create data directory {}", data_dir.display()))?;
+    crate::owner_only::make_data_dir_owner_only(data_dir)?;
     tempfile::Builder::new()
         .prefix(".reset-demo-data-")
         .tempdir_in(data_dir)
@@ -630,7 +629,7 @@ async fn reset_prepared_bundle_with(
     let _operation_lock = crate::operation_lock::acquire_for_reset(&cfg.paths.db)?;
     let mut ready = crate::operation_lock::ReadyWhileRebuilding::clear(&cfg.paths.db)?;
     let db_parent = parent_dir_or_cwd(&cfg.paths.db);
-    fs::create_dir_all(db_parent)
+    file_io::create_dir_all_owner_only(db_parent)
         .with_context(|| format!("create database parent {}", db_parent.display()))?;
     let db_work = tempfile::Builder::new()
         .prefix(".reset-demo-db-")
@@ -742,7 +741,11 @@ async fn rebuild_demo_account(
     if let Some(size) = by.record_with_size {
         let mut conn = db.acquire().await?;
         crate::db::audit_trail::record_demo_build_after_removal(
-            &mut conn, by.actor, size, replaced,
+            &mut conn,
+            by.actor,
+            size,
+            replaced,
+            chrono::Utc::now(),
         )
         .await?;
     }
@@ -921,6 +924,7 @@ async fn import_demo_sources_with(
                         account_id,
                         import_id: Some(import_run.id),
                         phone_country: None,
+                        now: chrono::Utc::now(),
                     })
                 },
             )
@@ -975,7 +979,14 @@ async fn load_demo_address_book(
     let text = address_book::rewrite_ids_to_nameless(&mut conn, account_id, &text)
         .await
         .context("match the demo address book to the Unknowns the imports made")?;
-    let loaded = address_book::load(&mut conn, account_id, &text, LoadMode::Append).await;
+    let loaded = address_book::load(
+        &mut conn,
+        account_id,
+        &text,
+        LoadMode::Append,
+        chrono::Utc::now(),
+    )
+    .await;
     let counts = loaded.map_err(|e| anyhow::anyhow!("load the demo address book: {e}"))?;
     progress.say(format_args!(
         "The demo address book named {}: {} named in place and {} new. It moved {} and added {}",
@@ -2258,7 +2269,8 @@ async fn wipe_demo_account_with(
             }
         }
     }
-    let deleted = account_profile::delete_account(&mut conn, account_id, actor).await?;
+    let deleted =
+        account_profile::delete_account(&mut conn, account_id, actor, chrono::Utc::now()).await?;
     if deleted {
         progress.say("The Demo Account is removed from the database");
     } else {

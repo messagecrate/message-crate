@@ -45,6 +45,7 @@ fn replace_opts<'a>(assets: &'a Path, root: &'a Path, source: &'a str) -> Import
         account_id: TEST_ACCOUNT,
         import_id: None,
         phone_country: None,
+        now: crate::test_support::fixed_instant(),
     })
 }
 
@@ -96,6 +97,7 @@ fn edit_options<'a>(assets: &'a Path, root: &'a Path) -> ImportOptions<'a> {
         account_id: TEST_ACCOUNT,
         import_id: None,
         phone_country: None,
+        now: crate::test_support::fixed_instant(),
     })
 }
 

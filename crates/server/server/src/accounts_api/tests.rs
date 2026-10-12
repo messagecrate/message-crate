@@ -2562,6 +2562,7 @@ async fn apply_profile_update_sets_name_and_handles() {
             },
         ],
         &[],
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -2627,6 +2628,7 @@ async fn saving_a_profile_clears_the_setup_owed_flag() {
             ..UpdateAccountRequest::default()
         },
         true,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -2657,6 +2659,7 @@ async fn apply_profile_update_removes_handles() {
         None,
         &both.map(|(a, s)| link(a, s)),
         &[],
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -2667,6 +2670,7 @@ async fn apply_profile_update_removes_handles() {
         None,
         &[],
         &both.map(|(a, s)| unlink(a, s)),
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -2721,9 +2725,17 @@ async fn removing_one_service_of_a_number_leaves_the_other() {
         link("+15555550100", ApiIdentityService::Whatsapp),
     ];
 
-    apply_profile_update(&mut conn, account_id, None, None, &both, &[])
-        .await
-        .unwrap();
+    apply_profile_update(
+        &mut conn,
+        account_id,
+        None,
+        None,
+        &both,
+        &[],
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     apply_profile_update(
         &mut conn,
         account_id,
@@ -2731,6 +2743,7 @@ async fn removing_one_service_of_a_number_leaves_the_other() {
         None,
         &[],
         &[unlink("+15555550100", ApiIdentityService::Whatsapp)],
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -2739,9 +2752,17 @@ async fn removing_one_service_of_a_number_leaves_the_other() {
         ["phone"]
     );
 
-    apply_profile_update(&mut conn, account_id, None, None, &both, &[])
-        .await
-        .unwrap();
+    apply_profile_update(
+        &mut conn,
+        account_id,
+        None,
+        None,
+        &both,
+        &[],
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     apply_profile_update(
         &mut conn,
         account_id,
@@ -2749,6 +2770,7 @@ async fn removing_one_service_of_a_number_leaves_the_other() {
         None,
         &[],
         &[unlink("+15555550100", ApiIdentityService::Phone)],
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -2782,6 +2804,7 @@ async fn removing_a_whatsapp_identity_ignores_an_unlinked_text_message_row() {
         None,
         &[link("+15555550100", ApiIdentityService::Whatsapp)],
         &[],
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -2793,6 +2816,7 @@ async fn removing_a_whatsapp_identity_ignores_an_unlinked_text_message_row() {
         None,
         &[],
         &[unlink("+15555550100", ApiIdentityService::Whatsapp)],
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -2823,6 +2847,7 @@ async fn the_account_carries_a_time_zone_and_refuses_an_unknown_one() {
             ..UpdateAccountRequest::default()
         },
         true,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -2839,6 +2864,7 @@ async fn the_account_carries_a_time_zone_and_refuses_an_unknown_one() {
             ..UpdateAccountRequest::default()
         },
         true,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap_err();

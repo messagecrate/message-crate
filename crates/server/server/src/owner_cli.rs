@@ -11,6 +11,7 @@
 //! the owner. See `docs/adr/0008-the-owner-holds-no-messages.md`.
 
 use anyhow::{Result, bail};
+use chrono::Utc;
 
 use crate::db::account_profile;
 use crate::db::audit_trail::{self, AuditAction, AuditActor, NewEntry};
@@ -58,6 +59,7 @@ pub async fn create_owner(opened: &OpenDb, username: &str, password: &str) -> Re
             AuditActor::CommandLine,
             (account_profile::OWNER_ACCOUNT_ID, &username),
         ),
+        Utc::now(),
     )
     .await?;
 
@@ -86,6 +88,7 @@ pub async fn reset_owner_password(opened: &OpenDb, password: &str) -> Result<Str
     // The password, its record and the end of the sessions the old password
     // opened land together.
     let mut tx = crate::db::begin_write(&mut conn).await?;
+    let now = Utc::now();
     account_profile::update_password_hash(&mut tx, account_profile::OWNER_ACCOUNT_ID, Some(&hash))
         .await?;
     audit_trail::record_about(
@@ -94,6 +97,7 @@ pub async fn reset_owner_password(opened: &OpenDb, password: &str) -> Result<Str
         AuditActor::CommandLine,
         account_profile::OWNER_ACCOUNT_ID,
         audit_trail::Details::default(),
+        now,
     )
     .await?;
     // The old password is gone, so every session it opened should be too.
@@ -101,6 +105,7 @@ pub async fn reset_owner_password(opened: &OpenDb, password: &str) -> Result<Str
         &mut tx,
         account_profile::OWNER_ACCOUNT_ID,
         AuditActor::CommandLine,
+        now,
     )
     .await?;
     tx.commit().await?;

@@ -595,6 +595,7 @@ impl<'a> World<'a> {
             &mut tx,
             account_profile::DEMO_ACCOUNT_ID,
             crate::db::audit_trail::AuditActor::CommandLine,
+            crate::test_support::fixed_instant(),
         )
         .await
         .unwrap();
