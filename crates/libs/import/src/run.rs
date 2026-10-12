@@ -57,7 +57,7 @@ use crate::prepare::{
 use crate::progress::{ProgressEvent, ProgressFn, Reporter};
 use crate::report::{
     AssetTotals, ImportReport, count_file_results, elapsed_ms, format_import_summary, now_stamp,
-    outcome_status,
+    outcome_status, what_the_server_did,
 };
 
 /// How many messages to pack into one import HTTP request when size is not the limit.
@@ -188,8 +188,14 @@ impl Session {
         max_retries: u32,
         mut op: impl FnMut(&Self) -> Result<T>,
     ) -> Result<T> {
-        message_crate_http::with_retries(max_retries, || op(self))
-            .inspect_err(|error| self.note_halt(error))
+        // A run told to stop makes no further retry, so a Pause while the
+        // server is away does not wait out the rest of a retry's wait.
+        message_crate_http::with_retries_until(
+            max_retries,
+            || self.check_stop().is_err(),
+            || op(self),
+        )
+        .inspect_err(|error| self.note_halt(error))
     }
 
     /// Stop the run when `error` is the server refusing the session token,
@@ -331,7 +337,7 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
     let session_refused = session.is_refused();
     let away = session.away();
     if let Some(line) = halt_line(session_refused, away) {
-        out.show_at(RunLogLevel::Warn, line.into());
+        out.show_at(RunLogLevel::Warn, line);
     }
     pipeline.record_cancelled(&files, &mut out);
     out.flush_file_counter();
@@ -436,25 +442,23 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
 }
 
 /// The sentence that says why the server halted the run, if it did: it
-/// refused the session, it is stopping, or it could not be reached. A
-/// refused session outranks the server being away, because the desktop app
-/// ends the session for it.
-fn halt_line(session_refused: bool, away: Option<ServerAway>) -> Option<&'static str> {
+/// refused the session, or it was away ([`what_the_server_did`]). A refused
+/// session outranks the server being away, because the desktop app ends
+/// the session for it.
+fn halt_line(session_refused: bool, away: Option<ServerAway>) -> Option<String> {
     if session_refused {
         return Some(
             "The server no longer accepts this session, so the Upload paused. \
-             The next Upload sends what this one did not.",
+             The next Upload sends what this one did not."
+                .into(),
         );
     }
-    away.map(|away| match away {
-        ServerAway::Stopping => {
-            "The server is stopping, so the Upload paused. \
-             The next Upload sends what this one did not."
-        }
-        ServerAway::Unavailable => {
-            "The server could not be reached, so the Upload paused. \
-             The next Upload sends what this one did not."
-        }
+    away.map(|away| {
+        format!(
+            "The server {}, so the Upload paused. \
+             The next Upload sends what this one did not.",
+            what_the_server_did(away)
+        )
     })
 }
 

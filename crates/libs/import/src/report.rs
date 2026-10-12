@@ -288,6 +288,17 @@ pub(crate) fn format_ms_seconds(ms: u64) -> String {
     format!("{:.1}s", ms as f64 / 1000.0)
 }
 
+/// What the server did that halted the run, after "the server": the one
+/// wording the Upload's log uses for each reason, in the line that says the
+/// Upload paused and in its summary.
+pub(crate) fn what_the_server_did(away: ServerAway) -> &'static str {
+    match away {
+        ServerAway::Stopping => "is stopping",
+        ServerAway::Busy => "was too busy to take the Upload",
+        ServerAway::Unavailable => "could not be reached",
+    }
+}
+
 /// Build the sentences that end the Upload's log: how the Upload ended, and
 /// what it did with the conversations, messages and Assets it read.
 pub fn format_import_summary(report: &ImportReport) -> String {
@@ -300,11 +311,9 @@ pub fn format_import_summary(report: &ImportReport) -> String {
             (true, _) => format!(
                 "The Upload paused after {elapsed}, because the server refused the session."
             ),
-            (false, Some(ServerAway::Stopping)) => {
-                format!("The Upload paused after {elapsed}, because the server is stopping.")
-            }
-            (false, Some(ServerAway::Unavailable)) => format!(
-                "The Upload paused after {elapsed}, because the server could not be reached."
+            (false, Some(away)) => format!(
+                "The Upload paused after {elapsed}, because the server {}.",
+                what_the_server_did(away)
             ),
             (false, None) => format!("The Upload paused after {elapsed}."),
         }
@@ -520,6 +529,14 @@ mod tests {
                 ..not_ok.clone()
             }),
             "The Upload paused after 1m00s, because the server could not be reached."
+        );
+        assert_eq!(
+            first_line(ImportReport {
+                cancelled: true,
+                server_away: Some(ServerAway::Busy),
+                ..not_ok.clone()
+            }),
+            "The Upload paused after 1m00s, because the server was too busy to take the Upload."
         );
         assert_eq!(
             first_line(ImportReport {

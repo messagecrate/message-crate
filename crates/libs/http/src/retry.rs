@@ -5,7 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::Result;
-use message_crate_api_types::Problem;
+use message_crate_api_types::{Problem, problem_slug};
 
 use crate::AuthError;
 
@@ -123,15 +123,15 @@ pub fn classify_retry(error: &anyhow::Error) -> RetryKind {
 pub enum ServerAway {
     /// The server answered `server-stopping`: it was told to stop.
     Stopping,
+    /// The server answered `database-busy`: its database stayed taken, by
+    /// another import, for longer than the request could wait.
+    Busy,
     /// No answer came (the connection was refused, dropped, or timed out),
     /// or the answer was `502 Bad Gateway`, `503 Service Unavailable` or
     /// `504 Gateway Timeout`, which a server or the proxy before it gives
     /// when it cannot take requests.
     Unavailable,
 }
-
-/// The problem type a server told to stop answers with.
-const SERVER_STOPPING: &str = "server-stopping";
 
 /// Whether `error` says the server was not there to take the request, and
 /// why. Every request fails the same way until the server is back, so a run
@@ -140,11 +140,10 @@ const SERVER_STOPPING: &str = "server-stopping";
 /// the request and failed on it, and the next request may succeed.
 pub fn server_away(error: &anyhow::Error) -> Option<ServerAway> {
     if let Some(http) = error.downcast_ref::<HttpError>() {
-        if http
-            .problem()
-            .is_some_and(|problem| problem.slug() == Some(SERVER_STOPPING))
-        {
-            return Some(ServerAway::Stopping);
+        match http.problem().and_then(Problem::slug) {
+            Some(problem_slug::SERVER_STOPPING) => return Some(ServerAway::Stopping),
+            Some(problem_slug::DATABASE_BUSY) => return Some(ServerAway::Busy),
+            _ => {}
         }
         return matches!(http.status, 502..=504).then_some(ServerAway::Unavailable);
     }
@@ -189,20 +188,57 @@ pub fn with_retries<T, F>(max_retries: u32, op: F) -> Result<T>
 where
     F: FnMut() -> Result<T>,
 {
+    with_retries_until(max_retries, || false, op)
+}
+
+/// [`with_retries`] for a run that can be told to stop: `stop` is asked
+/// before each retry and through each wait, and once it says `true` no
+/// retry is made. A person who pauses an Upload while the server is away
+/// is then not kept waiting for the rest of a retry's wait.
+///
+/// # Errors
+///
+/// Returns the last error from `op` when retries are exhausted, the error
+/// is permanent, or `stop` said `true`.
+pub fn with_retries_until<T>(
+    max_retries: u32,
+    stop: impl Fn() -> bool,
+    op: impl FnMut() -> Result<T>,
+) -> Result<T> {
     retry_with_waits(
         max_retries,
-        |attempt| {
-            thread::sleep(retry_wait(attempt, max_retries, rand_factor()));
-        },
+        |attempt| wait_unless(retry_wait(attempt, max_retries, rand_factor()), &stop),
         op,
     )
 }
 
+/// How often a retry's wait asks whether the run must stop.
+const STOP_POLL: Duration = Duration::from_millis(100);
+
+/// Sleep for `wait` in steps of [`STOP_POLL`], asking `stop` before each.
+/// Returns `false`, at once, when `stop` says `true`, and `true` when the
+/// whole wait passed.
+fn wait_unless(wait: Duration, stop: &impl Fn() -> bool) -> bool {
+    let mut left = wait;
+    loop {
+        if stop() {
+            return false;
+        }
+        if left.is_zero() {
+            return true;
+        }
+        let step = left.min(STOP_POLL);
+        thread::sleep(step);
+        left -= step;
+    }
+}
+
 /// [`with_retries`], with `wait(attempt)` called before each retry in place
-/// of the sleep, so a test can see the waits without taking them.
+/// of the sleep, so a test can see the waits without taking them. A wait
+/// that returns `false` ends the retries with the last error.
 fn retry_with_waits<T>(
     max_retries: u32,
-    mut wait: impl FnMut(u32),
+    mut wait: impl FnMut(u32) -> bool,
     mut op: impl FnMut() -> Result<T>,
 ) -> Result<T> {
     let mut attempt = 0u32;
@@ -211,10 +247,12 @@ fn retry_with_waits<T>(
         match op() {
             Ok(v) => return Ok(v),
             Err(e) => {
-                if attempt > max_retries || classify_retry(&e) == RetryKind::Permanent {
+                if attempt > max_retries
+                    || classify_retry(&e) == RetryKind::Permanent
+                    || !wait(attempt)
+                {
                     return Err(e);
                 }
-                wait(attempt);
             }
         }
     }
@@ -362,7 +400,14 @@ mod tests {
     /// its result with the attempts each wait came after.
     fn retried<T>(max_retries: u32, op: impl FnMut() -> Result<T>) -> (Result<T>, Vec<u32>) {
         let mut waits = Vec::new();
-        let result = retry_with_waits(max_retries, |attempt| waits.push(attempt), op);
+        let result = retry_with_waits(
+            max_retries,
+            |attempt| {
+                waits.push(attempt);
+                true
+            },
+            op,
+        );
         (result, waits)
     }
 
@@ -419,6 +464,32 @@ mod tests {
         assert!(waits.is_empty());
     }
 
+    /// A run told to stop makes no further retry: a wait that says so ends
+    /// the retries with the last error.
+    #[test]
+    fn a_stop_during_a_wait_ends_the_retries() {
+        let mut calls = 0;
+        let result = retry_with_waits(
+            3,
+            |_| false,
+            || -> Result<u32> {
+                calls += 1;
+                Err(anyhow::Error::from(io::Error::other("flaky")))
+            },
+        );
+        assert!(result.is_err());
+        assert_eq!(calls, 1);
+    }
+
+    /// A stop already asked for ends a wait before any of it is slept, so
+    /// Pause during a 15-second wait is not kept waiting (it is asked again
+    /// at every step of the wait).
+    #[test]
+    fn a_wait_asks_whether_to_stop_before_it_sleeps() {
+        assert!(!wait_unless(LAST_RETRY_WAIT, &|| true));
+        assert!(wait_unless(Duration::ZERO, &|| false));
+    }
+
     /// The waits double from half a second, and the one before the last
     /// retry is long enough for a server or network away for several
     /// seconds to come back (#2092): three retries used to give up after
@@ -456,7 +527,7 @@ mod tests {
     fn a_server_told_to_stop_is_away_because_it_is_stopping() {
         let stopping = anyhow::Error::from(
             HttpError::new(503, "Import Run 7 batch failed")
-                .with_problem(problem(SERVER_STOPPING, 503)),
+                .with_problem(problem(problem_slug::SERVER_STOPPING, 503)),
         )
         .context("POST /v1/imports/7/batches");
         assert_eq!(server_away(&stopping), Some(ServerAway::Stopping));
@@ -472,10 +543,21 @@ mod tests {
                 "{status}"
             );
         }
-        let busy = anyhow::Error::from(
-            HttpError::new(503, "batch failed").with_problem(problem("database-busy", 503)),
+        let unnamed = anyhow::Error::from(
+            HttpError::new(503, "batch failed").with_problem(problem("some-other-type", 503)),
         );
-        assert_eq!(server_away(&busy), Some(ServerAway::Unavailable));
+        assert_eq!(server_away(&unnamed), Some(ServerAway::Unavailable));
+    }
+
+    /// A busy database is the server answering, not a server that cannot be
+    /// reached, so it is told apart: the Upload's log says which.
+    #[test]
+    fn a_busy_database_is_a_server_away_because_it_is_busy() {
+        let busy = anyhow::Error::from(
+            HttpError::new(503, "batch failed")
+                .with_problem(problem(problem_slug::DATABASE_BUSY, 503)),
+        );
+        assert_eq!(server_away(&busy), Some(ServerAway::Busy));
     }
 
     /// The server took the request and failed on it, or refused it: the
