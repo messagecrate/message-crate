@@ -192,13 +192,11 @@ describe("ApiTokensSection table", () => {
     expect(wording()).not.toMatch(/API keys?|(this|delete) key|delete message data/i);
 
     await user.click(screen.getByRole("button", { name: "Revoke API Token" }));
-    await settle();
     expect(screen.getByText(/Programs using it will stop working/)).toBeTruthy();
     expect(wording()).not.toMatch(/API keys?|(this|delete) key|CLI tools/i);
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     await user.click(screen.getByRole("button", { name: "Edit API Token" }));
-    await settle();
     expect(screen.getByRole("dialog", { name: "Rename API Token" })).toBeTruthy();
     expect(wording()).not.toMatch(/API keys?|(this|delete) key/i);
     await user.click(screen.getByRole("button", { name: "Cancel" }));

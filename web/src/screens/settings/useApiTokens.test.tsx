@@ -139,9 +139,7 @@ describe("useApiTokens", () => {
 
     await settle();
     expect(result.current.busy).toBe(true);
-    act(() => {
-      answer.resolve({} as never);
-    });
+    answer.resolve({} as never);
     await settle();
     expect(result.current.busy).toBe(false);
     expect(rename).toHaveBeenCalledWith(1, { label: "Desktop" });

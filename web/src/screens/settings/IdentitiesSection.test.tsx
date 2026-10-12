@@ -148,7 +148,6 @@ describe("IdentitiesSection", () => {
 
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Add identity" }));
-    await settle();
     const dialog = screen.getByRole("dialog", { name: "Add identity" });
     await user.click(within(dialog).getByRole("button", { name: /Service/ }));
     await user.click(screen.getByRole("option", { name: "Email" }));
@@ -173,7 +172,6 @@ describe("IdentitiesSection", () => {
     await settle();
     expect(screen.getByText("30")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Remove archer@example.com (Email)" }));
-    await settle();
     const dialog = screen.getByRole("dialog", { name: "Remove identity?" });
     await user.click(within(dialog).getByRole("button", { name: "Remove" }));
 
@@ -191,7 +189,6 @@ describe("IdentitiesSection", () => {
     render(<IdentitiesSection profile={profile} />);
 
     await user.click(screen.getByRole("button", { name: "Add identity" }));
-    await settle();
     const dialog = screen.getByRole("dialog", { name: "Add identity" });
     await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "+1 555 555 0199");
     await user.click(within(dialog).getByRole("button", { name: "Add" }));
@@ -211,7 +208,6 @@ describe("IdentitiesSection", () => {
     const remove = screen.getByRole("button", { name: "Remove +15555550100 (Text Message)" });
     expect(remove.className).not.toMatch(/opacity-0/);
     await user.click(remove);
-    await settle();
     const dialog = screen.getByRole("dialog", { name: "Remove identity?" });
     expect(
       within(dialog).getByText(
@@ -225,7 +221,6 @@ describe("IdentitiesSection", () => {
     expect(mutateAsync).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Remove +15555550100 (Text Message)" }));
-    await settle();
     const again = screen.getByRole("dialog", { name: "Remove identity?" });
     await user.click(within(again).getByRole("button", { name: "Remove" }));
     expect(mutateAsync).toHaveBeenCalledWith({
@@ -241,7 +236,6 @@ describe("IdentitiesSection", () => {
     await settle();
     expect(screen.getByText("30")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /^Remove \+15555550100/ }));
-    await settle();
     const dialog = screen.getByRole("dialog", { name: "Remove identity?" });
     await user.click(within(dialog).getByRole("button", { name: "Remove" }));
 
@@ -278,7 +272,6 @@ describe("IdentitiesSection", () => {
     render(<IdentitiesSection profile={profile} />);
 
     await user.click(screen.getByRole("button", { name: "Add identity" }));
-    await settle();
     const dialog = screen.getByRole("dialog", { name: "Add identity" });
     await user.click(within(dialog).getByRole("button", { name: /Service/ }));
     await user.click(screen.getByRole("option", { name: "WhatsApp" }));
@@ -300,7 +293,6 @@ describe("IdentitiesSection", () => {
     render(<IdentitiesSection profile={profile} />);
 
     await user.click(screen.getByRole("button", { name: "Add identity" }));
-    await settle();
     const dialog = screen.getByRole("dialog", { name: "Add identity" });
     await user.click(within(dialog).getByRole("button", { name: /Service/ }));
     await user.click(screen.getByRole("option", { name: "WhatsApp" }));
@@ -323,9 +315,8 @@ describe("IdentitiesSection", () => {
 
     // The server's rows replace the placeholder rows, buttons and all.
     await settle();
-    expect(screen.getAllByText("30").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("30")).toHaveLength(2);
     await user.click(screen.getByRole("button", { name: "Remove +15555550100 (WhatsApp)" }));
-    await settle();
     const dialog = screen.getByRole("dialog", { name: "Remove identity?" });
     await user.click(within(dialog).getByRole("button", { name: "Remove" }));
 
@@ -345,9 +336,8 @@ describe("IdentitiesSection", () => {
 
     // The server's rows replace the placeholder rows, buttons and all.
     await settle();
-    expect(screen.getAllByText("30").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("30")).toHaveLength(2);
     await user.click(screen.getByRole("button", { name: "Remove +15555550100 (WhatsApp)" }));
-    await settle();
     const dialog = screen.getByRole("dialog", { name: "Remove identity?" });
     await user.click(within(dialog).getByRole("button", { name: "Remove" }));
 

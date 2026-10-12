@@ -64,7 +64,6 @@ describe("ManagedApiTokensSection", () => {
 
     await settle();
     await user.click(screen.getByRole("button", { name: "Revoke API Token" }));
-    await settle();
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText(/Backup script/)).toBeTruthy();
     await user.click(within(dialog).getByRole("button", { name: "Revoke token" }));
