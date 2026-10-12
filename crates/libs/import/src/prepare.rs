@@ -339,7 +339,11 @@ fn scan_one_attachment(
         // the file says `not_fetched`) says more than a plain missing file.
         return Ok(AttachmentProjection::Missing {
             index,
-            reason: att.missing_reason.as_deref().unwrap_or("file_missing").into(),
+            reason: att
+                .missing_reason
+                .as_deref()
+                .unwrap_or("file_missing")
+                .into(),
             size: att.size_bytes,
         });
     };
