@@ -91,6 +91,18 @@ export function noPreviewNote(attachment: MessageAttachment): string | null {
   return `No Preview could be made: ${reason}`;
 }
 
+/**
+ * What a screen says about an attachment whose Thumbnail the server tried to
+ * make and could not: "No Thumbnail could be made" and the server's
+ * `thumbnail_not_made_reason`, as `noPreviewNote` says for the Preview
+ * (`docs/architecture/media.md`, rule 4). `null` while no try has failed.
+ * The caller says it only where no Thumbnail is drawn.
+ */
+export function noThumbnailNote(attachment: MessageAttachment): string | null {
+  const reason = attachment.thumbnail_not_made_reason;
+  return reason ? `No Thumbnail could be made: ${reason}` : null;
+}
+
 /** The name a person knows the attachment by: the export's name, else its path's last part. */
 export function attachmentName(attachment: MessageAttachment): string {
   if (attachment.original_name?.trim()) return attachment.original_name.trim();

@@ -625,7 +625,7 @@ async fn load_attachments(
         |placeholders| {
             format!(
                 "SELECT message_id, path, original_name, mime_type, sha256, is_sticker, transcription,
-                    missing_reason, derived_mime_type, thumbnail_mime_type, shown_as_is,
+                    missing_reason, preview_mime_type, thumbnail_mime_type, shown_as_is,
                     preview_not_made_reason, thumbnail_not_made_reason
              FROM attachments
              WHERE message_id IN ({placeholders})

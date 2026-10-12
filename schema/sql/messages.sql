@@ -202,12 +202,13 @@ CREATE TABLE IF NOT EXISTS attachments (
     size_bytes INTEGER,
     -- Why bytes are absent (for example not_exported, decrypt_failed); NULL if present.
     missing_reason TEXT,
-    -- SHA-256 hex of a converted/compressed derivative used by the browser.
-    derived_sha256 TEXT,
-    -- Path under the assets store for the derivative file.
-    derived_assets_path TEXT,
-    -- MIME type of the derivative file.
-    derived_mime_type TEXT,
+    -- SHA-256 hex of the Preview: a copy of the original every browser
+    -- shows. NULL until the server has made it.
+    preview_sha256 TEXT,
+    -- Path of the Preview under the account's converted-media directory.
+    preview_assets_path TEXT,
+    -- MIME type of the Preview file.
+    preview_mime_type TEXT,
     -- Why the server's media pass could not make the Preview the last time
     -- it tried: what ffmpeg said about the file, with the paths it named
     -- made relative to the account's originals directory and the pass's

@@ -433,7 +433,7 @@ async fn work_through_with(
     if !stop.load(Ordering::Relaxed) {
         tracing::info!(
             thumbnails = stats.thumbnails,
-            previews = stats.derived,
+            previews = stats.previews,
             removed = stats.removed,
             dropped = stats.dropped,
             shared = stats.shared,

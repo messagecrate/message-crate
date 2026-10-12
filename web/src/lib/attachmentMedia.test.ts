@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { attachment } from "../test/apiShapes";
-import { attachmentKind, fullVersion, noPreviewNote } from "./attachmentMedia";
+import { attachmentKind, fullVersion, noPreviewNote, noThumbnailNote } from "./attachmentMedia";
 
 /**
  * The viewer's rule (`docs/architecture/media.md`, rule 2), as the server
@@ -63,6 +63,20 @@ describe("noPreviewNote", () => {
         attachment({ preview_mime_type: "image/jpeg", preview_not_made_reason: reason }),
       ),
     ).toBeNull();
+  });
+});
+
+describe("noThumbnailNote", () => {
+  const reason = "Error opening input file ab/a.heic.";
+
+  it("says why the server could not make the Thumbnail", () => {
+    expect(
+      noThumbnailNote(attachment({ mime_type: "image/heic", thumbnail_not_made_reason: reason })),
+    ).toBe(`No Thumbnail could be made: ${reason}`);
+  });
+
+  it("says nothing while no try has failed", () => {
+    expect(noThumbnailNote(attachment({ mime_type: "image/heic" }))).toBeNull();
   });
 });
 

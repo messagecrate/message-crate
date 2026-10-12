@@ -605,7 +605,7 @@ async fn run_reset_demo(args: ResetDemoArgs) -> Result<()> {
     let rows = [
         (
             "Previews made",
-            stats.process_assets.derived,
+            stats.process_assets.previews,
             "JPEG/MP4/MP3 copies of originals a browser may not show",
         ),
         ("Thumbnails made", stats.process_assets.thumbnails, ""),
