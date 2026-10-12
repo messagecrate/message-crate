@@ -101,9 +101,13 @@ fn row_to_saved_search(row: &SqliteRow) -> Result<SavedSearch> {
 /// Trim and check a name under the rules a Contact Group's and a Message
 /// Tag's name follow: not blank, and within the length cap.
 fn normalize_name(name: &str) -> Result<String> {
-    crate::db::named_membership::collection_name(name)
-        .map(str::to_string)
-        .map_err(SavedSearchError::BadRequest)
+    crate::text_caps::required_capped_text(
+        "name",
+        name,
+        crate::text_caps::MAX_COLLECTION_NAME_CHARS,
+    )
+    .map(str::to_string)
+    .map_err(|refusal| SavedSearchError::BadRequest(refusal.to_string()))
 }
 
 /// Trim a query. An empty query is rejected, and so is one every list would

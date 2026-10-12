@@ -390,7 +390,8 @@ pub async fn update_api_token(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::api_tokens::{ApiTokenLabelError, ApiTokenMutationError};
+    use crate::db::api_tokens::ApiTokenMutationError;
+    use crate::text_caps::RequiredTextError;
 
     /// One token read at its own path answers it as the list shows it, with
     /// its masked secret and never the secret itself; a token id the account
@@ -424,10 +425,10 @@ mod tests {
     #[test]
     fn label_errors_map_to_validation_failed_with_the_same_message() {
         let err = map_label_error(ApiTokenMutationError::InvalidLabel(
-            ApiTokenLabelError::Required,
+            RequiredTextError::Blank("label".to_string()),
         ));
         match err {
-            ApiError::ValidationFailed(msg) => assert_eq!(msg, ["label is required"]),
+            ApiError::ValidationFailed(msg) => assert_eq!(msg, ["label required"]),
             other => panic!("expected ValidationFailed, got {other:?}"),
         }
 
@@ -438,7 +439,7 @@ mod tests {
         )
         .unwrap_err();
         let err = map_label_error(ApiTokenMutationError::InvalidLabel(
-            ApiTokenLabelError::TooLong(too_long),
+            RequiredTextError::TooLong(too_long),
         ));
         match err {
             ApiError::ValidationFailed(msg) => {

@@ -386,9 +386,10 @@ carry their date on the heading.
 
 - 2026-10-12: **Every name that is too long is refused in the same words.**
   A Contact Group, Message Tag or Saved Search name over 80 characters, an
-  API token label over 120 and a username over 128 now get the message
+  API Token label over 120 and a username over 128 now get the message
   every other length limit gives, such as "name: must be at most 80
-  characters", in place of wordings of their own. An API token label is
+  characters", in place of wordings of their own. A blank name or label is
+  refused as "name required" or "label required". An API Token label is
   counted in characters, so a label in a script that takes several bytes a
   letter is no longer refused short of 120 (#2665).
 - 2026-10-12: **Disabling an account logs it out.** A person still logged

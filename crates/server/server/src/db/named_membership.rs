@@ -16,7 +16,7 @@ use anyhow::Result as AnyResult;
 use sqlx::{AssertSqlSafe, SqlSafeStr, SqlStr, SqliteConnection};
 
 use crate::db::begin_write;
-use crate::text_caps::{MAX_COLLECTION_NAME_CHARS, capped_text};
+use crate::text_caps::{MAX_COLLECTION_NAME_CHARS, required_capped_text};
 
 /// One Contact Group or Message Tag: its id and name.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, sqlx::FromRow, utoipa::ToSchema)]
@@ -271,26 +271,12 @@ fn reserved_error(spec: &MembershipSpec, name: &str) -> String {
     format!("\"{}\" is a reserved {}", name.trim(), spec.reserved_label)
 }
 
-/// The trimmed name of a Contact Group, Message Tag or Saved Search, or the
-/// sentence that refuses it: blank, or over the length cap every collection
-/// name shares. Each collection's own rules come after it.
-///
-/// # Errors
-///
-/// The sentence naming the rule the name breaks.
-pub fn collection_name(name: &str) -> Result<&str, String> {
-    let trimmed =
-        capped_text("name", name, MAX_COLLECTION_NAME_CHARS).map_err(|e| e.to_string())?;
-    if trimmed.is_empty() {
-        return Err("name required".to_string());
-    }
-    Ok(trimmed)
-}
-
-/// Trim and validate a set name against the rules every collection name
-/// shares, and the spec's refused-character and reserved-name rules.
+/// Trim and validate a set name: not blank and within the cap every
+/// collection name shares, then the spec's refused-character and
+/// reserved-name rules.
 fn normalize_name(spec: &MembershipSpec, name: &str) -> Result<String, MembershipError> {
-    let trimmed = collection_name(name).map_err(MembershipError::BadRequest)?;
+    let trimmed = required_capped_text("name", name, MAX_COLLECTION_NAME_CHARS)
+        .map_err(|refusal| MembershipError::BadRequest(refusal.to_string()))?;
     if let Some((refused, reason)) = spec.refused_char
         && trimmed.contains(refused)
     {

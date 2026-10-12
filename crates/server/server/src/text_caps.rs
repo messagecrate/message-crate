@@ -1,9 +1,8 @@
 //! Every length cap on text the server stores: the names a person types (an
 //! account's display name and username, a contact's name, and the name of a
-//! Contact Group, Message Tag or Saved Search), API token labels, identity
-//! addresses, Import
-//! Error and note text, the program, install and directory an Import Run
-//! names, and Import Run JSON.
+//! Contact Group, Message Tag or Saved Search), API Token labels, identity
+//! addresses, Import Error and note text, the program, install and directory
+//! an Import Run names, and Import Run JSON.
 //!
 //! A name, an address or an Import Error's text is stored, returned on every
 //! list that shows it, and written into the Audit Trail and the server log, so
@@ -12,8 +11,10 @@
 //! the caller learns the rule the first time it breaks it, as with `limit` in
 //! `paging.rs`. Every cap is refused in one wording, `"<field>: must be at
 //! most N characters"`, by the checks below, and each is also written in its
-//! field's OpenAPI description. A field's other rules, such as whether it
-//! may be blank or which names are reserved, stay with its route.
+//! field's OpenAPI description. A field's other rules, such as which names
+//! are reserved, stay with its route. A route whose field may not be blank
+//! checks it with [`required_capped_text`], so that refusal has one wording
+//! too, `"<field> required"`.
 
 use crate::server::ApiError;
 
@@ -70,6 +71,23 @@ impl From<TooLong> for ApiError {
     }
 }
 
+/// A value that may not be blank and is, or is over its cap.
+#[derive(Debug, thiserror::Error)]
+pub enum RequiredTextError {
+    /// The trimmed value is empty. Holds the field's name.
+    #[error("{0} required")]
+    Blank(String),
+    /// The trimmed value is over its cap.
+    #[error(transparent)]
+    TooLong(#[from] TooLong),
+}
+
+impl From<RequiredTextError> for ApiError {
+    fn from(error: RequiredTextError) -> Self {
+        Self::validation(error.to_string())
+    }
+}
+
 /// The sentence of each [`TooLong`] among `results`, in order, for a route
 /// that checks several fields and names every one over its cap in one
 /// `validation-failed`.
@@ -96,6 +114,25 @@ pub fn capped_text<'a>(field: &str, value: &'a str, max_chars: usize) -> Result<
             max: max_chars,
             unit: "characters",
         });
+    }
+    Ok(trimmed)
+}
+
+/// `value` trimmed, for a field that may not be blank: [`capped_text`],
+/// then a refusal naming `field` when nothing is left after the trim.
+///
+/// # Errors
+///
+/// [`RequiredTextError::TooLong`] when the trimmed value is longer than
+/// `max_chars`, and [`RequiredTextError::Blank`] when it is empty.
+pub fn required_capped_text<'a>(
+    field: &str,
+    value: &'a str,
+    max_chars: usize,
+) -> Result<&'a str, RequiredTextError> {
+    let trimmed = capped_text(field, value, max_chars)?;
+    if trimmed.is_empty() {
+        return Err(RequiredTextError::Blank(field.to_string()));
     }
     Ok(trimmed)
 }
@@ -140,8 +177,8 @@ pub fn capped_json(field: &str, json: &str, max_bytes: usize) -> Result<(), TooL
 mod tests {
     use super::*;
 
-    fn refusal(result: Result<impl std::fmt::Debug, TooLong>) -> Vec<String> {
-        match result.map_err(ApiError::from) {
+    fn refusal<E: Into<ApiError>>(result: Result<impl std::fmt::Debug, E>) -> Vec<String> {
+        match result.map_err(Into::into) {
             Err(ApiError::ValidationFailed(errors)) => errors,
             other => panic!("expected validation-failed, got {other:?}"),
         }
@@ -159,6 +196,19 @@ mod tests {
         assert_eq!(
             refusal(capped_text("name", &"é".repeat(6), 5)),
             vec!["name: must be at most 5 characters".to_string()]
+        );
+    }
+
+    #[test]
+    fn a_required_value_is_refused_blank_and_over_its_cap() {
+        assert_eq!(required_capped_text("name", " ab ", 2).unwrap(), "ab");
+        assert_eq!(
+            refusal(required_capped_text("name", "   ", 2)),
+            vec!["name required".to_string()]
+        );
+        assert_eq!(
+            refusal(required_capped_text("name", "abc", 2)),
+            vec!["name: must be at most 2 characters".to_string()]
         );
     }
 

@@ -61,26 +61,13 @@ pub struct ApiTokenAuth {
     pub token_hint: String,
 }
 
-/// Label validation failures.
-#[derive(Debug, thiserror::Error)]
-pub enum ApiTokenLabelError {
-    /// The trimmed label is empty.
-    #[error("label is required")]
-    Required,
-    /// The trimmed label is longer than
-    /// [`MAX_API_TOKEN_LABEL_CHARS`](crate::text_caps::MAX_API_TOKEN_LABEL_CHARS)
-    /// characters.
-    #[error(transparent)]
-    TooLong(#[from] crate::text_caps::TooLong),
-}
-
 /// Failures from creating or renaming an API token: a typed label error, or
 /// any other database error.
 #[derive(Debug, thiserror::Error)]
 pub enum ApiTokenMutationError {
     /// The label failed validation.
     #[error(transparent)]
-    InvalidLabel(#[from] ApiTokenLabelError),
+    InvalidLabel(#[from] crate::text_caps::RequiredTextError),
     /// Any other database failure.
     #[error(transparent)]
     Other(#[from] anyhow::Error),
@@ -397,13 +384,12 @@ fn api_token_expiry(expires_in_days: Option<u64>, created_at: &str) -> Option<St
 }
 
 /// Trim a token label and reject empty or over-long ones.
-fn validate_api_token_label(label: &str) -> Result<&str, ApiTokenLabelError> {
-    let label =
-        crate::text_caps::capped_text("label", label, crate::text_caps::MAX_API_TOKEN_LABEL_CHARS)?;
-    if label.is_empty() {
-        return Err(ApiTokenLabelError::Required);
-    }
-    Ok(label)
+fn validate_api_token_label(label: &str) -> Result<&str, crate::text_caps::RequiredTextError> {
+    crate::text_caps::required_capped_text(
+        "label",
+        label,
+        crate::text_caps::MAX_API_TOKEN_LABEL_CHARS,
+    )
 }
 
 #[cfg(test)]
@@ -552,7 +538,7 @@ mod tests {
             .unwrap_err();
         match err {
             ApiTokenMutationError::InvalidLabel(label_err) => {
-                assert_eq!(label_err.to_string(), "label is required");
+                assert_eq!(label_err.to_string(), "label required");
             }
             other => panic!("expected InvalidLabel, got {other:?}"),
         }
