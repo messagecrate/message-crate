@@ -1263,6 +1263,15 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-12: **A slow or stuck device can no longer hold the server.** A
+  device that connected and sent nothing, sent its request a byte at a time,
+  or stopped part-way through sending one could hold its connection for
+  good, and any number of such connections could pile up. The server now
+  closes a connection that sends no request for 30 seconds, holds at most
+  256 open at once, and stops reading any request that stalls or runs past
+  the upload time limits, not only an upload. This guards against a
+  misbehaving device on your network. It does not make the server safe to
+  put on the internet (#2100).
 - 2026-10-12: **Deleting for good erases the text from the database's
   files.** Deleting a conversation or a contact from Trash, emptying Trash,
   deleting all of an account's messages, and deleting an account left the

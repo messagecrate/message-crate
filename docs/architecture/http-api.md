@@ -255,11 +255,13 @@ current one, because that account reaches every other.
   request to judge: the client that sent it has usually gone, and one that
   is still there sends the body again, as it would after any broken
   connection.
-- An upload body that the server stopped reading because it took too long
-  is `408 Request Timeout` (`upload-stalled`): an import batch, an
-  attachment or a part of one that went `[server] upload_stall_secs` (60)
-  with no byte arriving, or was still arriving `upload_piece_secs` (300)
-  after the read started. Why: the connection failed, not the data, and
+- A body that the server stopped reading because it took too long is
+  `408 Request Timeout` (`upload-stalled`): a body that went `[server]
+  upload_stall_secs` (60) with no byte arriving, or was still arriving
+  `upload_piece_secs` (300) after the read started. It is mostly an import
+  batch, an attachment or a part of one, the bodies large enough to meet
+  the limits, but every body is held to them
+  ([Connections](#connections)). Why: the connection failed, not the data, and
   `malformed-body` told the person their data was bad. The client is still
   there to read the answer, so the answer says that running the import
   again continues it. The desktop app shows it and does not send the piece
@@ -659,6 +661,68 @@ either is no longer than the limit. Rejected: a config key for the limit,
 because Docker's stop time would have to follow every value it could be
 set to.
 
+## Connections
+
+The server holds every connection to three limits, so one slow or stuck
+client cannot hold it
+([#2100](https://github.com/messagecrate/message-crate/issues/2100)). A
+connection that sends no request, or sends one too slowly, is closed after
+30 seconds. At most 256 connections are open at once, and the next waits
+for one to close. A body that stops arriving, or arrives too slowly, is no
+longer read once the upload time limits pass. In detail:
+
+- A connection has 30 seconds to send a request's headers, counted from when
+  it opens or from the previous answer, and is closed when it has not
+  (`HEADER_READ_LIMIT` in `crates/server/server/src/connections.rs`). So an
+  idle connection stays open 30 seconds after its last answer. The desktop
+  app keeps an idle connection for reuse 20 seconds (`POOL_IDLE_LIMIT` in
+  `crates/libs/http`), under that, so it never sends a request on a
+  connection the server is closing.
+- At most 256 connections are open at once (`MAX_CONNECTIONS` there). The
+  next one is accepted once one of them closes, and waits with the operating
+  system until then. 256 is far above what a few browser tabs and the
+  desktop app's Upload open together, and under the 1024 open files a Linux
+  process gets by default, which the connections share with the database and
+  the upload files.
+- Every request body is held to the upload time limits, `[server]
+  upload_stall_secs` (60) with no byte arriving and `upload_piece_secs` (300)
+  for the whole body, and one that meets either answers `408 Request Timeout`
+  (`upload-stalled`). An import batch, an attachment and a part of one hold
+  their bodies to the limits themselves, from when they start reading. The
+  layers hold every other body from when the request arrives
+  (`limit_request_body` in `crates/server/server/src/server.rs`). Why the uploads start their own
+  clock: an import batch waits for an import slot before it reads, and a
+  clock started on arrival would count that wait against its body.
+
+Nothing limits how long an answer takes to send: an export download or a
+large attachment takes as long as the client's link needs.
+
+Why: `axum::serve` builds each connection without a timer, and hyper reads
+its own 30-second header limit only with one set, so a device that opened a
+connection and sent nothing, or sent its headers or a JSON body a byte at a
+time, held a task and a file handle for as long as it liked, and any number
+of devices could. On a home network one misbehaving device could starve a
+server that has one database file and two import slots. The limits are
+fixed in the code, not config keys, because no setup needs others: a
+working client sends its headers at once. Why the body limits are the
+upload ones rather than figures of their own: every other body is smaller
+than an import batch, so the limits a batch arrives inside hold it too, and
+one pair of figures is one to explain.
+
+Rejected: a cap on requests in flight (`tower::limit::ConcurrencyLimitLayer`)
+in place of the cap on connections. A connection that never sends its
+headers is no request, so a cap on requests leaves it uncounted. Under
+HTTP/1.1 a connection carries one request at a time, so the cap on
+connections bounds the requests too. Axum's `Router::layer` would also give
+each route a cap of its own.
+
+These limits keep a slow or broken client from holding the server. They do
+not make the server safe to reach from the internet: that needs a proxy, as
+[Credentials and reach](#credentials-and-reach) says, and what the server
+itself must do there is
+a separate design
+([#2894](https://github.com/messagecrate/message-crate/issues/2894)).
+
 ## Content negotiation
 
 `406 Not Acceptable` is answered only when an `Accept` header is present and no
@@ -957,7 +1021,8 @@ What each reaches:
   read with `408 Request Timeout` (`upload-stalled`), which frees the slot.
   An attachment body and a part of one are held to the same two limits,
   though they take no slot, because each holds a connection and a file
-  while it reads. At 16 MiB, a full batch arrives inside 5 minutes at about
+  while it reads, and so is every other body
+  ([Connections](#connections)). At 16 MiB, a full batch arrives inside 5 minutes at about
   0.45 Mbit/s. A multipart part is 16 MiB by default (`[server]
   asset_part_size`), and the Upload sends an attachment over 16 MiB in parts
   (`MAX_PROXY_BODY_BYTES` in `message-crate-import`), so an attachment
@@ -1215,8 +1280,9 @@ when the two differ, and CI checks the web app's generated types against it.
 An operation's error responses are built from shared parts, never written out
 by hand. The credential a route accepts brings its `401 Unauthorized` and
 `403 Forbidden`, and a Media Link brings `media-link-invalid`; a request
-body brings `400 Bad Request`, `413 Payload Too Large`,
-`415 Unsupported Media Type` and `422 Unprocessable Entity`; an id in the path
+body brings `400 Bad Request`, `408 Request Timeout` (`upload-stalled`),
+`413 Payload Too Large`, `415 Unsupported Media Type` and
+`422 Unprocessable Entity`; an id in the path
 brings `404 Not Found` and `422 Unprocessable Entity`; every `/v1` route brings
 `422 Unprocessable Entity` for a query parameter it does not declare; and every
 `/v1` route that answers JSON brings `406 Not Acceptable` for an `Accept` that

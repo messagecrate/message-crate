@@ -74,11 +74,11 @@ Why the rules: `docs/architecture/media.md`.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `asset_part_size` | `16777216` (16 MiB) | Largest part of a multipart upload. Must be greater than 0. Keep under ~100 MiB for Cloudflare-proxied setups, and small enough that a whole part arrives inside `upload_piece_secs`: 16 MiB arrives inside the default at about 0.45 Mbit/s. The part size a client is told is this or the attachment size limit, whichever is smaller. |
-| `upload_stall_secs` | `60` | Seconds an upload (an import batch, an attachment, or a part of one) may go with no byte arriving before the server stops reading it. An attachment upload nothing has been written to for this long, with no request to it running, is abandoned, and the server removes it. Must be greater than 0. |
-| `upload_piece_secs` | `300` (5 minutes) | Seconds a whole upload may take to arrive, from the start of the read, before the server stops reading it. Must be greater than 0. A full 16 MiB import batch arrives in time at about 0.45 Mbit/s. |
+| `upload_stall_secs` | `60` | Seconds a request body may go with no byte arriving before the server stops reading it. Every body is held to it, and an upload (an import batch, an attachment, or a part of one) is the body large enough to meet it. An attachment upload nothing has been written to for this long, with no request to it running, is abandoned, and the server removes it. Must be greater than 0. |
+| `upload_piece_secs` | `300` (5 minutes) | Seconds a whole request body may take to arrive before the server stops reading it: from the start of the read for an upload, and from when the request arrives for any other body. Every body is held to it, as to `upload_stall_secs`. Must be greater than 0. A full 16 MiB import batch arrives in time at about 0.45 Mbit/s. |
 
 The server refuses a config file that sets either time to 0, naming the key.
-An upload that meets either limit is refused with `408 Request Timeout` and the [`upload-stalled`](/docs/developer/reference/errors/upload-stalled/) problem type, and none of it is stored. Running the import again continues it.
+A body that meets either limit is refused with `408 Request Timeout` and the [`upload-stalled`](/docs/developer/reference/errors/upload-stalled/) problem type, and none of it is stored. Sending the request again can succeed, and for an upload, running the import again continues it.
 Why: an import batch holds one of the server's two import slots while it arrives, so a client that stops sending part-way, such as a laptop that goes to sleep, must not hold it for long.
 `GET /v1/server` states both limits as `upload_stall_secs` and `upload_piece_secs`, and the desktop app's Upload waits for each upload's answer as long as the server says it may take, plus 5 minutes for the server to save it.
 A server started with `--data-dir`, as the desktop app starts its own, uses the defaults.
@@ -104,6 +104,19 @@ Each part of a multipart upload is held to the part size the upload was given wh
 Every other request body has a cap fixed in the server: 32 KiB for `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/claim`, 32 MiB for any other JSON body, 8 MiB for an address book loaded with `POST /v1/contacts`, 16 MiB for an import batch, the most the desktop app sends in one, and 512 MiB for any other body.
 Why: the Owner's limit must never reach the login, or the settings change that would raise it again.
 A body over its cap is refused with `413 Payload Too Large` and the [`payload-too-large`](/docs/developer/reference/errors/payload-too-large/) problem type.
+
+### Connection limits
+
+The server holds every connection to two limits fixed in the server, with no config key:
+
+- A connection has 30 seconds to send a request's headers, counted from when it opens or from its previous answer, and the server closes it when it has not. So a connection with no request in it stays open 30 seconds.
+- At most 256 connections are open at once. The next one is accepted once one of them closes.
+
+A working client sends its headers at once and opens far fewer connections, so neither limit is one a setup needs to change.
+With the two body limits above, they keep one slow or broken client from holding the server: one that connects and sends nothing, sends its request a byte at a time, or stops part-way through a body.
+They do not make the server safe to reach from the internet.
+Nothing limits how long an answer takes to send, so an export download or a large attachment takes as long as the link needs.
+Why the rules: "Connections" in `docs/architecture/http-api.md` in the repository.
 
 ### Stopping the server
 

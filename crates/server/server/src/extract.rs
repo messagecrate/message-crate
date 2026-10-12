@@ -62,7 +62,8 @@ where
 pub struct Json<T>(pub T);
 
 /// Axum's rejection as the problem on the right side of the line: well-formed
-/// JSON that does not fit the target type parsed and then broke a rule;
+/// JSON that does not fit the target type parsed and then broke a rule; a
+/// body that stopped arriving in time is `upload-stalled`, as every body is;
 /// everything else could not be read.
 fn json_rejection(rejection: JsonRejection) -> ApiError {
     match rejection {
@@ -72,7 +73,8 @@ fn json_rejection(rejection: JsonRejection) -> ApiError {
         rejection if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE => {
             ApiError::PayloadTooLarge
         }
-        rejection => ApiError::MalformedBody(rejection.body_text()),
+        rejection => crate::server::body_too_slow(&rejection)
+            .unwrap_or_else(|| ApiError::MalformedBody(rejection.body_text())),
     }
 }
 

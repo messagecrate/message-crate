@@ -249,6 +249,7 @@ fn failures(path: &str, op: &mut Operation) {
             ProblemType::MalformedBody,
             ProblemType::PayloadTooLarge,
             ProblemType::UnsupportedMediaType,
+            ProblemType::UploadStalled,
             ProblemType::ValidationFailed,
         ]);
     }
