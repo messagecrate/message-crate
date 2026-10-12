@@ -654,9 +654,9 @@ describe("ContactDrawer", () => {
     const input = await openNameEditor(user);
     await user.clear(input);
     await user.keyboard("{Enter}");
-
     await settle();
-    expect(screen.getByRole("alert")).toHaveTextContent("name must not be empty");
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Name must not be empty");
     expect(post).toHaveBeenCalledWith("1", { name: "" });
     expect(screen.getByRole("textbox", { name: "Contact name" })).toBeTruthy();
   });

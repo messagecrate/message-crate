@@ -11,10 +11,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiTokenRevealProvider } from "../../components/ApiTokenRevealDialog";
 import { createApiToken, deleteApiToken, listApiTokens, renameApiToken } from "../../lib/serverApi";
 import type { components } from "../../lib/serverApi.types";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { useApiTokens } from "./useApiTokens";
 
 type ApiToken = components["schemas"]["ApiToken"];
@@ -64,6 +65,10 @@ beforeEach(() => {
   });
 });
 
+afterEach(() => {
+  stopFakeClock();
+});
+
 describe("useApiTokens", () => {
   it("asks for the list again after a token is created", async () => {
     create.mockResolvedValue({ ...token, token: "mc-api-secret" } as unknown as Awaited<
@@ -92,22 +97,26 @@ describe("useApiTokens", () => {
   });
 
   it("asks for the list again after a token is revoked, and closes the dialog either way", async () => {
+    startFakeClock();
     revoke.mockRejectedValue(new Error("already revoked"));
     const { result } = renderHook(() => useApiTokens(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await settle();
+    expect(result.current.loading).toBe(false);
 
     act(() => {
       result.current.revoke(token);
     });
+    await settle();
 
-    await waitFor(() => expect(result.current.actionError).toBe("already revoked"));
+    expect(result.current.actionError).toBe("Already revoked");
     expect(result.current.revokeTarget).toBeNull();
-    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    expect(list).toHaveBeenCalledTimes(2);
 
     act(() => {
       result.current.cancelCompose();
     });
-    await waitFor(() => expect(result.current.actionError).toBe(""));
+    await settle();
+    expect(result.current.actionError).toBe("");
   });
 
   it("reports a write in flight while a rename is unanswered", async () => {
@@ -140,8 +149,10 @@ describe("useApiTokens", () => {
   });
 
   it("calls them API Tokens when the list cannot be loaded", async () => {
-    list.mockRejectedValue("offline");
+    startFakeClock();
+    list.mockRejectedValue(new Error(""));
     const { result } = renderHook(() => useApiTokens(), { wrapper });
-    await waitFor(() => expect(result.current.loadError).toBe("Could not load API Tokens."));
+    await settle();
+    expect(result.current.loadError).toBe("Could not load API Tokens.");
   });
 });

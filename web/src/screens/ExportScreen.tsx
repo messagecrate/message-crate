@@ -9,7 +9,7 @@ import Select, { selectItemClassName } from "../components/Select";
 import TextField from "../components/TextField";
 import { useRunDesktopJob } from "../hooks/useRunDesktopJob";
 import { getBaseUrl } from "../lib/api";
-import { errorText } from "../lib/apiErrorMessage";
+import { errorLine, errorText } from "../lib/apiErrorMessage";
 import { useAuth } from "../lib/authContext";
 import { holdDesktopJob } from "../lib/desktopJob";
 import { writeInExportDir } from "../lib/exportDir";
@@ -191,7 +191,7 @@ export default function ExportScreen() {
       } catch (err: unknown) {
         const message = errorText(err);
         appendLog(`Error: ${message}`);
-        setError(message);
+        setError(errorLine(err));
       } finally {
         releaseDesktop();
         setBusy(false);

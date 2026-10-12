@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 import Button from "../../components/Button";
 import Checkbox from "../../components/Checkbox";
 import { textInputClass } from "../../components/TextField";
-import { apiErrorMessage } from "../../lib/apiErrorMessage";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache, useRouteMutation } from "../../lib/routeQuery";
 import { updateServerSettings } from "../../lib/serverApi";
@@ -53,7 +53,7 @@ export function ServerSettingsPanel() {
   if (error) {
     return (
       <p className="text-[0.875rem] text-danger">
-        {apiErrorMessage(error, "Could not load server settings.")}
+        {errorLine(error, "Could not load server settings.")}
       </p>
     );
   }
@@ -93,7 +93,7 @@ export function ServerSettingsPanel() {
         </p>
         {save.error ? (
           <p className="mt-2 text-[0.813rem] text-danger" role="alert">
-            {apiErrorMessage(save.error, "Could not save.")}
+            {errorLine(save.error, "Could not save.")}
           </p>
         ) : null}
       </div>
@@ -131,7 +131,7 @@ export function ServerSettingsPanel() {
         </p>
         {saveLimit.error ? (
           <p className="mt-2 mb-0 text-[0.813rem] text-danger" role="alert">
-            {apiErrorMessage(saveLimit.error, "Could not save.")}
+            {errorLine(saveLimit.error, "Could not save.")}
           </p>
         ) : null}
       </form>

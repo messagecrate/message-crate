@@ -510,7 +510,7 @@ describe("SystemSection", () => {
     render(<SystemSection />);
     await settle();
     expect(screen.getByText(/Could not look for the media tools/)).toHaveTextContent(
-      "no desktop process",
+      "Could not look for the media tools. No desktop process",
     );
   });
 });

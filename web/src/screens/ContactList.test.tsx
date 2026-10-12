@@ -153,10 +153,14 @@ describe("ContactList", () => {
     await user.click(screen.getByRole("button", { name: "Contact Groups" }));
     await user.click(screen.getByRole("button", { name: /Create Contact Group$/ }));
     await user.type(screen.getByPlaceholderText("Contact Group name"), "Work; 2024{Enter}");
-
     await settle();
+
     expect(createGroupMock).toHaveBeenCalledWith({ name: "Work; 2024" });
-    expect(screen.getByText(refusal)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Name can\'t hold ";", because the address book separates Contact Group names with it',
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Contact Group name")).toHaveValue("Work; 2024");
     expect(updateMembersMock).not.toHaveBeenCalled();
   });

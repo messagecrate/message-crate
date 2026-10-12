@@ -1,6 +1,6 @@
 import { keepPreviousData } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { rejectionMessage } from "../../lib/apiErrorMessage";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { useRouteInfiniteQuery } from "../../lib/routeQuery";
 import { saveFile } from "../../lib/saveFile";
 import type { LogLevel, LogLine, LogLinesPage } from "../../lib/serverApi";
@@ -140,7 +140,7 @@ export default function LogViewer({
         <p className="m-0 text-[0.813rem] text-muted">Reading the log…</p>
       ) : lines.error && items.length === 0 ? (
         <p role="alert" className="m-0 text-[0.813rem] text-danger">
-          {rejectionMessage(lines.error, "Could not read the log.")}
+          {errorLine(lines.error, "Could not read the log.")}
         </p>
       ) : items.length === 0 ? (
         <p className="m-0 text-[0.813rem] text-muted">
@@ -188,7 +188,7 @@ function LogDownloads({ downloads }: { downloads: LogDownload[] }) {
       const contents = await download.read();
       await saveFile(download.name, new Blob([contents], { type: "text/plain" }));
     } catch (err) {
-      setError(rejectionMessage(err, `Could not download ${download.name}.`));
+      setError(errorLine(err, `Could not download ${download.name}.`));
     } finally {
       setBusy("");
     }

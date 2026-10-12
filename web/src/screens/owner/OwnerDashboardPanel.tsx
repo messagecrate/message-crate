@@ -1,4 +1,4 @@
-import { apiErrorMessage } from "../../lib/apiErrorMessage";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
 import { useRouteQuery } from "../../lib/routeQuery";
 import { getServerStorage } from "../../lib/serverApi";
@@ -32,7 +32,7 @@ export function OwnerDashboardPanel() {
         <p className="mt-4 text-[0.875rem] text-muted">Loading totals…</p>
       ) : error ? (
         <p className="mt-4 text-[0.875rem] text-danger" role="alert">
-          {apiErrorMessage(error, "Could not load the totals.")}
+          {errorLine(error, "Could not load the totals.")}
         </p>
       ) : (
         <>

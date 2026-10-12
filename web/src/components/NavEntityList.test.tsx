@@ -210,9 +210,9 @@ describe("NavEntityList navigation", () => {
     await user.click(screen.getByRole("button", { name: "Contact Group options for Family" }));
     await user.click(screen.getByRole("menuitem", { name: "Delete" }));
     await user.click(screen.getByRole("button", { name: "Delete" }));
-
     await settle();
-    expect(screen.getByRole("alert")).toHaveTextContent("group not found");
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Group not found");
     expect(screen.getByRole("dialog", { name: "Delete Family?" })).toBeTruthy();
     expect(screen.getByTestId("location").textContent).toBe("/group/Family");
   });

@@ -226,9 +226,10 @@ describe("LeftPanel", () => {
     await user.click(screen.getByRole("button", { name: "Saved search options for From Alice" }));
     await user.click(screen.getByRole("menuitem", { name: "Delete" }));
 
-    expect(savedSearchActions.remove).toHaveBeenCalledWith(1);
     await settle();
-    expect(screen.getByRole("alert")).toHaveTextContent("saved search not found");
+
+    expect(savedSearchActions.remove).toHaveBeenCalledWith(1);
+    expect(screen.getByRole("alert")).toHaveTextContent("Saved search not found");
   });
 
   describe("desktop Import/Export Messages section", () => {

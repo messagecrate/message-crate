@@ -92,7 +92,7 @@ describe("GroupsMenu", () => {
     expect(screen.queryByText("Family")).toBeNull();
   });
 
-  it("shows the server's refusal of a new name and keeps the typed name", async () => {
+  it("shows the server's refusal of a new name, as a sentence, and keeps the typed name", async () => {
     const user = setupUser();
     const refusal =
       'name can\'t hold ";", because the address book separates Contact Group names with it';
@@ -104,9 +104,13 @@ describe("GroupsMenu", () => {
     await fill(user, screen.getByPlaceholderText("Contact Group name"), "Work; 2024");
     await user.click(screen.getByRole("button", { name: "Create" }));
 
-    expect(onCreate).toHaveBeenCalledWith("Work; 2024");
     await settle();
-    expect(screen.getByText(refusal)).toBeTruthy();
+    expect(onCreate).toHaveBeenCalledWith("Work; 2024");
+    expect(
+      screen.getByText(
+        'Name can\'t hold ";", because the address book separates Contact Group names with it',
+      ),
+    ).toBeTruthy();
     expect(screen.getByPlaceholderText("Contact Group name")).toHaveValue("Work; 2024");
   });
 

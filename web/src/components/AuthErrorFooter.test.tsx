@@ -7,12 +7,7 @@ import AuthErrorFooter from "./AuthErrorFooter";
 afterEach(cleanup);
 
 describe("AuthErrorFooter", () => {
-  it("capitalizes the server's lowercase sentence", () => {
-    render(<AuthErrorFooter error="invalid username or password" />);
-    expect(screen.getByText("Invalid username or password")).toBeInTheDocument();
-  });
-
-  it("leaves an already-capitalized message alone", () => {
+  it("shows the message as its caller gives it", () => {
     render(<AuthErrorFooter error="Passwords do not match." />);
     expect(screen.getByText("Passwords do not match.")).toBeInTheDocument();
   });

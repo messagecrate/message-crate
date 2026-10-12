@@ -9,7 +9,7 @@ import ListRangePill, {
 import TagsMenu from "../components/TagsMenu";
 import { useSetRightToolbar } from "../components/useRightToolbar";
 import VirtualList, { type VisibleRange } from "../components/VirtualList";
-import { searchErrorLine } from "../lib/apiErrorMessage";
+import { errorLine } from "../lib/apiErrorMessage";
 import {
   type ConversationSortState,
   loadConversationSort,
@@ -185,7 +185,7 @@ export default function ConversationList({
   if (error && conversations.length === 0) {
     return (
       <div className="p-4 text-[0.813rem] text-danger">
-        {searchErrorLine(error, "Could not load conversations.")}
+        {errorLine(error, "Could not load conversations.")}
       </div>
     );
   }
