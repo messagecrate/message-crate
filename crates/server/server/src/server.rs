@@ -1712,6 +1712,9 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     // The desktop app names its Tools Directory; ffmpeg is looked for on
     // PATH first and there second, as the app looks (#1053).
     media::set_tools_dir(server.tools_dir.clone());
+    // How long a conversion may go without progress before ffmpeg is
+    // stopped (#2898).
+    media::set_stall_wait(server.transcode_stall_wait());
     let bind = server.bind.clone();
     // Before the database is opened, so a database that fails to open is in
     // the server's log as well as on stderr: from here on, `main` writes the
