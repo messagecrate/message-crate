@@ -436,15 +436,7 @@ async fn run_imports_discard(args: ImportsDiscardArgs) -> Result<()> {
         // Only the unreferenced files: `.incoming/` is left to `serve`,
         // which may be running and is the only one that knows which uploads
         // its requests are using (#2652).
-        if let Err(error) =
-            crate::asset_store::sweep_unreferenced(&opened.db, &opened.cfg.paths, account).await
-        {
-            tracing::warn!(
-                account_id = account,
-                error = format!("{error:#}"),
-                "Unreferenced files could not be swept after the Import Run was discarded"
-            );
-        }
+        crate::asset_store::sweep_unreferenced_logged(&opened.db, &opened.cfg.paths, account).await;
     }
     opened.close().await;
     print!(

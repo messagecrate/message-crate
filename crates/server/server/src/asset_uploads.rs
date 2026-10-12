@@ -242,7 +242,9 @@ pub(crate) fn in_use(path: &Path) -> bool {
 /// Run `remove` on `path` unless a request is using it, and return what it
 /// returned, or `None` when a request is. [`IN_USE`] stays locked while
 /// `remove` runs, so no request starts using `path` in between: one that
-/// tries waits, then finds what `remove` left.
+/// tries waits, then finds what `remove` left. Every request waits on it, so
+/// `remove` does one quick step, such as an unlink or a rename, and nothing
+/// that takes long.
 pub(crate) fn unless_in_use<T>(path: &Path, remove: impl FnOnce() -> T) -> Option<T> {
     let uses = uses();
     if uses.contains_key(path) {
@@ -360,7 +362,7 @@ pub fn start_upload(
         bytes,
         mime,
         limits,
-        Abandonment::now(stall),
+        Abandonment::from_now(stall),
         new_upload_id,
     )
 }

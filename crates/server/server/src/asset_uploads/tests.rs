@@ -12,7 +12,7 @@ fn start_at(
     now: SystemTime,
 ) -> Result<(Sha256, String), AssetError> {
     let sha = Sha256::of_bytes(data);
-    let abandoned = crate::asset_store::tests::at(now);
+    let abandoned = crate::asset_store::tests::abandoned_at(now);
     start_upload_with(
         root,
         &sha,
@@ -312,7 +312,7 @@ fn two_starts_given_the_same_upload_id_get_an_upload_each() {
     };
     let mut ids = ["aa", "aa", "bb"].into_iter().map(String::from);
     let mut start = |bytes: u64| {
-        let abandoned = crate::asset_store::tests::at(SystemTime::now());
+        let abandoned = crate::asset_store::tests::abandoned_at(SystemTime::now());
         let (_, started) = start_upload_with(root, &sha, bytes, None, limits, abandoned, || {
             ids.next().unwrap()
         })

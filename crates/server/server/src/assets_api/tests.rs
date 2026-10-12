@@ -793,7 +793,7 @@ async fn a_sweep_leaves_an_upload_whose_part_is_still_arriving() {
 
     let removed = crate::asset_store::sweep_incoming(
         &assets_dir,
-        crate::asset_store::tests::at(
+        crate::asset_store::tests::abandoned_at(
             std::time::SystemTime::now() + Duration::from_secs(24 * 60 * 60),
         ),
     );

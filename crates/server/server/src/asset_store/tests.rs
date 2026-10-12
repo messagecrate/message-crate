@@ -68,7 +68,7 @@ fn a_stored_name_gives_its_fingerprint_and_any_other_name_gives_none() {
 pub(crate) const STALL: Duration = Duration::from_secs(60);
 
 /// Abandonment at `now` after [`STALL`].
-pub(crate) fn at(now: SystemTime) -> Abandonment {
+pub(crate) fn abandoned_at(now: SystemTime) -> Abandonment {
     Abandonment { now, stall: STALL }
 }
 
@@ -100,9 +100,9 @@ fn an_upload_session_is_abandoned_once_nothing_was_written_for_the_stall_limit()
     let second = Duration::from_secs(1);
 
     for session in [&with_manifest, &without_manifest] {
-        assert!(!upload_session_is_stale(session, at(written)).unwrap());
-        assert!(!upload_session_is_stale(session, at(written + STALL - second)).unwrap());
-        assert!(upload_session_is_stale(session, at(written + STALL)).unwrap());
+        assert!(!upload_session_is_stale(session, abandoned_at(written)).unwrap());
+        assert!(!upload_session_is_stale(session, abandoned_at(written + STALL - second)).unwrap());
+        assert!(upload_session_is_stale(session, abandoned_at(written + STALL)).unwrap());
     }
 }
 
@@ -460,7 +460,7 @@ fn incoming_with_leftovers() -> Incoming {
 fn the_incoming_sweep_removes_part_temps_and_stale_sessions_and_nothing_else() {
     let incoming = incoming_with_leftovers();
 
-    let removed = sweep_incoming(&incoming.assets, at(incoming.began));
+    let removed = sweep_incoming(&incoming.assets, abandoned_at(incoming.began));
 
     assert_eq!(removed, 2, "the abandoned .part temp and the stale session");
     assert!(!incoming.stale_part.exists());
@@ -591,10 +591,33 @@ fn the_incoming_sweep_leaves_an_upload_a_request_is_using() {
     let session_use = crate::asset_uploads::hold(&incoming.stale_session);
     let part_use = crate::asset_uploads::hold(&incoming.stale_part);
 
-    assert_eq!(sweep_incoming(&incoming.assets, at(incoming.began)), 0);
+    assert_eq!(
+        sweep_incoming(&incoming.assets, abandoned_at(incoming.began)),
+        0
+    );
     assert!(incoming.stale_session.join("manifest.json").exists());
     assert!(incoming.stale_part.exists());
 
     drop((session_use, part_use));
-    assert_eq!(sweep_incoming(&incoming.assets, at(incoming.began)), 2);
+    assert_eq!(
+        sweep_incoming(&incoming.assets, abandoned_at(incoming.began)),
+        2
+    );
+}
+
+/// #2652: the sweep sets an abandoned upload's directory aside under a
+/// `.removing-` name before deleting it. One a stopped sweep left there is
+/// deleted by the next.
+#[test]
+fn the_incoming_sweep_deletes_a_directory_a_stopped_sweep_set_aside() {
+    let incoming = incoming_with_leftovers();
+    let aside = incoming.assets.join(".incoming").join(".removing-abc123");
+    fs::create_dir_all(&aside).unwrap();
+    fs::write(aside.join("manifest.json"), b"{}").unwrap();
+    fs::write(aside.join("part-0001"), b"half").unwrap();
+
+    sweep_incoming(&incoming.assets, abandoned_at(incoming.began));
+
+    assert!(!aside.exists());
+    assert!(incoming.fresh_session.join("manifest.json").exists());
 }
