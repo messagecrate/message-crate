@@ -207,6 +207,15 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-12: **A wrong password now costs a short wait instead of counting
+  toward a lockout.** A refused login, and a wrong current password when
+  changing the owner's password or deleting an account, waits about a second
+  before Message Crate answers. Nothing counts the wrong tries anymore, so
+  someone who knows your username can no longer keep you from logging in by
+  sending wrong passwords, and creating an account or claiming Message Crate
+  is no longer limited to 20 tries a minute. The wait is not protection for a
+  Message Crate reachable from the internet: that needs a proxy with its own
+  login in front of it (#2893, #2894).
 - 2026-10-11: **The guide says what leaves the computer.** "What Message
   Crate is" now says that Message Crate sends no telemetry, crash reports, or
   usage data, and that the desktop app connects only to the Message Crate

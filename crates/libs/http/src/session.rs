@@ -185,7 +185,6 @@ fn classify_auth_http_status(status: u16, body: String) -> AuthError {
     match status {
         403 => AuthError::Forbidden { status, body },
         404 => AuthError::ApiNotFound { status, body },
-        429 => AuthError::RateLimited { status, body },
         500..=599 => AuthError::ServerError { status, body },
         _ => AuthError::HttpStatus { status, body },
     }

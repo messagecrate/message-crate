@@ -4,9 +4,9 @@ use std::sync::atomic::AtomicBool;
 use super::*;
 use crate::problem::ProblemType;
 use crate::test_support::{
-    SeedConversation, SeedMessage, claim_as_owner, expect_problem, expect_problem_for, get_json,
-    get_raw, get_status, http_client, patch_json_raw, post_json_raw, post_logged_out, post_status,
-    register_via_api, seed_conversation, stored_time, test_fixture,
+    SeedConversation, SeedMessage, claim_as_owner, expect_problem, get_json, get_raw, get_status,
+    http_client, patch_json_raw, post_json_raw, post_logged_out, post_status, register_via_api,
+    seed_conversation, stored_time, test_fixture,
 };
 
 /// Turn public registration off, the way a real server ships.
@@ -366,45 +366,6 @@ async fn claiming_needs_a_password_of_one_character_or_more() {
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "one character is enough");
-}
-
-/// Claiming takes no credential and makes the most powerful one the server
-/// has, so it is rate limited, and once for the whole server: a count per
-/// username would let a script trying a new name each time straight through.
-#[tokio::test]
-async fn claiming_is_rate_limited_across_the_server() {
-    let fixture = test_fixture().await;
-    let state = fixture.state.clone();
-    // An empty password is refused after the limiter has counted the
-    // attempt, so every try counts and none claims this Message Crate.
-    for attempt in 0..crate::credentials::AUTH_RATE_MAX {
-        let (status, text) = post_logged_out(
-            &state,
-            "/v1/server/claim",
-            serde_json::json!({ "username": format!("keeper{attempt}"), "password": "" }),
-        )
-        .await;
-        expect_problem_for(
-            &format!("attempt {attempt} inside the limit"),
-            status,
-            &text,
-            ProblemType::ValidationFailed,
-        );
-    }
-    let (status, text) = crate::test_support::post_logged_out(
-        &state,
-        "/v1/server/claim",
-        serde_json::json!({ "username": "keeper", "password": "hunter2hunter2" }),
-    )
-    .await;
-    let problem = crate::test_support::expect_problem(
-        status,
-        &text,
-        crate::problem::ProblemType::RateLimited,
-    );
-    assert!(problem.retry_after.is_some(), "{text}");
-    let after: Server = get_json(&state, "/v1/server", "").await;
-    assert_eq!(after.state, ServerState::Unclaimed);
 }
 
 #[tokio::test]

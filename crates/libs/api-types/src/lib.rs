@@ -992,8 +992,8 @@ mod export_scope_tests {
 /// same request.
 ///
 /// The extension members belong to the types named here: `word` and
-/// `did_you_mean` to `search-query-invalid`, `retry_after` to `rate-limited`
-/// and `database-busy`, `line` to `malformed-body` and `validation-failed` from an import batch,
+/// `did_you_mean` to `search-query-invalid`, `retry_after` to
+/// `database-busy`, `line` to `malformed-body` and `validation-failed` from an import batch,
 /// `holder` to `identity-exists`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
@@ -1024,8 +1024,8 @@ pub struct Problem {
     /// edit distance of the one used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub did_you_mean: Option<String>,
-    /// `rate-limited` and `database-busy`: seconds until the request may
-    /// succeed, the same figure as the `Retry-After` header.
+    /// `database-busy`: seconds until the request may succeed, the same
+    /// figure as the `Retry-After` header.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry_after: Option<u64>,
     /// `malformed-body` from an import batch: the line of the request body

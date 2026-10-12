@@ -383,14 +383,13 @@ pub struct AppState {
     /// Serialize multipart complete per (account, sha256) so two clients cannot
     /// race `store_verified` on the same SHA-256 fingerprint.
     pub(crate) asset_complete_locks: KeyedLocks,
-    /// Sliding-window hit counts for the unauthenticated auth endpoints. Held
-    /// here, not in a static, so tests in one binary cannot rate-limit each
-    /// other; a running server has a single state, so the limit still spans it.
-    pub(crate) auth_rate_limits: crate::credentials::AuthRateLimits,
+    /// The wait before the answer to a refused login or a wrong current
+    /// password. `serve` sleeps; the test harness swaps in one that counts
+    /// each wait and returns at once.
+    pub(crate) refusal_wait: crate::credentials::RefusalWait,
     /// The slots HTTP imports take, from [`crate::imports_api::import_slots`],
     /// so imports can never drain the connection pool. Held here, not in a
-    /// static, for the same reason as `auth_rate_limits`: tests in one binary
-    /// cannot wait on each other's imports.
+    /// static, so tests in one binary cannot wait on each other's imports.
     pub(crate) import_slots: Arc<tokio::sync::Semaphore>,
     /// The largest multipart part, from `[server] asset_part_size`. The part
     /// size a client is told is this or the attachment size limit, whichever
@@ -430,8 +429,8 @@ pub struct AppState {
 
 impl AppState {
     /// The state every handler shares, over an opened database. `serve` and the
-    /// test harness both come through here, so the locks and the rate limits
-    /// are assembled in one place.
+    /// test harness both come through here, so the locks and the slots are
+    /// assembled in one place.
     pub fn new(
         opened: OpenDb,
         asset_part_size: usize,
@@ -442,7 +441,7 @@ impl AppState {
             db: opened.db,
             account_import_locks: KeyedLocks::default(),
             asset_complete_locks: KeyedLocks::default(),
-            auth_rate_limits: crate::credentials::AuthRateLimits::default(),
+            refusal_wait: crate::credentials::RefusalWait::default(),
             import_slots: crate::imports_api::import_slots(),
             asset_part_size,
             upload_time_limits,
@@ -593,11 +592,6 @@ pub enum ApiError {
     /// account is gone. An `authentication-required` whose challenge names
     /// `error="invalid_token"` (RFC 6750, section 3.1).
     TokenRefused(String),
-    /// `429` — the auth rate limiter refused the attempt; `Retry-After` in seconds.
-    RateLimited {
-        /// Seconds until an attempt may succeed.
-        retry_after_secs: u64,
-    },
     /// `409` — the username already belongs to an account.
     UsernameTaken(String),
     /// `409` — a Contact Group, Message Tag or Saved Search name collides.
@@ -726,7 +720,6 @@ impl ApiError {
             Self::ValidationFailed(_)
             | Self::MalformedImportLine { .. }
             | Self::InvalidImportLines { .. }
-            | Self::RateLimited { .. }
             | Self::SearchQueryInvalid { .. }
             | Self::IdentityExists { .. }
             | Self::RangeNotSatisfiable { .. }
@@ -759,7 +752,6 @@ impl ApiError {
             Self::AuthenticationRequired(_) | Self::TokenRefused(_) => {
                 ProblemType::AuthenticationRequired
             }
-            Self::RateLimited { .. } => ProblemType::RateLimited,
             Self::UsernameTaken(_) => ProblemType::UsernameTaken,
             Self::NameTaken(_) => ProblemType::NameTaken,
             Self::DemoAccountProtected(_) => ProblemType::DemoAccountProtected,
@@ -836,12 +828,6 @@ impl ApiError {
         };
         match self {
             Self::ValidationFailed(errors) => problem.errors = Some(errors.clone()),
-            Self::RateLimited { retry_after_secs } => {
-                problem.retry_after = Some(*retry_after_secs);
-                problem.detail = Some(format!(
-                    "too many authentication attempts; try again in {retry_after_secs} seconds"
-                ));
-            }
             Self::SearchQueryInvalid {
                 detail,
                 word,
@@ -913,10 +899,6 @@ impl std::fmt::Display for ApiError {
             Self::ValidationFailed(errors) | Self::InvalidImportLines { errors, .. } => {
                 f.write_str(&errors.join("; "))
             }
-            Self::RateLimited { retry_after_secs } => write!(
-                f,
-                "too many authentication attempts; try again in {retry_after_secs} seconds"
-            ),
             Self::SearchQueryInvalid { detail, .. }
             | Self::MalformedImportLine { detail, .. }
             | Self::IdentityExists { detail, .. }
@@ -2330,7 +2312,7 @@ pub(crate) fn test_app_state(pool: sqlx::SqlitePool, data_dir: &Path) -> AppStat
             ..crate::config::ServerConfig::default()
         }),
     };
-    AppState::new(
+    let mut state = AppState::new(
         OpenDb {
             cfg,
             db: pool,
@@ -2338,7 +2320,11 @@ pub(crate) fn test_app_state(pool: sqlx::SqlitePool, data_dir: &Path) -> AppStat
         },
         asset_uploads::DEFAULT_PART_SIZE,
         UploadTimeLimits::of(&crate::config::ServerConfig::default()),
-    )
+    );
+    // A refused login counts its wait rather than sleeping it, so no test
+    // sleeps and a test can read how many refusals waited.
+    state.refusal_wait = crate::credentials::RefusalWait::counted();
+    state
 }
 
 #[cfg(test)]
