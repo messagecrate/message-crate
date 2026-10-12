@@ -645,6 +645,25 @@ pub enum AttachmentSource {
 mod tests {
     use super::*;
 
+    /// The person reads these sentences as they are, from the Apple Messages
+    /// Reader and from the WhatsApp import alike, and every other test
+    /// compares against the constants. This one pins the wording itself.
+    #[test]
+    fn the_backup_password_sentences_are_the_ones_the_person_reads() {
+        assert_eq!(
+            ENCRYPTED_BACKUP_PASSWORD_REQUIRED,
+            "The backup is encrypted. Fill in the Encryption password."
+        );
+        assert_eq!(
+            UNENCRYPTED_BACKUP_CLEAR_PASSWORD,
+            "This backup is not encrypted. Clear the Encryption password."
+        );
+        assert_eq!(
+            IOS_BACKUP_PASSWORD_INCORRECT,
+            "The iOS backup password was incorrect."
+        );
+    }
+
     #[test]
     fn requests_and_events_round_trip_with_their_tags() {
         let request = Request::Export(ExportRequest {
