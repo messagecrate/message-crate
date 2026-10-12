@@ -666,7 +666,7 @@ The server holds every connection to three limits, so one slow or stuck
 client cannot hold it
 ([#2100](https://github.com/messagecrate/message-crate/issues/2100)). A
 connection that sends no request, or sends one too slowly, is closed after
-30 seconds. Only so many connections are open at once, and the next waits
+30 seconds. At most 256 connections are open at once, and the next waits
 for one to close. A body that stops arriving, or arrives too slowly, is no
 longer read once the upload time limits pass. In detail:
 
@@ -710,7 +710,7 @@ one pair of figures is one to explain.
 
 Rejected: a cap on requests in flight (`tower::limit::ConcurrencyLimitLayer`)
 in place of the cap on connections. A connection that never sends its
-headers is no request, so a cap on requests leaves it uncounted, and under
+headers is no request, so a cap on requests leaves it uncounted. Under
 HTTP/1.1 a connection carries one request at a time, so the cap on
 connections bounds the requests too. Axum's `Router::layer` would also give
 each route a cap of its own.

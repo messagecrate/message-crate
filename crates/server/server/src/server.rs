@@ -1945,8 +1945,8 @@ where
         tokio::join!(served, work);
     };
     // `serve_connections` returns only after `stop` resolved, and `stop`
-    // sends on both channels before it resolves, so each receive below
-    // waits for the stop and is never refused.
+    // sends on both channels before it resolves, so the receive below waits
+    // for the stop and is never refused.
     let limit_passed = async move {
         let _ = signaled_rx.await;
         drain_limit().await;

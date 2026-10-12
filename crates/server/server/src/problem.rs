@@ -311,7 +311,6 @@ pub mod openapi {
         IdentityExists,
         AssetUploadInvalid,
         RangeNotSatisfiable,
-        UploadStalled,
         ServerStopping,
     );
 }
