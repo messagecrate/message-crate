@@ -370,6 +370,15 @@ released versions carry their date on the heading.
   account again, named by a number and with no password, so anyone could log
   in to it. The import or export is now refused, and the account stays
   deleted.
+- 2026-10-12: **A page asked for while an import keeps the database busy
+  loads once the server is ready.** The server says how many seconds to wait
+  when its database is too busy, and the app tried again at once, met the
+  same busy database, and showed the error. It now waits the seconds the
+  server named before it asks once more. A change you save is still not sent
+  again on its own: you read why it failed and send it again (#2891).
+- 2026-10-12: **The first page downloads less.** Settings was part of the
+  code every visit downloads first, through Owner Home. It is now downloaded
+  the first time Settings is opened, from the app or from Owner Home (#2879).
 - 2026-10-11: **Logging in often no longer locks you out.** Every login
   counted toward the limit of 20 attempts a minute for an account, the
   successful ones too, so an account that logged in often, such as the Demo
@@ -961,6 +970,13 @@ released versions carry their date on the heading.
   seconds.** SMS Backup+ itself records an MMS's time in seconds, and the
   import now reads it that way, so an MMS exported to SMS Backup+ mail goes
   out to the second (#2603).
+- 2026-10-12: **An export's conversation files mark each attachment it
+  could not fetch.** The export's log named the attachment, but the
+  conversation file still pointed at a file that was not there with nothing
+  saying why, so importing or converting that export later reported a plain
+  missing file. The conversation file now marks the attachment as not
+  fetched, an import of that export keeps the mark, and the conversation
+  shows the attachment as not fetched by the export (#2899).
 - 2026-10-11: **One missing attachment no longer throws away a whole
   export.** When the desktop app could not fetch one attachment, for
   instance because its file was gone from the server, the export stopped

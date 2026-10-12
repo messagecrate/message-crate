@@ -11,9 +11,17 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { deferred } from "../test/deferred";
+import { advanceTimersAndSettle } from "../test/fakeTimers";
 import { freshEntries, seedEntries } from "../test/staleEntries";
-import { ApiError, noAnswerError, REQUEST_TIMEOUT_MS, requestTimeoutError } from "./api";
+import {
+  ApiError,
+  noAnswerError,
+  problemFromBody,
+  REQUEST_TIMEOUT_MS,
+  requestTimeoutError,
+} from "./api";
 import type { OffsetPage } from "./routeQuery";
 import {
   createQueryClient,
@@ -131,6 +139,73 @@ describe("createQueryClient", () => {
 
   it("asks again once when the request never reached the server", async () => {
     expect(await callsUntilError(noAnswerError())).toBe(2);
+  });
+
+  /** The server's answer for a database too busy to take the request. */
+  function databaseBusy(retryAfter: number): ApiError {
+    return problemFromBody(
+      503,
+      JSON.stringify({
+        type: "https://messagecrate.app/problems/database-busy",
+        title: "Database busy",
+        status: 503,
+        detail: "The database is busy, so try again in a few seconds.",
+        retry_after: retryAfter,
+      }),
+    );
+  }
+
+  describe("with a database too busy to answer", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("waits the seconds the server named before it asks again, once", async () => {
+      client = createQueryClient();
+      const askedAgain = deferred();
+      const fetchGroups = vi
+        .fn<() => Promise<string[]>>()
+        .mockRejectedValueOnce(databaseBusy(5))
+        .mockImplementationOnce(async () => {
+          askedAgain.resolve();
+          return ["Family"];
+        });
+      const { result } = renderHook(() => useRouteQuery(["contact-groups"], fetchGroups), {
+        wrapper,
+      });
+
+      await advanceTimersAndSettle(0);
+      expect(fetchGroups).toHaveBeenCalledTimes(1);
+
+      await advanceTimersAndSettle(4_999);
+      expect(fetchGroups).toHaveBeenCalledTimes(1);
+
+      await advanceTimersAndSettle(1);
+      await act(() => askedAgain.promise);
+      expect(fetchGroups).toHaveBeenCalledTimes(2);
+      // TanStack Query tells the screen on a zero-delay timer, which the fake
+      // clock sets a millisecond out when it is set while timers are running.
+      await advanceTimersAndSettle(1);
+      expect(result.current.data).toEqual(["Family"]);
+    });
+
+    it("does not send a write again", async () => {
+      client = createQueryClient();
+      const write = vi.fn(async () => {
+        throw databaseBusy(5);
+      });
+      const { result } = renderHook(() => useRouteMutation({ mutationFn: write }), { wrapper });
+
+      await act(async () => {
+        await result.current.mutateAsync().catch(() => {});
+      });
+      await advanceTimersAndSettle(60_000);
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(result.current.error).toBeInstanceOf(ApiError);
+    });
   });
 });
 

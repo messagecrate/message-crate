@@ -335,9 +335,16 @@ fn scan_one_attachment(
             item: format!("{name}:{rel}"),
             reason: "attachment file not found on disk".into(),
         });
+        // A reason the conversation file already gives, such as the
+        // `not_fetched` of an Export that could not fetch the file, says more
+        // than a plain missing file, so it is kept.
         return Ok(AttachmentProjection::Missing {
             index,
-            reason: "file_missing".into(),
+            reason: att
+                .missing_reason
+                .as_deref()
+                .unwrap_or("file_missing")
+                .into(),
             size: att.size_bytes,
         });
     };

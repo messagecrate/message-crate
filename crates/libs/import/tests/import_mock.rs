@@ -2259,6 +2259,8 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
             .path("/v1/imports/7/batches")
             .body_includes(r#""missing_reason":"file_missing""#)
             .body_includes("gone.bin")
+            .body_includes(r#""missing_reason":"not_fetched""#)
+            .body_includes("unfetched.pdf")
             .body_includes(&small_digest);
         then.status(200).json_body(json!({
             "messages": 1,
@@ -2287,6 +2289,15 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
             mime_type: Some("text/plain".into()),
             digest_sha256: Some(small_digest),
             size_bytes: Some(SMALL.len() as u64),
+            ..message_ir::testutil::sample_attachment()
+        },
+        // An Export that could not fetch this file said why, and the
+        // Import keeps that reason rather than a plain missing file.
+        IrAttachment {
+            path: Some("attachments/unfetched.pdf".into()),
+            original_name: Some("unfetched.pdf".into()),
+            mime_type: Some("application/pdf".into()),
+            missing_reason: Some(message_ir::NOT_FETCHED.into()),
             ..message_ir::testutil::sample_attachment()
         },
     ];
