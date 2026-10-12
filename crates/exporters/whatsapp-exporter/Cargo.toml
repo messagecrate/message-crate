@@ -9,6 +9,9 @@ autotests = false
 [dependencies]
 anyhow = { workspace = true }
 hex = { workspace = true }
+# MIT OR Apache-2.0, so this FCL crate may link it; only the sentences an
+# iPhone backup's password is refused with come from it.
+imessage-reader-protocol = { path = "../../helpers/imessage-reader-protocol" }
 ios-backup = { path = "../../libs/ios-backup" }
 message-csv = { path = "../../libs/csv" }
 message-crate-core = { path = "../../core/message-crate-core" }

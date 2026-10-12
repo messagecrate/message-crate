@@ -21,7 +21,7 @@ use imessage_database::{
 use rusqlite::Connection;
 
 use crate::{
-    data_source::DataSource, error::RuntimeError, identities::OwnerAddresses,
+    data_source::DataSource, error::RuntimeError, identities::OwnerAddresses, log::emit_log,
     options::ReaderOptions,
 };
 
@@ -68,7 +68,7 @@ impl MailSession {
         let db = data_source.db();
         let capabilities = Capabilities::determine(db)?;
 
-        options.emit_log("Building cache...");
+        emit_log("Building cache...");
         options.setup_step(1, CACHE_STEPS, "Caching chats");
         let chatrooms = Chat::cache(db)?;
         let chat_styles = chat_styles(db);
@@ -89,7 +89,7 @@ impl MailSession {
 
         options.setup_step(4, CACHE_STEPS, "Caching tapbacks");
         let tapbacks = Message::cache(db)?;
-        options.emit_log("Cache built!");
+        emit_log("Cache built!");
 
         Ok(Self {
             capabilities,
@@ -111,7 +111,7 @@ impl MailSession {
         let chat_id = message.chat_id.or(message.deleted_from)?;
         let chat = self.chatrooms.get(&chat_id);
         if chat.is_none() {
-            self.options.emit_log(format!(
+            emit_log(format!(
                 "A message names conversation {chat_id}, which is not in the messages database"
             ));
         }

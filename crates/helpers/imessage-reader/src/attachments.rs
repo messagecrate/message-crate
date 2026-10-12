@@ -7,7 +7,7 @@ use crabapple::error::BackupError;
 use imessage_database::tables::attachment::Attachment;
 use imessage_reader_protocol::{AttachmentFile, Event};
 
-use crate::{backup::decrypt_file, error::RuntimeError, session::MailSession};
+use crate::{backup::decrypt_file, error::RuntimeError, log::emit_log, session::MailSession};
 
 /// The path Messages resolves for this attachment on the selected platform,
 /// or `None` when it has no file.
@@ -50,7 +50,7 @@ pub(crate) fn decrypt_for_app(session: &MailSession, source: &Path) -> Event {
         match decrypt_file(backup, source, session.options.scratch_dir()) {
             Ok(temp) => AttachmentFile::Ready { path: temp },
             Err(RuntimeError::BackupError(BackupError::FileNotFoundInBackup(_))) => {
-                session.options.emit_log(format!(
+                emit_log(format!(
                     "Attachment {} is not in the encrypted backup, so it is recorded without its file",
                     source.display()
                 ));

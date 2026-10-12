@@ -137,6 +137,19 @@ pub fn bare_address(raw: &str) -> Option<String> {
 /// sides agree on, and it sits here with the rest of that agreement.
 pub const IOS_BACKUP_PASSWORD_INCORRECT: &str = "The iOS backup password was incorrect.";
 
+/// The [`Event::Error`] message the helper sends when an encrypted iPhone
+/// backup comes with no password. The WhatsApp import from an iPhone backup
+/// refuses the same case with the same sentence, so it sits here, where both
+/// sides of the process boundary can reach it.
+pub const ENCRYPTED_BACKUP_PASSWORD_REQUIRED: &str =
+    "The backup is encrypted. Fill in the Encryption password.";
+
+/// The [`Event::Error`] message the helper sends when a password comes with
+/// an iPhone backup that is not encrypted. The WhatsApp import from an
+/// iPhone backup refuses the same case with the same sentence.
+pub const UNENCRYPTED_BACKUP_CLEAR_PASSWORD: &str =
+    "This backup is not encrypted. Clear the Encryption password.";
+
 /// The file name of the helper executable, without the `.exe` Windows adds.
 pub const HELPER_NAME: &str = "imessage-reader";
 
@@ -631,6 +644,28 @@ pub enum AttachmentSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every other test compares against the constants, so only this one
+    /// fails when a sentence's wording changes. The wording is repeated
+    /// outside Rust and must change with it: the troubleshooting page
+    /// (`docs/.../owner/troubleshooting.md`) heads a section with each of
+    /// the first two, and the Import form shows the first from its own
+    /// copy in `web/src/lib/encryptedBackup.ts`.
+    #[test]
+    fn the_backup_password_sentences_are_the_ones_the_person_reads() {
+        assert_eq!(
+            ENCRYPTED_BACKUP_PASSWORD_REQUIRED,
+            "The backup is encrypted. Fill in the Encryption password."
+        );
+        assert_eq!(
+            UNENCRYPTED_BACKUP_CLEAR_PASSWORD,
+            "This backup is not encrypted. Clear the Encryption password."
+        );
+        assert_eq!(
+            IOS_BACKUP_PASSWORD_INCORRECT,
+            "The iOS backup password was incorrect."
+        );
+    }
 
     #[test]
     fn requests_and_events_round_trip_with_their_tags() {
