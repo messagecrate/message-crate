@@ -1,6 +1,7 @@
 import { type UseMutationResult, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import type { AccountProfile } from "./account";
+import { errorLine } from "./apiErrorMessage";
 import { useAuth } from "./authContext";
 import { keys } from "./queryKeys";
 import { useRouteCache, useRouteMutation, useRouteQuery } from "./routeQuery";
@@ -31,7 +32,7 @@ export function useAccountProfile(): {
   return {
     profile: data ?? null,
     loading: isPending,
-    error: error ? error.message : "",
+    error: error ? errorLine(error) : "",
     retry: () => void refetch(),
   };
 }

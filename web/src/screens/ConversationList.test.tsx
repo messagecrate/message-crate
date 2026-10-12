@@ -272,7 +272,7 @@ describe("ConversationList", () => {
       await settle();
 
       expect(vi.mocked(createMessageTag)).toHaveBeenCalledWith({ name: longName });
-      expect(screen.getByText(refusal)).toBeInTheDocument();
+      expect(screen.getByText("Name must be at most 80 characters")).toBeInTheDocument();
       expect(screen.getByPlaceholderText("Message Tag name")).toHaveValue(longName);
     });
 

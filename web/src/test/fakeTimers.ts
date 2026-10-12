@@ -104,3 +104,15 @@ export function stopFakeClock(): void {
 export async function settle(): Promise<void> {
   await advanceTimersAndSettle(0);
 }
+
+/**
+ * Run what waits on the next animation frame, such as React Aria putting
+ * focus back on a menu's trigger after the menu closes. `settle` never runs
+ * a frame, because it doesn't move the clock. Needs `startFakeClock`. See
+ * "An animation frame" in `web/src/test/README.md`.
+ */
+export function advanceToNextFrame(): void {
+  act(() => {
+    vi.advanceTimersToNextFrame();
+  });
+}

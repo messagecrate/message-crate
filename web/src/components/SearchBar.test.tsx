@@ -5,6 +5,7 @@ import { type ComponentProps, useRef, useState } from "react";
 import { MemoryRouter, useLocation, useSearchParams } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SearchList } from "../lib/searchFields";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { fill, setupUser } from "../test/user";
 import SearchBar from "./SearchBar";
 
@@ -174,6 +175,7 @@ function AddressSearch({ onSubmit }: { onSubmit: (q: string) => void }) {
 
 describe("SearchBar", () => {
   beforeEach(() => {
+    startFakeClock();
     vi.clearAllMocks();
     suggestionsMock.current = [];
     recentsMock.current = ["ada", "grace"];
@@ -181,6 +183,7 @@ describe("SearchBar", () => {
 
   afterEach(() => {
     cleanup();
+    stopFakeClock();
   });
 
   it("walks the recent searches with arrow keys and reports the active row", async () => {
@@ -288,7 +291,8 @@ describe("SearchBar", () => {
     // Two recents, then the advanced row.
     await user.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
 
-    expect(await screen.findByTestId("advanced-form")).toBeTruthy();
+    await settle();
+    expect(screen.getByTestId("advanced-form")).toBeTruthy();
   });
 
   it("keeps the advanced panel open, with no popdown over it, when the box is focused again", async () => {
@@ -297,7 +301,8 @@ describe("SearchBar", () => {
 
     await user.click(input);
     await user.keyboard("{ArrowUp}{Enter}");
-    expect(await screen.findByTestId("advanced-form")).toBeTruthy();
+    await settle();
+    expect(screen.getByTestId("advanced-form")).toBeTruthy();
 
     act(() => input.blur());
     await user.click(input);
@@ -417,7 +422,7 @@ describe("SearchBar", () => {
       await user.type(input, "attachment:any");
 
       expect(input).toHaveValue("attachment:any");
-      await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+      await settle();
       expect(screen.getByTestId("value").textContent).toBe("attachment:any");
       expect(input).toHaveValue("attachment:any");
     });
@@ -427,7 +432,7 @@ describe("SearchBar", () => {
       const { input } = renderLateSearch(LaggingSearch);
 
       await user.type(input, "ada");
-      await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+      await settle();
       await user.click(screen.getByRole("button", { name: "Open a Saved Search" }));
 
       expect(input).toHaveValue("kind:group");
@@ -441,7 +446,7 @@ describe("SearchBar", () => {
       const { input } = renderLateSearch(MergingSearch);
 
       await user.type(input, "a{Backspace}");
-      await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+      await settle();
       await user.click(screen.getByRole("button", { name: "Open a Saved Search for a" }));
 
       expect(input).toHaveValue("a");

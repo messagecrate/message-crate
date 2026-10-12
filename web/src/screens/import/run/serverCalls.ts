@@ -3,7 +3,7 @@
  * the server refused, and the account that started the run having logged out.
  */
 
-import { errorText } from "../../../lib/apiErrorMessage";
+import { errorLine, errorText } from "../../../lib/apiErrorMessage";
 import type { ImportStage } from "../../../lib/importRun";
 import { endsSession } from "../../../lib/routeQuery";
 import { CANCELLED_MESSAGE } from "../../../lib/runCancel";
@@ -132,7 +132,7 @@ export async function moveStageAtReview(
     return "recorded";
   } catch (e: unknown) {
     if (await leaveIfRefused(ctx, e, runId)) return "refused";
-    ctx.store.set({ reviewError: errorText(e) });
+    ctx.store.set({ reviewError: errorLine(e) });
     return "failed";
   }
 }

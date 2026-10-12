@@ -1,5 +1,5 @@
 import type { UseMutationResult } from "@tanstack/react-query";
-import { apiErrorMessage } from "../../lib/apiErrorMessage";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache, useRouteMutation, useRouteQuery } from "../../lib/routeQuery";
 import {
@@ -62,6 +62,6 @@ export function useOwnerAccounts() {
   return {
     accounts: data ?? [],
     loading,
-    loadError: loadError ? apiErrorMessage(loadError, "Could not load accounts.") : "",
+    loadError: loadError ? errorLine(loadError, "Could not load accounts.") : "",
   };
 }

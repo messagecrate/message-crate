@@ -1,4 +1,4 @@
-import { errorText } from "../../../lib/apiErrorMessage";
+import { errorLine, errorText } from "../../../lib/apiErrorMessage";
 import { CANCELLED_MESSAGE } from "../../../lib/runCancel";
 import { registerRunningUpload } from "../../../lib/runningUpload";
 import { sessionRefused } from "../../../lib/sessionRefusal";
@@ -89,7 +89,7 @@ async function uploadAndFinish(
       pausedBeforeStart = true;
     } else {
       threw = true;
-      recordError(ctx, ctx.scratch.activeStage, msg);
+      recordError(ctx, ctx.scratch.activeStage, errorLine(e));
       failActiveStep(ctx);
     }
   }

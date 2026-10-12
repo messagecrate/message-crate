@@ -3,7 +3,7 @@ import Button from "../../components/Button";
 import { textInputClass } from "../../components/TextField";
 import TimeZoneField from "../../components/TimeZoneField";
 import { fixedSettings } from "../../lib/account";
-import { errorText } from "../../lib/apiErrorMessage";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { useSettingsAccount, useUpdateSettingsProfile } from "../../lib/useSettingsAccount";
 import { AccountActivitySection } from "./AccountActivitySection";
 import { AddressBookSection } from "./AddressBookSection";
@@ -46,7 +46,7 @@ export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: 
       });
       setNameDraft(null);
     } catch (e) {
-      setNameError(errorText(e));
+      setNameError(errorLine(e));
     }
   };
 
@@ -58,7 +58,7 @@ export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: 
     try {
       await updateProfile.mutateAsync({ time_zone: zone });
     } catch (e) {
-      setZoneError(errorText(e));
+      setZoneError(errorLine(e));
     }
   };
 

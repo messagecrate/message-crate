@@ -494,13 +494,19 @@ final period, naming the thing and what is wrong with it: `asset not found`,
 such as a header (`Content-Type must be text/csv`) or an abbreviation
 (`API token not found`). The client decides how the sentence starts and ends
 on its screen, because it may show the sentence alone or joined with others.
-The web app joins a validation failure's `errors` with `; ` into one line, and
-a screen that shows a sentence on a line of its own capitalises its first
-letter with `errorLine` or `sentenceCase` (`web/src/lib/apiErrorMessage.ts`).
-A screen that runs a search uses `searchErrorLine` there instead: a
-`search-query-invalid` refusal about one word starts with that word, as
-`from: is not a Contacts word; it works on Messages`, and a capital would
-change the word, so that sentence is shown as it is.
+The web app joins a validation failure's `errors` with `; ` into one line.
+Every screen that shows the sentence as a sentence of its own, on a line of
+its own or after another sentence that ends with a period, shows it through
+one function, `errorLine` (`web/src/lib/apiErrorMessage.ts`), which
+capitalizes its first letter. A sentence that starts with a name a capital
+would change keeps its first letter: a `search-query-invalid` refusal about
+one word starts with that word, as
+`from: is not a Contacts word; it works on Messages`, and a server refusal
+that starts with a field's snake_case name or indexed path, as
+`asset_max_bytes must be at most …` or `identities[0].address: …`, names the
+field as the API spells it. A
+sentence joined after a prefix, as `Could not load contacts: …`, is shown as
+the server wrote it.
 For a `5xx`, the web app ends the sentence with the problem's `request_id`, as
 `internal server error (request 4f3c…)` (`problemFromBody` in
 `web/src/lib/api.ts`). Why: a `5xx` names no cause to the client, so the id is

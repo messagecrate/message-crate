@@ -39,9 +39,9 @@ vi.mock("../../lib/tauri", async (importOriginal) => {
 });
 
 afterEach(() => {
-  stopFakeClock();
   cleanup();
   vi.clearAllMocks();
+  stopFakeClock();
 });
 
 beforeEach(() => {
@@ -205,9 +205,9 @@ describe("ConvertSection", () => {
     });
     const user = await fillDirectories("/home/demo/link-to-export", "/home/demo/export");
     await user.click(convertButton());
-
     await settle();
-    expect(screen.getByText("input and output directories must be different")).toBeTruthy();
+
+    expect(screen.getByText("Input and output directories must be different")).toBeTruthy();
     expect(screen.queryByText(/Conversion complete/)).toBeNull();
   });
 

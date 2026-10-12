@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { apiErrorMessage, searchErrorLine } from "../lib/apiErrorMessage";
+import { errorLine } from "../lib/apiErrorMessage";
 import { canUseImportExportWithProfile } from "../lib/desktopFeatures";
 import { type SavedSearch, useSavedSearchActions, useSavedSearches } from "../lib/savedSearches";
 import { isTauri } from "../lib/tauriCheck";
@@ -145,7 +145,7 @@ export default function LeftPanel({
       await savedSearchActions.create(name, query);
       setShowGroupForm(false);
     } catch (err) {
-      setFormError(searchErrorLine(err, "Could not create saved search"));
+      setFormError(errorLine(err, "Could not create saved search"));
     }
   };
 
@@ -155,7 +155,7 @@ export default function LeftPanel({
       await savedSearchActions.update(id, name, query);
       setEditFor(null);
     } catch (err) {
-      setFormError(searchErrorLine(err, "Could not save saved search"));
+      setFormError(errorLine(err, "Could not save saved search"));
     }
   };
 
@@ -164,7 +164,7 @@ export default function LeftPanel({
     try {
       await savedSearchActions.remove(id);
     } catch (err) {
-      setDeleteError(apiErrorMessage(err, "Could not delete saved search"));
+      setDeleteError(errorLine(err, "Could not delete saved search"));
     }
   };
 

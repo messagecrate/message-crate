@@ -1,6 +1,6 @@
 import { type ReactNode, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { apiErrorMessage } from "../lib/apiErrorMessage";
+import { errorLine } from "../lib/apiErrorMessage";
 import { slugFromPath, slugPath } from "../lib/contactGroups";
 import { type NameCollection, useNameCollectionActions } from "../lib/nameCollection";
 import type { NavEntityCopy } from "../lib/namedSetCopy";
@@ -61,7 +61,7 @@ export default function NavEntityList({
       setCreateOpen(false);
       navigate(slugPath(copy.routeBase, slug(created)));
     } catch (err) {
-      setError(apiErrorMessage(err, copy.createError));
+      setError(errorLine(err, copy.createError));
     }
   };
 
@@ -78,7 +78,7 @@ export default function NavEntityList({
         navigate(slugPath(copy.routeBase, slug(next)));
       }
     } catch (err) {
-      setError(apiErrorMessage(err, copy.renameError));
+      setError(errorLine(err, copy.renameError));
     }
   };
 
@@ -91,7 +91,7 @@ export default function NavEntityList({
         navigate(copy.fallbackRoute);
       }
     } catch (err) {
-      setError(apiErrorMessage(err, copy.deleteError));
+      setError(errorLine(err, copy.deleteError));
     }
   };
 

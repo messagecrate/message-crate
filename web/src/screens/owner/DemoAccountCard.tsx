@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
-import { apiErrorMessage } from "../../lib/apiErrorMessage";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache, useRouteMutation, useRouteQuery } from "../../lib/routeQuery";
 import { parseSelectKey } from "../../lib/selectKey";
@@ -64,7 +64,7 @@ export function DemoAccountCard() {
   if (demo.error || !demo.data) {
     return (
       <p className="mt-4 text-[0.875rem] text-danger">
-        {apiErrorMessage(demo.error, "Could not load the Demo Account.")}
+        {errorLine(demo.error, "Could not load the Demo Account.")}
       </p>
     );
   }
@@ -128,7 +128,7 @@ export function DemoAccountCard() {
       ) : null}
       {build.error && !confirmOpen ? (
         <p className="mt-2 mb-0 text-[0.813rem] text-danger" role="alert">
-          {apiErrorMessage(build.error, "Could not start the build.")}
+          {errorLine(build.error, "Could not start the build.")}
         </p>
       ) : null}
 
@@ -138,7 +138,7 @@ export function DemoAccountCard() {
         body="This removes the Demo Account with everything visitors changed in it, and builds it again. No other account is touched."
         confirmLabel="Reset Demo Account"
         busy={build.isPending}
-        error={build.error ? apiErrorMessage(build.error, "Could not start the build.") : ""}
+        error={build.error ? errorLine(build.error, "Could not start the build.") : ""}
         onClose={() => setConfirmOpen(false)}
         onConfirm={() => build.mutate(size)}
       />

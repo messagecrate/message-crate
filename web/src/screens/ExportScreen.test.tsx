@@ -37,7 +37,8 @@ vi.mock("../lib/tauri", async (importOriginal) => {
   };
 });
 
-vi.mock("../lib/api", () => ({
+vi.mock("../lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/api")>()),
   getBaseUrl: () => "http://127.0.0.1:8080",
 }));
 
@@ -46,9 +47,9 @@ vi.mock("../lib/authContext", () => ({
 }));
 
 afterEach(() => {
-  stopFakeClock();
   cleanup();
   vi.clearAllMocks();
+  stopFakeClock();
 });
 
 /** The directory the desktop makes for the export in the Export Directory. */
@@ -232,11 +233,11 @@ describe("ExportScreen", () => {
     });
 
     await exportAs("/home/demo/out", "CSV (.csv)");
-
     await settle();
+
     expect(invokeDiscardExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir);
     expect(invokeFinishExportDir).not.toHaveBeenCalled();
-    expect(screen.getByText("unsupported output format")).toBeTruthy();
+    expect(screen.getByText("Unsupported output format")).toBeTruthy();
   });
 
   it("does not start the conversion when Cancel is pressed after the export step finished", async () => {
@@ -326,9 +327,9 @@ describe("ExportScreen", () => {
     });
 
     await exportAs("/home/demo/out", "CSV (.csv)");
-
     await settle();
-    expect(screen.getByText("server unreachable")).toBeTruthy();
+
+    expect(screen.getByText("Server unreachable")).toBeTruthy();
     expect(currentDesktopJob()).toBeNull();
   });
 
@@ -454,9 +455,9 @@ describe("ExportScreen", () => {
     });
 
     await exportTo("/home/demo/out");
-
     await settle();
-    expect(screen.getByText("session token is required")).toBeTruthy();
+
+    expect(screen.getByText("Session token is required")).toBeTruthy();
     expect(screen.queryByText(/Export complete/)).toBeNull();
   });
 

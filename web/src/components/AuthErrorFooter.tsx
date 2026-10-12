@@ -1,5 +1,3 @@
-import { sentenceCase } from "../lib/apiErrorMessage";
-
 /**
  * Error line for an auth form. The band is a reserved, fixed height and is
  * transparent when empty, so the surrounding form does not shift when a
@@ -29,7 +27,7 @@ export default function AuthErrorFooter({
           bottom edge just the same, but a message too long for the band still
           scrolls, where `justify-end` would push the overflow out through a top
           edge no scrollbar can reach. */}
-      <div className="mt-auto">{sentenceCase(error) || " "}</div>
+      <div className="mt-auto">{error || " "}</div>
     </div>
   );
 }

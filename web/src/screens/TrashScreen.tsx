@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import Button from "../components/Button";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ContactLabel from "../components/ContactLabel";
-import { apiErrorMessage, searchErrorLine } from "../lib/apiErrorMessage";
+import { errorLine } from "../lib/apiErrorMessage";
 import { contactLabelText } from "../lib/contactLabel";
 import { isNearEnd } from "../lib/listPaging";
 import { countOf } from "../lib/plural";
@@ -254,11 +254,11 @@ export default function TrashScreen() {
     deleteConversation.isPending || deleteContact.isPending || emptyTrash.isPending;
   const dialogError =
     pending?.kind === "conversation" && deleteConversation.error
-      ? apiErrorMessage(deleteConversation.error, "Could not delete this conversation.")
+      ? errorLine(deleteConversation.error, "Could not delete this conversation.")
       : pending?.kind === "contact" && deleteContact.error
-        ? apiErrorMessage(deleteContact.error, "Could not delete this contact.")
+        ? errorLine(deleteContact.error, "Could not delete this contact.")
         : pending?.kind === "empty" && emptyTrash.error
-          ? apiErrorMessage(emptyTrash.error, "Could not empty Trash.")
+          ? errorLine(emptyTrash.error, "Could not empty Trash.")
           : "";
 
   return (
@@ -279,7 +279,7 @@ export default function TrashScreen() {
       </div>
       {fieldsError ? (
         <div className={errorBoxClass}>
-          Could not load the search words. {apiErrorMessage(fieldsError, "")}
+          Could not load the search words. {errorLine(fieldsError, "")}
         </div>
       ) : unknownWords.length > 0 ? (
         <div className={noteBoxClass} role="status">
@@ -294,7 +294,7 @@ export default function TrashScreen() {
           <section className="mb-8">
             <h3 className={sectionHeadingClass}>Conversations</h3>
             {error && (
-              <div className={errorBoxClass}>{searchErrorLine(error, "Could not load Trash.")}</div>
+              <div className={errorBoxClass}>{errorLine(error, "Could not load Trash.")}</div>
             )}
             {selectedId !== null ? (
               selectedLoading ? (
@@ -320,7 +320,7 @@ export default function TrashScreen() {
                 />
               ) : (
                 <div className="text-[0.875rem] text-danger">
-                  {apiErrorMessage(selectedError, "Could not load this conversation.")}
+                  {errorLine(selectedError, "Could not load this conversation.")}
                 </div>
               )
             ) : contactsOnlyWords.length > 0 ? (
@@ -344,12 +344,12 @@ export default function TrashScreen() {
             <h3 className={sectionHeadingClass}>Contacts</h3>
             {contactsError && (
               <div className={errorBoxClass}>
-                {searchErrorLine(contactsError, "Could not load trashed contacts.")}
+                {errorLine(contactsError, "Could not load trashed contacts.")}
               </div>
             )}
             {restoreContact.error && (
               <div className={errorBoxClass}>
-                {apiErrorMessage(restoreContact.error, "Could not restore this contact.")}
+                {errorLine(restoreContact.error, "Could not restore this contact.")}
               </div>
             )}
             {conversationsOnlyWords.length > 0 ? (
@@ -505,7 +505,7 @@ function SelectedConversation({
       </div>
       {restoreConversation.error && (
         <div className={errorBoxClass}>
-          {apiErrorMessage(restoreConversation.error, "Could not restore this conversation.")}
+          {errorLine(restoreConversation.error, "Could not restore this conversation.")}
         </div>
       )}
       <div className="flex items-center gap-4">
