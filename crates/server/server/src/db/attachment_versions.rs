@@ -33,21 +33,14 @@ impl Version {
         }
     }
 
-    /// The column that says why this version could not be made the last
-    /// time the media pass tried, `NULL` once it is made.
-    pub(crate) fn not_made_reason_column(self) -> &'static str {
+    /// The columns that say why this version could not be made the last
+    /// time the media pass tried, `NULL` once it is made: the reason in
+    /// words, then its [`NotMadeKind`]. They are set and cleared together,
+    /// which a `CHECK` on the table holds.
+    pub(crate) fn not_made_columns(self) -> [&'static str; 2] {
         match self {
-            Self::Preview => "preview_not_made_reason",
-            Self::Thumbnail => "thumbnail_not_made_reason",
-        }
-    }
-
-    /// The column that says which [`NotMadeKind`] the reason in
-    /// [`Self::not_made_reason_column`] is, set and cleared with it.
-    pub(crate) fn not_made_kind_column(self) -> &'static str {
-        match self {
-            Self::Preview => "preview_not_made_kind",
-            Self::Thumbnail => "thumbnail_not_made_kind",
+            Self::Preview => ["preview_not_made_reason", "preview_not_made_kind"],
+            Self::Thumbnail => ["thumbnail_not_made_reason", "thumbnail_not_made_kind"],
         }
     }
 
@@ -69,9 +62,19 @@ impl Version {
 /// Thumbnail or Preview. The reason beside it says the rest in words. The
 /// owner's view of an Import Run counts its attachments' failures by kind.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, utoipa::ToSchema,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    utoipa::ToSchema,
+    sqlx::Type,
 )]
 #[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
 pub enum NotMadeKind {
     /// ffmpeg exited with an error: it could not read or convert the file.
     ConversionFailed,
@@ -98,28 +101,6 @@ impl NotMadeKind {
         Self::OriginalMissing,
         Self::ServerProblem,
     ];
-
-    /// The kind as its column stores it.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::ConversionFailed => "conversion_failed",
-            Self::Stalled => "stalled",
-            Self::RanPastLength => "ran_past_length",
-            Self::TookTooLong => "took_too_long",
-            Self::OriginalMissing => "original_missing",
-            Self::ServerProblem => "server_problem",
-        }
-    }
-
-    /// The kind its column stores as `stored`. A value outside the column's
-    /// `CHECK` reads as [`Self::ServerProblem`], which the `CHECK` makes
-    /// impossible.
-    fn from_stored(stored: &str) -> Self {
-        Self::ALL
-            .into_iter()
-            .find(|kind| kind.as_str() == stored)
-            .unwrap_or(Self::ServerProblem)
-    }
 }
 
 impl std::fmt::Display for Version {
@@ -316,8 +297,7 @@ pub async fn record_shown_as_is(
         account_id,
         original_sha,
     } = rows;
-    let reason_column = Version::Preview.not_made_reason_column();
-    let kind_column = Version::Preview.not_made_kind_column();
+    let [reason_column, kind_column] = Version::Preview.not_made_columns();
     let mut tx = begin_write(conn).await?;
     sqlx::query(&format!(
         "UPDATE attachments
@@ -374,8 +354,7 @@ pub async fn record_not_made(
         reason,
     } = not_made;
     let [_, path_column, _] = version.columns();
-    let reason_column = version.not_made_reason_column();
-    let kind_column = version.not_made_kind_column();
+    let [reason_column, kind_column] = version.not_made_columns();
     let mut tx = begin_write(conn).await?;
     sqlx::query(&format!(
         "UPDATE attachments
@@ -389,7 +368,7 @@ pub async fn record_not_made(
     .bind(original_sha)
     .bind(account_id)
     .bind(named)
-    .bind(kind.as_str())
+    .bind(kind)
     .execute(&mut *tx)
     .await?;
     tx.commit().await
@@ -430,8 +409,7 @@ async fn point_rows(
         file,
     } = write;
     let [sha_column, path_column, mime_column] = version.columns();
-    let reason_column = version.not_made_reason_column();
-    let kind_column = version.not_made_kind_column();
+    let [reason_column, kind_column] = version.not_made_columns();
     let unset_filter = if only_unset {
         format!("AND COALESCE({path_column}, '') = ''")
     } else {
@@ -682,10 +660,8 @@ pub async fn not_made_for_import(
     conn: &mut SqliteConnection,
     import_id: i64,
 ) -> Result<Vec<NotMadeAttachment>, sqlx::Error> {
-    let [thumbnail_reason, preview_reason] =
-        [Version::Thumbnail, Version::Preview].map(Version::not_made_reason_column);
-    let [thumbnail_kind, preview_kind] =
-        [Version::Thumbnail, Version::Preview].map(Version::not_made_kind_column);
+    let [thumbnail_reason, thumbnail_kind] = Version::Thumbnail.not_made_columns();
+    let [preview_reason, preview_kind] = Version::Preview.not_made_columns();
     let rows: Vec<NotMadeRow> = sqlx::query_as(&format!(
         "SELECT id, original_name, mime_type, size_bytes,
                 {thumbnail_kind} AS thumbnail_kind, {thumbnail_reason} AS thumbnail_reason,
@@ -729,17 +705,17 @@ struct NotMadeRow {
     original_name: Option<String>,
     mime_type: Option<String>,
     size_bytes: Option<i64>,
-    thumbnail_kind: Option<String>,
+    thumbnail_kind: Option<NotMadeKind>,
     thumbnail_reason: Option<String>,
-    preview_kind: Option<String>,
+    preview_kind: Option<NotMadeKind>,
     preview_reason: Option<String>,
 }
 
 impl NotMadeRow {
     fn into_attachment(self) -> NotMadeAttachment {
-        let version = |kind: Option<String>, reason: Option<String>| {
+        let version = |kind: Option<NotMadeKind>, reason: Option<String>| {
             kind.map(|kind| VersionNotMade {
-                kind: NotMadeKind::from_stored(&kind),
+                kind,
                 reason: reason.unwrap_or_default(),
             })
         };

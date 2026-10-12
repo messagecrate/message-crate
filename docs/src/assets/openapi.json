@@ -1837,7 +1837,7 @@
           "Accounts"
         ],
         "summary": "An account's Import Runs as a page, newest first unless `sort` says otherwise.",
-        "description": "The owner reads any account's, each an `OwnerImportRun`; an account reads its own in full.",
+        "description": "The owner reads any account's, each an `OwnerImportRunSummary`; an account reads its own in full.",
         "operationId": "list_account_imports",
         "parameters": [
           {
@@ -1981,7 +1981,7 @@
           "Accounts"
         ],
         "summary": "One of an account's Import Runs: status, timings and counts, and for the account itself its summary and issues.",
-        "description": "The owner reads it as an `OwnerImportRunDetail`, with the attachments whose Thumbnail or Preview could not be made and why. A run that is another account's is a 404.",
+        "description": "The owner reads it as an `OwnerImportRun`, with the attachments whose Thumbnail or Preview could not be made and why. A run that is another account's is a 404.",
         "operationId": "get_account_import",
         "parameters": [
           {
@@ -13143,7 +13143,7 @@
             "description": "The account's own run."
           },
           {
-            "$ref": "#/components/schemas/OwnerImportRunDetail",
+            "$ref": "#/components/schemas/OwnerImportRun",
             "description": "Another account's run, as the owner reads it."
           }
         ],
@@ -13156,11 +13156,11 @@
             "description": "The account's own runs."
           },
           {
-            "$ref": "#/components/schemas/Page_OwnerImportRun",
+            "$ref": "#/components/schemas/Page_OwnerImportRunSummary",
             "description": "Another account's runs, as the owner reads them."
           }
         ],
-        "description": "An account's Import Runs as its reader may see them: each an\n`ImportRunSummary` for the account itself, an `OwnerImportRun` for the\nowner. Neither carries the run's issues."
+        "description": "An account's Import Runs as its reader may see them: each an\n`ImportRunSummary` for the account itself, an `OwnerImportRunSummary`\nfor the owner. Neither carries the run's issues."
       },
       "AccountMessages": {
         "type": "object",
@@ -16584,8 +16584,40 @@
         }
       },
       "OwnerImportRun": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/OwnerImportRunSummary",
+            "description": "Everything the list answers for the run."
+          },
+          {
+            "type": "object",
+            "required": [
+              "not_made_counts",
+              "not_made_attachments"
+            ],
+            "properties": {
+              "not_made_attachments": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/NotMadeAttachment"
+                },
+                "description": "The attachments the run wrote whose Thumbnail or Preview could not be\nmade, by id, each with why for each version not made."
+              },
+              "not_made_counts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/NotMadeCount"
+                },
+                "description": "How many of `not_made_attachments` have no Thumbnail and how many no\nPreview, for each kind of failure, leaving out a kind none has. Empty\nuntil the media pass has tried the run's attachments, which it does\nafter the run ends."
+              }
+            }
+          }
+        ],
+        "description": "One Import Run as the owner reads it under another account: everything\nthe list answers for it, and the attachments the run wrote whose\nThumbnail or Preview the server's media pass could not make, with why. A\nrun may write any number of them, so the list leaves them out\n(`docs/architecture/http-api.md`, \"Lists\"). Each is named by its file\nname, type and size, which the owner may read\n(`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner may\nsee\"); never by its message, its conversation, or its bytes."
+      },
+      "OwnerImportRunSummary": {
         "type": "object",
-        "description": "An Import Run as the owner reads it under another account: its source,\nmode, times, outcome and counts, and nothing of what the backup held\n(`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner may\nsee\"). The run's summary, its issues, its notes and its form say whom the\naccount talks to, so they stay out, and a field reaches the owner only by\nbeing added here.",
+        "description": "An Import Run as the owner's list of another account's runs answers it:\nits source, mode, times, outcome and counts, and nothing of what the\nbackup held\n(`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner may\nsee\"). The run's summary, its issues, its notes and its form say whom the\naccount talks to, so they stay out, and a field reaches the owner only by\nbeing added here.",
         "required": [
           "id",
           "source",
@@ -16735,38 +16767,6 @@
             "description": "Time spent uploading, when finished."
           }
         }
-      },
-      "OwnerImportRunDetail": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/OwnerImportRun",
-            "description": "Everything the list answers for the run."
-          },
-          {
-            "type": "object",
-            "required": [
-              "not_made_counts",
-              "not_made_attachments"
-            ],
-            "properties": {
-              "not_made_attachments": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/NotMadeAttachment"
-                },
-                "description": "The attachments the run wrote whose Thumbnail or Preview could not be\nmade, by id, each with why for each version not made."
-              },
-              "not_made_counts": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/NotMadeCount"
-                },
-                "description": "How many of `not_made_attachments` have no Thumbnail and how many no\nPreview, for each kind of failure, leaving out a kind none has. Empty\nuntil the media pass has tried the run's attachments, which it does\nafter the run ends."
-              }
-            }
-          }
-        ],
-        "description": "One Import Run as the owner reads it by its own route: everything the\nlist answers for it, and the attachments the run wrote whose Thumbnail or\nPreview the server's media pass could not make, with why. A run may write\nany number of them, so the list leaves them out (`docs/architecture/http-api.md`,\n\"Lists\"). Each is named by its file name, type and size, which the owner\nmay read (`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner\nmay see\"); never by its message, its conversation, or its bytes."
       },
       "Page_Account": {
         "type": "object",
@@ -18750,7 +18750,7 @@
           }
         }
       },
-      "Page_OwnerImportRun": {
+      "Page_OwnerImportRunSummary": {
         "type": "object",
         "description": "One page of a list.",
         "required": [
@@ -18764,7 +18764,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "description": "An Import Run as the owner reads it under another account: its source,\nmode, times, outcome and counts, and nothing of what the backup held\n(`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner may\nsee\"). The run's summary, its issues, its notes and its form say whom the\naccount talks to, so they stay out, and a field reaches the owner only by\nbeing added here.",
+              "description": "An Import Run as the owner's list of another account's runs answers it:\nits source, mode, times, outcome and counts, and nothing of what the\nbackup held\n(`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner may\nsee\"). The run's summary, its issues, its notes and its form say whom the\naccount talks to, so they stay out, and a field reaches the owner only by\nbeing added here.",
               "required": [
                 "id",
                 "source",

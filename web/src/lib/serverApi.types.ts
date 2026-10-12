@@ -211,7 +211,7 @@ export interface paths {
         };
         /**
          * An account's Import Runs as a page, newest first unless `sort` says otherwise.
-         * @description The owner reads any account's, each an `OwnerImportRun`; an account reads its own in full.
+         * @description The owner reads any account's, each an `OwnerImportRunSummary`; an account reads its own in full.
          */
         get: operations["list_account_imports"];
         put?: never;
@@ -231,7 +231,7 @@ export interface paths {
         };
         /**
          * One of an account's Import Runs: status, timings and counts, and for the account itself its summary and issues.
-         * @description The owner reads it as an `OwnerImportRunDetail`, with the attachments whose Thumbnail or Preview could not be made and why. A run that is another account's is a 404.
+         * @description The owner reads it as an `OwnerImportRun`, with the attachments whose Thumbnail or Preview could not be made and why. A run that is another account's is a 404.
          */
         get: operations["get_account_import"];
         put?: never;
@@ -1698,13 +1698,13 @@ export interface components {
          */
         AccountExportRuns: components["schemas"]["Page_ExportRun"] | components["schemas"]["Page_OwnerExportRun"];
         /** @description One of an account's Import Runs as its reader may see it. */
-        AccountImportRun: components["schemas"]["ImportRun"] | components["schemas"]["OwnerImportRunDetail"];
+        AccountImportRun: components["schemas"]["ImportRun"] | components["schemas"]["OwnerImportRun"];
         /**
          * @description An account's Import Runs as its reader may see them: each an
-         *     `ImportRunSummary` for the account itself, an `OwnerImportRun` for the
-         *     owner. Neither carries the run's issues.
+         *     `ImportRunSummary` for the account itself, an `OwnerImportRunSummary`
+         *     for the owner. Neither carries the run's issues.
          */
-        AccountImportRuns: components["schemas"]["Page_ImportRunSummary"] | components["schemas"]["Page_OwnerImportRun"];
+        AccountImportRuns: components["schemas"]["Page_ImportRunSummary"] | components["schemas"]["Page_OwnerImportRunSummary"];
         /** @description One account's share of the messages held: an id, a username and numbers. */
         AccountMessages: {
             /**
@@ -3824,14 +3824,39 @@ export interface components {
             total_bytes: number;
         };
         /**
-         * @description An Import Run as the owner reads it under another account: its source,
-         *     mode, times, outcome and counts, and nothing of what the backup held
+         * @description One Import Run as the owner reads it under another account: everything
+         *     the list answers for it, and the attachments the run wrote whose
+         *     Thumbnail or Preview the server's media pass could not make, with why. A
+         *     run may write any number of them, so the list leaves them out
+         *     (`docs/architecture/http-api.md`, "Lists"). Each is named by its file
+         *     name, type and size, which the owner may read
+         *     (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
+         *     see"); never by its message, its conversation, or its bytes.
+         */
+        OwnerImportRun: components["schemas"]["OwnerImportRunSummary"] & {
+            /**
+             * @description The attachments the run wrote whose Thumbnail or Preview could not be
+             *     made, by id, each with why for each version not made.
+             */
+            not_made_attachments: components["schemas"]["NotMadeAttachment"][];
+            /**
+             * @description How many of `not_made_attachments` have no Thumbnail and how many no
+             *     Preview, for each kind of failure, leaving out a kind none has. Empty
+             *     until the media pass has tried the run's attachments, which it does
+             *     after the run ends.
+             */
+            not_made_counts: components["schemas"]["NotMadeCount"][];
+        };
+        /**
+         * @description An Import Run as the owner's list of another account's runs answers it:
+         *     its source, mode, times, outcome and counts, and nothing of what the
+         *     backup held
          *     (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
          *     see"). The run's summary, its issues, its notes and its form say whom the
          *     account talks to, so they stay out, and a field reaches the owner only by
          *     being added here.
          */
-        OwnerImportRun: {
+        OwnerImportRunSummary: {
             /**
              * Format: int64
              * @description Attachments counted for the run.
@@ -3919,29 +3944,6 @@ export interface components {
              * @description Time spent uploading, when finished.
              */
             upload_ms: number | null;
-        };
-        /**
-         * @description One Import Run as the owner reads it by its own route: everything the
-         *     list answers for it, and the attachments the run wrote whose Thumbnail or
-         *     Preview the server's media pass could not make, with why. A run may write
-         *     any number of them, so the list leaves them out (`docs/architecture/http-api.md`,
-         *     "Lists"). Each is named by its file name, type and size, which the owner
-         *     may read (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner
-         *     may see"); never by its message, its conversation, or its bytes.
-         */
-        OwnerImportRunDetail: components["schemas"]["OwnerImportRun"] & {
-            /**
-             * @description The attachments the run wrote whose Thumbnail or Preview could not be
-             *     made, by id, each with why for each version not made.
-             */
-            not_made_attachments: components["schemas"]["NotMadeAttachment"][];
-            /**
-             * @description How many of `not_made_attachments` have no Thumbnail and how many no
-             *     Preview, for each kind of failure, leaving out a kind none has. Empty
-             *     until the media pass has tried the run's attachments, which it does
-             *     after the run ends.
-             */
-            not_made_counts: components["schemas"]["NotMadeCount"][];
         };
         /** @description One page of a list. */
         Page_Account: {
@@ -4959,7 +4961,7 @@ export interface components {
             total: number;
         };
         /** @description One page of a list. */
-        Page_OwnerImportRun: {
+        Page_OwnerImportRunSummary: {
             /** @description The rows on this page. */
             items: {
                 /**

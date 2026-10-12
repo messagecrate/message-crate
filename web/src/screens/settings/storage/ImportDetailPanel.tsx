@@ -132,6 +132,7 @@ export default function ImportDetailPanel({
           </div>
           {"not_made_attachments" in selectedImport ? (
             <ImportNotMadePanel
+              attachmentCount={selectedImport.attachment_count}
               counts={selectedImport.not_made_counts}
               attachments={selectedImport.not_made_attachments}
             />

@@ -187,9 +187,9 @@ owner's read of one Import Run counts the run's attachments by kind and lists
 them, each by file name, type and size with its reasons
 (`docs/architecture/http-api.md`, "Credentials and reach"), so the owner sees
 which files of an import were left without a version and why, and can run
-`process-assets` to try again; nothing tries again on its own (#2636). The reason is what ffmpeg said about the file,
-with the paths it named made relative to the account's directories, or a
-phrase of the server's when ffmpeg did not read the file, such as when the
+`process-assets` to try again; nothing tries again on its own (#2636).
+The reason is what ffmpeg said about the file, with the paths it named made
+relative to the account's directories, or a phrase of the server's when ffmpeg did not read the file, such as when the
 original is missing. It never holds a path outside the data directory or the
 full error, whose context names the original's path and, for a missing
 ffmpeg, every directory the server looked in. It is never recorded beside a

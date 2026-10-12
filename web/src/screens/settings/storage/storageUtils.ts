@@ -28,7 +28,7 @@ type Schema = components["schemas"];
  * held. Both carry how many issues the run recorded; opening the run reads
  * them, and its notes.
  */
-export type ListedImportRun = Schema["ImportRunSummary"] | Schema["OwnerImportRun"];
+export type ListedImportRun = Schema["ImportRunSummary"] | Schema["OwnerImportRunSummary"];
 
 /**
  * One Export Run as the history table lists it: in full to the account

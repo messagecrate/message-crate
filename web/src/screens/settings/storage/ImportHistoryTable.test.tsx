@@ -216,7 +216,13 @@ describe("Import history", () => {
   });
 
   it("shows the owner which attachments of a run have no Thumbnail or Preview, and why", async () => {
-    const listed = { ...anImport(1), counts: {}, contacts_new: 0, contacts_changed: 0 };
+    const listed = {
+      ...anImport(1),
+      attachment_count: 5,
+      counts: {},
+      contacts_new: 0,
+      contacts_changed: 0,
+    };
     listAccountImports.mockResolvedValue({ items: [listed], total: 1, limit: 50, offset: 0 });
     getAccountImport.mockResolvedValue({
       ...listed,
@@ -253,7 +259,8 @@ describe("Import history", () => {
       (await screen.findByRole("heading", { name: "Thumbnails and Previews" }))
         .parentElement as HTMLElement,
     );
-    expect(panel.getByText("2 attachments with no Thumbnail or Preview")).toBeInTheDocument();
+    // The failures are out of the run's attachments, 5 here.
+    expect(panel.getByText("2 of 5 attachments have no Thumbnail or Preview")).toBeInTheDocument();
     const [counts, list] = panel.getAllByRole("table");
     const countRows = within(counts as HTMLElement)
       .getAllByRole("row")

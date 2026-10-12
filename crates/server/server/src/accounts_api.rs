@@ -34,7 +34,7 @@ use crate::db::{account_profile, imports, server_settings, session_tokens};
 use crate::exports_api::OwnerExportRun;
 use crate::extract::{Json, Path, Query};
 use crate::imports_api::{
-    ImportRun, ImportRunSummary, OwnerImportRun, OwnerImportRunDetail, with_yourself,
+    ImportRun, ImportRunSummary, OwnerImportRun, OwnerImportRunSummary, with_yourself,
 };
 use crate::paging::{DEFAULT_LIST_LIMIT, Page, PageQuery, page_from_rows, page_of, page_params};
 use crate::server::{
@@ -1390,7 +1390,7 @@ pub(crate) async fn list_account_identities(
 // run's detail carries the counts.
 //
 // The account reads its runs in full. The owner reads each as an
-// `OwnerImportRun` (by its own route an `OwnerImportRunDetail`) or
+// `OwnerImportRun` (in a list an `OwnerImportRunSummary`) or an
 // `OwnerExportRun`, which hold only what ADR 0008 lists:
 // a run's summary, its issues and an export's query say whom the account
 // talks to and what it searched for. The owner's view is a type of its own
@@ -1398,15 +1398,15 @@ pub(crate) async fn list_account_identities(
 // reaches the owner only when someone adds it to that type.
 
 /// An account's Import Runs as its reader may see them: each an
-/// `ImportRunSummary` for the account itself, an `OwnerImportRun` for the
-/// owner. Neither carries the run's issues.
+/// `ImportRunSummary` for the account itself, an `OwnerImportRunSummary`
+/// for the owner. Neither carries the run's issues.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 #[serde(untagged)]
 pub(crate) enum AccountImportRuns {
     /// The account's own runs.
     Own(Page<ImportRunSummary>),
     /// Another account's runs, as the owner reads them.
-    Owner(Page<OwnerImportRun>),
+    Owner(Page<OwnerImportRunSummary>),
 }
 
 /// One of an account's Import Runs as its reader may see it.
@@ -1416,7 +1416,7 @@ pub(crate) enum AccountImportRun {
     /// The account's own run.
     Own(Box<ImportRun>),
     /// Another account's run, as the owner reads it.
-    Owner(Box<OwnerImportRunDetail>),
+    Owner(Box<OwnerImportRun>),
 }
 
 /// An account's Export Runs as its reader may see them: in full for the
@@ -1431,7 +1431,7 @@ pub(crate) enum AccountExportRuns {
 }
 
 /// An account's Import Runs as a page, newest first unless `sort` says
-/// otherwise. The owner reads any account's, each an `OwnerImportRun`; an
+/// otherwise. The owner reads any account's, each an `OwnerImportRunSummary`; an
 /// account reads its own in full.
 #[utoipa::path(
     get,
@@ -1468,7 +1468,7 @@ pub(crate) async fn list_account_imports(
 
 /// One of an account's Import Runs: status, timings and counts, and for the
 /// account itself its summary and issues. The owner reads it as an
-/// `OwnerImportRunDetail`, with the attachments whose Thumbnail or Preview
+/// `OwnerImportRun`, with the attachments whose Thumbnail or Preview
 /// could not be made and why. A run that is another account's is a 404.
 #[utoipa::path(
     get,

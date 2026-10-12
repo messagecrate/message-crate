@@ -27,9 +27,12 @@ const NOT_MADE_KIND_LABEL: Record<NotMadeKind, string> = {
  * someone runs `process-assets`, so the panel offers no retry.
  */
 export default function ImportNotMadePanel({
+  attachmentCount,
   counts,
   attachments,
 }: {
+  /** The attachments counted for the run, which the failures are out of. */
+  attachmentCount: number;
   counts: NotMadeCount[];
   attachments: NotMadeAttachment[];
 }) {
@@ -43,7 +46,8 @@ export default function ImportNotMadePanel({
       ) : (
         <>
           <p className="mb-2 text-[0.813rem] text-text">
-            {countOf(attachments.length, "attachment")} with no Thumbnail or Preview
+            {attachments.length.toLocaleString()} of {countOf(attachmentCount, "attachment")}{" "}
+            {attachments.length === 1 ? "has" : "have"} no Thumbnail or Preview
           </p>
           <table className="mb-3 border-collapse">
             <thead>
