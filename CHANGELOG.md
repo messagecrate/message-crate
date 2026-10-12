@@ -980,6 +980,13 @@ released versions carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-12: **A photo or video with no Thumbnail says why.** When the
+  server tried to make the small picture a conversation shows for a photo or
+  video and could not, the conversation showed only the file's name in its
+  place. It now says "No Thumbnail could be made" under the name, with what
+  went wrong, as opening an attachment with no Preview already did. The
+  database format changed: an existing Message Crate is rebuilt empty on
+  first start and its messages must be imported again (#2635, #2639).
 - 2026-10-11: **An attachment's type comes from its contents, not only
   from what the import called it.** A video an export called a plain file
   showed as a download and never got a thumbnail or a copy a browser can

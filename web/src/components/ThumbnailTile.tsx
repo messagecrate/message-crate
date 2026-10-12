@@ -27,8 +27,19 @@ export function ThumbnailTile({
   );
 }
 
-/** The Thumbnail, or the file's name in its place while there is none. */
-export function ThumbnailPicture({ name, url }: { name: string; url: string | null }) {
+/**
+ * The Thumbnail, or the file's name in its place while there is none, with
+ * `note` under it when the server says why it could not make one.
+ */
+export function ThumbnailPicture({
+  name,
+  url,
+  note = null,
+}: {
+  name: string;
+  url: string | null;
+  note?: string | null;
+}) {
   if (url) {
     return (
       <img
@@ -39,8 +50,16 @@ export function ThumbnailPicture({ name, url }: { name: string; url: string | nu
     );
   }
   return (
-    <span className="flex h-full w-[200px] items-center justify-center break-all bg-elevated px-3 text-center text-[0.75rem] text-muted">
+    <span className="relative flex h-full w-[200px] items-center justify-center break-all bg-elevated px-3 text-center text-[0.75rem] text-muted">
       {name}
+      {note ? (
+        <span
+          title={note}
+          className="absolute inset-x-2 bottom-2 line-clamp-2 break-words text-[0.688rem]"
+        >
+          {note}
+        </span>
+      ) : null}
     </span>
   );
 }

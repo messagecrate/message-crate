@@ -1737,9 +1737,9 @@ pub(crate) async fn give_thumbnail_the_preview_file(state: &AppState, sha: &str)
     let mut conn = state.db.acquire().await.unwrap();
     let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query(
-        "UPDATE attachments SET thumbnail_sha256 = derived_sha256,
-            thumbnail_assets_path = derived_assets_path,
-            thumbnail_mime_type = derived_mime_type
+        "UPDATE attachments SET thumbnail_sha256 = preview_sha256,
+            thumbnail_assets_path = preview_assets_path,
+            thumbnail_mime_type = preview_mime_type
          WHERE sha256 = $1",
     )
     .bind(sha)
@@ -1798,19 +1798,19 @@ pub(crate) async fn seed_attachment_with_preview(
     fs::write(preview, PREVIEW_BYTES).unwrap();
 
     let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
-    for (sha, derived) in [(&with_preview, true), (&without_preview, false)] {
+    for (sha, has_preview) in [(&with_preview, true), (&without_preview, false)] {
         sqlx::query(
             "INSERT INTO attachments (
                 message_id, original_name, mime_type, sha256, assets_path,
-                derived_sha256, derived_assets_path, derived_mime_type
+                preview_sha256, preview_assets_path, preview_mime_type
              ) VALUES ($1, 'photo.heic', 'image/heic', $2, $3, $4, $5, $6)",
         )
         .bind(message_id)
         .bind(sha.as_str())
         .bind(shard_rel_path(sha, ""))
-        .bind(derived.then_some(preview_sha.as_str()))
-        .bind(derived.then_some(preview_path.as_str()))
-        .bind(derived.then_some("image/jpeg"))
+        .bind(has_preview.then_some(preview_sha.as_str()))
+        .bind(has_preview.then_some(preview_path.as_str()))
+        .bind(has_preview.then_some("image/jpeg"))
         .execute(&mut *tx)
         .await
         .unwrap();
@@ -1931,9 +1931,9 @@ async fn a_preview_or_thumbnail_path_outside_the_converted_directory_is_not_serv
         let mut conn = state.db.acquire().await.unwrap();
         let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
         sqlx::query(
-            "UPDATE attachments SET derived_assets_path = $1,
-                thumbnail_sha256 = derived_sha256, thumbnail_assets_path = $1,
-                thumbnail_mime_type = derived_mime_type
+            "UPDATE attachments SET preview_assets_path = $1,
+                thumbnail_sha256 = preview_sha256, thumbnail_assets_path = $1,
+                thumbnail_mime_type = preview_mime_type
              WHERE sha256 = $2",
         )
         .bind(&stored)
@@ -1962,13 +1962,13 @@ async fn a_preview_or_thumbnail_path_outside_the_converted_directory_is_not_serv
 }
 
 /// What `file_of` answers for the Preview of [`seed_attachment_with_preview`]'s
-/// original once a second row of it names `derived_path` with
-/// `derived_mime`, each an SQL expression over the first row, and the
+/// original once a second row of it names `preview_path` with
+/// `preview_mime`, each an SQL expression over the first row, and the
 /// warnings it wrote to the server's log meanwhile. Returns the answer, the
 /// log lines, the original's fingerprint and the first row's Preview path.
 async fn file_of_with_a_second_row(
-    derived_path: &str,
-    derived_mime: &str,
+    preview_path: &str,
+    preview_mime: &str,
 ) -> (
     Option<(String, Option<String>)>,
     Vec<crate::logging::LogLine>,
@@ -1986,10 +1986,10 @@ async fn file_of_with_a_second_row(
     sqlx::query(&format!(
         "INSERT INTO attachments (
             message_id, original_name, mime_type, sha256, assets_path,
-            derived_sha256, derived_assets_path, derived_mime_type
+            preview_sha256, preview_assets_path, preview_mime_type
          )
          SELECT message_id, original_name, mime_type, sha256, assets_path,
-            derived_sha256, {derived_path}, {derived_mime}
+            preview_sha256, {preview_path}, {preview_mime}
          FROM attachments WHERE sha256 = $1"
     ))
     .bind(&sha)
@@ -2033,7 +2033,7 @@ async fn file_of_with_a_second_row(
 #[tokio::test]
 async fn rows_that_name_different_previews_answer_the_oldest_rows_and_log_it() {
     let (file, lines, sha, preview_path) =
-        file_of_with_a_second_row("'ab/a-damaged-preview.jpg'", "derived_mime_type").await;
+        file_of_with_a_second_row("'ab/a-damaged-preview.jpg'", "preview_mime_type").await;
 
     assert_eq!(
         file,
@@ -2056,7 +2056,7 @@ async fn rows_that_name_different_previews_answer_the_oldest_rows_and_log_it() {
 #[tokio::test]
 async fn rows_that_name_one_preview_with_different_media_types_log_nothing() {
     let (file, lines, _, preview_path) =
-        file_of_with_a_second_row("derived_assets_path", "NULL").await;
+        file_of_with_a_second_row("preview_assets_path", "NULL").await;
 
     assert_eq!(file, Some((preview_path, Some("image/jpeg".into()))));
     assert!(lines.is_empty(), "{lines:?}");
