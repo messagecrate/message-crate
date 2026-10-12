@@ -1258,6 +1258,15 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-12: **A slow or stuck device can no longer hold the server.** A
+  device that connected and sent nothing, sent its request a byte at a time,
+  or stopped part-way through sending one could hold its connection for
+  good, and any number of such connections could pile up. The server now
+  closes a connection that sends no request for 30 seconds, holds at most
+  256 open at once, and stops reading any request that stalls or runs past
+  the upload time limits, not only an upload. This guards against a
+  misbehaving device on your network; it does not make the server safe to
+  put on the internet (#2100).
 - 2026-10-12: **A stopping server waits at most 30 seconds, and Docker
   gives it 40.** A server told to stop waited as long as the longest
   request still running, and an import could take minutes, so `docker stop`

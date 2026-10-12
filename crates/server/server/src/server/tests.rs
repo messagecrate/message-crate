@@ -2198,7 +2198,6 @@ async fn sigterm_drains_the_request_in_flight_then_stops_the_server() {
     let stopped = tokio::time::timeout(Duration::from_secs(10), server)
         .await
         .expect("the server kept running after SIGTERM")
-        .unwrap()
         .unwrap();
     assert!(matches!(stopped, Stopped::Drained), "{stopped:?}");
 }
@@ -2266,7 +2265,7 @@ async fn a_stopping_server_gives_up_on_a_request_still_running_at_the_drain_limi
 
     stop_tx.send(()).unwrap();
     limit_tx.send(()).unwrap();
-    let stopped = server.await.unwrap().unwrap();
+    let stopped = server.await.unwrap();
     assert!(matches!(stopped, Stopped::GaveUp), "{stopped:?}");
     assert!(limit_started.load(Ordering::SeqCst));
 
@@ -2319,7 +2318,7 @@ async fn a_stopping_server_gives_up_on_its_own_work_at_the_drain_limit() {
     stop_tx.send(()).unwrap();
     work_rx.await.expect("the stop signal started the work");
     limit_tx.send(()).unwrap();
-    let stopped = server.await.unwrap().unwrap();
+    let stopped = server.await.unwrap();
     assert!(matches!(stopped, Stopped::GaveUp), "{stopped:?}");
 }
 
@@ -2353,7 +2352,7 @@ async fn a_stopping_server_waits_for_its_own_work() {
         "the server stopped before the work the signal started ended"
     );
     finish_tx.send(()).unwrap();
-    let stopped = server.await.unwrap().unwrap();
+    let stopped = server.await.unwrap();
     assert!(matches!(stopped, Stopped::Drained), "{stopped:?}");
 }
 
@@ -2676,6 +2675,106 @@ async fn every_upload_read_answers_upload_stalled() {
         Some(ProblemType::UploadStalled),
         "{discarded}"
     );
+}
+
+/// Send `request` through the server's layers around `routes`, with the
+/// test's upload time limits, and return the answer's status and text, and
+/// how long the answer took on the paused clock.
+async fn answer_with_test_upload_times(
+    routes: Router<AppState>,
+    request: axum::http::Request<axum::body::Body>,
+) -> (StatusCode, String, std::time::Duration) {
+    use http_body_util::BodyExt as _;
+    use tower::ServiceExt as _;
+
+    let fixture = test_fixture().await;
+    let mut state = fixture.state.clone();
+    state.upload_time_limits = TEST_UPLOAD_TIMES;
+    let app = with_server_layers(routes, state);
+    // Paused only now, so building the fixture ran on a clock that moves.
+    tokio::time::pause();
+    let started = tokio::time::Instant::now();
+    let answer = async {
+        let response = app.oneshot(request).await.unwrap();
+        let status = response.status();
+        (
+            status,
+            response.into_body().collect().await.unwrap().to_bytes(),
+        )
+    };
+    let (status, bytes) = tokio::time::timeout(TEST_UPLOAD_TIMES.piece * 4, answer)
+        .await
+        .expect("the server was still reading the body long after every limit");
+    let took = started.elapsed();
+    (status, String::from_utf8(bytes.to_vec()).unwrap(), took)
+}
+
+/// A JSON body that stops arriving part-way is held to the upload time
+/// limits as an upload's is, and answers `upload-stalled` at the stall limit
+/// (#2100). Before, any body but an upload's could take as long as its
+/// client liked, holding its connection all the while. Time is paused, so
+/// the limit passes as soon as nothing else can run.
+#[tokio::test]
+async fn a_json_body_that_stops_arriving_is_upload_stalled_at_the_stall_limit() {
+    let routes = Router::new().route(
+        "/v1/echo",
+        axum::routing::post(|Json(value): Json<serde_json::Value>| async move { Json(value) }),
+    );
+    let first: Result<axum::body::Bytes, std::io::Error> =
+        Ok(axum::body::Bytes::from_static(b"{\"name\": "));
+    let stalled = futures_util::stream::iter([first]).chain(futures_util::stream::pending());
+    let request = axum::http::Request::post("/v1/echo")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(axum::body::Body::from_stream(stalled))
+        .unwrap();
+
+    let (status, text, took) = answer_with_test_upload_times(routes, request).await;
+
+    // The timer wheel counts whole milliseconds, and the clock was paused
+    // part-way through one.
+    assert!(
+        took >= TEST_UPLOAD_TIMES.stall
+            && took < TEST_UPLOAD_TIMES.stall + std::time::Duration::from_secs(1),
+        "{took:?}"
+    );
+    let problem = expect_problem(status, &text, ProblemType::UploadStalled);
+    assert!(
+        problem
+            .detail
+            .is_some_and(|detail| detail.contains("no bytes of the body arrived for 7 seconds")),
+        "{text}"
+    );
+}
+
+/// An import batch holds its own body to time, from when it starts reading,
+/// because it waits for an import slot first. A clock the layers started
+/// when the request arrived would count that wait against the body, and
+/// refuse a batch that waited longer than the limit for a whole body.
+#[tokio::test]
+async fn an_import_batch_body_is_timed_from_its_own_read_not_its_arrival() {
+    let routes = Router::new().route(
+        "/v1/imports/{id}/batches",
+        axum::routing::post(|request: axum::extract::Request| async move {
+            tokio::time::sleep(TEST_UPLOAD_TIMES.piece * 2).await;
+            read_body_limited(request.into_body(), 1024)
+                .await
+                .map(|body| body.len().to_string())
+        }),
+    );
+    // The batch's one line arrives a second after the read asks for it.
+    let line = futures_util::stream::once(async {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        Ok::<_, std::io::Error>(axum::body::Bytes::from_static(b"{}\n"))
+    });
+    let request = axum::http::Request::post("/v1/imports/7/batches")
+        .header(header::CONTENT_TYPE, "application/jsonl")
+        .body(axum::body::Body::from_stream(line))
+        .unwrap();
+
+    let (status, text, _) = answer_with_test_upload_times(routes, request).await;
+
+    assert_eq!(status, StatusCode::OK, "{text}");
+    assert_eq!(text, "3");
 }
 
 /// The limits pass `Limited`'s error through, so a body with no declared

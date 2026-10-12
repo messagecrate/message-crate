@@ -70,10 +70,17 @@ fn app_headers() -> reqwest::header::HeaderMap {
 /// Idle connections kept per server host for worker threads.
 const POOL_MAX_IDLE_PER_HOST: usize = 64;
 
+/// How long an idle connection is kept for reuse: 20 seconds, under the 30
+/// seconds the server keeps one open with no request. A connection the
+/// client kept longer could be closed by the server just as the client
+/// sends a request on it, which fails the request for nothing.
+const POOL_IDLE_LIMIT: std::time::Duration = std::time::Duration::from_secs(20);
+
 /// Build the shared blocking reqwest client.
 ///
 /// One client per `HttpSession`; the connection pool keeps
-/// `POOL_MAX_IDLE_PER_HOST` idle connections per host for the worker threads.
+/// `POOL_MAX_IDLE_PER_HOST` idle connections per host for the worker threads,
+/// each for `POOL_IDLE_LIMIT`.
 ///
 /// The client trusts the certificate authorities the operating system trusts
 /// as well as the bundled webpki roots (the workspace's reqwest features), so
@@ -86,6 +93,7 @@ const POOL_MAX_IDLE_PER_HOST: usize = 64;
 pub fn build_client() -> Result<reqwest::blocking::Client> {
     reqwest::blocking::Client::builder()
         .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST)
+        .pool_idle_timeout(POOL_IDLE_LIMIT)
         .default_headers(app_headers())
         .build()
         .context("build HTTP client")

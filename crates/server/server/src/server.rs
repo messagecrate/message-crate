@@ -1239,6 +1239,13 @@ pub(crate) const MAX_REQUEST_BODY_BYTES: usize = 512 * 1024 * 1024;
 /// ([`is_upload_part`]) skips it too, because its route holds the body to the
 /// part size the upload started with, and the limit as it is now would refuse
 /// every remaining part of an upload the owner lowered the limit under.
+///
+/// Every body is held to time as well as size, with the upload time limits
+/// ([`UploadTimeLimits`]), so a client that stops sending a body part-way,
+/// or sends a byte now and then, holds its connection only so long (#2100).
+/// The three uploads ([`reads_its_own_body_in_time`]) are left to hold
+/// their bodies themselves, because each starts the clock when it starts
+/// reading.
 async fn limit_request_body(
     axum::extract::State(state): axum::extract::State<AppState>,
     request: axum::extract::Request,
@@ -1263,9 +1270,37 @@ async fn limit_request_body(
     if declared_over(request.headers(), limit) {
         return ApiError::PayloadTooLarge.into_response();
     }
-    let request =
-        request.map(|body| axum::body::Body::new(http_body_util::Limited::new(body, limit)));
+    let in_time = !reads_its_own_body_in_time(&request);
+    let request = request.map(|body| {
+        let body = axum::body::Body::new(http_body_util::Limited::new(body, limit));
+        if in_time {
+            upload_body_bounded(body, state.upload_time_limits)
+        } else {
+            body
+        }
+    });
     next.run(request).await
+}
+
+/// Whether `request` is one of the uploads that hold their body to the
+/// upload time limits themselves: an import batch, which waits for an
+/// import slot before it reads, a single-request attachment upload, and a
+/// part of a multipart one. Each starts the clock when it starts reading,
+/// and a clock started on arrival would count the wait for a slot against
+/// the body.
+fn reads_its_own_body_in_time(request: &axum::extract::Request) -> bool {
+    is_import_batch(request) || is_attachment_upload(request) || is_upload_part(request)
+}
+
+/// `POST /v1/imports/{id}/batches`: one batch of an import.
+fn is_import_batch(request: &axum::extract::Request) -> bool {
+    request.method() == axum::http::Method::POST
+        && request
+            .uri()
+            .path()
+            .strip_prefix("/v1/imports/")
+            .and_then(|rest| rest.strip_suffix("/batches"))
+            .is_some_and(|id| !id.is_empty() && !id.contains('/'))
 }
 
 /// Whether `path` belongs to the `/v1` interface: `/v1` itself or anything
@@ -1792,14 +1827,11 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
             tokio::join!(demo_build.stop(), media_queue.stop());
         }
     };
-    let on_signal = {
-        let stop_work = stop_work.clone();
-        move || {
-            on_signal();
-            stop_work()
-        }
+    let on_signal = move || {
+        on_signal();
+        stop_work()
     };
-    match serve_until_shutdown(
+    serve_until_shutdown(
         listener,
         app,
         shutdown_signal(exit_with_parent),
@@ -1807,15 +1839,7 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
         || tokio::time::sleep(STOP_DRAIN_LIMIT),
     )
     .await
-    {
-        Ok(stopped) => stopped.log(&in_flight),
-        // A server that failed was never told to stop, so nothing stopped
-        // the build or the pass yet.
-        Err(error) => {
-            stop_work().await;
-            return Err(error.into());
-        }
-    }
+    .log(&in_flight);
     tracing::info!("The server has stopped");
     Ok(())
 }
@@ -1885,36 +1909,40 @@ impl Stopped {
 /// sleep of [`STOP_DRAIN_LIMIT`], and a test a future it resolves itself.
 /// What is still running when the limit passes is left to end with the
 /// process (`main` shuts the runtime down without waiting for it).
+///
+/// Every connection is held to [`crate::connections::ConnectionLimits::SERVER`]:
+/// how many are open at once, and how long one may take over its headers or
+/// sit idle (#2100).
 async fn serve_until_shutdown<W, D>(
     listener: tokio::net::TcpListener,
     app: Router,
     stop: impl Future<Output = ()> + Send + 'static,
     on_signal: impl FnOnce() -> W + Send + 'static,
     drain_limit: impl FnOnce() -> D,
-) -> std::io::Result<Stopped>
+) -> Stopped
 where
     W: Future<Output = ()> + Send + 'static,
     D: Future<Output = ()>,
 {
     let (work_tx, work_rx) = tokio::sync::oneshot::channel::<W>();
     let (signaled_tx, signaled_rx) = tokio::sync::oneshot::channel::<()>();
-    let served = axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
+    let served = crate::connections::serve_connections(
+        listener,
+        app,
+        crate::connections::ConnectionLimits::SERVER,
+        async move {
             stop.await;
             let _ = work_tx.send(on_signal());
             let _ = signaled_tx.send(());
-        })
-        .into_future();
-    // A server that fails before it is told to stop drops both senders. The
-    // work is then nothing to wait for, and the limit never starts.
+        },
+    );
     let work = async move {
         if let Ok(work) = work_rx.await {
             work.await;
         }
     };
     let finished = async move {
-        let (served, ()) = tokio::join!(served, work);
-        served
+        tokio::join!(served, work);
     };
     let limit_passed = async move {
         if signaled_rx.await.is_err() {
@@ -1923,8 +1951,8 @@ where
         drain_limit().await;
     };
     tokio::select! {
-        served = finished => served.map(|()| Stopped::Drained),
-        () = limit_passed => Ok(Stopped::GaveUp),
+        () = finished => Stopped::Drained,
+        () = limit_passed => Stopped::GaveUp,
     }
 }
 
@@ -2316,15 +2344,28 @@ fn body_read_error(error: axum::Error) -> ApiError {
         if cause.is::<http_body_util::LengthLimitError>() {
             return ApiError::PayloadTooLarge;
         }
+        source = cause.source();
+    }
+    body_too_slow(&error)
+        .unwrap_or_else(|| ApiError::MalformedBody(format!("failed to read body: {error}")))
+}
+
+/// The `upload-stalled` problem when [`upload_body_bounded`] ended the body
+/// whose read failed with `error`, found anywhere in its chain of causes, so
+/// a body read by Axum's own extractors answers it as well as one the
+/// server reads itself.
+pub(crate) fn body_too_slow(error: &(dyn std::error::Error + 'static)) -> Option<ApiError> {
+    let mut source = Some(error);
+    while let Some(cause) = source {
         if let Some(too_slow) = cause.downcast_ref::<BodyTooSlow>() {
-            return ApiError::UploadStalled(format!(
+            return Some(ApiError::UploadStalled(format!(
                 "{too_slow}: the connection stopped delivering the body and nothing is wrong \
                  with the data, so sending it again continues the upload"
-            ));
+            )));
         }
         source = cause.source();
     }
-    ApiError::MalformedBody(format!("failed to read body: {error}"))
+    None
 }
 
 /// Read the whole request body into memory, failing once it passes `max_bytes`.
