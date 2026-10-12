@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-use crate::tools::{InstalledTools, MediaTools};
+use crate::tools::{InstalledTools, MediaTools, Reads};
 use crate::{CompressOptions, MediaMode};
 
 /// Aggregate counts and errors from one media convert/compress pass.
@@ -900,7 +900,7 @@ fn convert_image(
     ];
     with_temp_output(&tmp, || {
         tools
-            .transcode(&args, &tmp, None)
+            .transcode(&args, &tmp, Reads::OneFrame, None)
             .with_context(|| format!("convert image {}", path.display()))?;
         if keep_smaller && !is_smaller(&tmp, path)? {
             let _ = fs::remove_file(&tmp);
@@ -935,7 +935,7 @@ fn convert_audio(
     }
     with_temp_output(&tmp, || {
         tools
-            .transcode(&args, &tmp, None)
+            .transcode(&args, &tmp, Reads::All(path), None)
             .with_context(|| format!("convert audio {}", path.display()))?;
         if keep_smaller && !is_smaller(&tmp, path)? {
             let _ = fs::remove_file(&tmp);
@@ -977,7 +977,7 @@ fn convert_video(tools: &dyn MediaTools, path: &Path, commit: Commit<'_>) -> Res
             "+faststart".into(),
         ];
         tools
-            .transcode(&args, &tmp, None)
+            .transcode(&args, &tmp, Reads::All(path), None)
             .with_context(|| format!("convert video {}", path.display()))?;
         commit_produced(commit, path, &tmp)
     })
@@ -994,7 +994,7 @@ fn remux_mp4(tools: &dyn MediaTools, path: &Path, tmp: &Path) -> Result<()> {
         "-movflags".into(),
         "+faststart".into(),
     ];
-    tools.transcode(&args, tmp, None)
+    tools.transcode(&args, tmp, Reads::All(path), None)
 }
 
 /// Leave an MP4 as it is; remux anything else into one, so every video the
@@ -1071,7 +1071,7 @@ fn compress_video(
             "-movflags".into(),
             "+faststart".into(),
         ]);
-        if let Err(hevc_err) = tools.transcode(&hevc_args, &tmp, None) {
+        if let Err(hevc_err) = tools.transcode(&hevc_args, &tmp, Reads::All(path), None) {
             let _ = fs::remove_file(&tmp);
             let mut avc_args = base_video_args(path, &vf);
             avc_args.extend([
@@ -1089,7 +1089,7 @@ fn compress_video(
                 "+faststart".into(),
             ]);
             tools
-                .transcode(&avc_args, &tmp, None)
+                .transcode(&avc_args, &tmp, Reads::All(path), None)
                 .with_context(|| format!("HEVC failed ({hevc_err:#}), and then H.264 failed"))
                 .with_context(|| format!("compress video {}", path.display()))?;
             *hevc_failure = Some(format!("{hevc_err:#}"));

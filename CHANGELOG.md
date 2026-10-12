@@ -1022,6 +1022,20 @@ released versions carry their date on the heading.
   filled the Audit Trail with refused logins. Past 120 such logins a minute
   in all, the server now turns them away without checking them or recording
   them, and the answer still doesn't say whether a username exists.
+- 2026-10-11: **No single attachment or error stops Thumbnails and Previews
+  for good.** The server makes Thumbnails and Previews one attachment at a
+  time, and three things could stop that work for every account. A file
+  ffmpeg never finished converting, such as a damaged video, held it
+  forever, and again at every start. ffmpeg is now stopped once it runs far
+  longer than the file plays, at least 10 minutes and at most 6 hours, or
+  an hour when the file does not say how long it plays. The attachment
+  then says that ffmpeg did not finish in time. A fault in the server's own code ended the work until a restart, and
+  a moment when the database was busy ended it until the next import. Both
+  are now written to the server's log, and the work starts again 5 seconds
+  later, waiting twice as long after each failure in a row, up to 5
+  minutes. ffmpeg and ffprobe now also open only files on this
+  computer, never a network address named inside an attachment
+  (#2059, #2072, #2091).
 - 2026-10-11: **Two uploads of one attachment at the same moment both
   succeed.** The server named an upload's temporary file from the clock
   alone, so two uploads of the same file that started in one clock tick

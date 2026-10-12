@@ -21,7 +21,7 @@ demo-seed = { path = "../demo-seed" }
 file-io = { workspace = true }
 fs2 = "0.4.3"
 hmac = "0.13.0"
-futures-util = { version = "0.3.31", default-features = false }
+futures-util = { version = "0.3.31", default-features = false, features = ["std"] }
 hex = { workspace = true }
 libc = "0.2"
 # The bindings sqlx-sqlite already links (VENDORING.md pins the version), for
