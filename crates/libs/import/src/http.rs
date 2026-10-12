@@ -559,6 +559,7 @@ mod tests {
             },
             cancel: Default::default(),
             refused: Default::default(),
+            away: Default::default(),
             piece_wait: Duration::from_secs(5),
         }
     }

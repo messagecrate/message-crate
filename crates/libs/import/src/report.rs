@@ -9,6 +9,7 @@ use message_crate_api_types::ImportMode;
 use message_crate_core::count_of;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+use message_crate_http::ServerAway;
 use serde::{Deserialize, Serialize};
 
 /// Per-conversation outcome written into the final report JSON.
@@ -103,17 +104,25 @@ pub struct ImportReport {
     /// The cancel flag halts it when it leaves conversations unsent: they are
     /// in `conversations_cancelled`, and the journal leaves them for the next
     /// Upload. A cancel that arrives after the last request went out halts
-    /// nothing, so it is `false` then. Only the cancel flag or a refused
-    /// session halts a run: a failed request fails its conversations and the
-    /// run goes on. A session the server refused mid-run halts the run as a
-    /// cancel does, without setting the caller's cancel flag, and it is
-    /// `true` then even when no conversation was left unsent.
+    /// nothing, so it is `false` then. Only the cancel flag, a refused
+    /// session, or a server that was not there to take a request halts a
+    /// run: any other failed request fails its conversations and the run
+    /// goes on. A session the server refused mid-run, or a server away
+    /// (`server_away`), halts the run as a cancel does, without setting the
+    /// caller's cancel flag, and it is `true` then even when no conversation
+    /// was left unsent.
     pub cancelled: bool,
     /// `true` when the server refused the session token during the run (it
     /// expired or was ended), which halted the run as for a cancel. The
     /// requests it refused fail no conversation. The caller ends the session
     /// on its side as well, since every later request would be refused.
     pub session_refused: bool,
+    /// Set when a request failed because the server could not take it,
+    /// with why: it was stopping, too busy, or could not be reached. That
+    /// halted the run as for a cancel, and the request fails no
+    /// conversation: the next Upload sends what this one did not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_away: Option<ServerAway>,
     /// `true` when the Upload could not complete the Import Run it started:
     /// the server refused the request, or no answer came. The server may then
     /// still hold the run as running, so `ok` is `false`. A paused run
@@ -279,6 +288,17 @@ pub(crate) fn format_ms_seconds(ms: u64) -> String {
     format!("{:.1}s", ms as f64 / 1000.0)
 }
 
+/// What the server did that halted the run, after "the server": the one
+/// wording the Upload's log uses for each reason, in the line that says the
+/// Upload paused and in its summary.
+pub(crate) fn what_the_server_did(away: ServerAway) -> &'static str {
+    match away {
+        ServerAway::Stopping => "was stopping",
+        ServerAway::Busy => "was too busy",
+        ServerAway::Unavailable => "could not be reached",
+    }
+}
+
 /// Build the sentences that end the Upload's log: how the Upload ended, and
 /// what it did with the conversations, messages and Assets it read.
 pub fn format_import_summary(report: &ImportReport) -> String {
@@ -287,10 +307,15 @@ pub fn format_import_summary(report: &ImportReport) -> String {
     // after the last conversation was sent halted nothing, so that run
     // completed.
     let ending = if report.cancelled {
-        if report.session_refused {
-            format!("The Upload paused after {elapsed}, because the server refused the session.")
-        } else {
-            format!("The Upload paused after {elapsed}.")
+        match (report.session_refused, report.server_away) {
+            (true, _) => format!(
+                "The Upload paused after {elapsed}, because the server refused the session."
+            ),
+            (false, Some(away)) => format!(
+                "The Upload paused after {elapsed}, because the server {}.",
+                what_the_server_did(away)
+            ),
+            (false, None) => format!("The Upload paused after {elapsed}."),
         }
     } else if report.conversations_failed > 0 || report.messages_failed > 0 {
         format!("The Upload completed in {elapsed}, with errors.")
@@ -363,6 +388,7 @@ mod tests {
             ok: true,
             cancelled: false,
             session_refused: false,
+            server_away: None,
             completion_refused: false,
             account: 1,
             username: "user".into(),
@@ -484,6 +510,33 @@ mod tests {
                 ..not_ok.clone()
             }),
             "The Upload paused after 1m00s, because the server refused the session."
+        );
+        // A server that was not there halts the Upload whether or not it
+        // left a conversation unsent, and the line says why (#2727, #2092).
+        assert_eq!(
+            first_line(ImportReport {
+                cancelled: true,
+                server_away: Some(ServerAway::Stopping),
+                ..not_ok.clone()
+            }),
+            "The Upload paused after 1m00s, because the server was stopping."
+        );
+        assert_eq!(
+            first_line(ImportReport {
+                cancelled: true,
+                server_away: Some(ServerAway::Unavailable),
+                conversations_cancelled: 6,
+                ..not_ok.clone()
+            }),
+            "The Upload paused after 1m00s, because the server could not be reached."
+        );
+        assert_eq!(
+            first_line(ImportReport {
+                cancelled: true,
+                server_away: Some(ServerAway::Busy),
+                ..not_ok.clone()
+            }),
+            "The Upload paused after 1m00s, because the server was too busy."
         );
         assert_eq!(
             first_line(ImportReport {

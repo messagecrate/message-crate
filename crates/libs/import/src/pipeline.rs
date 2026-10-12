@@ -45,8 +45,8 @@ pub(crate) enum ChunkStep {
     Continue,
     /// A flush failed for this conversation; drop its remaining chunks but keep the run going.
     FileFailed,
-    /// The run must stop: the caller cancelled it, or the server refused the
-    /// session.
+    /// The run must stop: the caller cancelled it, the server refused the
+    /// session, or the server was not there to take a request.
     Abort,
 }
 
@@ -193,19 +193,34 @@ struct ImportHttpOutcome {
 }
 
 /// Why a batch failed: the sentence to show, the line of the batch the
-/// server could not read, when it named one, and whether the server refused
-/// the session rather than the batch.
+/// server could not read, when it named one, and whether the failure halts
+/// the run rather than failing the batch.
 struct BatchError {
     message: String,
     refused_line: Option<u64>,
-    session_refused: bool,
+    /// The server refused the session, or was not there to take the batch
+    /// (it is stopping, busy, or could not be reached), or the run was told
+    /// to stop while the batch was still being retried. Nothing is known to
+    /// be wrong with the batch, so its conversations are left for the next
+    /// Upload.
+    halts_run: bool,
 }
 
 impl BatchError {
-    fn new(error: &anyhow::Error) -> Self {
+    /// The failure `error`, from a run that `stopped` (cancelled, refused,
+    /// or with the server away) by the time the request gave up.
+    fn new(error: &anyhow::Error, stopped: bool) -> Self {
+        // A stop ends the retries of a failure that might have passed on a
+        // later try, so that batch is not counted as failed. A permanent
+        // failure was not cut short, and fails its batch as it would anyway.
+        let cut_short = stopped
+            && message_crate_http::classify_retry(error)
+                == message_crate_http::RetryKind::Transient;
         Self {
             message: format!("{error:#}"),
-            session_refused: message_crate_http::is_session_refused(error),
+            halts_run: message_crate_http::is_session_refused(error)
+                || message_crate_http::server_away(error).is_some()
+                || cut_short,
             refused_line: error
                 .downcast_ref::<HttpError>()
                 .and_then(HttpError::problem)
@@ -415,8 +430,9 @@ impl<'a> ImportPipeline<'a> {
 
     /// Flush, then say whether the run may keep going.
     ///
-    /// A failed request stops the run only when the caller cancelled it or
-    /// the server refused the session. Otherwise the failure is
+    /// A failed request stops the run only when the caller cancelled it, the
+    /// server refused the session, or the server was not there to take a
+    /// request. Otherwise the failure is
     /// recorded against the conversations in that batch and the run moves on.
     ///
     /// # Errors
@@ -453,8 +469,8 @@ impl<'a> ImportPipeline<'a> {
         let Some(batch) = self.pending.take() else {
             return Ok(ok);
         };
-        // Do not start a new import after a cancel or a refused session;
-        // leave pending unsent.
+        // Do not start a new import after a cancel, a refused session, or a
+        // server that was not there; leave pending unsent.
         if self.must_stop() {
             return Ok(false);
         }
@@ -482,7 +498,7 @@ impl<'a> ImportPipeline<'a> {
                 .request(max_retries, |session| {
                     session.post_import(import_id, batch.body.clone())
                 })
-                .map_err(|error| BatchError::new(&error));
+                .map_err(|error| BatchError::new(&error, session.check_stop().is_err()));
             let request_ms = elapsed_ms(request_started);
             let seconds = request_started.elapsed().as_secs_f64().max(0.001);
             ImportHttpOutcome {
@@ -519,8 +535,9 @@ impl<'a> ImportPipeline<'a> {
     ///
     /// On success: record each message id so a later Upload can skip them.
     /// On failure: mark every conversation that contributed to this batch as
-    /// failed, unless the server refused the session: that stops the run,
-    /// and the batch's conversations are left for the next Upload.
+    /// failed, unless the server refused the session or was not there to
+    /// take the batch: that stops the run, and the batch's conversations are
+    /// left for the next Upload.
     ///
     /// # Errors
     ///
@@ -532,7 +549,7 @@ impl<'a> ImportPipeline<'a> {
         out: &mut Reporter<'_, '_>,
     ) -> Result<bool> {
         if let Err(error) = &outcome.response
-            && error.session_refused
+            && error.halts_run
         {
             out.log_at(
                 RunLogLevel::Warn,
@@ -730,8 +747,8 @@ impl<'a> ImportPipeline<'a> {
         Ok(())
     }
 
-    /// True once the run must stop: the caller cancelled it, or the server
-    /// refused the session.
+    /// True once the run must stop: the caller cancelled it, the server
+    /// refused the session, or the server was not there to take a request.
     fn must_stop(&self) -> bool {
         self.session.check_stop().is_err()
     }
@@ -767,9 +784,21 @@ mod tests {
     fn a_batch_error_keeps_the_cause_beneath_its_label() {
         let error = anyhow::anyhow!("connection refused").context("Import Run 7 batch failed");
         assert_eq!(
-            BatchError::new(&error).message,
+            BatchError::new(&error, false).message,
             "Import Run 7 batch failed: connection refused"
         );
+    }
+
+    /// A Pause that ends a batch's retries leaves the batch for the next
+    /// Upload, because a later try might have passed. A batch the server
+    /// refused for good fails as it would have anyway.
+    #[test]
+    fn a_batch_whose_retries_a_stop_cut_short_halts_the_run() {
+        let transient = anyhow::anyhow!("connection reset").context("Import Run 7 batch failed");
+        assert!(BatchError::new(&transient, true).halts_run);
+        assert!(!BatchError::new(&transient, false).halts_run);
+        let refused = anyhow::Error::from(HttpError::new(400, "Import Run 7 batch failed"));
+        assert!(!BatchError::new(&refused, true).halts_run);
     }
 
     /// The lines of a batch run on across its chunks, and each maps back to
