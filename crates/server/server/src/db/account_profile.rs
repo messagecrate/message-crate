@@ -378,7 +378,10 @@ pub async fn load_last_login(
 /// runs are unlinked, keep its username, and gain an `account_deleted` entry
 /// (`docs/adr/0020-the-audit-trail-outlives-the-account.md`). One
 /// transaction, so the record and the deletion land together; the record is
-/// stamped `now`. Returns whether there was an account to delete.
+/// stamped `now`. What was deleted is erased from the database's files
+/// ([`crate::db::erase`]): its words from the search indexes in that
+/// transaction, and the write-ahead log once it commits. Returns whether
+/// there was an account to delete.
 pub async fn delete_account(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -393,7 +396,9 @@ pub async fn delete_account(
         .execute(&mut *tx)
         .await
         .with_context(|| format!("delete account {account_id}"))?;
+    crate::db::erase::erase_deleted_words(&mut tx).await?;
     tx.commit().await?;
+    crate::db::erase::clear_write_ahead_log(conn).await;
     Ok(existed)
 }
 
@@ -587,7 +592,10 @@ pub struct DeletedMessagesStats {
 /// Permanently delete one account's conversations (cascades to messages,
 /// attachments, participants, tapbacks), staging rows, and trash markers,
 /// in one write transaction: all of it is deleted or none of it, and the
-/// Audit Trail entry for it is stamped `now`.
+/// Audit Trail entry for it is stamped `now`. What was deleted is erased
+/// from the database's files ([`crate::db::erase`]): its words from the
+/// search indexes in that transaction, and the write-ahead log once it
+/// commits.
 /// Contacts, groups, login details, and import tokens are retained.
 pub async fn delete_all_messages_for_account(
     conn: &mut SqliteConnection,
@@ -636,7 +644,9 @@ pub async fn delete_all_messages_for_account(
         now,
     )
     .await?;
+    crate::db::erase::erase_deleted_words(&mut tx).await?;
     tx.commit().await?;
+    crate::db::erase::clear_write_ahead_log(conn).await;
     Ok(DeletedMessagesStats {
         conversations,
         attachments: u64::try_from(attachment_count).unwrap_or(0),

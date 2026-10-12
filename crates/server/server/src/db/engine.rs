@@ -82,7 +82,15 @@ const ACQUIRE_TIMEOUT: Duration = Duration::from_secs(10);
 /// The server's pragma set, applied to each new connection: `trusted_schema`
 /// OFF first ([`distrust_schema`]), then `busy_timeout` (overlapping auth and
 /// UI writes wait that long for the write lock), foreign keys on, synchronous
-/// NORMAL, `temp_store` MEMORY, `cache_size` -[`CACHE_KIB`].
+/// NORMAL, `temp_store` MEMORY, `cache_size` -[`CACHE_KIB`], `secure_delete`
+/// ON and `journal_size_limit` 0.
+///
+/// `secure_delete` ON makes SQLite write zeros over deleted content and
+/// freed pages, so text deleted for good does not stay readable in the file.
+/// `journal_size_limit` 0 cuts the write-ahead log to the frames of the first
+/// commit after the log starts over, so frames older than that, and the text
+/// in them, do not stay at its end. Why both, and what else erasing takes:
+/// [`crate::db::erase`].
 fn with_pragmas(pool: SqlitePoolOptions, busy_timeout: Duration) -> SqlitePoolOptions {
     let busy_timeout_sql = format!("PRAGMA busy_timeout = {}", busy_timeout.as_millis());
     let cache_size_sql = format!("PRAGMA cache_size = -{CACHE_KIB}");
@@ -104,6 +112,12 @@ fn with_pragmas(pool: SqlitePoolOptions, busy_timeout: Duration) -> SqlitePoolOp
                 .execute(&mut *conn)
                 .await?;
             sqlx::query(sqlx::AssertSqlSafe(cache_size_sql))
+                .execute(&mut *conn)
+                .await?;
+            sqlx::query("PRAGMA secure_delete = ON")
+                .execute(&mut *conn)
+                .await?;
+            sqlx::query("PRAGMA journal_size_limit = 0")
                 .execute(&mut *conn)
                 .await?;
             Ok(())
@@ -407,6 +421,22 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(trusted_schema, 0, "trusted_schema must be OFF");
+        // Deleted content and freed pages are written over with zeros, so
+        // text deleted for good does not stay in the file (#2108).
+        let secure_delete: i64 =
+            sqlx::query_scalar("SELECT secure_delete FROM pragma_secure_delete")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(secure_delete, 1, "secure_delete must be ON");
+        // The write-ahead log is cut back when it starts over, so its old
+        // frames do not stay at its end (#2108).
+        let journal_size_limit: i64 =
+            sqlx::query_scalar("SELECT journal_size_limit FROM pragma_journal_size_limit")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(journal_size_limit, 0, "journal_size_limit");
         // The tests run in the journal mode the server runs in, so a test can
         // show what WAL does to a write that lands between a read and a write.
         let journal_mode: String = sqlx::query_scalar("PRAGMA journal_mode")

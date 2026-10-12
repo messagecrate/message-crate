@@ -89,3 +89,22 @@ The `trashed:` operator works on contacts, conversations, and messages:
 **Settings → Account** has a **Danger zone** with **Delete all messages**.
 It deletes every message and attachment the account holds without trashing each conversation first, and leaves the contacts and settings in place.
 The button is disabled on the `demo` account.
+
+## What deleting erases from the disk
+
+Deleting a conversation or a contact from Trash, **Empty Trash**, **Delete all messages**, and deleting an account each erase the deleted text from the database's files, not only from the screens.
+The server writes zeros over the deleted rows and the space they freed, writes the search index again without their words, and clears the write-ahead log, the `messagecrate.db-wal` file beside the database.
+A copy of the database's files made afterwards holds none of the deleted text.
+
+Does deleting take longer on a large Message Crate?
+
+Yes, by about a second on a Message Crate of 636,000 messages, because the search index is written again whole each time.
+
+When another request is reading the database at that moment, the write-ahead log can't be cleared at once.
+The server clears it the next time the log starts over, which happens on its own as later changes are written.
+
+Three places outside the database's files keep what they held:
+
+- **Attachment files.** The server removes a deleted attachment's file, and the disk keeps its bytes in free space until something else is written there. Full-disk encryption is what keeps them unreadable on a lost or stolen disk, as [Encrypt the disk that holds the volume](/docs/user/features/owner/run-on-another-machine/#encrypt-the-disk-that-holds-the-volume) describes.
+- **Copies made before the delete**, such as a backup of the data directory or an export. Each holds the messages it was made with until it is deleted.
+- **The copy kept before a schema rebuild**, named like `messagecrate.db.before-rebuild-1176793189`. It holds every message the database held before the rebuild until it is deleted, as [Update Message Crate](/docs/user/features/owner/update/) describes.

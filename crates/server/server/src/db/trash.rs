@@ -50,6 +50,7 @@ use sqlx::SqliteConnection;
 
 use crate::db::audit_trail::{self, AuditAction, AuditActor, Details};
 use crate::db::contacts;
+use crate::db::erase;
 use crate::db::ownership::{owns_contact, owns_conversation};
 use crate::db::sql::{SQLITE_IN_CHUNK, in_placeholders};
 use crate::db::{WriteTx, begin_write};
@@ -274,6 +275,9 @@ pub enum OrphanedFile {
 /// Permanently delete a trashed conversation, or make a trashed contact
 /// Unknown again, its `last_modified` set to `now`. See the module notes for
 /// what each means. A conversation's Audit Trail entry is stamped `now` too.
+/// What was deleted is erased from the database's files
+/// ([`crate::db::erase`]): a conversation's words from the search indexes in
+/// the same transaction, and the write-ahead log once it commits.
 ///
 /// # Errors
 ///
@@ -310,6 +314,7 @@ pub async fn delete_trashed(
                 now,
             )
             .await?;
+            erase::erase_deleted_words(&mut tx).await?;
             orphaned
         }
         Trashable::Contact(id) => {
@@ -318,13 +323,17 @@ pub async fn delete_trashed(
         }
     };
     tx.commit().await?;
+    erase::clear_write_ahead_log(conn).await;
     Ok(DeleteOutcome::Deleted(orphaned))
 }
 
 /// Empty the trash: delete every trashed conversation permanently and make
 /// every trashed contact Unknown, its `last_modified` set to `now`, then
 /// clear both marker tables and record it in the Audit Trail at `now`. One
-/// transaction, so the trash is either emptied or untouched.
+/// transaction, so the trash is either emptied or untouched. What was
+/// deleted is erased from the database's files ([`crate::db::erase`]): its
+/// words from the search indexes in that transaction, and the write-ahead
+/// log once it commits.
 ///
 /// # Errors
 ///
@@ -377,7 +386,9 @@ pub async fn empty_trash(
         now,
     )
     .await?;
+    erase::erase_deleted_words(&mut tx).await?;
     tx.commit().await?;
+    erase::clear_write_ahead_log(conn).await;
     Ok(EmptiedTrash {
         orphaned,
         conversations: conversation_ids.len(),

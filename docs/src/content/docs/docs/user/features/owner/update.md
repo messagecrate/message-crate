@@ -96,5 +96,7 @@ A new, empty database gets no copy, because it holds nothing.
 The copy opens only in a release with the old database layout, such as the one that wrote it, because any other server would rebuild it too.
 That release serves it again once the copy is renamed to the database's own name, with the server stopped.
 The copies stay until they are deleted, and each one is as large as the database was.
+A message deleted for good after the rebuild is still in a copy made before it, because deleting erases only the database the server runs on.
+The copy holds it until the copy is deleted.
 
 The way forward on the new release is the first-time path again: [create the Owner and an account](/docs/user/your-messages/create-the-owner-and-an-account/#create-the-owner), then [import the backups](/docs/user/your-messages/import-your-backup/).

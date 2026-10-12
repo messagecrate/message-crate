@@ -1250,6 +1250,17 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-12: **Deleting for good erases the text from the database's
+  files.** Deleting a conversation or a contact from Trash, emptying Trash,
+  deleting all of an account's messages, and deleting an account left the
+  deleted text readable in the database file, its search index, and the
+  write-ahead log beside it, so anyone who copied the files later could
+  still read it. Now the server writes over it, writes the search index
+  again without it, and clears the log. Each delete takes about a second
+  longer on a Message Crate of 636,000 messages. Attachment files, backups
+  and exports made earlier, and the copy kept before a database rebuild
+  still hold what they held; the Trash page of the user guide says what
+  covers them (#2108).
 - 2026-10-12: **Other people who log in to the same computer can no longer
   read your messages.** The database, the directory with every account's
   attachments, and the server's log were readable by every user of the
