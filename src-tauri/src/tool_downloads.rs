@@ -41,8 +41,14 @@
 //!   asset's, because ffmpeg's and ffprobe's assets are gzipped.
 //! - **Anything else is replaced** after a good download, whoever put it
 //!   there: a file from an older release, or any other file. Until the
-//!   download passes, the old file stays in use, so with no internet a file
-//!   put there by hand is still the one used.
+//!   download passes, an ffmpeg or ffprobe put there by hand is still the
+//!   one used, so with no internet it still works.
+//! - **Only the pinned wtsexporter counts** (#2692). The app needs the
+//!   fork's pinned build, so a wtsexporter with any other SHA-256, such as
+//!   a copy still being written or another build, is treated as missing
+//!   until the download replaces it, by the import's lookup
+//!   (`whatsapp_exporter::wtsexporter_path`) and by the check alike
+//!   ([`in_place`]). A failed download says so in its reason.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
@@ -327,6 +333,38 @@ fn runs(program: Program, dir: &Path) -> bool {
     match program {
         Program::Ffmpeg | Program::Ffprobe => media::tool_in_dir(dir, program.name()).is_some(),
         Program::Wtsexporter => media::is_executable(&dir.join(program.file_name())),
+    }
+}
+
+/// Whether `pin`'s program in `dir` is in place for the lookup that uses
+/// it: it [`runs`], and a wtsexporter is the pinned file too, as the
+/// WhatsApp import's lookup asks (#2692). A copy still being written, or
+/// another build, is not. The file is read once per version of it
+/// ([`media::file_has_sha256`]).
+fn in_place(pin: &Pinned, dir: &Path) -> bool {
+    runs(pin.program, dir)
+        && (pin.program != Program::Wtsexporter
+            || media::file_has_sha256(&dir.join(pin.program.file_name()), pin.program_sha256))
+}
+
+/// The reason a download of `pin`'s program into `dir` failed with `err`.
+/// A wtsexporter there that is not the pinned file is not used, so the
+/// reason starts by saying so, because Settings shows wtsexporter as
+/// missing though a file is there (#2692).
+fn failure_reason(pin: &Pinned, dir: &Path, err: &DownloadError) -> String {
+    let path = dir.join(pin.program.file_name());
+    if pin.program == Program::Wtsexporter
+        && path.is_file()
+        && !media::file_has_sha256(&path, pin.program_sha256)
+    {
+        format!(
+            "The {} in the Tools Directory is not the file of release {}, or is still being \
+             copied there, so it is not used. {err}",
+            pin.program.name(),
+            pin.release
+        )
+    } else {
+        err.to_string()
     }
 }
 
@@ -993,7 +1031,7 @@ fn check(
             Stamp::at(&path)
                 .ok()
                 .is_some_and(|now| found.get(&program) != Some(&Some(now)))
-                && runs(program, dir)
+                && in_place(pin, dir)
         };
         // Put in place while an earlier program's tries waited.
         if was_put_in_place() {
@@ -1035,7 +1073,7 @@ fn check(
             Err(err) => downloads.set(
                 program,
                 DownloadState::Failed {
-                    reason: err.to_string(),
+                    reason: failure_reason(pin, dir, &err),
                 },
             ),
         }

@@ -336,8 +336,10 @@ mod tests {
         );
     }
 
-    /// wtsexporter in the Tools Directory is reported where it is, and a
-    /// Tools Directory without it reports it missing.
+    /// A Tools Directory without wtsexporter reports it missing. A file
+    /// there that is not the pinned release's file, such as a copy still
+    /// being written, is reported missing too where the app has a download
+    /// for this computer, and found where it has none (#2692).
     #[test]
     fn wtsexporter_is_reported_from_the_tools_directory() {
         let _lock = media::testutil::tools_test_lock();
@@ -350,25 +352,26 @@ mod tests {
         let missing = tools_status_with(&downloads, &pinned).wtsexporter;
         let unavailable = tools_status_with(&downloads, &[]).wtsexporter;
         media::testutil::write_with_mode(&tools.path().join(name), 0o755);
-        let found = tools_status_with(&downloads, &pinned).wtsexporter;
-        let found_by_hand = tools_status_with(&downloads, &[]).wtsexporter;
+        let not_pinned = tools_status_with(&downloads, &pinned).wtsexporter;
         media::set_tools_dir(previous);
 
         assert_eq!(missing, ToolStatus::Missing);
         // No download for this computer: told apart, so the form offers no
-        // Try again; a copy put there by hand is found all the same.
+        // Try again.
         assert_eq!(unavailable, ToolStatus::Unavailable);
         assert_eq!(
             serde_json::to_value(&unavailable).unwrap(),
             serde_json::json!({ "state": "unavailable" })
         );
-        assert_eq!(found_by_hand, found);
-        assert_eq!(
-            found,
-            ToolStatus::Found {
-                path: tools.path().join(name).display().to_string()
-            }
-        );
+        let here =
+            whatsapp_exporter::pinned_wtsexporter(std::env::consts::OS, std::env::consts::ARCH);
+        let expected = match here {
+            Some(_) => ToolStatus::Missing,
+            None => ToolStatus::Found {
+                path: tools.path().join(name).display().to_string(),
+            },
+        };
+        assert_eq!(not_pinned, expected);
     }
 
     /// A download in progress is sent with its bytes so far and its total,

@@ -3,11 +3,11 @@
 //! change to this file and to the user guide's troubleshooting page,
 //! `docs/src/content/docs/docs/user/features/owner/troubleshooting.md`,
 //! which names the release and its files for a copy put in the Tools
-//! Directory by hand (`docs/adr/0019`). A newer wtsexporter release is a
-//! change to this file, to that page, to the install hint in
-//! `crates/exporters/whatsapp-exporter/src/wtsexporter.rs`, and to the
-//! developer install in `AGENTS.md` and
-//! `docs/src/content/docs/docs/developer/contributing.md`, which name it.
+//! Directory by hand (`docs/adr/0019`). The wtsexporter release and its
+//! checksums are the WhatsApp exporter's
+//! (`crates/exporters/whatsapp-exporter/src/wtsexporter/pin.rs`), because
+//! its lookup counts only the pinned file as wtsexporter (#2692); that file
+//! says what a newer one changes.
 //! A renamed heading on that page is a change to
 //! `tool_downloads::troubleshooting` for ffmpeg, and for wtsexporter to
 //! `WTSEXPORTER_TROUBLESHOOTING` in the exporter's `wtsexporter.rs`, which
@@ -21,13 +21,6 @@ const FFMPEG_STATIC: &str = "eugeneware/ffmpeg-static";
 /// The `ffmpeg-static` release pinned: its files report ffmpeg 7.0.2, a GPL
 /// build with `libx264` and `libx265`.
 const FFMPEG_RELEASE: &str = "b6.1.1";
-
-/// The project the wtsexporter files come from: Message Crate's fork, whose
-/// JSON says who sent each message and who is in each group.
-const WTSEXPORTER_REPO: &str = "messagecrate/WhatsApp-Chat-Exporter";
-
-/// The fork release pinned, the first with `full_key_id` and `reply_key_id`.
-const WTSEXPORTER_RELEASE: &str = "0.13.0-mc.2";
 
 /// The `.gz` file of ffmpeg and of ffprobe for one platform, with the
 /// SHA-256 of each `.gz` and of the program it unpacks to.
@@ -138,43 +131,6 @@ const WINDOWS_X64: FfmpegFiles = FfmpegFiles {
     ),
 };
 
-/// The wtsexporter file for each platform the fork builds for, as
-/// `(os, arch, asset, sha256)`. The checksums are copied from the release's
-/// `SHA256SUMS` asset, read on 2026-10-08; the app never fetches that file.
-/// Linux on ARM has no file.
-const WTSEXPORTER_FILES: &[(&str, &str, &str, &str)] = &[
-    (
-        "linux",
-        "x86_64",
-        "wtsexporter_linux_x64",
-        "2756dfbcc7e320390e34244a8fc7160770d99d6fef17dea6a2d6ce269b62f71b",
-    ),
-    (
-        "macos",
-        "x86_64",
-        "wtsexporter_macos_x64",
-        "b0e885474108d810fa7ba31360275494fc93ebadae117859ba7e90fa705f45e3",
-    ),
-    (
-        "macos",
-        "aarch64",
-        "wtsexporter_macos_arm64",
-        "03f90f32e956a5df1cbfbc1a1a87524ab05450f645703df0c16d630671eda9bf",
-    ),
-    (
-        "windows",
-        "x86_64",
-        "wtsexporter_win_x64.exe",
-        "4f4c91ab7829fa4a78673b5124c354b7be0c6d7446689ac58c56461f7988707f",
-    ),
-    (
-        "windows",
-        "aarch64",
-        "wtsexporter_win_arm64.exe",
-        "aa154042bec5b96953dda8d3c6daabac4fbbd9bd51c28fd350ba416317d9ec10",
-    ),
-];
-
 /// The pinned files for a computer whose `std::env::consts` are `os` and
 /// `arch`: ffmpeg and ffprobe, then wtsexporter. A platform with no file
 /// for a program gets nothing for it.
@@ -196,17 +152,14 @@ pub fn pinned_for(os: &str, arch: &str) -> Vec<Pinned> {
             });
         }
     }
-    if let Some(&(_, _, asset, sha256)) = WTSEXPORTER_FILES
-        .iter()
-        .find(|(file_os, file_arch, _, _)| *file_os == os && *file_arch == arch)
-    {
+    if let Some(file) = whatsapp_exporter::pinned_wtsexporter(os, arch) {
         pinned.push(Pinned {
             program: Program::Wtsexporter,
-            repo: WTSEXPORTER_REPO,
-            release: WTSEXPORTER_RELEASE,
-            asset,
-            sha256,
-            program_sha256: sha256,
+            repo: whatsapp_exporter::WTSEXPORTER_REPO,
+            release: whatsapp_exporter::WTSEXPORTER_RELEASE,
+            asset: file.asset,
+            sha256: file.sha256,
+            program_sha256: file.sha256,
             gzipped: false,
         });
     }
