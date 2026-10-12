@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 
-use crate::tools::{MediaTools, Reads};
+use crate::tools::{FfmpegFailed, MediaTools, Reads};
 use crate::{CompressOptions, KillReason, Killed, MediaMode};
 
 /// Aggregate counts and errors from one media convert/compress pass.
@@ -20,17 +20,98 @@ pub struct MediaReport {
     pub bytes_before: u64,
     /// Total bytes under `attachments/` after convert/compress (non-temp files).
     pub bytes_after: u64,
-    /// What the pass could not do, from either of its two writers.
-    /// [`process_attachment_files`] puts one `path: error` line here for
-    /// each file it could not convert or compress, and `message-crate-core`
-    /// splits each at its first `": "` to mark that file's attachment.
-    /// Staging's own Media pass (`run_media_post_pass` in `message-staging`)
-    /// puts one sentence counting the files it could not convert instead,
-    /// since each one's conversation entry already says why.
+    /// What the pass could not do, for the log, from either of its two
+    /// writers. [`process_attachment_files`] puts one `path: error` line
+    /// here for each file it could not convert or compress, with the whole
+    /// error. Staging's own Media pass (`run_media_post_pass` in
+    /// `message-staging`) puts one sentence counting the files it could not
+    /// convert instead, since each one's conversation entry already says
+    /// why.
     pub errors: Vec<String>,
+    /// Each file [`process_attachment_files`] could not convert or
+    /// compress, with the reason its attachment records.
+    pub not_converted: Vec<NotConverted>,
     /// Why HEVC failed, when the pass compressed a video as H.264 instead.
     /// The caller logs it as a warning with [`HevcFallback::line`].
     pub hevc_fallback: HevcFallback,
+}
+
+/// A file a convert or compress pass could not convert.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NotConverted {
+    /// The file, as the pass was given it.
+    pub path: PathBuf,
+    /// Why, as [`why_not_converted`] words it.
+    pub reason: String,
+}
+
+/// Why ffmpeg did not convert `file`, short enough to keep on the
+/// attachment as `convert_failed: <reason>`, and naming neither `file` nor
+/// any other file in its directory by its path:
+///
+/// - why ffmpeg was stopped ([`Killed`]);
+/// - the last line ffmpeg wrote before it failed, with each file it was
+///   given written as `<input>` or `<output>`
+///   ([`FfmpegFailed::without_files`]);
+/// - how ffmpeg exited, when it failed and wrote nothing;
+/// - otherwise the error's first line, with `file` written as `<input>`,
+///   and without each step of it that names another file in `file`'s
+///   directory, such as the temporary file a conversion writes.
+///
+/// The desktop app's Media Stage and the convert pass of an Import Run that
+/// converts as it stages both record this, so one failure reads alike on
+/// either path. The whole error, with everything ffmpeg wrote, goes to the
+/// run's log.
+#[must_use]
+pub fn why_not_converted(err: &anyhow::Error, file: &Path) -> String {
+    if let Some(killed) = err.downcast_ref::<Killed>() {
+        return killed.to_string();
+    }
+    if let Some(failed) = err.downcast_ref::<FfmpegFailed>() {
+        return match failed
+            .said()
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+        {
+            Some(last) => failed.without_files(last.trim()),
+            None => failed.to_string(),
+        };
+    }
+    let file_text = file.display().to_string();
+    let dir = file
+        .parent()
+        .map(|dir| dir.display().to_string())
+        .unwrap_or_default();
+    let steps: Vec<String> = err
+        .chain()
+        .map(|step| {
+            let step = step.to_string();
+            if file_text.is_empty() {
+                step
+            } else {
+                step.replace(&file_text, "<input>")
+            }
+        })
+        .filter(|step| dir.is_empty() || !step.contains(&dir))
+        .collect();
+    steps
+        .join(": ")
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// `err` on one line, with its whole chain, and each file a failed ffmpeg
+/// run in it was given written as `<input>` or `<output>`
+/// ([`FfmpegFailed::without_files`]).
+fn error_line_without_files(err: &anyhow::Error) -> String {
+    let line = format!("{err:#}");
+    match err.downcast_ref::<FfmpegFailed>() {
+        Some(failed) => failed.without_files(&line),
+        None => line,
+    }
 }
 
 /// Why HEVC failed, kept from the first video in a run that was compressed
@@ -52,6 +133,15 @@ impl HevcFallback {
         }
         self.reason = hevc_failure;
         self.line()
+    }
+
+    /// Why HEVC failed, or `None` when no video fell back: everything
+    /// ffmpeg wrote, with the files it was given written as `<input>` and
+    /// `<output>` ([`FfmpegFailed::without_files`]), so the server's log can
+    /// hold it.
+    #[must_use]
+    pub fn reason(&self) -> Option<&str> {
+        self.reason.as_deref()
     }
 
     /// The warning saying why HEVC failed, or `None` when no video fell back.
@@ -147,7 +237,13 @@ pub fn process_attachment_files(
                 let _ = remove_msgmedia_temps(&attachments);
                 return Err(Killed::ffmpeg_stopped().into());
             }
-            Err(err) => report.errors.push(format!("{}: {err:#}", path.display())),
+            Err(err) => {
+                report.errors.push(format!("{}: {err:#}", path.display()));
+                report.not_converted.push(NotConverted {
+                    path: path.clone(),
+                    reason: why_not_converted(&err, path),
+                });
+            }
         }
         done += 1;
         if done.is_multiple_of(MEDIA_PROGRESS_EVERY) || done == total {
@@ -546,8 +642,12 @@ pub enum TranscodeOutcome {
     /// A derivative was written to the destination the caller named.
     Produced {
         /// Why HEVC failed, when a compressed video was written as H.264
-        /// instead. A caller keeps it in a [`HevcFallback`] for the run and
-        /// logs what that returns, so the run says it once.
+        /// instead: the whole HEVC error, with the files ffmpeg was given
+        /// written as `<input>` and `<output>`. Not only its last line,
+        /// because ffmpeg writes why an encoder would not open before the
+        /// lines that follow from it. A caller keeps it in a
+        /// [`HevcFallback`] for the run and logs what that returns, so the
+        /// run says it once.
         hevc_failure: Option<String>,
     },
 }
@@ -1122,7 +1222,7 @@ fn compress_video(
                 .transcode(&avc_args, &tmp, Reads::All(path), stop)
                 .with_context(|| format!("HEVC failed ({hevc_err:#}), and then H.264 failed"))
                 .with_context(|| format!("compress video {}", path.display()))?;
-            *hevc_failure = Some(format!("{hevc_err:#}"));
+            *hevc_failure = Some(error_line_without_files(&hevc_err));
         }
         Ok(Some(commit_produced(commit, path, &tmp)?))
     })

@@ -528,11 +528,13 @@ async fn stage_all_files(
             ));
         }
     }
-    if asset_stats.hevc_fallback.line().is_some() {
-        // The reason itself stays out: it is ffmpeg's output, which names
-        // the files it was given, and the server's log holds no file names.
+    if let Some(reason) = asset_stats.hevc_fallback.reason() {
+        // The reason names the files ffmpeg was given as `<input>` and
+        // `<output>`, never by their paths, so the log holds no file name
+        // (`media::HevcFallback::reason`).
         tracing::warn!(
             import_id = opts.import_id,
+            reason,
             "HEVC encoding failed, so videos were compressed as H.264 instead"
         );
     }

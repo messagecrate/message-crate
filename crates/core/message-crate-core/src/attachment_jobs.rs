@@ -370,9 +370,14 @@ fn apply_convert_or_compress(
     if let Some(line) = report.hevc_fallback.line() {
         log.warn(line);
     }
-    apply_remap_to_jobs(jobs, &remap, output_dir);
+    // The attachment keeps a short reason; the whole error, with its path
+    // and everything ffmpeg wrote, goes to the log.
     for err in &report.errors {
-        mark_convert_error(jobs, err);
+        log.warn(format!("Could not convert {err}"));
+    }
+    apply_remap_to_jobs(jobs, &remap, output_dir);
+    for failed in &report.not_converted {
+        mark_convert_error(jobs, output_dir, failed);
     }
     Ok(())
 }
@@ -398,17 +403,20 @@ fn apply_remap_to_jobs(
     }
 }
 
-fn mark_convert_error(jobs: &mut [AttachmentJob<'_>], err: &str) {
-    let Some((path, reason)) = err.split_once(": ") else {
-        return;
-    };
+/// Record on each attachment staged at `failed.path`, under `output_dir`,
+/// that it could not be converted, with the short reason the desktop app's
+/// Media Stage records too ([`media::why_not_converted`]).
+fn mark_convert_error(
+    jobs: &mut [AttachmentJob<'_>],
+    output_dir: &Path,
+    failed: &media::NotConverted,
+) {
     for job in jobs.iter_mut() {
         let Some(rel) = job.attachment.path.as_deref() else {
             continue;
         };
-        let native = rel.replace('/', std::path::MAIN_SEPARATOR_STR);
-        if path.ends_with(rel) || path.ends_with(native.as_str()) {
-            job.attachment.missing_reason = Some(format!("convert_failed: {reason}"));
+        if output_dir.join(rel) == failed.path {
+            job.attachment.missing_reason = Some(format!("convert_failed: {}", failed.reason));
         }
     }
 }
