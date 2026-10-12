@@ -139,10 +139,8 @@ pub fn written_cell(cell: &str) -> Cow<'_, str> {
 /// A cell as Message Crate reads it from a CSV file: one `'` taken off when
 /// one of the characters a spreadsheet reads as a formula follows it, which
 /// undoes [`written_cell`]. A spreadsheet can keep that `'` when it saves or
-/// drop it, and both read the same, for every cell that did not itself start
-/// with `'` and one of those characters. Such a cell, `'=x`, is written
-/// `''=x`; a spreadsheet that drops the outer `'` saves `'=x`, which reads
-/// back as `=x`.
+/// drop it, and both read the same, unless the cell itself started with
+/// `'`. The developer reference's "Understand CSV columns" page says why.
 pub fn read_cell(cell: &str) -> &str {
     match cell.strip_prefix(TEXT_MARK) {
         Some(rest)

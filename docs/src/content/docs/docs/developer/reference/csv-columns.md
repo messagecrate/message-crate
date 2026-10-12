@@ -15,8 +15,11 @@ The `'` also keeps the `+` of a phone number such as `+15551234567`, and the `-`
 A cell that already starts with one or more `'` and then one of those characters gets one more `'`.
 Reading the file back takes exactly one `'` off a cell whose next character, after any further `'`, is one of them.
 So a CSV export imported or converted again gives back each cell exactly as it was.
-A spreadsheet that keeps the `'` when it saves the file, or drops it, gives the same result for every cell that did not itself start with `'` and one of those characters.
-Such a cell can lose its own `'`: a message `'=x` is written `''=x`, a spreadsheet that drops the outer `'` saves `'=x`, and that reads back as `=x`.
+A spreadsheet that keeps the `'` when it saves the file, or drops it, gives the same result for every cell that does not itself start with `'`.
+A cell that does can lose its own `'`, because the spreadsheet reads that `'` as its text mark too.
+A cell `'hello` is written as it is, and a spreadsheet that drops the mark saves `hello`.
+A cell `'=x` is written `''=x`, and a spreadsheet that drops the outer mark saves `'=x`.
+That reads back as `=x`.
 Any other cell, a JSON column included, is written as it is.
 The diagnostic CSV files the GO SMS Pro import writes (`skipped_*.csv`) follow the same rule.
 
