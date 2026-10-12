@@ -1,7 +1,8 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { installIntersectionObserver } from "../../test/intersectionObserver";
 import { Providers } from "../../test/providers";
 import { setupUser } from "../../test/user";
@@ -76,33 +77,33 @@ describe("OwnerLogsPanel", () => {
     ]);
     invokeListImportRunLogs.mockResolvedValue([ALICE_RUN]);
     invokeReadImportRunLogLines.mockResolvedValue(page("chat.jsonl failed: the server refused"));
+    startFakeClock();
   });
 
   afterEach(() => {
     cleanup();
+    stopFakeClock();
   });
 
   it("opens on the server's log, and picks an Import Run's log on this computer", async () => {
     const user = setupUser();
     renderPanel();
+    await settle();
 
-    expect(await screen.findByText("the server refused a login")).toBeInTheDocument();
-    expect(
-      await screen.findByRole("button", { name: "Download server-000002.log" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("the server refused a login")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download server-000002.log" })).toBeInTheDocument();
     // The owner reads every run log on this computer.
-    await waitFor(() =>
-      expect(invokeListImportRunLogs).toHaveBeenCalledWith({
-        messageCrateId: HERE,
-        accountId: 1,
-        owner: true,
-      }),
-    );
+    expect(invokeListImportRunLogs).toHaveBeenCalledWith({
+      messageCrateId: HERE,
+      accountId: 1,
+      owner: true,
+    });
 
     await user.click(screen.getByRole("button", { name: /Log$/ }));
-    await user.click(await screen.findByRole("option", { name: /Import Run 42 by alice/ }));
+    await user.click(screen.getByRole("option", { name: /Import Run 42 by alice/ }));
+    await settle();
 
-    expect(await screen.findByText("chat.jsonl failed: the server refused")).toBeInTheDocument();
+    expect(screen.getByText("chat.jsonl failed: the server refused")).toBeInTheDocument();
     expect(invokeReadImportRunLogLines).toHaveBeenCalledWith(
       { messageCrateId: HERE, accountId: 1, owner: true },
       ALICE_RUN.name,
@@ -115,10 +116,11 @@ describe("OwnerLogsPanel", () => {
     desktop.on = false;
     const user = setupUser();
     renderPanel();
+    await settle();
 
-    expect(await screen.findByText("the server refused a login")).toBeInTheDocument();
+    expect(screen.getByText("the server refused a login")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Log$/ }));
-    const options = await screen.findAllByRole("option");
+    const options = screen.getAllByRole("option");
     expect(options.map((option) => option.textContent)).toEqual(["The server's log"]);
     expect(invokeListImportRunLogs).not.toHaveBeenCalled();
   });
