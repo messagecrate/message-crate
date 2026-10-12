@@ -21,6 +21,19 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-12: **The owner sees which attachments of an import have no
+  Thumbnail or Preview, and why.** In User Accounts, an account's Storage tab
+  opens each Import Run with a **Thumbnails and Previews** part. It counts the
+  run's attachments whose Thumbnail or Preview the server could not make, by
+  kind of failure: the conversion failed, it stopped making progress, a
+  damaged file ran past its length, a step took too long, the original file
+  is missing, or a problem on the server. Under the counts it lists each of
+  those attachments by file name, type and size, with the reason for each
+  version that was not made. The owner never sees the attachment itself, its
+  Thumbnail or its Preview. Nothing tries again on its own, and running
+  `process-assets` is still how to try again. The database format changed:
+  an existing Message Crate is rebuilt empty on first start and its messages
+  must be imported again (#2636).
 - 2026-10-11: **The owner's Logs panel shows refused logins.** A login
   refused for a wrong password, an unknown username or a disabled account
   now leaves a warning in the server's log naming the account and the
@@ -347,6 +360,15 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-12: **A page asked for while an import keeps the database busy
+  loads once the server is ready.** The server says how many seconds to wait
+  when its database is too busy, and the app tried again at once, met the
+  same busy database, and showed the error. It now waits the seconds the
+  server named before it asks once more. A change you save is still not sent
+  again on its own: you read why it failed and send it again (#2891).
+- 2026-10-12: **The first page downloads less.** Settings was part of the
+  code every visit downloads first, through Owner Home. It is now downloaded
+  the first time Settings is opened, from the app or from Owner Home (#2879).
 - 2026-10-11: **Logging in often no longer locks you out.** Every login
   counted toward the limit of 20 attempts a minute for an account, the
   successful ones too, so an account that logged in often, such as the Demo
@@ -947,6 +969,13 @@ released versions carry their date on the heading.
   seconds.** SMS Backup+ itself records an MMS's time in seconds, and the
   import now reads it that way, so an MMS exported to SMS Backup+ mail goes
   out to the second (#2603).
+- 2026-10-12: **An export's conversation files mark each attachment it
+  could not fetch.** The export's log named the attachment, but the
+  conversation file still pointed at a file that was not there with nothing
+  saying why, so importing or converting that export later reported a plain
+  missing file. The conversation file now marks the attachment as not
+  fetched, an import of that export keeps the mark, and the conversation
+  shows the attachment as not fetched by the export (#2899).
 - 2026-10-11: **One missing attachment no longer throws away a whole
   export.** When the desktop app could not fetch one attachment, for
   instance because its file was gone from the server, the export stopped

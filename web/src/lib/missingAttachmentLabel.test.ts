@@ -26,6 +26,18 @@ describe("missingAttachmentChipLabel", () => {
     ).toBe("gone.bin (missing — file not found)");
   });
 
+  it("says an attachment an export could not fetch was not fetched", () => {
+    expect(
+      missingAttachmentChipLabel(
+        attachment({
+          original_name: "menu.pdf",
+          mime_type: "application/pdf",
+          missing_reason: "not_fetched",
+        }),
+      ),
+    ).toBe("menu.pdf · application/pdf (missing — not fetched by the export)");
+  });
+
   it("labels a deliberately skipped attachment as skipped, not missing", () => {
     expect(
       missingAttachmentChipLabel(

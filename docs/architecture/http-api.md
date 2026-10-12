@@ -381,7 +381,7 @@ resource's own `GET` answers the collection. `GET /v1/imports` and an
 account's own `GET /v1/accounts/{id}/imports` answer each run as an
 `ImportRunSummary`, with the counts and without the issues or notes. The
 owner's `GET /v1/accounts/{id}/imports` answers each as an
-`OwnerImportRun`, which also counts them and never carries them.
+`OwnerImportRunSummary`, which also counts them and never carries them.
 `GET /v1/imports/{id}` answers the issues and the notes. Each count is
 read in the list's own statement, never by a statement per row. Why: `limit` bounds a page's rows and nothing else, so a collection
 inside each row left a page's size to whatever the runs recorded. Forty
@@ -390,6 +390,15 @@ Storage carry about 800,000 issues, and one statement per row made a page of
 500 runs a thousand statements (#1559).
 Rejected: capping how many issues a run stores. It bounds the list by
 throwing away the diagnostics the run exists to keep.
+
+The attachments an Import Run wrote whose Thumbnail or Preview could not be
+made are such a collection too. The owner's
+`GET /v1/accounts/{id}/imports/{import_id}` answers an `OwnerImportRun`,
+which adds them (`not_made_attachments`) and their count by kind of failure
+(`not_made_counts`). The owner's list carries neither, not even a count.
+Why: a count would read every attachment of every run on the page, where
+the issue count reads one small table, and the owner reads the failures on
+the run's record (#2636).
 
 `limit` is at least 1 and at most 500, default 40, on every list including an
 Export Run's messages. `offset` is at most 50 000 on the browse lists. A value
@@ -573,7 +582,10 @@ type and carrying the chain, and no `ERROR` line
 The desktop app's HTTP client (`classify_retry` in `crates/libs/http`)
 retries a `5xx`, so it retries this with no change of its own. The web app
 tries a read that failed with a `5xx` once more (`retry` in
-`web/src/lib/routeQuery.ts`), without waiting for `Retry-After`, and shows a
+`web/src/lib/routeQuery.ts`). For `database-busy` it first waits the
+`retry_after` seconds the server named (`retryDelay` there), because the
+import holding the write lock will not let go sooner and a second try at
+once meets the same lock. It never tries a write again: it shows the
 write's failure with its `detail`. The pool
 (`crates/server/server/src/db/engine.rs`) holds 8 connections: two import
 batches and the sweep of unreferenced files after an Import Run
@@ -843,7 +855,13 @@ What each reaches:
   nothing of the backup an import read, neither the file the desktop app
   recorded (`source_fingerprint`) nor when the backup was made
   (`backup_taken_at`), because both say when and from what the account's
-  phone was backed up.
+  phone was backed up. The owner's read of one run adds the attachments it
+  wrote whose Thumbnail or Preview the media pass could not make, each by
+  its file name, type and size with why each version was not made, and their
+  count by kind of failure: an attachment's name, type and size are what
+  ADR 0008 lets the owner read, and the reason is what ffmpeg said about the
+  file or a phrase of the server's. Nothing of the message or conversation
+  the attachment belongs to comes with it (#2636).
   Why: a staging summary lists the addresses of everyone in the backup, an
   issue names its conversation's file, a note names a file or an address, and
   an export's query is a search over
@@ -1233,7 +1251,15 @@ from the name:
   list, and `ImportRunSummary` is an Import Run without its issues and
   notes, which `ImportRun` adds to it ([Lists](#lists)). `Owner` is the
   thing as the owner reads it under another account: `OwnerImportRun` and
-  `OwnerExportRun` ([Credentials and reach](#credentials-and-reach)).
+  `OwnerExportRun` ([Credentials and reach](#credentials-and-reach)), and
+  `OwnerImportRunSummary` is an `OwnerImportRun` as the owner's list answers
+  it, without the attachments whose versions were not made. `NotMade` is a
+  Thumbnail or Preview the server could not make, as the owner reads it:
+  `NotMadeAttachment` is an attachment that has one, by its file name, type
+  and size and nothing of its message or conversation, because those are
+  what ADR 0008 lets the owner read of an attachment. The types it carries
+  share the prefix: `NotMadeVersion` (why one version was not made),
+  `NotMadeKind` and `NotMadeCount`.
 - An action's input and output are named for the action:
   `VerbNounRequest` for a body sent in, `VerbNounResponse` for an answer that
   is not a thing (`CreateApiTokenRequest`, `DeleteMessagesResponse`), and
