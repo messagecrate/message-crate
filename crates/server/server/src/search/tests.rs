@@ -4,7 +4,7 @@
 use chrono::NaiveDate;
 use sqlx::SqliteConnection;
 
-use super::{CompileRequest, ListKind, QueryError, compile, today_in};
+use super::{CompileRequest, Filter, ListKind, QueryError, compile, today_in};
 use crate::db::sql::bind_args;
 use crate::test_support::{ConversationRow, stored_time};
 
@@ -719,6 +719,18 @@ pub(crate) async fn run_on(
         zone,
     })
     .unwrap_or_else(|e| panic!("{q:?} on {list:?}: {}", e.message));
+    run_filter(conn, list, &f)
+        .await
+        .unwrap_or_else(|e| panic!("{q:?} on {list:?}: {e}\n{}", f.where_sql()))
+}
+
+/// Run a compiled `filter` against `list`'s base table alone, and return
+/// the matching ids, ascending, or the database's error.
+pub(crate) async fn run_filter(
+    conn: &mut SqliteConnection,
+    list: ListKind,
+    filter: &Filter,
+) -> Result<Vec<i64>, sqlx::Error> {
     let table = match list {
         ListKind::Contacts => "contacts",
         ListKind::Conversations => "conversations",
@@ -727,14 +739,27 @@ pub(crate) async fn run_on(
     let alias = list.base_alias();
     let sql = format!(
         "SELECT {alias}.id FROM {table} {alias} WHERE {} ORDER BY {alias}.id",
-        f.where_sql()
+        filter.where_sql()
     );
-    let rows: Vec<i64> =
-        sqlx::query_scalar_with(sqlx::AssertSqlSafe(sql.as_str()), bind_args(f.params()))
-            .fetch_all(&mut *conn)
-            .await
-            .unwrap_or_else(|e| panic!("{q:?} on {list:?}: {e}\n{sql}"));
-    rows
+    sqlx::query_scalar_with(sqlx::AssertSqlSafe(sql), bind_args(filter.params()))
+        .fetch_all(&mut *conn)
+        .await
+}
+
+/// What breaks the form `docs/architecture/http-api.md`, "Failures", gives
+/// every `detail`, if anything: one sentence, in lowercase, with no final
+/// stop, so the website decides how the line starts and ends (#2816).
+pub(crate) fn detail_form_problem(message: &str) -> Option<String> {
+    let Some(first) = message.chars().next() else {
+        return Some("a refusal with no sentence".into());
+    };
+    if first.is_uppercase() {
+        return Some(format!("starts with a capital: {message}"));
+    }
+    if message.ends_with(['.', '?', '!']) {
+        return Some(format!("ends with a stop: {message}"));
+    }
+    None
 }
 
 pub(crate) fn sorted(mut ids: Vec<i64>) -> Vec<i64> {
@@ -790,16 +815,9 @@ fn every_refusal_takes_the_detail_form() {
         (ListKind::Messages, "import:x"),
     ];
     for (list, query) in cases {
-        let message = err(list, query).message;
-        let first = message.chars().next().expect("a refusal has a sentence");
-        assert!(
-            !first.is_uppercase(),
-            "{list:?} {query:.40}: starts with a capital: {message}"
-        );
-        assert!(
-            !message.ends_with(['.', '?', '!']),
-            "{list:?} {query:.40}: ends with a stop: {message}"
-        );
+        if let Some(problem) = detail_form_problem(&err(list, query).message) {
+            panic!("{list:?} {query:.40}: {problem}");
+        }
     }
 }
 
@@ -1778,20 +1796,7 @@ mod index_characters {
             zone: chrono_tz::UTC,
         })
         .map_err(|e| e.message)?;
-        let table = match list {
-            ListKind::Contacts => "contacts",
-            ListKind::Conversations => "conversations",
-            ListKind::Messages => "messages",
-        };
-        let alias = list.base_alias();
-        let sql = format!(
-            "SELECT {alias}.id FROM {table} {alias} WHERE {} ORDER BY {alias}.id",
-            f.where_sql()
-        );
-        sqlx::query_scalar_with(sqlx::AssertSqlSafe(sql), bind_args(f.params()))
-            .fetch_all(&mut *conn)
-            .await
-            .map_err(|e| e.to_string())
+        run_filter(conn, list, &f).await.map_err(|e| e.to_string())
     }
 }
 

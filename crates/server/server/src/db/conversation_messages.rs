@@ -256,7 +256,7 @@ pub fn message_list_sort_text(order: &[SortKey<MessageListSort>]) -> String {
 /// candidate message, `rowid = m.id AND MATCH ?`, the per-row cost #413
 /// removed from the filter: 22 s instead of 0.1 s for `the` on the medium
 /// Demo Account. Materialized, the index is asked once for the whole search.
-const RANK_JOIN_SQL: &str = "
+pub(crate) const RANK_JOIN_SQL: &str = "
      LEFT JOIN (WITH ranked AS MATERIALIZED (
                   SELECT rowid AS rank_id, bm25(messages_fts) AS rank
                   FROM messages_fts WHERE messages_fts MATCH ?)

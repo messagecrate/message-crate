@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use super::*;
-use crate::search::{Filter, check_for_every_list};
+use crate::search::check_for_every_list;
 
 const CASES_PER_SEED: u64 = 300;
 
@@ -153,15 +153,11 @@ fn panic_text(panic: &(dyn std::any::Any + Send)) -> String {
 }
 
 /// A broken rule of a refusal, if any: its sentence is in the `detail` form
-/// (lowercase, no final stop, as `every_refusal_takes_the_detail_form` checks
-/// one query per kind), and its span is a range of whole characters of the
-/// input.
+/// ([`detail_form_problem`]), and its span is a range of whole characters of
+/// the input.
 fn refusal_problem(input: &str, e: &QueryError) -> Option<String> {
-    let Some(first) = e.message.chars().next() else {
-        return Some("a refusal with no sentence".into());
-    };
-    if first.is_uppercase() || e.message.ends_with(['.', '?', '!']) {
-        return Some(format!("a refusal not in the detail form: {}", e.message));
+    if let Some(problem) = detail_form_problem(&e.message) {
+        return Some(problem);
     }
     let span = &e.span;
     if span.start > span.end
@@ -178,9 +174,10 @@ fn refusal_problem(input: &str, e: &QueryError) -> Option<String> {
     None
 }
 
-/// Compile `input` on every list and check it for every list. `Err` names a
-/// panic or a broken rule; `Ok` holds each list's compiled filter, if any.
-fn check(input: &str) -> Result<Vec<(ListKind, Filter)>, String> {
+/// Compile `input` on every list, then check it with
+/// [`check_for_every_list`], each under `catch_unwind`. `Err` names a panic
+/// or a broken rule; `Ok` holds the filter of each list that answers it.
+fn compile_on_every_list(input: &str) -> Result<Vec<(ListKind, Filter)>, String> {
     let mut compiled = Vec::new();
     for list in LISTS {
         let result = catch_unwind(AssertUnwindSafe(|| {
@@ -213,48 +210,51 @@ fn check(input: &str) -> Result<Vec<(ListKind, Filter)>, String> {
     }
     let shared = catch_unwind(AssertUnwindSafe(|| check_for_every_list(input)))
         .map_err(|panic| format!("every list: panicked: {}", panic_text(&*panic)))?;
-    match shared {
-        Ok(()) => {}
-        Err(e) => {
-            if let Some(problem) = refusal_problem(input, &e) {
-                return Err(format!("every list: {problem}"));
-            }
-            // What every list refuses alike, no list may answer.
-            if let Some((list, _)) = compiled.first() {
-                return Err(format!(
-                    "refused for every list ({}) but {list:?} answers it",
-                    e.message
-                ));
-            }
+    if let Err(e) = shared {
+        if let Some(problem) = refusal_problem(input, &e) {
+            return Err(format!("every list: {problem}"));
+        }
+        // What every list refuses alike, no list may answer.
+        if let Some((list, _)) = compiled.first() {
+            return Err(format!(
+                "refused for every list ({}) but {list:?} answers it",
+                e.message
+            ));
         }
     }
     Ok(compiled)
 }
 
-/// Every input the sweep feeds, each with a description of how it was made.
-fn inputs() -> Vec<(String, String)> {
+/// One query the sweep feeds, and how it was made from its seed.
+struct Input {
+    how: String,
+    text: String,
+}
+
+/// Every input the sweep feeds.
+fn inputs() -> Vec<Input> {
     let mut out = Vec::new();
     for (seed_index, (_, seed)) in seeds().into_iter().enumerate() {
         let chars: Vec<char> = seed.chars().collect();
         for len in 0..=chars.len() {
-            out.push((
-                format!("seed {seed_index}: first {len} characters"),
-                chars[..len].iter().collect(),
-            ));
-            out.push((
-                format!("seed {seed_index}: from character {len}"),
-                chars[len..].iter().collect(),
-            ));
+            out.push(Input {
+                how: format!("seed {seed_index}: first {len} characters"),
+                text: chars[..len].iter().collect(),
+            });
+            out.push(Input {
+                how: format!("seed {seed_index}: from character {len}"),
+                text: chars[len..].iter().collect(),
+            });
         }
         for case in 0..CASES_PER_SEED {
             let mut rng = Lcg(((seed_index as u64) << 32) ^ case ^ 0x9e37_79b9_7f4a_7c15);
             let mut text = chars.clone();
             let steps = 1 + rng.below(4);
             let applied: Vec<String> = (0..steps).map(|_| mutate(&mut rng, &mut text)).collect();
-            out.push((
-                format!("seed {seed_index}: case {case} [{}]", applied.join(", ")),
-                text.into_iter().collect(),
-            ));
+            out.push(Input {
+                how: format!("seed {seed_index}: case {case} [{}]", applied.join(", ")),
+                text: text.into_iter().collect(),
+            });
         }
     }
     out
@@ -275,10 +275,81 @@ fn every_seed_compiles_before_it_is_cut_or_mutated() {
     }
 }
 
+/// Run a Messages `filter` the way the messages route does: one page,
+/// ranked by relevance when the query has a word to rank by, so the
+/// full-text rank query runs too, and with the edited messages on the page
+/// read for which version matched. True when a message on the page was
+/// found only by an earlier version.
+async fn load_messages_page(conn: &mut SqliteConnection, filter: &Filter) -> Result<bool, String> {
+    use crate::db::conversation_messages::{MessageListSort, load_message_list_page};
+    use crate::paging::{Direction, SortKey};
+    let key = if filter.rank_query().is_some() {
+        MessageListSort::Relevance
+    } else {
+        MessageListSort::Date
+    };
+    let order = [SortKey {
+        key,
+        direction: if key == MessageListSort::Relevance {
+            Direction::Asc
+        } else {
+            Direction::Desc
+        },
+    }];
+    load_message_list_page(conn, filter, &order, 50, 0)
+        .await
+        .map(|page| page.iter().any(|m| m.matched_earlier_version))
+        .map_err(|e| format!("the messages page: {e:?}"))
+}
+
+/// Run the statements the messages route builds from a Messages `filter`
+/// beyond its WHERE fragment, each over every message rather than only the
+/// rows the filter matches: SQLite reads the rank join, and so asks the
+/// full-text index, only when a row reaches it, and most swept queries
+/// match no message.
+async fn run_messages_statements(
+    conn: &mut SqliteConnection,
+    filter: &Filter,
+) -> Result<(), String> {
+    use crate::db::conversation_messages::{RANK_JOIN_SQL, messages_from_sql};
+    use crate::db::sql::SqlParam;
+    let mut statements: Vec<(&str, String, Vec<SqlParam>)> = Vec::new();
+    if let Some(rank_query) = filter.rank_query() {
+        statements.push((
+            "the rank query",
+            format!("SELECT m.id FROM messages m {RANK_JOIN_SQL}"),
+            vec![SqlParam::Text(rank_query)],
+        ));
+    }
+    if let Some((final_where, params)) = filter.final_text() {
+        statements.push((
+            "the final-text filter",
+            format!("SELECT m.id {} WHERE {final_where}", messages_from_sql()),
+            params.to_vec(),
+        ));
+    }
+    if let Some((sql, params)) = filter.matching_earlier_version_ids() {
+        statements.push((
+            "the earlier-version match",
+            sql.to_string(),
+            params.to_vec(),
+        ));
+    }
+    for (what, sql, params) in statements {
+        sqlx::query_scalar_with::<_, i64, _>(sqlx::AssertSqlSafe(sql), bind_args(&params))
+            .fetch_all(&mut *conn)
+            .await
+            .map_err(|e| format!("{what}: {e}"))?;
+    }
+    Ok(())
+}
+
 /// Every cut and mutated query is answered or refused in the `detail` form
 /// on every list, never a panic, and every answer runs on SQLite: a panic
 /// in the handler drops the connection, and a database error is an internal
-/// error, so either one shows the person a failed search.
+/// error, so either one shows the person a failed search. The database
+/// holds a contact and an edited message, so each list's filter is tested
+/// against a row, and the messages page reads the earlier versions.
 #[tokio::test]
 async fn truncated_and_corrupted_queries_are_answered_or_refused() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
@@ -286,61 +357,71 @@ async fn truncated_and_corrupted_queries_are_answered_or_refused() {
     crate::db::schema::ensure_schema(&mut conn).await.unwrap();
     crate::test_support::insert_account_with_id(&mut conn, ACCOUNT, "alice").await;
     let chat = handle(&mut conn, ACCOUNT, "+15555550150", "imessage").await;
+    contact(&mut conn, ACCOUNT, "Zoë Lima", &[chat]).await;
     let conv = conversation(&mut conn, ACCOUNT, chat, "individual", None, &[chat]).await;
-    let body = "avocado party \u{1F389} café o'brien";
-    message(
+    let body = "party \u{1F389} café o'brien";
+    let edited = message(
         &mut conn,
         ACCOUNT,
         msg(conv, "2024-06-01T10:00:00Z", false, Some(chat), body),
     )
     .await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    sqlx::query(
+        "INSERT INTO message_versions (message_id, part_index, text, edited_at)
+         VALUES ($1, 0, 'avocado two words', NULL)",
+    )
+    .bind(edited)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
 
     let mut failures = Vec::new();
     let mut seen = BTreeSet::new();
     let mut cases = 0usize;
-    for (how, input) in inputs() {
-        if !seen.insert(input.clone()) {
+    let mut found_by_earlier_version = 0usize;
+    for Input { how, text } in inputs() {
+        if !seen.insert(text.clone()) {
             continue;
         }
         cases += 1;
-        let compiled = match check(&input) {
+        let compiled = match compile_on_every_list(&text) {
             Ok(compiled) => compiled,
             Err(e) => {
-                failures.push(format!("{how}: {e}\n  input {input:?}"));
+                failures.push(format!("{how}: {e}\n  input {text:?}"));
                 continue;
             }
         };
         for (list, filter) in compiled {
-            let table = match list {
-                ListKind::Contacts => "contacts",
-                ListKind::Conversations => "conversations",
-                ListKind::Messages => "messages",
+            let ran = match list {
+                ListKind::Messages => match run_messages_statements(&mut conn, &filter).await {
+                    Ok(()) => load_messages_page(&mut conn, &filter).await,
+                    Err(e) => Err(e),
+                },
+                _ => run_filter(&mut conn, list, &filter)
+                    .await
+                    .map(|_| false)
+                    .map_err(|e| e.to_string()),
             };
-            let alias = list.base_alias();
-            let sql = format!(
-                "SELECT {alias}.id FROM {table} {alias} WHERE {}",
-                filter.where_sql()
-            );
-            if let Err(e) = sqlx::query_scalar_with::<_, i64, _>(
-                sqlx::AssertSqlSafe(sql),
-                bind_args(filter.params()),
-            )
-            .fetch_all(&mut *conn)
-            .await
-            {
-                failures.push(format!("{how}: {list:?}: {e}\n  input {input:?}"));
+            match ran {
+                Ok(by_earlier_version) => {
+                    found_by_earlier_version += usize::from(by_earlier_version);
+                }
+                Err(e) => failures.push(format!("{how}: {list:?}: {e}\n  input {text:?}")),
             }
         }
     }
+    // Some queries must find the message by its earlier version alone, or
+    // the statements that read earlier versions were never run.
+    assert!(
+        found_by_earlier_version > 0,
+        "no query found the edited message by its earlier version"
+    );
     assert!(
         failures.is_empty(),
         "{} of {cases} queries failed:\n{}",
         failures.len(),
-        failures
-            .iter()
-            .take(20)
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n")
+        failures.join("\n")
     );
 }
