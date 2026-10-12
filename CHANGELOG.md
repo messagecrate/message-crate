@@ -950,8 +950,9 @@ released versions carry their date on the heading.
 - 2026-10-12: **Converting an SMS Backup & Restore backup logs its
   attachments and moves the progress bar.** While a Convert of a backup
   copied its attachments, the log said nothing about one it could not find
-  or copy, and the progress bar stood still. The log now names each such
-  attachment once, and the progress bar follows the copying (#2644).
+  or copy, and the progress bar stood still until the copying was done. The
+  log now names each such attachment once, and the progress bar follows the
+  copying (#2644).
 - 2026-10-12: **An export to SMS Backup+ mail writes an MMS's time in
   seconds.** SMS Backup+ itself records an MMS's time in seconds, and the
   import now reads it that way, so an MMS exported to SMS Backup+ mail goes
