@@ -4,7 +4,7 @@ use crate::progress::Progress;
 use crate::test_support::{
     ConversationHeaderLine, MessageLine, RegisteredAccount, TestFixture,
     assert_every_person_is_on_a_contact, attachment, conversation_header, fixture_with_account,
-    get_json, http_client, import_ada_conversation, import_jsonl_text, message_line, patch_json,
+    get_json, import_ada_conversation, import_jsonl_text, message_line, patch_json,
     post_created_json, post_json, test_fixture,
 };
 use message_ir::{
@@ -121,14 +121,13 @@ pub(super) async fn batches_path(
     token: &str,
     source: &str,
 ) -> String {
-    let (_, created): (String, serde_json::Value) = post_created_json(
+    let (run, _) = crate::test_support::start_import_run(
         state,
-        "/v1/imports",
         token,
         serde_json::json!({ "source": source }),
     )
     .await;
-    format!("/v1/imports/{}/batches", created["id"].as_i64().unwrap())
+    format!("/v1/imports/{run}/batches")
 }
 
 /// One `source` conversation with `+15555550107`, one message per guid. The
@@ -176,45 +175,25 @@ async fn import_one_batch(
 
 /// Create an Import Run with `request` as the `POST /v1/imports` body,
 /// post `body` as its one batch, and complete the run so the account may
-/// start another. Every test in this module that imports one batch over
-/// HTTP and checks nothing before the run completes goes through here.
+/// start another. A test that checks something between the steps calls
+/// them itself: [`crate::test_support::start_import_run`],
+/// [`crate::test_support::post_import_batch`] and
+/// [`crate::test_support::complete_import_run`].
 async fn import_one_batch_requesting(
     state: &crate::server::AppState,
     token: &str,
     request: serde_json::Value,
     body: String,
 ) {
-    let (_, created): (String, serde_json::Value) =
-        post_created_json(state, "/v1/imports", token, request).await;
-    let id = created["id"].as_i64().unwrap();
-    let (status, text) = crate::test_support::post_raw(
-        state,
-        &format!("/v1/imports/{id}/batches"),
-        token,
-        "application/jsonl",
-        body,
-    )
-    .await;
-    assert_eq!(status, axum::http::StatusCode::OK, "{text}");
-    let _: serde_json::Value = post_json(
-        state,
-        &format!("/v1/imports/{id}/complete"),
-        token,
-        serde_json::json!({ "status": "completed" }),
-    )
-    .await;
+    let (run, _) = crate::test_support::start_import_run(state, token, request).await;
+    crate::test_support::post_import_batch(state, token, run, body).await;
+    crate::test_support::complete_import_run(state, token, run).await;
 }
 
 /// Complete `import_id` and hand back the date its row says it
 /// finished on, the `YYYY-MM-DD` the shortcuts are named after.
 async fn complete_run(state: &crate::server::AppState, token: &str, import_id: i64) -> String {
-    let _: serde_json::Value = post_json(
-        state,
-        &format!("/v1/imports/{import_id}/complete"),
-        token,
-        serde_json::json!({ "status": "completed" }),
-    )
-    .await;
+    crate::test_support::complete_import_run(state, token, import_id).await;
     let mut conn = state.db.acquire().await.unwrap();
     let finished_at: String = sqlx::query_scalar("SELECT finished_at FROM imports WHERE id = $1")
         .bind(import_id)

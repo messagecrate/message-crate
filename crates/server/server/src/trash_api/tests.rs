@@ -5,8 +5,8 @@ use crate::problem::ProblemType;
 use crate::test_support::{
     RegisteredAccount, SeedConversation, SeedMessage, TestFixture, attach_stored_file, attachment,
     conversation_header, delete_raw, delete_status, expect_problem, fake_sha256,
-    fixture_with_account, get_json, get_raw, get_status, http_client, message_line,
-    register_via_api, seed_conversation, stored_time,
+    fixture_with_account, get_json, get_raw, get_status, message_line, register_via_api,
+    seed_conversation, stored_time,
 };
 
 /// One `imessage` conversation with one message on `handle`, returning its id.
@@ -179,14 +179,13 @@ async fn empty_trash_needs_the_delete_permission() {
 /// Start an Import Run for `imessage`, as an Upload does before it asks
 /// about any file, and return its id.
 async fn start_run(fixture: &TestFixture, account: &RegisteredAccount) -> i64 {
-    let (_, run): (String, serde_json::Value) = crate::test_support::post_created_json(
+    crate::test_support::start_import_run(
         &fixture.state,
-        "/v1/imports",
         &account.token,
         serde_json::json!({ "source": "imessage" }),
     )
-    .await;
-    run["id"].as_i64().unwrap()
+    .await
+    .0
 }
 
 /// One batch of one incoming message whose attachment is the file `sha`.
@@ -249,8 +248,8 @@ async fn a_file_head_reported_present_survives_an_empty_trash_before_the_batch()
     //    holds the file: it does.
     let run = start_run(&fixture, &alice).await;
     let server = crate::test_support::serve(&fixture.state).await;
-    let head = http_client()
-        .head(format!("{}/v1/assets/{sha}", server.base()))
+    let head = server
+        .head(&format!("/v1/assets/{sha}"))
         .bearer_auth(&alice.token)
         .send()
         .await
@@ -260,15 +259,13 @@ async fn a_file_head_reported_present_survives_an_empty_trash_before_the_batch()
     let status = delete_status(&fixture.state, "/v1/trash", &alice.token).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     // 3. The batch that names the file arrives.
-    let (status, text) = crate::test_support::post_raw(
+    crate::test_support::post_import_batch(
         &fixture.state,
-        &format!("/v1/imports/{run}/batches"),
         &alice.token,
-        "application/jsonl",
+        run,
         batch_naming(sha.as_str()),
     )
     .await;
-    assert!(status.is_success(), "{status} {text}");
 
     let mut conn = fixture.conn().await;
     let assets_path: Option<String> = sqlx::query_scalar(
@@ -285,22 +282,11 @@ async fn a_file_head_reported_present_survives_an_empty_trash_before_the_batch()
     );
     drop(conn);
 
-    complete_run(&fixture, &alice, run).await;
+    crate::test_support::complete_import_run(&fixture.state, &alice.token, run).await;
     assert!(
         asset_file.is_file(),
         "the sweep at the run's end keeps a file the new message names"
     );
-}
-
-/// End the Import Run `run` as an Upload does.
-async fn complete_run(fixture: &TestFixture, account: &RegisteredAccount, run: i64) {
-    let _: serde_json::Value = crate::test_support::post_json(
-        &fixture.state,
-        &format!("/v1/imports/{run}/complete"),
-        &account.token,
-        serde_json::json!({ "status": "completed" }),
-    )
-    .await;
 }
 
 /// A file Empty Trash kept because an Import Run was running is removed
@@ -326,7 +312,7 @@ async fn a_file_kept_for_a_running_import_goes_when_the_run_ends() {
         "a running Import Run may still need the file"
     );
 
-    complete_run(&fixture, &alice, run).await;
+    crate::test_support::complete_import_run(&fixture.state, &alice.token, run).await;
     assert!(
         !doomed_file.exists(),
         "nothing names the file once the run ended"
@@ -455,14 +441,12 @@ async fn import_file_from(
     bytes: &[u8],
 ) -> StatusCode {
     let sha = crate::assets_api::Sha256::of_bytes(bytes);
-    let (_, run): (String, serde_json::Value) = crate::test_support::post_created_json(
+    let (run, _) = crate::test_support::start_import_run(
         &fixture.state,
-        "/v1/imports",
         &account.token,
         serde_json::json!({ "source": source }),
     )
     .await;
-    let run = run["id"].as_i64().unwrap();
     let (put, text) = crate::test_support::put_raw(
         &fixture.state,
         &format!("/v1/assets/{sha}"),
@@ -472,16 +456,14 @@ async fn import_file_from(
     )
     .await;
     assert!(put.is_success(), "{put} {text}");
-    let (status, text) = crate::test_support::post_raw(
+    crate::test_support::post_import_batch(
         &fixture.state,
-        &format!("/v1/imports/{run}/batches"),
         &account.token,
-        "application/jsonl",
+        run,
         batch_from_source(source, handle, sha.as_str()),
     )
     .await;
-    assert!(status.is_success(), "{status} {text}");
-    complete_run(fixture, account, run).await;
+    crate::test_support::complete_import_run(&fixture.state, &account.token, run).await;
     put
 }
 

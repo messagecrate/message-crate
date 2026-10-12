@@ -8,8 +8,8 @@ use crate::db::account_profile;
 use crate::problem::ProblemType;
 use crate::test_support::{
     ConversationRow, MessageRow, RegisteredAccount, TestFixture, expect_problem,
-    expect_problem_response, fixture_with_account, http_client, post_json, post_json_raw,
-    register_via_api, stored_time, test_fixture,
+    expect_problem_response, fixture_with_account, post_json, post_json_raw, register_via_api,
+    stored_time, test_fixture,
 };
 use axum::http::StatusCode;
 
@@ -2620,8 +2620,8 @@ async fn get_address_book(
     accept: Option<&str>,
 ) -> (StatusCode, String, String, String) {
     let server = crate::test_support::serve(&fixture.state).await;
-    let mut request = http_client()
-        .post(format!("{}/v1/contacts/address-book", server.base()))
+    let mut request = server
+        .post("/v1/contacts/address-book")
         .bearer_auth(&account.token)
         .json(&body);
     if let Some(accept) = accept {
@@ -3601,8 +3601,8 @@ async fn a_long_comma_list_is_refused_as_too_many_parts() {
     let q = format!("groups:{values}");
     assert!(q.len() <= 2048, "{}", q.len());
     let server = crate::test_support::serve(&fixture.state).await;
-    let response = http_client()
-        .get(format!("{}/v1/contacts", server.base()))
+    let response = server
+        .get("/v1/contacts")
         .query(&[("q", q.as_str())])
         .bearer_auth(&user.token)
         .send()

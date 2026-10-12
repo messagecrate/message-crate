@@ -13,6 +13,7 @@
 //!   the asset store.
 //! - `imports`: imports run on a connection, and the checks on what an
 //!   import leaves behind.
+//! - `import_runs`: an Import Run driven over HTTP one step at a time.
 //! - `logs`: the server's log lines.
 //! - `lines`: the JSON Lines a test imports.
 //! - `client`: the HTTP client a test calls its own server with, shared
@@ -26,6 +27,7 @@
 mod client;
 mod fixture;
 mod http;
+mod import_runs;
 mod imports;
 mod lines;
 mod logs;
@@ -45,6 +47,7 @@ pub use http::{
     post_raw, post_status, post_status_logged_out, problem, put_json, put_json_raw, put_raw,
     put_status, register_via_api, serve, serve_router,
 };
+pub use import_runs::{complete_import_run, post_import_batch, start_import_run};
 pub use imports::{
     assert_every_person_is_on_a_contact, at_current_schema_version, import_ada_conversation,
     import_for_account, import_jsonl_text,
