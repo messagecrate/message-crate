@@ -172,7 +172,7 @@ async fn the_conversation_that_names_nobody_never_becomes_a_contact() {
     assert_eq!(contacts, 0);
 }
 
-/// A group chat's identifier names the conversation, not a person, so only
+/// A group conversation's identifier names the conversation, not a person, so only
 /// the people in the group become contacts.
 #[tokio::test]
 async fn a_group_chat_identifier_never_becomes_a_contact() {

@@ -52,6 +52,17 @@ pub async fn insert_account_with_id(
     id
 }
 
+/// The `can_import`, `can_export` and `can_delete` columns of the
+/// `accounts` row at `id`, as stored, for a test that checks the row rather
+/// than what the server grants.
+pub async fn stored_permissions(conn: &mut sqlx::SqliteConnection, id: i64) -> (i64, i64, i64) {
+    sqlx::query_as("SELECT can_import, can_export, can_delete FROM accounts WHERE id = $1")
+        .bind(id)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap_or_else(|e| panic!("read the permission columns of account {id}: {e:#}"))
+}
+
 /// Store an attachment size limit directly, the way a test lowers the body
 /// cap below the part size.
 pub async fn store_asset_max_bytes(state: &AppState, bytes: u64) {
@@ -303,8 +314,8 @@ pub struct ConversationRow<'a> {
     pub id: Option<i64>,
     /// `conversations.account_id`.
     pub account_id: i64,
-    /// `conversations.chat_handle_id`: the peer's handle for a 1:1
-    /// conversation, the group chat's handle for a group.
+    /// `conversations.chat_handle_id`: the peer's handle for a one-to-one
+    /// conversation, the group conversation's handle for a group.
     pub chat_handle_id: i64,
     /// `conversations.conversation_type`: `individual` or `group`.
     pub conversation_type: &'a str,

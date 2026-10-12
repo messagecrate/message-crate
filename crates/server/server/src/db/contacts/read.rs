@@ -39,7 +39,7 @@ pub struct ContactSummary {
     /// the contact's identities sent (RFC 3339, UTC), conversations in the
     /// trash and duplicate messages left out. Null when none of them ever
     /// sent a message. Not the contact's last activity: a message the
-    /// account owner sent, or another member of a group chat, does not
+    /// account owner sent, or another member of a group conversation, does not
     /// count. The same question `last-message:` asks on Contacts.
     pub last_heard_at: Option<String>,
     /// Group names on this contact (A–Z).
@@ -63,14 +63,14 @@ pub struct ContactSelectionSummary {
     pub start_date: Option<String>,
     /// When the contact sent its last message; `null` when it sent none.
     pub end_date: Option<String>,
-    /// 1:1 conversations with the contact.
+    /// One-to-one conversations with the contact.
     pub individual_conversations: u64,
     /// Group conversations with the contact.
     pub group_conversations: u64,
     /// Conversations of orphaned messages the contact is in: the three
     /// conversation counts add up to every conversation with the contact.
     pub orphaned_conversations: u64,
-    /// Messages the contact sent in 1:1 conversations.
+    /// Messages the contact sent in one-to-one conversations.
     pub individual_message_count: u64,
     /// Messages the contact sent in group conversations.
     pub group_message_count: u64,
@@ -358,7 +358,7 @@ pub async fn contact_name_and_modified(
 
 /// Conversation and message counts across every handle of one contact.
 pub struct ContactTotals {
-    /// 1:1 conversations the contact appears in.
+    /// One-to-one conversations the contact appears in.
     pub direct: u64,
     /// Group conversations the contact appears in.
     pub groups: u64,

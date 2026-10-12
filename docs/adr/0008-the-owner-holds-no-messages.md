@@ -188,6 +188,13 @@ Provisioning the owner with `can_import`, `can_export` and `can_delete` all
 that anything with database access can change, rather than a property of the
 design.
 
+The owner's row does hold 0 for all three columns, so someone reading the
+database sees what the server grants. The zeros are not the mechanism: the
+server decides the owner's permissions from its id and ignores those columns
+for it, so setting one to 1 grants nothing. (Revised 2026-10-11. Until then
+the owner's row held the columns' defaults of 1
+([#2577](https://github.com/messagecrate/message-crate/issues/2577)).)
+
 ## Considered and rejected: a claim token
 
 Printing a token to the server log on first start and requiring it to claim

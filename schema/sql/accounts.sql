@@ -21,6 +21,10 @@ CREATE TABLE IF NOT EXISTS accounts (
     -- 1 = the account holder has not set up their profile yet, so the session
     -- owes profile setup before it goes anywhere; cleared on the first save.
     must_set_up_profile INTEGER NOT NULL DEFAULT 0,
+    -- The three permissions below never decide the owner's or the Demo
+    -- Account's permissions, which come from their ids. Their rows agree with
+    -- what the server grants: the owner's holds 0 for all three, and the Demo
+    -- Account's holds 1 for export alone.
     -- 1 = may call the import endpoints.
     can_import INTEGER NOT NULL DEFAULT 1,
     -- 1 = may call the export endpoints.

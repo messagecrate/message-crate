@@ -10,7 +10,7 @@
 //! - [`pdu`]: one file as one message: direction, people, text, attachments.
 //!
 //! Each module's documentation lists the rules it holds to and why. The
-//! [`testutil`] module (feature `testutil`) builds PDUs the way a phone
+//! `testutil` module (feature `testutil`) builds PDUs the way a phone
 //! writes them, for tests here and in the exporter.
 
 mod emoji;

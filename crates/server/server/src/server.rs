@@ -24,7 +24,7 @@ use tokio::io::AsyncWriteExt;
 use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::ServeDir;
-use tower_http::trace::{DefaultOnResponse, TraceLayer};
+use tower_http::trace::{DefaultOnResponse, OnResponse, TraceLayer};
 use tracing::Level;
 
 use crate::asset_uploads;
@@ -764,7 +764,7 @@ impl ApiError {
     /// The problem document this failure answers with. Every failure is
     /// logged here, once: an internal error at `ERROR` with its whole chain,
     /// which the document says nothing of, and a refused request with
-    /// [`log_refusal`]'s line.
+    /// `log_refusal`'s line.
     #[must_use]
     pub fn to_problem(&self) -> Problem {
         let request_id = crate::request_id::current();
@@ -915,8 +915,31 @@ impl IntoResponse for ApiError {
 /// An error's whole context chain on one line, outermost first, so the log
 /// shows the sqlx or io failure under the step that hit it. `Display` alone
 /// would print only the outermost message.
+///
+/// A source the error before it already ends with, after a `": "`, is left
+/// out, because it says nothing new: `sqlx::Error::Database` writes the
+/// database's message after "error returned from database:" and gives that
+/// same message again as its source (#2675). A cause whose words only happen
+/// to end the step's phrase ("conversation" under "stage conversation") is
+/// kept.
 pub(crate) fn error_chain(err: &anyhow::Error) -> String {
-    format!("{err:#}")
+    let mut line = String::new();
+    let mut previous: Option<String> = None;
+    for link in err.chain() {
+        let text = link.to_string();
+        let repeated = previous
+            .as_deref()
+            .is_some_and(|p| p == text || p.ends_with(&format!(": {text}")));
+        if repeated {
+            continue;
+        }
+        if !line.is_empty() {
+            line.push_str(": ");
+        }
+        line.push_str(&text);
+        previous = Some(text);
+    }
+    line
 }
 
 impl From<crate::db::imports::ImportLookupError> for ApiError {
@@ -1439,7 +1462,7 @@ pub(crate) fn http_app(state: AppState) -> Router {
         // outside `/v1`, so a probe sending `Accept: text/plain` gets the
         // plain text it answers, and its query is still checked like every
         // other route's.
-        .merge(health_router)
+        .merge(health_router.route_layer(axum::middleware::map_response(mark_routine)))
         // After routing, so the matched path names the operation whose
         // declared parameters the query is checked against.
         .route_layer(axum::middleware::from_fn_with_state(
@@ -1454,7 +1477,11 @@ pub(crate) fn http_app(state: AppState) -> Router {
         api = api.merge(utoipa_swagger_ui::SwaggerUi::new("/docs").url("/openapi.json", spec));
     }
     api.method_not_allowed_fallback(api_method_not_allowed)
-        .fallback_service(ServeDir::new(static_dir))
+        .fallback_service(
+            Router::new()
+                .fallback_service(ServeDir::new(static_dir))
+                .layer(axum::middleware::map_response(mark_routine)),
+        )
         // The cap `extract::Json` reads a body against. The routes that read
         // a body of their own hold it to their own figure instead.
         .layer(DefaultBodyLimit::max(MAX_JSON_BODY_BYTES))
@@ -1475,8 +1502,11 @@ pub(crate) fn http_app(state: AppState) -> Router {
         // answering a preflight), so their answers are marked as well as the
         // handlers'.
         .layer(axum::middleware::from_fn(no_store_unless_set))
-        // One `info` line per response (method, path, status, latency), and an
-        // `error` line for a 5xx. A refused request's problem type is
+        // One line per response (method, path, status, latency), at `debug`
+        // for a successful `Routine` answer and at `info` for every other
+        // (`log_response`). Nothing more for a 5xx, because
+        // `ApiError::to_problem` writes its one `error` line with the
+        // error's chain. A refused request's problem type is
         // logged where the problem is built (`log_refusal`). Runs outside
         // CORS so the status it logs is the one the client receives. The span
         // carries method and path; its level must match the line's or the
@@ -1495,12 +1525,41 @@ pub(crate) fn http_app(state: AppState) -> Router {
                             .unwrap_or("")
                     )
                 })
-                .on_response(DefaultOnResponse::new().level(Level::INFO)),
+                .on_response(log_response)
+                .on_failure(()),
         )
         // Outermost of all: the request id is made before the trace span
         // reads it and stays in scope while every problem body is built.
         .layer(axum::middleware::from_fn(crate::request_id::layer))
         .with_state(state)
+}
+
+/// Marks a response whose log line is written at `debug` when it succeeds:
+/// a file of the website, and the answer to `GET /health`, which the web app
+/// asks for every 30 seconds in each open tab. At `info`, these lines would
+/// bury the requests that did something (#2274).
+#[derive(Clone, Copy)]
+struct Routine;
+
+/// Mark `response` as [`Routine`].
+async fn mark_routine(mut response: Response) -> Response {
+    response.extensions_mut().insert(Routine);
+    response
+}
+
+/// Write `response`'s line: at `debug` for a [`Routine`] answer that is not
+/// a client or server error, and at `info` for every other. A failed probe
+/// and a file the website does not have are not routine, so each keeps its
+/// `info` line.
+fn log_response(response: &Response, latency: std::time::Duration, span: &tracing::Span) {
+    let status = response.status();
+    let routine = response.extensions().get::<Routine>().is_some()
+        && !status.is_client_error()
+        && !status.is_server_error();
+    let level = if routine { Level::DEBUG } else { Level::INFO };
+    DefaultOnResponse::new()
+        .level(level)
+        .on_response(response, latency, span);
 }
 
 /// Start the HTTP server. It runs until Ctrl-C or SIGTERM, or, when

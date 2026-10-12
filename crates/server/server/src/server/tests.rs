@@ -6,6 +6,7 @@ use crate::imports_api::{
     UpdateImportRequest, complete_import, create_import, discard_import, get_import, list_imports,
     update_import,
 };
+use crate::logging::{LogLevel, LogLine};
 use crate::problem::ProblemType;
 use crate::test_support::{
     ImportingAccount, expect_problem, expect_problem_for, http_client, test_fixture,
@@ -40,6 +41,33 @@ fn error_chain_keeps_every_context_layer() {
         error_chain(&err),
         "stage conversation chat-1: write staging row: disk full"
     );
+}
+
+/// `sqlx::Error::Database` says "error returned from database:" and the
+/// database's message, and gives that message again as its source, so the
+/// chain names it once (#2675).
+#[tokio::test]
+async fn error_chain_names_a_database_message_once() {
+    let fixture = test_fixture().await;
+    let err = sqlx::query("SELECT * FROM no_such_table")
+        .execute(&fixture.state.db)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, sqlx::Error::Database(_)), "{err:?}");
+    let err = anyhow::Error::new(err).context("read the attachments of a page of messages");
+    assert_eq!(
+        error_chain(&err),
+        "read the attachments of a page of messages: error returned from database: \
+         (code: 1) no such table: no_such_table"
+    );
+}
+
+/// A cause whose words only happen to end the step's phrase still says
+/// something new, so the chain keeps it.
+#[test]
+fn error_chain_keeps_a_cause_that_ends_the_step_by_chance() {
+    let err = anyhow::anyhow!("conversation").context("stage conversation");
+    assert_eq!(error_chain(&err), "stage conversation: conversation");
 }
 
 #[test]
@@ -278,7 +306,7 @@ async fn cors_preflight_rejects_unknown_origin() {
 }
 
 /// The server log's lines while the CORS layer is built from `origins`.
-fn log_lines_building_cors(origins: &[&str]) -> Vec<crate::logging::LogLine> {
+fn log_lines_building_cors(origins: &[&str]) -> Vec<LogLine> {
     use crate::logging::{LogFiles, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
 
     let dir = TempDir::new().unwrap();
@@ -306,7 +334,7 @@ fn log_lines_building_cors(origins: &[&str]) -> Vec<crate::logging::LogLine> {
 fn a_wildcard_cors_origin_is_warned_about() {
     let lines = log_lines_building_cors(&["https://app.example", " * "]);
     assert_eq!(lines.len(), 1, "{lines:?}");
-    assert_eq!(lines[0].level, crate::logging::LogLevel::Warn);
+    assert_eq!(lines[0].level, LogLevel::Warn);
     assert!(lines[0].text.contains("cors_origins"), "{}", lines[0].text);
     assert!(lines[0].text.contains("--cors-origin"), "{}", lines[0].text);
     assert!(lines[0].text.contains("any website"), "{}", lines[0].text);
@@ -316,6 +344,154 @@ fn a_wildcard_cors_origin_is_warned_about() {
 fn a_listed_cors_origin_is_not_warned_about() {
     let lines = log_lines_building_cors(&["https://app.example"]);
     assert!(lines.is_empty(), "{lines:?}");
+}
+
+/// `state` serving the website from a directory of its own, which holds
+/// `index.html` and nothing else.
+fn with_website(mut state: AppState, website: &Path) -> AppState {
+    std::fs::write(website.join("index.html"), "<!doctype html>").unwrap();
+    let mut cfg = (*state.cfg).clone();
+    cfg.server.as_mut().unwrap().static_dir = website.to_path_buf();
+    state.cfg = Arc::new(cfg);
+    state
+}
+
+/// The server log's lines, oldest first, written at `filter` while `state`'s
+/// app answers a `GET` for each of `paths` in turn.
+async fn log_lines_serving(state: &AppState, filter: &str, paths: &[&str]) -> Vec<LogLine> {
+    use crate::logging::{LogFiles, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
+
+    let dir = TempDir::new().unwrap();
+    let log_dir = dir.path().join("logs");
+    let files = LogFiles::open(&log_dir, SERVER_LOG_LIMITS).unwrap();
+    {
+        // The test's runtime has one thread, so the server's tasks write
+        // through this thread's subscriber too.
+        let _subscriber =
+            tracing::subscriber::set_default(crate::logging::subscriber_for(files, filter));
+        let server = crate::test_support::serve(state).await;
+        for path in paths {
+            http_client()
+                .get(format!("{}{path}", server.base()))
+                .send()
+                .await
+                .unwrap()
+                .bytes()
+                .await
+                .unwrap();
+        }
+    }
+    let mut lines = read_lines(
+        &log_dir,
+        &LogLinesQuery {
+            limit: 100,
+            ..LogLinesQuery::default()
+        },
+    )
+    .unwrap()
+    .0;
+    lines.reverse();
+    lines
+}
+
+/// The per-response lines among `lines`: each one's level and the status it
+/// names.
+fn response_lines(lines: &[LogLine]) -> Vec<(LogLevel, String)> {
+    lines
+        .iter()
+        .filter(|line| line.text.contains("finished processing request"))
+        .map(|line| {
+            let status = line
+                .text
+                .split_whitespace()
+                .find_map(|word| word.strip_prefix("status="))
+                .unwrap_or_else(|| panic!("no status in {}", line.text))
+                .to_string();
+            (line.level, status)
+        })
+        .collect()
+}
+
+/// A `500 Internal Server Error` writes one `ERROR` line, the one with the
+/// error's chain, and its per-response line at `INFO` (#2254). The request
+/// is a failed health probe, which is not routine, so its line stays at
+/// `INFO` too (#2274).
+#[tokio::test]
+async fn a_500_writes_one_error_line_and_an_info_response_line() {
+    let fixture = test_fixture().await;
+    // A closed pool fails the health check's statement.
+    fixture.state.db.close().await;
+    let lines = log_lines_serving(&fixture.state, "info", &["/health"]).await;
+
+    let errors: Vec<_> = lines
+        .iter()
+        .filter(|line| line.level == LogLevel::Error)
+        .collect();
+    assert_eq!(errors.len(), 1, "{lines:#?}");
+    assert!(
+        errors[0]
+            .text
+            .contains("run the health check's statement on the database"),
+        "{}",
+        errors[0].text
+    );
+    assert_eq!(
+        response_lines(&lines),
+        [(LogLevel::Info, "500".to_string())],
+        "{lines:#?}"
+    );
+}
+
+/// A successful health probe and a file of the website are answered without
+/// a line at the default `info`, because the web app probes `/health` every
+/// 30 seconds in each tab. An answer from `/v1`, and a 404 from the website,
+/// still write theirs (#2274).
+#[tokio::test]
+async fn a_successful_probe_or_website_file_writes_no_info_line() {
+    let fixture = test_fixture().await;
+    let website = TempDir::new().unwrap();
+    let state = with_website(fixture.state.clone(), website.path());
+    let lines = log_lines_serving(
+        &state,
+        "info",
+        &["/health", "/index.html", "/", "/missing.js", "/v1/nothing"],
+    )
+    .await;
+
+    assert_eq!(
+        response_lines(&lines),
+        [
+            (LogLevel::Info, "404".to_string()),
+            (LogLevel::Info, "404".to_string()),
+        ],
+        "{lines:#?}"
+    );
+}
+
+/// The trace layer writes the lines left out at `info` at `DEBUG`, so a
+/// `debug` filter still shows every response (#2274).
+#[tokio::test]
+async fn a_successful_probe_or_website_file_writes_a_debug_line() {
+    let fixture = test_fixture().await;
+    let website = TempDir::new().unwrap();
+    let state = with_website(fixture.state.clone(), website.path());
+    // `debug` for the response lines alone, so the debug lines of sqlx,
+    // hyper and reqwest never crowd them out of the lines read back.
+    let lines = log_lines_serving(
+        &state,
+        "info,tower_http::trace=debug",
+        &["/health", "/index.html"],
+    )
+    .await;
+
+    assert_eq!(
+        response_lines(&lines),
+        [
+            (LogLevel::Debug, "200".to_string()),
+            (LogLevel::Debug, "200".to_string()),
+        ],
+        "{lines:#?}"
+    );
 }
 
 #[tokio::test]

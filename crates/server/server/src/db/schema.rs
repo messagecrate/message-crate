@@ -203,7 +203,7 @@ async fn has_user_tables(conn: &mut SqliteConnection) -> Result<bool> {
 ///
 /// Foreign keys are turned OFF for the drop loop: SQLite's FK-aware DROP
 /// processing cannot handle a schema whose remaining CREATE statements still
-/// reference already-dropped tables ("no such table: main.<dropped>"). The
+/// reference already-dropped tables ("no such table: main.`<dropped>`"). The
 /// constraints themselves have `ON DELETE` actions, so the drops would
 /// cascade cleanly; this is a schema-parse limitation, not a data one.
 async fn rebuild_schema(conn: &mut SqliteConnection) -> Result<()> {
