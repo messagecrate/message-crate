@@ -51,6 +51,30 @@ pub(crate) async fn connect_read_only(path: &Path) -> sqlx::Result<SqliteConnect
     Ok(conn)
 }
 
+/// A connection of its own to the database file at `path`, for a
+/// write-ahead log checkpoint ([`crate::db::erase`]): `trusted_schema` OFF
+/// ([`distrust_schema`]) and `busy_timeout` at `wait`, and none of the
+/// pool's other pragmas, which a checkpoint does not use. It never creates
+/// the file. The caller closes it after the checkpoint, so the short wait
+/// never reaches a pooled connection.
+///
+/// # Errors
+///
+/// Returns an error when the file cannot be opened, or the pragma fails.
+pub(crate) async fn connect_for_checkpoint(
+    path: &Path,
+    wait: Duration,
+) -> sqlx::Result<SqliteConnection> {
+    crate::db::sqlite_functions::register();
+    let mut conn = SqliteConnectOptions::new()
+        .filename(path)
+        .busy_timeout(wait)
+        .connect()
+        .await?;
+    distrust_schema(&mut conn).await?;
+    Ok(conn)
+}
+
 /// How long a statement that needs the write lock waits for another
 /// writer's transaction, such as an import batch's, before SQLite answers
 /// `SQLITE_BUSY`. The request then answers `503 Service Unavailable`

@@ -120,8 +120,17 @@ What about text deleted for good before Message Crate 0.11.0?
 Releases before 0.11.0 left its words in the search index and its rows in the database file's free space.
 The first delete for good after the update writes the search index again without those words.
 The free space keeps the rows until that space is used again.
-With the server stopped, the `sqlite3` command-line tool erases both at once, run in the data directory:
+With the server stopped, the `sqlite3` command-line tool erases both at once.
+It must be version 3.43 or newer, because older versions can't merge this kind of search index.
+On the desktop app or a server run without Docker, the command runs in the data directory:
 
 ```bash title="With the server stopped: write the search index and the database file again"
 sqlite3 messagecrate.db "INSERT INTO messages_fts(messages_fts) VALUES('optimize'); INSERT INTO message_versions_fts(message_versions_fts) VALUES('optimize'); VACUUM;"
+```
+
+A Docker install keeps the data directory in its volume, so a temporary container with `sqlite3` runs the same command there, with the `message-crate` container stopped:
+
+```bash title="With the message-crate container stopped: the same command in the volume"
+docker run --rm -v message-crate-data:/data alpine sh -c \
+  "apk add --no-cache sqlite >/dev/null && sqlite3 /data/messagecrate.db \"INSERT INTO messages_fts(messages_fts) VALUES('optimize'); INSERT INTO message_versions_fts(message_versions_fts) VALUES('optimize'); VACUUM;\""
 ```

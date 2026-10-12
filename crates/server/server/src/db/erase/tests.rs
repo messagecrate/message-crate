@@ -323,20 +323,14 @@ async fn a_log_kept_by_a_reader_is_cleared_by_the_next_retry() {
         .await
         .unwrap();
     assert!(holds(&wal, BODY), "the reader kept the log as it was");
-    assert!(LOGS_TO_CLEAR.lock().unwrap().contains(&db));
-    // The connection's own wait is back after the checkpoint's short one.
-    let own: i64 = sqlx::query_scalar("SELECT timeout FROM pragma_busy_timeout")
-        .fetch_one(&mut *conn)
-        .await
-        .unwrap();
-    assert_eq!(own, 15_000);
+    assert!(logs_to_clear().waiting.contains_key(&db));
 
     sqlx::query("ROLLBACK").execute(&mut *reader).await.unwrap();
     drop(reader);
     drop(conn);
     retry_clearing(&fixture.state.db).await;
 
-    assert!(!LOGS_TO_CLEAR.lock().unwrap().contains(&db));
+    assert!(!logs_to_clear().waiting.contains_key(&db));
     assert_eq!(std::fs::metadata(&wal).unwrap().len(), 0);
     let mut conn = fixture.conn().await;
     assert_only_the_kept_text_is_left(&mut conn).await;
@@ -354,4 +348,26 @@ async fn a_log_no_one_else_reads_is_cleared_to_zero_bytes() {
     assert_eq!(clear_write_ahead_log(&mut conn).await, LogCleared::Cleared);
 
     assert_eq!(std::fs::metadata(&wal).unwrap().len(), 0);
+}
+
+/// A checkpoint that clears the log removes the file only when no other
+/// checkpoint kept the log while it ran: one that did wrote frames this one
+/// may not have cleared, so the file stays for the next retry.
+#[test]
+fn a_clear_never_drops_a_log_kept_while_it_ran() {
+    let file = PathBuf::from("/nowhere/messagecrate.db");
+    let mut logs = LogsToClear {
+        waiting: std::collections::BTreeMap::new(),
+        kept: 0,
+    };
+    // This checkpoint starts with no entry; another keeps the log meanwhile.
+    let seen = logs.waiting.get(&file).copied();
+    record(&mut logs, file.clone(), None, LogCleared::Kept);
+    record(&mut logs, file.clone(), seen, LogCleared::Cleared);
+    assert!(logs.waiting.contains_key(&file));
+
+    // The next checkpoint saw that entry, so its clear removes it.
+    let seen = logs.waiting.get(&file).copied();
+    record(&mut logs, file.clone(), seen, LogCleared::Cleared);
+    assert!(!logs.waiting.contains_key(&file));
 }

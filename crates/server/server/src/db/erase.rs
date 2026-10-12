@@ -38,7 +38,7 @@
 //! then, until they are used again or the file is vacuumed. The user guide's
 //! Trash page says so.
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -65,9 +65,31 @@ const CHECKPOINT_WAIT: Duration = Duration::from_secs(1);
 pub(crate) const RETRY_EVERY: Duration = Duration::from_secs(30);
 
 /// The database files whose log still holds text deleted for good, because
-/// a read kept [`clear_write_ahead_log`] from clearing it. Keyed by file, so
-/// two databases in one process, as in the tests, never clear each other's.
-static LOGS_TO_CLEAR: Mutex<BTreeSet<PathBuf>> = Mutex::new(BTreeSet::new());
+/// a read kept [`clear_write_ahead_log`] from clearing it.
+///
+/// It is the process's, not a pool's, because the delete functions that
+/// clear the log are handed a connection, not the pool or the server's
+/// state. Keyed by file, so two databases in one process, as in the tests,
+/// never clear each other's.
+struct LogsToClear {
+    /// Each waiting file, with the count of [`LogsToClear::kept`] when its
+    /// log was last kept.
+    waiting: BTreeMap<PathBuf, u64>,
+    /// How many times a log has been kept, so a checkpoint can tell whether
+    /// another was kept while it ran.
+    kept: u64,
+}
+
+static LOGS_TO_CLEAR: Mutex<LogsToClear> = Mutex::new(LogsToClear {
+    waiting: BTreeMap::new(),
+    kept: 0,
+});
+
+/// [`LOGS_TO_CLEAR`], locked. A panic while it was held left it whole,
+/// because every change to it is a single insert or remove.
+fn logs_to_clear() -> std::sync::MutexGuard<'static, LogsToClear> {
+    LOGS_TO_CLEAR.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// Merge each full-text search index into one segment, so the words of the
 /// rows `tx` deleted are no longer in it, then commit `tx`. The merge runs
@@ -104,88 +126,111 @@ pub(crate) enum LogCleared {
     Kept,
 }
 
-/// Copy the write-ahead log into the database file and cut it to zero bytes,
-/// after a delete for good has committed, so the page images earlier
-/// transactions wrote go from the log. It waits [`CHECKPOINT_WAIT`] for
-/// another connection's read to end.
+/// Copy the write-ahead log of the database behind `conn` into the database
+/// file and cut it to zero bytes, after a delete for good has committed, so
+/// the page images earlier transactions wrote go from the log.
+///
+/// The checkpoint runs on a connection of its own, opened for it and closed
+/// after it ([`crate::db::engine::connect_for_checkpoint`]), which waits
+/// [`CHECKPOINT_WAIT`] for another connection's read to end. `conn` comes
+/// from the pool and goes back to it unchanged, even when the request is
+/// dropped while the checkpoint waits.
 ///
 /// The delete has committed by the time this runs, so a log that is kept is
 /// a warning in the server's log, never a failed request. The database is
 /// then remembered for [`keep_retrying`].
 pub(crate) async fn clear_write_ahead_log(conn: &mut SqliteConnection) -> LogCleared {
-    let file = crate::db::schema::database_file(conn).await.ok().flatten();
-    let cleared = match checkpoint_waiting_briefly(conn).await {
-        Ok(true) => LogCleared::Cleared,
-        Ok(false) => {
-            tracing::warn!(
-                "The write-ahead log could not be cleared after a delete for good, because another connection was still reading, so the server tries again every {} s",
-                RETRY_EVERY.as_secs()
-            );
-            LogCleared::Kept
-        }
+    let file = match crate::db::schema::database_file(conn).await {
+        Ok(Some(file)) => file,
+        // An in-memory database has no log to clear.
+        Ok(None) => return LogCleared::Cleared,
         Err(err) => {
             tracing::warn!(
                 error = %err,
+                "The write-ahead log could not be cleared after a delete for good, because the database's file could not be named, so it holds the deleted text until the server stops"
+            );
+            return LogCleared::Kept;
+        }
+    };
+    clear_log_of(file).await
+}
+
+/// [`clear_write_ahead_log`] for the database at `file`, recording the
+/// outcome in [`LOGS_TO_CLEAR`].
+async fn clear_log_of(file: PathBuf) -> LogCleared {
+    // A log kept by a checkpoint that starts after this one is not cleared
+    // by this one, so only an entry this checkpoint has seen is removed.
+    let seen = logs_to_clear().waiting.get(&file).copied();
+    let checkpoint = checkpoint(&file).await;
+    let cleared = match &checkpoint {
+        Ok(true) => LogCleared::Cleared,
+        Ok(false) | Err(_) => {
+            let cause = match &checkpoint {
+                Err(err) => format!("the checkpoint failed: {err}"),
+                _ => "another connection was still reading".to_owned(),
+            };
+            tracing::warn!(
+                cause,
                 "The write-ahead log could not be cleared after a delete for good, so the server tries again every {} s",
                 RETRY_EVERY.as_secs()
             );
             LogCleared::Kept
         }
     };
-    if let Some(file) = file {
-        let mut pending = LOGS_TO_CLEAR.lock().unwrap_or_else(|e| e.into_inner());
-        match cleared {
-            LogCleared::Cleared => pending.remove(&file),
-            LogCleared::Kept => pending.insert(file),
-        };
-    }
+    record(&mut logs_to_clear(), file, seen, cleared);
     cleared
 }
 
-/// Run `PRAGMA wal_checkpoint(TRUNCATE)` with `busy_timeout` at
-/// [`CHECKPOINT_WAIT`], then put the connection's own timeout back. Answers
-/// whether the checkpoint finished.
-async fn checkpoint_waiting_briefly(conn: &mut SqliteConnection) -> sqlx::Result<bool> {
-    let own: i64 = sqlx::query_scalar("SELECT timeout FROM pragma_busy_timeout")
-        .fetch_one(&mut *conn)
+/// Record in `logs` what a checkpoint of `file` did. `seen` is the file's
+/// entry when the checkpoint started: a clear removes the entry only if it
+/// is still that one, because a log kept by a checkpoint that ran meanwhile
+/// may hold frames this one did not clear.
+fn record(logs: &mut LogsToClear, file: PathBuf, seen: Option<u64>, cleared: LogCleared) {
+    match cleared {
+        LogCleared::Cleared => {
+            if logs.waiting.get(&file).copied() == seen {
+                logs.waiting.remove(&file);
+            }
+        }
+        LogCleared::Kept => {
+            logs.kept += 1;
+            let kept = logs.kept;
+            logs.waiting.insert(file, kept);
+        }
+    }
+}
+
+/// Run `PRAGMA wal_checkpoint(TRUNCATE)` on a connection of its own to
+/// `file`, and answer whether it finished.
+async fn checkpoint(file: &std::path::Path) -> sqlx::Result<bool> {
+    use sqlx::Connection as _;
+    let mut own = crate::db::engine::connect_for_checkpoint(file, CHECKPOINT_WAIT).await?;
+    let (busy, _, _) = sqlx::query_as::<_, (i64, i64, i64)>("PRAGMA wal_checkpoint(TRUNCATE)")
+        .fetch_one(&mut own)
         .await?;
-    sqlx::query(sqlx::AssertSqlSafe(format!(
-        "PRAGMA busy_timeout = {}",
-        CHECKPOINT_WAIT.as_millis()
-    )))
-    .execute(&mut *conn)
-    .await?;
-    let answer = sqlx::query_as::<_, (i64, i64, i64)>("PRAGMA wal_checkpoint(TRUNCATE)")
-        .fetch_one(&mut *conn)
-        .await;
-    sqlx::query(sqlx::AssertSqlSafe(format!("PRAGMA busy_timeout = {own}")))
-        .execute(&mut *conn)
-        .await?;
-    Ok(answer?.0 == 0)
+    own.close().await?;
+    Ok(busy == 0)
 }
 
 /// Try again to clear the log of the database behind `pool`, when a read
 /// kept [`clear_write_ahead_log`] from clearing it. Does nothing, and takes
 /// no connection, while no log is waiting.
 pub(crate) async fn retry_clearing(pool: &SqlitePool) {
-    if LOGS_TO_CLEAR
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .is_empty()
-    {
+    if logs_to_clear().waiting.is_empty() {
         return;
     }
-    let Ok(mut conn) = pool.acquire().await else {
-        return;
+    let file = {
+        let Ok(mut conn) = pool.acquire().await else {
+            return;
+        };
+        let Ok(Some(file)) = crate::db::schema::database_file(&mut conn).await else {
+            return;
+        };
+        file
     };
-    let Ok(Some(file)) = crate::db::schema::database_file(&mut conn).await else {
-        return;
-    };
-    let waiting = LOGS_TO_CLEAR
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .contains(&file);
-    if waiting && clear_write_ahead_log(&mut conn).await == LogCleared::Cleared {
+    if logs_to_clear().waiting.contains_key(&file)
+        && clear_log_of(file).await == LogCleared::Cleared
+    {
         tracing::info!("The write-ahead log is cleared of the text deleted for good");
     }
 }

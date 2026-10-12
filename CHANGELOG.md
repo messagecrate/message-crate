@@ -1493,9 +1493,9 @@ carry their date on the heading.
 
 - 2026-10-12: Text deleted for good before this release can still be in
   the database file's free space and in its search index. The first delete
-  for good after the update clears the search index, and the Trash page of
-  the user guide gives the command that erases both with the server
-  stopped (#2108).
+  for good after the update writes the search index again without those
+  words, and the Trash page of the user guide gives the command that
+  erases both with the server stopped (#2108).
 - 2026-10-12: The server now makes its data directory and its database
   file readable by its own user alone each time it opens the database. A
   backup job or another program that read either as a different user,
