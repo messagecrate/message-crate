@@ -81,6 +81,23 @@ fn a_username_is_trimmed_and_checked() {
     ));
 }
 
+/// A username over its cap is refused in the wording every length cap
+/// shares (`text_caps`), counted after the trim like every other.
+#[test]
+fn a_long_username_is_refused_in_the_wording_of_every_length_cap() {
+    assert_eq!(
+        require_valid_username(&format!(" {} ", "a".repeat(128))).unwrap(),
+        "a".repeat(128)
+    );
+    match require_valid_username(&"a".repeat(129)) {
+        Err(ApiError::ValidationFailed(errors)) => assert_eq!(
+            errors,
+            ["username: must be at most 128 characters".to_string()]
+        ),
+        other => panic!("expected validation-failed, got {other:?}"),
+    }
+}
+
 /// `serve`'s wait sleeps [`REFUSAL_WAIT`] before it answers, and the answer
 /// is `invalid-credentials` with the sentence it was given. The clock is
 /// tokio's paused one, so the test takes no time and reads no wall clock.
@@ -427,7 +444,7 @@ fn a_username_is_one_to_128_characters_of_a_known_set() {
     }
 
     // Letters from other scripts are refused. The doc comment on
-    // `is_valid_username` gives the reason.
+    // `require_valid_username` gives the reason.
     for other_script in ["аdmin", "mätt", "матт", "ｍatt", "matt\u{0301}", "٣"] {
         assert!(
             !is_valid_username(other_script),

@@ -1,4 +1,6 @@
-//! Length caps on stored names a person types, identity addresses, Import
+//! Every length cap on text the server stores: the names a person types (an
+//! account's display name and username, a contact's name, and the name of a
+//! Contact Group, Message Tag or Saved Search), identity addresses, Import
 //! Error and note text, the program, install and directory an Import Run
 //! names, and Import Run JSON.
 //!
@@ -7,13 +9,22 @@
 //! each has a stated upper bound rather than the 32 MiB cap on a JSON body
 //! (#2183). A value over its cap is `validation-failed`, never cut short, so
 //! the caller learns the rule the first time it breaks it, as with `limit` in
-//! `paging.rs`. Each cap is also written in its field's OpenAPI description.
+//! `paging.rs`. Every cap is refused in one wording, `"<field>: must be at
+//! most N characters"`, by the checks below, and each is also written in its
+//! field's OpenAPI description. A field's other rules, such as whether it
+//! may be blank or which names are reserved, stay with its route.
 
 use crate::server::ApiError;
 
 /// Most characters in a name a person types: an account's display name and a
 /// contact's name.
 pub const MAX_PERSON_NAME_CHARS: usize = 200;
+/// Most characters in a username. A username is ASCII, so this is its
+/// length in bytes too.
+pub const MAX_USERNAME_CHARS: usize = 128;
+/// Most characters in the name of a Contact Group, a Message Tag or a Saved
+/// Search: a name that fits the sidebar.
+pub const MAX_COLLECTION_NAME_CHARS: usize = 80;
 /// Most characters in an identity address a person types: an email address's
 /// local part (64) and domain (255) with the `@` between them come to 320, and
 /// a phone number is far shorter.

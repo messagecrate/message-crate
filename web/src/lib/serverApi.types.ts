@@ -2077,7 +2077,11 @@ export interface components {
         ClaimServerRequest: {
             /** @description Password for the owner. Must satisfy the server's password policy. */
             password: string;
-            /** @description Login username for the owner. */
+            /**
+             * @description Login username for the owner, which the server trims: 1 to 128 characters, each
+             *     a letter A to Z, a digit, `_`, `-` or `.`. Any other is refused with
+             *     `422 Unprocessable Entity`.
+             */
             username: string;
         };
         /**
@@ -2385,7 +2389,11 @@ export interface components {
              *     refused with `422 Unprocessable Entity`.
              */
             preferred_name?: string | null;
-            /** @description Login username. */
+            /**
+             * @description Login username, which the server trims: 1 to 128 characters, each
+             *     a letter A to Z, a digit, `_`, `-` or `.`. Any other is refused with
+             *     `422 Unprocessable Entity`.
+             */
             username: string;
         };
         /**
@@ -5514,13 +5522,14 @@ export interface components {
              *     accepts. 536870912 (512 MiB) until the owner changes it.
              */
             asset_max_bytes: number;
+            /** @description Anyone reaching the server may create their own account. */
+            public_registration: boolean;
+        } & {
             /**
              * @description The journal SQLite keeps the database with. Not a setting: the
              *     server reports it here because only the owner may read it.
              */
             journal: components["schemas"]["DatabaseJournal"];
-            /** @description Anyone reaching the server may create their own account. */
-            public_registration: boolean;
         };
         /**
          * @description What state a Message Crate is in, from outside.

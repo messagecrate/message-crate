@@ -392,7 +392,7 @@ async fn the_owner_can_open_and_close_registration() {
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
     let settings: ServerSettings = get_json(&state, "/v1/server/settings", &owner.token).await;
-    assert!(!settings.public_registration);
+    assert!(!settings.settings.public_registration);
 
     let (status, text) = post_logged_out(
         &state,
@@ -409,7 +409,7 @@ async fn the_owner_can_open_and_close_registration() {
         serde_json::json!({ "public_registration": true }),
     )
     .await;
-    assert!(opened.public_registration);
+    assert!(opened.settings.public_registration);
 
     let joined = register_via_api(&state, "stranger", "hunter2hunter2").await;
     assert_eq!(joined.username, "stranger");

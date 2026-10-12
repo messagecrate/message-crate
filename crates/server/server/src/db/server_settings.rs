@@ -10,15 +10,17 @@ use sqlx::SqliteConnection;
 /// What the attachment size limit reads as until the owner sets it: 512 MiB.
 pub const DEFAULT_ASSET_MAX_BYTES: u64 = 512 * 1024 * 1024;
 
-/// The server's settings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The server settings the owner controls.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
 pub struct ServerSettings {
-    /// Anyone reaching the server may create their own account. Off unless the
-    /// owner turns it on.
+    /// Anyone reaching the server may create their own account.
     pub public_registration: bool,
-    /// The attachment size limit: the largest asset the server accepts, as one
-    /// `PUT` or as the declared total of a multipart upload, in bytes. This
-    /// row is the only place it lives.
+    /// The attachment size limit, in bytes: the largest asset the server
+    /// accepts. 536870912 (512 MiB) until the owner changes it.
+    // The limit holds for one `PUT` and for the declared total of a
+    // multipart upload alike. This row is the only place it lives.
     pub asset_max_bytes: u64,
 }
 
