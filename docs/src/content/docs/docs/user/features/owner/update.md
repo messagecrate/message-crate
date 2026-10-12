@@ -89,6 +89,7 @@ Is anything kept?
 
 Yes. Before the rebuild, the server writes a copy of the database beside it, named after the database with `.before-rebuild-` and the old Schema Fingerprint, such as `messagecrate.db.before-rebuild-1176793189`.
 A second rebuild from the same fingerprint adds `-2`, `-3` and so on, so no copy is written over.
+The copy is written under its name with `.partial` added and renamed only once it is whole, so a file ending in `.partial` is a copy that was cut off, such as by the server being stopped, and holds nothing worth keeping.
 If the copy can't be written, as on a full disk, the server leaves the database as it is and stops with an error naming the copy.
 A new, empty database gets no copy, because it holds nothing.
 

@@ -750,6 +750,51 @@ async fn reset_refuses_while_server_holds_database_lock() {
     );
 }
 
+/// A database stamped by a server with another database layout is refused
+/// before the snapshot: the reset would rebuild the snapshot, keep the copy
+/// of it inside its own work directory, and delete that directory when it
+/// ends. `serve` keeps the copy beside the database and rebuilds it.
+#[tokio::test]
+async fn reset_refuses_a_database_with_another_layout() {
+    let temp = tempfile::tempdir().expect("create test directory");
+    let db = temp.path().join("messagecrate.db");
+    seed_reset_test_database(&db).await;
+    let other = schema::SCHEMA_FINGERPRINT ^ 1;
+    // Opened without `test_db`, which would make sure of the schema and so
+    // rebuild the database this test stamps.
+    let pool = engine::open_pool_for_path(&db)
+        .await
+        .expect("open test database");
+    sqlx::query(&format!("PRAGMA user_version = {other}"))
+        .execute(&pool)
+        .await
+        .expect("stamp another fingerprint");
+    engine::close_pool(&pool).await;
+    let bundle = temp.path().join("bundle");
+    write_tiny_reset_bundle(&bundle);
+    let cfg = test_config(&db, &temp.path().join("data"));
+
+    let result = reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID).await;
+
+    let error = format!("{:#}", result.err().expect("the reset is refused"));
+    assert!(error.contains("another database layout"), "{error}");
+    assert!(error.contains("serve"), "{error}");
+    let pool = engine::open_pool_for_path(&db)
+        .await
+        .expect("open test database");
+    let stamped: i64 = sqlx::query_scalar("PRAGMA user_version")
+        .fetch_one(&pool)
+        .await
+        .expect("read the stamp");
+    let messages: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages")
+        .fetch_one(&pool)
+        .await
+        .expect("count messages");
+    engine::close_pool(&pool).await;
+    assert_eq!(stamped, other, "the database keeps its stamp");
+    assert!(messages > 0, "the database keeps its messages");
+}
+
 #[tokio::test]
 async fn failures_during_the_install_restore_all_active_state() {
     for failure_point in [

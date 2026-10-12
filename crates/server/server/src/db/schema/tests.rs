@@ -551,14 +551,9 @@ async fn other_fingerprint_rebuilds_to_current() {
     assert_eq!(accounts, 0, "the rebuild drops data");
 }
 
-/// The database file behind `conn`, as SQLite names it.
-async fn database_file(conn: &mut SqliteConnection) -> std::path::PathBuf {
-    let file: String =
-        sqlx::query_scalar("SELECT file FROM pragma_database_list WHERE name = 'main'")
-            .fetch_one(&mut *conn)
-            .await
-            .unwrap();
-    file.into()
+/// The database file behind `conn`, which every test pool has.
+async fn file_of(conn: &mut SqliteConnection) -> std::path::PathBuf {
+    database_file(conn).await.unwrap().unwrap()
 }
 
 /// The path of the copy a rebuild of `db` from fingerprint `stamped` keeps
@@ -608,7 +603,7 @@ async fn a_rebuild_keeps_a_copy_that_still_holds_the_messages() {
     .await;
     let other = SCHEMA_FINGERPRINT ^ 1;
     stamp_user_version(&mut conn, other).await.unwrap();
-    let db = database_file(&mut conn).await;
+    let db = file_of(&mut conn).await;
 
     ensure_schema(&mut conn).await.unwrap();
 
@@ -640,7 +635,7 @@ async fn a_second_rebuild_from_the_same_fingerprint_keeps_both_copies() {
     let (pool, _fixture) = seeded_schema_fixture().await;
     let mut conn = pool.acquire().await.unwrap();
     let other = SCHEMA_FINGERPRINT ^ 1;
-    let db = database_file(&mut conn).await;
+    let db = file_of(&mut conn).await;
     let first = rebuild_copy_path(&db, other);
     std::fs::write(&first, b"an earlier copy").unwrap();
     stamp_user_version(&mut conn, other).await.unwrap();
@@ -655,13 +650,42 @@ async fn a_second_rebuild_from_the_same_fingerprint_keeps_both_copies() {
     assert_eq!(std::fs::read(&first).unwrap(), b"an earlier copy");
 }
 
+/// When the copy can't be written, the rebuild does not run: the database
+/// keeps its tables, its rows and its stamp, and no file under the copy's
+/// name is left to be mistaken for a whole copy.
+#[tokio::test]
+async fn a_copy_that_fails_leaves_the_database_as_it_is() {
+    let (pool, _fixture) = seeded_schema_fixture().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let other = SCHEMA_FINGERPRINT ^ 1;
+    let db = file_of(&mut conn).await;
+    // A directory where the copy is written makes `VACUUM INTO` fail.
+    let partial = std::path::PathBuf::from(format!(
+        "{}.partial",
+        rebuild_copy_path(&db, other).display()
+    ));
+    std::fs::create_dir(&partial).unwrap();
+    stamp_user_version(&mut conn, other).await.unwrap();
+
+    let error = ensure_schema(&mut conn).await.unwrap_err().to_string();
+
+    assert!(error.contains("could not keep a copy"), "{error}");
+    assert_eq!(user_version(&mut conn).await.unwrap(), other);
+    let accounts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(accounts, 2, "the database keeps its rows");
+    assert_eq!(rebuild_copies(&db), vec![partial]);
+}
+
 /// A file that holds no table has nothing to keep, so building the schema
 /// in it leaves no copy beside it.
 #[tokio::test]
 async fn building_a_new_database_keeps_no_copy() {
     let (pool, _dir) = test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let db = database_file(&mut conn).await;
+    let db = file_of(&mut conn).await;
 
     ensure_schema(&mut conn).await.unwrap();
 

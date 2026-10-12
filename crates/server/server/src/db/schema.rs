@@ -15,7 +15,7 @@
 //! kept beside its file. Nothing is bumped by
 //! hand; changing a `schema/sql/*.sql` file is the whole of a schema change.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use sqlx::SqliteConnection;
 
 /// Baseline DDL lives in `schema/sql/`. Every column there carries a comment;
@@ -166,6 +166,7 @@ async fn migrate_schema(conn: &mut SqliteConnection) -> Result<()> {
         tracing::warn!(
             stamped = %stamped,
             expected = %SCHEMA_FINGERPRINT,
+            copy = %copy.display(),
             "The database's schema differs from this server's, so the database is rebuilt empty and its messages must be imported again. \
              A copy of it as it was is kept at {}",
             copy.display()
@@ -180,7 +181,7 @@ async fn migrate_schema(conn: &mut SqliteConnection) -> Result<()> {
 }
 
 /// The `user_version` pragma value stamped by [`migrate_schema`].
-async fn user_version(conn: &mut SqliteConnection) -> Result<i64> {
+pub(crate) async fn user_version(conn: &mut SqliteConnection) -> Result<i64> {
     Ok(sqlx::query_scalar("PRAGMA user_version")
         .fetch_one(&mut *conn)
         .await?)
@@ -205,46 +206,71 @@ async fn has_user_tables(conn: &mut SqliteConnection) -> Result<bool> {
     Ok(tables > 0)
 }
 
+/// The file of the database behind `conn`, as SQLite names it, or `None`
+/// for an in-memory database, which has none.
+///
+/// # Errors
+///
+/// Returns an error when the pragma cannot be read.
+pub(crate) async fn database_file(
+    conn: &mut SqliteConnection,
+) -> Result<Option<std::path::PathBuf>> {
+    let file: String =
+        sqlx::query_scalar("SELECT file FROM pragma_database_list WHERE name = 'main'")
+            .fetch_one(&mut *conn)
+            .await?;
+    Ok((!file.is_empty()).then(|| file.into()))
+}
+
 /// Copy the database behind `conn`, stamped `stamped`, to a new file beside
 /// it, and return the copy's path: `<file>.before-rebuild-<stamped>`, or
-/// that name followed by `-2`, `-3` and so on when an earlier rebuild from
-/// the same fingerprint already kept a copy, so no copy is written over.
+/// that name followed by `-2`, `-3` and so on when the name is taken, so no
+/// copy is ever written over.
 ///
-/// `VACUUM INTO` writes the copy from one read of the database, so it is
+/// The name is claimed by creating it empty with `create_new`, which only
+/// one process can do, so two servers rebuilding at once never share one.
+/// `VACUUM INTO` then writes `<copy>.partial`, and only a whole copy is
+/// renamed onto the claimed name: a process killed while copying leaves a
+/// file named partial and an empty one, never one that looks whole.
+/// `VACUUM INTO` reads the database in one transaction, so the copy is
 /// whole even while the write-ahead log holds pages the file does not.
 ///
 /// # Errors
 ///
 /// Returns an error, naming the copy, when the database has no file (an
 /// in-memory one), or the copy cannot be written, as on a full disk. The
-/// caller then leaves the database as it is.
+/// files this call made are removed, and the caller leaves the database as
+/// it is.
 async fn keep_copy_before_rebuild(
     conn: &mut SqliteConnection,
     stamped: i64,
 ) -> Result<std::path::PathBuf> {
-    let file: String =
-        sqlx::query_scalar("SELECT file FROM pragma_database_list WHERE name = 'main'")
-            .fetch_one(&mut *conn)
-            .await?;
-    if file.is_empty() {
+    let Some(file) = database_file(conn).await? else {
         anyhow::bail!(
             "the database has no file to keep a copy of before its schema is rebuilt, so it was left as it is"
         );
-    }
-    let first = format!("{file}.before-rebuild-{stamped}");
-    let mut copy = std::path::PathBuf::from(&first);
-    let mut n = 1;
-    while copy.exists() {
-        n += 1;
-        copy = std::path::PathBuf::from(format!("{first}-{n}"));
-    }
-    if let Err(error) = sqlx::query("VACUUM INTO $1")
-        .bind(copy.to_string_lossy().as_ref())
+    };
+    let first = format!("{}.before-rebuild-{stamped}", file.display());
+    let copy = claim_free_name(&first).with_context(|| {
+        format!("could not claim a name for a copy of the database beside {first}, so it was left as it is")
+    })?;
+    let partial = std::path::PathBuf::from(format!("{}.partial", copy.display()));
+    let written = match sqlx::query("VACUUM INTO $1")
+        .bind(partial.to_string_lossy().as_ref())
         .execute(&mut *conn)
         .await
     {
-        // The name was free, so whatever is there now is this copy's
-        // unfinished part, which nobody must mistake for a whole one.
+        Ok(_) => std::fs::rename(&partial, &copy).map_err(anyhow::Error::from),
+        Err(error) => {
+            // A file `VACUUM INTO` began is removed; anything else at that
+            // name, which made it fail, is left alone.
+            if partial.is_file() {
+                let _ = std::fs::remove_file(&partial);
+            }
+            Err(error.into())
+        }
+    };
+    if let Err(error) = written {
         let _ = std::fs::remove_file(&copy);
         anyhow::bail!(
             "could not keep a copy of the database at {} before rebuilding its schema, \
@@ -253,6 +279,29 @@ async fn keep_copy_before_rebuild(
         );
     }
     Ok(copy)
+}
+
+/// Create `first`, or else the first of `first-2`, `first-3` and so on that
+/// does not exist, empty, and return its path. `create_new` fails on a name
+/// that exists, so the name returned is one this call made.
+fn claim_free_name(first: &str) -> std::io::Result<std::path::PathBuf> {
+    let mut n = 1;
+    loop {
+        let path = if n == 1 {
+            std::path::PathBuf::from(first)
+        } else {
+            std::path::PathBuf::from(format!("{first}-{n}"))
+        };
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(_) => return Ok(path),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => n += 1,
+            Err(error) => return Err(error),
+        }
+    }
 }
 
 /// Drop every user table and recreate the current schema from the embedded
@@ -319,12 +368,16 @@ fn quote_ident(name: &str) -> String {
 /// new database its Message Crate's id ([`message_crate_id`]).
 ///
 /// The database carries the fingerprint in `PRAGMA user_version` and is
-/// rebuilt when it does not match. A rebuilt database is a new Message Crate,
-/// with a new id.
+/// rebuilt when it does not match, after a copy of it is kept beside its file
+/// ([`migrate_schema`]). A rebuilt database is a new Message Crate, with a
+/// new id.
 ///
 /// # Errors
 ///
-/// Returns an error when a DDL statement fails.
+/// Returns an error when the file is another program's database, when a
+/// rebuild is due and the copy before it cannot be written or the database
+/// has no file to copy (then the database is left as it is), or when a DDL
+/// statement fails.
 pub async fn ensure_schema(conn: &mut SqliteConnection) -> Result<()> {
     migrate_schema(conn).await?;
     sqlx::query(

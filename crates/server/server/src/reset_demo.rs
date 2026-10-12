@@ -605,6 +605,7 @@ async fn reset_prepared_bundle_with(
     if crate::open_db::inspect(&cfg.paths.db).await? == Some(schema::DatabaseKind::Foreign) {
         return Err(schema::not_a_message_crate_database(&cfg.paths.db));
     }
+    refuse_another_layout(&cfg.paths.db).await?;
     let _operation_lock = crate::operation_lock::acquire_for_reset(&cfg.paths.db)?;
     let mut ready = crate::operation_lock::ReadyWhileRebuilding::clear(&cfg.paths.db)?;
     let db_parent = parent_dir_or_cwd(&cfg.paths.db);
@@ -970,6 +971,33 @@ fn validate_prepared_bundle(bundle: &Path) -> Result<PreparedBundle> {
         whatsapp_dir,
         contacts_csv,
     })
+}
+
+/// Refuse a Message Crate database at `db` stamped with another Schema
+/// Fingerprint, before anything is written. Its snapshot would be rebuilt
+/// empty, and the copy kept before that rebuild would land in the reset's
+/// work directory, which is deleted when the reset ends. `serve` keeps the
+/// copy beside the database and rebuilds it, and a reset can follow.
+async fn refuse_another_layout(db: &Path) -> Result<()> {
+    if crate::open_db::inspect(db).await? != Some(schema::DatabaseKind::MessageCrate) {
+        return Ok(());
+    }
+    let mut conn = engine::connect_read_only(db)
+        .await
+        .with_context(|| format!("failed to open database {}", db.display()))?;
+    let stamped = schema::user_version(&mut conn).await;
+    sqlx::Connection::close(conn).await?;
+    let stamped = stamped.with_context(|| format!("failed to read database {}", db.display()))?;
+    if stamped != schema::SCHEMA_FINGERPRINT {
+        bail!(
+            "{} was made by a server with another database layout (Schema Fingerprint {stamped}, \
+             this server's is {}), so reset-demo left it as it is. Start `serve` on it first: \
+             it keeps a copy of the database beside it and rebuilds it",
+            db.display(),
+            schema::SCHEMA_FINGERPRINT
+        );
+    }
+    Ok(())
 }
 
 /// Copy the active database to the prepared path (checkpointing the WAL first) so the reset
