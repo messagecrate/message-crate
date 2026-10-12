@@ -13,6 +13,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import { deferred } from "../test/deferred";
 import { freshEntries, seedEntries } from "../test/staleEntries";
 import {
   type ChipTarget,
@@ -94,15 +95,6 @@ function pageGroups(id: string): string[] | undefined {
 /** Group chips on the open contact. */
 function detailGroups(): string[] | undefined {
   return client.getQueryData<{ groups: string[] }>(DETAIL_KEY)?.groups;
-}
-
-/** A promise this test resolves when it chooses, so it can look mid-write. */
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
-  let resolve: (value: T) => void = () => {};
-  const promise = new Promise<T>((r) => {
-    resolve = r;
-  });
-  return { promise, resolve };
 }
 
 beforeEach(() => {
