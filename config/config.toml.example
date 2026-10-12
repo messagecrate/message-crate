@@ -38,10 +38,11 @@ bind = "127.0.0.1:8080"
 # asset_part_size = 16777216
 
 # How long the server waits for a request body: seconds with no byte
-# arriving, and seconds for the whole body. Every body is held to them; an
+# arriving, and seconds for the whole body. Every body is held to them. An
 # upload (an import batch, an attachment, or a part of one) is the body large
 # enough to meet them. A body that meets either is refused (408 Request
-# Timeout, upload-stalled), and running the import again continues it. An attachment
+# Timeout, upload-stalled), and sending the request again can succeed. For an
+# upload, running the import again continues it. An attachment
 # upload nothing has been written to for upload_stall_secs, with no request to
 # it running, is abandoned, and the server removes it. Each must be greater
 # than 0.

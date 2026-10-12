@@ -1265,7 +1265,7 @@ carry their date on the heading.
   closes a connection that sends no request for 30 seconds, holds at most
   256 open at once, and stops reading any request that stalls or runs past
   the upload time limits, not only an upload. This guards against a
-  misbehaving device on your network; it does not make the server safe to
+  misbehaving device on your network. It does not make the server safe to
   put on the internet (#2100).
 - 2026-10-12: **An attachment sent in parts no longer fills the server's
   memory.** The server held each part of a large attachment in memory until

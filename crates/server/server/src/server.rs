@@ -1944,10 +1944,11 @@ where
     let finished = async move {
         tokio::join!(served, work);
     };
+    // `serve_connections` returns only after `stop` resolved, and `stop`
+    // sends on both channels before it resolves, so each receive below
+    // waits for the stop and is never refused.
     let limit_passed = async move {
-        if signaled_rx.await.is_err() {
-            std::future::pending::<()>().await;
-        }
+        let _ = signaled_rx.await;
         drain_limit().await;
     };
     tokio::select! {
@@ -1957,7 +1958,8 @@ where
 }
 
 /// Resolve on Ctrl-C, or on SIGTERM on Unix, or once the process
-/// `exit_with_parent` names is gone, so axum drains in-flight requests, for
+/// `exit_with_parent` names is gone, so
+/// [`crate::connections::serve_connections`] drains in-flight requests, for
 /// up to [`STOP_DRAIN_LIMIT`], before exiting. A crashed desktop app ends
 /// its server this way (#1934).
 async fn shutdown_signal(exit_with_parent: Option<ParentWatch>) {
@@ -2360,7 +2362,7 @@ pub(crate) fn body_too_slow(error: &(dyn std::error::Error + 'static)) -> Option
         if let Some(too_slow) = cause.downcast_ref::<BodyTooSlow>() {
             return Some(ApiError::UploadStalled(format!(
                 "{too_slow}: the connection stopped delivering the body and nothing is wrong \
-                 with the data, so sending it again continues the upload"
+                 with the data, so sending the same request again can succeed"
             )));
         }
         source = cause.source();

@@ -664,7 +664,11 @@ set to.
 
 The server holds every connection to three limits, so one slow or stuck
 client cannot hold it
-([#2100](https://github.com/messagecrate/message-crate/issues/2100)):
+([#2100](https://github.com/messagecrate/message-crate/issues/2100)). A
+connection that sends no request, or sends one too slowly, is closed after
+30 seconds. Only so many connections are open at once, and the next waits
+for one to close. A body that stops arriving, or arrives too slowly, is no
+longer read once the upload time limits pass. In detail:
 
 - A connection has 30 seconds to send a request's headers, counted from when
   it opens or from the previous answer, and is closed when it has not
@@ -683,9 +687,9 @@ client cannot hold it
   upload_stall_secs` (60) with no byte arriving and `upload_piece_secs` (300)
   for the whole body, and one that meets either answers `408 Request Timeout`
   (`upload-stalled`). An import batch, an attachment and a part of one hold
-  their bodies to the limits themselves, from when they start reading; the
-  layers hold every other body from when it arrives (`limit_request_body`
-  in `crates/server/server/src/server.rs`). Why the uploads start their own
+  their bodies to the limits themselves, from when they start reading. The
+  layers hold every other body from when the request arrives
+  (`limit_request_body` in `crates/server/server/src/server.rs`). Why the uploads start their own
   clock: an import batch waits for an import slot before it reads, and a
   clock started on arrival would count that wait against its body.
 
@@ -703,6 +707,13 @@ working client sends its headers at once. Why the body limits are the
 upload ones rather than figures of their own: every other body is smaller
 than an import batch, so the limits a batch arrives inside hold it too, and
 one pair of figures is one to explain.
+
+Rejected: a cap on requests in flight (`tower::limit::ConcurrencyLimitLayer`)
+in place of the cap on connections. A connection that never sends its
+headers is no request, so a cap on requests leaves it uncounted, and under
+HTTP/1.1 a connection carries one request at a time, so the cap on
+connections bounds the requests too. Axum's `Router::layer` would also give
+each route a cap of its own.
 
 These limits keep a slow or broken client from holding the server. They do
 not make the server safe to reach from the internet: that needs a proxy, as
@@ -1268,8 +1279,9 @@ when the two differ, and CI checks the web app's generated types against it.
 An operation's error responses are built from shared parts, never written out
 by hand. The credential a route accepts brings its `401 Unauthorized` and
 `403 Forbidden`, and a Media Link brings `media-link-invalid`; a request
-body brings `400 Bad Request`, `413 Payload Too Large`,
-`415 Unsupported Media Type` and `422 Unprocessable Entity`; an id in the path
+body brings `400 Bad Request`, `408 Request Timeout` (`upload-stalled`),
+`413 Payload Too Large`, `415 Unsupported Media Type` and
+`422 Unprocessable Entity`; an id in the path
 brings `404 Not Found` and `422 Unprocessable Entity`; every `/v1` route brings
 `422 Unprocessable Entity` for a query parameter it does not declare; and every
 `/v1` route that answers JSON brings `406 Not Acceptable` for an `Accept` that

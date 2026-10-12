@@ -1919,7 +1919,6 @@ pub(crate) async fn discard_import(
     responses(
         (status = 200, body = CreateImportBatchResponse),
         crate::problem::openapi::StateConflict,
-        crate::problem::openapi::UploadStalled,
         crate::problem::openapi::ServerStopping,
     )
 )]

@@ -1089,8 +1089,7 @@ fn require_content_type(headers: &HeaderMap) -> Result<(), ApiError> {
             headers(("Location" = String, description = "Path of the stored asset"))
         ),
         (status = 200, body = Asset, description = "The server already held the asset"),
-        crate::problem::openapi::AssetUploadInvalid,
-        crate::problem::openapi::UploadStalled
+        crate::problem::openapi::AssetUploadInvalid
     )
 )]
 pub(crate) async fn replace_asset(
@@ -1329,8 +1328,7 @@ pub(crate) async fn create_asset_upload(
     responses(
         (status = 200, body = ReplaceAssetUploadPartResponse),
         crate::problem::openapi::AssetUploadInvalid,
-        crate::problem::openapi::StateConflict,
-        crate::problem::openapi::UploadStalled
+        crate::problem::openapi::StateConflict
     )
 )]
 pub(crate) async fn replace_asset_upload_part(

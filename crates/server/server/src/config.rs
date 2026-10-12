@@ -166,10 +166,11 @@ pub struct ServerConfig {
     /// be greater than 0.
     #[serde(default = "default_upload_stall_secs")]
     pub upload_stall_secs: u64,
-    /// Seconds a whole request body may take to arrive, from the start of
-    /// the read, before the server stops reading it and answers
-    /// `upload-stalled`. Every body is held to it, as to
-    /// `upload_stall_secs`. Default 300. Must be greater than 0.
+    /// Seconds a whole request body may take to arrive before the server
+    /// stops reading it and answers
+    /// `upload-stalled`, counted from the start of the read for an upload
+    /// and from when the request arrives for any other body. Every body is
+    /// held to it, as to `upload_stall_secs`. Default 300. Must be greater than 0.
     #[serde(default = "default_upload_piece_secs")]
     pub upload_piece_secs: u64,
     /// Cross-Origin Resource Sharing (CORS) origins allowed to call this API,
