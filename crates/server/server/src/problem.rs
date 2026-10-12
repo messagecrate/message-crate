@@ -3,9 +3,9 @@
 //!
 //! This is the one place a type is declared. Each declaration names the
 //! [`crate::server::ApiError`] variants that answer the type, and
-//! `ApiError::problem_type` is generated from those names. The OpenAPI
-//! document describes the body through [`Problem`], and `dump-error-docs`
-//! ([`crate::error_docs`]) writes one page per type under
+//! [`crate::server::ApiError::problem_type`] is generated from those names.
+//! The OpenAPI document describes the body through [`Problem`], and
+//! `dump-error-docs` ([`crate::error_docs`]) writes one page per type under
 //! `docs/src/content/docs/docs/developer/reference/errors/` from the same
 //! declarations, so nothing has to be kept in step by hand.
 
@@ -35,11 +35,13 @@ pub const INTERNAL_TYPE: &str = "about:blank";
 /// fails to compile, because `problem_type` must match every variant.
 /// [`ApiError::Internal`] is the one failure with no type: its arm comes
 /// after the list's, so an entry with a guard can still take an internal
-/// error, as `database-busy` does. A variant belongs to one entry: the
-/// list's arms are matched in order, so a variant a second entry matches
-/// again would never reach it, and Clippy refuses that arm as an unreachable
-/// pattern. A new type also needs its [`ProblemType::page`] arm, which the
-/// compiler demands.
+/// error, as `database-busy` does. The list's arms are matched in order, so
+/// a variant an entry matches without a guard belongs to that entry: a later
+/// entry that matches it again is never reached. rustc warns of that arm as
+/// an unreachable pattern, and CI's Clippy run at `-D warnings` refuses it.
+/// A guarded entry passes on what its guard refuses, so the arms after it
+/// still see that variant. A new type also needs its [`ProblemType::page`]
+/// arm, which the compiler demands.
 macro_rules! problem_types {
     ($(
         $(#[$doc:meta])*
