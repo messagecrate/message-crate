@@ -152,17 +152,8 @@ pub(crate) static FIELDS: &[FieldSpec] = &[
         value_type: ValueType::Choice,
         lists: &[V, M],
         // The id each exporter writes into `export.source`, as written, which
-        // the import stamps on every message it writes. A new exporter adds
-        // its id here and nothing else.
-        values: &[
-            "imessage",
-            "whatsapp",
-            "sms-backup-restore",
-            "imazing",
-            "openextract",
-            "go-sms-pro",
-            "sms-backup-plus",
-        ],
+        // the import stamps on every message it writes.
+        values: message_crate_api_types::SOURCE_IDS,
         help: "the kind of backup it was imported from",
         example: "source:whatsapp",
     },

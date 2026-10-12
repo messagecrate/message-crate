@@ -24,7 +24,7 @@ use sbr::{
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
-const EXPORT_SOURCE: &str = "sms-backup-restore";
+const EXPORT_SOURCE: &str = message_crate_core::Exporter::SmsBackupRestore.source_id();
 const EXPORT_TOOL: &str = "SMS Backup & Restore";
 const EXPORT_TOOL_VERSION: &str = "10.26.003";
 

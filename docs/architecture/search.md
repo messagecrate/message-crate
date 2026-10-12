@@ -485,8 +485,11 @@ Choice: `imessage`, `sms`, `mms`, `rcs`, `whatsapp`.
 Choice: `imessage`, `whatsapp`, `sms-backup-restore`, `imazing`,
 `openextract`, `go-sms-pro`, `sms-backup-plus`. Each value is the id an
 exporter writes into `export.source`, which the import stamps on every message
-it writes, so the word compares the stored id with no mapping. A new exporter
-adds its id to the list and nothing else. Why: a person whose messages came
+it writes, so the word compares the stored id with no mapping. A backup type's
+id is a constant in `message_crate_api_types::source_id`, which
+`Exporter::source_id` in `message-crate-core` returns and its exporter writes.
+Search reads `SOURCE_IDS`, and a test in `message-crate-core` fails when
+`SOURCE_IDS` and the backup types' ids differ. Why: a person whose messages came
 through iMazing, GO SMS Pro or SMS Backup+ can name that backup, and no value
 quietly takes in or leaves out another (#1116).
 

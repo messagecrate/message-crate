@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-const EXPORT_SOURCE: &str = "openextract";
+const EXPORT_SOURCE: &str = message_crate_core::Exporter::OpenExtract.source_id();
 const EXPORT_TOOL: &str = "OpenExtract";
 const EXPORT_TOOL_VERSION: &str = "0.5.1";
 

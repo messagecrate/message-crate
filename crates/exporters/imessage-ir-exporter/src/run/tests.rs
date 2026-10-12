@@ -1,26 +1,37 @@
 use super::*;
 use message_crate_core::{
-    AppleConfig, CancelFlag, IssueSink, MediaConfig, OutputFormat, testutil::names_in,
+    AppleConfig, OutputFormat,
+    testutil::{TestRun, names_in},
 };
 use message_ir::TimePrecision;
 use std::{fs, path::Path};
 
-fn apple_cfg(input: &Path, apple: AppleConfig) -> ExporterConfig {
-    ExporterConfig {
+fn apple_cfg(input: &Path, apple: AppleConfig) -> TestRun<AppleConfig> {
+    TestRun {
+        context: RunContext::new(input.with_extension("cache")),
+        output: OutputConfig::new(input.with_extension("export_out"), OutputFormat::Jsonl),
         inputs: vec![input.to_path_buf()],
-        output: input.with_extension("export_out"),
-        scratch_dir: input.with_extension("cache"),
-        timezone: None,
-        obfuscate: Default::default(),
-        media: MediaConfig::default(),
-        cancel: CancelFlag::default(),
-        log: LogSink::none(),
-        progress: ProgressSink::none(),
-        issues: IssueSink::none(),
-        output_format: OutputFormat::Jsonl,
-        resume: false,
-        source: SourceConfig::Apple(apple),
+        source: apple,
     }
+}
+
+/// [`export_options`] for `config`.
+fn options_for(config: &TestRun<AppleConfig>) -> Result<ExportOptions> {
+    config.run(export_options)
+}
+
+/// [`run_with`] for `config`, starting the program with `spawn`.
+fn run_config(
+    config: &TestRun<AppleConfig>,
+    spawn: impl FnOnce(&Request, LogSink, ProgressSink) -> Result<Helper>,
+) -> Result<message_crate_core::RunResult> {
+    run_with(
+        &config.context,
+        &config.output,
+        &config.inputs,
+        &config.source,
+        spawn,
+    )
 }
 
 /// A backup password only unlocks an iPhone backup, so a Mac `chat.db`
@@ -30,7 +41,7 @@ fn a_backup_password_is_refused_for_a_mac_chat_db() {
     let dir = tempfile::tempdir().unwrap();
     let chat = dir.path().join("chat.db");
     fs::write(&chat, b"sqlite").unwrap();
-    let err = options_from_export_config(&apple_cfg(
+    let err = options_for(&apple_cfg(
         &chat,
         AppleConfig {
             platform: Some(ApplePlatform::MacOs),
@@ -60,7 +71,7 @@ fn an_empty_input_is_the_macs_own_database() {
 fn missing_chat_db_uses_locked_copy() {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("chat.db");
-    let err = options_from_export_config(&apple_cfg(
+    let err = options_for(&apple_cfg(
         &missing,
         AppleConfig {
             platform: Some(ApplePlatform::MacOs),
@@ -76,7 +87,7 @@ fn missing_attachment_directory_uses_locked_copy() {
     let dir = tempfile::tempdir().unwrap();
     let chat = dir.path().join("chat.db");
     fs::write(&chat, b"sqlite").unwrap();
-    let err = options_from_export_config(&apple_cfg(
+    let err = options_for(&apple_cfg(
         &chat,
         AppleConfig {
             platform: Some(ApplePlatform::MacOs),
@@ -93,7 +104,7 @@ fn missing_apple_contacts_uses_locked_copy() {
     let dir = tempfile::tempdir().unwrap();
     let chat = dir.path().join("chat.db");
     fs::write(&chat, b"sqlite").unwrap();
-    let err = options_from_export_config(&apple_cfg(
+    let err = options_for(&apple_cfg(
         &chat,
         AppleConfig {
             platform: Some(ApplePlatform::MacOs),
@@ -108,7 +119,7 @@ fn missing_apple_contacts_uses_locked_copy() {
 #[test]
 fn empty_directory_is_not_an_iphone_backup() {
     let dir = tempfile::tempdir().unwrap();
-    let err = options_from_export_config(&apple_cfg(
+    let err = options_for(&apple_cfg(
         dir.path(),
         AppleConfig {
             platform: Some(ApplePlatform::Ios),
@@ -130,7 +141,7 @@ fn unencrypted_backup_missing_messages_uses_locked_copy() {
 <plist version="1.0"><dict><key>IsEncrypted</key><false/></dict></plist>"#,
     )
     .unwrap();
-    let err = options_from_export_config(&apple_cfg(
+    let err = options_for(&apple_cfg(
         dir.path(),
         AppleConfig {
             platform: Some(ApplePlatform::Ios),
@@ -163,7 +174,7 @@ fn an_unencrypted_backup_with_its_messages_database_is_accepted() {
             ..AppleConfig::default()
         },
     );
-    let options = options_from_export_config(&config).unwrap();
+    let options = options_for(&config).unwrap();
     assert_eq!(options.source.platform, Platform::Ios);
     assert_eq!(options.source.db_path, dir.path());
 }
@@ -202,15 +213,15 @@ fn an_output_that_is_or_contains_the_input_is_refused() {
                 ..AppleConfig::default()
             },
         );
-        config.output = output;
-        let Err(err) = options_from_export_config(&config) else {
-            panic!("{} was accepted", config.output.display());
+        config.output.directory = output;
+        let Err(err) = options_for(&config) else {
+            panic!("{} was accepted", config.output.directory.display());
         };
         assert!(
             err.to_string()
                 .contains("must not be the same as, or contain, the input"),
             "{}: {err}",
-            config.output.display()
+            config.output.directory.display()
         );
     }
 }
@@ -246,7 +257,7 @@ fn options_carry_the_request_the_program_receives() {
             ..AppleConfig::default()
         },
     );
-    let options = options_from_export_config(&config).unwrap();
+    let options = options_for(&config).unwrap();
     assert_eq!(options.source.platform, Platform::MacOs);
     assert_eq!(options.source.db_path, chat);
     assert!(!options.use_caller_id);
@@ -280,7 +291,7 @@ fn rows_the_program_skipped_are_counted_in_the_run_result() {
         },
     );
 
-    let result = run_with(&config, |request, _, _| Ok(spawn_fake(&program, request))).unwrap();
+    let result = run_config(&config, |request, _, _| Ok(spawn_fake(&program, request))).unwrap();
     assert!(
         result
             .messages
@@ -313,7 +324,7 @@ fn a_run_with_no_skipped_rows_says_nothing_about_them() {
         },
     );
 
-    let result = run_with(&config, |request, _, _| Ok(spawn_fake(&program, request))).unwrap();
+    let result = run_config(&config, |request, _, _| Ok(spawn_fake(&program, request))).unwrap();
     assert!(
         !result
             .messages
@@ -396,24 +407,22 @@ fn run_one_message(
     dir: &Path,
     attachments: Vec<imessage_reader_protocol::Attachment>,
     progress: ProgressSink,
-) -> (ExporterConfig, message_crate_core::RunResult) {
+) -> (TestRun<AppleConfig>, message_crate_core::RunResult) {
     use ios_backup::testutil::{fake_helper, spawn_fake};
 
     let chat = dir.join("chat.db");
     fs::write(&chat, b"sqlite").unwrap();
     let program = fake_helper(dir, &one_message_script(attachments));
-    let config = ExporterConfig {
-        output_format: OutputFormat::Json,
-        progress,
-        ..apple_cfg(
-            &chat,
-            AppleConfig {
-                platform: Some(ApplePlatform::MacOs),
-                ..AppleConfig::default()
-            },
-        )
-    };
-    let result = run_with(&config, |request, _, _| Ok(spawn_fake(&program, request))).unwrap();
+    let mut config = apple_cfg(
+        &chat,
+        AppleConfig {
+            platform: Some(ApplePlatform::MacOs),
+            ..AppleConfig::default()
+        },
+    );
+    config.output.format = OutputFormat::Json;
+    config.context.progress = progress;
+    let result = run_config(&config, |request, _, _| Ok(spawn_fake(&program, request))).unwrap();
     (config, result)
 }
 
@@ -442,10 +451,14 @@ fn inline_and_missing_attachments_reach_a_file_backed_export() {
         result.messages
     );
 
-    let document = read_conversation_json(&config.output.join("+15555550122.json")).unwrap();
+    let document =
+        read_conversation_json(&config.output.directory.join("+15555550122.json")).unwrap();
     let attachments = &document.messages[0].attachments;
     let path = attachments[0].path.as_deref().expect("the SVG was staged");
-    assert_eq!(fs::read_to_string(config.output.join(path)).unwrap(), SVG);
+    assert_eq!(
+        fs::read_to_string(config.output.directory.join(path)).unwrap(),
+        SVG
+    );
     assert_eq!(attachments[1].path, None);
     assert_eq!(
         attachments[1].missing_reason.as_deref(),
@@ -555,7 +568,7 @@ fn a_jsonl_run_reports_its_conversations_and_messages() {
         },
     );
 
-    let result = run_with(&config, |request, _, _| Ok(spawn_fake(&program, request))).unwrap();
+    let result = run_config(&config, |request, _, _| Ok(spawn_fake(&program, request))).unwrap();
     assert_eq!((result.conversations, result.message_count), (1, 2));
 }
 
@@ -664,9 +677,9 @@ fn an_attachment_that_fails_to_decrypt_is_counted_apart_from_missing_ones() {
             ..AppleConfig::default()
         },
     );
-    let issues = message_crate_core::testutil::collect_issues(&mut config);
+    let issues = message_crate_core::testutil::collect_issues(&mut config.context);
 
-    let result = run_with(&config, |request, _, _| Ok(spawn_fake(&program, request))).unwrap();
+    let result = run_config(&config, |request, _, _| Ok(spawn_fake(&program, request))).unwrap();
     assert!(
         result
             .messages
@@ -702,7 +715,7 @@ fn an_attachment_that_fails_to_decrypt_is_counted_apart_from_missing_ones() {
     // The Import Run lists the video, and only the video, as an issue, under
     // the conversation file it was recorded while writing, so a resumed
     // Staging that writes that file again retires the row (#1688).
-    let written: Vec<String> = fs::read_dir(&config.output)
+    let written: Vec<String> = fs::read_dir(&config.output.directory)
         .unwrap()
         .filter_map(|e| e.ok())
         .map(|e| e.file_name().to_string_lossy().into_owned())
@@ -743,18 +756,16 @@ fn a_reader_that_stops_during_the_attachments_stops_the_run() {
             "exit 3",
         );
         let program = fake_helper(dir.path(), &body);
-        let config = ExporterConfig {
-            output_format: format,
-            ..apple_cfg(
-                &chat,
-                AppleConfig {
-                    platform: Some(ApplePlatform::MacOs),
-                    ..AppleConfig::default()
-                },
-            )
-        };
+        let mut config = apple_cfg(
+            &chat,
+            AppleConfig {
+                platform: Some(ApplePlatform::MacOs),
+                ..AppleConfig::default()
+            },
+        );
+        config.output.format = format;
 
-        let err = run_with(&config, |request, _, _| Ok(spawn_fake(&program, request)))
+        let err = run_config(&config, |request, _, _| Ok(spawn_fake(&program, request)))
             .expect_err("a run whose reader stopped fails");
         let text = format!("{err:#}");
         assert!(
@@ -764,7 +775,7 @@ fn a_reader_that_stops_during_the_attachments_stops_the_run() {
             ),
             "{format:?}: {text}"
         );
-        let written: Vec<_> = fs::read_dir(&config.output)
+        let written: Vec<_> = fs::read_dir(&config.output.directory)
             .unwrap()
             .map(|entry| entry.unwrap().path())
             .filter(|path| path.extension().is_some_and(|ext| ext == format.as_str()))
@@ -801,7 +812,7 @@ fn the_scratch_directory_is_under_the_scratch_directory_and_deleted_after() {
         },
     );
 
-    let result = run_with(&config, |request, _, _| Ok(spawn_fake(&program, request))).unwrap();
+    let result = run_config(&config, |request, _, _| Ok(spawn_fake(&program, request))).unwrap();
     assert!(
         result.messages.iter().any(|l| l == "  Saved 1 attachment"),
         "{:#?}",
@@ -813,6 +824,7 @@ fn the_scratch_directory_is_under_the_scratch_directory_and_deleted_after() {
         panic!("the program was sent an export request: {sent}");
     };
     let reader_root = config
+        .context
         .scratch_dir
         .join(message_crate_core::IMESSAGE_READER_DIRECTORY);
     assert_eq!(
@@ -824,7 +836,7 @@ fn the_scratch_directory_is_under_the_scratch_directory_and_deleted_after() {
     );
     assert!(!sent.scratch_dir.exists());
     assert!(names_in(&reader_root).is_empty());
-    let mut left: Vec<String> = fs::read_dir(&config.output)
+    let mut left: Vec<String> = fs::read_dir(&config.output.directory)
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
@@ -859,15 +871,16 @@ fn a_failed_run_leaves_no_scratch_directory() {
         },
     );
 
-    run_with(&config, |request, _, _| Ok(spawn_fake(&program, request)))
+    run_config(&config, |request, _, _| Ok(spawn_fake(&program, request)))
         .expect_err("a run whose reader stopped fails");
 
     assert!(
-        !config.output.join(".imessage-reader").exists(),
+        !config.output.directory.join(".imessage-reader").exists(),
         "{:?}",
-        names_in(&config.output)
+        names_in(&config.output.directory)
     );
     let reader_root = config
+        .context
         .scratch_dir
         .join(message_crate_core::IMESSAGE_READER_DIRECTORY);
     assert!(names_in(&reader_root).is_empty());
@@ -903,7 +916,7 @@ fn a_decrypt_the_scratch_disk_cannot_hold_is_refused_before_the_reader_starts() 
         },
     );
 
-    let err = run_with(&config, |_, _, _| panic!("the reader is not started"))
+    let err = run_config(&config, |_, _, _| panic!("the reader is not started"))
         .expect_err("the decrypt does not fit");
 
     assert!(
@@ -914,6 +927,7 @@ fn a_decrypt_the_scratch_disk_cannot_hold_is_refused_before_the_reader_starts() 
         "{err:#}"
     );
     let reader_root = config
+        .context
         .scratch_dir
         .join(message_crate_core::IMESSAGE_READER_DIRECTORY);
     assert!(names_in(&reader_root).is_empty());
@@ -943,18 +957,16 @@ fn every_format_refuses_attachments_the_staging_disk_cannot_hold() {
         )
         .replace(r#""size_hint":10"#, r#""size_hint":4611686018427387903"#);
         let program = fake_helper(dir.path(), &body);
-        let config = ExporterConfig {
-            output_format: format,
-            ..apple_cfg(
-                &chat,
-                AppleConfig {
-                    platform: Some(ApplePlatform::MacOs),
-                    ..AppleConfig::default()
-                },
-            )
-        };
+        let mut config = apple_cfg(
+            &chat,
+            AppleConfig {
+                platform: Some(ApplePlatform::MacOs),
+                ..AppleConfig::default()
+            },
+        );
+        config.output.format = format;
 
-        let err = run_with(&config, |request, _, _| Ok(spawn_fake(&program, request)))
+        let err = run_config(&config, |request, _, _| Ok(spawn_fake(&program, request)))
             .expect_err("the attachments do not fit");
 
         assert!(
@@ -963,12 +975,12 @@ fn every_format_refuses_attachments_the_staging_disk_cannot_hold() {
             "{format:?}: {err:#}"
         );
         assert_eq!(
-            names_in(&config.output),
+            names_in(&config.output.directory),
             [".message-crate-export", "attachments"],
             "{format:?}"
         );
         assert!(
-            names_in(&config.output.join("attachments")).is_empty(),
+            names_in(&config.output.directory.join("attachments")).is_empty(),
             "{format:?}"
         );
     }

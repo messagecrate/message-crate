@@ -1,7 +1,7 @@
 //! What a run does to its documents on the way out: media mode, obfuscation,
 //! and the sinks the write tail reports through.
 
-use crate::config::ExporterConfig;
+use crate::config::{OutputConfig, RunContext};
 use crate::process::LogSink;
 use crate::progress::ProgressSink;
 use media::{CompressOptions, MediaMode};
@@ -37,18 +37,18 @@ impl Default for ExportTransforms {
 }
 
 impl ExportTransforms {
-    /// The transforms an exporter run wants: media and obfuscation from the
-    /// config (obfuscation is on when either its flag or a seed is set), plus
-    /// the run's log and progress sinks so the write tail reports through
-    /// the same hooks the exporter does.
-    pub fn from_config(config: &ExporterConfig) -> Self {
+    /// The transforms an exporter run wants: media and obfuscation from
+    /// `output` (obfuscation is on when either its flag or a seed is set),
+    /// plus the run's log and progress sinks from `context` so the write tail
+    /// reports through the same hooks the exporter does.
+    pub fn new(context: &RunContext, output: &OutputConfig) -> Self {
         Self {
-            media: config.media.mode,
-            compress: config.media.compress.clone(),
-            obfuscate: config.obfuscate_active(),
-            obfuscate_seed: config.obfuscate.seed.clone(),
-            log: config.log.clone(),
-            progress: config.progress.clone(),
+            media: output.media.mode,
+            compress: output.media.compress.clone(),
+            obfuscate: output.obfuscate_active(),
+            obfuscate_seed: output.obfuscate.seed.clone(),
+            log: context.log.clone(),
+            progress: context.progress.clone(),
         }
     }
 
@@ -76,35 +76,27 @@ impl ExportTransforms {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{FormatConfig, MediaConfig, ObfuscateConfig, OutputFormat, SourceConfig};
-    use crate::pipeline::IssueSink;
-    use crate::process::CancelFlag;
+    use crate::config::{MediaConfig, ObfuscateConfig, OutputFormat};
     use crate::progress::ProgressEvent;
     use media::MaxResolution;
-    use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
 
-    fn config(obfuscate: ObfuscateConfig, media: MediaConfig) -> ExporterConfig {
-        ExporterConfig {
-            inputs: Vec::new(),
-            output: PathBuf::from("out"),
-            scratch_dir: PathBuf::from("/cache"),
-            timezone: None,
+    fn output(obfuscate: ObfuscateConfig, media: MediaConfig) -> OutputConfig {
+        OutputConfig {
             obfuscate,
             media,
-            cancel: CancelFlag::default(),
-            log: LogSink::none(),
-            progress: ProgressSink::none(),
-            issues: IssueSink::none(),
-            output_format: OutputFormat::Json,
-            resume: false,
-            source: SourceConfig::Format(FormatConfig::default()),
+            ..OutputConfig::new("out", OutputFormat::Json)
         }
     }
 
+    /// The transforms of a run that writes `output`, reporting nowhere.
+    fn transforms(output: &OutputConfig) -> ExportTransforms {
+        ExportTransforms::new(&RunContext::new("/cache"), output)
+    }
+
     #[test]
-    fn from_config_obfuscates_when_the_flag_is_set_without_a_seed() {
-        let t = ExportTransforms::from_config(&config(
+    fn new_obfuscates_when_the_flag_is_set_without_a_seed() {
+        let t = transforms(&output(
             ObfuscateConfig {
                 enabled: true,
                 seed: None,
@@ -116,8 +108,8 @@ mod tests {
     }
 
     #[test]
-    fn from_config_obfuscates_when_only_a_seed_is_given() {
-        let t = ExportTransforms::from_config(&config(
+    fn new_obfuscates_when_only_a_seed_is_given() {
+        let t = transforms(&output(
             ObfuscateConfig {
                 enabled: false,
                 seed: Some("abc123".to_string()),
@@ -129,37 +121,36 @@ mod tests {
     }
 
     #[test]
-    fn from_config_leaves_obfuscation_off_without_flag_or_seed() {
-        let t = ExportTransforms::from_config(&config(
-            ObfuscateConfig::default(),
-            MediaConfig::default(),
-        ));
+    fn new_leaves_obfuscation_off_without_flag_or_seed() {
+        let t = transforms(&output(ObfuscateConfig::default(), MediaConfig::default()));
         assert!(!t.obfuscate);
     }
 
     #[test]
-    fn from_config_carries_the_media_mode_compress_options_and_sinks() {
+    fn new_carries_the_media_mode_compress_options_and_sinks() {
         let compress = CompressOptions {
             max_resolution: MaxResolution::P720,
             max_fps: 24.0,
             min_size_bytes: 1234,
             skip_efficient: false,
         };
-        let mut cfg = config(
+        let out = output(
             ObfuscateConfig::default(),
             MediaConfig {
                 mode: MediaMode::Compress,
                 compress: compress.clone(),
             },
         );
+        let mut context = RunContext::new("/cache");
         let lines = Arc::new(Mutex::new(Vec::new()));
         let lines_seen = Arc::clone(&lines);
-        cfg.log = LogSink::new(move |line| lines_seen.lock().unwrap().push(line.to_string()));
+        context.log = LogSink::new(move |line| lines_seen.lock().unwrap().push(line.to_string()));
         let events = Arc::new(Mutex::new(Vec::new()));
         let events_seen = Arc::clone(&events);
-        cfg.progress = ProgressSink::unpaced(move |event| events_seen.lock().unwrap().push(event));
+        context.progress =
+            ProgressSink::unpaced(move |event| events_seen.lock().unwrap().push(event));
 
-        let t = ExportTransforms::from_config(&cfg);
+        let t = ExportTransforms::new(&context, &out);
         t.log.emit("a line");
         t.progress.emit(ProgressEvent::Parse { done: 1, total: 2 });
 
