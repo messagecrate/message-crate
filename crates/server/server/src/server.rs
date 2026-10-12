@@ -565,9 +565,8 @@ impl<T: Serialize> IntoResponse for Created<T> {
 /// variants that answer the type, and generates [`Self::problem_type`] from
 /// them, so a new variant fails to compile until a type names it. The
 /// `String` a variant carries is the `detail`, one sentence written for the
-/// person reading it; a
-/// `500 Internal Server Error` carries the whole error chain for the log and
-/// shows the client a fixed sentence.
+/// person reading it; a `500 Internal Server Error` carries the whole error
+/// chain for the log and shows the client a fixed sentence.
 #[derive(Debug)]
 pub enum ApiError {
     /// `422` — fields that parsed and then broke a rule, every one of them.
