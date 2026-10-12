@@ -2274,6 +2274,73 @@ async fn a_limited_body_streamed_to_a_file_over_the_cap_is_too_large() {
     assert_eq!(error.status(), StatusCode::PAYLOAD_TOO_LARGE, "{error}");
 }
 
+/// A body that stops arriving part-way ends the read once the idle bound
+/// passes, as a `400 Bad Request` naming the wait, so an import batch from a
+/// client that went away never holds its import slot for good. Time is
+/// paused, so the bound passes as soon as nothing else can run.
+#[tokio::test(start_paused = true)]
+async fn a_body_that_stops_arriving_ends_the_read_after_the_idle_bound() {
+    let dir = TempDir::new().unwrap();
+    let first: Result<axum::body::Bytes, std::io::Error> =
+        Ok(axum::body::Bytes::from_static(b"{}\n"));
+    let stalled = futures_util::stream::iter([first]).chain(futures_util::stream::pending());
+    let body = batch_body_bounded(axum::body::Body::from_stream(stalled));
+
+    let error = stream_body_to_file(body, &dir.path().join("upload"), 1024)
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.status(), StatusCode::BAD_REQUEST, "{error}");
+    assert!(
+        error
+            .to_string()
+            .contains("no bytes arrived for 60 seconds"),
+        "{error}"
+    );
+}
+
+/// A body that sends a byte every 30 seconds never meets the idle bound,
+/// but ends at the deadline for the whole body, so a client that trickles
+/// cannot hold an import slot for good either. Time is paused, so each wait
+/// passes as soon as nothing else can run.
+#[tokio::test(start_paused = true)]
+async fn a_body_that_trickles_ends_the_read_at_the_deadline() {
+    let dir = TempDir::new().unwrap();
+    let trickle = futures_util::stream::unfold((), |()| async {
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        let byte: Result<axum::body::Bytes, std::io::Error> =
+            Ok(axum::body::Bytes::from_static(b"\n"));
+        Some((byte, ()))
+    });
+    let body = batch_body_bounded(axum::body::Body::from_stream(trickle));
+
+    let error = stream_body_to_file(body, &dir.path().join("upload"), 1024 * 1024)
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.status(), StatusCode::BAD_REQUEST, "{error}");
+    assert!(
+        error
+            .to_string()
+            .contains("the body took longer than 600 seconds to arrive"),
+        "{error}"
+    );
+}
+
+/// The bounds pass `Limited`'s error through, so a body with no declared
+/// length over its cap is still too large, not malformed.
+#[tokio::test]
+async fn a_bounded_batch_body_over_the_cap_is_too_large() {
+    let dir = TempDir::new().unwrap();
+    let body = batch_body_bounded(limited_chunked_body(5));
+
+    let error = stream_body_to_file(body, &dir.path().join("upload"), 5)
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.status(), StatusCode::PAYLOAD_TOO_LARGE, "{error}");
+}
+
 #[tokio::test]
 async fn a_limited_body_read_into_memory_over_the_cap_is_too_large() {
     let error = read_body_limited(limited_chunked_body(5), 5)

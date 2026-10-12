@@ -156,10 +156,11 @@ For an import batch, a line that is JSON and breaks a rule of message-ir (a wron
 For an import batch, `line` carries the line of the request body that could not be read, counted from 1 with blank lines included. It is a line of the batch, not of any file: a client that packed the batch from several files turns it into the file and line it came from.".to_string(),
             Self::UnsupportedMediaType => "The request's `Content-Type` is absent or not one this route accepts. An import body is `application/x-ndjson` or `application/jsonl`; a JSON route takes `application/json`. Send the right header with the same body.".to_string(),
             Self::PayloadTooLarge => format!(
-                "The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading. `PUT /v1/assets/{{sha256}}` caps at the attachment size limit, which the owner sets in Server Settings and `GET /v1/server` reports as `asset_max_bytes`. Each part of a multipart upload caps at the part size the upload was given when it started. Every other cap is fixed in the server: `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/claim` at {}, any other JSON body at {}, an address book loaded with `POST /v1/contacts` at {}, and an import batch, or any other body, at {}. Send less, or, for an attachment, have the owner raise the limit.",
+                "The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading. `PUT /v1/assets/{{sha256}}` caps at the attachment size limit, which the owner sets in Server Settings and `GET /v1/server` reports as `asset_max_bytes`. Each part of a multipart upload caps at the part size the upload was given when it started. Every other cap is fixed in the server: `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/claim` at {}, any other JSON body at {}, an address book loaded with `POST /v1/contacts` at {}, an import batch at {}, the most the desktop app sends in one, and any other body at {}. Send less, or, for an attachment, have the owner raise the limit.",
                 byte_size(crate::server::MAX_AUTH_BODY_BYTES),
                 byte_size(crate::server::MAX_JSON_BODY_BYTES),
                 byte_size(crate::contacts_api::address_book::MAX_ADDRESS_BOOK_BYTES),
+                byte_size(message_crate_api_types::MAX_IMPORT_BATCH_BYTES),
                 byte_size(crate::server::MAX_REQUEST_BODY_BYTES),
             ),
             Self::InvalidCredentials => "The username or password did not match an account, the account is disabled, or the current password given to confirm deleting an account or changing the owner's password was wrong. The server does not say which. A login to a disabled account answers this whether the password was right or not, so a guesser learns nothing. Check both and try again, or ask the owner whether the account is disabled. Repeated attempts are rate limited.".to_string(),
@@ -285,6 +286,7 @@ mod tests {
                 crate::contacts_api::address_book::MAX_ADDRESS_BOOK_BYTES,
                 "8 MiB",
             ),
+            (message_crate_api_types::MAX_IMPORT_BATCH_BYTES, "64 MiB"),
             (crate::server::MAX_REQUEST_BODY_BYTES, "512 MiB"),
         ] {
             assert_eq!(byte_size(cap), text);

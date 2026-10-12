@@ -27,7 +27,8 @@ use crate::journal::{JournalMessage, RunJournal};
 use crate::progress::AttachmentSkip;
 use crate::project::{self, AttachmentProjection};
 use crate::report::{AssetTotals, UploadProfile, elapsed_ms};
-use crate::run::{ImportConfig, MAX_IMPORT_BODY_BYTES, Session};
+use crate::run::{ImportConfig, Session};
+use message_crate_api_types::MAX_IMPORT_BATCH_BYTES;
 
 /// Journal state shared by every prepare worker and the import pipeline.
 ///
@@ -385,8 +386,8 @@ fn scan_one_attachment(
 ///
 /// # Errors
 ///
-/// Returns an error when a message cannot be encoded, a single message alone
-/// exceeds the chunk limit, or the run is cancelled.
+/// Returns an error when a message cannot be encoded, a single message with
+/// the conversation header exceeds the chunk limit, or the run is cancelled.
 fn build_import_chunks(
     ctx: &PrepareContext<'_>,
     name: &str,
@@ -397,7 +398,7 @@ fn build_import_chunks(
     let mut builder = ChunkBuilder::new(
         project::document_header_line(doc)?,
         ctx.batch_size,
-        MAX_IMPORT_BODY_BYTES,
+        MAX_IMPORT_BATCH_BYTES,
     );
     for (i, msg) in doc.messages.iter().enumerate() {
         ctx.session.check_stop()?;
@@ -407,13 +408,14 @@ fn build_import_chunks(
             // Already imported this message id on a previous successful Upload.
             continue;
         }
-        // A single message larger than the chunk limit cannot be split further.
-        if line.len() > MAX_IMPORT_BODY_BYTES {
+        // A message that does not fit one chunk with the header cannot be
+        // split further, and the server refuses a larger body.
+        if !builder.fits_alone(&line) {
             bail!(
-                "{name}: message {guid} encodes to {} bytes alone, which exceeds the \
-                 {} MiB import chunk limit — cannot upload through Cloudflare safely",
+                "{name}: message {guid} encodes to {} bytes, which with its conversation \
+                 header exceeds the {} MiB import batch limit",
                 line.len(),
-                MAX_IMPORT_BODY_BYTES as u64 / message_ir::MIB
+                MAX_IMPORT_BATCH_BYTES as u64 / message_ir::MIB
             );
         }
         builder.push(
@@ -455,6 +457,12 @@ impl ChunkBuilder {
             messages: Vec::new(),
             file_lines: vec![HEADER_FILE_LINE],
         }
+    }
+
+    /// Whether `line` fits a chunk of its own, beside the header every chunk
+    /// starts with. One that does not can never be sent.
+    fn fits_alone(&self, line: &[u8]) -> bool {
+        self.header_line.len() + line.len() <= self.max_body_bytes
     }
 
     /// Add one encoded message, from line `file_line` of the staged file,
@@ -1127,7 +1135,7 @@ mod tests {
     #[test]
     fn chunk_builder_splits_on_count() {
         let header = b"{\"h\":1}\n".to_vec();
-        let mut builder = ChunkBuilder::new(header.clone(), 2, MAX_IMPORT_BODY_BYTES);
+        let mut builder = ChunkBuilder::new(header.clone(), 2, MAX_IMPORT_BATCH_BYTES);
         for i in 0..5 {
             builder.push(
                 b"{}\n",
@@ -1145,6 +1153,19 @@ mod tests {
         // Every chunk repeats the header, so each starts again at line 1.
         let lines: Vec<&[usize]> = chunks.iter().map(|c| c.file_lines.as_slice()).collect();
         assert_eq!(lines, [&[1, 2, 3][..], &[1, 4, 5], &[1, 6]]);
+    }
+
+    /// A message fits a chunk only when it fits beside the header the chunk
+    /// repeats. A message under the limit alone, but over it with the header,
+    /// used to go out as a body over the limit, which the server refuses.
+    #[test]
+    fn a_message_fits_only_when_it_fits_beside_the_header() {
+        let header = b"{\"h\":100}\n".to_vec();
+        assert_eq!(header.len(), 10);
+        let builder = ChunkBuilder::new(header, NO_MESSAGE_COUNT_LIMIT, 32);
+
+        assert!(builder.fits_alone(&[b'x'; 22]));
+        assert!(!builder.fits_alone(&[b'x'; 23]));
     }
 
     /// A conversation too big for one request is cut into chunks that each

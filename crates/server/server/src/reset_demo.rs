@@ -750,10 +750,10 @@ impl BuildRun {
 }
 
 /// The most JSONL a build imports in one transaction: what an Upload sends
-/// in one request, `message_crate_import::MAX_IMPORT_BODY_BYTES` (64 MiB).
+/// in one request, [`message_crate_api_types::MAX_IMPORT_BATCH_BYTES`].
 /// Every other write on the server waits for the transaction, so it waits
 /// for one batch at most.
-const IMPORT_BATCH_BYTES: u64 = 64 * 1024 * 1024;
+const IMPORT_BATCH_BYTES: u64 = message_crate_api_types::MAX_IMPORT_BATCH_BYTES as u64;
 
 /// Group `paths`, in order, into batches whose sizes add up to `limit` bytes
 /// or less. A file larger than `limit` is a batch of its own, because a

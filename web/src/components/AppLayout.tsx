@@ -8,6 +8,7 @@ import { ColumnResizeProvider } from "./ColumnResizeContext";
 import ContactDrawer from "./ContactDrawer";
 import { COLUMN_DIVIDER_WIDTH } from "./columnDivider";
 import type { ContactPreview } from "./contactDrawer/contactDrawerTypes";
+import ErrorBoundary from "./ErrorBoundary";
 import LeftPanel from "./LeftPanel";
 import { LIST_COLUMN_MIN_WIDTH } from "./ListColumn";
 import { RIGHT_PANE_MIN_WIDTH } from "./RightPane";
@@ -89,9 +90,14 @@ export default function AppLayout() {
               besideMinWidth={shown ? BESIDE_PANEL_MIN_WIDTH : undefined}
             />
 
-            {/* The route's own columns, from its element in App.tsx. */}
+            {/* The route's own columns, from its element in App.tsx. A
+                screen that throws, or whose code didn't load, shows why in
+                their place while the header and the navigation panel stay
+                usable. Picking another screen shows that screen. */}
             <AppLayoutContext.Provider value={context}>
-              <Outlet />
+              <ErrorBoundary scope="screen" resetKey={location.pathname}>
+                <Outlet />
+              </ErrorBoundary>
             </AppLayoutContext.Provider>
 
             {/* Overlay contact panel (e.g. opened from a conversation). */}

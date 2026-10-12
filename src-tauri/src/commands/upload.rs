@@ -138,7 +138,7 @@ fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<ImportConf
         // already recorded as sent.
         force: false,
         max_retries: 3,
-        // Pack until message_crate_import::MAX_IMPORT_BODY_BYTES (64 MiB); do not stop at a message count.
+        // Pack until message_crate_api_types::MAX_IMPORT_BATCH_BYTES (64 MiB); do not stop at a message count.
         batch_size: message_crate_import::NO_MESSAGE_COUNT_LIMIT,
         // Above DEFAULT_ASSET_UPLOAD_WORKERS (8): desktop imports are often many small files.
         asset_upload_workers: 16,
@@ -151,7 +151,7 @@ fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<ImportConf
         // moves in small parts instead of one long PUT.
         asset_multipart_threshold: 5 * 1024 * 1024,
         // Per-file attachment cap, the server's own as the run recorded it.
-        // JSONL import batches use MAX_IMPORT_BODY_BYTES.
+        // JSONL import batches use MAX_IMPORT_BATCH_BYTES.
         asset_max_bytes: recorded.asset_max_bytes,
         log_path,
         cancel: CancelFlag::default(),

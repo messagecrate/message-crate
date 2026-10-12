@@ -1,5 +1,4 @@
 import {
-  lazy,
   type ReactNode,
   Suspense,
   useCallback,
@@ -21,6 +20,7 @@ import {
   Popover,
   Text,
 } from "react-aria-components";
+import { lazyChunk } from "../lib/chunkLoad";
 import {
   clearRecentSearches,
   loadRecentSearches,
@@ -44,12 +44,13 @@ import {
 import { Z_INLINE_PANEL, Z_POPOVER } from "../lib/zLayers";
 import type { AdvancedSearchMode } from "./AdvancedSearchForm";
 import Button from "./Button";
+import ErrorBoundary from "./ErrorBoundary";
 import { ClockIcon, SearchFieldIcon, SlidersIcon } from "./icons";
 import PlainButton from "./PlainButton";
 
 // The advanced form pulls in the date picker and calendar, about 150 kB of
 // the entry chunk that most visits never open. It loads when the panel does.
-const AdvancedSearchForm = lazy(() => import("./AdvancedSearchForm"));
+const AdvancedSearchForm = lazyChunk("AdvancedSearchForm", () => import("./AdvancedSearchForm"));
 
 /** While the advanced panel is open, focusing the box does not open the popdown over it. */
 function KeepPopdownClosed({ when }: { when: boolean }) {
@@ -458,14 +459,18 @@ export default function SearchBar({
 
       {showAdvanced && advancedMode ? (
         <div className={`absolute top-full left-0 mt-2 w-full min-w-[300px] ${Z_INLINE_PANEL}`}>
-          <Suspense fallback={null}>
-            <AdvancedSearchForm
-              mode={advancedMode}
-              withTail
-              onApply={(q) => applyQuery(q, { save: true })}
-              onClose={() => setShowAdvanced(false)}
-            />
-          </Suspense>
+          {/* The header sits outside the screen's boundary in AppLayout, so
+              a form that fails here says so in its own place. */}
+          <ErrorBoundary scope="panel">
+            <Suspense fallback={null}>
+              <AdvancedSearchForm
+                mode={advancedMode}
+                withTail
+                onApply={(q) => applyQuery(q, { save: true })}
+                onClose={() => setShowAdvanced(false)}
+              />
+            </Suspense>
+          </ErrorBoundary>
         </div>
       ) : null}
     </div>
