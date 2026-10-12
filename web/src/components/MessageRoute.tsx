@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { apiErrorMessage } from "../lib/apiErrorMessage";
+import { errorLine } from "../lib/apiErrorMessage";
 import { asMessagesLocationState } from "../lib/messagesLocationState";
 import { keys } from "../lib/queryKeys";
 import {
@@ -126,7 +126,7 @@ export default function MessageRoute() {
           ) : notFound ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
               <p className="m-0 text-[0.875rem] text-danger">
-                {apiErrorMessage(error, "Conversation not found.")}
+                {errorLine(error, "Conversation not found.")}
               </p>
               <Link
                 to="/"

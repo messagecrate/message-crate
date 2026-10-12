@@ -1,6 +1,7 @@
 import Checkbox from "../../components/Checkbox";
 import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
 import { type AccountProfile, fixedSettings } from "../../lib/account";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { parseSelectKey } from "../../lib/selectKey";
 import { type ManagedAccountChanges, useUpdateAccount } from "../owner/useOwnerAccounts";
 import { sectionTitleClass } from "./profileStyles";
@@ -92,7 +93,7 @@ export function AccountPermissionsSection({
         )}
         {updateAccount.error ? (
           <p className="m-0 text-[0.813rem] text-danger" role="alert">
-            {updateAccount.error.message}
+            {errorLine(updateAccount.error)}
           </p>
         ) : null}
       </div>

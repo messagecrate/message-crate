@@ -31,7 +31,7 @@ describe("useAsyncAction", () => {
     expect(result.current.error).toBe("");
   });
 
-  it("captures errors and clearError resets them", async () => {
+  it("captures an error as a line of its own, and clearError resets it", async () => {
     const { result } = renderHook(() => useAsyncAction());
 
     await act(async () => {
@@ -41,7 +41,7 @@ describe("useAsyncAction", () => {
     });
 
     expect(result.current.busy).toBe(false);
-    expect(result.current.error).toContain("boom");
+    expect(result.current.error).toBe("Boom");
 
     act(() => {
       result.current.clearError();

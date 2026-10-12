@@ -32,35 +32,32 @@ export function errorText(err: unknown): string {
   return apiErrorMessage(err, String(err));
 }
 
-/**
- * `text` with its first letter capitalised, for a server `detail` shown as a
- * line of its own. The server writes each `detail` in lowercase with no final
- * period (`docs/architecture/http-api.md`, "Failures"), and a line of UI text
- * starts with a capital.
- */
-export function sentenceCase(text: string): string {
+/** `text` with its first letter capitalized. */
+function sentenceCase(text: string): string {
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
 
 /**
- * What went wrong, as a line of its own on a screen: `errorText` with its
- * first letter capitalised.
+ * What went wrong, as a sentence of its own on a screen: on a line of its own,
+ * or after another sentence that ends with a period. Every screen that shows a
+ * failure that way goes through here. The text is `rejectionMessage`'s, with
+ * `fallback` for anything that has no message, or `String(err)` when no
+ * fallback is given, so a desktop command's string rejection is shown too.
+ *
+ * The server writes each `detail` in lowercase with no final period
+ * (`docs/architecture/http-api.md`, "Failures"), and a sentence on a screen
+ * starts with a capital, so the first letter is capitalized. One refusal is
+ * kept as it is: a `search-query-invalid` problem about one search word starts
+ * with that word as it is typed (`from: is not a Contacts word; it works on
+ * Messages`), and a capital would change the word. Any other sentence that
+ * names something first, such as `sort: unknown key …`, starts with a capital.
+ *
+ * A sentence joined after a prefix that already starts the line ("Could not
+ * load contacts: …") uses `errorText`, `apiErrorMessage` or
+ * `rejectionMessage`, and stays as the server wrote it.
  */
-export function errorLine(err: unknown): string {
-  return sentenceCase(errorText(err));
-}
-
-/**
- * A failure on a screen that runs a search, as a line of its own. A search
- * refusal that is about one word starts with that word as it is typed
- * (`from: is not a Contacts word; it works on Messages`), and a capital would
- * change the word, so it is shown as it is. Only a `search-query-invalid`
- * problem is read that way. Any other sentence starts with a capital, as
- * `errorLine` gives it, including a refusal that names a parameter first,
- * such as `sort: unknown key …`.
- */
-export function searchErrorLine(err: unknown, fallback: string): string {
-  const text = apiErrorMessage(err, fallback);
+export function errorLine(err: unknown, fallback?: string): string {
+  const text = rejectionMessage(err, fallback ?? String(err));
   const aboutAWord =
     err instanceof ApiError && err.type === "search-query-invalid" && /^[a-z][a-z-]*:/.test(text);
   return aboutAWord ? text : sentenceCase(text);

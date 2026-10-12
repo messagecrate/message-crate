@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getImportContacts } from "../../../lib/serverApi";
+import { settle, startFakeClock, stopFakeClock } from "../../../test/fakeTimers";
 import { mockedAuth, renderWithProviders as render } from "../../../test/providers";
 import ImportContactsPanel from "./ImportContactsPanel";
 
@@ -21,6 +22,7 @@ describe("ImportContactsPanel", () => {
 
   afterEach(() => {
     cleanup();
+    stopFakeClock();
   });
 
   it("asks for the contacts of the run it was given", async () => {
@@ -70,9 +72,11 @@ describe("ImportContactsPanel", () => {
   });
 
   it("shows the reason when the load fails", async () => {
+    startFakeClock();
     get.mockRejectedValue(new Error("no such import"));
     render(<ImportContactsPanel importId={11} newCount={0} changedCount={0} />);
-    expect(await screen.findByText("no such import")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText("No such import")).toBeInTheDocument();
   });
 
   it("reads the contacts past the first page when the list is scrolled to its end", async () => {

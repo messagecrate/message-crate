@@ -1,5 +1,6 @@
 import { useState } from "react";
 import GroupNameDialog from "../../components/GroupNameDialog";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { contactGroups, useContactGroupActions } from "../../lib/contactGroups";
 import { useNameCollection } from "../../lib/nameCollection";
 import type { Conversation } from "../../lib/types";
@@ -55,7 +56,7 @@ export default function ContactGroupFromConversation({
           placeholder="Contact Group name"
           confirmLabel="Create"
           initial={conversation.shown_title ?? ""}
-          error={actions.error?.message ?? null}
+          error={actions.error ? errorLine(actions.error) : null}
           busy={actions.pending}
           onSave={save}
           onCancel={onClose}

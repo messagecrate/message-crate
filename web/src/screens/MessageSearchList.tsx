@@ -3,7 +3,7 @@ import ListRangeHeader from "../components/ListRangeHeader";
 import MessageSearchRow from "../components/MessageSearchRow";
 import SortMenu, { type SortField } from "../components/SortMenu";
 import VirtualList from "../components/VirtualList";
-import { searchErrorLine } from "../lib/apiErrorMessage";
+import { errorLine } from "../lib/apiErrorMessage";
 import { MAX_LIST_OFFSET } from "../lib/listPaging";
 import {
   type MessageSearchSort,
@@ -140,7 +140,7 @@ function MessageResults({
       <div className="flex min-h-0 flex-1 flex-col">
         <ListRangeHeader actions={sortMenu} />
         <div className="p-4 text-[0.813rem] text-danger">
-          {searchErrorLine(error, "Could not load messages.")}
+          {errorLine(error, "Could not load messages.")}
         </div>
       </div>
     );

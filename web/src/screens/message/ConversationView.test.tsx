@@ -47,11 +47,11 @@ describe("ConversationView", () => {
 
   it("shows the server's error sentence when the query failed", () => {
     render(<ConversationView {...baseProps} messages={[]} error={new Error("server is down")} />);
-    expect(screen.getByText("server is down")).toBeInTheDocument();
+    expect(screen.getByText("Server is down")).toBeInTheDocument();
   });
 
   it("falls back to a generic message when the error carries no message", () => {
-    render(<ConversationView {...baseProps} messages={[]} error={"not an Error"} />);
+    render(<ConversationView {...baseProps} messages={[]} error={new Error("")} />);
     expect(screen.getByText("Could not load messages.")).toBeInTheDocument();
   });
 

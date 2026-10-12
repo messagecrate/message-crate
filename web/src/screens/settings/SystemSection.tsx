@@ -6,7 +6,7 @@ import OpenPathButton from "../../components/OpenPathButton";
 import PathPicker from "../../components/PathPicker";
 import PlainButton from "../../components/PlainButton";
 import { getBaseUrl } from "../../lib/api";
-import { errorText } from "../../lib/apiErrorMessage";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { APP_BUILD } from "../../lib/build";
 import { getOpenToNetwork, isOwnAddress, setOpenToNetwork } from "../../lib/localServer";
 import { keys } from "../../lib/queryKeys";
@@ -307,7 +307,7 @@ function DataDirectory() {
     // next start of its own.
     if (!isOwnAddress(getBaseUrl())) return;
     invokeSetOpenToNetwork(on).then(setServer, (caught: unknown) => {
-      setNetworkError(errorText(caught));
+      setNetworkError(errorLine(caught));
     });
   };
   // A Message Crate the app only found (Docker on this computer) listens
@@ -325,7 +325,7 @@ function DataDirectory() {
         onPress={() => {
           setError(null);
           invokeOpenDataDirectory().catch((caught: unknown) => {
-            setError(errorText(caught));
+            setError(errorLine(caught));
           });
         }}
       >
@@ -381,7 +381,7 @@ function ExportDirectory() {
     retry: false,
   });
   const path = query.data ?? null;
-  const error = query.error ? errorText(query.error) : null;
+  const error = query.error ? errorLine(query.error) : null;
   return (
     <div className="mt-8">
       <h3 className={sectionHeadingClass}>Exports</h3>
@@ -422,13 +422,13 @@ export function SystemSection() {
   const defaultStagingPath = stagingQuery.data?.defaultRoot ?? "";
   /** Why the last value typed was not saved, or why reading the directory again failed. */
   const [saveError, setSaveError] = useState<string | null>(null);
-  const stagingError = saveError ?? (stagingQuery.error ? errorText(stagingQuery.error) : null);
+  const stagingError = saveError ?? (stagingQuery.error ? errorLine(stagingQuery.error) : null);
   const [rememberPaths, setRememberPaths] = useState(() => isTauri() && getRememberImporterPaths());
   // Asked again each second while a download runs.
   const toolsQuery = useToolsStatus();
   const tools: ToolsStatus | null = toolsQuery.data ?? null;
   const toolsError = toolsQuery.error
-    ? `Could not look for the media tools. ${errorText(toolsQuery.error)}`
+    ? `Could not look for the media tools. ${errorLine(toolsQuery.error)}`
     : null;
 
   // The desktop process keeps the setting and decides what it takes: every
@@ -453,7 +453,7 @@ export function SystemSection() {
       },
       (caught: unknown) => {
         if (gen !== stagingSaveGen.current) return;
-        setSaveError(`Not saved. ${errorText(caught)}`);
+        setSaveError(`Not saved. ${errorLine(caught)}`);
       },
     );
   };
@@ -478,7 +478,7 @@ export function SystemSection() {
         },
         (caught: unknown) => {
           if (gen !== stagingSaveGen.current) return;
-          setSaveError(errorText(caught));
+          setSaveError(errorLine(caught));
         },
       );
   };

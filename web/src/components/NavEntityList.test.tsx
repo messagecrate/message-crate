@@ -11,6 +11,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { mockedAuth, Providers } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 import GroupsNav from "./GroupsNav";
@@ -43,6 +44,7 @@ vi.mock("../lib/serverApi", () => ({
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  stopFakeClock();
 });
 
 /** Renders the current path so a test can read where `navigate` landed. */
@@ -194,14 +196,16 @@ describe("NavEntityList navigation", () => {
 
   it("keeps the confirmation open with the server's message when the delete is refused", async () => {
     routes.deleteContactGroup.mockRejectedValue(new Error("group not found"));
+    startFakeClock();
     const user = setupUser();
     renderGroups("/group/Family", ["Family"]);
 
     await user.click(screen.getByRole("button", { name: "Contact Group options for Family" }));
     await user.click(screen.getByRole("menuitem", { name: "Delete" }));
     await user.click(screen.getByRole("button", { name: "Delete" }));
+    await settle();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("group not found");
+    expect(screen.getByRole("alert")).toHaveTextContent("Group not found");
     expect(screen.getByRole("dialog", { name: "Delete Family?" })).toBeTruthy();
     expect(screen.getByTestId("location")).toHaveTextContent("/group/Family");
   });

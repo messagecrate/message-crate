@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { apiErrorMessage } from "../lib/apiErrorMessage";
+import { errorLine } from "../lib/apiErrorMessage";
 import { keys } from "../lib/queryKeys";
 import { useRouteQuery } from "../lib/routeQuery";
 import { getConversationSources } from "../lib/serverApi";
@@ -49,7 +49,7 @@ export default function SourcesPanel({
         <div className="text-[0.875rem] text-muted">Loading…</div>
       ) : error ? (
         <div className="rounded border border-danger-soft-border bg-danger-soft-bg p-2 text-[0.813rem] text-danger">
-          {apiErrorMessage(error, "Could not load sources.")}
+          {errorLine(error, "Could not load sources.")}
         </div>
       ) : sources.length === 0 ? (
         <div className="text-[0.875rem] text-muted">No source data available</div>
