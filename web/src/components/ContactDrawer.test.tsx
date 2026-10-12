@@ -689,7 +689,7 @@ describe("ContactDrawer", () => {
       /First heard from/i,
       /Last heard from/i,
       /Conversations/i,
-      /Direct messages/i,
+      /One-to-one messages/i,
       /Group messages/i,
     ]) {
       const header = screen.getByRole("columnheader", { name });

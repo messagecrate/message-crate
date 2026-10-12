@@ -44,7 +44,7 @@ export function ContactDrawerHandles({
 }: {
   contactId: string;
   handleRows: ContactDetail["identities"];
-  /** The contact's direct, group, and orphaned conversations, each counted once. */
+  /** The contact's one-to-one, group, and orphaned conversations, each counted once. */
   conversations: number;
   loading: boolean;
   onBrowse?: BrowseFn;

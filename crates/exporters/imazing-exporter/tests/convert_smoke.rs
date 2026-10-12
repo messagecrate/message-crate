@@ -30,7 +30,7 @@ fn convert_messages_keys_the_chat_by_its_number() {
     assert_eq!(report.messages, 8);
     assert_eq!(report.extra(crate::emit::MESSAGES_FILES), 1);
     assert_eq!(report.extra(crate::emit::WHATSAPP_FILES), 0);
-    assert_eq!(report.extra(message_crate_core::NAME_ONLY_CHAT), 0);
+    assert_eq!(report.extra(message_crate_core::NAME_ONLY_CONVERSATION), 0);
 
     let out = tmp.path().join("+13215550100.csv");
     let body = fs::read_to_string(&out).expect("read csv");

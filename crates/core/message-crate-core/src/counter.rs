@@ -148,13 +148,13 @@ pub const NOTIFICATIONS: Counter = Counter::new(
     "Kept {n} notifications as received messages",
 );
 
-/// Chats that name their person with no phone number or email address, each
+/// Conversations that name their person with no phone number or email address, each
 /// kept under the name alone and sent as a
-/// [`crate::NAME_ONLY_CHAT_NOTE`].
-pub const NAME_ONLY_CHAT: Counter = Counter::new(
-    "name_only_chat",
-    "Kept 1 chat under a name alone, with no phone number or email address",
-    "Kept {n} chats under a name alone, with no phone number or email address",
+/// [`crate::NAME_ONLY_CONVERSATION_NOTE`].
+pub const NAME_ONLY_CONVERSATION: Counter = Counter::new(
+    "name_only_conversation",
+    "Kept 1 conversation under a name alone, with no phone number or email address",
+    "Kept {n} conversations under a name alone, with no phone number or email address",
 );
 
 /// Parts left out of kept messages because they could not be read, each
@@ -375,7 +375,7 @@ mod tests {
             ATTACHMENTS_SAVED,
             CONVERSATIONS_OBFUSCATED,
             NOTIFICATIONS,
-            NAME_ONLY_CHAT,
+            NAME_ONLY_CONVERSATION,
             SKIPPED_UNREADABLE_PART,
             NOT_SMS_OR_MMS_LEFT_OUT,
             ATTACHMENTS_MISSING,

@@ -298,10 +298,10 @@ impl Ingest {
                 if let Key::Keyed(ConversationKey::NameOnly(name)) = &conversation.key {
                     // Counted once per conversation, not once per row.
                     report.caveat(
-                        message_crate_core::NAME_ONLY_CHAT,
+                        message_crate_core::NAME_ONLY_CONVERSATION,
                         1,
                         format!("{} ({name})", path.display()),
-                        message_crate_core::NAME_ONLY_CHAT_NOTE,
+                        message_crate_core::NAME_ONLY_CONVERSATION_NOTE,
                     );
                 }
                 Pending {
@@ -665,7 +665,7 @@ mod tests {
         let out = dir.path().join("out");
         let report = convert(dir.path(), &out).unwrap();
         assert_eq!(report.conversations, 1);
-        assert_eq!(report.extra(message_crate_core::NAME_ONLY_CHAT), 0);
+        assert_eq!(report.extra(message_crate_core::NAME_ONLY_CONVERSATION), 0);
         let body = fs::read_to_string(out.join("+15555550122.csv")).unwrap();
         assert!(body.contains("openextract"));
     }
@@ -682,7 +682,7 @@ mod tests {
         );
         let out = dir.path().join("out");
         let report = convert(dir.path(), &out).unwrap();
-        assert_eq!(report.extra(message_crate_core::NAME_ONLY_CHAT), 1);
+        assert_eq!(report.extra(message_crate_core::NAME_ONLY_CONVERSATION), 1);
         assert_eq!(report.conversations, 1);
         let csv_path = out.join("name_Cathy_Arp.csv");
         assert!(csv_path.is_file(), "missing {}", csv_path.display());

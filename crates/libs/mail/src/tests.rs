@@ -1223,7 +1223,8 @@ fn group_conversations_keep_their_own_addresses() {
 /// address as it was, made the mail unreadable (mailparse: "Header cannot
 /// start with a space") or broke the mbox `From_` line (#1816). Every
 /// identity now reads back exactly, from an incoming sender, the owner and a
-/// 1:1 peer, in a group and a 1:1 conversation, in both directions.
+/// peer of a one-to-one conversation, in a group and a one-to-one
+/// conversation, in both directions.
 #[test]
 fn an_identity_with_a_line_break_keeps_the_address_headers_whole() {
     for conversation_type in ["group", "individual"] {

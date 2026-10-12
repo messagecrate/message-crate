@@ -18,7 +18,7 @@ export type IdentityRow = {
   start_date: string | null;
   /** When the newest was sent, or null. */
   end_date: string | null;
-  /** Direct, group, and orphaned conversations the identity takes part in. */
+  /** One-to-one, group, and orphaned conversations the identity takes part in. */
   conversations: number;
   direct_messages: number;
   group_messages: number;
@@ -119,7 +119,7 @@ export function hasOrphanedMessages(
 }
 
 /**
- * All of a contact's conversations: its direct, group, and orphaned ones. A
+ * All of a contact's conversations: its one-to-one, group, and orphaned ones. A
  * conversation is exactly one of the three, so they add up.
  */
 export function conversationTotal(direct: number, group: number, orphaned: number): number {

@@ -37,10 +37,10 @@ fn run_writes_the_conversation_and_counts_the_bad_date_row() {
     );
 }
 
-/// A CSV the run cannot read is an Import Error naming it, and a chat kept
-/// under a name alone is a note naming it (#1626, #1535).
+/// A CSV the run cannot read is an Import Error naming it, and a conversation
+/// kept under a name alone is a note naming it (#1626, #1535).
 #[test]
-fn run_sends_an_import_error_for_an_unreadable_csv_and_a_note_for_a_name_only_chat() {
+fn run_sends_an_import_error_for_an_unreadable_csv_and_a_note_for_a_name_only_conversation() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("in");
     fs::create_dir_all(&input).unwrap();
@@ -81,7 +81,7 @@ fn run_sends_an_import_error_for_an_unreadable_csv_and_a_note_for_a_name_only_ch
             kind: message_crate_core::RunIssueKind::Note,
             step: "parse".into(),
             item: format!("{} (Mystery Person)", input.join("all_conversations.csv").display()),
-            reason: "This chat names its person with no phone number or email address, so the conversation is kept under the name alone.".into(),
+            reason: "This conversation names its person with no phone number or email address, so it is kept under the name alone.".into(),
             conversation: None,
         }]
     );

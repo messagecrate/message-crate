@@ -64,7 +64,7 @@ fn header(raw: &[u8], name: &str) -> Option<String> {
     parse_mail(raw).unwrap().headers.get_first_value(name)
 }
 
-/// A 1:1 SMS conversation with Sam: an incoming SMS, an outgoing SMS, an
+/// A one-to-one SMS conversation with Sam: an incoming SMS, an outgoing SMS, an
 /// incoming MMS with a photo and an outgoing MMS with a photo, a second apart.
 fn sms_and_mms_document() -> ConversationDocument {
     let mut document = sample_document("incoming sms");

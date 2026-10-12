@@ -57,7 +57,7 @@ The identity table has these columns:
 | **First heard from** | The date of the first message the contact sent from this identity |
 | **Last heard from** | The date of the last message the contact sent from this identity |
 | **Conversations** | How many conversations the identity takes part in |
-| **Direct messages** | How many messages the contact sent from it in one-to-one conversations |
+| **One-to-one messages** | How many messages the contact sent from it in one-to-one conversations |
 | **Group messages** | How many messages the contact sent from it in group conversations |
 
 The message counts and the two dates cover only messages the contact sent.
@@ -131,7 +131,7 @@ The right pane shows a table headed with the count, such as **3 contacts selecte
 | **First heard from** | The date of the first message the contact sent |
 | **Last heard from** | The date of the last message the contact sent |
 | **Conversations** | How many conversations the contact takes part in |
-| **Direct Messages** | How many messages the contact sent in one-to-one conversations |
+| **One-to-one Messages** | How many messages the contact sent in one-to-one conversations |
 | **Group Messages** | How many messages the contact sent in group conversations |
 
 Changing the search or opening a Contact Group unchecks every row, because the checked contacts might no longer be on the screen.

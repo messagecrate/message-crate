@@ -314,7 +314,7 @@ fn a_phone_and_email_of_one_person_stay_two_addresses() {
 }
 
 /// A received row with handle 0 has no sender, in a group as in a
-/// one-to-one chat, and nothing is named "Me".
+/// one-to-one conversation, and nothing is named "Me".
 #[test]
 fn handle_zero_on_a_received_row_is_no_sender() {
     let fixture = FixtureDb::write();
@@ -351,7 +351,7 @@ fn the_owner_is_not_a_participant_of_a_group() {
 }
 
 /// A chat with no `chat_handle_join` rows keeps its own identifier, and
-/// a one-to-one chat takes the identifier's address as its participant.
+/// a one-to-one conversation takes the identifier's address as its participant.
 /// A message in no chat is orphaned and keeps its sender.
 #[test]
 fn a_chat_with_no_handle_rows_keeps_its_identifier() {
@@ -571,9 +571,9 @@ fn orphaned_rows_make_one_conversation_for_each_person() {
 
 /// An orphaned row that names the other person sits in that person's
 /// orphaned conversation whichever way it went: a sent row names its
-/// recipient in `handle_id`, as Apple writes a one-to-one chat's sent
-/// rows. A row that names nobody, sent with `handle_id` 0, received with
-/// no sender, or received from one of the holder's own addresses, sits
+/// recipient in `handle_id`, as Apple writes the sent rows of a one-to-one
+/// conversation. A row that names nobody, sent with `handle_id` 0, received
+/// with no sender, or received from one of the holder's own addresses, sits
 /// in the one keyed `orphaned:` alone, with no participants (#1778).
 #[test]
 fn orphaned_rows_sit_with_the_person_they_name_in_either_direction() {

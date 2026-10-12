@@ -19,7 +19,7 @@ Source XML/PDU → `ConversationDocument` → [`message_ir_format::FormatSink`](
 The desktop app's Import screen runs this exporter and always writes JSON Lines, one file per conversation, because Import reads conversation files in that form (`src-tauri/src/commands/extract.rs`).
 Every other format (JSON, CSV, EML, MBOX, SMS Backup & Restore XML) is a rewrite of that output through [Convert](/docs/developer/formats/convert/), which Export and **Settings → Convert** run.
 
-In CSV form: one file per conversation. PDU media under `attachments/` when copying/embedding. Filenames: 1:1 → `+E164.csv`; untitled groups → `group_+A_+B_….csv` (max 10 phones, then a hash). The XML form is a single SyncTech `smses.xml`.
+In CSV form: one file per conversation. PDU media under `attachments/` when copying/embedding. Filenames: one-to-one → `+E164.csv`; untitled groups → `group_+A_+B_….csv` (max 10 phones, then a hash). The XML form is a single SyncTech `smses.xml`.
 
 Diagnostic skip lists (`skipped_invalid_address.csv`, `skipped_empty_pdu.csv`, `skipped_no_party.csv`) are **not** conversation CSVs; they use their own small headers (see [Skipped records](#skipped-records)).
 
@@ -115,7 +115,7 @@ MMS from `I_<unix>_*.pdu` (received) and `S_<unix>_*.pdu` (sent) files use the s
 |---------------|--------------|
 | `direction` | `m-send-req` is outgoing, `m-retrieve-conf` is incoming. The file name prefix says the same thing and is not consulted. |
 | `sender_identity` | The From header's address on a received message, classified like an XML `<address>`. A sent message carries the Insert-address-token instead of a number, so the export owner is the sender. |
-| `chat_identifier` / `conversation_type` / `group_title` | From the From, To, Cc and Bcc addresses that are not the owner's: one is a 1:1 chat, two or more a group with a `chat-group-…` id. |
+| `chat_identifier` / `conversation_type` / `group_title` | From the From, To, Cc and Bcc addresses that are not the owner's: one is a one-to-one conversation, two or more a group with a `chat-group-…` id. |
 | `timestamp*` / `timestamp_unix_ms` | The MMS `Date` header; the file name's seconds when the header is absent. |
 | `text` | Every `text/plain` part joined with a newline, with GO SMS Pro emoji codes decoded: the parts the SMIL names in its order, then the rest in wire order. When there is no text part, the Subject. |
 | `attachments_json` | Every part that is not `text/plain` and not `application/smil`, a contact card (`text/x-vcard`) included, in the same order as the text, with its content type and the name its part headers give it, under `attachments/` |

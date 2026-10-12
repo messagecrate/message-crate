@@ -575,7 +575,7 @@ fn part_content_type(mime: Option<&str>) -> &str {
     }
 }
 
-/// The other party's handle in a 1:1 conversation; groups have none.
+/// The other party's handle in a one-to-one conversation; groups have none.
 fn peer_identity(msg: &MailMessage) -> Option<&str> {
     if msg.conversation_type.eq_ignore_ascii_case("group") {
         return None;

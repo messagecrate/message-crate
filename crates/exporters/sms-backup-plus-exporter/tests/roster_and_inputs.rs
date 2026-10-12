@@ -72,7 +72,7 @@ fn input_with(root: &Path, names: &[&str]) -> PathBuf {
     input
 }
 
-/// The roster of a one-to-one chat is the peer, named from the subject.
+/// The roster of a one-to-one conversation is the peer, named from the subject.
 ///
 /// `peer_handles_from_digits` fills the roster and `normalize_handle` writes
 /// the sender; each could return nothing and a message would still be written.
@@ -541,7 +541,7 @@ fn an_address_given_one_number_in_both_spellings_has_one_number_in_a_stated_coun
 /// writes it with its `+` code, in the country the run states: the run
 /// keys the owner's numbers in that country, as it keys the archive's
 /// (#1676). Keyed with no country, `07700900123` named nobody the archive
-/// wrote, so the owner became the peer of their own one-to-one chat.
+/// wrote, so the owner became the peer of their own one-to-one conversation.
 #[test]
 fn an_owner_given_in_national_form_is_not_a_peer_in_the_run_s_country() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -582,6 +582,6 @@ Hello Dee\r\n",
     assert_eq!(
         docs.keys().map(String::as_str).collect::<Vec<_>>(),
         ["+447700900456"],
-        "the one-to-one chat is with Dee, not the owner"
+        "the one-to-one conversation is with Dee, not the owner"
     );
 }

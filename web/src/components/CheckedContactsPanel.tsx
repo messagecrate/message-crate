@@ -250,7 +250,7 @@ export default function CheckedContactsPanel({
               Conversations
             </SortableColumn>
             <SortableColumn id="direct_messages" widthClass="w-[15%]" align="right">
-              Direct
+              One-to-one
               <br />
               Messages
             </SortableColumn>
