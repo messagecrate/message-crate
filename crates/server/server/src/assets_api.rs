@@ -26,7 +26,7 @@ use crate::asset_store::sidecar_path;
 use crate::asset_uploads;
 use crate::server::{
     ApiError, AppState, AuthIdentity, Created, ImportAccess, ImportOrExportAccess,
-    content_type_base, discard_body, read_body_limited, resolve_import_account, run_blocking,
+    content_type_base, discard_body, resolve_import_account, run_blocking, stream_body_into,
     stream_body_to_file, upload_body_bounded, upload_content_type,
 };
 
@@ -1346,33 +1346,41 @@ pub(crate) async fn replace_asset_upload_part(
         return Err(ApiError::validation("part number must be >= 1"));
     }
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
-    // The part arrives into memory, so nothing is written to the upload until
-    // all of it is in: the sweep of abandoned uploads must leave it alone
-    // meanwhile (#2652).
+    // The part streams into a temp file of its own, and the manifest records
+    // it only once all of it is in, so the manifest can look abandoned while
+    // the part arrives: the sweep of abandoned uploads must leave the upload
+    // alone meanwhile (#2652).
     let _in_use = asset_uploads::hold_upload(&assets_dir, &sha256, &upload_id)?;
     // The part size this upload started with, not the one the Server
     // Settings give now: lowering the limit holds from the next upload.
-    let part_size = {
+    let new_part = {
         let assets_dir = assets_dir.clone();
         let sha = sha256.clone();
         let uid = upload_id.clone();
         run_blocking("upload part", move || {
-            asset_uploads::session_part_size(&assets_dir, &sha, &uid)
+            asset_uploads::begin_part(&assets_dir, &sha, &uid, part)
         })
         .await?
     };
-    if crate::server::declared_over(&headers, part_size) {
+    // Dropping the temp, on any early return or when the client goes away
+    // part-way, removes its file.
+    let temp = new_part.temp;
+    if crate::server::declared_over(&headers, new_part.part_size) {
         return Err(ApiError::PayloadTooLarge);
     }
-    let body = read_body_limited(
+    // One chunk of the body is in memory at a time, never the whole part
+    // (#2114).
+    stream_body_into(
         upload_body_bounded(request.into_body(), state.upload_time_limits),
-        part_size,
+        tokio::fs::File::from_std(new_part.file),
+        temp.path(),
+        new_part.part_size,
     )
     .await?;
     let sha = sha256.clone();
     let uid = upload_id.clone();
     let written = run_blocking("upload part", move || {
-        asset_uploads::put_part(&assets_dir, &sha, &uid, part, &body)
+        asset_uploads::put_part(&assets_dir, &sha, &uid, part, temp)
     })
     .await?;
     Ok(Json(ReplaceAssetUploadPartResponse {

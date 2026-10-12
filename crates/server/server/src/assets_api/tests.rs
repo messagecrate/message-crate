@@ -740,8 +740,8 @@ async fn an_upload_start_past_the_open_upload_limit_is_a_state_conflict() {
     }
 }
 
-/// #2652: a part arrives into memory, so nothing is written to its upload
-/// until all of it is in, and its manifest can say nothing was written for
+/// #2652: a part streams into its own temp, so nothing is written to its
+/// upload's manifest until all of it is in, and the manifest can say nothing was written for
 /// longer than the stall limit while the part is still arriving. A sweep
 /// then leaves the upload alone, and the part is stored once it arrives.
 #[tokio::test]
@@ -806,6 +806,90 @@ async fn a_sweep_leaves_an_upload_whose_part_is_still_arriving() {
     drop(send);
     let (status, text) = putting.await.unwrap();
     assert_eq!(status, StatusCode::OK, "{text}");
+}
+
+/// The temp files in an upload's directory that parts are arriving into,
+/// with their sizes.
+fn part_temps(session: &std::path::Path) -> Vec<u64> {
+    std::fs::read_dir(session)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
+        .map(|entry| entry.metadata().unwrap().len())
+        .collect()
+}
+
+/// #2114: a part's body goes to disk as it arrives, not into memory until
+/// the whole of it is in. Once it is all in, the temp takes the part's
+/// name; a part that ends short is refused and leaves no temp behind.
+#[tokio::test]
+async fn a_part_is_written_to_disk_as_it_arrives() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let mut state = fixture.state.clone();
+    state.asset_part_size = 16;
+    let bytes: Vec<u8> = (0u8..20).collect();
+    let sha = sha256_hex(&bytes);
+    let (_, started): (String, serde_json::Value) = crate::test_support::post_created_json(
+        &state,
+        &format!("/v1/assets/{sha}/uploads"),
+        &user.token,
+        serde_json::json!({ "bytes": 20 }),
+    )
+    .await;
+    let upload_id = started["upload_id"].as_str().unwrap().to_string();
+    let assets_dir = state.cfg.paths.assets_dir_for_account(user.account_id);
+    let session =
+        asset_uploads::session_dir(&assets_dir, &Sha256::parse(&sha).unwrap(), &upload_id);
+    let send_part = |part: u32| {
+        let (send, arriving) = tokio::sync::mpsc::channel::<axum::body::Bytes>(1);
+        let body = futures_util::stream::unfold(arriving, |mut arriving| async move {
+            let chunk = arriving.recv().await?;
+            Some((Ok::<_, std::io::Error>(chunk), arriving))
+        });
+        let state = state.clone();
+        let path = format!("/v1/assets/{sha}/uploads/{upload_id}/parts/{part}");
+        let token = user.token.clone();
+        let putting = crate::request_id::spawn_in_current_span(async move {
+            crate::test_support::put_raw(
+                &state,
+                &path,
+                &token,
+                "application/octet-stream",
+                reqwest::Body::wrap_stream(body),
+            )
+            .await
+        });
+        (send, putting)
+    };
+
+    let (send, putting) = send_part(1);
+    send.send(axum::body::Bytes::copy_from_slice(&bytes[..8]))
+        .await
+        .unwrap();
+    while part_temps(&session) != [8] {
+        tokio::task::yield_now().await;
+    }
+    send.send(axum::body::Bytes::copy_from_slice(&bytes[8..16]))
+        .await
+        .unwrap();
+    drop(send);
+    let (status, text) = putting.await.unwrap();
+    assert_eq!(status, StatusCode::OK, "{text}");
+    assert_eq!(part_temps(&session), Vec::<u64>::new());
+    assert_eq!(
+        std::fs::read(session.join("part-0001")).unwrap(),
+        &bytes[..16]
+    );
+
+    let (send, putting) = send_part(2);
+    send.send(axum::body::Bytes::copy_from_slice(&bytes[16..18]))
+        .await
+        .unwrap();
+    drop(send);
+    let (status, text) = putting.await.unwrap();
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{text}");
+    assert_eq!(part_temps(&session), Vec::<u64>::new());
+    assert!(!session.join("part-0002").exists());
 }
 
 /// A multipart upload read at its own path answers its size, part size and
