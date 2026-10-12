@@ -262,6 +262,12 @@ const RANK_JOIN_SQL: &str = "
                   FROM messages_fts WHERE messages_fts MATCH ?)
                 SELECT rank_id, rank FROM ranked) r ON r.rank_id = m.id";
 
+/// [`messages_from_sql`] with [`RANK_JOIN_SQL`] after it: the `FROM` of a
+/// relevance-ordered message list, whose first `?` is the rank query.
+pub(crate) fn ranked_messages_from_sql() -> String {
+    format!("{}{RANK_JOIN_SQL}", messages_from_sql())
+}
+
 /// One page of the messages a search matches, in `order`.
 ///
 /// A `relevance` key ranks by `bm25()` over `filter`'s rank query, read once
@@ -409,7 +415,7 @@ pub(crate) fn message_list_page_sql(
                 "sort: relevance needs a free-text word in q to rank by; sort by date instead",
             ));
         };
-        from_sql.push_str(RANK_JOIN_SQL);
+        from_sql = ranked_messages_from_sql();
         params.push(SqlParam::Text(rank_query));
     }
     params.extend_from_slice(filter.params());
