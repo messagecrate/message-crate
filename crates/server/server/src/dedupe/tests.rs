@@ -1101,8 +1101,8 @@ async fn a_write_that_commits_while_the_pass_reads_does_not_fail_it() {
 // ---------------------------------------------------------------------------
 // Several conversations, handles, senders and attachments.
 //
-// Most tests above use the one 1:1 conversation `setup_db` makes and two or
-// three messages. The ones below build what a real database holds: 1:1 and group conversations, the same group
+// Most tests above use the single one-to-one conversation `setup_db` makes and two or
+// three messages. The ones below build what a real database holds: one-to-one and group conversations, the same group
 // under two chat identifiers (two exporters naming one group differently),
 // incoming group messages with a sender, and attachments.
 // ---------------------------------------------------------------------------
@@ -1531,7 +1531,7 @@ struct GenChat {
     senders: Vec<i64>,
 }
 
-/// Build a database from `seed`: two 1:1 chats, one group under two chat
+/// Build a database from `seed`: two one-to-one conversations, one group under two chat
 /// identifiers, one smaller group. Each logical message is written by one
 /// to three sources (a source may write it twice), and each copy is an exact
 /// twin, a near-time twin (inside the window or one second past it), or a

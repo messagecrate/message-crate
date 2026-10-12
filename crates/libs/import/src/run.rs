@@ -248,11 +248,11 @@ impl RunPaths {
 ///
 /// High-level flow:
 /// 1. Log in, open the journal, and list conversation files.
-/// 2. Start a few **prepare workers** ([`PrepareQueue`]). Each worker reads one
+/// 2. Start a few **prepare workers** (`PrepareQueue`). Each worker reads one
 ///    chat file, uploads its attachments, and builds message chunks.
 /// 3. The main thread **consumes prepare results in file order**, packs
 ///    message chunks into import batches, and sends those batches over HTTP
-///    ([`ImportPipeline`]). An import can start while prepare workers keep
+///    (`ImportPipeline`). An import can start while prepare workers keep
 ///    working on later chats.
 /// 4. Complete the Import Run this Upload started, then write the report.
 ///

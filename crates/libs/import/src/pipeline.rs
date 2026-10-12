@@ -4,7 +4,7 @@
 //! [`ImportPipeline`] owns every piece of state the import loop mutates: the
 //! batch being filled, the request in flight, the per-conversation trackers,
 //! the result rows, and the message accounting. The main loop in
-//! [`crate::run`] only decides *when* to queue and flush; the pipeline decides
+//! [`crate::run`](mod@crate::run) only decides *when* to queue and flush; the pipeline decides
 //! *what that means* for the journal, the report, and the log.
 
 use std::collections::BTreeSet;

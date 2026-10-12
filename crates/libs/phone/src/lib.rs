@@ -145,7 +145,7 @@ const MAX_PHONE_DIGITS: usize = 15;
 ///
 /// Two conditions are added. The value must be nothing but digits and phone
 /// punctuation, so prose is rejected before any digits are collected. And the
-/// digits that remain must number no more than [`MAX_PHONE_DIGITS`], so two
+/// digits that remain must number no more than `MAX_PHONE_DIGITS`, so two
 /// numbers run together are rejected rather than concatenated into a handle
 /// that matches nothing.
 ///

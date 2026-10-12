@@ -142,7 +142,7 @@ const PACED_STAGES: usize = 4;
 /// no bar to move passes [`ProgressSink::none`].
 ///
 /// The sink paces what it delivers: each stage's counts reach the callback
-/// at most once per [`PROGRESS_INTERVAL`], except a stage's first and last
+/// at most once per `PROGRESS_INTERVAL`, except a stage's first and last
 /// counts and every setup step, which always do. Stages are paced apart
 /// because the write queue reports conversations and attachments at the
 /// same time.

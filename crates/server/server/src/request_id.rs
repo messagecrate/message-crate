@@ -9,8 +9,8 @@
 //! The id also joins the request's tracing span, so every log line written
 //! under the request carries it. A span does not cross `tokio::spawn` or
 //! `spawn_blocking` on its own, so work a request starts in a task of its
-//! own goes through [`spawn_in_current_span`] and
-//! [`spawn_blocking_in_current_span`], which carry it (#2186).
+//! own goes through `spawn_in_current_span` and
+//! `spawn_blocking_in_current_span`, which carry it (#2186).
 //! Every spawn in the crate does, request or not, and `clippy.toml` refuses
 //! tokio's own calls. Outside a request there is no span, and the two do
 //! what tokio's calls do.

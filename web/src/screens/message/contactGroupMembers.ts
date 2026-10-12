@@ -6,7 +6,7 @@ import { useAccountProfile } from "../../lib/useAccountProfile";
 
 /**
  * The contacts "Make a Contact Group from these people" would add: everyone
- * in a group chat who has a contact, but the account owner. Empty when the
+ * in a group conversation who has a contact, but the account owner. Empty when the
  * conversation is not a group or fewer than two such people are in it, and
  * the conversation panel's menu then does not offer it.
  */

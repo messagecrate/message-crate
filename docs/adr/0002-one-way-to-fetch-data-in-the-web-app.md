@@ -12,13 +12,15 @@ Anyone who needs caching, request deduplication, or loading state on a new
 screen uses TanStack Query. Writing a new one for a single screen is the thing
 this decision exists to prevent.
 
-The rule is that a screen fetches the account data it shows one way. Two
+The rule is that a screen fetches the account data it shows one way. Four
 fetches are named exceptions, below, and they are the only ones. Any other fetch
 outside TanStack Query is a violation of this decision.
 
-## Two fetches that stay outside TanStack Query
+## Four fetches that stay outside TanStack Query
 
-Both were decided with the maintainer on 2 October 2026 (issue #1111).
+The first two were decided with the maintainer on 2 October 2026 (issue
+#1111). The last two were already in the code for the reasons given, and were
+named here on 11 October 2026 (issue #2271).
 
 **An attachment's bytes.** `web/src/hooks/useAssetObjectUrl.ts` downloads an
 attachment, its Preview or its Thumbnail, through `fetchAssetObjectUrl` in
@@ -42,6 +44,27 @@ on the login screen that address is the one the person is still typing, which
 is not yet the server `apiClient` talks to. It carries no session and returns no
 account data, so it has no place in `serverApi.ts`, whose functions all go
 through `apiClient`, and no account to name a cache entry after.
+
+**The Import Run's own server calls.** `getServerState`, `getActiveImportRun`,
+`createImport`, `setImportStage`, `completeImport` and `discardImportRun` are
+called from `web/src/screens/import/run/` through `endSessionIfRefused` in
+`serverCalls.ts`, straight over `serverApi.ts`. A run is not a screen's data:
+it runs on after the Import screen is left, and it stops where the server
+holds it when its session is refused. A `401 Unauthorized` that ended the
+session through the query client would end it with no word to the run, so the
+run handles the refusal itself, ends the session the same way the query
+client would (`endsSession` in `web/src/lib/routeQuery.ts`), and stops
+where the server last recorded it, for its account's next login to resume.
+The Import screen's own read of the running run, outside the run, goes
+through TanStack Query like any screen's.
+
+**The check of a saved login at start.** `checkSavedLogin` in
+`web/src/lib/savedLogin.ts` calls `getSession` once, from an effect in
+`web/src/lib/auth.tsx`, before anything that shows account data renders. It
+asks only whether the saved token still works: a `401 Unauthorized` forgets
+the login, and any other failure leaves it in place. Its answer is the
+account the cache entries are named with, so it has to be settled before
+there is an account to name an entry after.
 
 ## Why
 
