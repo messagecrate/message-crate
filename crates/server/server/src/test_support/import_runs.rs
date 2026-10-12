@@ -8,8 +8,8 @@ use super::{post_created_json, post_json, post_raw};
 use crate::server::AppState;
 
 /// Start an Import Run as `token`'s account, `POST /v1/imports` with
-/// `request` as the body, and answer the run's id with the body the
-/// `201 Created` carried.
+/// `request` as the body, and return the run's id and the body of the
+/// `201 Created`.
 pub async fn start_import_run(
     state: &AppState,
     token: &str,
@@ -40,9 +40,9 @@ pub async fn post_import_batch(state: &AppState, token: &str, run: i64, body: St
     );
 }
 
-/// Complete Import Run `run`, so its account may start another, and answer
-/// the run as the route returned it, which must say `completed`.
-pub async fn complete_import_run(state: &AppState, token: &str, run: i64) -> serde_json::Value {
+/// Complete Import Run `run`, so its account may start another. The run
+/// the route returns must say `completed`.
+pub async fn complete_import_run(state: &AppState, token: &str, run: i64) {
     let completed: serde_json::Value = post_json(
         state,
         &format!("/v1/imports/{run}/complete"),
@@ -51,5 +51,4 @@ pub async fn complete_import_run(state: &AppState, token: &str, run: i64) -> ser
     )
     .await;
     assert_eq!(completed["status"], "completed", "{completed}");
-    completed
 }

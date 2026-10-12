@@ -43,20 +43,7 @@ async fn a_batch_waiting_for_a_slot_when_the_server_stops_is_refused_and_stores_
     // Every slot is taken, so the batch cannot start until one is freed.
     // Whether it is already waiting on the slots or not yet there when they
     // close, it meets them closed: the outcome does not depend on timing.
-    let waiting = crate::request_id::spawn_in_current_span({
-        let state = state.clone();
-        let token = token.clone();
-        async move {
-            crate::test_support::post_raw(
-                &state,
-                &path,
-                &token,
-                "application/jsonl",
-                one_message_batch(),
-            )
-            .await
-        }
-    });
+    let waiting = spawn_batch(&state, path, &token, one_message_batch());
     state.on_stop_signal()();
     // The earlier batches end, which is what let the waiting one in.
     drop(every_slot);
@@ -75,11 +62,11 @@ async fn a_batch_waiting_for_a_slot_when_the_server_stops_is_refused_and_stores_
             .contains("send it again"),
         "{text}"
     );
-    let stored: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages")
-        .fetch_one(&state.db)
-        .await
-        .unwrap();
-    assert_eq!(stored, 0, "the refused batch stored a message");
+    assert_eq!(
+        stored_messages(&state).await,
+        0,
+        "the refused batch stored a message"
+    );
 }
 
 /// A batch waiting for an import slot has not read its body: the slot
@@ -113,6 +100,21 @@ fn hold_every_import_slot(state: &crate::server::AppState) -> Vec<OwnedSemaphore
                 .expect("a new server has every import slot free")
         })
         .collect()
+}
+
+/// Post `body` to the batches `path` as `token` in a task of its own, so the
+/// test can act while the batch waits, and answer the task.
+fn spawn_batch(
+    state: &crate::server::AppState,
+    path: String,
+    token: &str,
+    body: impl Into<reqwest::Body> + Send + 'static,
+) -> tokio::task::JoinHandle<(axum::http::StatusCode, String)> {
+    let state = state.clone();
+    let token = token.to_string();
+    crate::request_id::spawn_in_current_span(async move {
+        crate::test_support::post_raw(&state, &path, &token, "application/jsonl", body).await
+    })
 }
 
 /// The number of messages stored in `state`'s database.
@@ -161,31 +163,19 @@ async fn hand_a_slot_to_the_waiting_batch<T>(
     }
 }
 
-/// While two imports run, a third batch waits for one of them to end:
-/// it imports nothing until an import slot is freed, takes that slot, and
-/// then imports. Each import holds a pooled connection for its whole run,
-/// so a third running at once would leave login and search waiting for
-/// one (#2128). The test holds both slots in place of the two imports.
+/// While every import slot is held by a running import, another batch
+/// waits for one of them to end: it imports nothing until a slot is freed,
+/// takes that slot, and then imports. Each import holds a pooled
+/// connection for its whole run, so with the two slots a third import
+/// running at once would leave login and search waiting for a connection
+/// (#2128). The test holds every slot in place of the running imports.
 #[tokio::test]
-async fn a_third_batch_waits_while_two_imports_hold_the_slots() {
+async fn a_batch_waits_while_every_import_slot_is_held() {
     let (state, _fixture, token) = importer().await;
     let path = batches_path(&state, &token, "imessage").await;
     let mut held = hold_every_import_slot(&state);
 
-    let batch = crate::request_id::spawn_in_current_span({
-        let state = state.clone();
-        let token = token.clone();
-        async move {
-            crate::test_support::post_raw(
-                &state,
-                &path,
-                &token,
-                "application/jsonl",
-                one_message_batch(),
-            )
-            .await
-        }
-    });
+    let batch = spawn_batch(&state, path, &token, one_message_batch());
     hand_a_slot_to_the_waiting_batch(&state, &mut held, &batch).await;
 
     let (status, text) = batch.await.unwrap();
@@ -209,13 +199,7 @@ async fn a_batch_refused_after_taking_its_slot_gives_the_slot_back() {
     let path = batches_path(&state, &token, "imessage").await;
     let mut held = hold_every_import_slot(&state);
 
-    let batch = crate::request_id::spawn_in_current_span({
-        let state = state.clone();
-        let token = token.clone();
-        async move {
-            crate::test_support::post_raw(&state, &path, &token, "application/jsonl", "").await
-        }
-    });
+    let batch = spawn_batch(&state, path, &token, "");
     hand_a_slot_to_the_waiting_batch(&state, &mut held, &batch).await;
 
     let (status, text) = batch.await.unwrap();
@@ -295,20 +279,7 @@ async fn a_batch_still_arriving_when_the_server_stops_is_refused_and_stores_noth
         one_message_batch(),
     ))])
     .chain(futures_util::stream::pending());
-    let posting = crate::request_id::spawn_in_current_span({
-        let state = state.clone();
-        let token = token.clone();
-        async move {
-            crate::test_support::post_raw(
-                &state,
-                &path,
-                &token,
-                "application/jsonl",
-                reqwest::Body::wrap_stream(body),
-            )
-            .await
-        }
-    });
+    let posting = spawn_batch(&state, path, &token, reqwest::Body::wrap_stream(body));
 
     // The batch's directory exists once it holds a slot and reads its body.
     let root = crate::imports_api::batch_bodies::root(&state.cfg.paths.data_dir);
@@ -319,11 +290,11 @@ async fn a_batch_still_arriving_when_the_server_stops_is_refused_and_stores_noth
 
     let (status, text) = posting.await.unwrap();
     crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::ServerStopping);
-    let stored: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages")
-        .fetch_one(&state.db)
-        .await
-        .unwrap();
-    assert_eq!(stored, 0, "the refused batch stored a message");
+    assert_eq!(
+        stored_messages(&state).await,
+        0,
+        "the refused batch stored a message"
+    );
 }
 
 /// One iMessage conversation with one message.
