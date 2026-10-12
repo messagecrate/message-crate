@@ -1436,3 +1436,50 @@ fn a_cancel_while_ffmpeg_runs_ends_the_stage_as_canceled_not_as_a_failed_file() 
     assert_eq!(doc.messages[0].attachments[0].missing_reason, None);
     assert!(original.exists(), "the original is kept");
 }
+
+/// The reason recorded on an attachment ffmpeg could not convert carries why
+/// ffmpeg failed or was stopped, not only which file it was working on, so
+/// a stalled or looping video says so (#2898).
+#[cfg(unix)]
+#[test]
+fn a_failed_conversion_records_why_ffmpeg_failed() {
+    use std::os::unix::fs::PermissionsExt;
+    // The mocks fail only on this test's own file, so another test that
+    // runs them while this one has the tools located is not misled.
+    let tools = tempfile::tempdir().unwrap();
+    for name in ["ffmpeg", "ffprobe"] {
+        let program = tools.path().join(name);
+        std::fs::write(
+            &program,
+            "#!/bin/sh\n[ \"$1\" = -version ] && exit 0\n\
+             case \"$*\" in *fail-me.png*) ;; *) exit 1 ;; esac\n\
+             echo 'the encoder made no progress' >&2\nexit 1\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let _located =
+        media::testutil::locate_tools(std::ffi::OsString::new(), tools.path().to_path_buf());
+    let (dir, jsonl, _) = staged_one("fail-me.png", PNG_1X1_RGB);
+
+    let report = transcode_staged(
+        dir.path(),
+        &options(MediaMode::Convert, u64::MAX),
+        &CancelFlag::default(),
+        &IssueSink::none(),
+        &LogSink::none(),
+        &mut |_| {},
+    )
+    .unwrap();
+
+    assert_eq!(report.failed, 1);
+    let doc = read_conversation_jsonl(&jsonl).unwrap();
+    let reason = doc.messages[0].attachments[0]
+        .missing_reason
+        .clone()
+        .unwrap();
+    assert!(
+        reason.starts_with("convert_failed: ") && reason.contains("the encoder made no progress"),
+        "{reason}"
+    );
+}

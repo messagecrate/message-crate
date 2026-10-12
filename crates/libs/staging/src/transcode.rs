@@ -715,7 +715,7 @@ fn apply_transcode(
                 RunIssueKind::Skip,
                 &format!("could not be converted, so the original file is kept: {err:#}"),
             ));
-            let reason = format!("convert_failed: {err}");
+            let reason = format!("convert_failed: {err:#}");
             if is_heal {
                 // `recorded_rel` is the phantom `-mv` name a crashed prior
                 // run already wrote into the document; nothing will ever
