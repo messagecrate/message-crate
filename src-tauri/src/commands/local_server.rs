@@ -100,7 +100,7 @@ pub fn local_server_status(server: State<'_, LocalServer>) -> Status {
 #[tauri::command]
 pub fn open_data_directory(app: AppHandle) -> Result<(), String> {
     let dir = data_dir(&app)?;
-    std::fs::create_dir_all(&dir)
+    file_io::create_dir_all_owner_only(&dir)
         .map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
     open::that_detached(&dir).map_err(|e| format!("Could not open {}: {e}", dir.display()))
 }

@@ -80,6 +80,24 @@ fn rotation_never_keeps_more_than_the_limits_files() {
     assert_eq!(numbers, (newest - 4..=newest).collect::<Vec<_>>());
 }
 
+/// `serve` opens its log before the database, so on a new Message Crate
+/// the log is what makes the Data Directory: both are readable by the
+/// server's user alone, as the log names every account's routes and ids
+/// (#2097).
+#[cfg(unix)]
+#[test]
+fn a_new_log_and_the_data_directory_it_is_made_in_are_the_owner_s_alone() {
+    use crate::test_support::permission_bits as mode;
+
+    let tmp = TempDir::new().unwrap();
+    let data_dir = tmp.path().join("data");
+
+    LogFiles::open(&super::log_dir(&data_dir), SERVER_LOG_LIMITS).unwrap();
+
+    assert_eq!(mode(&data_dir), 0o700);
+    assert_eq!(mode(&super::log_dir(&data_dir)), 0o700);
+}
+
 /// A restarted server writes on the end of the newest file, and a log with
 /// more files than the limit is trimmed when it is opened.
 #[test]

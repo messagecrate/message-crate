@@ -303,9 +303,9 @@ fn claim_copy_name(first: &str) -> std::io::Result<(std::path::PathBuf, std::pat
         if copy.exists() {
             continue;
         }
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
+        // Owner-only, as the database it copies (#2097); `VACUUM INTO`
+        // writes into the file and keeps its mode.
+        match file_io::owner_only(std::fs::OpenOptions::new().write(true).create_new(true))
             .open(&partial)
         {
             Ok(_) => return Ok((copy, partial)),
