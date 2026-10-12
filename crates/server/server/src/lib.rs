@@ -28,6 +28,7 @@ pub(crate) mod identity_country;
 pub(crate) mod import_cli;
 pub(crate) mod import_media;
 pub(crate) mod imports_api;
+pub(crate) mod in_flight;
 pub(crate) mod jsonl;
 pub(crate) mod keyed_locks;
 pub mod logging;

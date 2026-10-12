@@ -11,6 +11,7 @@ build-version = { path = "../../libs/build-version" }
 anyhow = { workspace = true }
 argon2 = "0.6.0"
 axum = "0.8.9"
+http-body = "1"
 http-body-util = "0.1"
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
@@ -67,6 +68,8 @@ media = { path = "../../libs/media", features = ["testutil"] }
 message-ir = { workspace = true, features = ["testutil"] }
 # `stream`, so a test can send a body with no declared length.
 reqwest = { workspace = true, features = ["stream"] }
+# `util`, so a test can send a request straight to a router with `oneshot`.
+tower = { version = "0.5", features = ["util"] }
 # `test-util`, so a test can pause time and let a wait pass at once.
 tokio = { version = "1.53.0", features = ["test-util"] }
 # The desktop app's import library, so a test can run an Upload as the app

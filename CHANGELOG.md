@@ -1258,6 +1258,16 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-12: **A stopping server waits at most 30 seconds, and Docker
+  gives it 40.** A server told to stop waited as long as the longest
+  request still running, and an import could take minutes, so `docker stop`
+  killed it after Docker's 10 seconds with no line in the log saying why.
+  The server now waits up to 30 seconds for the work in progress, then
+  stops and names in its log each request it stopped without. An import
+  cut off this way stores nothing, and the Upload sends it again. Both
+  Compose files and every `docker run` command in the guide now give the
+  server 40 seconds to stop, and `docker stop -t 40` stops one started
+  before this release the same way (#2122).
 - 2026-10-12: **Other people who log in to the same computer can no longer
   read your messages.** The database, the directory with every account's
   attachments, and the server's log were readable by every user of the
@@ -1479,6 +1489,12 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-12: A Message Crate started with `docker run` before this release
+  keeps Docker's 10 seconds to stop, which can cut off an import. Stop it
+  with `docker stop -t 40 message-crate`, and start it again with the
+  `docker run` command in the user guide, which now carries
+  `--stop-timeout 40`. The Compose files set the 40 seconds themselves
+  (#2122).
 - 2026-10-12: The server now makes its data directory and its database
   file readable by its own user alone each time it opens the database. A
   backup job or another program that read either as a different user,
