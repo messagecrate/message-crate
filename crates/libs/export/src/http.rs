@@ -20,7 +20,7 @@ use sha2::{Digest, Sha256};
 
 use crate::part_file::write_asset;
 
-use message_crate_api_types::{ExportRun, ExportScope, ExportStatus, Message, Page};
+use message_crate_api_types::{CompleteExportStatus, ExportRun, ExportScope, Message, Page};
 
 pub use message_crate_http::HttpSession;
 
@@ -100,48 +100,19 @@ pub fn export_messages(http: &HttpSession, args: ExportMessagesArgs<'_>) -> Resu
     ok_json(&what, status, &body)
 }
 
-/// How an Export ends its run on the server: with the conversation files
-/// written, stopped by an error, or given up by the person.
+/// How an Export ends its run on the server: through `complete` with how
+/// it ended (its conversation files written, or stopped by an error), or
+/// through `cancel` when the person gave it up.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CloseAction {
-    Complete,
-    Fail,
+    Complete(CompleteExportStatus),
     Cancel,
-}
-
-impl CloseAction {
-    /// The last segment of the route that closes the run this way.
-    fn path_segment(self) -> &'static str {
-        match self {
-            Self::Complete | Self::Fail => "complete",
-            Self::Cancel => "cancel",
-        }
-    }
-
-    /// The outcome `complete` records, or `None` for `cancel`, whose route
-    /// names its outcome and takes no body.
-    fn status(self) -> Option<ExportStatus> {
-        match self {
-            Self::Complete => Some(ExportStatus::Completed),
-            Self::Fail => Some(ExportStatus::Failed),
-            Self::Cancel => None,
-        }
-    }
-
-    /// The request's name in an error, after "Export Run 7".
-    fn noun(self) -> &'static str {
-        match self {
-            Self::Complete => "completion",
-            Self::Fail => "failure record",
-            Self::Cancel => "cancellation",
-        }
-    }
 }
 
 /// The body of `POST /v1/exports/{id}/complete`: how the run ended.
 #[derive(Debug, serde::Serialize)]
 struct CompleteExportBody {
-    status: ExportStatus,
+    status: CompleteExportStatus,
 }
 
 /// `POST /v1/exports/{id}/complete` with the run's outcome, or
@@ -158,15 +129,28 @@ pub fn close_export(
     export_id: i64,
     action: CloseAction,
 ) -> Result<ExportRun> {
-    let what = format!("Export Run {export_id} {}", action.noun());
-    let path = format!("/v1/exports/{export_id}/{}", action.path_segment());
+    // The noun names the request in an error: "Export Run 7 completion
+    // failed".
+    let (noun, segment, body) = match action {
+        CloseAction::Complete(status) => (
+            match status {
+                CompleteExportStatus::Completed => "completion",
+                CompleteExportStatus::Failed => "close",
+            },
+            "complete",
+            Some(serde_json::to_vec(&CompleteExportBody { status })?),
+        ),
+        CloseAction::Cancel => ("cancellation", "cancel", None),
+    };
+    let what = format!("Export Run {export_id} {noun}");
+    let path = format!("/v1/exports/{export_id}/{segment}");
     let mut request = http
         .server_request(Method::POST, base_url, &path, token)
         .timeout(JSON_CALL_TIMEOUT);
-    if let Some(status) = action.status() {
+    if let Some(body) = body {
         request = request
             .header("Content-Type", "application/json")
-            .body(serde_json::to_vec(&CompleteExportBody { status })?);
+            .body(body);
     }
     let response = request.send().with_context(|| format!("{what} failed"))?;
     let status = response.status();
@@ -454,10 +438,17 @@ mod tests {
         });
         let http = HttpSession::new().unwrap();
 
-        let run = close_export(&http, &server.base_url(), "mc_test", 7, CloseAction::Fail).unwrap();
+        let run = close_export(
+            &http,
+            &server.base_url(),
+            "mc_test",
+            7,
+            CloseAction::Complete(CompleteExportStatus::Failed),
+        )
+        .unwrap();
 
         failed.assert();
-        assert_eq!(run.status, ExportStatus::Failed);
+        assert_eq!(run.status, message_crate_api_types::ExportStatus::Failed);
     }
 
     #[test]

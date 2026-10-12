@@ -2083,8 +2083,16 @@ export interface components {
              * @description `completed` when the client wrote what it read, or `failed` when an
              *     error stopped it. A run the person gave up is closed with `cancel`.
              */
-            status: components["schemas"]["ExportStatus"];
+            status: components["schemas"]["CompleteExportStatus"];
         };
+        /**
+         * @description How a client says its reading of an Export Run ended, in the body of
+         *     `POST /v1/exports/{id}/complete`: the two statuses that route records. A
+         *     run the person gave up is closed with `cancel`, and only the server sets
+         *     `running`, so neither is a value here.
+         * @enum {string}
+         */
+        CompleteExportStatus: "completed" | "failed";
         /**
          * @description Final stats and issues for a running Import Run. The outcome is stated
          *     once, as `status`. The run's message and attachment counts are not part

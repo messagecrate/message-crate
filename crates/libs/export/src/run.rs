@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use message_crate_core::{CancelFlag, Cancelled, check_cancel, count_of, parallel_for_each};
-use message_crate_http::{auth_check as authenticate, with_retries};
+use message_crate_http::{auth_check as authenticate, is_session_refused, with_retries};
 use message_ir_format::mark_export_directory;
 use serde::Serialize;
 
@@ -20,7 +20,9 @@ use crate::project::{
     ExportPath, build_document, common_backup_taken_at, conversation_key, export_path,
     to_ir_message,
 };
-use message_crate_api_types::{ExportQueryList, ExportRun, ExportScope, Message};
+use message_crate_api_types::{
+    CompleteExportStatus, ExportQueryList, ExportRun, ExportScope, Message,
+};
 
 /// Page size for `GET /v1/exports/{id}/messages`; the server's maximum.
 pub const DEFAULT_PAGE_LIMIT: usize = 500;
@@ -226,8 +228,12 @@ pub fn run(
         // refused failure record or cancellation follows the error the run
         // returns below.
         let line = match action {
-            CloseAction::Complete => format!("{error:#}. The Export wrote its files all the same"),
-            CloseAction::Fail | CloseAction::Cancel => format!("{error:#}"),
+            CloseAction::Complete(CompleteExportStatus::Completed) => {
+                format!("{error:#}. The Export wrote its files all the same")
+            }
+            CloseAction::Complete(CompleteExportStatus::Failed) | CloseAction::Cancel => {
+                format!("{error:#}")
+            }
         };
         emit(&mut on_progress, ProgressEvent::Log(line));
     }
@@ -274,13 +280,14 @@ pub fn run(
 /// and failed for every other error.
 fn close_action<T>(outcome: &Result<T>) -> CloseAction {
     match outcome {
-        Ok(_) => CloseAction::Complete,
+        Ok(_) => CloseAction::Complete(CompleteExportStatus::Completed),
         Err(error) if error.is::<Cancelled>() => CloseAction::Cancel,
-        Err(_) => CloseAction::Fail,
+        Err(_) => CloseAction::Complete(CompleteExportStatus::Failed),
     }
 }
 
-/// The progress line that ends a run with `count` Assets it could not fetch.
+/// The progress line that ends a run with `count` attachments whose Asset
+/// it could not fetch.
 fn missing_assets_line(count: usize) -> String {
     let files = if count == 1 {
         "its file is"
@@ -290,7 +297,7 @@ fn missing_assets_line(count: usize) -> String {
     format!(
         "{} could not be fetched, so {files} missing from the Export. \
          The lines above name each one",
-        count_of(count as u64, "Asset", "Assets")
+        count_of(count as u64, "attachment", "attachments")
     )
 }
 
@@ -473,12 +480,7 @@ impl<'a> Export<'a> {
         let assets = if self.cfg.skip_attachments {
             AssetCounts::default()
         } else {
-            let counts = self.fetch_assets(&fetched.assets, out)?;
-            // An Asset that could not be fetched has no file to place at its
-            // other paths, and the journal must not list it as on disk.
-            for failure in &counts.failed {
-                fetched.assets.remove(&failure.sha256);
-            }
+            let counts = self.fetch_assets(&mut fetched.assets, out)?;
             place_other_paths(&self.cfg.out_dir, &fetched.assets, &fetched.other_paths)?;
             counts
         };
@@ -579,14 +581,16 @@ impl<'a> Export<'a> {
     /// "Fetching" line counts as already on disk the same Assets the
     /// "Fetched" line counts as kept. An Asset whose fetch fails after
     /// retries gets one line in the progress log, is counted as failed, and
-    /// is not journaled.
+    /// is removed from `assets`, so nothing after this places, journals or
+    /// records it as on disk.
     ///
     /// # Errors
     ///
-    /// Returns an error when the run is cancelled.
+    /// Returns an error when the run is cancelled or the server refuses the
+    /// session.
     fn fetch_assets(
         &self,
-        assets: &HashMap<String, String>,
+        assets: &mut HashMap<String, String>,
         out: &mut Option<&mut ProgressFn<'_>>,
     ) -> Result<AssetCounts> {
         let cfg = self.cfg;
@@ -613,16 +617,7 @@ impl<'a> Export<'a> {
                 workers: cfg.asset_fetch_workers,
                 cancel: &cfg.cancel,
             })?;
-            let failed: Vec<AssetFailure> = stats
-                .failed
-                .into_iter()
-                .map(|(sha256, reason)| AssetFailure {
-                    path: to_fetch[&sha256].clone(),
-                    sha256,
-                    reason,
-                })
-                .collect();
-            for failure in &failed {
+            for failure in &stats.failed {
                 emit(
                     out,
                     ProgressEvent::Log(format!(
@@ -640,11 +635,15 @@ impl<'a> Export<'a> {
                     kept
                 )),
             );
-            (stats.fetched, failed)
+            (stats.fetched, stats.failed)
         };
-        let failed_shas: BTreeSet<&str> = failed.iter().map(|f| f.sha256.as_str()).collect();
+        // An Asset that could not be fetched has no file: it has none to
+        // place at its other paths, and the journal must not list it.
+        for failure in &failed {
+            assets.remove(&failure.sha256);
+        }
         for sha in assets.keys() {
-            if !self.journal.assets.contains(sha) && !failed_shas.contains(sha.as_str()) {
+            if !self.journal.assets.contains(sha) {
                 let event = ExportJournalEvent::AssetOk {
                     target: self.target.clone(),
                     sha256: sha.clone(),
@@ -739,6 +738,8 @@ impl<'a> Export<'a> {
         }
         let mut recorded_assets = self.journal.assets.clone();
         recorded_assets.extend(seen_assets.into_keys());
+        // `seen_assets` already leaves out what this run could not fetch;
+        // a line an earlier run wrote for one of them goes too.
         for failure in &assets.failed {
             recorded_assets.remove(&failure.sha256);
         }
@@ -870,6 +871,8 @@ fn refused_path_line(path: &str, rel: Option<&str>) -> String {
 
 struct AssetFetchJob {
     sha256: String,
+    /// The path under the output directory, as the report names it.
+    rel: String,
     dest: PathBuf,
 }
 
@@ -878,9 +881,8 @@ struct AssetFetchStats {
     /// The bytes this run fetched.
     bytes: u64,
     fetched: u64,
-    /// Each Asset whose fetch failed after retries, as (SHA-256, the error),
-    /// sorted by SHA-256.
-    failed: Vec<(String, String)>,
+    /// Each Asset whose fetch failed after retries, sorted by SHA-256.
+    failed: Vec<AssetFailure>,
 }
 
 /// The Assets in `assets` (SHA-256 to path under `out_dir`) whose file is not
@@ -919,7 +921,10 @@ struct FetchAssetsParallelArgs<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`] when the run is cancelled.
+/// Returns [`Cancelled`] when the run is cancelled, and the server's refusal
+/// when it refuses the session (`401 Unauthorized`): every other fetch with
+/// that token is refused too, so the run stops and says to log in again
+/// rather than listing each Asset as missing.
 fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetchStats> {
     let FetchAssetsParallelArgs {
         session,
@@ -934,6 +939,7 @@ fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetch
         .iter()
         .map(|(sha256, rel)| AssetFetchJob {
             sha256: sha256.clone(),
+            rel: rel.clone(),
             dest: out_dir.join(rel),
         })
         .collect();
@@ -951,13 +957,17 @@ fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetch
                 stats.bytes = stats.bytes.saturating_add(bytes);
                 stats.fetched += 1;
             }
-            Err(error) if error.is::<Cancelled>() => return Err(error),
-            Err(error) => stats
-                .failed
-                .push((job.sha256.clone(), format!("{error:#}"))),
+            Err(error) if error.is::<Cancelled>() || is_session_refused(&error) => {
+                return Err(error);
+            }
+            Err(error) => stats.failed.push(AssetFailure {
+                sha256: job.sha256.clone(),
+                path: job.rel.clone(),
+                reason: format!("{error:#}"),
+            }),
         }
     }
-    stats.failed.sort();
+    stats.failed.sort_by(|a, b| a.sha256.cmp(&b.sha256));
     Ok(stats)
 }
 

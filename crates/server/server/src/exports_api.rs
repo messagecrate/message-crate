@@ -9,7 +9,9 @@
 
 use crate::extract::{Json, Path as AxumPath, Query};
 use axum::extract::State;
-use message_crate_api_types::{ExportQueryList, ExportRun, ExportScope, ExportStatus};
+use message_crate_api_types::{
+    CompleteExportStatus, ExportQueryList, ExportRun, ExportScope, ExportStatus,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
@@ -249,7 +251,7 @@ pub(crate) struct CreateExportRequest {
 pub(crate) struct CompleteExportRequest {
     /// `completed` when the client wrote what it read, or `failed` when an
     /// error stopped it. A run the person gave up is closed with `cancel`.
-    pub(crate) status: ExportStatus,
+    pub(crate) status: CompleteExportStatus,
 }
 
 /// Query string of `GET /v1/exports`.
@@ -542,16 +544,7 @@ pub(crate) async fn complete_export(
     AxumPath(export_id): AxumPath<i64>,
     Json(body): Json<CompleteExportRequest>,
 ) -> Result<Json<ExportRun>, ApiError> {
-    let status = match body.status {
-        ExportStatus::Completed | ExportStatus::Failed => body.status,
-        other => {
-            return Err(ApiError::validation(format!(
-                "invalid export status '{other}'; expected 'completed' or 'failed' \
-                 (cancel closes a run the person gave up)"
-            )));
-        }
-    };
-    close_export(&state, auth.account_id, export_id, status).await
+    close_export(&state, auth.account_id, export_id, body.status.into()).await
 }
 
 /// Record that the client gave the run up.

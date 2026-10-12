@@ -13899,10 +13899,18 @@
         ],
         "properties": {
           "status": {
-            "$ref": "#/components/schemas/ExportStatus",
+            "$ref": "#/components/schemas/CompleteExportStatus",
             "description": "`completed` when the client wrote what it read, or `failed` when an\nerror stopped it. A run the person gave up is closed with `cancel`."
           }
         }
+      },
+      "CompleteExportStatus": {
+        "type": "string",
+        "description": "How a client says its reading of an Export Run ended, in the body of\n`POST /v1/exports/{id}/complete`: the two statuses that route records. A\nrun the person gave up is closed with `cancel`, and only the server sets\n`running`, so neither is a value here.",
+        "enum": [
+          "completed",
+          "failed"
+        ]
       },
       "CompleteImportRequest": {
         "type": "object",

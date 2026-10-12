@@ -1037,7 +1037,7 @@ fn an_asset_the_server_does_not_have_is_named_in_the_report_and_every_conversati
     assert_eq!(doc.messages.len(), 3, "every message is written");
     for line in [
         format!("{reason}, so attachments/menu.pdf is not written"),
-        "1 Asset could not be fetched, so its file is missing from the Export. \
+        "1 attachment could not be fetched, so its file is missing from the Export. \
          The lines above name each one"
             .to_string(),
     ] {
@@ -1149,6 +1149,38 @@ fn a_page_that_cannot_be_fetched_closes_the_run_as_failed() {
     assert_eq!(cancel.calls(), 0);
     assert!(!out.join(CONVERSATION_FILE).exists());
     assert!(!load_journal(&out, &server).export_complete);
+}
+
+/// A session the server refuses while the Assets are fetched (it expired, or
+/// was ended from another window) refuses every other fetch too. The run
+/// ends with the sentence that says to log in again, closed as failed,
+/// rather than finishing with every Asset listed as missing.
+#[test]
+fn a_session_refused_while_fetching_assets_fails_the_run() {
+    let server = MockServer::start();
+    let _auth = mock_auth(&server);
+    let (create, complete) = mock_run(&server);
+    let fail = mock_fail(&server);
+    let cancel = mock_cancel(&server);
+    let _pages = mock_pages(&server, "sms-backup-restore");
+    let _assets = server.mock(|when, then| {
+        when.method(GET).path_prefix("/v1/assets/");
+        then.status(401).body("unauthorized");
+    });
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("exported");
+
+    let message = format!(
+        "{:#}",
+        run(&config(&out, server.base_url()), None).unwrap_err()
+    );
+
+    assert!(message.contains("Log in again"), "{message}");
+    create.assert();
+    fail.assert();
+    assert_eq!(complete.calls(), 0);
+    assert_eq!(cancel.calls(), 0);
+    assert!(!out.join(CONVERSATION_FILE).exists());
 }
 
 /// A cancel that arrives while the pages are read closes the run as
