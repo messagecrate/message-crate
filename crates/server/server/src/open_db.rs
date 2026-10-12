@@ -82,6 +82,28 @@ impl OpenDb {
         }
     }
 
+    /// [`OpenDb::open`] for a command that writes files under the Data
+    /// Directory, such as `import` and `process-assets`: a missing Data
+    /// Directory is made readable by the server's user alone
+    /// ([`crate::owner_only`]) before anything is written into it, as when a
+    /// database outside it is opened on a new computer.
+    ///
+    /// # Errors
+    ///
+    /// Returns what [`OpenDb::open`] does, and an error naming the Data
+    /// Directory when it cannot be made.
+    pub async fn open_to_write_data_dir(cfg: Config) -> Result<Self> {
+        let opened = Self::open(cfg).await?;
+        // `open_pool` tightened one that is there.
+        file_io::create_dir_all_owner_only(&opened.cfg.paths.data_dir).with_context(|| {
+            format!(
+                "create data directory {}",
+                opened.cfg.paths.data_dir.display()
+            )
+        })?;
+        Ok(opened)
+    }
+
     /// Open the database `cfg` names, making it when no file is there or the
     /// file is empty. A new database's directory is made too, which is how a new
     /// Message Crate begins. `serve` and `create-database` open it this way,
@@ -102,7 +124,10 @@ impl OpenDb {
             file_io::create_dir_all_owner_only(parent)
                 .with_context(|| format!("create {}", parent.display()))?;
         }
-        crate::owner_only::make_data_dir_owner_only(&cfg.paths.data_dir)?;
+        // Made here and tightened in `open_pool`, so a Data Directory another
+        // user owns is warned of once.
+        file_io::create_dir_all_owner_only(&cfg.paths.data_dir)
+            .with_context(|| format!("create data directory {}", cfg.paths.data_dir.display()))?;
         Self::open_pool(cfg).await
     }
 
@@ -322,9 +347,8 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn opening_a_database_others_could_read_makes_it_the_owner_s_alone() {
-        use std::os::unix::fs::PermissionsExt as _;
-
         use crate::test_support::permission_bits as mode;
+        use std::os::unix::fs::PermissionsExt as _;
 
         let open_to_all = |path: &Path, mode| {
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
@@ -343,6 +367,36 @@ mod tests {
 
         assert_eq!(mode(&cfg.paths.data_dir), 0o700);
         assert_eq!(mode(&cfg.paths.db), 0o600);
+    }
+
+    /// `import --db` on a database outside a Data Directory that is not
+    /// there yet writes attachments into it, so it is made owner-only first.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_command_that_writes_files_makes_a_missing_data_directory_the_owner_s_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = fresh_config(dir.path());
+        OpenDb::create_or_open(cfg.clone())
+            .await
+            .unwrap()
+            .close()
+            .await;
+        std::fs::remove_dir(&cfg.paths.data_dir).unwrap();
+
+        OpenDb::open(cfg.clone()).await.unwrap().close().await;
+        assert!(
+            !cfg.paths.data_dir.exists(),
+            "a read-only command makes none"
+        );
+        OpenDb::open_to_write_data_dir(cfg.clone())
+            .await
+            .unwrap()
+            .close()
+            .await;
+        assert_eq!(
+            crate::test_support::permission_bits(&cfg.paths.data_dir),
+            0o700
+        );
     }
 
     #[tokio::test]

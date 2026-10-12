@@ -1250,9 +1250,9 @@ carry their date on the heading.
   messages without a password. Now only the user Message Crate runs as can
   read them, whether the server runs on its own, in Docker or in the desktop
   app, and the desktop app keeps its import logs the same way. An existing
-  Message Crate is closed off the next time it starts. Windows has no such
-  permissions, so there the files keep the access of the directory they are
-  in, which for the desktop app is your own user directory (#2097).
+  Message Crate is closed off the next time it starts. On Windows, the files
+  take the access of the directory they are in, which for the desktop app
+  is your own user directory (#2097).
 - 2026-10-12: **A database rebuilt for a new layout keeps a copy of what it
   held.** When a server finds a database from a release with another
   database layout, it still rebuilds it empty, but it first writes a copy of

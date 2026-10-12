@@ -106,7 +106,7 @@ impl RunLog {
         let log = Self { file };
         if let Some(error) = not_tightened {
             log.warn(&format!(
-                "{} may be readable by other users of this computer, and it could not be made readable by this user alone: {error}",
+                "Could not make {} readable by this user alone: {error}",
                 logs_dir.display()
             ));
         }
