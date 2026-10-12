@@ -38,6 +38,16 @@ pub const APP_HEADER: &str = "x-message-crate-app";
 /// Request header carrying that app's Build, such as `0.9.0+343fe0d8`.
 pub const APP_VERSION_HEADER: &str = "x-message-crate-version";
 
+/// The largest import batch body: what the Upload packs into one request,
+/// and what the server reads from one before it answers
+/// `413 Payload Too Large`. One figure for both, so the server never accepts
+/// more than its own client sends.
+///
+/// Kept under Cloudflare's ~100 MiB upload cap so a large group conversation
+/// is split into several requests instead of one giant one that gets
+/// rejected.
+pub const MAX_IMPORT_BATCH_BYTES: usize = 64 * 1024 * 1024;
+
 /// Which app a session's requests come from. The server records it beside the
 /// app's Build and shows both to the owner; it never refuses a request
 /// on account of either.

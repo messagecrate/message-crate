@@ -17,6 +17,7 @@ pub use message_crate_api_types::ImportMode;
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 use tempfile::TempDir;
+use tokio::sync::OwnedSemaphorePermit;
 
 use crate::extract::{Json, Path as AxumPath, Query};
 use axum::extract::{Request, State};
@@ -32,8 +33,9 @@ use crate::db::maintenance;
 use crate::db::schema;
 use crate::progress::Progress;
 use media::MediaMode;
-use message_crate_api_types::RunIssueKind;
+use message_crate_api_types::{MAX_IMPORT_BATCH_BYTES, RunIssueKind};
 
+pub(crate) mod batch_bodies;
 pub mod contact_name;
 pub mod failure;
 pub mod promote;
@@ -51,8 +53,9 @@ use crate::paging::{
     DEFAULT_LIST_LIMIT, Page, PageQuery, page_from_rows, page_params, parse_status, sorted_page,
 };
 use crate::server::{
-    ApiError, AppState, Created, ImportAccess, content_type_base, is_jsonl_content_type,
-    resolve_import_account, run_blocking, stream_body_to_file,
+    ApiError, AppState, Created, ImportAccess, batch_body_bounded, content_type_base,
+    declared_over, is_jsonl_content_type, resolve_import_account, run_blocking,
+    stream_body_to_file,
 };
 use crate::text_caps::{
     MAX_DEVICE_ID_CHARS, MAX_IMPORT_ERROR_TEXT_CHARS, MAX_IMPORT_NOTE_TEXT_CHARS,
@@ -1859,24 +1862,37 @@ pub(crate) async fn create_import_batch(
     };
 
     if is_jsonl_content_type(ct) {
-        let temp = tempfile::tempdir()
-            .map_err(|e| ApiError::Internal(anyhow::anyhow!("temp dir: {e}")))?;
+        // A body that says it is over the cap is refused before it waits
+        // for a slot; one that does not say is cut off as it is read.
+        if declared_over(&headers, MAX_IMPORT_BATCH_BYTES) {
+            return Err(ApiError::PayloadTooLarge);
+        }
+        // The slot comes before the body, so a batch waiting behind the
+        // running imports holds no disk (#2095). The read gives up once the
+        // body stops arriving or takes too long, so a client gone part-way,
+        // or one that sends a byte now and then, never holds the slot for
+        // good.
+        let permit = take_import_slot(&state).await?;
+        let temp = batch_bodies::new_dir(&state.cfg.paths.data_dir)
+            .map_err(|e| ApiError::Internal(anyhow::anyhow!("import batch directory: {e}")))?;
         let jsonl_path = temp.path().join("_import.jsonl");
-        let n = stream_body_to_file(
-            request.into_body(),
-            &jsonl_path,
-            crate::server::MAX_REQUEST_BODY_BYTES,
-        )
-        .await?;
+        let body = batch_body_bounded(request.into_body());
+        let n = stream_body_to_file(body, &jsonl_path, MAX_IMPORT_BATCH_BYTES).await?;
         if n == 0 {
             return Err(ImportFailure::Empty.into());
+        }
+        // A server told to stop while the body arrived refuses the batch
+        // before its import starts, as it refuses one waiting for a slot,
+        // so the stop never waits for a whole import more.
+        if state.import_slots.is_closed() {
+            return Err(server_stopping());
         }
         // The import pipeline does blocking file IO (JSONL parse, asset
         // hashing and copies) — run it off the async workers so a large
         // import cannot stall unrelated requests.
         let handle = tokio::runtime::Handle::current();
         let response = run_blocking("import", move || {
-            handle.block_on(run_import_path(state, context, jsonl_path))
+            handle.block_on(run_import_path(state, permit, context, jsonl_path))
         })
         .await;
         drop(temp);
@@ -1902,25 +1918,43 @@ pub(crate) fn import_slots() -> Arc<tokio::sync::Semaphore> {
     Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_IMPORTS))
 }
 
+/// Take one of the server's import slots, waiting while every one is held.
+///
+/// An import holds one pooled connection for its whole run (JSONL parse,
+/// asset IO, promote), so the slots bound concurrent imports and they can
+/// never drain the pool. A batch takes its slot before it reads its body,
+/// so the batches waiting behind the running ones hold nothing on disk, and
+/// before the per-account lock, so lock order (slot → account → pool) is
+/// consistent everywhere. The slots close when the server is told to stop
+/// (`AppState::on_stop_signal`), so a batch still waiting here is refused
+/// and the Upload retries it, rather than making the stop wait for it.
+///
+/// # Errors
+///
+/// Returns [`ApiError::ServerStopping`] when the slots closed.
+async fn take_import_slot(state: &AppState) -> Result<OwnedSemaphorePermit, ApiError> {
+    Arc::clone(&state.import_slots)
+        .acquire_owned()
+        .await
+        .map_err(|_| server_stopping())
+}
+
+/// The refusal of a batch the server did not start because it is stopping.
+fn server_stopping() -> ApiError {
+    ApiError::ServerStopping(
+        "the server is stopping, so it did not start this batch; send it again once the server is running".into(),
+    )
+}
+
 /// `create_import_batch` is the only entry point, and the run's `source`,
-/// validated when the run was created, names an on-disk directory.
+/// validated when the run was created, names an on-disk directory. The
+/// batch holds `_import_permit`, its import slot, until the import ends.
 async fn run_import_path(
     state: AppState,
+    _import_permit: OwnedSemaphorePermit,
     context: BatchContext,
     jsonl_path: PathBuf,
 ) -> Result<Json<CreateImportBatchResponse>, ApiError> {
-    // An import holds one pooled connection for its whole run (JSONL parse,
-    // asset IO, promote). Bound concurrent imports here so they can never
-    // drain the pool; the slot is taken before the per-account lock so
-    // lock order (slot → account → pool) is consistent everywhere. The
-    // slots close when the server is told to stop
-    // (`AppState::on_stop_signal`), so a batch still waiting here is refused
-    // and the Upload retries it, rather than making the stop wait for it.
-    let _import_permit = state.import_slots.acquire().await.map_err(|_| {
-        ApiError::ServerStopping(
-            "the server is stopping, so it did not start this batch; send it again once the server is running".into(),
-        )
-    })?;
     let cfg = Arc::clone(&state.cfg);
     let BatchContext {
         account,
@@ -1932,8 +1966,8 @@ async fn run_import_path(
 
     let _guard = state.account_import_locks.lock(account.to_string()).await;
 
-    // One pooled connection held for the whole import; the import slot
-    // taken above keeps enough of the pool free for other requests.
+    // One pooled connection held for the whole import; the batch's import
+    // slot keeps enough of the pool free for other requests.
     let mut conn = state.db.acquire().await?;
 
     // A `replace` run wipes the source once, on its first batch; every batch
