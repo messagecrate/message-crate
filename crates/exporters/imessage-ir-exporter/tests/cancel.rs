@@ -9,7 +9,7 @@
 
 mod common;
 
-use message_crate_core::{ExporterConfig, IssueSink, LogSink, ProgressSink};
+use message_crate_core::{LogSink, ProgressSink};
 use std::{
     path::Path,
     process::Command,
@@ -77,18 +77,15 @@ fn a_cancelled_run_stops_and_kills_the_reader() {
     };
     let on_log = cancel_on_first_event.clone();
     let on_progress = cancel_on_first_event;
-    let config = ExporterConfig {
-        log: LogSink::new(move |_| on_log()),
-        progress: ProgressSink::unpaced(move |_| on_progress()),
-        issues: IssueSink::none(),
-        ..config(&db_path, &output, Arc::clone(&cancel))
-    };
+    let mut config = config(&db_path, &output, Arc::clone(&cancel));
+    config.context.log = LogSink::new(move |_| on_log());
+    config.context.progress = ProgressSink::unpaced(move |_| on_progress());
 
     // The run goes on its own thread so a run that never returns fails the
     // test instead of hanging it.
     let (done, result) = mpsc::channel();
     std::thread::spawn(move || {
-        let _ = done.send(imessage_ir_exporter::run(&config).map(|_| ()));
+        let _ = done.send(config.run(imessage_ir_exporter::run).map(|_| ()));
     });
     let result = result
         .recv_timeout(RUN_TIMEOUT)

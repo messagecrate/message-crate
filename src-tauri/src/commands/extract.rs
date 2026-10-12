@@ -14,26 +14,19 @@
 //!
 //! `cancel` sets the cancel flag of the job that is running (see
 //! `commands::jobs`). The exporter checks it between steps through
-//! `ExporterConfig.cancel`.
+//! `RunContext.cancel`.
+//!
+//! Which exporter a backup runs, and how its form is filled, is looked up in
+//! [`exporters`].
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use media::{CompressOptions, MaxResolution};
 use message_crate_core::{
-    ApplePlatform, AttachmentMedia, Exporter, ExporterConfig, Form, FormContext, OutputFormat,
-    RunResult, SourceConfig, WhatsappPlatform,
+    AttachmentMedia, ExporterConfig, Form, FormContext, OutputFormat, RunResult,
 };
 use message_staging::TranscodeOptions;
-
-// Short names so the match in `run_exporter` stays easy to read.
-use go_sms_pro_exporter::run as run_go_sms_pro;
-use imazing_exporter::run as run_imazing;
-use imessage_ir_exporter::run as run_imessage;
-use openextract_exporter::run as run_openextract;
-use sms_backup_plus_exporter::run as run_sms_plus;
-use sms_backup_restore_exporter::run as run_sms_restore;
-use whatsapp_exporter::run as run_whatsapp;
 
 use super::events;
 use super::jobs::{cancel_running_job, spawn_job, start_job};
@@ -42,7 +35,9 @@ use super::paths::{logs_dir, scratch_dir};
 use crate::app_directories::RunLog;
 use crate::run_directories::RunDirectories;
 use crate::state::{AppState, JobName};
-use crate::tool_downloads::{Program, ToolDownloads};
+use crate::tool_downloads::ToolDownloads;
+
+mod exporters;
 
 /// Ask this process to stop the job that is running. Does nothing when no
 /// job runs.
@@ -200,13 +195,13 @@ pub fn extract(
         &output_dir.display().to_string(),
         &options,
     )?;
-    config.resume = args.resume.unwrap_or(false);
+    config.output.resume = args.resume.unwrap_or(false);
 
     let job = start_job(&state, JobName::Staging)?;
 
     let app_handle = app.clone();
     let cancel = job.cancel_flag();
-    config.cancel = cancel.clone();
+    config.context.cancel = cancel.clone();
     let downloads = downloads.inner().clone();
     // Two channels, two jobs: log lines are for the person reading the log
     // panel, progress events are for the bar. Nothing reads counts out of
@@ -214,9 +209,9 @@ pub fn extract(
     // The same lines go into the run's log in the Logs Directory, which
     // outlives the run's directory.
     let run_log = RunLog::open(&logs_dir(&app)?, &output_dir);
-    config.log = events::run_log_sink(&app_handle, &run_log);
-    config.progress = events::progress_sink(&app_handle);
-    config.issues = events::run_issue_sink(&app_handle, &run_log);
+    config.context.log = events::run_log_sink(&app_handle, &run_log);
+    config.context.progress = events::progress_sink(&app_handle);
+    config.context.issues = events::run_issue_sink(&app_handle, &run_log);
 
     spawn_job(app, job, move || {
         // A program still downloading is waited for, and the wait is the
@@ -224,7 +219,7 @@ pub fn extract(
         super::tools::wait_for_downloads(
             &app_handle,
             &downloads,
-            programs_run_by(&config.source),
+            exporters::exporter(&config.source).programs,
             &cancel,
             events::Step::Setup,
         )
@@ -385,7 +380,7 @@ fn run_staging(
     output_dir: &Path,
     media_settings: &TranscodeOptions,
 ) -> anyhow::Result<RunResult> {
-    let run_result = run_exporter(config)?;
+    let run_result = exporters::run(config)?;
     message_staging::write_media_settings(output_dir, media_settings)?;
     Ok(run_result)
 }
@@ -393,10 +388,12 @@ fn run_staging(
 /// Build the exporter config the background thread will run, with its
 /// scratch data under `scratch_dir`, the Scratch Directory.
 ///
-/// Every source maps its UI key to an [`Exporter`] variant, fills the shared
-/// [`Form`], and goes through `Form::to_config` — so the Form builders in
-/// message-crate-core are the single source of truth for field mapping and validation.
-/// Every path writes JSON Lines (one JSON object per line).
+/// The Import screen's `source` key is looked up in
+/// [`exporters::IMPORT_SOURCES`], which names its backup type and fills the
+/// shared [`Form`], and the form goes through `Form::to_config`, so the Form
+/// builders in message-crate-core are the single source of truth for field
+/// mapping and validation. Every path writes JSON Lines (one JSON object per
+/// line).
 ///
 /// # Errors
 ///
@@ -433,124 +430,16 @@ fn build_exporter_config(
         ..Default::default()
     };
 
-    let exporter = match source {
-        "imessage-ios" => {
-            form.db_path = path.to_string();
-            form.apple_platform = ApplePlatform::Ios;
-            form.backup_password.clone_from(&options.backup_password);
-            Exporter::Imessage
-        }
-        "imessage-macos" | "imessage-jailbreak" => {
-            form.db_path = path.to_string();
-            form.apple_platform = ApplePlatform::MacOs;
-            form.attachment_root.clone_from(&options.attachment_root);
-            form.apple_contacts.clone_from(&options.apple_contacts);
-            // The Import screen offers obfuscation for iPhone backups and the
-            // Android SMS sources, not for Mac Messages or a jailbreak copy.
-            form.obfuscate = false;
-            Exporter::Imessage
-        }
-        "sms-backup-restore" => {
-            form.input = path.to_string();
-            form.owner_phones = options.owner_phones.join("\n");
-            Exporter::SmsBackupRestore
-        }
-        "go-sms-pro" => {
-            form.input = path.to_string();
-            form.owner_phones = options.owner_phones.join("\n");
-            Exporter::GoSmsPro
-        }
-        "sms-backup-plus" => {
-            form.input = path.to_string();
-            form.owner_phones = options.owner_phones.join("\n");
-            form.owner_emails = options.owner_emails.join("\n");
-            Exporter::SmsBackupPlus
-        }
-        "openextract" => {
-            form.input = path.to_string();
-            Exporter::OpenExtract
-        }
-        "imazing" => {
-            form.input = path.to_string();
-            // iMazing dates carry no zone, so the exporter reads them in this
-            // one. Without it the exporter falls back to the machine's zone,
-            // and the same directory gives different instants on different
-            // machines.
-            form.timezone.clone_from(&options.timezone);
-            Exporter::Imazing
-        }
-        // Both WhatsApp platforms take the holder's number as an owner phone:
-        // Android's only source, iPhone's fallback when the backup's
-        // preferences carry no owner key.
-        "whatsapp-android" => {
-            form.input = path.to_string();
-            form.owner_phones = options.owner_phones.join("\n");
-            form.whatsapp_platform = WhatsappPlatform::Android;
-            form.whatsapp_key.clone_from(&options.whatsapp_key);
-            form.whatsapp_wa.clone_from(&options.whatsapp_wa);
-            form.whatsapp_media.clone_from(&options.whatsapp_media);
-            form.whatsapp_db.clone_from(&options.whatsapp_db);
-            Exporter::Whatsapp
-        }
-        "whatsapp-ios" => {
-            form.input = path.to_string();
-            form.owner_phones = options.owner_phones.join("\n");
-            form.whatsapp_platform = WhatsappPlatform::Ios;
-            form.whatsapp_backup = path.to_string();
-            form.backup_password.clone_from(&options.backup_password);
-            form.whatsapp_wa.clone_from(&options.whatsapp_wa);
-            form.is_business_app = options.is_business_app;
-            Exporter::Whatsapp
-        }
-        _ => return Err(format!("unsupported source '{source}'")),
-    };
+    let import_source =
+        exporters::import_source(source).ok_or_else(|| format!("unsupported source '{source}'"))?;
+    (import_source.fill)(&mut form, path, options);
 
     let ctx = FormContext {
         scratch_dir,
         ffmpeg_available: form.attachment_media.needs_ffmpeg() && media::ffmpeg_available(),
     };
-    form.to_config(exporter, ctx)
+    form.to_config(import_source.exporter, ctx)
         .map_err(|errors| errors.join("; "))
-}
-
-/// The programs the Tools Directory holds that `source`'s exporter runs: a
-/// WhatsApp import runs wtsexporter. Staging copies attachments as they are
-/// whatever the person chose, so it never runs ffmpeg; the Media stage does
-/// (`transcode_staging`). Every source is named, with no wildcard arm, so a
-/// new source does not compile until someone decides what it runs.
-fn programs_run_by(source: &SourceConfig) -> &'static [Program] {
-    match source {
-        SourceConfig::Whatsapp(_) => &[Program::Wtsexporter],
-        SourceConfig::GoSmsPro(_)
-        | SourceConfig::SmsBackupRestore(_)
-        | SourceConfig::SmsBackupPlus(_)
-        | SourceConfig::OpenExtract(_)
-        | SourceConfig::Imazing(_)
-        | SourceConfig::Apple(_)
-        | SourceConfig::Format(_) => &[],
-    }
-}
-
-/// Call the exporter that matches `config.source`.
-///
-/// # Errors
-///
-/// Returns an error if the exporter fails, or if the source is
-/// `SourceConfig::Format`: Convert runs through the `format` command, never
-/// through `extract`.
-fn run_exporter(config: &ExporterConfig) -> anyhow::Result<RunResult> {
-    match &config.source {
-        SourceConfig::GoSmsPro(_) => run_go_sms_pro(config),
-        SourceConfig::SmsBackupRestore(_) => run_sms_restore(config),
-        SourceConfig::SmsBackupPlus(_) => run_sms_plus(config),
-        SourceConfig::OpenExtract(_) => run_openextract(config),
-        SourceConfig::Imazing(_) => run_imazing(config),
-        SourceConfig::Apple(_) => run_imessage(config),
-        SourceConfig::Whatsapp(_) => run_whatsapp(config),
-        SourceConfig::Format(_) => Err(anyhow::anyhow!(
-            "Convert runs through the format command, not extract"
-        )),
-    }
 }
 
 #[cfg(test)]

@@ -1,9 +1,6 @@
 //! `format` command — convert an existing extract directory to another format.
 
-use message_crate_core::{
-    ExporterConfig, FormatConfig, IssueSink, LogSink, MediaConfig, OutputFormat, ProgressSink,
-    SourceConfig,
-};
+use message_crate_core::{FormatConfig, LogSink, OutputConfig, OutputFormat, RunContext};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -60,26 +57,22 @@ pub fn format(
     let app_handle = app.clone();
     spawn_job(app, job, move || {
         let log_app = app_handle.clone();
-        let config = ExporterConfig {
-            inputs: vec![PathBuf::from(&input_dir)],
-            output: PathBuf::from(&output_dir),
-            scratch_dir,
-            timezone: None,
-            obfuscate: Default::default(),
-            media: MediaConfig::default(),
+        // Settings → Convert shows a log, not a progress bar.
+        let context = RunContext {
             cancel,
             log: LogSink::new(move |line: &str| {
                 events::emit(&log_app, events::LOG, line.to_string());
             }),
-            // Settings → Convert shows a log, not a progress bar.
-            progress: ProgressSink::none(),
-            issues: IssueSink::none(),
-            output_format: fmt,
-            resume: false,
-            source: SourceConfig::Format(FormatConfig { run_started }),
+            ..RunContext::new(scratch_dir)
         };
+        let output = OutputConfig::new(&output_dir, fmt);
 
-        let run_result = message_reexport::run(&config)?;
+        let run_result = message_reexport::run(
+            &context,
+            &output,
+            &[PathBuf::from(&input_dir)],
+            &FormatConfig { run_started },
+        )?;
         let summary = last_log_line_or(&run_result.messages, "Format conversion complete.");
         for line in run_result.messages {
             events::emit(&app_handle, events::LOG, line);

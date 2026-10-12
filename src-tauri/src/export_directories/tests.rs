@@ -1,6 +1,5 @@
 use message_crate_core::{
-    CancelFlag, ExportReport, ExportTransforms, ExporterConfig, FormatConfig, IssueSink, LogSink,
-    MediaConfig, ObfuscateConfig, OutputFormat, ProgressSink, SourceConfig,
+    ExportReport, ExportTransforms, FormatConfig, OutputConfig, OutputFormat, RunContext,
 };
 use std::path::{Path, PathBuf};
 
@@ -38,21 +37,12 @@ fn export_into(dir: &Path) {
 
 /// Convert `input` into `output` as CSV, as Export's format step does.
 fn convert(input: &Path, output: &Path, cache: &Path) {
-    message_reexport::run(&ExporterConfig {
-        inputs: vec![input.to_path_buf()],
-        output: output.to_path_buf(),
-        scratch_dir: cache.to_path_buf(),
-        timezone: None,
-        obfuscate: ObfuscateConfig::default(),
-        media: MediaConfig::default(),
-        cancel: CancelFlag::default(),
-        log: LogSink::none(),
-        progress: ProgressSink::none(),
-        issues: IssueSink::none(),
-        output_format: OutputFormat::Csv,
-        resume: false,
-        source: SourceConfig::Format(FormatConfig::default()),
-    })
+    message_reexport::run(
+        &RunContext::new(cache),
+        &OutputConfig::new(output, OutputFormat::Csv),
+        &[input.to_path_buf()],
+        &FormatConfig::default(),
+    )
     .unwrap();
 }
 
