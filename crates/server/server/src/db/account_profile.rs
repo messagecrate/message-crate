@@ -1360,10 +1360,8 @@ mod tests {
         );
     }
 
-    /// The server gives the owner no import, export or delete permission
-    /// (`load_account_auth`), so the owner's row must not say otherwise to
-    /// someone reading the database. Every other account still starts with
-    /// all three.
+    /// [`insert_account_at`] writes 0 to the owner's import, export and
+    /// delete columns and 1 to every other account's.
     #[tokio::test]
     async fn the_owner_row_holds_no_permission_and_other_rows_hold_all_three() {
         let fixture = crate::test_support::test_fixture().await;
