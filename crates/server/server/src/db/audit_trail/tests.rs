@@ -634,6 +634,38 @@ async fn the_schema_refuses_an_edit_or_delete_of_an_audit_trail_entry() {
     assert_eq!(count_entries(&mut conn).await, total);
 }
 
+/// An entry is stamped with the instant it is given, and the trim of refused
+/// logins for unknown usernames measures its window back from the instant it
+/// is given: an entry older than the window goes, a younger one stays.
+#[tokio::test]
+async fn refused_logins_are_stamped_and_trimmed_at_the_instant_given() {
+    let fixture = test_fixture().await;
+    let mut conn = fixture.conn().await;
+    let now = crate::test_support::fixed_instant();
+    let window = chrono::Duration::days(UNKNOWN_USERNAME_RETENTION_DAYS);
+    let outside = now - window - chrono::Duration::hours(1);
+    let inside = now - window + chrono::Duration::hours(1);
+    for at in [outside, inside] {
+        record_refused_login(
+            &mut conn,
+            "nobody",
+            None,
+            AuditReason::UnknownUsername,
+            None,
+            at,
+        )
+        .await
+        .unwrap();
+    }
+
+    assert_eq!(trim_refused_logins(&mut conn, now).await.unwrap(), 1);
+    let kept: Vec<String> = sqlx::query_scalar("SELECT at FROM audit_entries")
+        .fetch_all(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(kept, [inside.to_rfc3339()]);
+}
+
 /// Run each of `statements`, and check the schema refuses every one.
 async fn assert_refused(conn: &mut SqliteConnection, statements: &[&str]) {
     for statement in statements {
