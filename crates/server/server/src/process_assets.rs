@@ -265,9 +265,10 @@ pub(crate) async fn decide_shown_as_is(
 
 /// Make the versions of every stored original of the account `opts` names,
 /// or of every account in the database when it names none, saying what it
-/// does on standard output. An account's attachments from every source share
-/// one originals directory and one converted directory, so each account is
-/// one pass.
+/// does through `progress`, which the caller picks: a command run from a
+/// shell prints it, and work under `serve` writes it to the server's log. An
+/// account's attachments from every source share one originals directory and
+/// one converted directory, so each account is one pass.
 ///
 /// # Errors
 ///
@@ -276,11 +277,12 @@ pub(crate) async fn decide_shown_as_is(
 /// original whose Preview or Thumbnail cannot be made is counted in
 /// `not_made`, an incomplete original that cannot be removed in
 /// `not_removed`, and a damaged version that cannot be dropped in
-/// `not_dropped`. Each is printed, and the run goes on.
+/// `not_dropped`. Each is said through `progress`, and the run goes on.
 pub async fn run(
     opened: &OpenDb,
     opts: &ProcessAssetsOptions,
     stop: &AtomicBool,
+    progress: Progress,
 ) -> Result<ProcessAssetsStats> {
     let cfg = &opened.cfg;
     let account_ids = match opts.account {
@@ -298,7 +300,8 @@ pub async fn run(
         if stop.load(Ordering::Relaxed) {
             break;
         }
-        let Some(pass) = AccountPass::open(cfg, opts, work.path(), account_id, stop)? else {
+        let Some(pass) = AccountPass::open(cfg, opts, work.path(), account_id, stop, progress)?
+        else {
             continue;
         };
         let rows =
@@ -314,7 +317,7 @@ pub async fn run(
         );
     }
 
-    println!("{}", done_line(&stats, opts.dry_run));
+    progress.heading(done_line(&stats, opts.dry_run));
     Ok(stats)
 }
 
@@ -545,18 +548,19 @@ impl<'a> AccountPass<'a> {
         work_dir: &'a Path,
         account_id: i64,
         stop: &'a AtomicBool,
+        progress: Progress,
     ) -> Result<Option<Self>> {
         let assets_dir = cfg.paths.assets_dir_for_account(account_id);
         let converted_dir = cfg.paths.assets_converted_dir_for_account(account_id);
-        println!(
+        progress.heading(format_args!(
             "Processing account {account_id}'s Assets in {}",
             assets_dir.display()
-        );
+        ));
         if !assets_dir.is_dir() {
-            eprintln!(
-                "  {} is missing or is not a directory, so this account's Assets are not processed",
+            progress.warn(format_args!(
+                "{} is missing or is not a directory, so this account's Assets are not processed",
                 assets_dir.display()
-            );
+            ));
             return Ok(None);
         }
         let cleaned_verb = if opts.dry_run {
@@ -571,15 +575,17 @@ impl<'a> AccountPass<'a> {
                 "1 abandoned temporary upload file",
                 "{n} abandoned temporary upload files",
             );
-            println!("  {cleaned_verb} {files} under .incoming/");
+            progress.say(format_args!("{cleaned_verb} {files} under .incoming/"));
         }
         let left = crate::asset_store::sweep_shard_temps(&assets_dir, opts.dry_run)
             + crate::asset_store::sweep_shard_temps(&converted_dir, opts.dry_run);
         if left > 0 {
             let files = words(left, "1 temporary file", "{n} temporary files");
-            println!("  {cleaned_verb} {files} a killed write left in the shard directories");
+            progress.say(format_args!(
+                "{cleaned_verb} {files} a killed write left in the shard directories"
+            ));
         }
-        Self::new(cfg, opts, work_dir, account_id, stop, Progress::Print)
+        Self::new(cfg, opts, work_dir, account_id, stop, progress)
     }
 
     /// The pass over `account_id`'s directories, making the converted
