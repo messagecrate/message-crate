@@ -16,7 +16,7 @@
 
 use crate::IrParticipant;
 
-/// What every group chat id starts with, so a group's key can never equal an
+/// What every group's chat id starts with, so a group's key can never equal an
 /// address.
 pub const GROUP_CHAT_ID_PREFIX: &str = "group:";
 
@@ -145,7 +145,7 @@ mod tests {
     /// A group's chat id is in a namespace of its own, so even a vendor id
     /// shaped like an address never gives a group a person's key.
     #[test]
-    fn a_group_chat_id_never_equals_an_address() {
+    fn a_groups_chat_id_never_equals_an_address() {
         let address = "+15555550111";
         let group = ConversationKey::Group {
             vendor_id: address.to_string(),

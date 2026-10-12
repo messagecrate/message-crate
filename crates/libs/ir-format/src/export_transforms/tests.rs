@@ -162,9 +162,10 @@ fn convert_at_finish_leaves_cloned_file() {
     assert_eq!(fs::read(att.join("keep.bin")).unwrap(), b"already-cloned");
 }
 
-/// A group chat in which every string holds its own `LEAK-<n>` marker, except
-/// the values listed in [`KEPT_AS_IS`]. Every `Option` is set, so a field
-/// added to the IR later has to be filled in here and the walk then checks it.
+/// A group conversation in which every string holds its own `LEAK-<n>`
+/// marker, except the values listed in [`KEPT_AS_IS`]. Every `Option` is set,
+/// so a field added to the IR later has to be filled in here and the walk then
+/// checks it.
 fn doc_with_a_marker_in_every_field() -> ConversationDocument {
     ConversationDocument {
         schema_version: SCHEMA_VERSION,
@@ -359,7 +360,7 @@ fn obfuscated_export_keeps_no_string_from_the_source() {
     let mut written = String::new();
     for entry in fs::read_dir(tmp.path()).unwrap() {
         let path = entry.unwrap().path();
-        // A group chat's file is named after its title.
+        // A group conversation's file is named after its title.
         let name = path.file_name().unwrap().to_string_lossy();
         assert!(!name.contains("LEAK-"), "obfuscated export wrote {name}");
         if path.extension().and_then(|e| e.to_str()) == Some("json") {

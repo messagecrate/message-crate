@@ -4,11 +4,11 @@ CREATE TABLE IF NOT EXISTS conversations (
     id INTEGER PRIMARY KEY,
     -- Owning account (`accounts.id`).
     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-    -- Thread identity handle (`handles.id`); peer for 1:1, group chat id for groups.
+    -- Conversation identity handle (`handles.id`): the other person in a one-to-one conversation, the group's chat id in a group conversation.
     chat_handle_id INTEGER NOT NULL REFERENCES handles(id) ON DELETE CASCADE,
-    -- Thread shape: 'individual' | 'group' (and any other values the importer writes).
+    -- Conversation shape: 'individual' | 'group' (and any other values the importer writes).
     conversation_type TEXT NOT NULL,
-    -- Group display title; NULL for 1:1 chats.
+    -- Group display title; NULL for a one-to-one conversation.
     group_title TEXT,
     -- The latest message time of the copy that gave group_title, in the form
     -- messages.timestamp holds; NULL with no title, or when that copy had no

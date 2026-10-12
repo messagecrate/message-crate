@@ -313,7 +313,7 @@ fn pdu_target(
         return None;
     }
     if others.len() >= 2 {
-        let (chat_id, title) = phone::group_chat_id("chat-group-", &others);
+        let (chat_id, title) = phone::group_conversation_id("chat-group-", &others);
         Some(PduTarget {
             chat_id,
             is_group: true,
@@ -700,7 +700,7 @@ mod tests {
     /// group is the other people, so the owner's number changes neither the
     /// chat id nor the title.
     #[test]
-    fn the_owners_number_is_not_part_of_a_group_chat_id() {
+    fn the_owners_number_is_not_part_of_a_group_conversation_id() {
         let target = |recipients: &[&str]| {
             let owners = OwnerHandleSet::from_phones(&["+15555550100".into()]).unwrap();
             let parsed = ParsedPdu {

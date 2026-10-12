@@ -1197,10 +1197,10 @@ fn identities_keep_their_own_addresses() {
     );
 }
 
-/// Group chats whose identifiers differ only in characters an address
+/// Group conversations whose identifiers differ only in characters an address
 /// cannot hold still have different addresses.
 #[test]
-fn group_chats_keep_their_own_addresses() {
+fn group_conversations_keep_their_own_addresses() {
     let addresses: Vec<String> = ["chat a b", "chat a_b", "chat\r\na", "g@b=c", "g=b@c"]
         .into_iter()
         .map(|id| {

@@ -721,7 +721,7 @@ fn is_national_form_of(digits: &str, owner: &str) -> bool {
 /// the sorted, deduplicated keys, so `["12","34"]` and `["123","4"]` cannot
 /// collide, hashed when it would pass 180 bytes so it stays a safe file
 /// name. The title names up to four of the keys.
-pub fn group_chat_id(prefix: &str, others: &[String]) -> (String, String) {
+pub fn group_conversation_id(prefix: &str, others: &[String]) -> (String, String) {
     let mut sorted = others.to_vec();
     sorted.sort();
     sorted.dedup();

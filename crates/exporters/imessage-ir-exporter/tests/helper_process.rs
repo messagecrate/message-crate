@@ -18,9 +18,9 @@ use std::{
 };
 
 use chat_db_fixture::{
-    DELETED_GUID, DELETED_TEXT, FRIEND_EMAIL, FRIEND_PHONE, GROUP_CHAT_IDENTIFIER, OWNER,
-    OWNER_EMAIL, PARTLY_UNSENT_GUID, PARTLY_UNSENT_TEXT, PHOTO_BYTES, REACTED_GUID, REACTION_EMOJI,
-    UNSENT_GUID, set_message_date, write_chat_db,
+    DELETED_GUID, DELETED_TEXT, FRIEND_EMAIL, FRIEND_PHONE, GROUP_IDENTIFIER, OWNER, OWNER_EMAIL,
+    PARTLY_UNSENT_GUID, PARTLY_UNSENT_TEXT, PHOTO_BYTES, REACTED_GUID, REACTION_EMOJI, UNSENT_GUID,
+    set_message_date, write_chat_db,
 };
 use common::{config, helper_binary};
 use message_ir::{ConversationDocument, Deletion, IrDirection, IrMessage, TimePrecision};
@@ -120,7 +120,7 @@ fn a_seconds_stamp_and_an_unreadable_date_are_whole_seconds() {
         .run(imessage_ir_exporter::run)
         .unwrap();
 
-    let group = document_for(&output, GROUP_CHAT_IDENTIFIER);
+    let group = document_for(&output, GROUP_IDENTIFIER);
     let seconds = message_with_guid(&group, "guid-3");
     assert_eq!(seconds.time_precision, TimePrecision::Seconds);
     assert_eq!(
@@ -295,7 +295,7 @@ fn a_tapback_and_an_emoji_reaction_are_the_messages_reactions() {
     let group = jsonl_files(&output)
         .into_iter()
         .map(|path| fs::read_to_string(path).unwrap())
-        .find(|text| text.contains(GROUP_CHAT_IDENTIFIER))
+        .find(|text| text.contains(GROUP_IDENTIFIER))
         .expect("the group's conversation file");
     let pizza: serde_json::Value = group
         .lines()

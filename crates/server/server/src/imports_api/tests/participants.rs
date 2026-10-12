@@ -175,7 +175,7 @@ async fn the_conversation_that_names_nobody_never_becomes_a_contact() {
 /// A group conversation's identifier names the conversation, not a person, so only
 /// the people in the group become contacts.
 #[tokio::test]
-async fn a_group_chat_identifier_never_becomes_a_contact() {
+async fn a_group_conversation_identifier_never_becomes_a_contact() {
     let tmp = TempDir::new().unwrap();
     let db = tmp.path().join("messagecrate.db");
     let assets = tmp.path().join("assets");

@@ -94,7 +94,8 @@ pub enum MailPackage {
 /// the writer reads them straight from the IR instead of a flattened copy.
 #[derive(Debug, Clone)]
 pub struct MailMessage {
-    /// Conversation id → `X-ME-Chat-Identifier`, group chat address local part.
+    /// Conversation id → `X-ME-Chat-Identifier`, and the local part of a
+    /// group conversation's address.
     pub chat_identifier: String,
     /// `individual` or `group`.
     pub conversation_type: String,
@@ -456,7 +457,8 @@ fn owner_address(msg: &MailMessage) -> Address<'static> {
     synthetic_address(identity, Some(display))
 }
 
-/// One browseable address for a group chat (roster stays in `X-ME-Participants`).
+/// One browseable address for a group conversation (the members stay in
+/// `X-ME-Participants`).
 fn conversation_address(msg: &MailMessage) -> Address<'static> {
     let display = msg
         .group_title
@@ -791,9 +793,9 @@ pub fn attachment_part(mime: &str, filename: String, bytes: &[u8]) -> MimePart<'
 
 /// Who the mail is from and to.
 ///
-/// A group chat is addressed as the chat itself, with the sender (or the
-/// owner) on the other side. A 1:1 chat is addressed peer-to-owner or
-/// owner-to-peer by direction.
+/// A group conversation is addressed as the conversation itself, with the
+/// sender (or the owner) on the other side. A one-to-one conversation is
+/// addressed peer-to-owner or owner-to-peer by direction.
 fn envelope_addresses(msg: &MailMessage) -> (Address<'static>, Address<'static>) {
     if msg.conversation_type.eq_ignore_ascii_case("group") {
         let from = match msg.message.direction {

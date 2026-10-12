@@ -88,7 +88,7 @@ pub fn generate_phone(
 /// The phone-number chat identifier of the group at `index`: a different
 /// number for each index, or `None` once the 400 numbers of [`GROUP_AREA`]
 /// are used up.
-pub fn group_chat_phone(index: usize) -> Option<String> {
+pub fn group_conversation_phone(index: usize) -> Option<String> {
     let area = *GROUP_AREA.get(index / US_LINES.len())?;
     let line = US_LINES.start + u16::try_from(index % US_LINES.len()).ok()?;
     Some(format_us(area, line))
@@ -169,14 +169,14 @@ mod tests {
     }
 
     #[test]
-    fn group_chat_phones_are_distinct_and_never_a_number_a_person_can_draw() {
+    fn group_conversation_phones_are_distinct_and_never_a_number_a_person_can_draw() {
         let people: HashSet<String> = all_fictional_phones().collect();
         let groups: Vec<String> = (0..400)
-            .map(|index| group_chat_phone(index).expect("400 group numbers"))
+            .map(|index| group_conversation_phone(index).expect("400 group numbers"))
             .collect();
         let distinct: HashSet<&String> = groups.iter().collect();
         assert_eq!(distinct.len(), 400);
         assert!(groups.iter().all(|phone| !people.contains(phone)));
-        assert_eq!(group_chat_phone(400), None);
+        assert_eq!(group_conversation_phone(400), None);
     }
 }
