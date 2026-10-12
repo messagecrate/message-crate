@@ -607,7 +607,14 @@ async fn open_db() -> (OpenDb, tempfile::TempDir) {
         },
         server: None,
     };
-    (OpenDb { cfg, db: pool }, dir)
+    (
+        OpenDb {
+            cfg,
+            db: pool,
+            wal_error: None,
+        },
+        dir,
+    )
 }
 
 async fn seed_account(conn: &mut SqliteConnection, id: i64) {

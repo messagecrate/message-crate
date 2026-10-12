@@ -127,20 +127,33 @@ async fn the_state_route_carries_the_build_and_the_schema_fingerprint() {
     );
 }
 
-/// The route reports the journal mode the database runs in when it is read,
-/// so a server that could not have write-ahead logging says so beside its
-/// Build, where Owner Home reads it.
+/// The state route answers anyone, so it says nothing of how the database is
+/// stored: the journal mode is on the owner's settings route (#2703).
 #[tokio::test]
-async fn the_state_route_carries_the_journal_mode_the_database_runs_in() {
+async fn the_state_route_leaves_the_journal_mode_out() {
+    let fixture = test_fixture().await;
+    let body: serde_json::Value = get_json(&fixture.state, "/v1/server", "").await;
+    assert!(body.get("journal_mode").is_none(), "{body}");
+    assert!(body.get("journal").is_none(), "{body}");
+}
+
+/// The owner's settings carry the journal mode the database runs in when
+/// they are read, so a server that could not have write-ahead logging says
+/// so on Owner Home, and so does the answer to a change, which the screen
+/// shows in place of the one it read (#2703).
+#[tokio::test]
+async fn the_settings_carry_the_journal_mode_the_database_runs_in() {
     use crate::db::engine::JournalMode;
     use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 
     let fixture = test_fixture().await;
-    let body: Server = get_json(&fixture.state, "/v1/server", "").await;
-    assert_eq!(body.journal_mode, Some(JournalMode::Wal));
+    let owner = claim_as_owner(&fixture.state, "keeper", "hunter2hunter2").await;
+    let body: ServerSettings = get_json(&fixture.state, "/v1/server/settings", &owner.token).await;
+    assert_eq!(body.journal.mode, Some(JournalMode::Wal));
+    assert_eq!(body.journal.wal_error, None);
 
     // A database left in a rollback journal, as one is when the server could
-    // not turn write-ahead logging on.
+    // not turn write-ahead logging on, with the error SQLite gave then.
     let dir = tempfile::tempdir().unwrap();
     let pool = SqlitePoolOptions::new()
         .connect_with(
@@ -155,9 +168,28 @@ async fn the_state_route_carries_the_journal_mode_the_database_runs_in() {
         let mut conn = pool.acquire().await.unwrap();
         crate::db::schema::ensure_schema(&mut conn).await.unwrap();
     }
-    let state = crate::server::test_app_state(pool, dir.path());
-    let body: Server = get_json(&state, "/v1/server", "").await;
-    assert_eq!(body.journal_mode, Some(JournalMode::Delete));
+    let mut state = crate::server::test_app_state(pool, dir.path());
+    state.wal_error = Some("database is locked".into());
+    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let body: ServerSettings = get_json(&state, "/v1/server/settings", &owner.token).await;
+    assert_eq!(body.journal.mode, Some(JournalMode::Delete));
+    assert_eq!(
+        body.journal.wal_error.as_deref(),
+        Some("database is locked")
+    );
+
+    let changed: ServerSettings = crate::test_support::patch_json(
+        &state,
+        "/v1/server/settings",
+        &owner.token,
+        serde_json::json!({ "public_registration": true }),
+    )
+    .await;
+    assert_eq!(changed.journal.mode, Some(JournalMode::Delete));
+    assert_eq!(
+        changed.journal.wal_error.as_deref(),
+        Some("database is locked")
+    );
 }
 
 /// Two Message Crates have different ids, though both start their account

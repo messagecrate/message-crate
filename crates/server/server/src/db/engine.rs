@@ -1,6 +1,7 @@
 //! Pool construction for the SQLite database file.
 
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -230,32 +231,55 @@ fn mode_or_warn(answer: Result<JournalMode>) -> Option<JournalMode> {
         .ok()
 }
 
-/// Ask SQLite for write-ahead logging, and return the mode the database ends
-/// in. Another process holding the database, or a hot rollback journal that
-/// cannot be rolled back (in a read-only directory, say), can make the
-/// request fail. A hot journal that can be rolled back is not a cause:
-/// SQLite rolls it back on the first read. SQLite also turns it down without an error where
-/// the database cannot use it (one held in memory, say), and answers the
-/// mode it kept. Either way the pool stays usable, and a warning in the log
-/// says so. `None` when the mode cannot be read at all. That is warned of
-/// too, and [`open_pool_for_path`] still returns the pool.
-async fn try_enable_wal(pool: &SqlitePool) -> Option<JournalMode> {
+/// What SQLite answered when the server asked it for write-ahead logging.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WalAnswer {
+    /// The mode the database ended in. `None` when it could not be read.
+    mode: Option<JournalMode>,
+    /// The error SQLite gave for the request, in SQLite's words. `None` when
+    /// it gave none: it turned write-ahead logging on, or kept another mode
+    /// without an error.
+    error: Option<Arc<str>>,
+}
+
+/// Ask SQLite for write-ahead logging, and return what it answered: the mode
+/// the database ends in, and the error it gave, if any. Another process
+/// holding the database, or a hot rollback journal that cannot be rolled
+/// back (in a read-only directory, say), can make the request fail. A hot
+/// journal that can be rolled back is not a cause: SQLite rolls it back on
+/// the first read. SQLite also turns it down without an error where the
+/// database cannot use it (one held in memory, say), and answers the mode it
+/// kept. Either way the pool stays usable, and a warning in the log says so.
+/// The mode is `None` when it cannot be read at all. That is warned of too,
+/// and [`open_pool_keeping_wal_error`] still returns the pool.
+async fn try_enable_wal(pool: &SqlitePool) -> WalAnswer {
     let mode = match sqlx::query_scalar::<_, String>("PRAGMA journal_mode = WAL")
         .fetch_one(pool)
         .await
     {
-        Ok(name) => mode_or_warn(JournalMode::parse(&name))?,
+        Ok(name) => mode_or_warn(JournalMode::parse(&name)),
         Err(err) => {
             tracing::warn!(error = %err, "Write-ahead logging could not be turned on, so the database goes on without it");
-            return journal_mode_or_warn(pool).await;
+            // SQLite's own words when the error is SQLite's, without sqlx's
+            // prefix and code; sqlx's whole message otherwise.
+            let error: Arc<str> = err
+                .as_database_error()
+                .map_or_else(|| err.to_string(), |db| db.message().to_owned())
+                .into();
+            return WalAnswer {
+                mode: journal_mode_or_warn(pool).await,
+                error: Some(error),
+            };
         }
     };
-    if mode != JournalMode::Wal {
+    if let Some(mode) = mode
+        && mode != JournalMode::Wal
+    {
         tracing::warn!(
             "SQLite kept the database in journal mode {mode} rather than write-ahead logging, so the database goes on without it"
         );
     }
-    Some(mode)
+    WalAnswer { mode, error: None }
 }
 
 /// Open the configured pool for a SQLite file, naming the file in the error
@@ -265,12 +289,35 @@ async fn try_enable_wal(pool: &SqlitePool) -> Option<JournalMode> {
 ///
 /// Returns an error when the file cannot be opened or created.
 pub async fn open_pool_for_path(path: &Path) -> Result<SqlitePool> {
+    Ok(open_pool_keeping_wal_error(path).await?.pool)
+}
+
+/// A pool [`open_pool_keeping_wal_error`] opened, with the error SQLite gave
+/// when the pool asked for write-ahead logging.
+#[derive(Debug)]
+pub struct OpenedPool {
+    /// The pool, usable whatever SQLite answered.
+    pub pool: SqlitePool,
+    /// The error SQLite gave, in SQLite's words, such as `database is
+    /// locked`. `None` when it gave none: it turned write-ahead logging on,
+    /// or kept another mode without an error.
+    pub wal_error: Option<Arc<str>>,
+}
+
+/// [`open_pool_for_path`], keeping the error SQLite gave when the pool
+/// asked for write-ahead logging, so Owner Home can say why the database
+/// runs without it.
+///
+/// # Errors
+///
+/// Returns an error when the file cannot be opened or created.
+pub async fn open_pool_keeping_wal_error(path: &Path) -> Result<OpenedPool> {
     let pool = sqlite_pool_options(BUSY_TIMEOUT)
         .connect_with(connect_options(path))
         .await
         .with_context(|| format!("failed to open database {}", path.display()))?;
-    try_enable_wal(&pool).await;
-    Ok(pool)
+    let wal_error = try_enable_wal(&pool).await.error;
+    Ok(OpenedPool { pool, wal_error })
 }
 
 /// Close `pool` and every connection it opened, so none is left attached to
@@ -326,7 +373,7 @@ pub(crate) async fn test_pool_with_busy_timeout(
         .connect_with(connect_options(&path))
         .await
         .unwrap();
-    assert_eq!(try_enable_wal(&pool).await, Some(JournalMode::Wal));
+    assert_eq!(try_enable_wal(&pool).await.mode, Some(JournalMode::Wal));
     (pool, dir)
 }
 
@@ -403,8 +450,51 @@ mod tests {
             .connect_with(SqliteConnectOptions::new().in_memory(true))
             .await
             .unwrap();
-        assert_eq!(try_enable_wal(&pool).await, Some(JournalMode::Memory));
+        assert_eq!(try_enable_wal(&pool).await.mode, Some(JournalMode::Memory));
         assert_eq!(journal_mode(&pool).await.unwrap(), JournalMode::Memory);
+    }
+
+    /// Another connection's write transaction keeps SQLite from turning
+    /// write-ahead logging on. The answer keeps the error SQLite gave, in
+    /// SQLite's words, so Owner Home can name the cause (#2691), and the
+    /// mode the database stayed in.
+    #[tokio::test]
+    async fn a_refused_wal_request_keeps_the_error_sqlite_gave() {
+        use sqlx::Connection;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("messagecrate.db");
+        let mut holder = connect_options(&path).connect().await.unwrap();
+        sqlx::query("CREATE TABLE t (id INTEGER PRIMARY KEY)")
+            .execute(&mut holder)
+            .await
+            .unwrap();
+        // The write lock, held until the end of the test.
+        let tx = holder.begin_with(BEGIN_IMMEDIATE_SQL).await.unwrap();
+
+        // No wait for the lock, so SQLite answers at once.
+        let pool = sqlite_pool_options(Duration::ZERO)
+            .connect_with(connect_options(&path))
+            .await
+            .unwrap();
+        let answer = try_enable_wal(&pool).await;
+
+        assert_eq!(answer.mode, Some(JournalMode::Delete));
+        assert_eq!(answer.error.as_deref(), Some("database is locked"));
+        tx.rollback().await.unwrap();
+    }
+
+    /// A request SQLite grants, or turns down without an error, has no error
+    /// to keep.
+    #[tokio::test]
+    async fn a_granted_or_quietly_turned_down_wal_request_keeps_no_error() {
+        let (pool, _dir) = test_pool().await;
+        assert_eq!(try_enable_wal(&pool).await.error, None);
+        let memory = sqlite_pool_options(BUSY_TIMEOUT)
+            .connect_with(SqliteConnectOptions::new().in_memory(true))
+            .await
+            .unwrap();
+        assert_eq!(try_enable_wal(&memory).await.error, None);
     }
 
     /// The name the start-up line prints is the one SQLite answers, which is

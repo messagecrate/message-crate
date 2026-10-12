@@ -42,7 +42,8 @@ The new release changed the database layout, and the server rebuilt the database
 
 The server turns on write-ahead logging each time it starts, so pages load while an import writes.
 When it can't, most often because another program has the database file open, the server starts without it, and every page waits for each import batch.
-The server's log, under **Logs** in Owner Home, holds a warning from the start: SQLite's error when it gave one, or else the journal mode it kept.
+The notice quotes the error SQLite gave when the server asked for write-ahead logging, such as `database is locked`, when it gave one; otherwise SQLite kept another journal mode without an error.
+The server's log, under **Logs** in Owner Home, holds the same warning from the start.
 Closing any other program that has the database file open, then restarting the server, turns it back on.
 **Server Settings** shows the journal mode, which reads `wal` once it is on.
 

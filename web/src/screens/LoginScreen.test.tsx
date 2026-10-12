@@ -126,7 +126,6 @@ function serveAt(answer: (address: string) => Answer) {
       demo_account: answered.demoAccount ?? false,
       version: "0.10.0",
       schema_fingerprint: 1,
-      journal_mode: "wal",
       asset_max_bytes: 1024,
       upload_stall_secs: 60,
       upload_piece_secs: 300,
