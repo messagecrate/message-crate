@@ -65,8 +65,8 @@ through TanStack Query like any screen's.
 session is applied before anything renders, so the screens' first queries
 run beside the check rather than after it. The check decides only what
 becomes of the saved login, by a rule of its own: a `401 Unauthorized`
-forgets it, and a server that gives no answer leaves it saved for a later
-retry. In both cases this session shows the login screen. The query
+forgets it, and any other failure, which says nothing about the token, leaves
+it saved for a later retry. In both cases this session shows the login screen. The query
 client knows only the first half of that rule (`endsSession` in
 `web/src/lib/routeQuery.ts`), and the check returns no data any screen
 shows, so it has nothing to cache.
