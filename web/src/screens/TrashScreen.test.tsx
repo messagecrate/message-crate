@@ -191,34 +191,27 @@ describe("TrashScreen", () => {
     expect(listContactsMock).not.toHaveBeenCalled();
   });
 
-  it("shows the error, and blames no list, when the search words cannot be loaded", async () => {
-    // With no registry, `trashed:` (which the page adds itself) read as a word
-    // both lists refuse (#1234).
-    listSearchFieldsMock.mockRejectedValue(new Error("Server unreachable"));
-    renderAt("/trash");
-    await settle();
-
-    expect(screen.getByText("Could not load the search words. Server unreachable")).toBeTruthy();
-    expect(screen.queryByText(/applies to/)).toBeNull();
-    expect(screen.queryByText("Trash is empty")).toBeNull();
-  });
-
   it.each([
-    ["conversations", "contacts"],
-    ["contacts", "conversations"],
+    ["both lists", ["conversations", "contacts"]],
+    ["the conversations list", ["conversations"]],
+    ["the contacts list", ["contacts"]],
   ] as const)(
-    "asks neither list while the %s search words cannot be loaded, though the %s words can",
-    async (failed, _loaded) => {
-      // A list whose words failed to load has none, which would refuse every
-      // word, so the screen reads no words from it and asks neither list.
+    "shows the error, and blames no list, when the search words of %s cannot be loaded",
+    async (_which, failing) => {
+      // With no registry, `trashed:` (which the page adds itself) read as a word
+      // both lists refuse (#1234). A list whose words failed to load has none,
+      // which would refuse every word, so the screen reads no words from it and
+      // asks neither list, even when the other list's words loaded.
       listSearchFieldsMock.mockImplementation(async (list) => {
-        if (list === failed) throw new Error("Server unreachable");
+        if (failing.some((name) => name === list)) throw new Error("Server unreachable");
         return fieldsFor(list as keyof typeof FIELD_WORDS);
       });
       renderAt("/trash");
       await settle();
 
       expect(screen.getByText("Could not load the search words. Server unreachable")).toBeTruthy();
+      expect(screen.queryByText(/applies to/)).toBeNull();
+      expect(screen.queryByText("Trash is empty")).toBeNull();
       expect(listConversationsMock).not.toHaveBeenCalled();
       expect(listContactsMock).not.toHaveBeenCalled();
     },

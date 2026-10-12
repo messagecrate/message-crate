@@ -27,9 +27,11 @@ import { type ReactElement, type ReactNode, useState } from "react";
  * A query client with retries and background refetching off.
  *
  * Entries nothing on screen reads are dropped at once, so one test's leftovers
- * never reach the next. A test about an entry written ahead of the screen that
- * reads it (a seed from a mutation's answer) passes `keepUnread`, which holds
- * such entries the way the app's client does.
+ * never reach the next. A test about an entry nothing reads for a while passes
+ * `keepUnread`, which holds such entries the way the app's client does: one
+ * written ahead of the screen that reads it (a seed from a mutation's answer),
+ * or one the screen read, stopped reading, and reads again (a conversation
+ * selected again after another).
  */
 export function testQueryClient({
   keepUnread = false,

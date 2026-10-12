@@ -222,6 +222,7 @@ describe("ErrorBoundary", () => {
   });
 });
 
+// The file's `beforeEach` starts the fake clock that this test moves.
 describe("pageAnswers", () => {
   it("counts a page that never answers as one that doesn't", async () => {
     const { pageAnswers: realPageAnswers, PAGE_ANSWER_TIMEOUT_MS } =
