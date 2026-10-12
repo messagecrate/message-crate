@@ -519,9 +519,9 @@ pub struct AccountAuth {
 /// The owner's permissions and the Demo Account's are known from their ids
 /// and never read from their rows: the owner holds none
 /// (`docs/adr/0008-the-owner-holds-no-messages.md`), and the Demo Account
-/// holds [`DEMO_ACCOUNT_PERMISSIONS`]. The owner's row keeps the columns'
-/// defaults, which are on, so reading it would report permissions no guard
-/// lets the owner use.
+/// holds [`DEMO_ACCOUNT_PERMISSIONS`]. [`insert_account_at`] writes 0 to the
+/// owner's three permission columns so its row agrees, but the id alone
+/// decides.
 pub async fn load_account_auth(
     conn: &mut SqliteConnection,
     account_id: i64,
