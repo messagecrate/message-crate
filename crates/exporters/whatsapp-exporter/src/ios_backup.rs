@@ -10,9 +10,11 @@
 //! anything is decrypted.
 
 use anyhow::{Result, bail};
+use imessage_reader_protocol::{
+    ENCRYPTED_BACKUP_PASSWORD_REQUIRED, UNENCRYPTED_BACKUP_CLEAR_PASSWORD,
+};
 use ios_backup::{
-    DecryptedDomain, ENCRYPTED_BACKUP_PASSWORD_REQUIRED, UNENCRYPTED_BACKUP_CLEAR_PASSWORD,
-    decrypt_ios_backup_domain, ios_backup_domain_files, ios_backup_encrypted_flag,
+    DecryptedDomain, decrypt_ios_backup_domain, ios_backup_domain_files, ios_backup_encrypted_flag,
 };
 use message_crate_core::{RunContext, WhatsappConfig};
 use message_staging::{Disk, check_headroom};
