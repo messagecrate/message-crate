@@ -1264,8 +1264,9 @@ async fn every_response_carries_a_server_made_request_id_and_a_problem_repeats_i
     assert!(problem.errors.is_some_and(|e| !e.is_empty()), "{text}");
 }
 
-/// A wrong password is `invalid-credentials` at 401, with no `Retry-After`:
-/// the server waited before answering, so there is nothing to wait for.
+/// A wrong password is `invalid-credentials` at `401 Unauthorized`, with no
+/// `Retry-After`: the server waited before answering, so there is nothing to
+/// wait for.
 #[tokio::test]
 async fn a_wrong_password_is_401_invalid_credentials() {
     let (fixture, _) = crate::test_support::fixture_with_account().await;

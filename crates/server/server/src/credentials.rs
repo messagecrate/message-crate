@@ -35,8 +35,8 @@ static DUMMY_PASSWORD_HASH: OnceLock<String> = OnceLock::new();
 /// so no test sleeps or reads the clock.
 #[derive(Debug, Clone)]
 pub(crate) enum RefusalWait {
-    /// Sleep this long.
-    Sleep(Duration),
+    /// Sleep [`REFUSAL_WAIT`].
+    Sleep,
     /// Count the wait and return at once.
     #[cfg(test)]
     Counted(Arc<AtomicUsize>),
@@ -44,7 +44,7 @@ pub(crate) enum RefusalWait {
 
 impl Default for RefusalWait {
     fn default() -> Self {
-        Self::Sleep(REFUSAL_WAIT)
+        Self::Sleep
     }
 }
 
@@ -59,7 +59,7 @@ impl RefusalWait {
     #[cfg(test)]
     pub(crate) fn waits(&self) -> usize {
         match self {
-            Self::Sleep(_) => 0,
+            Self::Sleep => 0,
             Self::Counted(waits) => waits.load(Ordering::SeqCst),
         }
     }
@@ -71,7 +71,7 @@ impl RefusalWait {
     /// refusals waiting their turn to answer do not empty the pool.
     pub(crate) async fn refuse(&self, detail: &str) -> ApiError {
         match self {
-            Self::Sleep(wait) => tokio::time::sleep(*wait).await,
+            Self::Sleep => tokio::time::sleep(REFUSAL_WAIT).await,
             #[cfg(test)]
             Self::Counted(waits) => {
                 waits.fetch_add(1, Ordering::SeqCst);
@@ -257,9 +257,9 @@ pub(crate) fn normalize_username(raw: &str) -> String {
 /// True for 1 to 128 characters of ASCII letters, digits, `_`, `-`, or `.`.
 ///
 /// ASCII only, because the account lookup (`COLLATE NOCASE`) folds ASCII
-/// letters only: a letter from another script would make an account whose name looks like another's, such as
-/// `аdmin` with a Cyrillic `а` beside `admin`. A preferred name carries a
-/// person's name in any script.
+/// letters only: a letter from another script would make an account whose
+/// name looks like another's, such as `аdmin` with a Cyrillic `а` beside
+/// `admin`. A preferred name carries a person's name in any script.
 pub(crate) fn is_valid_username(s: &str) -> bool {
     let s = s.trim();
     if s.is_empty() || s.len() > 128 {

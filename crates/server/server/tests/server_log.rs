@@ -377,7 +377,7 @@ async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_stand
 
 /// A refused request leaves a line with its problem type and status, at
 /// `WARN` when it is about who may do what (`401 Unauthorized`,
-/// `403 Forbidden`, `429 Too Many Requests`) and at
+/// `403 Forbidden`) and at
 /// `INFO` for the rest, so the owner's Logs panel, which opens at warnings
 /// and up, shows a password guesser or a token that lost its rights (#2168).
 /// The line never holds the problem's `detail`, which can repeat what a

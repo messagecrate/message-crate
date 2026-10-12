@@ -1,6 +1,6 @@
 //! `auth_check` is the desktop app's login, and every branch in it produces a
 //! different message for the person typing the URL: "that is the wrong host",
-//! "that session is not valid", "the server is rate limiting you". Nothing exercised
+//! "that session is not valid", "the server failed". Nothing exercised
 //! the function itself before — the unit tests reach the classifiers directly,
 //! so the wiring between the response and the classifier was untested, and a
 //! change that answered `unauthorized` to every failure would have passed them

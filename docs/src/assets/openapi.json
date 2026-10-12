@@ -12719,7 +12719,7 @@
           "Session"
         ],
         "summary": "Log in: verify a local username and password and answer the Session, a `201 Created` whose `Location` is the singleton itself.",
-        "description": "A refused login waits [`crate::credentials::REFUSAL_WAIT`], then answers\n`invalid-credentials`, whatever was wrong: a username nobody holds, a\nwrong or empty password, a disabled account. A login with the right\npassword does not wait.",
+        "description": "A refused login waits about a second, then answers\n`invalid-credentials`, whatever was wrong: a username nobody holds, a\nwrong or empty password, a disabled account. A login with the right\npassword does not wait.",
         "operationId": "create_session",
         "requestBody": {
           "content": {

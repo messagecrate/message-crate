@@ -139,7 +139,8 @@ one of the two `503 Service Unavailable` types, `server-stopping` and
 built, with the problem type's slug and the status
 (`problem=invalid-credentials status=401`). It is at `WARN` for
 `401 Unauthorized`, `403 Forbidden` and `database-busy`, and at `INFO` for
-every other refusal. The level follows from the problem type, by its status and, for `database-busy`, by name, in
+every other refusal. The level follows from the problem type, by its
+status and, for `database-busy`, by name, in
 `crates/server/server/src/problem.rs`, where each problem type is declared.
 The problem's `detail` is never written. A `database-busy` line also
 carries the error's chain as `error`, as the `ERROR` line of a `500` does

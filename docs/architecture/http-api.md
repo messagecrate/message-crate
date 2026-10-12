@@ -1023,7 +1023,7 @@ with TLS and a login of its own, and what the server itself must do there is
 a separate design (#2894).
 
 Rejected: counting attempts, per account, per username or for the whole
-server, and answering `429` past the count (#2893). A count per account let
+server, and answering `429 Too Many Requests` past the count (#2893). A count per account let
 anyone who knew a username lock its holder out by sending wrong passwords. A
 count per username needed timing machinery so that it would not tell a
 stranger which usernames name an account, and kept a count for every

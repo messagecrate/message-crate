@@ -1580,7 +1580,7 @@ export interface paths {
         put?: never;
         /**
          * Log in: verify a local username and password and answer the Session, a `201 Created` whose `Location` is the singleton itself.
-         * @description A refused login waits [`crate::credentials::REFUSAL_WAIT`], then answers
+         * @description A refused login waits about a second, then answers
          *     `invalid-credentials`, whatever was wrong: a username nobody holds, a
          *     wrong or empty password, a disabled account. A login with the right
          *     password does not wait.
