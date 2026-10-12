@@ -2606,7 +2606,7 @@ async fn every_import_contact_group_of_a_built_demo_has_members() {
         DEMO_ACCOUNT_ID,
         BuildBy {
             actor: AuditActor::CommandLine,
-            records: None,
+            record_with_size: None,
         },
         BuildRun::Serve,
         &AtomicBool::new(false),
@@ -2665,7 +2665,7 @@ async fn another_account_writes_between_the_demo_wipes_delete_batches() {
         DEMO_ACCOUNT_ID,
         BuildBy {
             actor: AuditActor::Server,
-            records: None,
+            record_with_size: None,
         },
         BuildRun::Serve,
         &AtomicBool::new(false),

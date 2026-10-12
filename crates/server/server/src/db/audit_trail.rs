@@ -693,17 +693,34 @@ pub async fn record_demo_build_after_removal(
     size: DemoDataSize,
     replaced: bool,
 ) -> Result<()> {
+    record(conn, &demo_build_entry(actor, size, replaced, None)).await?;
+    Ok(())
+}
+
+/// The entry that records a build of the Demo Account by `actor` with the
+/// `size` set: `demo_account_reset` when it `replaced` a Demo Account,
+/// `demo_account_added` when there was none. It is about `account` when one
+/// is given, and about no account otherwise.
+#[must_use]
+pub fn demo_build_entry<'a>(
+    actor: AuditActor,
+    size: DemoDataSize,
+    replaced: bool,
+    account: Option<(i64, &'a str)>,
+) -> NewEntry<'a> {
     let action = if replaced {
         AuditAction::DemoAccountReset
     } else {
         AuditAction::DemoAccountAdded
     };
-    let entry = NewEntry::about_no_account(action, actor).with_details(Details {
+    let entry = match account {
+        Some(account) => NewEntry::about(action, actor, account),
+        None => NewEntry::about_no_account(action, actor),
+    };
+    entry.with_details(Details {
         demo_data_size: Some(size),
         ..Details::default()
-    });
-    record(conn, &entry).await?;
-    Ok(())
+    })
 }
 
 async fn insert(

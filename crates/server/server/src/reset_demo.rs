@@ -500,7 +500,7 @@ pub async fn build_demo_account(
             &work.path().join("bundle"),
             BuildBy {
                 actor: AuditActor::Owner,
-                records: None,
+                record_with_size: None,
             },
             &stop,
         )
@@ -535,7 +535,7 @@ where
             &bundle,
             BuildBy {
                 actor: AuditActor::StartUp,
-                records: Some(size),
+                record_with_size: Some(size),
             },
             &AtomicBool::new(false),
         )
@@ -654,7 +654,7 @@ async fn reset_prepared_bundle_with(
         account_id,
         BuildBy {
             actor: AuditActor::CommandLine,
-            records: Some(size),
+            record_with_size: Some(size),
         },
         BuildRun::Command,
         &AtomicBool::new(false),
@@ -737,7 +737,7 @@ async fn rebuild_demo_account(
     let progress = run.progress();
     begin_demo_build(db).await?;
     let replaced = wipe_demo_account(cfg, db, account_id, by.actor, progress).await?;
-    if let Some(size) = by.records {
+    if let Some(size) = by.record_with_size {
         let mut conn = db.acquire().await?;
         crate::db::audit_trail::record_demo_build_after_removal(
             &mut conn, by.actor, size, replaced,
@@ -779,7 +779,7 @@ struct BuildBy {
     /// the owner's build, which the owner's request recorded already.
     ///
     /// [`audit_trail::record_demo_build_after_removal`]: crate::db::audit_trail::record_demo_build_after_removal
-    records: Option<DemoDataSize>,
+    record_with_size: Option<DemoDataSize>,
 }
 
 /// What runs a Demo Account build, which decides two things: whether it ends
