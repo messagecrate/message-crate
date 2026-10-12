@@ -497,8 +497,8 @@ on its screen, because it may show the sentence alone or joined with others.
 The web app joins a validation failure's `errors` with `; ` into one line, and
 a screen that shows a sentence on a line of its own capitalises its first
 letter with `errorLine` or `sentenceCase` (`web/src/lib/apiErrorMessage.ts`).
-A screen that runs a search uses `searchErrorLine` there instead: a search
-refusal about one word starts with that word, as
+A screen that runs a search uses `searchErrorLine` there instead: a
+`search-query-invalid` refusal about one word starts with that word, as
 `from: is not a Contacts word; it works on Messages`, and a capital would
 change the word, so that sentence is shown as it is.
 For a `5xx`, the web app ends the sentence with the problem's `request_id`, as

@@ -732,7 +732,7 @@ carry their date on the heading.
 - 2026-10-12: **A refused import reads as one line.** The reason the server
   gives for refusing part of an import, such as a message with no guid or a
   file from another schema version, no longer starts with a capital or ends
-  with a full stop, so the line the app shows for the file reads as one
+  with a period, so the line the app shows for the file reads as one
   sentence. Convert words a file from another schema version the same way
   (#2815).
 - 2026-10-12: **SMS Backup+ dates are read in the unit the app wrote.**

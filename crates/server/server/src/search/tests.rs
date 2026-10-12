@@ -754,7 +754,7 @@ pub(crate) fn err(list: ListKind, q: &str) -> QueryError {
     .expect_err("expected a refusal")
 }
 
-/// Every refusal is one sentence in lowercase with no final stop, the form
+/// Every refusal is one sentence in lowercase with no final period, the form
 /// `docs/architecture/http-api.md`, "Failures", gives every `detail`, so the
 /// website decides how the line starts and ends (#2816). One query per kind
 /// of refusal, and per sentence the parser writes.

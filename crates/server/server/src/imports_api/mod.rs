@@ -950,7 +950,9 @@ fn optional_json_string(
 
 /// [`optional_json_string`] for a value an Import Run stores as it is
 /// created. Adds to `errors` the sentence refusing it when it is over
-/// [`MAX_IMPORT_RUN_JSON_BYTES`].
+/// [`MAX_IMPORT_RUN_JSON_BYTES`], and still returns it, so the route goes on
+/// to name every other rule the body breaks. Only a value that cannot be
+/// serialized returns early, as an internal failure.
 fn capped_json_string(
     value: Option<&serde_json::Value>,
     field: &str,
@@ -1419,15 +1421,15 @@ pub(crate) async fn create_import(
     } else if let Err(e) = validate_source_id(&body.source) {
         errors.push(e.to_string());
     }
-    let phone_country = body.phone_country.as_deref().and_then(|code| {
-        let country = phone::country(code);
-        if country.is_none() {
-            errors.push(format!(
+    let mut phone_country = None;
+    if let Some(code) = body.phone_country.as_deref() {
+        match phone::country(code) {
+            Some(country) => phone_country = Some(country),
+            None => errors.push(format!(
                 "phone_country {code:?} is not a country GET /v1/phone-countries lists"
-            ));
+            )),
         }
-        country
-    });
+    }
     let tool = body
         .tool
         .as_deref()
