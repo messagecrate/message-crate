@@ -53,8 +53,9 @@ use crate::paging::{
     DEFAULT_LIST_LIMIT, Page, PageQuery, page_from_rows, page_params, parse_status, sorted_page,
 };
 use crate::server::{
-    ApiError, AppState, BATCH_BODY_IDLE, Created, ImportAccess, content_type_base,
-    is_jsonl_content_type, resolve_import_account, run_blocking, stream_body_to_file,
+    ApiError, AppState, Created, ImportAccess, batch_body_bounded, content_type_base,
+    declared_over, is_jsonl_content_type, resolve_import_account, run_blocking,
+    stream_body_to_file,
 };
 use crate::text_caps::{
     MAX_DEVICE_ID_CHARS, MAX_IMPORT_ERROR_TEXT_CHARS, MAX_IMPORT_NOTE_TEXT_CHARS,
@@ -1863,18 +1864,19 @@ pub(crate) async fn create_import_batch(
     if is_jsonl_content_type(ct) {
         // A body that says it is over the cap is refused before it waits
         // for a slot; one that does not say is cut off as it is read.
-        if crate::server::declared_over(&headers, MAX_IMPORT_BATCH_BYTES) {
+        if declared_over(&headers, MAX_IMPORT_BATCH_BYTES) {
             return Err(ApiError::PayloadTooLarge);
         }
         // The slot comes before the body, so a batch waiting behind the
         // running imports holds no disk (#2095). The read gives up once the
-        // body stops arriving, so a client gone part-way never holds the
-        // slot for good.
+        // body stops arriving or takes too long, so a client gone part-way,
+        // or one that sends a byte now and then, never holds the slot for
+        // good.
         let permit = take_import_slot(&state).await?;
         let temp = batch_bodies::new_dir(&state.cfg.paths.data_dir)
             .map_err(|e| ApiError::Internal(anyhow::anyhow!("import batch directory: {e}")))?;
         let jsonl_path = temp.path().join("_import.jsonl");
-        let body = crate::server::idle_bounded(request.into_body(), BATCH_BODY_IDLE);
+        let body = batch_body_bounded(request.into_body());
         let n = stream_body_to_file(body, &jsonl_path, MAX_IMPORT_BATCH_BYTES).await?;
         if n == 0 {
             return Err(ImportFailure::Empty.into());

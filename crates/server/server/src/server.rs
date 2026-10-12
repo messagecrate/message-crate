@@ -1991,23 +1991,44 @@ pub(crate) fn declared_over(headers: &HeaderMap, limit: usize) -> bool {
 /// laptop that goes to sleep, must not hold one for good.
 pub(crate) const BATCH_BODY_IDLE: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// The read of a body ended because nothing arrived for the idle bound.
-#[derive(Debug, thiserror::Error)]
-#[error("no bytes arrived for {} seconds", .0.as_secs())]
-pub(crate) struct BodyStalled(std::time::Duration);
+/// How long an import batch's whole body may take to arrive. A client that
+/// sends a byte now and then never meets [`BATCH_BODY_IDLE`], so this bounds
+/// how long it can hold a slot. Ten minutes is the Upload's own timeout for
+/// one batch request, so no Upload is still sending a body after it.
+pub(crate) const BATCH_BODY_DEADLINE: std::time::Duration = std::time::Duration::from_secs(600);
 
-/// `body`, ending with a [`BodyStalled`] error once `idle` passes with no
-/// chunk arriving. Reading it answers `400 Bad Request` then, as a body that
-/// stops arriving for any other reason does.
-pub(crate) fn idle_bounded(body: axum::body::Body, idle: std::time::Duration) -> axum::body::Body {
+/// Why the read of an import batch's body ended before the body did.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum BodyTooSlow {
+    /// Nothing arrived for [`BATCH_BODY_IDLE`].
+    #[error("no bytes arrived for {} seconds", BATCH_BODY_IDLE.as_secs())]
+    Stalled,
+    /// The body was still arriving at [`BATCH_BODY_DEADLINE`].
+    #[error("the body took longer than {} seconds to arrive", BATCH_BODY_DEADLINE.as_secs())]
+    Overdue,
+}
+
+/// An import batch's `body`, ending with a [`BodyTooSlow`] error once
+/// [`BATCH_BODY_IDLE`] passes with no chunk arriving, or
+/// [`BATCH_BODY_DEADLINE`] passes from the start of the read. Reading it
+/// answers `400 Bad Request` then, as a body that stops arriving for any
+/// other reason does.
+pub(crate) fn batch_body_bounded(body: axum::body::Body) -> axum::body::Body {
     type BoxError = Box<dyn std::error::Error + Send + Sync>;
+    let deadline = tokio::time::Instant::now() + BATCH_BODY_DEADLINE;
     let chunks =
         futures_util::stream::unfold(Some(body.into_data_stream()), move |stream| async move {
             let mut stream = stream?;
-            match tokio::time::timeout(idle, stream.next()).await {
+            let idle_end = tokio::time::Instant::now() + BATCH_BODY_IDLE;
+            let (wait_until, too_slow) = if idle_end < deadline {
+                (idle_end, BodyTooSlow::Stalled)
+            } else {
+                (deadline, BodyTooSlow::Overdue)
+            };
+            match tokio::time::timeout_at(wait_until, stream.next()).await {
                 Ok(Some(chunk)) => Some((chunk.map_err(BoxError::from), Some(stream))),
                 Ok(None) => None,
-                Err(_) => Some((Err(BoxError::from(BodyStalled(idle))), None)),
+                Err(_) => Some((Err(BoxError::from(too_slow)), None)),
             }
         });
     axum::body::Body::from_stream(chunks)
