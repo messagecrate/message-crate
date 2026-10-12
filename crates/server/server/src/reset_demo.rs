@@ -145,6 +145,7 @@ async fn dedupe_and_process_assets(
     let opened = OpenDb {
         cfg: cfg.clone(),
         db: db.clone(),
+        wal_error: None,
     };
     let process_stats = process_assets::run(
         &opened,

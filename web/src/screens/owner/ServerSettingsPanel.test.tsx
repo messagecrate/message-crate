@@ -33,7 +33,11 @@ function renderPanel() {
 
 beforeEach(() => {
   getServerSettings.mockReset();
-  getServerSettings.mockResolvedValue({ public_registration: false, asset_max_bytes: 512 * MIB });
+  getServerSettings.mockResolvedValue({
+    public_registration: false,
+    asset_max_bytes: 512 * MIB,
+    journal: { mode: "wal", wal_error: null },
+  });
   updateServerSettings.mockReset();
 });
 
@@ -50,7 +54,11 @@ describe("ServerSettingsPanel attachment size limit", () => {
 
   it("offers no save for a limit that is not a whole number of hundredths of a megabyte", async () => {
     // 0.333 MB, which the field shows rounded to 0.33.
-    getServerSettings.mockResolvedValue({ public_registration: false, asset_max_bytes: 349_176 });
+    getServerSettings.mockResolvedValue({
+      public_registration: false,
+      asset_max_bytes: 349_176,
+      journal: { mode: "wal", wal_error: null },
+    });
     renderPanel();
 
     expect(await screen.findByLabelText("Attachment size limit")).toHaveValue(0.33);
@@ -61,6 +69,7 @@ describe("ServerSettingsPanel attachment size limit", () => {
     updateServerSettings.mockResolvedValue({
       public_registration: false,
       asset_max_bytes: 100 * MIB,
+      journal: { mode: "wal", wal_error: null },
     });
     renderPanel();
     const field = await screen.findByLabelText("Attachment size limit");

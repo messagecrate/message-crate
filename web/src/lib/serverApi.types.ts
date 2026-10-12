@@ -1381,8 +1381,8 @@ export interface paths {
         /**
          * Report whether this Message Crate is unclaimed, closed, or open.
          * @description Also reports this Message Crate's id, the server's Build, its Schema
-         *     Fingerprint, the database's journal mode, whether the Demo Account
-         *     exists, and the attachment size limit.
+         *     Fingerprint, whether the Demo Account exists, the attachment size limit,
+         *     and the upload time limits.
          */
         get: operations["get_server"];
         put?: never;
@@ -1529,7 +1529,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read the server settings. */
+        /** Read the server settings, and how the database is stored: its journal mode, and the error SQLite gave when the server asked for write-ahead logging. */
         get: operations["get_server_settings"];
         put?: never;
         post?: never;
@@ -2694,6 +2694,28 @@ export interface components {
             token: string;
             /** @description The username the account logs in with. */
             username: string;
+        };
+        /**
+         * @description The journal SQLite keeps the database with, and why it is not
+         *     write-ahead logging when it is not.
+         */
+        DatabaseJournal: {
+            /**
+             * @description The journal mode SQLite runs the database in now, read when the
+             *     request is answered. The server asks for `wal` on every start. Any
+             *     other mode means it could not have it, as when another program held
+             *     the database file, and then every page waits while an import writes.
+             *     Owner Home says so. `null` when the mode could not be read; the
+             *     server's log says why.
+             */
+            mode: components["schemas"]["JournalMode"] | null;
+            /**
+             * @description The error SQLite gave when the server asked for write-ahead logging
+             *     as it started, in SQLite's words, such as `database is locked`.
+             *     `null` when SQLite gave none: it turned write-ahead logging on, or
+             *     kept another mode without an error.
+             */
+            wal_error: string | null;
         };
         /** @description What one dedupe did. */
         DedupeCounts: {
@@ -5448,16 +5470,6 @@ export interface components {
              */
             id: string;
             /**
-             * @description The journal mode SQLite runs the database in now. The server asks for
-             *     `wal` on every start. Any other mode means it could not have it, as
-             *     when another program held the database file, and then every page
-             *     waits while an import writes. Owner Home says so, and the server's
-             *     log holds what SQLite answered. `null` when the
-             *     mode could not be read. The route still answers, because the entry
-             *     screen reads it before anyone can log in.
-             */
-            journal_mode: components["schemas"]["JournalMode"] | null;
-            /**
              * Format: int64
              * @description The Schema Fingerprint, the number this server stamps into its database.
              */
@@ -5491,7 +5503,10 @@ export interface components {
              */
             version: string;
         };
-        /** @description The server settings the owner controls. */
+        /**
+         * @description The server settings the owner controls, with the database's journal
+         *     beside them, which the owner reads and cannot change.
+         */
         ServerSettings: {
             /**
              * Format: int64
@@ -5499,6 +5514,11 @@ export interface components {
              *     accepts. 536870912 (512 MiB) until the owner changes it.
              */
             asset_max_bytes: number;
+            /**
+             * @description The journal SQLite keeps the database with. Not a setting: the
+             *     server reports it here because only the owner may read it.
+             */
+            journal: components["schemas"]["DatabaseJournal"];
             /** @description Anyone reaching the server may create their own account. */
             public_registration: boolean;
         };

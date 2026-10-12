@@ -945,15 +945,25 @@ What each reaches:
   there, not in the answer that starts an Import Run, because the desktop
   app's web screens start the run and the Upload only posts into it, often
   after a restart.
-- `GET /v1/server` reports the journal mode SQLite runs the database in,
-  `journal_mode`, read when the request is answered, to any client. Owner
-  Home says so when it is not `wal`. It is `null` when the mode cannot be
-  read, and the route still answers, because the entry screen reads it
-  before anyone can log in. Why: in any other mode every page
-  waits while an import writes, and a warning in the server's log was the
-  only sign of it (#2201). The mode is a fact about the installation that
-  holds nothing of any account, as the Build is, so it needs no credential.
-  The reason SQLite gave stays in the log, which the owner alone reads.
+- `/v1/server/settings` reports the database's journal as `journal`: the
+  journal mode SQLite runs the database in, `mode`, read when the request
+  is answered, and `wal_error`, the error SQLite gave when the server asked
+  for write-ahead logging as it started, in SQLite's words. `journal` is not
+  a setting, so it sits in an object of its own beside the settings, and
+  the owner cannot change it. `GET` and `PATCH` answer it, so the answer to
+  a change replaces the one the screen read without losing it. Owner Home
+  says so when the mode is not `wal`, or it cannot be read and SQLite gave
+  an error, and names that error. A `wal` mode hides the notice whatever
+  `wal_error` says, because the error is from the start and the file may
+  have been switched to write-ahead logging since. `mode` is `null` when it cannot be read, and the route still
+  answers. `wal_error` is `null` when SQLite gave no error: it turned
+  write-ahead logging on, or kept another mode without one. Why:
+  in any other mode every page waits while an import writes, and a warning
+  in the server's log was the only sign of it (#2201). Neither is on
+  `GET /v1/server`, which answers anyone: that route carries only what a
+  client needs before it logs in, and how the database is stored is not
+  that (#2703). SQLite's error goes to the owner alone, as the server's log
+  does (#2691).
 - Free text a route stores has a cap of its own, stated in the field's
   OpenAPI description: a name a person types (an account's display name, a
   contact's name) at most 200 characters, an identity address it links at

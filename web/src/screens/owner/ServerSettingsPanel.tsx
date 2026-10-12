@@ -4,9 +4,10 @@ import Checkbox from "../../components/Checkbox";
 import { textInputClass } from "../../components/TextField";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
-import { useRouteCache, useRouteMutation, useRouteQuery } from "../../lib/routeQuery";
-import { getServerSettings, updateServerSettings } from "../../lib/serverApi";
+import { useRouteCache, useRouteMutation } from "../../lib/routeQuery";
+import { updateServerSettings } from "../../lib/serverApi";
 import { useServerInfo } from "../../lib/useServerInfo";
+import { useServerSettings } from "../../lib/useServerSettings";
 import { DemoAccountCard } from "./DemoAccountCard";
 
 const MIB = 1024 * 1024;
@@ -31,9 +32,7 @@ function megabytes(bytes: number): string {
  */
 export function ServerSettingsPanel() {
   const cache = useRouteCache();
-  const { data, isPending, error } = useRouteQuery(keys.serverSettings.all, (signal) =>
-    getServerSettings({ signal }),
-  );
+  const { data, isPending, error } = useServerSettings();
   const save = useRouteMutation({
     mutationFn: (public_registration: boolean) => updateServerSettings({ public_registration }),
     onSuccess: (settings) => cache.set(keys.serverSettings.all, settings),
@@ -139,20 +138,22 @@ export function ServerSettingsPanel() {
 
       <DemoAccountCard />
 
-      {info.data ? (
-        <dl className="mt-4 grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-6 gap-y-2 rounded-xl border border-border bg-elevated p-4 text-[0.875rem]">
-          <dt className="text-muted">Version</dt>
-          <dd className="m-0 font-mono text-[0.813rem] text-text">{info.data.version}</dd>
-          <dt className="text-muted">Schema fingerprint</dt>
-          <dd className="m-0 font-mono text-[0.813rem] text-text">
-            {info.data.schema_fingerprint}
-          </dd>
-          <dt className="text-muted">Journal mode</dt>
-          <dd className="m-0 font-mono text-[0.813rem] text-text">
-            {info.data.journal_mode ?? "unknown (the server's log says why)"}
-          </dd>
-        </dl>
-      ) : null}
+      <dl className="mt-4 grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-6 gap-y-2 rounded-xl border border-border bg-elevated p-4 text-[0.875rem]">
+        {info.data ? (
+          <>
+            <dt className="text-muted">Version</dt>
+            <dd className="m-0 font-mono text-[0.813rem] text-text">{info.data.version}</dd>
+            <dt className="text-muted">Schema fingerprint</dt>
+            <dd className="m-0 font-mono text-[0.813rem] text-text">
+              {info.data.schema_fingerprint}
+            </dd>
+          </>
+        ) : null}
+        <dt className="text-muted">Journal mode</dt>
+        <dd className="m-0 font-mono text-[0.813rem] text-text">
+          {data.journal.mode ?? "unknown (the server's log says why)"}
+        </dd>
+      </dl>
     </section>
   );
 }
