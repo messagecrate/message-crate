@@ -111,6 +111,7 @@ async fn media_none_skips_attachment_copy() {
             import_id: None,
             source_from_jsonl: true,
             media: MediaMode::Disabled,
+            media_tools: &media::testutil::FakeTools::missing(),
             wipe_sources: Some(vec!["sms".into()]),
             phone_country: None,
             progress: Progress::Log,
@@ -124,19 +125,16 @@ async fn media_none_skips_attachment_copy() {
 }
 
 /// `import --media convert` stores the converted file in place of the
-/// original: a PNG goes in and the attachment the database holds is a JPEG.
-/// Runs the real ffmpeg, so the guard is taken outside the async block, as
-/// Clippy's `await_holding_lock` asks.
-#[test]
-fn media_convert_stores_the_converted_file_not_the_original() {
+/// original: a PNG goes in and the attachment the database holds is the
+/// JPEG ffmpeg wrote.
+#[tokio::test]
+async fn media_convert_stores_the_converted_file_not_the_original() {
     use crate::config::PathsConfig;
     use media::MediaMode;
     use media::testutil::PNG_1X1_RGB;
 
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
-        return;
-    };
-    let test = async {
+    let tools = media::testutil::FakeTools::new().writing("the jpeg");
+    {
         let tmp = TempDir::new().unwrap();
         let db = tmp.path().join("messagecrate.db");
         let paths = PathsConfig {
@@ -167,6 +165,7 @@ fn media_convert_stores_the_converted_file_not_the_original() {
                 import_id: None,
                 source_from_jsonl: true,
                 media: MediaMode::Convert,
+                media_tools: &tools,
                 wipe_sources: Some(vec!["imessage".into()]),
                 phone_country: None,
                 progress: Progress::Log,
@@ -185,14 +184,9 @@ fn media_convert_stores_the_converted_file_not_the_original() {
         let stored = paths
             .assets_dir_for_account(TEST_ACCOUNT)
             .join(assets_path.expect("the attachment is stored"));
-        let bytes = fs::read(&stored).unwrap();
-        assert_eq!(&bytes[..2], [0xff, 0xd8], "a JPEG starts with SOI");
-    };
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(test);
+        assert_eq!(fs::read(&stored).unwrap(), b"the jpeg");
+    }
+    assert_eq!(tools.runs().len(), 1, "ffmpeg ran once, on the PNG");
 }
 
 #[tokio::test]

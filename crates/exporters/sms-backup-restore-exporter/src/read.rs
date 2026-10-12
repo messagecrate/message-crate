@@ -1,7 +1,9 @@
 //! Read SMS Backup & Restore XML into [`ConversationDocument`] values.
 
 use anyhow::{Result, bail};
-use media::{CompressOptions, MediaMode};
+use std::sync::Arc;
+
+use media::{CompressOptions, MediaMode, MediaTools};
 use message_crate_core::{
     CancelFlag, Cancelled, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, MediaConfig,
     ProgressSink, SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE,
@@ -223,6 +225,8 @@ pub struct ReadOptions<'a> {
     pub media: MediaMode,
     /// Image/video compress settings used when `media` converts or compresses.
     pub compress: CompressOptions,
+    /// The ffmpeg and ffprobe used when `media` converts or compresses.
+    pub tools: Arc<dyn MediaTools>,
     /// Human-readable notes and warnings while reading.
     pub log: &'a LogSink,
     /// Typed progress events while staging attachments.
@@ -345,6 +349,7 @@ pub fn spooled_attachments<'a>(
         MediaConfig {
             mode,
             compress: options.compress.clone(),
+            tools: Arc::clone(&options.tools),
         },
         PathSources::OnDisk,
         |att| {

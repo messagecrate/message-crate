@@ -7,8 +7,9 @@
 
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use media::{CompressOptions, MediaMode};
+use media::{CompressOptions, MediaMode, MediaTools, NoTools};
 
 use crate::exporters::{ApplePlatform, Exporter, WhatsappPlatform};
 use crate::pipeline::IssueSink;
@@ -242,13 +243,21 @@ pub struct MediaConfig {
     pub mode: MediaMode,
     /// Compress-mode options (long-edge cap, max fps, min size).
     pub compress: CompressOptions,
+    /// The ffmpeg and ffprobe Convert and Compress run, and the Tools
+    /// Directory the WhatsApp exporter finds `wtsexporter` in
+    /// ([`MediaTools::tools_dir`]). The caller builds them from where it
+    /// keeps its tools ([`media::InstalledTools`]); a test passes a fake.
+    pub tools: Arc<dyn MediaTools>,
 }
 
 impl Default for MediaConfig {
+    /// Clone, with no tools at all ([`NoTools`]): a run that converts or
+    /// compresses is given its tools by its caller, and fails if it is not.
     fn default() -> Self {
         Self {
             mode: MediaMode::Clone,
             compress: CompressOptions::default(),
+            tools: Arc::new(NoTools),
         }
     }
 }

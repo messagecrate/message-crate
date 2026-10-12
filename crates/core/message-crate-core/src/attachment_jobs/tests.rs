@@ -1,11 +1,11 @@
 use super::*;
+use media::MediaMode;
 use media::testutil::PNG_1X1_RGB;
-use media::{CompressOptions, MediaMode};
 
 fn media_cfg(mode: MediaMode) -> MediaConfig {
     MediaConfig {
         mode,
-        compress: CompressOptions::default(),
+        ..MediaConfig::default()
     }
 }
 use message_ir::IrAttachment;
@@ -766,7 +766,7 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
 /// that file's type, and mark the one it could not convert.
 #[test]
 fn convert_points_each_attachment_at_its_converted_file() {
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+    let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
@@ -792,7 +792,10 @@ fn convert_points_each_attachment_at_its_converted_file() {
         run_attachment_jobs(
             &mut jobs,
             &att_dir,
-            &media_cfg(MediaMode::Convert),
+            &MediaConfig {
+                tools: std::sync::Arc::new(tools),
+                ..media_cfg(MediaMode::Convert)
+            },
             |i| {
                 Ok(Some(if i == 0 {
                     PNG_1X1_RGB.to_vec()

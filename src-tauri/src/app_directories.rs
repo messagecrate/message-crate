@@ -45,12 +45,11 @@ pub fn tools_dir_in(home: &Path) -> PathBuf {
 }
 
 /// Make the Tools Directory under `home`, so a program put there by hand
-/// has a place to go, and name it to the lookups of this process. A
-/// directory that cannot be made is still named: nothing is found in it.
-pub fn use_tools_dir_in(home: &Path) -> PathBuf {
+/// has a place to go, and answer it. A directory that cannot be made is
+/// still answered: nothing is found in it.
+pub fn make_tools_dir_in(home: &Path) -> PathBuf {
     let tools = tools_dir_in(home);
     let _ = std::fs::create_dir_all(&tools);
-    media::set_tools_dir(Some(tools.clone()));
     tools
 }
 
@@ -164,26 +163,21 @@ mod tests {
     use message_crate_core::testutil::run_log_lines;
 
     use super::{
-        RunLog, import_run_log, logs_dir_in, scratch_dir_in, sweep_at_start_up, tools_dir_in,
-        use_tools_dir_in,
+        RunLog, import_run_log, logs_dir_in, make_tools_dir_in, scratch_dir_in, sweep_at_start_up,
+        tools_dir_in,
     };
 
     /// The Tools Directory is `tools` in the Message Crate Directory, and the
-    /// app makes it and names it to its lookups when it starts (#1053).
+    /// app makes it when it starts (#1053).
     #[test]
-    fn the_tools_directory_is_made_and_named_to_the_lookups() {
-        let _lock = media::testutil::tools_test_lock();
+    fn the_tools_directory_is_made_in_the_message_crate_directory() {
         let home = tempfile::tempdir().unwrap();
         let tools = home.path().join("message-crate").join("tools");
         assert_eq!(tools_dir_in(home.path()), tools);
 
-        let previous = media::tools_dir();
-        assert_eq!(use_tools_dir_in(home.path()), tools);
-        let named = media::tools_dir();
-        media::set_tools_dir(previous);
+        assert_eq!(make_tools_dir_in(home.path()), tools);
 
         assert!(tools.is_dir());
-        assert_eq!(named, Some(tools));
     }
 
     #[test]

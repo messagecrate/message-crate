@@ -27,11 +27,11 @@ use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
-use media::{CompressOptions, MediaMode};
+use media::{CompressOptions, MediaMode, MediaTools};
 use message_crate_core::{
     AttachmentJob, CONVERSATION_FILES_PREPARING, CONVERSATIONS_RESUMED, CancelFlag, Counter,
     IssueSink, LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent, ProgressSink,
@@ -141,6 +141,8 @@ pub struct WriteQueueOptions {
     pub media: MediaMode,
     /// Compress settings, used by the convert/compress run after the write.
     pub compress: CompressOptions,
+    /// The ffmpeg and ffprobe the convert/compress run uses.
+    pub tools: Arc<dyn MediaTools>,
     /// Skip units whose conversation file is already on disk.
     pub resume: bool,
     /// 0 picks a count from the machine. The sequential drain ignores it.
@@ -655,6 +657,7 @@ fn run_media_post_pass(
     let report = transcode_staged(
         output_dir,
         &transcode_options,
+        options.tools.as_ref(),
         cancel,
         &IssueSink::none(),
         log,
@@ -833,6 +836,7 @@ fn write_one_unit(
             &MediaConfig {
                 mode: stage_mode,
                 compress: options.compress.clone(),
+                tools: Arc::clone(&options.tools),
             },
             |i| match sources.get_mut(i) {
                 Some(source) => load(&file, source),

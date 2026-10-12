@@ -288,12 +288,15 @@ fn a_malformed_fingerprint_is_refused_before_a_conversion() {
     };
 
     for media in [media::MediaMode::Convert, media::MediaMode::Compress] {
+        let assets = tmp.path().join("assets");
         let err = prepare_attachments(
-            Some(&export_dir),
-            &tmp.path().join("assets"),
+            &ImportOptions {
+                media,
+                ..append_opts(&assets, &export_dir, "")
+            },
+            &assets,
             vec![att.clone()],
             &mut AssetStats::default(),
-            media,
             tmp.path(),
             2,
         )

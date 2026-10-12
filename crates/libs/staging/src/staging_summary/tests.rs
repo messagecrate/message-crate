@@ -1,6 +1,7 @@
 use super::*;
 use crate::write_queue::conversation_file;
 use media::CompressOptions;
+use media::testutil::FakeTools;
 use message_ir::{IrAttachment, IrParticipant};
 use message_ir_format::write_conversation_jsonl_to;
 
@@ -203,7 +204,13 @@ fn staged_fixture_with_many_attachments(count: usize) -> tempfile::TempDir {
 #[test]
 fn counts_conversations_messages_and_distinct_contacts() {
     let dir = staged_fixture(); // two conversations, one shared participant
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |_| {},
+    )
+    .unwrap();
     assert_eq!(summary.conversations, 2);
     assert_eq!(summary.messages, 5);
     assert_eq!(
@@ -220,7 +227,7 @@ fn the_summary_carries_the_limit_its_verdicts_were_measured_against() {
         asset_max_bytes: 7 * 1024 * 1024,
         ..summary_options()
     };
-    let summary = summarize_staging(dir.path(), &options, &mut |_| {}).unwrap();
+    let summary = summarize_staging(dir.path(), &options, &FakeTools::new(), &mut |_| {}).unwrap();
     assert_eq!(summary.asset_max_bytes, 7 * 1024 * 1024);
 }
 
@@ -238,7 +245,13 @@ fn the_summary_carries_the_attachment_mode_staging_recorded() {
             mode,
             ..summary_options()
         };
-        let summary = summarize_staging(staged_fixture().path(), &options, &mut |_| {}).unwrap();
+        let summary = summarize_staging(
+            staged_fixture().path(),
+            &options,
+            &FakeTools::new(),
+            &mut |_| {},
+        )
+        .unwrap();
         assert_eq!(summary.media_mode, mode);
         assert_eq!(
             serde_json::to_value(&summary).unwrap()["mediaMode"],
@@ -254,14 +267,26 @@ fn attachment_bytes_are_measured_on_disk_not_read_from_the_document() {
     let dir = staged_fixture();
     let attachment = dir.path().join("attachments/photo.png");
     std::fs::write(&attachment, vec![7u8; 4096]).unwrap();
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |_| {},
+    )
+    .unwrap();
     assert_eq!(summary.attachment_bytes, 4096);
 }
 
 #[test]
 fn an_attachment_that_is_already_missing_is_counted_but_not_forecast() {
     let dir = staged_fixture_with_missing_reason("not_copied");
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |_| {},
+    )
+    .unwrap();
     assert_eq!(summary.attachments, 1);
     assert_eq!(summary.attachment_bytes, 0);
     assert!(
@@ -276,7 +301,13 @@ fn only_files_worth_reporting_get_a_forecast_row() {
     // verdict is something other than "fits as-is", because that is the
     // whole content of the report.
     let dir = staged_fixture_with_sizes(&[("small.png", 1024), ("huge.png", 900 * 1024 * 1024)]);
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |_| {},
+    )
+    .unwrap();
     assert_eq!(summary.forecasts.len(), 1);
     assert_eq!(summary.forecasts[0].name, "huge.png");
     assert_eq!(summary.forecasts[0].verdict, SizeVerdict::ProbablyTooBig);
@@ -289,7 +320,7 @@ fn clone_mode_forecasts_each_file_at_the_size_it_already_has() {
     let dir = staged_fixture_with_sizes(&[("huge.png", 900 * 1024 * 1024)]);
     let mut options = summary_options();
     options.mode = MediaMode::Clone;
-    let summary = summarize_staging(dir.path(), &options, &mut |_| {}).unwrap();
+    let summary = summarize_staging(dir.path(), &options, &FakeTools::new(), &mut |_| {}).unwrap();
     assert_eq!(summary.forecasts.len(), 1);
     assert_eq!(summary.forecasts[0].verdict, SizeVerdict::ProbablyTooBig);
     assert_eq!(
@@ -305,7 +336,13 @@ fn a_jpeg_convert_leaves_alone_forecasts_its_own_size_not_a_shrink() {
     // the current size would promise a shrink that convert_video/image
     // never performs on a file already in its target format.
     let dir = staged_fixture_with_sizes(&[("big.jpg", 55 * 1024 * 1024)]);
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |_| {},
+    )
+    .unwrap();
     assert_eq!(summary.forecasts.len(), 1);
     assert_eq!(
         summary.forecasts[0].estimate_bytes,
@@ -325,7 +362,8 @@ fn a_committed_derivative_is_judged_on_its_own_size_not_a_mode_factor() {
     for mode in [MediaMode::Convert, MediaMode::Compress] {
         let mut options = summary_options();
         options.mode = mode;
-        let summary = summarize_staging(dir.path(), &options, &mut |_| {}).unwrap();
+        let summary =
+            summarize_staging(dir.path(), &options, &FakeTools::new(), &mut |_| {}).unwrap();
         assert!(
             summary.forecasts.is_empty(),
             "a committed derivative under the limit gets no forecast row (mode {mode:?})"
@@ -339,7 +377,13 @@ fn aliased_attachments_sharing_one_file_count_bytes_and_forecast_once() {
     // `attachments` is per-reference (2); everything else measured from
     // the file itself is per-physical-file (1).
     let dir = staged_fixture_with_aliased_attachment(900 * 1024 * 1024);
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |_| {},
+    )
+    .unwrap();
     assert_eq!(summary.attachments, 2, "one reference per document");
     assert_eq!(
         summary.attachment_bytes,
@@ -383,7 +427,13 @@ fn two_attachments_in_one_document_sharing_one_file_count_bytes_and_forecast_onc
     let jsonl = conversation_file(dir.path(), &doc);
     write_conversation_jsonl_to(&jsonl, &doc).unwrap();
 
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |_| {},
+    )
+    .unwrap();
     assert_eq!(
         summary.attachments, 2,
         "one reference per message, both in the same document"
@@ -399,7 +449,13 @@ fn two_attachments_in_one_document_sharing_one_file_count_bytes_and_forecast_onc
 #[test]
 fn a_directory_with_no_conversation_files_is_an_empty_summary_not_an_error() {
     let dir = tempfile::tempdir().unwrap();
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |_| {},
+    )
+    .unwrap();
     assert_eq!(summary.conversations, 0);
     assert_eq!(summary.messages, 0);
 }
@@ -408,9 +464,14 @@ fn a_directory_with_no_conversation_files_is_an_empty_summary_not_an_error() {
 fn progress_reports_a_final_call_matching_the_attachment_total() {
     let dir = staged_fixture_with_sizes(&[("a.png", 10), ("b.png", 20), ("c.png", 30)]);
     let mut seen = Vec::new();
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |p| {
-        seen.push((p.done, p.total));
-    })
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |p| {
+            seen.push((p.done, p.total));
+        },
+    )
     .unwrap();
     assert_eq!(seen.first(), Some(&(0, 3)));
     assert_eq!(seen.last(), Some(&(3, 3)));
@@ -421,9 +482,14 @@ fn progress_reports_a_final_call_matching_the_attachment_total() {
 fn progress_cadence_is_pinned_at_every_hundred_plus_a_final_call() {
     let dir = staged_fixture_with_many_attachments(250);
     let mut seen = Vec::new();
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |p| {
-        seen.push((p.done, p.total));
-    })
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |p| {
+            seen.push((p.done, p.total));
+        },
+    )
     .unwrap();
     assert_eq!(
         seen,
@@ -473,7 +539,13 @@ fn messages_are_counted_under_the_owner_handle_that_sent_or_received_them() {
     let jsonl = conversation_file(dir.path(), &doc);
     write_conversation_jsonl_to(&jsonl, &doc).unwrap();
 
-    let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
+    let summary = summarize_staging(
+        dir.path(),
+        &summary_options(),
+        &FakeTools::new(),
+        &mut |_| {},
+    )
+    .unwrap();
 
     assert_eq!(
         summary.owner_identities,

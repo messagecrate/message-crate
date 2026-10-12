@@ -1,5 +1,5 @@
 use super::*;
-use media::MediaMode;
+use media::{InstalledTools, MediaMode};
 use message_crate_core::{ApplePlatform, IssueSink, SourceConfig, WhatsappPlatform};
 use std::fs;
 
@@ -40,6 +40,7 @@ fn convert_and_compress_stage_originals_and_defer_the_media_stage() {
         options.attachment_media = chosen;
         let config = build_exporter_config(
             Path::new("/scratch"),
+            &InstalledTools::default(),
             "imessage-ios",
             "/backup",
             "/out",
@@ -61,6 +62,7 @@ fn copy_and_skip_reach_the_exporter_unchanged() {
         options.attachment_media = chosen;
         let config = build_exporter_config(
             Path::new("/scratch"),
+            &InstalledTools::default(),
             "imessage-ios",
             "/backup",
             "/out",
@@ -86,6 +88,7 @@ fn non_imessage_sources_defer_the_media_stage_too() {
         options.attachment_media = chosen;
         let config = build_exporter_config(
             Path::new("/scratch"),
+            &InstalledTools::default(),
             "whatsapp-android",
             dump.path().to_str().unwrap(),
             "/out",
@@ -227,6 +230,7 @@ fn staging_records_the_media_settings_in_the_directory() {
     options.attachment_media = AttachmentMedia::Convert;
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "sms-backup-restore",
         input.to_str().unwrap(),
         output.to_str().unwrap(),
@@ -272,6 +276,7 @@ fn a_staging_issue_reaches_the_issue_sink_before_staging_ends() {
     options.owner_emails = vec!["me@example.com".into()];
     let mut config = build_exporter_config(
         &tmp.path().join("scratch"),
+        &InstalledTools::default(),
         "sms-backup-plus",
         backup.to_str().unwrap(),
         output.to_str().unwrap(),
@@ -309,6 +314,7 @@ fn jailbreak_uses_macos_platform_and_attachment_root() {
     options.obfuscate = true;
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "imessage-jailbreak",
         "/mnt/iphone/sms.db",
         "/tmp/out",
@@ -341,6 +347,7 @@ fn ios_backup_does_not_forward_attachment_root() {
     options.backup_password = "pw".into();
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "imessage-ios",
         "/backups/iphone",
         "/tmp/out",
@@ -365,6 +372,7 @@ fn macos_forwards_optional_attachment_root() {
     options.attachment_root = "/Users/sam/Library/Messages".into();
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "imessage-macos",
         "/Users/sam/Library/Messages/chat.db",
         "/tmp/out",
@@ -387,6 +395,7 @@ fn macos_forwards_optional_attachment_root() {
 fn sms_backup_restore_requires_owner_phones() {
     let err = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "sms-backup-restore",
         "/tmp/backup",
         "/tmp/out",
@@ -406,6 +415,7 @@ fn sms_backup_restore_passes_owner_phones() {
     fs::write(&backup, "<smses count=\"0\"></smses>").unwrap();
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "sms-backup-restore",
         backup.to_str().unwrap(),
         "/tmp/out",
@@ -427,6 +437,7 @@ fn sms_backup_restore_refuses_a_directory() {
     let backup = tempfile::tempdir().unwrap();
     let err = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "sms-backup-restore",
         backup.path().to_str().unwrap(),
         "/tmp/out",
@@ -440,6 +451,7 @@ fn sms_backup_restore_refuses_a_directory() {
 fn every_source_requires_an_existing_input_path() {
     let err = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "sms-backup-restore",
         "/does/not/exist-sms-backup",
         "/tmp/out",
@@ -460,6 +472,7 @@ fn sms_backup_plus_requires_owner_emails() {
     let backup = tempfile::tempdir().unwrap();
     let err = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "sms-backup-plus",
         backup.path().to_str().unwrap(),
         "/tmp/out",
@@ -479,6 +492,7 @@ fn sms_backup_plus_passes_owner_phones_and_emails() {
     options.owner_emails = vec!["me@example.com".into(), "Me@Work.example".into()];
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "sms-backup-plus",
         backup.path().to_str().unwrap(),
         "/tmp/out",
@@ -505,6 +519,7 @@ fn whatsapp_android_forwards_key_and_optional_paths() {
     let dump = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "whatsapp-android",
         dump.path().to_str().unwrap(),
         "/tmp/out",
@@ -540,6 +555,7 @@ fn whatsapp_android_refuses_an_empty_owner_phone() {
     let dump = tempfile::tempdir().unwrap();
     let err = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "whatsapp-android",
         dump.path().to_str().unwrap(),
         "/tmp/out",
@@ -561,9 +577,15 @@ fn whatsapp_ios_forwards_the_backup_password() {
     let mut options = test_options(vec!["+15555550100".into()]);
     options.backup_password = "pw".into();
     for (source, expected) in [("whatsapp-ios", Some("pw")), ("whatsapp-android", None)] {
-        let config =
-            build_exporter_config(Path::new("/scratch"), source, path, "/tmp/out", &options)
-                .unwrap();
+        let config = build_exporter_config(
+            Path::new("/scratch"),
+            &InstalledTools::default(),
+            source,
+            path,
+            "/tmp/out",
+            &options,
+        )
+        .unwrap();
         let SourceConfig::Whatsapp(wa) = config.source else {
             panic!("{:?}", config.source);
         };
@@ -579,6 +601,7 @@ fn whatsapp_ios_forwards_the_owner_phone_as_a_fallback() {
     let path = backup.path().to_str().unwrap();
     let empty = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "whatsapp-ios",
         path,
         "/tmp/out",
@@ -592,6 +615,7 @@ fn whatsapp_ios_forwards_the_owner_phone_as_a_fallback() {
 
     let filled = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "whatsapp-ios",
         path,
         "/tmp/out",
@@ -613,6 +637,7 @@ fn whatsapp_ios_omits_leftover_android_media_and_db() {
     let backup = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "whatsapp-ios",
         backup.path().to_str().unwrap(),
         "/tmp/out",
@@ -639,6 +664,7 @@ fn whatsapp_ios_sets_backup_from_directory_and_business() {
     let backup = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "whatsapp-ios",
         backup.path().to_str().unwrap(),
         "/tmp/out",
@@ -667,6 +693,7 @@ fn imazing_reads_dates_in_the_zone_the_screen_sent() {
     let directory = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "imazing",
         directory.path().to_str().unwrap(),
         "/tmp/out",
@@ -685,6 +712,7 @@ fn imazing_with_no_zone_leaves_the_exporter_its_fallback() {
     let directory = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
         Path::new("/scratch"),
+        &InstalledTools::default(),
         "imazing",
         directory.path().to_str().unwrap(),
         "/tmp/out",
@@ -724,6 +752,7 @@ fn counts_for_a_jsonl_attachment(data: &str) -> (u64, u64) {
     let cache = tmp.path().join("scratch");
     let config = build_exporter_config(
         &cache,
+        &InstalledTools::default(),
         "sms-backup-restore",
         input.to_str().unwrap(),
         output.to_str().unwrap(),

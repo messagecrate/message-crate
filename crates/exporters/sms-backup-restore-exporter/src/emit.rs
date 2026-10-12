@@ -98,6 +98,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     // The read options still need the compress settings after `transforms`
     // moves into the writer.
     let compress = transforms.compress.clone();
+    let tools = std::sync::Arc::clone(&transforms.tools);
     let mut writer = ExportWriter::open(args.output_dir, output_format, transforms, resume)?
         .with_spool(args.scratch_dir);
     if output_format == OutputFormat::Xml {
@@ -113,6 +114,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
             spool: writer.spool(),
             media: writer.media_mode(),
             compress,
+            tools,
             log: writer.log(),
             progress: writer.progress(),
             cancel: &cancel,

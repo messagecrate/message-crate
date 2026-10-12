@@ -168,6 +168,7 @@ fn convert_and_import_word_every_count_and_error_alike() {
             spool: None,
             media: media::MediaMode::Disabled,
             compress: media::CompressOptions::default(),
+            tools: std::sync::Arc::new(media::InstalledTools::default()),
             log: &LogSink::none(),
             progress: &ProgressSink::none(),
             cancel: &CancelFlag::default(),

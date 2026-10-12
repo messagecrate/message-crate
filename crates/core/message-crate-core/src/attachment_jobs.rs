@@ -351,6 +351,7 @@ fn apply_convert_or_compress(
     let files = media::collect_media_files(attachments_dir).map_err(|e| format!("{e:#}"))?;
     let mut emit = |line: &str| log.emit(line);
     let (report, remap) = media::process_attachment_files(
+        media.tools.as_ref(),
         output_dir,
         &files,
         media.mode,
