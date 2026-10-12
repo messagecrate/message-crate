@@ -55,6 +55,11 @@ describe("ConversationView", () => {
     expect(screen.getByText("Could not load messages.")).toBeInTheDocument();
   });
 
+  it("shows a rejection that is only a string as the sentence it is", () => {
+    render(<ConversationView {...baseProps} messages={[]} error={"no route to host"} />);
+    expect(screen.getByText("No route to host")).toBeInTheDocument();
+  });
+
   it("shows an empty state when the conversation has no messages", () => {
     render(<ConversationView {...baseProps} messages={[]} />);
     expect(screen.getByText("No messages in this conversation")).toBeInTheDocument();

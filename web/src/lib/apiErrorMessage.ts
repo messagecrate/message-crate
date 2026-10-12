@@ -46,11 +46,14 @@ function sentenceCase(text: string): string {
  *
  * The server writes each `detail` in lowercase with no final period
  * (`docs/architecture/http-api.md`, "Failures"), and a sentence on a screen
- * starts with a capital, so the first letter is capitalized. One refusal is
- * kept as it is: a `search-query-invalid` problem about one search word starts
- * with that word as it is typed (`from: is not a Contacts word; it works on
- * Messages`), and a capital would change the word. Any other sentence that
- * names something first, such as `sort: unknown key …`, starts with a capital.
+ * starts with a capital, so the first letter is capitalized. A sentence that
+ * starts with a name a capital would change is kept as it is: a
+ * `search-query-invalid` refusal about one search word starts with that word
+ * as it is typed (`from: is not a Contacts word; it works on Messages`), and a
+ * sentence that starts with a field's snake_case name
+ * (`asset_max_bytes must be at most …`) names the field as the API spells it.
+ * Any other sentence that names something first, such as
+ * `sort: unknown key …`, starts with a capital.
  *
  * A sentence joined after a prefix that already starts the line ("Could not
  * load contacts: …") uses `errorText`, `apiErrorMessage` or
@@ -60,5 +63,6 @@ export function errorLine(err: unknown, fallback?: string): string {
   const text = rejectionMessage(err, fallback ?? String(err));
   const aboutAWord =
     err instanceof ApiError && err.type === "search-query-invalid" && /^[a-z][a-z-]*:/.test(text);
-  return aboutAWord ? text : sentenceCase(text);
+  const aboutAField = /^[a-z][a-z0-9]*_[a-z0-9_]*\b/.test(text);
+  return aboutAWord || aboutAField ? text : sentenceCase(text);
 }

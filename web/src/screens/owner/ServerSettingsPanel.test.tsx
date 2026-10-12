@@ -112,7 +112,7 @@ describe("ServerSettingsPanel attachment size limit", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Asset_max_bytes must be at most 9223372036854775807",
+      "asset_max_bytes must be at most 9223372036854775807",
     );
     expect(field).toHaveValue(99999999999999);
   });

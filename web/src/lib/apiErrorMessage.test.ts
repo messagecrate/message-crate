@@ -87,6 +87,18 @@ describe("errorLine", () => {
     );
   });
 
+  it("keeps a sentence that starts with a field's snake_case name as the API spells it", () => {
+    expect(errorLine(refusal("validation-failed", "asset_max_bytes must be at most 9"))).toBe(
+      "asset_max_bytes must be at most 9",
+    );
+    expect(errorLine(new Error("run_dir: must be at most 4 characters"))).toBe(
+      "run_dir: must be at most 4 characters",
+    );
+    expect(errorLine(new Error("name: must be at most 80 characters"))).toBe(
+      "Name: must be at most 80 characters",
+    );
+  });
+
   it("starts a desktop command's string rejection with a capital", () => {
     expect(errorLine("no such file or directory", "Could not open path")).toBe(
       "No such file or directory",

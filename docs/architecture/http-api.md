@@ -498,10 +498,12 @@ The web app joins a validation failure's `errors` with `; ` into one line.
 Every screen that shows the sentence as a sentence of its own, on a line of
 its own or after another sentence that ends with a period, shows it through
 one function, `errorLine` (`web/src/lib/apiErrorMessage.ts`), which
-capitalizes its first letter. One sentence keeps its first letter: a
-`search-query-invalid` refusal about one word starts with that word, as
-`from: is not a Contacts word; it works on Messages`, and a capital would
-change the word. A sentence joined after a prefix, as `Could not load
+capitalizes its first letter. A sentence that starts with a name a capital
+would change keeps its first letter: a `search-query-invalid` refusal about
+one word starts with that word, as
+`from: is not a Contacts word; it works on Messages`, and a sentence that
+starts with a field's snake_case name, as `asset_max_bytes must be at most …`,
+names the field as the API spells it. A sentence joined after a prefix, as `Could not load
 contacts: …`, is shown as the server wrote it.
 For a `5xx`, the web app ends the sentence with the problem's `request_id`, as
 `internal server error (request 4f3c…)` (`problemFromBody` in

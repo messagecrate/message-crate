@@ -104,7 +104,7 @@ describe("ProfileSettingsPanel", () => {
   it("starts the server's refusal of a display name with a capital", async () => {
     startFakeClock();
     updateAccountProfile.mockRejectedValue(
-      new ApiError(422, "preferred_name: must be at most 120 characters"),
+      new ApiError(403, "display name and time zone are fixed"),
     );
     const user = setupUser();
     render(<ProfileSettingsPanel />);
@@ -113,7 +113,7 @@ describe("ProfileSettingsPanel", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     await settle();
 
-    expect(screen.getByText("Preferred_name: must be at most 120 characters")).toBeInTheDocument();
+    expect(screen.getByText("Display name and time zone are fixed")).toBeInTheDocument();
   });
 
   it("shows the Demo Account's name and zone as fixed and offers no address book load", async () => {
