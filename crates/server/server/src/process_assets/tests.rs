@@ -1391,6 +1391,22 @@ async fn not_made_reasons(
     .unwrap()
 }
 
+/// The kind of failure recorded for each version of one attachment row:
+/// Preview, then Thumbnail.
+async fn not_made_kinds(
+    conn: &mut SqliteConnection,
+    attachment_id: i64,
+) -> (Option<String>, Option<String>) {
+    sqlx::query_as(
+        "SELECT preview_not_made_kind, thumbnail_not_made_kind
+         FROM attachments WHERE id = $1",
+    )
+    .bind(attachment_id)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap()
+}
+
 /// A version that could not be made keeps why on its rows, for the `/v1`
 /// Attachment, until a later pass makes it. A dry run records nothing.
 #[test]
@@ -1431,6 +1447,12 @@ fn why_a_version_was_not_made_is_kept_until_it_is_made() {
             not_made_reasons(&mut conn, attachment_id).await,
             (missing.clone(), missing)
         );
+        let missing = Some("original_missing".to_string());
+        assert_eq!(
+            not_made_kinds(&mut conn, attachment_id).await,
+            (missing.clone(), missing),
+            "the kind is recorded with the reason, for the owner's count"
+        );
 
         fs::write(&original, bytes).unwrap();
         assert_eq!(
@@ -1448,6 +1470,7 @@ fn why_a_version_was_not_made_is_kept_until_it_is_made() {
             not_made_reasons(&mut conn, attachment_id).await,
             (None, None)
         );
+        assert_eq!(not_made_kinds(&mut conn, attachment_id).await, (None, None));
     });
 }
 
@@ -1547,6 +1570,7 @@ async fn deciding_an_original_is_shown_as_it_is_clears_why_its_preview_was_not_m
             rows,
             version,
             named: None,
+            kind: NotMadeKind::ConversionFailed,
             reason: "bad file",
         };
         versions_db::record_not_made(&mut conn, not_made)
@@ -2503,8 +2527,72 @@ fn an_ffmpeg_that_stalled_is_the_reason_no_version_was_made() {
     .context("preview of /srv/data/accounts/1/assets/clip.mov");
 
     assert_eq!(
-        not_made_reason(&err, &[]),
-        "ffmpeg made no progress for 2 minutes after converting 1:05 of the file, so it was \
-         stopped"
+        not_made(&err, &[]),
+        (
+            NotMadeKind::Stalled,
+            "ffmpeg made no progress for 2 minutes after converting 1:05 of the file, so it \
+             was stopped"
+                .to_string()
+        )
+    );
+}
+
+/// Each way ffmpeg is stopped is its own kind of failure, so the owner's view
+/// of an Import Run counts a looping damaged file apart from a hung encoder
+/// (#2636). A stall before any output and one partway are one kind: both
+/// stopped making progress.
+#[test]
+fn each_way_ffmpeg_is_stopped_is_sorted_into_its_kind() {
+    let wait = std::time::Duration::from_secs(120);
+    for (why, kind) in [
+        (
+            media::KillReason::StalledBeforeOutput { wait },
+            NotMadeKind::Stalled,
+        ),
+        (
+            media::KillReason::StalledPartway {
+                wait,
+                at: std::time::Duration::from_secs(3),
+            },
+            NotMadeKind::Stalled,
+        ),
+        (
+            media::KillReason::RanPastLength {
+                length: std::time::Duration::from_secs(5),
+            },
+            NotMadeKind::RanPastLength,
+        ),
+        (
+            media::KillReason::ShortStepTooLong {
+                limit: std::time::Duration::from_secs(15),
+            },
+            NotMadeKind::TookTooLong,
+        ),
+    ] {
+        let err = media::testutil::ffmpeg_killed(why);
+        assert_eq!(not_made(&err, &[]).0, kind, "{why:?}");
+    }
+}
+
+/// A missing original and a failure that is neither ffmpeg's nor a missing
+/// file each have a kind of their own, and the second's reason names nothing
+/// of the error (#2636).
+#[test]
+fn a_missing_original_and_a_server_problem_are_their_own_kinds() {
+    let missing = anyhow::Error::new(MissingOriginal).context("thumbnail of /srv/a/b");
+    assert_eq!(
+        not_made(&missing, &[]),
+        (
+            NotMadeKind::OriginalMissing,
+            "the original file is missing".to_string()
+        )
+    );
+    let other = anyhow::anyhow!("disk full at /srv/data/work");
+    assert_eq!(
+        not_made(&other, &[]),
+        (
+            NotMadeKind::ServerProblem,
+            "the server ran into a problem making it".to_string()
+        )
     );
 }

@@ -162,6 +162,9 @@ describe("Import history", () => {
 
     expect(await screen.findByRole("heading", { name: "Import Errors" })).toBeInTheDocument();
     expect(getAccountImport).toHaveBeenCalledWith(1, expect.anything(), undefined);
+    // The account's own run carries no list of missing versions: the account
+    // reads why on each attachment it opens.
+    expect(screen.queryByRole("heading", { name: "Thumbnails and Previews" })).toBeNull();
   });
 
   it("shows the backup a run read beside when that backup was made", async () => {
@@ -210,6 +213,103 @@ describe("Import history", () => {
     const [file, made] = Array.from(backup.parentElement?.querySelectorAll("dd") ?? []);
     expect(file?.textContent).toBe("Not recorded");
     expect(made?.textContent).toBe("The backup does not say when it was made");
+  });
+
+  it("shows the owner which attachments of a run have no Thumbnail or Preview, and why", async () => {
+    const listed = {
+      ...anImport(1),
+      counts: {},
+      contacts_new: 0,
+      contacts_changed: 0,
+    };
+    listAccountImports.mockResolvedValue({ items: [listed], total: 1, limit: 50, offset: 0 });
+    getAccountImport.mockResolvedValue({
+      ...listed,
+      written_attachment_count: 5,
+      not_made_counts: [
+        { kind: "conversion_failed", thumbnails: 1, previews: 1 },
+        { kind: "stalled", thumbnails: 0, previews: 2 },
+      ],
+      not_made_attachments: [
+        {
+          id: 11,
+          original_name: "IMG_0001.HEIC",
+          mime_type: "image/heic",
+          size_bytes: 2048,
+          thumbnail: { kind: "conversion_failed", reason: "Invalid data found" },
+          preview: { kind: "conversion_failed", reason: "Invalid data found" },
+        },
+        {
+          id: 12,
+          original_name: "clip.mov",
+          mime_type: "video/quicktime",
+          size_bytes: null,
+          thumbnail: null,
+          preview: { kind: "stalled", reason: "ffmpeg made no progress for 2 minutes" },
+        },
+      ],
+    });
+    const user = setupUser();
+    renderWithProviders(<StorageSection managedAccountId={3} />);
+    const heading = await screen.findByRole("heading", { name: "Import history" });
+    const section = within(heading.parentElement as HTMLElement);
+    await user.click(await section.findByRole("button", { expanded: false }));
+
+    const panel = within(
+      (await screen.findByRole("heading", { name: "Thumbnails and Previews" }))
+        .parentElement as HTMLElement,
+    );
+    // The failures are out of the run's attachments, 5 here.
+    expect(panel.getByText("2 of 5 attachments have no Thumbnail or Preview")).toBeInTheDocument();
+    const [counts, list] = panel.getAllByRole("table");
+    const countRows = within(counts as HTMLElement)
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) =>
+        within(row)
+          .getAllByRole("cell")
+          .map((cell) => cell.textContent),
+      );
+    expect(countRows).toEqual([
+      ["Conversion failed", "1", "1"],
+      ["Stopped making progress", "0", "2"],
+    ]);
+    const clip = within(list as HTMLElement)
+      .getByText("clip.mov")
+      .closest("tr") as HTMLElement;
+    const cells = within(clip)
+      .getAllByRole("cell")
+      .map((cell) => cell.textContent);
+    expect(cells).toEqual([
+      "clip.mov",
+      "video/quicktime",
+      "—",
+      "—",
+      "Stopped making progressffmpeg made no progress for 2 minutes",
+    ]);
+    expect(getAccountImport).toHaveBeenCalledWith(1, expect.anything(), 3);
+  });
+
+  it("tells the owner when no attachment of a run is missing a version", async () => {
+    const listed = { ...anImport(1), counts: {}, contacts_new: 0, contacts_changed: 0 };
+    listAccountImports.mockResolvedValue({ items: [listed], total: 1, limit: 50, offset: 0 });
+    getAccountImport.mockResolvedValue({
+      ...listed,
+      written_attachment_count: 1,
+      not_made_counts: [],
+      not_made_attachments: [],
+    });
+    const user = setupUser();
+    renderWithProviders(<StorageSection managedAccountId={3} />);
+    const heading = await screen.findByRole("heading", { name: "Import history" });
+    const section = within(heading.parentElement as HTMLElement);
+    await user.click(await section.findByRole("button", { expanded: false }));
+
+    expect(
+      await screen.findByText(
+        "No attachment of this import is missing a Thumbnail or Preview the server tried to make.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("says when no Import Run has been recorded", async () => {

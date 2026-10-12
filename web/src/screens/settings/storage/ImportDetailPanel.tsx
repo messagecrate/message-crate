@@ -4,6 +4,7 @@ import ImportSummaryPanel, {
 import PlainButton from "../../../components/PlainButton";
 import { formatBytes } from "../../../lib/formatBytes";
 import ImportContactsPanel from "./ImportContactsPanel";
+import ImportNotMadePanel from "./ImportNotMadePanel";
 import ImportRunLog from "./ImportRunLog";
 import type { AccountImportRun } from "./storageUtils";
 import {
@@ -129,6 +130,13 @@ export default function ImportDetailPanel({
               </p>
             )}
           </div>
+          {"not_made_attachments" in selectedImport ? (
+            <ImportNotMadePanel
+              attachmentCount={selectedImport.written_attachment_count}
+              counts={selectedImport.not_made_counts}
+              attachments={selectedImport.not_made_attachments}
+            />
+          ) : null}
           <ImportRunLog importRunId={selectedImport.id} />
         </>
       ) : null}

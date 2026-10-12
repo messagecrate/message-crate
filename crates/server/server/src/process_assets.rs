@@ -26,7 +26,8 @@ use tempfile::TempDir;
 use crate::config::Config;
 use crate::counts::words;
 use crate::db::attachment_versions::{
-    self as versions_db, NotMade, OriginalRows, StoredOriginal, Version, VersionFile, VersionWrite,
+    self as versions_db, NotMade, NotMadeKind, OriginalRows, StoredOriginal, Version, VersionFile,
+    VersionWrite,
 };
 use crate::db::{account_profile, schema};
 use crate::open_db::OpenDb;
@@ -861,7 +862,7 @@ impl<'a> AccountPass<'a> {
     }
 
     /// Record on the rows of `row`'s original why `version` was not made,
-    /// as [`not_made_reason`] words `err`. `state` is the version the rows
+    /// as [`not_made`] sorts and words `err`. `state` is the version the rows
     /// named when the pass read them: an intact one still works, as after a
     /// failed remake under `--force`, so nothing is recorded beside it. A
     /// missing or damaged one does not, so the rows that still name it get
@@ -883,7 +884,7 @@ impl<'a> AccountPass<'a> {
         if self.opts.dry_run || self.stop.load(Ordering::Relaxed) || state == PreviewFile::Intact {
             return Ok(());
         }
-        let reason = not_made_reason(err, &[&self.assets_dir, self.work_dir]);
+        let (kind, reason) = not_made(err, &[&self.assets_dir, self.work_dir]);
         let named = row.named(version).assets_path;
         versions_db::record_not_made(
             &mut *db.acquire().await?,
@@ -891,6 +892,7 @@ impl<'a> AccountPass<'a> {
                 rows: self.rows(row),
                 version,
                 named: named.as_deref(),
+                kind,
                 reason: &reason,
             },
         )
@@ -1115,17 +1117,18 @@ async fn list_account_ids(conn: &mut SqliteConnection, data_dir: &Path) -> Resul
 #[error("missing original")]
 struct MissingOriginal;
 
-/// Why a version was not made, from `err`, the failure of making it, as the
-/// `/v1` Attachment answers it: what ffmpeg said about the file, with each
-/// path under one of `dirs` made relative to it, why ffmpeg was stopped
-/// (it made no progress, ran past twice the file's length, or did not
-/// finish one frame in time), or a phrase of the server's when ffmpeg did not read
-/// the file. Nothing else of `err` is kept: its
-/// context names the original by its full path, and a missing ffmpeg's
-/// error names every directory the server looked in. The `dirs` are the
-/// account's originals directory and the pass's work directory, both under
-/// the data directory, so what is left names no file outside it.
-fn not_made_reason(err: &anyhow::Error, dirs: &[&Path]) -> String {
+/// Why a version was not made, from `err`, the failure of making it: the
+/// kind of failure, which the owner's view of an Import Run counts, and the
+/// reason as the `/v1` Attachment answers it. The reason is what ffmpeg said
+/// about the file, with each path under one of `dirs` made relative to it;
+/// why ffmpeg was stopped (it made no progress, ran past twice the file's
+/// length, or did not finish one frame in time); or a phrase of the
+/// server's when ffmpeg did not read the file. Nothing else of `err` is
+/// kept: its context names the original by its full path, and a missing
+/// ffmpeg's error names every directory the server looked in. The `dirs` are
+/// the account's originals directory and the pass's work directory, both
+/// under the data directory, so what is left names no file outside it.
+fn not_made(err: &anyhow::Error, dirs: &[&Path]) -> (NotMadeKind, String) {
     if let Some(failed) = err.downcast_ref::<media::FfmpegFailed>() {
         let said = dirs.iter().fold(failed.said().to_string(), |said, dir| {
             said.replace(
@@ -1134,17 +1137,37 @@ fn not_made_reason(err: &anyhow::Error, dirs: &[&Path]) -> String {
             )
         });
         if said.is_empty() {
-            return "ffmpeg could not read the file and said nothing about it".to_string();
+            return (
+                NotMadeKind::ConversionFailed,
+                "ffmpeg could not read the file and said nothing about it".to_string(),
+            );
         }
-        return said;
+        return (NotMadeKind::ConversionFailed, said);
     }
     if let Some(killed) = err.downcast_ref::<media::Killed>() {
-        return killed.to_string();
+        let kind = match killed.reason() {
+            media::KillReason::StalledBeforeOutput { .. }
+            | media::KillReason::StalledPartway { .. } => NotMadeKind::Stalled,
+            media::KillReason::RanPastLength { .. } => NotMadeKind::RanPastLength,
+            media::KillReason::ShortStepTooLong { .. } => NotMadeKind::TookTooLong,
+            // A stop fails the conversion, not the file, and the pass records
+            // nothing for it ([`AccountPass::record_not_made`]).
+            media::KillReason::Stopped | media::KillReason::StoppedBeforeStart => {
+                NotMadeKind::ServerProblem
+            }
+        };
+        return (kind, killed.to_string());
     }
     if err.downcast_ref::<MissingOriginal>().is_some() {
-        return "the original file is missing".to_string();
+        return (
+            NotMadeKind::OriginalMissing,
+            "the original file is missing".to_string(),
+        );
     }
-    "the server ran into a problem making it".to_string()
+    (
+        NotMadeKind::ServerProblem,
+        "the server ran into a problem making it".to_string(),
+    )
 }
 
 /// Incomplete iMessage/SMS transfers and aborted uploads use a `.part` suffix.

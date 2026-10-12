@@ -104,6 +104,18 @@ cannot be acted on. Contacts sit on the other side. How many contacts an
 account has is a measure of the database; who they are is the account holder's
 address book.
 
+Why the server could not make an attachment's Thumbnail or Preview sits on
+the permitted side too. (Revised 2026-10-12, #2636.) The owner reads, for
+each Import Run, the attachments it wrote whose versions were not made, each
+by its name, type and size, with the kind of failure and the reason the
+server recorded. The reason is what ffmpeg said about the file, with the
+paths it named made relative to the account's directories, or a phrase of
+the server's. It describes the file as a file, as its type and size do, and
+never holds what the file shows or which conversation it is in. The owner
+needs it to tell a damaged backup from a slow computer, and to decide whether
+to try again. The attachment's bytes, its Thumbnail and its Preview stay on
+the other side.
+
 An Import Run's log is the one place the owner reads a conversation's
 identities. (Revised 2026-10-09. Until then whether the owner may read them
 was open in [#1990](https://github.com/messagecrate/message-crate/issues/1990).)
@@ -129,7 +141,8 @@ holder's word, not on inspection.
 
 All of this is built. An account's Storage tab shows the owner what it shows
 the account holder: the message, attachment, conversation and contact counts
-and the storage total, each import and export the account has run, and its
+and the storage total, each import and export the account has run, the
+attachments of each import that have no Thumbnail or Preview and why, and its
 largest attachments by name and size. The owner reads them at
 `/v1/accounts/{id}/storage`, `/imports` and `/exports`; `/v1/imports` and
 `/v1/exports` stay the pipelines' own and still refuse the owner. Two things
