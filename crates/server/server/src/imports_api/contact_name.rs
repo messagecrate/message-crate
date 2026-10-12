@@ -8,9 +8,8 @@ use message_ir::{IdentityService, IdentityType, trimmed};
 use sqlx::SqliteConnection;
 
 use super::ImportCounts;
-use super::staging::StagingInserts;
 use crate::db::contacts;
-use crate::db::handles::{normalize_handle, upsert_handle_row_cached};
+use crate::db::handles::normalize_handle;
 use crate::db::import_contacts::{self, ContactReason};
 use crate::db::trash;
 use crate::imports_api::records::HandleValue;
@@ -135,72 +134,6 @@ pub(super) fn is_account_identity(
 ) -> bool {
     let normalized = normalize_handle(address, handle_type, country).key;
     identities.contains(&(normalized, handle_type))
-}
-
-/// The `handles` row for an incoming message's sender, creating it when this
-/// import is the first to meet that address, and the contact that owns it.
-/// `None` for a message the account owner sent, and for one whose source
-/// recorded no sender address. The run's insert state `stmts` gives the
-/// account, the run, the handle cache, the account's identities, and the
-/// instant stamped on a contact it changes.
-pub(super) async fn resolve_incoming_sender_handle(
-    tx: &mut SqliteConnection,
-    stmts: &mut StagingInserts,
-    sender: IncomingSender<'_>,
-    counts: &mut ImportCounts,
-) -> Result<Option<i64>> {
-    if sender.is_from_me {
-        return Ok(None);
-    }
-    let Some(value) = sender.value else {
-        return Ok(None);
-    };
-    let Some(address) = trimmed(value.as_str()) else {
-        return Ok(None);
-    };
-    let handle_type = value.handle_type_on(sender.service);
-    let (handle_id, flagged, cached) = upsert_handle_row_cached(
-        tx,
-        &mut stmts.handles,
-        stmts.account_id,
-        address,
-        handle_type,
-        Some(sender.service.as_str()),
-    )
-    .await?;
-    if flagged {
-        counts.phones_needing_review += 1;
-    }
-    count_other_identity(handle_type, cached, counts);
-    // A sender is a person the import met, whether or not a conversation
-    // header named them: `orphaned.jsonl` names nobody, and a group header
-    // can leave out someone who wrote in it. So the sender gets a contact
-    // the same way a participant does, which also replaces a trashed one
-    // (ADR-0013). A handle already in the cache went through here, or
-    // through a participant or a one-to-one chat, earlier in this run, and
-    // each of those gave it a contact unless it is one of the account's
-    // identities. A sender at one is the holder, who never gets a contact
-    // here (#1093); the message still records the address it came from.
-    if !cached
-        && !is_account_identity(
-            &stmts.identities,
-            address,
-            handle_type,
-            stmts.handles.country(),
-        )
-    {
-        ensure_contact_for_handle(
-            tx,
-            stmts.account_id,
-            stmts.import_id,
-            handle_id,
-            None,
-            counts,
-            stmts.now,
-        )
-        .await?;
-    }
-    Ok(Some(handle_id))
 }
 
 /// If this handle has no contact but a sibling handle (same normalized value

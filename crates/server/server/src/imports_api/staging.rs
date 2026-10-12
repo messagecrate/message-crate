@@ -25,7 +25,6 @@ use media::MediaMode;
 
 use super::contact_name::{
     IncomingSender, count_other_identity, ensure_contact_for_handle, is_account_identity,
-    resolve_incoming_sender_handle,
 };
 use super::{ImportCounts, ImportFailure, ImportOptions};
 
@@ -273,11 +272,11 @@ fn prepare_attachments(
 /// multi-row chunks. Handle ids are remembered so the same sender is not
 /// looked up on every message.
 pub(super) struct StagingInserts {
-    pub(super) account_id: i64,
-    pub(super) import_id: Option<i64>,
+    account_id: i64,
+    import_id: Option<i64>,
     /// The instant stamped on each contact the run changes.
-    pub(super) now: chrono::DateTime<chrono::Utc>,
-    pub(super) handles: HandleIdCache,
+    now: chrono::DateTime<chrono::Utc>,
+    handles: HandleIdCache,
     /// Handle ids of the account holder's own addresses met in this run, by
     /// address and service. Apart from `handles`, whose entries each have a
     /// contact: an owner's handle never gets one (ADR-0015).
@@ -285,7 +284,7 @@ pub(super) struct StagingInserts {
     /// The account's identities, as `(normalized address, handle type)`.
     /// A participant at one of them is the holder, who is never a
     /// participant (ADR-0015, #1093).
-    pub(super) identities: HashSet<(String, IdentityType)>,
+    identities: HashSet<(String, IdentityType)>,
 }
 
 impl StagingInserts {
@@ -309,6 +308,71 @@ impl StagingInserts {
             owners: HashMap::new(),
             identities,
         }
+    }
+
+    /// The `handles` row for an incoming message's sender, creating it when this
+    /// import is the first to meet that address, and the contact that owns it.
+    /// `None` for a message the account owner sent, and for one whose source
+    /// recorded no sender address. A contact it changes is stamped with the
+    /// run's instant.
+    async fn resolve_incoming_sender_handle(
+        &mut self,
+        tx: &mut SqliteConnection,
+        sender: IncomingSender<'_>,
+        counts: &mut ImportCounts,
+    ) -> Result<Option<i64>> {
+        if sender.is_from_me {
+            return Ok(None);
+        }
+        let Some(value) = sender.value else {
+            return Ok(None);
+        };
+        let Some(address) = trimmed(value.as_str()) else {
+            return Ok(None);
+        };
+        let handle_type = value.handle_type_on(sender.service);
+        let (handle_id, flagged, cached) = upsert_handle_row_cached(
+            tx,
+            &mut self.handles,
+            self.account_id,
+            address,
+            handle_type,
+            Some(sender.service.as_str()),
+        )
+        .await?;
+        if flagged {
+            counts.phones_needing_review += 1;
+        }
+        count_other_identity(handle_type, cached, counts);
+        // A sender is a person the import met, whether or not a conversation
+        // header named them: `orphaned.jsonl` names nobody, and a group header
+        // can leave out someone who wrote in it. So the sender gets a contact
+        // the same way a participant does, which also replaces a trashed one
+        // (ADR-0013). A handle already in the cache went through here, or
+        // through a participant or a one-to-one chat, earlier in this run, and
+        // each of those gave it a contact unless it is one of the account's
+        // identities. A sender at one is the holder, who never gets a contact
+        // here (#1093); the message still records the address it came from.
+        if !cached
+            && !is_account_identity(
+                &self.identities,
+                address,
+                handle_type,
+                self.handles.country(),
+            )
+        {
+            ensure_contact_for_handle(
+                tx,
+                self.account_id,
+                self.import_id,
+                handle_id,
+                None,
+                counts,
+                self.now,
+            )
+            .await?;
+        }
+        Ok(Some(handle_id))
     }
 }
 
@@ -773,17 +837,17 @@ async fn resolve_message_rows(
             .service
             .as_deref()
             .map_or(service, IdentityService::parse);
-        let sender_handle_id = resolve_incoming_sender_handle(
-            tx,
-            stmts,
-            IncomingSender {
-                is_from_me: msg.is_from_me,
-                value: msg.sender.as_ref(),
-                service: sender_service,
-            },
-            counts,
-        )
-        .await?;
+        let sender_handle_id = stmts
+            .resolve_incoming_sender_handle(
+                tx,
+                IncomingSender {
+                    is_from_me: msg.is_from_me,
+                    value: msg.sender.as_ref(),
+                    service: sender_service,
+                },
+                counts,
+            )
+            .await?;
         let owner_handle_id =
             resolve_owner_handle(tx, stmts, msg.owner.as_deref(), sender_service).await?;
         rows.push(PendingStagingMessage {
@@ -1091,17 +1155,17 @@ async fn tapback_row(
 ) -> Result<StagingTapback> {
     // A reaction names its sender by address only.
     let reactor = tap.sender.clone().map(HandleValue::Address);
-    let sender_handle_id = resolve_incoming_sender_handle(
-        tx,
-        stmts,
-        IncomingSender {
-            is_from_me: tap.is_from_me,
-            value: reactor.as_ref(),
-            service: row.sender_service,
-        },
-        counts,
-    )
-    .await?;
+    let sender_handle_id = stmts
+        .resolve_incoming_sender_handle(
+            tx,
+            IncomingSender {
+                is_from_me: tap.is_from_me,
+                value: reactor.as_ref(),
+                service: row.sender_service,
+            },
+            counts,
+        )
+        .await?;
     Ok(StagingTapback {
         message_id,
         part_index: tap.part_index,
