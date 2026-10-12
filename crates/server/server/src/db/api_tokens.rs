@@ -61,24 +61,13 @@ pub struct ApiTokenAuth {
     pub token_hint: String,
 }
 
-/// Label validation failures.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum ApiTokenLabelError {
-    /// The trimmed label is empty.
-    #[error("label is required")]
-    Required,
-    /// The label is longer than 120 characters.
-    #[error("label must be at most 120 characters")]
-    TooLong,
-}
-
 /// Failures from creating or renaming an API token: a typed label error, or
 /// any other database error.
 #[derive(Debug, thiserror::Error)]
 pub enum ApiTokenMutationError {
     /// The label failed validation.
     #[error(transparent)]
-    InvalidLabel(#[from] ApiTokenLabelError),
+    InvalidLabel(#[from] crate::text_caps::RequiredTextError),
     /// Any other database failure.
     #[error(transparent)]
     Other(#[from] anyhow::Error),
@@ -395,15 +384,12 @@ fn api_token_expiry(expires_in_days: Option<u64>, created_at: &str) -> Option<St
 }
 
 /// Trim a token label and reject empty or over-long ones.
-fn validate_api_token_label(label: &str) -> Result<&str, ApiTokenLabelError> {
-    let label = label.trim();
-    if label.is_empty() {
-        return Err(ApiTokenLabelError::Required);
-    }
-    if label.len() > 120 {
-        return Err(ApiTokenLabelError::TooLong);
-    }
-    Ok(label)
+fn validate_api_token_label(label: &str) -> Result<&str, crate::text_caps::RequiredTextError> {
+    crate::text_caps::required_capped_text(
+        "label",
+        label,
+        crate::text_caps::MAX_API_TOKEN_LABEL_CHARS,
+    )
 }
 
 #[cfg(test)]
@@ -552,7 +538,7 @@ mod tests {
             .unwrap_err();
         match err {
             ApiTokenMutationError::InvalidLabel(label_err) => {
-                assert_eq!(label_err.to_string(), "label is required");
+                assert_eq!(label_err.to_string(), "label required");
             }
             other => panic!("expected InvalidLabel, got {other:?}"),
         }
@@ -570,11 +556,23 @@ mod tests {
             ApiTokenMutationError::InvalidLabel(label_err) => {
                 assert_eq!(
                     label_err.to_string(),
-                    "label must be at most 120 characters"
+                    "label: must be at most 120 characters"
                 );
             }
             other => panic!("expected InvalidLabel, got {other:?}"),
         }
+
+        // The cap counts characters, not bytes: 120 letters of a script
+        // that takes three bytes each fit.
+        create_api_token(
+            &mut conn,
+            account_id,
+            &"語".repeat(120),
+            Permissions::all(),
+            None,
+        )
+        .await
+        .unwrap();
     }
 
     /// An expired token stops working, and a disabled one stops working at

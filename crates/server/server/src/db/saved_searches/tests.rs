@@ -251,7 +251,7 @@ async fn names_over_max_len_are_rejected() {
     let fixture = crate::test_support::test_fixture().await;
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
-    let long = "a".repeat(MAX_NAME_LEN + 1);
+    let long = "a".repeat(crate::text_caps::MAX_COLLECTION_NAME_CHARS + 1);
     let err = create(
         &mut conn,
         account,
@@ -261,10 +261,17 @@ async fn names_over_max_len_are_rejected() {
     )
     .await
     .unwrap_err();
-    assert!(
-        matches!(err, SavedSearchError::BadRequest(_)),
-        "got {err:?}"
-    );
+    // The wording every length cap shares, as a Contact Group's name has.
+    match err {
+        SavedSearchError::BadRequest(sentence) => assert_eq!(
+            sentence,
+            format!(
+                "name: must be at most {} characters",
+                crate::text_caps::MAX_COLLECTION_NAME_CHARS
+            )
+        ),
+        other => panic!("expected BadRequest, got {other:?}"),
+    }
 }
 
 #[tokio::test]

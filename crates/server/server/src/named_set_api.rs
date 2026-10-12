@@ -13,20 +13,9 @@ use crate::extract::{Json, Query};
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 
-use crate::db::named_membership::{self, MembershipSpec};
+use crate::db::named_membership::{self, MembershipSpec, NamedSet};
 use crate::paging::{DEFAULT_LIST_LIMIT, MAX_LIST_OFFSET, Page, PageQuery, page_of, page_params};
 use crate::server::{ApiError, AppState, Created, FullAccess};
-
-/// One Contact Group or Message Tag: its id and name.
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub(crate) struct NamedSet {
-    /// Id of the Contact Group or Message Tag, which its routes name in their
-    /// path.
-    pub(crate) id: i64,
-    /// The name as stored: trimmed, at most 80 characters, and unique among
-    /// the account's sets of this kind whatever its letter case.
-    pub(crate) name: String,
-}
 
 /// The name of a new set.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -91,11 +80,7 @@ pub(crate) async fn list(
         Some(MAX_LIST_OFFSET),
     )?;
     let mut conn = state.db.acquire().await?;
-    let rows: Vec<NamedSet> = named_membership::list_sets(spec, &mut conn, account_id)
-        .await?
-        .into_iter()
-        .map(|(id, name)| NamedSet { id, name })
-        .collect();
+    let rows = named_membership::list_sets(spec, &mut conn, account_id).await?;
     Ok(Json(page_of(rows, params)))
 }
 
@@ -111,10 +96,10 @@ pub(crate) async fn create(
     body: CreateNamedSetRequest,
 ) -> Result<Created<NamedSet>, ApiError> {
     let mut conn = state.db.acquire().await?;
-    let (id, name) = named_membership::create_set(spec, &mut conn, account_id, &body.name).await?;
+    let set = named_membership::create_set(spec, &mut conn, account_id, &body.name).await?;
     Ok(Created {
-        location: format!("{root_path}/{id}"),
-        body: NamedSet { id, name },
+        location: format!("{root_path}/{}", set.id),
+        body: set,
     })
 }
 
@@ -127,8 +112,9 @@ pub(crate) async fn get(
     id: i64,
 ) -> Result<Json<NamedSet>, ApiError> {
     let mut conn = state.db.acquire().await?;
-    let (id, name) = named_membership::get_set(spec, &mut conn, account_id, id).await?;
-    Ok(Json(NamedSet { id, name }))
+    Ok(Json(
+        named_membership::get_set(spec, &mut conn, account_id, id).await?,
+    ))
 }
 
 /// Rename a set by id, answering its id and the new name. An unknown or
@@ -143,8 +129,9 @@ pub(crate) async fn update(
     body: UpdateNamedSetRequest,
 ) -> Result<Json<NamedSet>, ApiError> {
     let mut conn = state.db.acquire().await?;
-    let name = named_membership::rename_set(spec, &mut conn, account_id, id, &body.name).await?;
-    Ok(Json(NamedSet { id, name }))
+    Ok(Json(
+        named_membership::rename_set(spec, &mut conn, account_id, id, &body.name).await?,
+    ))
 }
 
 /// Delete a set by id and its memberships, answering 204. An unknown or

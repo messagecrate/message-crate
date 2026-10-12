@@ -148,7 +148,8 @@ async fn the_settings_carry_the_journal_mode_the_database_runs_in() {
 
     let fixture = test_fixture().await;
     let owner = claim_as_owner(&fixture.state, "keeper", "hunter2hunter2").await;
-    let body: ServerSettings = get_json(&fixture.state, "/v1/server/settings", &owner.token).await;
+    let body: ApiServerSettings =
+        get_json(&fixture.state, "/v1/server/settings", &owner.token).await;
     assert_eq!(body.journal.mode, Some(JournalMode::Wal));
     assert_eq!(body.journal.wal_error, None);
 
@@ -171,14 +172,14 @@ async fn the_settings_carry_the_journal_mode_the_database_runs_in() {
     let mut state = crate::server::test_app_state(pool, dir.path());
     state.wal_error = Some("database is locked".into());
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let body: ServerSettings = get_json(&state, "/v1/server/settings", &owner.token).await;
+    let body: ApiServerSettings = get_json(&state, "/v1/server/settings", &owner.token).await;
     assert_eq!(body.journal.mode, Some(JournalMode::Delete));
     assert_eq!(
         body.journal.wal_error.as_deref(),
         Some("database is locked")
     );
 
-    let changed: ServerSettings = crate::test_support::patch_json(
+    let changed: ApiServerSettings = crate::test_support::patch_json(
         &state,
         "/v1/server/settings",
         &owner.token,
@@ -391,8 +392,8 @@ async fn the_owner_can_open_and_close_registration() {
     close_registration(&state).await;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
-    let settings: ServerSettings = get_json(&state, "/v1/server/settings", &owner.token).await;
-    assert!(!settings.public_registration);
+    let settings: ApiServerSettings = get_json(&state, "/v1/server/settings", &owner.token).await;
+    assert!(!settings.settings.public_registration);
 
     let (status, text) = post_logged_out(
         &state,
@@ -402,14 +403,14 @@ async fn the_owner_can_open_and_close_registration() {
     .await;
     expect_problem(status, &text, ProblemType::RegistrationClosed);
 
-    let opened: ServerSettings = crate::test_support::patch_json(
+    let opened: ApiServerSettings = crate::test_support::patch_json(
         &state,
         "/v1/server/settings",
         &owner.token,
         serde_json::json!({ "public_registration": true }),
     )
     .await;
-    assert!(opened.public_registration);
+    assert!(opened.settings.public_registration);
 
     let joined = register_via_api(&state, "stranger", "hunter2hunter2").await;
     assert_eq!(joined.username, "stranger");
