@@ -160,6 +160,11 @@ pub fn require_logged_in(auth: &AuthIdentity) -> Result<(), ApiError> {
 /// finishes the `detail` "the Demo Account's ...", one sentence in lowercase
 /// with no final period (`docs/architecture/http-api.md`, "Failures"). What
 /// a caller can do about it is on the problem type's page.
+///
+/// One refusal of the Demo Account is not built here: `delete_account`
+/// answers "the Demo Account cannot delete itself" on its own. The owner may
+/// delete the Demo Account, so that refusal depends on who asks, and this
+/// function refuses whoever asks.
 pub fn refuse_for_demo_account(target: i64, what: &str) -> Result<(), ApiError> {
     if account_profile::is_demo_account(target) {
         return Err(ApiError::DemoAccountProtected(format!(
