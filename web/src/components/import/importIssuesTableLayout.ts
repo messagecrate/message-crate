@@ -2,7 +2,7 @@
 export const HEADER_ROW_HEIGHT = 36;
 /** Collapsed row: file + step + two lines of error text. */
 export const COLLAPSED_ROW_HEIGHT = 56;
-export const MAX_VISIBLE_ROWS = 14;
+const MAX_VISIBLE_ROWS = 14;
 export const MAX_VISIBLE_FILENAMES = 6;
 export const FILENAME_ROW_PX = 20;
 

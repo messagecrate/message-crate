@@ -2,8 +2,8 @@
  * The logged-in account, as every screen and query reads it.
  *
  * Its own module, importing neither `routeQuery` nor `useAccountProfile`,
- * because both read `useAuth` and `auth.tsx` imports both (`routeQuery`
- * through `sessionQueryClient.tsx`): `auth.tsx` holds the provider that fills
+ * because both read `useAuth` and `AuthProvider.tsx` imports both (`routeQuery`
+ * through `sessionQueryClient.tsx`): `AuthProvider.tsx` holds the provider that fills
  * this context.
  */
 import { createContext, useContext } from "react";
@@ -27,7 +27,7 @@ interface AuthContextValue extends AuthState {
    * once the pause is recorded: the Upload sends this session's token. Unless
    * `ask` is false, logout first asks whether to pause it, and does nothing
    * when the person goes back. It waits at most `UPLOAD_PAUSE_LIMIT_MS`
-   * (`auth.tsx`) for the pause, less when the person presses **Log out now**, and then
+   * (`AuthProvider.tsx`) for the pause, less when the person presses **Log out now**, and then
    * revokes the session anyway and says the Upload resumes from what it sent.
    *
    * `deletedAccountDirectories` is given when the account has just been deleted:

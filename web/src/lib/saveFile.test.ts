@@ -12,7 +12,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   save: (...args: unknown[]) => save(...args),
 }));
-vi.mock("./tauri-check", () => ({
+vi.mock("./tauriCheck", () => ({
   isTauri: () => isTauri(),
 }));
 

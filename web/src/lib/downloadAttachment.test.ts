@@ -4,12 +4,12 @@ import { downloadAttachment } from "./downloadAttachment";
 import { saveFile } from "./saveFile";
 import { createMediaLink, fetchAsset } from "./serverApi";
 import { invokeSaveDownload } from "./tauri";
-import { isTauri } from "./tauri-check";
+import { isTauri } from "./tauriCheck";
 
 vi.mock("./serverApi", () => ({ createMediaLink: vi.fn(), fetchAsset: vi.fn() }));
 vi.mock("./saveFile", () => ({ saveFile: vi.fn() }));
 vi.mock("./tauri", () => ({ invokeSaveDownload: vi.fn() }));
-vi.mock("./tauri-check", () => ({ isTauri: vi.fn() }));
+vi.mock("./tauriCheck", () => ({ isTauri: vi.fn() }));
 
 const VIDEO = attachment({
   original_name: "Clip.mov",

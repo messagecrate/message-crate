@@ -7,7 +7,7 @@ import {
   setImporterExtraPath,
   setImporterPath,
   setRememberImporterPaths,
-} from "./system-settings";
+} from "./systemSettings";
 
 beforeEach(() => {
   installMemoryStorage();

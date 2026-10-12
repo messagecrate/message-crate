@@ -32,7 +32,7 @@ vi.mock("../lib/useMessageTags", () => ({
   useMessageTags: () => ({ tags: [] }),
 }));
 
-vi.mock("../lib/tauri-check", () => ({
+vi.mock("../lib/tauriCheck", () => ({
   isTauri: () => tauriState.isTauri,
 }));
 

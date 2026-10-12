@@ -191,7 +191,7 @@ const FRESH_RUN = initialImportRunState(stepsFor("copy"));
  * The run in the store when `accountId` started it, and the fresh form when
  * another account did.
  */
-export function importRunFor(state: ImportRunState, accountId: number | null): ImportRunState {
+function importRunFor(state: ImportRunState, accountId: number | null): ImportRunState {
   return state.accountId === accountId ? state : FRESH_RUN;
 }
 

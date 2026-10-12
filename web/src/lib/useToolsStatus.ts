@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { keys } from "./queryKeys";
 import { invokeRetryToolDownloads, invokeToolsStatus, toolsDownloading } from "./tauri";
-import { isTauri } from "./tauri-check";
+import { isTauri } from "./tauriCheck";
 
 /** How often the window asks the desktop process again while a check or a download runs. */
 const DOWNLOAD_POLL_MS = 1000;

@@ -20,6 +20,7 @@ import { focusRingClass } from "../lib/uiStyles";
  * This file's override in `web/biome.json` replaces the root rule's paths
  * rather than adding to them, so it copies every root path except
  * `react-aria-components`; a path added to the root rule is added there too.
+ * `scripts/check-biome-restricted-imports.mjs` fails when the two lists differ.
  */
 export type TabProps = {
   id: Key;

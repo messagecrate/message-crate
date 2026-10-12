@@ -3,7 +3,7 @@
  */
 import { useEffect, useRef } from "react";
 import { destroyWindow, onWindowCloseRequested } from "./tauri";
-import { isTauri } from "./tauri-check";
+import { isTauri } from "./tauriCheck";
 
 /**
  * Hold the desktop window open on close until `revokeSession` has ended the

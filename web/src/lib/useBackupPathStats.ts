@@ -4,7 +4,7 @@ import { emptyImessagePathStats, type ImessagePathStats, isImessageMethod } from
 import { probePath } from "./pathChecks";
 import { type ImessagePathsKey, keys, type WhatsappPathsKey } from "./queryKeys";
 import { invokeIosBackupEncrypted } from "./tauri";
-import { isTauri } from "./tauri-check";
+import { isTauri } from "./tauriCheck";
 import { useDebouncedValue } from "./useDebouncedValue";
 import {
   emptyWhatsappPathStats,

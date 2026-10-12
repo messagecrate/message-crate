@@ -12,7 +12,7 @@ import {
   type ServerHealthStatus,
 } from "../lib/serverHealth";
 import { invokeOpenDataDirectory, type LocalServerStatus } from "../lib/tauri";
-import { isTauri } from "../lib/tauri-check";
+import { isTauri } from "../lib/tauriCheck";
 import {
   accentLinkClass,
   authCardBodyClass,

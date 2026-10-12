@@ -1,5 +1,5 @@
 import { invokeOpenPath } from "./tauri";
-import { isTauri } from "./tauri-check";
+import { isTauri } from "./tauriCheck";
 
 /**
  * Open a file or directory with the operating system's default handler.

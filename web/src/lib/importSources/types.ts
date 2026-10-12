@@ -1,6 +1,6 @@
 import type { ImportSourceId } from "../exportSources";
 import type { ImessagePathStats } from "../imessageImport";
-import type { ImporterExtraField } from "../system-settings";
+import type { ImporterExtraField } from "../systemSettings";
 import type { AttachmentChoices, ExtractConfig } from "../types";
 import type { WhatsappPathStats } from "../whatsappImport";
 
@@ -30,7 +30,7 @@ export type SnapshotSecret = "backupPassword" | "whatsappKey";
  * An option under Processing Options that only some sources have. The
  * phone's country is every source's, so it is not one of these.
  */
-export type ProcessingOption = "obfuscate" | "timeZone" | "whatsappFallbackPhone";
+type ProcessingOption = "obfuscate" | "timeZone" | "whatsappFallbackPhone";
 
 /**
  * How a run reads an Apple Messages backup's identities before it starts,
@@ -38,7 +38,7 @@ export type ProcessingOption = "obfuscate" | "timeZone" | "whatsappFallbackPhone
  * from their profile. `ios` is true for an iPhone backup and false for a
  * Messages database.
  */
-export type AppleIdentityRead = { ios: boolean };
+type AppleIdentityRead = { ios: boolean };
 
 /** The Import form's values, as an Import Run is started and resumed with them. */
 export type ImportJobFormValues = AttachmentChoices & {
@@ -81,7 +81,7 @@ export type ImportJobFormValues = AttachmentChoices & {
 };
 
 /** The fields `extract` reads for one source, beside the ones every run sends. */
-export type ExtractFields = Partial<Omit<ExtractConfig, "source" | "path" | "output_dir">>;
+type ExtractFields = Partial<Omit<ExtractConfig, "source" | "path" | "output_dir">>;
 
 /**
  * The owner phone numbers as they are being typed, for a source that asks
@@ -127,7 +127,7 @@ export type ReadinessInput = {
 };
 
 /** Whether the source's fields are ready for Import, and the problem with each field that is not. */
-export type Readiness = {
+type Readiness = {
   enabled: boolean;
   errors: Partial<Record<string, string>>;
 };

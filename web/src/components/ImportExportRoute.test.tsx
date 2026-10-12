@@ -4,6 +4,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { importRunStore, initialImportRunState } from "../screens/import/importRunStore";
+import { seedImportRun } from "../test/importRun";
 import { setupUser } from "../test/user";
 import ImportExportRoute from "./ImportExportRoute";
 
@@ -17,7 +18,7 @@ const state = vi.hoisted(() => ({
   accountId: 1,
 }));
 
-vi.mock("../lib/tauri-check", () => ({ isTauri: () => state.isTauri }));
+vi.mock("../lib/tauriCheck", () => ({ isTauri: () => state.isTauri }));
 vi.mock("../lib/useAccountProfile", () => ({
   useAccountProfile: () => ({ profile: state.profile, loading: state.loading, error: "" }),
 }));
@@ -118,7 +119,7 @@ describe("ImportExportRoute", () => {
 
   it("keeps an Import Run already in progress on screen, with the reason it will fail", async () => {
     state.profile = { ...allowed, can_import: false };
-    importRunStore.set({ accountId: 1, phase: "running", running: true });
+    seedImportRun(state.accountId, { phase: "running", running: true });
     renderRoute("import");
     expect(await screen.findByText("the form")).toBeTruthy();
     expect(screen.getByRole("status").textContent).toMatch(
@@ -129,7 +130,7 @@ describe("ImportExportRoute", () => {
 
   it("shows the message once that run is left", async () => {
     state.profile = { ...allowed, can_import: false };
-    importRunStore.set({ accountId: 1, phase: "done" });
+    seedImportRun(state.accountId, { phase: "done" });
     renderRoute("import");
     expect(await screen.findByText("the form")).toBeTruthy();
     act(() => importRunStore.set({ phase: "form" }));
@@ -140,7 +141,7 @@ describe("ImportExportRoute", () => {
   it("does not show another account's run to an account with Import turned off", () => {
     // Account 1 left its run waiting at a Review and logged out; account 2,
     // which may not import, logged in on the same desktop app (#1085).
-    importRunStore.set({ accountId: 1, phase: "staging_review" });
+    seedImportRun(1, { phase: "staging_review" });
     state.accountId = 2;
     state.profile = { ...allowed, can_import: false };
     renderRoute("import");
@@ -150,7 +151,7 @@ describe("ImportExportRoute", () => {
 
   it("does not let a run in progress open Export, for an account that may export", async () => {
     state.profile = allowed;
-    importRunStore.set({ accountId: 1, phase: "running", running: true });
+    seedImportRun(state.accountId, { phase: "running", running: true });
     renderRoute("export");
     // Let the Suspense boundary settle before asserting.
     await act(async () => {});

@@ -25,10 +25,10 @@ import { narrow } from "./searchQuery";
  */
 
 /** One set as the server answers it. */
-export type NamedSet = { id: number; name: string };
+type NamedSet = { id: number; name: string };
 
 /** Members to put in and take out of a set, in one request. Either side may be left off. */
-export type MembersPatch = { add?: number[]; remove?: number[] };
+type MembersPatch = { add?: number[]; remove?: number[] };
 
 /** What a membership write answers with. */
 export type MembersChanged = { added: number; removed: number };
@@ -198,15 +198,13 @@ function checkedName(collection: NameCollection, name: string): string {
   return trimmed;
 }
 
-export function useCreateNamedSet(
-  collection: NameCollection,
-): UseMutationResult<NamedSet, Error, string> {
+function useCreateNamedSet(collection: NameCollection): UseMutationResult<NamedSet, Error, string> {
   return useRouteMutation<NamedSet, Error, string>({
     mutationFn: async (name) => collection.routes.create({ name: checkedName(collection, name) }),
   });
 }
 
-export function useRenameNamedSet(
+function useRenameNamedSet(
   collection: NameCollection,
 ): UseMutationResult<NamedSet, Error, { from: string; to: string }> {
   const idOf = useIdOf(collection);
@@ -218,9 +216,7 @@ export function useRenameNamedSet(
   });
 }
 
-export function useDeleteNamedSet(
-  collection: NameCollection,
-): UseMutationResult<void, Error, string> {
+function useDeleteNamedSet(collection: NameCollection): UseMutationResult<void, Error, string> {
   const idOf = useIdOf(collection);
   return useRouteMutation<void, Error, string>({
     mutationFn: async (name) => collection.routes.remove(await idOf(name)),

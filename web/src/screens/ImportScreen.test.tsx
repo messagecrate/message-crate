@@ -131,7 +131,7 @@ vi.mock("../lib/tauri", () => ({
 
 vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 
-vi.mock("../lib/tauri-check", () => ({
+vi.mock("../lib/tauriCheck", () => ({
   isTauri: () => false,
 }));
 

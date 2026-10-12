@@ -25,7 +25,7 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
 
 const getAccountProfileMock = vi.mocked(getAccountProfile);
 
-vi.mock("../lib/tauri-check", () => ({
+vi.mock("../lib/tauriCheck", () => ({
   isTauri: () => tauriState.isTauri,
 }));
 

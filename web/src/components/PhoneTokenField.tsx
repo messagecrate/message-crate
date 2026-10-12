@@ -11,7 +11,7 @@ export type PhoneTokenFieldHandle = {
   flush: () => string[];
 };
 
-export type PhoneTokenFieldProps = {
+type PhoneTokenFieldProps = {
   value: string[];
   onChange: (phones: string[]) => void;
   /** Fired when the uncommitted draft text changes. */

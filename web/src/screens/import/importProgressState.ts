@@ -104,7 +104,7 @@ export const MEDIA_LABEL = "Media";
 export const UPLOAD_LABEL = "Upload";
 
 /** Whether this attachment media mode runs a Media stage (convert/compress). */
-export function hasMediaStage(mode: AttachmentMediaMode): boolean {
+function hasMediaStage(mode: AttachmentMediaMode): boolean {
   return mode === "convert" || mode === "compress";
 }
 

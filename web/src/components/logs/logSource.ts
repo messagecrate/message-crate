@@ -14,7 +14,7 @@ import {
   type RunLogEntry,
   type RunLogReader,
 } from "../../lib/tauri";
-import { isTauri } from "../../lib/tauri-check";
+import { isTauri } from "../../lib/tauriCheck";
 import { useIsOwner } from "../../lib/useIsOwner";
 import { useServerInfo } from "../../lib/useServerInfo";
 

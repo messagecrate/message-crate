@@ -25,7 +25,7 @@ import { useLogoutOnWindowClose } from "./windowCloseLogout";
  * session anyway (#1491). An Upload that does not stop must not keep the person
  * logged in; the Upload then resumes from what its journal recorded as sent.
  */
-export const UPLOAD_PAUSE_LIMIT_MS = 15_000;
+const UPLOAD_PAUSE_LIMIT_MS = 15_000;
 
 /** Max time to wait for the server logout request before clearing local state. */
 const LOGOUT_TIMEOUT_MS = 2000;

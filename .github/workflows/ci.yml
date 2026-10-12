@@ -97,7 +97,7 @@ jobs:
               # own tree run in the web job, so a change to any of them must
               # run that job.
               docs/src/assets/openapi.json) docs=true; web=true ;;
-              scripts/check-generated-api-types.sh|scripts/openapi-typescript/*) web=true ;;
+              scripts/check-generated-api-types.sh|scripts/check-biome-restricted-imports.mjs|scripts/openapi-typescript/*) web=true ;;
               docs/*) docs=true ;;
               web/*) web=true ;;
               web-next/*) ;;                # legacy tree, not the product path
@@ -305,6 +305,9 @@ jobs:
 
       - name: Lint and format-check
         run: cd web && npx biome ci .
+
+      - name: Biome's restricted-import lists agree
+        run: node scripts/check-biome-restricted-imports.mjs
 
       - name: Generated server API types match the OpenAPI document
         run: ./scripts/check-generated-api-types.sh

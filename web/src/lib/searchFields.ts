@@ -30,7 +30,7 @@ export function hasFieldToken(q: string): boolean {
 }
 
 /** The field words a query carries, lower-cased and without the leading minus, in order of appearance. */
-export function fieldWords(q: string): string[] {
+function fieldWords(q: string): string[] {
   return [...new Set(fieldTokens(q).map((t) => t.word))];
 }
 

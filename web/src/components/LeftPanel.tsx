@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
 import { canUseImportExportWithProfile } from "../lib/desktopFeatures";
 import { type SavedSearch, useSavedSearchActions, useSavedSearches } from "../lib/savedSearches";
-import { isTauri } from "../lib/tauri-check";
+import { isTauri } from "../lib/tauriCheck";
 import { resizeHandleGutterClass } from "../lib/tw";
 import { useAccountProfile } from "../lib/useAccountProfile";
 import { useContactGroups } from "../lib/useContactGroups";

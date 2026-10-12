@@ -295,7 +295,7 @@ function EarlierVersionsList({ state, mine }: { state: EarlierVersionsState; min
  * What a version reads when the backup records the edit and not the text it
  * replaced, as an iMazing export does.
  */
-export const EARLIER_VERSION_NOT_IN_BACKUP_TEXT = "Earlier version not in the backup";
+const EARLIER_VERSION_NOT_IN_BACKUP_TEXT = "Earlier version not in the backup";
 
 /**
  * One earlier version: its time above its text. A version whose text the
@@ -435,7 +435,7 @@ export function ChatBubbleRow({
 }
 
 /** Full-width row chrome for services rendered as flat rows rather than bubbles. */
-export function ServiceRow({
+function ServiceRow({
   messageId,
   isActive,
   children,

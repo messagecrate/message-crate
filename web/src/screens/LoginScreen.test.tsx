@@ -19,7 +19,7 @@ const startLocalServer = vi.hoisted(() => vi.fn());
 const invokeLocalServerStatus = vi.hoisted(() => vi.fn());
 const invokeOpenDataDirectory = vi.hoisted(() => vi.fn());
 
-vi.mock("../lib/tauri-check", () => ({
+vi.mock("../lib/tauriCheck", () => ({
   isTauri: () => tauriState.isTauri,
 }));
 

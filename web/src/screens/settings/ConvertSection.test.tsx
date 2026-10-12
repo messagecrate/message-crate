@@ -18,7 +18,7 @@ const invokeDiscardExportDir = vi.hoisted(() => vi.fn());
 const CONVERT_DIR =
   "/home/demo/.local/share/app.messagecrate.desktop/exports/convert-2026-10-04-1430-jsonl";
 
-vi.mock("../../lib/tauri-check", () => ({
+vi.mock("../../lib/tauriCheck", () => ({
   isTauri: () => tauriState.isTauri,
 }));
 

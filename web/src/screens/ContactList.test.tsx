@@ -25,7 +25,7 @@ import ContactList, { FILTER_DEBOUNCE_MS } from "./ContactList";
 vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 
 const tauriMock = vi.hoisted(() => ({ current: false }));
-vi.mock("../lib/tauri-check", () => ({ isTauri: () => tauriMock.current }));
+vi.mock("../lib/tauriCheck", () => ({ isTauri: () => tauriMock.current }));
 
 vi.mock("../lib/serverApi", () => ({
   listContacts: vi.fn(),

@@ -30,7 +30,7 @@ export type OpenRun = {
 };
 
 /** The desktop side of a run: the Tauri commands and events it uses. */
-export type RunDesktop = {
+type RunDesktop = {
   /** True inside the desktop app. A run does nothing anywhere else. */
   isTauri: () => boolean;
   awaitDesktopJob: typeof tauri.awaitDesktopJob;
@@ -52,7 +52,7 @@ export type RunDesktop = {
 };
 
 /** The server side of a run: its routes, and the session they go with. */
-export type RunServer = {
+type RunServer = {
   getServerState: typeof serverApi.getServerState;
   createImport: typeof serverApi.createImport;
   completeImport: typeof serverApi.completeImport;

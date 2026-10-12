@@ -15,7 +15,7 @@ export interface ContactSortState {
   order: SortOrder;
 }
 
-export const DEFAULT_CONTACT_SORT = {
+const DEFAULT_CONTACT_SORT = {
   sort: "last",
   order: "asc",
 } as const satisfies ContactSortState;
@@ -114,7 +114,7 @@ export function compareContactsByName(
  * orders `sort=last_heard`; the timestamps are RFC 3339 in UTC, so string
  * order is time order.
  */
-export function compareContactsByLastHeard(
+function compareContactsByLastHeard(
   a: string | null | undefined,
   b: string | null | undefined,
   order: SortOrder,

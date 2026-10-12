@@ -35,7 +35,7 @@ const desktop = vi.hoisted(() => ({
   retry: vi.fn(),
 }));
 
-vi.mock("../../lib/tauri-check", () => ({
+vi.mock("../../lib/tauriCheck", () => ({
   isTauri: () => desktop.isTauri,
 }));
 

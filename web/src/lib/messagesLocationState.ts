@@ -1,7 +1,7 @@
 import type { Conversation } from "./types";
 
 /** Lightweight contact row carried on location state so the drawer can paint immediately. */
-export type OpenContactPreview = {
+type OpenContactPreview = {
   id: string;
   name: string;
   addresses?: string[];

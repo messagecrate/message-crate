@@ -357,7 +357,7 @@ export function suggestion(word: string, value: string): string {
 // --- Advanced search -------------------------------------------------
 
 /** Same operators as web-next CountField (Any / Equal to / More than / Less than). */
-export type CountComparator = "=" | ">" | "<";
+type CountComparator = "=" | ">" | "<";
 
 export type CountFilterInput = {
   comparator: CountComparator | "any";

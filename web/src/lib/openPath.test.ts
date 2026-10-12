@@ -7,7 +7,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invoke(...args),
 }));
 
-vi.mock("./tauri-check", () => ({
+vi.mock("./tauriCheck", () => ({
   isTauri: () => isTauri(),
 }));
 

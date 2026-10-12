@@ -26,14 +26,12 @@ import {
   invokeUpload,
   onDesktopJobEvents,
 } from "../../lib/tauri";
-import { isTauri } from "../../lib/tauri-check";
+import { isTauri } from "../../lib/tauriCheck";
 import { useFetchAccountProfile } from "../../lib/useAccountProfile";
 import { type ImportRunState, importRunStore, useImportRunState } from "./importRunStore";
 import type { ImportRunDeps } from "./run/context";
 import { createImportRunService, type ImportRunService, type RunAccount } from "./run/service";
 import type { Resume } from "./run/staging";
-
-export type { ImportPhase, ImportStep } from "./importProgressState";
 
 /**
  * What the app's Import Run works through: the desktop app's commands, the

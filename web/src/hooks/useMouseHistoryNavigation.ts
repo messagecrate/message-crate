@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { isTauri } from "../lib/tauri-check";
+import { isTauri } from "../lib/tauriCheck";
 
 /** The thumb buttons, as the DOM numbers them. */
 const BACK_BUTTON = 3;

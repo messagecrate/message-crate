@@ -24,7 +24,7 @@ export function filesOverLimit(summary: StagingSummary): AttachmentForecast[] {
     .sort(bySizeDescending);
 }
 
-export type EstimatePileKey = "likely_within" | "may_exceed" | "not_media";
+type EstimatePileKey = "likely_within" | "may_exceed" | "not_media";
 
 /** One group of files the Staging Review's estimates sort into. */
 export interface EstimatePile {

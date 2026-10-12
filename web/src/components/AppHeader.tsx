@@ -19,7 +19,7 @@ import SearchBar from "./SearchBar";
 import VersionNotice from "./VersionNotice";
 
 /** Which list the header search runs against. */
-export type HeaderSearchTarget = "accounts" | "contacts" | "conversations" | "messages" | "trash";
+type HeaderSearchTarget = "accounts" | "contacts" | "conversations" | "messages" | "trash";
 
 /**
  * Every target uses the same bar; only the wording, the recents bucket, the

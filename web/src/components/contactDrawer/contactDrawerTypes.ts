@@ -2,8 +2,7 @@ import type { ContactDetail, ContactHandle } from "../../lib/contactDetail";
 import { formatIsoDateOnly } from "../../lib/formatDate";
 import { conversationTotal } from "../identityRows";
 
-export type { OfferedService } from "../../lib/offeredService";
-export { formatOfferedServiceLabel, inferService } from "../../lib/offeredService";
+export { formatOfferedServiceLabel } from "../../lib/offeredService";
 
 /** Lightweight row data so the drawer can paint before the detail API returns. */
 export type ContactPreview = {
@@ -110,7 +109,7 @@ export function formatHandleDate(iso: string | null | undefined, zone: string): 
   return formatIsoDateOnly(iso, zone);
 }
 
-export function emptyHandleRow(address: string): ContactHandle {
+function emptyHandleRow(address: string): ContactHandle {
   return {
     address,
     service: "",

@@ -80,7 +80,7 @@ vi.mock("./api", () => ({
     getText: vi.fn().mockResolvedValue(""),
     getBlob: vi.fn().mockResolvedValue(new Blob()),
   },
-  // The logged-in account, as `auth.tsx` records it after login.
+  // The logged-in account, as `AuthProvider.tsx` records it after login.
   getAccountId: () => 7,
   getBaseUrl: () => "http://127.0.0.1:8080",
 }));

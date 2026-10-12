@@ -1,4 +1,4 @@
-import { isTauri } from "./tauri-check";
+import { isTauri } from "./tauriCheck";
 
 /**
  * This app's Build, such as `0.9.0+343fe0d8`. `vite.config.ts` works it out
@@ -8,7 +8,7 @@ import { isTauri } from "./tauri-check";
 export const APP_BUILD: string = __APP_BUILD__;
 
 /** Which app this is, as the server records it. */
-export function appKind(): "desktop" | "website" {
+function appKind(): "desktop" | "website" {
   return isTauri() ? "desktop" : "website";
 }
 

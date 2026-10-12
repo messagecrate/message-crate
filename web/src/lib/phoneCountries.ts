@@ -29,7 +29,7 @@ export function phoneCountryLabel(country: PhoneCountryChoice): string {
  * The countries named in `locale` and sorted by name. A code the browser
  * cannot name keeps the code as its name.
  */
-export function namedPhoneCountries(
+function namedPhoneCountries(
   countries: readonly components["schemas"]["PhoneCountry"][],
   locale?: string,
 ): PhoneCountryChoice[] {

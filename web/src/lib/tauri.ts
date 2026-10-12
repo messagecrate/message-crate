@@ -673,7 +673,7 @@ function asciiJson(value: string): string {
 }
 
 /** Why the app's own Message Crate is not running. */
-export type LocalServerFailure = "port_taken" | "start_failed";
+type LocalServerFailure = "port_taken" | "start_failed";
 
 /**
  * What the desktop app reports about its own Message Crate, the server it

@@ -10,7 +10,7 @@ import { type AccountRunDirectories, accountRunDirectories } from "../../lib/imp
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
 import { deleteAccount, deleteAllMessages as deleteAllMessagesRoute } from "../../lib/serverApi";
-import { isTauri } from "../../lib/tauri-check";
+import { isTauri } from "../../lib/tauriCheck";
 import { useDeleteAccount, useDeleteAccountMessages } from "../owner/useOwnerAccounts";
 import { dangerButtonClass } from "./profileStyles";
 

@@ -8,7 +8,7 @@
  *
  * The Import screen's run lives in `screens/import/run/` (`service.ts`,
  * which `screens/import/useImportJob.ts` builds once for the app). Its Upload
- * (`run/upload.ts`) registers the pause here while it runs; `auth.tsx` reads
+ * (`run/upload.ts`) registers the pause here while it runs; `AuthProvider.tsx` reads
  * it, without depending on the screen.
  *
  * The other way round, an Upload the server refused the session to ends the

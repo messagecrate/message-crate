@@ -2,7 +2,7 @@ import { yearIn } from "../../lib/timeZone";
 import type { Message } from "../../lib/types";
 
 /** A gap this long or longer between two messages starts a new run (#1391). */
-export const RUN_GAP_MS = 60 * 60 * 1000;
+const RUN_GAP_MS = 60 * 60 * 1000;
 
 /** The calendar day an instant falls on in `zone`, as `YYYY-MM-DD`, for comparing two days. */
 function dayKey(iso: string, zone: string): string {

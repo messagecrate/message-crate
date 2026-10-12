@@ -7,7 +7,7 @@ import { useRunDesktopJob } from "../../hooks/useRunDesktopJob";
 import { errorText } from "../../lib/apiErrorMessage";
 import { writeInExportDir } from "../../lib/exportDir";
 import { EXPORT_FORMATS, type ExportFormat, invokeFormat } from "../../lib/tauri";
-import { isTauri } from "../../lib/tauri-check";
+import { isTauri } from "../../lib/tauriCheck";
 import { sameDirectory } from "./convertUtils";
 
 /** Label for the chosen format, for the success panel. */
