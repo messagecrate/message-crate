@@ -19,7 +19,7 @@ const SIZE_LABEL: Record<DemoDataSize, string> = {
 };
 
 /** How often the card asks the server whether a build has ended. */
-const BUILD_POLL_MS = 1500;
+export const BUILD_POLL_MS = 1500;
 
 /**
  * Add the Demo Account, or reset it.

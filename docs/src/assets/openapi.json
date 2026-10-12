@@ -13539,6 +13539,7 @@
           "owner",
           "holder",
           "command_line",
+          "start_up",
           "server",
           "anonymous"
         ]

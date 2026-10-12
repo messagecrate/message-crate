@@ -422,13 +422,15 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     -- address_book_loaded or address_book_exported.
     action TEXT NOT NULL,
     -- Who acted: owner, holder (the account's own holder), command_line
-    -- (a server command), server (the server on its own), or anonymous
-    -- (someone at the login card).
+    -- (a server command), start_up (the server's first start, which adds
+    -- the Demo Account to a new database), server (the server on its own),
+    -- or anonymous (someone at the login card).
     actor TEXT NOT NULL,
     -- The account the entry is about (`accounts.id`). NULL when it is about
     -- no account (a refused login for an unknown username, opening or closing
     -- registration, changing the attachment size limit, adding the Demo
-    -- Account) or once the account is deleted.
+    -- Account, a Demo Account build by `reset-demo` or the first start) or
+    -- once the account is deleted.
     account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
     -- That account's username when the entry was written; for a refused
     -- login, the username as typed, trimmed and cut to 128 characters.

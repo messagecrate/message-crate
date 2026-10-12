@@ -4,7 +4,7 @@ import { startLocalServer } from "./localServer";
 import { invokeLocalServerStatus, type LocalServerStatus } from "./tauri";
 
 /** How often a starting server is asked how it is getting on. */
-const POLL_MS = 500;
+export const STARTING_POLL_MS = 500;
 
 /**
  * How often a ready server is asked again. A Message Crate the app only found
@@ -55,7 +55,11 @@ export function useLocalServer(active: boolean): {
       if (run.current !== mine) return;
       setStatus(next);
       const wait =
-        next.status === "starting" ? POLL_MS : next.status === "ready" ? READY_POLL_MS : null;
+        next.status === "starting"
+          ? STARTING_POLL_MS
+          : next.status === "ready"
+            ? READY_POLL_MS
+            : null;
       if (wait !== null) {
         timer.current = setTimeout(() => {
           invokeLocalServerStatus().then(settle, (error: unknown) => settle(failed(error)));

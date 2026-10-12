@@ -1933,7 +1933,7 @@ export interface components {
          * @description Who acted.
          * @enum {string}
          */
-        AuditActor: "owner" | "holder" | "command_line" | "server" | "anonymous";
+        AuditActor: "owner" | "holder" | "command_line" | "start_up" | "server" | "anonymous";
         /**
          * @description One entry of the Audit Trail as the interface hands it out: an entry of
          *     `audit_entries`, an Import Run, or an Export Run. `id` is the row's id in

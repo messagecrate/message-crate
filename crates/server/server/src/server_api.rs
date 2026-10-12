@@ -851,23 +851,15 @@ async fn record_build_and_end_demo_sessions(
     state: &AppState,
     size: DemoDataSize,
 ) -> Result<(), ApiError> {
-    use crate::db::audit_trail::{self, AuditAction, AuditActor, Details, NewEntry};
+    use crate::db::audit_trail::{self, AuditActor};
     let mut conn = state.db.acquire().await?;
     let mut tx = crate::db::begin_write(&mut conn).await?;
     let demo =
         account_profile::username_for_account(&mut tx, account_profile::DEMO_ACCOUNT_ID).await?;
-    let entry = match &demo {
-        Some(username) => NewEntry::about(
-            AuditAction::DemoAccountReset,
-            AuditActor::Owner,
-            (account_profile::DEMO_ACCOUNT_ID, username),
-        ),
-        None => NewEntry::about_no_account(AuditAction::DemoAccountAdded, AuditActor::Owner),
-    }
-    .with_details(Details {
-        demo_data_size: Some(size),
-        ..Details::default()
-    });
+    let about = demo
+        .as_deref()
+        .map(|username| (account_profile::DEMO_ACCOUNT_ID, username));
+    let entry = audit_trail::demo_build_entry(AuditActor::Owner, size, about.is_some(), about);
     audit_trail::record(&mut tx, &entry).await?;
     crate::db::session_tokens::revoke_account_sessions(
         &mut tx,

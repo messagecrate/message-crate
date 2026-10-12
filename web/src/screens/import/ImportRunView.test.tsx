@@ -1,12 +1,13 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
 import { holdDesktopJob } from "../../lib/desktopJob";
 import type { ImportJobFormValues } from "../../lib/importSources/types";
 import type { AttachmentForecast, StagingSummary, ToolStatus, ToolsStatus } from "../../lib/tauri";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { importForm } from "../../test/importForm";
 import { Providers } from "../../test/providers";
 import { MIB } from "../../test/units";
@@ -226,6 +227,7 @@ describe("runHeading and the operation line", () => {
 
 describe("ImportRunView", () => {
   beforeEach(() => {
+    startFakeClock();
     openPathInExplorer.mockReset();
     openPathInExplorer.mockResolvedValue(undefined);
     getImportMock.mockReset();
@@ -245,6 +247,7 @@ describe("ImportRunView", () => {
     desktop.isTauri = false;
     desktop.toolsStatus.mockReset();
     desktop.retry.mockReset();
+    stopFakeClock();
   });
 
   it("lists every stage and review of the run, in order", () => {
@@ -295,9 +298,8 @@ describe("ImportRunView", () => {
     });
     // The log is in the Logs Directory, named for the run, so it outlives
     // the run's directory.
-    await user.click(
-      await within(stageRow("Upload")).findByRole("button", { name: "import-iphone.log" }),
-    );
+    await settle();
+    await user.click(within(stageRow("Upload")).getByRole("button", { name: "import-iphone.log" }));
     expect(openPathInExplorer).toHaveBeenCalledWith(
       "/home/sam/.local/share/app.messagecrate.desktop/logs/import-iphone.log",
     );
@@ -310,7 +312,10 @@ describe("ImportRunView", () => {
       runDir,
       steps: stepsAt("convert", { Staging: "done", Media: "done", Upload: "active" }),
     });
-    await within(stageRow("Upload")).findByRole("button", { name: "import-iphone.log" });
+    await settle();
+    expect(
+      within(stageRow("Upload")).getByRole("button", { name: "import-iphone.log" }),
+    ).toBeInTheDocument();
 
     view.rerender(
       viewElement({
@@ -332,7 +337,10 @@ describe("ImportRunView", () => {
     const staging = "/home/sam/message-crate/staging-iphone";
     const steps = stepsAt("convert", { Staging: "done", Media: "done", Upload: "active" });
     const view = renderView({ runDir: staging, steps });
-    await within(stageRow("Upload")).findByRole("button", { name: "import-iphone.log" });
+    await settle();
+    expect(
+      within(stageRow("Upload")).getByRole("button", { name: "import-iphone.log" }),
+    ).toBeInTheDocument();
 
     view.rerender(viewElement({ phase: "done", running: false, runDir: staging, steps }));
 
@@ -402,12 +410,11 @@ describe("ImportRunView", () => {
       expect(review.getByRole("status")).toHaveTextContent(
         "A Convert is running. Upload to Message Crate can start once it ends.",
       );
+      act(() => release());
+      expect(screen.getByRole("button", { name: "Upload to Message Crate" })).toBeEnabled();
     } finally {
       release();
     }
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Upload to Message Crate" })).toBeEnabled(),
-    );
   });
 
   it("waits at the Staging Review with the staged facts, the limit and the decision", async () => {
@@ -573,12 +580,9 @@ describe("ImportRunView", () => {
     });
     expect(screen.getByRole("button", { name: "Convert media" })).toBeDisabled();
 
-    await user.click(await screen.findByRole("button", { name: "Try again" }));
-
-    await waitFor(
-      () => expect(screen.getByRole("button", { name: "Convert media" })).toBeEnabled(),
-      { timeout: 3000 },
-    );
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await settle();
+    expect(screen.getByRole("button", { name: "Convert media" })).toBeEnabled();
     expect(desktop.retry).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/Media can't use ffprobe/)).toBeNull();
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
@@ -603,10 +607,9 @@ describe("ImportRunView", () => {
       mediaToolsMissing: ["ffmpeg"],
     });
 
-    await waitFor(() => expect(desktop.toolsStatus).toHaveBeenCalled());
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Convert media" })).toBeEnabled(),
-    );
+    await settle();
+    expect(desktop.toolsStatus).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Convert media" })).toBeEnabled();
     expect(screen.queryByText(/Media can't use ffmpeg/)).toBeNull();
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
@@ -727,10 +730,11 @@ describe("ImportRunView", () => {
     const upload = within(stageRow("Upload"));
     expect(upload.getByText("Duplicate").nextSibling).toHaveTextContent("295");
     expect(upload.getByText("Uploaded").nextSibling).toHaveTextContent("6,104");
-    await waitFor(() => expect(upload.getByText("Modified").nextSibling).toHaveTextContent("16"));
+    await settle();
+    expect(upload.getByText("Modified").nextSibling).toHaveTextContent("16");
 
     await user.click(upload.getByRole("button", { name: /Contact list/ }));
-    await waitFor(() => expect(upload.getByText("Ada Lovelace")).toBeInTheDocument());
+    expect(upload.getByText("Ada Lovelace")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "View imported conversations" }));
     expect(navigateMock).toHaveBeenCalledWith("/?q=import%3A%2342");

@@ -17,7 +17,7 @@ Each row has three columns:
 |---|---|
 | **Date** | When it happened. |
 | **What happened** | The act, with its counts. |
-| **By** | Who acted: the **Account holder**, the **Owner**, a **Server command** such as `reset-owner-password`, the **Server** on its own, or the **Login screen** for a refused login. |
+| **By** | Who acted: the **Account holder**, the **Owner**, a **Server command** such as `reset-owner-password` or `reset-demo`, the **Server's first start**, the **Server** on its own, or the **Login screen** for a refused login. The server's first start is the one that adds the Demo Account to a new Message Crate. |
 
 An entry says that something happened and how much.
 It never says what a message said or which conversation it was in.
@@ -29,6 +29,7 @@ An Export Run shows whether it covered everything, a search or picked conversati
 - A refused login: an unknown username, a wrong password, or a disabled account.
 - Each Import Run and Export Run, and what started it: a login, or an API token named by its label and hint.
 - The Owner creating the account, disabling or re-enabling it, setting its password, changing its permissions, deleting its messages for good, or deleting it.
+- Every build of the Demo Account, adding it or resetting it, with the set of Demo Data: by the Owner in Owner Home, by the `reset-demo` server command, or by the server's first start on a new Message Crate. A reset from Owner Home is recorded before the old Demo Account is deleted, so it stays among that account's entries. The `reset-demo` command records its build after the old Demo Account is deleted, so its entry, like every add, belongs to no account and is read under **Audit Trail** in Owner Home.
 - The account holder changing their password, deleting their messages for good, deleting a conversation from the trash, emptying the trash, making or deleting an API token, and loading or exporting an address book.
 
 Moving conversations to the trash and back, tags, Saved Searches, contact names, the display name, the Time Zone, and identities are not recorded.
