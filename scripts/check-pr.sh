@@ -6,7 +6,9 @@
 # Stops on the first failure. Checks, never rewrites: CHANGELOG.md's
 # formatting rules, rustfmt --check and Clippy at -D warnings on the
 # workspace and src-tauri, Biome ci, the check that web/biome.json's
-# restricted-import lists agree, and the web type-check. Run ./scripts/format-all.sh to fix formatting failures.
+# restricted-import lists agree, and the web type-check. Run
+# ./scripts/format-all.sh to fix rustfmt and Biome failures; a CHANGELOG.md
+# failure names its line and rule, and is fixed by hand.
 # CI is the complete gate; ./scripts/check-all.sh runs the full set locally.
 # Why this split: docs/adr/0007-ci-is-the-only-gate.md.
 # Runs npm ci in web/ only when that tree has no node_modules yet.

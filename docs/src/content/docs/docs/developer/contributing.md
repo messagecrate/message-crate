@@ -253,7 +253,7 @@ From the repository root:
 ./scripts/check-pr.sh
 ```
 
-That script is quick: it checks the formatting of `CHANGELOG.md`, checks formatting on the workspace and `src-tauri/`, runs Clippy on both at `-D warnings`, and lints and type-checks `web/`. It stops on the first failure and never rewrites files — if formatting fails, run `./scripts/format-all.sh` and commit the result.
+That script is quick: it checks the formatting of `CHANGELOG.md`, checks formatting on the workspace and `src-tauri/`, runs Clippy on both at `-D warnings`, and lints and type-checks `web/`. It stops on the first failure and never rewrites files — if Rust or `web/` formatting fails, run `./scripts/format-all.sh` and commit the result. A `CHANGELOG.md` failure names the line and the rule it breaks; fix that line by hand.
 
 CI runs the complete gate on every pull request: build, tests, the web bundle and its tests, and the docs build. To run all of that locally in one command, use `./scripts/check-all.sh`; expect it to take a while, since it does serially what CI does in parallel.
 
