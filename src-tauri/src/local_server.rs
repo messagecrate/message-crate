@@ -737,8 +737,9 @@ impl Inner {
 #[derive(Debug, Clone)]
 pub struct LocalServer {
     inner: Arc<Mutex<Inner>>,
-    /// Told each time an event has run through [`step`], so a test can wait
-    /// for the state it is about rather than poll for it.
+    /// [`LocalServer::apply`] notifies this after each event has gone
+    /// through [`step`], so a test can wait for the phase it is about rather
+    /// than poll for it.
     #[cfg(test)]
     changed: Arc<std::sync::Condvar>,
 }

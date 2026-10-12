@@ -22,11 +22,11 @@ pub(crate) struct KeyedLocks {
     /// A `std` mutex: it is only ever held for one map operation, never
     /// across an `.await`, and `Drop` cannot await.
     map: Arc<StdMutex<LockMap>>,
-    /// The key of each task that found its key's mutex held and started to
+    /// How many tasks found each key's mutex held and started to
     /// wait, so a test can act once a task waits on a key rather than after
     /// a sleep.
     #[cfg(test)]
-    waiting: Arc<tokio::sync::watch::Sender<Vec<String>>>,
+    waiting: Arc<tokio::sync::watch::Sender<HashMap<String, usize>>>,
 }
 
 /// Holds the key's mutex until dropped.
@@ -48,7 +48,8 @@ impl KeyedLocks {
             Ok(guard) => guard,
             Err(_) => {
                 #[cfg(test)]
-                self.waiting.send_modify(|keys| keys.push(key.clone()));
+                self.waiting
+                    .send_modify(|keys| *keys.entry(key.clone()).or_default() += 1);
                 mutex.lock_owned().await
             }
         };
@@ -75,10 +76,13 @@ impl KeyedLocks {
     pub(crate) async fn a_task_waits(&self, key: &str) {
         let mut waited = self.waiting.subscribe();
         // The sender lives in `self`, so the wait cannot see it dropped.
-        let _ = waited.wait_for(|keys| keys.iter().any(|k| k == key)).await;
+        let _ = waited.wait_for(|keys| keys.contains_key(key)).await;
         self.waiting.send_modify(|keys| {
-            if let Some(at) = keys.iter().position(|k| k == key) {
-                keys.remove(at);
+            if let Some(count) = keys.get_mut(key) {
+                *count -= 1;
+                if *count == 0 {
+                    keys.remove(key);
+                }
             }
         });
     }
