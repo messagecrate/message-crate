@@ -103,7 +103,8 @@ fn hold_every_import_slot(state: &crate::server::AppState) -> Vec<OwnedSemaphore
 }
 
 /// Post `body` to the batches `path` as `token` in a task of its own, so the
-/// test can act while the batch waits, and answer the task.
+/// test can act while the batch waits. Return the task's handle, which
+/// yields the status and the body of the response.
 fn spawn_batch(
     state: &crate::server::AppState,
     path: String,
@@ -761,12 +762,7 @@ async fn a_batch_with_a_message_without_a_guid_is_refused_and_stores_nothing() {
         Some(3),
         "Upload maps the line back to its file"
     );
-    let mut conn = state.db.acquire().await.unwrap();
-    let stored: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages")
-        .fetch_one(&mut *conn)
-        .await
-        .unwrap();
-    assert_eq!(stored, 0);
+    assert_eq!(stored_messages(&state).await, 0);
 }
 
 /// The steps in #1162: a proxy in front of the server times out while the
