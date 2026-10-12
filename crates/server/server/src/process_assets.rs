@@ -53,7 +53,7 @@ pub struct ProcessAssetsOptions {
     /// Only process this account. `None` processes every account, which is
     /// what the `process-assets` command does. A Demo Account build names
     /// the Demo Account, so it converts nothing of any other account and
-    /// never sweeps another account's upload temps.
+    /// touches no other account's files.
     pub account: Option<i64>,
 }
 
@@ -570,9 +570,8 @@ enum Derived {
 }
 
 impl<'a> AccountPass<'a> {
-    /// Find the directories, remove abandoned upload temps and the temporary
-    /// files a killed write left in the shard directories, and make the
-    /// converted directory. `None` when the account has no assets directory
+    /// Find the directories, remove the temporary files a killed write left
+    /// in the shard directories, and make the converted directory. `None` when the account has no assets directory
     /// to process.
     ///
     /// # Errors
@@ -607,15 +606,9 @@ impl<'a> AccountPass<'a> {
         } else {
             "Removed"
         };
-        let cleaned = crate::asset_store::sweep_incoming(&assets_dir, opts.dry_run);
-        if cleaned > 0 {
-            let files = words(
-                cleaned,
-                "1 abandoned temporary upload file",
-                "{n} abandoned temporary upload files",
-            );
-            progress.say(format_args!("{cleaned_verb} {files} under .incoming/"));
-        }
+        // `.incoming/` is left to `serve`, which removes abandoned uploads
+        // itself: only it knows which uploads a request is using, and this
+        // command may run while it does (#2652).
         let left = crate::asset_store::sweep_shard_temps(&assets_dir, opts.dry_run)
             + crate::asset_store::sweep_shard_temps(&converted_dir, opts.dry_run);
         if left > 0 {

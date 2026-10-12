@@ -40,8 +40,10 @@ bind = "127.0.0.1:8080"
 # How long the server waits for an upload (an import batch, an attachment, or
 # a part of one): seconds with no byte arriving, and seconds for the whole
 # upload. An upload that meets either is refused (408 Request Timeout,
-# upload-stalled), and running the import again continues it. Each must be
-# greater than 0.
+# upload-stalled), and running the import again continues it. An attachment
+# upload nothing has been written to for upload_stall_secs, with no request to
+# it running, is abandoned, and the server removes it. Each must be greater
+# than 0.
 # upload_stall_secs = 60
 # upload_piece_secs = 300
 

@@ -1565,7 +1565,13 @@ pub(crate) async fn complete_import(
     let row = complete_run_at(&mut conn, account, import_id, &args, now).await?;
     let run = import_run(&mut conn, row).await;
     drop(conn);
-    crate::asset_store::sweep_after_run(&state.db, &state.cfg.paths, account).await;
+    crate::asset_store::sweep_after_run(
+        &state.db,
+        &state.cfg.paths,
+        account,
+        state.upload_time_limits.stall,
+    )
+    .await;
     crate::media_queue::queue_import_run(&state.db, &state.media_queue, account, import_id, now)
         .await;
     run.map(Json)
@@ -1867,7 +1873,13 @@ pub(crate) async fn discard_import(
     crate::db::imports::discard_import(&mut conn, account, import_id, &issues, &notes, now).await?;
     let run = full_import_run(&mut conn, account, import_id).await;
     drop(conn);
-    crate::asset_store::sweep_after_run(&state.db, &state.cfg.paths, account).await;
+    crate::asset_store::sweep_after_run(
+        &state.db,
+        &state.cfg.paths,
+        account,
+        state.upload_time_limits.stall,
+    )
+    .await;
     crate::media_queue::queue_import_run(&state.db, &state.media_queue, account, import_id, now)
         .await;
     run.map(Json)

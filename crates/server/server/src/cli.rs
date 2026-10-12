@@ -433,7 +433,12 @@ async fn run_imports_discard(args: ImportsDiscardArgs) -> Result<()> {
         crate::db::imports::discard_running_import(&mut conn, account, chrono::Utc::now()).await?;
     drop(conn);
     if discarded.is_some() {
-        crate::asset_store::sweep_after_run(&opened.db, &opened.cfg.paths, account).await;
+        // The stall limit of the server the config file describes, or the
+        // default when it describes none.
+        let stall =
+            crate::server::UploadTimeLimits::of(&opened.cfg.server.clone().unwrap_or_default())
+                .stall;
+        crate::asset_store::sweep_after_run(&opened.db, &opened.cfg.paths, account, stall).await;
     }
     opened.close().await;
     print!(

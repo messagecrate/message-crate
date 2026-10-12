@@ -60,9 +60,10 @@
 //!   run can belong to a missing account, so it needs no run check.
 //! - [`sweep_unreferenced`]: every unnamed Asset of an account, when a run
 //!   ends.
-//! - [`sweep_incoming`]: abandoned upload temps, by age, when a run ends,
-//!   when the server starts, and when an upload start finds the account at
-//!   its open-upload limit.
+//! - [`sweep_incoming`]: abandoned uploads, the ones nothing was written to
+//!   for `[server] upload_stall_secs`, when a run ends, when the server
+//!   starts, and when an upload start finds the account at its open-upload
+//!   limit.
 //! - [`sweep_shard_temps`]: temporary files a killed write left in the
 //!   shard directories, by age.
 //!
@@ -73,7 +74,7 @@ use std::collections::HashSet;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use anyhow::Context;
 use sqlx::{SqliteConnection, SqlitePool};
@@ -615,9 +616,15 @@ async fn take_out_unnamed(
 
 /// [`sweep_unreferenced`] once an Import Run of `account_id` has ended, so
 /// the files it was told about or uploaded and never named go, then
-/// [`sweep_incoming`] of the account, so do the uploads left for a day. A
-/// failure is logged: the run's end is what the caller answers for.
-pub(crate) async fn sweep_after_run(pool: &SqlitePool, paths: &PathsConfig, account_id: i64) {
+/// [`sweep_incoming`] of the account, so do the uploads nothing was written
+/// to for `stall`, the server's `[server] upload_stall_secs`. A failure is
+/// logged: the run's end is what the caller answers for.
+pub(crate) async fn sweep_after_run(
+    pool: &SqlitePool,
+    paths: &PathsConfig,
+    account_id: i64,
+    stall: Duration,
+) {
     if let Err(error) = sweep_unreferenced(pool, paths, account_id).await {
         tracing::warn!(
             account_id,
@@ -625,19 +632,24 @@ pub(crate) async fn sweep_after_run(pool: &SqlitePool, paths: &PathsConfig, acco
             "Unreferenced files could not be swept after an Import Run"
         );
     }
-    sweep_incoming_of(paths, vec![account_id]).await;
+    sweep_incoming_of(paths, vec![account_id], stall).await;
 }
 
 /// [`sweep_incoming`] of every account, once as `serve` starts, so the
 /// uploads a stopped server left go even when no Import Run ends after it.
-/// A failure is logged: the server starts either way.
-pub(crate) async fn sweep_incoming_at_start(pool: &SqlitePool, paths: &PathsConfig) {
+/// `stall` is the server's `[server] upload_stall_secs`. A failure is
+/// logged: the server starts either way.
+pub(crate) async fn sweep_incoming_at_start(
+    pool: &SqlitePool,
+    paths: &PathsConfig,
+    stall: Duration,
+) {
     let account_ids = match pool.acquire().await {
         Ok(mut conn) => crate::db::account_profile::account_ids(&mut conn).await,
         Err(error) => Err(error.into()),
     };
     match account_ids {
-        Ok(account_ids) => sweep_incoming_of(paths, account_ids).await,
+        Ok(account_ids) => sweep_incoming_of(paths, account_ids, stall).await,
         Err(error) => tracing::warn!(
             error = format!("{error:#}"),
             "Abandoned uploads could not be swept as the server started"
@@ -647,14 +659,14 @@ pub(crate) async fn sweep_incoming_at_start(pool: &SqlitePool, paths: &PathsConf
 
 /// [`sweep_incoming`] of the assets directory of each of `account_ids`, on
 /// the blocking pool, because it walks the directory.
-async fn sweep_incoming_of(paths: &PathsConfig, account_ids: Vec<i64>) {
+async fn sweep_incoming_of(paths: &PathsConfig, account_ids: Vec<i64>, stall: Duration) {
     let dirs: Vec<PathBuf> = account_ids
         .into_iter()
         .map(|account_id| paths.assets_dir_for_account(account_id))
         .collect();
     let swept = crate::request_id::spawn_blocking_in_current_span(move || {
         for dir in &dirs {
-            sweep_incoming(dir, false);
+            sweep_incoming(dir, SystemTime::now(), stall);
         }
     })
     .await;
@@ -765,20 +777,25 @@ fn sweep_store_dir(
     removed
 }
 
-/// Age after which an upload temp under `.incoming/` counts as abandoned: a
-/// `{sha}-*.part` file or a multipart session directory `{sha}/{upload_id}/`.
-/// A live upload keeps writing its temp while a sweep runs, so only a temp
-/// left untouched this long is removed.
-pub(crate) const STALE_UPLOAD_SECS: u64 = 24 * 60 * 60;
-
-/// Remove abandoned `{sha}-*.part` temps and multipart session directories under
-/// `originals_dir/.incoming/`, and return how many it removed (or would
-/// remove, in a dry run).
+/// Remove the abandoned uploads under `originals_dir/.incoming/`, and
+/// return how many it removed: each `{sha}-*.part` temp and each multipart
+/// upload's directory `{sha}/{upload_id}/` that nothing was written to for
+/// `stall` before `now`, and that no request is using
+/// ([`crate::asset_uploads::in_use`]).
+///
+/// `stall` is `[server] upload_stall_secs`, the longest the server lets an
+/// upload's body go with no byte arriving. A part is held in memory until
+/// the whole of it has arrived, and a completion writes nothing to the
+/// manifest, so a request using an upload keeps it whatever its files say.
+/// Between two requests nothing holds it: nothing resumes an upload once
+/// its client stops, because the client keeps the upload id in memory only,
+/// and the desktop app sends each part as soon as the one before it is
+/// answered.
 ///
 /// The server writes and removes these files while the sweep runs, so a
 /// file that is gone by the time the sweep reaches it is passed over, and
 /// any other failure is logged and the sweep goes on.
-pub(crate) fn sweep_incoming(originals_dir: &Path, dry_run: bool) -> u64 {
+pub(crate) fn sweep_incoming(originals_dir: &Path, now: SystemTime, stall: Duration) -> u64 {
     let incoming = originals_dir.join(".incoming");
     let entries = match std::fs::read_dir(&incoming) {
         Ok(entries) => entries,
@@ -797,16 +814,18 @@ pub(crate) fn sweep_incoming(originals_dir: &Path, dry_run: bool) -> u64 {
                 continue;
             }
         };
+        if crate::asset_uploads::in_use(&path) {
+            continue;
+        }
         if path.is_file() && has_part_extension(&path) {
             parts.push(path);
         } else if path.is_dir() {
             sha_dirs.push(path);
         }
     }
-    let now = SystemTime::now();
-    let mut removed = remove_stale_files(&parts, now, STALE_UPLOAD_SECS, dry_run);
+    let mut removed = remove_stale_files(&parts, now, stall.as_secs(), false);
     for sha_dir in &sha_dirs {
-        removed += remove_stale_sessions(sha_dir, now, dry_run);
+        removed += remove_stale_sessions(sha_dir, now, stall);
     }
     removed
 }
@@ -914,10 +933,10 @@ fn remove_stale_files(files: &[PathBuf], now: SystemTime, secs: u64, dry_run: bo
 }
 
 /// Remove each multipart session directory under `sha_dir`
-/// (`.incoming/{sha256}/{upload_id}/`) that is stale at `now`, then
-/// `sha_dir` itself once it is empty. Returns how many sessions it removed
-/// (or would remove, in a dry run).
-fn remove_stale_sessions(sha_dir: &Path, now: SystemTime, dry_run: bool) -> u64 {
+/// (`.incoming/{sha256}/{upload_id}/`) that nothing was written to for
+/// `stall` before `now` and that no request is using, then `sha_dir`
+/// itself once it is empty. Returns how many sessions it removed.
+fn remove_stale_sessions(sha_dir: &Path, now: SystemTime, stall: Duration) -> u64 {
     let entries = match std::fs::read_dir(sha_dir) {
         Ok(entries) => entries,
         Err(err) => {
@@ -934,24 +953,16 @@ fn remove_stale_sessions(sha_dir: &Path, now: SystemTime, dry_run: bool) -> u64 
                 continue;
             }
         };
-        if !session.is_dir() {
+        if !session.is_dir() || crate::asset_uploads::in_use(&session) {
             continue;
         }
-        match upload_session_is_stale(&session, now) {
+        match upload_session_is_stale(&session, now, stall) {
             Ok(true) => {}
             Ok(false) => continue,
             Err(err) => {
                 log_sweep_error("read", &session, &err);
                 continue;
             }
-        }
-        if dry_run {
-            println!(
-                "This dry run would remove the stale upload session {}",
-                session.display()
-            );
-            removed += 1;
-            continue;
         }
         match remove_tree(&session) {
             Ok(()) => removed += 1,
@@ -960,28 +971,23 @@ fn remove_stale_sessions(sha_dir: &Path, now: SystemTime, dry_run: bool) -> u64 
     }
     let is_empty = std::fs::read_dir(sha_dir).is_ok_and(|mut rest| rest.next().is_none());
     if is_empty {
-        if dry_run {
-            println!(
-                "This dry run would remove the empty directory {}",
-                sha_dir.display()
-            );
-        } else {
-            // A new upload for this fingerprint may have made a session in
-            // the meantime, and then the directory stays.
-            let _ = std::fs::remove_dir(sha_dir);
-        }
+        // A new upload for this fingerprint may have made a session in the
+        // meantime, and then the directory stays.
+        let _ = std::fs::remove_dir(sha_dir);
     }
     removed
 }
 
-/// True when a multipart upload session's manifest (or, failing that, its
-/// directory) is older than the abandoned-upload limit.
-fn upload_session_is_stale(session: &Path, now: SystemTime) -> io::Result<bool> {
+/// True when nothing was written to a multipart upload for `stall` before
+/// `now`. Every part written rewrites the manifest after the part, so the
+/// manifest's modified time is the upload's last write; an upload with no
+/// manifest yet goes by its directory's.
+fn upload_session_is_stale(session: &Path, now: SystemTime, stall: Duration) -> io::Result<bool> {
     let manifest = session.join("manifest.json");
     if manifest.is_file() {
-        modified_at_least(&manifest, now, STALE_UPLOAD_SECS)
+        modified_at_least(&manifest, now, stall.as_secs())
     } else {
-        modified_at_least(session, now, STALE_UPLOAD_SECS)
+        modified_at_least(session, now, stall.as_secs())
     }
 }
 

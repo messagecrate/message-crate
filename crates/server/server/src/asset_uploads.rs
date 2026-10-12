@@ -2,12 +2,12 @@
 //!
 //! Staging layout: `{assets}/.incoming/{sha256}/{upload_id}/part-NNNN` + `manifest.json`.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -20,12 +20,14 @@ use crate::assets_api::{self, AssetError, Sha256, StoredAsset};
 pub const DEFAULT_PART_SIZE: usize = message_crate_api_types::MAX_IMPORT_BATCH_BYTES;
 
 /// How many multipart uploads one account may have open at once. An open
-/// upload keeps its parts on disk until it is completed, aborted, or left
-/// untouched for [`crate::asset_store::STALE_UPLOAD_SECS`], so without a cap
-/// one account could start uploads without end and fill the disk every
-/// account shares. The desktop app runs at most 64 at once (16 attachment
-/// workers in each of 4 conversations prepared together); twice that leaves
-/// room for the uploads a stopped run left open.
+/// upload keeps its parts on disk until it is completed, aborted, or
+/// abandoned: nothing written to it for `[server] upload_stall_secs`
+/// ([`crate::asset_store::sweep_incoming`]). Without a cap one account could
+/// start uploads without end and fill the disk every account shares. The
+/// desktop app runs at most 64 at once (16 attachment workers in each of 4
+/// conversations prepared together); twice that leaves room for the uploads
+/// a stopped run left open, and a start that finds no room removes the
+/// abandoned ones first.
 pub const MAX_OPEN_UPLOADS: usize = 128;
 
 /// Held while an upload start counts the open uploads and makes its own, so
@@ -185,6 +187,68 @@ fn write_manifest(session: &Path, manifest: &UploadManifest) -> Result<()> {
     Ok(())
 }
 
+/// The upload temps under `.incoming/` requests are using now, each with how
+/// many: a multipart upload's directory while a part or the completion runs,
+/// and a single-request `.part` temp while its body arrives and is stored.
+/// The sweep of abandoned uploads leaves each one alone
+/// ([`crate::asset_store::sweep_incoming`]), because a part arrives into
+/// memory and a completion rewrites no manifest, so the files of an upload
+/// in use can say nothing was written to it for longer than
+/// `[server] upload_stall_secs`. It is in the server's memory for the reason
+/// [`LOCKED_SESSIONS`] is.
+static IN_USE: LazyLock<Mutex<HashMap<PathBuf, usize>>> = LazyLock::new(Mutex::default);
+
+/// [`IN_USE`], which no panic can leave half-changed: each change is one
+/// count up or down.
+fn uses() -> MutexGuard<'static, HashMap<PathBuf, usize>> {
+    IN_USE.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// A request's use of an upload temp, counted in [`IN_USE`] until dropped.
+#[derive(Debug)]
+#[must_use = "the upload is in use only while this is held"]
+pub(crate) struct InUse {
+    path: PathBuf,
+}
+
+impl Drop for InUse {
+    fn drop(&mut self) {
+        let mut uses = uses();
+        if let Some(count) = uses.get_mut(&self.path) {
+            *count -= 1;
+            if *count == 0 {
+                uses.remove(&self.path);
+            }
+        }
+    }
+}
+
+/// Count `path`, an upload's directory or a `.part` temp, as in use by the
+/// calling request until the answer is dropped.
+pub(crate) fn hold(path: &Path) -> InUse {
+    *uses().entry(path.to_path_buf()).or_insert(0) += 1;
+    InUse {
+        path: path.to_path_buf(),
+    }
+}
+
+/// Whether a request is using `path` now ([`hold`]).
+pub(crate) fn in_use(path: &Path) -> bool {
+    uses().contains_key(path)
+}
+
+/// Count the upload `upload_id` of `sha` as in use until the answer is
+/// dropped, as [`hold`] does, whether or not it exists. An id that is not
+/// one is refused the same way the upload's routes refuse it.
+///
+/// # Errors
+///
+/// Returns [`AssetError::Invalid`] when the upload id is invalid.
+pub fn hold_upload(assets_root: &Path, sha: &Sha256, upload_id: &str) -> Result<InUse, AssetError> {
+    let upload_id = require_upload_id(upload_id)?;
+    Ok(hold(&session_dir(assets_root, sha, &upload_id)))
+}
+
 /// The upload directories a request is working in now. The lock is held in
 /// the server's memory, not on a file: a lock on a file stays held while a copy
 /// of its descriptor is open, and every process the server starts (ffmpeg, the
@@ -259,26 +323,49 @@ fn count_open_uploads(assets_root: &Path) -> usize {
 ///
 /// Returns [`AssetError::Invalid`] when `bytes` is over the attachment size
 /// limit, [`AssetError::TooManyUploads`] when the account already has
-/// [`MAX_OPEN_UPLOADS`] uploads open, and [`AssetError::Internal`] when the
-/// upload's directory cannot be made.
+/// [`MAX_OPEN_UPLOADS`] uploads open that are not abandoned (nothing written
+/// to them for `stall`, `[server] upload_stall_secs`), and
+/// [`AssetError::Internal`] when the upload's directory cannot be made.
 pub fn start_upload(
     assets_root: &Path,
     sha: &Sha256,
     bytes: u64,
     mime: Option<&str>,
     limits: UploadLimits,
+    stall: Duration,
 ) -> Result<(Option<StoredAsset>, Option<StartUpload>), AssetError> {
-    start_upload_with_ids(assets_root, sha, bytes, mime, limits, new_upload_id)
+    start_upload_with(
+        assets_root,
+        sha,
+        bytes,
+        mime,
+        limits,
+        Abandoned {
+            now: SystemTime::now(),
+            stall,
+        },
+        new_upload_id,
+    )
 }
 
-/// [`start_upload`], taking each upload id it tries from `next_id`. It is a
-/// parameter only so a test can hand two starts the same id.
-fn start_upload_with_ids(
+/// When an upload counts as abandoned: nothing written to it for `stall`
+/// before `now`.
+#[derive(Debug, Clone, Copy)]
+struct Abandoned {
+    now: SystemTime,
+    stall: Duration,
+}
+
+/// [`start_upload`], at the time `abandoned` gives, taking each upload id it
+/// tries from `next_id`. Both are parameters only so a test can set the clock
+/// and hand two starts the same id.
+fn start_upload_with(
     assets_root: &Path,
     sha: &Sha256,
     bytes: u64,
     mime: Option<&str>,
     limits: UploadLimits,
+    abandoned: Abandoned,
     mut next_id: impl FnMut() -> String,
 ) -> Result<(Option<StoredAsset>, Option<StartUpload>), AssetError> {
     if bytes > limits.max_bytes {
@@ -296,9 +383,10 @@ fn start_upload_with_ids(
     // Abandoned uploads are swept when an Import Run ends and when the
     // server starts, not on every start, because the sweep walks the whole
     // of `.incoming/` (#2261). An account at the limit may be there only
-    // because of abandoned ones, so it is swept before it is refused.
+    // because of abandoned ones, such as those of an Upload that was
+    // stopped, so they are removed before it is refused (#2652).
     if count_open_uploads(assets_root) >= MAX_OPEN_UPLOADS {
-        crate::asset_store::sweep_incoming(assets_root, false);
+        crate::asset_store::sweep_incoming(assets_root, abandoned.now, abandoned.stall);
         if count_open_uploads(assets_root) >= MAX_OPEN_UPLOADS {
             return Err(AssetError::TooManyUploads);
         }
@@ -389,7 +477,7 @@ pub fn session_part_size(
 }
 
 /// An upload's directory can be removed while a request to it runs: by the
-/// upload's completion, by an abort, or by the sweep of stale uploads. A
+/// upload's completion, by an abort, or by the sweep of abandoned uploads. A
 /// failure to read or write its files after that is an upload that is gone,
 /// not a server that cannot store the file.
 ///

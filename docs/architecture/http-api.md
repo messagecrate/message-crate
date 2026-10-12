@@ -996,14 +996,29 @@ What each reaches:
   with `413 Payload Too Large`, and the push failed the conversation (#1179).
 - An account may have at most 128 multipart uploads open at once. The start
   of one more answers `409 Conflict` (`state-conflict`), with `detail`
-  naming the limit, until one of them is completed, aborted, or removed as
-  stale after a day untouched. Why: an open upload keeps its parts on the
-  disk every account shares, and with no cap one account could leave enough
-  of them to fill it (#2176). It is `409 Conflict` and not
-  `422 Unprocessable Entity` because the account's state refuses the start, and
-  no rewrite of the request gets past it. The number is twice the uploads the
-  desktop app runs at once, so a run that was stopped and started again is not
-  refused.
+  naming the limit, until one of them is completed, aborted, or abandoned.
+  Why: an open upload keeps its parts on the disk every account shares, and
+  with no cap one account could leave enough of them to fill it (#2176). It
+  is `409 Conflict` and not `422 Unprocessable Entity` because the account's
+  state refuses the start, and no rewrite of the request gets past it. The
+  number is twice the uploads the desktop app runs at once, 16 attachments in
+  each of 4 conversations, so an import goes as fast as the app can send it.
+- An upload, multipart or a single-request body, is abandoned once nothing
+  has been written to it for `[server] upload_stall_secs` (60) and no request
+  to it is running. A start that finds the account at the limit removes the
+  account's abandoned uploads first and counts again, and `serve` removes
+  every account's as it starts and each account's when its Import Run ends.
+  Why: an Upload the app's close or a crash stopped leaves up to 64 uploads
+  open, which nothing resumes, because the client keeps an upload's id in
+  memory only. With a day as the limit, two such stops held the account at
+  the limit, and the next Upload failed every attachment sent in parts for up
+  to a day (#2652). The stall limit is safe because a live upload never goes
+  that long between requests: the app sends each part as soon as the one
+  before it is answered. A request still running keeps its upload however
+  old its files are, because a part arrives into memory before any of it is
+  written, and a completion writes no manifest. Only `serve` removes them,
+  not `process-assets`: that command may run beside `serve` and cannot see
+  its requests.
 
 The credential names the account. No route takes an `account=` parameter. A
 Media Link is a credential, so its `media_link` parameter names the account

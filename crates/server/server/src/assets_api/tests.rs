@@ -740,6 +740,73 @@ async fn an_upload_start_past_the_open_upload_limit_is_a_state_conflict() {
     }
 }
 
+/// #2652: a part arrives into memory, so nothing is written to its upload
+/// until all of it is in, and its manifest can say nothing was written for
+/// longer than the stall limit while the part is still arriving. A sweep
+/// then leaves the upload alone, and the part is stored once it arrives.
+#[tokio::test]
+async fn a_sweep_leaves_an_upload_whose_part_is_still_arriving() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let mut state = fixture.state.clone();
+    state.asset_part_size = 16;
+    let bytes: Vec<u8> = (0u8..20).collect();
+    let sha = sha256_hex(&bytes);
+    let (_, started): (String, serde_json::Value) = crate::test_support::post_created_json(
+        &state,
+        &format!("/v1/assets/{sha}/uploads"),
+        &user.token,
+        serde_json::json!({ "bytes": 20 }),
+    )
+    .await;
+    let upload_id = started["upload_id"].as_str().unwrap().to_string();
+    let assets_dir = state.cfg.paths.assets_dir_for_account(user.account_id);
+    let session =
+        asset_uploads::session_dir(&assets_dir, &Sha256::parse(&sha).unwrap(), &upload_id);
+    crate::asset_store::tests::make_abandoned(&session.join("manifest.json"));
+
+    let (send, arriving) = tokio::sync::mpsc::channel::<axum::body::Bytes>(1);
+    let body = futures_util::stream::unfold(arriving, |mut arriving| async move {
+        let chunk = arriving.recv().await?;
+        Some((Ok::<_, std::io::Error>(chunk), arriving))
+    });
+    let putting = {
+        let state = state.clone();
+        let path = format!("/v1/assets/{sha}/uploads/{upload_id}/parts/1");
+        let token = user.token.clone();
+        crate::request_id::spawn_in_current_span(async move {
+            crate::test_support::put_raw(
+                &state,
+                &path,
+                &token,
+                "application/octet-stream",
+                reqwest::Body::wrap_stream(body),
+            )
+            .await
+        })
+    };
+    send.send(axum::body::Bytes::copy_from_slice(&bytes[..8]))
+        .await
+        .unwrap();
+    while !asset_uploads::in_use(&session) {
+        tokio::task::yield_now().await;
+    }
+
+    let removed = crate::asset_store::sweep_incoming(
+        &assets_dir,
+        std::time::SystemTime::now() + Duration::from_secs(24 * 60 * 60),
+        crate::asset_store::tests::STALL,
+    );
+
+    assert_eq!(removed, 0);
+    assert!(session.join("manifest.json").is_file());
+    send.send(axum::body::Bytes::copy_from_slice(&bytes[8..16]))
+        .await
+        .unwrap();
+    drop(send);
+    let (status, text) = putting.await.unwrap();
+    assert_eq!(status, StatusCode::OK, "{text}");
+}
+
 /// A multipart upload read at its own path answers its size, part size and
 /// the parts received so far, so a client that lost track of an upload can
 /// resume it; an upload id nobody started answers `404 Not Found`.
