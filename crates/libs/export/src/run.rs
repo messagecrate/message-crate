@@ -6,6 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 use message_crate_core::{CancelFlag, Cancelled, check_cancel, count_of, parallel_for_each};
@@ -224,16 +225,12 @@ pub fn run(
     // not a failed export: the directory is complete, only the record is not.
     let action = close_action(&outcome);
     if let Err(error) = exporter.close_export(export.id, action) {
-        // A refused completion follows a run whose files are all written; a
-        // refused failure record or cancellation follows the error the run
-        // returns below.
-        let line = match action {
-            CloseAction::Complete(CompleteExportStatus::Completed) => {
-                format!("{error:#}. The Export wrote its files all the same")
-            }
-            CloseAction::Complete(CompleteExportStatus::Failed) | CloseAction::Cancel => {
-                format!("{error:#}")
-            }
+        // A refused completion follows a run whose files are all written;
+        // any other refused close follows the error the run returns below.
+        let line = if action == CloseAction::Complete(CompleteExportStatus::Completed) {
+            format!("{error:#}. The Export wrote its files all the same")
+        } else {
+            format!("{error:#}")
         };
         emit(&mut on_progress, ProgressEvent::Log(line));
     }
@@ -286,8 +283,7 @@ fn close_action<T>(outcome: &Result<T>) -> CloseAction {
     }
 }
 
-/// The progress line that ends a run with `count` attachments whose Asset
-/// it could not fetch.
+/// The progress line that ends a run with `count` Assets it could not fetch.
 fn missing_assets_line(count: usize) -> String {
     let files = if count == 1 {
         "its file is"
@@ -297,7 +293,7 @@ fn missing_assets_line(count: usize) -> String {
     format!(
         "{} could not be fetched, so {files} missing from the Export. \
          The lines above name each one",
-        count_of(count as u64, "attachment", "attachments")
+        count_of(count as u64, "Asset", "Assets")
     )
 }
 
@@ -871,8 +867,8 @@ fn refused_path_line(path: &str, rel: Option<&str>) -> String {
 
 struct AssetFetchJob {
     sha256: String,
-    /// The path under the output directory, as the report names it.
-    rel: String,
+    /// The path under the output directory, as [`AssetFailure::path`].
+    path: String,
     dest: PathBuf,
 }
 
@@ -939,33 +935,55 @@ fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetch
         .iter()
         .map(|(sha256, rel)| AssetFetchJob {
             sha256: sha256.clone(),
-            rel: rel.clone(),
+            path: rel.clone(),
             dest: out_dir.join(rel),
         })
         .collect();
     let mut stats = AssetFetchStats::default();
 
+    // Set by the first refused session, so the jobs not yet started skip
+    // their request: the server would refuse each one the same way.
+    let session_refused = AtomicBool::new(false);
     let results = parallel_for_each(&jobs, workers, cancel, |job| {
-        with_retries(MAX_RETRIES, || {
+        if session_refused.load(Ordering::Relaxed) {
+            bail!("Asset {} skipped after the session was refused", job.sha256);
+        }
+        let result = with_retries(MAX_RETRIES, || {
             crate::http::fetch_asset(session, base_url, token, &job.sha256, &job.dest)
-        })
+        });
+        if let Err(error) = &result
+            && is_session_refused(error)
+        {
+            session_refused.store(true, Ordering::Relaxed);
+        }
+        result
     });
 
+    let mut cancelled = None;
+    let mut refused = None;
     for (job, result) in jobs.iter().zip(results) {
         match result {
             Ok(bytes) => {
                 stats.bytes = stats.bytes.saturating_add(bytes);
                 stats.fetched += 1;
             }
-            Err(error) if error.is::<Cancelled>() || is_session_refused(&error) => {
-                return Err(error);
+            Err(error) if error.is::<Cancelled>() => {
+                cancelled.get_or_insert(error);
+            }
+            Err(error) if is_session_refused(&error) => {
+                refused.get_or_insert(error);
             }
             Err(error) => stats.failed.push(AssetFailure {
                 sha256: job.sha256.clone(),
-                path: job.rel.clone(),
+                path: job.path.clone(),
                 reason: format!("{error:#}"),
             }),
         }
+    }
+    // A cancel wins over a refused session, so a run the person stopped is
+    // closed as cancelled whichever job saw which first.
+    if let Some(error) = cancelled.or(refused) {
+        return Err(error);
     }
     stats.failed.sort_by(|a, b| a.sha256.cmp(&b.sha256));
     Ok(stats)

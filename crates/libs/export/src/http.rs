@@ -132,14 +132,14 @@ pub fn close_export(
     // The noun names the request in an error: "Export Run 7 completion
     // failed".
     let (noun, segment, body) = match action {
-        CloseAction::Complete(status) => (
-            match status {
-                CompleteExportStatus::Completed => "completion",
-                CompleteExportStatus::Failed => "close",
-            },
+        CloseAction::Complete(status @ CompleteExportStatus::Completed) => (
+            "completion",
             "complete",
-            Some(serde_json::to_vec(&CompleteExportBody { status })?),
+            Some(CompleteExportBody { status }),
         ),
+        CloseAction::Complete(status @ CompleteExportStatus::Failed) => {
+            ("closing", "complete", Some(CompleteExportBody { status }))
+        }
         CloseAction::Cancel => ("cancellation", "cancel", None),
     };
     let what = format!("Export Run {export_id} {noun}");
@@ -150,7 +150,7 @@ pub fn close_export(
     if let Some(body) = body {
         request = request
             .header("Content-Type", "application/json")
-            .body(body);
+            .body(serde_json::to_vec(&body)?);
     }
     let response = request.send().with_context(|| format!("{what} failed"))?;
     let status = response.status();

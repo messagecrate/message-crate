@@ -106,20 +106,20 @@ fn fetched_line(messages: usize, total: u64) -> String {
     )
 }
 
-/// The line that ends an Export from a server, naming how many attachments
-/// that could not be fetched when there were any.
-fn finished_line(messages: u64, conversations: u64, missing_attachments: u64) -> String {
+/// The line that ends an Export from a server, naming how many Assets
+/// could not be fetched when there were any.
+fn finished_line(messages: u64, conversations: u64, missing_assets: u64) -> String {
     let line = format!(
         "Export complete: {} in {}",
         count_of(messages, "message", "messages"),
         count_of(conversations, "conversation", "conversations")
     );
-    if missing_attachments == 0 {
+    if missing_assets == 0 {
         line
     } else {
         format!(
             "{line}, without {} that could not be fetched",
-            count_of(missing_attachments, "attachment", "attachments")
+            count_of(missing_assets, "Asset", "Assets")
         )
     }
 }
@@ -147,18 +147,18 @@ mod tests {
         );
     }
 
-    /// An Export that could not fetch some attachments still completes, and
-    /// its last line says how many are missing (#2070).
+    /// An Export that could not fetch some Assets still completes, and its
+    /// last line says how many are missing (#2070).
     #[test]
-    fn the_last_line_counts_the_attachments_that_could_not_be_fetched() {
+    fn the_last_line_counts_the_assets_that_could_not_be_fetched() {
         assert_eq!(
             finished_line(3, 2, 1),
-            "Export complete: 3 messages in 2 conversations, without 1 attachment \
+            "Export complete: 3 messages in 2 conversations, without 1 Asset \
              that could not be fetched"
         );
         assert_eq!(
             finished_line(3, 2, 2),
-            "Export complete: 3 messages in 2 conversations, without 2 attachments \
+            "Export complete: 3 messages in 2 conversations, without 2 Assets \
              that could not be fetched"
         );
     }

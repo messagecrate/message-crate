@@ -1037,7 +1037,7 @@ fn an_asset_the_server_does_not_have_is_named_in_the_report_and_every_conversati
     assert_eq!(doc.messages.len(), 3, "every message is written");
     for line in [
         format!("{reason}, so attachments/menu.pdf is not written"),
-        "1 attachment could not be fetched, so its file is missing from the Export. \
+        "1 Asset could not be fetched, so its file is missing from the Export. \
          The lines above name each one"
             .to_string(),
     ] {
