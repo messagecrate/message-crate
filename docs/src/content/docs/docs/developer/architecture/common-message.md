@@ -127,7 +127,7 @@ Every message has a required `time_precision`: `milliseconds` when the source re
 | WhatsApp | `milliseconds` |
 | SMS Backup & Restore | `milliseconds`, from the `date` attribute |
 | GO SMS Pro | `milliseconds` for a message from the XML backup; `seconds` for one read only from a PDU file, whose name records the second |
-| SMS Backup+ | `milliseconds` from `X-smssync-date`; `seconds` for a mail without it, timed by its `Date` header |
+| SMS Backup+ | `milliseconds` from an SMS's `X-smssync-date`; `seconds` for an MMS, whose `X-smssync-date` is in seconds, and for a mail timed by its `Date` header |
 | iMazing | `seconds` |
 | OpenExtract | `seconds` |
 | An Export Run of the server | The precision the server stored |

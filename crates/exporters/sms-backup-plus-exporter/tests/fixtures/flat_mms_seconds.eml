@@ -1,0 +1,16 @@
+From: "Alice" <alice@unknown.email>
+To: me@example.com
+Subject: SMS with Alice
+X-smssync-datatype: MMS
+X-smssync-type: 132
+X-smssync-address: 4075550107
+X-smssync-date: 1609459380
+X-smssync-id: 41
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mc-part"
+
+--mc-part
+Content-Type: text/plain; charset=utf-8
+
+An MMS dated in seconds
+--mc-part--

@@ -220,6 +220,13 @@ impl SmsBackupPlusArchive {
             (true, IrDirection::Incoming) => "132",
             (true, IrDirection::Outgoing) => "128",
         };
+        // SMS Backup+ copies Android's `date`: milliseconds for an SMS, and
+        // seconds for an MMS, so an MMS goes out to the second.
+        let smssync_date = if is_mms {
+            message.timestamp_unix_ms.div_euclid(1000)
+        } else {
+            message.timestamp_unix_ms
+        };
         let (from, to) = conversation.envelope(message);
         let builder = MessageBuilder::new()
             .from(from)
@@ -233,10 +240,7 @@ impl SmsBackupPlusArchive {
                 Text::new(if is_mms { "MMS" } else { "SMS" }),
             )
             .header("X-smssync-address", Text::new(conversation.address()))
-            .header(
-                "X-smssync-date",
-                Text::new(message.timestamp_unix_ms.to_string()),
-            )
+            .header("X-smssync-date", Text::new(smssync_date.to_string()))
             .header("X-smssync-type", Text::new(android_type))
             .header(
                 "X-smssync-backup-time",

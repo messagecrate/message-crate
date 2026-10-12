@@ -650,6 +650,17 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-12: **SMS Backup+ dates are read in the unit the app wrote.**
+  SMS Backup+ records a text message's time in milliseconds and an MMS's in
+  seconds, as the phone stores them. The import guessed the unit from the
+  size of the number, so a text message from before 1973 came out in the
+  wrong year, and a date far past any calendar was taken as it was. The
+  import now reads each date in its message's unit, by the same rule as the
+  SMS Backup & Restore and GO SMS Pro imports. A date that cannot be read
+  that way takes the time the mail itself carries, to the second, and a mail
+  with no readable time is counted as a message with an invalid date. An
+  export to SMS Backup+ mail now writes an MMS's time in seconds, as SMS
+  Backup+ does, so an MMS goes out to the second (#2603).
 - 2026-10-11: **An import no longer fills the server's temporary space or
   memory.** The server wrote each import batch it received to the operating
   system's temporary directory. That directory is often small or held in

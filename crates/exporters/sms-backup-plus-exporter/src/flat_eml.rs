@@ -345,19 +345,13 @@ pub(crate) fn group_key(members: &[Handle]) -> (String, String) {
     phone::group_chat_id("group-", &keys)
 }
 
-/// Unix seconds from the SMS Backup+ date header (milliseconds or seconds), else the `Date` header,
-/// and whether the time carries milliseconds.
+/// Unix seconds from `X-smssync-date`, else from the `Date` header, and
+/// whether the time carries milliseconds. An `X-smssync-date` that cannot be
+/// read in its unit leaves the time to `Date`, which SMS Backup+ writes on
+/// every mail from the same moment, to the second.
 fn timestamp_seconds(headers: &MailHeaders) -> Option<(f64, bool)> {
-    let raw = &headers.smssync_date;
-    if !raw.is_empty() && raw.chars().all(|c| c.is_ascii_digit()) {
-        let value: i64 = raw.parse().ok()?;
-        // Android uses epoch ms (~1e12 today). Seconds stay ~1e9 until year 5138.
-        // Threshold 1e11 catches pre-2001 ms timestamps that the old 1e12 cutoff missed.
-        return Some(if value >= 100_000_000_000 {
-            (value as f64 / 1000.0, true)
-        } else {
-            (value as f64, false)
-        });
+    if let Some(time) = smssync_date_seconds(headers) {
+        return Some(time);
     }
     if headers.date.is_empty() {
         return None;
@@ -366,6 +360,33 @@ fn timestamp_seconds(headers: &MailHeaders) -> Option<(f64, bool)> {
     chrono::DateTime::parse_from_rfc2822(&headers.date)
         .ok()
         .map(|d| (d.timestamp() as f64, false))
+}
+
+/// Unix seconds from `X-smssync-date`, read in the unit its
+/// `X-smssync-datatype` gives, and whether the time carries milliseconds.
+///
+/// SMS Backup+ copies the date straight from Android's database, where an
+/// SMS's and a call's `date` are milliseconds and an MMS's is seconds
+/// (`setSmsHeaders`, `setMmsHeaders` and `setCallLogHeaders` in
+/// <https://github.com/jberkel/sms-backup-plus/blob/fd33c3209c80598632d0323237fc86fa4ffea710/app/src/main/java/sms/backup/plus/mail/HeaderGenerator.java#L64-L88>).
+/// A mail with no `X-smssync-datatype` comes from a version older than the
+/// header, which SMS Backup+ added in November 2010 (commit `33f87f2`), a
+/// month after it began backing up MMS: such a mail is almost always an SMS,
+/// so its date is read in milliseconds. A datatype SMS Backup+ never writes
+/// names no unit, so its date is not read.
+fn smssync_date_seconds(headers: &MailHeaders) -> Option<(f64, bool)> {
+    let date = headers.smssync_date.as_str();
+    let datatype = headers.smssync_datatype.as_str();
+    if datatype.eq_ignore_ascii_case("MMS") {
+        android_fields::unix_secs_from_date_secs(date).map(|secs| (secs, false))
+    } else if datatype.is_empty()
+        || datatype.eq_ignore_ascii_case("SMS")
+        || datatype.eq_ignore_ascii_case("CALLLOG")
+    {
+        android_fields::unix_secs_from_date_ms(date).map(|secs| (secs, true))
+    } else {
+        None
+    }
 }
 
 /// True for a message the owner sent: by `X-smssync-type`, else when `From`
