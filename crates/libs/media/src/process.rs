@@ -685,7 +685,8 @@ fn derivative_name_impl(
 /// and any `.in_progress` marker, is left alone.
 ///
 /// Setting `stop` kills the ffmpeg that runs and fails the call as stopped
-/// ([`Killed::is_stop`]).
+/// ([`KillReason::Stopped`], or [`KillReason::StoppedBeforeStart`] when it
+/// was set first).
 ///
 /// # Errors
 ///
@@ -734,7 +735,8 @@ pub(crate) fn transcode_file_with(
 /// says so.
 ///
 /// Setting `stop` kills the ffmpeg that runs and fails the call as stopped
-/// ([`Killed::is_stop`]).
+/// ([`KillReason::Stopped`], or [`KillReason::StoppedBeforeStart`] when it
+/// was set first).
 ///
 /// # Errors
 ///

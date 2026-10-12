@@ -441,12 +441,60 @@ fn a_position_is_said_as_a_player_shows_it() {
 #[test]
 fn the_no_progress_wait_is_the_default_until_set() {
     let _guard = tools_test_lock();
+    let _restore = RestoreStallWait;
     assert_eq!(stall_wait(), DEFAULT_STALL_WAIT);
     set_stall_wait(Duration::from_secs(30));
     assert_eq!(stall_wait(), Duration::from_secs(30));
     set_stall_wait(Duration::ZERO);
     assert_eq!(stall_wait(), Duration::from_millis(1));
-    set_stall_wait(DEFAULT_STALL_WAIT);
+}
+
+/// Puts the default no-progress wait back when dropped, so a test that
+/// fails part way does not leave every later conversion in this process
+/// stopped as stalled.
+struct RestoreStallWait;
+
+impl Drop for RestoreStallWait {
+    fn drop(&mut self) {
+        set_stall_wait(DEFAULT_STALL_WAIT);
+    }
+}
+
+/// A conversion that reaches the end of its file is finishing it: with
+/// `+faststart` ffmpeg rewrites the whole output without reporting
+/// progress, which on a slow disk takes longer than the wait. It is given
+/// twice the time it took to reach the end, and stopped after that.
+#[test]
+fn a_conversion_finishing_its_file_gets_twice_the_time_it_took() {
+    let wait = 2 * MINUTE;
+    let length = Duration::from_secs(600);
+    let mut watch = StallWatch::new(wait, Some(length));
+    // Reaches the end, a frame short of it, after 10 minutes.
+    let end = length - Duration::from_millis(40);
+    assert_eq!(watch.observe(Some(end), 10 * MINUTE), None);
+    // Silent for 19 minutes while it rewrites the file: not stopped.
+    assert_eq!(watch.observe(Some(end), 29 * MINUTE), None);
+    assert_eq!(
+        watch.observe(Some(end), 30 * MINUTE),
+        Some(KillReason::StalledPartway {
+            wait: 20 * MINUTE,
+            at: end
+        })
+    );
+}
+
+/// A conversion that stops short of the end gets only the wait, however
+/// long it took to get there.
+#[test]
+fn a_conversion_short_of_its_end_gets_only_the_wait() {
+    let wait = 2 * MINUTE;
+    let mut watch = StallWatch::new(wait, Some(Duration::from_secs(600)));
+    let at = Duration::from_secs(500);
+    assert_eq!(watch.observe(Some(at), 60 * MINUTE), None);
+    assert_eq!(
+        watch.observe(Some(at), 62 * MINUTE),
+        Some(KillReason::StalledPartway { wait, at })
+    );
 }
 
 /// A time limit is said in the largest whole unit.

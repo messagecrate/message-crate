@@ -63,7 +63,10 @@ fn tools_lock() -> &'static RwLock<()> {
 /// the location differs from the one it found, and put that one back before
 /// releasing it. Otherwise a test that runs the real ffmpeg can resolve the
 /// tools in the instant another test has them pointed at an empty or mock
-/// directory.
+/// directory. A test that changes the no-progress wait
+/// ([`crate::set_stall_wait`]) holds it the same way, and puts the default
+/// back before releasing it, because a short wait would stop the real
+/// ffmpeg of every test that runs meanwhile.
 pub fn tools_test_lock() -> RwLockWriteGuard<'static, ()> {
     tools_lock().write().unwrap_or_else(PoisonError::into_inner)
 }

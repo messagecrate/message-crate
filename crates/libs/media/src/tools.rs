@@ -387,11 +387,7 @@ fn command_runs_watched(bin: &Path, args: &[&str], now: &dyn Fn() -> Duration) -
     }) else {
         return false;
     };
-    let waited = wait_or_kill(&mut child, || {
-        (now() >= SHORT_STEP_LIMIT).then_some(KillReason::ShortStepTooLong {
-            limit: SHORT_STEP_LIMIT,
-        })
-    });
+    let waited = wait_or_kill(&mut child, || short_step_over(now()));
     matches!(waited, Ok(Ok(status)) if status.success())
 }
 
@@ -559,13 +555,17 @@ const LOCAL_FILES_ONLY: [&str; 2] = ["-protocol_whitelist", "file,pipe"];
 /// setting (#2898).
 pub(crate) const SHORT_STEP_LIMIT: Duration = Duration::from_secs(15);
 
+/// [`DEFAULT_STALL_WAIT`] in milliseconds, which the process-wide wait
+/// starts at.
+const DEFAULT_STALL_WAIT_MILLIS: u64 = 120_000;
+
 /// How long a conversion that reads a whole file may go without moving
 /// forward before it is killed, when nothing set another ([`set_stall_wait`]).
-pub const DEFAULT_STALL_WAIT: Duration = Duration::from_secs(120);
+pub const DEFAULT_STALL_WAIT: Duration = Duration::from_millis(DEFAULT_STALL_WAIT_MILLIS);
 
 /// The no-progress wait in milliseconds, process-wide, as [`set_stall_wait`]
 /// set it.
-static STALL_WAIT_MILLIS: AtomicU64 = AtomicU64::new(120_000);
+static STALL_WAIT_MILLIS: AtomicU64 = AtomicU64::new(DEFAULT_STALL_WAIT_MILLIS);
 
 /// Set how long a conversion that reads a whole file may go without moving
 /// forward before it is killed (#2898). The server sets it from
@@ -602,6 +602,14 @@ impl<'a> Reads<'a> {
     }
 }
 
+/// Why a short step that has run for `ran` must end: when it has run
+/// [`SHORT_STEP_LIMIT`].
+fn short_step_over(ran: Duration) -> Option<KillReason> {
+    (ran >= SHORT_STEP_LIMIT).then_some(KillReason::ShortStepTooLong {
+        limit: SHORT_STEP_LIMIT,
+    })
+}
+
 /// What ends one run of ffmpeg or ffprobe early, besides a stop.
 enum Limit {
     /// A short step, killed after [`SHORT_STEP_LIMIT`].
@@ -628,7 +636,14 @@ pub(crate) struct StallWatch {
     furthest: Duration,
     /// When the position last moved forward, or the run started.
     moved_at: Duration,
+    /// When the position reached the end of the source, if it has.
+    reached_end_at: Option<Duration>,
 }
+
+/// How close to the source's length a position counts as its end. ffmpeg's
+/// last `out_time` is the start of the last frame or packet, a little short
+/// of the length ffprobe reads.
+const END_TOLERANCE: Duration = Duration::from_secs(1);
 
 impl StallWatch {
     /// A watch over a run that has just started, with the no-progress
@@ -639,6 +654,7 @@ impl StallWatch {
             length,
             furthest: Duration::ZERO,
             moved_at: Duration::ZERO,
+            reached_end_at: None,
         }
     }
 
@@ -646,6 +662,13 @@ impl StallWatch {
     /// since the run started, and say why the run must end, if it must:
     /// the position passed twice the source's length, or it has not moved
     /// for the wait.
+    ///
+    /// Once the position reaches the source's end, ffmpeg is finishing the
+    /// file, and with `-movflags +faststart` it rewrites the whole output
+    /// then without reporting progress: on a slow disk that takes minutes
+    /// for a large video. The wait is then at least twice the time the run
+    /// took to reach the end, since the rewrite reads and writes what the
+    /// run wrote once.
     pub(crate) fn observe(
         &mut self,
         position: Option<Duration>,
@@ -657,19 +680,28 @@ impl StallWatch {
             self.furthest = position;
             self.moved_at = now;
         }
-        if let Some(length) = self.length
-            && self.furthest > length.saturating_mul(2)
-        {
-            return Some(KillReason::RanPastLength { length });
+        if let Some(length) = self.length {
+            if self.furthest > length.saturating_mul(2) {
+                return Some(KillReason::RanPastLength { length });
+            }
+            if self.reached_end_at.is_none()
+                && !self.furthest.is_zero()
+                && self.furthest + END_TOLERANCE >= length
+            {
+                self.reached_end_at = Some(self.moved_at);
+            }
         }
-        if now.saturating_sub(self.moved_at) < self.wait {
+        let wait = self
+            .reached_end_at
+            .map_or(self.wait, |at| self.wait.max(at.saturating_mul(2)));
+        if now.saturating_sub(self.moved_at) < wait {
             return None;
         }
         Some(if self.furthest.is_zero() {
-            KillReason::StalledBeforeOutput { wait: self.wait }
+            KillReason::StalledBeforeOutput { wait }
         } else {
             KillReason::StalledPartway {
-                wait: self.wait,
+                wait,
                 at: self.furthest,
             }
         })
@@ -808,7 +840,26 @@ pub(crate) fn run_ffprobe(
     stop: Option<&AtomicBool>,
 ) -> Result<Vec<u8>> {
     let started = Instant::now();
-    run_ffprobe_watched(args, path, stop, &|| started.elapsed())
+    run_ffprobe_watched(args, path, stop, &|| started.elapsed()).map(|ran| ran.stdout)
+}
+
+/// [`run_ffprobe`], answering what ffprobe wrote to stderr beside what it
+/// wrote to stdout, for a run whose warnings matter.
+///
+/// # Errors
+///
+/// As [`run_ffprobe`].
+pub(crate) fn run_ffprobe_with_stderr(
+    args: &[&str],
+    path: &Path,
+    stop: Option<&AtomicBool>,
+) -> Result<(Vec<u8>, String)> {
+    let started = Instant::now();
+    let ran = run_ffprobe_watched(args, path, stop, &|| started.elapsed())?;
+    Ok((
+        ran.stdout,
+        String::from_utf8_lossy(&ran.stderr_tail).into_owned(),
+    ))
 }
 
 /// [`run_ffprobe`], with `now` saying how long ffprobe has run, so a test
@@ -818,7 +869,7 @@ fn run_ffprobe_watched(
     path: &Path,
     stop: Option<&AtomicBool>,
     now: &dyn Fn() -> Duration,
-) -> Result<Vec<u8>> {
+) -> Result<Ran> {
     let mut command = ffprobe_command()?;
     command
         .args(LOCAL_FILES_ONLY)
@@ -842,7 +893,7 @@ fn run_ffprobe_watched(
             String::from_utf8_lossy(&ran.stderr_tail).trim()
         );
     }
-    Ok(ran.stdout)
+    Ok(ran)
 }
 
 /// The program a [`Watch`] runs, named as the errors name it.
@@ -879,6 +930,7 @@ struct Watch<'a> {
 }
 
 /// How a program that exited ended, and what it wrote.
+#[derive(Debug)]
 struct Ran {
     status: ExitStatus,
     /// Everything it wrote to stdout. Empty for a conversion, whose stdout
@@ -948,11 +1000,7 @@ fn run_watched(mut command: Command, watch: Watch<'_>) -> Result<Ran> {
             return Some(KillReason::Stopped);
         }
         match &mut limit {
-            Limit::ShortStep => {
-                (now() >= SHORT_STEP_LIMIT).then_some(KillReason::ShortStepTooLong {
-                    limit: SHORT_STEP_LIMIT,
-                })
-            }
+            Limit::ShortStep => short_step_over(now()),
             Limit::Progress(watch) => {
                 let micros = position.load(Ordering::Relaxed);
                 let at = (micros != NO_POSITION).then(|| Duration::from_micros(micros));
@@ -1091,8 +1139,8 @@ impl Killed {
 
     /// True when the run was stopped, before or after it started, rather
     /// than ended for something wrong with it.
-    #[must_use]
-    pub fn is_stop(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_stop(&self) -> bool {
         matches!(
             self.why,
             KillReason::Stopped | KillReason::StoppedBeforeStart

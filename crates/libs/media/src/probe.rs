@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 
-use crate::tools::run_ffprobe;
+use crate::tools::{run_ffprobe, run_ffprobe_with_stderr};
 
 /// What ffprobe reports about one media file's first video stream.
 ///
@@ -60,13 +60,13 @@ pub fn probe_media(path: &Path) -> Result<MediaProbe> {
 }
 
 /// How long the media file at `path` plays, as its container says. `None`
-/// when ffprobe is missing, fails, reports no length, as for a still, or
-/// `stop` is set.
+/// when ffprobe is missing, fails, reports no length, as for a still,
+/// reports only a length it estimated, or `stop` is set.
 pub(crate) fn played_for(path: &Path, stop: Option<&AtomicBool>) -> Option<Duration> {
-    let out = run_ffprobe(
+    let (out, said) = run_ffprobe_with_stderr(
         &[
             "-v",
-            "error",
+            "warning",
             "-show_entries",
             "format=duration",
             "-of",
@@ -76,7 +76,23 @@ pub(crate) fn played_for(path: &Path, stop: Option<&AtomicBool>) -> Option<Durat
         stop,
     )
     .ok()?;
-    parse_duration(&String::from_utf8_lossy(&out))
+    length_read(&String::from_utf8_lossy(&out), &said)
+}
+
+/// What ffprobe writes when it estimates a file's length from the bitrate
+/// of its first frames, as for an ADTS AAC file or a variable-bitrate MP3
+/// without a header that counts its frames.
+const ESTIMATED_LENGTH: &str = "Estimating duration from bitrate";
+
+/// The length ffprobe answered on stdout, unless what it said on stderr
+/// shows it only estimated it. An estimate from the first frames can come
+/// out under half the real length, and a conversion past twice the length
+/// is stopped as looping (#2898).
+fn length_read(answer: &str, said: &str) -> Option<Duration> {
+    if said.contains(ESTIMATED_LENGTH) {
+        return None;
+    }
+    parse_duration(answer)
 }
 
 /// Read ffprobe's `format=duration` answer, seconds with a fraction. `None`
@@ -139,6 +155,23 @@ mod tests {
         for no_length in ["N/A", "", "0.000000", "-3", "nan", "inf", "1e400"] {
             assert_eq!(parse_duration(no_length), None, "{no_length:?}");
         }
+    }
+
+    /// A length ffprobe only estimated from the first frames' bitrate is no
+    /// length, so a conversion of the file is never stopped as running past
+    /// twice it (#2898). Other warnings leave the length as read.
+    #[test]
+    fn an_estimated_length_is_no_length() {
+        let said = "[aac @ 0x5581] Estimating duration from bitrate, this may be inaccurate\n";
+        assert_eq!(length_read("12.500000\n", said), None);
+        assert_eq!(
+            length_read("12.500000\n", "[mov @ 0x5581] some other warning\n"),
+            Some(Duration::from_millis(12_500))
+        );
+        assert_eq!(
+            length_read("12.500000\n", ""),
+            Some(Duration::from_millis(12_500))
+        );
     }
 
     #[test]
