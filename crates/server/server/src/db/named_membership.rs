@@ -13,7 +13,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use anyhow::Result as AnyResult;
-use sqlx::SqliteConnection;
+use sqlx::{AssertSqlSafe, SqlSafeStr, SqlStr, SqliteConnection};
 
 use crate::db::begin_write;
 
@@ -216,7 +216,7 @@ async fn find_id(
         "SELECT id FROM {table} WHERE account_id = $1 AND lower(name) = lower($2)",
         table = spec.table,
     );
-    let id = sqlx::query_scalar::<_, i64>(&sql)
+    let id = sqlx::query_scalar::<_, i64>(AssertSqlSafe(sql))
         .bind(account_id)
         .bind(name)
         .fetch_optional(&mut *conn)
@@ -237,7 +237,7 @@ async fn ensure_id(
         "INSERT INTO {table} (account_id, name) VALUES ($1, $2) ON CONFLICT DO NOTHING",
         table = spec.table
     );
-    sqlx::query(&sql)
+    sqlx::query(AssertSqlSafe(sql))
         .bind(account_id)
         .bind(&name)
         .execute(&mut *conn)
@@ -320,7 +320,7 @@ async fn member_exists(
         "SELECT id FROM {mt} WHERE id = $1 AND account_id = $2",
         mt = spec.member_table
     );
-    let found: Option<i64> = sqlx::query_scalar::<_, i64>(&sql)
+    let found: Option<i64> = sqlx::query_scalar::<_, i64>(AssertSqlSafe(sql))
         .bind(member_id)
         .bind(account_id)
         .fetch_optional(&mut *conn)
@@ -384,8 +384,7 @@ pub async fn set_membership(
     let mut changed = 0u64;
     for id in ids {
         let n = if enable {
-            let sql = insert_member_sql(spec);
-            sqlx::query(&sql)
+            sqlx::query(insert_member_sql(spec))
                 .bind(name_row_id)
                 .bind(id)
                 .bind(account_id)
@@ -393,8 +392,7 @@ pub async fn set_membership(
                 .await?
                 .rows_affected()
         } else {
-            let sql = delete_member_sql(spec);
-            sqlx::query(&sql)
+            sqlx::query(delete_member_sql(spec))
                 .bind(id)
                 .bind(name_row_id)
                 .bind(account_id)
@@ -436,7 +434,7 @@ pub async fn list_sets(
         "SELECT id, name FROM {table} WHERE account_id = $1 ORDER BY lower(name)",
         table = spec.table
     );
-    let rows = sqlx::query_as::<_, (i64, String)>(&sql)
+    let rows = sqlx::query_as::<_, (i64, String)>(AssertSqlSafe(sql))
         .bind(account_id)
         .fetch_all(&mut *conn)
         .await?;
@@ -457,7 +455,7 @@ pub async fn get_set(
         "SELECT id, name FROM {table} WHERE id = $1 AND account_id = $2",
         table = spec.table
     );
-    let row = sqlx::query_as::<_, (i64, String)>(&sql)
+    let row = sqlx::query_as::<_, (i64, String)>(AssertSqlSafe(sql))
         .bind(id)
         .bind(account_id)
         .fetch_optional(&mut *conn)
@@ -523,7 +521,7 @@ pub async fn rename_set(
         "UPDATE {table} SET name = $1 WHERE id = $2 AND account_id = $3",
         table = spec.table
     );
-    sqlx::query(&sql)
+    sqlx::query(AssertSqlSafe(sql))
         .bind(&new_name)
         .bind(id)
         .bind(account_id)
@@ -550,7 +548,7 @@ pub async fn delete_set(
         nc = spec.name_column,
         mc = spec.member_column,
     );
-    let members = sqlx::query_scalar::<_, i64>(&members_sql)
+    let members = sqlx::query_scalar::<_, i64>(AssertSqlSafe(members_sql))
         .bind(id)
         .fetch_all(&mut *tx)
         .await?;
@@ -558,7 +556,7 @@ pub async fn delete_set(
         "DELETE FROM {table} WHERE id = $1 AND account_id = $2",
         table = spec.table
     );
-    sqlx::query(&sql)
+    sqlx::query(AssertSqlSafe(sql))
         .bind(id)
         .bind(account_id)
         .execute(&mut *tx)
@@ -588,7 +586,7 @@ pub async fn list_member_ids_of(
         mt = spec.members_table,
         nc = spec.name_column,
     );
-    let rows = sqlx::query_scalar::<_, i64>(&sql)
+    let rows = sqlx::query_scalar::<_, i64>(AssertSqlSafe(sql))
         .bind(id)
         .fetch_all(&mut *conn)
         .await?;
@@ -651,7 +649,7 @@ pub async fn patch_members(
 
     let mut added = 0u64;
     for member in add {
-        let n = sqlx::query(&insert_sql)
+        let n = sqlx::query(insert_sql.clone())
             .bind(id)
             .bind(member)
             .bind(account_id)
@@ -669,7 +667,7 @@ pub async fn patch_members(
     }
     let mut removed = 0u64;
     for member in remove {
-        let n = sqlx::query(&delete_sql)
+        let n = sqlx::query(delete_sql.clone())
             .bind(member)
             .bind(id)
             .bind(account_id)
@@ -707,7 +705,7 @@ pub async fn names_for_item(
         name_col = spec.name_column,
         member_col = spec.member_column,
     );
-    let rows = sqlx::query_scalar::<_, String>(&sql)
+    let rows = sqlx::query_scalar::<_, String>(AssertSqlSafe(sql))
         .bind(account_id)
         .bind(item_id)
         .fetch_all(&mut *conn)
@@ -737,7 +735,7 @@ pub async fn names_for_items(
                 name_col = spec.name_column,
                 member_col = spec.member_column,
             );
-            let mut q = sqlx::query_as::<_, (i64, String)>(&sql).bind(account_id);
+            let mut q = sqlx::query_as::<_, (i64, String)>(AssertSqlSafe(sql)).bind(account_id);
             for id in chunk {
                 q = q.bind(*id);
             }
@@ -750,8 +748,8 @@ pub async fn names_for_items(
 
 /// Link one member to one name row, doing nothing when the link exists or
 /// the member is not the account's. Binds: name row id, member id, account.
-fn insert_member_sql(spec: &MembershipSpec) -> String {
-    format!(
+fn insert_member_sql(spec: &MembershipSpec) -> SqlStr {
+    AssertSqlSafe(format!(
         "INSERT INTO {mt} ({mc}, {nc})
          SELECT id, $1 FROM {member_table} WHERE id = $2 AND account_id = $3
          ON CONFLICT DO NOTHING",
@@ -759,13 +757,14 @@ fn insert_member_sql(spec: &MembershipSpec) -> String {
         mc = spec.member_column,
         nc = spec.name_column,
         member_table = spec.member_table,
-    )
+    ))
+    .into_sql_str()
 }
 
 /// Unlink one member from one name row when the member is the account's.
 /// Binds: member id, name row id, account.
-fn delete_member_sql(spec: &MembershipSpec) -> String {
-    format!(
+fn delete_member_sql(spec: &MembershipSpec) -> SqlStr {
+    AssertSqlSafe(format!(
         "DELETE FROM {mt}
          WHERE {mc} = $1 AND {nc} = $2
            AND EXISTS (
@@ -777,7 +776,8 @@ fn delete_member_sql(spec: &MembershipSpec) -> String {
         mc = spec.member_column,
         nc = spec.name_column,
         member_table = spec.member_table,
-    )
+    ))
+    .into_sql_str()
 }
 
 #[cfg(test)]

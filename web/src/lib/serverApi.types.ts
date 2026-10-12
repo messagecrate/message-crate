@@ -1381,8 +1381,8 @@ export interface paths {
         /**
          * Report whether this Message Crate is unclaimed, closed, or open.
          * @description Also reports this Message Crate's id, the server's Build, its Schema
-         *     Fingerprint, the database's journal mode, whether the Demo Account
-         *     exists, and the attachment size limit.
+         *     Fingerprint, whether the Demo Account exists, the attachment size limit,
+         *     and the upload time limits.
          */
         get: operations["get_server"];
         put?: never;
@@ -1529,7 +1529,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read the server settings. */
+        /** Read the server settings, and how the database is stored: its journal mode, and the error SQLite gave when the server asked for write-ahead logging. */
         get: operations["get_server_settings"];
         put?: never;
         post?: never;
@@ -1578,7 +1578,13 @@ export interface paths {
          */
         get: operations["get_session"];
         put?: never;
-        /** Log in: verify a local username and password and answer the Session, a `201 Created` whose `Location` is the singleton itself. */
+        /**
+         * Log in: verify a local username and password and answer the Session, a `201 Created` whose `Location` is the singleton itself.
+         * @description A refused login waits about a second, then answers
+         *     `invalid-credentials`, whatever was wrong: a username nobody holds, a
+         *     wrong or empty password, a disabled account. A login with the right
+         *     password does not wait.
+         */
         post: operations["create_session"];
         /**
          * Log out: revoke the presented session token, ending the Session.
@@ -2688,6 +2694,28 @@ export interface components {
             token: string;
             /** @description The username the account logs in with. */
             username: string;
+        };
+        /**
+         * @description The journal SQLite keeps the database with, and why it is not
+         *     write-ahead logging when it is not.
+         */
+        DatabaseJournal: {
+            /**
+             * @description The journal mode SQLite runs the database in now, read when the
+             *     request is answered. The server asks for `wal` on every start. Any
+             *     other mode means it could not have it, as when another program held
+             *     the database file, and then every page waits while an import writes.
+             *     Owner Home says so. `null` when the mode could not be read; the
+             *     server's log says why.
+             */
+            mode: components["schemas"]["JournalMode"] | null;
+            /**
+             * @description The error SQLite gave when the server asked for write-ahead logging
+             *     as it started, in SQLite's words, such as `database is locked`.
+             *     `null` when SQLite gave none: it turned write-ahead logging on, or
+             *     kept another mode without an error.
+             */
+            wal_error: string | null;
         };
         /** @description What one dedupe did. */
         DedupeCounts: {
@@ -5252,8 +5280,8 @@ export interface components {
          *     same request.
          *
          *     The extension members belong to the types named here: `word` and
-         *     `did_you_mean` to `search-query-invalid`, `retry_after` to `rate-limited`
-         *     and `database-busy`, `line` to `malformed-body` and `validation-failed` from an import batch,
+         *     `did_you_mean` to `search-query-invalid`, `retry_after` to
+         *     `database-busy`, `line` to `malformed-body` and `validation-failed` from an import batch,
          *     `holder` to `identity-exists`.
          */
         Problem: {
@@ -5291,8 +5319,8 @@ export interface components {
             request_id?: string | null;
             /**
              * Format: int64
-             * @description `rate-limited` and `database-busy`: seconds until the request may
-             *     succeed, the same figure as the `Retry-After` header.
+             * @description `database-busy`: seconds until the request may succeed, the same
+             *     figure as the `Retry-After` header.
              */
             retry_after?: number | null;
             /**
@@ -5442,16 +5470,6 @@ export interface components {
              */
             id: string;
             /**
-             * @description The journal mode SQLite runs the database in now. The server asks for
-             *     `wal` on every start. Any other mode means it could not have it, as
-             *     when another program held the database file, and then every page
-             *     waits while an import writes. Owner Home says so, and the server's
-             *     log holds what SQLite answered. `null` when the
-             *     mode could not be read. The route still answers, because the entry
-             *     screen reads it before anyone can log in.
-             */
-            journal_mode: components["schemas"]["JournalMode"] | null;
-            /**
              * Format: int64
              * @description The Schema Fingerprint, the number this server stamps into its database.
              */
@@ -5485,7 +5503,10 @@ export interface components {
              */
             version: string;
         };
-        /** @description The server settings the owner controls. */
+        /**
+         * @description The server settings the owner controls, with the database's journal
+         *     beside them, which the owner reads and cannot change.
+         */
         ServerSettings: {
             /**
              * Format: int64
@@ -5493,6 +5514,11 @@ export interface components {
              *     accepts. 536870912 (512 MiB) until the owner changes it.
              */
             asset_max_bytes: number;
+            /**
+             * @description The journal SQLite keeps the database with. Not a setting: the
+             *     server reports it here because only the owner may read it.
+             */
+            journal: components["schemas"]["DatabaseJournal"];
             /** @description Anyone reaching the server may create their own account. */
             public_registration: boolean;
         };
@@ -6023,15 +6049,6 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server. */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
         };
     };
     get_account: {
@@ -6218,15 +6235,6 @@ export interface operations {
             };
             /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description [`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server. */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7410,15 +7418,6 @@ export interface operations {
             };
             /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description [`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server. */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13591,15 +13590,6 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server. */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
         };
     };
     get_demo_account: {
@@ -14319,15 +14309,6 @@ export interface operations {
             };
             /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description [`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server. */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };

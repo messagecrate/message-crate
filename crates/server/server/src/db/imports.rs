@@ -587,11 +587,11 @@ pub async fn get_owned_import(
     account_id: i64,
     import_id: i64,
 ) -> std::result::Result<ImportRow, ImportLookupError> {
-    let row = sqlx::query(&format!(
+    let row = sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT {IMPORT_COLUMNS}
          FROM imports
          WHERE id = $1 AND account_id = $2"
-    ))
+    )))
     .bind(import_id)
     .bind(account_id)
     .fetch_optional(&mut *conn)
@@ -764,11 +764,11 @@ pub async fn discard_running_import(
     account_id: i64,
     now: chrono::DateTime<Utc>,
 ) -> Result<Option<ImportRow>> {
-    let row = sqlx::query(&format!(
+    let row = sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT {IMPORT_COLUMNS}
          FROM imports
          WHERE account_id = $1 AND status = 'running'"
-    ))
+    )))
     .bind(account_id)
     .fetch_optional(&mut *conn)
     .await?;
@@ -1075,7 +1075,7 @@ pub async fn list_imports_page(
         ""
     };
     let count_sql = format!("SELECT COUNT(*) FROM imports WHERE account_id = $1{status_sql}");
-    let mut count = sqlx::query_scalar::<_, i64>(&count_sql).bind(account_id);
+    let mut count = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql)).bind(account_id);
     if let Some(status) = status {
         count = count.bind(status);
     }
@@ -1104,7 +1104,7 @@ pub async fn list_imports_page(
          ORDER BY started_at {direction}, id {direction}
          LIMIT {limit_param} OFFSET {offset_param}"
     );
-    let mut query = sqlx::query(&sql).bind(account_id);
+    let mut query = sqlx::query(sqlx::AssertSqlSafe(sql)).bind(account_id);
     if let Some(status) = status {
         query = query.bind(status);
     }

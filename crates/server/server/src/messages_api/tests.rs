@@ -2081,7 +2081,10 @@ async fn a_relevance_search_reads_the_index_once() {
         let (sql, params) = message_list_page_sql(&filter, &order, 40, 0).unwrap();
         let rows = sqlx::Executor::fetch_all(
             &mut *conn,
-            crate::db::sql::bind_all(&format!("EXPLAIN QUERY PLAN {sql}"), &params),
+            crate::db::sql::bind_all(
+                sqlx::AssertSqlSafe(format!("EXPLAIN QUERY PLAN {sql}")),
+                &params,
+            ),
         )
         .await
         .unwrap();

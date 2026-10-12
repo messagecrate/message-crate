@@ -98,9 +98,9 @@ impl Trashable {
         account_id: i64,
     ) -> Result<bool, sqlx::Error> {
         let (table, id_column) = self.marker();
-        let found: Option<i64> = sqlx::query_scalar(&format!(
+        let found: Option<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             "SELECT 1 FROM {table} WHERE account_id = $1 AND {id_column} = $2"
-        ))
+        )))
         .bind(account_id)
         .bind(self.id())
         .fetch_optional(&mut *conn)
@@ -124,10 +124,10 @@ pub async fn move_to_trash(
         return Ok(false);
     }
     let (table, id_column) = target.marker();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO {table} (account_id, {id_column}) VALUES ($1, $2)
          ON CONFLICT DO NOTHING"
-    ))
+    )))
     .bind(account_id)
     .bind(target.id())
     .execute(&mut *conn)
@@ -151,9 +151,9 @@ pub async fn restore(
         return Ok(false);
     }
     let (table, id_column) = target.marker();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "DELETE FROM {table} WHERE account_id = $1 AND {id_column} = $2"
-    ))
+    )))
     .bind(account_id)
     .bind(target.id())
     .execute(&mut *conn)
@@ -436,7 +436,7 @@ async fn delete_conversations(
                AND (a.sha256 IS NOT NULL OR a.preview_sha256 IS NOT NULL
                     OR a.thumbnail_sha256 IS NOT NULL)"
         );
-        let mut q = sqlx::query_as::<_, AttachmentFilesRow>(&sql);
+        let mut q = sqlx::query_as::<_, AttachmentFilesRow>(sqlx::AssertSqlSafe(sql));
         for id in chunk {
             q = q.bind(*id);
         }
@@ -459,7 +459,7 @@ async fn delete_conversations(
                 "DELETE FROM {table}
                  WHERE account_id = $1 AND {id_column} IN ({placeholders}){trashed}"
             );
-            let mut q = sqlx::query(&sql).bind(account_id);
+            let mut q = sqlx::query(sqlx::AssertSqlSafe(sql)).bind(account_id);
             for id in chunk {
                 q = q.bind(*id);
             }
@@ -564,7 +564,9 @@ async fn forget_contacts(
             "UPDATE contacts SET preferred_name = '', last_modified = $2
              WHERE account_id = $1 AND id IN ({placeholders})"
         );
-        let mut q = sqlx::query(&sql).bind(account_id).bind(&last_modified);
+        let mut q = sqlx::query(sqlx::AssertSqlSafe(sql))
+            .bind(account_id)
+            .bind(&last_modified);
         for id in chunk {
             q = q.bind(*id);
         }
@@ -577,7 +579,7 @@ async fn forget_contacts(
                  SELECT id FROM contacts WHERE account_id = $1 AND id IN ({placeholders})
              )"
         );
-        let mut q = sqlx::query(&sql).bind(account_id);
+        let mut q = sqlx::query(sqlx::AssertSqlSafe(sql)).bind(account_id);
         for id in chunk {
             q = q.bind(*id);
         }
@@ -586,7 +588,7 @@ async fn forget_contacts(
         let sql = format!(
             "DELETE FROM trashed_contacts WHERE account_id = $1 AND contact_id IN ({placeholders})"
         );
-        let mut q = sqlx::query(&sql).bind(account_id);
+        let mut q = sqlx::query(sqlx::AssertSqlSafe(sql)).bind(account_id);
         for id in chunk {
             q = q.bind(*id);
         }

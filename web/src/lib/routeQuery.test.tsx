@@ -124,7 +124,6 @@ describe("createQueryClient", () => {
     [403, "Forbidden"],
     [404, "Not Found"],
     [422, "Unprocessable Entity"],
-    [429, "Too Many Requests"],
   ])("asks once when the server answers %i %s", async (status, reason) => {
     expect(await callsUntilError(new ApiError(status, reason))).toBe(1);
   });

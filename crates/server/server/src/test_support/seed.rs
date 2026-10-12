@@ -29,12 +29,15 @@ pub async fn with_trigger_lifted<T>(
             .fetch_one(&mut *conn)
             .await
             .unwrap_or_else(|e| panic!("read trigger {trigger}: {e:#}"));
-    sqlx::raw_sql(&format!("DROP TRIGGER {trigger}"))
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP TRIGGER {trigger}")))
         .execute(&mut *conn)
         .await
         .unwrap();
     let result = edit(&mut *conn).await;
-    sqlx::raw_sql(&sql).execute(&mut *conn).await.unwrap();
+    sqlx::raw_sql(sqlx::AssertSqlSafe(sql))
+        .execute(&mut *conn)
+        .await
+        .unwrap();
     result
 }
 

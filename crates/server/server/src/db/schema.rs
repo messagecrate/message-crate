@@ -173,9 +173,11 @@ async fn migrate_schema(conn: &mut SqliteConnection) -> Result<()> {
         );
     }
     rebuild_schema(conn).await?;
-    sqlx::query(&format!("PRAGMA application_id = {APPLICATION_ID}"))
-        .execute(&mut *conn)
-        .await?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "PRAGMA application_id = {APPLICATION_ID}"
+    )))
+    .execute(&mut *conn)
+    .await?;
     stamp_user_version(conn, SCHEMA_FINGERPRINT).await?;
     Ok(())
 }
@@ -189,9 +191,11 @@ pub(crate) async fn user_version(conn: &mut SqliteConnection) -> Result<i64> {
 
 /// Record the schema fingerprint in SQLite's `user_version` pragma.
 async fn stamp_user_version(conn: &mut SqliteConnection, version: i64) -> Result<()> {
-    sqlx::query(&format!("PRAGMA user_version = {version}"))
-        .execute(&mut *conn)
-        .await?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "PRAGMA user_version = {version}"
+    )))
+    .execute(&mut *conn)
+    .await?;
     Ok(())
 }
 
@@ -335,9 +339,12 @@ async fn rebuild_schema(conn: &mut SqliteConnection) -> Result<()> {
     .fetch_all(&mut *conn)
     .await?;
     for table in &tables {
-        sqlx::query(&format!("DROP TABLE {}", quote_ident(table)))
-            .execute(&mut *conn)
-            .await?;
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DROP TABLE {}",
+            quote_ident(table)
+        )))
+        .execute(&mut *conn)
+        .await?;
     }
     sqlx::query("PRAGMA foreign_keys = ON")
         .execute(&mut *conn)
@@ -506,7 +513,7 @@ const MESSAGES_SECONDARY_INDEX_DDL: &[(&str, &str)] = &[
 /// the promote inserts).
 pub(crate) async fn drop_messages_secondary_indexes(conn: &mut SqliteConnection) -> Result<()> {
     for (name, _) in MESSAGES_SECONDARY_INDEX_DDL {
-        sqlx::query(&format!("DROP INDEX IF EXISTS {name}"))
+        sqlx::query(sqlx::AssertSqlSafe(format!("DROP INDEX IF EXISTS {name}")))
             .execute(&mut *conn)
             .await?;
     }
@@ -516,7 +523,7 @@ pub(crate) async fn drop_messages_secondary_indexes(conn: &mut SqliteConnection)
 /// Recreate secondary `messages` indexes after bulk promote inserts.
 pub(crate) async fn create_messages_secondary_indexes(conn: &mut SqliteConnection) -> Result<()> {
     for (_, ddl) in MESSAGES_SECONDARY_INDEX_DDL {
-        sqlx::query(ddl).execute(&mut *conn).await?;
+        sqlx::query(*ddl).execute(&mut *conn).await?;
     }
     Ok(())
 }
@@ -568,14 +575,14 @@ pub(crate) async fn index_messages_fts_from_promote_map(
     min_new_message_id: i64,
     min_new_attachment_id: i64,
 ) -> Result<u64> {
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "DELETE FROM messages_fts WHERE rowid IN ({STORED_MESSAGES_TO_REINDEX})"
-    ))
+    )))
     .bind(min_new_message_id)
     .bind(min_new_attachment_id)
     .execute(&mut *conn)
     .await?;
-    let n = sqlx::query(&format!(
+    let n = sqlx::query(sqlx::AssertSqlSafe(format!(
         r"
         INSERT INTO messages_fts(rowid, body, subject, attachment_text)
         SELECT
@@ -598,7 +605,7 @@ pub(crate) async fn index_messages_fts_from_promote_map(
         JOIN messages m ON m.id = mm.prod_id
         WHERE m.deletion IS NOT 'unsent'
         "
-    ))
+    )))
     .bind(min_new_message_id)
     .bind(min_new_attachment_id)
     .execute(&mut *conn)
@@ -668,24 +675,24 @@ pub async fn delete_messages_for_source(
     account_id: i64,
     source: &str,
 ) -> Result<u64> {
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "DELETE FROM attachments WHERE message_id IN ({MESSAGE_IDS_FOR_SOURCE})"
-    ))
+    )))
     .bind(source)
     .bind(account_id)
     .execute(&mut *conn)
     .await?;
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "DELETE FROM tapbacks WHERE message_id IN ({MESSAGE_IDS_FOR_SOURCE})"
-    ))
+    )))
     .bind(source)
     .bind(account_id)
     .execute(&mut *conn)
     .await?;
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE messages SET duplicate_of = NULL
          WHERE duplicate_of IN ({MESSAGE_IDS_FOR_SOURCE})"
-    ))
+    )))
     .bind(source)
     .bind(account_id)
     .execute(&mut *conn)
@@ -789,7 +796,9 @@ pub fn split_ddl(batch: &str) -> Vec<String> {
 /// Run every statement in a DDL batch against one connection.
 async fn execute_batch(conn: &mut SqliteConnection, batch: &str) -> Result<()> {
     for stmt in split_ddl(batch) {
-        sqlx::query(&stmt).execute(&mut *conn).await?;
+        sqlx::query(sqlx::AssertSqlSafe(stmt))
+            .execute(&mut *conn)
+            .await?;
     }
     Ok(())
 }

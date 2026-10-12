@@ -607,7 +607,14 @@ async fn open_db() -> (OpenDb, tempfile::TempDir) {
         },
         server: None,
     };
-    (OpenDb { cfg, db: pool }, dir)
+    (
+        OpenDb {
+            cfg,
+            db: pool,
+            wal_error: None,
+        },
+        dir,
+    )
 }
 
 async fn seed_account(conn: &mut SqliteConnection, id: i64) {
@@ -1702,11 +1709,11 @@ async fn name_version(
     fs::write(&path, bytes).unwrap();
     let [sha_column, path_column, mime_column] = version.columns();
     let mut tx = crate::db::begin_write(conn).await.unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE attachments
          SET {sha_column} = $1, {path_column} = $2, {mime_column} = 'image/jpeg'
          WHERE id = $3"
-    ))
+    )))
     .bind(sha)
     .bind(&rel)
     .bind(attachment_id)

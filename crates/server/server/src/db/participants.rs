@@ -28,19 +28,21 @@ pub async fn set_aside_identity_participants(
                            WHERE h.account_id = $1 AND {})",
         is_account_identity_sql("h", "$1"),
     );
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO participants_set_aside (conversation_id, handle_id, name_alias)
          SELECT conversation_id, handle_id, name_alias FROM participants
          WHERE {at_identity}
          ON CONFLICT (conversation_id, handle_id) DO UPDATE SET name_alias = excluded.name_alias"
-    ))
+    )))
     .bind(account_id)
     .execute(&mut *conn)
     .await?;
-    sqlx::query(&format!("DELETE FROM participants WHERE {at_identity}"))
-        .bind(account_id)
-        .execute(&mut *conn)
-        .await?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DELETE FROM participants WHERE {at_identity}"
+    )))
+    .bind(account_id)
+    .execute(&mut *conn)
+    .await?;
     Ok(())
 }
 
@@ -63,18 +65,18 @@ pub async fn restore_set_aside_participants(
                            WHERE h.account_id = $1 AND NOT {})",
         is_account_identity_sql("h", "$1"),
     );
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          SELECT conversation_id, handle_id, name_alias FROM participants_set_aside
          WHERE {released}
          ON CONFLICT (conversation_id, handle_id) DO NOTHING"
-    ))
+    )))
     .bind(account_id)
     .execute(&mut *conn)
     .await?;
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "DELETE FROM participants_set_aside WHERE {released}"
-    ))
+    )))
     .bind(account_id)
     .execute(&mut *conn)
     .await?;

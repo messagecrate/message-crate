@@ -48,7 +48,7 @@ async fn with_alice(config: &Path) {
     crate::test_support::insert_account_with_id(&mut conn, ALICE, "alice").await;
 }
 
-async fn count(config: &Path, sql: &str) -> i64 {
+async fn count(config: &Path, sql: &'static str) -> i64 {
     let opened = open(config).await;
     let mut conn = opened.conn().await.unwrap();
     sqlx::query_scalar(sql).fetch_one(&mut *conn).await.unwrap()

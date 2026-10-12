@@ -1199,10 +1199,12 @@ fn after_a_database_error_the_pass_works_through_the_queue_without_an_import_run
         let state = &fixture.state;
         import_three(&fixture, &alice).await;
         let rename = async |from: &str, to: &str| {
-            sqlx::query(&format!("ALTER TABLE {from} RENAME TO {to}"))
-                .execute(&state.db)
-                .await
-                .unwrap();
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "ALTER TABLE {from} RENAME TO {to}"
+            )))
+            .execute(&state.db)
+            .await
+            .unwrap();
         };
         rename("media_queue", "media_queue_away").await;
         let wake = Notify::new();

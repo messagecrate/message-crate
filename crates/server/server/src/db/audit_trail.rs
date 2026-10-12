@@ -370,11 +370,11 @@ pub async fn record_run_credential(
 ) -> Result<()> {
     let columns = credential.run_columns();
     let table = table.name();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE {table} SET credential = $1, app_kind = $2, app_build = $3,
                 api_token_label = $4, api_token_hint = $5
          WHERE id = $6"
-    ))
+    )))
     .bind(columns.credential)
     .bind(columns.app_kind)
     .bind(columns.app_build)
@@ -1019,7 +1019,7 @@ pub async fn page(
     };
     let sources = sources_sql();
     let count_sql = format!("SELECT COUNT(*) FROM ({sources}) {filter}");
-    let mut count = sqlx::query_scalar::<_, i64>(&count_sql).bind(&now);
+    let mut count = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql)).bind(&now);
     if let Some(id) = id {
         count = count.bind(id);
     }
@@ -1029,7 +1029,7 @@ pub async fn page(
         "SELECT src, id FROM ({sources}) {filter}
          ORDER BY at DESC, src DESC, id DESC LIMIT {limit} OFFSET {offset}"
     );
-    let mut rows = sqlx::query_as::<_, (String, i64)>(&page_sql).bind(&now);
+    let mut rows = sqlx::query_as::<_, (String, i64)>(sqlx::AssertSqlSafe(page_sql)).bind(&now);
     if let Some(id) = id {
         rows = rows.bind(id);
     }
@@ -1078,14 +1078,14 @@ pub async fn deleted_accounts_page(
 ) -> Result<(Vec<DeletedAccount>, u64)> {
     const DELETED: &str = "FROM audit_entries
          WHERE action = 'account_deleted' AND deletion_entry_id = id AND username IS NOT NULL";
-    let total: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) {DELETED}"))
+    let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT COUNT(*) {DELETED}")))
         .fetch_one(&mut *conn)
         .await
         .context("count deleted accounts")?;
-    let rows: Vec<(i64, String, String)> = sqlx::query_as(&format!(
+    let rows: Vec<(i64, String, String)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT id, username, at {DELETED}
          ORDER BY username COLLATE NOCASE, at DESC, id DESC LIMIT {limit} OFFSET {offset}"
-    ))
+    )))
     .fetch_all(&mut *conn)
     .await
     .context("list deleted accounts")?;
@@ -1229,12 +1229,12 @@ fn run_entry(row: &sqlx::sqlite::SqliteRow, action: AuditAction) -> Result<Audit
 
 /// An Import Run as an Audit Trail entry: its source, status and counts.
 async fn load_import(conn: &mut SqliteConnection, id: i64) -> Result<Option<AuditEntry>> {
-    let row = sqlx::query(&format!(
+    let row = sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT r.id, r.started_at, r.status, r.source, r.message_count, r.attachment_count,
                 r.bytes_uploaded, {RUN_ACCOUNT_SQL}
          FROM imports r LEFT JOIN accounts a ON a.id = r.account_id
          WHERE r.id = $1"
-    ))
+    )))
     .bind(id)
     .fetch_optional(&mut *conn)
     .await?;
@@ -1255,12 +1255,12 @@ async fn load_import(conn: &mut SqliteConnection, id: i64) -> Result<Option<Audi
 /// An Export Run as an Audit Trail entry: the kind of scope and how much it
 /// matched, never the query or the picked ids.
 async fn load_export(conn: &mut SqliteConnection, id: i64) -> Result<Option<AuditEntry>> {
-    let row = sqlx::query(&format!(
+    let row = sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT r.id, r.started_at, r.status, r.scope_kind, r.scope_list, r.message_count,
                 r.conversation_count, r.attachment_count, r.total_bytes, {RUN_ACCOUNT_SQL}
          FROM exports r LEFT JOIN accounts a ON a.id = r.account_id
          WHERE r.id = $1"
-    ))
+    )))
     .bind(id)
     .fetch_optional(&mut *conn)
     .await?;

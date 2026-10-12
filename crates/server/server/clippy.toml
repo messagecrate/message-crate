@@ -17,7 +17,4 @@ disallowed-methods = [
     # tokio's own calls do.
     { path = "tokio::task::spawn", reason = "the spawned work loses the request's tracing span; use crate::request_id::spawn_in_current_span" },
     { path = "tokio::task::spawn_blocking", reason = "the work loses the request's tracing span; use crate::request_id::spawn_blocking_in_current_span" },
-    # sqlx's close can return with a connection still open, which later
-    # deletes another database's -wal and -shm files by name (#2592).
-    { path = "sqlx::Pool::close", reason = "can return with a connection still open; use crate::db::engine::close_pool" },
 ]

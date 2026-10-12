@@ -142,12 +142,11 @@ from `100` up.
   login folds the case of A to Z only.
   An account may have no password (`password_hash` NULL); an empty password is
   accepted only for those accounts.
-- Guesses at one account's password are rate-limited to 20 per 60 seconds:
-  every login as the account, under any spelling of its username, and every
-  wrong current password sent to change the owner's password or to delete the
-  account.
-  Creating an account and claiming Message Crate are each limited to 20 attempts
-  per 60 seconds across the whole server, whatever the username.
+- A refused login waits about a second before the server answers, and so
+  does a wrong current password sent to change the owner's password or to
+  delete an account. Nothing counts the attempts, so wrong passwords never lock
+  an account out. The wait is not protection for a Message Crate reachable
+  from the internet: put it behind a proxy with TLS and a login of its own.
 - Each account can create named **API tokens** for programs that call the HTTP API
   (stored hashed; shown once when created). GUI sessions use a separate rotating
   token.

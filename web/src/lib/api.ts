@@ -90,9 +90,8 @@ export class ApiError extends Error {
   readonly requestId: string | null;
   /**
    * Seconds the server asked the client to wait before trying again, for
-   * `rate-limited` and `database-busy`; null when it named none. Only a read
-   * refused with `database-busy` waits it before trying again
-   * (`createQueryClient`); a `rate-limited` read is never tried again.
+   * `database-busy`; null when it named none. A read refused with
+   * `database-busy` waits it before trying again (`createQueryClient`).
    */
   readonly retryAfter: number | null;
   /** True when the call's time limit ended it and no answer arrived (`requestTimeoutError`). */

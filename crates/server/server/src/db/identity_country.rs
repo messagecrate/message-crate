@@ -116,7 +116,7 @@ async fn messages_keyed_by(
     account_id: i64,
     handle_id: i64,
 ) -> Result<Vec<i64>> {
-    Ok(sqlx::query_scalar(&format!(
+    Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT m.id FROM messages m
          WHERE m.account_id = $1 AND {HAS_CONTENT_KEY_SQL}
            AND m.conversation_id IN (
@@ -125,7 +125,7 @@ async fn messages_keyed_by(
              UNION SELECT conversation_id FROM messages
                    WHERE account_id = $1 AND sender_handle_id = $2)
          ORDER BY m.id",
-    ))
+    )))
     .bind(account_id)
     .bind(handle_id)
     .fetch_all(&mut *conn)

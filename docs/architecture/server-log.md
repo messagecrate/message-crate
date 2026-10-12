@@ -138,10 +138,10 @@ one of the two `503 Service Unavailable` types, `server-stopping` and
 `database-busy`) leaves one more line, written where its problem document is
 built, with the problem type's slug and the status
 (`problem=invalid-credentials status=401`). It is at `WARN` for
-`401 Unauthorized`, `403 Forbidden`, `429 Too Many Requests` and
-`database-busy`, and at `INFO` for every other refusal. The level follows
-from the problem type, by its status and, for `database-busy`, by name, in
-`crates/server/server/src/problem.rs`, where each problem type is declared.
+`401 Unauthorized`, `403 Forbidden` and `database-busy`, and at `INFO` for
+every other refusal. The level follows from the problem type, by its status
+and, for `database-busy`, by name, in `crates/server/server/src/problem.rs`,
+where each problem type is declared.
 The problem's `detail` is never written. A `database-busy` line also
 carries the error's chain as `error`, as the `ERROR` line of a `500` does
 (below).
@@ -164,19 +164,11 @@ the client received.
 A refused login leaves one more `WARN` line, beside its Audit Trail entry,
 with the account's id (none for a username that names no account), the
 reason (`unknown_username`, `wrong_password` or `account_disabled`) and the
-connecting app and its Build. A login as an unknown username refused
-unchecked, because the count of them for the whole server is full, leaves
-none: that count's own line says so once. A rate-limit count that fills
-leaves one `WARN` line with the count's kind (`password`, `unknown_username`,
-`unknown_usernames`, `register` or `claim`), the account's id when it is a
-password's, and `retry_after_secs`. It writes that line once, when it first
-refuses an attempt, and again only after it has emptied.
+connecting app and its Build.
 
 Why: the Audit Trail is read one account at a time, so a run of password
 guesses showed in the owner's Logs panel only as `invalid-credentials` lines
-that do not say which account or why. Why once per count: each refused
-attempt already leaves its `rate-limited` line, and a sustained attack must
-not write the rest of the log away. Why not the username: it is what a person
+that do not say which account or why. Why not the username: it is what a person
 typed, and a guesser's list of usernames is not an outcome.
 
 ## A failed request names the step that failed

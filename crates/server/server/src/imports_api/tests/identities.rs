@@ -217,12 +217,12 @@ async fn a_contact_with_only_other_identities_is_unknown() {
         &trip_with_a_name_only_member(),
     )
     .await;
-    let unknown: Vec<String> = sqlx::query_scalar(&format!(
+    let unknown: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT ct.preferred_name FROM contacts ct
          WHERE ct.account_id = $1 AND {}
          ORDER BY ct.preferred_name",
         crate::db::contacts::UNKNOWN_CONTACT_SQL
-    ))
+    )))
     .bind(TEST_ACCOUNT)
     .fetch_all(&mut *conn)
     .await

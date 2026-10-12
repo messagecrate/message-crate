@@ -441,35 +441,6 @@ async fn a_taken_username_is_a_conflict() {
     expect_problem(status, &text, ProblemType::InvalidCredentials);
 }
 
-/// Creating an account is the server's one unauthenticated write, so without a
-/// limit it is an offer to fill the disk. The limiter itself is unit-tested in
-/// `credentials/tests.rs` and the status mapping in `server/tests.rs`, but
-/// nothing put the two together: a route that stopped consulting the limiter
-/// passed both. The count is one for the whole server, like `claim`: a count
-/// per username lets a script that tries a new name each time straight
-/// through, which is the flood the limit exists to stop.
-#[tokio::test]
-async fn registrations_under_many_names_are_rate_limited_across_the_server() {
-    let fixture = test_fixture().await;
-    let state = fixture.state.clone();
-    let body =
-        |username: &str| serde_json::json!({ "username": username, "password": "hunter2hunter2" });
-
-    for attempt in 0..crate::credentials::AUTH_RATE_MAX {
-        let status =
-            post_status_logged_out(&state, "/v1/accounts", body(&format!("flood{attempt}"))).await;
-        assert_eq!(
-            status,
-            StatusCode::CREATED,
-            "attempt {attempt} inside the limit"
-        );
-    }
-
-    let (status, text) = post_logged_out(&state, "/v1/accounts", body("one-more-name")).await;
-    let problem = expect_problem(status, &text, ProblemType::RateLimited);
-    assert!(problem.retry_after.is_some(), "{text}");
-}
-
 // ---------------------------------------------------------------------------
 // Changing an account
 // ---------------------------------------------------------------------------
@@ -3297,11 +3268,11 @@ async fn the_owner_reads_which_attachments_of_a_run_have_no_thumbnail_or_preview
 // Guessing the current password
 // ---------------------------------------------------------------------------
 
-/// A wrong current password on the owner's own password change counts like a
-/// failed login, and past the login's limit the change is refused before the
-/// guess is checked: even the right password is then `429`.
+/// A wrong current password on the owner's own password change waits, as a
+/// refused login does, then answers `invalid-credentials`. Nothing counts the
+/// wrong ones, so the right one still works after many, and does not wait.
 #[tokio::test]
-async fn guessing_the_owners_current_password_is_rate_limited() {
+async fn a_wrong_current_password_for_the_owners_change_waits_and_never_locks_out() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
@@ -3314,7 +3285,8 @@ async fn guessing_the_owners_current_password_is_rate_limited() {
         })
     };
 
-    for attempt in 1..=crate::credentials::AUTH_RATE_MAX {
+    let wrong = 25;
+    for attempt in 0..wrong {
         let (status, text) = put_json_raw(&state, &path, &owner.token, change("notthisone")).await;
         expect_problem_for(
             &format!("attempt {attempt}"),
@@ -3322,45 +3294,41 @@ async fn guessing_the_owners_current_password_is_rate_limited() {
             &text,
             ProblemType::InvalidCredentials,
         );
+        assert_eq!(state.refusal_wait.waits(), attempt + 1, "attempt {attempt}");
     }
-    let (status, text) = put_json_raw(&state, &path, &owner.token, change("notthisone")).await;
-    expect_problem(status, &text, ProblemType::RateLimited);
-    // Past the limit the guess is not checked.
     let (status, text) = put_json_raw(&state, &path, &owner.token, change("hunter2hunter2")).await;
-    expect_problem(status, &text, ProblemType::RateLimited);
+    assert_eq!(status, StatusCode::OK, "{text}");
+    assert_eq!(
+        state.refusal_wait.waits(),
+        wrong,
+        "the right one did not wait"
+    );
 }
 
-/// A wrong current password on an account deleting itself counts like a
-/// failed login, and past the login's limit the delete is refused before the
-/// guess is checked, so the account survives even the right password.
+/// A wrong current password on an account deleting itself waits, then
+/// answers `invalid-credentials` and leaves the account; the right one
+/// deletes it without waiting.
 #[tokio::test]
-async fn guessing_the_current_password_to_delete_an_account_is_rate_limited() {
+async fn a_wrong_current_password_to_delete_an_account_waits_and_keeps_it() {
     let (fixture, alice) = fixture_with_account().await;
     let state = fixture.state.clone();
     let path = member(alice.account_id);
     let delete =
         |current: &str| serde_json::json!({ "confirm": true, "current_password": current });
 
-    for attempt in 1..=crate::credentials::AUTH_RATE_MAX {
-        let (status, text) = delete_json_raw(&state, &path, &alice.token, delete("not-it")).await;
-        expect_problem_for(
-            &format!("attempt {attempt}"),
-            status,
-            &text,
-            ProblemType::InvalidCredentials,
-        );
-    }
     let (status, text) = delete_json_raw(&state, &path, &alice.token, delete("not-it")).await;
-    expect_problem(status, &text, ProblemType::RateLimited);
-    // Past the limit the guess is not checked.
-    let (status, text) =
-        delete_json_raw(&state, &path, &alice.token, delete("hunter2hunter2")).await;
-    expect_problem(status, &text, ProblemType::RateLimited);
+    expect_problem(status, &text, ProblemType::InvalidCredentials);
+    assert_eq!(state.refusal_wait.waits(), 1);
     assert_eq!(
         get_status(&state, &path, &alice.token).await,
         StatusCode::OK,
         "the account is still there"
     );
+
+    let (status, text) =
+        delete_json_raw(&state, &path, &alice.token, delete("hunter2hunter2")).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{text}");
+    assert_eq!(state.refusal_wait.waits(), 1, "the right one did not wait");
 }
 
 /// The storage route's OpenAPI text gives the length of its largest
