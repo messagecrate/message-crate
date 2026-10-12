@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ApiError } from "../../lib/api";
+import { useRouteMutation } from "../../lib/routeQuery";
 import { createAccount } from "../../lib/serverApi";
 import type { components } from "../../lib/serverApi.types";
 import { useAsyncAction } from "../../lib/useAsyncAction";
@@ -31,6 +32,12 @@ export function useCreateAccountForm({
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const { busy, error, run } = useAsyncAction();
+  // The owner's new account joins User Accounts and the storage counts, so
+  // the account's screens fetch again once the write settles. A stranger's
+  // registration on the Login screen has no account's screens yet.
+  const create = useRouteMutation({
+    mutationFn: (body: Parameters<typeof createAccount>[0]) => createAccount(body),
+  });
 
   const submit = () => {
     if (busy) return;
@@ -46,7 +53,7 @@ export function useCreateAccountForm({
       onBeforeCreate?.();
       let created: CreatedAccount;
       try {
-        created = await createAccount({
+        created = await create.mutateAsync({
           username: username.trim(),
           password,
           preferred_name: null,

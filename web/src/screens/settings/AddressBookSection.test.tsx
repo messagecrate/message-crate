@@ -1,19 +1,22 @@
 /** @vitest-environment jsdom */
 
+import { QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/api";
+import { keys } from "../../lib/queryKeys";
 import { loadAddressBook } from "../../lib/serverApi";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
+import { renderWithProviders, testQueryClient } from "../../test/providers";
+import { freshEntries, seedEntries } from "../../test/staleEntries";
 import { MIB } from "../../test/units";
 import { setupUser } from "../../test/user";
 import { AddressBookSection } from "./AddressBookSection";
 
 vi.mock("../../lib/serverApi", () => ({ loadAddressBook: vi.fn() }));
 
-const invalidateAccount = vi.fn();
-vi.mock("../../lib/routeQuery", () => ({
-  useRouteCache: () => ({ invalidateAccount }),
+vi.mock("../../lib/authContext", () => ({
+  useAuth: () => ({ accountId: 7 }),
 }));
 
 const post = vi.mocked(loadAddressBook);
@@ -50,13 +53,13 @@ describe("AddressBookSection", () => {
   });
 
   it("offers Append and Edit, with Append chosen", () => {
-    render(<AddressBookSection />);
+    renderWithProviders(<AddressBookSection />);
     expect((screen.getByLabelText(/^Append/) as HTMLInputElement).checked).toBe(true);
     expect((screen.getByLabelText(/^Edit/) as HTMLInputElement).checked).toBe(false);
   });
 
   it("is one radio group, named and moved through with the arrow keys", async () => {
-    render(<AddressBookSection />);
+    renderWithProviders(<AddressBookSection />);
     const group = screen.getByRole("radiogroup", { name: "How to load it" });
 
     const user = setupUser();
@@ -70,7 +73,7 @@ describe("AddressBookSection", () => {
 
   it("sends the file's text as an Append unless Edit is chosen", async () => {
     post.mockResolvedValue(NOTHING);
-    render(<AddressBookSection />);
+    renderWithProviders(<AddressBookSection />);
     chooseFile("address-book.csv", FILE);
     await settle();
     expect(post).toHaveBeenCalledTimes(1);
@@ -84,7 +87,7 @@ describe("AddressBookSection", () => {
   });
 
   it("takes a .csv file only, and refuses a vCard without asking the server", async () => {
-    render(<AddressBookSection />);
+    renderWithProviders(<AddressBookSection />);
     expect(screen.getByLabelText("Address book file").getAttribute("accept")).toBe(".csv,text/csv");
     chooseFile("Contacts.vcf", "BEGIN:VCARD\nEND:VCARD\n");
 
@@ -104,7 +107,7 @@ describe("AddressBookSection", () => {
       groups_created: 7,
       notes: [],
     });
-    render(<AddressBookSection />);
+    renderWithProviders(<AddressBookSection />);
     chooseFile("address-book.csv", FILE);
 
     await settle();
@@ -131,7 +134,7 @@ describe("AddressBookSection", () => {
       "row 5: 447700900123 has no +, so it became the new identity 447700900123",
     ];
     post.mockResolvedValue({ ...NOTHING, notes });
-    render(<AddressBookSection />);
+    renderWithProviders(<AddressBookSection />);
     chooseFile("address-book.csv", FILE);
 
     await settle();
@@ -145,7 +148,7 @@ describe("AddressBookSection", () => {
 
   it("shows no list of numbers when every number kept its +", async () => {
     post.mockResolvedValue(NOTHING);
-    render(<AddressBookSection />);
+    renderWithProviders(<AddressBookSection />);
     chooseFile("address-book.csv", FILE);
 
     await settle();
@@ -153,13 +156,22 @@ describe("AddressBookSection", () => {
     expect(screen.queryByLabelText("Numbers written without +")).toBeNull();
   });
 
-  it("marks the account's cache stale after a load", async () => {
+  it("marks the contacts and Contact Groups stale after a load", async () => {
+    // A load renames contacts, moves identities and adds Contact Groups.
+    const shown = [keys.contacts.all, keys.contactGroups.all];
+    const client = testQueryClient();
+    seedEntries(client, 7, shown);
     post.mockResolvedValue(NOTHING);
-    render(<AddressBookSection />);
+    render(
+      <QueryClientProvider client={client}>
+        <AddressBookSection />
+      </QueryClientProvider>,
+    );
     chooseFile("address-book.csv", FILE);
 
     await settle();
-    expect(invalidateAccount).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("What the load changed")).toBeInTheDocument();
+    expect(freshEntries(client, 7, shown)).toEqual([]);
   });
 
   it("lists every row a refused load names, each on its own line", async () => {
@@ -174,7 +186,7 @@ describe("AddressBookSection", () => {
         ],
       }),
     );
-    render(<AddressBookSection />);
+    renderWithProviders(<AddressBookSection />);
     chooseFile("address-book.csv", FILE);
     await settle();
 
@@ -188,20 +200,27 @@ describe("AddressBookSection", () => {
       "Row 7: identity is blank",
     ]);
     expect(alert.textContent).toContain("Nothing was loaded.");
-    expect(invalidateAccount).not.toHaveBeenCalled();
   });
 
-  it("shows the reason when the load fails some other way", async () => {
+  it("shows the reason when the load fails some other way, and marks the account stale as every write does", async () => {
+    const shown = [keys.contacts.all, keys.contactGroups.all];
+    const client = testQueryClient();
+    seedEntries(client, 7, shown);
     post.mockRejectedValue(new Error("address book is empty"));
-    render(<AddressBookSection />);
+    render(
+      <QueryClientProvider client={client}>
+        <AddressBookSection />
+      </QueryClientProvider>,
+    );
     chooseFile("address-book.csv", "  ");
     await settle();
 
     expect(screen.getByText("Address book is empty")).toBeInTheDocument();
+    expect(freshEntries(client, 7, shown)).toEqual([]);
   });
 
   it("refuses a file past the size the server accepts, without asking the server", async () => {
-    render(<AddressBookSection />);
+    renderWithProviders(<AddressBookSection />);
     const input = screen.getByLabelText("Address book file") as HTMLInputElement;
     const file = new File(["x"], "huge.csv");
     Object.defineProperty(file, "size", { value: 9 * MIB });

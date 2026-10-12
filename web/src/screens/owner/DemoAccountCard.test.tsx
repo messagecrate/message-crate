@@ -1,14 +1,17 @@
 /** @vitest-environment jsdom */
 
+import { QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { keys } from "../../lib/queryKeys";
 import {
   advanceTimersAndSettle,
   settle,
   startFakeClock,
   stopFakeClock,
 } from "../../test/fakeTimers";
-import { Providers } from "../../test/providers";
+import { Providers, testQueryClient } from "../../test/providers";
+import { freshEntries, seedEntries } from "../../test/staleEntries";
 import { setupUser } from "../../test/user";
 import { BUILD_POLL_MS, DemoAccountCard } from "./DemoAccountCard";
 
@@ -96,6 +99,27 @@ describe("DemoAccountCard", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Building the Demo Account");
     await advanceTimersAndSettle(1);
     expect(screen.getByRole("button", { name: "Reset Demo Account" })).toBeEnabled();
+  });
+
+  it("marks User Accounts stale when a build ends, and not before", async () => {
+    // The build adds the Demo Account to the owner's list, which the server
+    // finishes on its own after the write that started it has settled.
+    const shown = [keys.ownerAccounts.all];
+    const client = testQueryClient();
+    seedEntries(client, 1, shown);
+    getDemoAccount.mockResolvedValueOnce(building).mockResolvedValue(ready);
+    render(
+      <QueryClientProvider client={client}>
+        <DemoAccountCard />
+      </QueryClientProvider>,
+    );
+    await settle();
+
+    expect(screen.getByRole("status")).toHaveTextContent("Building the Demo Account");
+    expect(freshEntries(client, 1, shown)).toEqual(shown);
+    await advanceTimersAndSettle(BUILD_POLL_MS);
+    expect(screen.getByRole("button", { name: "Reset Demo Account" })).toBeEnabled();
+    expect(freshEntries(client, 1, shown)).toEqual([]);
   });
 
   it("says why the last build failed and offers to add it again", async () => {

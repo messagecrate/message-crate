@@ -34,7 +34,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { ApiError } from "./api";
 import { useAuth } from "./authContext";
 import { PAGE_SIZE_FILL, PAGE_SIZE_FIRST, PAGE_SIZE_MAX } from "./listPaging";
@@ -379,10 +379,11 @@ export type RouteCacheEntries = readonly [readonly unknown[], unknown][];
  * The cache operations a write needs, with the account already in front of
  * every key.
  *
- * A mutation draws its change before the server answers, puts the old value
- * back when the server refuses, and marks the account stale once it settles. Each of
- * those is one call on the query client — this is that client with the account
- * rule applied, and nothing else. It is not a cache.
+ * A mutation draws its change before the server answers and puts the old
+ * value back when the server refuses. Each of those is one call on the query
+ * client — this is that client with the account rule applied, and nothing
+ * else. It is not a cache. Marking the account stale once a write settles is
+ * `useMarkAccountStale`'s.
  */
 type RouteCache = {
   /** What the cache holds under one key, without fetching. */
@@ -399,22 +400,6 @@ type RouteCache = {
   patch: <T>(prefix: RouteQueryKey, update: (entry: T | undefined) => T | undefined) => void;
   /** Put snapshotted entries back where they came from. */
   restore: (entries: RouteCacheEntries) => void;
-  /**
-   * Mark every entry of the logged-in account stale, so whatever is on screen
-   * refetches. Every write calls this once it settles: `useRouteMutation`
-   * calls it for each write made with TanStack Query.
-   *
-   * The whole account, not a list of the entries one write changes: six
-   * writes once left out entries they changed, and the screens showing those
-   * kept the old state. TanStack Query refetches only the entries on screen,
-   * so the cost is a few small requests. See
-   * `docs/adr/0002-one-way-to-fetch-data-in-the-web-app.md`.
-   *
-   * The entries are marked before this returns. The refetches it starts are
-   * not waited for, so a write is finished when the server has answered it,
-   * not when every screen has fetched again.
-   */
-  invalidateAccount: () => void;
 };
 
 export function useRouteCache(): RouteCache {
@@ -441,10 +426,35 @@ export function useRouteCache(): RouteCache {
       restore: (entries: RouteCacheEntries) => {
         for (const [key, data] of entries) client.setQueryData(key, data);
       },
-      invalidateAccount: () => {
-        void client.invalidateQueries({ queryKey: at([]) });
-      },
     };
+  }, [client, account]);
+}
+
+/**
+ * Mark every entry of the logged-in account stale, so whatever is on screen
+ * refetches. Every write to account data calls this once it settles.
+ *
+ * A write made with TanStack Query never calls it by hand: `useRouteMutation`
+ * calls it for each one. The two calls left, in `ImportScreen` (a discard of
+ * an Import Run) and `DemoAccountCard` (the end of a build), are for writes
+ * that are not one request and its answer; ADR 0002 says why. A plain
+ * request and answer is a `useRouteMutation`, not a new call to this.
+ *
+ * The whole account, not a list of the entries one write changes: six
+ * writes once left out entries they changed, and the screens showing those
+ * kept the old state. TanStack Query refetches only the entries on screen,
+ * so the cost is a few small requests. See
+ * `docs/adr/0002-one-way-to-fetch-data-in-the-web-app.md`.
+ *
+ * The entries are marked before the returned function returns. The refetches
+ * it starts are not waited for, so a write is finished when the server has
+ * answered it, not when every screen has fetched again.
+ */
+export function useMarkAccountStale(): () => void {
+  const client = useQueryClient();
+  const account = useAccountScope();
+  return useCallback(() => {
+    void client.invalidateQueries({ queryKey: routeQueryKey(account, []) });
   }, [client, account]);
 }
 
@@ -454,7 +464,7 @@ export function useRouteCache(): RouteCache {
  * before the write's own `onSettled` runs.
  *
  * Every write to account data goes through this rather than `useMutation`,
- * because then none can leave out the `invalidateAccount` call that ADR 0002
+ * because then none can leave out the `useMarkAccountStale` call that ADR 0002
  * asks of each one. A write that left it out would leave every other screen showing
  * the old state.
  *
@@ -475,12 +485,12 @@ export function useRouteMutation<
 >(
   options: UseMutationOptions<TData, TError, TVariables, TOnMutateResult>,
 ): UseMutationResult<TData, TError, TVariables, TOnMutateResult> {
-  const cache = useRouteCache();
+  const markAccountStale = useMarkAccountStale();
   const { onSettled } = options;
   return useMutation({
     ...options,
     onSettled: (...args) => {
-      cache.invalidateAccount();
+      markAccountStale();
       return onSettled?.(...args);
     },
   });

@@ -4,7 +4,12 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
-import { useRouteCache, useRouteMutation, useRouteQuery } from "../../lib/routeQuery";
+import {
+  useMarkAccountStale,
+  useRouteCache,
+  useRouteMutation,
+  useRouteQuery,
+} from "../../lib/routeQuery";
 import { parseSelectKey } from "../../lib/selectKey";
 import { getDemoAccount, replaceDemoAccount } from "../../lib/serverApi";
 import type { components } from "../../lib/serverApi.types";
@@ -31,6 +36,7 @@ export const BUILD_POLL_MS = 1500;
  */
 export function DemoAccountCard() {
   const cache = useRouteCache();
+  const markAccountStale = useMarkAccountStale();
   const demo = useRouteQuery(keys.demoAccount.all, (signal) => getDemoAccount({ signal }), {
     refetchInterval: (query) => (query.state.data?.status === "building" ? BUILD_POLL_MS : false),
     // A build outlasts a glance at another tab, and the page should be right
@@ -55,10 +61,10 @@ export function DemoAccountCard() {
   const wasBuilding = useRef(false);
   useEffect(() => {
     if (wasBuilding.current && status !== undefined && status !== "building") {
-      cache.invalidateAccount();
+      markAccountStale();
     }
     wasBuilding.current = status === "building";
-  }, [status, cache]);
+  }, [status, markAccountStale]);
 
   if (demo.isPending) return null;
   if (demo.error || !demo.data) {
