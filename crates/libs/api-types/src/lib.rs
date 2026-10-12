@@ -49,18 +49,38 @@ pub const APP_VERSION_HEADER: &str = "x-message-crate-version";
 pub const MAX_IMPORT_BATCH_BYTES: usize = 64 * 1024 * 1024;
 
 /// The id each exporter writes into a conversation file's `export.source`,
-/// as written. The import stamps it on every message it writes, and
-/// search's `source:` field accepts these values and no others.
-/// `message-crate-core`'s `Exporter::source_id` is what the exporters
-/// write, and a test there fails when the two lists differ.
+/// one constant per backup type. `message-crate-core`'s
+/// `Exporter::source_id` returns these, and each exporter writes what it
+/// returns.
+pub mod source_id {
+    /// GO SMS Pro.
+    pub const GO_SMS_PRO: &str = "go-sms-pro";
+    /// iMazing.
+    pub const IMAZING: &str = "imazing";
+    /// Apple Messages, from an iPhone backup or a Mac.
+    pub const IMESSAGE: &str = "imessage";
+    /// OpenExtract.
+    pub const OPENEXTRACT: &str = "openextract";
+    /// SMS Backup & Restore.
+    pub const SMS_BACKUP_RESTORE: &str = "sms-backup-restore";
+    /// SMS Backup+.
+    pub const SMS_BACKUP_PLUS: &str = "sms-backup-plus";
+    /// WhatsApp.
+    pub const WHATSAPP: &str = "whatsapp";
+}
+
+/// Every id in [`source_id`]. The import stamps a file's id on every message
+/// it writes, and search's `source:` field accepts these values and no
+/// others. A test in `message-crate-core` fails when a backup type's id is
+/// missing here.
 pub const SOURCE_IDS: &[&str] = &[
-    "imessage",
-    "whatsapp",
-    "sms-backup-restore",
-    "imazing",
-    "openextract",
-    "go-sms-pro",
-    "sms-backup-plus",
+    source_id::IMESSAGE,
+    source_id::WHATSAPP,
+    source_id::SMS_BACKUP_RESTORE,
+    source_id::IMAZING,
+    source_id::OPENEXTRACT,
+    source_id::GO_SMS_PRO,
+    source_id::SMS_BACKUP_PLUS,
 ];
 
 /// Which app a session's requests come from. The server records it beside the

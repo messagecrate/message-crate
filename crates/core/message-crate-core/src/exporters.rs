@@ -57,14 +57,15 @@ impl Exporter {
     /// this returns, and `message_crate_api_types::SOURCE_IDS`, the list
     /// search accepts, holds every one (a test here checks it).
     pub const fn source_id(self) -> &'static str {
+        use message_crate_api_types::source_id;
         match self {
-            Self::GoSmsPro => "go-sms-pro",
-            Self::Imazing => "imazing",
-            Self::Imessage => "imessage",
-            Self::OpenExtract => "openextract",
-            Self::SmsBackupRestore => "sms-backup-restore",
-            Self::SmsBackupPlus => "sms-backup-plus",
-            Self::Whatsapp => "whatsapp",
+            Self::GoSmsPro => source_id::GO_SMS_PRO,
+            Self::Imazing => source_id::IMAZING,
+            Self::Imessage => source_id::IMESSAGE,
+            Self::OpenExtract => source_id::OPENEXTRACT,
+            Self::SmsBackupRestore => source_id::SMS_BACKUP_RESTORE,
+            Self::SmsBackupPlus => source_id::SMS_BACKUP_PLUS,
+            Self::Whatsapp => source_id::WHATSAPP,
         }
     }
 }

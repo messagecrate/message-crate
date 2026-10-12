@@ -48,7 +48,7 @@ mod tests {
     use super::run;
     use crate::emit::{ConvertExportArgs, convert_export};
     use message_crate_core::{
-        ConvertRun, LogSink, OutputFormat, SmsBackupPlusConfig, testutil::jsonl_run_config,
+        ConvertRun, LogSink, OutputFormat, SmsBackupPlusConfig, testutil::jsonl_test_run,
     };
     use std::path::Path;
 
@@ -64,7 +64,7 @@ mod tests {
     /// The error the desktop app shows for a run the exporter refuses.
     fn refusal(inputs: &[&Path], source: SmsBackupPlusConfig) -> String {
         let tmp = tempfile::tempdir().unwrap();
-        let config = jsonl_run_config(inputs, &tmp.path().join("out"), source);
+        let config = jsonl_test_run(inputs, &tmp.path().join("out"), source);
         config.run(run).unwrap_err().to_string()
     }
 

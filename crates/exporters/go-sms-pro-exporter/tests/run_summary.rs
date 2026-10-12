@@ -5,7 +5,7 @@
 
 use message_crate_core::GoSmsProConfig;
 use message_crate_core::testutil::TestRun;
-use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_run_config};
+use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_test_run};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -27,7 +27,7 @@ fn backup(xml: &str) -> Backup {
     fs::create_dir_all(&input).unwrap();
     fs::write(input.join("gosms_sys_1.xml"), xml).unwrap();
     let output = tmp.path().join("out");
-    let config = jsonl_run_config(
+    let config = jsonl_test_run(
         &[&input],
         &output,
         GoSmsProConfig {

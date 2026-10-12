@@ -3,14 +3,14 @@
 //! rows name is a note naming the picture (#1626). Without a sink the desktop
 //! app never heard of either.
 
-use message_crate_core::testutil::{collect_issues, jsonl_run_config};
+use message_crate_core::testutil::{collect_issues, jsonl_test_run};
 use message_crate_core::{ImazingConfig, RunIssue};
 use std::fs;
 use std::path::Path;
 
 /// `run()` over `input` into `output`, copying attachments, and the rows it sent.
 fn run_collecting(input: &Path, output: &Path) -> Vec<RunIssue> {
-    let mut config = jsonl_run_config(
+    let mut config = jsonl_test_run(
         &[input],
         output,
         ImazingConfig {

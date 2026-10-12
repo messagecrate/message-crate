@@ -602,8 +602,10 @@ fn every_source_carries_the_shared_form_fields() {
     }
 }
 
-/// How many backup types there are. A variant added to `Exporter` stops
-/// this match compiling until it is counted here.
+/// How many backup types there are. The variant list is written out again
+/// here on purpose: a variant added to `Exporter` stops this match compiling
+/// until it is counted, which is how the test below knows `Exporter::ALL`
+/// is complete.
 fn backup_type_count() -> usize {
     match Exporter::default() {
         Exporter::GoSmsPro

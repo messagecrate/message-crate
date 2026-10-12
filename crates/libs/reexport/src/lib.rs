@@ -104,7 +104,7 @@ fn convert_export(
     let (inputs, output_dir) = prepare_outputs(&[input_dir.to_path_buf()], &output.directory)?;
 
     let detected = detect_ir_export(input_dir)?;
-    let transforms = ExportTransforms::from_config(context, output);
+    let transforms = ExportTransforms::new(context, output);
     let copy_attachments = transforms.copies_attachments();
 
     // The input is read before the output is cleaned, so an input the read

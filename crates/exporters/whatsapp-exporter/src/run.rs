@@ -287,7 +287,7 @@ mod tests {
     use crate::wtsexporter::WtsexporterArgs;
     use message_crate_core::{
         WhatsappConfig,
-        testutil::{TestRun, jsonl_run_config},
+        testutil::{TestRun, jsonl_test_run},
     };
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -319,7 +319,7 @@ mod tests {
             // A directory above the backup named as the input.
             (vec![backup.as_path()], tmp.path().to_path_buf()),
         ] {
-            let config = jsonl_run_config(
+            let config = jsonl_test_run(
                 &inputs,
                 &output,
                 WhatsappConfig {
@@ -351,7 +351,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let output = tmp.path().join("out");
         fs::create_dir_all(&output).unwrap();
-        let mut test_run = jsonl_run_config(&[], &output, WhatsappConfig::default());
+        let mut test_run = jsonl_test_run(&[], &output, WhatsappConfig::default());
         test_run.context.scratch_dir = tmp.path().join("scratch");
         (tmp, output, test_run)
     }

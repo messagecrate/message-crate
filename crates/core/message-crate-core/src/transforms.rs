@@ -41,7 +41,7 @@ impl ExportTransforms {
     /// `output` (obfuscation is on when either its flag or a seed is set),
     /// plus the run's log and progress sinks from `context` so the write tail
     /// reports through the same hooks the exporter does.
-    pub fn from_config(context: &RunContext, output: &OutputConfig) -> Self {
+    pub fn new(context: &RunContext, output: &OutputConfig) -> Self {
         Self {
             media: output.media.mode,
             compress: output.media.compress.clone(),
@@ -91,11 +91,11 @@ mod tests {
 
     /// The transforms of a run that writes `output`, reporting nowhere.
     fn transforms(output: &OutputConfig) -> ExportTransforms {
-        ExportTransforms::from_config(&RunContext::new("/cache"), output)
+        ExportTransforms::new(&RunContext::new("/cache"), output)
     }
 
     #[test]
-    fn from_config_obfuscates_when_the_flag_is_set_without_a_seed() {
+    fn new_obfuscates_when_the_flag_is_set_without_a_seed() {
         let t = transforms(&output(
             ObfuscateConfig {
                 enabled: true,
@@ -108,7 +108,7 @@ mod tests {
     }
 
     #[test]
-    fn from_config_obfuscates_when_only_a_seed_is_given() {
+    fn new_obfuscates_when_only_a_seed_is_given() {
         let t = transforms(&output(
             ObfuscateConfig {
                 enabled: false,
@@ -121,13 +121,13 @@ mod tests {
     }
 
     #[test]
-    fn from_config_leaves_obfuscation_off_without_flag_or_seed() {
+    fn new_leaves_obfuscation_off_without_flag_or_seed() {
         let t = transforms(&output(ObfuscateConfig::default(), MediaConfig::default()));
         assert!(!t.obfuscate);
     }
 
     #[test]
-    fn from_config_carries_the_media_mode_compress_options_and_sinks() {
+    fn new_carries_the_media_mode_compress_options_and_sinks() {
         let compress = CompressOptions {
             max_resolution: MaxResolution::P720,
             max_fps: 24.0,
@@ -150,7 +150,7 @@ mod tests {
         context.progress =
             ProgressSink::unpaced(move |event| events_seen.lock().unwrap().push(event));
 
-        let t = ExportTransforms::from_config(&context, &out);
+        let t = ExportTransforms::new(&context, &out);
         t.log.emit("a line");
         t.progress.emit(ProgressEvent::Parse { done: 1, total: 2 });
 

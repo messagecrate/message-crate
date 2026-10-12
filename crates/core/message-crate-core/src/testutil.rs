@@ -357,7 +357,7 @@ impl<S> TestRun<S> {
 /// write JSONL into `output`, copy no attachments and keep every name, so
 /// the result shows only what the exporter itself did. Scratch data goes
 /// under [`test_scratch_dir`].
-pub fn jsonl_run_config<S>(inputs: &[&Path], output: &Path, source: S) -> TestRun<S> {
+pub fn jsonl_test_run<S>(inputs: &[&Path], output: &Path, source: S) -> TestRun<S> {
     TestRun {
         context: RunContext::new(test_scratch_dir()),
         output: OutputConfig {

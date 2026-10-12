@@ -214,10 +214,10 @@ pub struct ConvertRun {
 
 impl ConvertRun {
     /// The run-wide settings of a run in `context` that writes `output`, with
-    /// the transforms [`ExportTransforms::from_config`] builds.
+    /// the transforms [`ExportTransforms::new`] builds.
     pub fn new(context: &RunContext, output: &OutputConfig) -> Self {
         Self {
-            transforms: ExportTransforms::from_config(context, output),
+            transforms: ExportTransforms::new(context, output),
             output_format: output.format,
             cancel: context.cancel.clone(),
             resume: output.resume,

@@ -4,7 +4,7 @@
 //! error, passed them.
 
 use crate::emit::{ConvertExportArgs, convert_export};
-use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_run_config};
+use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_test_run};
 use message_crate_core::{
     CancelFlag, ConvertRun, LogSink, OutputFormat, ProgressSink, SmsBackupRestoreConfig,
 };
@@ -53,7 +53,7 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
     let tmp = tempfile::tempdir().unwrap();
     let input = backup_file(tmp.path());
     let output = tmp.path().join("out");
-    let mut config = jsonl_run_config(
+    let mut config = jsonl_test_run(
         &[&input],
         &output,
         SmsBackupRestoreConfig {
@@ -151,7 +151,7 @@ fn convert_and_import_word_every_count_and_error_alike() {
     let tmp = tempfile::tempdir().unwrap();
     let input = backup_file(tmp.path());
     let output = tmp.path().join("out");
-    let config = jsonl_run_config(
+    let config = jsonl_test_run(
         &[&input],
         &output,
         SmsBackupRestoreConfig {

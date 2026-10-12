@@ -2,7 +2,7 @@
 //! shows. The smoke tests call `convert_export` directly, so a `run()` that
 //! wrote nothing, or a report that dropped the bad-date count, passed them.
 
-use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_run_config};
+use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_test_run};
 use message_crate_core::{OpenExtractConfig, RunIssue};
 use std::fs;
 
@@ -19,7 +19,7 @@ fn run_writes_the_conversation_and_counts_the_bad_date_row() {
     let input = tmp.path().join("all_conversations.csv");
     fs::write(&input, ALL_CONVERSATIONS_CSV).unwrap();
     let output = tmp.path().join("out");
-    let config = jsonl_run_config(&[&input], &output, OpenExtractConfig {});
+    let config = jsonl_test_run(&[&input], &output, OpenExtractConfig {});
 
     let result = config.run(crate::run).expect("run");
 
@@ -56,7 +56,7 @@ fn run_sends_an_import_error_for_an_unreadable_csv_and_a_note_for_a_name_only_ch
     )
     .unwrap();
     let output = tmp.path().join("out");
-    let mut config = jsonl_run_config(&[&input], &output, OpenExtractConfig {});
+    let mut config = jsonl_test_run(&[&input], &output, OpenExtractConfig {});
     let issues = collect_issues(&mut config.context);
 
     config.run(crate::run).expect("run");

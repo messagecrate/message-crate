@@ -807,3 +807,18 @@ fn only_a_whatsapp_import_waits_for_a_download() {
         );
     }
 }
+
+/// Every backup type has a key the Import screen can send. A backup type
+/// added to `Exporter` and left out of `IMPORT_SOURCES` compiles, but it
+/// could never be chosen (#2102).
+#[test]
+fn every_backup_type_has_an_import_screen_key() {
+    for exporter in message_crate_core::Exporter::ALL {
+        assert!(
+            exporters::IMPORT_SOURCES
+                .iter()
+                .any(|source| source.exporter == exporter),
+            "{exporter:?} has no Import screen key"
+        );
+    }
+}

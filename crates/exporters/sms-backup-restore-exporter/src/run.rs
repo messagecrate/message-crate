@@ -36,7 +36,7 @@ pub fn run(
 
 #[cfg(test)]
 mod tests {
-    use message_crate_core::{SmsBackupRestoreConfig, testutil::jsonl_run_config};
+    use message_crate_core::{SmsBackupRestoreConfig, testutil::jsonl_test_run};
     use std::fs;
     use std::path::Path;
 
@@ -65,7 +65,7 @@ mod tests {
         .unwrap();
 
         for output in [input.clone(), tmp.path().to_path_buf()] {
-            let config = jsonl_run_config(
+            let config = jsonl_test_run(
                 &[&xml],
                 &output,
                 SmsBackupRestoreConfig {

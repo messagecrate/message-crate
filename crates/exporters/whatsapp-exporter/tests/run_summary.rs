@@ -2,7 +2,7 @@
 //! shows. The smoke tests call `convert_json` directly, so a `run()` that
 //! wrote nothing, or a report that dropped the bad-date count, passed them.
 
-use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_run_config};
+use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_test_run};
 use message_crate_core::{RunIssue, WhatsappConfig};
 use std::fs;
 
@@ -42,7 +42,7 @@ fn run_writes_the_conversation_and_counts_the_bad_date_rows() {
     )
     .unwrap();
     let output = tmp.path().join("out");
-    let config = jsonl_run_config(
+    let config = jsonl_test_run(
         &[],
         &output,
         WhatsappConfig {
@@ -88,7 +88,7 @@ fn run_records_the_form_owner_on_the_header() {
     )
     .unwrap();
     let output = tmp.path().join("out");
-    let config = jsonl_run_config(
+    let config = jsonl_test_run(
         &[],
         &output,
         WhatsappConfig {
@@ -130,7 +130,7 @@ fn run_sends_a_note_for_a_media_file_the_backup_does_not_hold() {
     )
     .unwrap();
     let output = tmp.path().join("out");
-    let mut config = jsonl_run_config(
+    let mut config = jsonl_test_run(
         &[],
         &output,
         WhatsappConfig {
