@@ -128,6 +128,10 @@ pub(crate) struct AuthRateLimits {
     /// The time every count reads, when a test has stopped the clock.
     /// `None` reads the system clock.
     frozen_at: Option<Instant>,
+    /// How long the last login as an unknown username took to refuse once
+    /// counted, Argon2, the Audit Trail entry and the waits for both
+    /// included, in nanoseconds. A login refused unchecked waits this long.
+    unknown_refusal_nanos: Arc<AtomicU64>,
 }
 
 impl AuthRateLimits {
@@ -138,7 +142,25 @@ impl AuthRateLimits {
         Self {
             buckets: Arc::default(),
             frozen_at: Some(now),
+            unknown_refusal_nanos: Arc::default(),
         }
+    }
+
+    /// Remember how long a login as an unknown username took to refuse,
+    /// from its count to its answer.
+    pub(crate) fn record_unknown_refusal(&self, took: Duration) {
+        let nanos = u64::try_from(took.as_nanos()).unwrap_or(u64::MAX);
+        self.unknown_refusal_nanos.store(nanos, Ordering::Relaxed);
+    }
+
+    /// Wait as long as the last login as an unknown username took to refuse,
+    /// without running Argon2 or writing anything. A login refused unchecked,
+    /// because the server's count of them is full, then answers after about
+    /// the time a checked one does, so its timing does not say the username
+    /// names no account, and it costs no CPU.
+    pub(crate) async fn wait_as_long_as_an_unknown_refusal(&self) {
+        let nanos = self.unknown_refusal_nanos.load(Ordering::Relaxed);
+        tokio::time::sleep(Duration::from_nanos(nanos)).await;
     }
 
     fn now(&self) -> Instant {
@@ -352,8 +374,7 @@ pub(crate) async fn verify_login_password(
     password: &str,
 ) -> Result<bool, ApiError> {
     let (hash, password) = (password_hash.map(str::to_owned), password.to_owned());
-    let started = Instant::now();
-    let verified = run_argon2("password check", move || {
+    run_argon2("password check", move || {
         Ok(match hash.as_deref() {
             None | Some("") => {
                 let _ = verify_password(dummy_password_hash(), &password);
@@ -362,23 +383,7 @@ pub(crate) async fn verify_login_password(
             Some(hash) => verify_password(hash, &password),
         })
     })
-    .await?;
-    let took = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-    LAST_LOGIN_CHECK_NANOS.store(took, Ordering::Relaxed);
-    Ok(verified)
-}
-
-/// How long the last [`verify_login_password`] took, waiting for its permit
-/// included, in nanoseconds.
-static LAST_LOGIN_CHECK_NANOS: AtomicU64 = AtomicU64::new(0);
-
-/// Wait as long as the last login's password check took, without running
-/// Argon2. A login refused unchecked, because the count of logins as unknown
-/// usernames is full, takes about the time a checked one does, so its timing
-/// does not say the username names no account, and it costs no CPU.
-pub(crate) async fn wait_as_long_as_a_login_check() {
-    let nanos = LAST_LOGIN_CHECK_NANOS.load(Ordering::Relaxed);
-    tokio::time::sleep(Duration::from_nanos(nanos)).await;
+    .await
 }
 
 /// Hash the owner's password, on the blocking thread pool. The owner must

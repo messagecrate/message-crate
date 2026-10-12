@@ -915,24 +915,30 @@ rejected below, and a count that let the holder past it would be a count a
 guesser could pass too.
 
 Logins as usernames that name no account are also counted once for the whole
-server, at 120 a minute, checked first, before the count for the username,
-the Argon2 run that keeps their timing equal with a real account's, and the
-Audit Trail entry. Past it, such a login is refused unchecked: no Argon2, no
-Audit Trail entry, no log line of its own. It answers `401 Unauthorized` like a
-wrong password, after waiting as long as the last password check took. A
-count per username alone lets a script that tries a new username each time
-run Argon2 and write to the Audit Trail as fast as it likes. The limit is
-well above what people mistyping their usernames produce, so the count never
-stops a person.
+server, at a higher limit than an account's (`UNKNOWN_USERNAME_RATE_MAX` in
+`crates/server/server/src/credentials.rs`; the developer reference does not
+give it, because nothing past it answers `429`). The count is checked first,
+before the count for the username, the Argon2 run that keeps their timing
+equal with a real account's, and the Audit Trail entry. Past it, such a login
+is refused unchecked: no Argon2, no Audit Trail entry, no log line of its
+own. It still counts under its username, and answers `401 Unauthorized` like
+a wrong password, after waiting as long as the last checked refusal of an
+unknown username took. A count per username alone lets a script that tries a
+new username each time run Argon2 and write to the Audit Trail as fast as it
+likes. The limit is well above what people mistyping their usernames
+produce, so the count never stops a person.
 
 Rejected: answering `429 Too Many Requests` past the count for unknown
 usernames. Only usernames that name no account would get it, so once a
 stranger had filled the count, a `401` would tell them that a username names
 an account. The login works to hide that: the dummy Argon2 run, and one
-answer for a wrong password, an unknown username and a disabled account.
-Rejected too: one count for every login, known usernames included. It would
-hide nothing more, and a stranger filling it would keep every account on the
-server from logging in.
+answer for a wrong password, an unknown username and a disabled account. For
+the same reason the username's own count is kept past the server's count, so
+its `429` comes at the same attempt as a real account's. Rejected too: one
+count for every login, known usernames included. It would hide nothing more,
+and a stranger filling it would keep every account on the server from
+logging in.
+
 `POST /v1/accounts` and `POST /v1/server/claim`
 count once for the whole server, because they guard against a flood of new
 accounts, and a count per name lets a script that tries a new name each time

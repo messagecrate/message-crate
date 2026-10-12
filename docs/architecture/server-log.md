@@ -104,8 +104,8 @@ with the account's id (none for a username that names no account), the
 reason (`unknown_username`, `wrong_password` or `account_disabled`) and the
 connecting app and its Build. A login as an unknown username refused
 unchecked, because the count of them for the whole server is full, leaves
-none: that count's own line says so once. A rate-limit count that fills leaves one `WARN`
-line with the count's kind (`password`, `unknown_username`,
+none: that count's own line says so once. A rate-limit count that fills
+leaves one `WARN` line with the count's kind (`password`, `unknown_username`,
 `unknown_usernames`, `register` or `claim`), the account's id when it is a
 password's, and `retry_after_secs`. It writes that line once, when it first
 refuses an attempt, and again only after it has emptied.

@@ -4,6 +4,8 @@
 //! reading it says which account the bearer token names, and logging out
 //! ends it. The password rules it applies live in `credentials`.
 
+use std::time::Instant;
+
 use axum::extract::State;
 use axum::http::HeaderMap;
 use serde::{Deserialize, Serialize};
@@ -11,7 +13,6 @@ use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::credentials::{
     AuthRateLimits, MAX_PASSWORD_BYTES, RateBucket, normalize_username, verify_login_password,
-    wait_as_long_as_a_login_check,
 };
 use crate::db::audit_trail::{self, AuditReason};
 use crate::db::session_tokens::ConnectingApp;
@@ -129,21 +130,27 @@ fn invalid_login() -> ApiError {
 /// server, then under the username. `Ok(false)` when the server's count is
 /// full, and the login is to be refused unchecked.
 ///
-/// The server's count comes first, so a login it refuses touches no count of
-/// its own username and adds no bucket. A login the username's count refuses
-/// is given back to the server's count, because a refused attempt is not
-/// counted.
+/// A login the username's count refuses is given back to the server's
+/// count, because a refused attempt is not counted. The username's count is
+/// kept past the server's count too, so its `429` comes at the same attempt
+/// as a real account's whether or not the server's count is full, and does
+/// not tell a stranger which usernames name an account.
 fn count_unknown_username(limits: &AuthRateLimits, username: &str) -> Result<bool, ApiError> {
-    let server_hit = match limits.count(&RateBucket::UnknownUsernames) {
-        Ok(hit) => hit,
-        Err(ApiError::RateLimited { .. }) => return Ok(false),
-        Err(err) => return Err(err),
-    };
-    if let Err(err) = limits.count(&RateBucket::unknown_username(username)) {
-        limits.give_back(&RateBucket::UnknownUsernames, server_hit)?;
-        return Err(err);
+    let own = RateBucket::unknown_username(username);
+    match limits.count(&RateBucket::UnknownUsernames) {
+        Ok(server_hit) => {
+            if let Err(err) = limits.count(&own) {
+                limits.give_back(&RateBucket::UnknownUsernames, server_hit)?;
+                return Err(err);
+            }
+            Ok(true)
+        }
+        Err(ApiError::RateLimited { .. }) => {
+            limits.count(&own)?;
+            Ok(false)
+        }
+        Err(err) => Err(err),
     }
-    Ok(true)
 }
 
 /// Log in: verify a local username and password and answer the Session, a
@@ -209,12 +216,13 @@ pub async fn create_session(
         None => {
             if !count_unknown_username(limits, &username)? {
                 drop(conn);
-                wait_as_long_as_a_login_check().await;
+                limits.wait_as_long_as_an_unknown_refusal().await;
                 return Err(invalid_login());
             }
             None
         }
     };
+    let counted_at = Instant::now();
     // Refused logins for usernames nobody holds are kept for a fixed time,
     // and a login is when the old ones go.
     audit_trail::trim_refused_logins(&mut conn).await?;
@@ -244,6 +252,7 @@ pub async fn create_session(
             app,
         )
         .await?;
+        limits.record_unknown_refusal(counted_at.elapsed());
         return Err(invalid_login());
     };
 

@@ -679,6 +679,28 @@ async fn logins_as_ever_new_unknown_usernames_are_refused_unchecked_past_the_ser
         refused_logins(&state).await,
         i64::try_from(max).unwrap() + 1
     );
+
+    // An unknown username and a real account still reach `429` at the same
+    // attempt, so the full count tells nothing either way.
+    for username in ["another-nobody", "alice"] {
+        let already = usize::from(username == "alice");
+        for attempt in already..crate::credentials::AUTH_RATE_MAX {
+            let (status, text) = log_in_raw(&state, username, "guess").await;
+            expect_problem_for(
+                &format!("{username}, attempt {attempt}"),
+                status,
+                &text,
+                ProblemType::InvalidCredentials,
+            );
+        }
+        let (status, text) = log_in_raw(&state, username, "guess").await;
+        expect_problem_for(
+            &format!("{username}, past the limit"),
+            status,
+            &text,
+            ProblemType::RateLimited,
+        );
+    }
 }
 
 /// A login the username's own count refuses is given back to the server's
