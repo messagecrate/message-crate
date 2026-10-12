@@ -22,10 +22,11 @@ pub(crate) struct KeyedLocks {
     /// A `std` mutex: it is only ever held for one map operation, never
     /// across an `.await`, and `Drop` cannot await.
     map: Arc<StdMutex<LockMap>>,
-    /// Told each time a task finds its key's mutex held and starts to wait,
-    /// so a test can act once a task is waiting rather than after a sleep.
+    /// The key of each task that found its key's mutex held and started to
+    /// wait, so a test can act once a task waits on a key rather than after
+    /// a sleep.
     #[cfg(test)]
-    waiting: Arc<tokio::sync::Notify>,
+    waiting: Arc<tokio::sync::watch::Sender<Vec<String>>>,
 }
 
 /// Holds the key's mutex until dropped.
@@ -47,7 +48,7 @@ impl KeyedLocks {
             Ok(guard) => guard,
             Err(_) => {
                 #[cfg(test)]
-                self.waiting.notify_one();
+                self.waiting.send_modify(|keys| keys.push(key.clone()));
                 mutex.lock_owned().await
             }
         };
@@ -67,11 +68,19 @@ impl KeyedLocks {
         self.map.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Wait until a task has found its key's mutex held and is waiting for
-    /// it, or return at once when one has since the last call.
+    /// Wait until a task has found the mutex for `key` held and is waiting
+    /// for it. Each task that waited is counted once, so the next call waits
+    /// for another.
     #[cfg(test)]
-    pub(crate) async fn a_task_waits(&self) {
-        self.waiting.notified().await;
+    pub(crate) async fn a_task_waits(&self, key: &str) {
+        let mut waited = self.waiting.subscribe();
+        // The sender lives in `self`, so the wait cannot see it dropped.
+        let _ = waited.wait_for(|keys| keys.iter().any(|k| k == key)).await;
+        self.waiting.send_modify(|keys| {
+            if let Some(at) = keys.iter().position(|k| k == key) {
+                keys.remove(at);
+            }
+        });
     }
 
     /// Number of keys currently known. Tests use it to show the map shrinks.
@@ -119,7 +128,7 @@ mod tests {
                 locks.len()
             })
         };
-        locks.a_task_waits().await;
+        locks.a_task_waits("a:1").await;
         assert_eq!(locks.len(), 1);
         drop(first);
         // The waiter held the entry, so it was still there when it ran.

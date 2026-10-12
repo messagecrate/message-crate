@@ -1825,8 +1825,9 @@ async fn deleting_messages_waits_for_a_batch_in_progress() {
     });
     // The delete reaches the account's import lock, finds the batch holding
     // it, and waits.
+    let key = alice.account_id.to_string();
     tokio::select! {
-        () = state.account_import_locks.a_task_waits() => {}
+        () = state.account_import_locks.a_task_waits(&key) => {}
         status = &mut delete => panic!(
             "the delete finished ({status:?}) while a batch held the account's import lock"
         ),
