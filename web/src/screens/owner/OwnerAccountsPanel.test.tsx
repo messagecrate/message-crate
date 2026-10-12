@@ -12,8 +12,9 @@
 
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { account } from "../../test/apiShapes";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { mockedAuth, Providers } from "../../test/providers";
 import { OwnerAccountsPanel } from "./OwnerAccountsPanel";
 
@@ -26,10 +27,17 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
   listAccounts: (...a: unknown[]) => listAccounts(...a),
 }));
 
-afterEach(cleanup);
+beforeEach(() => {
+  startFakeClock();
+});
 
-async function rowOf(username: string): Promise<HTMLElement> {
-  const cell = await screen.findByText(username);
+afterEach(() => {
+  cleanup();
+  stopFakeClock();
+});
+
+function rowOf(username: string): HTMLElement {
+  const cell = screen.getByText(username);
   const row = cell.closest("tr");
   if (!row) throw new Error(`no row for ${username}`);
   return row;
@@ -51,12 +59,13 @@ describe("OwnerAccountsPanel", () => {
         </MemoryRouter>
       </Providers>,
     );
+    await settle();
 
-    expect(within(await rowOf("bob")).getByText("No password")).toBeInTheDocument();
-    expect(within(await rowOf("carol")).getByText("No password")).toBeInTheDocument();
-    expect(within(await rowOf("carol")).getByText("Disabled")).toBeInTheDocument();
+    expect(within(rowOf("bob")).getByText("No password")).toBeInTheDocument();
+    expect(within(rowOf("carol")).getByText("No password")).toBeInTheDocument();
+    expect(within(rowOf("carol")).getByText("Disabled")).toBeInTheDocument();
     for (const username of ["admin", "alice", "demo"]) {
-      expect(within(await rowOf(username)).queryByText("No password")).not.toBeInTheDocument();
+      expect(within(rowOf(username)).queryByText("No password")).not.toBeInTheDocument();
     }
   });
 });
