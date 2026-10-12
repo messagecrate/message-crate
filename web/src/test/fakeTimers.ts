@@ -8,6 +8,7 @@
  * timers started land.
  */
 
+import { defaultScheduler, notifyManager } from "@tanstack/react-query";
 import { act } from "@testing-library/react";
 import { vi } from "vitest";
 
@@ -38,4 +39,62 @@ export async function advanceTimersAndSettle(ms: number): Promise<void> {
  */
 export function lendTestingLibraryTheFakeClock(): void {
   vi.stubGlobal("jest", { advanceTimersByTime: (ms: number) => vi.advanceTimersByTime(ms) });
+}
+
+/**
+ * What a test that renders React runs on the fake clock: the timers a
+ * debounce, a poll, TanStack Query's notifications, and React Aria's
+ * animation frames use, and `Date`, so a screen that measures how long
+ * something has run (such as how long a poll keeps going) reads the fake
+ * clock too. `Date` starts at the real time and moves only with the clock.
+ */
+const FAKED_TIMERS = [
+  "setTimeout",
+  "clearTimeout",
+  "setInterval",
+  "clearInterval",
+  "requestAnimationFrame",
+  "cancelAnimationFrame",
+  "Date",
+] as const;
+
+/**
+ * Put the test on the fake clock and lend it to Testing Library, so nothing
+ * the screen does waits on real time. Call it before `render`, usually in
+ * `beforeEach`, and `useRealClock` in `afterEach`.
+ */
+export function useFakeClock(): void {
+  vi.useFakeTimers({ toFake: [...FAKED_TIMERS] });
+  lendTestingLibraryTheFakeClock();
+  // TanStack Query tells a screen about an answer from a setTimeout(0). The
+  // fake clock runs a zero-delay timer set while it is moving 1 ms later, so
+  // an answer a timer started (a poll's) would land only once the clock moved
+  // again. A microtask lands it within the same `settle`.
+  notifyManager.setScheduler(queueMicrotask);
+}
+
+/**
+ * Take the fake clock back, and every global the test stubbed with it
+ * (`vi.unstubAllGlobals`).
+ */
+export function useRealClock(): void {
+  notifyManager.setScheduler(defaultScheduler);
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+}
+
+/**
+ * Let everything already started land, without moving the clock: a mock's
+ * answer, the render it causes, a transition, the refetch a mutation's
+ * answer starts, and whatever those start in turn, up to the next timer due
+ * later than now. Needs `useFakeClock`.
+ *
+ * This is how the test is told that the screen has drawn what it was waiting
+ * for: when `settle` returns, the test reads the screen at once with
+ * `getBy…` or `queryBy…`. A delay the screen waits out on purpose (a
+ * debounce, a poll) is moved past with `advanceTimersAndSettle(ms)` instead.
+ * See `web/src/test/README.md`.
+ */
+export async function settle(): Promise<void> {
+  await advanceTimersAndSettle(0);
 }

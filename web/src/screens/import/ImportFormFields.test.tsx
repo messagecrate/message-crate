@@ -1,13 +1,14 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { holdDesktopJob } from "../../lib/desktopJob";
 import { EXPORT_SOURCES } from "../../lib/exportSources";
 import { IMESSAGE_METHODS, IMESSAGE_SOURCE_ID } from "../../lib/imessageImport";
 import { IMPORT_SOURCES } from "../../lib/importSources";
 import type { ToolStatus, ToolsStatus } from "../../lib/tauri";
 import type { AttachmentChoices } from "../../lib/types";
+import { DOWNLOAD_POLL_MS, OTHER_CHECK_POLL_MS } from "../../lib/useToolsStatus";
 import {
   emptyWhatsappPathStats,
   WHATSAPP_ERR_BACKUP_NOT_DIRECTORY,
@@ -16,11 +17,11 @@ import {
   WHATSAPP_METHODS,
   WHATSAPP_SOURCE_ID,
 } from "../../lib/whatsappImport";
+import { advanceTimersAndSettle, settle, useFakeClock, useRealClock } from "../../test/fakeTimers";
 import { DIRECTORY_STAT, FILE_STAT } from "../../test/pathStats";
 import { renderWithProviders as render } from "../../test/providers";
 import { MIB } from "../../test/units";
 import { setupUser } from "../../test/user";
-import { SLOW_STATE_WAIT } from "../../test/waits";
 import type { ImportFormFieldsProps } from "./formSections/types";
 import ImportFormFields from "./ImportFormFields";
 
@@ -45,11 +46,16 @@ vi.mock("../../lib/tauri", async (importOriginal) => ({
   invokeRetryToolDownloads: () => desktop.retry(),
 }));
 
+beforeEach(() => {
+  useFakeClock();
+});
+
 afterEach(() => {
   cleanup();
   desktop.isTauri = false;
   desktop.toolsStatus.mockReset();
   desktop.retry.mockReset();
+  useRealClock();
 });
 
 const copyAttachments: AttachmentChoices = {
@@ -146,7 +152,7 @@ describe("ImportFormFields iMessage methods", () => {
     expect(screen.queryByText("iPhone - iOS")).toBeNull();
     expect(screen.queryByText("iMessage - macOS")).toBeNull();
     await user.click(screen.getByLabelText("Platform"));
-    expect(await screen.findByRole("option", { name: "iPhone backup" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "iPhone backup" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "Mac Messages" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "Jailbroken iPhone" })).toBeNull();
   });
@@ -165,7 +171,7 @@ describe("ImportFormFields iMessage methods", () => {
       },
     });
     await user.click(screen.getByLabelText("Platform"));
-    expect(await screen.findByRole("option", { name: "Jailbroken iPhone" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Jailbroken iPhone" })).toBeTruthy();
   });
 
   it("marks the iPhone backup directory required and encryption password optional", () => {
@@ -217,11 +223,11 @@ describe("ImportFormFields iMessage methods", () => {
     renderForm({ attachments: compress, onAttachmentsChange });
 
     await user.click(screen.getByLabelText("Attachments"));
-    await user.click(await screen.findByRole("option", { name: "Skip" }));
+    await user.click(screen.getByRole("option", { name: "Skip" }));
     expect(onAttachmentsChange).toHaveBeenLastCalledWith({ ...compress, attachmentMedia: "skip" });
 
     await user.click(screen.getByLabelText("Target resolution"));
-    await user.click(await screen.findByRole("option", { name: "1080" }));
+    await user.click(screen.getByRole("option", { name: "1080" }));
     expect(onAttachmentsChange).toHaveBeenLastCalledWith({ ...compress, maxResolution: "1080p" });
 
     await user.type(screen.getByLabelText("Max FPS"), "6");
@@ -313,7 +319,7 @@ describe("ImportFormFields iMessage methods", () => {
     const user = setupUser();
     renderForm({ source: "whatsapp-android", onSourceChange });
     await user.click(screen.getByLabelText("Import source"));
-    expect(await screen.findByRole("option", { name: "WhatsApp" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "WhatsApp" })).toBeTruthy();
     await user.click(screen.getByRole("option", { name: "Apple Messages" }));
     expect(onSourceChange).toHaveBeenCalledWith(IMESSAGE_SOURCE_ID);
   });
@@ -323,7 +329,7 @@ describe("ImportFormFields iMessage methods", () => {
     const user = setupUser();
     renderForm({ source: "imessage-ios", onSourceChange });
     await user.click(screen.getByLabelText("Import source"));
-    expect(await screen.findByRole("option", { name: "Apple Messages" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Apple Messages" })).toBeTruthy();
     await user.click(screen.getByRole("option", { name: "WhatsApp" }));
     expect(onSourceChange).toHaveBeenCalledWith(WHATSAPP_SOURCE_ID);
   });
@@ -351,7 +357,7 @@ describe("ImportFormFields WhatsApp methods", () => {
     renderForm({ source: "whatsapp-android" });
     expect(screen.getByLabelText("Platform")).toBeTruthy();
     await user.click(screen.getByLabelText("Platform"));
-    expect(await screen.findByRole("option", { name: "Android" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Android" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "iPhone" })).toBeTruthy();
     expect(screen.getByLabelText("Decryption key (Optional)")).toBeTruthy();
     expect(screen.queryByRole("checkbox", { name: "WhatsApp Business" })).toBeNull();
@@ -572,7 +578,7 @@ describe("ImportFormFields Import button", () => {
       onPhoneCountryChange,
     });
     await user.click(screen.getByRole("button", { name: /Phone's country/ }));
-    await user.click(await screen.findByRole("option", { name: "United Kingdom (+44)" }));
+    await user.click(screen.getByRole("option", { name: "United Kingdom (+44)" }));
     expect(onPhoneCountryChange).toHaveBeenCalledWith("GB");
   });
 
@@ -895,9 +901,10 @@ describe("ImportFormFields programs the import needs", () => {
       }),
     );
     renderForm(readyWhatsapp);
+    await settle();
 
     expect(
-      await screen.findByText(
+      screen.getByText(
         "wtsexporter download failed. No connection to the download's server: dns error. A WhatsApp import can't start without wtsexporter.",
       ),
     ).toBeTruthy();
@@ -912,11 +919,10 @@ describe("ImportFormFields programs the import needs", () => {
     desktop.isTauri = true;
     desktop.toolsStatus.mockResolvedValue(status({ wtsexporter: { state: "missing" } }));
     renderForm(readyWhatsapp);
+    await settle();
 
     expect(
-      await screen.findByText(
-        "wtsexporter not found. A WhatsApp import can't start without wtsexporter.",
-      ),
+      screen.getByText("wtsexporter not found. A WhatsApp import can't start without wtsexporter."),
     ).toBeTruthy();
     expect(importButton()).toBeDisabled();
   });
@@ -925,9 +931,10 @@ describe("ImportFormFields programs the import needs", () => {
     desktop.isTauri = true;
     desktop.toolsStatus.mockResolvedValue(status({ wtsexporter: { state: "unavailable" } }));
     renderForm(readyWhatsapp);
+    await settle();
 
     expect(
-      await screen.findByText(
+      screen.getByText(
         "wtsexporter not found, and the app has no download of it for this computer. A WhatsApp import can't start without wtsexporter.",
       ),
     ).toBeTruthy();
@@ -944,8 +951,9 @@ describe("ImportFormFields programs the import needs", () => {
       status({ wtsexporter: { state: "unusable", reason: "It is not executable." } }),
     );
     renderForm(readyWhatsapp);
+    await settle();
 
-    expect(await screen.findByText(/wtsexporter not used\. It is not executable\./)).toBeTruthy();
+    expect(screen.getByText(/wtsexporter not used\. It is not executable\./)).toBeTruthy();
     expect(importButton()).toBeDisabled();
   });
 
@@ -957,9 +965,10 @@ describe("ImportFormFields programs the import needs", () => {
       }),
     );
     renderForm(readyWhatsapp);
+    await settle();
 
     expect(
-      await screen.findByText(
+      screen.getByText(
         "Downloading wtsexporter: 12 MB of 30 MB (40%). The import waits for wtsexporter.",
       ),
     ).toBeTruthy();
@@ -970,14 +979,24 @@ describe("ImportFormFields programs the import needs", () => {
   it("keeps asking while the start-up check runs, and unblocks once wtsexporter arrives", async () => {
     desktop.isTauri = true;
     // Read before the check has looked at wtsexporter: missing, and checking.
+    // The notice that shows it reads the status again as it appears, so both
+    // first reads say so, and only the poll can bring wtsexporter.
+    const checking = status({ checking: true, wtsexporter: { state: "missing" } });
     desktop.toolsStatus
-      .mockResolvedValueOnce(status({ checking: true, wtsexporter: { state: "missing" } }))
+      .mockResolvedValueOnce(checking)
+      .mockResolvedValueOnce(checking)
       .mockResolvedValue(status({}));
     renderForm(readyWhatsapp);
 
-    expect(await screen.findByText(/wtsexporter not found/)).toBeTruthy();
+    await settle();
+    expect(desktop.toolsStatus).toHaveBeenCalledTimes(2);
+    expect(screen.getByText(/wtsexporter not found/)).toBeTruthy();
     expect(importButton()).toBeDisabled();
-    await waitFor(() => expect(importButton()).toBeEnabled(), { timeout: 3000 });
+    // Asked again at the next poll, which finds it.
+    await advanceTimersAndSettle(DOWNLOAD_POLL_MS - 1);
+    expect(importButton()).toBeDisabled();
+    await advanceTimersAndSettle(1);
+    expect(importButton()).toBeEnabled();
   });
 
   it("lets a WhatsApp import start once wtsexporter is found, and says nothing", async () => {
@@ -985,7 +1004,8 @@ describe("ImportFormFields programs the import needs", () => {
     desktop.toolsStatus.mockResolvedValue(status({}));
     renderForm(readyWhatsapp);
 
-    await waitFor(() => expect(desktop.toolsStatus).toHaveBeenCalled());
+    await settle();
+    expect(desktop.toolsStatus).toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
     expect(importButton()).toBeEnabled();
   });
@@ -1001,9 +1021,10 @@ describe("ImportFormFields programs the import needs", () => {
       ...readyWhatsapp,
       attachments: { ...copyAttachments, attachmentMedia: "convert" },
     });
+    await settle();
 
     expect(
-      await screen.findByText("Downloading ffmpeg: 12 MB of 30 MB (40%). Media waits for ffmpeg."),
+      screen.getByText("Downloading ffmpeg: 12 MB of 30 MB (40%). Media waits for ffmpeg."),
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
@@ -1017,9 +1038,10 @@ describe("ImportFormFields programs the import needs", () => {
       ...readyWhatsapp,
       attachments: { ...copyAttachments, attachmentMedia: "convert" },
     });
+    await settle();
 
     expect(
-      await screen.findByText(
+      screen.getByText(
         "ffmpeg not found. ffprobe not found. Convert and Compress need ffmpeg and ffprobe. Copy imports attachments as they are.",
       ),
     ).toBeTruthy();
@@ -1050,14 +1072,19 @@ describe("ImportFormFields programs the import needs", () => {
     });
     renderForm(readyWhatsapp);
 
-    await user.click(await screen.findByRole("button", { name: "Try again" }));
+    await settle();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await settle();
 
     expect(
-      await screen.findByText(
+      screen.getByText(
         "A check of the Tools Directory is already running. This form shows its result when it ends.",
       ),
     ).toBeTruthy();
-    await waitFor(() => expect(importButton()).toBeEnabled(), { timeout: 3000 });
+    expect(importButton()).toBeDisabled();
+    // The check brings wtsexporter by the next poll.
+    await advanceTimersAndSettle(DOWNLOAD_POLL_MS);
+    expect(importButton()).toBeEnabled();
   });
 
   it("the already-running line goes when this process's check ends with the program still failed", async () => {
@@ -1080,14 +1107,20 @@ describe("ImportFormFields programs the import needs", () => {
     });
     renderForm(readyWhatsapp);
 
-    await user.click(await screen.findByRole("button", { name: "Try again" }));
+    await settle();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await settle();
 
     const line =
       "A check of the Tools Directory is already running. This form shows its result when it ends.";
-    expect(await screen.findByText(line)).toBeTruthy();
-    await waitFor(() => expect(screen.queryByText(line)).toBeNull(), SLOW_STATE_WAIT);
+    expect(screen.getByText(line)).toBeTruthy();
+    // The second poll's answer has the check ended.
+    await advanceTimersAndSettle(DOWNLOAD_POLL_MS);
+    expect(screen.getByText(line)).toBeTruthy();
+    await advanceTimersAndSettle(DOWNLOAD_POLL_MS);
+    expect(screen.queryByText(line)).toBeNull();
     expect(importButton()).toBeDisabled();
-  }, 10_000);
+  });
 
   it("Try again while another app's check runs says so, and asks until the program arrives", async () => {
     const user = setupUser();
@@ -1102,15 +1135,22 @@ describe("ImportFormFields programs the import needs", () => {
     });
     renderForm(readyWhatsapp);
 
-    await user.click(await screen.findByRole("button", { name: "Try again" }));
+    await settle();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await settle();
 
     expect(
-      await screen.findByText(
+      screen.getByText(
         "A check of the Tools Directory is already running. This form shows its result when it ends.",
       ),
     ).toBeTruthy();
-    await waitFor(() => expect(importButton()).toBeEnabled(), { timeout: 5000 });
-  }, 10_000);
+    // No check of this process runs, so the form asks at the slower pace
+    // until the other app's download lands.
+    await advanceTimersAndSettle(OTHER_CHECK_POLL_MS - 1);
+    expect(importButton()).toBeDisabled();
+    await advanceTimersAndSettle(1);
+    expect(importButton()).toBeEnabled();
+  });
 
   it("Try again starts the download and follows it until the program arrives", async () => {
     const user = setupUser();
@@ -1129,14 +1169,15 @@ describe("ImportFormFields programs the import needs", () => {
     });
     renderForm(readyWhatsapp);
 
-    await user.click(await screen.findByRole("button", { name: "Try again" }));
+    await settle();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await settle();
 
     expect(desktop.retry).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText(/Downloading wtsexporter/)).toBeTruthy();
+    expect(screen.getByText(/Downloading wtsexporter/)).toBeTruthy();
     // Asked again while it downloads, until it is found.
-    await waitFor(() => expect(screen.queryByText(/Downloading wtsexporter/)).toBeNull(), {
-      timeout: 3000,
-    });
+    await advanceTimersAndSettle(DOWNLOAD_POLL_MS);
+    expect(screen.queryByText(/Downloading wtsexporter/)).toBeNull();
     expect(desktop.toolsStatus.mock.calls.length).toBeGreaterThanOrEqual(3);
     expect(importButton()).toBeEnabled();
   });

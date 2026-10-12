@@ -1,11 +1,13 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setBaseUrl } from "../../lib/api";
 import { APP_BUILD } from "../../lib/build";
 import { getOpenToNetwork } from "../../lib/localServer";
 import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware";
+import { DOWNLOAD_POLL_MS } from "../../lib/useToolsStatus";
+import { advanceTimersAndSettle, settle, useFakeClock, useRealClock } from "../../test/fakeTimers";
 import { renderWithProviders as render } from "../../test/providers";
 import { MIB } from "../../test/units";
 import { fill, setupUser } from "../../test/user";
@@ -54,9 +56,11 @@ vi.mock("../../lib/tauri", async (importOriginal) => ({
 afterEach(() => {
   cleanup();
   setBaseUrl("");
+  useRealClock();
 });
 
 beforeEach(() => {
+  useFakeClock();
   localStorage.clear();
   tauriState.isTauri = true;
   desktopStaging.root = "";
@@ -90,13 +94,15 @@ describe("SystemSection", () => {
 
     tauriState.isTauri = true;
     render(<SystemSection />);
-    expect((await screen.findByText("Version")).nextElementSibling).toHaveTextContent(APP_BUILD);
+    await settle();
+    expect(screen.getByText("Version").nextElementSibling).toHaveTextContent(APP_BUILD);
   });
 
   it("names the Apple Messages reader and its GPL license in the desktop app only", async () => {
     tauriState.isTauri = true;
     render(<SystemSection />);
-    expect(await screen.findByText("Third-party software")).toBeTruthy();
+    await settle();
+    expect(screen.getByText("Third-party software")).toBeTruthy();
     expect(screen.getByText(/Apple Messages reader/)).toHaveTextContent("imessage-reader");
     expect(screen.getByText(/GNU General Public License/)).toBeTruthy();
     const source = screen.getByRole("link", { name: "Source" });
@@ -113,17 +119,21 @@ describe("SystemSection", () => {
   it("opens the data directory of the app's own Message Crate", async () => {
     invokeOpenDataDirectory.mockResolvedValue(undefined);
     render(<SystemSection />);
+    await settle();
     const user = setupUser();
-    await user.click(await screen.findByRole("button", { name: "Open data directory" }));
+    await user.click(screen.getByRole("button", { name: "Open data directory" }));
+    await settle();
     expect(invokeOpenDataDirectory).toHaveBeenCalledTimes(1);
   });
 
   it("says why the data directory could not be opened", async () => {
     invokeOpenDataDirectory.mockRejectedValue(new Error("Could not open /data"));
     render(<SystemSection />);
+    await settle();
     const user = setupUser();
-    await user.click(await screen.findByRole("button", { name: "Open data directory" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Could not open /data");
+    await user.click(screen.getByRole("button", { name: "Open data directory" }));
+    await settle();
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not open /data");
   });
 
   it("keeps the app's own Message Crate closed to the network until asked", async () => {
@@ -132,7 +142,8 @@ describe("SystemSection", () => {
     invokeSetOpenToNetwork.mockReset();
     invokeSetOpenToNetwork.mockResolvedValue({ status: "starting", first_time: false });
     render(<SystemSection />);
-    const box = await screen.findByRole("checkbox", {
+    await settle();
+    const box = screen.getByRole("checkbox", {
       name: /Let other devices on this network connect/,
     });
     expect(box).not.toBeChecked();
@@ -141,11 +152,13 @@ describe("SystemSection", () => {
 
     const user = setupUser();
     await user.click(box);
+    await settle();
 
     expect(getOpenToNetwork()).toBe(true);
     expect(invokeSetOpenToNetwork).toHaveBeenLastCalledWith(true);
 
     await user.click(box);
+    await settle();
     expect(getOpenToNetwork()).toBe(false);
     expect(invokeSetOpenToNetwork).toHaveBeenLastCalledWith(false);
     // The setting restarts a server the app runs; it never starts one.
@@ -157,11 +170,13 @@ describe("SystemSection", () => {
     startLocalServer.mockReset();
     invokeSetOpenToNetwork.mockReset();
     render(<SystemSection />);
+    await settle();
 
     const user = setupUser();
     await user.click(
-      await screen.findByRole("checkbox", { name: /Let other devices on this network connect/ }),
+      screen.getByRole("checkbox", { name: /Let other devices on this network connect/ }),
     );
+    await settle();
 
     expect(getOpenToNetwork()).toBe(true);
     expect(invokeSetOpenToNetwork).not.toHaveBeenCalled();
@@ -173,11 +188,13 @@ describe("SystemSection", () => {
     invokeSetOpenToNetwork.mockReset();
     invokeSetOpenToNetwork.mockResolvedValue({ status: "ready", started_by_app: false });
     render(<SystemSection />);
+    await settle();
     const user = setupUser();
     await user.click(
-      await screen.findByRole("checkbox", { name: /Let other devices on this network connect/ }),
+      screen.getByRole("checkbox", { name: /Let other devices on this network connect/ }),
     );
-    expect(await screen.findByRole("status")).toHaveTextContent("This app did not start");
+    await settle();
+    expect(screen.getByRole("status")).toHaveTextContent("This app did not start");
   });
 
   it("offers no data directory in the browser", () => {
@@ -195,17 +212,17 @@ describe("SystemSection", () => {
 
   it("has no Save button and labels the path fields", async () => {
     render(<SystemSection />);
-    await waitFor(() => {
-      expect(screen.getByLabelText("Staging directory")).toBeTruthy();
-    });
+    await settle();
+    expect(screen.getByLabelText("Staging directory")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Saving…" })).toBeNull();
   });
 
   it("names the Export Directory, where each Export and Convert gets a directory", async () => {
     render(<SystemSection />);
+    await settle();
     expect(
-      await screen.findByRole("button", {
+      screen.getByRole("button", {
         name: "/home/demo/.local/share/app.messagecrate.desktop/exports",
       }),
     ).toBeTruthy();
@@ -215,35 +232,41 @@ describe("SystemSection", () => {
   it("stores the staging directory in the desktop process on change", async () => {
     const user = setupUser();
     render(<SystemSection />);
-    const stagingInput = await screen.findByDisplayValue("/home/demo/message-crate");
+    await settle();
+    const stagingInput = screen.getByDisplayValue("/home/demo/message-crate");
 
     await user.clear(stagingInput);
     await fill(user, stagingInput, "/tmp/my-staging");
+    await settle();
 
-    await waitFor(() => expect(desktopStaging.root).toBe("/tmp/my-staging"));
+    expect(desktopStaging.root).toBe("/tmp/my-staging");
     expect(setStagingDirectory).toHaveBeenLastCalledWith("/tmp/my-staging");
   });
 
   it("says why the desktop process refused a staging directory", async () => {
     const user = setupUser();
     render(<SystemSection />);
-    const stagingInput = await screen.findByDisplayValue("/home/demo/message-crate");
+    await settle();
+    const stagingInput = screen.getByDisplayValue("/home/demo/message-crate");
     setStagingDirectory.mockRejectedValue("Could not save staging.json: disk full");
 
     await user.type(stagingInput, "/x");
+    await settle();
 
-    expect(await screen.findByText(/disk full/)).toBeInTheDocument();
+    expect(screen.getByText(/disk full/)).toBeInTheDocument();
   });
 
   it("shows a directory accepted after a refusal when the field is left before the answer", async () => {
     const user = setupUser();
     render(<SystemSection />);
-    const stagingInput = await screen.findByDisplayValue("/home/demo/message-crate");
+    await settle();
+    const stagingInput = screen.getByDisplayValue("/home/demo/message-crate");
     await user.type(stagingInput, "x", {
       initialSelectionStart: 0,
       initialSelectionEnd: "/home/demo/message-crate".length,
     });
-    expect(await screen.findByText(/Not saved/)).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText(/Not saved/)).toBeInTheDocument();
 
     // The pasted directory replaces the refused one in one change, so the
     // refusal is still shown when the field is left.
@@ -262,8 +285,9 @@ describe("SystemSection", () => {
     await user.paste("/data/mc");
     await user.tab();
     answer();
+    await settle();
 
-    await waitFor(() => expect(stagingInput).toHaveValue("/data/mc"));
+    expect(stagingInput).toHaveValue("/data/mc");
     expect(screen.queryByText(/Not saved/)).toBeNull();
   });
 
@@ -271,7 +295,8 @@ describe("SystemSection", () => {
     const user = setupUser();
     desktopStaging.root = "/srv/staging";
     render(<SystemSection />);
-    const stagingInput = await screen.findByDisplayValue("/srv/staging");
+    await settle();
+    const stagingInput = screen.getByDisplayValue("/srv/staging");
 
     // Typed over the whole path: an empty field would clear the setting on its own.
     await user.type(stagingInput, "staging", {
@@ -279,13 +304,15 @@ describe("SystemSection", () => {
       initialSelectionEnd: "/srv/staging".length,
     });
 
+    await settle();
     expect(stagingInput).toHaveValue("staging");
     expect(
-      await screen.findByText("Not saved. The staging directory must be a full path."),
+      screen.getByText("Not saved. The staging directory must be a full path."),
     ).toBeInTheDocument();
     expect(desktopStaging.root).toBe("/srv/staging");
 
     await user.tab();
+    await settle();
 
     expect(stagingInput).toHaveValue("/srv/staging");
     expect(screen.queryByText(/must be a full path/)).toBeNull();
@@ -296,24 +323,25 @@ describe("SystemSection", () => {
     desktopStaging.readError = "Could not read staging.json: permission denied";
     desktopStaging.root = "/srv/staging";
     render(<SystemSection />);
+    await settle();
 
-    expect(await screen.findByText(/permission denied/)).toBeInTheDocument();
+    expect(screen.getByText(/permission denied/)).toBeInTheDocument();
     const stagingInput = screen.getByLabelText("Staging directory");
     expect(stagingInput).toHaveValue("");
 
     desktopStaging.readError = null;
     await user.click(stagingInput);
     await user.tab();
+    await settle();
 
-    await waitFor(() => expect(stagingInput).toHaveValue("/srv/staging"));
+    expect(stagingInput).toHaveValue("/srv/staging");
     expect(screen.queryByText(/permission denied/)).toBeNull();
   });
 
   it("shows where ffmpeg, ffprobe and wtsexporter were found, and the Tools Directory", async () => {
     render(<SystemSection />);
-    await waitFor(() => {
-      expect(screen.getByLabelText(/Found ffmpeg/i)).toBeTruthy();
-    });
+    await settle();
+    expect(screen.getByLabelText(/Found ffmpeg/i)).toBeTruthy();
     expect(screen.getByLabelText(/Found ffprobe/i)).toBeTruthy();
     expect(screen.getByLabelText(/Found wtsexporter/i)).toBeTruthy();
     expect(screen.getByText("/usr/bin/ffmpeg")).toBeTruthy();
@@ -333,13 +361,12 @@ describe("SystemSection", () => {
       wtsexporter: { state: "missing" },
     });
     render(<SystemSection />);
-    await waitFor(() => {
-      expect(
-        screen.getByLabelText(
-          "ffmpeg not found. Put it beside ffprobe, or put both in the Tools Directory, /home/demo/message-crate/tools.",
-        ),
-      ).toBeTruthy();
-    });
+    await settle();
+    expect(
+      screen.getByLabelText(
+        "ffmpeg not found. Put it beside ffprobe, or put both in the Tools Directory, /home/demo/message-crate/tools.",
+      ),
+    ).toBeTruthy();
     expect(screen.getByLabelText(/Found ffprobe/i)).toBeTruthy();
     expect(
       screen.getByLabelText(
@@ -357,8 +384,9 @@ describe("SystemSection", () => {
       wtsexporter: { state: "missing" },
     });
     render(<SystemSection />);
+    await settle();
     expect(
-      await screen.findByLabelText(
+      screen.getByLabelText(
         "ffmpeg not found. Put it and ffprobe in the Tools Directory, /home/demo/message-crate/tools.",
       ),
     ).toBeTruthy();
@@ -380,13 +408,15 @@ describe("SystemSection", () => {
       wtsexporter: { state: "missing" },
     });
     render(<SystemSection />);
-    expect(await screen.findByLabelText(`ffmpeg not used. ${reason}`)).toBeTruthy();
+    await settle();
+    expect(screen.getByLabelText(`ffmpeg not used. ${reason}`)).toBeTruthy();
     expect(screen.getByLabelText(`ffprobe not used. ${reason}`)).toBeTruthy();
   });
 
   it("has nothing to type for the media tools: the ffmpeg directory field is gone (#1053)", async () => {
     render(<SystemSection />);
-    await screen.findByLabelText(/Found ffmpeg/i);
+    await settle();
+    expect(screen.getByLabelText(/Found ffmpeg/i)).toBeTruthy();
     expect(screen.queryByLabelText("ffmpeg directory")).toBeNull();
     const media = screen.getByRole("list", { name: "Media tools" }).parentElement;
     expect(media?.querySelector("input")).toBeNull();
@@ -401,9 +431,13 @@ describe("SystemSection", () => {
       wtsexporter: { state: "missing" },
     });
     render(<SystemSection />);
-    expect(await screen.findByLabelText(/wtsexporter not found/)).toBeTruthy();
-    // The next answer, a second later, has wtsexporter in place.
-    expect(await screen.findByLabelText(/Found wtsexporter/i, {}, { timeout: 3000 })).toBeTruthy();
+    await settle();
+    expect(screen.getByLabelText(/wtsexporter not found/)).toBeTruthy();
+    // The next answer, at the next poll, has wtsexporter in place.
+    await advanceTimersAndSettle(DOWNLOAD_POLL_MS - 1);
+    expect(screen.getByLabelText(/wtsexporter not found/)).toBeTruthy();
+    await advanceTimersAndSettle(1);
+    expect(screen.getByLabelText(/Found wtsexporter/i)).toBeTruthy();
   });
 
   it("shows a download's progress, and asks again until it ends", async () => {
@@ -415,10 +449,14 @@ describe("SystemSection", () => {
       wtsexporter: { state: "found", path: "/home/demo/message-crate/tools/wtsexporter" },
     });
     render(<SystemSection />);
-    expect(await screen.findByLabelText("Downloading ffmpeg: 12 MB of 29 MB (41%).")).toBeTruthy();
+    await settle();
+    expect(screen.getByLabelText("Downloading ffmpeg: 12 MB of 29 MB (41%).")).toBeTruthy();
     expect(screen.getByLabelText("Downloading ffprobe: 0 B so far.")).toBeTruthy();
-    // The next answer, a second later, has both in place.
-    expect(await screen.findByLabelText(/Found ffmpeg/i, {}, { timeout: 3000 })).toBeTruthy();
+    // The next answer, at the next poll, has both in place.
+    await advanceTimersAndSettle(DOWNLOAD_POLL_MS - 1);
+    expect(screen.getByLabelText("Downloading ffmpeg: 12 MB of 29 MB (41%).")).toBeTruthy();
+    await advanceTimersAndSettle(1);
+    expect(screen.getByLabelText(/Found ffmpeg/i)).toBeTruthy();
     expect(screen.getByLabelText(/Found ffprobe/i)).toBeTruthy();
   });
 
@@ -431,8 +469,9 @@ describe("SystemSection", () => {
       wtsexporter: { state: "unavailable" },
     });
     render(<SystemSection />);
+    await settle();
     expect(
-      await screen.findByLabelText(
+      screen.getByLabelText(
         "wtsexporter not found, and the app has no download of it for this computer. Put a copy in the Tools Directory, /home/demo/message-crate/tools.",
       ),
     ).toBeTruthy();
@@ -448,8 +487,9 @@ describe("SystemSection", () => {
       wtsexporter: { state: "downloadFailed", reason },
     });
     render(<SystemSection />);
+    await settle();
     expect(
-      await screen.findByLabelText(
+      screen.getByLabelText(
         `wtsexporter download failed. ${reason} It is tried again the next time the app starts, or with Try again on the Import form. See "Import can't find wtsexporter" in Troubleshooting at messagecrate.app.`,
       ),
     ).toBeTruthy();
@@ -463,7 +503,8 @@ describe("SystemSection", () => {
   it("says so when the desktop process cannot be asked", async () => {
     toolsStatus.mockRejectedValue(new Error("no desktop process"));
     render(<SystemSection />);
-    expect(await screen.findByText(/Could not look for the media tools/)).toHaveTextContent(
+    await settle();
+    expect(screen.getByText(/Could not look for the media tools/)).toHaveTextContent(
       "no desktop process",
     );
   });

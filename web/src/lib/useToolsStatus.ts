@@ -4,14 +4,14 @@ import { invokeRetryToolDownloads, invokeToolsStatus, toolsDownloading } from ".
 import { isTauri } from "./tauriCheck";
 
 /** How often the window asks the desktop process again while a check or a download runs. */
-const DOWNLOAD_POLL_MS = 1000;
+export const DOWNLOAD_POLL_MS = 1000;
 
 /**
  * How often the window asks again after Try again found another app's check
  * running, which `checking` does not count, and for how long: a download
  * that arrives shows as found, and a failed one is never heard of here.
  */
-const OTHER_CHECK_POLL_MS = 2000;
+export const OTHER_CHECK_POLL_MS = 2000;
 export const OTHER_CHECK_POLL_FOR_MS = 2 * 60 * 1000;
 
 /**
