@@ -8,7 +8,7 @@ Content-Type: multipart/mixed; boundary="mc-part"
 X-smssync-datatype: MMS
 X-smssync-type: 132
 X-smssync-address: +15555550101~+15555550102
-X-smssync-date: 1609459380000
+X-smssync-date: 1609459380
 
 --mc-part
 Content-Type: text/plain; charset=utf-8

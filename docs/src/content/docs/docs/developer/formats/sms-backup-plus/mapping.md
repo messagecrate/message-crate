@@ -57,8 +57,8 @@ The shared dedupe step (`message_ir::one_copy_per_message`) then keeps one copy 
 Two copies are one message when the chat, the direction, the sender, the collapsed text and the attachment digests agree and the times are compatible.
 Times are compatible when they are equal to the millisecond, or when one copy has whole seconds only and falls in the same second as the other.
 
-A mail timed by `X-smssync-date` in milliseconds has milliseconds.
-A mail timed by `Date`, or by `X-smssync-date` in seconds, has whole seconds only.
+A mail timed by `X-smssync-date` in milliseconds, as an SMS is, has milliseconds.
+A mail timed by `Date`, or by `X-smssync-date` in seconds, as an MMS is, has whole seconds only.
 A whole-second copy yields to a millisecond copy, so the message keeps the millisecond time and one `guid` whichever file is read first.
 Two millisecond copies with different times are two messages, such as the same text sent twice 300 ms apart.
 

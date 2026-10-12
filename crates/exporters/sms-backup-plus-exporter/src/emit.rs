@@ -661,7 +661,7 @@ impl<'a> EmlIngest<'a> {
                 }
                 self.add_parsed(*message)?;
             }
-            ParsedEmlKind::FlatNone => self.report.bump(SKIPPED_PARSE_ERROR, 1),
+            ParsedEmlKind::FlatNoDate => self.report.skipped_invalid_date += 1,
             ParsedEmlKind::CallLog => self.report.bump(SKIPPED_CALL_LOG, 1),
             ParsedEmlKind::NotSms => self.report.bump(SKIPPED_NOT_SMS_BACKUP_PLUS, 1),
             ParsedEmlKind::IoError { path, reason } => self.report.error(

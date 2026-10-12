@@ -650,6 +650,14 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-12: **SMS Backup+ dates are read in the unit the app wrote.**
+  SMS Backup+ records a text message's time in milliseconds and an MMS's in
+  seconds, but the import guessed the unit from the size of the number and
+  took a date far past any calendar as it was. It now reads each date in its
+  message's unit, by the same rule as the SMS Backup & Restore and GO SMS Pro
+  imports. A date it cannot read takes the time the mail carries to the
+  second, and a mail with no readable time counts as a message with an
+  invalid date (#2603).
 - 2026-10-12: **An import's connection that stalls is no longer reported as
   bad data.** When the connection stopped delivering part of an import, the
   server answered as though the file were damaged. It now says the
@@ -926,6 +934,10 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-12: **An export to SMS Backup+ mail writes an MMS's time in
+  seconds.** SMS Backup+ itself records an MMS's time in seconds, and the
+  import now reads it that way, so an MMS exported to SMS Backup+ mail goes
+  out to the second (#2603).
 - 2026-10-11: **One missing attachment no longer throws away a whole
   export.** When the desktop app could not fetch one attachment, for
   instance because its file was gone from the server, the export stopped
@@ -1063,6 +1075,25 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-12: **A hung video conversion is given up on within about 2
+  minutes, and a slow computer is no longer cut off on long videos.** A
+  conversion was stopped only after many times the video's length, so a
+  hung 5-second clip held up Thumbnails and Previews for 10 minutes, while
+  a long video on a slow computer, such as a small NAS converting iPhone
+  video, could still be cut off before it finished. A conversion now runs as
+  long as it keeps moving through the file. It is stopped once it hasn't
+  moved for 2 minutes, or once it goes past twice the file's length, as a
+  damaged file does when it loops. A server's config file can change the
+  wait with `transcode_stall_secs`. Reading a file's details, making a
+  Thumbnail and the check that finds ffmpeg are stopped after 15 seconds,
+  and an ffmpeg or ffprobe that never answers that check is passed over
+  rather than holding every lookup. The reason an attachment gives says
+  which happened: no progress, past twice its length, or a step that took
+  too long. When an Import Run compresses a video, HEVC that fails, or
+  hangs before converting anything, still falls back to H.264. A video that
+  stalls partway or loops isn't tried again with H.264, and canceling
+  stops the conversion at once as canceled, not as a file that failed
+  (#2898, #2883).
 - 2026-10-11: **The server's log holds what it was missing.** A request
   that broke the server in an unexpected way closed the connection with no
   answer and left nothing in the log. It now gets the same "internal server

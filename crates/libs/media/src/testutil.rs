@@ -45,10 +45,10 @@ pub const PNG_1X1_RGB: &[u8] = &[
 pub const PNG_1X1_RGB_BASE64: &str =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
 
-/// The error an ffmpeg run fails with when it is killed after `limit`
-/// ([`crate::RanTooLong`]), for a test of what a caller makes of it.
-pub fn ffmpeg_ran_too_long(limit: std::time::Duration) -> anyhow::Error {
-    crate::RanTooLong::ffmpeg(limit).into()
+/// The error an ffmpeg run fails with when it is killed for `why`
+/// ([`crate::Killed`]), for a test of what a caller makes of it.
+pub fn ffmpeg_killed(why: crate::KillReason) -> anyhow::Error {
+    crate::Killed::ffmpeg(why).into()
 }
 
 /// The lock over the process-wide tool location.
@@ -63,7 +63,10 @@ fn tools_lock() -> &'static RwLock<()> {
 /// the location differs from the one it found, and put that one back before
 /// releasing it. Otherwise a test that runs the real ffmpeg can resolve the
 /// tools in the instant another test has them pointed at an empty or mock
-/// directory.
+/// directory. A test that changes the no-progress wait
+/// ([`crate::set_stall_wait`]) holds it the same way, and puts the default
+/// back before releasing it, because a short wait would stop the real
+/// ffmpeg of every test that runs meanwhile.
 pub fn tools_test_lock() -> RwLockWriteGuard<'static, ()> {
     tools_lock().write().unwrap_or_else(PoisonError::into_inner)
 }
@@ -189,4 +192,34 @@ pub fn write_with_mode(path: &Path, mode: u32) {
     }
     #[cfg(not(unix))]
     let _ = mode;
+}
+
+/// A clock for a watched run that reads zero until `started` exists, and
+/// then an hour more on every read, so every limit and wait passes once the
+/// mock has started, and none before. It waits on no real clock.
+#[cfg(test)]
+pub(crate) fn clock_from(started: &Path) -> impl Fn() -> std::time::Duration + '_ {
+    let hours = std::cell::Cell::new(0u64);
+    move || {
+        if started.is_file() {
+            hours.set(hours.get() + 1);
+        }
+        std::time::Duration::from_secs(hours.get() * 3600)
+    }
+}
+
+/// A mock ffmpeg body that writes its pid, then `progress` on its progress
+/// stream, then marks itself `started` and never exits. Between the two it
+/// writes 256 KiB of progress lines that carry no position: a pipe holds 64
+/// KiB, so the mock gets past them only once the reader has read, and so
+/// recorded, the position before them. The test's clock starts only then,
+/// with no race between the reader and the watch.
+#[cfg(test)]
+pub(crate) fn progress_then_hang(progress: &str) -> String {
+    format!(
+        "echo $$ > \"$(dirname \"$0\")/pid\"\n\
+         printf '{progress}'\n\
+         yes frame=1 | head -c 262144\n\
+         touch \"$(dirname \"$0\")/started\"\nexec sleep 600"
+    )
 }

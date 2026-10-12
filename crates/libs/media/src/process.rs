@@ -2,11 +2,12 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 
 use crate::tools::{InstalledTools, MediaTools, Reads};
-use crate::{CompressOptions, MediaMode};
+use crate::{CompressOptions, KillReason, Killed, MediaMode};
 
 /// Aggregate counts and errors from one media convert/compress pass.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -81,18 +82,29 @@ const MP3_COMPRESS_FLOOR: u64 = 100 * 1024;
 /// Returns a path remap (`old_rel` → `new_rel`, forward-slash relative to
 /// `output_dir`) for callers that update IR / CSV themselves.
 ///
+/// Setting `stop` kills the ffmpeg that runs and converts no other file.
+///
 /// # Errors
 ///
 /// Returns an error when ffmpeg/ffprobe are missing or fail, an input path
-/// escapes the output directory, or IO fails.
+/// escapes the output directory, IO fails, or `stop` is set ([`Killed`]).
 pub fn process_attachment_files(
     output_dir: &Path,
     files: &[PathBuf],
     mode: MediaMode,
     compress: &CompressOptions,
     log: Option<&mut dyn FnMut(&str)>,
+    stop: Option<&AtomicBool>,
 ) -> Result<(MediaReport, HashMap<String, String>)> {
-    process_attachment_files_with(&InstalledTools, output_dir, files, mode, compress, log)
+    process_attachment_files_with(
+        &InstalledTools,
+        output_dir,
+        files,
+        mode,
+        compress,
+        log,
+        stop,
+    )
 }
 
 /// [`process_attachment_files`] with the programs `tools` runs.
@@ -103,6 +115,7 @@ pub(crate) fn process_attachment_files_with(
     mode: MediaMode,
     compress: &CompressOptions,
     mut log: Option<&mut dyn FnMut(&str)>,
+    stop: Option<&AtomicBool>,
 ) -> Result<(MediaReport, HashMap<String, String>)> {
     if matches!(mode, MediaMode::Clone | MediaMode::Disabled) {
         return Ok((MediaReport::default(), HashMap::new()));
@@ -132,10 +145,15 @@ pub(crate) fn process_attachment_files_with(
     emit(&mut log, "");
     emit(&mut log, &starting_line(verb, total, report.bytes_before));
 
+    let asked = Asked {
+        mode,
+        compress,
+        stop,
+    };
     let mut done = 0usize;
     for path in files {
         let mut hevc_failure = None;
-        let outcome = process_one(tools, output_dir, path, mode, compress, &mut hevc_failure);
+        let outcome = process_one(tools, output_dir, path, asked, &mut hevc_failure);
         report.hevc_fallback.record(hevc_failure);
         match outcome {
             Ok(Outcome::Changed { old_rel, new_rel }) => {
@@ -143,6 +161,12 @@ pub(crate) fn process_attachment_files_with(
                 remap.insert(old_rel, new_rel);
             }
             Ok(Outcome::Skipped) => report.skipped += 1,
+            // A conversion the stop killed is not the file's failure, and
+            // no other file is started.
+            Err(_) if stop.is_some_and(|stop| stop.load(Ordering::Relaxed)) => {
+                let _ = remove_msgmedia_temps(&attachments);
+                return Err(Killed::ffmpeg_stopped().into());
+            }
             Err(err) => report.errors.push(format!("{}: {err:#}", path.display())),
         }
         done += 1;
@@ -377,9 +401,10 @@ fn try_remux_replace(
     tools: &dyn MediaTools,
     path: &Path,
     commit: Commit<'_>,
+    stop: Option<&AtomicBool>,
 ) -> Result<Option<PathBuf>> {
     let tmp = temp_sibling(path, "mp4");
-    if remux_mp4(tools, path, &tmp).is_err() {
+    if remux_mp4(tools, path, &tmp, stop).is_err() {
         let _ = fs::remove_file(&tmp);
         return Ok(None);
     }
@@ -441,6 +466,17 @@ fn has_gif_ext(path: &Path) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case("gif"))
 }
 
+/// What the caller asked of the media step for one file.
+#[derive(Clone, Copy)]
+struct Asked<'a> {
+    /// Convert or compress.
+    mode: MediaMode,
+    /// How to compress, in [`MediaMode::Compress`].
+    compress: &'a CompressOptions,
+    /// The run's stop: setting it kills the ffmpeg that runs.
+    stop: Option<&'a AtomicBool>,
+}
+
 /// Run the media step over one file, committing however `commit` says.
 ///
 /// Returns the produced path, or `None` when the media step leaves this file
@@ -451,11 +487,15 @@ fn run_one(
     tools: &dyn MediaTools,
     path: &Path,
     kind: Kind,
-    mode: MediaMode,
-    compress: &CompressOptions,
+    asked: Asked<'_>,
     commit: Commit<'_>,
     hevc_failure: &mut Option<String>,
 ) -> Result<Option<PathBuf>> {
+    let Asked {
+        mode,
+        compress,
+        stop,
+    } = asked;
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -468,7 +508,7 @@ fn run_one(
             if matches!(ext.as_str(), "jpg" | "jpeg" | "gif") {
                 return Ok(None);
             }
-            convert_image(tools, path, false, false, commit)
+            convert_image(tools, path, false, false, commit, stop)
         }
         (Kind::Image, MediaMode::Compress) => {
             if ext == "gif" {
@@ -478,24 +518,24 @@ fn run_one(
             if same_format && fs::metadata(path)?.len() <= JPEG_COMPRESS_FLOOR {
                 return Ok(None);
             }
-            convert_image(tools, path, true, same_format, commit)
+            convert_image(tools, path, true, same_format, commit, stop)
         }
         (Kind::Audio, MediaMode::Convert) => {
             if ext == "mp3" {
                 return Ok(None);
             }
-            convert_audio(tools, path, false, false, commit)
+            convert_audio(tools, path, false, false, commit, stop)
         }
         (Kind::Audio, MediaMode::Compress) => {
             let same_format = ext == "mp3";
             if same_format && fs::metadata(path)?.len() <= MP3_COMPRESS_FLOOR {
                 return Ok(None);
             }
-            convert_audio(tools, path, true, same_format, commit)
+            convert_audio(tools, path, true, same_format, commit, stop)
         }
-        (Kind::Video, MediaMode::Convert) => convert_video(tools, path, commit).map(Some),
+        (Kind::Video, MediaMode::Convert) => convert_video(tools, path, commit, stop).map(Some),
         (Kind::Video, MediaMode::Compress) => {
-            compress_video(tools, path, compress, commit, hevc_failure)
+            compress_video(tools, path, compress, commit, stop, hevc_failure)
         }
         (_, MediaMode::Clone | MediaMode::Disabled) => Ok(None),
     }
@@ -506,21 +546,12 @@ fn process_one(
     tools: &dyn MediaTools,
     output_dir: &Path,
     path: &Path,
-    mode: MediaMode,
-    compress: &CompressOptions,
+    asked: Asked<'_>,
     hevc_failure: &mut Option<String>,
 ) -> Result<Outcome> {
     let old_rel = rel_path(output_dir, path)?;
     let kind = classify(path).context("unknown media kind")?;
-    match run_one(
-        tools,
-        path,
-        kind,
-        mode,
-        compress,
-        Commit::InPlace,
-        hevc_failure,
-    )? {
+    match run_one(tools, path, kind, asked, Commit::InPlace, hevc_failure)? {
         Some(new_path) => changed(output_dir, &old_rel, &new_path),
         None => Ok(Outcome::Skipped),
     }
@@ -637,16 +668,22 @@ fn derivative_name_impl(
 /// `src` by an interrupted run is cleared; scratch belonging to other files,
 /// and any `.in_progress` marker, is left alone.
 ///
+/// Setting `stop` kills the ffmpeg that runs and fails the call as stopped
+/// ([`KillReason::Stopped`], or [`KillReason::StoppedBeforeStart`] when it
+/// was set first).
+///
 /// # Errors
 ///
-/// Returns an error when ffmpeg/ffprobe are missing or fail, or IO fails.
+/// Returns an error when ffmpeg/ffprobe are missing or fail, IO fails, or
+/// `stop` is set.
 pub fn transcode_file(
     src: &Path,
     dest: &Path,
     mode: MediaMode,
     compress: &CompressOptions,
+    stop: Option<&AtomicBool>,
 ) -> Result<TranscodeOutcome> {
-    transcode_file_with(&InstalledTools, src, dest, mode, compress)
+    transcode_file_with(&InstalledTools, src, dest, mode, compress, stop)
 }
 
 /// [`transcode_file`] with the programs `tools` runs.
@@ -656,6 +693,7 @@ pub(crate) fn transcode_file_with(
     dest: &Path,
     mode: MediaMode,
     compress: &CompressOptions,
+    stop: Option<&AtomicBool>,
 ) -> Result<TranscodeOutcome> {
     let kind = classify(src);
     // Clear this file's own scratch before checking the mode: an interrupted
@@ -667,7 +705,17 @@ pub(crate) fn transcode_file_with(
         return Ok(TranscodeOutcome::Skipped);
     }
     let kind = kind.context("unknown media kind")?;
-    transcode_as(tools, src, kind, dest, mode, compress)
+    transcode_as(
+        tools,
+        src,
+        kind,
+        dest,
+        Asked {
+            mode,
+            compress,
+            stop,
+        },
+    )
 }
 
 /// [`transcode_file`] for a source whose kind the caller already knows,
@@ -680,17 +728,23 @@ pub(crate) fn transcode_file_with(
 /// audio file an MP3; the same-format floors only apply when the extension
 /// says so.
 ///
+/// Setting `stop` kills the ffmpeg that runs and fails the call as stopped
+/// ([`KillReason::Stopped`], or [`KillReason::StoppedBeforeStart`] when it
+/// was set first).
+///
 /// # Errors
 ///
-/// Returns an error when ffmpeg/ffprobe are missing or fail, or IO fails.
+/// Returns an error when ffmpeg/ffprobe are missing or fail, IO fails, or
+/// `stop` is set.
 pub fn transcode_file_as(
     src: &Path,
     kind: Kind,
     dest: &Path,
     mode: MediaMode,
     compress: &CompressOptions,
+    stop: Option<&AtomicBool>,
 ) -> Result<TranscodeOutcome> {
-    transcode_file_as_with(&InstalledTools, src, kind, dest, mode, compress)
+    transcode_file_as_with(&InstalledTools, src, kind, dest, mode, compress, stop)
 }
 
 /// [`transcode_file_as`] with the programs `tools` runs.
@@ -701,12 +755,23 @@ pub(crate) fn transcode_file_as_with(
     dest: &Path,
     mode: MediaMode,
     compress: &CompressOptions,
+    stop: Option<&AtomicBool>,
 ) -> Result<TranscodeOutcome> {
     remove_temps_beside(src, kind);
     if matches!(mode, MediaMode::Clone | MediaMode::Disabled) {
         return Ok(TranscodeOutcome::Skipped);
     }
-    transcode_as(tools, src, kind, dest, mode, compress)
+    transcode_as(
+        tools,
+        src,
+        kind,
+        dest,
+        Asked {
+            mode,
+            compress,
+            stop,
+        },
+    )
 }
 
 /// The shared tail of the two `transcode_file` entry points.
@@ -715,20 +780,11 @@ fn transcode_as(
     src: &Path,
     kind: Kind,
     dest: &Path,
-    mode: MediaMode,
-    compress: &CompressOptions,
+    asked: Asked<'_>,
 ) -> Result<TranscodeOutcome> {
     tools.require()?;
     let mut hevc_failure = None;
-    match run_one(
-        tools,
-        src,
-        kind,
-        mode,
-        compress,
-        Commit::To(dest),
-        &mut hevc_failure,
-    )? {
+    match run_one(tools, src, kind, asked, Commit::To(dest), &mut hevc_failure)? {
         Some(_) => Ok(TranscodeOutcome::Produced { hevc_failure }),
         None => Ok(TranscodeOutcome::Skipped),
     }
@@ -882,6 +938,7 @@ fn convert_image(
     compress: bool,
     keep_smaller: bool,
     commit: Commit<'_>,
+    stop: Option<&AtomicBool>,
 ) -> Result<Option<PathBuf>> {
     let tmp = temp_sibling(path, "jpg");
     let quality = if compress { "5" } else { "2" }; // ffmpeg -q:v (2 best … 31 worst for mjpeg)
@@ -900,7 +957,7 @@ fn convert_image(
     ];
     with_temp_output(&tmp, || {
         tools
-            .transcode(&args, &tmp, Reads::OneFrame, None)
+            .transcode(&args, &tmp, Reads::OneFrame, stop)
             .with_context(|| format!("convert image {}", path.display()))?;
         if keep_smaller && !is_smaller(&tmp, path)? {
             let _ = fs::remove_file(&tmp);
@@ -918,6 +975,7 @@ fn convert_audio(
     compress: bool,
     keep_smaller: bool,
     commit: Commit<'_>,
+    stop: Option<&AtomicBool>,
 ) -> Result<Option<PathBuf>> {
     let tmp = temp_sibling(path, "mp3");
     let mut args = vec![
@@ -935,7 +993,7 @@ fn convert_audio(
     }
     with_temp_output(&tmp, || {
         tools
-            .transcode(&args, &tmp, Reads::All(path), None)
+            .transcode(&args, &tmp, Reads::All(path), stop)
             .with_context(|| format!("convert audio {}", path.display()))?;
         if keep_smaller && !is_smaller(&tmp, path)? {
             let _ = fs::remove_file(&tmp);
@@ -946,12 +1004,17 @@ fn convert_audio(
 }
 
 /// Convert a video to MP4: remux when the codecs allow, else re-encode.
-fn convert_video(tools: &dyn MediaTools, path: &Path, commit: Commit<'_>) -> Result<PathBuf> {
+fn convert_video(
+    tools: &dyn MediaTools,
+    path: &Path,
+    commit: Commit<'_>,
+    stop: Option<&AtomicBool>,
+) -> Result<PathBuf> {
     let tmp = temp_sibling(path, "mp4");
 
     with_temp_output(&tmp, || {
         // Prefer remux into mp4 when already a video file.
-        if remux_mp4(tools, path, &tmp).is_ok() {
+        if remux_mp4(tools, path, &tmp, stop).is_ok() {
             return commit_produced(commit, path, &tmp);
         }
         let _ = fs::remove_file(&tmp);
@@ -977,14 +1040,19 @@ fn convert_video(tools: &dyn MediaTools, path: &Path, commit: Commit<'_>) -> Res
             "+faststart".into(),
         ];
         tools
-            .transcode(&args, &tmp, Reads::All(path), None)
+            .transcode(&args, &tmp, Reads::All(path), stop)
             .with_context(|| format!("convert video {}", path.display()))?;
         commit_produced(commit, path, &tmp)
     })
 }
 
 /// Copy the streams into an MP4 container without re-encoding.
-fn remux_mp4(tools: &dyn MediaTools, path: &Path, tmp: &Path) -> Result<()> {
+fn remux_mp4(
+    tools: &dyn MediaTools,
+    path: &Path,
+    tmp: &Path,
+    stop: Option<&AtomicBool>,
+) -> Result<()> {
     let args = vec![
         "-y".into(),
         "-i".into(),
@@ -994,7 +1062,7 @@ fn remux_mp4(tools: &dyn MediaTools, path: &Path, tmp: &Path) -> Result<()> {
         "-movflags".into(),
         "+faststart".into(),
     ];
-    tools.transcode(&args, tmp, Reads::All(path), None)
+    tools.transcode(&args, tmp, Reads::All(path), stop)
 }
 
 /// Leave an MP4 as it is; remux anything else into one, so every video the
@@ -1003,6 +1071,7 @@ fn keep_or_remux(
     tools: &dyn MediaTools,
     path: &Path,
     commit: Commit<'_>,
+    stop: Option<&AtomicBool>,
 ) -> Result<Option<PathBuf>> {
     let ext = path
         .extension()
@@ -1012,25 +1081,26 @@ fn keep_or_remux(
     if ext == "mp4" {
         return Ok(None);
     }
-    try_remux_replace(tools, path, commit)
+    try_remux_replace(tools, path, commit, stop)
 }
 
 /// Re-encode a video under the resolution, frame-rate, and quality caps; `None` when it is already within them.
 ///
-/// HEVC is tried first and H.264 when it fails. When H.264 then succeeds,
-/// why HEVC failed goes into `hevc_failure`; when H.264 fails too, the error
-/// carries both reasons.
+/// HEVC is tried first, and H.264 when HEVC failed in a way H.264 may not
+/// ([`h264_follows`]). When H.264 then succeeds, why HEVC failed goes into
+/// `hevc_failure`; when H.264 fails too, the error carries both reasons.
 fn compress_video(
     tools: &dyn MediaTools,
     path: &Path,
     opts: &CompressOptions,
     commit: Commit<'_>,
+    stop: Option<&AtomicBool>,
     hevc_failure: &mut Option<String>,
 ) -> Result<Option<PathBuf>> {
     let meta = fs::metadata(path)?;
     if meta.len() < opts.min_size_bytes {
         // Still remux non-mp4 small files for container consistency.
-        return keep_or_remux(tools, path, commit);
+        return keep_or_remux(tools, path, commit, stop);
     }
 
     // A probe that fails yields empty codec and zero dimensions, which never
@@ -1039,7 +1109,7 @@ fn compress_video(
     if opts.skip_efficient
         && is_efficient(&probe.codec, probe.width, probe.height, probe.bitrate, opts)
     {
-        return keep_or_remux(tools, path, commit);
+        return keep_or_remux(tools, path, commit, stop);
     }
 
     let max_edge = opts.max_resolution.max_long_edge();
@@ -1071,8 +1141,11 @@ fn compress_video(
             "-movflags".into(),
             "+faststart".into(),
         ]);
-        if let Err(hevc_err) = tools.transcode(&hevc_args, &tmp, Reads::All(path), None) {
+        if let Err(hevc_err) = tools.transcode(&hevc_args, &tmp, Reads::All(path), stop) {
             let _ = fs::remove_file(&tmp);
+            if !h264_follows(&hevc_err) {
+                return Err(hevc_err.context(format!("compress video {}", path.display())));
+            }
             let mut avc_args = base_video_args(path, &vf);
             avc_args.extend([
                 "-c:v".into(),
@@ -1089,13 +1162,38 @@ fn compress_video(
                 "+faststart".into(),
             ]);
             tools
-                .transcode(&avc_args, &tmp, Reads::All(path), None)
+                .transcode(&avc_args, &tmp, Reads::All(path), stop)
                 .with_context(|| format!("HEVC failed ({hevc_err:#}), and then H.264 failed"))
                 .with_context(|| format!("compress video {}", path.display()))?;
             *hevc_failure = Some(format!("{hevc_err:#}"));
         }
         Ok(Some(commit_produced(commit, path, &tmp)?))
     })
+}
+
+/// Whether H.264 is tried after HEVC failed with `hevc_err` (#2898).
+///
+/// - ffmpeg exited with an error, as when the encoder is missing or refused
+///   the file, or did not start: yes.
+/// - It made no progress and had never moved from the start: yes, because
+///   the HEVC encoder most likely hung, as a hardware encoder can.
+/// - It made no progress after moving: no, because the file is most likely
+///   damaged at that point, and H.264 would stall there too.
+/// - It ran past twice the file's length: no, because a damaged file loops.
+/// - It was stopped: no, because nothing is wrong, and the run is ending.
+/// - A short step over its limit is not a conversion, and never reaches
+///   here; it is not followed either.
+fn h264_follows(hevc_err: &anyhow::Error) -> bool {
+    match hevc_err.downcast_ref::<Killed>().map(Killed::reason) {
+        None | Some(KillReason::StalledBeforeOutput { .. }) => true,
+        Some(
+            KillReason::StalledPartway { .. }
+            | KillReason::RanPastLength { .. }
+            | KillReason::Stopped
+            | KillReason::StoppedBeforeStart
+            | KillReason::ShortStepTooLong { .. },
+        ) => false,
+    }
 }
 
 /// The frame rate to bring a video down to, or `None` to leave its rate alone.

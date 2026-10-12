@@ -14,7 +14,7 @@ Typical headers:
 | `X-smssync-datatype` | `SMS`, `MMS` or `CALLLOG`; a `CALLLOG` mail is skipped (below) |
 | `X-smssync-type` | Android SMS type; sent ≈ `{2,128,4,135,6,5}`, received ≈ `{1,132,130}` |
 | `X-smssync-address` | The other party's number. For an MMS, only the first address the phone stored for it, so a group MMS names one of its participants here. Older exports may list several, separated by `~` (or `;`, `,`, `\|`) |
-| `X-smssync-date` | Unix epoch **milliseconds** (or seconds if small) |
+| `X-smssync-date` | The message time as Android stores it: epoch **milliseconds** for an SMS or a call, epoch **seconds** for an MMS (below) |
 | `X-smssync-id` | Stable sync id (optional) |
 | `Subject` | `SMS with {contact name}` |
 | `From` / `To` | The owner is their Gmail address. Anyone else is their contact's email address when the contact has one, else `<number>@unknown.email`. A sent MMS names every recipient in `To`; a received MMS names its sender in `From` and every other recipient, the owner included, in `To` |
@@ -24,6 +24,27 @@ The `X-smssync-address`, `From` and `To` rows come from SMS Backup+ at commit
 `app/src/main/java/sms/backup/plus/mail/MessageGenerator.java` (lines 144–150
 and 182), `getDetails` in `MmsSupport.java` (lines 91–153), and `getAddress`
 and `getUnknownEmail` in `PersonRecord.java` (lines 36–52 and 83–86).
+
+SMS Backup+ copies `X-smssync-date` straight from Android's database, so its
+unit is the one Android stores for the message's kind: milliseconds for an
+SMS and a call, seconds for an MMS. The source is `setSmsHeaders`,
+`setMmsHeaders` and `setCallLogHeaders` in
+`app/src/main/java/sms/backup/plus/mail/HeaderGenerator.java` at commit
+`fd33c32` (lines 64–88). The exporter reads the date in the unit
+`X-smssync-datatype` gives, by the date rule every Android reader shares: a
+whole number, at most the last millisecond of the year 9999.
+
+`WHATSAPP`, which SMS Backup+ wrote for WhatsApp messages from 2013 to 2015
+(commits `e77c56d` and `24b549e`), is read in milliseconds too. A mail with no
+`X-smssync-datatype` comes from a version older than the header, which SMS
+Backup+ added in November 2010 (commit `33f87f2`), a month after it began
+backing up MMS. Its date is read in the unit that agrees with the `Date`
+header to the second, and in milliseconds when it has no `Date`.
+
+A date that cannot be read, or one in a mail of any other datatype, leaves the
+time to the `Date` header, which SMS Backup+ writes on every mail to the
+second. A mail with neither is skipped and counted as a message with an
+invalid date.
 
 A received MMS names the owner in `To` under the address on the owner's own
 contact card, which need not be the account the backup went to. The run
@@ -64,7 +85,7 @@ Every mail carries `Subject` (`SMS with <name>`: the sender of a received messag
 |---|---|
 | `X-smssync-datatype` | `SMS`, or `MMS` for an MMS or a message with an attachment |
 | `X-smssync-address` | The other person's address; in a group, every other person's, joined by `~`. Empty for a conversation known only by a name, which the subject then names, and for the conversation that names nobody, whose subject is plain `SMS` |
-| `X-smssync-date` | The message time in epoch milliseconds |
+| `X-smssync-date` | The message time in epoch milliseconds for an SMS, and in epoch seconds for an MMS, as SMS Backup+ writes it, so an MMS goes out to the second |
 | `X-smssync-type` | `1` received or `2` sent for SMS; `132` received or `128` sent for MMS |
 | `X-smssync-backup-time` | The start of the Export Run that wrote the file, or of the Convert run, in epoch milliseconds |
 

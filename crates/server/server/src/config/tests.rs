@@ -126,6 +126,41 @@ fn a_config_with_no_settings_loads_the_documented_defaults() {
     assert_eq!(server.upload_piece_secs, 300);
     assert!(!server.openapi_ui);
     assert!(server.cors_origins.is_empty());
+    assert_eq!(server.transcode_stall_secs, 120);
+}
+
+/// `[server] transcode_stall_secs` sets how long a conversion may go
+/// without progress before ffmpeg is stopped; a file with no `[server]`
+/// section, and a server started with `--data-dir`, use the default
+/// (#2898).
+#[test]
+fn transcode_stall_secs_sets_the_no_progress_wait() {
+    let cfg = load_text(
+        "[paths]\ndb = \"data/messagecrate.db\"\n\n[server]\ntranscode_stall_secs = 600\n",
+    )
+    .unwrap();
+    assert_eq!(
+        cfg.transcode_stall_wait(),
+        std::time::Duration::from_secs(600)
+    );
+
+    let no_server = load_text("[paths]\ndb = \"data/messagecrate.db\"\n").unwrap();
+    assert_eq!(no_server.transcode_stall_wait(), media::DEFAULT_STALL_WAIT);
+    let data_dir = Config::for_data_dir(Path::new("data"));
+    assert_eq!(data_dir.transcode_stall_wait(), media::DEFAULT_STALL_WAIT);
+}
+
+/// A wait of zero would stop every conversion at once, so it is refused,
+/// naming the key.
+#[test]
+fn a_transcode_stall_secs_of_zero_is_refused_naming_the_key() {
+    let err =
+        load_text("[paths]\ndb = \"data/messagecrate.db\"\n\n[server]\ntranscode_stall_secs = 0\n")
+            .unwrap_err();
+    let text = format!("{err:#}");
+
+    assert!(text.contains("[server] transcode_stall_secs"), "{text}");
+    assert!(text.contains("greater than 0"), "{text}");
 }
 
 /// Write `text` as `config/config.toml` under a fresh directory and load it.

@@ -1,5 +1,5 @@
 use super::*;
-use crate::testutil::tools_test_lock;
+use crate::testutil::{clock_from, progress_then_hang, tools_test_lock};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
@@ -71,57 +71,232 @@ fn still_runs(pid: &str) -> bool {
         .success()
 }
 
-/// An ffmpeg that never exits is killed once its time is up, and the run
-/// fails saying so, so one file ffmpeg hangs on cannot hold up the media
-/// pass for good (#2059). The test says when the time is up, as soon as the
-/// mock has started, so it waits on no clock.
+/// An ffmpeg that never exits on one frame is killed once the short step's
+/// 15 seconds are up, and the run fails saying so, so one file ffmpeg hangs
+/// on cannot hold up the media pass for good (#2059, #2898).
 #[cfg(unix)]
 #[test]
-fn ffmpeg_that_never_finishes_is_killed_when_its_time_is_up() {
+fn ffmpeg_that_never_finishes_one_frame_is_killed_after_the_short_step_limit() {
     let _guard = tools_test_lock();
     let _restore = RestoreToolsDir::capture();
     let dir = mock_ffmpeg_dir(WRITE_PID_AND_HANG);
     let pid_file = dir.path().join("pid");
 
     let err = run_ffmpeg_watched(
-        &["out.mp4".to_string()],
+        &["out.jpg".to_string()],
         Some(&AtomicBool::new(false)),
-        Duration::from_secs(10 * 60),
-        &|| pid_file.is_file(),
+        Limit::ShortStep,
+        &clock_from(&pid_file),
     )
     .expect_err("a run past its time fails");
 
-    assert!(err.downcast_ref::<RanTooLong>().is_some(), "{err:#}");
+    assert_eq!(
+        err.downcast_ref::<Killed>().map(Killed::reason),
+        Some(KillReason::ShortStepTooLong {
+            limit: SHORT_STEP_LIMIT
+        }),
+        "{err:#}"
+    );
     assert_eq!(
         format!("{err:#}"),
-        "ffmpeg did not finish within 10 minutes, so it was stopped"
+        "ffmpeg did not finish within 15 seconds, so it was stopped"
     );
     let pid = fs::read_to_string(&pid_file).unwrap().trim().to_string();
     assert!(!still_runs(&pid), "ffmpeg {pid} still runs");
 }
 
-/// An ffprobe that never exits is killed once its time is up too, and the
-/// probe fails (#2059).
+/// An ffprobe that never exits is killed once the short step's 15 seconds
+/// are up too, and the probe fails (#2059, #2898).
 #[cfg(unix)]
 #[test]
-fn ffprobe_that_never_finishes_is_killed_when_its_time_is_up() {
+fn ffprobe_that_never_finishes_is_killed_after_the_short_step_limit() {
     let _guard = tools_test_lock();
     let _restore = RestoreToolsDir::capture();
     let dir = mock_tools_dir("exit 0", WRITE_PID_AND_HANG);
     let pid_file = dir.path().join("pid");
 
-    let err = run_ffprobe_watched(&["-v", "error"], Path::new("clip.mp4"), None, &|| {
-        pid_file.is_file()
-    })
+    let err = run_ffprobe_watched(
+        &["-v", "error"],
+        Path::new("clip.mp4"),
+        None,
+        &clock_from(&pid_file),
+    )
     .expect_err("a probe past its time fails");
 
-    assert!(err.downcast_ref::<RanTooLong>().is_some(), "{err:#}");
+    assert!(err.downcast_ref::<Killed>().is_some(), "{err:#}");
     assert!(
-        format!("{err:#}").contains("ffprobe did not finish within 2 minutes"),
+        format!("{err:#}").contains("ffprobe did not finish within 15 seconds"),
         "{err:#}"
     );
     let pid = fs::read_to_string(&pid_file).unwrap().trim().to_string();
     assert!(!still_runs(&pid), "ffprobe {pid} still runs");
+}
+
+/// A conversion whose ffmpeg writes no progress and never exits is killed
+/// once the no-progress wait has passed, as stalled before any output, and
+/// the process is reaped (#2898).
+#[cfg(unix)]
+#[test]
+fn a_conversion_that_never_moves_is_killed_as_stalled_before_any_output() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let dir = mock_ffmpeg_dir(WRITE_PID_AND_HANG);
+    let pid_file = dir.path().join("pid");
+    let wait = Duration::from_secs(120);
+
+    let err = run_ffmpeg_watched(
+        &["out.mp4".to_string()],
+        None,
+        Limit::Progress(StallWatch::new(wait, Some(Duration::from_secs(60)))),
+        &clock_from(&pid_file),
+    )
+    .expect_err("a stalled run fails");
+
+    assert_eq!(
+        err.downcast_ref::<Killed>().map(Killed::reason),
+        Some(KillReason::StalledBeforeOutput { wait }),
+        "{err:#}"
+    );
+    let pid = fs::read_to_string(&pid_file).unwrap().trim().to_string();
+    assert!(!still_runs(&pid), "ffmpeg {pid} still runs");
+}
+
+/// A conversion whose position moves and then stops is killed once the
+/// no-progress wait has passed, as stalled partway, at the furthest
+/// position, and the process is reaped (#2898).
+#[cfg(unix)]
+#[test]
+fn a_conversion_that_stops_moving_partway_is_killed_and_reaped() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let dir = mock_ffmpeg_dir(&progress_then_hang(
+        "out_time=00:00:01.000000\\nprogress=continue\\nout_time=00:00:42.000000\\nprogress=continue\\n",
+    ));
+    let wait = Duration::from_secs(120);
+
+    let err = run_ffmpeg_watched(
+        &["out.mp4".to_string()],
+        None,
+        Limit::Progress(StallWatch::new(wait, Some(Duration::from_secs(600)))),
+        &clock_from(&dir.path().join("started")),
+    )
+    .expect_err("a stalled run fails");
+
+    assert_eq!(
+        err.downcast_ref::<Killed>().map(Killed::reason),
+        Some(KillReason::StalledPartway {
+            wait,
+            at: Duration::from_secs(42)
+        }),
+        "{err:#}"
+    );
+    let pid = fs::read_to_string(dir.path().join("pid"))
+        .unwrap()
+        .trim()
+        .to_string();
+    assert!(!still_runs(&pid), "ffmpeg {pid} still runs");
+}
+
+/// A conversion whose `out_time` passes twice the file's length is killed
+/// as looping on a damaged file, and the process is reaped. The clock never
+/// moves, so only the position can end the run (#2898).
+#[cfg(unix)]
+#[test]
+fn a_conversion_past_twice_its_length_is_killed() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    // The pid is written before the progress, so it is there once the run
+    // is killed.
+    let dir = mock_ffmpeg_dir(
+        "echo $$ > \"$(dirname \"$0\")/pid\"\n\
+         printf 'out_time=-00:00:00.023220\\nprogress=continue\\n\
+         out_time=00:00:03.000000\\nprogress=continue\\n'\nexec sleep 600",
+    );
+    let pid_file = dir.path().join("pid");
+
+    let err = run_ffmpeg_watched(
+        &["out.mp4".to_string()],
+        None,
+        Limit::Progress(StallWatch::new(
+            Duration::from_secs(120),
+            Some(Duration::from_secs(1)),
+        )),
+        &|| Duration::ZERO,
+    )
+    .expect_err("a run past twice its length fails");
+
+    assert_eq!(
+        err.downcast_ref::<Killed>().map(Killed::reason),
+        Some(KillReason::RanPastLength {
+            length: Duration::from_secs(1)
+        }),
+        "{err:#}"
+    );
+    assert_eq!(
+        format!("{err:#}"),
+        "ffmpeg ran past twice the file's length of 0:01, so it was stopped as looping on a \
+         damaged file"
+    );
+    let pid = fs::read_to_string(&pid_file).unwrap().trim().to_string();
+    assert!(!still_runs(&pid), "ffmpeg {pid} still runs");
+}
+
+/// A conversion that writes progress and exits succeeds, whatever its
+/// progress said.
+#[cfg(unix)]
+#[test]
+fn a_conversion_that_exits_after_its_progress_succeeds() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let _dir = mock_ffmpeg_dir(
+        "printf 'out_time=00:00:01.000000\\nprogress=continue\\n\
+         out_time=00:00:02.000000\\nprogress=end\\n'\nexit 0",
+    );
+
+    run_ffmpeg_watched(
+        &["out.mp4".to_string()],
+        None,
+        Limit::Progress(StallWatch::new(
+            Duration::from_secs(120),
+            Some(Duration::from_secs(2)),
+        )),
+        &|| Duration::ZERO,
+    )
+    .expect("a run that exits 0 succeeds");
+}
+
+/// A program that never exits on `-version` is killed once the short
+/// step's 15 seconds are up and answers "not found", and leaves no process,
+/// so a broken ffmpeg on `PATH` cannot hold every lookup for good (#2883).
+#[cfg(unix)]
+#[test]
+fn a_program_that_never_answers_version_does_not_run_and_is_reaped() {
+    let dir = tempfile::tempdir().unwrap();
+    let program = dir.path().join("ffmpeg");
+    fs::write(&program, format!("#!/bin/sh\n{WRITE_PID_AND_HANG}\n")).unwrap();
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+    let pid_file = dir.path().join("pid");
+
+    assert!(!command_runs_watched(
+        &program,
+        &["-version"],
+        &clock_from(&pid_file)
+    ));
+
+    let pid = fs::read_to_string(&pid_file).unwrap().trim().to_string();
+    assert!(!still_runs(&pid), "{pid} still runs");
+}
+
+/// A program that answers `-version` within the short step runs.
+#[cfg(unix)]
+#[test]
+fn a_program_that_answers_version_runs() {
+    let tools = mock_tools();
+    assert!(command_runs_watched(
+        &tools.path().join("ffmpeg"),
+        &["-version"],
+        &|| Duration::ZERO
+    ));
 }
 
 /// ffprobe's answer on stdout comes back, after the flags that keep it to
@@ -141,8 +316,9 @@ fn ffprobe_answers_what_it_wrote_and_opens_only_local_files() {
     );
 }
 
-/// Every ffmpeg run reads nothing from stdin and opens only local files and
-/// pipes, after the quiet flags (#2059).
+/// Every ffmpeg run writes its progress to stdout, reads nothing from stdin
+/// and opens only local files and pipes, after the quiet flags (#2059,
+/// #2898).
 #[cfg(unix)]
 #[test]
 fn ffmpeg_reads_no_stdin_and_opens_only_local_files() {
@@ -159,26 +335,189 @@ fn ffmpeg_reads_no_stdin_and_opens_only_local_files() {
 
     assert_eq!(
         fs::read_to_string(dir.path().join("args")).unwrap(),
-        "-hide_banner -nostats -loglevel error -nostdin -protocol_whitelist file,pipe \
-         -i in.mov out.mp4\n"
+        "-hide_banner -nostats -loglevel error -progress pipe:1 -nostdin \
+         -protocol_whitelist file,pipe -i in.mov out.mp4\n"
     );
 }
 
-/// A conversion that reads a whole file is given twenty times its length,
-/// at least ten minutes and at most six hours, in whole minutes; one whose
-/// length is not known gets an hour.
+/// A minute, for the scripted progress streams below.
+const MINUTE: Duration = Duration::from_secs(60);
+
+/// A conversion whose position keeps moving is never stopped, however long
+/// it runs: a thousand hours of a long video on a slow computer, a second
+/// of the file every minute (#2898).
 #[test]
-fn an_ffmpeg_run_is_given_time_by_the_length_of_what_it_reads() {
-    let minutes = |m: u64| Duration::from_secs(m * 60);
-    assert_eq!(ffmpeg_time_limit(None), minutes(60));
-    assert_eq!(ffmpeg_time_limit(Some(Duration::from_secs(5))), minutes(10));
+fn a_conversion_that_keeps_moving_is_never_stopped() {
+    let mut watch = StallWatch::new(2 * MINUTE, None);
+    for minute in 0..60_000u64 {
+        let now = MINUTE * u32::try_from(minute).unwrap();
+        assert_eq!(
+            watch.observe(Some(Duration::from_secs(minute)), now),
+            None,
+            "stopped at minute {minute}"
+        );
+    }
+}
+
+/// A slow conversion of a file with a known length that keeps moving is
+/// never stopped either, until it passes twice that length.
+#[test]
+fn a_slow_conversion_within_its_length_is_never_stopped() {
+    let length = Duration::from_secs(3600);
+    let mut watch = StallWatch::new(2 * MINUTE, Some(length));
+    for second in 0..=7200u64 {
+        let now = MINUTE * u32::try_from(second).unwrap();
+        assert_eq!(watch.observe(Some(Duration::from_secs(second)), now), None);
+    }
+}
+
+/// A position that stops moving is stopped once the wait has passed since
+/// it last moved, as stalled partway, and not before.
+#[test]
+fn a_conversion_that_stops_moving_is_stopped_after_the_wait() {
+    let wait = 2 * MINUTE;
+    let mut watch = StallWatch::new(wait, Some(10 * MINUTE));
+    let at = Duration::from_secs(30);
+    assert_eq!(watch.observe(Some(at), MINUTE), None);
+    assert_eq!(watch.observe(Some(at), 2 * MINUTE), None);
     assert_eq!(
-        ffmpeg_time_limit(Some(Duration::from_millis(61_500))),
-        minutes(21)
+        watch.observe(Some(at), 3 * MINUTE - Duration::from_millis(1)),
+        None
     );
-    assert_eq!(ffmpeg_time_limit(Some(minutes(10))), minutes(200));
-    assert_eq!(ffmpeg_time_limit(Some(minutes(60))), minutes(6 * 60));
-    assert_eq!(ffmpeg_time_limit(Some(Duration::MAX)), minutes(6 * 60));
+    assert_eq!(
+        watch.observe(Some(at), 3 * MINUTE),
+        Some(KillReason::StalledPartway { wait, at })
+    );
+}
+
+/// A position that goes back is not progress: only a position past the
+/// furthest seen moves the run forward.
+#[test]
+fn a_position_that_goes_back_is_not_progress() {
+    let wait = 2 * MINUTE;
+    let mut watch = StallWatch::new(wait, None);
+    let furthest = Duration::from_secs(40);
+    assert_eq!(watch.observe(Some(furthest), Duration::ZERO), None);
+    assert_eq!(watch.observe(Some(Duration::from_secs(10)), MINUTE), None);
+    assert_eq!(
+        watch.observe(Some(Duration::from_secs(39)), 2 * MINUTE),
+        Some(KillReason::StalledPartway { wait, at: furthest })
+    );
+}
+
+/// A run that never reports a position past the start is stopped as
+/// stalled before any output once the wait has passed since it started.
+#[test]
+fn a_conversion_that_never_moves_is_stalled_before_any_output() {
+    let wait = 2 * MINUTE;
+    let mut watch = StallWatch::new(wait, None);
+    assert_eq!(watch.observe(None, MINUTE), None);
+    assert_eq!(watch.observe(Some(Duration::ZERO), MINUTE), None);
+    assert_eq!(
+        watch.observe(Some(Duration::ZERO), wait),
+        Some(KillReason::StalledBeforeOutput { wait })
+    );
+}
+
+/// A position past twice the file's length is stopped at once, while it is
+/// still moving; at twice the length it is not yet.
+#[test]
+fn a_conversion_past_twice_its_length_is_stopped() {
+    let length = Duration::from_secs(5);
+    let mut watch = StallWatch::new(2 * MINUTE, Some(length));
+    assert_eq!(
+        watch.observe(Some(Duration::from_secs(10)), Duration::ZERO),
+        None
+    );
+    assert_eq!(
+        watch.observe(Some(Duration::from_millis(10_001)), Duration::ZERO),
+        Some(KillReason::RanPastLength { length })
+    );
+}
+
+/// ffmpeg's `out_time` lines are read as positions; other lines, `N/A` and
+/// a line that is not a time are not, and a negative time is the start.
+#[test]
+fn out_time_reads_ffmpegs_progress_lines() {
+    assert_eq!(
+        out_time("out_time=01:02:03.500000"),
+        Some(Duration::from_millis(3_723_500))
+    );
+    assert_eq!(out_time("out_time=00:00:00.000000\n"), Some(Duration::ZERO));
+    assert_eq!(out_time("out_time=-00:00:00.023220"), Some(Duration::ZERO));
+    assert_eq!(out_time("out_time=N/A"), None);
+    assert_eq!(out_time("out_time_us=3723500000"), None);
+    assert_eq!(out_time("progress=continue"), None);
+    assert_eq!(out_time("out_time=nonsense"), None);
+}
+
+/// A position or length is said as a player shows it.
+#[test]
+fn a_position_is_said_as_a_player_shows_it() {
+    assert_eq!(clock(Duration::from_millis(5_900)), "0:05");
+    assert_eq!(clock(Duration::from_secs(65)), "1:05");
+    assert_eq!(clock(Duration::from_secs(3 * 3600 + 7)), "3:00:07");
+}
+
+/// The no-progress wait is the default until it is set, and a wait under a
+/// millisecond is taken as one.
+#[test]
+fn the_no_progress_wait_is_the_default_until_set() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreStallWait;
+    assert_eq!(stall_wait(), DEFAULT_STALL_WAIT);
+    set_stall_wait(Duration::from_secs(30));
+    assert_eq!(stall_wait(), Duration::from_secs(30));
+    set_stall_wait(Duration::ZERO);
+    assert_eq!(stall_wait(), Duration::from_millis(1));
+}
+
+/// Puts the default no-progress wait back when dropped, so a test that
+/// fails partway does not leave every later conversion in this process
+/// stopped as stalled.
+struct RestoreStallWait;
+
+impl Drop for RestoreStallWait {
+    fn drop(&mut self) {
+        set_stall_wait(DEFAULT_STALL_WAIT);
+    }
+}
+
+/// A conversion that reaches the end of its file is finishing it: with
+/// `+faststart` ffmpeg rewrites the whole output without reporting
+/// progress, which on a slow disk takes longer than the wait. It is given
+/// twice the time it took to reach the end, and stopped after that.
+#[test]
+fn a_conversion_finishing_its_file_gets_twice_the_time_it_took() {
+    let wait = 2 * MINUTE;
+    let length = Duration::from_secs(600);
+    let mut watch = StallWatch::new(wait, Some(length));
+    // Reaches the end, a frame short of it, after 10 minutes.
+    let end = length - Duration::from_millis(40);
+    assert_eq!(watch.observe(Some(end), 10 * MINUTE), None);
+    // Silent for 19 minutes while it rewrites the file: not stopped.
+    assert_eq!(watch.observe(Some(end), 29 * MINUTE), None);
+    assert_eq!(
+        watch.observe(Some(end), 30 * MINUTE),
+        Some(KillReason::StalledPartway {
+            wait: 20 * MINUTE,
+            at: end
+        })
+    );
+}
+
+/// A conversion that stops short of the end gets only the wait, however
+/// long it took to get there.
+#[test]
+fn a_conversion_short_of_its_end_gets_only_the_wait() {
+    let wait = 2 * MINUTE;
+    let mut watch = StallWatch::new(wait, Some(Duration::from_secs(600)));
+    let at = Duration::from_secs(500);
+    assert_eq!(watch.observe(Some(at), 60 * MINUTE), None);
+    assert_eq!(
+        watch.observe(Some(at), 62 * MINUTE),
+        Some(KillReason::StalledPartway { wait, at })
+    );
 }
 
 /// A time limit is said in the largest whole unit.
@@ -528,7 +867,7 @@ fn a_program_held_open_for_writing_is_found_once_the_writer_closes() {
     let mut writer = Some(fs::File::options().write(true).open(&ffmpeg).unwrap());
     let mut starts = 0;
 
-    let runs = runs_once_the_file_is_free(|| {
+    let runs = started_once_the_file_is_free(|| {
         starts += 1;
         let started = start_version(&ffmpeg);
         if starts == 1 {
@@ -540,7 +879,8 @@ fn a_program_held_open_for_writing_is_found_once_the_writer_closes() {
             writer.take();
         }
         started
-    });
+    })
+    .is_some_and(|status| status.success());
 
     assert!(runs, "found once the writer closed");
     assert!(starts > 1, "started again after the refusal");
@@ -572,12 +912,12 @@ fn a_program_held_open_for_writing_throughout_is_not_found() {
 fn a_start_refused_for_another_reason_is_not_made_again() {
     let mut starts = 0;
 
-    let runs = runs_once_the_file_is_free(|| {
+    let started = started_once_the_file_is_free(|| -> io::Result<ExitStatus> {
         starts += 1;
         Err(io::Error::from(io::ErrorKind::NotFound))
     });
 
-    assert!(!runs);
+    assert!(started.is_none());
     assert_eq!(starts, 1);
 }
 
@@ -906,6 +1246,9 @@ fn a_stopped_transcode_runs_neither_program() {
         )
         .expect_err("a stopped run fails");
 
-    assert!(format!("{err:#}").contains("stopped"), "{err:#}");
+    assert!(
+        err.downcast_ref::<Killed>().map(Killed::reason) == Some(KillReason::StoppedBeforeStart),
+        "{err:#}"
+    );
     assert!(!dir.path().join("ran").exists(), "a program ran");
 }
