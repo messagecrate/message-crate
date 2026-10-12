@@ -1578,7 +1578,13 @@ export interface paths {
          */
         get: operations["get_session"];
         put?: never;
-        /** Log in: verify a local username and password and answer the Session, a `201 Created` whose `Location` is the singleton itself. */
+        /**
+         * Log in: verify a local username and password and answer the Session, a `201 Created` whose `Location` is the singleton itself.
+         * @description A refused login waits about a second, then answers
+         *     `invalid-credentials`, whatever was wrong: a username nobody holds, a
+         *     wrong or empty password, a disabled account. A login with the right
+         *     password does not wait.
+         */
         post: operations["create_session"];
         /**
          * Log out: revoke the presented session token, ending the Session.
@@ -5252,8 +5258,8 @@ export interface components {
          *     same request.
          *
          *     The extension members belong to the types named here: `word` and
-         *     `did_you_mean` to `search-query-invalid`, `retry_after` to `rate-limited`
-         *     and `database-busy`, `line` to `malformed-body` and `validation-failed` from an import batch,
+         *     `did_you_mean` to `search-query-invalid`, `retry_after` to
+         *     `database-busy`, `line` to `malformed-body` and `validation-failed` from an import batch,
          *     `holder` to `identity-exists`.
          */
         Problem: {
@@ -5291,8 +5297,8 @@ export interface components {
             request_id?: string | null;
             /**
              * Format: int64
-             * @description `rate-limited` and `database-busy`: seconds until the request may
-             *     succeed, the same figure as the `Retry-After` header.
+             * @description `database-busy`: seconds until the request may succeed, the same
+             *     figure as the `Retry-After` header.
              */
             retry_after?: number | null;
             /**
@@ -6023,15 +6029,6 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server. */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
         };
     };
     get_account: {
@@ -6218,15 +6215,6 @@ export interface operations {
             };
             /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description [`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server. */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7410,15 +7398,6 @@ export interface operations {
             };
             /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description [`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server. */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13591,15 +13570,6 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server. */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
         };
     };
     get_demo_account: {
@@ -14319,15 +14289,6 @@ export interface operations {
             };
             /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description [`rate-limited`](https://messagecrate.app/docs/developer/reference/errors/rate-limited): The server refused an authentication attempt because too many came too fast: more than 20 attempts inside 60 seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server. */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };

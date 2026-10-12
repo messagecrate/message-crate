@@ -4,16 +4,12 @@
 //! reading it says which account the bearer token names, and logging out
 //! ends it. The password rules it applies live in `credentials`.
 
-use std::time::Instant;
-
 use axum::extract::State;
 use axum::http::HeaderMap;
 use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
 
-use crate::credentials::{
-    AuthRateLimits, MAX_PASSWORD_BYTES, RateBucket, normalize_username, verify_login_password,
-};
+use crate::credentials::{MAX_PASSWORD_BYTES, normalize_username, verify_login_password};
 use crate::db::audit_trail::{self, AuditReason};
 use crate::db::session_tokens::ConnectingApp;
 use crate::db::{account_profile, api_tokens, dedupe, session_tokens};
@@ -143,39 +139,15 @@ async fn load_username(pool: &SqlitePool, account_id: i64) -> Result<String, Api
 
 /// The answer to every refused login, whatever was wrong, so the answer does
 /// not tell a guesser which part failed.
-fn invalid_login() -> ApiError {
-    ApiError::InvalidCredentials("invalid username or password".into())
-}
-
-/// Count a login as `username`, which names no account: once for the whole
-/// server, then under the username. `Ok(false)` when the server's count is
-/// full, and the login is to be refused unchecked.
-///
-/// A login the username's count refuses is given back to the server's
-/// count, because a refused attempt is not counted. The username's count is
-/// kept past the server's count too, so its `429` comes at the same attempt
-/// as a real account's whether or not the server's count is full, and does
-/// not tell a stranger which usernames name an account.
-fn count_unknown_username(limits: &AuthRateLimits, username: &str) -> Result<bool, ApiError> {
-    let own = RateBucket::unknown_username(username);
-    match limits.count(&RateBucket::UnknownUsernames) {
-        Ok(server_hit) => {
-            if let Err(err) = limits.count(&own) {
-                limits.give_back(&RateBucket::UnknownUsernames, server_hit)?;
-                return Err(err);
-            }
-            Ok(true)
-        }
-        Err(ApiError::RateLimited { .. }) => {
-            limits.count(&own)?;
-            Ok(false)
-        }
-        Err(err) => Err(err),
-    }
-}
+const INVALID_LOGIN: &str = "invalid username or password";
 
 /// Log in: verify a local username and password and answer the Session, a
 /// `201 Created` whose `Location` is the singleton itself.
+///
+/// A refused login waits about a second, then answers
+/// `invalid-credentials`, whatever was wrong: a username nobody holds, a
+/// wrong or empty password, a disabled account. A login with the right
+/// password does not wait.
 #[utoipa::path(
     post,
     path = "/v1/session",
@@ -188,8 +160,7 @@ fn count_unknown_username(limits: &AuthRateLimits, username: &str) -> Result<boo
             body = CreateSessionResponse,
             headers(("Location" = String, description = "`/v1/session`"))
         ),
-        crate::problem::openapi::InvalidCredentials,
-        crate::problem::openapi::RateLimited
+        crate::problem::openapi::InvalidCredentials
     )
 )]
 pub async fn create_session(
@@ -201,58 +172,40 @@ pub async fn create_session(
     if username.is_empty() {
         return Err(ApiError::validation("username is required"));
     }
-    // Before any count, so the answer is the same whether or not the
-    // username names an account and whatever its count holds.
+    // Before the lookup, so the answer is the same whether or not the
+    // username names an account.
     if req.password.len() > MAX_PASSWORD_BYTES {
         return Err(ApiError::validation("password is too long"));
     }
     let app = crate::server::connecting_app(&headers);
-    let app = app.as_ref();
+    // `log_in` has given its connection back by the time it answers, so a
+    // refusal waits holding none.
+    match log_in(&state, &username, &req.password, app.as_ref()).await? {
+        Some(body) => Ok(Created {
+            location: "/v1/session".to_string(),
+            body,
+        }),
+        None => Err(state.refusal_wait.refuse(INVALID_LOGIN).await),
+    }
+}
+
+/// Check `username` and `password` and open the account's Session.
+/// `Ok(None)` when the login is refused; the Audit Trail records why.
+async fn log_in(
+    state: &AppState,
+    username: &str,
+    password: &str,
+    app: Option<&ConnectingApp>,
+) -> Result<Option<CreateSessionResponse>, ApiError> {
     let mut conn = state.db.acquire().await?;
-    let account_id = account_profile::lookup_account_by_username(&mut conn, &username).await?;
-    // A rate-limited attempt is turned away before anything is checked, and
-    // the Audit Trail records nothing of it. Every attempt is counted before
-    // its password is checked, so guesses sent at once cannot all pass the
-    // limit; a login with the right password is given back below, so the
-    // holder's own logins never fill the count.
-    //
-    // Counted per account, not per username as typed: the lookup ignores
-    // case, so every spelling of a username guesses at the same password. A
-    // username nobody holds is counted under that username, and once more for
-    // the whole server, so a script trying a new username each time cannot
-    // run Argon2 and write to the Audit Trail as fast as it likes.
-    //
-    // Past the server's count a login as a username nobody holds is refused
-    // unchecked: no Argon2, no Audit Trail entry, no log line. Its answer is
-    // the one a wrong password gets, after about as long, not `429`, because
-    // a `429` that only unknown usernames get would tell a stranger which
-    // usernames name an account.
-    let limits = &state.auth_rate_limits;
-    let counted = match account_id {
-        Some(id) => {
-            let bucket = RateBucket::Password(id);
-            let hit = limits.count(&bucket)?;
-            Some((bucket, hit))
-        }
-        None => {
-            if !count_unknown_username(limits, &username)? {
-                drop(conn);
-                limits.wait_as_long_as_an_unknown_refusal().await;
-                return Err(invalid_login());
-            }
-            None
-        }
-    };
-    let counted_at = Instant::now();
+    let account_id = account_profile::lookup_account_by_username(&mut conn, username).await?;
     // Refused logins for usernames nobody holds are kept for a fixed time,
     // and a login is when the old ones go.
     audit_trail::trim_refused_logins(&mut conn).await?;
 
-    let password = req.password.clone();
-
     // The username the account's row holds. An account deleted since the
     // lookup above is a username nobody holds by now, so it takes the same
-    // branch, with the same timing and the same Audit Trail entry.
+    // branch and gets the same Audit Trail entry.
     let account = match account_id {
         Some(id) => account_profile::username_for_account(&mut conn, id)
             .await?
@@ -260,21 +213,21 @@ pub async fn create_session(
         None => None,
     };
     let Some((account_id, stored_username)) = account else {
-        // The connection goes back to the pool for the length of the Argon2
-        // run, as it does before the real check below.
+        // Argon2 runs against a dummy hash, as it runs against the real one
+        // below, and the connection goes back to the pool for the length of
+        // the run.
         drop(conn);
-        let _ = verify_login_password(None, &password).await?;
+        let _ = verify_login_password(None, password).await?;
         let mut conn = state.db.acquire().await?;
         audit_trail::record_refused_login(
             &mut conn,
-            &username,
+            username,
             None,
             AuditReason::UnknownUsername,
             app,
         )
         .await?;
-        limits.record_unknown_refusal(counted_at.elapsed());
-        return Err(invalid_login());
+        return Ok(None);
     };
 
     // The Demo Account cannot be entered while it is being built: until the
@@ -282,7 +235,7 @@ pub async fn create_session(
     // The login card is told there is no Demo Account, so the answer here is
     // the one for a username that does not exist.
     if account_id == account_profile::DEMO_ACCOUNT_ID && state.demo_build.is_building() {
-        return Err(invalid_login());
+        return Ok(None);
     }
 
     let account = Some((account_id, stored_username.as_str()));
@@ -291,27 +244,25 @@ pub async fn create_session(
     // so a burst of logins neither stalls the async workers nor empties the
     // pool. An account changed meanwhile is read afresh below.
     drop(conn);
-    let verified = verify_login_password(password_hash.as_deref(), &password).await?;
+    let verified = verify_login_password(password_hash.as_deref(), password).await?;
     let mut conn = state.db.acquire().await?;
     if !verified {
         audit_trail::record_refused_login(
             &mut conn,
-            &username,
+            username,
             account,
             AuditReason::WrongPassword,
             app,
         )
         .await?;
-        return Err(invalid_login());
+        return Ok(None);
     }
 
     // A disabled account gets the answer every refused login gets. Its own
     // answer would come only after the right password, so a guesser would
     // learn which guess was right, and that password works again once the
-    // owner enables the account. The Audit Trail still says why. The attempt
-    // stays counted for the same reason: given back, it would show in the
-    // count which guess was right.
-    let body = match CreateSessionResponse::for_existing_account(
+    // owner enables the account. The Audit Trail still says why.
+    match CreateSessionResponse::for_existing_account(
         &mut conn,
         account_id,
         stored_username.clone(),
@@ -319,29 +270,20 @@ pub async fn create_session(
     )
     .await?
     {
-        LoginOpened::Session(body) => body,
+        LoginOpened::Session(body) => Ok(Some(body)),
         LoginOpened::Disabled => {
             audit_trail::record_refused_login(
                 &mut conn,
-                &username,
+                username,
                 account,
                 AuditReason::AccountDisabled,
                 app,
             )
             .await?;
-            return Err(invalid_login());
+            Ok(None)
         }
-        LoginOpened::Gone => return Err(invalid_login()),
-    };
-    // The holder's own login: it does not count against the account.
-    if let Some((bucket, hit)) = counted {
-        limits.give_back(&bucket, hit)?;
+        LoginOpened::Gone => Ok(None),
     }
-
-    Ok(Created {
-        location: "/v1/session".to_string(),
-        body,
-    })
 }
 
 /// Revoke the session token. Returns whether it named a Session.

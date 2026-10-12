@@ -118,13 +118,6 @@ fn decode<T: DeserializeOwned>(what: &str, text: &str) -> T {
 /// Register an account as a stranger, `POST /v1/accounts` with no
 /// credential, and return it with the live session token the server opens on
 /// it. Asserts the `201 Created` and the `Location` naming the new row.
-///
-/// The auth rate limiter lives on `AppState` (`credentials::AuthRateLimits`),
-/// so the hits counted here belong to this fixture alone. That matters because
-/// the suite reuses a handful of literal usernames ("alice", "bob", ...)
-/// across many test functions in one test binary: with a shared limiter,
-/// enough tests registering the same name inside one 60-second window would
-/// trip `AUTH_RATE_MAX` and fail an unrelated test with a 429.
 pub async fn register_via_api(
     state: &AppState,
     username: &str,

@@ -93,7 +93,6 @@ pub fn classify_retry(error: &anyhow::Error) -> RetryKind {
             AuthError::Unauthorized
             | AuthError::Forbidden { .. }
             | AuthError::ApiNotFound { .. }
-            | AuthError::RateLimited { .. }
             | AuthError::Rejected { .. } => RetryKind::Permanent,
             AuthError::HttpStatus { status, .. } if (400..500).contains(status) => {
                 RetryKind::Permanent
@@ -229,12 +228,6 @@ mod tests {
             AuthError::Forbidden {
                 status: 403,
                 body: "username does not match API key".into(),
-            }
-        ))));
-        assert!(classified(classify_retry(&anyhow::Error::from(
-            AuthError::RateLimited {
-                status: 429,
-                body: "slow down".into(),
             }
         ))));
         assert!(classified(classify_retry(&anyhow::Error::from(

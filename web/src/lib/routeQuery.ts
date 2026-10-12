@@ -126,11 +126,10 @@ export function createQueryClient({
         // One retry, and only for a failure a second try can change: a
         // request that never reached the server, or a `5xx`. A `4xx` answers
         // the same request the same way again, so asking again only delays
-        // the error on screen (or the login screen, for an ended session),
-        // and a `429 Too Many Requests` adds a request to a client already
-        // over the limit. A call its time limit ended is not tried again
-        // either: the server already had the whole limit to answer, and a
-        // second try would double the wait before the error shows.
+        // the error on screen (or the login screen, for an ended session).
+        // A call its time limit ended is not tried again either: the server
+        // already had the whole limit to answer, and a second try would
+        // double the wait before the error shows.
         retry: (failureCount, error) =>
           failureCount < 1 && !refusedRequest(error) && !timedOut(error),
         retryDelay,

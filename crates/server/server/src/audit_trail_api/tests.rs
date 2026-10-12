@@ -8,8 +8,8 @@ use crate::problem::ProblemType;
 use crate::server::{APP_HEADER, APP_VERSION_HEADER};
 use crate::test_support::{
     PASSWORD, claim_as_owner, delete_status, expect_problem, expect_problem_for, get_json, get_raw,
-    http_client, log_in, log_in_raw, login_status, patch_status, post_created_json,
-    register_via_api, serve, test_fixture, with_trigger_lifted,
+    http_client, log_in, log_in_raw, patch_status, post_created_json, register_via_api, serve,
+    test_fixture, with_trigger_lifted,
 };
 
 /// The items of an Audit Trail page.
@@ -241,26 +241,6 @@ async fn a_refused_login_for_an_unknown_username_is_kept_ninety_days() {
         .collect();
     assert_eq!(refused.len(), 1, "{refused:?}");
     assert_eq!(refused[0]["reason"], "wrong_password");
-}
-
-/// A rate-limited login is turned away before anything is checked, and
-/// leaves nothing in the Audit Trail.
-#[tokio::test]
-async fn a_rate_limited_login_writes_nothing() {
-    let fixture = test_fixture().await;
-    let state = &fixture.state;
-    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
-    for _ in 0..crate::credentials::AUTH_RATE_MAX {
-        login_status(state, "nobody", "guess").await;
-    }
-    let (status, text) = log_in_raw(state, "nobody", "guess").await;
-    expect_problem(status, &text, ProblemType::RateLimited);
-    let items = trail(state, "/v1/audit-trail", &owner.token).await;
-    let refused = items
-        .iter()
-        .filter(|item| item["action"] == "login_refused")
-        .count();
-    assert_eq!(refused, crate::credentials::AUTH_RATE_MAX);
 }
 
 /// Deleting an account leaves its entries and runs readable under its old
