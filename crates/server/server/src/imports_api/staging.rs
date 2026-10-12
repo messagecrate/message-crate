@@ -13,7 +13,7 @@ use super::records::{
 };
 use crate::assets_api::{self, AssetError, AssetStats, StoredAsset};
 use crate::db::handles::{
-    HandleIdCache, handle_type_on, upsert_handle_row_cached, upsert_handle_row_in,
+    HandleIdCache, handle_type_on, normalize_handle, upsert_handle_row_cached, upsert_handle_row_in,
 };
 use crate::db::staging::{
     self as db_staging, BackupOrder, StagedCopy, StagingAttachment, StagingConversation,
@@ -23,9 +23,7 @@ use crate::import_media;
 use crate::jsonl::{self, ReadRecordsError};
 use media::MediaMode;
 
-use super::contact_name::{
-    IncomingSender, count_other_identity, ensure_contact_for_handle, is_account_identity,
-};
+use super::contact_name::ensure_contact_for_handle;
 use super::{ImportCounts, ImportFailure, ImportOptions};
 
 /// Why staging a file stopped: a refusal the sender can fix by changing the
@@ -266,6 +264,44 @@ fn prepare_attachments(
         });
     }
     Ok(prepared)
+}
+
+/// Count `handle_type` in `counts` when it is `Other` and this run meets the
+/// identity for the first time (`cached` is false). An identity of type
+/// `other` that is a person is a name with no address, or a sender such as
+/// `AMAZON`: something the exporter could not tie to an address, which the
+/// run's counts name.
+fn count_other_identity(handle_type: IdentityType, cached: bool, counts: &mut ImportCounts) {
+    if handle_type == IdentityType::Other && !cached {
+        counts.other_identities += 1;
+    }
+}
+
+/// What one message says about who sent it. Its own type because these three
+/// facts travel together and come from the message, while the connection,
+/// handle cache, account and counts around them belong to the import run.
+struct IncomingSender<'a> {
+    /// True when the account owner sent it, in which case there is no sender
+    /// handle to resolve.
+    is_from_me: bool,
+    /// The sender's address as the backup recorded it, or the name it gave
+    /// with no address, when it recorded either. Typed by
+    /// [`HandleValue::handle_type_on`].
+    value: Option<&'a HandleValue>,
+    /// Service the message arrived on: `phone` or `whatsapp`.
+    service: IdentityService,
+}
+
+/// True when `address`, read as `handle_type` in the run's `country`, is one
+/// of the account's identities: the account holder, on any service.
+fn is_account_identity(
+    identities: &HashSet<(String, IdentityType)>,
+    address: &str,
+    handle_type: IdentityType,
+    country: Option<&'static phone::Country>,
+) -> bool {
+    let normalized = normalize_handle(address, handle_type, country).key;
+    identities.contains(&(normalized, handle_type))
 }
 
 /// Per-import insert state. Message / attachment / tapback rows flush in

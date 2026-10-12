@@ -1,18 +1,14 @@
 //! Contact linking and display-name merging during import.
 
-use std::collections::HashSet;
-
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use message_ir::{IdentityService, IdentityType, trimmed};
+use message_ir::trimmed;
 use sqlx::SqliteConnection;
 
 use super::ImportCounts;
 use crate::db::contacts;
-use crate::db::handles::normalize_handle;
 use crate::db::import_contacts::{self, ContactReason};
 use crate::db::trash;
-use crate::imports_api::records::HandleValue;
 
 /// The contact that owns `handle_id`, creating one when nothing owns it yet.
 ///
@@ -92,48 +88,6 @@ pub(super) async fn ensure_contact_for_handle(
     import_contacts::record(tx, import_id, contact_id, reason).await?;
     counts.contacts_created += 1;
     Ok(contact_id)
-}
-
-/// Count `handle_type` in `counts` when it is `Other` and this run meets the
-/// identity for the first time (`cached` is false). An identity of type
-/// `other` that is a person is a name with no address, or a sender such as
-/// `AMAZON`: something the exporter could not tie to an address, which the
-/// run's counts name.
-pub(super) fn count_other_identity(
-    handle_type: IdentityType,
-    cached: bool,
-    counts: &mut ImportCounts,
-) {
-    if handle_type == IdentityType::Other && !cached {
-        counts.other_identities += 1;
-    }
-}
-
-/// What one message says about who sent it. Its own type because these three
-/// facts travel together and come from the message, while the connection,
-/// handle cache, account and counts around them belong to the import run.
-pub(super) struct IncomingSender<'a> {
-    /// True when the account owner sent it, in which case there is no sender
-    /// handle to resolve.
-    pub is_from_me: bool,
-    /// The sender's address as the backup recorded it, or the name it gave
-    /// with no address, when it recorded either. Typed by
-    /// [`HandleValue::handle_type_on`].
-    pub value: Option<&'a HandleValue>,
-    /// Service the message arrived on: `phone` or `whatsapp`.
-    pub service: IdentityService,
-}
-
-/// True when `address`, read as `handle_type` in the run's `country`, is one
-/// of the account's identities: the account holder, on any service.
-pub(super) fn is_account_identity(
-    identities: &HashSet<(String, IdentityType)>,
-    address: &str,
-    handle_type: IdentityType,
-    country: Option<&'static phone::Country>,
-) -> bool {
-    let normalized = normalize_handle(address, handle_type, country).key;
-    identities.contains(&(normalized, handle_type))
 }
 
 /// If this handle has no contact but a sibling handle (same normalized value
