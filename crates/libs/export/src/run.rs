@@ -474,16 +474,17 @@ impl<'a> Export<'a> {
         Ok(export)
     }
 
-    /// Close the run by `action`, retrying a transient failure until the
-    /// person cancels the run. The close of a cancelled run is tried once,
-    /// so Cancel is not kept waiting on a server that is away. A failed
-    /// close is returned as it is, never as [`Cancelled`]: the caller logs
-    /// it.
+    /// Close the run by `action`, retrying a transient failure. The close of
+    /// a cancelled run is tried once, so Cancel is not kept waiting on a
+    /// server that is away. A completed or failed run keeps every retry
+    /// even when Cancel is pressed during its close, since nothing on the
+    /// server closes a run left running. A failed close is returned as it
+    /// is, never as [`Cancelled`]: the caller logs it.
     fn close_export(&self, export_id: i64, action: CloseAction) -> Result<ExportRun> {
         let cfg = self.cfg;
         with_retries_until(
             MAX_RETRIES,
-            || is_cancelled(&cfg.cancel),
+            || action == CloseAction::Cancel,
             || {
                 crate::http::close_export(
                     &self.session,
@@ -984,8 +985,8 @@ struct FetchAssetsParallelArgs<'a> {
 /// then [`parallel_for_each`] runs them. `assets` holds only Assets whose file
 /// is not at its path ([`assets_to_fetch`]). Each fetch retries a transient
 /// HTTP failure until the run is cancelled, as the Upload does, and a fetch
-/// that still fails is one
-/// entry in `failed`, as an Upload's failed Asset is one row of its summary.
+/// that still fails is one entry in `failed`, as an Upload's failed Asset is
+/// one row of its summary.
 ///
 /// # Errors
 ///
