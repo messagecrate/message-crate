@@ -435,12 +435,10 @@ export function useRouteCache(): RouteCache {
  * refetches. Every write to account data calls this once it settles.
  *
  * A write made with TanStack Query never calls it by hand: `useRouteMutation`
- * calls it for each one. The two calls left are for writes that are not one
- * request and its answer: the Import screen's discard of an Import Run, which
- * closes the run on the server and then deletes its directory, and the end of
- * a Demo Account build, which the server finishes on its own and the card
- * sees through its poll. A plain request and answer is a `useRouteMutation`,
- * not a new call to this.
+ * calls it for each one. The two calls left, in `ImportScreen` (a discard of
+ * an Import Run) and `DemoAccountCard` (the end of a build), are for writes
+ * that are not one request and its answer; ADR 0002 says why. A plain
+ * request and answer is a `useRouteMutation`, not a new call to this.
  *
  * The whole account, not a list of the entries one write changes: six
  * writes once left out entries they changed, and the screens showing those
