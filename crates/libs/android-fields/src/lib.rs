@@ -22,8 +22,17 @@ pub const MAX_DATE_MS: i64 = 253_402_300_799_999;
 /// anything but a whole number of milliseconds from 0 to [`MAX_DATE_MS`], so
 /// `NaN`, `inf`, and out-of-range values never become a timestamp. The text
 /// is read as it is: a caller that trims its field trims it first.
+///
+/// Only ASCII digits are read, with no leading zero except in `0` itself.
+/// Android never writes a `+` or a leading zero, so a date with either
+/// comes from an edited or damaged file and counts as unreadable.
 #[must_use]
 pub fn unix_secs_from_date_ms(date_ms: &str) -> Option<f64> {
+    let digits_only = !date_ms.is_empty() && date_ms.bytes().all(|b| b.is_ascii_digit());
+    let leading_zero = date_ms.len() > 1 && date_ms.starts_with('0');
+    if !digits_only || leading_zero {
+        return None;
+    }
     let millis = date_ms
         .parse::<i64>()
         .ok()
@@ -100,6 +109,11 @@ mod tests {
             ("", None),
             (" 1400773261000", None),
             ("-1", None),
+            ("+1400773261000", None),
+            ("+0", None),
+            ("0001400773261000", None),
+            ("01", None),
+            ("00", None),
             ("abc", None),
             ("99999999999999999999999", None),
             ("9223372036854775807", None),

@@ -652,6 +652,13 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-11: **A message date with a leading + or leading zeros counts as
+  unreadable.** Android writes a message's date in SMS Backup & Restore and
+  GO SMS Pro backups as plain digits. A date such as `+1400773261000` or
+  `0001400773261000` can only come from a file that was edited or damaged,
+  and it was read as a real date. Such a message is now skipped and counted
+  with the other messages whose date could not be read (#2602).
+
 - 2026-10-11: **The Import Run's log says why videos were compressed as H.264.**
   When ffmpeg could not compress a video as HEVC, most often because it was
   built without the HEVC encoder, the import compressed it as H.264 instead

@@ -857,6 +857,11 @@ pub const FIRST_GENERATED_ACCOUNT_ID: i64 = 100;
 
 /// Insert an account at a fixed id: the owner at [`OWNER_ACCOUNT_ID`], and a
 /// test's chosen row.
+///
+/// The owner's row holds 0 for `can_import`, `can_export` and `can_delete`,
+/// because [`load_account_auth`] gives the owner none of the three from its
+/// id, and the row must not say otherwise to someone reading the database.
+/// Every other row holds 1 for all three.
 pub async fn insert_account_at(
     conn: &mut SqliteConnection,
     id: i64,
@@ -865,13 +870,17 @@ pub async fn insert_account_at(
     preferred_name: Option<&str>,
 ) -> Result<()> {
     schema::ensure_accounts_schema(conn).await?;
+    let granted = i32::from(!is_server_owner(id));
     sqlx::query(
-        "INSERT INTO accounts (id, username, password_hash, preferred_name) VALUES ($1, $2, $3, $4)",
+        "INSERT INTO accounts (id, username, password_hash, preferred_name,
+                               can_import, can_export, can_delete)
+         VALUES ($1, $2, $3, $4, $5, $5, $5)",
     )
     .bind(id)
     .bind(username)
     .bind(password_hash)
     .bind(preferred_name)
+    .bind(granted)
     .execute(&mut *conn)
     .await
     .with_context(|| format!("insert account {username} at id {id}"))?;
@@ -1348,6 +1357,39 @@ mod tests {
                 .await
                 .unwrap()
                 .is_some()
+        );
+    }
+
+    /// The server gives the owner no import, export or delete permission
+    /// (`load_account_auth`), so the owner's row must not say otherwise to
+    /// someone reading the database. Every other account still starts with
+    /// all three.
+    #[tokio::test]
+    async fn the_owner_row_holds_no_permission_and_other_rows_hold_all_three() {
+        let fixture = crate::test_support::test_fixture().await;
+        let mut conn = fixture.conn().await;
+        insert_account_at(&mut conn, OWNER_ACCOUNT_ID, "owner", None, None)
+            .await
+            .unwrap();
+        let alice = insert_account(&mut conn, "alice", None, None)
+            .await
+            .unwrap();
+        let stored = |id: i64| {
+            sqlx::query_as::<_, (i64, i64, i64)>(
+                "SELECT can_import, can_export, can_delete FROM accounts WHERE id = $1",
+            )
+            .bind(id)
+        };
+        assert_eq!(
+            stored(OWNER_ACCOUNT_ID)
+                .fetch_one(&mut *conn)
+                .await
+                .unwrap(),
+            (0, 0, 0)
+        );
+        assert_eq!(
+            stored(alice).fetch_one(&mut *conn).await.unwrap(),
+            (1, 1, 1)
         );
     }
 }
