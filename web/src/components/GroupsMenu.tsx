@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { apiErrorMessage } from "../lib/apiErrorMessage";
+import { errorLine } from "../lib/apiErrorMessage";
 import type { MembershipCheckState } from "../lib/membership";
 import { CONTACT_GROUP_MENU_COPY, type GroupsMenuCopy } from "../lib/namedSetCopy";
 import { popupShadowClass } from "../lib/uiStyles";
@@ -119,7 +119,7 @@ export default function GroupsMenu({
     } catch (err) {
       if (formCountRef.current !== formCount) return;
       setCreating(false);
-      setCreateError(apiErrorMessage(err, copy.createError));
+      setCreateError(errorLine(err, copy.createError));
       return;
     }
     if (formCountRef.current !== formCount) return;

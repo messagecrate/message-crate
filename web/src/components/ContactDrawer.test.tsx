@@ -9,6 +9,7 @@ import type { ContactDetail } from "../lib/contactDetail";
 import { keys } from "../lib/queryKeys";
 import { routeQueryKey } from "../lib/routeQueryKey";
 import { focusRingClass } from "../lib/uiStyles";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { inTimeZone } from "../test/timeZone";
 import { fill, setupUser } from "../test/user";
 import ContactDrawer from "./ContactDrawer";
@@ -80,6 +81,7 @@ function detail(id: number, overrides: Partial<ContactDetail> = {}): ContactDeta
 describe("ContactDrawer", () => {
   afterEach(() => {
     cleanup();
+    stopFakeClock();
   });
 
   beforeEach(() => {
@@ -654,13 +656,15 @@ describe("ContactDrawer", () => {
   });
 
   it("shows why an empty name was refused and keeps the editor open", async () => {
+    startFakeClock();
     post.mockRejectedValue(new Error("name must not be empty"));
     const user = setupUser();
     const input = await openNameEditor(user);
     await user.clear(input);
     await user.keyboard("{Enter}");
+    await settle();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("name must not be empty");
+    expect(screen.getByRole("alert")).toHaveTextContent("Name must not be empty");
     expect(post).toHaveBeenCalledWith("1", { name: "" });
     expect(screen.getByRole("textbox", { name: "Contact name" })).toBeTruthy();
   });

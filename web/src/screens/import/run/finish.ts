@@ -4,7 +4,7 @@ import type {
   ImportSummaryView,
 } from "../../../components/import/ImportSummaryPanel";
 import { ApiError } from "../../../lib/api";
-import { errorText } from "../../../lib/apiErrorMessage";
+import { errorLine, errorText } from "../../../lib/apiErrorMessage";
 import type { UploadFinishedReport } from "../../../lib/tauri";
 import { STAGING_LABEL, UPLOAD_LABEL } from "../importProgressState";
 import {
@@ -191,7 +191,7 @@ export async function stopStageNotRecorded(
   stage: "media" | "upload",
 ): Promise<void> {
   if (await leaveIfRefused(ctx, e, runId)) return;
-  recordError(ctx, stage, errorText(e));
+  recordError(ctx, stage, errorLine(e));
   failActiveStep(ctx);
   await finishImport(ctx, {
     runId,

@@ -5,7 +5,7 @@ import IdentityDialogs from "../../components/IdentityDialogs";
 import IdentityTable, { type IdentityRow } from "../../components/IdentityTable";
 import { useIdentityCountryPick } from "../../components/useIdentityCountryPick";
 import { type AccountProfile, fixedSettings } from "../../lib/account";
-import { errorText } from "../../lib/apiErrorMessage";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { identityType } from "../../lib/backupIdentity";
 import {
   listedServerService,
@@ -128,7 +128,7 @@ export function IdentitiesSection({
       });
       setAdding(false);
     } catch (e) {
-      setAddError(errorText(e));
+      setAddError(errorLine(e));
     }
   };
 
@@ -153,7 +153,7 @@ export function IdentitiesSection({
       );
       setRemoveTarget(null);
     } catch (e) {
-      setRemoveError(errorText(e));
+      setRemoveError(errorLine(e));
     }
   };
 

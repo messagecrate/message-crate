@@ -4,6 +4,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { useLayoutEffect } from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { mockedAuth, Providers } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 import type { NavItem } from "./appLayoutContext";
@@ -57,6 +58,7 @@ vi.mock("../lib/savedSearches", () => ({
 
 afterEach(() => {
   cleanup();
+  stopFakeClock();
 });
 
 beforeEach(() => {
@@ -215,13 +217,16 @@ describe("LeftPanel", () => {
       { id: 1, name: "From Alice", query: "from:alice", kind: "manual" },
     ];
     savedSearchActions.remove.mockRejectedValue(new Error("saved search not found"));
+    startFakeClock();
     const user = setupUser();
     renderPanel();
     await user.click(screen.getByRole("button", { name: "Saved search options for From Alice" }));
     await user.click(screen.getByRole("menuitem", { name: "Delete" }));
 
+    await settle();
+
     expect(savedSearchActions.remove).toHaveBeenCalledWith(1);
-    expect(await screen.findByRole("alert")).toHaveTextContent("saved search not found");
+    expect(screen.getByRole("alert")).toHaveTextContent("Saved search not found");
   });
 
   describe("desktop Import/Export Messages section", () => {

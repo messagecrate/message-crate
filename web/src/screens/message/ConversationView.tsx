@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import MessageBubble from "../../components/MessageBubble";
 import { NearScreenRoot } from "../../hooks/useNearScreen";
-import { apiErrorMessage } from "../../lib/apiErrorMessage";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { useTimeZone } from "../../lib/timeZone";
 import type { Message, MessageAttachment } from "../../lib/types";
 import { conversationRows } from "./conversationLayout";
@@ -175,7 +175,7 @@ export default function ConversationView({
             <div className="p-4 text-[0.813rem] text-muted">Loading…</div>
           ) : error && rows.length === 0 ? (
             <div className="p-4 text-[0.813rem] text-danger">
-              {apiErrorMessage(error, "Could not load messages.")}
+              {errorLine(error, "Could not load messages.")}
             </div>
           ) : rows.length === 0 ? (
             <div className="p-4 text-[0.813rem] text-muted">No messages in this conversation</div>
@@ -209,7 +209,7 @@ export default function ConversationView({
               ) : null}
               {error ? (
                 <div className="px-4 py-2 text-[0.813rem] text-danger">
-                  {apiErrorMessage(error, "Could not load messages.")}
+                  {errorLine(error, "Could not load messages.")}
                 </div>
               ) : null}
             </>

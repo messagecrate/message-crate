@@ -47,6 +47,7 @@ import {
   listContacts,
   updateContactGroupMembers,
 } from "../lib/serverApi";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { setupUser } from "../test/user";
 
 const listContactsMock = vi.mocked(listContacts);
@@ -87,6 +88,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  stopFakeClock();
 });
 
 /** Renders the list inside the providers and panes it needs on the page. */
@@ -142,17 +144,24 @@ describe("ContactList", () => {
     const refusal =
       'name can\'t hold ";", because the address book separates Contact Group names with it';
     createGroupMock.mockRejectedValue(new ApiError(422, refusal));
+    startFakeClock();
     const user = setupUser();
 
     renderList();
+    await settle();
 
-    await user.click(await screen.findByRole("checkbox", { name: "Select Alice" }));
+    await user.click(screen.getByRole("checkbox", { name: "Select Alice" }));
     await user.click(screen.getByRole("button", { name: "Contact Groups" }));
     await user.click(screen.getByRole("button", { name: /Create Contact Group$/ }));
     await user.type(screen.getByPlaceholderText("Contact Group name"), "Work; 2024{Enter}");
+    await settle();
 
-    await waitFor(() => expect(createGroupMock).toHaveBeenCalledWith({ name: "Work; 2024" }));
-    expect(await screen.findByText(refusal)).toBeInTheDocument();
+    expect(createGroupMock).toHaveBeenCalledWith({ name: "Work; 2024" });
+    expect(
+      screen.getByText(
+        'Name can\'t hold ";", because the address book separates Contact Group names with it',
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Contact Group name")).toHaveValue("Work; 2024");
     expect(updateMembersMock).not.toHaveBeenCalled();
   });

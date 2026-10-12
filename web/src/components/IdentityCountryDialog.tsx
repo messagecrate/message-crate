@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { ApiError } from "../lib/api";
+import { errorLine } from "../lib/apiErrorMessage";
 import { usePhoneCountries } from "../lib/phoneCountries";
 import { Z_POPOVER_IN_MODAL } from "../lib/zLayers";
 import Button from "./Button";
@@ -24,7 +25,7 @@ const IDENTITY_EXISTS = "identity-exists";
  */
 function mergeQuestion(error: Error | null): string | null {
   return error instanceof ApiError && error.type === IDENTITY_EXISTS
-    ? (error.detail ?? error.message)
+    ? errorLine(error.detail ?? error.message)
     : null;
 }
 
@@ -63,7 +64,8 @@ export default function IdentityCountryDialog({
   }, [open]);
 
   const question = mergeQuestion(error);
-  const message = question ? "" : (error?.message ?? listError?.message ?? "");
+  const failed = error ?? listError;
+  const message = question || !failed ? "" : errorLine(failed);
   const canPick = country !== null && !busy;
 
   return (
