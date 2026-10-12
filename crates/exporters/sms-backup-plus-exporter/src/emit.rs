@@ -25,7 +25,7 @@ use rayon::prelude::*;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-const EXPORT_SOURCE: &str = "sms-backup-plus";
+const EXPORT_SOURCE: &str = message_crate_core::Exporter::SmsBackupPlus.source_id();
 const EXPORT_TOOL: &str = "SMS Backup+";
 const EXPORT_TOOL_VERSION: &str = "1.5.11";
 
@@ -554,7 +554,7 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
 
 /// Read-only inputs every parallel EML parse needs.
 struct ParseInputs {
-    /// The `ExporterConfig::inputs` paths after output preparation; relative
+    /// The `inputs` paths `run` was given, after output preparation; relative
     /// EML paths are computed against these.
     input_roots: Vec<PathBuf>,
     /// The subset of `input_roots` that are single files rather than directories.

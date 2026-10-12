@@ -13,7 +13,7 @@ use anyhow::{Result, bail};
 use ios_backup::{
     DecryptedDomain, decrypt_ios_backup_domain, ios_backup_domain_files, ios_backup_encrypted_flag,
 };
-use message_crate_core::{ExporterConfig, WhatsappConfig};
+use message_crate_core::{RunContext, WhatsappConfig};
 use message_staging::{Disk, check_headroom};
 use std::path::{Path, PathBuf};
 
@@ -94,10 +94,10 @@ fn domain(source: &WhatsappConfig) -> &'static str {
 pub(crate) fn decrypt_if_encrypted(
     source: &WhatsappConfig,
     work: &Path,
-    config: &ExporterConfig,
+    context: &RunContext,
 ) -> Result<Option<DecryptedWhatsapp>> {
     decrypt_with(source, work, |backup, password, domain| {
-        config
+        context
             .log
             .emit("The iPhone backup is encrypted; decrypting WhatsApp's files...");
         decrypt_ios_backup_domain(
@@ -108,8 +108,8 @@ pub(crate) fn decrypt_if_encrypted(
             // The decrypted files go under the Scratch Directory, so its
             // disk is checked for room before the first one is written.
             |bytes| check_headroom(work, bytes, Disk::Scratch),
-            config.log.clone(),
-            config.progress.clone(),
+            context.log.clone(),
+            context.progress.clone(),
         )
     })
 }
