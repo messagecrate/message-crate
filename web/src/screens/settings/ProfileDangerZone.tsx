@@ -8,7 +8,7 @@ import { errorLine } from "../../lib/apiErrorMessage";
 import { useAuth } from "../../lib/authContext";
 import { type AccountRunDirectories, accountRunDirectories } from "../../lib/importRun";
 import { keys } from "../../lib/queryKeys";
-import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
+import { useRouteMutation, useRouteQuery } from "../../lib/routeQuery";
 import { deleteAccount, deleteAllMessages as deleteAllMessagesRoute } from "../../lib/serverApi";
 import { isTauri } from "../../lib/tauriCheck";
 import { useDeleteAccount, useDeleteAccountMessages } from "../owner/useOwnerAccounts";
@@ -60,9 +60,11 @@ export function ProfileDangerZone({
 }) {
   const { logout } = useAuth();
   const navigate = useNavigate();
-  const cache = useRouteCache();
   const removeManagedAccount = useDeleteAccount();
   const removeManagedMessages = useDeleteAccountMessages();
+  const removeOwnMessages = useRouteMutation({
+    mutationFn: () => deleteAllMessagesRoute({ confirm: true }),
+  });
   const [dangerZoneOpen, setDangerZoneOpen] = useState(false);
   const [confirmDeleteMessagesOpen, setConfirmDeleteMessagesOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -95,12 +97,10 @@ export function ProfileDangerZone({
     setDangerError("");
     try {
       if (managed) await removeManagedMessages.mutateAsync(managedAccountId);
-      else await deleteAllMessagesRoute({ confirm: true });
+      else await removeOwnMessages.mutateAsync();
     } catch (e) {
       setDangerError(errorLine(e));
     } finally {
-      // The owner's deletion is a mutation that marks the cache stale itself.
-      if (!managed) cache.invalidateAccount();
       setDeletingMessages(false);
       setConfirmDeleteMessagesOpen(false);
     }

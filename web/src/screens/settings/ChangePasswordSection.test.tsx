@@ -11,6 +11,7 @@ import { fill, setupUser } from "../../test/user";
 import { ChangePasswordSection } from "./ChangePasswordSection";
 
 const changePassword = vi.hoisted(() => vi.fn());
+const setAccountPassword = vi.hoisted(() => vi.fn());
 const updateToken = vi.hoisted(() => vi.fn());
 
 vi.mock("../../lib/authContext", () => ({
@@ -20,12 +21,15 @@ vi.mock("../../lib/authContext", () => ({
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),
   changePassword: (...a: unknown[]) => changePassword(...a),
+  setAccountPassword: (...a: unknown[]) => setAccountPassword(...a),
 }));
 
 beforeEach(() => {
   startFakeClock();
   changePassword.mockReset();
   updateToken.mockReset();
+  setAccountPassword.mockReset();
+  setAccountPassword.mockResolvedValue(undefined);
   changePassword.mockResolvedValue({ token: "mc-user-rotated" });
 });
 
@@ -140,6 +144,33 @@ describe("ChangePasswordSection", () => {
     expect(
       screen.getByText("Password changed. This account's API Tokens were revoked."),
     ).toBeInTheDocument();
+    expect(freshEntries(client, 101, shown)).toEqual([]);
+  });
+
+  it("marks User Accounts stale when the owner sets another account's password", async () => {
+    // The owner's list says which accounts have a password.
+    const shown = [keys.ownerAccounts.all];
+    const client = testQueryClient();
+    seedEntries(client, 101, shown);
+    const user = setupUser();
+    render(
+      <QueryClientProvider client={client}>
+        <ChangePasswordSection managedAccountId={7} />
+      </QueryClientProvider>,
+    );
+
+    await fill(user, screen.getByLabelText("New password"), "a");
+    await fill(user, screen.getByLabelText("Confirm new password"), "a");
+    await user.click(screen.getByRole("button", { name: "Change password" }));
+
+    await settle();
+    expect(setAccountPassword).toHaveBeenCalledWith(7, {
+      password: "a",
+      password_confirmation: "a",
+    });
+    expect(changePassword).not.toHaveBeenCalled();
+    expect(updateToken).not.toHaveBeenCalled();
+    expect(screen.getByText("Password changed.")).toBeInTheDocument();
     expect(freshEntries(client, 101, shown)).toEqual([]);
   });
 });

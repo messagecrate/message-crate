@@ -16,7 +16,7 @@ import { serverService } from "../lib/offeredService";
 import { probePath, toDesktopOs } from "../lib/pathChecks";
 import { usePhoneCountries } from "../lib/phoneCountries";
 import { keys } from "../lib/queryKeys";
-import { useRouteCache, useRouteQuery } from "../lib/routeQuery";
+import { useMarkAccountStale, useRouteCache, useRouteQuery } from "../lib/routeQuery";
 import { unmatchedIdentities } from "../lib/serverApi";
 import {
   getImporterPath,
@@ -84,6 +84,7 @@ async function runDirectoryCheck(runDir: string): Promise<DirectoryCheck> {
 export default function ImportScreen() {
   const fetchAccountProfile = useFetchAccountProfile();
   const cache = useRouteCache();
+  const markAccountStale = useMarkAccountStale();
   const {
     phase,
     steps,
@@ -362,7 +363,7 @@ export default function ImportScreen() {
       if (!notClosed) setResume(NO_RESUME);
       // The run is gone, or the server still has it; either way the badge
       // asks again rather than keep saying "waiting".
-      cache.invalidateAccount();
+      markAccountStale();
     }
   }
 
@@ -459,7 +460,7 @@ export default function ImportScreen() {
         setDiscardError(outcome.message);
         return;
       }
-      cache.invalidateAccount();
+      markAccountStale();
       setResume(NO_RESUME);
       await startImport(restoredForm);
     } finally {

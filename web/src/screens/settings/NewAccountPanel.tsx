@@ -38,9 +38,10 @@ export function NewAccountPanel() {
       // The server answers with the whole account row, so the account's
       // Settings draw from it at once instead of showing a loading state and
       // redrawing when the fetch lands. The session token is not the row's.
+      // The request already marked the account's cache stale, so User
+      // Accounts fetches the list again.
       const { token: _token, ...account } = created;
       cache.set(keys.ownerAccounts.member(account.account_id), account);
-      cache.invalidateAccount();
       // `replace`, so Back from the account's Settings is User Accounts, not this form.
       navigate(`/owner/accounts/${created.account_id}`, { replace: true });
     },

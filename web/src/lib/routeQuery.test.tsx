@@ -24,6 +24,7 @@ import {
 import type { OffsetPage } from "./routeQuery";
 import {
   createQueryClient,
+  useMarkAccountStale,
   useRouteCache,
   useRouteMutation,
   useRoutePagedList,
@@ -464,14 +465,16 @@ describe("useRouteCache", () => {
       total: 2,
     });
   });
+});
 
-  it("marks every entry of the logged-in account stale, and no other account's", async () => {
+describe("useMarkAccountStale", () => {
+  it("marks every entry of the logged-in account stale, and no other account's", () => {
     const entries = [["contacts", "list", ""], ["account-profile"], ["api-tokens"]];
     seedEntries(client, 7, entries);
     seedEntries(client, 8, entries);
-    const { result } = renderHook(() => useRouteCache(), { wrapper });
+    const { result } = renderHook(() => useMarkAccountStale(), { wrapper });
 
-    result.current.invalidateAccount();
+    result.current();
 
     expect(freshEntries(client, 7, entries)).toEqual([]);
     expect(freshEntries(client, 8, entries)).toEqual(entries);
