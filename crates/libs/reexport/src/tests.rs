@@ -1802,3 +1802,64 @@ fn the_byte_total_of_a_conversion_stays_the_same_when_a_file_is_gone() {
         Some((4, 5))
     );
 }
+
+/// A conversion of an SMS Backup & Restore backup stages its attachments
+/// with the run's log and progress: each attachment whose spooled file is
+/// gone is logged once, by the staging, never by the count the disk check
+/// made before it, and the staging's progress reaches the run's bar (#2644).
+#[test]
+fn a_backup_s_attachments_are_staged_into_the_run_s_log_and_progress() {
+    let source = tempfile::tempdir().unwrap();
+    let output = tempfile::tempdir().unwrap();
+    // Each part's data is a short text in base64, in a part that is not
+    // `text/plain`, so it is an attachment rather than the message's text.
+    let part = |name: &str, data: &str| {
+        format!(r#"<part ct="application/octet-stream" name="{name}" data="{data}"/>"#)
+    };
+    let backup = format!(
+        r#"<smses><mms date="1400773400000" msg_box="1" address="+15555550101"><parts>{}{}{}</parts><addrs><addr address="+15555550101" type="137"/><addr address="+15555550100" type="151"/></addrs></mms></smses>"#,
+        part("kept.txt", "a2VwdA=="),
+        part("gone-1.txt", "Z29uZSBvbmU="),
+        part("gone-2.txt", "Z29uZSB0d28="),
+    );
+    let file = source.path().join("smses.xml");
+    fs::write(&file, backup).unwrap();
+    let (mut config, logged) = logged_config(&file, output.path());
+    let (progress, totals) = message_crate_core::testutil::attachment_totals();
+    config.context.progress = progress;
+    let context = &config.context;
+
+    let read = SmsBackupRead::open(
+        &file,
+        output.path().to_path_buf(),
+        &context.scratch_dir,
+        true,
+    );
+    let mut documents = read.read(context).unwrap();
+    let spool = read.spool.as_ref().unwrap();
+    let gone: Vec<PathBuf> = documents[0].messages[0].attachments[1..]
+        .iter()
+        .map(|att| spool.path(att.digest_sha256.as_deref().unwrap()).unwrap())
+        .collect();
+    for path in &gone {
+        fs::remove_file(path).unwrap();
+    }
+    read.counted(&mut documents, context);
+    read.stage(&mut documents, context).unwrap();
+
+    let logged = logged.lock().unwrap().clone();
+    for path in &gone {
+        let line = message_staging::unreadable_attachment_line(path, "no file there");
+        assert_eq!(
+            logged.iter().filter(|logged| **logged == line).count(),
+            1,
+            "{line:?} once in the log: {logged:#?}"
+        );
+    }
+    let totals = totals.lock().unwrap().clone();
+    assert_eq!(
+        totals.last().map(|&(done, _, _)| done),
+        Some(3),
+        "{totals:?}"
+    );
+}
