@@ -236,7 +236,7 @@ mod tests {
             .await
             .unwrap();
         for table in ["messages_fts", "attachments", "messages"] {
-            sqlx::query(&format!("DROP TABLE {table}"))
+            sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE {table}")))
                 .execute(&mut *conn)
                 .await
                 .unwrap_or_else(|e| panic!("drop {table}: {e}"));

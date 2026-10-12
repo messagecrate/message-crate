@@ -729,10 +729,11 @@ pub(crate) async fn run_on(
         "SELECT {alias}.id FROM {table} {alias} WHERE {} ORDER BY {alias}.id",
         f.where_sql()
     );
-    let rows: Vec<i64> = sqlx::query_scalar_with(&sql, bind_args(f.params()))
-        .fetch_all(&mut *conn)
-        .await
-        .unwrap_or_else(|e| panic!("{q:?} on {list:?}: {e}\n{sql}"));
+    let rows: Vec<i64> =
+        sqlx::query_scalar_with(sqlx::AssertSqlSafe(sql.as_str()), bind_args(f.params()))
+            .fetch_all(&mut *conn)
+            .await
+            .unwrap_or_else(|e| panic!("{q:?} on {list:?}: {e}\n{sql}"));
     rows
 }
 
@@ -1738,7 +1739,7 @@ mod index_characters {
             "SELECT {alias}.id FROM {table} {alias} WHERE {} ORDER BY {alias}.id",
             f.where_sql()
         );
-        sqlx::query_scalar_with(&sql, bind_args(f.params()))
+        sqlx::query_scalar_with(sqlx::AssertSqlSafe(sql), bind_args(f.params()))
             .fetch_all(&mut *conn)
             .await
             .map_err(|e| e.to_string())

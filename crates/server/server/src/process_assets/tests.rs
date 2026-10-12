@@ -1709,11 +1709,11 @@ async fn name_version(
     fs::write(&path, bytes).unwrap();
     let [sha_column, path_column, mime_column] = version.columns();
     let mut tx = crate::db::begin_write(conn).await.unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE attachments
          SET {sha_column} = $1, {path_column} = $2, {mime_column} = 'image/jpeg'
          WHERE id = $3"
-    ))
+    )))
     .bind(sha)
     .bind(&rel)
     .bind(attachment_id)

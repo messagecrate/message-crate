@@ -341,7 +341,7 @@ mod tests {
         (opened, opts)
     }
 
-    async fn count(opened: &OpenDb, sql: &str) -> i64 {
+    async fn count(opened: &OpenDb, sql: &'static str) -> i64 {
         let mut conn = opened.conn().await.unwrap();
         sqlx::query_scalar(sql)
             .bind(ALICE)
@@ -411,7 +411,7 @@ mod tests {
     /// Search's query. A run missing either shortcut is left out.
     async fn runs_with_their_shortcuts(opened: &OpenDb) -> Vec<(String, String, i64, String)> {
         let mut conn = opened.conn().await.unwrap();
-        sqlx::query_as(&format!(
+        sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "SELECT i.source, g.name,
                     (SELECT COUNT(*) FROM contact_group_members m WHERE m.group_id = g.id),
                     s.query
@@ -423,7 +423,7 @@ mod tests {
                ON s.account_id = i.account_id AND s.query = 'import:#' || i.id
              WHERE i.account_id = $1
              ORDER BY i.id"
-        ))
+        )))
         .bind(ALICE)
         .fetch_all(&mut *conn)
         .await

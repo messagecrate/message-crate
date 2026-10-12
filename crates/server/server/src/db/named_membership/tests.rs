@@ -47,7 +47,7 @@ async fn all_membership_rows(spec: &MembershipSpec, conn: &mut SqliteConnection)
         mc = spec.member_column,
         mt = spec.members_table,
     );
-    sqlx::query_scalar(&sql)
+    sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
         .fetch_all(&mut *conn)
         .await
         .unwrap()

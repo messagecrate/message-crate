@@ -359,9 +359,9 @@ async fn the_sql_form_of_an_import_groups_name_is_the_name_the_group_is_given() 
         let row = crate::db::imports::get_owned_import(&mut conn, account.account_id, import_id)
             .await
             .unwrap();
-        let from_sql: String = sqlx::query_scalar(&format!(
+        let from_sql: String = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             "SELECT {IMPORT_CONTACT_GROUP_NAME_SQL} FROM imports i WHERE i.id = $1"
-        ))
+        )))
         .bind(import_id)
         .fetch_one(&mut *conn)
         .await

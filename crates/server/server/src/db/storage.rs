@@ -36,15 +36,15 @@ async fn scalar(
 ) -> Result<i64> {
     let n: i64 = match scope {
         Scope::Account(account_id) => {
-            sqlx::query_scalar(&format!(
+            sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
                 "SELECT {select} FROM {from} WHERE {account_column} = $1"
-            ))
+            )))
             .bind(account_id)
             .fetch_one(&mut *conn)
             .await?
         }
         Scope::AllAccounts => {
-            sqlx::query_scalar(&format!("SELECT {select} FROM {from}"))
+            sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT {select} FROM {from}")))
                 .fetch_one(&mut *conn)
                 .await?
         }
@@ -92,7 +92,7 @@ pub async fn attachment_bytes(conn: &mut SqliteConnection, scope: Scope) -> Resu
            GROUP BY m.account_id, NULLIF(a.sha256, ''), \
                     CASE WHEN NULLIF(a.sha256, '') IS NULL THEN a.id END)"
     );
-    let mut query = sqlx::query_scalar(&sql);
+    let mut query = sqlx::query_scalar(sqlx::AssertSqlSafe(sql));
     if let Scope::Account(account_id) = scope {
         query = query.bind(account_id);
     }
@@ -163,14 +163,14 @@ pub async fn messages_bytes(conn: &mut SqliteConnection) -> Result<i64> {
 /// SQLite's `BLOB` type first.
 pub async fn text_by_account(conn: &mut SqliteConnection) -> Result<Vec<AccountText>> {
     let bytes_of = |column: &str| format!("COALESCE(LENGTH(CAST({column} AS BLOB)), 0)");
-    let rows: Vec<(i64, String, i64, i64)> = sqlx::query_as(&format!(
+    let rows: Vec<(i64, String, i64, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT a.id, a.username, COUNT(m.id), COALESCE(SUM({} + {}), 0) \
          FROM accounts a LEFT JOIN messages m ON m.account_id = a.id \
          GROUP BY a.id, a.username \
          ORDER BY CASE WHEN a.id = $1 THEN 0 ELSE 1 END, a.username",
         bytes_of("m.body"),
         bytes_of("m.subject"),
-    ))
+    )))
     .bind(OWNER_ACCOUNT_ID)
     .fetch_all(&mut *conn)
     .await?;

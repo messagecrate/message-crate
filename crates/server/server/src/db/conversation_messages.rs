@@ -15,8 +15,7 @@
 use std::collections::HashMap;
 
 use anyhow::Context;
-use sqlx::SqliteConnection;
-use sqlx::{Executor, Row};
+use sqlx::{Executor, Row, SqlSafeStr, SqliteConnection};
 
 pub use message_crate_api_types::{
     Attachment, Deletion, EarlierVersion, Message, MessageConversation, ReplyTo, Tapback,
@@ -285,7 +284,7 @@ pub async fn load_message_list_page(
     offset: usize,
 ) -> Result<Vec<Message>, ApiError> {
     let (sql, params) = message_list_page_sql(filter, order, limit, offset)?;
-    let mut page = fetch_message_page(conn, &sql, &params).await?;
+    let mut page = fetch_message_page(conn, sqlx::AssertSqlSafe(sql), &params).await?;
     mark_earlier_version_matches(conn, filter, &mut page).await?;
     Ok(page)
 }
@@ -325,7 +324,7 @@ async fn mark_earlier_version_matches(
         let mut params: Vec<SqlParam> = chunk.iter().map(|id| SqlParam::Int(*id)).collect();
         params.extend_from_slice(final_params);
         let final_hits: Vec<i64> = (&mut *conn)
-            .fetch_all(bind_all(&sql, &params))
+            .fetch_all(bind_all(sqlx::AssertSqlSafe(sql), &params))
             .await
             .and_then(|rows| rows.iter().map(|row| row.try_get(0)).collect())
             .context(
@@ -356,7 +355,7 @@ async fn mark_earlier_version_matches(
         }
         sql.push(&format!(") ORDER BY {EARLIER_VERSION_ORDER}"));
         let rows: Vec<(i64, bool)> = (&mut *conn)
-            .fetch_all(bind_all(&sql.text, &sql.params))
+            .fetch_all(bind_all(sqlx::AssertSqlSafe(sql.text), &sql.params))
             .await
             .and_then(|rows| {
                 rows.iter()
@@ -465,7 +464,7 @@ pub(crate) async fn load_messages_from(
     offset: usize,
 ) -> Result<Vec<Message>, ApiError> {
     let (sql, params) = message_page_sql(from_sql, where_sql, params, order_by, limit, offset);
-    fetch_message_page(conn, &sql, &params).await
+    fetch_message_page(conn, sqlx::AssertSqlSafe(sql), &params).await
 }
 
 /// The statement [`load_messages_from`] runs, and its parameters with
@@ -505,7 +504,7 @@ fn message_page_sql(
 /// Runs a statement from [`message_page_sql`] and reads its rows as messages.
 async fn fetch_message_page(
     conn: &mut SqliteConnection,
-    sql: &str,
+    sql: impl SqlSafeStr,
     params: &[SqlParam],
 ) -> Result<Vec<Message>, ApiError> {
     let page_rows: Vec<RawRow> = (&mut *conn)
@@ -818,7 +817,7 @@ pub(crate) async fn count_matching_messages(
         where_sql = filter.where_sql(),
     );
     let n: i64 = (&mut *conn)
-        .fetch_one(bind_all(&sql, filter.params()))
+        .fetch_one(bind_all(sqlx::AssertSqlSafe(sql), filter.params()))
         .await
         .and_then(|row| row.try_get(0))
         .context("count the messages a search matches")?;
@@ -954,7 +953,7 @@ pub async fn get_conversation_messages(
     let (where_sql, params) = conversation_messages_where(conversation_id, account_id);
 
     let count_sql = format!("SELECT COUNT(*) FROM messages m WHERE {where_sql}");
-    let total: i64 = sqlx::query_scalar_with(&count_sql, bind_args(&params))
+    let total: i64 = sqlx::query_scalar_with(sqlx::AssertSqlSafe(count_sql), bind_args(&params))
         .fetch_one(&mut *conn)
         .await
         .context("count a conversation's messages")?;
@@ -976,7 +975,9 @@ pub async fn get_conversation_messages(
     // The message's place in the order: its timestamp, `sort_order` and id,
     // the three keys every message list sorts by.
     let anchor: Option<(StoredTime, i64)> = sqlx::query_as_with(
-        &format!("SELECT m.timestamp, m.sort_order FROM messages m WHERE {where_sql} AND m.id = ?"),
+        sqlx::AssertSqlSafe(format!(
+            "SELECT m.timestamp, m.sort_order FROM messages m WHERE {where_sql} AND m.id = ?"
+        )),
         bind_args(
             &params
                 .iter()
@@ -1021,7 +1022,9 @@ pub async fn get_conversation_messages(
 
     let (preceding_where, preceding_params) = beside(precedes);
     let position: i64 = sqlx::query_scalar_with(
-        &format!("SELECT COUNT(*) FROM messages m WHERE {preceding_where}"),
+        sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM messages m WHERE {preceding_where}"
+        )),
         bind_args(&preceding_params),
     )
     .fetch_one(&mut *conn)

@@ -349,11 +349,11 @@ async fn recorded_credential(
     table: RunTable,
     run_id: i64,
 ) -> RecordedCredential {
-    sqlx::query_as(&format!(
+    sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT credential, app_kind, app_build, api_token_label, api_token_hint
          FROM {} WHERE id = $1",
         table.name()
-    ))
+    )))
     .bind(run_id)
     .fetch_one(&mut *conn)
     .await
@@ -506,7 +506,7 @@ async fn the_schema_refuses_an_edit_or_delete_of_an_audit_trail_entry() {
 /// Run each of `statements`, and check the schema refuses every one.
 async fn assert_refused(conn: &mut SqliteConnection, statements: &[&str]) {
     for statement in statements {
-        let error = sqlx::query(statement)
+        let error = sqlx::query(sqlx::AssertSqlSafe(*statement))
             .execute(&mut *conn)
             .await
             .expect_err(statement)

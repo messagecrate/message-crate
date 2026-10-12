@@ -153,9 +153,9 @@ async fn edit_snapshot(conn: &mut sqlx::SqliteConnection) -> EditSnapshot {
     let mut hits = Vec::new();
     for word in ["six", "seven", "eight"] {
         for table in ["messages_fts", "message_versions_fts"] {
-            let n: i64 = sqlx::query_scalar(&format!(
+            let n: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
                 "SELECT COUNT(*) FROM {table} WHERE {table} MATCH $1"
-            ))
+            )))
             .bind(word)
             .fetch_one(&mut *conn)
             .await

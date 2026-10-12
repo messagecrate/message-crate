@@ -52,7 +52,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Sqlite> for StoredTime {
 impl<'q> sqlx::Encode<'q, sqlx::Sqlite> for StoredTime {
     fn encode_by_ref(
         &self,
-        buf: &mut Vec<sqlx::sqlite::SqliteArgumentValue<'q>>,
+        buf: &mut sqlx::sqlite::SqliteArgumentsBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
         <String as sqlx::Encode<'q, sqlx::Sqlite>>::encode_by_ref(&self.0, buf)
     }

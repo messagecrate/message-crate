@@ -531,7 +531,7 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
          {scope}
          ORDER BY CASE WHEN h.handle_type = 'email' THEN 1 ELSE 0 END, h.normalized",
     );
-    let mut query = sqlx::query_as::<_, IdentityRow>(&sql).bind(account_id);
+    let mut query = sqlx::query_as::<_, IdentityRow>(sqlx::AssertSqlSafe(sql)).bind(account_id);
     if let IdentitiesOf::Contact { contact_id, .. } = of {
         query = query.bind(contact_id);
     }
@@ -573,10 +573,10 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
 ///
 /// Returns an error when the query fails.
 pub async fn identity_handle_ids(conn: &mut SqliteConnection, account_id: i64) -> Result<Vec<i64>> {
-    Ok(sqlx::query_scalar(&format!(
+    Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT h.id FROM handles h WHERE h.account_id = $1 AND {} ORDER BY h.id",
         crate::db::account_profile::is_account_identity_sql("h", "$1"),
-    ))
+    )))
     .bind(account_id)
     .fetch_all(&mut *conn)
     .await?)

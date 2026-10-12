@@ -18,7 +18,7 @@ use anyhow::{Context, Result, bail};
 use demo_seed::DemoSize;
 use demo_seed::bundle::{DemoSeed, IMESSAGE_SOURCE, SBR_SOURCE, WHATSAPP_SOURCE, read_seed_toml};
 use message_ir::IdentityType;
-use sqlx::{Row, SqlitePool};
+use sqlx::{AssertSqlSafe, Row, SqlSafeStr, SqlitePool};
 
 use crate::config::Config;
 use crate::counts::words;
@@ -1024,7 +1024,7 @@ async fn prepare_database_snapshot(active: &Path, prepared: &Path) -> Result<()>
                 )
             })?;
         conn.close().await?;
-        engine::close_pool(&pool).await;
+        pool.close().await;
     } else {
         let pool = engine::open_pool_for_path(prepared)
             .await
@@ -1035,7 +1035,7 @@ async fn prepare_database_snapshot(active: &Path, prepared: &Path) -> Result<()>
             .with_context(|| format!("create prepared database {}", prepared.display()))?;
         schema::ensure_schema(&mut conn).await?;
         conn.close().await?;
-        engine::close_pool(&pool).await;
+        pool.close().await;
     }
     Ok(())
 }
@@ -1066,14 +1066,13 @@ async fn checkpoint_and_clean_sidecars(db: &Path, operation: &str) -> Result<()>
     let busy: i64 = row.try_get(0)?;
     let _log: i64 = row.try_get(1)?;
     let _checkpointed: i64 = row.try_get(2)?;
-    // Close the connection deterministically: `pool.close()` only waits for
-    // checked-out connections to be *returned*, and the sqlx worker thread
-    // runs `sqlite3_close` later. A close that lands after the TRUNCATE
+    // Close the connection itself, so its `sqlite3_close` has run before
+    // anything else touches the files: a close that lands after the TRUNCATE
     // checkpoint can read the truncated `-shm` mapping and crash the process.
     conn.close().await?;
     // Close the pool so no connection stays attached to the database while
     // reset-demo replaces or renames it.
-    engine::close_pool(&pool).await;
+    pool.close().await;
     if busy != 0 {
         bail!(
             "cannot replace {} because its WAL could not be checkpointed; stop every process using the database and run reset-demo offline",
@@ -1231,7 +1230,7 @@ async fn with_check_conn<T>(
         .with_context(|| format!("open {} to verify non-demo accounts", db.display()))?;
     let result = read(&mut conn).await;
     conn.close().await?;
-    engine::close_pool(&pool).await;
+    pool.close().await;
     result
 }
 
@@ -1303,10 +1302,10 @@ async fn outliving_rows(
     .await?;
     let mut rows = BTreeMap::new();
     for table in tables {
-        let ids: Vec<i64> = sqlx::query_scalar(&format!(
+        let ids: Vec<i64> = sqlx::query_scalar(AssertSqlSafe(format!(
             "SELECT id FROM {} WHERE {filter}",
             quote_ident(&table)
-        ))
+        )))
         .bind(value)
         .fetch_all(&mut *conn)
         .await
@@ -1410,7 +1409,7 @@ async fn non_demo_state_on_conn(
             None => selection,
         };
         let sql = format!("SELECT {row_text} {selection} ORDER BY 1");
-        let query = sqlx::query_scalar::<_, String>(&sql);
+        let query = sqlx::query_scalar::<_, String>(AssertSqlSafe(sql));
         // Only a table whose rows belong to accounts leaves the Demo
         // Account's rows out.
         let query = match (&owner, unlinked) {
@@ -1511,7 +1510,7 @@ async fn search_index_digest(
          ORDER BY d.id",
         join = index.owner_join("d.id"),
     );
-    let rows = sqlx::query_scalar::<_, String>(&sql)
+    let rows = sqlx::query_scalar::<_, String>(AssertSqlSafe(sql))
         .bind(demo_id)
         .fetch(&mut *conn);
     digest_rows(rows)
@@ -1569,17 +1568,18 @@ async fn search_sample_digest(
     use futures_util::TryStreamExt;
 
     let table = index.table;
-    let sql = format!(
+    let sql = AssertSqlSafe(format!(
         "SELECT f.rowid FROM {table} f {join}
          WHERE {table} MATCH $1 AND m.account_id IS NOT $2
          ORDER BY f.rowid",
         join = index.owner_join("f.rowid"),
-    );
+    ))
+    .into_sql_str();
     // Hashed as they come: a common word finds most messages.
     let mut digest = DigestBuilder::default();
     for term in terms {
         let phrase = format!("\"{}\"", term.replace('"', "\"\""));
-        let mut found = sqlx::query_scalar::<_, i64>(&sql)
+        let mut found = sqlx::query_scalar::<_, i64>(sql.clone())
             .bind(&phrase)
             .bind(demo_id)
             .fetch(&mut *conn);
