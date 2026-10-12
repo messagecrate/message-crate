@@ -25,7 +25,6 @@ async fn import_one_message(conn: &mut SqliteConnection, dir: &std::path::Path, 
             import_id: None,
             phone_country: None,
         }),
-        super::super::ImportSchemaMode::Ensure,
     )
     .await
     .unwrap();
@@ -69,7 +68,7 @@ async fn a_promote_that_fails_is_an_internal_import_failure() {
 /// guid join has statistics to plan with.
 #[tokio::test]
 async fn an_import_analyzes_import_tables_before_begin() {
-    let (pool, dir) = crate::db::engine::test_pool().await;
+    let (pool, dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     import_one_message(&mut conn, dir.path(), "analyze-guid-1").await;
     let stat_rows: i64 = sqlx::query_scalar(

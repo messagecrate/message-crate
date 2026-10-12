@@ -32,7 +32,6 @@ use crate::config::Config;
 use crate::db::account_profile;
 use crate::db::api_tokens;
 use crate::db::permissions::Permissions;
-use crate::db::schema;
 use crate::db::session_tokens;
 use crate::exit_with_parent::ParentWatch;
 use crate::keyed_locks::KeyedLocks;
@@ -2005,8 +2004,6 @@ pub async fn resolve_auth_on_conn(
     token: &str,
     app: Option<&session_tokens::ConnectingApp>,
 ) -> Result<AuthIdentity, ApiError> {
-    schema::ensure_accounts_schema(conn).await?;
-
     let resolved = if let Some(session) = session_tokens::lookup_session(&mut *conn, token).await? {
         if let Some(app) = app {
             // A record, not a check: a failed write still serves the

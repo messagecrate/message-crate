@@ -409,7 +409,6 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
             import_id: None,
             phone_country: None,
         }),
-        crate::imports_api::ImportSchemaMode::Ensure,
     )
     .await
     .unwrap();
@@ -495,7 +494,6 @@ async fn import_conversation_file(
             import_id: None,
             phone_country: None,
         }),
-        crate::imports_api::ImportSchemaMode::Ensure,
     )
     .await
     .unwrap()

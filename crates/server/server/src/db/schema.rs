@@ -1,16 +1,18 @@
 //! Schema management for the database.
 //!
-//! Serve and import open their database connections through
-//! [`crate::db::engine`] pools (shared pragmas) and ensure the
-//! schema with `ensure_schema` / `ensure_accounts_schema`. DDL lives in
-//! the SQL files embedded at compile time (`schema/sql/*.sql`); the
-//! functions here apply and evolve it.
+//! The schema is made sure of once, by [`ensure_schema`], when
+//! [`crate::open_db::OpenDb`] opens the pool and when `reset-demo` builds a
+//! database, and never by a request: a request that rebuilt the database
+//! would empty it under the server serving it (#2064). DDL lives in the SQL
+//! files embedded at compile time (`schema/sql/*.sql`); the functions here
+//! apply and evolve it.
 //!
 //! The embedded SQL is fingerprinted at compile time ([`SCHEMA_FINGERPRINT`])
 //! and the fingerprint is stamped into the database as `PRAGMA
 //! user_version`. The rule is: any schema change requires a fresh reload of data,
 //! so a database stamped with a different fingerprint is rebuilt empty from
-//! the embedded DDL instead of being patched in place. Nothing is bumped by
+//! the embedded DDL instead of being patched in place, once a copy of it is
+//! kept beside its file. Nothing is bumped by
 //! hand; changing a `schema/sql/*.sql` file is the whole of a schema change.
 
 use anyhow::Result;
@@ -145,7 +147,10 @@ pub fn not_a_message_crate_database(path: &std::path::Path) -> anyhow::Error {
 /// ([`DatabaseKind::Foreign`]).
 ///
 /// The only kind of migration is a full rebuild: schema changes require a
-/// fresh reload of data, never in-place column patches.
+/// fresh reload of data, never in-place column patches. The rebuild drops
+/// every table, so a database that has any is first copied beside its file
+/// ([`keep_copy_before_rebuild`]), and the rebuild does not run when the copy
+/// fails (#2068).
 async fn migrate_schema(conn: &mut SqliteConnection) -> Result<()> {
     if database_kind(conn).await? == DatabaseKind::Foreign {
         anyhow::bail!(
@@ -157,10 +162,13 @@ async fn migrate_schema(conn: &mut SqliteConnection) -> Result<()> {
         return Ok(());
     }
     if has_user_tables(conn).await? {
+        let copy = keep_copy_before_rebuild(conn, stamped).await?;
         tracing::warn!(
             stamped = %stamped,
             expected = %SCHEMA_FINGERPRINT,
-            "The database's schema differs from this server's, so the database is rebuilt empty and its messages must be imported again"
+            "The database's schema differs from this server's, so the database is rebuilt empty and its messages must be imported again. \
+             A copy of it as it was is kept at {}",
+            copy.display()
         );
     }
     rebuild_schema(conn).await?;
@@ -195,6 +203,56 @@ async fn has_user_tables(conn: &mut SqliteConnection) -> Result<bool> {
     .fetch_one(&mut *conn)
     .await?;
     Ok(tables > 0)
+}
+
+/// Copy the database behind `conn`, stamped `stamped`, to a new file beside
+/// it, and return the copy's path: `<file>.before-rebuild-<stamped>`, or
+/// that name followed by `-2`, `-3` and so on when an earlier rebuild from
+/// the same fingerprint already kept a copy, so no copy is written over.
+///
+/// `VACUUM INTO` writes the copy from one read of the database, so it is
+/// whole even while the write-ahead log holds pages the file does not.
+///
+/// # Errors
+///
+/// Returns an error, naming the copy, when the database has no file (an
+/// in-memory one), or the copy cannot be written, as on a full disk. The
+/// caller then leaves the database as it is.
+async fn keep_copy_before_rebuild(
+    conn: &mut SqliteConnection,
+    stamped: i64,
+) -> Result<std::path::PathBuf> {
+    let file: String =
+        sqlx::query_scalar("SELECT file FROM pragma_database_list WHERE name = 'main'")
+            .fetch_one(&mut *conn)
+            .await?;
+    if file.is_empty() {
+        anyhow::bail!(
+            "the database has no file to keep a copy of before its schema is rebuilt, so it was left as it is"
+        );
+    }
+    let first = format!("{file}.before-rebuild-{stamped}");
+    let mut copy = std::path::PathBuf::from(&first);
+    let mut n = 1;
+    while copy.exists() {
+        n += 1;
+        copy = std::path::PathBuf::from(format!("{first}-{n}"));
+    }
+    if let Err(error) = sqlx::query("VACUUM INTO $1")
+        .bind(copy.to_string_lossy().as_ref())
+        .execute(&mut *conn)
+        .await
+    {
+        // The name was free, so whatever is there now is this copy's
+        // unfinished part, which nobody must mistake for a whole one.
+        let _ = std::fs::remove_file(&copy);
+        anyhow::bail!(
+            "could not keep a copy of the database at {} before rebuilding its schema, \
+             so it was left as it is: {error}",
+            copy.display()
+        );
+    }
+    Ok(copy)
 }
 
 /// Drop every user table and recreate the current schema from the embedded
@@ -586,23 +644,6 @@ pub async fn delete_messages_for_source(
     .execute(&mut *conn)
     .await?;
     Ok(n.rows_affected())
-}
-
-/// Create current account and server metadata tables.
-///
-/// Account tables live in the same database file as everything else, so
-/// the one `user_version` stamp covers them. A stamped database needs
-/// nothing; anything else gets the full schema (with the rebuild that
-/// implies).
-///
-/// # Errors
-///
-/// Returns an error when a DDL statement fails.
-pub async fn ensure_accounts_schema(conn: &mut SqliteConnection) -> Result<()> {
-    if user_version(conn).await? != SCHEMA_FINGERPRINT {
-        ensure_schema(conn).await?;
-    }
-    Ok(())
 }
 
 /// True when `table` exists. [`crate::process_assets::run`] uses it to fall

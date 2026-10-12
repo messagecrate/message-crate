@@ -452,14 +452,9 @@ async fn import_files(conn: &mut sqlx::SqliteConnection, files: &[(&str, String)
         import_id: None,
         phone_country: None,
     });
-    crate::imports_api::import_jsonl_files_on_conn(
-        conn,
-        &paths,
-        &opts,
-        crate::imports_api::ImportSchemaMode::Ensure,
-    )
-    .await
-    .unwrap();
+    crate::imports_api::import_jsonl_files_on_conn(conn, &paths, &opts)
+        .await
+        .unwrap();
 }
 
 /// The rule "an import makes a contact for every person it meets": every
@@ -498,7 +493,7 @@ async fn assert_every_met_handle_has_a_live_contact(conn: &mut sqlx::SqliteConne
 /// sibling's contact.
 #[tokio::test]
 async fn a_sender_no_header_names_still_gets_a_contact() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     import_files(
         &mut conn,
@@ -521,7 +516,7 @@ async fn a_sender_no_header_names_still_gets_a_contact() {
 /// [`assert_imported_as_three_orphaned_conversations`] says.
 #[tokio::test]
 async fn orphaned_messages_make_one_conversation_per_person_and_one_naming_nobody() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     import_files(
         &mut conn,
@@ -593,7 +588,7 @@ async fn the_orphaned_conversation_over_http_is_not_a_person() {
 /// one that names nobody is "Orphaned · Unknown person" throughout (#1778).
 #[tokio::test]
 async fn an_orphaned_title_follows_its_person_s_contact_name() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     import_files(
         &mut conn,
@@ -690,7 +685,7 @@ async fn a_sender_is_never_linked_to_a_trashed_contact() {
 /// giving it a contact.
 #[tokio::test]
 async fn a_one_to_one_chat_first_met_as_a_sender_gets_a_contact() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     import_files(
         &mut conn,

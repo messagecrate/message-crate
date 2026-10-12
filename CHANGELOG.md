@@ -1050,6 +1050,19 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-12: **A database rebuilt for a new layout keeps a copy of what it
+  held.** When a server finds a database from a release with another
+  database layout, it still rebuilds it empty, but it first writes a copy of
+  the database beside it, named after the database with
+  `.before-rebuild-` and a number, and the log line names the copy. Running
+  the earlier release on that copy brings everything back. If the copy
+  can't be written, as on a full disk, the server leaves the database as it
+  is and does not start.
+- 2026-10-12: **A request can no longer empty the database.** Every
+  request from a logged-in account checked the database layout, and a
+  database another server or command had changed was rebuilt empty from
+  inside that request, while the server was serving it. The layout is now
+  checked once, when the server opens the database.
 - 2026-10-11: **The server's log holds what it was missing.** A request
   that broke the server in an unexpected way closed the connection with no
   answer and left nothing in the log. It now gets the same "internal server

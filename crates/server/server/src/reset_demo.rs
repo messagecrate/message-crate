@@ -30,7 +30,7 @@ use crate::db::engine;
 use crate::db::maintenance;
 use crate::db::schema;
 use crate::dedupe;
-use crate::imports_api::{self, FixedImportArgs, ImportMode, ImportOptions, ImportSchemaMode};
+use crate::imports_api::{self, FixedImportArgs, ImportMode, ImportOptions};
 use crate::open_db::OpenDb;
 use crate::process_assets::{self, ProcessAssetsOptions};
 use crate::progress::Progress;
@@ -875,7 +875,6 @@ async fn import_demo_sources_with(
                         phone_country: None,
                     })
                 },
-                ImportSchemaMode::AssumeReady,
             )
             .await
             .map_err(anyhow::Error::from);
