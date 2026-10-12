@@ -2533,7 +2533,7 @@ export interface components {
          */
         CreateImportRequest: {
             /**
-             * @description Which install is creating the Import Run, stored trimmed. Null when
+             * @description Which copy of the app is creating the Import Run, stored trimmed. Null when
              *     the request leaves it out, or blank. Over 64 characters is refused
              *     with `422 Unprocessable Entity`.
              */

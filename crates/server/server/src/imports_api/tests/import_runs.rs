@@ -567,24 +567,29 @@ async fn an_import_stores_its_text_fields_at_the_cap() {
     assert_eq!(run["device_id"], device_id.as_str());
 }
 
-/// A blank `tool` or `device_id` is stored as none. Trimmed to `""`, a blank
-/// `device_id` read as no `device_id`, which the desktop app takes to mean
-/// a run of its own, so it would offer to resume another install's run and
-/// delete its directory on a Discard.
+/// A blank `tool` or `device_id`, and an empty `run_dir`, are stored as
+/// none, as a value left out is. Stored as `""`, a blank `device_id` read
+/// as none only because the desktop app tests it for truth.
 #[tokio::test]
-async fn an_import_stores_a_blank_tool_or_device_id_as_none() {
+async fn an_import_stores_a_blank_tool_device_id_or_run_dir_as_none() {
     let (state, _fixture, token) = importer().await;
     let (_, created): (String, serde_json::Value) = post_created_json(
         &state,
         "/v1/imports",
         &token,
-        serde_json::json!({ "source": "imessage", "tool": "  ", "device_id": " \t " }),
+        serde_json::json!({
+            "source": "imessage",
+            "tool": "  ",
+            "device_id": " \t ",
+            "run_dir": "",
+        }),
     )
     .await;
     let id = created["id"].as_i64().unwrap();
     let run: serde_json::Value = get_json(&state, &format!("/v1/imports/{id}"), &token).await;
-    assert_eq!(run["tool"], serde_json::Value::Null, "{run}");
-    assert_eq!(run["device_id"], serde_json::Value::Null, "{run}");
+    for field in ["tool", "device_id", "run_dir"] {
+        assert_eq!(run[field], serde_json::Value::Null, "{field}: {run}");
+    }
 }
 
 /// A completion with an Import Error and a note both over the cap names

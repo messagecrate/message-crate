@@ -681,7 +681,7 @@ pub(crate) struct CreateImportRequest {
     #[serde(default)]
     #[schema(max_length = 4096)]
     pub(crate) run_dir: Option<String>,
-    /// Which install is creating the Import Run, stored trimmed. Null when
+    /// Which copy of the app is creating the Import Run, stored trimmed. Null when
     /// the request leaves it out, or blank. Over 64 characters is refused
     /// with `422 Unprocessable Entity`.
     #[serde(default)]
@@ -818,6 +818,14 @@ fn note_rows(
     rows
 }
 
+/// `value`, or none when it is empty. A new Import Run stores an empty
+/// `tool`, `run_dir` or `device_id` as none, as it stores one left out. A
+/// blank `tool` or `device_id` is empty once trimmed. A whitespace `run_dir`
+/// is kept, because it is not trimmed and could name a directory.
+fn empty_as_none(value: Option<&str>) -> Option<&str> {
+    value.filter(|v| !v.is_empty())
+}
+
 /// The issues and notes a completion or a discard carries, as the database
 /// records them. Refuses the request naming every rule [`import_issue_inputs`]
 /// and [`note_rows`] find broken, in both lists. Checked before a connection
@@ -864,9 +872,9 @@ pub(crate) struct ImportIssueRequest {
 }
 
 /// The requested issues as the database records them, their text trimmed.
-/// Refuses an issue that is not an Import Error, since the run stores only
-/// `error` and `skip` rows as its issues, and an `item` or `reason` over its
-/// cap (`text_caps`): each one is added to `errors`.
+/// Adds to `errors` every issue that is not an Import Error, since the run
+/// stores only `error` and `skip` rows as its issues, and every `item` or
+/// `reason` over its cap (`text_caps`).
 fn import_issue_inputs(
     issues: &[ImportIssueRequest],
     errors: &mut Vec<String>,
@@ -1393,16 +1401,15 @@ pub(crate) async fn create_import(
         .as_deref()
         .map(|id| capped_text("device_id", id, MAX_DEVICE_ID_CHARS))
         .transpose();
-    ApiError::unless_broken(too_long_sentences([&tool, &run_dir, &device_id]).collect())?;
-    // Each is `Ok` now. A blank `tool` or `device_id` is stored as none, so
-    // a blank `device_id` never reads as this install's own run, which the
-    // desktop app takes a run with no `device_id` to be.
-    fn blank_as_none(value: Option<&str>) -> Option<&str> {
-        value.filter(|v| !v.is_empty())
-    }
-    let tool = blank_as_none(tool.ok().flatten());
-    let run_dir = run_dir.ok().flatten();
-    let device_id = blank_as_none(device_id.ok().flatten());
+    let errors: Vec<String> = too_long_sentences([&tool, &run_dir, &device_id]).collect();
+    let (Ok(tool), Ok(run_dir), Ok(device_id)) = (tool, run_dir, device_id) else {
+        return Err(ApiError::ValidationFailed(errors));
+    };
+    let (tool, run_dir, device_id) = (
+        empty_as_none(tool),
+        empty_as_none(run_dir),
+        empty_as_none(device_id),
+    );
     let account = resolve_import_account(&auth);
     let stage = body.stage.unwrap_or(crate::db::imports::ImportStage::Parse);
     // Credentials never reach the row, whoever the client is.

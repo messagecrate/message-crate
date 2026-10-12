@@ -14580,7 +14580,7 @@
               "string",
               "null"
             ],
-            "description": "Which install is creating the Import Run, stored trimmed. Null when\nthe request leaves it out, or blank. Over 64 characters is refused\nwith `422 Unprocessable Entity`.",
+            "description": "Which copy of the app is creating the Import Run, stored trimmed. Null when\nthe request leaves it out, or blank. Over 64 characters is refused\nwith `422 Unprocessable Entity`.",
             "maxLength": 64
           },
           "form": {

@@ -27,7 +27,8 @@ pub const MAX_IMPORT_NOTE_TEXT_CHARS: usize = 2_000;
 /// Most characters in the name of the program that runs an import. The
 /// desktop app sends `message-crate`.
 pub const MAX_IMPORT_TOOL_CHARS: usize = 64;
-/// Most characters in the id of the install that creates an Import Run. The
+/// Most characters in the id of the copy of the app that creates an Import
+/// Run. The
 /// desktop app sends a UUID, 36 characters.
 pub const MAX_DEVICE_ID_CHARS: usize = 64;
 /// Most characters in a path a client stores, such as an Import Run's
