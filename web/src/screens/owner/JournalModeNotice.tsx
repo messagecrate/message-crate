@@ -6,8 +6,14 @@ import { useServerSettings } from "../../lib/useServerSettings";
  * without it when SQLite says no; then a reader waits for a writer, so every
  * page load waits while an import batch writes. Before this line, the only
  * sign was a warning in the server's log (#2201). It quotes the error SQLite
- * gave when it gave one (#2691). A mode the server could not read (`null`)
- * says nothing either way, so it shows nothing.
+ * gave when it gave one (#2691).
+ *
+ * It shows when the mode is not `wal`, and when the server cannot read the
+ * mode now but SQLite gave an error at start, because the error alone says
+ * write-ahead logging was refused. It never shows while the mode is `wal`:
+ * the error is from the start, and the file may have been switched to
+ * write-ahead logging since. A mode the server cannot read with no error
+ * from SQLite says nothing either way, so it shows nothing.
  *
  * The mode is the owner's to read, on the server settings, not on the state
  * route anyone may ask (#2703).
@@ -15,9 +21,7 @@ import { useServerSettings } from "../../lib/useServerSettings";
 export function JournalModeNotice() {
   const { data } = useServerSettings();
   const journal = data?.journal;
-  // SQLite's error says write-ahead logging was refused even when the mode
-  // could not be read since.
-  if (!journal || (!journal.wal_error && (!journal.mode || journal.mode === "wal"))) return null;
+  if (!journal || journal.mode === "wal" || (!journal.mode && !journal.wal_error)) return null;
 
   return (
     <p

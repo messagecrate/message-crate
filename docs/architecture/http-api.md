@@ -953,8 +953,10 @@ What each reaches:
   a setting, so it sits in an object of its own beside the settings, and
   the owner cannot change it. `GET` and `PATCH` answer it, so the answer to
   a change replaces the one the screen read without losing it. Owner Home
-  says so when the mode is not `wal` or SQLite gave an error, and names
-  that error. `mode` is `null` when it cannot be read, and the route still
+  says so when the mode is not `wal`, or it cannot be read and SQLite gave
+  an error, and names that error. A `wal` mode hides the notice whatever
+  `wal_error` says, because the error is from the start and the file may
+  have been switched to write-ahead logging since. `mode` is `null` when it cannot be read, and the route still
   answers. `wal_error` is `null` when SQLite gave no error: it turned
   write-ahead logging on, or kept another mode without one. Why:
   in any other mode every page waits while an import writes, and a warning

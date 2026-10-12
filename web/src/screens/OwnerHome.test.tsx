@@ -912,6 +912,19 @@ describe("OwnerHome", () => {
     expect(notice).toHaveTextContent("SQLite answered: disk I/O error.");
   });
 
+  it("says nothing about write-ahead logging while the mode is wal, whatever SQLite answered at start", async () => {
+    getServerSettings.mockResolvedValue({
+      public_registration: false,
+      asset_max_bytes: 512 * MIB,
+      journal: { mode: "wal", wal_error: "database is locked" },
+    });
+    renderHome();
+
+    await screen.findByText("bob");
+    await waitFor(() => expect(getServerSettings).toHaveBeenCalled());
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
   it("shows the journal mode as unknown in Server Settings when the server could not read it", async () => {
     getServerSettings.mockResolvedValue({
       public_registration: false,
