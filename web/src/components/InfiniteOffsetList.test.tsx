@@ -116,15 +116,23 @@ describe("InfiniteOffsetList in the desktop app", () => {
 
   it("works the range out again when a new search replaces the rows", async () => {
     tauriMock.current = true;
-    const restore = layOutDrawnRows(49);
+    let restore = layOutDrawnRows(49);
     try {
       const { rerender } = renderList(manyItems(), { sectioned: false, total: 90 });
       const pill = screen.getByTestId("contact-list-range-pill");
+      expect(pill).not.toHaveTextContent("1–8 of 90");
       advanceToNextFrame();
       expect(pill).toHaveTextContent("1–8 of 90");
 
-      rerender(listElement(manyItems().slice(0, 3), { sectioned: false, total: 3 }));
-      expect(pill).toHaveTextContent("1–3 of 3");
+      // The new search's rows are twice as tall, so four of its six fit where
+      // eight fitted. Until the list measures them, the old 1–8 reads as
+      // all six.
+      restore();
+      restore = layOutDrawnRows(98);
+      rerender(listElement(manyItems().slice(0, 6), { sectioned: false, total: 6 }));
+      expect(pill).toHaveTextContent("1–6 of 6");
+      advanceToNextFrame();
+      expect(pill).toHaveTextContent("1–4 of 6");
     } finally {
       restore();
     }
@@ -357,6 +365,7 @@ describe("InfiniteOffsetList asking for more without sections", () => {
     try {
       renderList(manyItems(), { sectioned: false, hasMore: true, requestMore, total: 90 });
       const pill = screen.getByTestId("contact-list-range-pill");
+      expect(pill).not.toHaveTextContent("1–8 of 90");
       advanceToNextFrame();
       expect(pill).toHaveTextContent("1–8 of 90");
       expect(requestMore).not.toHaveBeenCalled();

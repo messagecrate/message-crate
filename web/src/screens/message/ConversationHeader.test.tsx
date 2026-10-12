@@ -158,7 +158,11 @@ describe("ConversationHeader", () => {
   describe("Make a Contact Group", () => {
     it("is offered on a group conversation and not on a one-to-one conversation", async () => {
       const user = setupUser();
-      renderHeader(conversation());
+      // The same people as the group chat, so only the conversation's kind
+      // keeps the item off the menu.
+      renderHeader(conversation({ participants: groupChat().participants }));
+      // The profile the item waits for has landed, so its absence is the screen's choice.
+      await settle();
       await user.click(screen.getByRole("button", { name: "More for this conversation" }));
       expect(screen.queryByRole("menuitem", { name: "Make a Contact Group" })).toBeNull();
       cleanup();
