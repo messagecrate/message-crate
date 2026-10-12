@@ -3,7 +3,7 @@ import { ToggleButton } from "react-aria-components";
 import { useNavigate } from "react-router-dom";
 import PlainButton from "../../components/PlainButton";
 import PopupMenu, { type PopupMenuItem } from "../../components/PopupMenu";
-import { apiErrorMessage } from "../../lib/apiErrorMessage";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { formatMonthYear } from "../../lib/formatDate";
 import { conversationServiceLabel } from "../../lib/serviceLabel";
 import { useTimeZone } from "../../lib/timeZone";
@@ -172,7 +172,7 @@ export default function ConversationHeader({
 
       {trashConversation.error && (
         <div className="mt-2 rounded border border-danger-soft-border bg-danger-soft-bg px-3 py-2 text-[0.75rem] text-danger">
-          {apiErrorMessage(trashConversation.error, "Could not move this conversation to trash.")}
+          {errorLine(trashConversation.error, "Could not move this conversation to trash.")}
         </div>
       )}
     </div>

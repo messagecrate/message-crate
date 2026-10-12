@@ -1,4 +1,4 @@
-import { errorText } from "../../../lib/apiErrorMessage";
+import { errorLine, errorText } from "../../../lib/apiErrorMessage";
 import type { ImportJobFormValues } from "../../../lib/importSources/types";
 import { CANCELLED_MESSAGE } from "../../../lib/runCancel";
 import {
@@ -86,7 +86,7 @@ export async function runMediaStage(
       cancelled = true;
     } else {
       threw = true;
-      recordError(ctx, ctx.scratch.activeStage, msg);
+      recordError(ctx, ctx.scratch.activeStage, errorLine(e));
     }
   }
   const mediaMs = ctx.now() - mediaStartedAt;

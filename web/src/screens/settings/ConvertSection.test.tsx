@@ -3,6 +3,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { holdDesktopJob } from "../../lib/desktopJob";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { fill, setupUser } from "../../test/user";
 import { ConvertSection } from "./ConvertSection";
 
@@ -40,6 +41,7 @@ vi.mock("../../lib/tauri", async (importOriginal) => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  stopFakeClock();
 });
 
 beforeEach(() => {
@@ -190,13 +192,15 @@ describe("ConvertSection", () => {
   });
 
   it("reports the failure rather than claiming the conversion finished", async () => {
+    startFakeClock();
     awaitDesktopJob.mockImplementation(async () => {
       throw new Error("input and output directories must be different");
     });
     const user = await fillDirectories("/home/demo/link-to-export", "/home/demo/export");
     await user.click(convertButton());
+    await settle();
 
-    expect(await screen.findByText("input and output directories must be different")).toBeTruthy();
+    expect(screen.getByText("Input and output directories must be different")).toBeTruthy();
     expect(screen.queryByText(/Conversion complete/)).toBeNull();
   });
 

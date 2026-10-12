@@ -1,6 +1,6 @@
 import { type ReactNode, useMemo } from "react";
 import { Cell, Column, Row, Table, TableBody, TableHeader } from "react-aria-components";
-import { apiErrorMessage } from "../lib/apiErrorMessage";
+import { errorLine } from "../lib/apiErrorMessage";
 import type { ContactDetail } from "../lib/contactDetail";
 import { contactLabelText } from "../lib/contactLabel";
 import { countOf } from "../lib/plural";
@@ -202,9 +202,7 @@ export default function CheckedContactsPanel({
         >
           <div className="min-w-0">
             <p className="m-0 font-semibold">The figures for these contacts could not be loaded.</p>
-            <p className="m-0 mt-1">
-              {apiErrorMessage(summaries.error, "The server did not answer.")}
-            </p>
+            <p className="m-0 mt-1">{errorLine(summaries.error, "The server did not answer.")}</p>
           </div>
           <Button variant="secondary" size="chip" onClick={() => void summaries.refetch()}>
             Try again

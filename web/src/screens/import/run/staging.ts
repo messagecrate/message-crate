@@ -1,4 +1,4 @@
-import { errorText } from "../../../lib/apiErrorMessage";
+import { errorLine, errorText } from "../../../lib/apiErrorMessage";
 import { getDeviceId } from "../../../lib/deviceId";
 import { buildSourceFingerprint } from "../../../lib/importRun";
 import { importRunCreateBody } from "../../../lib/importSource";
@@ -312,7 +312,7 @@ export async function runImport(
     // completes: a broken backup must not lock the account out of importing.
     const cancelled = msg === CANCELLED_MESSAGE;
     const stageNotRecorded = e instanceof StageNotRecordedError;
-    if (!cancelled) recordError(ctx, ctx.scratch.activeStage, msg);
+    if (!cancelled) recordError(ctx, ctx.scratch.activeStage, errorLine(e));
     failActiveStep(ctx);
     store.set({ computingSummary: false });
     await finishImport(ctx, {

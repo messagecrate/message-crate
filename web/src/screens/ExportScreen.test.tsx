@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { currentDesktopJob } from "../lib/desktopJob";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { fill, setupUser } from "../test/user";
 import ExportScreen from "./ExportScreen";
 import { ConvertSection } from "./settings/ConvertSection";
@@ -36,7 +37,8 @@ vi.mock("../lib/tauri", async (importOriginal) => {
   };
 });
 
-vi.mock("../lib/api", () => ({
+vi.mock("../lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/api")>()),
   getBaseUrl: () => "http://127.0.0.1:8080",
 }));
 
@@ -47,6 +49,7 @@ vi.mock("../lib/authContext", () => ({
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  stopFakeClock();
 });
 
 /** The directory the desktop makes for the export in the Export Directory. */
@@ -98,7 +101,7 @@ async function exportAs(directory: string, formatLabel: string) {
   renderScreen();
   await fill(user, screen.getByPlaceholderText("The Export Directory"), directory);
   await user.click(screen.getByRole("button", { name: /Output format/ }));
-  await user.click(await screen.findByRole("option", { name: formatLabel }));
+  await user.click(screen.getByRole("option", { name: formatLabel }));
   await user.click(screen.getByRole("button", { name: "Export" }));
   return user;
 }
@@ -206,6 +209,7 @@ describe("ExportScreen", () => {
   });
 
   it("deletes the export's own directory when the conversion fails", async () => {
+    startFakeClock();
     // Otherwise a failed export silently leaves a whole copy of the conversations on
     // disk, in a directory the person never chose and will not think to look in.
     awaitDesktopJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
@@ -217,10 +221,11 @@ describe("ExportScreen", () => {
     });
 
     await exportAs("/home/demo/out", "CSV (.csv)");
+    await settle();
 
-    await waitFor(() => expect(invokeDiscardExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir));
+    expect(invokeDiscardExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir);
     expect(invokeFinishExportDir).not.toHaveBeenCalled();
-    expect(await screen.findByText("unsupported output format")).toBeTruthy();
+    expect(screen.getByText("Unsupported output format")).toBeTruthy();
   });
 
   it("does not start the conversion when Cancel is pressed after the export step finished", async () => {
@@ -301,13 +306,15 @@ describe("ExportScreen", () => {
   });
 
   it("lets the desktop job go when the export fails", async () => {
+    startFakeClock();
     awaitDesktopJob.mockImplementationOnce(async () => {
       throw new Error("server unreachable");
     });
 
     await exportAs("/home/demo/out", "CSV (.csv)");
+    await settle();
 
-    expect(await screen.findByText("server unreachable")).toBeTruthy();
+    expect(screen.getByText("Server unreachable")).toBeTruthy();
     expect(currentDesktopJob()).toBeNull();
   });
 
@@ -424,13 +431,15 @@ describe("ExportScreen", () => {
   });
 
   it("reports the failure rather than claiming the export finished", async () => {
+    startFakeClock();
     awaitDesktopJob.mockImplementation(async () => {
       throw new Error("session token is required");
     });
 
     await exportTo("/home/demo/out");
+    await settle();
 
-    expect(await screen.findByText("session token is required")).toBeTruthy();
+    expect(screen.getByText("Session token is required")).toBeTruthy();
     expect(screen.queryByText(/Export complete/)).toBeNull();
   });
 

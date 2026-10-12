@@ -1395,7 +1395,7 @@ describe("useImportJob wiring", () => {
     expect(result.current.summaryView?.issues).toContainEqual(
       expect.objectContaining({
         stage: "upload",
-        reason: "error sending request: connection refused",
+        reason: "Error sending request: connection refused",
       }),
     );
     expect(completeImportMock).not.toHaveBeenCalled();

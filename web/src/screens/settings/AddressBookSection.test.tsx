@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/api";
 import { loadAddressBook } from "../../lib/serverApi";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { MIB } from "../../test/units";
 import { setupUser } from "../../test/user";
 import { AddressBookSection } from "./AddressBookSection";
@@ -44,6 +45,7 @@ describe("AddressBookSection", () => {
 
   afterEach(() => {
     cleanup();
+    stopFakeClock();
   });
 
   it("offers Append and Edit, with Append chosen", () => {
@@ -153,6 +155,7 @@ describe("AddressBookSection", () => {
   });
 
   it("lists every row a refused load names, each on its own line", async () => {
+    startFakeClock();
     post.mockRejectedValue(
       new ApiError(422, "row 3: service; row 7: identity", {
         type: "https://messagecrate.app/docs/developer/reference/errors/validation-failed",
@@ -166,26 +169,29 @@ describe("AddressBookSection", () => {
     );
     render(<AddressBookSection />);
     chooseFile("address-book.csv", FILE);
+    await settle();
 
-    const alert = await screen.findByRole("alert");
+    const alert = screen.getByRole("alert");
     expect(
       within(alert)
         .getAllByRole("listitem")
         .map((li) => li.textContent),
     ).toEqual([
-      'row 3: service "imessage" is not one Message Crate stores; use phone or whatsapp',
-      "row 7: identity is blank",
+      'Row 3: service "imessage" is not one Message Crate stores; use phone or whatsapp',
+      "Row 7: identity is blank",
     ]);
     expect(alert.textContent).toContain("Nothing was loaded.");
     expect(invalidateAccount).not.toHaveBeenCalled();
   });
 
   it("shows the reason when the load fails some other way", async () => {
+    startFakeClock();
     post.mockRejectedValue(new Error("address book is empty"));
     render(<AddressBookSection />);
     chooseFile("address-book.csv", "  ");
+    await settle();
 
-    expect(await screen.findByText("address book is empty")).toBeInTheDocument();
+    expect(screen.getByText("Address book is empty")).toBeInTheDocument();
   });
 
   it("refuses a file past the size the server accepts, without asking the server", async () => {

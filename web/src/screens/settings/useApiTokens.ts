@@ -1,7 +1,7 @@
 import type { UseMutationResult } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { useRevealApiToken } from "../../components/apiTokenRevealState";
-import { apiErrorMessage } from "../../lib/apiErrorMessage";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
 import { useRouteMutation, useRouteQuery } from "../../lib/routeQuery";
 import { createApiToken, deleteApiToken, listApiTokens, renameApiToken } from "../../lib/serverApi";
@@ -78,7 +78,7 @@ export function useApiTokens() {
   const latest = [createToken, renameToken, revokeToken].reduce((newest, next) =>
     next.submittedAt > newest.submittedAt ? next : newest,
   );
-  const actionError = latest.error ? latest.error.message : "";
+  const actionError = latest.error ? errorLine(latest.error) : "";
 
   const resetCreate = createToken.reset;
   const resetRename = renameToken.reset;
@@ -156,7 +156,7 @@ export function useApiTokens() {
   return {
     tokens: data ?? [],
     loading,
-    loadError: loadError ? apiErrorMessage(loadError, "Could not load API Tokens.") : "",
+    loadError: loadError ? errorLine(loadError, "Could not load API Tokens.") : "",
     busy,
     composing,
     setComposing,
@@ -207,9 +207,9 @@ export function useManagedApiTokens(accountId: number) {
   return {
     tokens: data ?? [],
     loading,
-    loadError: loadError ? apiErrorMessage(loadError, "Could not load API Tokens.") : "",
+    loadError: loadError ? errorLine(loadError, "Could not load API Tokens.") : "",
     busy: revokeToken.isPending,
-    actionError: revokeToken.error ? revokeToken.error.message : "",
+    actionError: revokeToken.error ? errorLine(revokeToken.error) : "",
     revokeTarget,
     setRevokeTarget,
     revoke,

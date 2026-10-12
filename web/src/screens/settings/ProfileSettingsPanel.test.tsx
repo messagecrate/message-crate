@@ -3,6 +3,8 @@
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
+import { ApiError } from "../../lib/api";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { mockedAuth, renderWithProviders as render } from "../../test/providers";
 import { fill, setupUser } from "../../test/user";
 import { ProfileSettingsPanel } from "./ProfileSettingsPanel";
@@ -44,7 +46,10 @@ beforeEach(() => {
     return { ...current };
   });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  stopFakeClock();
+});
 
 function nameField() {
   return screen.getByRole("textbox", { name: "Display name" }) as HTMLInputElement;
@@ -94,6 +99,21 @@ describe("ProfileSettingsPanel", () => {
       await updateAccountProfile.mock.results[0].value;
     });
     expect(nameField().value).toBe("");
+  });
+
+  it("starts the server's refusal of a display name with a capital", async () => {
+    startFakeClock();
+    updateAccountProfile.mockRejectedValue(
+      new ApiError(403, "display name and time zone are fixed"),
+    );
+    const user = setupUser();
+    render(<ProfileSettingsPanel />);
+    await settle();
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await settle();
+
+    expect(screen.getByText("Display name and time zone are fixed")).toBeInTheDocument();
   });
 
   it("shows the Demo Account's name and zone as fixed and offers no address book load", async () => {
