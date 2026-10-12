@@ -14,7 +14,7 @@ use crate::server::AppState;
 #[openapi(
     info(
         title = "Message Crate HTTP API",
-        description = "HTTP API for a Message Crate server. Bearer Session tokens come from logging in. API tokens come from Settings → Account.\n\nA method a path does not take answers `405 Method Not Allowed` as a [`method-not-allowed`](https://messagecrate.app/docs/developer/reference/errors/method-not-allowed) problem document on every `/v1` path. No operation lists it, because it is the answer for an operation that does not exist.\n\nEvery `/v1` answer carries `Cache-Control: no-store` unless the operation lists a `Cache-Control` of its own, as the asset reads do.",
+        description = "HTTP API for a Message Crate server. Bearer Session tokens come from logging in. API tokens come from Settings → Account.\n\nA method a path does not take answers `405 Method Not Allowed` as a [`method-not-allowed`](https://messagecrate.app/docs/developer/reference/errors/method-not-allowed) problem document on every `/v1` path. No operation lists it, because it is the answer for an operation that does not exist.\n\nAn operation that reads or writes the database answers `503 Service Unavailable` as a [`database-busy`](https://messagecrate.app/docs/developer/reference/errors/database-busy) problem document, with `Retry-After`, when the database stays busy for longer than the request can wait. No operation lists it, because almost every operation can answer it.\n\nEvery `/v1` answer carries `Cache-Control: no-store` unless the operation lists a `Cache-Control` of its own, as the asset reads do.",
         license(
             name = "Fair Core License 1.0 (ALv2 future)",
             url = "https://github.com/messagecrate/message-crate/blob/main/LICENSE.md"

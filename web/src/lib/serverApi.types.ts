@@ -5123,8 +5123,8 @@ export interface components {
          *     same request.
          *
          *     The extension members belong to the types named here: `word` and
-         *     `did_you_mean` to `search-query-invalid`, `retry_after` to `rate-limited`,
-         *     `line` to `malformed-body` and `validation-failed` from an import batch,
+         *     `did_you_mean` to `search-query-invalid`, `retry_after` to `rate-limited`
+         *     and `database-busy`, `line` to `malformed-body` and `validation-failed` from an import batch,
          *     `holder` to `identity-exists`.
          */
         Problem: {
@@ -5162,8 +5162,8 @@ export interface components {
             request_id?: string | null;
             /**
              * Format: int64
-             * @description `rate-limited`: seconds until an attempt may succeed, the same figure
-             *     as the `Retry-After` header.
+             * @description `rate-limited` and `database-busy`: seconds until the request may
+             *     succeed, the same figure as the `Retry-After` header.
              */
             retry_after?: number | null;
             /**

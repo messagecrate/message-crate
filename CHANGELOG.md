@@ -1016,12 +1016,22 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-11: **A busy server says it is busy, and stays busy less often.**
+  While two imports ran, every other page and action shared what was left of
+  the server's database connections, and one that waited too long failed as
+  "internal server error", with an error in the server's log. The server now
+  keeps more connections free beside the imports, and a request that still
+  finds the database busy says so and to try again in a few seconds. An
+  import's upload sends it again by itself, and the server's log notes it as
+  a warning rather than an error (#2084, #2124).
+
 - 2026-10-11: **Logins under made-up usernames are limited.** Each username
   that names no account had its own limit, so a script trying a new name
   each time was never slowed, kept the server busy checking passwords, and
   filled the Audit Trail with refused logins. Past 120 such logins a minute
   in all, the server now turns them away without checking them or recording
   them, and the answer still doesn't say whether a username exists.
+
 - 2026-10-11: **No single attachment or error stops Thumbnails and Previews
   for good.** The server makes Thumbnails and Previews one attachment at a
   time, and three things could stop that work for every account. A file
@@ -1036,6 +1046,7 @@ released versions carry their date on the heading.
   minutes. ffmpeg and ffprobe now also open only files on this
   computer, never a network address named inside an attachment
   (#2059, #2072, #2091).
+
 - 2026-10-11: **Two uploads of one attachment at the same moment both
   succeed.** The server named an upload's temporary file from the clock
   alone, so two uploads of the same file that started in one clock tick
