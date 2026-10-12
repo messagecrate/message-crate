@@ -4300,6 +4300,7 @@ name = "whatsapp-exporter"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "file-io",
  "hex",
  "imessage-reader-protocol",
  "ios-backup",

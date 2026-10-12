@@ -31,18 +31,26 @@
 //! app:
 //!
 //! - **The pinned one stays.** A file is the pinned one when its entry
-//!   names the pinned release and its stamp is the one recorded, so no file
-//!   is read again at start-up. One that does not run is not downloaded
-//!   again, because the download would be the same file: Settings says it
-//!   doesn't run until a newer pin or another file changes that.
+//!   names the pinned release and its stamp is the one recorded, so ffmpeg
+//!   and ffprobe are not read again at start-up. wtsexporter is read once
+//!   per start, because its lookup counts it only by its SHA-256 (#2692).
+//!   One that does not run is not downloaded again, because the download
+//!   would be the same file: Settings says it doesn't run until a newer pin
+//!   or another file changes that.
 //! - **A pinned file with no entry is adopted.** A file with no entry, or
 //!   whose stamp changed, whose SHA-256 is the pinned program's gets an
 //!   entry and stays. The pinned program's SHA-256 is carried beside the
 //!   asset's, because ffmpeg's and ffprobe's assets are gzipped.
 //! - **Anything else is replaced** after a good download, whoever put it
 //!   there: a file from an older release, or any other file. Until the
-//!   download passes, the old file stays in use, so with no internet a file
-//!   put there by hand is still the one used.
+//!   download passes, an ffmpeg or ffprobe put there by hand is still the
+//!   one used, so with no internet it still works.
+//! - **Only the pinned wtsexporter counts** (#2692). The app needs the
+//!   fork's pinned build, so a wtsexporter with any other SHA-256, such as
+//!   a copy still being written or another build, is treated as missing
+//!   until the download replaces it, by the import's lookup
+//!   (`whatsapp_exporter::wtsexporter_path`) and by the check alike
+//!   ([`in_place`]). A failed download says so in its reason.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
@@ -300,6 +308,12 @@ fn need(pinned: &Pinned, dir: &Path, manifest: &Manifest) -> Need {
     let Ok(stamp) = Stamp::at(&path) else {
         return Need::Download;
     };
+    // The lookup reads wtsexporter whatever the record says, so the check
+    // reads it too, or a file changed under the same stamp would show as
+    // missing while every check keeps it.
+    if not_the_pinned_file(pinned, dir) {
+        return Need::Download;
+    }
     if let Some(written) = manifest.get(&pinned.program)
         && written.is(pinned)
         && written.stamp == stamp
@@ -310,7 +324,7 @@ fn need(pinned: &Pinned, dir: &Path, manifest: &Manifest) -> Need {
             Need::DoesNotRun
         };
     }
-    if file_io::file_sha256(&path).is_ok_and(|sha256| sha256 == pinned.program_sha256) {
+    if media::file_has_sha256(&path, pinned.program_sha256) {
         Need::Adopt
     } else {
         Need::Download
@@ -327,6 +341,39 @@ fn runs(program: Program, dir: &Path) -> bool {
     match program {
         Program::Ffmpeg | Program::Ffprobe => media::tool_in_dir(dir, program.name()).is_some(),
         Program::Wtsexporter => media::is_executable(&dir.join(program.file_name())),
+    }
+}
+
+/// Whether `pin`'s program is a wtsexporter in `dir` that is not the pinned
+/// file, such as a copy still being written or another build. Only the
+/// pinned wtsexporter counts, as the WhatsApp import's lookup asks (#2692),
+/// so such a file is not used. ffmpeg and ffprobe are never one. The file is
+/// read once per version of it ([`media::file_has_sha256`]).
+fn not_the_pinned_file(pin: &Pinned, dir: &Path) -> bool {
+    let path = dir.join(pin.program.file_name());
+    pin.program == Program::Wtsexporter
+        && path.is_file()
+        && !media::file_has_sha256(&path, pin.program_sha256)
+}
+
+/// Whether `pin`'s program in `dir` is in place for the lookup that uses
+/// it: it [`runs`], and is not [`not_the_pinned_file`].
+fn in_place(pin: &Pinned, dir: &Path) -> bool {
+    runs(pin.program, dir) && !not_the_pinned_file(pin, dir)
+}
+
+/// The reason a download of `pin`'s program into `dir` failed with `err`.
+/// A wtsexporter there that is not the pinned file is not used, so the
+/// reason starts by saying so, because Settings shows wtsexporter as
+/// missing though a file is there (#2692).
+fn failure_reason(pin: &Pinned, dir: &Path, err: &DownloadError) -> String {
+    if not_the_pinned_file(pin, dir) {
+        format!(
+            "{} {err}",
+            whatsapp_exporter::not_pinned_reason(pin.release)
+        )
+    } else {
+        err.to_string()
     }
 }
 
@@ -993,7 +1040,7 @@ fn check(
             Stamp::at(&path)
                 .ok()
                 .is_some_and(|now| found.get(&program) != Some(&Some(now)))
-                && runs(program, dir)
+                && in_place(pin, dir)
         };
         // Put in place while an earlier program's tries waited.
         if was_put_in_place() {
@@ -1035,7 +1082,7 @@ fn check(
             Err(err) => downloads.set(
                 program,
                 DownloadState::Failed {
-                    reason: err.to_string(),
+                    reason: failure_reason(pin, dir, &err),
                 },
             ),
         }

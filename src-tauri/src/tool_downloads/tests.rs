@@ -281,10 +281,16 @@ fn a_fetched_file_that_does_not_unpack_leaves_the_old_program() {
         &mut io::sink(),
     )
     .expect_err("the bytes unpacked");
+    // The old file is not the pinned one, so it is not used, and the reason
+    // says so first (#2692).
     assert_eq!(
         downloads.get(Program::Wtsexporter),
         Some(DownloadState::Failed {
-            reason: format!("The downloaded file could not be unpacked: {unpack_error}."),
+            reason: format!(
+                "The wtsexporter in the Tools Directory is not the file of release r2, or is \
+                 still being copied there, so it is not used. The downloaded file could not \
+                 be unpacked: {unpack_error}."
+            ),
         })
     );
 }
@@ -440,11 +446,15 @@ fn a_gzipped_program_that_is_not_the_pinned_one_is_refused() {
     assert!(reason.contains(&sha256_hex(b"ffmpeg")), "{reason}");
 }
 
+/// What [`write_runnable`] writes: a program that answers `-version`.
+#[cfg(unix)]
+const RUNNABLE: &[u8] = b"#!/bin/sh\nexit 0\n";
+
 /// Write a program at `path` that answers `-version`.
 #[cfg(unix)]
 fn write_runnable(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
-    std::fs::write(path, "#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::write(path, RUNNABLE).unwrap();
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
@@ -517,8 +527,28 @@ fn ffmpeg_on_path_without_ffprobe_is_downloaded() {
     );
 }
 
-/// A program the app wrote from the pinned release is not downloaded again,
-/// and its file is not read to know it.
+/// A wtsexporter whose record and stamp say it is the pinned file, and whose
+/// bytes are not, is downloaded again: the lookup reads its SHA-256 and
+/// shows it as missing, so a check that kept it would never fix that
+/// (#2692).
+#[test]
+fn a_recorded_wtsexporter_that_is_not_the_pinned_file_is_downloaded() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, _) = pin(Program::Wtsexporter, "r1", b"pinned", false);
+    let target = tools.path().join(Program::Wtsexporter.file_name());
+    std::fs::write(&target, b"pinnex").unwrap();
+    make_executable(&target).unwrap();
+    let mut manifest = Manifest::new();
+    manifest.insert(
+        Program::Wtsexporter,
+        Written::of(&pinned, Stamp::at(&target).unwrap()),
+    );
+
+    assert_eq!(need(&pinned, tools.path(), &manifest), Need::Download);
+}
+
+/// A program the app wrote from the pinned release is not downloaded again.
 #[test]
 fn the_pinned_program_the_app_wrote_is_kept() {
     let tools = tempfile::tempdir().unwrap();
@@ -1125,7 +1155,7 @@ fn a_download_that_reaches_its_server_starts_the_waits_over() {
 fn a_program_put_in_place_during_a_wait_ends_the_tries() {
     let tools = tempfile::tempdir().unwrap();
     let _tools = no_ffmpeg_on_path(tools.path());
-    let (pinned, _) = pin(Program::Wtsexporter, "r1", b"pinned", false);
+    let (pinned, _) = pin(Program::Wtsexporter, "r1", RUNNABLE, false);
     let target = tools.path().join(Program::Wtsexporter.file_name());
     let downloads = ToolDownloads::default();
     let waits = std::cell::RefCell::new(Vec::new());
@@ -1144,9 +1174,48 @@ fn a_program_put_in_place_during_a_wait_ends_the_tries() {
 
     assert_eq!(waits.into_inner(), NO_NETWORK_WAITS[..1]);
     assert_eq!(downloads.get(Program::Wtsexporter), None);
-    assert_eq!(
-        std::fs::read_to_string(&target).unwrap(),
-        "#!/bin/sh\nexit 0\n"
+    assert_eq!(std::fs::read(&target).unwrap(), RUNNABLE);
+}
+
+/// A wtsexporter still being copied in by hand while the check waits for
+/// the network is not the pinned file, so it does not end the tries, and
+/// the failed download says the file there is not used (#2692). An import
+/// waiting for it fails with that reason instead of running a cut-off file.
+#[cfg(unix)]
+#[test]
+fn a_truncated_wtsexporter_put_in_place_during_a_wait_is_not_used() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, _) = pin(Program::Wtsexporter, "r1", RUNNABLE, false);
+    let target = tools.path().join(Program::Wtsexporter.file_name());
+    let downloads = ToolDownloads::default();
+    let waits = std::cell::RefCell::new(Vec::new());
+
+    // Port 9 on this computer, where nothing listens.
+    check_waiting(
+        tools.path(),
+        "http://127.0.0.1:9",
+        &[pinned],
+        &downloads,
+        &|pause| {
+            let mut waits = waits.borrow_mut();
+            waits.push(pause);
+            // A little more of the copy at each wait, never all of it.
+            std::fs::write(&target, &RUNNABLE[..waits.len()]).unwrap();
+            make_executable(&target).unwrap();
+        },
+    );
+
+    assert_eq!(waits.into_inner(), NO_NETWORK_WAITS);
+    let Some(DownloadState::Failed { reason }) = downloads.get(Program::Wtsexporter) else {
+        panic!("the wtsexporter download did not fail");
+    };
+    assert!(
+        reason.starts_with(
+            "The wtsexporter in the Tools Directory is not the file of release r1, or is still \
+             being copied there, so it is not used. No connection"
+        ),
+        "{reason}"
     );
 }
 
@@ -1158,7 +1227,7 @@ fn a_program_put_in_place_during_another_programs_wait_is_used() {
     let tools = tempfile::tempdir().unwrap();
     let _tools = no_ffmpeg_on_path(tools.path());
     let (ffprobe, _) = pin(Program::Ffprobe, "r1", b"ffprobe", false);
-    let (wts, _) = pin(Program::Wtsexporter, "r1", b"pinned", false);
+    let (wts, _) = pin(Program::Wtsexporter, "r1", RUNNABLE, false);
     let target = tools.path().join(Program::Wtsexporter.file_name());
     let downloads = ToolDownloads::default();
     let waits = std::cell::RefCell::new(Vec::new());
@@ -1188,7 +1257,9 @@ fn a_program_put_in_place_during_another_programs_wait_is_used() {
 
 /// A program that was already in place before the check and is not the
 /// pinned one does not end the tries: the check still wants the pinned
-/// release, and with no network it fails after the whole round.
+/// release, and with no network it fails after the whole round. A
+/// wtsexporter that is another build is not used meanwhile, and the
+/// failure says so (#2692).
 #[cfg(unix)]
 #[test]
 fn a_program_already_in_place_does_not_end_the_tries() {
@@ -1201,10 +1272,13 @@ fn a_program_already_in_place_does_not_end_the_tries() {
     let waits = check_now(tools.path(), "http://127.0.0.1:9", &[pinned], &downloads);
 
     assert_eq!(waits, NO_NETWORK_WAITS);
-    assert!(matches!(
-        downloads.get(Program::Wtsexporter),
-        Some(DownloadState::Failed { .. })
-    ));
+    let Some(DownloadState::Failed { reason }) = downloads.get(Program::Wtsexporter) else {
+        panic!("the wtsexporter download did not fail");
+    };
+    assert!(
+        reason.starts_with("The wtsexporter in the Tools Directory is not the file of release r1"),
+        "{reason}"
+    );
 }
 
 /// A download that reached its server and failed for another reason, such
