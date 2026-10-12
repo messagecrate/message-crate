@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/api";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { Providers } from "../../test/providers";
 import { MIB } from "../../test/units";
 import { fill, setupUser } from "../../test/user";
@@ -39,15 +40,20 @@ beforeEach(() => {
     journal: { mode: "wal", wal_error: null },
   });
   updateServerSettings.mockReset();
+  startFakeClock();
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  stopFakeClock();
+});
 
 describe("ServerSettingsPanel attachment size limit", () => {
   it("shows the limit the server holds, in megabytes", async () => {
     renderPanel();
+    await settle();
 
-    expect(await screen.findByLabelText("Attachment size limit")).toHaveValue(512);
+    expect(screen.getByLabelText("Attachment size limit")).toHaveValue(512);
     // Nothing to save until the number differs from the one in force.
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
@@ -60,8 +66,9 @@ describe("ServerSettingsPanel attachment size limit", () => {
       journal: { mode: "wal", wal_error: null },
     });
     renderPanel();
+    await settle();
 
-    expect(await screen.findByLabelText("Attachment size limit")).toHaveValue(0.33);
+    expect(screen.getByLabelText("Attachment size limit")).toHaveValue(0.33);
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
@@ -72,7 +79,8 @@ describe("ServerSettingsPanel attachment size limit", () => {
       journal: { mode: "wal", wal_error: null },
     });
     renderPanel();
-    const field = await screen.findByLabelText("Attachment size limit");
+    await settle();
+    const field = screen.getByLabelText("Attachment size limit");
     // The read the write starts never answers, so only the write's own answer
     // can show the new limit.
     getServerSettings.mockReturnValue(new Promise(() => {}));
@@ -81,15 +89,17 @@ describe("ServerSettingsPanel attachment size limit", () => {
     await user.clear(field);
     await fill(user, field, "100");
     await user.click(screen.getByRole("button", { name: "Save" }));
+    await settle();
 
     expect(updateServerSettings).toHaveBeenCalledWith({ asset_max_bytes: 100 * MIB });
-    await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeDisabled());
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(field).toHaveValue(100);
   });
 
   it("offers no save for a limit that is blank or not above zero", async () => {
     renderPanel();
-    const field = await screen.findByLabelText("Attachment size limit");
+    await settle();
+    const field = screen.getByLabelText("Attachment size limit");
 
     const user = setupUser();
     await user.clear(field);
@@ -104,14 +114,16 @@ describe("ServerSettingsPanel attachment size limit", () => {
       new ApiError(422, "asset_max_bytes must be at most 9223372036854775807"),
     );
     renderPanel();
-    const field = await screen.findByLabelText("Attachment size limit");
+    await settle();
+    const field = screen.getByLabelText("Attachment size limit");
 
     const user = setupUser();
     await user.clear(field);
     await fill(user, field, "99999999999999");
     await user.click(screen.getByRole("button", { name: "Save" }));
+    await settle();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    expect(screen.getByRole("alert")).toHaveTextContent(
       "asset_max_bytes must be at most 9223372036854775807",
     );
     expect(field).toHaveValue(99999999999999);
