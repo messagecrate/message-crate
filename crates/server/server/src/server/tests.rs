@@ -6,6 +6,7 @@ use crate::imports_api::{
     UpdateImportRequest, complete_import, create_import, discard_import, get_import, list_imports,
     update_import,
 };
+use crate::logging::{LogLevel, LogLine};
 use crate::problem::ProblemType;
 use crate::test_support::{
     ImportingAccount, expect_problem, expect_problem_for, http_client, test_fixture,
@@ -305,7 +306,7 @@ async fn cors_preflight_rejects_unknown_origin() {
 }
 
 /// The server log's lines while the CORS layer is built from `origins`.
-fn log_lines_building_cors(origins: &[&str]) -> Vec<crate::logging::LogLine> {
+fn log_lines_building_cors(origins: &[&str]) -> Vec<LogLine> {
     use crate::logging::{LogFiles, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
 
     let dir = TempDir::new().unwrap();
@@ -333,7 +334,7 @@ fn log_lines_building_cors(origins: &[&str]) -> Vec<crate::logging::LogLine> {
 fn a_wildcard_cors_origin_is_warned_about() {
     let lines = log_lines_building_cors(&["https://app.example", " * "]);
     assert_eq!(lines.len(), 1, "{lines:?}");
-    assert_eq!(lines[0].level, crate::logging::LogLevel::Warn);
+    assert_eq!(lines[0].level, LogLevel::Warn);
     assert!(lines[0].text.contains("cors_origins"), "{}", lines[0].text);
     assert!(lines[0].text.contains("--cors-origin"), "{}", lines[0].text);
     assert!(lines[0].text.contains("any website"), "{}", lines[0].text);
@@ -357,11 +358,7 @@ fn with_website(mut state: AppState, website: &Path) -> AppState {
 
 /// The server log's lines, oldest first, written at `filter` while `state`'s
 /// app answers a `GET` for each of `paths` in turn.
-async fn log_lines_serving(
-    state: &AppState,
-    filter: &str,
-    paths: &[&str],
-) -> Vec<crate::logging::LogLine> {
+async fn log_lines_serving(state: &AppState, filter: &str, paths: &[&str]) -> Vec<LogLine> {
     use crate::logging::{LogFiles, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
 
     let dir = TempDir::new().unwrap();
@@ -399,7 +396,7 @@ async fn log_lines_serving(
 
 /// The per-response lines among `lines`: each one's level and the status it
 /// names.
-fn response_lines(lines: &[crate::logging::LogLine]) -> Vec<(crate::logging::LogLevel, String)> {
+fn response_lines(lines: &[LogLine]) -> Vec<(LogLevel, String)> {
     lines
         .iter()
         .filter(|line| line.text.contains("finished processing request"))
@@ -416,11 +413,11 @@ fn response_lines(lines: &[crate::logging::LogLine]) -> Vec<(crate::logging::Log
 }
 
 /// A `500 Internal Server Error` writes one `ERROR` line, the one with the
-/// error's chain, and its per-response line at `INFO` (#2254).
+/// error's chain, and its per-response line at `INFO` (#2254). The request
+/// is a failed health probe, which is not routine, so its line stays at
+/// `INFO` too (#2274).
 #[tokio::test]
 async fn a_500_writes_one_error_line() {
-    use crate::logging::LogLevel;
-
     let fixture = test_fixture().await;
     // A closed pool fails the health check's statement.
     fixture.state.db.close().await;
@@ -451,8 +448,6 @@ async fn a_500_writes_one_error_line() {
 /// still write theirs (#2274).
 #[tokio::test]
 async fn a_successful_probe_or_website_file_writes_no_info_line() {
-    use crate::logging::LogLevel;
-
     let fixture = test_fixture().await;
     let website = TempDir::new().unwrap();
     let state = with_website(fixture.state.clone(), website.path());
@@ -477,8 +472,6 @@ async fn a_successful_probe_or_website_file_writes_no_info_line() {
 /// still shows every response (#2274).
 #[tokio::test]
 async fn a_successful_probe_or_website_file_writes_a_debug_line() {
-    use crate::logging::LogLevel;
-
     let fixture = test_fixture().await;
     let website = TempDir::new().unwrap();
     let state = with_website(fixture.state.clone(), website.path());
@@ -490,22 +483,6 @@ async fn a_successful_probe_or_website_file_writes_a_debug_line() {
             (LogLevel::Debug, "200".to_string()),
             (LogLevel::Debug, "200".to_string()),
         ],
-        "{lines:#?}"
-    );
-}
-
-/// A probe that fails is not routine, so its line stays at `INFO` (#2274).
-#[tokio::test]
-async fn a_failed_probe_writes_an_info_line() {
-    use crate::logging::LogLevel;
-
-    let fixture = test_fixture().await;
-    fixture.state.db.close().await;
-    let lines = log_lines_serving(&fixture.state, "info", &["/health"]).await;
-
-    assert_eq!(
-        response_lines(&lines),
-        [(LogLevel::Info, "500".to_string())],
         "{lines:#?}"
     );
 }
