@@ -841,11 +841,11 @@ fn convert_chat_directory(rows: &str, files: &[(&str, &str)]) -> ChatDirectoryEx
 }
 
 /// Convert one chat directory holding the CSV `(name, contents)` and the named
-/// `files` to JSON, and read back the conversation written to `doc_name`.
+/// `files` to JSON, and read back the conversation written to `document_name`.
 fn convert_chat_directory_with(
     (csv_name, csv): (&str, &str),
     files: &[(&str, &str)],
-    doc_name: &str,
+    document_name: &str,
 ) -> ChatDirectoryExport {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("in");
@@ -863,7 +863,7 @@ fn convert_chat_directory_with(
         convert_run: ConvertRun::default(),
     })
     .unwrap();
-    let document = message_ir_format::read_conversation_json(&out.join(doc_name)).unwrap();
+    let document = message_ir_format::read_conversation_json(&out.join(document_name)).unwrap();
     ChatDirectoryExport {
         report,
         document,

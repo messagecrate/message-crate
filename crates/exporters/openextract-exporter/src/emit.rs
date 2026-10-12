@@ -572,7 +572,7 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
         self.export.clone()
     }
 
-    fn service(&self, _msg: &PendingMessage) -> IrService {
+    fn service(&self, _message: &PendingMessage) -> IrService {
         IrService::Sms
     }
 

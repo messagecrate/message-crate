@@ -113,12 +113,12 @@ pub trait ProjectionHooks {
     /// The source's own id for the message, where it has one. It goes into
     /// the [`MessageGuid`], and two copies with different ones are two
     /// messages. The default has none.
-    fn vendor_key(&self, _msg: &PendingMessage) -> Option<String> {
+    fn vendor_key(&self, _message: &PendingMessage) -> Option<String> {
         None
     }
 
     /// The key a reply names to quote this message. The default has none.
-    fn reply_key(&self, _msg: &PendingMessage) -> Option<String> {
+    fn reply_key(&self, _message: &PendingMessage) -> Option<String> {
         None
     }
 
@@ -127,33 +127,33 @@ pub trait ProjectionHooks {
     /// [`reply_key`](Self::reply_key) equals [`PendingReply::quoted_key`];
     /// with no such message, or more than one, the reply stays a reply with
     /// no link. The default records no replies.
-    fn reply(&self, _msg: &PendingMessage) -> Option<PendingReply> {
+    fn reply(&self, _message: &PendingMessage) -> Option<PendingReply> {
         None
     }
 
     /// The reactions that stand on the message, each naming the person who
     /// reacted, in the order the source gives them. The default records
     /// none.
-    fn reactions(&self, _msg: &PendingMessage) -> Vec<Reaction> {
+    fn reactions(&self, _message: &PendingMessage) -> Vec<Reaction> {
         Vec::new()
     }
 
     /// Whether the message was deleted in the source app or unsent by its
     /// sender. The default marks none.
-    fn deletion(&self, _msg: &PendingMessage) -> Option<Deletion> {
+    fn deletion(&self, _message: &PendingMessage) -> Option<Deletion> {
         None
     }
 
     /// The earlier versions of an edited message, oldest first within each
     /// part. The default records none.
-    fn edits(&self, _msg: &PendingMessage) -> Vec<EarlierVersion> {
+    fn edits(&self, _message: &PendingMessage) -> Vec<EarlierVersion> {
         Vec::new()
     }
 
     /// Map one queued attachment onto the shared [`IrAttachment`] shape.
     /// The default is [`PendingAttachment::to_ir`]: metadata only (no path,
     /// no bytes), with the size when the exporter recorded one.
-    fn attachment_to_ir(&self, att: &PendingAttachment, _msg: &PendingMessage) -> IrAttachment {
+    fn attachment_to_ir(&self, att: &PendingAttachment, _message: &PendingMessage) -> IrAttachment {
         att.to_ir()
     }
 
@@ -168,7 +168,7 @@ pub trait ProjectionHooks {
     }
 
     /// Subject line of one message; the default has none.
-    fn subject(&self, _msg: &PendingMessage) -> Option<String> {
+    fn subject(&self, _message: &PendingMessage) -> Option<String> {
         None
     }
 
@@ -553,11 +553,15 @@ mod tests {
             }
         }
 
-        fn service(&self, _msg: &PendingMessage) -> IrService {
+        fn service(&self, _message: &PendingMessage) -> IrService {
             IrService::Sms
         }
 
-        fn source(&self, _conversation: &PendingConversation, _msg: &PendingMessage) -> IrSource {
+        fn source(
+            &self,
+            _conversation: &PendingConversation,
+            _message: &PendingMessage,
+        ) -> IrSource {
             IrSource::default()
         }
     }
@@ -588,11 +592,15 @@ mod tests {
             TestHooks.export()
         }
 
-        fn service(&self, _msg: &PendingMessage) -> IrService {
+        fn service(&self, _message: &PendingMessage) -> IrService {
             IrService::Whatsapp
         }
 
-        fn source(&self, _conversation: &PendingConversation, _msg: &PendingMessage) -> IrSource {
+        fn source(
+            &self,
+            _conversation: &PendingConversation,
+            _message: &PendingMessage,
+        ) -> IrSource {
             IrSource::default()
         }
 

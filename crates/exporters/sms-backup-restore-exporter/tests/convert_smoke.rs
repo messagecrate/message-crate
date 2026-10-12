@@ -352,8 +352,8 @@ fn convert_export_json_and_jsonl_use_pristine_v4() {
             .unwrap()
             >= 1
     );
-    let msg_line: serde_json::Value = serde_json::from_str(lines.next().unwrap()).unwrap();
-    assert!(msg_line["source"]["fields"].is_object());
+    let message_line: serde_json::Value = serde_json::from_str(lines.next().unwrap()).unwrap();
+    assert!(message_line["source"]["fields"].is_object());
 }
 
 #[test]

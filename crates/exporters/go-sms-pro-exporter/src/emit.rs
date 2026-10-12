@@ -390,7 +390,7 @@ impl ProjectionHooks for GoSmsProjection {
         self.export.clone()
     }
 
-    fn service(&self, _msg: &PendingMessage) -> IrService {
+    fn service(&self, _message: &PendingMessage) -> IrService {
         IrService::Sms
     }
 
@@ -824,7 +824,7 @@ mod tests {
 
     /// An XML row (milliseconds, no attachments) or a PDU row (whole
     /// seconds) with `digests` as its attachments.
-    fn test_msg(source_kind: &str, text: &str, digests: &[&str]) -> PendingMessage {
+    fn test_message(source_kind: &str, text: &str, digests: &[&str]) -> PendingMessage {
         let mut extra = BTreeMap::new();
         extra.insert("source_kind".into(), source_kind.to_string());
         if source_kind == "xml" {
@@ -854,8 +854,8 @@ mod tests {
     fn xml_and_pdu_mms_rows_collapse_keeping_attachments_and_milliseconds() {
         // The same MMS appears in the XML backup (no attachments) and as a PDU
         // file with media, in either order.
-        let xml = || test_msg("xml", "hello", &[]);
-        let pdu = || test_msg("pdu", "hello", &["a1"]);
+        let xml = || test_message("xml", "hello", &[]);
+        let pdu = || test_message("pdu", "hello", &["a1"]);
         for rows in [vec![xml(), pdu()], vec![pdu(), xml()]] {
             let (msgs, report) = project(rows);
             assert_eq!(msgs.len(), 1);
@@ -874,8 +874,8 @@ mod tests {
         // Two MMS sharing second, direction, and caption but with different
         // media are distinct messages: both rows survive.
         let (msgs, _) = project(vec![
-            test_msg("pdu", "photo", &["a1"]),
-            test_msg("pdu", "photo", &["a2"]),
+            test_message("pdu", "photo", &["a1"]),
+            test_message("pdu", "photo", &["a2"]),
         ]);
         assert_eq!(msgs.len(), 2);
         assert_ne!(msgs[0].guid, msgs[1].guid);
@@ -883,7 +883,10 @@ mod tests {
 
     #[test]
     fn plain_sms_duplicates_dropped() {
-        let (msgs, report) = project(vec![test_msg("xml", "hi", &[]), test_msg("xml", "hi", &[])]);
+        let (msgs, report) = project(vec![
+            test_message("xml", "hi", &[]),
+            test_message("xml", "hi", &[]),
+        ]);
         assert_eq!(msgs.len(), 1);
         assert_eq!(report.duplicates_dropped, 1);
     }

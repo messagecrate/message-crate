@@ -1288,7 +1288,7 @@ mod tests {
             participants: Vec::new(),
             owner_identity: String::new(),
             owner_display_name: None,
-            messages: vec![msg_with_attachments(1000, 3)],
+            messages: vec![message_with_attachments(1000, 3)],
             attachment_loads: vec![
                 AttachmentLoad::Path {
                     path: present,
@@ -1331,7 +1331,7 @@ mod tests {
     }
 
     /// A bare message carrying `count` attachments, for pairing tests.
-    fn msg_with_attachments(timestamp_ms: i64, count: usize) -> IrMessage {
+    fn message_with_attachments(timestamp_ms: i64, count: usize) -> IrMessage {
         IrMessage {
             guid: format!("guid-{timestamp_ms}"),
             timestamp_unix_ms: timestamp_ms,
@@ -1372,7 +1372,10 @@ mod tests {
             participants: Vec::new(),
             owner_identity: String::new(),
             owner_display_name: None,
-            messages: vec![msg_with_attachments(1000, 1), msg_with_attachments(2000, 1)],
+            messages: vec![
+                message_with_attachments(1000, 1),
+                message_with_attachments(2000, 1),
+            ],
             attachment_loads: vec![
                 AttachmentLoad::Path {
                     path: first.clone(),

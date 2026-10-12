@@ -631,7 +631,7 @@ impl ProjectionHooks for WhatsappProjection {
         self.export.clone()
     }
 
-    fn service(&self, _msg: &PendingMessage) -> IrService {
+    fn service(&self, _message: &PendingMessage) -> IrService {
         IrService::Whatsapp
     }
 
@@ -648,7 +648,7 @@ impl ProjectionHooks for WhatsappProjection {
 
     /// None: whether a media file was found must leave the GUID unchanged,
     /// and `key_id` already tells WhatsApp messages apart.
-    fn attachment_digests(&self, _msg: &PendingMessage) -> Vec<String> {
+    fn attachment_digests(&self, _message: &PendingMessage) -> Vec<String> {
         Vec::new()
     }
 
