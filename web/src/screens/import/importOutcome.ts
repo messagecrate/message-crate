@@ -12,7 +12,7 @@ import type {
  * and the next visit to Import offers Resume or Discard (CONTEXT.md,
  * "Pause").
  */
-export type ImportOutcome = "completed" | "completed_with_issues" | "paused";
+type ImportOutcome = "completed" | "completed_with_issues" | "paused";
 
 /**
  * The stable identity of a staged attachment across Media.

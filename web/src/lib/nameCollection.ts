@@ -34,7 +34,7 @@ type MembersPatch = { add?: number[]; remove?: number[] };
 export type MembersChanged = { added: number; removed: number };
 
 /** A name to put on or take off some rows, as a screen asks for it. */
-export type SetMembersVars = { name: string; patch: MembersPatch };
+type SetMembersVars = { name: string; patch: MembersPatch };
 
 /**
  * A cached shape whose rows carry this collection's names as chips.
@@ -64,7 +64,7 @@ export type NameCollectionRoutes = {
   ) => Promise<{ added: number; removed: number }>;
 };
 
-export type NameCollectionConfig = {
+type NameCollectionConfig = {
   routes: NameCollectionRoutes;
   /** This collection's cache prefix, from `queryKeys`. */
   key: RouteQueryKey;
@@ -224,7 +224,7 @@ function useDeleteNamedSet(collection: NameCollection): UseMutationResult<void, 
 }
 
 /** The rows as they were before an optimistic membership write touched them. */
-export type ChipSnapshot = { entries: RouteCacheEntries };
+type ChipSnapshot = { entries: RouteCacheEntries };
 
 /**
  * Put rows in or out of one set, drawn before the server answers.
@@ -267,7 +267,7 @@ export function useSetNamedSetMembers(
 }
 
 /** What a screen or the sidebar does to one of these collections. */
-export type NameCollectionActions = {
+type NameCollectionActions = {
   create: (name: string) => Promise<string>;
   /**
    * The name of the set called `name` in any letter case, as the server

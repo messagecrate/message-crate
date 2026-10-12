@@ -27,7 +27,7 @@ export function filesOverLimit(summary: StagingSummary): AttachmentForecast[] {
 type EstimatePileKey = "likely_within" | "may_exceed" | "not_media";
 
 /** One group of files the Staging Review's estimates sort into. */
-export interface EstimatePile {
+interface EstimatePile {
   key: EstimatePileKey;
   label: string;
   /** What the pile means, shown above its files once it is opened. */

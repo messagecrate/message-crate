@@ -5,7 +5,7 @@ import type { components } from "../../lib/serverApi.types";
 import { useAsyncAction } from "../../lib/useAsyncAction";
 
 /** What the server answers when it creates an account. */
-export type CreatedAccount = components["schemas"]["CreateAccountResponse"];
+type CreatedAccount = components["schemas"]["CreateAccountResponse"];
 
 /**
  * Creating an account: a username, the password twice, the checks, and the

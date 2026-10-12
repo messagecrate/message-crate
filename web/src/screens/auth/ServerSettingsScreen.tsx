@@ -5,7 +5,7 @@ import { DEFAULT_TAURI_SERVER_URL } from "../../lib/authGuards";
 import { accentLinkClass, authLabelClass, authScreenTitleClass } from "../../lib/uiStyles";
 import ServerStatus, { type ServerConnection } from "./ServerStatus";
 
-export interface ServerSettingsScreenProps {
+interface ServerSettingsScreenProps {
   /** Address being typed. */
   draft: string;
   /**

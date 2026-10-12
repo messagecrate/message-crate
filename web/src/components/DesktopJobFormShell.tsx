@@ -3,7 +3,7 @@ import { type DesktopJobName, desktopJobRunningText, useDesktopJob } from "../li
 import Button from "./Button";
 import ProgressBar from "./ProgressBar";
 
-export type DesktopJobFormShellProps = {
+type DesktopJobFormShellProps = {
   /** Screen heading. Omit when the caller already sits under a heading (Settings tabs). */
   title?: string;
   /**

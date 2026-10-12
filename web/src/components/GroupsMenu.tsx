@@ -9,7 +9,7 @@ import Checkbox from "./Checkbox";
 import { ChevronDownIcon, PeopleGroupIcon } from "./icons";
 import PlainButton from "./PlainButton";
 
-export type GroupCheckState = MembershipCheckState;
+type GroupCheckState = MembershipCheckState;
 
 /** Padding, type size, and flex line shared by group rows and the empty message. */
 const MENU_ROW_CLASS = "flex items-center gap-2 px-3 py-1.5 text-[0.813rem] leading-5";

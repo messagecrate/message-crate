@@ -12,7 +12,7 @@ import {
 } from "../../lib/useToolsStatus";
 
 /** What a program is needed for: a WhatsApp import, or Convert and Compress. */
-export type ProgramNeed = "whatsapp" | "media";
+type ProgramNeed = "whatsapp" | "media";
 
 /** The troubleshooting section for what `need` runs. */
 function troubleshootingUrl(need: ProgramNeed): string {

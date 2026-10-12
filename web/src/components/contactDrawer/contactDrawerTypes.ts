@@ -71,7 +71,7 @@ export function sameContactPreviews(
   });
 }
 
-export type ConversationParticipantPreviewSource = {
+type ConversationParticipantPreviewSource = {
   /** As the server sends it: a number. The UI carries contact ids as strings. */
   contact_id?: number | null;
   /** Null/undefined when the source named this participant without an address. */

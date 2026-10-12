@@ -14,7 +14,7 @@ import { Z_POPOVER } from "../lib/zLayers";
 import { SelectChevronIcon } from "./icons";
 
 /** Default control, or the denser one the filter panels use. */
-export type SelectSize = "md" | "sm";
+type SelectSize = "md" | "sm";
 
 const TRIGGER_SIZE: Record<SelectSize, string> = {
   md: "rounded-xl px-3 py-2.5 text-[0.875rem]",

@@ -78,7 +78,7 @@ export function startingAuthState(): AuthState {
  * What the server said about a saved login: it still works, it refused it,
  * or it gave no answer about it.
  */
-export type SavedLoginCheck = "valid" | "refused" | "unanswered";
+type SavedLoginCheck = "valid" | "refused" | "unanswered";
 
 /**
  * Point `api.ts` at `login`, and leave it there, then ask the server

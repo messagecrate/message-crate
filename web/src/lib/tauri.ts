@@ -67,7 +67,7 @@ export interface RunDirConfig {
 }
 
 /** The Staging Directory, and the directory used when Settings name none. */
-export interface StagingDirectorySetting {
+interface StagingDirectorySetting {
   root: string;
   defaultRoot: string;
 }
@@ -87,7 +87,7 @@ export async function invokeSetStagingDirectory(root: string): Promise<StagingDi
 }
 
 /** Who ran an Import Run, on which Message Crate: the first line of the run's log. */
-export interface RunLogAccount {
+interface RunLogAccount {
   importRunId: number;
   accountId: number;
   /** The server's address, for a person to read. */
@@ -147,7 +147,7 @@ export async function invokeListImportRunLogs(reader: RunLogReader): Promise<Run
  * The levels a run log writes. The desktop app refuses `debug` and `trace`,
  * which only the server's log has.
  */
-export type RunLogLevel = "error" | "warn" | "info";
+type RunLogLevel = "error" | "warn" | "info";
 
 /**
  * A page of one Import Run log's lines, newest first: those at `level` and
@@ -282,7 +282,7 @@ export async function invokeSaveImportRunRecord(config: {
   });
 }
 
-export interface UploadConfig {
+interface UploadConfig {
   base_url: string;
   token: string;
   input_dir: string;
@@ -368,7 +368,7 @@ export async function invokeUpload(config: UploadConfig): Promise<void> {
  */
 export type ExportQueryList = components["schemas"]["ExportQueryList"];
 
-export interface ExportConfig {
+interface ExportConfig {
   base_url: string;
   token: string;
   out_dir: string;
@@ -535,7 +535,7 @@ export async function invokeToolsStatus(): Promise<ToolsStatus> {
  * program it would have downloaded shows as a failed download with that
  * reason.
  */
-export type RetryResult = "started" | "alreadyRunning" | "noToolsDirectory" | "couldNotStart";
+type RetryResult = "started" | "alreadyRunning" | "noToolsDirectory" | "couldNotStart";
 
 /**
  * Check the Tools Directory again and download what is missing, as Try again
@@ -568,7 +568,7 @@ export function toolUsable(status: ToolStatus): boolean {
   return status.state === "found" || status.state === "downloading";
 }
 
-export interface HomeDirInfo {
+interface HomeDirInfo {
   path: string;
   os: string;
 }

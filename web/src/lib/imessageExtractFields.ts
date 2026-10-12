@@ -2,7 +2,7 @@ import { mediaExtractFields } from "./sbrExtractFields";
 import type { AttachmentChoices, ExtractConfig } from "./types";
 
 /** iMessage extract method keys sent to the desktop `extract` command. */
-export type ImessageExtractSource = "imessage-ios" | "imessage-macos" | "imessage-jailbreak";
+type ImessageExtractSource = "imessage-ios" | "imessage-macos" | "imessage-jailbreak";
 
 /**
  * Build extract payload fields for an iMessage method.

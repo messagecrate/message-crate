@@ -26,7 +26,7 @@ import {
   type ThemeSeeds,
 } from "./theme";
 
-export type UseThemeResult = {
+type UseThemeResult = {
   mode: ThemeMode;
   setMode: (mode: ThemeMode) => void;
   seeds: ThemeSeeds;

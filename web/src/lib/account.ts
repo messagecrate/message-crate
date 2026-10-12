@@ -36,7 +36,7 @@ export function profileAddresses(profile: Pick<AccountProfile, "phones" | "email
  * screens read this one list instead of each testing `is_demo`, so a limit
  * the server adds is named here once.
  */
-export type FixedSettings = {
+type FixedSettings = {
   displayName: boolean;
   timeZone: boolean;
   /** The account's own identities, which decide which of its messages read as sent. */

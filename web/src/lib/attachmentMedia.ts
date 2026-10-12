@@ -4,14 +4,14 @@ import type { MessageAttachment } from "./types";
  * What an attachment is, for how a conversation shows it: a picture, a video
  * or a sound to play, or a file to download.
  */
-export type AttachmentKind = "image" | "video" | "audio" | "file";
+type AttachmentKind = "image" | "video" | "audio" | "file";
 
 /**
  * Which version opens an attachment in full (`docs/architecture/media.md`,
  * rule 2): the original, the Preview, or neither, when the original is not
  * one every browser shows and the server has not made its Preview yet.
  */
-export type FullVersion = "original" | "preview" | "none";
+type FullVersion = "original" | "preview" | "none";
 
 /** Types by a file name's extension, for an attachment the import named no type for. */
 const BY_EXTENSION: Record<string, string> = {

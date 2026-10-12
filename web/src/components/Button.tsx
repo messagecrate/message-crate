@@ -1,13 +1,7 @@
 import { focusRingClass } from "../lib/uiStyles";
 import PlainButton, { type PlainButtonProps } from "./PlainButton";
 
-export type ButtonVariant =
-  | "primary"
-  | "secondary"
-  | "danger"
-  | "ghost"
-  | "ghostNeutral"
-  | "ghostDanger";
+type ButtonVariant = "primary" | "secondary" | "danger" | "ghost" | "ghostNeutral" | "ghostDanger";
 
 /**
  * Sizes exist so call sites stop restating padding and type size as `!`-prefixed
@@ -15,7 +9,7 @@ export type ButtonVariant =
  * passed in `className` does not reliably beat one baked into the component —
  * which is why those overrides all needed `!important` to work at all.
  */
-export type ButtonSize = "wide" | "md" | "sm" | "xs" | "chip" | "icon";
+type ButtonSize = "wide" | "md" | "sm" | "xs" | "chip" | "icon";
 
 const VARIANT: Record<ButtonVariant, string> = {
   primary: "bg-accent text-sent-text border-accent font-bold hover:brightness-90",

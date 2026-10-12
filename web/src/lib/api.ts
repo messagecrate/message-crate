@@ -49,7 +49,7 @@ export function getBaseUrl(): string {
  * (`docs/architecture/http-api.md`). `type` is the URL of the page describing the kind of failure,
  * or `about:blank` for an internal error.
  */
-export type Problem = {
+type Problem = {
   type: string;
   title: string;
   status: number;

@@ -9,7 +9,7 @@ type OpenContactPreview = {
   groups?: string[];
 };
 
-export type MessagesLocationState = {
+type MessagesLocationState = {
   conversation?: Conversation;
   openContactId?: string;
   openContactPreview?: OpenContactPreview;

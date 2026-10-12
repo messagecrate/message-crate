@@ -13,7 +13,7 @@ import { Checkbox as RACCheckbox } from "react-aria-components";
  * Pass `children` for a visible label; otherwise `aria-label` is required, since
  * a checkbox with neither announces as an unnamed control.
  */
-export type CheckboxProps = {
+type CheckboxProps = {
   checked: boolean;
   /** Mixed state — some but not all of the things this box covers are checked. */
   indeterminate?: boolean;

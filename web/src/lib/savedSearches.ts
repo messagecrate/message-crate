@@ -64,7 +64,7 @@ function useDeleteSavedSearch(): UseMutationResult<void, Error, number> {
   return useRouteMutation({ mutationFn: (id: number) => deleteSavedSearch(id) });
 }
 
-export type SavedSearchActions = {
+type SavedSearchActions = {
   create: (name: string, query: string) => Promise<void>;
   update: (id: number, name: string, query: string) => Promise<void>;
   remove: (id: number) => Promise<void>;

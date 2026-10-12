@@ -12,7 +12,7 @@ export type ColumnResizeHandleProps = {
   onMouseLeave: () => void;
 };
 
-export type UseColumnResizeOptions = {
+type UseColumnResizeOptions = {
   storageKey: string;
   defaultWidth: number;
   minWidth: number;
@@ -27,7 +27,7 @@ export type UseColumnResizeOptions = {
   onDraggingChange?: (dragging: boolean) => void;
 };
 
-export type UseColumnResizeResult = {
+type UseColumnResizeResult = {
   width: number;
   dragging: boolean;
   handleHover: boolean;

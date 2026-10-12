@@ -38,7 +38,7 @@ export function quote(value: string): string {
  * One token of a query: where it starts and ends, and whether it opens a
  * group (`(`, or `-(` with its minus), closes one, or is anything else.
  */
-export type SearchToken = { kind: "open" | "close" | "text"; start: number; end: number };
+type SearchToken = { kind: "open" | "close" | "text"; start: number; end: number };
 
 /** The lexer's whitespace (`u8::is_ascii_whitespace`), plus NUL, which it reads as a space. */
 function isSpace(c: string | undefined): boolean {

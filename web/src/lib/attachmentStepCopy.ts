@@ -1,6 +1,6 @@
 import type { AttachmentMediaMode } from "./types";
 
-export type AttachmentStepCopy = {
+type AttachmentStepCopy = {
   label: string;
   doneDetail: string;
 };
