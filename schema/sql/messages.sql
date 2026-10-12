@@ -221,8 +221,11 @@ CREATE TABLE IF NOT EXISTS attachments (
     -- opens it and it gets no Preview (`media::browser_shows`,
     -- `docs/architecture/media.md` rule 2). The server's media pass decides
     -- it, and only an MP4 is opened to read its codec. 0 when it is not
-    -- shown as it is, and until the pass has looked at the file.
-    shown_as_is INTEGER NOT NULL DEFAULT 0 CHECK (shown_as_is IN (0, 1)),
+    -- shown as it is. NULL until the pass has decided, which the `/v1`
+    -- Attachment answers as not shown as it is; the pass plans an original
+    -- it cannot read from the decision recorded here, and from its type
+    -- only while there is none.
+    shown_as_is INTEGER CHECK (shown_as_is IN (0, 1)),
     -- SHA-256 hex of the Thumbnail: a small JPEG of an image, or a video's
     -- first frame. NULL until the server has made it.
     thumbnail_sha256 TEXT,

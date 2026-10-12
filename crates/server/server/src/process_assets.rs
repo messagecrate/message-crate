@@ -195,20 +195,48 @@ fn media_type(row: &StoredOriginal) -> Option<String> {
     )
 }
 
-/// Whether every browser shows `row`'s original, stored under `assets_dir`,
-/// as it is ([`media::browser_shows`]): the decision that both spares it a
-/// Preview and is answered as the `/v1` Attachment's `shown_as_is`. An
-/// incomplete `.part` original is never handed to ffprobe, and is not.
-/// `None` when nothing can be known, as for an MP4 while ffprobe is
-/// missing, so a decision an earlier pass recorded stays.
-fn shown_as_is(assets_dir: &Path, row: &StoredOriginal) -> Option<bool> {
+/// What the pass reads of one stored original's type, from its file and
+/// its rows ([`read_original`]).
+struct ReadOriginal {
+    /// The media type the original's first bytes show
+    /// ([`media::media_type_in_file`]); `None` when it cannot be read, is an
+    /// incomplete `.part`, or its bytes match no signature.
+    by_bytes: Option<&'static str>,
+    /// The original's media type: the one its bytes show, else the one its
+    /// rows say ([`media_type`]). A declared type is only a claim, so a
+    /// video declared `application/octet-stream` is still a video (#2805).
+    media_type: Option<String>,
+    /// Whether every browser shows the original as it is
+    /// ([`media::browser_shows`]): the decision that both spares it a
+    /// Preview and is answered as the `/v1` Attachment's `shown_as_is`.
+    /// `None` when nothing can be known, as for an original that cannot be
+    /// read or an MP4 while ffprobe is missing, so a decision an earlier
+    /// pass recorded stays.
+    decided: Option<bool>,
+}
+
+/// Read `row`'s original, stored under `assets_dir`, for its type and
+/// whether every browser shows it as it is: the one reading both
+/// [`decide_shown_as_is`] and the pass make. An incomplete `.part` original
+/// is never read nor handed to ffprobe: its rows say its type, and it is
+/// not shown as it is.
+fn read_original(assets_dir: &Path, row: &StoredOriginal) -> ReadOriginal {
+    let declared = media_type(row);
     if is_part_path(&row.assets_path) {
-        return Some(false);
+        return ReadOriginal {
+            by_bytes: None,
+            media_type: declared,
+            decided: Some(false),
+        };
     }
-    media::browser_shows(
-        &assets_dir.join(&row.assets_path),
-        media_type(row).as_deref(),
-    )
+    let path = assets_dir.join(&row.assets_path);
+    let by_bytes = media::media_type_in_file(&path, declared.as_deref());
+    let media_type = by_bytes.map(str::to_string).or(declared);
+    ReadOriginal {
+        by_bytes,
+        decided: media::browser_shows(&path, media_type.as_deref()),
+        media_type,
+    }
 }
 
 /// Record `decided` on every one of `rows`, the one write of the decision.
@@ -257,7 +285,8 @@ pub(crate) async fn decide_shown_as_is(
                 account_id,
                 original_sha: &row.sha256,
             };
-            record_decision_if_known(db, original, shown_as_is(&assets_dir, row)).await?;
+            let decided = read_original(&assets_dir, row).decided;
+            record_decision_if_known(db, original, decided).await?;
         }
     }
     Ok(())
@@ -677,16 +706,23 @@ impl<'a> AccountPass<'a> {
                 &version.describe_of(&row.sha256),
             )
         };
-        let decided = shown_as_is(&self.assets_dir, row);
+        let ReadOriginal {
+            by_bytes,
+            media_type,
+            decided,
+        } = read_original(&self.assets_dir, row);
         let on_disk = OnDisk {
             original_exists: source_path.is_file(),
             preview: state(Version::Preview),
             thumbnail: state(Version::Thumbnail),
             // With nothing known about the file, as for an original that
-            // cannot be read, its type decides: a missing JPEG is not given
-            // a Preview its type never needs.
+            // cannot be read, the decision an earlier pass recorded stands
+            // (#2804), and with none recorded its type decides: a missing
+            // JPEG is not given a Preview its type never needs.
             browser_shows: decided
-                .unwrap_or_else(|| media::shown_as_is_by_type(media_type(row).as_deref())),
+                .or(row.shown_as_is)
+                .unwrap_or_else(|| media::shown_as_is_by_type(media_type.as_deref())),
+            type_by_bytes: by_bytes,
         };
         // The decision is stored whatever the options leave alone, so the
         // `/v1` Attachment answers it without running ffprobe on a read. A
@@ -1177,6 +1213,11 @@ struct OnDisk {
     /// Every browser shows the original as it is ([`media::browser_shows`]),
     /// so it needs no Preview.
     browser_shows: bool,
+    /// The media type the original's first bytes show
+    /// ([`media::media_type_in_file`]), which decides its kind over what
+    /// its rows say. `None` when it cannot be read or its bytes match no
+    /// signature.
+    type_by_bytes: Option<&'static str>,
 }
 
 /// The state of a version a row names, under the converted directory.
@@ -1202,13 +1243,22 @@ fn plan(row: &StoredOriginal, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> P
     // Thumbnail like any other. Whether it gets a Preview is `browser_shows`'s
     // answer, as for every type: every browser shows a GIF, so it gets none,
     // while a file called a GIF whose bytes are not one gets one.
-    let kind_by_type = media::kind_of(
-        Path::new(&row.assets_path),
-        row.mime_type.as_deref(),
-        &row.name_hints(),
-    );
-    let is_gif = media_type(row).as_deref() == Some("image/gif");
-    let Some(kind) = kind_by_type.or(is_gif.then_some(Kind::Image)) else {
+    //
+    // The type the bytes show decides over the declared one, so a video
+    // declared `application/octet-stream` is a video, and a file declared a
+    // photo whose bytes are a PDF is not media (#2805).
+    let kind = if let Some(by_bytes) = on_disk.type_by_bytes {
+        media::kind_for_mime(by_bytes)
+    } else {
+        let kind_by_type = media::kind_of(
+            Path::new(&row.assets_path),
+            row.mime_type.as_deref(),
+            &row.name_hints(),
+        );
+        let is_gif = media_type(row).as_deref() == Some("image/gif");
+        kind_by_type.or(is_gif.then_some(Kind::Image))
+    };
+    let Some(kind) = kind else {
         return Plan::Skip(SkipReason::NotMedia);
     };
     let wanted = match kind {

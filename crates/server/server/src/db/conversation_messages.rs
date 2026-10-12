@@ -644,8 +644,9 @@ async fn load_attachments(
                     transcription: row.try_get(6)?,
                     missing_reason: row.try_get(7)?,
                     // Decided by the media pass and stored, so a read never
-                    // runs ffprobe.
-                    shown_as_is: row.try_get::<i64, _>(10)? != 0,
+                    // runs ffprobe. NULL until the pass has looked, which
+                    // reads as not shown as it is.
+                    shown_as_is: row.try_get::<Option<i64>, _>(10)?.is_some_and(|v| v != 0),
                     preview_mime_type: row.try_get(8)?,
                     preview_not_made_reason: row.try_get(11)?,
                     thumbnail_mime_type: row.try_get(9)?,
