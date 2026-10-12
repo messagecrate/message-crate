@@ -748,7 +748,7 @@ impl<R: Rng> Seeder<'_, R> {
         roster: &Roster,
         group: &crate::personas::GroupSpec,
     ) -> Result<()> {
-        let chat_id = group_chat_id(group.index);
+        let chat_id = group_conversation_id(group.index);
         let participants = group_participants(roster, group);
         if participants.len() < 2 && !group.phone_only {
             return Ok(());
@@ -1387,10 +1387,10 @@ fn sample_group_day_burst(rng: &mut impl Rng) -> usize {
 /// Chat identifier for a group: a mix of `chat…` IDs and phone-number IDs.
 ///
 /// A group past the last phone-number ID gets a `chat…` ID instead.
-fn group_chat_id(index: usize) -> String {
+fn group_conversation_id(index: usize) -> String {
     match index % 5 {
         0 => format!("chat{:010}", 1_000_000_000u64 + index as u64),
-        1..=3 => phones::group_chat_phone(index)
+        1..=3 => phones::group_conversation_phone(index)
             .unwrap_or_else(|| format!("chat{:010}", 3_000_000_000u64 + index as u64)),
         _ => format!("chat{:010}", 2_000_000_000u64 + index as u64),
     }

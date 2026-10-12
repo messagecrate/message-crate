@@ -652,7 +652,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .await;
 
     // Group conversation that includes Sam, with 1 message.
-    let group_chat = account_profile::link_account_handle(
+    let group_handle = account_profile::link_account_handle(
         &mut conn,
         account,
         "chat-sam-group",
@@ -662,7 +662,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .unwrap();
     ConversationRow {
         id: Some(2),
-        ..ConversationRow::group(account, group_chat, "Sam Group")
+        ..ConversationRow::group(account, group_handle, "Sam Group")
     }
     .insert(&mut conn)
     .await;
@@ -794,7 +794,7 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
         .insert(&mut conn)
         .await;
     }
-    let group_chat = account_profile::link_account_handle(
+    let group_handle = account_profile::link_account_handle(
         &mut conn,
         account,
         "chat-sam-group",
@@ -804,7 +804,7 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .unwrap();
     ConversationRow {
         id: Some(2),
-        ..ConversationRow::group(account, group_chat, "Sam Group")
+        ..ConversationRow::group(account, group_handle, "Sam Group")
     }
     .insert(&mut conn)
     .await;
@@ -945,7 +945,7 @@ async fn a_conversation_with_two_of_a_contacts_identities_counts_once() {
         .unwrap();
         handles.push(handle);
     }
-    let (group_chat, _) = crate::db::handles::upsert_handle_row(
+    let (group_handle, _) = crate::db::handles::upsert_handle_row(
         &mut conn,
         account,
         "chat-sam-group",
@@ -956,7 +956,7 @@ async fn a_conversation_with_two_of_a_contacts_identities_counts_once() {
     .unwrap();
     ConversationRow {
         id: Some(1),
-        ..ConversationRow::group(account, group_chat, "Sam Group")
+        ..ConversationRow::group(account, group_handle, "Sam Group")
     }
     .insert(&mut conn)
     .await;
@@ -1111,7 +1111,7 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
             .fetch_one(&mut *conn)
             .await
             .unwrap();
-    let (group_chat, _) = handles::upsert_handle_row(
+    let (group_handle, _) = handles::upsert_handle_row(
         &mut conn,
         account,
         "chat-jane-bob",
@@ -1144,7 +1144,7 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
         account,
         2,
         "group",
-        group_chat,
+        group_handle,
         &[jane_phone, jane_email, bob_phone],
         false,
     )
@@ -1296,7 +1296,7 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    let (group_chat, _) = handles::upsert_handle_row(
+    let (group_handle, _) = handles::upsert_handle_row(
         &mut conn,
         account,
         "chat-ada-group",
@@ -1317,7 +1317,7 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
 
     for (id, kind, chat, day) in [
         (1, "individual", ada_phone, "2024-01-01"),
-        (2, "group", group_chat, "2024-02-01"),
+        (2, "group", group_handle, "2024-02-01"),
         (3, "orphaned", orphaned_chat, "2024-03-01"),
     ] {
         insert_conversation(&mut conn, account, id, kind, chat, &[ada_phone], false).await;
@@ -1400,7 +1400,7 @@ async fn the_holders_orphaned_messages_count_as_orphaned() {
     )
     .await
     .unwrap();
-    let (group_chat, _) = handles::upsert_handle_row(
+    let (group_handle, _) = handles::upsert_handle_row(
         &mut conn,
         account,
         "chat-ada-group",
@@ -1422,7 +1422,10 @@ async fn the_holders_orphaned_messages_count_as_orphaned() {
     // holder's first. The holder's three orphaned messages sit in the
     // conversation of orphaned messages that has no sender's address in its
     // key and no participant (#1776).
-    for (id, kind, chat, count) in [(1, "individual", ada_phone, 1), (2, "group", group_chat, 2)] {
+    for (id, kind, chat, count) in [
+        (1, "individual", ada_phone, 1),
+        (2, "group", group_handle, 2),
+    ] {
         insert_conversation(&mut conn, account, id, kind, chat, &[ada_phone], false).await;
         for minute in 0..count {
             let sender = (minute > 0).then_some(ada_phone);

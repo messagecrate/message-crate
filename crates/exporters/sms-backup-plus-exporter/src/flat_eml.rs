@@ -399,7 +399,7 @@ pub(crate) fn names_a_group(members: &[Handle]) -> bool {
 /// A group's key and title from its members' keys.
 pub(crate) fn group_key(members: &[Handle]) -> (String, String) {
     let keys: Vec<String> = members.iter().map(|a| a.key().to_string()).collect();
-    phone::group_chat_id("group-", &keys)
+    phone::group_conversation_id("group-", &keys)
 }
 
 /// Unix seconds from `X-smssync-date`, else from the `Date` header, and

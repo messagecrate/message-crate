@@ -495,13 +495,13 @@ async fn list_conversations_filters_by_contact_and_type() {
     .await;
 
     // Group that includes Sam (distinct chat handle; Sam is a participant).
-    let group_chat =
+    let group_handle =
         account_profile::link_account_handle(&mut conn, account, "chat123456", IdentityType::Other)
             .await
             .unwrap();
     ConversationRow {
         id: Some(3),
-        ..ConversationRow::group(account, group_chat, "Sam Group")
+        ..ConversationRow::group(account, group_handle, "Sam Group")
     }
     .insert(&mut conn)
     .await;
@@ -666,13 +666,13 @@ async fn list_conversations_filters_by_participant_count() {
     )
     .await
     .unwrap();
-    let group_chat =
+    let group_handle =
         account_profile::link_account_handle(&mut conn, account, "chat-big", IdentityType::Other)
             .await
             .unwrap();
     ConversationRow {
         id: Some(10),
-        ..ConversationRow::group(account, group_chat, "Trio")
+        ..ConversationRow::group(account, group_handle, "Trio")
     }
     .insert(&mut conn)
     .await;
@@ -748,13 +748,13 @@ async fn list_conversations_participants_eq_three_on_built_fixture() {
     )
     .await
     .unwrap();
-    let group_chat =
+    let group_handle =
         account_profile::link_account_handle(&mut conn, account, "chat-trio", IdentityType::Other)
             .await
             .unwrap();
     ConversationRow {
         id: Some(20),
-        ..ConversationRow::group(account, group_chat, "Trio")
+        ..ConversationRow::group(account, group_handle, "Trio")
     }
     .insert(&mut conn)
     .await;

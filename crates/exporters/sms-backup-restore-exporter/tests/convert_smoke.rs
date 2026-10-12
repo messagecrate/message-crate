@@ -318,7 +318,7 @@ fn convert_export_json_and_jsonl_use_pristine_v4() {
     // individual conversation after owner-filtered peer resolution.
     assert_eq!(
         report.conversations, 1,
-        "MMS must not fragment into a group chat"
+        "MMS must not fragment into a group conversation"
     );
     let has_outgoing = document["messages"].as_array().unwrap().iter().any(|m| {
         m["direction"] == "outgoing" && m["sender_identity"].as_str() == Some("+15555550100")

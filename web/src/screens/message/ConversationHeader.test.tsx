@@ -58,7 +58,7 @@ const PROFILE = {
 };
 
 /** A group conversation: the owner, two people with contacts, one nobody has a contact for. */
-function groupChat(): Conversation {
+function groupConversation(): Conversation {
   return conversation({
     is_group: true,
     shown_title: "Book Club",
@@ -158,16 +158,16 @@ describe("ConversationHeader", () => {
   describe("Make a Contact Group", () => {
     it("is offered on a group conversation and not on a one-to-one conversation", async () => {
       const user = setupUser();
-      // The same people as the group chat, so only the conversation's kind
-      // keeps the item off the menu.
-      renderHeader(conversation({ participants: groupChat().participants }));
+      // The same people as the group conversation, so only the conversation's
+      // kind keeps the item off the menu.
+      renderHeader(conversation({ participants: groupConversation().participants }));
       // The profile the item waits for has landed, so its absence is the screen's choice.
       await settle();
       await user.click(screen.getByRole("button", { name: "More for this conversation" }));
       expect(screen.queryByRole("menuitem", { name: "Make a Contact Group" })).toBeNull();
       cleanup();
 
-      renderHeader(groupChat());
+      renderHeader(groupConversation());
       // The owner's profile decides who is left out, so the item waits for it.
       await settle();
       expect(getAccountProfileMock).toHaveBeenCalled();
@@ -186,7 +186,7 @@ describe("ConversationHeader", () => {
       });
       updateContactGroupMembersMock.mockResolvedValue({ added: 2, removed: 0 });
       const user = setupUser();
-      renderHeader(groupChat());
+      renderHeader(groupConversation());
       await settle();
 
       await openMenuItem(user, "Make a Contact Group");
@@ -209,7 +209,7 @@ describe("ConversationHeader", () => {
       listContactGroupsMock.mockResolvedValue([{ id: 4, name: "Readers" }]);
       updateContactGroupMembersMock.mockResolvedValue({ added: 2, removed: 0 });
       const user = setupUser();
-      renderHeader(groupChat());
+      renderHeader(groupConversation());
       await settle();
 
       await openMenuItem(user, "Make a Contact Group");
@@ -228,7 +228,7 @@ describe("ConversationHeader", () => {
   });
 
   it("says in one line who is in it, the service as the conversation list names it, and how many messages", () => {
-    renderHeader(groupChat());
+    renderHeader(groupConversation());
     expect(screen.getByRole("heading", { name: "Book Club" })).toBeInTheDocument();
     expect(screen.getByText("4 people")).toBeInTheDocument();
     // `sms` reads "Text Message", the conversation list's word, not the raw service.

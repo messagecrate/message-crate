@@ -225,10 +225,10 @@ fn an_incoming_sms_keeps_its_sender_and_contact_name() {
 
 /// An SMS from another app, such as iMessage's SMS fallback, has no SBR
 /// fields to restore, so the element is built from the message alone. A
-/// photo in a 1:1 chat makes it an `<mms>`, whatever kind the source app
-/// called the message.
+/// photo in a one-to-one conversation makes it an `<mms>`, whatever kind the
+/// source app called the message.
 #[test]
-fn a_direct_photo_from_another_app_keeps_its_chat_sender_subject_and_bytes() {
+fn a_one_to_one_photo_from_another_app_keeps_its_conversation_sender_subject_and_bytes() {
     let mut document = message_ir::testutil::sample_document("look at this");
     let message = &mut document.messages[0];
     message.source = None;
@@ -264,7 +264,8 @@ fn a_direct_photo_from_another_app_keeps_its_chat_sender_subject_and_bytes() {
 }
 
 /// A group message with no attachment is still an `<mms>`: an `<sms>` has
-/// one address and would land in a 1:1 chat with whoever sent it.
+/// one address and would land in a one-to-one conversation with whoever sent
+/// it.
 #[test]
 fn a_text_only_group_message_from_another_app_stays_in_its_group() {
     let mut document = message_ir::testutil::sample_document("who is in?");

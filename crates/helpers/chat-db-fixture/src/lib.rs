@@ -36,12 +36,13 @@ pub const OWNER: &str = "+15555550106";
 /// it with Apple's `E:` prefix (`E:owner@example.com`).
 pub const OWNER_EMAIL: &str = "owner@example.com";
 
-/// The first contact's number: the other side of the direct chat and a member
-/// of the group chat.
+/// The first contact's number: the other side of the one-to-one conversation
+/// and a member of the group conversation.
 pub const FRIEND_PHONE: &str = "+15555550107";
 
-/// The second contact's address: a member of the group chat, and the other
-/// side of the direct chat the owner runs from the email account.
+/// The second contact's address: a member of the group conversation, and the
+/// other side of the one-to-one conversation the owner runs from the email
+/// account.
 pub const FRIEND_EMAIL: &str = "friend@example.com";
 
 /// The first contact's email address. Apple links it to [`FRIEND_PHONE`]
@@ -49,14 +50,14 @@ pub const FRIEND_EMAIL: &str = "friend@example.com";
 /// does for two addresses on one contact card.
 pub const FRIEND_PHONE_EMAIL: &str = "sam@example.com";
 
-/// The group chat's identifier.
-pub const GROUP_CHAT_IDENTIFIER: &str = "chat100";
+/// The group conversation's identifier.
+pub const GROUP_IDENTIFIER: &str = "chat100";
 
-/// The identifier of the group chat nobody named, which every member but
-/// [`FRIEND_EMAIL`] has left.
+/// The identifier of the group conversation nobody named, which every member
+/// but [`FRIEND_EMAIL`] has left.
 pub const SHRUNK_GROUP_IDENTIFIER: &str = "chat200";
 
-/// The name the group chat was given.
+/// The name the group conversation was given.
 pub const GROUP_TITLE: &str = "Weekend plans";
 
 /// The guid of the message two people react to. Apple's guids are 36
@@ -199,7 +200,7 @@ pub fn write_chat_db(dir: &Path) -> PathBuf {
         INSERT INTO handle VALUES (3, '{friend_phone_email}', 'person-sam', 'iMessage');
         INSERT INTO handle VALUES (4, '{owner}', NULL, 'iMessage');
         INSERT INTO chat VALUES (1, '{friend_phone}', 'iMessage', NULL, 'P:{owner}', 45);
-        INSERT INTO chat VALUES (2, '{group_chat}', 'iMessage', '{group_title}', 'P:{owner}', 43);
+        INSERT INTO chat VALUES (2, '{group}', 'iMessage', '{group_title}', 'P:{owner}', 43);
         INSERT INTO chat VALUES (3, '{friend_email}', 'iMessage', NULL, 'E:{owner_email}', 45);
         INSERT INTO chat VALUES (4, '{shrunk_group}', 'iMessage', NULL, 'P:{owner}', 43);
         INSERT INTO chat VALUES (5, '{friend_phone_email}', 'iMessage', NULL, 'P:{owner}', 45);
@@ -256,7 +257,7 @@ pub fn write_chat_db(dir: &Path) -> PathBuf {
         shrunk_group = SHRUNK_GROUP_IDENTIFIER,
         owner = OWNER,
         owner_email = OWNER_EMAIL,
-        group_chat = GROUP_CHAT_IDENTIFIER,
+        group = GROUP_IDENTIFIER,
         group_title = GROUP_TITLE,
         d1 = apple_nanos(600_000_000),
         d1_read = apple_nanos(600_000_060),
