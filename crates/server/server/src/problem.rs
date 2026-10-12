@@ -82,8 +82,6 @@ problem_types! {
     InvalidCredentials => ("invalid-credentials", UNAUTHORIZED, "Invalid credentials"),
     /// The bearer token is missing, malformed, unknown or expired.
     AuthenticationRequired => ("authentication-required", UNAUTHORIZED, "Authentication required"),
-    /// The auth rate limiter refused the attempt.
-    RateLimited => ("rate-limited", TOO_MANY_REQUESTS, "Rate limited"),
     /// A new account's username collides with an existing one.
     UsernameTaken => ("username-taken", CONFLICT, "Username taken"),
     /// A Contact Group, Message Tag, or Saved Search name collides.
@@ -133,18 +131,18 @@ pub const DATABASE_BUSY_RETRY_AFTER_SECS: u64 = 5;
 impl ProblemType {
     /// Whether the line a request refused with this type leaves in the
     /// server's log is a warning (`docs/architecture/server-log.md`): true
-    /// for the types that answer `401 Unauthorized`, `403 Forbidden` and
-    /// `429 Too Many Requests`, because a run of them is what a password
-    /// guesser or an API token that lost its rights looks like, and for
-    /// `database-busy`, because a run of it says the server has more work
-    /// than its database keeps up with. The owner's Logs panel opens at
-    /// warnings and up. Every other refusal is logged at `INFO`.
+    /// for the types that answer `401 Unauthorized` and `403 Forbidden`,
+    /// because a run of them is what a password guesser or an API token that
+    /// lost its rights looks like, and for `database-busy`, because a run of
+    /// it says the server has more work than its database keeps up with.
+    /// The owner's Logs panel opens at warnings and up. Every other refusal
+    /// is logged at `INFO`.
     #[must_use]
     pub fn refusal_is_a_warning(self) -> bool {
         self == Self::DatabaseBusy
             || matches!(
                 self.status(),
-                StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
+                StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
             )
     }
 
@@ -173,14 +171,9 @@ For an import batch, `line` carries the line of the request body that could not 
                 byte_size(message_crate_api_types::MAX_IMPORT_BATCH_BYTES),
                 byte_size(crate::server::MAX_REQUEST_BODY_BYTES),
             ),
-            Self::InvalidCredentials => "The username or password did not match an account, the account is disabled, or the current password given to confirm deleting an account or changing the owner's password was wrong. The server does not say which. A login to a disabled account answers this whether the password was right or not, so a guesser learns nothing. Check both and try again, or ask the owner whether the account is disabled. Repeated attempts are rate limited.".to_string(),
+            Self::InvalidCredentials => "The username or password did not match an account, the account is disabled, or the current password given to confirm deleting an account or changing the owner's password was wrong. The server does not say which. A login to a disabled account answers this whether the password was right or not, so a guesser learns nothing. Check both and try again, or ask the owner whether the account is disabled. The server waits about a second before it answers each refused attempt, so a wrong password costs a moment before the next try. That wait is not protection for a Message Crate reachable from the internet: that is the job of the proxy in front of it.".to_string(),
             Self::AuthenticationRequired => "The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. Log in again, or issue a new API token, and send the new token.\n\n\
 Every `401 Unauthorized` answer carries `WWW-Authenticate: Bearer realm=\"message-crate\"`. When the request sent a Bearer token and the server refused it, the challenge adds `error=\"invalid_token\"`.".to_string(),
-            Self::RateLimited => format!(
-                "The server refused an authentication attempt because too many came too fast: more than {} attempts inside {} seconds at one account's password, or to register an account or claim Message Crate, which count once for the whole server. Logging in as an account under any spelling of its username counts against its password, and so does a current password sent to change the owner's password or to delete an account. A login that succeeds, and a right current password, are not counted. Wait the number of seconds in the `Retry-After` header (repeated as `retry_after` in the body) and try again.",
-                crate::credentials::AUTH_RATE_MAX,
-                crate::credentials::AUTH_RATE_WINDOW.as_secs()
-            ),
             Self::UsernameTaken => "The username already belongs to an account on this server. Usernames are compared ignoring case. `demo` belongs to the Demo Account even while that account is absent. Pick another.".to_string(),
             Self::NameTaken => "A Contact Group, Message Tag or Saved Search with this name already exists for the account. Names are compared ignoring case. Pick another, or rename the existing one.".to_string(),
             Self::DemoAccountProtected => "The demo account refuses this operation, because it exists to be looked at and reset rather than changed. Log in as a real account, or run `reset-demo` on the server to restore the demo data.".to_string(),
@@ -255,7 +248,6 @@ pub mod openapi {
     // to compile.
     named!(
         InvalidCredentials,
-        RateLimited,
         UsernameTaken,
         NameTaken,
         DemoAccountProtected,

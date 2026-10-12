@@ -1266,22 +1266,21 @@ async fn every_response_carries_a_server_made_request_id_and_a_problem_repeats_i
     assert!(problem.errors.is_some_and(|e| !e.is_empty()), "{text}");
 }
 
-/// A wrong password is `invalid-credentials` at 401, and the attempt after
-/// the limit is `rate-limited` with a `Retry-After` the body repeats.
+/// A wrong password is `invalid-credentials` at `401 Unauthorized`, with no
+/// `Retry-After`: the server waited before answering, so there is nothing to
+/// wait for.
 #[tokio::test]
-async fn a_wrong_password_is_401_and_the_limit_answers_429_with_retry_after() {
+async fn a_wrong_password_is_401_invalid_credentials() {
     let (fixture, _) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
     let server = crate::test_support::serve(&state).await;
-    let client = http_client();
-    let login = || {
-        client
-            .post(format!("{}/v1/session", server.base()))
-            .json(&serde_json::json!({ "username": "alice", "password": "not-it-at-all" }))
-            .send()
-    };
-
-    let wrong = login().await.unwrap();
+    let wrong = http_client()
+        .post(format!("{}/v1/session", server.base()))
+        .json(&serde_json::json!({ "username": "alice", "password": "not-it-at-all" }))
+        .send()
+        .await
+        .unwrap();
+    assert!(!wrong.headers().contains_key(header::RETRY_AFTER));
     let status = wrong.status();
     let text = wrong.text().await.unwrap();
     let problem = crate::test_support::expect_problem(
@@ -1293,67 +1292,6 @@ async fn a_wrong_password_is_401_and_the_limit_answers_429_with_retry_after() {
         problem.detail.as_deref(),
         Some("invalid username or password")
     );
-
-    for attempt in 1..crate::credentials::AUTH_RATE_MAX {
-        let wrong = login().await.unwrap();
-        let status = wrong.status();
-        let text = wrong.text().await.unwrap();
-        expect_problem_for(
-            &format!("attempt {attempt}"),
-            status,
-            &text,
-            ProblemType::InvalidCredentials,
-        );
-    }
-    let limited = login().await.unwrap();
-    let retry_after: u64 = limited.headers()[header::RETRY_AFTER]
-        .to_str()
-        .unwrap()
-        .parse()
-        .unwrap();
-    let status = limited.status();
-    let text = limited.text().await.unwrap();
-    let problem = crate::test_support::expect_problem(
-        status,
-        &text,
-        crate::problem::ProblemType::RateLimited,
-    );
-    assert_eq!(problem.retry_after, Some(retry_after));
-    assert!((1..=crate::credentials::AUTH_RATE_WINDOW.as_secs()).contains(&retry_after));
-}
-
-/// The account lookup ignores case, so every spelling of one username guesses
-/// at one password: they share one count, and the attempt after the limit is
-/// refused under each of them. A username that names no account folds the
-/// same way.
-#[tokio::test]
-async fn every_spelling_of_a_username_counts_against_one_limit() {
-    let (fixture, _) = crate::test_support::fixture_with_account().await;
-    let state = fixture.state.clone();
-
-    for spellings in [["alice", "Alice", "aLice"], ["nobody", "NOBODY", "noBody"]] {
-        for attempt in 0..crate::credentials::AUTH_RATE_MAX {
-            let username = spellings[attempt % spellings.len()];
-            let (status, text) =
-                crate::test_support::log_in_raw(&state, username, "not-it-at-all").await;
-            expect_problem_for(
-                &format!("attempt {attempt} as {username}"),
-                status,
-                &text,
-                ProblemType::InvalidCredentials,
-            );
-        }
-        for username in spellings {
-            let (status, text) =
-                crate::test_support::log_in_raw(&state, username, "not-it-at-all").await;
-            expect_problem_for(
-                &format!("past the limit as {username}"),
-                status,
-                &text,
-                ProblemType::RateLimited,
-            );
-        }
-    }
 }
 
 /// Every `/v1` operation in the document refuses a query parameter it does
@@ -1608,12 +1546,6 @@ fn every_api_error_answers_the_status_its_problem_type_declares() {
             StatusCode::UNAUTHORIZED,
         ),
         (ApiError::TokenRefused("x".into()), StatusCode::UNAUTHORIZED),
-        (
-            ApiError::RateLimited {
-                retry_after_secs: 30,
-            },
-            StatusCode::TOO_MANY_REQUESTS,
-        ),
         (ApiError::UsernameTaken("x".into()), StatusCode::CONFLICT),
         (ApiError::NameTaken("x".into()), StatusCode::CONFLICT),
         (
@@ -1708,9 +1640,6 @@ fn every_401_carries_a_bearer_challenge_and_nothing_else_does() {
         ApiError::InsufficientScope("x".into()),
         ApiError::AccountDisabled("x".into()),
         ApiError::NotFound("x".into()),
-        ApiError::RateLimited {
-            retry_after_secs: 30,
-        },
     ] {
         assert_eq!(challenge(error), None);
     }
@@ -1732,13 +1661,6 @@ fn every_api_error_displays_its_detail_sentence() {
         ApiError::ValidationFailed(vec!["name is required".into(), "name is too long".into()])
             .to_string(),
         "name is required; name is too long"
-    );
-    assert_eq!(
-        ApiError::RateLimited {
-            retry_after_secs: 30
-        }
-        .to_string(),
-        "too many authentication attempts; try again in 30 seconds"
     );
     assert_eq!(
         ApiError::SearchQueryInvalid {

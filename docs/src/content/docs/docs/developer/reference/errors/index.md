@@ -32,7 +32,6 @@ A `500 Internal Server Error` has no page: its `type` is `about:blank`, and its 
 | [`payload-too-large`](./payload-too-large/) | `413 Payload Too Large` | Payload too large |
 | [`invalid-credentials`](./invalid-credentials/) | `401 Unauthorized` | Invalid credentials |
 | [`authentication-required`](./authentication-required/) | `401 Unauthorized` | Authentication required |
-| [`rate-limited`](./rate-limited/) | `429 Too Many Requests` | Rate limited |
 | [`username-taken`](./username-taken/) | `409 Conflict` | Username taken |
 | [`name-taken`](./name-taken/) | `409 Conflict` | Name taken |
 | [`demo-account-protected`](./demo-account-protected/) | `403 Forbidden` | Demo account protected |

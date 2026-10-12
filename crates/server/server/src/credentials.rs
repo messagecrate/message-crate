@@ -1,14 +1,14 @@
-//! Passwords, usernames, and the rate limiter on attempts to present them.
+//! Passwords, usernames, and the wait before a refused one is answered.
 //!
 //! Nothing here is a route. The Session routes (`session_api`), the accounts
 //! collection (`accounts_api`), claiming (`server_api`) and the owner's shell
 //! commands (`owner_cli`) all hash, verify and validate through this module,
 //! so a password rule is written once.
 
-use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 use anyhow::Result;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
@@ -20,234 +20,59 @@ use crate::server::ApiError;
 
 /// Max password bytes accepted before hashing (creation, login, change).
 pub(crate) const MAX_PASSWORD_BYTES: usize = 1024;
-/// Sliding window for the routes a stranger may call with a credential.
-pub(crate) const AUTH_RATE_WINDOW: Duration = Duration::from_secs(60);
-/// The most hits one bucket may count within [`AUTH_RATE_WINDOW`]. The next
-/// attempt is refused as `rate-limited`. Every bucket but
-/// [`RateBucket::UnknownUsernames`] holds this many.
-pub(crate) const AUTH_RATE_MAX: usize = 20;
-/// The most logins as usernames that name no account the whole server takes
-/// within [`AUTH_RATE_WINDOW`], whichever usernames they are. Well above what
-/// people mistyping their usernames produce, and low enough that a script
-/// trying a new username each time cannot keep Argon2 busy or fill the Audit
-/// Trail.
-pub(crate) const UNKNOWN_USERNAME_RATE_MAX: usize = 120;
+/// How long the server waits before it answers a refused credential: a login
+/// it refuses, or a wrong `current_password`.
+///
+/// The wait is basic common sense, not protection from the internet: a wrong
+/// password costs a moment before the next try. Defending a Message Crate
+/// reachable from the internet is the job of the proxy in front of it.
+pub(crate) const REFUSAL_WAIT: Duration = Duration::from_secs(1);
 
 static DUMMY_PASSWORD_HASH: OnceLock<String> = OnceLock::new();
 
-/// One count the rate limiter keeps.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum RateBucket {
-    /// Registrations, once for the whole server.
-    Register,
-    /// Claims, once for the whole server.
-    Claim,
-    /// Guesses at one account's password: a login as it, and a
-    /// `current_password` sent to change the owner's password or to delete
-    /// the account. Keyed by the id, so every spelling of the username counts
-    /// here.
-    Password(i64),
-    /// Logins as one username that names no account, folded the way the
-    /// account lookup folds it (`COLLATE NOCASE`, which folds ASCII letters
-    /// only), so its spellings share one count as an account's do. Build it
-    /// with [`RateBucket::unknown_username`].
-    UnknownUsername(String),
-    /// Logins as any username that names no account, once for the whole
-    /// server, so a script that tries a new username each time is counted.
-    UnknownUsernames,
-}
-
-impl RateBucket {
-    /// The bucket for logins as `username`, which names no account.
-    pub(crate) fn unknown_username(username: &str) -> Self {
-        Self::UnknownUsername(username.to_ascii_lowercase())
-    }
-
-    /// The key the bucket's hits are kept under: its kind, and the account
-    /// or username it counts for.
-    fn key(&self) -> String {
-        match self {
-            Self::Password(account_id) => format!("{}:{account_id}", self.kind()),
-            Self::UnknownUsername(folded) => format!("{}:{folded}", self.kind()),
-            Self::Register | Self::Claim | Self::UnknownUsernames => self.kind().to_string(),
-        }
-    }
-
-    /// The most hits the bucket holds in [`AUTH_RATE_WINDOW`].
-    fn max(&self) -> usize {
-        match self {
-            Self::UnknownUsernames => UNKNOWN_USERNAME_RATE_MAX,
-            _ => AUTH_RATE_MAX,
-        }
-    }
-
-    /// The bucket's kind as the server's log names it. A username is never
-    /// written: the log holds ids and outcomes only.
-    fn kind(&self) -> &'static str {
-        match self {
-            Self::Register => "register",
-            Self::Claim => "claim",
-            Self::Password(_) => "password",
-            Self::UnknownUsername(_) => "unknown_username",
-            Self::UnknownUsernames => "unknown_usernames",
-        }
-    }
-
-    /// The account whose password the bucket guards, for the log.
-    fn account_id(&self) -> Option<i64> {
-        match self {
-            Self::Password(account_id) => Some(*account_id),
-            _ => None,
-        }
-    }
-}
-
-/// One counted attempt, which [`AuthRateLimits::give_back`] takes back when
-/// the attempt turned out to be the holder's own.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct Hit(Instant);
-
-/// One bucket's hits inside the window, and whether the log has been told it
-/// filled.
-#[derive(Debug, Default)]
-struct Hits {
-    times: VecDeque<Instant>,
-    warned: bool,
-}
-
-/// Sliding-window hit counts for the credential routes, one per
-/// [`RateBucket`].
-///
-/// This lives on `AppState` rather than in a process-global static: a running
-/// server builds exactly one state, so the limiter still spans the whole server,
-/// while each test fixture gets its own counts and cannot rate-limit an unrelated
-/// test running beside it in the same binary.
+/// The wait before the answer to every refused credential. `serve` sleeps
+/// [`REFUSAL_WAIT`]; the test harness counts each wait and returns at once,
+/// so no test sleeps or reads the clock.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct AuthRateLimits {
-    buckets: Arc<Mutex<HashMap<String, Hits>>>,
-    /// The time every count reads, when a test has stopped the clock.
-    /// `None` reads the system clock.
-    frozen_at: Option<Instant>,
-    /// How long the last login as an unknown username took to refuse once
-    /// counted, Argon2, the Audit Trail entry and the waits for both
-    /// included, in nanoseconds. A login refused unchecked waits this long.
-    unknown_refusal_nanos: Arc<AtomicU64>,
+pub(crate) enum RefusalWait {
+    /// Sleep [`REFUSAL_WAIT`].
+    #[default]
+    Sleep,
+    /// Count the wait and return at once.
+    #[cfg(test)]
+    Counted(Arc<AtomicUsize>),
 }
 
-impl AuthRateLimits {
-    /// A limiter whose clock reads `now` for good, so a test can fill a
-    /// window with no wall-clock time passing.
+impl RefusalWait {
+    /// A wait that counts itself and returns at once, for tests.
     #[cfg(test)]
-    pub(crate) fn frozen_at(now: Instant) -> Self {
-        Self {
-            buckets: Arc::default(),
-            frozen_at: Some(now),
-            unknown_refusal_nanos: Arc::default(),
+    pub(crate) fn counted() -> Self {
+        Self::Counted(Arc::default())
+    }
+
+    /// How many times a counted wait has run. Always 0 for a sleeping one.
+    #[cfg(test)]
+    pub(crate) fn waits(&self) -> usize {
+        match self {
+            Self::Sleep => 0,
+            Self::Counted(waits) => waits.load(Ordering::SeqCst),
         }
     }
 
-    /// Remember how long a login as an unknown username took to refuse,
-    /// from its count to its answer.
-    pub(crate) fn record_unknown_refusal(&self, took: Duration) {
-        let nanos = u64::try_from(took.as_nanos()).unwrap_or(u64::MAX);
-        self.unknown_refusal_nanos.store(nanos, Ordering::Relaxed);
-    }
-
-    /// Wait as long as the last login as an unknown username took to refuse,
-    /// without running Argon2 or writing anything. A login refused unchecked,
-    /// because the server's count of them is full, then answers after about
-    /// the time a checked one does, so its timing does not say the username
-    /// names no account, and it costs no CPU.
-    pub(crate) async fn wait_as_long_as_an_unknown_refusal(&self) {
-        let nanos = self.unknown_refusal_nanos.load(Ordering::Relaxed);
-        tokio::time::sleep(Duration::from_nanos(nanos)).await;
-    }
-
-    fn now(&self) -> Instant {
-        self.frozen_at.unwrap_or_else(Instant::now)
-    }
-
-    /// Count one attempt in `bucket`, or refuse it as `rate-limited` when
-    /// the bucket already holds its most hits inside [`AUTH_RATE_WINDOW`]. A
-    /// refused attempt is not counted. The answer is the hit, for
-    /// [`AuthRateLimits::give_back`].
+    /// Wait, then answer `invalid-credentials` with `detail`. Every refused
+    /// credential is answered through here, so each one waits the same.
     ///
-    /// Every attempt is counted before its password is checked, so that many
-    /// attempts sent at once cannot all pass while none has been counted yet.
-    pub(crate) fn count(&self, bucket: &RateBucket) -> Result<Hit, ApiError> {
-        self.count_at(bucket, self.now())
-    }
-
-    /// [`AuthRateLimits::count`] with the clock as an argument, so a test can
-    /// move it.
-    fn count_at(&self, bucket: &RateBucket, now: Instant) -> Result<Hit, ApiError> {
-        let mut map = self.lock()?;
-        // Forget every bucket whose newest hit is outside the window. A login
-        // as an unknown username is counted under that username, so without
-        // this a client spraying usernames grows the map for the life of the
-        // process.
-        map.retain(|_, hits| {
-            hits.times
-                .back()
-                .is_some_and(|newest| now.duration_since(*newest) <= AUTH_RATE_WINDOW)
-        });
-        let hits = map.entry(bucket.key()).or_default();
-        while let Some(oldest) = hits.times.front() {
-            if now.duration_since(*oldest) <= AUTH_RATE_WINDOW {
-                break;
+    /// The caller holds no pooled database connection across this call, so
+    /// refusals waiting their turn to answer do not empty the pool.
+    pub(crate) async fn refuse(&self, detail: &str) -> ApiError {
+        match self {
+            Self::Sleep => tokio::time::sleep(REFUSAL_WAIT).await,
+            #[cfg(test)]
+            Self::Counted(waits) => {
+                waits.fetch_add(1, Ordering::SeqCst);
             }
-            hits.times.pop_front();
         }
-        if hits.times.len() >= bucket.max() {
-            // The oldest hit inside the window is the next to leave it; until
-            // it does, every attempt is refused. Never zero: a client told to
-            // wait nothing would retry at once and be refused again.
-            let oldest = hits.times.front().copied().unwrap_or(now);
-            let remaining = AUTH_RATE_WINDOW.saturating_sub(now.duration_since(oldest));
-            let retry_after_secs = remaining.as_secs().max(1);
-            // One line when the bucket fills, not one per refused attempt:
-            // each refusal already leaves its own `rate-limited` line, and a
-            // sustained attack must not write the rest of the log away. The
-            // bucket forgets it warned once it empties.
-            if !hits.warned {
-                hits.warned = true;
-                tracing::warn!(
-                    bucket = bucket.kind(),
-                    account_id = bucket.account_id(),
-                    retry_after_secs,
-                    "Too many authentication attempts: the rate limit refuses more until the window passes"
-                );
-            }
-            return Err(ApiError::RateLimited { retry_after_secs });
-        }
-        hits.times.push_back(now);
-        Ok(Hit(now))
-    }
-
-    /// Take back `hit` from `bucket`: the attempt was the holder's own, such
-    /// as a login with the right password, so it does not count against the
-    /// account. Only an attempt whose answer already tells the caller it
-    /// succeeded is given back; giving back any other would let a guesser
-    /// read from the count which guess was right.
-    pub(crate) fn give_back(&self, bucket: &RateBucket, hit: Hit) -> Result<(), ApiError> {
-        let mut map = self.lock()?;
-        let key = bucket.key();
-        let Some(hits) = map.get_mut(&key) else {
-            return Ok(());
-        };
-        if let Some(at) = hits.times.iter().position(|time| *time == hit.0) {
-            hits.times.remove(at);
-        }
-        if hits.times.is_empty() {
-            map.remove(&key);
-        }
-        Ok(())
-    }
-
-    fn lock(&self) -> Result<std::sync::MutexGuard<'_, HashMap<String, Hits>>, ApiError> {
-        self.buckets
-            .lock()
-            .map_err(|_| ApiError::Internal(anyhow::anyhow!("auth rate limiter poisoned")))
+        ApiError::InvalidCredentials(detail.to_string())
     }
 }
 
@@ -283,9 +108,8 @@ pub(crate) fn verify_password(hash: &str, password: &str) -> bool {
 /// The permits for Argon2 runs, one per core the process may use.
 ///
 /// Each run takes about 19 MiB, and the blocking thread pool allows 512
-/// threads. Without a limit, a few hundred logins at once, each as a
-/// different unknown username and so each in its own rate-limit bucket,
-/// would ask for gigabytes and could get the server killed. One run per core
+/// threads. Without a limit, a few hundred logins at once would ask for
+/// gigabytes and could get the server killed. One run per core
 /// keeps every core busy, and the runs waiting for a permit take no Argon2
 /// memory.
 fn argon2_permits() -> &'static Arc<Semaphore> {
@@ -427,11 +251,10 @@ pub(crate) fn normalize_username(raw: &str) -> String {
 
 /// True for 1 to 128 characters of ASCII letters, digits, `_`, `-`, or `.`.
 ///
-/// ASCII only, because the account lookup (`COLLATE NOCASE`) and
-/// [`unknown_username_bucket`] fold ASCII letters only: a letter from another
-/// script would make an account whose name looks like another's, such as
-/// `аdmin` with a Cyrillic `а` beside `admin`. A preferred name carries a
-/// person's name in any script.
+/// ASCII only, because the account lookup (`COLLATE NOCASE`) folds ASCII
+/// letters only: a letter from another script would make an account whose
+/// name looks like another's, such as `аdmin` with a Cyrillic `а` beside
+/// `admin`. A preferred name carries a person's name in any script.
 pub(crate) fn is_valid_username(s: &str) -> bool {
     let s = s.trim();
     if s.is_empty() || s.len() > 128 {

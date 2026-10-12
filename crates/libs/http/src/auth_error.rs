@@ -93,14 +93,6 @@ pub enum AuthError {
         /// The response body from the server.
         body: String,
     },
-    /// The server rejected the request because it was rate limited.
-    #[error("session check failed (HTTP {status}): {body}")]
-    RateLimited {
-        /// The HTTP status code returned.
-        status: u16,
-        /// The response body from the server.
-        body: String,
-    },
     /// The server failed while verifying the credentials.
     #[error("session check failed (HTTP {status}): {body}")]
     ServerError {
@@ -149,7 +141,6 @@ impl AuthError {
             Self::Unauthorized => "unauthorized",
             Self::Forbidden { .. } => "forbidden",
             Self::ApiNotFound { .. } => "api_not_found",
-            Self::RateLimited { .. } => "rate_limited",
             Self::ServerError { .. } => "server_error",
             Self::HttpStatus { .. } => "http_status",
             Self::BadJson { .. } => "bad_json",
@@ -227,13 +218,6 @@ mod tests {
                 "api_not_found",
             ),
             (
-                AuthError::RateLimited {
-                    status: 429,
-                    body: "slow down".into(),
-                },
-                "rate_limited",
-            ),
-            (
                 AuthError::ServerError {
                     status: 503,
                     body: "busy".into(),
@@ -283,8 +267,7 @@ mod tests {
                 AuthError::ServerError { status, body, .. }
                 | AuthError::HttpStatus { status, body, .. }
                 | AuthError::Forbidden { status, body, .. }
-                | AuthError::ApiNotFound { status, body, .. }
-                | AuthError::RateLimited { status, body, .. } => {
+                | AuthError::ApiNotFound { status, body, .. } => {
                     assert!(message.contains(&status.to_string()));
                     assert!(message.contains(body));
                 }
