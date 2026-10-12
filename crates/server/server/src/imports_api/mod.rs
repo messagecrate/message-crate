@@ -1189,16 +1189,46 @@ pub(crate) struct OwnerImportRun {
     contacts_changed: u64,
 }
 
+/// One Import Run as the owner reads it by its own route: everything the
+/// list answers for it, and the attachments the run wrote whose Thumbnail or
+/// Preview the server's media pass could not make, with why. A run may write
+/// any number of them, so the list leaves them out (`docs/architecture/http-api.md`,
+/// "Lists"). Each is named by its file name, type and size, which the owner
+/// may read (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner
+/// may see"); never by its message, its conversation, or its bytes.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub(crate) struct OwnerImportRunDetail {
+    /// Everything the list answers for the run.
+    #[serde(flatten)]
+    pub(crate) run: OwnerImportRun,
+    /// How many of `not_made_attachments` have no Thumbnail and how many no
+    /// Preview, for each kind of failure, leaving out a kind none has. Empty
+    /// until the media pass has tried the run's attachments, which it does
+    /// after the run ends.
+    not_made_counts: Vec<crate::db::attachment_versions::NotMadeCount>,
+    /// The attachments the run wrote whose Thumbnail or Preview could not be
+    /// made, by id, each with why for each version not made.
+    not_made_attachments: Vec<crate::db::attachment_versions::NotMadeAttachment>,
+}
+
 /// The owner's view of one Import Run, read from the run's row, its issue
-/// count and its contact tally.
+/// count, its contact tally, and its attachments whose versions were not
+/// made.
 pub(crate) async fn owner_import_run(
     conn: &mut SqliteConnection,
     row: crate::db::imports::ImportRow,
-) -> Result<OwnerImportRun, ApiError> {
+) -> Result<OwnerImportRunDetail, ApiError> {
     let (issue_count, note_count) = crate::db::imports::issue_and_note_counts(conn, row.id).await?;
-    listed_import(conn, row, issue_count, note_count)
+    let not_made_attachments =
+        crate::db::attachment_versions::not_made_for_import(conn, row.id).await?;
+    let run = listed_import(conn, row, issue_count, note_count)
         .await
-        .map(OwnerImportRun::from)
+        .map(OwnerImportRun::from)?;
+    Ok(OwnerImportRunDetail {
+        run,
+        not_made_counts: crate::db::attachment_versions::count_not_made(&not_made_attachments),
+        not_made_attachments,
+    })
 }
 
 /// One run's row as the list would read it, given its issue and note

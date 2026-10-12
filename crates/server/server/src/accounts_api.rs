@@ -33,7 +33,9 @@ use crate::db::{WriteTx, begin_write};
 use crate::db::{account_profile, imports, server_settings, session_tokens};
 use crate::exports_api::OwnerExportRun;
 use crate::extract::{Json, Path, Query};
-use crate::imports_api::{ImportRun, ImportRunSummary, OwnerImportRun, with_yourself};
+use crate::imports_api::{
+    ImportRun, ImportRunSummary, OwnerImportRun, OwnerImportRunDetail, with_yourself,
+};
 use crate::paging::{DEFAULT_LIST_LIMIT, Page, PageQuery, page_from_rows, page_of, page_params};
 use crate::server::{
     ApiError, AppState, AuthIdentity, Created, LoggedIn, Owner, refuse_for_demo_account,
@@ -1388,7 +1390,8 @@ pub(crate) async fn list_account_identities(
 // run's detail carries the counts.
 //
 // The account reads its runs in full. The owner reads each as an
-// `OwnerImportRun` or `OwnerExportRun`, which hold only what ADR 0008 lists:
+// `OwnerImportRun` (by its own route an `OwnerImportRunDetail`) or
+// `OwnerExportRun`, which hold only what ADR 0008 lists:
 // a run's summary, its issues and an export's query say whom the account
 // talks to and what it searched for. The owner's view is a type of its own
 // rather than the account's with fields removed, so a field added to a run
@@ -1413,7 +1416,7 @@ pub(crate) enum AccountImportRun {
     /// The account's own run.
     Own(Box<ImportRun>),
     /// Another account's run, as the owner reads it.
-    Owner(Box<OwnerImportRun>),
+    Owner(Box<OwnerImportRunDetail>),
 }
 
 /// An account's Export Runs as its reader may see them: in full for the
@@ -1464,8 +1467,9 @@ pub(crate) async fn list_account_imports(
 }
 
 /// One of an account's Import Runs: status, timings and counts, and for the
-/// account itself its summary and issues. A run that is another account's
-/// is a 404.
+/// account itself its summary and issues. The owner reads it as an
+/// `OwnerImportRunDetail`, with the attachments whose Thumbnail or Preview
+/// could not be made and why. A run that is another account's is a 404.
 #[utoipa::path(
     get,
     path = "/v1/accounts/{id}/imports/{import_id}",

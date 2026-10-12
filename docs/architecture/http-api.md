@@ -382,7 +382,11 @@ account's own `GET /v1/accounts/{id}/imports` answer each run as an
 `ImportRunSummary`, with the counts and without the issues or notes. The
 owner's `GET /v1/accounts/{id}/imports` answers each as an
 `OwnerImportRun`, which also counts them and never carries them.
-`GET /v1/imports/{id}` answers the issues and the notes. Each count is
+`GET /v1/imports/{id}` answers the issues and the notes. The owner's
+`GET /v1/accounts/{id}/imports/{import_id}` answers an
+`OwnerImportRunDetail`, which adds the run's attachments whose Thumbnail or
+Preview could not be made (`not_made_attachments`) and their count by kind
+of failure (`not_made_counts`); the owner's list carries neither. Each count is
 read in the list's own statement, never by a statement per row. Why: `limit` bounds a page's rows and nothing else, so a collection
 inside each row left a page's size to whatever the runs recorded. Forty
 WhatsApp runs of 20,000 skipped files each made one page of Settings →
@@ -843,7 +847,13 @@ What each reaches:
   nothing of the backup an import read, neither the file the desktop app
   recorded (`source_fingerprint`) nor when the backup was made
   (`backup_taken_at`), because both say when and from what the account's
-  phone was backed up.
+  phone was backed up. The owner's read of one run adds the attachments it
+  wrote whose Thumbnail or Preview the media pass could not make, each by
+  its file name, type and size with why each version was not made, and their
+  count by kind of failure: an attachment's name, type and size are what
+  ADR 0008 lets the owner read, and the reason is what ffmpeg said about the
+  file or a phrase of the server's. Nothing of the message or conversation
+  the attachment belongs to comes with it (#2636).
   Why: a staging summary lists the addresses of everyone in the backup, an
   issue names its conversation's file, a note names a file or an address, and
   an export's query is a search over

@@ -217,6 +217,17 @@ CREATE TABLE IF NOT EXISTS attachments (
     -- once the original is decided to be shown as it is, and until a try has
     -- failed.
     preview_not_made_reason TEXT,
+    -- The kind of failure `preview_not_made_reason` describes, so the owner's
+    -- view of an Import Run can count the failures by kind without reading
+    -- ffmpeg's words: `conversion_failed` (ffmpeg exited with an error),
+    -- `stalled` (ffmpeg made no progress for the stall wait), `ran_past_length`
+    -- (ffmpeg ran past twice the file's length), `took_too_long` (a step that
+    -- reads one frame did not finish in time), `original_missing`, or
+    -- `server_problem` (anything else). Set and cleared with the reason.
+    preview_not_made_kind TEXT CHECK (preview_not_made_kind IN (
+        'conversion_failed', 'stalled', 'ran_past_length', 'took_too_long',
+        'original_missing', 'server_problem'
+    )),
     -- 1 when every browser shows the stored original as it is, so a viewer
     -- opens it and it gets no Preview (`media::browser_shows`,
     -- `docs/architecture/media.md` rule 2). The server's media pass decides
@@ -236,11 +247,21 @@ CREATE TABLE IF NOT EXISTS attachments (
     -- Why the media pass could not make the Thumbnail the last time it
     -- tried, as `preview_not_made_reason` says for the Preview.
     thumbnail_not_made_reason TEXT,
+    -- The kind of failure `thumbnail_not_made_reason` describes, as
+    -- `preview_not_made_kind` is for the Preview.
+    thumbnail_not_made_kind TEXT CHECK (thumbnail_not_made_kind IN (
+        'conversion_failed', 'stalled', 'ran_past_length', 'took_too_long',
+        'original_missing', 'server_problem'
+    )),
     -- Import Run that last wrote this row: the one that added it, or that
     -- gave a row stored without its file the file (`imports.id`). When the
     -- run ends, the server queues the Assets of the rows it wrote, whichever
     -- run created their message (#1946).
-    import_id INTEGER REFERENCES imports(id) ON DELETE SET NULL
+    import_id INTEGER REFERENCES imports(id) ON DELETE SET NULL,
+    -- A reason is never recorded without its kind, nor a kind without its
+    -- reason.
+    CHECK ((preview_not_made_reason IS NULL) = (preview_not_made_kind IS NULL)),
+    CHECK ((thumbnail_not_made_reason IS NULL) = (thumbnail_not_made_kind IS NULL))
 );
 
 CREATE INDEX IF NOT EXISTS ix_attachments_sha256 ON attachments (sha256);

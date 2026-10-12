@@ -89,7 +89,8 @@ export function describeExportScope(scope: Schema["ExportScope"]): string {
 
 /**
  * One Import Run: in full, with its summary, issues and notes, to the account
- * itself; to the owner with the summary's counts and how many issues.
+ * itself; to the owner with the summary's counts, how many issues, and the
+ * attachments whose Thumbnail or Preview could not be made.
  */
 export type AccountImportRun = Schema["AccountImportRun"];
 

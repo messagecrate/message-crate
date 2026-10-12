@@ -3086,6 +3086,176 @@ async fn c2_1_the_owner_reads_no_address_or_search_text_in_the_history() {
     );
 }
 
+/// The owner reads which of a run's attachments have no Thumbnail or Preview,
+/// counted by kind of failure, and each by its file's name, type and size
+/// with why (#2636). Only the run's own route answers them, and an
+/// attachment another run wrote, or whose versions were made, is not listed.
+#[tokio::test]
+async fn the_owner_reads_which_attachments_of_a_run_have_no_thumbnail_or_preview() {
+    let fixture = test_fixture().await;
+    let owner = claim_as_owner(&fixture.state, "keeper", "hunter2hunter2").await;
+    let alice = register_via_api(&fixture.state, "alice", "hunter2hunter2").await;
+    let base = member(alice.account_id);
+    let mut runs = Vec::new();
+    for _ in 0..2 {
+        let (_, run): (String, serde_json::Value) = post_created_json(
+            &fixture.state,
+            "/v1/imports",
+            &alice.token,
+            serde_json::json!({ "source": "imessage" }),
+        )
+        .await;
+        let id = run["id"].as_i64().unwrap();
+        // An account runs one Import Run at a time.
+        crate::test_support::post_json::<serde_json::Value>(
+            &fixture.state,
+            &format!("/v1/imports/{id}/discard"),
+            &alice.token,
+            serde_json::json!({ "issues": [], "notes": [] }),
+        )
+        .await;
+        runs.push(id);
+    }
+    let conversation_id = crate::test_support::seed_conversation(
+        &fixture.state,
+        &crate::test_support::SeedConversation {
+            account_id: alice.account_id,
+            handle: "+15555550142",
+            conversation_type: "individual",
+            group_title: None,
+            source_file: "seed.jsonl",
+            messages: &[crate::test_support::SeedMessage {
+                source: "imessage",
+                timestamp: crate::test_support::stored_time("2020-01-01T00:00:00.000Z"),
+                is_from_me: true,
+                body: "the photos from the lake",
+            }],
+        },
+    )
+    .await;
+    let mut conn = fixture.state.db.acquire().await.unwrap();
+    let message_id: i64 = sqlx::query_scalar("SELECT id FROM messages WHERE conversation_id = $1")
+        .bind(conversation_id)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    // Why one version was not made: its kind and its reason.
+    type Why<'a> = Option<(&'a str, &'a str)>;
+    // name, type, size, the run, then why the Thumbnail and why the Preview.
+    let rows: [(&str, &str, i64, i64, Why, Why); 4] = [
+        (
+            "IMG_0001.HEIC",
+            "image/heic",
+            2_048,
+            runs[0],
+            Some((
+                "conversion_failed",
+                "Invalid data found when processing input",
+            )),
+            Some((
+                "conversion_failed",
+                "Invalid data found when processing input",
+            )),
+        ),
+        (
+            "clip.mov",
+            "video/quicktime",
+            9_000_000,
+            runs[0],
+            None,
+            Some((
+                "stalled",
+                "ffmpeg made no progress for 2 minutes after converting 0:03 of the file, so it was stopped",
+            )),
+        ),
+        ("fine.jpg", "image/jpeg", 100, runs[0], None, None),
+        (
+            "other-run.heic",
+            "image/heic",
+            300,
+            runs[1],
+            Some(("original_missing", "the original file is missing")),
+            None,
+        ),
+    ];
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    for (name, mime, size, run, thumbnail, preview) in rows {
+        sqlx::query(
+            "INSERT INTO attachments
+                 (message_id, original_name, mime_type, size_bytes, import_id,
+                  thumbnail_not_made_kind, thumbnail_not_made_reason,
+                  preview_not_made_kind, preview_not_made_reason)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        )
+        .bind(message_id)
+        .bind(name)
+        .bind(mime)
+        .bind(size)
+        .bind(run)
+        .bind(thumbnail.map(|(kind, _)| kind))
+        .bind(thumbnail.map(|(_, reason)| reason))
+        .bind(preview.map(|(kind, _)| kind))
+        .bind(preview.map(|(_, reason)| reason))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    }
+    tx.commit().await.unwrap();
+    drop(conn);
+
+    let detail: serde_json::Value = get_json(
+        &fixture.state,
+        &format!("{base}/imports/{}", runs[0]),
+        &owner.token,
+    )
+    .await;
+    assert_eq!(
+        detail["not_made_counts"],
+        serde_json::json!([
+            { "kind": "conversion_failed", "thumbnails": 1, "previews": 1 },
+            { "kind": "stalled", "thumbnails": 0, "previews": 1 },
+        ])
+    );
+    let listed = detail["not_made_attachments"].as_array().unwrap();
+    assert_eq!(listed.len(), 2, "{listed:?}");
+    assert_eq!(listed[0]["original_name"], "IMG_0001.HEIC");
+    assert_eq!(listed[0]["mime_type"], "image/heic");
+    assert_eq!(listed[0]["size_bytes"], 2_048);
+    assert_eq!(
+        listed[0]["thumbnail"],
+        serde_json::json!({
+            "kind": "conversion_failed",
+            "reason": "Invalid data found when processing input"
+        })
+    );
+    assert_eq!(listed[1]["original_name"], "clip.mov");
+    assert_eq!(listed[1]["thumbnail"], serde_json::Value::Null);
+    assert_eq!(listed[1]["preview"]["kind"], "stalled");
+    // Nothing of the message or its conversation comes with them.
+    let text = detail.to_string();
+    assert!(!text.contains("the photos from the lake"), "{text}");
+    assert!(!text.contains("+15555550142"), "{text}");
+
+    // The list counts nothing of them: a run may write any number.
+    let list: serde_json::Value =
+        get_json(&fixture.state, &format!("{base}/imports"), &owner.token).await;
+    for run in list["items"].as_array().unwrap() {
+        assert!(run.get("not_made_attachments").is_none(), "{run}");
+        assert!(run.get("not_made_counts").is_none(), "{run}");
+    }
+
+    let other: serde_json::Value = get_json(
+        &fixture.state,
+        &format!("{base}/imports/{}", runs[1]),
+        &owner.token,
+    )
+    .await;
+    assert_eq!(
+        other["not_made_counts"],
+        serde_json::json!([{ "kind": "original_missing", "thumbnails": 1, "previews": 0 }])
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Guessing the current password
 // ---------------------------------------------------------------------------

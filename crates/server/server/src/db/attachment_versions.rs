@@ -42,6 +42,15 @@ impl Version {
         }
     }
 
+    /// The column that says which [`NotMadeKind`] the reason in
+    /// [`Self::not_made_reason_column`] is, set and cleared with it.
+    pub(crate) fn not_made_kind_column(self) -> &'static str {
+        match self {
+            Self::Preview => "preview_not_made_kind",
+            Self::Thumbnail => "thumbnail_not_made_kind",
+        }
+    }
+
     /// Whether `staging_attachments` has this version's columns. Staging
     /// copies the Preview columns from the import, and never names a
     /// Thumbnail.
@@ -53,6 +62,63 @@ impl Version {
     /// as `Preview of <sha256>`.
     pub(crate) fn describe_of(self, sha256: &str) -> String {
         format!("{self} of {sha256}")
+    }
+}
+
+/// The kind of failure that kept the server's media pass from making a
+/// Thumbnail or Preview. The reason beside it says the rest in words. The
+/// owner's view of an Import Run counts its attachments' failures by kind.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, utoipa::ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum NotMadeKind {
+    /// ffmpeg exited with an error: it could not read or convert the file.
+    ConversionFailed,
+    /// ffmpeg made no progress for the stall wait, so it was stopped.
+    Stalled,
+    /// ffmpeg ran past twice the file's length, as it does looping on a
+    /// damaged file, so it was stopped.
+    RanPastLength,
+    /// A step that reads one frame did not finish within its limit.
+    TookTooLong,
+    /// The original file is not on disk.
+    OriginalMissing,
+    /// Anything else went wrong on the server.
+    ServerProblem,
+}
+
+impl NotMadeKind {
+    /// Every kind, in the order the owner's view lists them.
+    pub const ALL: [Self; 6] = [
+        Self::ConversionFailed,
+        Self::Stalled,
+        Self::RanPastLength,
+        Self::TookTooLong,
+        Self::OriginalMissing,
+        Self::ServerProblem,
+    ];
+
+    /// The kind as its column stores it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ConversionFailed => "conversion_failed",
+            Self::Stalled => "stalled",
+            Self::RanPastLength => "ran_past_length",
+            Self::TookTooLong => "took_too_long",
+            Self::OriginalMissing => "original_missing",
+            Self::ServerProblem => "server_problem",
+        }
+    }
+
+    /// The kind its column stores as `stored`. A value outside the column's
+    /// `CHECK` reads as [`Self::ServerProblem`], which the `CHECK` makes
+    /// impossible.
+    fn from_stored(stored: &str) -> Self {
+        Self::ALL
+            .into_iter()
+            .find(|kind| kind.as_str() == stored)
+            .unwrap_or(Self::ServerProblem)
     }
 }
 
@@ -251,11 +317,13 @@ pub async fn record_shown_as_is(
         original_sha,
     } = rows;
     let reason_column = Version::Preview.not_made_reason_column();
+    let kind_column = Version::Preview.not_made_kind_column();
     let mut tx = begin_write(conn).await?;
     sqlx::query(&format!(
         "UPDATE attachments
          SET shown_as_is = $1,
-             {reason_column} = CASE WHEN $1 THEN NULL ELSE {reason_column} END
+             {reason_column} = CASE WHEN $1 THEN NULL ELSE {reason_column} END,
+             {kind_column} = CASE WHEN $1 THEN NULL ELSE {kind_column} END
          WHERE sha256 = $2
            AND (shown_as_is IS NOT $1 OR ($1 AND {reason_column} IS NOT NULL))
            AND message_id IN (SELECT id FROM messages WHERE account_id = $3)"
@@ -276,6 +344,7 @@ pub struct NotMade<'a> {
     pub rows: OriginalRows<'a>,
     pub version: Version,
     pub named: Option<&'a str>,
+    pub kind: NotMadeKind,
     pub reason: &'a str,
 }
 
@@ -301,23 +370,26 @@ pub async fn record_not_made(
         },
         version,
         named,
+        kind,
         reason,
     } = not_made;
     let [_, path_column, _] = version.columns();
     let reason_column = version.not_made_reason_column();
+    let kind_column = version.not_made_kind_column();
     let mut tx = begin_write(conn).await?;
     sqlx::query(&format!(
         "UPDATE attachments
-         SET {reason_column} = $1
+         SET {reason_column} = $1, {kind_column} = $5
          WHERE sha256 = $2
            AND (COALESCE({path_column}, '') = '' OR {path_column} = $4)
-           AND {reason_column} IS NOT $1
+           AND ({reason_column} IS NOT $1 OR {kind_column} IS NOT $5)
            AND message_id IN (SELECT id FROM messages WHERE account_id = $3)"
     ))
     .bind(reason)
     .bind(original_sha)
     .bind(account_id)
     .bind(named)
+    .bind(kind.as_str())
     .execute(&mut *tx)
     .await?;
     tx.commit().await
@@ -359,6 +431,7 @@ async fn point_rows(
     } = write;
     let [sha_column, path_column, mime_column] = version.columns();
     let reason_column = version.not_made_reason_column();
+    let kind_column = version.not_made_kind_column();
     let unset_filter = if only_unset {
         format!("AND COALESCE({path_column}, '') = ''")
     } else {
@@ -368,7 +441,7 @@ async fn point_rows(
     let done = sqlx::query(&format!(
         "UPDATE attachments
          SET {sha_column} = $1, {path_column} = $2, {mime_column} = $3,
-             {reason_column} = NULL
+             {reason_column} = NULL, {kind_column} = NULL
          WHERE sha256 = $4
            {unset_filter}
            AND message_id IN (SELECT id FROM messages WHERE account_id = $5)"
@@ -549,4 +622,134 @@ pub struct NamedFiles {
     pub derived_assets_path: Option<String>,
     pub thumbnail_sha256: Option<String>,
     pub thumbnail_assets_path: Option<String>,
+}
+
+/// Why one version of an attachment was not made: its kind, and the reason
+/// in words, as the `/v1` Attachment answers it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, utoipa::ToSchema)]
+pub struct VersionNotMade {
+    /// The kind of failure.
+    pub kind: NotMadeKind,
+    /// What ffmpeg said about the file, why it was stopped, or a phrase of
+    /// the server's, as the `/v1` Attachment's `preview_not_made_reason` and
+    /// `thumbnail_not_made_reason` answer it.
+    pub reason: String,
+}
+
+/// One attachment an Import Run wrote that has no Thumbnail or no Preview,
+/// because the media pass could not make it: the file's name, type and size,
+/// which the owner may read (`docs/adr/0008-the-owner-holds-no-messages.md`),
+/// and why each version was not made. Never its message, its conversation,
+/// or its bytes.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, utoipa::ToSchema)]
+pub struct NotMadeAttachment {
+    /// Attachment id.
+    pub id: i64,
+    /// File name from the export.
+    pub original_name: Option<String>,
+    /// MIME type of the original, when known.
+    pub mime_type: Option<String>,
+    /// The original's size in bytes, when known.
+    pub size_bytes: Option<i64>,
+    /// Why the Thumbnail was not made. Null when it was made, when the
+    /// attachment gets none, or until the media pass has tried.
+    pub thumbnail: Option<VersionNotMade>,
+    /// Why the Preview was not made. Null when it was made, when the
+    /// attachment needs none, or until the media pass has tried.
+    pub preview: Option<VersionNotMade>,
+}
+
+/// How many of an Import Run's attachments have no Thumbnail, and how many
+/// no Preview, for one kind of failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, utoipa::ToSchema)]
+pub struct NotMadeCount {
+    /// The kind of failure.
+    pub kind: NotMadeKind,
+    /// Attachments whose Thumbnail was not made for this kind.
+    pub thumbnails: u64,
+    /// Attachments whose Preview was not made for this kind.
+    pub previews: u64,
+}
+
+/// The attachments Import Run `import_id` last wrote (`attachments.import_id`)
+/// that have a version the media pass could not make, by id. Empty until
+/// the pass has tried them, and for a run whose versions were all made.
+///
+/// # Errors
+///
+/// Returns a database error when the query fails.
+pub async fn not_made_for_import(
+    conn: &mut SqliteConnection,
+    import_id: i64,
+) -> Result<Vec<NotMadeAttachment>, sqlx::Error> {
+    let [thumbnail_reason, preview_reason] =
+        [Version::Thumbnail, Version::Preview].map(Version::not_made_reason_column);
+    let [thumbnail_kind, preview_kind] =
+        [Version::Thumbnail, Version::Preview].map(Version::not_made_kind_column);
+    let rows: Vec<NotMadeRow> = sqlx::query_as(&format!(
+        "SELECT id, original_name, mime_type, size_bytes,
+                {thumbnail_kind} AS thumbnail_kind, {thumbnail_reason} AS thumbnail_reason,
+                {preview_kind} AS preview_kind, {preview_reason} AS preview_reason
+         FROM attachments
+         WHERE import_id = $1
+           AND ({thumbnail_kind} IS NOT NULL OR {preview_kind} IS NOT NULL)
+         ORDER BY id"
+    ))
+    .bind(import_id)
+    .fetch_all(&mut *conn)
+    .await?;
+    Ok(rows.into_iter().map(NotMadeRow::into_attachment).collect())
+}
+
+/// How many of `attachments` have no Thumbnail and how many no Preview, for
+/// each kind of failure, in [`NotMadeKind::ALL`]'s order, leaving out a kind
+/// none of them has.
+pub fn count_not_made(attachments: &[NotMadeAttachment]) -> Vec<NotMadeCount> {
+    let count = |kind: NotMadeKind, version: fn(&NotMadeAttachment) -> Option<&VersionNotMade>| {
+        attachments
+            .iter()
+            .filter(|attachment| version(attachment).is_some_and(|v| v.kind == kind))
+            .count() as u64
+    };
+    NotMadeKind::ALL
+        .into_iter()
+        .map(|kind| NotMadeCount {
+            kind,
+            thumbnails: count(kind, |a| a.thumbnail.as_ref()),
+            previews: count(kind, |a| a.preview.as_ref()),
+        })
+        .filter(|count| count.thumbnails > 0 || count.previews > 0)
+        .collect()
+}
+
+/// One row [`not_made_for_import`] reads.
+#[derive(sqlx::FromRow)]
+struct NotMadeRow {
+    id: i64,
+    original_name: Option<String>,
+    mime_type: Option<String>,
+    size_bytes: Option<i64>,
+    thumbnail_kind: Option<String>,
+    thumbnail_reason: Option<String>,
+    preview_kind: Option<String>,
+    preview_reason: Option<String>,
+}
+
+impl NotMadeRow {
+    fn into_attachment(self) -> NotMadeAttachment {
+        let version = |kind: Option<String>, reason: Option<String>| {
+            kind.map(|kind| VersionNotMade {
+                kind: NotMadeKind::from_stored(&kind),
+                reason: reason.unwrap_or_default(),
+            })
+        };
+        NotMadeAttachment {
+            id: self.id,
+            original_name: self.original_name,
+            mime_type: self.mime_type,
+            size_bytes: self.size_bytes,
+            thumbnail: version(self.thumbnail_kind, self.thumbnail_reason),
+            preview: version(self.preview_kind, self.preview_reason),
+        }
+    }
 }

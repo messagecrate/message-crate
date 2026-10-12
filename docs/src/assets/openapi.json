@@ -1981,7 +1981,7 @@
           "Accounts"
         ],
         "summary": "One of an account's Import Runs: status, timings and counts, and for the account itself its summary and issues.",
-        "description": "A run that is another account's is a 404.",
+        "description": "The owner reads it as an `OwnerImportRunDetail`, with the attachments whose Thumbnail or Preview could not be made and why. A run that is another account's is a 404.",
         "operationId": "get_account_import",
         "parameters": [
           {
@@ -13143,7 +13143,7 @@
             "description": "The account's own run."
           },
           {
-            "$ref": "#/components/schemas/OwnerImportRun",
+            "$ref": "#/components/schemas/OwnerImportRunDetail",
             "description": "Another account's run, as the owner reads it."
           }
         ],
@@ -16406,6 +16406,108 @@
           }
         }
       },
+      "NotMadeAttachment": {
+        "type": "object",
+        "description": "One attachment an Import Run wrote that has no Thumbnail or no Preview,\nbecause the media pass could not make it: the file's name, type and size,\nwhich the owner may read (`docs/adr/0008-the-owner-holds-no-messages.md`),\nand why each version was not made. Never its message, its conversation,\nor its bytes.",
+        "required": [
+          "id",
+          "mime_type",
+          "original_name",
+          "preview",
+          "size_bytes",
+          "thumbnail"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Attachment id."
+          },
+          "mime_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "MIME type of the original, when known."
+          },
+          "original_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "File name from the export."
+          },
+          "preview": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/VersionNotMade"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the Preview was not made. Null when it was made, when the\nattachment needs none, or until the media pass has tried."
+          },
+          "size_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The original's size in bytes, when known."
+          },
+          "thumbnail": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/VersionNotMade"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the Thumbnail was not made. Null when it was made, when the\nattachment gets none, or until the media pass has tried."
+          }
+        }
+      },
+      "NotMadeCount": {
+        "type": "object",
+        "description": "How many of an Import Run's attachments have no Thumbnail, and how many\nno Preview, for one kind of failure.",
+        "required": [
+          "kind",
+          "thumbnails",
+          "previews"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/NotMadeKind",
+            "description": "The kind of failure."
+          },
+          "previews": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Attachments whose Preview was not made for this kind.",
+            "minimum": 0
+          },
+          "thumbnails": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Attachments whose Thumbnail was not made for this kind.",
+            "minimum": 0
+          }
+        }
+      },
+      "NotMadeKind": {
+        "type": "string",
+        "description": "The kind of failure that kept the server's media pass from making a\nThumbnail or Preview. The reason beside it says the rest in words. The\nowner's view of an Import Run counts its attachments' failures by kind.",
+        "enum": [
+          "conversion_failed",
+          "stalled",
+          "ran_past_length",
+          "took_too_long",
+          "original_missing",
+          "server_problem"
+        ]
+      },
       "OwnerExportRun": {
         "type": "object",
         "description": "An Export Run as the owner reads it under another account: the form of\nits scope, its tool, times, outcome and counts\n(`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner may\nsee\"). A query's text is a search over the account's messages, and a\nselection names its conversations, so neither is here, and a field\nreaches the owner only by being added here.",
@@ -16633,6 +16735,38 @@
             "description": "Time spent uploading, when finished."
           }
         }
+      },
+      "OwnerImportRunDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/OwnerImportRun",
+            "description": "Everything the list answers for the run."
+          },
+          {
+            "type": "object",
+            "required": [
+              "not_made_counts",
+              "not_made_attachments"
+            ],
+            "properties": {
+              "not_made_attachments": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/NotMadeAttachment"
+                },
+                "description": "The attachments the run wrote whose Thumbnail or Preview could not be\nmade, by id, each with why for each version not made."
+              },
+              "not_made_counts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/NotMadeCount"
+                },
+                "description": "How many of `not_made_attachments` have no Thumbnail and how many no\nPreview, for each kind of failure, leaving out a kind none has. Empty\nuntil the media pass has tried the run's attachments, which it does\nafter the run ends."
+              }
+            }
+          }
+        ],
+        "description": "One Import Run as the owner reads it by its own route: everything the\nlist answers for it, and the attachments the run wrote whose Thumbnail or\nPreview the server's media pass could not make, with why. A run may write\nany number of them, so the list leaves them out (`docs/architecture/http-api.md`,\n\"Lists\"). Each is named by its file name, type and size, which the owner\nmay read (`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner\nmay see\"); never by its message, its conversation, or its bytes."
       },
       "Page_Account": {
         "type": "object",
@@ -19965,6 +20099,24 @@
           "size",
           "flag"
         ]
+      },
+      "VersionNotMade": {
+        "type": "object",
+        "description": "Why one version of an attachment was not made: its kind, and the reason\nin words, as the `/v1` Attachment answers it.",
+        "required": [
+          "kind",
+          "reason"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/NotMadeKind",
+            "description": "The kind of failure."
+          },
+          "reason": {
+            "type": "string",
+            "description": "What ffmpeg said about the file, why it was stopped, or a phrase of\nthe server's, as the `/v1` Attachment's `preview_not_made_reason` and\n`thumbnail_not_made_reason` answer it."
+          }
+        }
       }
     },
     "securitySchemes": {

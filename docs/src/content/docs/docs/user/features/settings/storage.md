@@ -139,3 +139,26 @@ The Owner reads another account's **Storage** tab from [Owner Home](/docs/user/f
 Two parts are held back, because they say who the account talks to.
 The **Contacts** part of an Import Run's record gives the two counts without the list.
 **Largest attachments** has no **Conversation** column.
+
+The Owner's view of an Import Run's record has one part the account's own does not: **Thumbnails and Previews**, between **Contacts** and **Log**.
+It lists the run's attachments whose Thumbnail or Preview the server could not make, so the Owner can see which files a damaged backup or a slow computer left without them.
+The server makes them after the run's data arrives, so the part fills in once the server has tried.
+
+A line first says how many attachments have no Thumbnail or Preview.
+A table then counts them by kind of failure, with one column for **No Thumbnail** and one for **No Preview**:
+
+| Kind of failure | Meaning |
+|---|---|
+| **Conversion failed** | ffmpeg could not read or convert the file |
+| **Stopped making progress** | ffmpeg made no progress for the stall wait, so the server stopped it |
+| **Damaged, ran past its length** | ffmpeg ran past twice the file's length, as it does looping on a damaged file, so the server stopped it |
+| **Took too long** | Reading one frame of the file did not finish in time |
+| **Original file missing** | The server holds no copy of the file |
+| **Server problem** | Anything else that went wrong on the server |
+
+Under the counts, each such attachment is listed with its **Name**, **Type** and **Size**, and under **Thumbnail** and **Preview** the kind of failure and the reason the server recorded, or a dash for a version that was made or that the attachment does not need.
+A run whose attachments all got what they need reads "No attachment of this import is missing a Thumbnail or Preview the server tried to make."
+
+The list names each attachment as a file, by the metadata the Owner may read.
+The Owner never sees the attachment, its Thumbnail or its Preview, nor the message or conversation it belongs to.
+Nothing on the part tries again: the server tries a file again only when someone runs `message-crate-server process-assets`.
