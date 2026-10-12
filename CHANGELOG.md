@@ -963,6 +963,17 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-11: **The server's log says each failure once.** A request the
+  server failed on wrote two error lines to its log, and the second said
+  nothing the first did not. It now writes one, with the whole
+  cause. A database error's message used to appear twice in that line, and
+  now appears once. A successful health check and a file of the website no
+  longer write a line at the default level, because the web app checks the
+  server's health every 30 seconds in each open tab and those lines buried
+  the requests that did something. A failed health check, a file the
+  website doesn't have, and every other request still write theirs
+  (#2254, #2675, #2274).
+
 - 2026-10-11: **The server warns when every website may call it.** A `*` in
   the server's list of websites allowed to call it lets a page on any
   website, opened by anyone on the network, reach the server through their
