@@ -659,7 +659,10 @@ released versions carry their date on the heading.
   all, down from 10, so a stalled import holds up other imports for less
   time. The owner can change both times in the server's config file with
   `upload_stall_secs` and `upload_piece_secs`, and the desktop app waits as
-  long as the server it imports into says (#2897).
+  long as the server it imports into says. The same limits hold for
+  attachments, which now go up in parts of 16 MiB, down from 64 MiB, so a
+  large photo or video arrives in time on the same slow connection a part of
+  an import does (#2897).
 - 2026-10-12: **Logging in while someone else imports no longer waits as
   long.** The desktop app now sends an import in parts of at most 16 MiB,
   down from 64 MiB, so the server saves each part in a quarter of the time

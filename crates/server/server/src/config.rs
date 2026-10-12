@@ -142,8 +142,9 @@ pub struct ServerConfig {
     /// Bind address (default `127.0.0.1:8080`).
     #[serde(default = "default_server_bind")]
     pub bind: String,
-    /// Largest multipart part, in bytes. Default 64 MiB (under Cloudflare
-    /// Free/Pro ~100 MB). The part size a client is told is this or the
+    /// Largest multipart part, in bytes. Default 16 MiB, the size of the
+    /// largest import batch, so a whole part arrives inside the default
+    /// `upload_piece_secs` at about 0.45 Mbit/s. The part size a client is told is this or the
     /// attachment size limit, whichever is smaller. The limit is a Server
     /// Setting the owner changes in the app and has no key in this file.
     #[serde(default = "default_asset_part_size")]
@@ -210,9 +211,9 @@ fn default_server_bind() -> String {
     "127.0.0.1:8080".to_string()
 }
 
-/// serde default for `[server] asset_part_size` (64 MiB).
+/// serde default for `[server] asset_part_size` (16 MiB).
 fn default_asset_part_size() -> usize {
-    64 * 1024 * 1024
+    crate::asset_uploads::DEFAULT_PART_SIZE
 }
 
 /// serde default for `[server] upload_stall_secs` (one minute).

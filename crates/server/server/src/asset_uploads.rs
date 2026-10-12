@@ -14,8 +14,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::assets_api::{self, AssetError, Sha256, StoredAsset};
 
-/// Default part size advertised to clients (under Cloudflare ~100 MiB).
-pub const DEFAULT_PART_SIZE: usize = 64 * 1024 * 1024;
+/// Default part size advertised to clients: 16 MiB, the size of the largest
+/// import batch, so a whole part arrives inside the server's default 5-minute
+/// limit for one upload at about 0.45 Mbit/s (#2897), and well under
+/// Cloudflare's ~100 MiB cap.
+pub const DEFAULT_PART_SIZE: usize = message_crate_api_types::MAX_IMPORT_BATCH_BYTES;
 
 /// How many multipart uploads one account may have open at once. An open
 /// upload keeps its parts on disk until it is completed, aborted, or left

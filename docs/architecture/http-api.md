@@ -896,7 +896,10 @@ What each reaches:
   An attachment body and a part of one are held to the same two limits,
   though they take no slot, because each holds a connection and a file
   while it reads. At 16 MiB, a full batch arrives inside 5 minutes at about
-  0.45 Mbit/s. Why: the server accepted eight
+  0.45 Mbit/s. A multipart part is 16 MiB by default (`[server]
+  asset_part_size`), and the Upload sends an attachment over 16 MiB in parts
+  (`MAX_PROXY_BODY_BYTES` in `message-crate-import`), so an attachment
+  arrives at the same speed a batch does. Why: the server accepted eight
   times what its client sends, and held a batch's whole text in memory
   beside its parsed records (#2075); every batch waiting for a slot held its
   body on disk (#2095); and that disk was the operating system's temporary

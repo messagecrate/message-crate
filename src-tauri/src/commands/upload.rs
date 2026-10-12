@@ -146,7 +146,7 @@ fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<ImportConf
         prepare_ahead: 8,
         // Above DEFAULT_PREPARE_WORKERS (2): more of the prepare-ahead queue runs at once.
         prepare_workers: 4,
-        // Below message_crate_import::MAX_PROXY_BODY_BYTES (90 MiB):
+        // Below message_crate_import::MAX_PROXY_BODY_BYTES (16 MiB):
         // desktop uploads switch to multipart sooner so a large attachment
         // moves in small parts instead of one long PUT.
         asset_multipart_threshold: 5 * 1024 * 1024,

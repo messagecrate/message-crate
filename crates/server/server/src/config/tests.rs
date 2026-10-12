@@ -121,7 +121,7 @@ fn a_config_with_no_settings_loads_the_documented_defaults() {
     );
     let server = cfg.require_server().unwrap();
     assert_eq!(server.bind, "127.0.0.1:8080");
-    assert_eq!(server.asset_part_size, 67_108_864);
+    assert_eq!(server.asset_part_size, 16_777_216);
     assert_eq!(server.upload_stall_secs, 60);
     assert_eq!(server.upload_piece_secs, 300);
     assert!(!server.openapi_ui);
