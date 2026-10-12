@@ -217,6 +217,9 @@ carry their date on the heading.
   is no longer limited to 20 tries a minute. The wait is not protection for a
   Message Crate reachable from the internet: that needs a proxy with its own
   login in front of it (#2893, #2894).
+- 2026-10-12: The Demo Account's username, `demo`, is fixed in the server
+  and no longer read from the Demo Data it is built from, with nothing
+  visible (#2808).
 - 2026-10-11: **The guide says what leaves the computer.** "What Message
   Crate is" now says that Message Crate sends no telemetry, crash reports, or
   usage data, and that the desktop app connects only to the Message Crate
@@ -384,6 +387,13 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-12: **The Audit Trail records every build of the Demo Account.**
+  Resetting or adding the Demo Account with the `reset-demo` server command
+  is now recorded, with the set of Demo Data, by **Server command**, and so
+  is the Demo Account a new Message Crate adds on its first start, by
+  **Server's first start**. Before, only a build from Owner Home left an
+  entry, and the command recorded only the deletion of the old Demo Account
+  (#2686).
 - 2026-10-12: **Disabling an account logs it out.** A person still logged
   in to an account the owner disabled was only refused while the account
   stayed disabled, so enabling it again let them carry on without logging

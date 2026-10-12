@@ -177,6 +177,7 @@ const ACTOR_LABELS: Record<AuditActor, string> = {
   owner: "Owner",
   holder: "Account holder",
   command_line: "Server command",
+  start_up: "Server's first start",
   server: "Server",
   anonymous: "Login screen",
 };
