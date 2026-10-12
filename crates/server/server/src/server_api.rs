@@ -100,9 +100,9 @@ pub struct Server {
 /// Body for claiming a Message Crate.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct ClaimServerRequest {
-    /// Login username for the owner, which the server trims: 1 to 128 characters, each
-    /// a letter A to Z, a digit, `_`, `-` or `.`. Any other is refused with
-    /// `422 Unprocessable Entity`.
+    /// Login username for the owner, which the server trims: 1 to 128
+    /// characters, each a letter A to Z, a digit, `_`, `-` or `.`. Any other
+    /// is refused with `422 Unprocessable Entity`.
     pub username: String,
     /// Password for the owner. Must satisfy the server's password policy.
     pub password: String,
@@ -236,9 +236,10 @@ pub async fn claim_server(
 /// beside them, which the owner reads and cannot change.
 // The settings are the `db/` read's own struct, flattened in whole, so its
 // fields are written once (`docs/architecture/http-api.md`, "Code"). Inline,
-// because the `db/` struct shares this one's wire name.
+// and `Api` in Rust, because the `db/` struct has the wire name too.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct ServerSettings {
+#[schema(as = ServerSettings)]
+pub struct ApiServerSettings {
     #[serde(flatten)]
     #[schema(inline)]
     pub settings: server_settings::ServerSettings,
@@ -271,8 +272,8 @@ async fn settings_body(
     state: &AppState,
     conn: &mut sqlx::SqliteConnection,
     settings: server_settings::ServerSettings,
-) -> ServerSettings {
-    ServerSettings {
+) -> ApiServerSettings {
+    ApiServerSettings {
         settings,
         journal: DatabaseJournal {
             mode: crate::db::engine::journal_mode_or_warn(&mut *conn).await,
@@ -317,13 +318,13 @@ fn asset_max_bytes_problem(bytes: u64) -> Option<String> {
     tag = "Server",
     security(("session" = ["owner"])),
     responses(
-        (status = 200, body = ServerSettings),
+        (status = 200, body = ApiServerSettings),
     )
 )]
 pub async fn get_server_settings(
     State(state): State<AppState>,
     Owner(_auth): Owner,
-) -> Result<Json<ServerSettings>, ApiError> {
+) -> Result<Json<ApiServerSettings>, ApiError> {
     let mut conn = state.db.acquire().await?;
     let settings = server_settings::load(&mut conn).await?;
     Ok(Json(settings_body(&state, &mut conn, settings).await))
@@ -341,14 +342,14 @@ pub async fn get_server_settings(
     security(("session" = ["owner"])),
     request_body = UpdateServerSettingsRequest,
     responses(
-        (status = 200, body = ServerSettings),
+        (status = 200, body = ApiServerSettings),
     )
 )]
 pub async fn update_server_settings(
     State(state): State<AppState>,
     Owner(_auth): Owner,
     Json(req): Json<UpdateServerSettingsRequest>,
-) -> Result<Json<ServerSettings>, ApiError> {
+) -> Result<Json<ApiServerSettings>, ApiError> {
     // Checked before anything is written, so a refused request changes nothing.
     if let Some(problem) = req.asset_max_bytes.and_then(asset_max_bytes_problem) {
         return Err(ApiError::validation(problem));

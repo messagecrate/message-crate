@@ -250,16 +250,10 @@ pub(crate) fn normalize_username(raw: &str) -> String {
     raw.trim().to_string()
 }
 
-/// True for 1 to [`MAX_USERNAME_CHARS`] characters of ASCII letters, digits,
-/// `_`, `-`, or `.`.
-pub(crate) fn is_valid_username(s: &str) -> bool {
-    require_valid_username(s).is_ok()
-}
-
 /// The trimmed username, or the `validation-failed` every route that takes
 /// one answers when it is malformed: over [`MAX_USERNAME_CHARS`] characters
-/// in the wording of every length cap ([`capped_text`]), blank, or holding a
-/// character other than an ASCII letter, a digit, `_`, `-` or `.`.
+/// in the wording of every length cap ([`capped_text`]), or blank or holding
+/// a character other than an ASCII letter, a digit, `_`, `-` or `.`.
 ///
 /// ASCII only, because the account lookup (`COLLATE NOCASE`) folds ASCII
 /// letters only: a letter from another script would make an account whose
@@ -267,15 +261,13 @@ pub(crate) fn is_valid_username(s: &str) -> bool {
 /// `admin`. A preferred name carries a person's name in any script.
 pub(crate) fn require_valid_username(raw: &str) -> Result<String, ApiError> {
     let username = capped_text("username", raw, MAX_USERNAME_CHARS)?;
-    if username.is_empty() {
-        return Err(ApiError::validation("username required"));
-    }
-    if !username
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+    if username.is_empty()
+        || !username
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
     {
         return Err(ApiError::validation(
-            "username must be letters A to Z, digits, _, - or .",
+            "username must be one or more letters A to Z, digits, _, - or .",
         ));
     }
     Ok(username.to_string())

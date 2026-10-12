@@ -285,8 +285,8 @@ pub async fn list_accounts(
 /// Body for creating an account, by the owner or by a stranger.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateAccountRequest {
-    /// Login username, which the server trims: 1 to 128 characters, each
-    /// a letter A to Z, a digit, `_`, `-` or `.`. Any other is refused with
+    /// Login username, which the server trims: 1 to 128 characters, each a
+    /// letter A to Z, a digit, `_`, `-` or `.`. Any other is refused with
     /// `422 Unprocessable Entity`.
     pub username: String,
     /// Local password, of any length. Absent or empty opens an account with

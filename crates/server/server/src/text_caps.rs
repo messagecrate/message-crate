@@ -1,6 +1,7 @@
 //! Every length cap on text the server stores: the names a person types (an
 //! account's display name and username, a contact's name, and the name of a
-//! Contact Group, Message Tag or Saved Search), identity addresses, Import
+//! Contact Group, Message Tag or Saved Search), API token labels, identity
+//! addresses, Import
 //! Error and note text, the program, install and directory an Import Run
 //! names, and Import Run JSON.
 //!
@@ -25,6 +26,8 @@ pub const MAX_USERNAME_CHARS: usize = 128;
 /// Most characters in the name of a Contact Group, a Message Tag or a Saved
 /// Search: a name that fits the sidebar.
 pub const MAX_COLLECTION_NAME_CHARS: usize = 80;
+/// Most characters in an API token's label.
+pub const MAX_API_TOKEN_LABEL_CHARS: usize = 120;
 /// Most characters in an identity address a person types: an email address's
 /// local part (64) and domain (255) with the `@` between them come to 320, and
 /// a phone number is far shorter.

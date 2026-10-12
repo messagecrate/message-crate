@@ -13862,7 +13862,7 @@
           },
           "username": {
             "type": "string",
-            "description": "Login username for the owner, which the server trims: 1 to 128 characters, each\na letter A to Z, a digit, `_`, `-` or `.`. Any other is refused with\n`422 Unprocessable Entity`."
+            "description": "Login username for the owner, which the server trims: 1 to 128\ncharacters, each a letter A to Z, a digit, `_`, `-` or `.`. Any other\nis refused with `422 Unprocessable Entity`."
           }
         }
       },
@@ -14319,7 +14319,7 @@
           },
           "username": {
             "type": "string",
-            "description": "Login username, which the server trims: 1 to 128 characters, each\na letter A to Z, a digit, `_`, `-` or `.`. Any other is refused with\n`422 Unprocessable Entity`."
+            "description": "Login username, which the server trims: 1 to 128 characters, each a\nletter A to Z, a digit, `_`, `-` or `.`. Any other is refused with\n`422 Unprocessable Entity`."
           }
         }
       },
@@ -14373,7 +14373,7 @@
           },
           "label": {
             "type": "string",
-            "description": "User-chosen label shown in Settings."
+            "description": "User-chosen label shown in Settings, which the server trims. A label\nthat is blank or over 120 characters is refused with\n`422 Unprocessable Entity`."
           }
         },
         "additionalProperties": false
@@ -19948,7 +19948,7 @@
         "properties": {
           "label": {
             "type": "string",
-            "description": "Replacement label."
+            "description": "Replacement label, under the rules a new token's label follows."
           }
         }
       },

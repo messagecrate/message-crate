@@ -2078,9 +2078,9 @@ export interface components {
             /** @description Password for the owner. Must satisfy the server's password policy. */
             password: string;
             /**
-             * @description Login username for the owner, which the server trims: 1 to 128 characters, each
-             *     a letter A to Z, a digit, `_`, `-` or `.`. Any other is refused with
-             *     `422 Unprocessable Entity`.
+             * @description Login username for the owner, which the server trims: 1 to 128
+             *     characters, each a letter A to Z, a digit, `_`, `-` or `.`. Any other
+             *     is refused with `422 Unprocessable Entity`.
              */
             username: string;
         };
@@ -2390,8 +2390,8 @@ export interface components {
              */
             preferred_name?: string | null;
             /**
-             * @description Login username, which the server trims: 1 to 128 characters, each
-             *     a letter A to Z, a digit, `_`, `-` or `.`. Any other is refused with
+             * @description Login username, which the server trims: 1 to 128 characters, each a
+             *     letter A to Z, a digit, `_`, `-` or `.`. Any other is refused with
              *     `422 Unprocessable Entity`.
              */
             username: string;
@@ -2422,7 +2422,11 @@ export interface components {
              * @description Days until expiry. Omit for the default (365 days). Pass `0` for no expiry.
              */
             expires_in_days?: number | null;
-            /** @description User-chosen label shown in Settings. */
+            /**
+             * @description User-chosen label shown in Settings, which the server trims. A label
+             *     that is blank or over 120 characters is refused with
+             *     `422 Unprocessable Entity`.
+             */
             label: string;
         };
         /** @description The created token, including its plaintext secret (returned once). */
@@ -5729,7 +5733,7 @@ export interface components {
         };
         /** @description Body for renaming a token. */
         UpdateApiTokenRequest: {
-            /** @description Replacement label. */
+            /** @description Replacement label, under the rules a new token's label follows. */
             label: string;
         };
         /** @description The previous and new addresses for a link change. */

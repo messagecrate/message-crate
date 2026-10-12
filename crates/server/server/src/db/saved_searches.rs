@@ -16,7 +16,6 @@ use sqlx::sqlite::SqliteRow;
 use sqlx::{Row, SqliteConnection};
 
 use crate::db::begin_write;
-use crate::text_caps::{MAX_COLLECTION_NAME_CHARS, capped_text};
 
 /// How a saved search was created.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,16 +98,12 @@ fn row_to_saved_search(row: &SqliteRow) -> Result<SavedSearch> {
     })
 }
 
-/// Trim and length-check a name. Empty names and names over
-/// [`MAX_COLLECTION_NAME_CHARS`] characters are rejected, as a Contact
-/// Group's and a Message Tag's are.
+/// Trim and check a name under the rules a Contact Group's and a Message
+/// Tag's name follow: not blank, and within the length cap.
 fn normalize_name(name: &str) -> Result<String> {
-    let trimmed = capped_text("name", name, MAX_COLLECTION_NAME_CHARS)
-        .map_err(|too_long| SavedSearchError::BadRequest(too_long.to_string()))?;
-    if trimmed.is_empty() {
-        return Err(SavedSearchError::BadRequest("name required".into()));
-    }
-    Ok(trimmed.to_string())
+    crate::db::named_membership::collection_name(name)
+        .map(str::to_string)
+        .map_err(SavedSearchError::BadRequest)
 }
 
 /// Trim a query. An empty query is rejected, and so is one every list would

@@ -414,7 +414,7 @@ async fn a_dropped_request_keeps_its_permit_until_the_run_ends() {
 
 /// The username rule, at both its edges and over its character set.
 ///
-/// `is_valid_username` had no test either. A username is the name an account
+/// The username check had no test either. A username is the name an account
 /// is looked up by at login, so accepting a blank one, or one with a slash
 /// or a space in it, makes an account that is awkward or impossible to reach.
 #[test]
@@ -428,7 +428,10 @@ fn a_username_is_one_to_128_characters_of_a_known_set() {
         "m",
         "user123",
     ] {
-        assert!(is_valid_username(good), "{good:?} must be accepted");
+        assert!(
+            require_valid_username(good).is_ok(),
+            "{good:?} must be accepted"
+        );
     }
 
     for bad in [
@@ -440,24 +443,33 @@ fn a_username_is_one_to_128_characters_of_a_known_set() {
         "matt:beisser",
         "matt\nbeisser",
     ] {
-        assert!(!is_valid_username(bad), "{bad:?} must be refused");
+        assert!(
+            require_valid_username(bad).is_err(),
+            "{bad:?} must be refused"
+        );
     }
 
     // Letters from other scripts are refused. The doc comment on
     // `require_valid_username` gives the reason.
     for other_script in ["аdmin", "mätt", "матт", "ｍatt", "matt\u{0301}", "٣"] {
         assert!(
-            !is_valid_username(other_script),
+            require_valid_username(other_script).is_err(),
             "{other_script:?} must be refused"
         );
     }
 
     // The length boundary, in both directions.
-    assert!(is_valid_username(&"a".repeat(128)), "128 is allowed");
-    assert!(!is_valid_username(&"a".repeat(129)), "129 is not");
+    assert!(
+        require_valid_username(&"a".repeat(128)).is_ok(),
+        "128 is allowed"
+    );
+    assert!(
+        require_valid_username(&"a".repeat(129)).is_err(),
+        "129 is not"
+    );
 
     // Surrounding whitespace is trimmed before the rule is applied, so a
     // pasted name with a trailing newline is accepted and stored trimmed.
-    assert!(is_valid_username("  matt  "));
+    assert!(require_valid_username("  matt  ").is_ok());
     assert_eq!(normalize_username("  matt\n"), "matt");
 }
