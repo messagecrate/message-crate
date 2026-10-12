@@ -38,10 +38,15 @@ fn send_part(
     part: u32,
     body: &[u8],
 ) -> Result<u64, AssetError> {
-    let NewPart { mut file, temp, .. } = begin_part(root, sha, upload_id, part)?;
-    file.write_all(body).unwrap();
-    drop(file);
-    put_part(root, sha, upload_id, part, temp)
+    let mut temp = begin_part(root, sha, upload_id, part)?;
+    write_into(&mut temp, body);
+    put_part(sha, temp)
+}
+
+/// Write `body` into `temp`'s file, as [`PartTemp::receive`] does with a
+/// request's body.
+fn write_into(temp: &mut PartTemp, body: &[u8]) {
+    temp.file.as_mut().unwrap().write_all(body).unwrap();
 }
 
 /// The files in an upload's directory other than its manifest.
@@ -102,11 +107,10 @@ fn a_part_of_the_right_size_is_recorded_in_the_manifest() {
 #[test]
 fn a_part_dropped_before_it_is_recorded_leaves_no_file() {
     let (dir, sha, upload_id, session) = started_upload();
-    let NewPart { mut file, temp, .. } = begin_part(dir.path(), &sha, &upload_id, 1).unwrap();
-    file.write_all(b"he").unwrap();
+    let mut temp = begin_part(dir.path(), &sha, &upload_id, 1).unwrap();
+    write_into(&mut temp, b"he");
     assert_eq!(files_beside_manifest(&session).len(), 1);
 
-    drop(file);
     drop(temp);
 
     assert_eq!(files_beside_manifest(&session), Vec::<String>::new());
@@ -118,10 +122,12 @@ fn a_part_dropped_before_it_is_recorded_leaves_no_file() {
 fn a_part_out_of_range_is_refused_before_its_body() {
     let (dir, sha, upload_id, session) = started_upload();
 
-    let err = begin_part(dir.path(), &sha, &upload_id, 2).unwrap_err();
+    for part in [0, 2] {
+        let err = begin_part(dir.path(), &sha, &upload_id, part).unwrap_err();
 
-    assert!(matches!(err, AssetError::Invalid(_)), "{err}");
-    assert_eq!(files_beside_manifest(&session), Vec::<String>::new());
+        assert!(matches!(err, AssetError::Invalid(_)), "{err}");
+        assert_eq!(files_beside_manifest(&session), Vec::<String>::new());
+    }
 }
 
 #[test]

@@ -584,7 +584,8 @@ fn a_part_file_gone_between_the_listing_and_the_removal_does_not_stop_the_sweep(
 /// #2652: a request using an upload keeps it, however long ago its
 /// manifest was written: a part arriving writes only its own temp and a
 /// completion writes no manifest, so a slow part or a long completion would
-/// otherwise look abandoned. Once the request ends, the upload is the sweep's again.
+/// otherwise look abandoned. Once the request ends, the upload is the
+/// sweep's again.
 #[test]
 fn the_incoming_sweep_leaves_an_upload_a_request_is_using() {
     let incoming = incoming_with_leftovers();
