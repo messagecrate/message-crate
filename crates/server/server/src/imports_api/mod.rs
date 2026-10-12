@@ -1203,6 +1203,10 @@ pub(crate) struct OwnerImportRun {
     /// Everything the list answers for the run.
     #[serde(flatten)]
     pub(crate) run: OwnerImportRunSummary,
+    /// How many attachments the run last wrote: those of the messages it
+    /// added, and the stored ones it gave their missing file, less any a
+    /// later run wrote since. `not_made_attachments` are out of these.
+    written_attachment_count: u64,
     /// How many of `not_made_attachments` have no Thumbnail and how many no
     /// Preview, for each kind of failure, leaving out a kind none has. Empty
     /// until the media pass has tried the run's attachments, which it does
@@ -1223,11 +1227,14 @@ pub(crate) async fn owner_import_run(
     let (issue_count, note_count) = crate::db::imports::issue_and_note_counts(conn, row.id).await?;
     let not_made_attachments =
         crate::db::attachment_versions::not_made_for_import(conn, row.id).await?;
+    let written_attachment_count =
+        crate::db::attachment_versions::written_by_import(conn, row.id).await?;
     let run = listed_import(conn, row, issue_count, note_count)
         .await
         .map(OwnerImportRunSummary::from)?;
     Ok(OwnerImportRun {
         run,
+        written_attachment_count,
         not_made_counts: crate::db::attachment_versions::count_not_made(&not_made_attachments),
         not_made_attachments,
     })

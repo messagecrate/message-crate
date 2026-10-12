@@ -16440,7 +16440,7 @@
           "preview": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/VersionNotMade"
+                "$ref": "#/components/schemas/NotMadeVersion"
               },
               {
                 "type": "null"
@@ -16459,7 +16459,7 @@
           "thumbnail": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/VersionNotMade"
+                "$ref": "#/components/schemas/NotMadeVersion"
               },
               {
                 "type": "null"
@@ -16507,6 +16507,24 @@
           "original_missing",
           "server_problem"
         ]
+      },
+      "NotMadeVersion": {
+        "type": "object",
+        "description": "Why one version of an attachment was not made: its kind, and the reason\nin words, as the `/v1` Attachment answers it.",
+        "required": [
+          "kind",
+          "reason"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/NotMadeKind",
+            "description": "The kind of failure."
+          },
+          "reason": {
+            "type": "string",
+            "description": "What ffmpeg said about the file, why it was stopped, or a phrase of\nthe server's, as the `/v1` Attachment's `preview_not_made_reason` and\n`thumbnail_not_made_reason` answer it."
+          }
+        }
       },
       "OwnerExportRun": {
         "type": "object",
@@ -16592,6 +16610,7 @@
           {
             "type": "object",
             "required": [
+              "written_attachment_count",
               "not_made_counts",
               "not_made_attachments"
             ],
@@ -16609,6 +16628,12 @@
                   "$ref": "#/components/schemas/NotMadeCount"
                 },
                 "description": "How many of `not_made_attachments` have no Thumbnail and how many no\nPreview, for each kind of failure, leaving out a kind none has. Empty\nuntil the media pass has tried the run's attachments, which it does\nafter the run ends."
+              },
+              "written_attachment_count": {
+                "type": "integer",
+                "format": "int64",
+                "description": "How many attachments the run last wrote: those of the messages it\nadded, and the stored ones it gave their missing file, less any a\nlater run wrote since. `not_made_attachments` are out of these.",
+                "minimum": 0
               }
             }
           }
@@ -20099,24 +20124,6 @@
           "size",
           "flag"
         ]
-      },
-      "VersionNotMade": {
-        "type": "object",
-        "description": "Why one version of an attachment was not made: its kind, and the reason\nin words, as the `/v1` Attachment answers it.",
-        "required": [
-          "kind",
-          "reason"
-        ],
-        "properties": {
-          "kind": {
-            "$ref": "#/components/schemas/NotMadeKind",
-            "description": "The kind of failure."
-          },
-          "reason": {
-            "type": "string",
-            "description": "What ffmpeg said about the file, why it was stopped, or a phrase of\nthe server's, as the `/v1` Attachment's `preview_not_made_reason` and\n`thumbnail_not_made_reason` answer it."
-          }
-        }
       }
     },
     "securitySchemes": {

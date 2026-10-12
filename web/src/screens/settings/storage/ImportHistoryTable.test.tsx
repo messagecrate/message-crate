@@ -218,7 +218,6 @@ describe("Import history", () => {
   it("shows the owner which attachments of a run have no Thumbnail or Preview, and why", async () => {
     const listed = {
       ...anImport(1),
-      attachment_count: 5,
       counts: {},
       contacts_new: 0,
       contacts_changed: 0,
@@ -226,6 +225,7 @@ describe("Import history", () => {
     listAccountImports.mockResolvedValue({ items: [listed], total: 1, limit: 50, offset: 0 });
     getAccountImport.mockResolvedValue({
       ...listed,
+      written_attachment_count: 5,
       not_made_counts: [
         { kind: "conversion_failed", thumbnails: 1, previews: 1 },
         { kind: "stalled", thumbnails: 0, previews: 2 },
@@ -295,6 +295,7 @@ describe("Import history", () => {
     listAccountImports.mockResolvedValue({ items: [listed], total: 1, limit: 50, offset: 0 });
     getAccountImport.mockResolvedValue({
       ...listed,
+      written_attachment_count: 1,
       not_made_counts: [],
       not_made_attachments: [],
     });

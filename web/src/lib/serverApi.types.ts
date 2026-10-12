@@ -3736,7 +3736,7 @@ export interface components {
              * @description Why the Preview was not made. Null when it was made, when the
              *     attachment needs none, or until the media pass has tried.
              */
-            preview: components["schemas"]["VersionNotMade"] | null;
+            preview: components["schemas"]["NotMadeVersion"] | null;
             /**
              * Format: int64
              * @description The original's size in bytes, when known.
@@ -3746,7 +3746,7 @@ export interface components {
              * @description Why the Thumbnail was not made. Null when it was made, when the
              *     attachment gets none, or until the media pass has tried.
              */
-            thumbnail: components["schemas"]["VersionNotMade"] | null;
+            thumbnail: components["schemas"]["NotMadeVersion"] | null;
         };
         /**
          * @description How many of an Import Run's attachments have no Thumbnail, and how many
@@ -3773,6 +3773,20 @@ export interface components {
          * @enum {string}
          */
         NotMadeKind: "conversion_failed" | "stalled" | "ran_past_length" | "took_too_long" | "original_missing" | "server_problem";
+        /**
+         * @description Why one version of an attachment was not made: its kind, and the reason
+         *     in words, as the `/v1` Attachment answers it.
+         */
+        NotMadeVersion: {
+            /** @description The kind of failure. */
+            kind: components["schemas"]["NotMadeKind"];
+            /**
+             * @description What ffmpeg said about the file, why it was stopped, or a phrase of
+             *     the server's, as the `/v1` Attachment's `preview_not_made_reason` and
+             *     `thumbnail_not_made_reason` answer it.
+             */
+            reason: string;
+        };
         /**
          * @description An Export Run as the owner reads it under another account: the form of
          *     its scope, its tool, times, outcome and counts
@@ -3846,6 +3860,13 @@ export interface components {
              *     after the run ends.
              */
             not_made_counts: components["schemas"]["NotMadeCount"][];
+            /**
+             * Format: int64
+             * @description How many attachments the run last wrote: those of the messages it
+             *     added, and the stored ones it gave their missing file, less any a
+             *     later run wrote since. `not_made_attachments` are out of these.
+             */
+            written_attachment_count: number;
         };
         /**
          * @description An Import Run as the owner's list of another account's runs answers it:
@@ -5780,20 +5801,6 @@ export interface components {
          * @enum {string}
          */
         ValueType: "text" | "name" | "person" | "choice" | "date" | "count" | "size" | "flag";
-        /**
-         * @description Why one version of an attachment was not made: its kind, and the reason
-         *     in words, as the `/v1` Attachment answers it.
-         */
-        VersionNotMade: {
-            /** @description The kind of failure. */
-            kind: components["schemas"]["NotMadeKind"];
-            /**
-             * @description What ffmpeg said about the file, why it was stopped, or a phrase of
-             *     the server's, as the `/v1` Attachment's `preview_not_made_reason` and
-             *     `thumbnail_not_made_reason` answer it.
-             */
-            reason: string;
-        };
     };
     responses: never;
     parameters: never;

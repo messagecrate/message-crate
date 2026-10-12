@@ -1242,10 +1242,13 @@ from the name:
   thing as the owner reads it under another account: `OwnerImportRun` and
   `OwnerExportRun` ([Credentials and reach](#credentials-and-reach)), and
   `OwnerImportRunSummary` is an `OwnerImportRun` as the owner's list answers
-  it, without the attachments whose versions were not made. `NotMade` is an
-  attachment of an Import Run as the owner reads one whose Thumbnail or
-  Preview could not be made: `NotMadeAttachment` holds its file name, type
-  and size and why, and nothing of its message or conversation.
+  it, without the attachments whose versions were not made. `NotMade` is a
+  Thumbnail or Preview the server could not make, as the owner reads it:
+  `NotMadeAttachment` is an attachment that has one, by its file name, type
+  and size and nothing of its message or conversation, because those are
+  what ADR 0008 lets the owner read of an attachment. The types it carries
+  share the prefix: `NotMadeVersion` (why one version was not made),
+  `NotMadeKind` and `NotMadeCount`.
 - An action's input and output are named for the action:
   `VerbNounRequest` for a body sent in, `VerbNounResponse` for an answer that
   is not a thing (`CreateApiTokenRequest`, `DeleteMessagesResponse`), and

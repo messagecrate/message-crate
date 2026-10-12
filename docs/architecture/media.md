@@ -179,7 +179,7 @@ in `preview_not_made_reason` and `thumbnail_not_made_reason`, so the viewer
 says why there is no Preview. Beside each reason it records its kind
 (`attachments.preview_not_made_kind` and `thumbnail_not_made_kind`):
 `conversion_failed` when ffmpeg exited with an error, `stalled` when it made
-no progress for the stall wait, `ran_past_length` when it ran past twice the
+no progress for `[server] transcode_stall_secs`, `ran_past_length` when it ran past twice the
 file's length, `took_too_long` when a step that reads one frame passed its
 limit, `original_missing`, or `server_problem` for anything else. A kind is
 set and cleared with its reason, which a `CHECK` on the table holds. The
@@ -189,8 +189,8 @@ them, each by file name, type and size with its reasons
 which files of an import were left without a version and why, and can run
 `process-assets` to try again; nothing tries again on its own (#2636).
 The reason is what ffmpeg said about the file, with the paths it named made
-relative to the account's directories, or a phrase of the server's when ffmpeg did not read the file, such as when the
-original is missing. It never holds a path outside the data directory or the
+relative to the account's directories, or a phrase of the server's when
+ffmpeg did not read the file, such as when the original is missing. It never holds a path outside the data directory or the
 full error, whose context names the original's path and, for a missing
 ffmpeg, every directory the server looked in. It is never recorded beside a
 version that works: a failed remake under `--force` of an intact version

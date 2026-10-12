@@ -198,6 +198,7 @@ describe("toImportSummaryView for the owner", () => {
       note_count: 1,
       contacts_new: 0,
       contacts_changed: 0,
+      written_attachment_count: 0,
       not_made_counts: [],
       not_made_attachments: [],
     });
@@ -246,6 +247,7 @@ describe("importBackup", () => {
         note_count: 0,
         contacts_new: 0,
         contacts_changed: 0,
+        written_attachment_count: 0,
         not_made_counts: [],
         not_made_attachments: [],
       }),

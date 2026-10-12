@@ -7,7 +7,7 @@ type Schema = components["schemas"];
 type NotMadeKind = Schema["NotMadeKind"];
 type NotMadeCount = Schema["NotMadeCount"];
 type NotMadeAttachment = Schema["NotMadeAttachment"];
-type VersionNotMade = Schema["VersionNotMade"];
+type NotMadeVersion = Schema["NotMadeVersion"];
 
 /** Each kind of failure as the owner reads it. */
 const NOT_MADE_KIND_LABEL: Record<NotMadeKind, string> = {
@@ -31,7 +31,7 @@ export default function ImportNotMadePanel({
   counts,
   attachments,
 }: {
-  /** The attachments counted for the run, which the failures are out of. */
+  /** The attachments the run last wrote, which the failures are out of. */
   attachmentCount: number;
   counts: NotMadeCount[];
   attachments: NotMadeAttachment[];
@@ -110,7 +110,7 @@ export default function ImportNotMadePanel({
 }
 
 /** Why one version was not made, or a dash when nothing failed. */
-function VersionNotMadeCell({ version }: { version: VersionNotMade | null }) {
+function VersionNotMadeCell({ version }: { version: NotMadeVersion | null }) {
   if (!version) return <span className="text-muted">—</span>;
   return (
     <>

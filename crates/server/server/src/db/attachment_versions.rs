@@ -74,11 +74,12 @@ impl Version {
     sqlx::Type,
 )]
 #[serde(rename_all = "snake_case")]
-#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
+#[sqlx(rename_all = "snake_case")]
 pub enum NotMadeKind {
     /// ffmpeg exited with an error: it could not read or convert the file.
     ConversionFailed,
-    /// ffmpeg made no progress for the stall wait, so it was stopped.
+    /// ffmpeg made no progress for `[server] transcode_stall_secs`, so it was
+    /// stopped.
     Stalled,
     /// ffmpeg ran past twice the file's length, as it does looping on a
     /// damaged file, so it was stopped.
@@ -605,7 +606,7 @@ pub struct NamedFiles {
 /// Why one version of an attachment was not made: its kind, and the reason
 /// in words, as the `/v1` Attachment answers it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, utoipa::ToSchema)]
-pub struct VersionNotMade {
+pub struct NotMadeVersion {
     /// The kind of failure.
     pub kind: NotMadeKind,
     /// What ffmpeg said about the file, why it was stopped, or a phrase of
@@ -631,10 +632,10 @@ pub struct NotMadeAttachment {
     pub size_bytes: Option<i64>,
     /// Why the Thumbnail was not made. Null when it was made, when the
     /// attachment gets none, or until the media pass has tried.
-    pub thumbnail: Option<VersionNotMade>,
+    pub thumbnail: Option<NotMadeVersion>,
     /// Why the Preview was not made. Null when it was made, when the
     /// attachment needs none, or until the media pass has tried.
-    pub preview: Option<VersionNotMade>,
+    pub preview: Option<NotMadeVersion>,
 }
 
 /// How many of an Import Run's attachments have no Thumbnail, and how many
@@ -677,11 +678,32 @@ pub async fn not_made_for_import(
     Ok(rows.into_iter().map(NotMadeRow::into_attachment).collect())
 }
 
+/// How many attachments Import Run `import_id` last wrote
+/// (`attachments.import_id`): the set [`not_made_for_import`] reads from, so
+/// its failures are out of this. It can differ from the run's
+/// `attachment_count`, which counts the attachments of the messages the run
+/// added, because a run also writes the stored rows it gives their missing
+/// file, and a later run that does the same takes them over.
+///
+/// # Errors
+///
+/// Returns a database error when the query fails.
+pub async fn written_by_import(
+    conn: &mut SqliteConnection,
+    import_id: i64,
+) -> Result<u64, sqlx::Error> {
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM attachments WHERE import_id = $1")
+        .bind(import_id)
+        .fetch_one(&mut *conn)
+        .await?;
+    Ok(count.max(0) as u64)
+}
+
 /// How many of `attachments` have no Thumbnail and how many no Preview, for
 /// each kind of failure, in [`NotMadeKind::ALL`]'s order, leaving out a kind
 /// none of them has.
 pub fn count_not_made(attachments: &[NotMadeAttachment]) -> Vec<NotMadeCount> {
-    let count = |kind: NotMadeKind, version: fn(&NotMadeAttachment) -> Option<&VersionNotMade>| {
+    let count = |kind: NotMadeKind, version: fn(&NotMadeAttachment) -> Option<&NotMadeVersion>| {
         attachments
             .iter()
             .filter(|attachment| version(attachment).is_some_and(|v| v.kind == kind))
@@ -714,7 +736,7 @@ struct NotMadeRow {
 impl NotMadeRow {
     fn into_attachment(self) -> NotMadeAttachment {
         let version = |kind: Option<NotMadeKind>, reason: Option<String>| {
-            kind.map(|kind| VersionNotMade {
+            kind.map(|kind| NotMadeVersion {
                 kind,
                 reason: reason.unwrap_or_default(),
             })

@@ -3216,6 +3216,8 @@ async fn the_owner_reads_which_attachments_of_a_run_have_no_thumbnail_or_preview
             { "kind": "stalled", "thumbnails": 0, "previews": 1 },
         ])
     );
+    // The failures are out of the three attachments the run wrote.
+    assert_eq!(detail["written_attachment_count"], 3);
     let listed = detail["not_made_attachments"].as_array().unwrap();
     assert_eq!(listed.len(), 2, "{listed:?}");
     assert_eq!(listed[0]["original_name"], "IMG_0001.HEIC");
@@ -3254,6 +3256,7 @@ async fn the_owner_reads_which_attachments_of_a_run_have_no_thumbnail_or_preview
         other["not_made_counts"],
         serde_json::json!([{ "kind": "original_missing", "thumbnails": 1, "previews": 0 }])
     );
+    assert_eq!(other["written_attachment_count"], 1);
 }
 
 // ---------------------------------------------------------------------------

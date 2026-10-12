@@ -144,7 +144,7 @@ The Owner's view of an Import Run's record has one part the account's own does n
 It lists the run's attachments whose Thumbnail or Preview the server could not make, so the Owner can see which files a damaged backup or a slow computer left without them.
 The server makes them after the run's data arrives, so the part fills in once the server has tried.
 
-A line first says how many of the run's attachments have no Thumbnail or Preview, such as **2 of 212 attachments have no Thumbnail or Preview**.
+A line first says how many of the attachments the run wrote have no Thumbnail or Preview, such as **2 of 212 attachments have no Thumbnail or Preview**.
 A table then counts them by kind of failure, with one column for **No Thumbnail** and one for **No Preview**:
 
 | Kind of failure | Meaning |
