@@ -404,10 +404,19 @@ struct SmsBackupRead {
     /// The payloads the read spooled; `None` when the run does not copy
     /// attachments. The spool is removed when this is dropped.
     spool: Option<AttachmentSpool>,
-    /// Where the read and the staging send their lines and counts: nowhere,
-    /// so the run's log says what the read found once, in [`Self::read`].
-    log: LogSink,
-    progress: ProgressSink,
+    /// The log and progress a pass that reports nothing sends to, held here
+    /// because the [`ReadOptions`] a pass is given borrows them.
+    no_log: LogSink,
+    no_progress: ProgressSink,
+}
+
+/// Where a pass of an [`SmsBackupRead`] sends its lines and counts.
+#[derive(Debug, Clone, Copy)]
+enum Reports {
+    /// Nowhere: the pass reports nothing.
+    Nowhere,
+    /// To the run's log and progress bar.
+    ToTheRun,
 }
 
 impl SmsBackupRead {
@@ -424,14 +433,19 @@ impl SmsBackupRead {
             // while the backup is read, so the copy is checked once, before
             // the clean, counting what the clean frees.
             spool: copy_attachments.then(|| AttachmentSpool::new(scratch_dir)),
-            log: LogSink::none(),
-            progress: ProgressSink::none(),
+            no_log: LogSink::none(),
+            no_progress: ProgressSink::none(),
         }
     }
 
-    /// The options the read and the staging share. The read leaves the
+    /// The options the read, the count and the staging share, sending their
+    /// lines and counts where `reports` says. The read leaves the
     /// attachments in the spool, for [`SmsBackupRead::stage`].
-    fn options<'a>(&'a self, context: &'a RunContext) -> ReadOptions<'a> {
+    fn options<'a>(&'a self, context: &'a RunContext, reports: Reports) -> ReadOptions<'a> {
+        let (log, progress) = match reports {
+            Reports::Nowhere => (&self.no_log, &self.no_progress),
+            Reports::ToTheRun => (&context.log, &context.progress),
+        };
         ReadOptions {
             owner_phones: &[],
             attachments_dir: Some(&self.attachments_dir),
@@ -442,8 +456,8 @@ impl SmsBackupRead {
                 MediaMode::Disabled
             },
             compress: CompressOptions::default(),
-            log: &self.log,
-            progress: &self.progress,
+            log,
+            progress,
             cancel: &context.cancel,
         }
     }
@@ -453,9 +467,11 @@ impl SmsBackupRead {
     /// read goes to the log the moment the read returns, so a run that then
     /// fails, such as one that found no conversation, still says why. It
     /// comes before every line of the run's summary, `Conversations:`
-    /// included.
+    /// included. The read itself reports nowhere, so each of those lines
+    /// reaches the log once, from its report.
     fn read(&self, context: &RunContext) -> Result<Vec<ConversationDocument>> {
-        let (documents, report) = read_backup(&self.input, self.options(context))?;
+        let (documents, report) =
+            read_backup(&self.input, self.options(context, Reports::Nowhere))?;
         for line in report.log_lines() {
             context.log.emit(line);
         }
@@ -463,18 +479,23 @@ impl SmsBackupRead {
     }
 
     /// Every attachment of `documents` paired with its spooled payload and
-    /// counted, for the disk check made before the output is cleaned.
+    /// counted, for the disk check made before the output is cleaned. The
+    /// count logs nothing: [`Self::stage`] counts again and logs each
+    /// attachment with no file then, so the run's log names it once (#2644).
     fn counted<'a>(
         &self,
         documents: &'a mut [ConversationDocument],
         context: &RunContext,
     ) -> CountedAttachments<'a> {
-        spooled_attachments(documents, &self.options(context))
+        spooled_attachments(documents, &self.options(context, Reports::Nowhere))
     }
 
-    /// Stage the spooled attachments into the output's `attachments/`.
+    /// Stage the spooled attachments into the output's `attachments/` with
+    /// the run's log and progress: each attachment with no file, or one that
+    /// could not be staged, is logged, and the staging's counts reach the
+    /// run's progress bar.
     fn stage(self, documents: &mut [ConversationDocument], context: &RunContext) -> Result<()> {
-        stage_read_attachments(documents, &self.options(context))
+        stage_read_attachments(documents, &self.options(context, Reports::ToTheRun))
     }
 }
 
