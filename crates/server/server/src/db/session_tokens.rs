@@ -418,7 +418,8 @@ pub async fn revoke_session_token(conn: &mut SqliteConnection, token: &str) -> R
 /// End the account's Session, if it has one, and record it as `revoked` by
 /// `actor`. Used by `reset-owner-password`, the shell command for an owner
 /// who has lost their password, so the old password's login ends with it,
-/// and by a Demo Account rebuild. The owner setting another account's
+/// by the owner disabling an account, so enabling it again does not bring
+/// back the old token, and by a Demo Account rebuild. The owner setting another account's
 /// password through `/v1` does not call this: that sets the password and
 /// nothing more, and the account's session carries on.
 ///

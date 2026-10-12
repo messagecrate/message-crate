@@ -2055,7 +2055,7 @@ async fn seed_demo_account_on_conn(
     account_id: i64,
     seed: &DemoSeed,
 ) -> Result<()> {
-    account_profile::ensure_account_row(conn, account_id).await?;
+    account_profile::create_account_row_if_missing(conn, account_id).await?;
 
     // Account creation reserves the name, but a database written before the
     // reservation may already give it to another account.

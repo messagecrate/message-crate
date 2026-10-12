@@ -13,6 +13,9 @@ async fn import_one_message(conn: &mut SqliteConnection, dir: &std::path::Path, 
     let message = message_line(guid, "hi").sms().sender("+15555550143");
     std::fs::write(&path, format!("{header}\n{message}\n")).unwrap();
     let assets = dir.join("assets");
+    crate::db::account_profile::create_account_row_if_missing(conn, TEST_ACCOUNT)
+        .await
+        .unwrap();
     let counts = super::super::import_jsonl_files_on_conn(
         conn,
         &[path],

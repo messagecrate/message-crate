@@ -347,6 +347,16 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-12: **Disabling an account logs it out.** Disabling an account
+  only refused its open login while the account stayed disabled, so enabling
+  it again let the same login, and every media link opened under it, work
+  again. Disabling now ends the login, and the person logs in again once the
+  account is enabled.
+- 2026-10-12: **A deleted account no longer comes back.** An import or an
+  export that was already under way when its account was deleted made the
+  account again, named by a number and with no password, so anyone could log
+  in to it. The import or export is now refused, and the account stays
+  deleted.
 - 2026-10-11: **Logging in often no longer locks you out.** Every login
   counted toward the limit of 20 attempts a minute for an account, the
   successful ones too, so an account that logged in often, such as the Demo

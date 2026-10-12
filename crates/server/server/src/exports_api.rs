@@ -105,8 +105,12 @@ pub async fn start_export_run(
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<ExportRun, ApiError> {
     let mut tx = crate::db::begin_write(conn).await?;
+    // The credential proved the account existed when the request arrived;
+    // one deleted since gets no run, and no row put back for it (#2061).
+    if !crate::db::account_profile::account_exists(&mut tx, account_id).await? {
+        return Err(ApiError::account_gone());
+    }
     let filter = scope_filter(&mut tx, account_id, scope, clock).await?;
-    crate::db::account_profile::ensure_account_row(&mut tx, account_id).await?;
     let export_id = exports::start_export(
         &mut tx,
         &StartExportArgs {

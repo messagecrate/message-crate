@@ -14,7 +14,7 @@ async fn account() -> (
     let (pool, dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     schema::ensure_schema(&mut conn).await.unwrap();
-    crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
+    crate::db::account_profile::create_account_row_if_missing(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();
     (conn, pool, dir)
@@ -452,6 +452,9 @@ async fn import_files(conn: &mut sqlx::SqliteConnection, files: &[(&str, String)
         import_id: None,
         phone_country: None,
     });
+    crate::db::account_profile::create_account_row_if_missing(conn, TEST_ACCOUNT)
+        .await
+        .unwrap();
     crate::imports_api::import_jsonl_files_on_conn(conn, &paths, &opts)
         .await
         .unwrap();

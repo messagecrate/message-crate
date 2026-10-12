@@ -1646,3 +1646,40 @@ async fn import_last_keeps_meaning_the_import_that_was_last_at_creation() {
     assert_eq!(ids, vec![from_first]);
     assert_eq!(total, 1);
 }
+
+/// Starting an Export Run for an account deleted after its credential was
+/// checked is refused as a credential whose account is gone, and puts no
+/// row back. Before #2061 the run made the row again, under the deleted id
+/// with no password.
+#[tokio::test]
+async fn an_export_run_for_a_deleted_account_brings_no_account_back() {
+    let (fixture, alice) = fixture_with_account().await;
+    let mut conn = fixture.conn().await;
+    crate::db::account_profile::delete_account(
+        &mut conn,
+        alice.account_id,
+        crate::db::audit_trail::AuditActor::Owner,
+    )
+    .await
+    .unwrap();
+
+    let err = start_export_run(
+        &mut conn,
+        alice.account_id,
+        &query(""),
+        None,
+        crate::search::tests::clock(),
+        &crate::db::audit_trail::CredentialUsed::Session(None),
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .expect_err("the deleted account's run must be refused");
+
+    assert!(matches!(err, ApiError::TokenRefused(_)), "{err:?}");
+    assert!(
+        !crate::db::account_profile::account_exists(&mut conn, alice.account_id)
+            .await
+            .unwrap(),
+        "the refused run put the deleted account's row back"
+    );
+}

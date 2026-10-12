@@ -535,16 +535,19 @@ async fn the_owners_changes_to_an_account_are_recorded() {
         StatusCode::OK
     );
 
-    let items = trail(state, &format!("{account}/audit-trail"), &alice.token).await;
+    // Disabling ended Alice's Session, so the owner reads her trail.
+    let items = trail(state, &format!("{account}/audit-trail"), &owner.token).await;
     assert_eq!(
-        actions(&items[..4]),
+        actions(&items[..5]),
         [
             "messages_deleted",
             "password_set",
             "account_enabled",
+            "session_ended",
             "account_disabled"
         ]
     );
-    assert!(items[..4].iter().all(|item| item["actor"] == "owner"));
+    assert!(items[..5].iter().all(|item| item["actor"] == "owner"));
+    assert_eq!(items[3]["reason"], "revoked");
     assert_eq!(items[0]["conversations"], 0);
 }

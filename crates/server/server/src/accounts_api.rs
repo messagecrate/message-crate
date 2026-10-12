@@ -759,13 +759,17 @@ async fn update_profile_in(
 /// with its account's on every request. The owner restrains the account and
 /// the tokens follow, without ever seeing one.
 ///
+/// Disabling the account also ends its Session, recorded as revoked by the
+/// owner, so enabling it again does not bring back the old token or the
+/// Media Links signed under it: the holder logs in again (#2074).
+///
 /// What changed goes in the Audit Trail as the owner's act: disabling or
 /// re-enabling, and which permissions were turned on and off. A flag sent
 /// with the value it already had changes nothing and records nothing. The
 /// caller holds the write transaction, so the change and its record land
 /// together.
 async fn apply_flags(
-    conn: &mut SqliteConnection,
+    conn: &mut WriteTx<'_>,
     account_id: i64,
     req: &UpdateAccountRequest,
 ) -> Result<(), ApiError> {
@@ -793,6 +797,9 @@ async fn apply_flags(
             Details::default(),
         )
         .await?;
+        if disabled {
+            session_tokens::revoke_account_sessions(conn, account_id, AuditActor::Owner).await?;
+        }
     }
     let was = before.permissions;
     let changes = [

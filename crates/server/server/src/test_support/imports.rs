@@ -22,6 +22,10 @@ pub async fn import_jsonl_text(
     let path = tmp.path().join("conversation.jsonl");
     std::fs::write(&path, body).unwrap();
     let assets = tmp.path().join("assets");
+    // The import never makes the account (#2061), so the test does.
+    crate::db::account_profile::create_account_row_if_missing(conn, account_id)
+        .await
+        .unwrap();
     import_jsonl_files_on_conn(
         conn,
         &[path],

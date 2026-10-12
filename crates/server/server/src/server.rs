@@ -1115,6 +1115,7 @@ impl From<crate::imports_api::ImportError> for ApiError {
         match e {
             crate::imports_api::ImportError::Rejected { failure, .. } => failure.into(),
             crate::imports_api::ImportError::Run(err) => err.into(),
+            crate::imports_api::ImportError::AccountGone => Self::account_gone(),
             crate::imports_api::ImportError::Internal(err) => Self::Internal(err),
         }
     }

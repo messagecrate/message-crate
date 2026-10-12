@@ -23,7 +23,7 @@ async fn promote_stamps_messages_with_import_id() {
 
     let (_pool, mut conn) = open_verify(&db).await;
     crate::db::schema::ensure_schema(&mut conn).await.unwrap();
-    crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
+    crate::db::account_profile::create_account_row_if_missing(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();
     let import_id = crate::db::imports::start_import(
@@ -127,7 +127,7 @@ async fn trunk_zero_phone_imports_digits_with_review_note() {
 
     let (_pool, mut conn) = open_verify(&db).await;
     crate::db::schema::ensure_schema(&mut conn).await.unwrap();
-    crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
+    crate::db::account_profile::create_account_row_if_missing(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();
 
@@ -338,6 +338,9 @@ async fn fail_every_message_insert(conn: &mut SqliteConnection) {
 async fn failed_promote_keeps_the_trashed_contact_and_adds_no_contacts() {
     let (pool, dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
+    crate::db::account_profile::create_account_row_if_missing(&mut conn, TEST_ACCOUNT)
+        .await
+        .unwrap();
     let assets = dir.path().join("assets");
     let export_dir = dir.path().join("export");
     fs::create_dir_all(&export_dir).unwrap();
