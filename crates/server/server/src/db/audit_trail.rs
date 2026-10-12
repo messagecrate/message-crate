@@ -970,9 +970,9 @@ pub async fn prepare_account_deletion(
         .execute(&mut **tx)
         .await
         .context("mark a deleted account's entries")?;
-    let now = at_text(now);
-    crate::db::imports::detach_from_account(tx, account_id, &username, deletion, &now).await?;
-    crate::db::exports::detach_from_account(tx, account_id, &username, deletion, &now).await?;
+    let at = at_text(now);
+    crate::db::imports::detach_from_account(tx, account_id, &username, deletion, &at).await?;
+    crate::db::exports::detach_from_account(tx, account_id, &username, deletion, &at).await?;
     Ok(true)
 }
 
@@ -1086,7 +1086,7 @@ pub async fn page(
     offset: usize,
     now: DateTime<Utc>,
 ) -> Result<(Vec<AuditEntry>, u64)> {
-    let now = at_text(now);
+    let at = at_text(now);
     let (filter, id) = match scope {
         Scope::All => ("", None),
         Scope::Account(id) => ("WHERE account_id = $2", Some(id)),
@@ -1094,7 +1094,7 @@ pub async fn page(
     };
     let sources = sources_sql();
     let count_sql = format!("SELECT COUNT(*) FROM ({sources}) {filter}");
-    let mut count = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql)).bind(&now);
+    let mut count = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql)).bind(&at);
     if let Some(id) = id {
         count = count.bind(id);
     }
@@ -1104,7 +1104,7 @@ pub async fn page(
         "SELECT src, id FROM ({sources}) {filter}
          ORDER BY at DESC, src DESC, id DESC LIMIT {limit} OFFSET {offset}"
     );
-    let mut rows = sqlx::query_as::<_, (String, i64)>(sqlx::AssertSqlSafe(page_sql)).bind(&now);
+    let mut rows = sqlx::query_as::<_, (String, i64)>(sqlx::AssertSqlSafe(page_sql)).bind(&at);
     if let Some(id) = id {
         rows = rows.bind(id);
     }
