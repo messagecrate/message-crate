@@ -1128,6 +1128,9 @@ pub(crate) async fn replace_asset(
         )
     })
     .await?;
+    // The sweep of abandoned uploads leaves the temp alone until it is
+    // removed below, however long storing it takes.
+    let _in_use = asset_uploads::hold(&tmp_path);
     // An empty body is checked like any other: the empty file is stored when
     // the claim is its fingerprint and refused when it is not.
     if let Err(err) = stream_body_to_file(body, &tmp_path, max_body_bytes).await {
@@ -1277,8 +1280,9 @@ pub(crate) async fn create_asset_upload(
     let bytes = body.bytes;
     let sha = sha256.clone();
     let limits = state.upload_limits().await?;
+    let stall = state.upload_time_limits.stall;
     let result = run_blocking("upload start", move || {
-        asset_uploads::start_upload(&assets_dir, &sha, bytes, mime.as_deref(), limits)
+        asset_uploads::start_upload(&assets_dir, &sha, bytes, mime.as_deref(), limits, stall)
     })
     .await?;
 
@@ -1342,6 +1346,10 @@ pub(crate) async fn replace_asset_upload_part(
         return Err(ApiError::validation("part number must be >= 1"));
     }
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+    // The part arrives into memory, so nothing is written to the upload until
+    // all of it is in: the sweep of abandoned uploads must leave it alone
+    // meanwhile (#2652).
+    let _in_use = asset_uploads::hold_upload(&assets_dir, &sha256, &upload_id)?;
     // The part size this upload started with, not the one the Server
     // Settings give now: lowering the limit holds from the next upload.
     let part_size = {
@@ -1423,12 +1431,15 @@ pub(crate) async fn complete_asset_upload(
         return Ok(Asset::stored(stored, true).into_response());
     }
 
+    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+    // Joining and storing a large upload writes nothing to its manifest, so
+    // the sweep of abandoned uploads must leave it alone meanwhile (#2652).
+    let _in_use = asset_uploads::hold_upload(&assets_dir, &sha256, &upload_id)?;
     let _guard = state
         .asset_complete_locks
         .lock(format!("{account}:{sha256}"))
         .await;
 
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
     let sha = sha256.clone();
     let uid = upload_id.clone();
     let (stored, already_present) = run_blocking("upload complete", move || {

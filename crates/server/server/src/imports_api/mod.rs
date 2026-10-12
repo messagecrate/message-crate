@@ -528,11 +528,13 @@ async fn stage_all_files(
             ));
         }
     }
-    if asset_stats.hevc_fallback.line().is_some() {
-        // The reason itself stays out: it is ffmpeg's output, which names
-        // the files it was given, and the server's log holds no file names.
+    if let Some(reason) = asset_stats.hevc_fallback.reason() {
+        // The reason names the files ffmpeg was given as `<input>` and
+        // `<output>`, never by their paths, so the log holds no file name
+        // (`media::HevcFallback::reason`).
         tracing::warn!(
             import_id = opts.import_id,
+            reason,
             "HEVC encoding failed, so videos were compressed as H.264 instead"
         );
     }
@@ -1565,7 +1567,13 @@ pub(crate) async fn complete_import(
     let row = complete_run_at(&mut conn, account, import_id, &args, now).await?;
     let run = import_run(&mut conn, row).await;
     drop(conn);
-    crate::asset_store::sweep_after_run(&state.db, &state.cfg.paths, account).await;
+    crate::asset_store::sweep_after_run(
+        &state.db,
+        &state.cfg.paths,
+        account,
+        state.upload_time_limits.stall,
+    )
+    .await;
     crate::media_queue::queue_import_run(&state.db, &state.media_queue, account, import_id, now)
         .await;
     run.map(Json)
@@ -1867,7 +1875,13 @@ pub(crate) async fn discard_import(
     crate::db::imports::discard_import(&mut conn, account, import_id, &issues, &notes, now).await?;
     let run = full_import_run(&mut conn, account, import_id).await;
     drop(conn);
-    crate::asset_store::sweep_after_run(&state.db, &state.cfg.paths, account).await;
+    crate::asset_store::sweep_after_run(
+        &state.db,
+        &state.cfg.paths,
+        account,
+        state.upload_time_limits.stall,
+    )
+    .await;
     crate::media_queue::queue_import_run(&state.db, &state.media_queue, account, import_id, now)
         .await;
     run.map(Json)

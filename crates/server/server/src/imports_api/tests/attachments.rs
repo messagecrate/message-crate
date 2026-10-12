@@ -189,6 +189,73 @@ async fn media_convert_stores_the_converted_file_not_the_original() {
     assert_eq!(tools.runs().len(), 1, "ffmpeg ran once, on the PNG");
 }
 
+/// An import that compresses a video as H.264 because HEVC failed says why
+/// in the server's log, once, and the reason names no file: ffmpeg names
+/// the video it read and the file it wrote by their paths (#2802).
+#[tokio::test]
+async fn the_hevc_fallback_warning_says_why_and_names_no_file() {
+    use crate::logging::LogLevel;
+    use media::MediaMode;
+
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("messagecrate.db");
+    let assets = tmp.path().join("assets");
+    fs::create_dir_all(tmp.path().join("attachments")).unwrap();
+    // Over the server's 20 MB floor for compressing a video. The file is
+    // sparse, and the fake ffmpeg reads none of it.
+    let clip = fs::File::create(tmp.path().join("attachments/holiday clip.mov")).unwrap();
+    clip.set_len(21 * 1024 * 1024).unwrap();
+    drop(clip);
+    let path = write_jsonl(
+        tmp.path(),
+        "compress.jsonl",
+        &conversation_with_attachments(&["attachments/holiday clip.mov"])
+            .replace("application/octet-stream", "video/quicktime"),
+    );
+    let tools = media::testutil::FakeTools::new()
+        .probing(media::testutil::video_probe("h264", 30.0))
+        .failing_on("libx265");
+
+    let (stats, lines) = crate::test_support::lines_written_by(
+        "warn",
+        import_jsonl_files(
+            &db,
+            &[path],
+            &ImportOptions {
+                assets_dir: &assets,
+                asset_root: Some(tmp.path()),
+                mode: ImportMode::Replace,
+                source: "",
+                account_id: TEST_ACCOUNT,
+                import_id: None,
+                source_from_jsonl: true,
+                media: MediaMode::Compress,
+                media_tools: &tools,
+                wipe_sources: Some(vec!["imessage".into()]),
+                phone_country: None,
+                progress: Progress::Log,
+            },
+        ),
+    )
+    .await;
+    stats.unwrap();
+
+    let warnings: Vec<_> = lines
+        .iter()
+        .filter(|line| line.level == LogLevel::Warn)
+        .collect();
+    assert_eq!(warnings.len(), 1, "{lines:#?}");
+    let text = &warnings[0].text;
+    assert!(
+        text.contains("HEVC encoding failed, so videos were compressed as H.264 instead")
+            && text.contains("libx265: fake failure on '<input>'"),
+        "{text}"
+    );
+    for name in ["holiday", "clip", tmp.path().to_str().unwrap()] {
+        assert!(!text.contains(name), "{name:?} is in {text}");
+    }
+}
+
 #[tokio::test]
 async fn persists_missing_reason_with_null_sha256() {
     let tmp = TempDir::new().unwrap();
