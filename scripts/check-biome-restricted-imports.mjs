@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * Check that every override of `noRestrictedImports` in web/biome.json keeps
- * the root rule's path list, less exactly one path: the one that override
- * lifts for its files.
+ * the root rule's level and path list, less exactly one path: the one that
+ * override lifts for its files. An override that sets the rule "off" is left
+ * alone.
  *
  * Usage:
  *   node scripts/check-biome-restricted-imports.mjs
@@ -22,22 +23,27 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const configPath = path.join(root, "web", "biome.json");
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
 
-/** The `paths` of a `noRestrictedImports` setting, or null when it sets none (such as "off"). */
-function pathsOf(rule) {
-  return rule?.options?.paths ?? null;
-}
-
-const rootPaths = pathsOf(config.linter?.rules?.style?.noRestrictedImports);
-if (rootPaths === null) {
+const rootRule = config.linter?.rules?.style?.noRestrictedImports;
+const rootPaths = rootRule?.options?.paths;
+if (rootPaths === undefined) {
   console.error("web/biome.json: the root noRestrictedImports rule has no paths.");
   process.exit(1);
 }
 
 const failures = [];
 for (const override of config.overrides ?? []) {
-  const paths = pathsOf(override.linter?.rules?.style?.noRestrictedImports);
-  if (paths === null) continue;
-  const where = `the override for ${override.includes.join(", ")}`;
+  const rule = override.linter?.rules?.style?.noRestrictedImports;
+  // "off" lifts every restriction for the override's files, on purpose.
+  if (rule === undefined || rule === "off") continue;
+  const where = `the override for ${(override.includes ?? []).join(", ") || "no includes"}`;
+  const paths = rule.options?.paths;
+  if (paths === undefined) {
+    failures.push(`${where} sets noRestrictedImports without paths; write it as "off" or with paths.`);
+    continue;
+  }
+  if (rule.level !== rootRule.level) {
+    failures.push(`${where} sets level "${rule.level}", and the root rule sets "${rootRule.level}".`);
+  }
   for (const [name, setting] of Object.entries(paths)) {
     if (!(name in rootPaths)) {
       failures.push(`${where} restricts "${name}", which the root rule does not.`);
@@ -48,7 +54,7 @@ for (const override of config.overrides ?? []) {
   const missing = Object.keys(rootPaths).filter((name) => !(name in paths));
   if (missing.length !== 1) {
     failures.push(
-      `${where} leaves out ${missing.length} of the root rule's paths (${missing.join(", ") || "none"}); it should leave out exactly the one it lifts.`,
+      `${where} leaves out ${missing.length} of the root rule's paths (${missing.join(", ") || "none"}). An override leaves out exactly the one path it lifts; to lift two for the same files, write two overrides.`,
     );
   }
 }

@@ -61,7 +61,7 @@ through TanStack Query like any screen's.
 
 **The check of a saved login at start.** `checkSavedLogin` in
 `web/src/lib/savedLogin.ts` calls `getSession` once, from an effect in
-`web/src/lib/auth.tsx`, when the app starts with a saved login. The saved
+`web/src/lib/AuthProvider.tsx`, when the app starts with a saved login. The saved
 session is applied before anything renders, so the screens' first queries
 run beside the check rather than after it. The check decides only what
 becomes of the saved login, by a rule of its own: a `401 Unauthorized`
@@ -213,7 +213,7 @@ nothing — the opposite of the pattern this decision removes.
   which needed restructuring rather than a swap: one was read during render and
   written in place for optimistic group chips, and the other was loaded from
   outside React during login.
-- `auth.tsx` clears nothing by hand. Its two lists are one `queryClient.clear()`
+- `AuthProvider.tsx` clears nothing by hand. Its two lists are one `queryClient.clear()`
   in each path, which releases memory and nothing more.
 - Every write marks the whole account's cache stale once it settles, through
   one call: `invalidateAccount` on `useRouteCache` in
