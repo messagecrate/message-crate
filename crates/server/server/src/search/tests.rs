@@ -2222,7 +2222,6 @@ mod kind_words {
                 import_id: None,
                 phone_country: None,
             }),
-            crate::imports_api::ImportSchemaMode::Ensure,
         )
         .await
         .unwrap();
@@ -2245,7 +2244,7 @@ mod kind_words {
     /// another source's kept message.
     #[tokio::test]
     async fn source_takes_every_id_an_import_writes() {
-        let (pool, dir) = crate::db::engine::test_pool().await;
+        let (pool, dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         let mut kept = Vec::new();
         let mut copies = Vec::new();

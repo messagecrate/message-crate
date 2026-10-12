@@ -16,14 +16,13 @@ use std::{
 use crabapple::error::BackupError;
 use imessage_database::error::{message::MessageError, plist::PlistParseError, table::TableError};
 
-/// User-facing copy when an encrypted backup has no password.
-pub const ENCRYPTED_BACKUP_PASSWORD_REQUIRED: &str =
-    "The backup is encrypted. Fill in the Encryption password.";
-/// User-facing copy when a password is set on an unencrypted backup.
-pub const UNENCRYPTED_BACKUP_CLEAR_PASSWORD: &str =
-    "This backup is not encrypted. Clear the Encryption password.";
-/// User-facing copy when the supplied iOS backup password is wrong.
-pub use imessage_reader_protocol::IOS_BACKUP_PASSWORD_INCORRECT;
+/// User-facing copy for the three iPhone backup password mistakes: an
+/// encrypted backup with no password, a password on a backup that is not
+/// encrypted, and a wrong password.
+pub use imessage_reader_protocol::{
+    ENCRYPTED_BACKUP_PASSWORD_REQUIRED, IOS_BACKUP_PASSWORD_INCORRECT,
+    UNENCRYPTED_BACKUP_CLEAR_PASSWORD,
+};
 /// User-facing copy when the directory is not an iPhone backup (or Messages is missing).
 pub const NOT_AN_IPHONE_BACKUP: &str =
     "This directory is not an iPhone backup, or Messages is missing from it.";

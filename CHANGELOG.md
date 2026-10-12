@@ -1082,6 +1082,20 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-12: **A database rebuilt for a new layout keeps a copy of what it
+  held.** When a server finds a database from a release with another
+  database layout, it still rebuilds it empty, but it first writes a copy of
+  the database beside it, named after the database with "before-rebuild"
+  and a number, and the log line names the copy. Running the earlier release
+  on that copy brings everything back. If the copy can't be written, as on a
+  full disk, the server leaves the database as it is and does not start.
+  Resetting the Demo Account from the command line refuses such a database
+  until the server has opened it once (#2068).
+- 2026-10-12: **A request can no longer empty the database.** Every
+  request from a logged-in account checked the database layout, and a
+  database another server or command had changed was rebuilt empty from
+  inside that request, while the server was serving it. The layout is now
+  checked once, when the server opens the database (#2064).
 - 2026-10-12: **A hung video conversion is given up on within about 2
   minutes, and a slow computer is no longer cut off on long videos.** A
   conversion was stopped only after many times the video's length, so a
