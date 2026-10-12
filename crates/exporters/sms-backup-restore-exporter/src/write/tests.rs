@@ -228,7 +228,7 @@ fn an_incoming_sms_keeps_its_sender_and_contact_name() {
 /// photo in a one-to-one conversation makes it an `<mms>`, whatever kind the
 /// source app called the message.
 #[test]
-fn a_direct_photo_from_another_app_keeps_its_chat_sender_subject_and_bytes() {
+fn a_one_to_one_photo_from_another_app_keeps_its_conversation_sender_subject_and_bytes() {
     let mut document = message_ir::testutil::sample_document("look at this");
     let message = &mut document.messages[0];
     message.source = None;

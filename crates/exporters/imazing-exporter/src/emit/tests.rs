@@ -1078,7 +1078,7 @@ fn a_chat_directory_with_a_whatsapp_and_a_messages_csv_attaches_only_messages_li
 /// #1080: a group's key is not built from who wrote, so a group in which one
 /// other person wrote is not that person's one-to-one conversation.
 #[test]
-fn a_group_where_one_person_wrote_is_not_their_direct_chat() {
+fn a_group_where_one_person_wrote_is_not_their_one_to_one_conversation() {
     let documents = convert_rows(
         "Alice Example & Bob Example,2020-01-01 12:00:00,iMessage,Incoming,+15555550111,Alice Example,Read,,,In the group,,,\n\
 Alice Example,2020-01-01 12:01:00,iMessage,Incoming,+15555550111,Alice Example,Read,,,Just us,,,\n",
