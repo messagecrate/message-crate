@@ -256,6 +256,9 @@ pub async fn open_pool_for_path(path: &Path) -> Result<SqlitePool> {
 /// deletes the `-wal` and `-shm` files by name, and by then those names can
 /// be another database's: the next start's new database lost its
 /// write-ahead log, and the tables in it, that way (#2592).
+///
+/// This goes once a sqlx release's `Pool::close` closes every connection
+/// (#2884).
 #[allow(clippy::disallowed_methods)] // the one place that calls Pool::close
 pub async fn close_pool(pool: &SqlitePool) {
     pool.close().await;
