@@ -337,24 +337,24 @@ async fn insert_message(
 }
 
 /// Attach a stored file to `message_id`: the original under `sha`, and a
-/// derivative under `derived` when given.
+/// Preview under `preview` when given.
 async fn insert_attachment(
     conn: &mut SqliteConnection,
     message_id: i64,
     sha: &str,
-    derived: Option<&str>,
+    preview: Option<&str>,
 ) {
     let mut tx = crate::db::begin_write(conn).await.unwrap();
     sqlx::query(
         "INSERT INTO attachments (
-            message_id, sha256, assets_path, derived_sha256, derived_assets_path
+            message_id, sha256, assets_path, preview_sha256, preview_assets_path
          ) VALUES ($1, $2, $3, $4, $5)",
     )
     .bind(message_id)
     .bind(sha)
     .bind(format!("{}/{sha}.jpg", &sha[..2]))
-    .bind(derived)
-    .bind(derived.map(|d| format!("{}/{d}.jpg", &d[..2])))
+    .bind(preview)
+    .bind(preview.map(|d| format!("{}/{d}.jpg", &d[..2])))
     .execute(&mut *tx)
     .await
     .unwrap();
@@ -560,19 +560,19 @@ async fn delete_reports_only_the_files_no_remaining_message_uses() {
     let mut conn = fixture.conn().await;
     let shared = sha('a');
     let only_here = sha('b');
-    let derived = sha('c');
+    let preview = sha('c');
     let staged = sha('d');
 
     // The conversation to delete: one message with the shared file, one with
-    // a file only it holds (plus a derivative), one with a file an import in
+    // a file only it holds (plus a Preview), one with a file an import in
     // progress has also staged.
     let doomed = insert_conversation_on(&mut conn, ACCOUNT_A, "+15550101").await;
     let m1 = insert_message(&mut conn, ACCOUNT_A, doomed, 0).await;
     insert_attachment(&mut conn, m1, &shared, None).await;
     let m2 = insert_message(&mut conn, ACCOUNT_A, doomed, 1).await;
-    insert_attachment(&mut conn, m2, &only_here, Some(&derived)).await;
+    insert_attachment(&mut conn, m2, &only_here, Some(&preview)).await;
     // The same file twice in one conversation is reported once.
-    insert_attachment(&mut conn, m2, &only_here, Some(&derived)).await;
+    insert_attachment(&mut conn, m2, &only_here, Some(&preview)).await;
     let m3 = insert_message(&mut conn, ACCOUNT_A, doomed, 2).await;
     insert_attachment(&mut conn, m3, &staged, None).await;
 
@@ -635,7 +635,7 @@ async fn delete_reports_only_the_files_no_remaining_message_uses() {
                 assets_path: format!("bb/{only_here}.jpg"),
             },
             OrphanedFile::Derived {
-                assets_path: format!("cc/{derived}.jpg"),
+                assets_path: format!("cc/{preview}.jpg"),
             },
         ]),
         "the shared file and the staged file must not be reported"
@@ -732,15 +732,15 @@ async fn delete_keeps_a_file_a_message_of_another_source_still_names() {
     fixture.account_with_id(ACCOUNT_A, "a").await;
     let mut conn = fixture.conn().await;
     let shared = sha('a');
-    let derived = sha('c');
+    let preview = sha('c');
 
     let doomed = insert_conversation_on(&mut conn, ACCOUNT_A, "+15550101").await;
     let m1 = insert_message(&mut conn, ACCOUNT_A, doomed, 0).await;
-    insert_attachment(&mut conn, m1, &shared, Some(&derived)).await;
+    insert_attachment(&mut conn, m1, &shared, Some(&preview)).await;
 
     let kept = insert_conversation_on(&mut conn, ACCOUNT_A, "+15550102").await;
     let k1 = insert_message(&mut conn, ACCOUNT_A, kept, 0).await;
-    insert_attachment(&mut conn, k1, &shared, Some(&derived)).await;
+    insert_attachment(&mut conn, k1, &shared, Some(&preview)).await;
     let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query("UPDATE messages SET source = 'sms' WHERE id = $1")
         .bind(k1)

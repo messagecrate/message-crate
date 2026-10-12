@@ -520,9 +520,9 @@ pub(crate) fn remove_account_dir(paths: &PathsConfig, account_id: i64) -> io::Re
 /// between the two would remove it.
 ///
 /// A file is named when its fingerprint, the part of its name before the
-/// first dot, is the `sha256`, `derived_sha256` or `thumbnail_sha256` of an
+/// first dot, is the `sha256`, `preview_sha256` or `thumbnail_sha256` of an
 /// attachment of the account, or the name of a file an `assets_path`,
-/// `derived_assets_path` or `thumbnail_assets_path` points at. A name that is not a 64-hex fingerprint is not the server's,
+/// `preview_assets_path` or `thumbnail_assets_path` points at. A name that is not a 64-hex fingerprint is not the server's,
 /// and is left alone, as is `.incoming/`.
 ///
 /// # Errors
@@ -689,10 +689,10 @@ async fn named_fingerprints(
 fn fingerprints(row: crate::db::attachment_versions::NamedFiles) -> impl Iterator<Item = String> {
     let paths = [
         row.assets_path,
-        row.derived_assets_path,
+        row.preview_assets_path,
         row.thumbnail_assets_path,
     ];
-    [row.sha256, row.derived_sha256, row.thumbnail_sha256]
+    [row.sha256, row.preview_sha256, row.thumbnail_sha256]
         .into_iter()
         .flatten()
         .chain(paths.into_iter().flatten().filter_map(|path| {
