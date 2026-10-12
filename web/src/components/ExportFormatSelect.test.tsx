@@ -24,7 +24,7 @@ describe("ExportFormatSelect", () => {
     render(<ExportFormatSelect value="jsonl" onChange={onChange} />);
 
     await user.click(screen.getByRole("button", { name: /Output format/ }));
-    const offered = (await screen.findAllByRole("option")).map((o) => o.textContent);
+    const offered = screen.getAllByRole("option").map((o) => o.textContent);
     expect(offered).toEqual(EXPORT_FORMATS.map((f) => f.label));
 
     await user.click(screen.getByRole("option", { name: "CSV (.csv)" }));

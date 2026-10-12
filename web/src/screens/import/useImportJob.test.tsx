@@ -14,7 +14,7 @@
 // through approve first, because there is no other way to reach it.
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
+import { act, render, renderHook, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
@@ -38,6 +38,7 @@ import type {
   ImportProgressEvent,
 } from "../../lib/types";
 import { account } from "../../test/apiShapes";
+import { deferred } from "../../test/deferred";
 import { importForm } from "../../test/importForm";
 import { seedImportRun } from "../../test/importRun";
 import { storedForm } from "../../test/storedForm";
@@ -83,6 +84,24 @@ const invokeImessageBackupIdentitiesMock = vi.fn();
 const readRunRecordMock = vi.fn();
 const saveRunRecordMock = vi.fn();
 const invokeStartImportRunLogMock = vi.fn();
+
+/**
+ * Resolves with the next record the run writes to its directory that `wanted`
+ * accepts, once the run has asked for that write. A fake desktop job that
+ * sends an event awaits it to learn that the window wrote the record the event
+ * leads to.
+ */
+function recordWritten(
+  wanted: (record: Record<string, unknown>) => boolean = () => true,
+): Promise<Record<string, unknown>> {
+  const written = deferred<Record<string, unknown>>();
+  const write = saveRunRecordMock.getMockImplementation();
+  saveRunRecordMock.mockImplementation((args: { record: Record<string, unknown> }) => {
+    if (wanted(args.record)) written.resolve(args.record);
+    return write?.(args);
+  });
+  return written.promise;
+}
 
 /**
  * `onDesktopJobEvents` stands in for the real Tauri event listener. Its default
@@ -874,6 +893,7 @@ describe("useImportJob wiring", () => {
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
+    const reported = deferred();
     // Replace beforeEach's canned extract run with one that reports a
     // setup step and then waits, so the row can be read mid-run.
     runMock.mockReset();
@@ -890,6 +910,7 @@ describe("useImportJob wiring", () => {
           total: 5,
           status: "Decrypting contacts database",
         });
+        reported.resolve();
         await held;
         return EXTRACT_RESULT;
       },
@@ -899,9 +920,8 @@ describe("useImportJob wiring", () => {
     act(() => {
       started = result.current.startImport(importForm({ attachmentMedia: "copy" }));
     });
-    await waitFor(() =>
-      expect(result.current.steps[0]?.detail).toBe("Decrypting contacts database (5/5)"),
-    );
+    await act(() => reported.promise);
+    expect(result.current.steps[0]?.detail).toBe("Decrypting contacts database (5/5)");
     expect(result.current.steps[0]?.status).toBe("active");
     release();
     await act(() => started);
@@ -913,6 +933,7 @@ describe("useImportJob wiring", () => {
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
+    const reported = deferred();
     runMock.mockReset();
     runMock.mockImplementationOnce(
       async (
@@ -932,6 +953,7 @@ describe("useImportJob wiring", () => {
           bytes_total: 31_457_280,
           waiting: "wtsexporter",
         });
+        reported.resolve();
         await held;
         return EXTRACT_RESULT;
       },
@@ -941,10 +963,9 @@ describe("useImportJob wiring", () => {
     act(() => {
       started = result.current.startImport(importForm({ attachmentMedia: "copy" }));
     });
-    await waitFor(() =>
-      expect(result.current.steps[0]?.detail).toBe(
-        "Waiting for the wtsexporter download: 12 MB of 30 MB (40%)",
-      ),
+    await act(() => reported.promise);
+    expect(result.current.steps[0]?.detail).toBe(
+      "Waiting for the wtsexporter download: 12 MB of 30 MB (40%)",
     );
     expect(result.current.steps[0]?.status).toBe("active");
     release();
@@ -959,6 +980,7 @@ describe("useImportJob wiring", () => {
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
+    const reported = deferred();
     runMock.mockReset();
     runMock.mockImplementationOnce(
       async (
@@ -984,6 +1006,7 @@ describe("useImportJob wiring", () => {
           bytes_done: 2048,
           bytes_total: 4096,
         });
+        reported.resolve();
         await held;
         return EXTRACT_RESULT;
       },
@@ -993,10 +1016,9 @@ describe("useImportJob wiring", () => {
     act(() => {
       started = result.current.startImport(importForm({ attachmentMedia: "copy" }));
     });
-    await waitFor(() =>
-      expect(result.current.steps[0]?.detail).toBe(
-        "Preparing conversations: 1/4\nReading messages: 10/40\nCopied attachments: 4/9 (2.0 KB / 4.0 KB)",
-      ),
+    await act(() => reported.promise);
+    expect(result.current.steps[0]?.detail).toBe(
+      "Preparing conversations: 1/4\nReading messages: 10/40\nCopied attachments: 4/9 (2.0 KB / 4.0 KB)",
     );
     release();
     await act(() => started);
@@ -1539,8 +1561,9 @@ describe("useImportJob wiring", () => {
         onIssue?: (event: ImportIssueEvent) => void,
       ) => {
         await fn();
+        const written = recordWritten();
         onIssue?.(stagingIssue);
-        await waitFor(() => expect(saveRunRecordMock).toHaveBeenCalled());
+        await written;
         savedBeforeStageEnded = saveRunRecordMock.mock.calls.map(([args]) => args);
         return EXTRACT_RESULT;
       },
@@ -1601,14 +1624,9 @@ describe("useImportJob wiring", () => {
           onIssue?: (event: ImportIssueEvent) => void,
         ) => {
           await fn();
+          const written = recordWritten();
           onIssue?.(notDecryptedEvent);
-          await waitFor(() => {
-            const last = saveRunRecordMock.mock.lastCall?.[0] as
-              | { record: Record<string, unknown> }
-              | undefined;
-            expect(last).toBeDefined();
-            seen.record = last?.record;
-          });
+          seen.record = await written;
           return EXTRACT_RESULT;
         },
       );
@@ -1688,6 +1706,7 @@ describe("useImportJob wiring", () => {
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
+    const reported = deferred();
     runMock.mockImplementationOnce(
       async (
         fn: () => Promise<unknown>,
@@ -1707,6 +1726,7 @@ describe("useImportJob wiring", () => {
           bytes_total: 31_457_280,
           waiting: "ffmpeg",
         });
+        reported.resolve();
         await held;
         return { summary: "Transcode finished.", transcode: undefined };
       },
@@ -1718,10 +1738,9 @@ describe("useImportJob wiring", () => {
       approved = result.current.approve();
     });
 
-    await waitFor(() =>
-      expect(result.current.steps[1]?.detail).toBe(
-        "Waiting for the ffmpeg download: 12 MB of 30 MB (40%)",
-      ),
+    await act(() => reported.promise);
+    expect(result.current.steps[1]?.detail).toBe(
+      "Waiting for the ffmpeg download: 12 MB of 30 MB (40%)",
     );
     expect(result.current.steps[1]?.status).toBe("active");
     release();
@@ -1735,7 +1754,7 @@ describe("useImportJob wiring", () => {
       item: "IMG_4.MOV",
       reason: "could not be converted",
     };
-    let savedBeforeStageEnded: { record: { issues: unknown[] } } | undefined;
+    let savedBeforeStageEnded: Record<string, unknown> | undefined;
     runMock.mockImplementationOnce(
       async (
         fn: () => Promise<unknown>,
@@ -1743,11 +1762,10 @@ describe("useImportJob wiring", () => {
         _onProgress?: (event: ImportProgressEvent) => void,
         onIssue?: (event: ImportIssueEvent) => void,
       ) => {
-        const before = saveRunRecordMock.mock.calls.length;
         await fn();
+        const written = recordWritten();
         onIssue?.(mediaIssue);
-        await waitFor(() => expect(saveRunRecordMock.mock.calls.length).toBeGreaterThan(before));
-        savedBeforeStageEnded = saveRunRecordMock.mock.lastCall?.[0];
+        savedBeforeStageEnded = await written;
         return { summary: "Transcode finished.", transcode: undefined };
       },
     );
@@ -1755,7 +1773,7 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
     await act(() => result.current.approve());
 
-    expect(savedBeforeStageEnded?.record.issues).toEqual([
+    expect(savedBeforeStageEnded?.issues).toEqual([
       { kind: "skip", stage: "media", item: "IMG_4.MOV", reason: "could not be converted" },
     ]);
   });
@@ -1995,22 +2013,21 @@ describe("useImportJob wiring", () => {
   it("does not start the extract when Cancel is pressed while the run is being created", async () => {
     // A Cancel sent while no job runs stops nothing, and invokeExtract starts
     // its job with a cancel flag of its own, so the run must not start it.
-    let releaseCreate: (value: { id: number }) => void = () => {};
+    const created = deferred<{ id: number }>();
+    const createAsked = deferred();
     createImportMock.mockReset();
-    createImportMock.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          releaseCreate = resolve;
-        }),
-    );
+    createImportMock.mockImplementationOnce(() => {
+      createAsked.resolve();
+      return created.promise;
+    });
     const { result } = renderJob();
     let started: Promise<void> = Promise.resolve();
     act(() => {
       started = result.current.startImport(importForm({ attachmentMedia: "copy" }));
     });
-    await waitFor(() => expect(createImportMock).toHaveBeenCalled());
+    await act(() => createAsked.promise);
     await act(() => result.current.cancel());
-    releaseCreate({ id: 1 });
+    created.resolve({ id: 1 });
     await act(() => started);
 
     expect(invokeExtractMock).not.toHaveBeenCalled();
@@ -2019,26 +2036,24 @@ describe("useImportJob wiring", () => {
   });
 
   it("does not start the upload when Cancel is pressed while the upload stage is written", async () => {
-    let releaseStage: () => void = () => {};
+    const stageWritten = deferred();
+    const uploadStageAsked = deferred();
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "copy" })));
-    setImportStageMock.mockImplementation((_id: number, stage: string) =>
-      stage === "upload"
-        ? new Promise<void>((resolve) => {
-            releaseStage = resolve;
-          })
-        : Promise.resolve(),
-    );
+    setImportStageMock.mockImplementation((_id: number, stage: string) => {
+      if (stage !== "upload") return Promise.resolve();
+      uploadStageAsked.resolve();
+      return stageWritten.promise;
+    });
     runMock.mockImplementationOnce(runResult({ summary: "Upload finished.", report: okReport() }));
     let approved: Promise<void> = Promise.resolve();
     act(() => {
       approved = result.current.approve();
     });
-    await waitFor(() =>
-      expect(setImportStageMock).toHaveBeenCalledWith(1, "upload", expect.anything()),
-    );
+    await act(() => uploadStageAsked.promise);
+    expect(setImportStageMock).toHaveBeenCalledWith(1, "upload", expect.anything());
     await act(() => result.current.cancel());
-    releaseStage();
+    stageWritten.resolve();
     await act(() => approved);
 
     expect(invokeUploadMock).not.toHaveBeenCalled();
@@ -2135,24 +2150,23 @@ describe("useImportJob wiring", () => {
   it("sends Cancel again once a job has started, when it was pressed while the job was starting", async () => {
     // A Cancel that reached the desktop side before the job started stopped
     // nothing, because no job was running yet, so it has to be sent again.
-    let releaseUpload: () => void = () => {};
+    const uploaded = deferred();
+    const uploadAsked = deferred();
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "copy" })));
-    invokeUploadMock.mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          releaseUpload = resolve;
-        }),
-    );
+    invokeUploadMock.mockImplementationOnce(() => {
+      uploadAsked.resolve();
+      return uploaded.promise;
+    });
     runMock.mockImplementationOnce(runResult({ summary: "Upload finished.", report: okReport() }));
     let approved: Promise<void> = Promise.resolve();
     act(() => {
       approved = result.current.approve();
     });
-    await waitFor(() => expect(invokeUploadMock).toHaveBeenCalled());
+    await act(() => uploadAsked.promise);
     await act(() => result.current.cancel());
     expect(cancelMock).toHaveBeenCalledTimes(1);
-    releaseUpload();
+    uploaded.resolve();
     await act(() => approved);
 
     expect(cancelMock).toHaveBeenCalledTimes(2);
@@ -2281,10 +2295,10 @@ describe("useImportJob wiring", () => {
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
     await act(async () => {
-      void result.current.approve();
-      void result.current.approve();
+      const first = result.current.approve();
+      const second = result.current.approve();
       resolveTranscode({ summary: "Transcode finished.", transcode: undefined });
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await Promise.all([first, second]);
     });
 
     expect(invokeTranscodeStagingMock).toHaveBeenCalledTimes(1);
@@ -3024,17 +3038,12 @@ describe("useImportJob resume path", () => {
       onFileDone?: (event: ImportFileDoneEvent) => void,
     ) => {
       await fn();
+      const written = recordWritten(recorded);
       events(
         (event) => onIssue?.(event),
         (event) => onFileDone?.(event),
       );
-      await waitFor(() => {
-        const last = saveRunRecordMock.mock.lastCall?.[0] as
-          | { record: Record<string, unknown> }
-          | undefined;
-        expect(last != null && recorded(last.record)).toBe(true);
-        seen.record = last?.record;
-      });
+      seen.record = await written;
       return { summary: "Upload finished.", report: failedReport() };
     };
   }
@@ -3389,11 +3398,10 @@ describe("useImportJob resumeAtReview", () => {
         _onProgress?: (event: ImportProgressEvent) => void,
         onIssue?: (event: ImportIssueEvent) => void,
       ) => {
-        const before = saveRunRecordMock.mock.calls.length;
         await fn();
+        const written = recordWritten();
         onIssue?.({ kind: "resolved", step: "media", item: "a.jsonl:IMG_4.MOV", reason: "" });
-        await waitFor(() => expect(saveRunRecordMock.mock.calls.length).toBeGreaterThan(before));
-        seen.record = saveRunRecordMock.mock.lastCall?.[0].record;
+        seen.record = (await written) as { issues: unknown[] };
         return { summary: "Transcode finished.", transcode: undefined };
       },
     );
@@ -3750,25 +3758,24 @@ describe("one desktop app, two accounts (#1085)", () => {
   });
 
   it("creates no run when account A logs out while its backup is being read", async () => {
-    let finishProbe: ((identities: string[]) => void) | null = null;
-    invokeImessageBackupIdentitiesMock.mockImplementation(
-      () =>
-        new Promise<string[]>((resolve) => {
-          finishProbe = resolve;
-        }),
-    );
+    const probed = deferred<string[]>();
+    const probeAsked = deferred();
+    invokeImessageBackupIdentitiesMock.mockImplementation(() => {
+      probeAsked.resolve();
+      return probed.promise;
+    });
     const a = renderJob();
     let runOfA: Promise<void> = Promise.resolve();
     act(() => {
       runOfA = a.result.current.startImport(importForm({ backupPassword: "secret-of-A" }));
     });
-    await waitFor(() => expect(finishProbe).not.toBeNull());
+    await act(() => probeAsked.promise);
 
     // A logs out and B logs in before the probe of A's backup ends. The
     // server calls go with B's session from here on.
     auth = ACCOUNT_B;
     await act(async () => {
-      finishProbe?.([]);
+      probed.resolve([]);
       await runOfA;
     });
 
@@ -3811,24 +3818,24 @@ describe("one desktop app, two accounts (#1085)", () => {
       .mockResolvedValueOnce("/home/sam/message-crate/staging-of-B");
     createImportMock.mockResolvedValueOnce({ id: 11 }).mockResolvedValueOnce({ id: 22 });
     // A's extract runs until a Cancel stops it, the way the desktop job does.
-    let stopExtractOfA: (() => void) | null = null;
+    const extractOfAStopped = deferred();
+    const extractOfARunning = deferred();
     runMock.mockReset();
     runMock.mockImplementationOnce(async (fn) => {
       await fn();
-      await new Promise<void>((resolve) => {
-        stopExtractOfA = resolve;
-      });
+      extractOfARunning.resolve();
+      await extractOfAStopped.promise;
       throw new Error("cancelled");
     });
     runMock.mockImplementationOnce(runResult(EXTRACT_RESULT));
-    cancelMock.mockImplementation(async () => stopExtractOfA?.());
+    cancelMock.mockImplementation(async () => extractOfAStopped.resolve());
 
     const a = renderJob();
     let runOfA: Promise<void> = Promise.resolve();
     act(() => {
       runOfA = a.result.current.startImport(importForm());
     });
-    await waitFor(() => expect(stopExtractOfA).not.toBeNull());
+    await act(() => extractOfARunning.promise);
     a.unmount();
 
     auth = ACCOUNT_B;

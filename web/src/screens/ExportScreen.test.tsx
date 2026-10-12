@@ -1,9 +1,10 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { currentDesktopJob } from "../lib/desktopJob";
+import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { fill, setupUser } from "../test/user";
 import ExportScreen from "./ExportScreen";
 import { ConvertSection } from "./settings/ConvertSection";
@@ -45,6 +46,7 @@ vi.mock("../lib/authContext", () => ({
 }));
 
 afterEach(() => {
+  stopFakeClock();
   cleanup();
   vi.clearAllMocks();
 });
@@ -59,6 +61,7 @@ const EXPORT_DIR = {
 };
 
 beforeEach(() => {
+  startFakeClock();
   invokeCreateExportDir.mockResolvedValue(EXPORT_DIR);
   invokeFinishExportDir.mockResolvedValue(EXPORT_DIR.dir);
   invokeDiscardExportDir.mockResolvedValue(undefined);
@@ -98,7 +101,7 @@ async function exportAs(directory: string, formatLabel: string) {
   renderScreen();
   await fill(user, screen.getByPlaceholderText("The Export Directory"), directory);
   await user.click(screen.getByRole("button", { name: /Output format/ }));
-  await user.click(await screen.findByRole("option", { name: formatLabel }));
+  await user.click(screen.getByRole("option", { name: formatLabel }));
   await user.click(screen.getByRole("button", { name: "Export" }));
   return user;
 }
@@ -107,14 +110,15 @@ describe("ExportScreen", () => {
   it("exports straight into the chosen directory for JSON Lines", async () => {
     await exportTo("/home/demo/out");
 
-    await waitFor(() => expect(invokeExport).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(invokeExport).toHaveBeenCalledTimes(1);
     // Everything is the scope the screen opens in without a query, and it
     // sends a blank query, which message-crate-export reads as the whole account.
     expect(invokeExport.mock.calls[0][0]).toMatchObject({ out_dir: "/home/demo/out", query: "" });
     // JSONL is what an Export already writes, so there is nothing to convert. The
     // export's own directory is finished, which deletes it when it is empty.
     expect(invokeFormat).not.toHaveBeenCalled();
-    await waitFor(() => expect(invokeFinishExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir));
+    expect(invokeFinishExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir);
     expect(invokeDiscardExportDir).not.toHaveBeenCalled();
   });
 
@@ -124,11 +128,12 @@ describe("ExportScreen", () => {
     expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    await waitFor(() => expect(invokeExport).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(invokeExport).toHaveBeenCalledTimes(1);
     expect(invokeCreateExportDir).toHaveBeenCalledWith("export", "jsonl", "");
     expect(invokeExport.mock.calls[0][0]).toMatchObject({ out_dir: EXPORT_DIR.dir });
-    await waitFor(() => expect(invokeFinishExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir));
-    expect(await screen.findByText(/Export complete/)).toHaveTextContent(
+    expect(invokeFinishExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir);
+    expect(screen.getByText(/Export complete/)).toHaveTextContent(
       `Export complete. JSON Lines (.jsonl) saved to ${EXPORT_DIR.dir}.`,
     );
   });
@@ -137,10 +142,11 @@ describe("ExportScreen", () => {
     const user = setupUser();
     renderScreen();
     await user.click(screen.getByRole("button", { name: /Output format/ }));
-    await user.click(await screen.findByRole("option", { name: "CSV (.csv)" }));
+    await user.click(screen.getByRole("option", { name: "CSV (.csv)" }));
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(invokeFormat).toHaveBeenCalledTimes(1);
     expect(invokeCreateExportDir).toHaveBeenCalledWith("export", "csv", "");
     expect(invokeExport.mock.calls[0][0]).toMatchObject({ out_dir: EXPORT_DIR.exported });
     // The conversion may not write into the directory that holds its input,
@@ -149,8 +155,9 @@ describe("ExportScreen", () => {
       input_dir: EXPORT_DIR.exported,
       output_dir: EXPORT_DIR.converting,
     });
-    await waitFor(() => expect(invokeFinishExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir));
-    expect(await screen.findByText(/Export complete/)).toHaveTextContent(
+    await settle();
+    expect(invokeFinishExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir);
+    expect(screen.getByText(/Export complete/)).toHaveTextContent(
       `Export complete. CSV (.csv) saved to ${EXPORT_DIR.dir}.`,
     );
   });
@@ -159,7 +166,8 @@ describe("ExportScreen", () => {
     const exported = EXPORT_DIR.exported;
     await exportAs("/home/demo/out", "CSV (.csv)");
 
-    await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(invokeFormat).toHaveBeenCalledTimes(1);
     expect(invokeExport.mock.calls[0][0]).toMatchObject({ out_dir: exported });
     expect(invokeFormat.mock.calls[0][0]).toEqual({
       input_dir: exported,
@@ -171,16 +179,21 @@ describe("ExportScreen", () => {
   });
 
   it("hands the conversion the time the Export Run started, before the export step", async () => {
+    // The fake clock stands still, so each step moves it 1 ms: a start time
+    // read after the export step would then be later than that step.
     let exportStepAt = 0;
     invokeExport.mockImplementation(async () => {
       exportStepAt = Date.now();
+      vi.setSystemTime(exportStepAt + 1);
     });
     const before = Date.now();
+    await advanceTimersAndSettle(1);
     await exportAs("/home/demo/out", "CSV (.csv)");
 
-    await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(invokeFormat).toHaveBeenCalledTimes(1);
     const started = invokeFormat.mock.calls[0][0].run_started_ms as number;
-    expect(started).toBeGreaterThanOrEqual(before);
+    expect(started).toBeGreaterThan(before);
     expect(started).toBeLessThanOrEqual(exportStepAt);
   });
 
@@ -190,8 +203,9 @@ describe("ExportScreen", () => {
     );
     await exportAs("/home/demo", "CSV (.csv)");
 
+    await settle();
     expect(
-      await screen.findByText("/home/demo holds the Export Directory, where the export works."),
+      screen.getByText("/home/demo holds the Export Directory, where the export works."),
     ).toBeTruthy();
     expect(invokeCreateExportDir).toHaveBeenCalledWith("export", "csv", "/home/demo");
     expect(invokeExport).not.toHaveBeenCalled();
@@ -201,7 +215,8 @@ describe("ExportScreen", () => {
   it("finishes the export's own directory once the conversion ends", async () => {
     await exportAs("/home/demo/out", "CSV (.csv)");
 
-    await waitFor(() => expect(invokeFinishExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir));
+    await settle();
+    expect(invokeFinishExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir);
     expect(invokeDiscardExportDir).not.toHaveBeenCalled();
   });
 
@@ -218,9 +233,10 @@ describe("ExportScreen", () => {
 
     await exportAs("/home/demo/out", "CSV (.csv)");
 
-    await waitFor(() => expect(invokeDiscardExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir));
+    await settle();
+    expect(invokeDiscardExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir);
     expect(invokeFinishExportDir).not.toHaveBeenCalled();
-    expect(await screen.findByText("unsupported output format")).toBeTruthy();
+    expect(screen.getByText("unsupported output format")).toBeTruthy();
   });
 
   it("does not start the conversion when Cancel is pressed after the export step finished", async () => {
@@ -241,11 +257,13 @@ describe("ExportScreen", () => {
     });
 
     const user = await exportAs("/home/demo/out", "CSV (.csv)");
-    await waitFor(() => expect(awaitDesktopJob).toHaveBeenCalledTimes(2));
+    await settle();
+    expect(awaitDesktopJob).toHaveBeenCalledTimes(2);
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     releaseFormat();
 
-    await waitFor(() => expect(invokeDiscardExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir));
+    await settle();
+    expect(invokeDiscardExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir);
     expect(invokeFormat).not.toHaveBeenCalled();
   });
 
@@ -284,19 +302,21 @@ describe("ExportScreen", () => {
     const [exportFormat] = screen.getAllByRole("button", { name: /Output format/ });
     if (!exportFormat) throw new Error("no Output format select");
     await user.click(exportFormat);
-    await user.click(await screen.findByRole("option", { name: "CSV (.csv)" }));
+    await user.click(screen.getByRole("option", { name: "CSV (.csv)" }));
     await user.click(screen.getByRole("button", { name: "Export" }));
 
     // The export step has ended and the format step has not started.
-    await waitFor(() => expect(awaitDesktopJob).toHaveBeenCalledTimes(2));
+    await settle();
+    expect(awaitDesktopJob).toHaveBeenCalledTimes(2);
     expect(invokeExport).toHaveBeenCalledTimes(1);
     expect(invokeFormat).not.toHaveBeenCalled();
     expect(currentDesktopJob()).toBe("Export");
     expect(convert).toBeDisabled();
 
     releaseFormat();
-    await waitFor(() => expect(invokeFinishExportDir).toHaveBeenCalled());
-    await waitFor(() => expect(convert).toBeEnabled());
+    await settle();
+    expect(invokeFinishExportDir).toHaveBeenCalled();
+    expect(convert).toBeEnabled();
     expect(currentDesktopJob()).toBeNull();
   });
 
@@ -307,7 +327,8 @@ describe("ExportScreen", () => {
 
     await exportAs("/home/demo/out", "CSV (.csv)");
 
-    expect(await screen.findByText("server unreachable")).toBeTruthy();
+    await settle();
+    expect(screen.getByText("server unreachable")).toBeTruthy();
     expect(currentDesktopJob()).toBeNull();
   });
 
@@ -327,7 +348,7 @@ describe("ExportScreen", () => {
     renderScreen();
     await fill(user, screen.getByPlaceholderText("The Export Directory"), "/home/demo/out");
     await user.click(screen.getByRole("button", { name: /Output format/ }));
-    await user.click(await screen.findByRole("option", { name: "CSV (.csv)" }));
+    await user.click(screen.getByRole("option", { name: "CSV (.csv)" }));
 
     const exportButton = screen.getByRole("button", { name: "Export" });
     await user.click(exportButton);
@@ -339,7 +360,8 @@ describe("ExportScreen", () => {
     fireEvent.click(exportButton);
     releaseExport();
 
-    await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(invokeFormat).toHaveBeenCalledTimes(1);
     expect(invokeExport).toHaveBeenCalledTimes(1);
     expect(invokeCreateExportDir).toHaveBeenCalledTimes(1);
   });
@@ -351,7 +373,7 @@ describe("ExportScreen", () => {
     expect(screen.queryByRole("textbox", { name: "Search" })).toBeNull();
 
     await user.click(screen.getByRole("button", { name: /Scope/ }));
-    await user.click(await screen.findByRole("option", { name: "Search" }));
+    await user.click(screen.getByRole("option", { name: "Search" }));
     expect(screen.getByRole("textbox", { name: "Search" })).toBeTruthy();
   });
 
@@ -360,11 +382,12 @@ describe("ExportScreen", () => {
     renderScreen();
     await fill(user, screen.getByPlaceholderText("The Export Directory"), "/home/demo/out");
     await user.click(screen.getByRole("button", { name: /Scope/ }));
-    await user.click(await screen.findByRole("option", { name: "Search" }));
+    await user.click(screen.getByRole("option", { name: "Search" }));
     await fill(user, screen.getByRole("textbox", { name: "Search" }), " in:#19,#22 ");
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    await waitFor(() => expect(invokeExport).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(invokeExport).toHaveBeenCalledTimes(1);
     // A search typed here, with no hand-off, is for the Messages list.
     expect(screen.getByRole("button", { name: /Search in/ })).toHaveTextContent("Messages");
     expect(invokeExport.mock.calls[0][0]).toMatchObject({ query: "in:#19,#22", list: "messages" });
@@ -387,7 +410,8 @@ describe("ExportScreen", () => {
     await fill(user, screen.getByPlaceholderText("The Export Directory"), "/home/demo/out");
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    await waitFor(() => expect(invokeExport).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(invokeExport).toHaveBeenCalledTimes(1);
     // Sent as a Messages query, the server would refuse `messages:` (#959).
     expect(invokeExport.mock.calls[0][0]).toMatchObject({
       query: "messages:>100 tag:Work",
@@ -399,13 +423,14 @@ describe("ExportScreen", () => {
     const user = setupUser();
     renderScreen("tag:Work");
     await user.click(screen.getByRole("button", { name: /Search in/ }));
-    await user.click(await screen.findByRole("option", { name: "Messages" }));
+    await user.click(screen.getByRole("option", { name: "Messages" }));
     expect(screen.getByText(/holds only the messages this search finds/)).toBeTruthy();
 
     await fill(user, screen.getByPlaceholderText("The Export Directory"), "/home/demo/out");
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    await waitFor(() => expect(invokeExport).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(invokeExport).toHaveBeenCalledTimes(1);
     expect(invokeExport.mock.calls[0][0]).toMatchObject({ query: "tag:Work", list: "messages" });
   });
 
@@ -419,7 +444,7 @@ describe("ExportScreen", () => {
     expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
 
     await user.click(screen.getByRole("button", { name: /Scope/ }));
-    await user.click(await screen.findByRole("option", { name: "Everything" }));
+    await user.click(screen.getByRole("option", { name: "Everything" }));
     expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
   });
 
@@ -430,18 +455,20 @@ describe("ExportScreen", () => {
 
     await exportTo("/home/demo/out");
 
-    expect(await screen.findByText("session token is required")).toBeTruthy();
+    await settle();
+    expect(screen.getByText("session token is required")).toBeTruthy();
     expect(screen.queryByText(/Export complete/)).toBeNull();
   });
 
   it("names the directory and format the export wrote to after the form changes", async () => {
     const user = await exportTo("/a");
-    await screen.findByText(/Export complete/);
+    await settle();
+    expect(screen.getByText(/Export complete/)).toBeInTheDocument();
     const field = screen.getByPlaceholderText("The Export Directory");
     await user.clear(field);
     await fill(user, field, "/b");
     await user.click(screen.getByRole("button", { name: /Output format/ }));
-    await user.click(await screen.findByRole("option", { name: "CSV (.csv)" }));
+    await user.click(screen.getByRole("option", { name: "CSV (.csv)" }));
 
     expect(screen.getByText(/Export complete/)).toHaveTextContent(
       "Export complete. JSON Lines (.jsonl) saved to /a.",
@@ -462,7 +489,8 @@ describe("ExportScreen", () => {
     await exportTo("/a");
     expect(screen.getByPlaceholderText("The Export Directory")).toBeDisabled();
     releaseExport();
-    await screen.findByText(/Export complete/);
+    await settle();
+    expect(screen.getByText(/Export complete/)).toBeInTheDocument();
     expect(screen.getByPlaceholderText("The Export Directory")).toBeEnabled();
   });
 
@@ -470,13 +498,15 @@ describe("ExportScreen", () => {
     // The export's directory is made before the job starts; the earlier
     // message must not stay up through that wait.
     const user = await exportTo("/a");
-    await screen.findByText(/Export complete/);
+    await settle();
+    expect(screen.getByText(/Export complete/)).toBeInTheDocument();
     invokeCreateExportDir.mockImplementation(() => new Promise<never>(() => {}));
     await user.click(screen.getByRole("button", { name: /Output format/ }));
-    await user.click(await screen.findByRole("option", { name: "CSV (.csv)" }));
+    await user.click(screen.getByRole("option", { name: "CSV (.csv)" }));
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    await waitFor(() => expect(invokeCreateExportDir).toHaveBeenCalledTimes(2));
+    await settle();
+    expect(invokeCreateExportDir).toHaveBeenCalledTimes(2);
     expect(screen.queryByText(/Export complete/)).toBeNull();
   });
 });

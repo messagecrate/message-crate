@@ -126,6 +126,18 @@ await settle();
 expect(result.current.error?.message).toBe("rename failed");
 ```
 
+When both stamps fall inside one chain the test does not step through, such
+as an Export Run's start time and its export step, the fake that stands for
+the earlier step moves the clock with `vi.setSystemTime`. That moves `Date`
+and fires no timer, so a time read after that step is later than it.
+
+```tsx
+invokeExport.mockImplementation(async () => {
+  exportStepAt = Date.now();
+  vi.setSystemTime(exportStepAt + 1);
+});
+```
+
 ### A transition or other deferred render
 
 `startTransition`, `useDeferredValue`, a state update in an effect, and a
@@ -223,7 +235,18 @@ expect(result.current).toBe("ok");
 `await new Promise((resolve) => setTimeout(resolve, 0))` inside `act` waits for
 real time too: it hopes everything queued lands before the timer fires. On the
 fake clock it never fires at all. `settle()` replaces it, because `settle()`
-runs what is queued rather than racing it.
+runs what is queued rather than racing it. Where the calls the sleep waited
+on return promises, as a hook's actions do, the test awaits those inside
+`act` instead, and needs no clock at all.
+
+```tsx
+await act(async () => {
+  const first = result.current.approve();
+  const second = result.current.approve();
+  resolveTranscode({ summary: "Transcode finished.", transcode: undefined });
+  await Promise.all([first, second]);
+});
+```
 
 ### Something the fake clock doesn't drive
 
