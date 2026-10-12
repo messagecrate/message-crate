@@ -1,7 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { setupUser } from "../test/user";
 import ApiTokenRevealDialog from "./ApiTokenRevealDialog";
 
@@ -9,8 +10,13 @@ function setClipboard(value: unknown) {
   Object.defineProperty(navigator, "clipboard", { value, configurable: true });
 }
 
+beforeEach(() => {
+  startFakeClock();
+});
+
 afterEach(() => {
   cleanup();
+  stopFakeClock();
   delete (navigator as { clipboard?: unknown }).clipboard;
 });
 
@@ -23,7 +29,8 @@ describe("ApiTokenRevealDialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Copy" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    await settle();
+    expect(screen.getByRole("alert")).toHaveTextContent(
       "This browser can't copy from this page. Select the token above and copy it.",
     );
     // A truncated token cannot be read off the screen, so it wraps instead.
@@ -38,7 +45,8 @@ describe("ApiTokenRevealDialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Copy" }));
 
-    expect(await screen.findByRole("button", { name: "Copied" })).toBeInTheDocument();
+    await settle();
+    expect(screen.getByRole("button", { name: "Copied" })).toBeInTheDocument();
     expect(writeText).toHaveBeenCalledWith("mc-pat-abc123");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });

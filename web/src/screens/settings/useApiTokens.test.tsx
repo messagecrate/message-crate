@@ -9,12 +9,13 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, renderHook, screen, waitFor } from "@testing-library/react";
+import { act, renderHook, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiTokenRevealProvider } from "../../components/ApiTokenRevealDialog";
 import { createApiToken, deleteApiToken, listApiTokens, renameApiToken } from "../../lib/serverApi";
 import type { components } from "../../lib/serverApi.types";
+import { deferred } from "../../test/deferred";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { useApiTokens } from "./useApiTokens";
 
@@ -58,6 +59,7 @@ const token: ApiToken = {
 };
 
 beforeEach(() => {
+  startFakeClock();
   vi.clearAllMocks();
   list.mockResolvedValue([token]);
   client = new QueryClient({
@@ -75,7 +77,8 @@ describe("useApiTokens", () => {
       ReturnType<typeof createApiToken>
     >);
     const { result } = renderHook(() => useApiTokens(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await settle();
+    expect(result.current.loading).toBe(false);
     expect(list).toHaveBeenCalledTimes(1);
 
     act(() => {
@@ -85,19 +88,17 @@ describe("useApiTokens", () => {
       result.current.create();
     });
 
-    await waitFor(() =>
-      expect(create).toHaveBeenCalledWith({
-        label: "Laptop",
-        can_import: true,
-        can_export: true,
-      }),
-    );
-    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText("mc-api-secret")).toBeInTheDocument();
+    await settle();
+    expect(create).toHaveBeenCalledWith({
+      label: "Laptop",
+      can_import: true,
+      can_export: true,
+    });
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("mc-api-secret")).toBeInTheDocument();
   });
 
   it("asks for the list again after a token is revoked, and closes the dialog either way", async () => {
-    startFakeClock();
     revoke.mockRejectedValue(new Error("already revoked"));
     const { result } = renderHook(() => useApiTokens(), { wrapper });
     await settle();
@@ -120,14 +121,11 @@ describe("useApiTokens", () => {
   });
 
   it("reports a write in flight while a rename is unanswered", async () => {
-    let finish: () => void = () => {};
-    rename.mockReturnValue(
-      new Promise((resolve) => {
-        finish = () => resolve({} as never);
-      }),
-    );
+    const answer = deferred<Awaited<ReturnType<typeof renameApiToken>>>();
+    rename.mockReturnValue(answer.promise);
     const { result } = renderHook(() => useApiTokens(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await settle();
+    expect(result.current.loading).toBe(false);
 
     act(() => {
       result.current.openRename(token);
@@ -139,17 +137,16 @@ describe("useApiTokens", () => {
       result.current.rename();
     });
 
-    await waitFor(() => expect(result.current.busy).toBe(true));
-    act(() => {
-      finish();
-    });
-    await waitFor(() => expect(result.current.busy).toBe(false));
+    await settle();
+    expect(result.current.busy).toBe(true);
+    answer.resolve({} as never);
+    await settle();
+    expect(result.current.busy).toBe(false);
     expect(rename).toHaveBeenCalledWith(1, { label: "Desktop" });
     expect(result.current.renameTarget).toBeNull();
   });
 
   it("calls them API Tokens when the list cannot be loaded", async () => {
-    startFakeClock();
     list.mockRejectedValue(new Error(""));
     const { result } = renderHook(() => useApiTokens(), { wrapper });
     await settle();

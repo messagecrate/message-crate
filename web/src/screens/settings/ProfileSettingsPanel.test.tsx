@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
 import { ApiError } from "../../lib/api";
@@ -31,6 +31,7 @@ const stored = {
 } as unknown as AccountProfile;
 
 beforeEach(() => {
+  startFakeClock();
   getAccountProfile.mockReset();
   updateAccountProfile.mockReset();
   // The server keeps what a write stored, so the read every write starts
@@ -69,7 +70,8 @@ describe("ProfileSettingsPanel", () => {
   }, async () => {
     const user = setupUser();
     render(<ProfileSettingsPanel />);
-    await waitFor(() => expect(nameField().value).toBe("Stored Name"));
+    await settle();
+    expect(nameField().value).toBe("Stored Name");
 
     await user.clear(nameField());
     await fill(user, nameField(), "Typed Name");
@@ -78,7 +80,8 @@ describe("ProfileSettingsPanel", () => {
     await user.click(within(screen.getByRole("listbox")).getAllByRole("option")[0]);
     expect(updateAccountProfile).toHaveBeenCalledWith({ time_zone: "America/Chicago" });
     // The server's answer has reached the profile entry the panel reads.
-    await waitFor(() => expect(zoneField().value).toMatch(/Central Time/));
+    await settle();
+    expect(zoneField().value).toMatch(/Central Time/);
 
     expect(nameField().value).toBe("Typed Name");
   });
@@ -86,7 +89,8 @@ describe("ProfileSettingsPanel", () => {
   it("clears the display name when an emptied field is saved", async () => {
     const user = setupUser();
     render(<ProfileSettingsPanel />);
-    await waitFor(() => expect(nameField().value).toBe("Stored Name"));
+    await settle();
+    expect(nameField().value).toBe("Stored Name");
 
     await user.clear(nameField());
     await user.click(screen.getByRole("button", { name: "Save" }));
@@ -95,14 +99,11 @@ describe("ProfileSettingsPanel", () => {
     expect(updateAccountProfile).toHaveBeenCalledWith({ preferred_name: null });
     // Once the answer arrives the field shows the name it carries, so the
     // field reads empty only when the answer has no name.
-    await act(async () => {
-      await updateAccountProfile.mock.results[0].value;
-    });
+    await settle();
     expect(nameField().value).toBe("");
   });
 
   it("starts the server's refusal of a display name with a capital", async () => {
-    startFakeClock();
     updateAccountProfile.mockRejectedValue(
       new ApiError(403, "display name and time zone are fixed"),
     );
@@ -125,7 +126,8 @@ describe("ProfileSettingsPanel", () => {
       is_demo: true,
     }));
     render(<ProfileSettingsPanel />);
-    await waitFor(() => expect(nameField().value).toBe("Demo User"));
+    await settle();
+    expect(nameField().value).toBe("Demo User");
 
     // The server refuses each of these for the Demo Account, so none is offered.
     expect(nameField().readOnly).toBe(true);

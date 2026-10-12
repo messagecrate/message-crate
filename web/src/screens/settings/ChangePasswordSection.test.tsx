@@ -1,9 +1,10 @@
 /** @vitest-environment jsdom */
 
 import { QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../lib/queryKeys";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { renderWithProviders, testQueryClient } from "../../test/providers";
 import { freshEntries, seedEntries } from "../../test/staleEntries";
 import { fill, setupUser } from "../../test/user";
@@ -22,12 +23,16 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
 }));
 
 beforeEach(() => {
+  startFakeClock();
   changePassword.mockReset();
   updateToken.mockReset();
   changePassword.mockResolvedValue({ token: "mc-user-rotated" });
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  stopFakeClock();
+});
 
 describe("ChangePasswordSection", () => {
   it("asks for the new password twice and never the current one", () => {
@@ -46,9 +51,8 @@ describe("ChangePasswordSection", () => {
     await fill(user, screen.getByLabelText("Confirm new password"), "a");
     await user.click(screen.getByRole("button", { name: "Change password" }));
 
-    await waitFor(() =>
-      expect(changePassword).toHaveBeenCalledWith({ password: "a", password_confirmation: "a" }),
-    );
+    await settle();
+    expect(changePassword).toHaveBeenCalledWith({ password: "a", password_confirmation: "a" });
     expect(updateToken).toHaveBeenCalledWith("mc-user-rotated");
   });
 
@@ -63,7 +67,8 @@ describe("ChangePasswordSection", () => {
     await fill(user, screen.getByLabelText("Confirm new password"), "second");
     await user.click(screen.getByRole("button", { name: "Change password" }));
 
-    expect(await screen.findByText("New passwords do not match")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText("New passwords do not match")).toBeInTheDocument();
     expect(changePassword).toHaveBeenCalledWith({
       password: "first",
       password_confirmation: "second",
@@ -77,11 +82,10 @@ describe("ChangePasswordSection", () => {
 
     await user.click(screen.getByRole("button", { name: "Reset password" }));
 
-    await waitFor(() =>
-      expect(changePassword).toHaveBeenCalledWith({ password: "", password_confirmation: "" }),
-    );
+    await settle();
+    expect(changePassword).toHaveBeenCalledWith({ password: "", password_confirmation: "" });
     expect(
-      await screen.findByText(
+      screen.getByText(
         "Password reset. This account now has no password, and its API Tokens were revoked.",
       ),
     ).toBeInTheDocument();
@@ -105,14 +109,13 @@ describe("ChangePasswordSection", () => {
     await fill(user, screen.getByLabelText("Current password"), "hunter2hunter2");
     await user.click(screen.getByRole("button", { name: "Change password" }));
 
-    await waitFor(() =>
-      expect(changePassword).toHaveBeenCalledWith({
-        password: "keeperschoice",
-        password_confirmation: "keeperschoice",
-        current_password: "hunter2hunter2",
-      }),
-    );
-    await waitFor(() => expect(screen.getByLabelText("Current password")).toHaveValue(""));
+    await settle();
+    expect(changePassword).toHaveBeenCalledWith({
+      password: "keeperschoice",
+      password_confirmation: "keeperschoice",
+      current_password: "hunter2hunter2",
+    });
+    expect(screen.getByLabelText("Current password")).toHaveValue("");
   });
 
   it("marks the API Tokens and the profile stale, and says the tokens were revoked", async () => {
@@ -133,8 +136,9 @@ describe("ChangePasswordSection", () => {
     await fill(user, screen.getByLabelText("Confirm new password"), "a");
     await user.click(screen.getByRole("button", { name: "Change password" }));
 
+    await settle();
     expect(
-      await screen.findByText("Password changed. This account's API Tokens were revoked."),
+      screen.getByText("Password changed. This account's API Tokens were revoked."),
     ).toBeInTheDocument();
     expect(freshEntries(client, 101, shown)).toEqual([]);
   });
