@@ -2431,7 +2431,7 @@ async fn a_body_that_stops_arriving_is_upload_stalled_at_the_stall_limit() {
         "{text}"
     );
     assert!(
-        text.contains("running the import again continues it"),
+        text.contains("sending it again continues the upload"),
         "{text}"
     );
 }

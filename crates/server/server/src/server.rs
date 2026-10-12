@@ -2197,8 +2197,8 @@ fn body_read_error(error: axum::Error) -> ApiError {
         }
         if let Some(too_slow) = cause.downcast_ref::<BodyTooSlow>() {
             return ApiError::UploadStalled(format!(
-                "{too_slow}. The connection stopped delivering the body, and nothing is wrong \
-                 with the data: running the import again continues it"
+                "{too_slow}: the connection stopped delivering the body and nothing is wrong \
+                 with the data, so sending it again continues the upload"
             ));
         }
         source = cause.source();
