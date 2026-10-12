@@ -980,11 +980,10 @@ released versions carry their date on the heading.
 
 - 2026-10-11: **No single attachment or error stops Thumbnails and Previews
   for good.** The server makes Thumbnails and Previews one attachment at a
-  time, and three things could stop that work until the server restarted,
-  for every account. A file ffmpeg never finished converting, such as a
+  time, and three things could stop that work for every account. A file ffmpeg never finished converting, such as a
   damaged video, held it forever, and again at every start. ffmpeg is now
   stopped once it runs far longer than the file plays, at least 10 minutes
-  and at most a day, and the attachment says that ffmpeg did not finish in
+  and at most 6 hours, and the attachment says that ffmpeg did not finish in
   time. A fault in the server's own code ended the work until a restart, and
   a moment when the database was busy ended it until the next import. Both
   are now written to the server's log, and the work starts again 5 seconds

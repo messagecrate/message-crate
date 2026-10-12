@@ -90,7 +90,7 @@ impl MediaQueue {
                     .enable_all()
                     .build()
                     .expect("a runtime for the pass that makes Thumbnails and Previews");
-                runtime.block_on(keep_working(&wake, &stop, async || {
+                runtime.block_on(keep_working(&wake, &stop, FIRST_RETRY, async || {
                     work_through(&pool, &cfg, &stop).await
                 }));
             })
@@ -144,15 +144,16 @@ const LONGEST_RETRY: Duration = Duration::from_secs(5 * 60);
 /// database busy for a moment stopped the pass until the next Import Run
 /// ended, which on a server imported into once was never, and a panic ended
 /// the pass's thread until the server restarted. The wait starts at
-/// [`FIRST_RETRY`] and doubles to [`LONGEST_RETRY`], so a failure that
-/// lasts does not fill the log, and a pass that ends cleanly starts it
-/// again at [`FIRST_RETRY`].
+/// `first_retry`, [`FIRST_RETRY`] outside tests, and doubles to
+/// [`LONGEST_RETRY`], so a failure that lasts does not fill the log, and a
+/// pass that ends cleanly starts it again at `first_retry`.
 async fn keep_working(
     wake: &Notify,
     stop: &AtomicBool,
+    first_retry: Duration,
     mut pass: impl AsyncFnMut() -> Result<ProcessAssetsStats>,
 ) {
-    let mut retry = FIRST_RETRY;
+    let mut retry = first_retry;
     while !stop.load(Ordering::Relaxed) {
         let failed = match AssertUnwindSafe(pass()).catch_unwind().await {
             Ok(Ok(_)) => false,
@@ -185,7 +186,7 @@ async fn keep_working(
             }
             retry = (retry * 2).min(LONGEST_RETRY);
         } else {
-            retry = FIRST_RETRY;
+            retry = first_retry;
             wake.notified().await;
         }
     }

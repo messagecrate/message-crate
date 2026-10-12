@@ -110,7 +110,7 @@ fn ffprobe_that_never_finishes_is_killed_when_its_time_is_up() {
     let dir = mock_tools_dir("exit 0", WRITE_PID_AND_HANG);
     let pid_file = dir.path().join("pid");
 
-    let err = run_ffprobe_watched(&["-v", "error"], Path::new("clip.mp4"), &|| {
+    let err = run_ffprobe_watched(&["-v", "error"], Path::new("clip.mp4"), None, &|| {
         pid_file.is_file()
     })
     .expect_err("a probe past its time fails");
@@ -133,7 +133,7 @@ fn ffprobe_answers_what_it_wrote_and_opens_only_local_files() {
     let _restore = RestoreToolsDir::capture();
     let _dir = mock_tools_dir("exit 0", "echo \"$@\"");
 
-    let out = run_ffprobe(&["-v", "error"], Path::new("clip.mp4")).unwrap();
+    let out = run_ffprobe(&["-v", "error"], Path::new("clip.mp4"), None).unwrap();
 
     assert_eq!(
         String::from_utf8(out).unwrap(),
@@ -165,23 +165,20 @@ fn ffmpeg_reads_no_stdin_and_opens_only_local_files() {
 }
 
 /// A conversion that reads a whole file is given twenty times its length,
-/// at least ten minutes and at most a day, in whole minutes; one whose
-/// length is not known gets ten minutes.
+/// at least ten minutes and at most six hours, in whole minutes; one whose
+/// length is not known gets an hour.
 #[test]
 fn an_ffmpeg_run_is_given_time_by_the_length_of_what_it_reads() {
     let minutes = |m: u64| Duration::from_secs(m * 60);
-    assert_eq!(ffmpeg_time_limit(None), minutes(10));
+    assert_eq!(ffmpeg_time_limit(None), minutes(60));
     assert_eq!(ffmpeg_time_limit(Some(Duration::from_secs(5))), minutes(10));
     assert_eq!(
         ffmpeg_time_limit(Some(Duration::from_millis(61_500))),
         minutes(21)
     );
-    assert_eq!(ffmpeg_time_limit(Some(minutes(60))), minutes(20 * 60));
-    assert_eq!(
-        ffmpeg_time_limit(Some(minutes(3 * 24 * 60))),
-        minutes(24 * 60)
-    );
-    assert_eq!(ffmpeg_time_limit(Some(Duration::MAX)), minutes(24 * 60));
+    assert_eq!(ffmpeg_time_limit(Some(minutes(10))), minutes(200));
+    assert_eq!(ffmpeg_time_limit(Some(minutes(60))), minutes(6 * 60));
+    assert_eq!(ffmpeg_time_limit(Some(Duration::MAX)), minutes(6 * 60));
 }
 
 /// A time limit is said in the largest whole unit.
@@ -887,4 +884,28 @@ fn a_directory_is_not_executable() {
 fn a_missing_file_is_not_executable() {
     let dir = tempfile::tempdir().unwrap();
     assert!(!is_executable(&dir.path().join("wtsexporter")));
+}
+
+/// A conversion asked for once the server is stopping starts neither the
+/// ffprobe that reads the file's length nor ffmpeg, so a stalled disk
+/// cannot hold the server's stop up (#2059).
+#[cfg(unix)]
+#[test]
+fn a_stopped_transcode_runs_neither_program() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let ran = "touch \"$(dirname \"$0\")/ran\"";
+    let dir = mock_tools_dir(ran, ran);
+
+    let err = InstalledTools
+        .transcode(
+            &["-i".to_string(), "in.mov".to_string()],
+            Path::new("out.mp4"),
+            Reads::All(Path::new("in.mov")),
+            Some(&AtomicBool::new(true)),
+        )
+        .expect_err("a stopped run fails");
+
+    assert!(format!("{err:#}").contains("stopped"), "{err:#}");
+    assert!(!dir.path().join("ran").exists(), "a program ran");
 }

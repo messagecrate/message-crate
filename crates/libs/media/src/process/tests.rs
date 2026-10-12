@@ -1372,3 +1372,35 @@ fn the_done_line_counts_one_file_and_many_files() {
         "Attachment compress done: processed 3 files, skipped 0 files, size 2.0 KB → 2.0 KB"
     );
 }
+
+/// A HEVC run that ran out of time is not followed by an H.264 run, which
+/// the same file would run out of time on too, so a file that hangs ffmpeg
+/// costs the Media Stage one time limit, not two (#2059).
+#[test]
+fn compress_tries_no_h264_after_hevc_ran_out_of_time() {
+    let dir = tempfile::tempdir().unwrap();
+    let (files, opts) = two_large_videos(dir.path());
+    let tools = FakeTools::new()
+        .probing(video_probe("h264", 30.0))
+        .running_too_long_on("libx265");
+
+    let (report, _) = process_attachment_files_with(
+        &tools,
+        dir.path(),
+        &files[..1],
+        MediaMode::Compress,
+        &opts,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
+    assert!(
+        report.errors[0].contains("did not finish within 10 minutes"),
+        "{:?}",
+        report.errors
+    );
+    let runs = tools.runs();
+    assert_eq!(runs.len(), 1, "{runs:?}");
+    assert!(has(&runs[0], "libx265"), "{runs:?}");
+}

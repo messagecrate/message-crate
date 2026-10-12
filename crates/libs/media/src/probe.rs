@@ -5,6 +5,7 @@
 //! for the time limit of the ffmpeg run that converts it.
 
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
@@ -48,6 +49,7 @@ pub fn probe_media(path: &Path) -> Result<MediaProbe> {
             "csv=p=0",
         ],
         path,
+        None,
     )?;
     let text = String::from_utf8_lossy(&out);
     let line = text
@@ -58,8 +60,9 @@ pub fn probe_media(path: &Path) -> Result<MediaProbe> {
 }
 
 /// How long the media file at `path` plays, as its container says. `None`
-/// when ffprobe is missing, fails, or reports no length, as for a still.
-pub(crate) fn played_for(path: &Path) -> Option<Duration> {
+/// when ffprobe is missing, fails, reports no length, as for a still, or
+/// `stop` is set.
+pub(crate) fn played_for(path: &Path, stop: Option<&AtomicBool>) -> Option<Duration> {
     let out = run_ffprobe(
         &[
             "-v",
@@ -70,6 +73,7 @@ pub(crate) fn played_for(path: &Path) -> Option<Duration> {
             "csv=p=0",
         ],
         path,
+        stop,
     )
     .ok()?;
     parse_duration(&String::from_utf8_lossy(&out))

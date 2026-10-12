@@ -39,6 +39,9 @@ pub(crate) struct FakeTools {
     /// A run whose arguments hold any of these fails, after writing its
     /// output, as an ffmpeg that fails part way leaves a partial file.
     failing: Vec<String>,
+    /// A run whose arguments hold any of these runs out of time, after
+    /// writing its output, as an ffmpeg killed at its time limit does.
+    too_long: Vec<String>,
     /// The arguments of every ffmpeg run, in order.
     runs: RefCell<Vec<Vec<String>>>,
     /// What every ffmpeg run read, in order: the file whose length sets its
@@ -55,6 +58,7 @@ impl FakeTools {
             probe: None,
             output: b"fake ffmpeg output".to_vec(),
             failing: Vec::new(),
+            too_long: Vec::new(),
             runs: RefCell::new(Vec::new()),
             reads: RefCell::new(Vec::new()),
         }
@@ -83,6 +87,12 @@ impl FakeTools {
     /// A run whose arguments hold `arg` fails.
     pub(crate) fn failing_on(mut self, arg: &str) -> Self {
         self.failing.push(arg.to_string());
+        self
+    }
+
+    /// A run whose arguments hold `arg` runs out of time.
+    pub(crate) fn running_too_long_on(mut self, arg: &str) -> Self {
+        self.too_long.push(arg.to_string());
         self
     }
 
@@ -132,11 +142,13 @@ impl MediaTools for FakeTools {
             bail!("stopped before ffmpeg started");
         }
         self.runs.borrow_mut().push(ffmpeg_command_line(args, dest));
-        self.reads.borrow_mut().push(match reads {
-            Reads::OneFrame => None,
-            Reads::All(src) => Some(src.to_path_buf()),
-        });
+        self.reads
+            .borrow_mut()
+            .push(reads.source().map(Path::to_path_buf));
         std::fs::write(dest, &self.output)?;
+        if args.iter().any(|arg| self.too_long.contains(arg)) {
+            return Err(crate::RanTooLong::ffmpeg(std::time::Duration::from_secs(600)).into());
+        }
         if args.iter().any(|arg| self.failing.contains(arg)) {
             bail!("ffmpeg failed (fake) on {}", args.join(" "));
         }

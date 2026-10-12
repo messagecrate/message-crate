@@ -1062,7 +1062,7 @@ async fn a_pass_that_fails_or_panics_runs_again_without_an_import_run() {
     let stop = AtomicBool::new(false);
     let runs = Runs::default();
 
-    let working = keep_working(&wake, &stop, async || match runs.start() {
+    let working = keep_working(&wake, &stop, FIRST_RETRY, async || match runs.start() {
         0 | 3 => Err(anyhow::anyhow!("database is locked")),
         1 => panic!("a bug in the pass"),
         2 => {
@@ -1096,7 +1096,7 @@ async fn after_a_panic_the_next_wake_runs_the_pass() {
     let stop = AtomicBool::new(false);
     let runs = Runs::default();
 
-    keep_working(&wake, &stop, async || {
+    keep_working(&wake, &stop, FIRST_RETRY, async || {
         if runs.start() == 0 {
             wake.notify_one();
             panic!("a bug in the pass");
@@ -1136,6 +1136,74 @@ fn an_asset_whose_work_panics_leaves_the_queue_and_the_pass_goes_on() {
 
         assert_eq!(made.load(Ordering::Relaxed), 3, "every Asset was worked on");
         assert_eq!(stats.not_made, 1, "the Asset that panicked is not made");
+        assert_eq!(queued(state).await, 0, "every Asset left the queue");
+    });
+}
+
+/// A real database error fails `work_through`, and the pass works through
+/// the queue on its next run with no Import Run ending (#2091). The queue's
+/// table is renamed away for the first run, so the queries fail, and put
+/// back after it. The wait before the next run is zero, so the test waits
+/// on no clock.
+#[test]
+fn after_a_database_error_the_pass_works_through_the_queue_without_an_import_run() {
+    with_real_ffmpeg(async {
+        let (fixture, alice) = fixture_with_account().await;
+        let state = &fixture.state;
+        import_three(&fixture, &alice).await;
+        let rename = async |from: &str, to: &str| {
+            sqlx::query(&format!("ALTER TABLE {from} RENAME TO {to}"))
+                .execute(&state.db)
+                .await
+                .unwrap();
+        };
+        rename("media_queue", "media_queue_away").await;
+        let wake = Notify::new();
+        let stop = AtomicBool::new(false);
+        let mut results = Vec::new();
+
+        keep_working(&wake, &stop, Duration::ZERO, async || {
+            let ran = work_through(&state.db, &state.cfg, &stop).await;
+            results.push(ran.is_ok());
+            if results.len() == 1 {
+                rename("media_queue_away", "media_queue").await;
+            } else {
+                stop.store(true, Ordering::Relaxed);
+            }
+            ran
+        })
+        .await;
+
+        assert_eq!(results, vec![false, true], "failed, then worked through");
+        assert_eq!(queued(state).await, 0, "every Asset left the queue");
+    });
+}
+
+/// After a pass panics, the next wake runs the pass again, and it works
+/// through what is queued (#2072).
+#[test]
+fn after_a_pass_panics_the_next_wake_works_through_the_queue() {
+    with_real_ffmpeg(async {
+        let (fixture, alice) = fixture_with_account().await;
+        let state = &fixture.state;
+        import_three(&fixture, &alice).await;
+        let wake = Notify::new();
+        let stop = AtomicBool::new(false);
+        let mut runs = 0;
+
+        keep_working(&wake, &stop, FIRST_RETRY, async || {
+            runs += 1;
+            if runs == 1 {
+                // What an Import Run that ends while the pass waits does.
+                wake.notify_one();
+                panic!("a bug in the pass");
+            }
+            stop.store(true, Ordering::Relaxed);
+            work_through(&state.db, &state.cfg, &AtomicBool::new(false)).await
+        })
+        .await;
+
+        assert_eq!(runs, 2);
         assert_eq!(queued(state).await, 0, "every Asset left the queue");
     });
 }
