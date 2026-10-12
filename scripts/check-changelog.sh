@@ -6,8 +6,9 @@
 #   ./scripts/check-changelog.sh <file>         # checks another file
 #
 # - width: no line is longer than 80 characters.
-# - tight lists: no blank line between two bullets of the same list, because
-#   one blank line makes the whole list render loose.
+# - tight lists: no blank line between two items of the same list, bulleted
+#   or numbered, even one before an item's indented second paragraph,
+#   because one blank line makes the whole list render loose.
 # - dated entries: every top-level bullet under the "— in development"
 #   heading starts with an ISO date (YYYY-MM-DD). Released sections are
 #   exempt; their date is on the heading.
@@ -27,7 +28,9 @@ max_width=80
 # machine has, and refuse to run rather than count "—" as three.
 probe='—'
 for locale in C.UTF-8 C.utf8 en_US.UTF-8 en_US.utf8; do
-  LC_ALL="${locale}" 2>/dev/null
+  # The braces carry the redirect, so a locale the machine lacks prints no
+  # setlocale warning.
+  { LC_ALL="${locale}"; } 2>/dev/null
   if [[ ${#probe} -eq 1 ]]; then
     break
   fi
@@ -43,15 +46,22 @@ fail() {
   failures=$((failures + 1))
 }
 
-bullet_re='^( *)[-*+] '
+# A list item starts with -, * or + (a bullet), or with a number and . or )
+# (an ordered list). Only a bullet carries the date.
+item_re='^( *)([-*+]|[0-9]+[.)]) '
+bullet_re='^[-*+] '
 date_re='^[-*+] [0-9]{4}-[0-9]{2}-[0-9]{2}'
 
 n=0
 in_development=false
-blank_before=false
-# The indents of the bullets in the list being read, as " 0 2 ", so a
-# bullet after a blank line can be told apart: one at an indent already in
-# the list is a second bullet of the same list.
+# Whether a blank line came since the last list item. A blank line anywhere
+# inside a list, even before an indented paragraph of an item, makes the
+# whole list render loose, so it counts until the next item.
+blank_in_list=false
+# The open lists, each as its indent and marker (" 0- 2. "), so an item
+# after a blank line can be told apart: one with an indent and marker
+# already open is a second item of the same list. A bullet character or an
+# ordered list's . or ) that changes starts a new list.
 list_indents=" "
 
 while IFS= read -r line || [[ -n "${line}" ]]; do
@@ -62,41 +72,48 @@ while IFS= read -r line || [[ -n "${line}" ]]; do
   fi
 
   if [[ -z "${line//[[:space:]]/}" ]]; then
-    blank_before=true
+    blank_in_list=true
     continue
   fi
 
   if [[ "${line}" =~ ^# ]]; then
     list_indents=" "
     if [[ "${line}" =~ ^##\  ]]; then
-      if [[ "${line}" == *"— in development"* ]]; then
+      # Any dash, so "- in development" cannot turn the date rule off.
+      if [[ "${line}" == *"in development"* ]]; then
         in_development=true
       else
         in_development=false
       fi
     fi
-  elif [[ "${line}" =~ ${bullet_re} ]]; then
+  elif [[ "${line}" =~ ${item_re} ]]; then
     indent=${#BASH_REMATCH[1]}
-    if ${blank_before} && [[ "${list_indents}" == *" ${indent} "* ]]; then
-      fail "${n}" "tight lists: blank line before this bullet of the same list"
+    marker="${BASH_REMATCH[2]: -1}"
+    if ${blank_in_list} && [[ "${list_indents}" == *" ${indent}${marker} "* ]]; then
+      fail "${n}" "tight lists: blank line inside the list before this item"
     fi
-    # A bullet ends every deeper list under the one before it.
+    # An item ends every list at its own indent or deeper.
     kept=" "
-    for i in ${list_indents}; do
-      if (( i < indent )); then
-        kept+="${i} "
+    for open in ${list_indents}; do
+      if (( ${open%?} < indent )); then
+        kept+="${open} "
       fi
     done
-    list_indents="${kept}${indent} "
-    if ${in_development} && (( indent == 0 )) && ! [[ "${line}" =~ ${date_re} ]]; then
+    list_indents="${kept}${indent}${marker} "
+    if ${in_development} && [[ "${line}" =~ ${bullet_re} ]] \
+      && ! [[ "${line}" =~ ${date_re} ]]; then
       fail "${n}" "dated entries: a bullet under the in-development heading starts with YYYY-MM-DD"
     fi
   elif ! [[ "${line}" =~ ^[[:space:]] ]]; then
     # A paragraph at the left margin ends the list.
     list_indents=" "
   fi
-  blank_before=false
+  # Only an indented line inside an item keeps a blank line counting.
+  if ! [[ "${line}" =~ ^[[:space:]] ]] || [[ "${line}" =~ ${item_re} ]]; then
+    blank_in_list=false
+  fi
 done < "${file}"
+
 
 if (( failures > 0 )); then
   echo "check-changelog: ${failures} problem(s) in ${file##*/}; the rules are in AGENTS.md, \"Releases and versions\"" >&2
