@@ -5,8 +5,8 @@ use crate::problem::ProblemType;
 use crate::test_support::{
     RegisteredAccount, SeedConversation, SeedMessage, claim_as_owner, delete_status,
     expect_problem, expect_problem_for, fixture_with_account, get_json, get_raw, get_status,
-    http_client, log_in, log_in_raw, post_created_json, post_json_raw, put_status,
-    register_via_api, seed_conversation, stored_time, test_fixture,
+    log_in, log_in_raw, post_created_json, post_json_raw, put_status, register_via_api,
+    seed_conversation, stored_time, test_fixture,
 };
 
 const TEST_ACCOUNT: i64 = 7;
@@ -69,11 +69,7 @@ async fn an_account_gone_before_its_username_is_read_answers_unauthorized() {
         .layer(axum::middleware::from_fn(crate::request_id::layer));
     let server = crate::test_support::serve_router(app).await;
 
-    let response = http_client()
-        .get(format!("{}/v1/session", server.base()))
-        .send()
-        .await
-        .unwrap();
+    let response = server.get("/v1/session").send().await.unwrap();
     let status = response.status();
     let text = response.text().await.unwrap();
     expect_problem(status, &text, ProblemType::AuthenticationRequired);

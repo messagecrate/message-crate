@@ -244,11 +244,7 @@ async fn import_access(state: &AppState, token: &str) -> ImportAccess {
 
 async fn get_path(state: AppState, path: &str) -> reqwest::Response {
     let server = crate::test_support::serve(&state).await;
-    http_client()
-        .get(format!("{}{path}", server.base()))
-        .send()
-        .await
-        .unwrap()
+    server.get(path).send().await.unwrap()
 }
 
 fn with_cors(mut state: AppState, origins: &[&str]) -> AppState {
@@ -260,11 +256,8 @@ fn with_cors(mut state: AppState, origins: &[&str]) -> AppState {
 
 async fn cors_preflight(state: AppState, origin: &str) -> reqwest::Response {
     let server = crate::test_support::serve(&state).await;
-    http_client()
-        .request(
-            reqwest::Method::OPTIONS,
-            format!("{}/health", server.base()),
-        )
+    server
+        .request(reqwest::Method::OPTIONS, "/health")
         .header("Origin", origin)
         .header("Access-Control-Request-Method", "GET")
         .header("Access-Control-Request-Headers", "content-type")
@@ -405,8 +398,8 @@ async fn log_lines_serving(state: &AppState, filter: &str, paths: &[&str]) -> Ve
             tracing::subscriber::set_default(crate::logging::subscriber_for(files, filter));
         let server = crate::test_support::serve(state).await;
         for path in paths {
-            http_client()
-                .get(format!("{}{path}", server.base()))
+            server
+                .get(path)
                 .send()
                 .await
                 .unwrap()
@@ -573,10 +566,9 @@ async fn openapi_ui_routes_carry_a_request_id_and_cors_headers() {
     let origin = "http://localhost:5173";
     let state = with_cors(state, &[origin]);
     let server = crate::test_support::serve(&state).await;
-    let client = http_client();
     for path in ["/openapi.json", "/docs/"] {
-        let response = client
-            .get(format!("{}{path}", server.base()))
+        let response = server
+            .get(path)
             .header("Origin", origin)
             .header(header::ACCEPT, "text/html")
             .send()
@@ -1189,8 +1181,8 @@ async fn the_fast_413_carries_cors_headers() {
 
     let sha = "0".repeat(64);
     let server = crate::test_support::serve(&state).await;
-    let response = http_client()
-        .put(format!("{}/v1/assets/{sha}", server.base()))
+    let response = server
+        .put(&format!("/v1/assets/{sha}"))
         .bearer_auth(&user.token)
         .header(header::ORIGIN, "https://app.example")
         .header(header::CONTENT_TYPE, "image/png")
@@ -1224,10 +1216,9 @@ async fn every_response_carries_a_server_made_request_id_and_a_problem_repeats_i
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
     let server = crate::test_support::serve(&state).await;
-    let client = http_client();
 
-    let ok = client
-        .get(format!("{}/v1/conversations", server.base()))
+    let ok = server
+        .get("/v1/conversations")
         .bearer_auth(&user.token)
         .send()
         .await
@@ -1239,8 +1230,8 @@ async fn every_response_carries_a_server_made_request_id_and_a_problem_repeats_i
         .to_string();
     assert!(uuid::Uuid::parse_str(&id).is_ok(), "not a UUID: {id}");
 
-    let failed = client
-        .get(format!("{}/v1/conversations/abc/sources", server.base()))
+    let failed = server
+        .get("/v1/conversations/abc/sources")
         .bearer_auth(&user.token)
         .header(crate::request_id::HEADER, "chosen-by-the-client")
         .send()
@@ -1274,8 +1265,8 @@ async fn a_wrong_password_is_401_invalid_credentials() {
     let (fixture, _) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
     let server = crate::test_support::serve(&state).await;
-    let wrong = http_client()
-        .post(format!("{}/v1/session", server.base()))
+    let wrong = server
+        .post("/v1/session")
         .json(&serde_json::json!({ "username": "alice", "password": "not-it-at-all" }))
         .send()
         .await
@@ -1303,7 +1294,6 @@ async fn every_operation_refuses_a_query_parameter_it_does_not_declare() {
     let fixture = crate::test_support::test_fixture().await;
     let state = fixture.state.clone();
     let server = crate::test_support::serve(&state).await;
-    let client = http_client();
     let spec: serde_json::Value =
         serde_json::from_str(&crate::openapi::dump_openapi_json()).unwrap();
 
@@ -1328,11 +1318,8 @@ async fn every_operation_refuses_a_query_parameter_it_does_not_declare() {
                 .filter(|p| p["in"] == "query")
                 .filter_map(|p| p["name"].as_str())
                 .collect();
-            let response = client
-                .request(
-                    method.clone(),
-                    format!("{}{path}?no_such_parameter=1", server.base()),
-                )
+            let response = server
+                .request(method.clone(), &format!("{path}?no_such_parameter=1"))
                 .send()
                 .await
                 .unwrap();
@@ -1367,13 +1354,8 @@ async fn every_operation_refuses_a_query_parameter_it_does_not_declare() {
 async fn a_path_parameters_name_and_a_head_request_are_held_to_the_declared_query() {
     let fixture = crate::test_support::test_fixture().await;
     let server = crate::test_support::serve(&fixture.state).await;
-    let client = http_client();
 
-    let response = client
-        .get(format!("{}/v1/conversations/1?id=1", server.base()))
-        .send()
-        .await
-        .unwrap();
+    let response = server.get("/v1/conversations/1?id=1").send().await.unwrap();
     let status = response.status();
     let text = response.text().await.unwrap();
     let problem = crate::test_support::expect_problem(
@@ -1386,11 +1368,8 @@ async fn a_path_parameters_name_and_a_head_request_are_held_to_the_declared_quer
         ["unknown query parameter 'id'; this route takes no query parameters"]
     );
 
-    let response = client
-        .head(format!(
-            "{}/v1/conversations?no_such_parameter=1",
-            server.base()
-        ))
+    let response = server
+        .head("/v1/conversations?no_such_parameter=1")
         .send()
         .await
         .unwrap();
@@ -1404,10 +1383,9 @@ async fn accept_is_checked_on_v1_json_routes_only() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
     let server = crate::test_support::serve(&state).await;
-    let client = http_client();
 
-    let refused = client
-        .get(format!("{}/v1/conversations", server.base()))
+    let refused = server
+        .get("/v1/conversations")
         .bearer_auth(&user.token)
         .header(header::ACCEPT, "text/html")
         .send()
@@ -1423,8 +1401,8 @@ async fn accept_is_checked_on_v1_json_routes_only() {
         "text/html, */*;q=0.1",
         "application/*",
     ] {
-        let allowed = client
-            .get(format!("{}/v1/conversations", server.base()))
+        let allowed = server
+            .get("/v1/conversations")
             .bearer_auth(&user.token)
             .header(header::ACCEPT, accept)
             .send()
@@ -1435,8 +1413,8 @@ async fn accept_is_checked_on_v1_json_routes_only() {
 
     // A browser navigation: the static app is served, or 404 without a
     // static dir here, but never refused for its Accept.
-    let page = client
-        .get(format!("{}/", server.base()))
+    let page = server
+        .get("/")
         .header(header::ACCEPT, "text/html")
         .send()
         .await
@@ -1446,10 +1424,9 @@ async fn accept_is_checked_on_v1_json_routes_only() {
     // The asset download, one of five /v1 routes that answer bytes, takes
     // any Accept; the route then refuses for its own reasons (no source
     // named), never for the header.
-    let asset = client
-        .get(format!(
-            "{}/v1/assets/{}",
-            server.base(),
+    let asset = server
+        .get(&format!(
+            "/v1/assets/{}",
             crate::test_support::fake_sha256('a')
         ))
         .bearer_auth(&user.token)
@@ -1468,8 +1445,8 @@ async fn health_answers_a_probe_that_accepts_only_text() {
     let fixture = crate::test_support::test_fixture().await;
     let server = crate::test_support::serve(&fixture.state).await;
 
-    let response = http_client()
-        .get(format!("{}/health", server.base()))
+    let response = server
+        .get("/health")
         .header(header::ACCEPT, "text/plain")
         .send()
         .await
@@ -1488,11 +1465,7 @@ async fn health_fails_when_the_database_cannot_be_reached() {
     let server = crate::test_support::serve(&fixture.state).await;
     fixture.state.db.close().await;
 
-    let response = http_client()
-        .get(format!("{}/health", server.base()))
-        .send()
-        .await
-        .unwrap();
+    let response = server.get("/health").send().await.unwrap();
 
     assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(
@@ -1514,11 +1487,7 @@ async fn health_fails_when_every_pool_connection_is_held() {
         held.push(fixture.state.db.acquire().await.unwrap());
     }
 
-    let response = http_client()
-        .get(format!("{}/health", server.base()))
-        .send()
-        .await
-        .unwrap();
+    let response = server.get("/health").send().await.unwrap();
 
     assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     drop(held);
@@ -1795,8 +1764,8 @@ async fn a_write_that_meets_a_held_write_lock_answers_database_busy() {
         .await
         .unwrap();
 
-    let response = http_client()
-        .post(format!("{}/v1/saved-searches", server.base()))
+    let response = server
+        .post("/v1/saved-searches")
         .bearer_auth(&account.token)
         .json(&serde_json::json!({"name": "Ada", "query": "ada"}))
         .send()
@@ -2065,8 +2034,8 @@ async fn the_website_is_served_from_the_configured_directory() {
 async fn a_lower_case_bearer_scheme_is_accepted() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let server = crate::test_support::serve(&fixture.state).await;
-    let response = http_client()
-        .get(format!("{}/v1/session", server.base()))
+    let response = server
+        .get("/v1/session")
         .header(
             reqwest::header::AUTHORIZATION,
             format!("bearer {}", user.token),
@@ -2083,8 +2052,8 @@ async fn a_lower_case_bearer_scheme_is_accepted() {
 async fn a_valid_token_under_another_scheme_answers_401() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let server = crate::test_support::serve(&fixture.state).await;
-    let response = http_client()
-        .get(format!("{}/v1/session", server.base()))
+    let response = server
+        .get("/v1/session")
         .header(
             reqwest::header::AUTHORIZATION,
             format!("Basic {}", user.token),
@@ -2536,8 +2505,8 @@ async fn a_chunked_attachment_upload_over_the_limit_is_413() {
         &[b'x'; 4096],
     )
     .await;
-    let sized = http_client()
-        .put(format!("{}/v1/assets/{sha}", server.base()))
+    let sized = server
+        .put(&format!("/v1/assets/{sha}"))
         .bearer_auth(&user.token)
         .header(header::CONTENT_TYPE, "image/png")
         .body(vec![b'x'; 4096])
@@ -2567,9 +2536,8 @@ async fn a_chunked_part_over_its_upload_part_size_is_413() {
     state.asset_part_size = 16;
     let server = crate::test_support::serve(&state).await;
     let sha = "0".repeat(64);
-    let client = http_client();
-    let started: serde_json::Value = client
-        .post(format!("{}/v1/assets/{sha}/uploads", server.base()))
+    let started: serde_json::Value = server
+        .post(&format!("/v1/assets/{sha}/uploads"))
         .bearer_auth(&user.token)
         .json(&serde_json::json!({ "bytes": 40 }))
         .send()
@@ -2699,8 +2667,8 @@ async fn a_handler_that_panics_answers_a_500_problem_with_its_request_id() {
         let server =
             crate::test_support::serve_router(with_server_layers(routes, fixture.state.clone()))
                 .await;
-        http_client()
-            .get(format!("{}/v1/panics", server.base()))
+        server
+            .get("/v1/panics")
             .send()
             .await
             .expect("the server answers a request whose handler panicked")
@@ -2752,8 +2720,6 @@ async fn every_v1_answer_without_its_own_cache_control_is_no_store() {
     let origin = "http://localhost:5173";
     let state = with_cors(state, &[origin]);
     let server = crate::test_support::serve(&state).await;
-    let client = http_client();
-    let url = |path: &str| format!("{}{path}", server.base());
     let cache_control = |response: &reqwest::Response| {
         response
             .headers()
@@ -2761,8 +2727,8 @@ async fn every_v1_answer_without_its_own_cache_control_is_no_store() {
             .map(|v| v.to_str().unwrap().to_string())
     };
 
-    let login = client
-        .post(url("/v1/session"))
+    let login = server
+        .post("/v1/session")
         .json(&serde_json::json!({
             "username": user.username,
             "password": crate::test_support::PASSWORD,
@@ -2777,45 +2743,45 @@ async fn every_v1_answer_without_its_own_cache_control_is_no_store() {
         .as_str()
         .unwrap()
         .to_string();
-    let session = client
-        .get(url("/v1/session"))
+    let session = server
+        .get("/v1/session")
         .bearer_auth(&token)
         .send()
         .await
         .unwrap();
     assert_eq!(session.status(), StatusCode::OK);
-    let logged_out = client.get(url("/v1/session")).send().await.unwrap();
+    let logged_out = server.get("/v1/session").send().await.unwrap();
     assert_eq!(logged_out.status(), StatusCode::UNAUTHORIZED);
-    let asset_logged_out = client
-        .get(url(&format!("/v1/assets/{}", "a".repeat(64))))
+    let asset_logged_out = server
+        .get(&format!("/v1/assets/{}", "a".repeat(64)))
         .send()
         .await
         .unwrap();
     assert_eq!(asset_logged_out.status(), StatusCode::UNAUTHORIZED);
-    let not_acceptable = client
-        .get(url("/v1/session"))
+    let not_acceptable = server
+        .get("/v1/session")
         .bearer_auth(&token)
         .header(header::ACCEPT, "text/html")
         .send()
         .await
         .unwrap();
     assert_eq!(not_acceptable.status(), StatusCode::NOT_ACCEPTABLE);
-    let undeclared_query = client
-        .get(url("/v1/session?unknown=1"))
+    let undeclared_query = server
+        .get("/v1/session?unknown=1")
         .bearer_auth(&token)
         .send()
         .await
         .unwrap();
     assert_eq!(undeclared_query.status(), StatusCode::UNPROCESSABLE_ENTITY);
-    let wrong_method = client
-        .patch(url("/v1/session"))
+    let wrong_method = server
+        .patch("/v1/session")
         .bearer_auth(&token)
         .send()
         .await
         .unwrap();
     assert_eq!(wrong_method.status(), StatusCode::METHOD_NOT_ALLOWED);
-    let preflight = client
-        .request(reqwest::Method::OPTIONS, url("/v1/session"))
+    let preflight = server
+        .request(reqwest::Method::OPTIONS, "/v1/session")
         .header("Origin", origin)
         .header("Access-Control-Request-Method", "GET")
         .header("Access-Control-Request-Headers", "authorization")
@@ -2823,7 +2789,7 @@ async fn every_v1_answer_without_its_own_cache_control_is_no_store() {
         .await
         .unwrap();
     assert_eq!(allow_origin(&preflight), Some(origin));
-    let unknown = client.get(url("/v1/no-such-route")).send().await.unwrap();
+    let unknown = server.get("/v1/no-such-route").send().await.unwrap();
     assert_eq!(unknown.status(), StatusCode::NOT_FOUND);
     for (what, response) in [
         ("session", &session),
@@ -2844,10 +2810,10 @@ async fn every_v1_answer_without_its_own_cache_control_is_no_store() {
 
     assert_eq!(login_cache_control.as_deref(), Some("no-store"), "login");
 
-    let website = client.get(url("/")).send().await.unwrap();
+    let website = server.get("/").send().await.unwrap();
     assert_eq!(website.status(), StatusCode::OK);
     assert_eq!(cache_control(&website), None);
-    let health = client.get(url("/health")).send().await.unwrap();
+    let health = server.get("/health").send().await.unwrap();
     assert_eq!(health.status(), StatusCode::OK);
     assert_eq!(cache_control(&health), None);
 }

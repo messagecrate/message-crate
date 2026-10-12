@@ -559,35 +559,19 @@ async fn the_import_run_says_when_its_backup_was_made() {
         let state = state.clone();
         let token = token.clone();
         async move {
-            let (_, created): (String, serde_json::Value) = post_created_json(
+            let (id, created) = crate::test_support::start_import_run(
                 &state,
-                "/v1/imports",
                 &token,
                 serde_json::json!({ "source": "imessage", "mode": "append" }),
             )
             .await;
-            let id = created["id"].as_i64().unwrap();
             assert_eq!(created["backup_taken_at"], serde_json::Value::Null);
             for body in body {
-                let (status, text) = crate::test_support::post_raw(
-                    &state,
-                    &format!("/v1/imports/{id}/batches"),
-                    &token,
-                    "application/jsonl",
-                    body,
-                )
-                .await;
-                assert_eq!(status, axum::http::StatusCode::OK, "{text}");
+                crate::test_support::post_import_batch(&state, &token, id, body).await;
             }
             let read: serde_json::Value =
                 get_json(&state, &format!("/v1/imports/{id}"), &token).await;
-            let _: serde_json::Value = post_json(
-                &state,
-                &format!("/v1/imports/{id}/complete"),
-                &token,
-                serde_json::json!({ "status": "completed" }),
-            )
-            .await;
+            crate::test_support::complete_import_run(&state, &token, id).await;
             read["backup_taken_at"].clone()
         }
     };

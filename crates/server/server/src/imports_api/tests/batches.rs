@@ -103,6 +103,135 @@ async fn a_batch_waiting_for_a_slot_has_not_read_its_body() {
     );
 }
 
+/// Every one of `state`'s import slots, each held on its own as one running
+/// import holds its slot, so a test can free them one at a time.
+fn hold_every_import_slot(state: &crate::server::AppState) -> Vec<OwnedSemaphorePermit> {
+    (0..MAX_CONCURRENT_IMPORTS)
+        .map(|_| {
+            Arc::clone(&state.import_slots)
+                .try_acquire_owned()
+                .expect("a new server has every import slot free")
+        })
+        .collect()
+}
+
+/// The number of messages stored in `state`'s database.
+async fn stored_messages(state: &crate::server::AppState) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM messages")
+        .fetch_one(&state.db)
+        .await
+        .unwrap()
+}
+
+/// Free one of the `held` import slots once `batch` waits for one, so the
+/// batch takes it, and check before each try that the batch has neither
+/// ended nor stored a message while every slot was held.
+///
+/// The slots hand a freed slot straight to a batch waiting for one, so a
+/// slot freed while a batch waits is taken at once and none is free. With
+/// no batch waiting yet the freed slot stays free, and the test takes it
+/// back and yields, which lets the batch run on to the slots. Nothing here
+/// reads a clock: the loop ends when the batch takes the slot, or fails
+/// when it ends or stores without one.
+async fn hand_a_slot_to_the_waiting_batch<T>(
+    state: &crate::server::AppState,
+    held: &mut Vec<OwnedSemaphorePermit>,
+    batch: &tokio::task::JoinHandle<T>,
+) {
+    loop {
+        tokio::task::yield_now().await;
+        assert!(
+            !batch.is_finished(),
+            "the batch ended while every import slot was held"
+        );
+        assert_eq!(
+            stored_messages(state).await,
+            0,
+            "a batch imported while every import slot was held"
+        );
+        drop(held.pop().expect("a held import slot"));
+        if state.import_slots.available_permits() == 0 {
+            return;
+        }
+        held.push(
+            Arc::clone(&state.import_slots)
+                .try_acquire_owned()
+                .expect("the slot just freed is free"),
+        );
+    }
+}
+
+/// While two imports run, a third batch waits for one of them to end:
+/// it imports nothing until an import slot is freed, takes that slot, and
+/// then imports. Each import holds a pooled connection for its whole run,
+/// so a third running at once would leave login and search waiting for
+/// one (#2128). The test holds both slots in place of the two imports.
+#[tokio::test]
+async fn a_third_batch_waits_while_two_imports_hold_the_slots() {
+    let (state, _fixture, token) = importer().await;
+    let path = batches_path(&state, &token, "imessage").await;
+    let mut held = hold_every_import_slot(&state);
+
+    let batch = crate::request_id::spawn_in_current_span({
+        let state = state.clone();
+        let token = token.clone();
+        async move {
+            crate::test_support::post_raw(
+                &state,
+                &path,
+                &token,
+                "application/jsonl",
+                one_message_batch(),
+            )
+            .await
+        }
+    });
+    hand_a_slot_to_the_waiting_batch(&state, &mut held, &batch).await;
+
+    let (status, text) = batch.await.unwrap();
+    assert_eq!(status, axum::http::StatusCode::OK, "{text}");
+    assert_eq!(stored_messages(&state).await, 1);
+    drop(held);
+    assert_eq!(
+        state.import_slots.available_permits(),
+        MAX_CONCURRENT_IMPORTS,
+        "the batch gave its import slot back"
+    );
+}
+
+/// A batch refused after it took its import slot gives the slot back: an
+/// empty body is refused once it is read, which is after the slot is
+/// taken. A slot kept by a refused batch would leave one import fewer to
+/// run, and none once two had been refused.
+#[tokio::test]
+async fn a_batch_refused_after_taking_its_slot_gives_the_slot_back() {
+    let (state, _fixture, token) = importer().await;
+    let path = batches_path(&state, &token, "imessage").await;
+    let mut held = hold_every_import_slot(&state);
+
+    let batch = crate::request_id::spawn_in_current_span({
+        let state = state.clone();
+        let token = token.clone();
+        async move {
+            crate::test_support::post_raw(&state, &path, &token, "application/jsonl", "").await
+        }
+    });
+    hand_a_slot_to_the_waiting_batch(&state, &mut held, &batch).await;
+
+    let (status, text) = batch.await.unwrap();
+    crate::test_support::expect_problem(
+        status,
+        &text,
+        crate::problem::ProblemType::ValidationFailed,
+    );
+    drop(held);
+    assert_eq!(
+        state.import_slots.available_permits(),
+        MAX_CONCURRENT_IMPORTS,
+        "the refused batch gave its import slot back"
+    );
+}
+
 /// A batch over the Upload's own cap is refused with `413 Payload Too
 /// Large`, so the server never reads more than its client sends. It used to
 /// accept up to the 512 MiB every other body may reach (#2075).
@@ -705,8 +834,8 @@ async fn a_batch_posted_again_after_a_gateway_timeout_stores_each_message_once()
     let server = crate::test_support::serve_router(app).await;
     let body = replace_run_batch("+15555550107", &["g-a", "g-b", "g-c"]);
     let post = || {
-        http_client()
-            .post(format!("{}{path}", server.base()))
+        server
+            .post(&path)
             .bearer_auth(&token)
             .header(reqwest::header::CONTENT_TYPE, "application/jsonl")
             .body(body.clone())

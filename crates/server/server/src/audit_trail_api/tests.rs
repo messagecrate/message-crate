@@ -8,8 +8,8 @@ use crate::problem::ProblemType;
 use crate::server::{APP_HEADER, APP_VERSION_HEADER};
 use crate::test_support::{
     PASSWORD, claim_as_owner, delete_status, expect_problem, expect_problem_for, get_json, get_raw,
-    http_client, log_in, log_in_raw, patch_status, post_created_json, register_via_api, serve,
-    test_fixture, with_trigger_lifted,
+    log_in, log_in_raw, patch_status, post_created_json, register_via_api, serve, test_fixture,
+    with_trigger_lifted,
 };
 
 /// The items of an Audit Trail page.
@@ -34,8 +34,8 @@ async fn log_in_from(
     build: &str,
 ) -> String {
     let server = serve(state).await;
-    let response = http_client()
-        .post(format!("{}/v1/session", server.base()))
+    let response = server
+        .post("/v1/session")
         .header(APP_HEADER, app)
         .header(APP_VERSION_HEADER, build)
         .json(&json!({ "username": username, "password": PASSWORD }))
