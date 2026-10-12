@@ -475,7 +475,14 @@ async fn a_successful_probe_or_website_file_writes_a_debug_line() {
     let fixture = test_fixture().await;
     let website = TempDir::new().unwrap();
     let state = with_website(fixture.state.clone(), website.path());
-    let lines = log_lines_serving(&state, "debug", &["/health", "/index.html"]).await;
+    // `debug` for the response lines alone, so the debug lines of sqlx,
+    // hyper and reqwest never crowd them out of the lines read back.
+    let lines = log_lines_serving(
+        &state,
+        "info,tower_http::trace=debug",
+        &["/health", "/index.html"],
+    )
+    .await;
 
     assert_eq!(
         response_lines(&lines),
