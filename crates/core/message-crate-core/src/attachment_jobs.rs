@@ -2,7 +2,7 @@
 
 use crate::attachments::attachment_dest_name;
 use crate::config::MediaConfig;
-use crate::process::{CancelFlag, LogSink};
+use crate::process::{CancelFlag, Cancelled, LogSink};
 use crate::progress::{ProgressEvent, ProgressSink};
 use file_io::sha256_hex;
 use media::MediaMode;
@@ -121,7 +121,7 @@ pub fn run_attachment_jobs(
 
     for (i, job) in jobs.iter_mut().enumerate() {
         if cancel.load(Ordering::Relaxed) {
-            return Err("canceled".into());
+            return Err(Cancelled.to_string());
         }
 
         let loaded = match load(i) {
@@ -181,7 +181,7 @@ pub fn run_attachment_jobs(
 
     if matches!(media.mode, MediaMode::Convert | MediaMode::Compress) {
         if cancel.load(Ordering::Relaxed) {
-            return Err("canceled".into());
+            return Err(Cancelled.to_string());
         }
         apply_convert_or_compress(jobs, attachments_dir, media, log, cancel)?;
         on_progress(AttachmentProgress {
@@ -362,7 +362,7 @@ fn apply_convert_or_compress(
     .map_err(|e| {
         // A conversion the cancel killed ends the run as canceled.
         if cancel.load(Ordering::Relaxed) {
-            "canceled".to_string()
+            Cancelled.to_string()
         } else {
             format!("{e:#}")
         }
