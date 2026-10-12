@@ -203,6 +203,27 @@ describe("TrashScreen", () => {
     expect(screen.queryByText("Trash is empty")).toBeNull();
   });
 
+  it.each([
+    ["conversations", "contacts"],
+    ["contacts", "conversations"],
+  ] as const)(
+    "asks neither list while the %s search words cannot be loaded, though the %s words can",
+    async (failed, _loaded) => {
+      // A list whose words failed to load has none, which would refuse every
+      // word, so the screen reads no words from it and asks neither list.
+      listSearchFieldsMock.mockImplementation(async (list) => {
+        if (list === failed) throw new Error("Server unreachable");
+        return fieldsFor(list as keyof typeof FIELD_WORDS);
+      });
+      renderAt("/trash");
+      await settle();
+
+      expect(screen.getByText("Could not load the search words. Server unreachable")).toBeTruthy();
+      expect(listConversationsMock).not.toHaveBeenCalled();
+      expect(listContactsMock).not.toHaveBeenCalled();
+    },
+  );
+
   it("shows the error, not an empty Trash, when trashed contacts cannot be loaded", async () => {
     listConversationsMock.mockResolvedValue({ items: [], total: 0, limit: 1, offset: 0 });
     listContactsMock.mockRejectedValue(new Error("Server unreachable"));
@@ -530,33 +551,44 @@ describe("TrashScreen", () => {
       }),
     );
     // The left column selects a row by setting `tsel`, as AppLayout does.
-    function SelectBob() {
+    function Select() {
       const navigate = useNavigate();
       return (
-        <button type="button" onClick={() => navigate("/trash?tsel=7")}>
-          select Bob
-        </button>
+        <>
+          <button type="button" onClick={() => navigate("/trash?tsel=42")}>
+            select Ada
+          </button>
+          <button type="button" onClick={() => navigate("/trash?tsel=7")}>
+            select Bob
+          </button>
+        </>
       );
     }
+    // `keepUnread` holds Bob's detail while Ada is selected, as the app's
+    // client does, so selecting him again draws his pane from the cache.
     render(
-      <Providers>
-        <MemoryRouter initialEntries={["/trash?tsel=42"]}>
-          <SelectBob />
+      <Providers keepUnread>
+        <MemoryRouter initialEntries={["/trash?tsel=7"]}>
+          <Select />
           <TrashScreen />
         </MemoryRouter>
       </Providers>,
     );
     await settle();
+    expect(screen.getByText("Bob Kahn")).toBeTruthy();
 
-    expect(screen.getByText("Ada Lovelace")).toBeTruthy();
     const user = setupUser();
+    await user.click(screen.getByRole("button", { name: "select Ada" }));
+    await settle();
+    expect(screen.getByText("Ada Lovelace")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Restore" }));
     await settle();
     expect(screen.getByText("Restore refused.")).toBeTruthy();
 
+    // No "Loading…" comes between Ada's pane and Bob's to unmount hers, so
+    // only the key keeps her error off his pane.
     await user.click(screen.getByRole("button", { name: "select Bob" }));
     await settle();
-
     expect(screen.getByText("Bob Kahn")).toBeTruthy();
     expect(screen.queryByText("Restore refused.")).toBeNull();
   });
