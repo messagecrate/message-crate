@@ -267,6 +267,15 @@ current one, because that account reaches every other.
   caller does not hold breaks a rule rather than completing with an empty
   result.
 - `429 Too Many Requests` carries `Retry-After`.
+- A request the database was too busy to take in time answers
+  `503 Service Unavailable` (`database-busy`) with `Retry-After`: SQLite
+  answered `SQLITE_BUSY` once the busy timeout ran out, or no pool connection
+  came free within the pool's acquire timeout (sqlx's `PoolTimedOut`). Why:
+  neither is a bug in the server, and the same request succeeds once the
+  import batch or the requests holding the database finish, so the remedy is
+  to wait and send it again, not to report a fault
+  ([#2084](https://github.com/messagecrate/message-crate/issues/2084)).
+  `/health` is the exception, below ([Failures](#failures)).
 - Every `401 Unauthorized` carries `WWW-Authenticate: Bearer
   realm="message-crate"`, whichever problem type it answers:
   `authentication-required`, `invalid-credentials` or `media-link-invalid`.
@@ -525,23 +534,53 @@ login would wait as well.
 
 Rejected: `503 Service Unavailable` for `/health`. A server that cannot reach
 its own database is the `500 Internal Server Error` no page could help with.
+That holds when every connection is taken too, though a `/v1` call answers
+that with `database-busy`: `/health` is outside `/v1`, and its callers read
+only whether it answered `ok`.
 
-Every registered problem type is a `4xx` but one: `server-stopping`, a
-`503 Service Unavailable`. A server told to stop closes its import slots
+Every registered problem type is a `4xx` but two, `server-stopping` and
+`database-busy`, each a `503 Service Unavailable`. Each is its own type
+because the remedy, sending the same request again, is not the remedy for a
+`500 Internal Server Error`, and the request was not the client's mistake, so
+it is not a `4xx`.
+
+A request that reaches a busy database answers `database-busy`, with a
+`Retry-After` of 5 seconds, wherever in the request the database refused it:
+the error's chain is searched for sqlx's `PoolTimedOut` or a SQLite
+`SQLITE_BUSY` (`is_database_busy` in `crates/server/server/src/server.rs`),
+so no handler has to map it. The refusal leaves one `WARN` line naming the
+type and carrying the chain, and no `ERROR` line
+([The server's log](server-log.md#a-refused-request-names-its-problem-type)).
+The desktop app's HTTP client (`classify_retry` in `crates/libs/http`)
+retries a `5xx`, so it retries this with no change of its own. The web app
+tries a read that failed with a `5xx` once more (`retry` in
+`web/src/lib/routeQuery.ts`), without waiting for `Retry-After`, and shows a
+write's failure with its `detail`. The pool
+(`crates/server/server/src/db/engine.rs`) holds 8 connections: two import
+batches and the sweep of unreferenced files after an Import Run
+(`asset_store::sweep_after_run`) can each hold one for a whole run, and
+under write-ahead logging the rest serve reads side by side. A request waits
+10 seconds for a connection, and a write waits SQLite's 15-second busy
+timeout for the write lock. Why: with 4 connections, two imports and a sweep
+left one for every other request, and a request waited sqlx's default 30
+seconds for it before answering `500 Internal Server Error`
+([#2124](https://github.com/messagecrate/message-crate/issues/2124)). Each
+connection's page cache is capped at about 100 MB, half what it was, so the
+8 hold no more memory in all than the 4 did. Not more than 8, because more
+connections would raise that total, or shrink each cache further.
+
+A server told to stop closes its import slots
 (`AppState::on_stop_signal` in `crates/server/server/src/server.rs`), so an
-import batch still waiting for a slot is refused with it, having read none of
-its body, and stores nothing. A batch that holds a slot but is still reading
-its body is refused the same way once the body has arrived, before its import
-starts.
+import batch still waiting for a slot is refused with `server-stopping`,
+having read none of its body, and stores nothing. A batch that holds a slot
+but is still reading its body is refused the same way once the body has
+arrived, before its import starts.
 The Upload retries it as it retries any `5xx`; if the server is not back in
 time, the Upload pauses, and resuming the run sends the batch. A batch whose
 import has started is not refused. Why: a waiting batch used to take a slot
 once an earlier batch ended and import in full, so the stop waited for a
 whole batch more
-([#2203](https://github.com/messagecrate/message-crate/issues/2203)). It is
-its own type because the remedy, sending the same request again, is not the
-remedy for a `500 Internal Server Error`, and the request was not the client's
-mistake, so it is not a `4xx`.
+([#2203](https://github.com/messagecrate/message-crate/issues/2203)).
 
 ## Content negotiation
 

@@ -21,7 +21,17 @@ pub struct TestFixture {
 /// server through `register_via_api` and a real server ships with it off. Tests
 /// whose subject is the closed server turn it back off and say so.
 pub async fn test_fixture() -> TestFixture {
-    let (pool, tmp) = crate::db::engine::test_pool().await;
+    fixture_on(crate::db::engine::test_pool().await).await
+}
+
+/// [`test_fixture`] whose database connections wait `busy_timeout` for
+/// another connection's write lock, so a test can meet `SQLITE_BUSY` at once.
+pub async fn test_fixture_with_busy_timeout(busy_timeout: std::time::Duration) -> TestFixture {
+    fixture_on(crate::db::engine::test_pool_with_busy_timeout(busy_timeout).await).await
+}
+
+/// The fixture on `pool`, which lives in `tmp`, with the schema applied.
+async fn fixture_on((pool, tmp): (sqlx::SqlitePool, TempDir)) -> TestFixture {
     {
         let mut conn = pool.acquire().await.unwrap();
         crate::db::schema::ensure_schema(&mut conn).await.unwrap();
