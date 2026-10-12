@@ -782,9 +782,26 @@ fn record_adopted_or_log(dir: &Path, path: &Path, manifest: &mut Manifest, pin: 
     }
 }
 
+/// The lock on [`LOCK_FILE`] a check holds, let go when it is dropped.
+///
+/// It is let go by unlocking, not only by closing the file. A child this
+/// process starts on another thread holds every descriptor the process had
+/// open from its fork until its exec, and a lock belongs to the open file
+/// the descriptors share, so a lock let go only by closing would stay held
+/// for that instant, and a check that starts then would read it as another
+/// check running and do nothing.
+#[derive(Debug)]
+struct CheckLock(File);
+
+impl Drop for CheckLock {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
+
 /// Take the lock on [`LOCK_FILE`] in `dir`, making `dir` first. `None` when
-/// another check holds it. The lock is let go when the file is closed.
-fn lock_check(dir: &Path) -> io::Result<Option<File>> {
+/// another check holds it.
+fn lock_check(dir: &Path) -> io::Result<Option<CheckLock>> {
     std::fs::create_dir_all(dir)?;
     let file = File::options()
         .create(true)
@@ -792,7 +809,7 @@ fn lock_check(dir: &Path) -> io::Result<Option<File>> {
         .write(true)
         .open(dir.join(LOCK_FILE))?;
     match file.try_lock() {
-        Ok(()) => Ok(Some(file)),
+        Ok(()) => Ok(Some(CheckLock(file))),
         Err(std::fs::TryLockError::WouldBlock) => Ok(None),
         Err(std::fs::TryLockError::Error(err)) => Err(err),
     }
@@ -956,7 +973,7 @@ fn check(
     fetch: &dyn Fetch,
     pinned: &[Pinned],
     run: &mut CheckRun,
-    _lock: Option<File>,
+    _lock: Option<CheckLock>,
     wait: &dyn Fn(Duration),
 ) {
     // A clone of the handle (one `Arc`), because `run` is borrowed mutably

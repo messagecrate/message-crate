@@ -387,6 +387,11 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-12: **Try again on the Import form always checks the tools.**
+  Pressing **Try again** just as the desktop app started another program
+  could leave the check of ffmpeg, ffprobe and wtsexporter believing an
+  earlier check was still running, so it downloaded nothing. The earlier
+  check now lets go at once when it ends (#2944).
 - 2026-10-12: **Every name that is too long is refused in the same words.**
   A Contact Group, Message Tag or Saved Search name over 80 characters, an
   API Token label over 120 and a username over 128 now get the message

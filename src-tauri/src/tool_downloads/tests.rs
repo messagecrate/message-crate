@@ -1741,3 +1741,19 @@ fn a_try_again_whose_thread_cannot_start_fails_with_that_reason() {
     );
     assert!(!downloads.checking());
 }
+
+/// A check's lock is let go when the check ends even while another copy of
+/// its descriptor is open, as a child another thread is starting holds one
+/// until it execs. A check that started then would otherwise read the lock
+/// as another check running and do nothing.
+#[test]
+fn a_checks_lock_is_let_go_while_a_copy_of_its_descriptor_is_open() {
+    let tools = tempfile::tempdir().unwrap();
+    let lock = lock_check(tools.path()).unwrap().expect("the lock is free");
+    let copy = lock.0.try_clone().unwrap();
+
+    drop(lock);
+
+    assert!(lock_check(tools.path()).unwrap().is_some());
+    drop(copy);
+}
