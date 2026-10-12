@@ -328,7 +328,7 @@ async fn http_import_of_a_schema_4_file_is_a_422_naming_both_versions() {
     assert_eq!(
         problem.errors.unwrap(),
         vec![format!(
-            "This file is schema version 4; Message Crate reads version {} (line 1 of the batch).",
+            "this file is schema version 4; Message Crate reads version {} (line 1 of the batch)",
             message_ir::SCHEMA_VERSION
         )]
     );
@@ -358,7 +358,7 @@ async fn http_import_of_a_line_that_is_not_json_is_a_400_naming_the_line_of_the_
     assert_eq!(problem.line, Some(3), "{text}");
     let message = problem.detail.unwrap();
     assert!(
-        message.starts_with("Could not read line 3 of the batch:"),
+        message.starts_with("could not read line 3 of the batch:"),
         "{message}"
     );
 }
@@ -380,7 +380,7 @@ async fn http_import_of_a_line_that_is_not_utf8_is_a_400_naming_the_line() {
     );
     let message = problem.detail.unwrap();
     assert!(
-        message.starts_with("Could not read line 3 of the batch:"),
+        message.starts_with("could not read line 3 of the batch:"),
         "{message}"
     );
 }
@@ -403,7 +403,7 @@ async fn a_refusal_after_a_blank_line_names_the_line_of_the_batch() {
     );
     assert_eq!(problem.line, Some(3), "{text}");
     assert!(
-        problem.errors.unwrap()[0].starts_with("Line 3 of the batch:"),
+        problem.errors.unwrap()[0].starts_with("line 3 of the batch:"),
         "{text}"
     );
 }
@@ -431,7 +431,7 @@ async fn a_batch_whose_header_has_the_wrong_fields_is_a_422_naming_the_line() {
     );
     assert!(
         problem.errors.unwrap()[0]
-            .starts_with("Line 1 of the batch: the conversation header is not valid"),
+            .starts_with("line 1 of the batch: the conversation header is not valid"),
         "{text}"
     );
 }
@@ -752,7 +752,7 @@ async fn a_batch_with_a_message_without_a_guid_is_refused_and_stores_nothing() {
         problem.errors.as_deref(),
         Some(
             &[
-                "The message on line 3 of the batch has no guid; every message needs one."
+                "the message on line 3 of the batch has no guid; every message needs one"
                     .to_string()
             ][..]
         )

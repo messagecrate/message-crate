@@ -483,7 +483,7 @@ async fn a_file_that_does_not_match_its_stated_sha256_is_refused_naming_it() {
     let stated = file_io::sha256_hex(b"the bytes the export saw");
     let err = import_photo_stating(b"the bytes on disk", &stated).await;
     assert!(
-        err.contains("Line 2") && err.contains("photo.bin") && err.contains(&stated),
+        err.contains("line 2") && err.contains("photo.bin") && err.contains(&stated),
         "{err}"
     );
 }
@@ -494,7 +494,7 @@ async fn a_file_that_does_not_match_its_stated_sha256_is_refused_naming_it() {
 async fn a_stated_sha256_that_is_not_one_is_refused_naming_the_file() {
     let err = import_photo_stating(b"the bytes on disk", "not-a-fingerprint").await;
     assert!(
-        err.contains("Line 2") && err.contains("photo.bin") && err.contains("not-a-fingerprint"),
+        err.contains("line 2") && err.contains("photo.bin") && err.contains("not-a-fingerprint"),
         "{err}"
     );
 }

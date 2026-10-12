@@ -169,7 +169,7 @@ describe("LeftPanel", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "a saved search named 'From Alice' already exists",
+      "A saved search named 'From Alice' already exists",
     );
     expect(savedSearchActions.create).toHaveBeenCalledWith("From Alice", "from:alice");
     expect(screen.getByRole("dialog", { name: "New saved search" })).toBeTruthy();
@@ -204,7 +204,7 @@ describe("LeftPanel", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "a saved search named 'Work' already exists",
+      "A saved search named 'Work' already exists",
     );
     expect(savedSearchActions.update).toHaveBeenCalledWith(1, "Work", "from:alice");
     expect(screen.getByRole("dialog", { name: "Edit saved search" })).toBeTruthy();

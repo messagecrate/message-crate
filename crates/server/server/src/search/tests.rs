@@ -754,6 +754,55 @@ pub(crate) fn err(list: ListKind, q: &str) -> QueryError {
     .expect_err("expected a refusal")
 }
 
+/// Every refusal is one sentence in lowercase with no final period, the form
+/// `docs/architecture/http-api.md`, "Failures", gives every `detail`, so the
+/// website decides how the line starts and ends (#2816). One query per kind
+/// of refusal, and per sentence the parser writes.
+#[test]
+fn every_refusal_takes_the_detail_form() {
+    let long = "a".repeat(super::lex::MAX_QUERY_BYTES + 1);
+    // Past the 32 words, the 64 parts and the 32 levels a search may hold.
+    let many_words = vec!["w"; 33].join(" ");
+    let many_parts = (0..65)
+        .map(|i| format!("tag:t{i}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let deep = format!("{}a{}", "(".repeat(40), ")".repeat(40));
+    let cases = [
+        (ListKind::Messages, long.as_str()),
+        (ListKind::Messages, many_words.as_str()),
+        (ListKind::Messages, many_parts.as_str()),
+        (ListKind::Messages, deep.as_str()),
+        (ListKind::Messages, r#"tag:"Book"#),
+        (ListKind::Messages, "(a"),
+        (ListKind::Messages, "a)"),
+        (ListKind::Messages, "()"),
+        (ListKind::Messages, "a or"),
+        (ListKind::Messages, "a and"),
+        (ListKind::Messages, "not"),
+        (ListKind::Messages, r#""""#),
+        (ListKind::Messages, "wombat:1"),
+        (ListKind::Messages, "paticipants:2"),
+        (ListKind::Contacts, "from:me"),
+        (ListKind::Messages, "tag:"),
+        (ListKind::Messages, "date:2019-13"),
+        (ListKind::Conversations, "kind:big"),
+        (ListKind::Messages, "import:x"),
+    ];
+    for (list, query) in cases {
+        let message = err(list, query).message;
+        let first = message.chars().next().expect("a refusal has a sentence");
+        assert!(
+            !first.is_uppercase(),
+            "{list:?} {query:.40}: starts with a capital: {message}"
+        );
+        assert!(
+            !message.ends_with(['.', '?', '!']),
+            "{list:?} {query:.40}: ends with a stop: {message}"
+        );
+    }
+}
+
 mod free_text {
     use super::*;
 
@@ -3912,8 +3961,8 @@ mod refusals {
         }
     }
 
-    /// An unknown word's message is the plain "word: is not a search word."
-    /// sentence, full stop; any "Did you mean" suffix comes only from a word
+    /// An unknown word's message is the plain "word: is not a search word"
+    /// sentence; any "did you mean" clause comes only from a word
     /// that is actually in today's word list, never from a spelling the
     /// language used to have. These nine are invented, made-up spellings
     /// with no history in this language at all.
@@ -3934,8 +3983,8 @@ mod refusals {
             assert_eq!(e.kind, QueryErrorKind::UnknownWord, "{made_up}");
             let word = made_up.split(':').next().unwrap();
             assert_eq!(
-                e.message.trim_end_matches(|c: char| c != '.'),
-                format!("{word}: is not a search word."),
+                e.message.split(';').next().unwrap(),
+                format!("{word}: is not a search word"),
                 "{made_up}"
             );
         }

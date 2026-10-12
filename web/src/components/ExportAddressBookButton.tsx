@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { apiErrorMessage } from "../lib/apiErrorMessage";
+import { searchErrorLine } from "../lib/apiErrorMessage";
 import { saveFile } from "../lib/saveFile";
 import { exportAddressBook } from "../lib/serverApi";
 import Button from "./Button";
@@ -36,7 +36,7 @@ export default function ExportAddressBookButton({
       const csv = await exportAddressBook(body);
       await saveFile(FILE_NAME, new Blob([csv], { type: "text/csv" }));
     } catch (err) {
-      setError(apiErrorMessage(err, "Could not export the address book."));
+      setError(searchErrorLine(err, "Could not export the address book."));
     } finally {
       setBusy(false);
     }

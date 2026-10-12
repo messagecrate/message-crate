@@ -27,7 +27,7 @@ impl fmt::Display for UnsupportedSchemaVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "This file is schema version {}; Message Crate reads version {SCHEMA_VERSION}",
+            "this file is schema version {}; Message Crate reads version {SCHEMA_VERSION}",
             self.found
         )
     }
@@ -77,7 +77,7 @@ mod tests {
     fn names_the_version_found_and_the_version_read() {
         assert_eq!(
             check_schema_version(3).unwrap_err().to_string(),
-            format!("This file is schema version 3; Message Crate reads version {SCHEMA_VERSION}")
+            format!("this file is schema version 3; Message Crate reads version {SCHEMA_VERSION}")
         );
         assert_eq!(check_schema_version(SCHEMA_VERSION), Ok(()));
     }
@@ -92,7 +92,7 @@ mod tests {
             check_schema_version_in_json(r#"{"schema_version":9,"export":{}}"#)
                 .unwrap_err()
                 .to_string(),
-            format!("This file is schema version 9; Message Crate reads version {SCHEMA_VERSION}")
+            format!("this file is schema version 9; Message Crate reads version {SCHEMA_VERSION}")
         );
     }
 
@@ -106,7 +106,7 @@ mod tests {
             check_schema_version_in_json(r#"{"schema_version":10,"export":{}}"#)
                 .unwrap_err()
                 .to_string(),
-            format!("This file is schema version 10; Message Crate reads version {SCHEMA_VERSION}")
+            format!("this file is schema version 10; Message Crate reads version {SCHEMA_VERSION}")
         );
     }
 
@@ -121,7 +121,7 @@ mod tests {
             check_schema_version_in_json(r#"{"schema_version":11,"export":{}}"#)
                 .unwrap_err()
                 .to_string(),
-            format!("This file is schema version 11; Message Crate reads version {SCHEMA_VERSION}")
+            format!("this file is schema version 11; Message Crate reads version {SCHEMA_VERSION}")
         );
     }
 
@@ -138,7 +138,7 @@ mod tests {
             check_schema_version_in_json(r#"{"schema_version":12,"export":{}}"#)
                 .unwrap_err()
                 .to_string(),
-            format!("This file is schema version 12; Message Crate reads version {SCHEMA_VERSION}")
+            format!("this file is schema version 12; Message Crate reads version {SCHEMA_VERSION}")
         );
         assert_eq!(SCHEMA_VERSION, 14);
     }

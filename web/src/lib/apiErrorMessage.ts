@@ -1,3 +1,5 @@
+import { ApiError } from "./api";
+
 /**
  * Pull the human-readable part out of an API error: the message of an
  * `Error`, and `fallback` for anything else. An `Error` whose message is
@@ -46,4 +48,20 @@ export function sentenceCase(text: string): string {
  */
 export function errorLine(err: unknown): string {
   return sentenceCase(errorText(err));
+}
+
+/**
+ * A failure on a screen that runs a search, as a line of its own. A search
+ * refusal that is about one word starts with that word as it is typed
+ * (`from: is not a Contacts word; it works on Messages`), and a capital would
+ * change the word, so it is shown as it is. Only a `search-query-invalid`
+ * problem is read that way. Any other sentence starts with a capital, as
+ * `errorLine` gives it, including a refusal that names a parameter first,
+ * such as `sort: unknown key …`.
+ */
+export function searchErrorLine(err: unknown, fallback: string): string {
+  const text = apiErrorMessage(err, fallback);
+  const aboutAWord =
+    err instanceof ApiError && err.type === "search-query-invalid" && /^[a-z][a-z-]*:/.test(text);
+  return aboutAWord ? text : sentenceCase(text);
 }

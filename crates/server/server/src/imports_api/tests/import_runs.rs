@@ -635,6 +635,91 @@ async fn a_completion_names_every_issue_and_note_over_the_cap() {
     );
 }
 
+/// A completion with a status the route does not take and a note over the
+/// cap names both in one refusal, so the client fixes them in one go rather
+/// than meeting the status only once the note is fixed (#2868).
+#[tokio::test]
+async fn a_completion_names_a_bad_status_with_a_note_over_the_cap() {
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    let (id, _) = crate::test_support::start_import_run(
+        state,
+        token,
+        serde_json::json!({ "source": "imessage" }),
+    )
+    .await;
+    let (status, text) = crate::test_support::post_json_raw(
+        state,
+        &format!("/v1/imports/{id}/complete"),
+        token,
+        serde_json::json!({
+            "status": "finished",
+            "notes": [{ "stage": "staging", "item": "a", "text": "x".repeat(2_001) }]
+        }),
+    )
+    .await;
+    crate::test_support::expect_problem(
+        status,
+        &text,
+        crate::problem::ProblemType::ValidationFailed,
+    );
+    let errors: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        errors["errors"],
+        serde_json::json!([
+            "invalid import status 'finished'; expected 'completed', 'completed_with_issues', or 'failed'",
+            "notes[0].text: must be at most 2000 characters"
+        ]),
+        "{text}"
+    );
+    crate::test_support::complete_import_run(state, token, id).await;
+}
+
+/// A new Import Run's body that breaks a rule of each kind the route checks
+/// is refused once, naming every one, and starts no run (#2868).
+#[tokio::test]
+async fn starting_a_run_names_every_rule_the_body_breaks() {
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    let (status, text) = crate::test_support::post_json_raw(
+        state,
+        "/v1/imports",
+        token,
+        serde_json::json!({
+            "source": "iMessage",
+            "phone_country": "ZZ",
+            "device_id": "d".repeat(65),
+            "form": { "pad": "f".repeat(70_000) }
+        }),
+    )
+    .await;
+    crate::test_support::expect_problem(
+        status,
+        &text,
+        crate::problem::ProblemType::ValidationFailed,
+    );
+    let errors: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        errors["errors"],
+        serde_json::json!([
+            "source id 'iMessage' must use only lowercase letters, digits, hyphens, and underscores",
+            "phone_country \"ZZ\" is not a country GET /v1/phone-countries lists",
+            "device_id: must be at most 64 characters",
+            "form: must be at most 65536 bytes of JSON"
+        ]),
+        "{text}"
+    );
+    // Nothing was started, so the same account starts a run at once.
+    crate::test_support::start_import_run(
+        state,
+        token,
+        serde_json::json!({ "source": "imessage" }),
+    )
+    .await;
+}
+
 /// A note's `item` and `text` are each at most 2,000 characters, on a
 /// completion and a discard alike, and a body over the cap leaves the run
 /// running. They were stored at any length a JSON body could carry (#2668).

@@ -134,17 +134,17 @@ impl<F: FieldNodes> Expr<F> {
 fn value_hint(spec: &FieldSpec) -> String {
     let choices = || spec.values.join(", ");
     match spec.value_type {
-        ValueType::Date => "Write a year, a month like 2024-05, a day, or a span like 7d, with >, >=, <, <=, or a..b.".into(),
-        ValueType::Count => "Write a number, with >, >=, <, <=, or a..b.".into(),
-        ValueType::Size => "Write a size like 500k, 1M, or 2G, with >, >=, <, <=, or a..b.".into(),
-        ValueType::Choice | ValueType::Flag => format!("Write one of: {}.", choices()),
-        ValueType::Name if spec.word == "import" => "Write #id or last.".into(),
-        ValueType::Name if spec.values.is_empty() => "Write a name, pre* for a prefix, or #id.".into(),
-        ValueType::Name => format!("Write a name, pre* for a prefix, #id, or one of: {}.", choices()),
-        ValueType::Person if spec.values.is_empty() => "Write a name, an identity, pre* for a prefix, or #id.".into(),
-        ValueType::Person => format!("Write a name, an identity, pre* for a prefix, #id, or one of: {}.", choices()),
-        ValueType::Text if spec.values.is_empty() => "Write some text, or pre* for a prefix.".into(),
-        ValueType::Text => format!("Write some text, pre* for a prefix, or one of: {}.", choices()),
+        ValueType::Date => "write a year, a month like 2024-05, a day, or a span like 7d, with >, >=, <, <=, or a..b".into(),
+        ValueType::Count => "write a number, with >, >=, <, <=, or a..b".into(),
+        ValueType::Size => "write a size like 500k, 1M, or 2G, with >, >=, <, <=, or a..b".into(),
+        ValueType::Choice | ValueType::Flag => format!("write one of: {}", choices()),
+        ValueType::Name if spec.word == "import" => "write #id or last".into(),
+        ValueType::Name if spec.values.is_empty() => "write a name, pre* for a prefix, or #id".into(),
+        ValueType::Name => format!("write a name, pre* for a prefix, #id, or one of: {}", choices()),
+        ValueType::Person if spec.values.is_empty() => "write a name, an identity, pre* for a prefix, or #id".into(),
+        ValueType::Person => format!("write a name, an identity, pre* for a prefix, #id, or one of: {}", choices()),
+        ValueType::Text if spec.values.is_empty() => "write some text, or pre* for a prefix".into(),
+        ValueType::Text => format!("write some text, pre* for a prefix, or one of: {}", choices()),
     }
 }
 
@@ -202,7 +202,7 @@ fn empty_value_error(spec: &FieldSpec, word: &str, span: Range<usize>) -> QueryE
     let mut err = QueryError::new(
         QueryErrorKind::EmptyValue,
         span,
-        format!("{word}: needs a value, for example {}{also}.", spec.example),
+        format!("{word}: needs a value, for example {}{also}", spec.example),
     );
     err.field = Some(spec.word);
     err
@@ -221,10 +221,10 @@ fn field_term(
         let mut err = QueryError::new(
             QueryErrorKind::UnknownWord,
             span,
-            format!("{word}: is not a search word."),
+            format!("{word}: is not a search word"),
         );
         if let Some(near) = fields::nearest(word, list) {
-            let _ = write!(err.message, " Did you mean {near}:?");
+            let _ = write!(err.message, "; did you mean {near}:");
             err.did_you_mean = Some(near);
         }
         return Err(err);
@@ -235,14 +235,14 @@ fn field_term(
             QueryErrorKind::WrongList,
             span,
             format!(
-                "{word}: is not a {} word. It works on {}.",
+                "{word}: is not a {} word; it works on {}",
                 list.label(),
                 works_on.join(" and ")
             ),
         );
         err.field = Some(spec.word);
         if let Some(near) = fields::nearest(word, list).filter(|n| *n != spec.word) {
-            let _ = write!(err.message, " Did you mean {near}:?");
+            let _ = write!(err.message, "; did you mean {near}:");
             err.did_you_mean = Some(near);
         }
         return Err(err);
@@ -261,14 +261,14 @@ fn field_term(
                 QueryError::new(
                     QueryErrorKind::BadValue,
                     span,
-                    "import: needs #id or last.".to_string(),
+                    "import: needs #id or last".to_string(),
                 )
             } else {
                 QueryError::new(
                     QueryErrorKind::BadValue,
                     span,
                     format!(
-                        "{word}: does not understand {}. {}",
+                        "{word}: does not understand {}; {}",
                         piece.trim(),
                         value_hint(spec)
                     ),
@@ -339,7 +339,7 @@ where
             let or_span = self.peek().unwrap().span.clone();
             self.i += 1;
             if self.at_operand_end() {
-                return Err(unbalanced(or_span, "or needs something on both sides."));
+                return Err(unbalanced(or_span, "or needs something on both sides"));
             }
             parts.push(self.parse_and(depth)?);
         }
@@ -360,7 +360,7 @@ where
                     let and_span = self.peek().unwrap().span.clone();
                     self.i += 1;
                     if self.at_operand_end() {
-                        return Err(unbalanced(and_span, "and needs something on both sides."));
+                        return Err(unbalanced(and_span, "and needs something on both sides"));
                     }
                     parts.push(self.parse_unary(depth)?);
                 }
@@ -380,20 +380,20 @@ where
             return Err(QueryError::new(
                 QueryErrorKind::TooComplex,
                 0..self.end,
-                "The search nests too deeply.",
+                "the search nests too deeply",
             ));
         }
         let Some(tok) = self.peek() else {
             return Err(unbalanced(
                 self.end..self.end,
-                "The search ends where a word was expected.",
+                "the search ends where a word was expected",
             ));
         };
         if matches!(tok.kind, TokenKind::Not) {
             let span = tok.span.clone();
             self.i += 1;
             if self.at_operand_end() {
-                return Err(unbalanced(span, "not needs something after it."));
+                return Err(unbalanced(span, "not needs something after it"));
             }
             return Ok(Expr::Not(Box::new(self.parse_unary(depth + 1)?)));
         }
@@ -416,7 +416,7 @@ where
             TokenKind::LParen => {
                 self.i += 1;
                 if matches!(self.peek().map(|t| &t.kind), None | Some(TokenKind::RParen)) {
-                    return Err(unbalanced(tok.span, "A parenthesis has nothing inside it."));
+                    return Err(unbalanced(tok.span, "a parenthesis has nothing inside it"));
                 }
                 let inner = self.parse_or(depth + 1)?;
                 match self.peek().map(|t| &t.kind) {
@@ -424,18 +424,18 @@ where
                         self.i += 1;
                         Ok(inner)
                     }
-                    _ => Err(unbalanced(tok.span, "A parenthesis never closes.")),
+                    _ => Err(unbalanced(tok.span, "a parenthesis never closes")),
                 }
             }
             TokenKind::RParen => Err(unbalanced(
                 tok.span,
-                "A closing parenthesis has no opening one.",
+                "a closing parenthesis has no opening one",
             )),
             TokenKind::Or | TokenKind::And => Err(unbalanced(
                 tok.span,
-                "or and and need something on both sides.",
+                "or and and need something on both sides",
             )),
-            TokenKind::Not => Err(unbalanced(tok.span, "not needs something after it.")),
+            TokenKind::Not => Err(unbalanced(tok.span, "not needs something after it")),
             TokenKind::Field {
                 word,
                 value,
@@ -455,7 +455,7 @@ where
                     return Err(QueryError::new(
                         QueryErrorKind::EmptyValue,
                         tok.span,
-                        "A quoted phrase needs some text between the quotes.",
+                        "a quoted phrase needs some text between the quotes",
                     ));
                 }
                 self.i += 1;
@@ -506,21 +506,21 @@ where
     if let Some(extra) = p.peek() {
         return Err(unbalanced(
             extra.span.clone(),
-            "A closing parenthesis has no opening one.",
+            "a closing parenthesis has no opening one",
         ));
     }
     if expr.text_terms() > MAX_TEXT_TERMS {
         return Err(QueryError::new(
             QueryErrorKind::TooComplex,
             0..end,
-            format!("The search has more than {MAX_TEXT_TERMS} words."),
+            format!("the search has more than {MAX_TEXT_TERMS} words"),
         ));
     }
     if expr.nodes() > MAX_NODES {
         return Err(QueryError::new(
             QueryErrorKind::TooComplex,
             0..end,
-            "The search has too many parts.",
+            "the search has too many parts",
         ));
     }
     Ok(Some(expr))
@@ -557,7 +557,7 @@ mod tests {
         ));
         let e = parse_err(ListKind::Messages, &nested(33));
         assert_eq!(e.kind, QueryErrorKind::TooComplex);
-        assert_eq!(e.message, "The search nests too deeply.");
+        assert_eq!(e.message, "the search nests too deeply");
     }
 
     /// A part is a term, a negation, or the `and` or `or` joining them. Field
@@ -575,7 +575,7 @@ mod tests {
         let one_over = "-service:sms ".repeat(32);
         let e = parse_err(ListKind::Messages, &one_over);
         assert_eq!(e.kind, QueryErrorKind::TooComplex);
-        assert_eq!(e.message, "The search has too many parts.");
+        assert_eq!(e.message, "the search has too many parts");
     }
 
     /// Each comma value is one more `OR` in the SQL, so each counts as a part.
@@ -589,7 +589,7 @@ mod tests {
 
         let e = parse_err(ListKind::Messages, &format!("service:{}", values(65)));
         assert_eq!(e.kind, QueryErrorKind::TooComplex);
-        assert_eq!(e.message, "The search has too many parts.");
+        assert_eq!(e.message, "the search has too many parts");
     }
 
     /// Read without a list, a query is held to the limits every list holds it
@@ -633,7 +633,7 @@ mod tests {
         assert!(unchecked("from:me grup:Family date:soon").is_ok());
         assert_eq!(
             unchecked("(from:me").unwrap_err().message,
-            "A parenthesis never closes."
+            "a parenthesis never closes"
         );
     }
 
@@ -731,7 +731,7 @@ mod tests {
     fn unknown_word_is_refused_without_naming_anything_else() {
         let err = parse_err(ListKind::Messages, "wombat:Family");
         assert_eq!(err.kind, QueryErrorKind::UnknownWord);
-        assert_eq!(err.message, "wombat: is not a search word.");
+        assert_eq!(err.message, "wombat: is not a search word");
         assert_eq!(err.span, 0..13);
         assert_eq!(err.did_you_mean, None);
     }
@@ -743,7 +743,7 @@ mod tests {
         assert_eq!(err.did_you_mean, Some("participants"));
         assert_eq!(
             err.message,
-            "paticipants: is not a search word. Did you mean participants:?"
+            "paticipants: is not a search word; did you mean participants:"
         );
     }
 
@@ -754,7 +754,7 @@ mod tests {
         assert_eq!(err.field, Some("from"));
         assert_eq!(
             err.message,
-            "from: is not a Contacts word. It works on Messages."
+            "from: is not a Contacts word; it works on Messages"
         );
         assert_eq!(err.span, 0..7);
         assert_eq!(err.did_you_mean, None);
@@ -766,18 +766,18 @@ mod tests {
         assert_eq!(err.kind, QueryErrorKind::EmptyValue);
         assert_eq!(
             err.message,
-            "tag: needs a value, for example tag:Holiday or tag:none."
+            "tag: needs a value, for example tag:Holiday or tag:none"
         );
         let err = parse_err(ListKind::Messages, "date:2019-13");
         assert_eq!(err.kind, QueryErrorKind::BadValue);
         assert_eq!(
             err.message,
-            "date: does not understand 2019-13. Write a year, a month like 2024-05, a day, or a span like 7d, with >, >=, <, <=, or a..b."
+            "date: does not understand 2019-13; write a year, a month like 2024-05, a day, or a span like 7d, with >, >=, <, <=, or a..b"
         );
         let err = parse_err(ListKind::Messages, "kind:big");
         assert_eq!(
             err.message,
-            "kind: does not understand big. Write one of: direct, group, orphaned."
+            "kind: does not understand big; write one of: direct, group, orphaned"
         );
     }
 
@@ -789,7 +789,7 @@ mod tests {
         assert_eq!(err.kind, QueryErrorKind::EmptyValue);
         assert_eq!(
             err.message,
-            "kind: needs a value, for example kind:direct or kind:group."
+            "kind: needs a value, for example kind:direct or kind:group"
         );
         // import:'s only keyword ("last") is already its example, so there
         // is no second example to offer.
@@ -797,7 +797,7 @@ mod tests {
         assert_eq!(err.kind, QueryErrorKind::EmptyValue);
         assert_eq!(
             err.message,
-            "import: needs a value, for example import:last."
+            "import: needs a value, for example import:last"
         );
     }
 
@@ -805,7 +805,7 @@ mod tests {
     fn import_only_accepts_id_or_last() {
         let err = parse_err(ListKind::Messages, "import:foo");
         assert_eq!(err.kind, QueryErrorKind::BadValue);
-        assert_eq!(err.message, "import: needs #id or last.");
+        assert_eq!(err.message, "import: needs #id or last");
         assert_eq!(err.field, Some("import"));
         let e = parse_ok(ListKind::Messages, "import:last");
         let Expr::Field(term) = e else { panic!() };
@@ -821,13 +821,13 @@ mod tests {
         assert_eq!(err.kind, QueryErrorKind::EmptyValue);
         assert_eq!(
             err.message,
-            "tag: needs a value, for example tag:Holiday or tag:none."
+            "tag: needs a value, for example tag:Holiday or tag:none"
         );
         let err = parse_err(ListKind::Messages, "tag:,,");
         assert_eq!(err.kind, QueryErrorKind::EmptyValue);
         assert_eq!(
             err.message,
-            "tag: needs a value, for example tag:Holiday or tag:none."
+            "tag: needs a value, for example tag:Holiday or tag:none"
         );
     }
 
