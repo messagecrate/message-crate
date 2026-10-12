@@ -387,6 +387,11 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-12: **The Demo Account's refusals read like every other error.**
+  When the Demo Account refuses something, such as setting its password or
+  deleting itself, the message is now one short sentence that names what
+  it refused, as the server's other errors are. The way to restore the
+  Demo Data is on the error's page in the developer reference (#2817).
 - 2026-10-12: **The Audit Trail records every build of the Demo Account.**
   Resetting or adding the Demo Account with the `reset-demo` server command
   is now recorded, with the set of Demo Data, by **Server command**, and so

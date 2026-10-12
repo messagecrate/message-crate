@@ -969,7 +969,7 @@ pub async fn delete_account(
     if reach.is_own() {
         if account_profile::is_demo_account(target) {
             return Err(ApiError::DemoAccountProtected(
-                "the demo account cannot be deleted; use reset-demo to restore it".into(),
+                "the Demo Account cannot delete itself".into(),
             ));
         }
         // Deleting the account deletes every message it owns, so an account
