@@ -470,12 +470,16 @@ fn make_session_dir(
 
 /// A part on its way in ([`begin_part`]): a new file in its upload's
 /// directory, which the part's body is streamed into
-/// ([`PartTemp::receive`]), so the server holds one read of a part's body
+/// ([`PartTemp::receive`]), so the server holds one buffer of a part's body
 /// at a time and never the whole of it (#2114). The file is removed when
 /// this is dropped, as when the part is refused or its client goes away
 /// part-way, unless [`put_part`] has given it the part's name.
 #[derive(Debug)]
 pub struct PartTemp {
+    /// The fingerprint the upload was started for.
+    sha: Sha256,
+    /// The upload's directory, which holds the file.
+    session: PathBuf,
     /// The part number the file is for.
     part: u32,
     /// The part size the upload started with. A body is capped at this
@@ -529,7 +533,8 @@ impl PartTemp {
 
 impl Drop for PartTemp {
     fn drop(&mut self) {
-        // Closed first, so Windows can delete it.
+        // Closed first, so Windows can delete it, when the body never
+        // arrived; `receive` closes it once the body is in.
         drop(self.file.take());
         if !self.kept {
             let _ = fs::remove_file(&self.path);
@@ -565,6 +570,8 @@ pub fn begin_part(
         match file_io::owner_only(options.write(true).create_new(true)).open(&path) {
             Ok(file) => {
                 return Ok(PartTemp {
+                    sha: sha.clone(),
+                    session,
                     part,
                     part_size: manifest.part_size,
                     path,
@@ -663,36 +670,32 @@ pub fn read_upload(
 }
 
 /// Record the part whose whole body is now in `temp`'s file
-/// ([`PartTemp::receive`]) in its upload, which was started for `sha`, and
-/// return its size. A body of exactly the part's size takes the part's
-/// name, replacing any copy of the part sent before, and the manifest
-/// records it. A body of any other size is refused, and dropping `temp`
-/// removes its file.
+/// ([`PartTemp::receive`]) in its upload, and return its size. A body of
+/// exactly the part's size takes the part's name, replacing any copy of the
+/// part sent before, and the manifest records it. A body of any other size
+/// is refused, and dropping `temp` removes its file.
 ///
 /// # Errors
 ///
-/// Returns [`AssetError::Invalid`] for a part of the wrong size or an upload
-/// started for another fingerprint, [`AssetError::Locked`] while another
-/// request to the upload holds its lock, [`AssetError::UploadNotFound`] when
-/// the upload was removed while the part arrived, and
-/// [`AssetError::Internal`] when the part cannot be stored.
-pub fn put_part(sha: &Sha256, temp: PartTemp) -> Result<u64, AssetError> {
+/// Returns [`AssetError::Invalid`] for a part of the wrong size,
+/// [`AssetError::Locked`] while another request to the upload holds its
+/// lock, [`AssetError::UploadNotFound`] when the upload was removed while
+/// the part arrived, and [`AssetError::Internal`] when the part cannot be
+/// stored.
+pub fn put_part(temp: PartTemp) -> Result<u64, AssetError> {
     // `begin_part` made the file in the upload's directory, which may have
     // been removed since.
-    let session = temp
-        .path
-        .parent()
-        .map(Path::to_path_buf)
-        .ok_or(AssetError::UploadNotFound)?;
-    write_part(&session, sha, temp).map_err(|e| gone_if_session_file_removed(&session, e))
+    let session = temp.session.clone();
+    write_part(temp).map_err(|e| gone_if_session_file_removed(&session, e))
 }
 
-/// [`put_part`] on the directory of its upload. The part number is not
-/// checked again: [`begin_part`] checked it against the same manifest, whose
-/// size and part size never change.
-fn write_part(session: &Path, sha: &Sha256, mut temp: PartTemp) -> Result<u64, AssetError> {
+/// [`put_part`]. The part number is not checked again: [`begin_part`]
+/// checked it against the same manifest, whose size and part size never
+/// change.
+fn write_part(mut temp: PartTemp) -> Result<u64, AssetError> {
+    let session = temp.session.as_path();
     let _lock = lock_session(session)?;
-    let mut manifest = read_manifest_for(session, sha)?;
+    let mut manifest = read_manifest_for(session, &temp.sha)?;
     let part = temp.part;
     // Closed before it is measured and renamed.
     drop(temp.file.take());

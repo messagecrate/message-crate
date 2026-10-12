@@ -743,8 +743,8 @@ async fn an_upload_start_past_the_open_upload_limit_is_a_state_conflict() {
 /// #2652: a part streams into its own temp, so nothing is written to its
 /// upload's manifest until all of it is in, and the manifest can say
 /// nothing was written for longer than the stall limit while the part is
-/// still arriving. A sweep
-/// then leaves the upload alone, and the part is stored once it arrives.
+/// still arriving. A sweep then leaves the upload alone, and the part is
+/// stored once it arrives.
 #[tokio::test]
 async fn a_sweep_leaves_an_upload_whose_part_is_still_arriving() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;

@@ -40,7 +40,7 @@ fn send_part(
 ) -> Result<u64, AssetError> {
     let mut temp = begin_part(root, sha, upload_id, part)?;
     write_into(&mut temp, body);
-    put_part(sha, temp)
+    put_part(temp)
 }
 
 /// Write `body` into `temp`'s file, as [`PartTemp::receive`] does with a

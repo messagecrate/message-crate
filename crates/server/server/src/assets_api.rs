@@ -1371,8 +1371,7 @@ pub(crate) async fn replace_asset_upload_part(
         state.upload_time_limits,
     ))
     .await?;
-    let sha = sha256.clone();
-    let written = run_blocking("upload part", move || asset_uploads::put_part(&sha, temp)).await?;
+    let written = run_blocking("upload part", move || asset_uploads::put_part(temp)).await?;
     Ok(Json(ReplaceAssetUploadPartResponse {
         part,
         bytes: written,
