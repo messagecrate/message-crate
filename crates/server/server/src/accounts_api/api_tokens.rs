@@ -280,6 +280,7 @@ pub async fn create_api_token(
             api_token_hint: Some(token_hint.clone()),
             ..Details::default()
         },
+        chrono::Utc::now(),
     )
     .await?;
 
@@ -341,6 +342,7 @@ pub async fn delete_api_token(
             api_token_hint: Some(token.token_hint),
             ..Details::default()
         },
+        chrono::Utc::now(),
     )
     .await?;
     Ok(axum::http::StatusCode::NO_CONTENT)

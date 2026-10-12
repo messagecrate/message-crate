@@ -921,7 +921,8 @@ async fn a_contact_deleted_for_good_takes_the_next_imported_name() {
             ACCOUNT_A,
             contact_id,
             "Pat Lee",
-            crate::db::contacts::Origin::Import
+            crate::db::contacts::Origin::Import,
+            crate::test_support::fixed_instant()
         )
         .await
         .unwrap()

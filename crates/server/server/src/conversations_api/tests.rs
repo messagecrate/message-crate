@@ -1330,6 +1330,7 @@ async fn list_conversations_filters_by_tag_and_people() {
         &[1],
         "Holiday",
         true,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -1375,6 +1376,7 @@ async fn list_conversations_filters_by_tag_and_people() {
         &[contact_id],
         "Family",
         true,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();

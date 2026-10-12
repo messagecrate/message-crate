@@ -65,6 +65,10 @@ async fn last_modified(conn: &mut SqliteConnection, contact: i64) -> String {
 /// A `last_modified` no hook writes, so a change from it shows a touch.
 const OLD: &str = "2000-01-01 00:00:00";
 
+/// The `last_modified` a hook writes when the change is made at
+/// [`crate::test_support::fixed_instant`].
+const TOUCHED: &str = "2026-03-14 12:00:00";
+
 /// Set every contact of `account` to [`OLD`].
 async fn age_contacts(conn: &mut SqliteConnection, account: i64) {
     sqlx::query("UPDATE contacts SET last_modified = $1 WHERE account_id = $2")
@@ -308,27 +312,43 @@ async fn patch_members_touches_the_member_contact_on_add_and_on_remove() {
 
     age_contacts(&mut conn, account).await;
     assert_eq!(
-        patch_members(group_spec(), &mut conn, account, id, &[ada], &[])
-            .await
-            .unwrap(),
+        patch_members(
+            group_spec(),
+            &mut conn,
+            account,
+            id,
+            &[ada],
+            &[],
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         (1, 0)
     );
-    assert_ne!(
+    assert_eq!(
         last_modified(&mut conn, ada).await,
-        OLD,
+        TOUCHED,
         "adding a contact to a group must touch the contact"
     );
 
     age_contacts(&mut conn, account).await;
     assert_eq!(
-        patch_members(group_spec(), &mut conn, account, id, &[], &[ada])
-            .await
-            .unwrap(),
+        patch_members(
+            group_spec(),
+            &mut conn,
+            account,
+            id,
+            &[],
+            &[ada],
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         (0, 1)
     );
-    assert_ne!(
+    assert_eq!(
         last_modified(&mut conn, ada).await,
-        OLD,
+        TOUCHED,
         "taking a contact out of a group must touch the contact"
     );
 }
@@ -430,12 +450,26 @@ async fn delete_set_drops_its_memberships_and_refuses_an_unknown_id() {
     let NamedSet { id, .. } = create_set(group_spec(), &mut conn, account, "Family")
         .await
         .unwrap();
-    patch_members(group_spec(), &mut conn, account, id, &[a], &[])
-        .await
-        .unwrap();
-    delete_set(group_spec(), &mut conn, account, id)
-        .await
-        .unwrap();
+    patch_members(
+        group_spec(),
+        &mut conn,
+        account,
+        id,
+        &[a],
+        &[],
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+    delete_set(
+        group_spec(),
+        &mut conn,
+        account,
+        id,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     assert!(
         list_sets(group_spec(), &mut conn, account)
             .await
@@ -448,9 +482,15 @@ async fn delete_set_drops_its_memberships_and_refuses_an_unknown_id() {
             .unwrap()
             .is_empty()
     );
-    let err = delete_set(group_spec(), &mut conn, account, id)
-        .await
-        .unwrap_err();
+    let err = delete_set(
+        group_spec(),
+        &mut conn,
+        account,
+        id,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(err, MembershipError::SetNotFound("group")));
 }
 
@@ -467,18 +507,33 @@ async fn delete_set_touches_each_member_and_no_other_contact() {
     let NamedSet { id, .. } = create_set(group_spec(), &mut conn, account, "Family")
         .await
         .unwrap();
-    patch_members(group_spec(), &mut conn, account, id, &[ada, ben], &[])
-        .await
-        .unwrap();
+    patch_members(
+        group_spec(),
+        &mut conn,
+        account,
+        id,
+        &[ada, ben],
+        &[],
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     age_contacts(&mut conn, account).await;
 
-    delete_set(group_spec(), &mut conn, account, id)
-        .await
-        .unwrap();
+    delete_set(
+        group_spec(),
+        &mut conn,
+        account,
+        id,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
     for (name, contact, moved) in [("Ada", ada, true), ("Ben", ben, true), ("Cy", cy, false)] {
         let after = last_modified(&mut conn, contact).await;
-        assert_eq!(after != OLD, moved, "{name}: last_modified is {after}");
+        let expected = if moved { TOUCHED } else { OLD };
+        assert_eq!(after, expected, "{name}: last_modified");
     }
 }
 
@@ -493,9 +548,17 @@ async fn patch_members_adds_and_removes_in_one_call() {
         .await
         .unwrap();
     assert_eq!(
-        patch_members(group_spec(), &mut conn, account, id, &[a, b, b], &[])
-            .await
-            .unwrap(),
+        patch_members(
+            group_spec(),
+            &mut conn,
+            account,
+            id,
+            &[a, b, b],
+            &[],
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         (2, 0)
     );
     assert_eq!(
@@ -505,9 +568,17 @@ async fn patch_members_adds_and_removes_in_one_call() {
         vec![a, b]
     );
     assert_eq!(
-        patch_members(group_spec(), &mut conn, account, id, &[a], &[b])
-            .await
-            .unwrap(),
+        patch_members(
+            group_spec(),
+            &mut conn,
+            account,
+            id,
+            &[a],
+            &[b],
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         (0, 1)
     );
     assert_eq!(
@@ -516,9 +587,17 @@ async fn patch_members_adds_and_removes_in_one_call() {
             .unwrap(),
         vec![a]
     );
-    let err = patch_members(group_spec(), &mut conn, account, id, &[], &[])
-        .await
-        .unwrap_err();
+    let err = patch_members(
+        group_spec(),
+        &mut conn,
+        account,
+        id,
+        &[],
+        &[],
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(err, MembershipError::BadRequest(_)));
 }
 
@@ -539,9 +618,17 @@ async fn patch_members_with_a_foreign_member_writes_nothing() {
         let NamedSet { id: bob_set, .. } =
             create_set(spec, &mut conn, bob, "Family").await.unwrap();
 
-        let err = patch_members(spec, &mut conn, alice, alice_set, &[alices, bobs], &[])
-            .await
-            .unwrap_err();
+        let err = patch_members(
+            spec,
+            &mut conn,
+            alice,
+            alice_set,
+            &[alices, bobs],
+            &[],
+            crate::test_support::fixed_instant(),
+        )
+        .await
+        .unwrap_err();
         match err {
             MembershipError::BadRequest(msg) => {
                 assert_eq!(msg, format!("{} {bobs} not found", spec.member_label));
@@ -584,9 +671,17 @@ async fn patch_members_refuses_an_id_to_add_of_zero_or_below() {
         .await
         .unwrap();
     for bad in [0, -1] {
-        let err = patch_members(group_spec(), &mut conn, account, id, &[bad, a], &[])
-            .await
-            .unwrap_err();
+        let err = patch_members(
+            group_spec(),
+            &mut conn,
+            account,
+            id,
+            &[bad, a],
+            &[],
+            crate::test_support::fixed_instant(),
+        )
+        .await
+        .unwrap_err();
         assert!(
             matches!(err, MembershipError::BadRequest(ref msg) if msg == &format!("contact {bad} not found")),
             "{bad}: {err:?}"
@@ -612,15 +707,31 @@ async fn patch_members_ignores_an_unknown_id_in_remove() {
     let NamedSet { id, .. } = create_set(group_spec(), &mut conn, account, "Family")
         .await
         .unwrap();
-    patch_members(group_spec(), &mut conn, account, id, &[a], &[])
-        .await
-        .unwrap();
+    patch_members(
+        group_spec(),
+        &mut conn,
+        account,
+        id,
+        &[a],
+        &[],
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     // A contact that exists but is not a member, and an id that names no
     // row at all: both are ignored, and nothing else changes.
     assert_eq!(
-        patch_members(group_spec(), &mut conn, account, id, &[], &[b, 999_999])
-            .await
-            .unwrap(),
+        patch_members(
+            group_spec(),
+            &mut conn,
+            account,
+            id,
+            &[],
+            &[b, 999_999],
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         (0, 0)
     );
     assert_eq!(
@@ -631,9 +742,17 @@ async fn patch_members_ignores_an_unknown_id_in_remove() {
     );
     // Mixed with a real member, only that one counts.
     assert_eq!(
-        patch_members(group_spec(), &mut conn, account, id, &[], &[a, 999_999])
-            .await
-            .unwrap(),
+        patch_members(
+            group_spec(),
+            &mut conn,
+            account,
+            id,
+            &[],
+            &[a, 999_999],
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         (0, 1)
     );
     assert!(
@@ -698,6 +817,7 @@ fn record_hook<'a>(
     _conn: &'a mut SqliteConnection,
     _account_id: i64,
     member_id: i64,
+    _now: chrono::DateTime<chrono::Utc>,
 ) -> Pin<Box<dyn Future<Output = AnyResult<()>> + Send + 'a>> {
     HOOK_CALLS.with_borrow_mut(|calls| calls.push(member_id));
     Box::pin(async { Ok(()) })
@@ -724,9 +844,17 @@ async fn patch_members_an_id_in_both_add_and_remove_nets_to_removed() {
     take_hook_calls();
 
     assert_eq!(
-        patch_members(&spec, &mut conn, account, id, &[a], &[])
-            .await
-            .unwrap(),
+        patch_members(
+            &spec,
+            &mut conn,
+            account,
+            id,
+            &[a],
+            &[],
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         (1, 0)
     );
     assert_eq!(take_hook_calls(), vec![a], "an add runs the hook once");
@@ -734,9 +862,17 @@ async fn patch_members_an_id_in_both_add_and_remove_nets_to_removed() {
     // Already a member: add and remove the same id nets to "removed",
     // and the change hook fires once, not twice.
     assert_eq!(
-        patch_members(&spec, &mut conn, account, id, &[a], &[a])
-            .await
-            .unwrap(),
+        patch_members(
+            &spec,
+            &mut conn,
+            account,
+            id,
+            &[a],
+            &[a],
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         (0, 1)
     );
     assert_eq!(
@@ -755,9 +891,17 @@ async fn patch_members_an_id_in_both_add_and_remove_nets_to_removed() {
     // hook does not run.
     let b = insert_contact(&mut conn, account, "Ben").await;
     assert_eq!(
-        patch_members(&spec, &mut conn, account, id, &[b], &[b])
-            .await
-            .unwrap(),
+        patch_members(
+            &spec,
+            &mut conn,
+            account,
+            id,
+            &[b],
+            &[b],
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         (0, 0)
     );
     assert_eq!(take_hook_calls(), Vec::<i64>::new(), "no change, no hook");
@@ -777,9 +921,17 @@ async fn set_membership_by_name_still_creates_and_fills_a_group() {
     let mut conn = fixture.conn().await;
     let a = insert_contact(&mut conn, account, "Ada").await;
     assert_eq!(
-        set_membership(group_spec(), &mut conn, account, &[a], "Family", true)
-            .await
-            .unwrap(),
+        set_membership(
+            group_spec(),
+            &mut conn,
+            account,
+            &[a],
+            "Family",
+            true,
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap(),
         1
     );
     assert_eq!(

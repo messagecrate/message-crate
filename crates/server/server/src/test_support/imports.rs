@@ -50,6 +50,7 @@ pub async fn import_jsonl_text(
             account_id,
             import_id: None,
             phone_country: None,
+            now: crate::test_support::fixed_instant(),
         }),
     )
     .await

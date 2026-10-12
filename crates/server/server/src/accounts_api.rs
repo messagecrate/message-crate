@@ -17,6 +17,7 @@
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use chrono::{DateTime, Utc};
 use message_ir::IdentityService;
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
@@ -419,9 +420,11 @@ pub async fn create_account(
     } else {
         AuditActor::Anonymous
     };
+    let now = Utc::now();
     audit_trail::record(
         &mut tx,
         &NewEntry::about(AuditAction::AccountCreated, actor, (account_id, &username)),
+        now,
     )
     .await?;
     let token = if by_owner {
@@ -429,10 +432,10 @@ pub async fn create_account(
     } else {
         // Registering opens a Session, so it is the account's first login.
         let app = crate::server::connecting_app(&headers);
-        let token = session_tokens::open_session(&mut tx, account_id, &username, app.as_ref())
+        let token = session_tokens::open_session(&mut tx, account_id, &username, app.as_ref(), now)
             .await
             .map_err(ApiError::Internal)?;
-        account_profile::record_login(&mut tx, account_id).await?;
+        account_profile::record_login(&mut tx, account_id, now).await?;
         Some(token)
     };
     tx.commit().await?;
@@ -643,7 +646,8 @@ impl From<ProfileUpdateError> for ApiError {
     }
 }
 
-/// Apply name, zone and identity changes on an open connection.
+/// Apply name, zone and identity changes on an open connection, stamping
+/// each contact they change `now`.
 async fn apply_profile_update(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -651,6 +655,7 @@ async fn apply_profile_update(
     time_zone: Option<&str>,
     identities: &[LinkAccountIdentityRequest],
     remove_identities: &[UnlinkAccountIdentityRequest],
+    now: DateTime<Utc>,
 ) -> std::result::Result<(), ProfileUpdateError> {
     if let Some(name) = time_zone.map(str::trim).filter(|n| !n.is_empty()) {
         let zone: chrono_tz::Tz = name
@@ -700,30 +705,32 @@ async fn apply_profile_update(
     }
 
     if let Some(before) = with_yourself_before {
-        with_yourself::follow_identities(conn, before).await?;
+        with_yourself::follow_identities(conn, before, now).await?;
     }
     Ok(())
 }
 
-/// Apply a profile update in one write transaction.
+/// Apply a profile update in one write transaction, at `now`.
 async fn update_profile_on_conn(
     conn: &mut SqliteConnection,
     account_id: i64,
     req: &UpdateAccountRequest,
     completes_setup: bool,
+    now: DateTime<Utc>,
 ) -> std::result::Result<(), ProfileUpdateError> {
     let mut tx = begin_write(conn).await?;
-    update_profile_in(&mut tx, account_id, req, completes_setup).await?;
+    update_profile_in(&mut tx, account_id, req, completes_setup, now).await?;
     tx.commit().await?;
     Ok(())
 }
 
-/// Apply a profile update inside the caller's write transaction.
+/// Apply a profile update inside the caller's write transaction, at `now`.
 async fn update_profile_in(
     tx: &mut WriteTx<'_>,
     account_id: i64,
     req: &UpdateAccountRequest,
     completes_setup: bool,
+    now: DateTime<Utc>,
 ) -> std::result::Result<(), ProfileUpdateError> {
     apply_profile_update(
         tx,
@@ -732,11 +739,12 @@ async fn update_profile_in(
         req.time_zone.as_deref(),
         &req.identities,
         &req.remove_identities,
+        now,
     )
     .await?;
     if let Some(set) = &req.set_identity_country {
         use crate::identity_country::{Whose, set_identity_country};
-        set_identity_country(tx, account_id, Whose::Account, set)
+        set_identity_country(tx, account_id, Whose::Account, set, now)
             .await
             .map_err(ProfileUpdateError::Country)?;
     }
@@ -765,11 +773,12 @@ async fn update_profile_in(
 /// re-enabling, and which permissions were turned on and off. A flag sent
 /// with the value it already had changes nothing and records nothing. The
 /// caller holds the write transaction, so the change and its record land
-/// together.
+/// together. The record is stamped `now`.
 async fn apply_flags(
     conn: &mut WriteTx<'_>,
     account_id: i64,
     req: &UpdateAccountRequest,
+    now: DateTime<Utc>,
 ) -> Result<(), ApiError> {
     let before = account_profile::load_account_auth(conn, account_id)
         .await?
@@ -793,10 +802,12 @@ async fn apply_flags(
             AuditActor::Owner,
             account_id,
             Details::default(),
+            now,
         )
         .await?;
         if disabled {
-            session_tokens::revoke_account_sessions(conn, account_id, AuditActor::Owner).await?;
+            session_tokens::revoke_account_sessions(conn, account_id, AuditActor::Owner, now)
+                .await?;
         }
     }
     let was = before.permissions;
@@ -826,6 +837,7 @@ async fn apply_flags(
             AuditActor::Owner,
             account_id,
             details,
+            now,
         )
         .await?;
     }
@@ -877,6 +889,7 @@ pub async fn update_account(
         // search alike for every visitor.
         refuse_for_demo_account(target, "display name and time zone are fixed")?;
     }
+    let now = Utc::now();
     match reach {
         reach @ (Reach::Own | Reach::OwnersOwn) => {
             if req.touches_flags() {
@@ -891,7 +904,7 @@ pub async fn update_account(
                     )
                 });
             }
-            update_profile_on_conn(&mut conn, target, &req, true).await?;
+            update_profile_on_conn(&mut conn, target, &req, true, now).await?;
         }
         Reach::Owner => {
             // The owner sets up an account for its holder: the name, zone and
@@ -899,9 +912,9 @@ pub async fn update_account(
             // failed flag leaves the profile as it was too.
             let mut tx = begin_write(&mut conn).await?;
             if req.touches_profile() {
-                update_profile_in(&mut tx, target, &req, false).await?;
+                update_profile_in(&mut tx, target, &req, false, now).await?;
             }
-            apply_flags(&mut tx, target, &req).await?;
+            apply_flags(&mut tx, target, &req, now).await?;
             tx.commit().await?;
         }
     }
@@ -1006,7 +1019,7 @@ pub async fn delete_account(
         }
     }
 
-    account_profile::delete_account(&mut conn, target, reach.actor()).await?;
+    account_profile::delete_account(&mut conn, target, reach.actor(), Utc::now()).await?;
     // The account is gone once its row is, so a directory that cannot be removed
     // (a permission error, a busy file) is logged with its path rather than
     // answered as a failure. No later account takes this id, so the directory
@@ -1159,10 +1172,11 @@ pub async fn replace_account_password(
     };
     let mut conn = state.db.acquire().await?;
     let new_hash = new_hash.as_deref();
+    let now = Utc::now();
 
     match reach {
         Reach::Own | Reach::OwnersOwn => {
-            let token = change_password_on_conn(&mut conn, target, new_hash).await?;
+            let token = change_password_on_conn(&mut conn, target, new_hash, now).await?;
             Ok(Json(ReplaceAccountPasswordResponse { token }).into_response())
         }
         Reach::Owner => {
@@ -1174,6 +1188,7 @@ pub async fn replace_account_password(
                 AuditActor::Owner,
                 target,
                 Details::default(),
+                now,
             )
             .await?;
             tx.commit().await?;
@@ -1256,8 +1271,13 @@ pub async fn delete_account_messages(
     drop(conn);
     let _batch_lock = state.account_import_locks.lock(target.to_string()).await;
     let mut conn = state.db.acquire().await?;
-    let stats =
-        account_profile::delete_all_messages_for_account(&mut conn, target, reach.actor()).await?;
+    let stats = account_profile::delete_all_messages_for_account(
+        &mut conn,
+        target,
+        reach.actor(),
+        Utc::now(),
+    )
+    .await?;
     drop(conn);
     crate::asset_store::remove_all_attachment_files(
         &state.db,

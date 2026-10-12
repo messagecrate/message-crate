@@ -6,6 +6,7 @@
 
 use axum::extract::State;
 use axum::http::HeaderMap;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
 
@@ -49,7 +50,7 @@ enum LoginOpened {
 
 impl CreateSessionResponse {
     /// Open the Session for an existing account, replacing the one it had,
-    /// and record the login, unless the account is disabled or gone.
+    /// and record the login at `now`, unless the account is disabled or gone.
     /// `username` is the one the account's row holds.
     ///
     /// The account is read under the write lock that opens the Session, so
@@ -62,6 +63,7 @@ impl CreateSessionResponse {
         account_id: i64,
         username: String,
         app: Option<&ConnectingApp>,
+        now: DateTime<Utc>,
     ) -> anyhow::Result<LoginOpened> {
         let mut tx = crate::db::begin_write(conn).await?;
         match account_profile::load_account_auth(&mut tx, account_id).await? {
@@ -69,8 +71,8 @@ impl CreateSessionResponse {
             Some(auth) if auth.disabled => return Ok(LoginOpened::Disabled),
             Some(_) => {}
         }
-        let token = session_tokens::open_session(&mut tx, account_id, &username, app).await?;
-        account_profile::record_login(&mut tx, account_id).await?;
+        let token = session_tokens::open_session(&mut tx, account_id, &username, app, now).await?;
+        account_profile::record_login(&mut tx, account_id, now).await?;
         tx.commit().await?;
         Ok(LoginOpened::Session(CreateSessionResponse {
             token,
@@ -190,7 +192,9 @@ pub async fn create_session(
 }
 
 /// Check `username` and `password` and open the account's Session.
-/// `Ok(None)` when the login is refused; the Audit Trail records why.
+/// `Ok(None)` when the login is refused; the Audit Trail records why. Each
+/// entry is stamped when it is written, after the password check, so the
+/// entries keep the order the writes land in however long each check took.
 async fn log_in(
     state: &AppState,
     username: &str,
@@ -201,7 +205,7 @@ async fn log_in(
     let account_id = account_profile::lookup_account_by_username(&mut conn, username).await?;
     // Refused logins for usernames nobody holds are kept for a fixed time,
     // and a login is when the old ones go.
-    audit_trail::trim_refused_logins(&mut conn).await?;
+    audit_trail::trim_refused_logins(&mut conn, Utc::now()).await?;
 
     // The username the account's row holds. An account deleted since the
     // lookup above is a username nobody holds by now, so it takes the same
@@ -225,6 +229,7 @@ async fn log_in(
             None,
             AuditReason::UnknownUsername,
             app,
+            Utc::now(),
         )
         .await?;
         return Ok(None);
@@ -246,6 +251,7 @@ async fn log_in(
     drop(conn);
     let verified = verify_login_password(password_hash.as_deref(), password).await?;
     let mut conn = state.db.acquire().await?;
+    let now = Utc::now();
     if !verified {
         audit_trail::record_refused_login(
             &mut conn,
@@ -253,6 +259,7 @@ async fn log_in(
             account,
             AuditReason::WrongPassword,
             app,
+            now,
         )
         .await?;
         return Ok(None);
@@ -267,6 +274,7 @@ async fn log_in(
         account_id,
         stored_username.clone(),
         app,
+        now,
     )
     .await?
     {
@@ -278,6 +286,7 @@ async fn log_in(
                 account,
                 AuditReason::AccountDisabled,
                 app,
+                now,
             )
             .await?;
             Ok(None)
@@ -286,9 +295,14 @@ async fn log_in(
     }
 }
 
-/// Revoke the session token. Returns whether it named a Session.
-async fn logout_on_conn(conn: &mut SqliteConnection, token: &str) -> anyhow::Result<bool> {
-    session_tokens::revoke_session_token(conn, token).await
+/// Revoke the session token, recording its end at `now`. Returns whether it
+/// named a Session.
+async fn logout_on_conn(
+    conn: &mut SqliteConnection,
+    token: &str,
+    now: DateTime<Utc>,
+) -> anyhow::Result<bool> {
+    session_tokens::revoke_session_token(conn, token, now).await
 }
 
 /// Log out: revoke the presented session token, ending the Session.
@@ -311,7 +325,7 @@ pub async fn delete_session(
 ) -> Result<axum::http::StatusCode, ApiError> {
     let token = crate::server::bearer_token(&headers)?;
     let mut conn = state.db.acquire().await?;
-    if logout_on_conn(&mut conn, &token).await? {
+    if logout_on_conn(&mut conn, &token, Utc::now()).await? {
         return Ok(axum::http::StatusCode::NO_CONTENT);
     }
     if api_tokens::lookup_account_for_api_token(&mut conn, &token)

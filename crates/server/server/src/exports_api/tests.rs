@@ -1659,6 +1659,7 @@ async fn an_export_run_for_a_deleted_account_brings_no_account_back() {
         &mut conn,
         alice.account_id,
         crate::db::audit_trail::AuditActor::Owner,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();

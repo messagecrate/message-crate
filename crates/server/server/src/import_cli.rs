@@ -208,6 +208,7 @@ async fn import_under_session(
         wipe_sources: Some(vec![source.to_string()]),
         phone_country: None,
         progress: opts.progress,
+        now: chrono::Utc::now(),
     };
     let result = imports_api::import_jsonl_files_on_conn(conn, paths, &import_opts)
         .await

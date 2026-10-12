@@ -741,7 +741,11 @@ async fn rebuild_demo_account(
     if let Some(size) = by.record_with_size {
         let mut conn = db.acquire().await?;
         crate::db::audit_trail::record_demo_build_after_removal(
-            &mut conn, by.actor, size, replaced,
+            &mut conn,
+            by.actor,
+            size,
+            replaced,
+            chrono::Utc::now(),
         )
         .await?;
     }
@@ -920,6 +924,7 @@ async fn import_demo_sources_with(
                         account_id,
                         import_id: Some(import_run.id),
                         phone_country: None,
+                        now: chrono::Utc::now(),
                     })
                 },
             )
@@ -974,7 +979,14 @@ async fn load_demo_address_book(
     let text = address_book::rewrite_ids_to_nameless(&mut conn, account_id, &text)
         .await
         .context("match the demo address book to the Unknowns the imports made")?;
-    let loaded = address_book::load(&mut conn, account_id, &text, LoadMode::Append).await;
+    let loaded = address_book::load(
+        &mut conn,
+        account_id,
+        &text,
+        LoadMode::Append,
+        chrono::Utc::now(),
+    )
+    .await;
     let counts = loaded.map_err(|e| anyhow::anyhow!("load the demo address book: {e}"))?;
     progress.say(format_args!(
         "The demo address book named {}: {} named in place and {} new. It moved {} and added {}",
@@ -2257,7 +2269,8 @@ async fn wipe_demo_account_with(
             }
         }
     }
-    let deleted = account_profile::delete_account(&mut conn, account_id, actor).await?;
+    let deleted =
+        account_profile::delete_account(&mut conn, account_id, actor, chrono::Utc::now()).await?;
     if deleted {
         progress.say("The Demo Account is removed from the database");
     } else {

@@ -16,11 +16,26 @@ async fn a_refused_login_keeps_the_typed_text_only_when_it_could_be_a_username()
         "nobody.here_2",
         " padded.name ",
     ] {
-        record_refused_login(&mut conn, typed, None, AuditReason::UnknownUsername, None)
-            .await
-            .unwrap();
+        record_refused_login(
+            &mut conn,
+            typed,
+            None,
+            AuditReason::UnknownUsername,
+            None,
+            crate::test_support::fixed_instant(),
+        )
+        .await
+        .unwrap();
     }
-    let (items, total) = page(&mut conn, Scope::All, 10, 0).await.unwrap();
+    let (items, total) = page(
+        &mut conn,
+        Scope::All,
+        10,
+        0,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     assert_eq!(total, 5);
     let kept: Vec<Option<&str>> = items.iter().rev().map(|i| i.username.as_deref()).collect();
     assert_eq!(
@@ -70,9 +85,14 @@ async fn deleting_an_account_keeps_an_import_runs_counts_and_drops_its_details()
     .await
     .unwrap();
 
-    account_profile::delete_account(&mut conn, account, AuditActor::Owner)
-        .await
-        .unwrap();
+    account_profile::delete_account(
+        &mut conn,
+        account,
+        AuditActor::Owner,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
     let row: (
         Option<i64>,
@@ -120,9 +140,15 @@ async fn a_renewed_session_does_not_read_as_expired() {
     let fixture = test_fixture().await;
     let account = fixture.account("alice").await;
     let mut conn = fixture.conn().await;
-    crate::db::session_tokens::open_session(&mut conn, account, "alice", None)
-        .await
-        .unwrap();
+    crate::db::session_tokens::open_session(
+        &mut conn,
+        account,
+        "alice",
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     let stale = "2000-01-01T00:00:00+00:00";
     with_trigger_lifted(&mut conn, "audit_entries_never_edited", async |conn| {
         sqlx::query("UPDATE audit_entries SET session_expires_at = $1")
@@ -132,12 +158,23 @@ async fn a_renewed_session_does_not_read_as_expired() {
             .unwrap();
     })
     .await;
-    crate::credentials::change_password_on_conn(&mut conn, account, None)
-        .await
-        .unwrap();
-    let (items, _) = page(&mut conn, Scope::Account(account), 10, 0)
-        .await
-        .unwrap();
+    crate::credentials::change_password_on_conn(
+        &mut conn,
+        account,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+    let (items, _) = page(
+        &mut conn,
+        Scope::Account(account),
+        10,
+        0,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     let actions: Vec<AuditAction> = items.iter().map(|item| item.action).collect();
     assert_eq!(actions, [AuditAction::PasswordSet, AuditAction::LoggedIn]);
     let login_expiry: String = sqlx::query_scalar(
@@ -170,7 +207,15 @@ async fn expire_session(conn: &mut SqliteConnection) {
 
 /// How each Session ended, oldest login first: `None` for one still live.
 async fn session_ends(conn: &mut SqliteConnection, account: i64) -> Vec<(AuditReason, String)> {
-    let (items, _) = page(conn, Scope::Account(account), 50, 0).await.unwrap();
+    let (items, _) = page(
+        conn,
+        Scope::Account(account),
+        50,
+        0,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     let mut ends: Vec<(AuditReason, String)> = items
         .into_iter()
         .filter(|item| item.action == AuditAction::SessionEnded)
@@ -187,13 +232,25 @@ async fn a_login_after_a_session_expired_does_not_replace_it() {
     let fixture = test_fixture().await;
     let account = fixture.account("alice").await;
     let mut conn = fixture.conn().await;
-    crate::db::session_tokens::open_session(&mut conn, account, "alice", None)
-        .await
-        .unwrap();
+    crate::db::session_tokens::open_session(
+        &mut conn,
+        account,
+        "alice",
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     expire_session(&mut conn).await;
-    crate::db::session_tokens::open_session(&mut conn, account, "alice", None)
-        .await
-        .unwrap();
+    crate::db::session_tokens::open_session(
+        &mut conn,
+        account,
+        "alice",
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         session_ends(&mut conn, account).await,
         [(
@@ -211,14 +268,25 @@ async fn revoking_leaves_an_expired_session_ended_at_its_expiry() {
     let fixture = test_fixture().await;
     let account = fixture.account("alice").await;
     let mut conn = fixture.conn().await;
-    crate::db::session_tokens::open_session(&mut conn, account, "alice", None)
-        .await
-        .unwrap();
+    crate::db::session_tokens::open_session(
+        &mut conn,
+        account,
+        "alice",
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     expire_session(&mut conn).await;
     let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
-    crate::db::session_tokens::revoke_account_sessions(&mut tx, account, AuditActor::CommandLine)
-        .await
-        .unwrap();
+    crate::db::session_tokens::revoke_account_sessions(
+        &mut tx,
+        account,
+        AuditActor::CommandLine,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     tx.commit().await.unwrap();
     assert_eq!(
         session_ends(&mut conn, account).await,
@@ -237,13 +305,32 @@ async fn deleting_an_account_ends_its_live_session() {
     let fixture = test_fixture().await;
     let account = fixture.account("alice").await;
     let mut conn = fixture.conn().await;
-    crate::db::session_tokens::open_session(&mut conn, account, "alice", None)
-        .await
-        .unwrap();
-    account_profile::delete_account(&mut conn, account, AuditActor::Owner)
-        .await
-        .unwrap();
-    let (items, _) = page(&mut conn, Scope::All, 50, 0).await.unwrap();
+    crate::db::session_tokens::open_session(
+        &mut conn,
+        account,
+        "alice",
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+    account_profile::delete_account(
+        &mut conn,
+        account,
+        AuditActor::Owner,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+    let (items, _) = page(
+        &mut conn,
+        Scope::All,
+        50,
+        0,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     let ended: Vec<(Option<AuditReason>, AuditActor)> = items
         .iter()
         .filter(|item| item.action == AuditAction::SessionEnded)
@@ -263,13 +350,25 @@ async fn an_entry_says_its_account_was_deleted_only_when_it_was() {
     let alice = fixture.account("alice").await;
     let bob = fixture.account("bob").await;
     let mut conn = fixture.conn().await;
-    crate::db::session_tokens::open_session(&mut conn, alice, "alice", None)
-        .await
-        .unwrap();
+    crate::db::session_tokens::open_session(
+        &mut conn,
+        alice,
+        "alice",
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     expire_session(&mut conn).await;
-    crate::db::session_tokens::open_session(&mut conn, bob, "bob", None)
-        .await
-        .unwrap();
+    crate::db::session_tokens::open_session(
+        &mut conn,
+        bob,
+        "bob",
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     sqlx::query(
         "INSERT INTO imports (account_id, source, mode, status, started_at)
          VALUES ($1, 'imessage', 'append', 'completed', '2026-10-01T00:00:00+00:00')",
@@ -295,6 +394,7 @@ async fn an_entry_says_its_account_was_deleted_only_when_it_was() {
             username: Some("carol"),
             ..NewEntry::about_no_account(AuditAction::RegistrationOpened, AuditActor::Owner)
         },
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -304,15 +404,29 @@ async fn an_entry_says_its_account_was_deleted_only_when_it_was() {
         None,
         AuditReason::UnknownUsername,
         None,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
 
-    account_profile::delete_account(&mut conn, alice, AuditActor::Owner)
-        .await
-        .unwrap();
+    account_profile::delete_account(
+        &mut conn,
+        alice,
+        AuditActor::Owner,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
-    let (items, _) = page(&mut conn, Scope::All, 50, 0).await.unwrap();
+    let (items, _) = page(
+        &mut conn,
+        Scope::All,
+        50,
+        0,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     let deleted: Vec<AuditAction> = items
         .iter()
         .filter(|item| item.account_deleted)
@@ -436,15 +550,22 @@ async fn the_schema_refuses_an_edit_or_delete_of_an_audit_trail_entry() {
     let account = fixture.account("alice").await;
     let other = fixture.account("bob").await;
     let mut conn = fixture.conn().await;
-    crate::db::session_tokens::open_session(&mut conn, account, "alice", None)
-        .await
-        .unwrap();
+    crate::db::session_tokens::open_session(
+        &mut conn,
+        account,
+        "alice",
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     record_refused_login(
         &mut conn,
         "alice",
         Some((account, "alice")),
         AuditReason::WrongPassword,
         None,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -467,9 +588,14 @@ async fn the_schema_refuses_an_edit_or_delete_of_an_audit_trail_entry() {
     assert_eq!(count_entries(&mut conn).await, 2);
 
     assert!(
-        account_profile::delete_account(&mut conn, account, AuditActor::Owner)
-            .await
-            .unwrap()
+        account_profile::delete_account(
+            &mut conn,
+            account,
+            AuditActor::Owner,
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap()
     );
     let unlinked: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM audit_entries
@@ -499,8 +625,45 @@ async fn the_schema_refuses_an_edit_or_delete_of_an_audit_trail_entry() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    assert_eq!(trim_refused_logins(&mut conn).await.unwrap(), 1);
+    assert_eq!(
+        trim_refused_logins(&mut conn, crate::test_support::fixed_instant())
+            .await
+            .unwrap(),
+        1
+    );
     assert_eq!(count_entries(&mut conn).await, total);
+}
+
+/// An entry is stamped with the instant it is given, and the trim of refused
+/// logins for unknown usernames measures its window back from the instant it
+/// is given: an entry older than the window goes, a younger one stays.
+#[tokio::test]
+async fn refused_logins_are_stamped_and_trimmed_at_the_instant_given() {
+    let fixture = test_fixture().await;
+    let mut conn = fixture.conn().await;
+    let now = crate::test_support::fixed_instant();
+    let window = chrono::Duration::days(UNKNOWN_USERNAME_RETENTION_DAYS);
+    let outside = now - window - chrono::Duration::hours(1);
+    let inside = now - window + chrono::Duration::hours(1);
+    for at in [outside, inside] {
+        record_refused_login(
+            &mut conn,
+            "nobody",
+            None,
+            AuditReason::UnknownUsername,
+            None,
+            at,
+        )
+        .await
+        .unwrap();
+    }
+
+    assert_eq!(trim_refused_logins(&mut conn, now).await.unwrap(), 1);
+    let kept: Vec<String> = sqlx::query_scalar("SELECT at FROM audit_entries")
+        .fetch_all(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(kept, [inside.to_rfc3339()]);
 }
 
 /// Run each of `statements`, and check the schema refuses every one.

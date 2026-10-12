@@ -273,7 +273,7 @@ pub enum OrphanedFile {
 
 /// Permanently delete a trashed conversation, or make a trashed contact
 /// Unknown again, its `last_modified` set to `now`. See the module notes for
-/// what each means.
+/// what each means. A conversation's Audit Trail entry is stamped `now` too.
 ///
 /// # Errors
 ///
@@ -307,6 +307,7 @@ pub async fn delete_trashed(
                 actor,
                 account_id,
                 Details::default(),
+                now,
             )
             .await?;
             orphaned
@@ -322,8 +323,8 @@ pub async fn delete_trashed(
 
 /// Empty the trash: delete every trashed conversation permanently and make
 /// every trashed contact Unknown, its `last_modified` set to `now`, then
-/// clear both marker tables. One transaction, so the trash is either emptied
-/// or untouched.
+/// clear both marker tables and record it in the Audit Trail at `now`. One
+/// transaction, so the trash is either emptied or untouched.
 ///
 /// # Errors
 ///
@@ -373,6 +374,7 @@ pub async fn empty_trash(
             contacts: count(contact_ids.len()),
             ..Details::default()
         },
+        now,
     )
     .await?;
     tx.commit().await?;

@@ -193,9 +193,14 @@ async fn change_password_transaction_updates_all_credentials() {
         password_change_setup().await;
     let new_hash = hash_password("new-password").unwrap();
 
-    let new_session = change_password_on_conn(&mut conn, TEST_ACCOUNT, Some(&new_hash))
-        .await
-        .unwrap();
+    let new_session = change_password_on_conn(
+        &mut conn,
+        TEST_ACCOUNT,
+        Some(&new_hash),
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
     let stored_hash = account_profile::load_password_hash(&mut conn, TEST_ACCOUNT)
         .await
@@ -254,9 +259,14 @@ async fn change_password_transaction_rolls_back_every_credential() {
     let new_hash = hash_password("new-password").unwrap();
 
     assert!(
-        change_password_on_conn(&mut conn, TEST_ACCOUNT, Some(&new_hash))
-            .await
-            .is_err()
+        change_password_on_conn(
+            &mut conn,
+            TEST_ACCOUNT,
+            Some(&new_hash),
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .is_err()
     );
 
     let stored_hash = account_profile::load_password_hash(&mut conn, TEST_ACCOUNT)

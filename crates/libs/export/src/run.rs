@@ -9,8 +9,13 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
-use message_crate_core::{CancelFlag, Cancelled, check_cancel, count_of, parallel_for_each};
-use message_crate_http::{auth_check as authenticate, is_session_refused, with_retries};
+use message_crate_core::{
+    CancelFlag, Cancelled, check_cancel, count_of, is_cancelled, parallel_for_each,
+};
+use message_crate_http::{
+    RetryKind, auth_check as authenticate, classify_retry, is_session_refused, with_retries,
+    with_retries_until,
+};
 use message_ir_format::mark_export_directory;
 use serde::Serialize;
 
@@ -36,6 +41,25 @@ pub const DEFAULT_ASSET_FETCH_WORKERS: usize = 8;
 /// Extra tries for transient HTTP failures, matching the message-crate-import default.
 const MAX_RETRIES: u32 = 3;
 
+/// Run `op`, retrying a transient failure, until the person cancels the
+/// run: a cancel ends the wait before the next try at once, and no further
+/// try is made (#2111).
+///
+/// # Errors
+///
+/// Returns [`Cancelled`] for a transient failure once the run is
+/// canceled: a later try might have passed, so the run is closed as
+/// canceled rather than failed. Any other failure is returned as it is.
+fn retried_until_canceled<T>(cancel: &CancelFlag, op: impl FnMut() -> Result<T>) -> Result<T> {
+    with_retries_until(MAX_RETRIES, || is_cancelled(cancel), op).map_err(|error| {
+        if is_cancelled(cancel) && classify_retry(&error) == RetryKind::Transient {
+            Cancelled.into()
+        } else {
+            error
+        }
+    })
+}
+
 /// Settings for one Export Run (output directory, URL, search, flags).
 #[derive(Debug, Clone)]
 pub struct ExportConfig {
@@ -58,7 +82,8 @@ pub struct ExportConfig {
     /// Messages per `GET /v1/exports/{id}/messages` page, clamped to
     /// `1..=MAX_PAGE_LIMIT`.
     pub page_limit: usize,
-    /// Checked between pages and Asset fetches; set it to stop the run early.
+    /// Checked between pages and Asset fetches, and through every wait
+    /// before a retry; set it to stop the run early.
     pub cancel: CancelFlag,
     /// Number of workers that fetch Assets in parallel (default 8).
     pub asset_fetch_workers: usize,
@@ -421,7 +446,7 @@ impl<'a> Export<'a> {
     /// Returns an error when the server refuses the scope or the request fails.
     fn start_export(&self, out: &mut Option<&mut ProgressFn<'_>>) -> Result<ExportRun> {
         let cfg = self.cfg;
-        let export = with_retries(MAX_RETRIES, || {
+        let export = retried_until_canceled(&cfg.cancel, || {
             crate::http::create_export(
                 &self.session,
                 &cfg.base_url,
@@ -450,12 +475,22 @@ impl<'a> Export<'a> {
         Ok(export)
     }
 
-    /// Close the run by `action`, retrying a transient failure.
+    /// Close the run by `action`, retrying a transient failure. The close of
+    /// a canceled run is tried once, so Cancel is not kept waiting on a
+    /// server that is away. A completed or failed run keeps every retry
+    /// even when Cancel is pressed during its close, since nothing on the
+    /// server closes a run left running. A failed close is returned as it
+    /// is, never as [`Cancelled`]: the caller logs it.
     fn close_export(&self, export_id: i64, action: CloseAction) -> Result<ExportRun> {
         let cfg = self.cfg;
-        with_retries(MAX_RETRIES, || {
+        let close = || {
             crate::http::close_export(&self.session, &cfg.base_url, &cfg.token, export_id, action)
-        })
+        };
+        if action == CloseAction::Cancel {
+            close()
+        } else {
+            with_retries(MAX_RETRIES, close)
+        }
     }
 
     /// Page the run's messages, fetch their Assets, and write the
@@ -522,7 +557,7 @@ impl<'a> Export<'a> {
         let mut offset = 0usize;
         loop {
             check_cancel(&cfg.cancel)?;
-            let page = with_retries(MAX_RETRIES, || {
+            let page = retried_until_canceled(&cfg.cancel, || {
                 crate::http::export_messages(
                     &self.session,
                     ExportMessagesArgs {
@@ -945,8 +980,9 @@ struct FetchAssetsParallelArgs<'a> {
 /// The same pattern as the Upload's `upload_assets`: the jobs are collected,
 /// then [`parallel_for_each`] runs them. `assets` holds only Assets whose file
 /// is not at its path ([`assets_to_fetch`]). Each fetch retries a transient
-/// HTTP failure, as the Upload does, and a fetch that still fails is one
-/// entry in `failed`, as an Upload's failed Asset is one row of its summary.
+/// HTTP failure until the run is canceled, as the Upload does, and a fetch
+/// that still fails is one entry in `failed`, as an Upload's failed Asset is
+/// one row of its summary.
 ///
 /// # Errors
 ///
@@ -981,7 +1017,7 @@ fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetch
         if session_refused.load(Ordering::Relaxed) {
             bail!("Asset {} skipped after the session was refused", job.sha256);
         }
-        let result = with_retries(MAX_RETRIES, || {
+        let result = retried_until_canceled(cancel, || {
             crate::http::fetch_asset(session, base_url, token, &job.sha256, &job.dest)
         });
         if let Err(error) = &result

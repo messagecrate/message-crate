@@ -160,7 +160,8 @@ pub(crate) async fn create_contacts(
         return Err(ApiError::validation("address book is empty"));
     }
     let mut conn = state.db.acquire().await?;
-    let counts = address_book::load(&mut conn, auth.account_id, content, query.mode).await?;
+    let now = chrono::Utc::now();
+    let counts = address_book::load(&mut conn, auth.account_id, content, query.mode, now).await?;
     let count = |n: u64| Some(i64::try_from(n).unwrap_or(i64::MAX));
     let details = Details {
         mode: Some(query.mode),
@@ -175,6 +176,7 @@ pub(crate) async fn create_contacts(
         AuditActor::Holder,
         auth.account_id,
         details,
+        now,
     )
     .await?;
     Ok(Json(counts.into()))
@@ -231,13 +233,15 @@ pub(crate) async fn get_address_book(
     Json(body): Json<GetAddressBookRequest>,
 ) -> Result<Response, ApiError> {
     let mut conn = state.db.acquire().await?;
+    let now = chrono::Utc::now();
     let q = body.q.as_deref().unwrap_or("").trim();
     let only: Option<HashSet<i64>> = if q.is_empty() {
         (!body.ids.is_empty()).then(|| body.ids.iter().copied().collect())
     } else {
         // The same compile the Contacts list runs, so the file holds the
         // rows the person was looking at.
-        let clock = crate::db::account_profile::account_clock(&mut conn, auth.account_id).await?;
+        let clock =
+            crate::db::account_profile::account_clock(&mut conn, auth.account_id, now).await?;
         let matched = contact_ids_matching(&mut conn, auth.account_id, q, clock).await?;
         Some(if body.ids.is_empty() {
             matched
@@ -262,6 +266,7 @@ pub(crate) async fn get_address_book(
         AuditActor::Holder,
         auth.account_id,
         details,
+        now,
     )
     .await?;
     Ok((

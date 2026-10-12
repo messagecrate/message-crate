@@ -135,6 +135,7 @@ async fn s6_1_with_follows_an_identity_an_address_book_moved() {
              ,Bea,,phone,phone,+15555550123\n"
         ),
         crate::db::address_book::LoadMode::Append,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();

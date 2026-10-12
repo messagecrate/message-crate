@@ -351,7 +351,15 @@ pub(crate) async fn update_contact(
     // One write transaction for the edit and the contact it answers with, so
     // a contact deleted meanwhile is `404`, never a half-applied edit.
     let mut tx = crate::db::begin_write(&mut conn).await?;
-    if !mutate_contact(&mut tx, auth.account_id, contact_id, &body).await? {
+    if !mutate_contact(
+        &mut tx,
+        auth.account_id,
+        contact_id,
+        &body,
+        chrono::Utc::now(),
+    )
+    .await?
+    {
         return Err(ApiError::not_found("contact"));
     }
     let contact = get_contact_detail(&mut tx, auth.account_id, contact_id)
