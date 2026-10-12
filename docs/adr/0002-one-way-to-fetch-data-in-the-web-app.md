@@ -225,9 +225,11 @@ nothing — the opposite of the pattern this decision removes.
   passed its own tests (issue #2162). A plain request and answer is a
   `useRouteMutation` even where the screen awaits it in a handler of its own
   (issue #2622). Only two writes call `useMarkAccountStale` by hand, because
-  neither is a request a screen awaits: the Import screen's discard of an
-  Import Run, which runs through the Import Run's own server calls above, and
-  the end of a Demo Account build, which the server finishes on its own.
+  neither is one request and its answer: the Import screen's discard of an
+  Import Run closes the run through the Import Run's own server calls above
+  and then deletes its directory on this computer, and a Demo Account build
+  is finished by the server on its own, after the request that started it
+  has been answered.
   The mutations that change no account data, such as an attachment download
   or a Media Link, are named in the Biome override that lets them use
   `useMutation`. No write names the entries it changes. Each write once named

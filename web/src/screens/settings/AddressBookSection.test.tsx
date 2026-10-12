@@ -202,6 +202,23 @@ describe("AddressBookSection", () => {
     expect(alert.textContent).toContain("Nothing was loaded.");
   });
 
+  it("marks the contacts stale after a refused load too, as every write does", async () => {
+    const shown = [keys.contacts.all];
+    const client = testQueryClient();
+    seedEntries(client, 7, shown);
+    post.mockRejectedValue(new Error("address book is empty"));
+    render(
+      <QueryClientProvider client={client}>
+        <AddressBookSection />
+      </QueryClientProvider>,
+    );
+    chooseFile("address-book.csv", FILE);
+
+    await settle();
+    expect(screen.getByText("Address book is empty")).toBeInTheDocument();
+    expect(freshEntries(client, 7, shown)).toEqual([]);
+  });
+
   it("shows the reason when the load fails some other way", async () => {
     post.mockRejectedValue(new Error("address book is empty"));
     renderWithProviders(<AddressBookSection />);
