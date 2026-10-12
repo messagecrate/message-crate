@@ -27,7 +27,7 @@ import { useAuth } from "../../lib/authContext";
 import { isUploadRunning } from "../../lib/runningUpload";
 import type { DesktopJobResult, UploadFinishedReport } from "../../lib/tauri";
 import { deferred } from "../../test/deferred";
-import { advanceTimersAndSettle, lendTestingLibraryTheFakeClock } from "../../test/fakeTimers";
+import { advanceTimersAndSettle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { importForm } from "../../test/importForm";
 import { setupUser } from "../../test/user";
 import { createImportRunStore, initialImportRunState } from "./importRunStore";
@@ -332,8 +332,7 @@ describe("logging out during an Upload", () => {
     const result = await startUpload();
     // An Upload that does not stop when asked.
     cancelMock.mockImplementation(() => {});
-    vi.useFakeTimers();
-    lendTestingLibraryTheFakeClock();
+    startFakeClock();
     try {
       const user = setupUser();
       const loggedOut = pressLogOut(result);
@@ -355,8 +354,7 @@ describe("logging out during an Upload", () => {
       expect(screen.getByText(NOT_PAUSED)).toBeTruthy();
       expect(calls).not.toContain("pause recorded");
     } finally {
-      vi.useRealTimers();
-      vi.unstubAllGlobals();
+      stopFakeClock();
     }
   });
 

@@ -57,10 +57,10 @@ function renderRoute(feature: "import" | "export") {
 }
 
 describe("ImportExportRoute", () => {
-  it("shows the form to an account that holds the permission", async () => {
+  it("shows the form to an account that holds the permission", () => {
     state.profile = allowed;
     renderRoute("import");
-    expect(await screen.findByText("the form")).toBeTruthy();
+    expect(screen.getByText("the form")).toBeTruthy();
   });
 
   it("goes to Messages in the browser", () => {
@@ -94,10 +94,10 @@ describe("ImportExportRoute", () => {
     expect(screen.queryByText("the form")).toBeNull();
   });
 
-  it("keeps Export open to an account that may export but not import", async () => {
+  it("keeps Export open to an account that may export but not import", () => {
     state.profile = { ...allowed, can_import: false };
     renderRoute("export");
-    expect(await screen.findByText("the form")).toBeTruthy();
+    expect(screen.getByText("the form")).toBeTruthy();
   });
 
   it("tells the Demo Account that importing needs another account, and logs out from there", async () => {
@@ -117,22 +117,22 @@ describe("ImportExportRoute", () => {
     expect(screen.queryByRole("button", { name: "Log out" })).toBeNull();
   });
 
-  it("keeps an Import Run already in progress on screen, with the reason it will fail", async () => {
+  it("keeps an Import Run already in progress on screen, with the reason it will fail", () => {
     state.profile = { ...allowed, can_import: false };
     seedImportRun(state.accountId, { phase: "running", running: true });
     renderRoute("import");
-    expect(await screen.findByText("the form")).toBeTruthy();
+    expect(screen.getByText("the form")).toBeTruthy();
     expect(screen.getByRole("status").textContent).toMatch(
       /The Owner has turned Import off for this account\./,
     );
     expect(screen.queryByRole("heading", { name: "Import" })).toBeNull();
   });
 
-  it("shows the message once that run is left", async () => {
+  it("shows the message once that run is left", () => {
     state.profile = { ...allowed, can_import: false };
     seedImportRun(state.accountId, { phase: "done" });
     renderRoute("import");
-    expect(await screen.findByText("the form")).toBeTruthy();
+    expect(screen.getByText("the form")).toBeTruthy();
     act(() => importRunStore.set({ phase: "form" }));
     expect(screen.getByText(/The Owner has not allowed this account to import\./)).toBeTruthy();
     expect(screen.queryByText("the form")).toBeNull();
@@ -149,12 +149,10 @@ describe("ImportExportRoute", () => {
     expect(screen.queryByText("the form")).toBeNull();
   });
 
-  it("does not let a run in progress open Export, for an account that may export", async () => {
+  it("does not let a run in progress open Export, for an account that may export", () => {
     state.profile = allowed;
     seedImportRun(state.accountId, { phase: "running", running: true });
     renderRoute("export");
-    // Let the Suspense boundary settle before asserting.
-    await act(async () => {});
     expect(screen.queryByText("the form")).toBeNull();
     expect(screen.getByRole("status").textContent).toMatch(
       /An Import Run is running\. Export can start once it ends\./,

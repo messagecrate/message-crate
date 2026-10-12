@@ -5,13 +5,14 @@
 // may flash on screen while that check is in flight, and a server that
 // can't answer falls through to the form rather than blocking it.
 
-import { act, cleanup, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { errorText } from "../lib/apiErrorMessage";
 import type { ActiveImportRun } from "../lib/importRun";
 import type { MediaToolName, StagingSummary } from "../lib/tauri";
 import { activeImportRun } from "../test/apiShapes";
 import { deferred } from "../test/deferred";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { mockedAuth, renderWithProviders } from "../test/providers";
 import { storedForm } from "../test/storedForm";
 import { MIB } from "../test/units";
@@ -211,6 +212,7 @@ function stagingSummary(overrides: Partial<StagingSummary> = {}): StagingSummary
 
 describe("ImportScreen entering Import", () => {
   beforeEach(() => {
+    startFakeClock();
     hookState.phase = "form";
     hookState.stagingSummary = null;
     hookState.mediaSummary = null;
@@ -249,6 +251,7 @@ describe("ImportScreen entering Import", () => {
   });
 
   afterEach(() => {
+    stopFakeClock();
     cleanup();
   });
 
@@ -273,7 +276,8 @@ describe("ImportScreen entering Import", () => {
     getActiveImportRunMock.mockResolvedValue(null);
     renderWithProviders(<ImportScreen />);
 
-    expect(await screen.findByTestId("import-form")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByTestId("import-form")).toBeInTheDocument();
     expect(screen.queryByTestId("resume-panel")).not.toBeInTheDocument();
   });
 
@@ -281,7 +285,8 @@ describe("ImportScreen entering Import", () => {
     getActiveImportRunMock.mockRejectedValue(new Error("network down"));
     renderWithProviders(<ImportScreen />);
 
-    expect(await screen.findByTestId("import-form")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByTestId("import-form")).toBeInTheDocument();
     expect(screen.queryByTestId("resume-panel")).not.toBeInTheDocument();
   });
 
@@ -289,7 +294,8 @@ describe("ImportScreen entering Import", () => {
     getActiveImportRunMock.mockResolvedValue(activeImportRun({ stage: "upload" }));
     renderWithProviders(<ImportScreen />);
 
-    expect(await screen.findByTestId("resume-panel")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_upload");
     expect(screen.queryByTestId("import-form")).not.toBeInTheDocument();
   });
@@ -299,7 +305,8 @@ describe("ImportScreen entering Import", () => {
     invokePathStatMock.mockRejectedValue(new Error("ipc down"));
     renderWithProviders(<ImportScreen />);
 
-    expect(await screen.findByTestId("resume-panel")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("directory_unknown");
   });
 
@@ -315,7 +322,8 @@ describe("ImportScreen entering Import", () => {
     });
     renderWithProviders(<ImportScreen />);
 
-    expect(await screen.findByTestId("resume-panel")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("directory_unknown");
   });
 
@@ -324,11 +332,13 @@ describe("ImportScreen entering Import", () => {
     getActiveImportRunMock.mockResolvedValue(activeImportRun({ stage: "upload" }));
     renderWithProviders(<ImportScreen />);
 
-    await screen.findByTestId("resume-panel");
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     await user.click(screen.getByText("discard-action"));
 
     expect(discardImportRunMock).toHaveBeenCalledWith(7);
-    expect(await screen.findByTestId("import-form")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByTestId("import-form")).toBeInTheDocument();
   });
 
   it("takes the sidebar's waiting badge away when the waiting run is discarded", async () => {
@@ -358,12 +368,14 @@ describe("ImportScreen entering Import", () => {
       </>,
     );
 
-    await screen.findByTestId("resume-panel");
-    await waitFor(() => expect(screen.getByTestId("import-badge")).toHaveTextContent("waiting"));
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("import-badge")).toHaveTextContent("waiting");
     await user.click(screen.getByText("discard-action"));
 
-    expect(await screen.findByTestId("import-form")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByTestId("import-badge")).toHaveTextContent("null"));
+    await settle();
+    expect(screen.getByTestId("import-form")).toBeInTheDocument();
+    expect(screen.getByTestId("import-badge")).toHaveTextContent("null");
   });
 
   it("also deletes the run directory when discarding a this-device run", async () => {
@@ -381,14 +393,16 @@ describe("ImportScreen entering Import", () => {
     );
     renderWithProviders(<ImportScreen />);
 
-    await screen.findByTestId("resume-panel");
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     await user.click(screen.getByText("discard-action"));
 
     expect(discardImportRunMock).toHaveBeenCalledWith(7);
     expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({
       run_dir: "/home/u/message-crate/staging-260830",
     });
-    expect(await screen.findByTestId("import-form")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByTestId("import-form")).toBeInTheDocument();
   });
 
   it("says which run directory could not be deleted, until dismissed", async () => {
@@ -402,7 +416,8 @@ describe("ImportScreen entering Import", () => {
     };
     renderWithProviders(<ImportScreen />);
 
-    const notice = await screen.findByRole("alert");
+    await settle();
+    const notice = screen.getByRole("alert");
     expect(notice).toHaveTextContent("/home/u/message-crate/staging-260830");
     expect(notice).toHaveTextContent("Permission denied");
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
@@ -423,13 +438,15 @@ describe("ImportScreen entering Import", () => {
     );
     renderWithProviders(<ImportScreen />);
 
-    await screen.findByTestId("resume-panel");
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("other_device");
     await user.click(screen.getByText("discard-action"));
 
     expect(discardImportRunMock).toHaveBeenCalledWith(7);
     expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
-    expect(await screen.findByTestId("import-form")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByTestId("import-form")).toBeInTheDocument();
   });
 
   it("resumes the Upload against the existing run without creating a new one", async () => {
@@ -443,7 +460,8 @@ describe("ImportScreen entering Import", () => {
     );
     renderWithProviders(<ImportScreen />);
 
-    await screen.findByTestId("resume-panel");
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     await user.click(screen.getByText("resume-action"));
 
     expect(startImportMock).toHaveBeenCalledTimes(1);
@@ -475,7 +493,8 @@ describe("ImportScreen entering Import", () => {
       );
       renderWithProviders(<ImportScreen />);
 
-      await screen.findByTestId("resume-panel");
+      await settle();
+      expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
       expect(screen.getByTestId("resume-kind")).toHaveTextContent(kind);
       await user.click(screen.getByText("resume-action"));
 
@@ -506,7 +525,8 @@ describe("ImportScreen entering Import", () => {
     );
     const { rerender } = renderWithProviders(<ImportScreen />);
 
-    await screen.findByTestId("resume-panel");
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_review");
     expect(getActiveImportRunMock).toHaveBeenCalledTimes(1);
 
@@ -524,7 +544,8 @@ describe("ImportScreen entering Import", () => {
     });
 
     expect(getActiveImportRunMock).toHaveBeenCalledTimes(2);
-    expect(await screen.findByTestId("resume-panel")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_review");
     expect(screen.getByTestId("resume-error")).toHaveTextContent("disk unavailable");
   });
@@ -539,7 +560,8 @@ describe("ImportScreen entering Import", () => {
     );
     renderWithProviders(<ImportScreen />);
 
-    await screen.findByTestId("resume-panel");
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("restart");
     await user.click(screen.getByText("resume-action"));
 
@@ -581,7 +603,8 @@ describe("ImportScreen entering Import", () => {
       });
     renderWithProviders(<ImportScreen />);
 
-    expect(await screen.findByTestId("resume-panel")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_write");
 
     await user.click(screen.getByText("resume-action"));
@@ -618,7 +641,8 @@ describe("ImportScreen entering Import", () => {
       });
     renderWithProviders(<ImportScreen />);
 
-    expect(await screen.findByTestId("resume-panel")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("source_changed");
   });
 
@@ -638,7 +662,8 @@ describe("ImportScreen entering Import", () => {
       .mockRejectedValueOnce(new Error("ipc down"));
     renderWithProviders(<ImportScreen />);
 
-    expect(await screen.findByTestId("resume-panel")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_write");
   });
 
@@ -649,7 +674,8 @@ describe("ImportScreen entering Import", () => {
     getActiveImportRunMock.mockResolvedValue(null);
     const { rerender } = renderWithProviders(<ImportScreen />);
 
-    expect(await screen.findByTestId("import-form")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByTestId("import-form")).toBeInTheDocument();
     expect(getActiveImportRunMock).toHaveBeenCalledTimes(1);
 
     hookState.phase = "running";
@@ -671,7 +697,8 @@ describe("ImportScreen entering Import", () => {
     });
 
     expect(getActiveImportRunMock).toHaveBeenCalledTimes(2);
-    expect(await screen.findByTestId("resume-panel")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_upload");
   });
 
@@ -689,7 +716,8 @@ describe("ImportScreen entering Import", () => {
     discardImportRunMock.mockReturnValue(pendingDiscard.promise);
     renderWithProviders(<ImportScreen />);
 
-    await screen.findByTestId("resume-panel");
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     await user.click(screen.getByText("resume-action"));
     await user.click(screen.getByText("resume-action"));
     await user.click(screen.getByText("discard-action"));
@@ -712,12 +740,14 @@ describe("ImportScreen entering Import", () => {
     );
     renderWithProviders(<ImportScreen />);
 
-    await screen.findByTestId("resume-panel");
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_upload");
     await user.click(screen.getByText("resume-action"));
 
     expect(startImportMock).not.toHaveBeenCalled();
-    expect(await screen.findByTestId("resume-kind")).toHaveTextContent("settings_unreadable");
+    await settle();
+    expect(screen.getByTestId("resume-kind")).toHaveTextContent("settings_unreadable");
   });
 
   it("keeps the panel, and the run's directory, when the server refuses a discard from it (#2669)", async () => {
@@ -732,11 +762,13 @@ describe("ImportScreen entering Import", () => {
     discardImportRunMock.mockRejectedValue(new Error("network down"));
     renderWithProviders(<ImportScreen />);
 
-    await screen.findByTestId("resume-panel");
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     await user.click(screen.getByText("discard-action"));
 
     expect(discardImportRunMock).toHaveBeenCalledWith(7);
-    expect(await screen.findByTestId("resume-error")).toHaveTextContent("network down");
+    await settle();
+    expect(screen.getByTestId("resume-error")).toHaveTextContent("network down");
     expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     expect(screen.queryByTestId("import-form")).not.toBeInTheDocument();
     expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
@@ -753,11 +785,13 @@ describe("ImportScreen entering Import", () => {
     discardImportRunMock.mockRejectedValue(new Error("network down"));
     renderWithProviders(<ImportScreen />);
 
-    await screen.findByTestId("resume-panel");
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     await user.click(screen.getByText("resume-action"));
 
     expect(discardImportRunMock).toHaveBeenCalledWith(7);
-    expect(await screen.findByTestId("resume-error")).toHaveTextContent("network down");
+    await settle();
+    expect(screen.getByTestId("resume-error")).toHaveTextContent("network down");
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("restart");
     expect(startImportMock).not.toHaveBeenCalled();
   });
@@ -769,7 +803,8 @@ describe("ImportScreen entering Import", () => {
     );
     renderWithProviders(<ImportScreen />);
 
-    await screen.findByTestId("resume-panel");
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_write");
     expect(screen.getByTestId("resume-secret")).toHaveTextContent("backupPassword");
 
@@ -788,7 +823,8 @@ describe("ImportScreen entering Import", () => {
     );
     renderWithProviders(<ImportScreen />);
 
-    await screen.findByTestId("resume-panel");
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("restart");
     expect(screen.getByTestId("resume-secret")).toHaveTextContent("backupPassword");
 
@@ -821,7 +857,8 @@ describe("ImportScreen entering Import", () => {
       );
       renderWithProviders(<ImportScreen />);
 
-      await screen.findByTestId("resume-panel");
+      await settle();
+      expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
       expect(screen.getByTestId("resume-kind")).toHaveTextContent(kind);
       expect(screen.getByTestId("resume-secret")).toHaveTextContent("whatsappKey");
 
@@ -840,7 +877,8 @@ describe("ImportScreen entering Import", () => {
     );
     renderWithProviders(<ImportScreen />);
 
-    await screen.findByTestId("resume-panel");
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_write");
     expect(screen.getByTestId("resume-secret")).toHaveTextContent("none");
 
@@ -857,7 +895,8 @@ describe("ImportScreen entering Import", () => {
     );
     renderWithProviders(<ImportScreen />);
 
-    await screen.findByTestId("resume-panel");
+    await settle();
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_upload");
     expect(screen.getByTestId("resume-secret")).toHaveTextContent("none");
 
@@ -872,6 +911,7 @@ describe("ImportScreen entering Import", () => {
 
 describe("ImportScreen during a run", () => {
   beforeEach(() => {
+    startFakeClock();
     hookState.phase = "form";
     hookState.stagingSummary = null;
     hookState.mediaSummary = null;
@@ -907,6 +947,7 @@ describe("ImportScreen during a run", () => {
   });
 
   afterEach(() => {
+    stopFakeClock();
     cleanup();
   });
 
@@ -917,7 +958,8 @@ describe("ImportScreen during a run", () => {
     const user = setupUser();
     renderWithProviders(<ImportScreen />);
 
-    expect(await screen.findByTestId("import-run")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByTestId("import-run")).toBeInTheDocument();
     expect(screen.queryByTestId("import-form")).not.toBeInTheDocument();
     expect(screen.getByTestId("run-review-waiting")).toHaveTextContent("staging");
     expect(screen.getByTestId("run-has-identities")).toHaveTextContent("true");
@@ -937,7 +979,8 @@ describe("ImportScreen during a run", () => {
     const user = setupUser();
     renderWithProviders(<ImportScreen />);
 
-    expect(await screen.findByTestId("import-run")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByTestId("import-run")).toBeInTheDocument();
     expect(screen.getByTestId("run-review-waiting")).toHaveTextContent("media");
     expect(screen.getByTestId("run-has-identities")).toHaveTextContent("false");
 
@@ -953,7 +996,8 @@ describe("ImportScreen during a run", () => {
     const user = setupUser();
     renderWithProviders(<ImportScreen />);
 
-    await user.click(await screen.findByText("run-back"));
+    await settle();
+    await user.click(screen.getByText("run-back"));
     expect(returnToFormMock).toHaveBeenCalledTimes(1);
   });
 
@@ -963,17 +1007,14 @@ describe("ImportScreen during a run", () => {
     apiPostMock.mockResolvedValue({ items: ["a", "c"], total: 2, limit: 500, offset: 0 });
     renderWithProviders(<ImportScreen />);
 
-    await screen.findByTestId("import-run");
-    await act(async () => {
-      await Promise.resolve();
-    });
-
+    await settle();
+    expect(screen.getByTestId("import-run")).toBeInTheDocument();
     expect(apiPostMock).toHaveBeenCalledTimes(1);
     expect(apiPostMock).toHaveBeenCalledWith(
       { identifiers: ["a", "b", "c"] },
       { signal: expect.any(AbortSignal) },
     );
-    await waitFor(() => expect(screen.getByTestId("run-unknown-contacts")).toHaveTextContent("2"));
+    expect(screen.getByTestId("run-unknown-contacts")).toHaveTextContent("2");
     expect(screen.getByTestId("run-unknown-contacts-error")).toHaveTextContent("null");
   });
 
@@ -998,19 +1039,13 @@ describe("ImportScreen during a run", () => {
     });
     renderWithProviders(<ImportScreen />);
 
-    await screen.findByTestId("import-run");
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
+    await settle();
+    expect(screen.getByTestId("import-run")).toBeInTheDocument();
     expect(apiPostMock).toHaveBeenCalledTimes(2);
     const bodies = apiPostMock.mock.calls.map(([body]) => body as { identifiers: string[] });
     expect(bodies[0]?.identifiers).toHaveLength(500);
     expect(bodies[1]?.identifiers).toHaveLength(120);
-    await waitFor(() =>
-      expect(screen.getByTestId("run-unknown-contacts")).toHaveTextContent("430"),
-    );
+    expect(screen.getByTestId("run-unknown-contacts")).toHaveTextContent("430");
   });
 
   it("shows why the unknown-contact count is missing when the lookup fails", async () => {
@@ -1019,10 +1054,9 @@ describe("ImportScreen during a run", () => {
     apiPostMock.mockRejectedValue(new Error("network down"));
     renderWithProviders(<ImportScreen />);
 
-    await screen.findByTestId("import-run");
-    await waitFor(() =>
-      expect(screen.getByTestId("run-unknown-contacts-error")).toHaveTextContent("network down"),
-    );
+    await settle();
+    expect(screen.getByTestId("import-run")).toBeInTheDocument();
+    expect(screen.getByTestId("run-unknown-contacts-error")).toHaveTextContent("network down");
     expect(screen.getByTestId("run-unknown-contacts")).toHaveTextContent("null");
   });
 
@@ -1031,8 +1065,9 @@ describe("ImportScreen during a run", () => {
     hookState.sourceIdentities = ["+15555550110"];
     renderWithProviders(<ImportScreen />);
 
+    await settle();
     expect(
-      await screen.findByText("None of the addresses this backup sent from are on your profile."),
+      screen.getByText("None of the addresses this backup sent from are on your profile."),
     ).toBeInTheDocument();
   });
 
@@ -1043,8 +1078,10 @@ describe("ImportScreen during a run", () => {
     const user = setupUser();
     renderWithProviders(<ImportScreen />);
 
-    await user.click(await screen.findByText("Add to profile"));
+    await settle();
+    await user.click(screen.getByText("Add to profile"));
 
-    expect(await screen.findByText("The server didn't add that address.")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText("The server didn't add that address.")).toBeInTheDocument();
   });
 });

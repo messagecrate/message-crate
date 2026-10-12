@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { holdDesktopJob } from "../../lib/desktopJob";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
@@ -45,6 +45,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  startFakeClock();
   tauriState.isTauri = true;
   invokeCreateExportDir.mockResolvedValue({
     dir: CONVERT_DIR,
@@ -70,7 +71,7 @@ async function fillDirectories(input: string, output: string, formatLabel?: stri
   await fill(user, screen.getByLabelText("Output directory"), output);
   if (formatLabel) {
     await user.click(screen.getByRole("button", { name: /Output format/ }));
-    await user.click(await screen.findByRole("option", { name: formatLabel }));
+    await user.click(screen.getByRole("option", { name: formatLabel }));
   }
   return user;
 }
@@ -85,9 +86,9 @@ describe("ConvertSection", () => {
         "An Export is running. Convert can start once it ends.",
       );
     } finally {
-      release();
+      act(() => release());
     }
-    await waitFor(() => expect(convertButton()).toBeEnabled());
+    expect(convertButton()).toBeEnabled();
   });
 
   it("shows the desktop-only stub when not in Tauri", () => {
@@ -112,13 +113,14 @@ describe("ConvertSection", () => {
     await fill(user, screen.getByLabelText("Input directory"), "/home/demo/export-json");
     await user.click(convertButton());
 
-    await waitFor(() => expect(invokeFinishExportDir).toHaveBeenCalledWith(CONVERT_DIR));
+    await settle();
+    expect(invokeFinishExportDir).toHaveBeenCalledWith(CONVERT_DIR);
     expect(invokeCreateExportDir).toHaveBeenCalledWith("convert", "jsonl", "");
     expect(invokeFormat.mock.calls[0][0]).toMatchObject({
       input_dir: "/home/demo/export-json",
       output_dir: CONVERT_DIR,
     });
-    expect(await screen.findByText(/Conversion complete/)).toHaveTextContent(
+    expect(screen.getByText(/Conversion complete/)).toHaveTextContent(
       `Conversion complete. JSON Lines (.jsonl) written to ${CONVERT_DIR}.`,
     );
   });
@@ -132,7 +134,8 @@ describe("ConvertSection", () => {
     await fill(user, screen.getByLabelText("Input directory"), "/home/demo/empty");
     await user.click(convertButton());
 
-    await waitFor(() => expect(invokeDiscardExportDir).toHaveBeenCalledWith(CONVERT_DIR));
+    await settle();
+    expect(invokeDiscardExportDir).toHaveBeenCalledWith(CONVERT_DIR);
     expect(invokeFinishExportDir).not.toHaveBeenCalled();
   });
 
@@ -140,7 +143,8 @@ describe("ConvertSection", () => {
     const user = await fillDirectories("/home/demo/export-json", "/home/demo/export-csv");
     await user.click(convertButton());
 
-    await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(invokeFormat).toHaveBeenCalledTimes(1);
     expect(invokeFormat.mock.calls[0][0]).toMatchObject({ output_dir: "/home/demo/export-csv" });
     expect(invokeCreateExportDir).not.toHaveBeenCalled();
   });
@@ -173,26 +177,27 @@ describe("ConvertSection", () => {
     );
     await user.click(convertButton());
 
-    await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(invokeFormat).toHaveBeenCalledTimes(1);
     expect(invokeFormat.mock.calls[0][0]).toEqual({
       input_dir: "/home/demo/export-json",
       output_dir: "/home/demo/export-csv",
       output_format: "csv",
       started_from: "convert",
     });
-    expect(await screen.findByText(/Conversion complete\. CSV \(\.csv\) written to/)).toBeTruthy();
+    expect(screen.getByText(/Conversion complete\. CSV \(\.csv\) written to/)).toBeTruthy();
   });
 
   it("defaults the output format to JSON Lines", async () => {
     const user = await fillDirectories("/home/demo/export-xml", "/home/demo/export-jsonl");
     await user.click(convertButton());
 
-    await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(invokeFormat).toHaveBeenCalledTimes(1);
     expect(invokeFormat.mock.calls[0][0]).toMatchObject({ output_format: "jsonl" });
   });
 
   it("reports the failure rather than claiming the conversion finished", async () => {
-    startFakeClock();
     awaitDesktopJob.mockImplementation(async () => {
       throw new Error("input and output directories must be different");
     });
@@ -207,13 +212,14 @@ describe("ConvertSection", () => {
   it("names the directory and format the conversion wrote to after the form changes", async () => {
     const user = await fillDirectories("/home/demo/export-json", "/a", "CSV (.csv)");
     await user.click(convertButton());
-    await screen.findByText(/Conversion complete/);
+    await settle();
+    expect(screen.getByText(/Conversion complete/)).toBeInTheDocument();
 
     const field = screen.getByLabelText("Output directory");
     await user.clear(field);
     await fill(user, field, "/b");
     await user.click(screen.getByRole("button", { name: /Output format/ }));
-    await user.click(await screen.findByRole("option", { name: "JSON Lines (.jsonl)" }));
+    await user.click(screen.getByRole("option", { name: "JSON Lines (.jsonl)" }));
 
     expect(screen.getByText(/Conversion complete/)).toHaveTextContent(
       "Conversion complete. CSV (.csv) written to /a.",
@@ -236,7 +242,8 @@ describe("ConvertSection", () => {
     expect(screen.getByLabelText("Input directory")).toBeDisabled();
     expect(screen.getByLabelText("Output directory")).toBeDisabled();
     release();
-    await screen.findByText(/Conversion complete/);
+    await settle();
+    expect(screen.getByText(/Conversion complete/)).toBeInTheDocument();
     expect(screen.getByLabelText("Output directory")).toBeEnabled();
   });
 });
