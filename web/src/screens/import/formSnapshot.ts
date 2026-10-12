@@ -54,6 +54,15 @@ export type StoredFormSnapshot = Pick<ImportJobFormValues, (typeof SNAPSHOT_FIEL
   whatsappKeyGiven: boolean;
 };
 
+/** `keys` of `source` and nothing else, each copied under its own name. */
+function pick<T, K extends keyof T>(source: T, keys: readonly K[]): Pick<T, K> {
+  const picked = {} as Pick<T, K>;
+  for (const key of keys) {
+    picked[key] = source[key];
+  }
+  return picked;
+}
+
 /**
  * Form snapshot for the run record, without the secrets: the fields in
  * `SNAPSHOT_FIELDS` and nothing else.
@@ -68,15 +77,9 @@ export type StoredFormSnapshot = Pick<ImportJobFormValues, (typeof SNAPSHOT_FIEL
  * WhatsApp from an iPhone backup) and the Android WhatsApp key.
  */
 export function formSnapshot(form: ImportJobFormValues): StoredFormSnapshot {
-  // Each field is copied from the form under its own name, so the record
-  // holds exactly the type's form fields.
-  const settings = Object.fromEntries(SNAPSHOT_FIELDS.map((field) => [field, form[field]])) as Pick<
-    ImportJobFormValues,
-    (typeof SNAPSHOT_FIELDS)[number]
-  >;
   const secret = findImportSource(form.source)?.snapshotSecret(form.source) ?? null;
   return {
-    ...settings,
+    ...pick(form, SNAPSHOT_FIELDS),
     backupPasswordGiven: secret === "backupPassword" && form.backupPassword.trim() !== "",
     whatsappKeyGiven: secret === "whatsappKey" && form.whatsappKey.trim() !== "",
   };

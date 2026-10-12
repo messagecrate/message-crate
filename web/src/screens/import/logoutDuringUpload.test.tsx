@@ -56,8 +56,9 @@ let cancelAsked = deferred();
 let sessionRevoked = deferred();
 
 /**
- * Deleting a run directory, which `AuthProvider` asks through `lib/tauri` for
- * a deleted account's runs, and the run asks through its own dependencies.
+ * The one fake for deleting a run directory. `AuthProvider` reaches it
+ * through `lib/tauri` when it deletes a deleted account's Import Runs, and the
+ * run reaches it through its `ImportRunDeps`. It records the call in `calls`.
  */
 async function fakeDeleteRunDir({ run_dir }: { run_dir: string }): Promise<void> {
   calls.push(`deleted ${run_dir}`);

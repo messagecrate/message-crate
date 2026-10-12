@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { listConversationMessages, listMessages } from "../../lib/serverApi";
 import type { Message } from "../../lib/types";
 import { message as baseMessage } from "../../test/apiShapes";
-import { deferred as settleLater } from "../../test/deferred";
+import { deferred } from "../../test/deferred";
 import { mockedAuth, Providers } from "../../test/providers";
 import { conversationYears, useConversationMessages } from "./useConversationMessages";
 
@@ -42,8 +42,8 @@ function message(id: number): Message {
 }
 
 /** A request's answer that the test settles, so a test can control landing order. */
-function deferred<T>() {
-  const answer = settleLater<T>();
+function supersedableAnswer<T>() {
+  const answer = deferred<T>();
   // Nothing else awaits this promise once the request is superseded.
   answer.promise.catch(() => {});
   return answer;
@@ -72,7 +72,7 @@ describe("useConversationMessages", () => {
   });
 
   it("ignores a slow response from the conversation the user navigated away from", async () => {
-    const slow = deferred<MessagePage>();
+    const slow = supersedableAnswer<MessagePage>();
     routeGets(slow.promise);
 
     const { result, rerender } = renderHook(
@@ -93,7 +93,7 @@ describe("useConversationMessages", () => {
   });
 
   it("keeps the current page when a request rejects", async () => {
-    const slow = deferred<MessagePage>();
+    const slow = supersedableAnswer<MessagePage>();
     routeGets(slow.promise);
 
     const { result, rerender } = renderHook(
