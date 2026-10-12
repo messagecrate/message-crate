@@ -13,9 +13,10 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { type SavedSearch, useSavedSearchActions, useSavedSearches } from "./savedSearches";
 import {
   createSavedSearch,
@@ -51,6 +52,7 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 beforeEach(() => {
+  startFakeClock();
   vi.clearAllMocks();
   account.current = 7;
   client = new QueryClient({
@@ -58,11 +60,16 @@ beforeEach(() => {
   });
 });
 
+afterEach(() => {
+  stopFakeClock();
+});
+
 describe("useSavedSearches", () => {
   it("reads the list from the server, not from browser storage", async () => {
     list.mockResolvedValue([search(1, "Family")]);
     const { result } = renderHook(() => useSavedSearches(), { wrapper });
-    await waitFor(() => expect(result.current.savedSearches).toEqual([search(1, "Family")]));
+    await settle();
+    expect(result.current.savedSearches).toEqual([search(1, "Family")]);
     expect(list).toHaveBeenCalled();
   });
 
@@ -91,25 +98,24 @@ describe("useSavedSearches", () => {
 
     list.mockResolvedValue([search(1, "Alice's Family")]);
     const first = renderHook(() => useSavedSearches(), { wrapper });
-    await waitFor(() =>
-      expect(first.result.current.savedSearches).toEqual([search(1, "Alice's Family")]),
-    );
+    await settle();
+    expect(first.result.current.savedSearches).toEqual([search(1, "Alice's Family")]);
     first.unmount();
 
     account.current = 8;
     list.mockResolvedValue([search(2, "Bob's Work")]);
     const second = renderHook(() => useSavedSearches(), { wrapper });
 
-    await waitFor(() =>
-      expect(second.result.current.savedSearches).toEqual([search(2, "Bob's Work")]),
-    );
+    await settle();
+    expect(second.result.current.savedSearches).toEqual([search(2, "Bob's Work")]);
     expect(second.result.current.savedSearches).not.toContainEqual(search(1, "Alice's Family"));
   });
 
   it("keeps the kind the server reports, so import rows stay identifiable", async () => {
     list.mockResolvedValue([search(2, "Backup 1", "import")]);
     const { result } = renderHook(() => useSavedSearches(), { wrapper });
-    await waitFor(() => expect(result.current.savedSearches[0]?.kind).toBe("import"));
+    await settle();
+    expect(result.current.savedSearches[0]?.kind).toBe("import");
   });
 });
 
@@ -135,9 +141,11 @@ describe("useSavedSearchActions", () => {
       () => ({ list: useSavedSearches(), actions: useSavedSearchActions() }),
       { wrapper },
     );
-    await waitFor(() => expect(result.current.list.savedSearches).toEqual([]));
+    await settle();
+    expect(result.current.list.savedSearches).toEqual([]);
     await act(() => result.current.actions.create("Work", "kind:group Work"));
-    await waitFor(() => expect(result.current.list.savedSearches).toEqual([search(3, "Work")]));
+    await settle();
+    expect(result.current.list.savedSearches).toEqual([search(3, "Work")]);
     expect(list).toHaveBeenCalledTimes(2);
   });
 
@@ -148,9 +156,11 @@ describe("useSavedSearchActions", () => {
       () => ({ list: useSavedSearches(), actions: useSavedSearchActions() }),
       { wrapper },
     );
-    await waitFor(() => expect(result.current.list.savedSearches).toEqual([search(3, "Work")]));
+    await settle();
+    expect(result.current.list.savedSearches).toEqual([search(3, "Work")]);
     await act(() => result.current.actions.update(3, "Renamed", "kind:group Work"));
-    await waitFor(() => expect(result.current.list.savedSearches).toEqual([search(3, "Renamed")]));
+    await settle();
+    expect(result.current.list.savedSearches).toEqual([search(3, "Renamed")]);
     expect(list).toHaveBeenCalledTimes(2);
   });
 
@@ -161,9 +171,11 @@ describe("useSavedSearchActions", () => {
       () => ({ list: useSavedSearches(), actions: useSavedSearchActions() }),
       { wrapper },
     );
-    await waitFor(() => expect(result.current.list.savedSearches).toEqual([search(3, "Work")]));
+    await settle();
+    expect(result.current.list.savedSearches).toEqual([search(3, "Work")]);
     await act(() => result.current.actions.remove(3));
-    await waitFor(() => expect(result.current.list.savedSearches).toEqual([]));
+    await settle();
+    expect(result.current.list.savedSearches).toEqual([]);
     expect(list).toHaveBeenCalledTimes(2);
   });
 
@@ -178,11 +190,13 @@ describe("useSavedSearchActions", () => {
     expect(result.current.pending).toBe(false);
 
     const write = result.current.create("Family", "kind:group");
-    await waitFor(() => expect(result.current.pending).toBe(true));
+    await settle();
+    expect(result.current.pending).toBe(true);
 
     refuse(new Error("server said no"));
     await expect(write).rejects.toThrow("server said no");
-    await waitFor(() => expect(result.current.error?.message).toBe("server said no"));
+    await settle();
+    expect(result.current.error?.message).toBe("server said no");
     expect(result.current.pending).toBe(false);
   });
 
@@ -192,7 +206,8 @@ describe("useSavedSearchActions", () => {
     const before = result.current.create;
 
     await result.current.create("Family", "kind:group");
-    await waitFor(() => expect(result.current.pending).toBe(false));
+    await settle();
+    expect(result.current.pending).toBe(false);
 
     expect(result.current.create).toBe(before);
   });

@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { Providers } from "../test/providers";
 
 const post = vi.fn();
@@ -65,6 +66,14 @@ vi.mock("./contactGroups", () => ({
 vi.mock("./messageTags", () => ({
   invalidateMessageTags: vi.fn(),
 }));
+
+beforeEach(() => {
+  startFakeClock();
+});
+
+afterEach(() => {
+  stopFakeClock();
+});
 
 const STORAGE_KEY = "message-crate-auth";
 const SERVER_ADDRESS_KEY = "message-crate-server-address";
@@ -244,10 +253,9 @@ describe("AuthProvider logout", () => {
       ),
     });
 
-    await waitFor(() => {
-      expect(onCloseRequested).toHaveBeenCalled();
-      expect(closeHandler).toBeTypeOf("function");
-    });
+    await settle();
+    expect(onCloseRequested).toHaveBeenCalled();
+    expect(closeHandler).toBeTypeOf("function");
 
     const handler = closeHandler;
     if (!handler) {
@@ -295,7 +303,8 @@ describe("AuthProvider restoring a saved login", () => {
 
     const { result } = await renderAuth();
 
-    await waitFor(() => expect(result.current.isAuthenticated).toBe(false));
+    await settle();
+    expect(result.current.isAuthenticated).toBe(false);
     expect(currentToken).toBeNull();
     expect(localStorage.getItem(STORAGE_KEY)).toContain("session-token");
   });
@@ -307,7 +316,8 @@ describe("AuthProvider restoring a saved login", () => {
 
     const { result } = await renderAuth();
 
-    await waitFor(() => expect(result.current.isAuthenticated).toBe(false));
+    await settle();
+    expect(result.current.isAuthenticated).toBe(false);
     expect(localStorage.getItem(STORAGE_KEY)).toContain("session-token");
   });
 
@@ -318,7 +328,8 @@ describe("AuthProvider restoring a saved login", () => {
 
     const { result } = await renderAuth();
 
-    await waitFor(() => expect(result.current.isAuthenticated).toBe(false));
+    await settle();
+    expect(result.current.isAuthenticated).toBe(false);
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
@@ -328,13 +339,15 @@ describe("AuthProvider restoring a saved login", () => {
     get.mockResolvedValue({ account_id: 7 });
 
     const { result } = await renderAuth();
-    await waitFor(() => expect(result.current.isAuthenticated).toBe(false));
+    await settle();
+    expect(result.current.isAuthenticated).toBe(false);
 
     act(() => {
       result.current.retrySavedLogin("http://127.0.0.1:8080");
     });
 
-    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    await settle();
+    expect(result.current.isAuthenticated).toBe(true);
     expect(currentToken).toBe("session-token");
     expect(result.current.accountId).toBe(7);
   });
@@ -355,7 +368,8 @@ describe("AuthProvider restoring a saved login", () => {
     get.mockRejectedValueOnce(new TypeError("Failed to fetch"));
 
     const { result } = await renderAuth();
-    await waitFor(() => expect(result.current.isAuthenticated).toBe(false));
+    await settle();
+    expect(result.current.isAuthenticated).toBe(false);
     get.mockClear();
 
     act(() => {
@@ -417,7 +431,8 @@ describe("AuthProvider keeping the server address", () => {
     seedSession(ELSEWHERE);
     get.mockResolvedValue({ account_id: 7 });
     const { result, unmount } = await renderAuth();
-    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    await settle();
+    expect(result.current.isAuthenticated).toBe(true);
 
     await act(async () => {
       await result.current.logout();
@@ -433,7 +448,8 @@ describe("AuthProvider keeping the server address", () => {
     const { ApiError } = await import("./api");
     get.mockRejectedValue(new ApiError(401, "Unauthorized"));
     const { result, unmount } = await renderAuth();
-    await waitFor(() => expect(result.current.isAuthenticated).toBe(false));
+    await settle();
+    expect(result.current.isAuthenticated).toBe(false);
     unmount();
 
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
@@ -492,8 +508,9 @@ describe("AuthProvider when the server says the session has ended", () => {
       { wrapper: await wrapper() },
     );
 
-    await waitFor(() => expect(ended).toHaveBeenCalled());
-    await waitFor(() => expect(result.current.isAuthenticated).toBe(false));
+    await settle();
+    expect(ended).toHaveBeenCalled();
+    expect(result.current.isAuthenticated).toBe(false);
     expect(currentToken).toBeNull();
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
@@ -520,7 +537,8 @@ describe("AuthProvider when the server says the session has ended", () => {
         { wrapper: await wrapper() },
       );
 
-      await waitFor(() => expect(result.current.isAuthenticated).toBe(false));
+      await settle();
+      expect(result.current.isAuthenticated).toBe(false);
       expect(pause).toHaveBeenCalledTimes(1);
       expect(document.body.textContent).not.toContain("An Upload is running");
     } finally {
@@ -545,13 +563,15 @@ describe("AuthProvider when the server says the session has ended", () => {
       }),
       { wrapper: await wrapper() },
     );
-    await waitFor(() => expect(get).toHaveBeenCalled());
+    await settle();
+    expect(get).toHaveBeenCalled();
 
     await act(async () => {
       await result.current.rename.mutateAsync("Family").catch(() => {});
     });
 
-    await waitFor(() => expect(result.current.auth.isAuthenticated).toBe(false));
+    await settle();
+    expect(result.current.auth.isAuthenticated).toBe(false);
     expect(currentToken).toBeNull();
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
@@ -579,7 +599,8 @@ describe("AuthProvider when the server says the session has ended", () => {
       }),
       { wrapper: await wrapper() },
     );
-    await waitFor(() => expect(get).toHaveBeenCalled());
+    await settle();
+    expect(get).toHaveBeenCalled();
 
     await act(async () => {
       await result.current.remove.mutateAsync("wrong").catch(() => {});

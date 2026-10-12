@@ -1,27 +1,28 @@
 /** @vitest-environment jsdom */
 
-import { act, renderHook, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { advanceTimersAndSettle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { HEALTH_URL_DEBOUNCE_MS } from "./serverHealth";
 import { useServerHealth } from "./useServerHealth";
 
 describe("useServerHealth", () => {
+  beforeEach(() => {
+    startFakeClock();
+  });
+
   afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.useRealTimers();
+    stopFakeClock();
   });
 
   it("does not fetch when probing is disabled", async () => {
-    vi.useFakeTimers();
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
     const { result } = renderHook(() => useServerHealth(null));
     expect(result.current).toBe("unknown");
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(HEALTH_URL_DEBOUNCE_MS + 50);
-    });
+    await advanceTimersAndSettle(HEALTH_URL_DEBOUNCE_MS + 50);
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(result.current).toBe("unknown");
@@ -34,7 +35,12 @@ describe("useServerHealth", () => {
     const { result } = renderHook(() => useServerHealth(""));
     expect(result.current).toBe("unknown");
 
-    await waitFor(() => expect(result.current).toBe("ok"), { timeout: 2000 });
+    await advanceTimersAndSettle(HEALTH_URL_DEBOUNCE_MS - 1);
+    expect(result.current).toBe("unknown");
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await advanceTimersAndSettle(1);
+    expect(result.current).toBe("ok");
     expect(fetchMock).toHaveBeenCalledWith(
       "/health",
       expect.objectContaining({ method: "GET", cache: "no-store" }),
@@ -46,7 +52,11 @@ describe("useServerHealth", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const { result } = renderHook(() => useServerHealth("not-a-url"));
-    await waitFor(() => expect(result.current).toBe("fail"), { timeout: 2000 });
+    await advanceTimersAndSettle(HEALTH_URL_DEBOUNCE_MS - 1);
+    expect(result.current).toBe("unknown");
+
+    await advanceTimersAndSettle(1);
+    expect(result.current).toBe("fail");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
