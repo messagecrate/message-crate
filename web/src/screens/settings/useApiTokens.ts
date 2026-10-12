@@ -19,7 +19,7 @@ type ApiToken = components["schemas"]["ApiToken"];
  * to `mutate` does not, so a secret revealed from there was lost whenever the
  * person left Settings before the server answered.
  */
-export function useCreateApiToken(): UseMutationResult<CreatedToken, Error, NewToken> {
+function useCreateApiToken(): UseMutationResult<CreatedToken, Error, NewToken> {
   const reveal = useRevealApiToken();
   return useRouteMutation({
     mutationFn: (body: NewToken) => createApiToken(body),
@@ -27,7 +27,7 @@ export function useCreateApiToken(): UseMutationResult<CreatedToken, Error, NewT
   });
 }
 
-export function useRenameApiToken(): UseMutationResult<
+function useRenameApiToken(): UseMutationResult<
   Awaited<ReturnType<typeof renameApiToken>>,
   Error,
   { id: number; label: string }
@@ -37,7 +37,7 @@ export function useRenameApiToken(): UseMutationResult<
   });
 }
 
-export function useRevokeApiToken(): UseMutationResult<
+function useRevokeApiToken(): UseMutationResult<
   Awaited<ReturnType<typeof deleteApiToken>>,
   Error,
   number

@@ -31,7 +31,7 @@ vi.mock("../../lib/localServer", async (importOriginal) => ({
   startLocalServer: () => startLocalServer(),
 }));
 
-vi.mock("../../lib/tauri-check", () => ({
+vi.mock("../../lib/tauriCheck", () => ({
   isTauri: () => tauriState.isTauri,
 }));
 

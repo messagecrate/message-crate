@@ -8,7 +8,7 @@
  * logged-in account.
  *
  * That rule is the point. Before it, four modules kept the account's data in
- * module-level variables and `auth.tsx` cleared them by hand from two separate
+ * module-level variables and `AuthProvider.tsx` cleared them by hand from two separate
  * lists — both of which named the same four and omitted the fifth, so a second
  * account could be shown the first account's Saved Searches. Naming the account
  * in the key makes that impossible rather than merely unlikely: a second
@@ -193,7 +193,7 @@ export type PagedFetchPage<T, E extends object = object> = (args: {
 }) => Promise<OffsetPage<T> & E>;
 
 /** What a long list needs to render itself while it fills. */
-export type PagedListResult<T, E extends object = object> = {
+type PagedListResult<T, E extends object = object> = {
   items: T[];
   total: number;
   /**
@@ -354,7 +354,7 @@ export type RouteCacheEntries = readonly [readonly unknown[], unknown][];
  * those is one call on the query client — this is that client with the account
  * rule applied, and nothing else. It is not a cache.
  */
-export type RouteCache = {
+type RouteCache = {
   /** What the cache holds under one key, without fetching. */
   read: <T>(key: RouteQueryKey) => T | undefined;
   /** Ask the server now and store the answer under the key. */

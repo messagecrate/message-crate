@@ -41,7 +41,7 @@ const TONE: Record<ServerConnection, string> = {
   untested: "text-muted",
 };
 
-export interface ServerStatusProps {
+interface ServerStatusProps {
   state: ServerConnection;
   /**
    * The address the state is about, as the person entered it or the card

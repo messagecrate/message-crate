@@ -17,8 +17,6 @@ import {
   type WindowStart,
 } from "./conversationWindow";
 
-export { PAGE_SIZE } from "./conversationWindow";
-
 /**
  * Calendar years covered by a conversation's first and last message instants,
  * read in the account's `zone`: the same rule `date:2024` uses, so the first
@@ -51,11 +49,7 @@ export function conversationYears(
  * "Methods"). A search leaves the trash out unless asked, and a trashed
  * conversation can still be opened, so the query asks.
  */
-export function conversationQueryFor(
-  conversationId: number,
-  date: string | null,
-  term: string,
-): string {
+function conversationQueryFor(conversationId: number, date: string | null, term: string): string {
   const parts = [`in:#${conversationId}`, "trashed:any"];
   if (date !== null) parts.push(`date:${date}`);
   const trimmed = term.trim();

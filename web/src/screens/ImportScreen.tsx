@@ -25,9 +25,9 @@ import {
   loadRememberedImportPaths,
   setImporterExtraPath,
   setImporterPath,
-} from "../lib/system-settings";
+} from "../lib/systemSettings";
 import { invokeHomeDir, invokePathStat } from "../lib/tauri";
-import { isTauri } from "../lib/tauri-check";
+import { isTauri } from "../lib/tauriCheck";
 import { useTimeZone } from "../lib/timeZone";
 import type { AttachmentChoices } from "../lib/types";
 import {

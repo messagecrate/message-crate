@@ -3,7 +3,7 @@ import { isSortOrder, type SortOrder } from "./sortOrder";
 import { readPref, writePref } from "./storage";
 
 /** The two name fields the list can order by; each also gives the A–Z section letters. */
-export type ContactNameSort = "first" | "last";
+type ContactNameSort = "first" | "last";
 /**
  * How the contact list is ordered: a name field, or when the server last heard
  * from the contact (`last_heard_at`, the server's `sort=last_heard`).
@@ -15,7 +15,7 @@ export interface ContactSortState {
   order: SortOrder;
 }
 
-export const DEFAULT_CONTACT_SORT = {
+const DEFAULT_CONTACT_SORT = {
   sort: "last",
   order: "asc",
 } as const satisfies ContactSortState;
@@ -23,7 +23,7 @@ export const DEFAULT_CONTACT_SORT = {
 const STORAGE_KEY = "contactSort:v1";
 
 /** The row fields the sort reads. */
-export interface SortableContact {
+interface SortableContact {
   name: string;
   addresses?: readonly string[];
   last_heard_at?: string | null;
@@ -114,7 +114,7 @@ export function compareContactsByName(
  * orders `sort=last_heard`; the timestamps are RFC 3339 in UTC, so string
  * order is time order.
  */
-export function compareContactsByLastHeard(
+function compareContactsByLastHeard(
   a: string | null | undefined,
   b: string | null | undefined,
   order: SortOrder,

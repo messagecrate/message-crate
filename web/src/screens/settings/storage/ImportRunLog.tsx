@@ -9,7 +9,7 @@ import {
   useRunLogs,
 } from "../../../components/logs/logSource";
 import { canReadImportRunLogs } from "../../../lib/desktopFeatures";
-import { isTauri } from "../../../lib/tauri-check";
+import { isTauri } from "../../../lib/tauriCheck";
 
 /**
  * An Import Run's log, from the run's row in Settings → Storage. The log

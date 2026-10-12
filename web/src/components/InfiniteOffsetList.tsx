@@ -13,7 +13,7 @@ import { ListBox, ListBoxItem, ListLayout, Virtualizer } from "react-aria-compon
 import { groupByLetter } from "../lib/contactSort";
 import { keepAttribute } from "../lib/keepAttribute";
 import { formatVisibleRange } from "../lib/listPaging";
-import { isTauri } from "../lib/tauri-check";
+import { isTauri } from "../lib/tauriCheck";
 import { listRowDividersThinClass, resizeHandleGutterClass } from "../lib/tw";
 import { Z_LIFT } from "../lib/zLayers";
 import ListRangeHeader, { type SelectAllBox } from "./ListRangeHeader";

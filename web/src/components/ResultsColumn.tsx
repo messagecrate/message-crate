@@ -25,7 +25,7 @@ import { LIST_TOOLBAR_CLASS } from "./ListRangeHeader";
 const SWITCH_BUTTON_CLASS = `flex-1 cursor-pointer border-none bg-transparent px-2 py-0.5 text-[0.75rem] font-medium text-muted hover:text-text ${focusRingClass} data-[selected]:bg-accent data-[selected]:text-sent-text`;
 
 /** The Conversations / Messages switch at the top of the Messages screen's results. */
-export function ResultsViewSwitch({
+function ResultsViewSwitch({
   view,
   onChange,
 }: {

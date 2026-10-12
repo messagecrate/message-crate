@@ -22,7 +22,7 @@ import {
   type MediaToolName,
   type StagingSummary,
 } from "../../lib/tauri";
-import { isTauri } from "../../lib/tauri-check";
+import { isTauri } from "../../lib/tauriCheck";
 import type { AttachmentMediaMode } from "../../lib/types";
 import { useToolsStatus } from "../../lib/useToolsStatus";
 import ImportContactsPanel from "../settings/storage/ImportContactsPanel";

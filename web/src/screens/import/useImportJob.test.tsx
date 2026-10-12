@@ -39,6 +39,7 @@ import type {
 } from "../../lib/types";
 import { account } from "../../test/apiShapes";
 import { importForm } from "../../test/importForm";
+import { seedImportRun } from "../../test/importRun";
 import { MIB } from "../../test/units";
 import { fill, setupUser } from "../../test/user";
 import { ConvertSection } from "../settings/ConvertSection";
@@ -396,7 +397,7 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.startImport(importForm()));
     const deleteFailure = { path: "/home/sam/message-crate/staging-old", reason: "busy" };
     act(() =>
-      importRunStore.set({
+      seedImportRun(auth.accountId, {
         ...LEFT_BEHIND,
         resumeError: "The directory could not be read.",
         runDirDeleteFailure: deleteFailure,
@@ -413,10 +414,8 @@ describe("useImportJob wiring", () => {
   });
 
   it("starts a new run with none of the fields an earlier run left", async () => {
-    // The logged-in account's own store, so taking the run over does not reset it first.
-    importRunStore.set({
+    seedImportRun(auth.accountId, {
       ...LEFT_BEHIND,
-      accountId: auth.accountId,
       resumeError: "The directory could not be read.",
     });
     const seen: ImportRunState[] = [];
@@ -3244,10 +3243,8 @@ describe("useImportJob resumeAtReview", () => {
   });
 
   it("starts a resume with none of the fields an earlier run left, and the resumed run's directory and id", async () => {
-    // The logged-in account's own store, so taking the run over does not reset it first.
-    importRunStore.set({
+    seedImportRun(auth.accountId, {
       ...LEFT_BEHIND,
-      accountId: auth.accountId,
       resumeError: "The directory could not be read.",
     });
     const seen: ImportRunState[] = [];

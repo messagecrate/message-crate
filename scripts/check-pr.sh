@@ -4,8 +4,9 @@
 #   ./scripts/check-pr.sh
 #
 # Stops on the first failure. Checks, never rewrites: rustfmt --check and
-# Clippy at -D warnings on the workspace and src-tauri, Biome ci, and the
-# web type-check. Run ./scripts/format-all.sh to fix formatting failures.
+# Clippy at -D warnings on the workspace and src-tauri, Biome ci, the check
+# that web/biome.json's restricted-import lists agree, and the web
+# type-check. Run ./scripts/format-all.sh to fix formatting failures.
 # CI is the complete gate; ./scripts/check-all.sh runs the full set locally.
 # Why this split: docs/adr/0007-ci-is-the-only-gate.md.
 # Runs npm ci in web/ only when that tree has no node_modules yet.
@@ -33,6 +34,8 @@ if [[ ! -d web/node_modules ]]; then
 fi
 echo "==> web lint + format check"
 (cd web && npx biome ci .)
+echo "==> web noRestrictedImports lists agree"
+node scripts/check-biome-restricted-imports.mjs
 echo "==> web type-check"
 (cd web && npm run typecheck)
 

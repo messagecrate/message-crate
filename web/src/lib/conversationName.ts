@@ -1,5 +1,5 @@
 /** What a conversation's name is made from, on either list's row. */
-export type ConversationNameParts = {
+type ConversationNameParts = {
   /** The title the server gives the conversation: the export's, or the account's name for a conversation with yourself. */
   title: string | null | undefined;
   /** Whether the conversation is a group: the server's `is_group`. */

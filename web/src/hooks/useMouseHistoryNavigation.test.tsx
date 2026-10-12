@@ -3,10 +3,10 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isTauri } from "../lib/tauri-check";
+import { isTauri } from "../lib/tauriCheck";
 import { useMouseHistoryNavigation } from "./useMouseHistoryNavigation";
 
-vi.mock("../lib/tauri-check", () => ({ isTauri: vi.fn() }));
+vi.mock("../lib/tauriCheck", () => ({ isTauri: vi.fn() }));
 
 const isTauriMock = vi.mocked(isTauri);
 

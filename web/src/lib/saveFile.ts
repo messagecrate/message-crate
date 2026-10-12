@@ -1,5 +1,5 @@
 import { invokeSaveFile } from "./tauri";
-import { isTauri } from "./tauri-check";
+import { isTauri } from "./tauriCheck";
 
 /**
  * Save `contents` as a file named `fileName`.

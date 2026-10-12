@@ -22,7 +22,7 @@ import {
   invokeExport,
   invokeFormat,
 } from "../lib/tauri";
-import { isTauri } from "../lib/tauri-check";
+import { isTauri } from "../lib/tauriCheck";
 
 /**
  * What an export covers. `everything` sends a blank query, which message-crate-export

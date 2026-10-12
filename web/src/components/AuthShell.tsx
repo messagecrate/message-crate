@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { AuthProvider } from "../lib/auth";
+import { AuthProvider } from "../lib/AuthProvider";
 import LogoutDialog from "./LogoutDialog";
 
 /**

@@ -15,7 +15,7 @@ import {
 } from "./serverApi";
 
 /** Names that must not be created as message tags. */
-export const RESERVED_TAG_NAMES = new Set(
+const RESERVED_TAG_NAMES = new Set(
   [
     "home",
     "contacts",

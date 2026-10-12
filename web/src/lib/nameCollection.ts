@@ -25,16 +25,16 @@ import { narrow } from "./searchQuery";
  */
 
 /** One set as the server answers it. */
-export type NamedSet = { id: number; name: string };
+type NamedSet = { id: number; name: string };
 
 /** Members to put in and take out of a set, in one request. Either side may be left off. */
-export type MembersPatch = { add?: number[]; remove?: number[] };
+type MembersPatch = { add?: number[]; remove?: number[] };
 
 /** What a membership write answers with. */
 export type MembersChanged = { added: number; removed: number };
 
 /** A name to put on or take off some rows, as a screen asks for it. */
-export type SetMembersVars = { name: string; patch: MembersPatch };
+type SetMembersVars = { name: string; patch: MembersPatch };
 
 /**
  * A cached shape whose rows carry this collection's names as chips.
@@ -64,7 +64,7 @@ export type NameCollectionRoutes = {
   ) => Promise<{ added: number; removed: number }>;
 };
 
-export type NameCollectionConfig = {
+type NameCollectionConfig = {
   routes: NameCollectionRoutes;
   /** This collection's cache prefix, from `queryKeys`. */
   key: RouteQueryKey;
@@ -198,15 +198,13 @@ function checkedName(collection: NameCollection, name: string): string {
   return trimmed;
 }
 
-export function useCreateNamedSet(
-  collection: NameCollection,
-): UseMutationResult<NamedSet, Error, string> {
+function useCreateNamedSet(collection: NameCollection): UseMutationResult<NamedSet, Error, string> {
   return useRouteMutation<NamedSet, Error, string>({
     mutationFn: async (name) => collection.routes.create({ name: checkedName(collection, name) }),
   });
 }
 
-export function useRenameNamedSet(
+function useRenameNamedSet(
   collection: NameCollection,
 ): UseMutationResult<NamedSet, Error, { from: string; to: string }> {
   const idOf = useIdOf(collection);
@@ -218,9 +216,7 @@ export function useRenameNamedSet(
   });
 }
 
-export function useDeleteNamedSet(
-  collection: NameCollection,
-): UseMutationResult<void, Error, string> {
+function useDeleteNamedSet(collection: NameCollection): UseMutationResult<void, Error, string> {
   const idOf = useIdOf(collection);
   return useRouteMutation<void, Error, string>({
     mutationFn: async (name) => collection.routes.remove(await idOf(name)),
@@ -228,7 +224,7 @@ export function useDeleteNamedSet(
 }
 
 /** The rows as they were before an optimistic membership write touched them. */
-export type ChipSnapshot = { entries: RouteCacheEntries };
+type ChipSnapshot = { entries: RouteCacheEntries };
 
 /**
  * Put rows in or out of one set, drawn before the server answers.
@@ -271,7 +267,7 @@ export function useSetNamedSetMembers(
 }
 
 /** What a screen or the sidebar does to one of these collections. */
-export type NameCollectionActions = {
+type NameCollectionActions = {
   create: (name: string) => Promise<string>;
   /**
    * The name of the set called `name` in any letter case, as the server

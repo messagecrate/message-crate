@@ -3,10 +3,10 @@ import { listedServerService } from "../lib/offeredService";
 import type { components } from "../lib/serverApi.types";
 
 /** The pick the server takes, as `set_identity_country` in a contact or account update. */
-export type IdentityCountryPick = components["schemas"]["SetIdentityCountryRequest"];
+type IdentityCountryPick = components["schemas"]["SetIdentityCountryRequest"];
 
 /** An identity as an identity table lists it. */
-export interface IdentityCountryTarget {
+interface IdentityCountryTarget {
   address: string;
   service: string | null;
 }

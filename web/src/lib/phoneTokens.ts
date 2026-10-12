@@ -34,7 +34,7 @@ export function normalizePhoneDigits(phone: string): string {
  * US national form for comparison: strip non-digits; if 11 digits starting
  * with `1`, drop the country code. Matches the server's `sanitize_number` for US.
  */
-export function toUsNationalDigits(phone: string): string {
+function toUsNationalDigits(phone: string): string {
   let digits = normalizePhoneDigits(phone);
   if (digits.length === 11 && digits.startsWith("1")) {
     digits = digits.slice(1);

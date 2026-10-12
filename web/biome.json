@@ -70,6 +70,12 @@
             }
           }
         },
+        "useFilenamingConvention": {
+          "level": "error",
+          "options": {
+            "filenameCases": ["camelCase", "PascalCase"]
+          }
+        },
         "useComponentExportOnlyModules": {
           "level": "error",
           "options": {

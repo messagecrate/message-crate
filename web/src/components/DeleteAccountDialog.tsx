@@ -5,7 +5,7 @@ import PathList from "./PathList";
 import PlainButton from "./PlainButton";
 
 /** The directories of the account's Import Runs on this computer, as the dialog shows them. */
-export type RunDirectoriesCheck = {
+type RunDirectoriesCheck = {
   checking: boolean;
   paths: readonly string[];
   /** Why they could not be looked for, or empty. */

@@ -10,7 +10,7 @@ import { getTimeZones } from "@vvo/tzdb";
  * countries are `@vvo/tzdb`'s; the offset is the one in force now, so it
  * follows daylight saving.
  */
-export interface TimeZoneChoice {
+interface TimeZoneChoice {
   /** The IANA name sent to the server. */
   id: string;
   label: string;

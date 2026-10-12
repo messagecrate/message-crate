@@ -21,7 +21,7 @@ const desktop = vi.hoisted(() => ({
   encrypted: vi.fn(),
 }));
 
-vi.mock("./tauri-check", () => ({ isTauri: () => desktop.isTauri }));
+vi.mock("./tauriCheck", () => ({ isTauri: () => desktop.isTauri }));
 
 vi.mock("./tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./tauri")>()),

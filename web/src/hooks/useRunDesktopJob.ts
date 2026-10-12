@@ -3,7 +3,7 @@ import type { DesktopJobName } from "../lib/desktopJob";
 import { awaitDesktopJob, type DesktopJobResult, invokeCancel } from "../lib/tauri";
 import type { ImportIssueEvent, ImportProgressEvent } from "../lib/types";
 
-export type RunDesktopJobCallbacks = {
+type RunDesktopJobCallbacks = {
   onLog?: (line: string) => void;
   onProgress?: (event: ImportProgressEvent) => void;
   onIssue?: (event: ImportIssueEvent) => void;

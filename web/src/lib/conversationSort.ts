@@ -17,7 +17,7 @@ export interface ConversationSortState {
 }
 
 /** Newest activity first — what the list showed before it was configurable. */
-export const DEFAULT_CONVERSATION_SORT = {
+const DEFAULT_CONVERSATION_SORT = {
   sort: "date",
   order: "desc",
 } as const satisfies ConversationSortState;

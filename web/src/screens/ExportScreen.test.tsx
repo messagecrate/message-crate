@@ -16,7 +16,7 @@ const invokeCancel = vi.hoisted(() => vi.fn());
 const invokeCreateExportDir = vi.hoisted(() => vi.fn());
 const awaitDesktopJob = vi.hoisted(() => vi.fn());
 
-vi.mock("../lib/tauri-check", () => ({
+vi.mock("../lib/tauriCheck", () => ({
   isTauri: () => true,
 }));
 

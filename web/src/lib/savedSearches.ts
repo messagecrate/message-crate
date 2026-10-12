@@ -23,7 +23,7 @@ type Schema = components["schemas"];
  *
  * The module-level cache and the browser event that used to live here are gone.
  * They are the reason a second account could be shown the first account's saved
- * searches: `auth.tsx` cleared four other caches by hand and missed this one.
+ * searches: `AuthProvider.tsx` cleared four other caches by hand and missed this one.
  * The cache entry is now named with the account, so there is nothing to
  * remember.
  */
@@ -41,7 +41,7 @@ export function useSavedSearches(): {
   return { savedSearches: data ?? [], loading: isPending };
 }
 
-export function useCreateSavedSearch(): UseMutationResult<
+function useCreateSavedSearch(): UseMutationResult<
   SavedSearch,
   Error,
   { name: string; query: string }
@@ -49,7 +49,7 @@ export function useCreateSavedSearch(): UseMutationResult<
   return useRouteMutation({ mutationFn: createSavedSearch });
 }
 
-export function useUpdateSavedSearch(): UseMutationResult<
+function useUpdateSavedSearch(): UseMutationResult<
   SavedSearch,
   Error,
   { id: number; name: string; query: string }
@@ -60,11 +60,11 @@ export function useUpdateSavedSearch(): UseMutationResult<
   });
 }
 
-export function useDeleteSavedSearch(): UseMutationResult<void, Error, number> {
+function useDeleteSavedSearch(): UseMutationResult<void, Error, number> {
   return useRouteMutation({ mutationFn: (id: number) => deleteSavedSearch(id) });
 }
 
-export type SavedSearchActions = {
+type SavedSearchActions = {
   create: (name: string, query: string) => Promise<void>;
   update: (id: number, name: string, query: string) => Promise<void>;
   remove: (id: number) => Promise<void>;

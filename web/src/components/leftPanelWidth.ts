@@ -14,7 +14,7 @@ export const LEFT_PANEL_WIDTH_VAR = "--left-panel-width";
  * The navigation panel takes at most this share of the window, so a
  * phone-width window keeps room for the page beside it (#1718).
  */
-export const LEFT_PANEL_WINDOW_SHARE = 0.5;
+const LEFT_PANEL_WINDOW_SHARE = 0.5;
 
 /**
  * The widest a window `windowWidth` pixels wide lets the navigation panel be,

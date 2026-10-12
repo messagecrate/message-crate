@@ -7,7 +7,7 @@ import {
   importExportBlock,
 } from "../lib/desktopFeatures";
 import { desktopJobRunningText } from "../lib/desktopJob";
-import { isTauri } from "../lib/tauri-check";
+import { isTauri } from "../lib/tauriCheck";
 import { useAccountProfile } from "../lib/useAccountProfile";
 import { useImportRunState } from "../screens/import/importRunStore";
 import Button from "./Button";

@@ -14,7 +14,6 @@ import {
 export type {
   ActivityFilter,
   ContactsQueryInput,
-  CountComparator,
   CountFilterInput,
   DateBoundFilter,
   DateBoundOp,
@@ -36,7 +35,7 @@ export type AdvancedSearchMode = "messages" | "contacts";
 export const EMPTY_COUNT: CountFilterInput = { comparator: "any", value: "" };
 export const EMPTY_DATE_BOUND: DateBoundFilter = { op: "any", start: "", end: "" };
 
-export function dateBoundHasValue(bound: DateBoundFilter): boolean {
+function dateBoundHasValue(bound: DateBoundFilter): boolean {
   if (bound.op === "any") return false;
   return Boolean(bound.start || (bound.op === "between" && bound.end));
 }

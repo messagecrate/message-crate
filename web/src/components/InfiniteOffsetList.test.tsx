@@ -7,7 +7,7 @@ import { setupUser } from "../test/user";
 import InfiniteOffsetList from "./InfiniteOffsetList";
 
 const tauriMock = vi.hoisted(() => ({ current: false }));
-vi.mock("../lib/tauri-check", () => ({
+vi.mock("../lib/tauriCheck", () => ({
   isTauri: () => tauriMock.current,
 }));
 

@@ -31,7 +31,7 @@ type Schema = components["schemas"];
 type Server = paths["/v1/server"]["get"]["responses"][200]["content"]["application/json"];
 
 /** Options every read accepts, so a caller can cancel an in-flight request. */
-export type RequestOptions = ApiRequestOptions;
+type RequestOptions = ApiRequestOptions;
 
 /**
  * The time limit of a call whose work on the server grows with what an
@@ -234,7 +234,7 @@ export type LogLevel = Schema["LogLevel"];
 /** A page of a log's lines, newest first. */
 export type LogLinesPage = Schema["ListLogLinesResponse"];
 /** One file of the server's log. */
-export type LogFile = Schema["LogFile"];
+type LogFile = Schema["LogFile"];
 
 /**
  * A page of the server's log, newest first: the lines at `level` and more

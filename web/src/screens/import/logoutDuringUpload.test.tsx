@@ -79,7 +79,7 @@ vi.mock("../../lib/useAccountProfile", () => ({
   useFetchAccountProfile: () => async () => ({ phones: [], emails: [] }),
 }));
 
-vi.mock("../../lib/tauri-check", () => ({
+vi.mock("../../lib/tauriCheck", () => ({
   isTauri: () => true,
 }));
 

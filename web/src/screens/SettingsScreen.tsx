@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import Tab from "../components/Tab";
 import { canUseConvert } from "../lib/desktopFeatures";
 import { parseSelectKey } from "../lib/selectKey";
-import { isTauri } from "../lib/tauri-check";
+import { isTauri } from "../lib/tauriCheck";
 import { useSettingsAccount } from "../lib/useSettingsAccount";
 import { AccountSettingsPanel } from "./settings/AccountSettingsPanel";
 import { AppearanceSection } from "./settings/AppearanceSection";

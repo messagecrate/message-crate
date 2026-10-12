@@ -17,7 +17,7 @@ const logout = vi.hoisted(() => vi.fn());
 const desktop = vi.hoisted(() => ({ value: false }));
 const accountRunDirectories = vi.hoisted(() => vi.fn());
 
-vi.mock("../../lib/tauri-check", () => ({
+vi.mock("../../lib/tauriCheck", () => ({
   isTauri: () => desktop.value,
 }));
 

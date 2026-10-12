@@ -6,7 +6,7 @@
  * `AbortSignal.any`, which older WebViews lack, and a timer is what Vitest's
  * fake timers control.
  */
-export type TimeLimit = {
+type TimeLimit = {
   /** The signal to hand `fetch`. */
   signal: AbortSignal;
   /** True when the limit, not the caller, aborted the signal. */

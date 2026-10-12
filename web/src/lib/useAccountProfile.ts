@@ -11,7 +11,7 @@ import { getAccountProfile, updateAccountProfile } from "./serverApi";
  * The logged-in account's profile.
  *
  * This used to be a module-level store with its own in-flight guard, its own
- * subscriber list, and a `clearAccountProfile` that `auth.tsx` had to remember
+ * subscriber list, and a `clearAccountProfile` that `AuthProvider.tsx` had to remember
  * to call on both login and logout. All of that is TanStack Query's now,
  * and the entry is named with the account, so nothing has to be cleared for
  * one account to stop seeing another's profile.

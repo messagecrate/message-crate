@@ -7,7 +7,7 @@
  * its own requests from the desktop side and whose own calls go straight
  * through `serverApi.ts` (#1491, #1677). Each reports the refusal here.
  *
- * `auth.tsx` registers how to end the session here, and the query client and
+ * `AuthProvider.tsx` registers how to end the session here, and the query client and
  * the run in `screens/import/run/` (`serverCalls.ts`, `upload.ts`) call it,
  * without either side depending on the other.
  */

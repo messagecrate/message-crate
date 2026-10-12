@@ -125,7 +125,7 @@ vi.mock("../lib/useContactGroups", () => ({
 vi.mock("../lib/useMessageTags", () => ({
   useMessageTags: () => ({ tags: sets.tags, loading: sets.tagsLoading }),
 }));
-vi.mock("../lib/tauri-check", () => ({ isTauri: () => desktop.on }));
+vi.mock("../lib/tauriCheck", () => ({ isTauri: () => desktop.on }));
 vi.mock("../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverApi")>()),
   listSearchFields: vi.fn(async (list: SearchList) => searchFieldsFor(list)),

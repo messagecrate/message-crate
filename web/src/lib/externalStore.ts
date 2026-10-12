@@ -6,7 +6,7 @@ import { useCallback, useSyncExternalStore } from "react";
  * It is for state that belongs to this window, not to the server. Server
  * data is read through TanStack Query, never through a store (ADR 0002).
  */
-export type ExternalStore<T> = {
+type ExternalStore<T> = {
   get: () => T;
   /** Replace the value, and tell every subscriber; nothing happens when it is the same value. */
   set: (next: T) => void;

@@ -205,7 +205,7 @@ function mergeOnce<T>(earlier: readonly T[], later: readonly T[], keyOf: (row: T
  * that resumes reads again what it had not finished, and reports the same
  * rows again: each is kept once.
  */
-export function mergeIssues(
+function mergeIssues(
   earlier: readonly ImportIssue[],
   later: readonly ImportIssue[],
 ): ImportIssue[] {

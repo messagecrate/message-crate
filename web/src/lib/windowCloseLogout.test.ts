@@ -8,7 +8,7 @@ const isTauri = vi.fn();
 const onWindowCloseRequested = vi.fn();
 const destroyWindow = vi.fn();
 
-vi.mock("./tauri-check", () => ({
+vi.mock("./tauriCheck", () => ({
   isTauri: () => isTauri(),
 }));
 

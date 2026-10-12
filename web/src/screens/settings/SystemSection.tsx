@@ -10,7 +10,7 @@ import { errorText } from "../../lib/apiErrorMessage";
 import { APP_BUILD } from "../../lib/build";
 import { getOpenToNetwork, isOwnAddress, setOpenToNetwork } from "../../lib/localServer";
 import { keys } from "../../lib/queryKeys";
-import { getRememberImporterPaths, setRememberImporterPaths } from "../../lib/system-settings";
+import { getRememberImporterPaths, setRememberImporterPaths } from "../../lib/systemSettings";
 import {
   invokeExportDirectory,
   invokeOpenDataDirectory,
@@ -22,7 +22,7 @@ import {
   type ToolStatus,
   type ToolsStatus,
 } from "../../lib/tauri";
-import { isTauri } from "../../lib/tauri-check";
+import { isTauri } from "../../lib/tauriCheck";
 import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware";
 import { toolStatusLine, troubleshootingSentence } from "../../lib/toolStatusCopy";
 import { accentLinkClass } from "../../lib/uiStyles";

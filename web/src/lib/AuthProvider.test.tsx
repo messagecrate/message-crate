@@ -41,7 +41,7 @@ vi.mock("./api", () => ({
   setBaseUrl: (...args: unknown[]) => setBaseUrl(...args),
 }));
 
-// The server calls auth.tsx and savedLogin.ts make, faked by name. Everything else in serverApi
+// The server calls AuthProvider.tsx and savedLogin.ts make, faked by name. Everything else in serverApi
 // stays real, since other modules in this graph import from it.
 vi.mock("./serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./serverApi")>()),
@@ -50,7 +50,7 @@ vi.mock("./serverApi", async (importOriginal) => ({
   getAccountProfile: (...args: unknown[]) => getProfile(...args),
 }));
 
-vi.mock("./tauri-check", () => ({
+vi.mock("./tauriCheck", () => ({
   isTauri: () => isTauri(),
 }));
 
@@ -117,7 +117,7 @@ describe("AuthProvider logout", () => {
       if (token === null) order.push("clear-token");
     });
 
-    const { AuthProvider } = await import("./auth");
+    const { AuthProvider } = await import("./AuthProvider");
     const { useAuth } = await import("./authContext");
     const { result } = renderHook(() => useAuth(), {
       wrapper: ({ children }: { children: ReactNode }) => (
@@ -143,7 +143,7 @@ describe("AuthProvider logout", () => {
     seedSession();
     post.mockRejectedValue(new Error("network down"));
 
-    const { AuthProvider } = await import("./auth");
+    const { AuthProvider } = await import("./AuthProvider");
     const { useAuth } = await import("./authContext");
     const { result } = renderHook(() => useAuth(), {
       wrapper: ({ children }: { children: ReactNode }) => (
@@ -171,7 +171,7 @@ describe("AuthProvider logout", () => {
       emails: [],
     }));
     const { pushRecentSearch, loadRecentSearches } = await import("./recentSearches");
-    const { AuthProvider } = await import("./auth");
+    const { AuthProvider } = await import("./AuthProvider");
     const { useAuth } = await import("./authContext");
     const { result } = renderHook(() => useAuth(), {
       wrapper: ({ children }: { children: ReactNode }) => (
@@ -207,7 +207,7 @@ describe("AuthProvider logout", () => {
   });
 
   it("skips the server logout request when there is no session token", async () => {
-    const { AuthProvider } = await import("./auth");
+    const { AuthProvider } = await import("./AuthProvider");
     const { useAuth } = await import("./authContext");
     const { result } = renderHook(() => useAuth(), {
       wrapper: ({ children }: { children: ReactNode }) => (
@@ -234,7 +234,7 @@ describe("AuthProvider logout", () => {
     });
 
     seedSession();
-    const { AuthProvider } = await import("./auth");
+    const { AuthProvider } = await import("./AuthProvider");
     const { useAuth } = await import("./authContext");
     const { result } = renderHook(() => useAuth(), {
       wrapper: ({ children }: { children: ReactNode }) => (
@@ -278,7 +278,7 @@ describe("AuthProvider restoring a saved login", () => {
   });
 
   async function renderAuth() {
-    const { AuthProvider } = await import("./auth");
+    const { AuthProvider } = await import("./AuthProvider");
     const { useAuth } = await import("./authContext");
     return renderHook(() => useAuth(), {
       wrapper: ({ children }: { children: ReactNode }) => (
@@ -384,7 +384,7 @@ describe("AuthProvider keeping the server address", () => {
   });
 
   async function renderAuth() {
-    const { AuthProvider } = await import("./auth");
+    const { AuthProvider } = await import("./AuthProvider");
     const { useAuth } = await import("./authContext");
     return renderHook(() => useAuth(), {
       wrapper: ({ children }: { children: ReactNode }) => (
@@ -466,7 +466,7 @@ describe("AuthProvider when the server says the session has ended", () => {
   });
 
   const wrapper = async () => {
-    const { AuthProvider } = await import("./auth");
+    const { AuthProvider } = await import("./AuthProvider");
     return ({ children }: { children: ReactNode }) => (
       <Providers>
         <AuthProvider>{children}</AuthProvider>

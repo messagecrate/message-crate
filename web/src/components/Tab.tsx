@@ -19,9 +19,11 @@ import { focusRingClass } from "../lib/uiStyles";
  * Biome's `noRestrictedImports` refuses React Aria's `Tab` everywhere but here.
  * This file's override in `web/biome.json` replaces the root rule's paths
  * rather than adding to them, so it copies every root path except
- * `react-aria-components`; a path added to the root rule is added there too.
+ * `react-aria-components`. A path added to the root rule must be added there
+ * too. `scripts/check-biome-restricted-imports.mjs` fails when this override's
+ * list is anything but the root list less `react-aria-components`.
  */
-export type TabProps = {
+type TabProps = {
   id: Key;
   children: ReactNode;
   /** The text size and layout of the strip it sits in, such as `flex-1 text-center`. */

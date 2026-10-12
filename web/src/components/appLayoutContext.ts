@@ -21,7 +21,7 @@ export type NavItem = "messages" | "contacts" | "trash" | "import" | "export";
  * that declares none, such as Settings, has no list, so the header offers no
  * search and the navigation panel fits the window.
  */
-export interface LayoutSection {
+interface LayoutSection {
   /** The list the header search searches, and its search so far. */
   search: HeaderSearch;
   /** The search box's words changed. */
@@ -35,7 +35,7 @@ export interface LayoutSection {
 }
 
 /** What the layout shows from the section: the parts that are not callbacks. */
-export interface ShownSection {
+interface ShownSection {
   search: HeaderSearch;
   browseQuery: string;
 }

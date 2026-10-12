@@ -2,8 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { ImportJobFormValues } from "../../lib/importSources/types";
 import { formSnapshot, restoreFormFromSnapshot } from "./formSnapshot";
 
-/** Every form field filled with a value no other field holds. */
-const markedForm: ImportJobFormValues = {
+/**
+ * Every form field filled with a value no other field holds. `Required` makes
+ * an optional field such as `assetMaxBytes` a type error when it is left out,
+ * so a field added to the form must be given a marker here, and the read-back
+ * test below then fails until it is stored or classed as a secret (#2552).
+ */
+const markedForm: Required<ImportJobFormValues> = {
   source: "imessage-ios",
   backupPath: "marker-backupPath",
   backupPassword: "marker-backupPassword",

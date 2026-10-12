@@ -38,7 +38,7 @@ export function quote(value: string): string {
  * One token of a query: where it starts and ends, and whether it opens a
  * group (`(`, or `-(` with its minus), closes one, or is anything else.
  */
-export type SearchToken = { kind: "open" | "close" | "text"; start: number; end: number };
+type SearchToken = { kind: "open" | "close" | "text"; start: number; end: number };
 
 /** The lexer's whitespace (`u8::is_ascii_whitespace`), plus NUL, which it reads as a space. */
 function isSpace(c: string | undefined): boolean {
@@ -357,7 +357,7 @@ export function suggestion(word: string, value: string): string {
 // --- Advanced search -------------------------------------------------
 
 /** Same operators as web-next CountField (Any / Equal to / More than / Less than). */
-export type CountComparator = "=" | ">" | "<";
+type CountComparator = "=" | ">" | "<";
 
 export type CountFilterInput = {
   comparator: CountComparator | "any";

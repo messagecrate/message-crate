@@ -7,7 +7,7 @@ import type { Conversation } from "./types";
  * text message — and which transport carried it is not what the label is for.
  * Anything else (WhatsApp, say) keeps its own name.
  */
-export function formatServiceLabel(service: string | null | undefined): string | null {
+function formatServiceLabel(service: string | null | undefined): string | null {
   const s = (service ?? "").trim();
   if (!s || s.toLowerCase() === "unknown") return null;
   const lower = s.toLowerCase();

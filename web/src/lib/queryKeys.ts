@@ -26,7 +26,7 @@
 export type AuditTrailKey = "all" | "own" | `account:${number}` | `deleted:${number}`;
 
 /** What makes one page of the conversation list its own cache entry. */
-export type ConversationListKey = { q: string; sort: string; order: string };
+type ConversationListKey = { q: string; sort: string; order: string };
 
 /** The Import form's Apple Messages method and paths, as one path check reads them. */
 export type ImessagePathsKey = {
