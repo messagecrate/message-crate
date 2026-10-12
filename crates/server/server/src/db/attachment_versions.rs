@@ -48,6 +48,12 @@ impl Version {
     pub(crate) fn in_staging(self) -> bool {
         self == Self::Preview
     }
+
+    /// This version of the original `sha256`, as a log line names it, such
+    /// as `Preview of <sha256>`.
+    pub(crate) fn describe_of(self, sha256: &str) -> String {
+        format!("{self} of {sha256}")
+    }
 }
 
 impl std::fmt::Display for Version {
@@ -97,12 +103,6 @@ impl StoredOriginal {
     /// Extension sources to fall back on when the stored file has no extension.
     pub(crate) fn name_hints(&self) -> [Option<&str>; 2] {
         [self.original_name.as_deref(), self.source_path.as_deref()]
-    }
-
-    /// What the `version` of this original is, as a log line names it, such
-    /// as `Preview of <sha256>`.
-    pub(crate) fn describe(&self, version: Version) -> String {
-        format!("{version} of {}", self.sha256)
     }
 
     /// What the rows say about `version`.

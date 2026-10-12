@@ -858,7 +858,7 @@ async fn stream_version(
             &converted_dir,
             &path,
             account,
-            &format!("{version} of {sha256}"),
+            &version.describe_of(sha256.as_str()),
         ) else {
             return Err(no_version());
         };

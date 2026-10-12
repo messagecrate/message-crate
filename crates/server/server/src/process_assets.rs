@@ -668,7 +668,7 @@ impl<'a> AccountPass<'a> {
                 row.named(version).assets_path.as_deref(),
                 &self.converted_dir,
                 self.account_id,
-                &row.describe(version),
+                &version.describe_of(&row.sha256),
             )
         };
         let decided = shown_as_is(&self.assets_dir, row);
@@ -950,7 +950,7 @@ impl<'a> AccountPass<'a> {
             &self.converted_dir,
             &rel,
             self.account_id,
-            &row.describe(version),
+            &version.describe_of(&row.sha256),
         ) && path.is_file()
         {
             crate::asset_store::remove_file(&path)
