@@ -1250,8 +1250,9 @@ carry their date on the heading.
   messages without a password. Now only the user Message Crate runs as can
   read them, whether the server runs on its own, in Docker or in the desktop
   app, and the desktop app keeps its import logs the same way. An existing
-  Message Crate is closed off the next time it starts. On Windows, where
-  these files already sit in your own user folder, nothing changes (#2097).
+  Message Crate is closed off the next time it starts. Windows has no such
+  permissions, so there the files keep the access of the directory they are
+  in, which for the desktop app is your own user directory (#2097).
 - 2026-10-12: **A database rebuilt for a new layout keeps a copy of what it
   held.** When a server finds a database from a release with another
   database layout, it still rebuilds it empty, but it first writes a copy of
@@ -1463,10 +1464,11 @@ carry their date on the heading.
 
 ### Upgrading
 
-- 2026-10-12: The server now makes its data directory readable by its own
-  user alone each time it starts. A backup job or another program that read
-  the data directory as a different user, through its group, can no longer
-  read it; run it as the user the server runs as, or as root.
+- 2026-10-12: The server now makes its data directory and its database
+  file readable by its own user alone each time it opens the database. A
+  backup job or another program that read either as a different user,
+  through its group, can no longer read it; run it as the user the server
+  runs as, or as root.
 - 2026-10-08: The **ffmpeg directory** field in Settings → System is gone,
   and the `MESSAGE_CRATE_BIN` and `WTSEXPORTER` environment variables are no
   longer read. ffmpeg and ffprobe beside the app, in a `lib/` directory

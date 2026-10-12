@@ -8,9 +8,17 @@
 //! whatever the umask gave the files in it. The database may live outside it
 //! (`[paths] db`, `--db`), so the database file, its `-wal`, `-shm` and
 //! `-journal` files, and the copy kept before a schema rebuild are made
-//! `0600` too. The database's directory is made `0700` when the server makes
-//! it, and an existing one is left as it is, since it may be any directory
-//! the owner named.
+//! `0600` too.
+//!
+//! The two directories follow different rules because they are different
+//! kinds of directory. The Data Directory is the server's own: it holds
+//! nothing but what the server writes there, so an existing one, even one
+//! the owner named with `serve --data-dir`, is tightened, and a group that
+//! read it before (a backup user, a file share) no longer can. The
+//! database's directory may be any directory that also holds other files,
+//! such as the one a command runs in, so it is made `0700` when the server
+//! makes it and an existing one is left as it is; the database's own files
+//! are `0600` there.
 //!
 //! Windows has no permission bits: there the directories and files take the
 //! access list of the directory they are made in ([`file_io::owner_only`]).
@@ -21,19 +29,28 @@ use anyhow::{Context, Result};
 
 /// Make the Data Directory `data_dir`, new directories above it included,
 /// readable by the server's user alone, and take group and other access off
-/// it when it is already there.
-///
-/// A directory another user owns cannot be changed. That is warned of, and
-/// the server goes on with the directory as its owner left it.
+/// it when it is already there ([`keep_data_dir_to_owner`]).
 ///
 /// # Errors
 ///
 /// Returns an error, naming the directory, when it cannot be made.
-pub(crate) fn keep_data_dir_to_owner(data_dir: &Path) -> Result<()> {
+pub(crate) fn make_data_dir_owner_only(data_dir: &Path) -> Result<()> {
     file_io::create_dir_all_owner_only(data_dir)
         .with_context(|| format!("create data directory {}", data_dir.display()))?;
-    restrict_or_warn(data_dir);
+    keep_data_dir_to_owner(data_dir);
     Ok(())
+}
+
+/// Take group and other access off the Data Directory `data_dir` when it is
+/// there. A missing one is left missing: only the commands that make a
+/// database make it ([`make_data_dir_owner_only`]).
+///
+/// A directory another user owns cannot be changed. That is warned of, and
+/// the server goes on with the directory as its owner left it.
+pub(crate) fn keep_data_dir_to_owner(data_dir: &Path) {
+    if data_dir.exists() {
+        restrict_or_warn(data_dir);
+    }
 }
 
 /// Make the database file at `db` readable by the server's user alone before
@@ -85,19 +102,15 @@ fn restrict_or_warn(path: &Path) {
 mod tests {
     use std::fs::{self, Permissions};
     use std::os::unix::fs::PermissionsExt as _;
-    use std::path::Path;
 
-    use super::{keep_data_dir_to_owner, keep_database_to_owner};
-
-    fn mode(path: &Path) -> u32 {
-        fs::metadata(path).unwrap().permissions().mode() & 0o777
-    }
+    use super::{keep_data_dir_to_owner, keep_database_to_owner, make_data_dir_owner_only};
+    use crate::test_support::permission_bits as mode;
 
     #[test]
     fn a_new_data_directory_and_the_ones_above_it_are_the_owner_s_alone() {
         let root = tempfile::tempdir().unwrap();
         let data_dir = root.path().join("srv").join("data");
-        keep_data_dir_to_owner(&data_dir).unwrap();
+        make_data_dir_owner_only(&data_dir).unwrap();
         assert_eq!(mode(&root.path().join("srv")), 0o700);
         assert_eq!(mode(&data_dir), 0o700);
     }
@@ -108,8 +121,16 @@ mod tests {
         let data_dir = root.path().join("data");
         fs::create_dir(&data_dir).unwrap();
         fs::set_permissions(&data_dir, Permissions::from_mode(0o755)).unwrap();
-        keep_data_dir_to_owner(&data_dir).unwrap();
+        keep_data_dir_to_owner(&data_dir);
         assert_eq!(mode(&data_dir), 0o700);
+    }
+
+    #[test]
+    fn a_missing_data_directory_is_not_made_by_keeping_it() {
+        let root = tempfile::tempdir().unwrap();
+        let data_dir = root.path().join("data");
+        keep_data_dir_to_owner(&data_dir);
+        assert!(!data_dir.exists());
     }
 
     #[test]

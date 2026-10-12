@@ -198,7 +198,7 @@ fn parent_dir_or_cwd(path: &Path) -> &Path {
 /// Work directory for the prepared account tree. Must live on the same mount
 /// as `data_dir` so the later install can `rename` into `data_dir/<account>`.
 fn reset_account_work_dir(data_dir: &Path) -> Result<tempfile::TempDir> {
-    crate::owner_only::keep_data_dir_to_owner(data_dir)?;
+    crate::owner_only::make_data_dir_owner_only(data_dir)?;
     tempfile::Builder::new()
         .prefix(".reset-demo-data-")
         .tempdir_in(data_dir)

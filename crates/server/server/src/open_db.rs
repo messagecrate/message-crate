@@ -102,14 +102,15 @@ impl OpenDb {
             file_io::create_dir_all_owner_only(parent)
                 .with_context(|| format!("create {}", parent.display()))?;
         }
+        crate::owner_only::make_data_dir_owner_only(&cfg.paths.data_dir)?;
         Self::open_pool(cfg).await
     }
 
     /// Open the pool on the file `cfg` names and make sure of the schema.
-    /// The Data Directory is made, or kept, readable by the server's user
-    /// alone first ([`crate::owner_only`]), whichever command opens it.
+    /// The Data Directory is kept readable by the server's user alone first
+    /// ([`crate::owner_only`]), whichever command opens it.
     async fn open_pool(cfg: Config) -> Result<Self> {
-        crate::owner_only::keep_data_dir_to_owner(&cfg.paths.data_dir)?;
+        crate::owner_only::keep_data_dir_to_owner(&cfg.paths.data_dir);
         let engine::OpenedPool {
             pool: db,
             wal_error,
@@ -295,9 +296,8 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn a_new_database_and_data_directory_are_the_owner_s_alone() {
-        use std::os::unix::fs::PermissionsExt as _;
+        use crate::test_support::permission_bits as mode;
 
-        let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
         let dir = tempfile::tempdir().unwrap();
         let mut cfg = fresh_config(dir.path());
         cfg.paths.db = dir.path().join("database/messagecrate.db");
@@ -324,7 +324,8 @@ mod tests {
     async fn opening_a_database_others_could_read_makes_it_the_owner_s_alone() {
         use std::os::unix::fs::PermissionsExt as _;
 
-        let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        use crate::test_support::permission_bits as mode;
+
         let open_to_all = |path: &Path, mode| {
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
         };

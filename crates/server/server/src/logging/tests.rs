@@ -87,9 +87,8 @@ fn rotation_never_keeps_more_than_the_limits_files() {
 #[cfg(unix)]
 #[test]
 fn a_new_log_and_the_data_directory_it_is_made_in_are_the_owner_s_alone() {
-    use std::os::unix::fs::PermissionsExt as _;
+    use crate::test_support::permission_bits as mode;
 
-    let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
     let tmp = TempDir::new().unwrap();
     let data_dir = tmp.path().join("data");
 

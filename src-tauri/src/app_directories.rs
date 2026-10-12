@@ -93,16 +93,24 @@ impl RunLog {
     /// names the phone numbers and email addresses in its file names (#2097).
     pub fn open(logs_dir: &Path, run_dir: &Path) -> Self {
         let path = import_run_log(logs_dir, run_dir);
+        let mut not_tightened = None;
         let file = file_io::create_dir_all_owner_only(logs_dir)
             .and_then(|()| {
                 // A Logs Directory that cannot be tightened still takes the
-                // log.
-                let _ = file_io::restrict_to_owner(logs_dir);
+                // log, which says so below.
+                not_tightened = file_io::restrict_to_owner(logs_dir).err();
                 File::options().create(true).append(true).open(&path)
             })
             .ok()
             .map(|file| Arc::new(Mutex::new(file)));
-        Self { file }
+        let log = Self { file };
+        if let Some(error) = not_tightened {
+            log.warn(&format!(
+                "{} may be readable by other users of this computer, and it could not be made readable by this user alone: {error}",
+                logs_dir.display()
+            ));
+        }
+        log
     }
 
     /// Add the error that stopped the stage to the log, as the window shows

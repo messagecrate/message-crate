@@ -314,8 +314,8 @@ pub struct OpenedPool {
 ///
 /// The file and its `-wal`, `-shm` and `-journal` files are made readable by
 /// the server's user alone first ([`crate::owner_only::keep_database_to_owner`]),
-/// so every database the server opens or makes is, the one `reset-demo`
-/// builds and renames into place among them.
+/// so every database the server opens or makes is owner-only, including the
+/// one `reset-demo` builds and renames into place.
 ///
 /// # Errors
 ///

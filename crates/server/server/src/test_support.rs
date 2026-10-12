@@ -63,3 +63,16 @@ pub use seed::{
     seed_one_message, store_asset_max_bytes, stored_permissions, stored_time, unique_guid,
     with_trigger_lifted,
 };
+
+/// The permission bits of the file or directory at `path`, such as `0o600`,
+/// for a test that checks what another user of the computer can read
+/// (#2097).
+#[cfg(unix)]
+pub fn permission_bits(path: &std::path::Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt as _;
+    std::fs::metadata(path)
+        .unwrap_or_else(|e| panic!("read the mode of {}: {e}", path.display()))
+        .permissions()
+        .mode()
+        & 0o777
+}
