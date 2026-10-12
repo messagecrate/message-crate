@@ -289,9 +289,9 @@ fn the_mms_fixture_is_dated_in_seconds() {
 }
 
 #[test]
-fn group_chat_id_does_not_collide_on_digit_split() {
-    let (k1, _) = phone::group_chat_id("group-", &["12".to_string(), "34".to_string()]);
-    let (k2, _) = phone::group_chat_id("group-", &["123".to_string(), "4".to_string()]);
+fn group_conversation_id_does_not_collide_on_digit_split() {
+    let (k1, _) = phone::group_conversation_id("group-", &["12".to_string(), "34".to_string()]);
+    let (k2, _) = phone::group_conversation_id("group-", &["123".to_string(), "4".to_string()]);
     assert_ne!(k1, k2);
     assert_eq!(k1, "group-2:12_2:34");
     assert_eq!(k2, "group-3:123_1:4");

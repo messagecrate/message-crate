@@ -11,7 +11,7 @@ fn normalize_collapses_whitespace() {
 }
 
 #[test]
-fn group_chat_identity_is_sorted_handles() {
+fn group_conversation_identity_is_sorted_handles() {
     let handles = vec![
         "+14075550105".to_string(),
         "+14075550104".to_string(),

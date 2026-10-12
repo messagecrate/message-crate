@@ -629,23 +629,23 @@ fn numbers(count: usize) -> Vec<String> {
 }
 
 #[test]
-fn group_chat_id_names_up_to_four_numbers() {
+fn group_conversation_id_names_up_to_four_numbers() {
     let others = vec![
         "+15555550102".to_string(),
         "+15555550101".to_string(),
         "+15555550102".to_string(),
     ];
     assert_eq!(
-        group_chat_id("grp-", &others),
+        group_conversation_id("grp-", &others),
         (
             "grp-12:+15555550101_12:+15555550102".to_string(),
             "Group: +15555550101, +15555550102".to_string()
         ),
         "sorted, deduplicated, length-prefixed id; the keys in the title"
     );
-    assert_eq!(group_chat_id("grp-", &[]).1, "Group");
+    assert_eq!(group_conversation_id("grp-", &[]).1, "Group");
     assert_eq!(
-        group_chat_id("grp-", &keys(4)).1,
+        group_conversation_id("grp-", &keys(4)).1,
         "Group: +15555550100, +15555550101, +15555550102, +15555550103"
     );
 }
@@ -654,34 +654,37 @@ fn group_chat_id_names_up_to_four_numbers() {
 fn a_group_title_keeps_each_number_s_country() {
     let others = ["+6555550100".to_string(), "+447700900123".to_string()];
     assert_eq!(
-        group_chat_id("grp-", &others).1,
+        group_conversation_id("grp-", &others).1,
         "Group: +447700900123, +6555550100"
     );
 }
 
 #[test]
-fn group_chat_id_counts_the_numbers_past_four() {
+fn group_conversation_id_counts_the_numbers_past_four() {
     assert_eq!(
-        group_chat_id("grp-", &keys(5)).1,
+        group_conversation_id("grp-", &keys(5)).1,
         "Group: +15555550100, +15555550101, +15555550102, +15555550103, and 1 others"
     );
 }
 
 #[test]
-fn group_chat_id_hashes_an_id_past_180_bytes() {
+fn group_conversation_id_hashes_an_id_past_180_bytes() {
     // 20 numbers make a 283-byte id. The expected value is the first 16
     // hex digits of SHA-256 over that id, computed with Python's hashlib.
     let mut others = numbers(20);
-    assert_eq!(group_chat_id("grp-", &others).0, "grp-03ecb51fee88d135");
+    assert_eq!(
+        group_conversation_id("grp-", &others).0,
+        "grp-03ecb51fee88d135"
+    );
     others.reverse();
     assert_eq!(
-        group_chat_id("grp-", &others).0,
+        group_conversation_id("grp-", &others).0,
         "grp-03ecb51fee88d135",
         "the order the numbers arrive in doesn't change the id"
     );
 
     // 12 numbers behind a 13-byte prefix make exactly 180 bytes: kept.
-    let (id, _) = group_chat_id("sms-backup-g-", &numbers(12));
+    let (id, _) = group_conversation_id("sms-backup-g-", &numbers(12));
     assert_eq!(id.len(), 180);
     assert!(id.starts_with("sms-backup-g-10:5555550100_"), "{id}");
 }

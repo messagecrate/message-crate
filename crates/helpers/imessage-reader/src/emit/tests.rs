@@ -1,8 +1,8 @@
 use super::*;
 use crate::test_support::FixtureDb;
 use chat_db_fixture::{
-    DELETED_GUID, DELETED_TEXT, FRIEND_EMAIL, FRIEND_PHONE, FRIEND_PHONE_EMAIL,
-    GROUP_CHAT_IDENTIFIER, GROUP_TITLE, OWNER, OWNER_EMAIL, PARTLY_UNSENT_GUID, PARTLY_UNSENT_TEXT,
+    DELETED_GUID, DELETED_TEXT, FRIEND_EMAIL, FRIEND_PHONE, FRIEND_PHONE_EMAIL, GROUP_IDENTIFIER,
+    GROUP_TITLE, OWNER, OWNER_EMAIL, PARTLY_UNSENT_GUID, PARTLY_UNSENT_TEXT,
     SHRUNK_GROUP_IDENTIFIER, UNSENT_GUID,
 };
 use imessage_reader_protocol::AttachmentSource;
@@ -207,7 +207,7 @@ fn every_fixture_row_builds_a_record() {
     assert!(reply.attachments.is_empty());
 
     let (group, message) = build_record(&session, &messages[2]).unwrap();
-    assert_eq!(group.chat_identifier, GROUP_CHAT_IDENTIFIER);
+    assert_eq!(group.chat_identifier, GROUP_IDENTIFIER);
     assert_eq!(group.conversation_type, "group");
     assert_eq!(group.group_title.as_deref(), Some(GROUP_TITLE));
     let mut handles: Vec<_> = group
@@ -248,7 +248,7 @@ fn a_chat_is_a_group_by_its_style() {
         "a name does not make a group"
     );
     assert_eq!(
-        participants_for(&session, &chat(2, GROUP_CHAT_IDENTIFIER, None)).1,
+        participants_for(&session, &chat(2, GROUP_IDENTIFIER, None)).1,
         "group"
     );
     let (members, kind) = participants_for(&session, &chat(4, SHRUNK_GROUP_IDENTIFIER, None));
@@ -343,7 +343,7 @@ fn the_owner_is_not_a_participant_of_a_group() {
     let session = fixture.session();
     let messages = FixtureDb::messages(&session);
     let (group, _) = build_record(&session, &messages[2]).unwrap();
-    assert_eq!(group.chat_identifier, GROUP_CHAT_IDENTIFIER);
+    assert_eq!(group.chat_identifier, GROUP_IDENTIFIER);
     assert_eq!(
         handles_of(&group.participants),
         vec![FRIEND_PHONE, FRIEND_EMAIL]

@@ -113,7 +113,7 @@ fn a_group_of_twenty_is_keyed_by_a_short_hash_of_its_roster() {
     assert_ne!(group_mms(21).chat_key, key);
 }
 
-/// The key and title come from `phone::group_chat_id`, the rule the
+/// The key and title come from `phone::group_conversation_id`, the rule the
 /// SMS exporters share: the roster sorted, without repeats, each number
 /// prefixed by its length. So a roster written in another order, or with
 /// an address twice, is the same group, and a different roster is not.
@@ -151,7 +151,7 @@ fn one_roster_in_any_order_or_with_a_repeat_is_one_group() {
             records[0].chat_key.clone(),
             records[0].group_title.clone().unwrap()
         ),
-        phone::group_chat_id("group-", &others)
+        phone::group_conversation_id("group-", &others)
     );
 }
 

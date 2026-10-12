@@ -65,7 +65,7 @@ impl MmsConversation {
         // documented at
         // https://messagecrate.app/docs/developer/formats/sms-backup-restore/mapping/.
         let keys: Vec<String> = peers.iter().map(|p| p.key().to_string()).collect();
-        let (chat_key, title) = phone::group_chat_id("group-", &keys);
+        let (chat_key, title) = phone::group_conversation_id("group-", &keys);
         Self {
             chat_key,
             kind: ConversationKind::Group,
