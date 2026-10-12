@@ -30,20 +30,168 @@ fn write_mock_tool(path: &Path) {
 /// runs `body` and an `ffprobe` that does nothing, with an empty `PATH`
 /// before it. Both answer `-version`, so the lookup accepts them.
 fn mock_ffmpeg_dir(body: &str) -> tempfile::TempDir {
+    mock_tools_dir(body, "exit 0")
+}
+
+/// Point the tool location at a Tools Directory holding an `ffmpeg` that
+/// runs `ffmpeg_body` and an `ffprobe` that runs `ffprobe_body`, with an
+/// empty `PATH` before it. Both answer `-version`, so the lookup accepts
+/// them.
+fn mock_tools_dir(ffmpeg_body: &str, ffprobe_body: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
-    write_mock_tool(&dir.path().join("ffprobe"));
-    let ffmpeg = dir.path().join("ffmpeg");
-    fs::write(
-        &ffmpeg,
-        format!("#!/bin/sh\n[ \"$1\" = -version ] && exit 0\n{body}\n"),
-    )
-    .unwrap();
-    let mut perms = fs::metadata(&ffmpeg).unwrap().permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(&ffmpeg, perms).unwrap();
+    for (name, body) in [("ffmpeg", ffmpeg_body), ("ffprobe", ffprobe_body)] {
+        let program = dir.path().join(name);
+        fs::write(
+            &program,
+            format!("#!/bin/sh\n[ \"$1\" = -version ] && exit 0\n{body}\n"),
+        )
+        .unwrap();
+        let mut perms = fs::metadata(&program).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&program, perms).unwrap();
+    }
     set_search_path(Some(OsString::new()));
     set_tools_dir(Some(dir.path().to_path_buf()));
     dir
+}
+
+/// A mock program body that writes its process id to `pid` in its own
+/// directory and then never exits. `exec` makes the `sleep` the process
+/// that was started, so killing it leaves nothing running.
+const WRITE_PID_AND_HANG: &str = "echo $$ > \"$(dirname \"$0\")/pid.tmp\"\n\
+     mv \"$(dirname \"$0\")/pid.tmp\" \"$(dirname \"$0\")/pid\"\nexec sleep 600";
+
+/// Whether the process `pid` still exists.
+fn still_runs(pid: &str) -> bool {
+    Command::new("kill")
+        .args(["-0", pid])
+        .stderr(Stdio::null())
+        .status()
+        .unwrap()
+        .success()
+}
+
+/// An ffmpeg that never exits is killed once its time is up, and the run
+/// fails saying so, so one file ffmpeg hangs on cannot hold up the media
+/// pass for good (#2059). The test says when the time is up, as soon as the
+/// mock has started, so it waits on no clock.
+#[cfg(unix)]
+#[test]
+fn ffmpeg_that_never_finishes_is_killed_when_its_time_is_up() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let dir = mock_ffmpeg_dir(WRITE_PID_AND_HANG);
+    let pid_file = dir.path().join("pid");
+
+    let err = run_ffmpeg_watched(
+        &["out.mp4".to_string()],
+        Some(&AtomicBool::new(false)),
+        Duration::from_secs(10 * 60),
+        &|| pid_file.is_file(),
+    )
+    .expect_err("a run past its time fails");
+
+    assert!(err.downcast_ref::<RanTooLong>().is_some(), "{err:#}");
+    assert_eq!(
+        format!("{err:#}"),
+        "ffmpeg did not finish within 10 minutes, so it was stopped"
+    );
+    let pid = fs::read_to_string(&pid_file).unwrap().trim().to_string();
+    assert!(!still_runs(&pid), "ffmpeg {pid} still runs");
+}
+
+/// An ffprobe that never exits is killed once its time is up too, and the
+/// probe fails (#2059).
+#[cfg(unix)]
+#[test]
+fn ffprobe_that_never_finishes_is_killed_when_its_time_is_up() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let dir = mock_tools_dir("exit 0", WRITE_PID_AND_HANG);
+    let pid_file = dir.path().join("pid");
+
+    let err = run_ffprobe_watched(&["-v", "error"], Path::new("clip.mp4"), &|| {
+        pid_file.is_file()
+    })
+    .expect_err("a probe past its time fails");
+
+    assert!(err.downcast_ref::<RanTooLong>().is_some(), "{err:#}");
+    assert!(
+        format!("{err:#}").contains("ffprobe did not finish within 2 minutes"),
+        "{err:#}"
+    );
+    let pid = fs::read_to_string(&pid_file).unwrap().trim().to_string();
+    assert!(!still_runs(&pid), "ffprobe {pid} still runs");
+}
+
+/// ffprobe's answer on stdout comes back, after the flags that keep it to
+/// local files.
+#[cfg(unix)]
+#[test]
+fn ffprobe_answers_what_it_wrote_and_opens_only_local_files() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let _dir = mock_tools_dir("exit 0", "echo \"$@\"");
+
+    let out = run_ffprobe(&["-v", "error"], Path::new("clip.mp4")).unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "-protocol_whitelist file,pipe -v error clip.mp4\n"
+    );
+}
+
+/// Every ffmpeg run reads nothing from stdin and opens only local files and
+/// pipes, after the quiet flags (#2059).
+#[cfg(unix)]
+#[test]
+fn ffmpeg_reads_no_stdin_and_opens_only_local_files() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let dir = mock_ffmpeg_dir("echo \"$@\" > \"$(dirname \"$0\")/args\"");
+
+    run_ffmpeg(&[
+        "-i".to_string(),
+        "in.mov".to_string(),
+        "out.mp4".to_string(),
+    ])
+    .unwrap();
+
+    assert_eq!(
+        fs::read_to_string(dir.path().join("args")).unwrap(),
+        "-hide_banner -nostats -loglevel error -nostdin -protocol_whitelist file,pipe \
+         -i in.mov out.mp4\n"
+    );
+}
+
+/// A conversion that reads a whole file is given twenty times its length,
+/// at least ten minutes and at most a day, in whole minutes; one whose
+/// length is not known gets ten minutes.
+#[test]
+fn an_ffmpeg_run_is_given_time_by_the_length_of_what_it_reads() {
+    let minutes = |m: u64| Duration::from_secs(m * 60);
+    assert_eq!(ffmpeg_time_limit(None), minutes(10));
+    assert_eq!(ffmpeg_time_limit(Some(Duration::from_secs(5))), minutes(10));
+    assert_eq!(
+        ffmpeg_time_limit(Some(Duration::from_millis(61_500))),
+        minutes(21)
+    );
+    assert_eq!(ffmpeg_time_limit(Some(minutes(60))), minutes(20 * 60));
+    assert_eq!(
+        ffmpeg_time_limit(Some(minutes(3 * 24 * 60))),
+        minutes(24 * 60)
+    );
+    assert_eq!(ffmpeg_time_limit(Some(Duration::MAX)), minutes(24 * 60));
+}
+
+/// A time limit is said in the largest whole unit.
+#[test]
+fn a_time_limit_is_said_in_its_largest_whole_unit() {
+    assert_eq!(spoken(Duration::from_secs(2 * 60)), "2 minutes");
+    assert_eq!(spoken(Duration::from_secs(60)), "1 minute");
+    assert_eq!(spoken(Duration::from_secs(20 * 3600)), "20 hours");
+    assert_eq!(spoken(Duration::from_secs(90 * 60)), "90 minutes");
+    assert_eq!(spoken(Duration::from_secs(45)), "45 seconds");
 }
 
 /// A directory holding an `ffmpeg` and an `ffprobe` that both run.

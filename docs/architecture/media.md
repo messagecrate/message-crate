@@ -187,6 +187,26 @@ named by no row, and the sweep at the next Import Run's end removes it once
 it is an hour old, the grace that keeps another pass's file with the same
 bytes.
 
+No single Asset and no single error stops the pass (#2059, #2072, #2091).
+Every ffmpeg run has a time limit, and so does every ffprobe run, in the
+pass and in the desktop app's Media Stage alike.
+ffprobe gets 2 minutes.
+An ffmpeg run that reads one frame, a Thumbnail or the Preview of an image, gets 10 minutes.
+One that reads the whole file, the Preview of a video or of audio, gets 20 times as long as ffprobe says the file plays, at least 10 minutes and at most a day, rounded up to whole minutes.
+A program still running at its limit is killed and waited for.
+The conversion then fails like any other, and the reason recorded on the Asset's rows says that ffmpeg did not finish within the limit.
+Every ffmpeg and ffprobe run reads nothing from standard input and opens only local files and pipes (`-nostdin`, `-protocol_whitelist file,pipe`).
+An Asset whose work panics fails the same way: it leaves the queue, the panic is logged at `error`, and the pass goes on to the next Asset.
+A pass that fails or panics outside one Asset's work, such as on a database busy past its timeout, is logged and runs again after a wait, or at the next wake if that comes sooner.
+The wait is 5 seconds, doubles with each failure in a row up to 5 minutes, and starts at 5 seconds again after a pass that ends cleanly.
+
+Why a time limit: the pass works on one Asset at a time for every account, so an ffmpeg that never ended held it until the server stopped.
+The Asset stayed queued, so at the next start the pass took it again and hung again.
+Why the limit follows the length: converting a two-hour video legitimately takes far longer than a photo, and a fixed limit long enough for it would leave a hung photo holding the pass for hours.
+Why a ceiling: a damaged or crafted file can claim any length.
+Why only local files: the files come from phone backups, and a playlist or a container inside one can name a network address that ffmpeg would otherwise open.
+Why run again on a timer rather than wait for an Import Run: only the end of an Import Run woke the pass, so on a server imported into once a busy database left the queue untouched until a restart.
+
 Why stop the conversion: ffmpeg is a process of its own, and one the server
 does not stop goes on converting after the server has stopped, using the
 computer for work nothing will record.

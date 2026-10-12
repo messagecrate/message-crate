@@ -1,14 +1,15 @@
 //! Read one media file's shape with ffprobe: for the size forecast, the
 //! Media Stage's compression, and the check whether a browser plays an MP4.
-//! [`probe_media`] is the only place ffprobe runs, so all three judge a file
-//! the same way.
+//! [`probe_media`] is the one place that reads a file's shape, so all three
+//! judge a file the same way. [`played_for`] reads how long a file plays,
+//! for the time limit of the ffmpeg run that converts it.
 
 use std::path::Path;
-use std::process::Command;
+use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Result, anyhow};
 
-use crate::tools::ffprobe_command;
+use crate::tools::run_ffprobe;
 
 /// What ffprobe reports about one media file's first video stream.
 ///
@@ -35,34 +36,53 @@ pub struct MediaProbe {
 /// Returns an error when ffprobe is missing, exits non-zero, or reports a
 /// line this cannot read.
 pub fn probe_media(path: &Path) -> Result<MediaProbe> {
-    let mut cmd: Command = ffprobe_command()?;
-    cmd.args([
-        "-v",
-        "error",
-        "-select_streams",
-        "v:0",
-        "-show_entries",
-        "stream=codec_name,width,height,avg_frame_rate,bit_rate",
-        "-of",
-        "csv=p=0",
-    ]);
-    cmd.arg(path);
-    let out = cmd
-        .output()
-        .with_context(|| format!("run ffprobe on {}", path.display()))?;
-    if !out.status.success() {
-        return Err(anyhow!(
-            "ffprobe failed on {}: {}",
-            path.display(),
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
-    let text = String::from_utf8_lossy(&out.stdout);
+    let out = run_ffprobe(
+        &[
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=codec_name,width,height,avg_frame_rate,bit_rate",
+            "-of",
+            "csv=p=0",
+        ],
+        path,
+    )?;
+    let text = String::from_utf8_lossy(&out);
     let line = text
         .lines()
         .find(|l| !l.trim().is_empty())
         .ok_or_else(|| anyhow!("ffprobe reported no stream for {}", path.display()))?;
     parse_probe_line(line.trim())
+}
+
+/// How long the media file at `path` plays, as its container says. `None`
+/// when ffprobe is missing, fails, or reports no length, as for a still.
+pub(crate) fn played_for(path: &Path) -> Option<Duration> {
+    let out = run_ffprobe(
+        &[
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "csv=p=0",
+        ],
+        path,
+    )
+    .ok()?;
+    parse_duration(&String::from_utf8_lossy(&out))
+}
+
+/// Read ffprobe's `format=duration` answer, seconds with a fraction. `None`
+/// for `N/A`, nothing, or a length that is not a positive finite number.
+fn parse_duration(text: &str) -> Option<Duration> {
+    let seconds: f64 = text.lines().next()?.trim().parse().ok()?;
+    if !seconds.is_finite() || seconds <= 0.0 {
+        return None;
+    }
+    Duration::try_from_secs_f64(seconds).ok()
 }
 
 /// Read one `codec,width,height,avg_frame_rate,bit_rate` line.
@@ -105,6 +125,17 @@ fn parse_frame_rate(raw: &str) -> Option<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_a_length_and_refuses_what_is_no_length() {
+        assert_eq!(
+            parse_duration("12.500000\n"),
+            Some(Duration::from_millis(12_500))
+        );
+        for no_length in ["N/A", "", "0.000000", "-3", "nan", "inf", "1e400"] {
+            assert_eq!(parse_duration(no_length), None, "{no_length:?}");
+        }
+    }
 
     #[test]
     fn parses_a_rational_frame_rate() {

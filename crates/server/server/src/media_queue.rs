@@ -20,12 +20,24 @@
 //! When the server stops, [`MediaQueue::stop`] kills the ffmpeg the pass
 //! runs and waits for the pass to end. The Asset it was working on stays
 //! queued, and the part-made file is removed with the work directory.
+//!
+//! Nothing one Asset does stops the pass: ffmpeg and ffprobe are killed
+//! when they run too long (`media`), and an Asset whose conversion fails or
+//! panics leaves the queue like any other failure. A pass that fails or
+//! panics for any other reason, such as a database that stays busy, runs
+//! again after a wait ([`keep_working`]), without waiting for an Import Run.
 
+use std::any::Any;
+use std::future::Future;
+use std::panic::AssertUnwindSafe;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use anyhow::Result;
+use futures_util::FutureExt;
 use sqlx::SqlitePool;
 use tokio::sync::Notify;
 
@@ -78,20 +90,9 @@ impl MediaQueue {
                     .enable_all()
                     .build()
                     .expect("a runtime for the pass that makes Thumbnails and Previews");
-                runtime.block_on(async move {
-                    while !stop.load(Ordering::Relaxed) {
-                        if let Err(error) = work_through(&pool, &cfg, &stop).await {
-                            tracing::warn!(
-                                error = format!("{error:#}"),
-                                "The pass that makes Thumbnails and Previews stopped. It starts again after the next Import Run"
-                            );
-                        }
-                        if stop.load(Ordering::Relaxed) {
-                            break;
-                        }
-                        wake.notified().await;
-                    }
-                });
+                runtime.block_on(keep_working(&wake, &stop, async || {
+                    work_through(&pool, &cfg, &stop).await
+                }));
             })
             .expect("a thread for the pass that makes Thumbnails and Previews");
         *self.thread.lock().unwrap_or_else(PoisonError::into_inner) = Some(thread);
@@ -123,6 +124,114 @@ impl MediaQueue {
         if !matches!(ended, Ok(Ok(()))) {
             tracing::warn!("The pass that makes Thumbnails and Previews did not end cleanly");
         }
+    }
+}
+
+/// How long the pass waits before it runs again after it failed or
+/// panicked, the first time. The wait doubles with each failure in a row,
+/// up to [`LONGEST_RETRY`], and starts here again after a pass that ends
+/// cleanly.
+const FIRST_RETRY: Duration = Duration::from_secs(5);
+
+/// The longest the pass waits before it runs again after failures in a
+/// row.
+const LONGEST_RETRY: Duration = Duration::from_secs(5 * 60);
+
+/// Run `pass` now, then each time `wake` is notified, until `stop` is set.
+///
+/// A pass that fails or panics is logged and runs again after a wait, or at
+/// the next wake when that comes first (#2072, #2091). Without the wait, a
+/// database busy for a moment stopped the pass until the next Import Run
+/// ended, which on a server imported into once was never, and a panic ended
+/// the pass's thread until the server restarted. The wait starts at
+/// [`FIRST_RETRY`] and doubles to [`LONGEST_RETRY`], so a failure that
+/// lasts does not fill the log, and a pass that ends cleanly starts it
+/// again at [`FIRST_RETRY`].
+async fn keep_working(
+    wake: &Notify,
+    stop: &AtomicBool,
+    mut pass: impl AsyncFnMut() -> Result<ProcessAssetsStats>,
+) {
+    let mut retry = FIRST_RETRY;
+    while !stop.load(Ordering::Relaxed) {
+        let failed = match AssertUnwindSafe(pass()).catch_unwind().await {
+            Ok(Ok(_)) => false,
+            Ok(Err(error)) => {
+                tracing::warn!(
+                    error = format!("{error:#}"),
+                    "The pass that makes Thumbnails and Previews stopped. It starts again in {} \
+                     seconds, or when the next Import Run ends",
+                    retry.as_secs()
+                );
+                true
+            }
+            Err(panic) => {
+                tracing::error!(
+                    panic = panic_text(&*panic),
+                    "The pass that makes Thumbnails and Previews panicked. It starts again in {} \
+                     seconds, or when the next Import Run ends",
+                    retry.as_secs()
+                );
+                true
+            }
+        };
+        if stop.load(Ordering::Relaxed) {
+            break;
+        }
+        if failed {
+            tokio::select! {
+                () = wake.notified() => {}
+                () = tokio::time::sleep(retry) => {}
+            }
+            retry = (retry * 2).min(LONGEST_RETRY);
+        } else {
+            retry = FIRST_RETRY;
+            wake.notified().await;
+        }
+    }
+}
+
+/// What a panic said: its message when it was given one, as `panic!` and
+/// `expect` give it.
+fn panic_text(panic: &(dyn Any + Send)) -> &str {
+    panic
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| panic.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("a panic with no message")
+}
+
+/// A panic in work on one Asset, made an error so that the Asset fails like
+/// any other and the pass goes on to the next.
+#[derive(Debug, thiserror::Error)]
+#[error("it panicked: {0}")]
+struct Panicked(String);
+
+/// Run `work`, failing with [`Panicked`] when it panics.
+async fn unless_it_panics<T>(work: impl Future<Output = Result<T>>) -> Result<T> {
+    AssertUnwindSafe(work)
+        .catch_unwind()
+        .await
+        .unwrap_or_else(|panic| Err(Panicked(panic_text(&*panic).to_string()).into()))
+}
+
+/// Log that one Asset's work failed with `error`, saying `what` failed: at
+/// `error` when the work panicked, which is a bug, else at `warn`.
+fn log_asset_failure(asset: &media_queue::QueuedAsset, what: &str, error: &anyhow::Error) {
+    if error.downcast_ref::<Panicked>().is_some() {
+        tracing::error!(
+            account_id = asset.account_id,
+            sha256 = asset.sha256,
+            error = format!("{error:#}"),
+            "{what}"
+        );
+    } else {
+        tracing::warn!(
+            account_id = asset.account_id,
+            sha256 = asset.sha256,
+            error = format!("{error:#}"),
+            "{what}"
+        );
     }
 }
 
@@ -190,8 +299,9 @@ fn log_not_queued(account_id: i64, import_id: i64, error: &sqlx::Error) {
 /// `after` as it is, until `stop` is set, leaving the queue as it is, and
 /// answer the last row decided. Only an MP4 is opened, by ffprobe, which is
 /// quick, and without ffprobe an MP4 is left as it was. An Asset whose rows
-/// cannot be written is logged, counted in `stats.not_decided`, and left for
-/// its turn in the pass, which records it again.
+/// cannot be written, or whose decision panics, is logged, counted in
+/// `stats.not_decided`, and left for its turn in the pass, which records it
+/// again.
 ///
 /// # Errors
 ///
@@ -208,20 +318,19 @@ async fn decide_queued(
         if stop.load(Ordering::Relaxed) {
             break;
         }
-        if let Err(error) = crate::process_assets::decide_shown_as_is(
+        if let Err(error) = unless_it_panics(crate::process_assets::decide_shown_as_is(
             cfg,
             pool,
             asset.account_id,
             Some(&asset.sha256),
-        )
+        ))
         .await
         {
             stats.not_decided += 1;
-            tracing::warn!(
-                account_id = asset.account_id,
-                sha256 = asset.sha256,
-                error = format!("{error:#}"),
-                "Whether an Asset is shown as it is could not be recorded"
+            log_asset_failure(
+                &asset,
+                "Whether an Asset is shown as it is could not be recorded",
+                &error,
             );
         }
         decided = asset.rowid;
@@ -232,7 +341,8 @@ async fn decide_queued(
 /// Make the Thumbnail and Preview of every queued Asset, oldest first, until
 /// the queue is empty or `stop` is set, and answer what was made. Each Asset
 /// leaves the queue once it is processed, whether or not every version could
-/// be made; a failure is logged, why each version was not made is recorded
+/// be made, and whether its work failed or panicked; a failure is logged,
+/// why each version was not made is recorded
 /// on the Asset's rows for the `/v1` Attachment to answer, and
 /// `process-assets` tries it again. An Asset queued again while it was
 /// worked on stays queued, and so does the one being worked on when `stop`
@@ -256,6 +366,28 @@ pub(crate) async fn work_through(
     cfg: &Config,
     stop: &AtomicBool,
 ) -> Result<ProcessAssetsStats> {
+    work_through_with(pool, cfg, stop, async |work: &Path, asset| {
+        crate::process_assets::process_one_asset(
+            cfg,
+            pool,
+            work,
+            asset.account_id,
+            &asset.sha256,
+            stop,
+        )
+        .await
+    })
+    .await
+}
+
+/// [`work_through`], making each Asset's versions with `make`, in the work
+/// directory it is given, so a test can make one fail or panic.
+async fn work_through_with(
+    pool: &SqlitePool,
+    cfg: &Config,
+    stop: &AtomicBool,
+    mut make: impl AsyncFnMut(&Path, &media_queue::QueuedAsset) -> Result<ProcessAssetsStats>,
+) -> Result<ProcessAssetsStats> {
     let mut stats = ProcessAssetsStats::default();
     let waiting = media_queue::count(&mut *pool.acquire().await?).await?;
     if waiting == 0 {
@@ -273,15 +405,7 @@ pub(crate) async fn work_through(
         // An Import Run that ended while the last Asset was converted
         // queued more, behind the videos already waiting.
         decided = decide_queued(pool, cfg, stop, decided, &mut stats).await?;
-        let done = crate::process_assets::process_one_asset(
-            cfg,
-            pool,
-            work.path(),
-            asset.account_id,
-            &asset.sha256,
-            stop,
-        )
-        .await;
+        let done = unless_it_panics(make(work.path(), &asset)).await;
         if stop.load(Ordering::Relaxed) {
             // Whatever it was making is gone with the work directory, so it
             // is made at the next start.
@@ -296,11 +420,10 @@ pub(crate) async fn work_through(
             Ok(made) => stats.add(&made),
             Err(error) => {
                 stats.not_made += 1;
-                tracing::warn!(
-                    account_id = asset.account_id,
-                    sha256 = asset.sha256,
-                    error = format!("{error:#}"),
-                    "An Asset's Thumbnail and Preview could not be made"
+                log_asset_failure(
+                    &asset,
+                    "An Asset's Thumbnail and Preview could not be made",
+                    &error,
                 );
             }
         }

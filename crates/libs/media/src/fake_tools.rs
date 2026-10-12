@@ -8,13 +8,13 @@
 //! real programs make of the arguments is tested against the real programs.
 
 use std::cell::RefCell;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Result, anyhow, bail};
 
 use crate::MediaProbe;
-use crate::tools::{MediaTools, ffmpeg_command_line};
+use crate::tools::{MediaTools, Reads, ffmpeg_command_line};
 
 /// What ffprobe reports about a small, low-bitrate 320x240 video in
 /// `codec` at `fps` frames per second.
@@ -41,6 +41,9 @@ pub(crate) struct FakeTools {
     failing: Vec<String>,
     /// The arguments of every ffmpeg run, in order.
     runs: RefCell<Vec<Vec<String>>>,
+    /// What every ffmpeg run read, in order: the file whose length sets its
+    /// time limit, or `None` for one frame.
+    reads: RefCell<Vec<Option<PathBuf>>>,
 }
 
 impl FakeTools {
@@ -53,6 +56,7 @@ impl FakeTools {
             output: b"fake ffmpeg output".to_vec(),
             failing: Vec::new(),
             runs: RefCell::new(Vec::new()),
+            reads: RefCell::new(Vec::new()),
         }
     }
 
@@ -86,6 +90,12 @@ impl FakeTools {
     pub(crate) fn runs(&self) -> Vec<Vec<String>> {
         self.runs.borrow().clone()
     }
+
+    /// What every ffmpeg run so far read, in order: the file whose length
+    /// set its time limit, or `None` for a run that reads one frame.
+    pub(crate) fn reads(&self) -> Vec<Option<PathBuf>> {
+        self.reads.borrow().clone()
+    }
 }
 
 impl MediaTools for FakeTools {
@@ -110,12 +120,22 @@ impl MediaTools for FakeTools {
             .ok_or_else(|| anyhow!("ffprobe cannot read {} (fake)", path.display()))
     }
 
-    fn transcode(&self, args: &[String], dest: &Path, stop: Option<&AtomicBool>) -> Result<()> {
+    fn transcode(
+        &self,
+        args: &[String],
+        dest: &Path,
+        reads: Reads<'_>,
+        stop: Option<&AtomicBool>,
+    ) -> Result<()> {
         self.require()?;
         if stop.is_some_and(|stop| stop.load(Ordering::Relaxed)) {
             bail!("stopped before ffmpeg started");
         }
         self.runs.borrow_mut().push(ffmpeg_command_line(args, dest));
+        self.reads.borrow_mut().push(match reads {
+            Reads::OneFrame => None,
+            Reads::All(src) => Some(src.to_path_buf()),
+        });
         std::fs::write(dest, &self.output)?;
         if args.iter().any(|arg| self.failing.contains(arg)) {
             bail!("ffmpeg failed (fake) on {}", args.join(" "));

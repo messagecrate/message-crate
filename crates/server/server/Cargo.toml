@@ -21,7 +21,7 @@ demo-seed = { path = "../demo-seed" }
 file-io = { workspace = true }
 fs2 = "0.4.3"
 hmac = "0.13.0"
-futures-util = { version = "0.3.31", default-features = false }
+futures-util = { version = "0.3.31", default-features = false, features = ["std"] }
 hex = { workspace = true }
 libc = "0.2"
 # The bindings sqlx-sqlite already links (VENDORING.md pins the version), for
@@ -66,6 +66,9 @@ media = { path = "../../libs/media", features = ["testutil"] }
 # `message_ir::testutil::sample_attachment`, which `test_support::lines::attachment` builds on.
 message-ir = { workspace = true, features = ["testutil"] }
 reqwest = { workspace = true }
+# A paused clock (`start_paused`), so a test of the media pass's wait
+# before it runs again waits on no real time.
+tokio = { version = "1.53.0", features = ["test-util"] }
 # The desktop app's import library, so a test can run an Upload as the app
 # sends one against the server binary.
 message-crate-import = { path = "../../libs/import" }

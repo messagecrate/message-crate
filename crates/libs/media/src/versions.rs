@@ -17,7 +17,7 @@ use std::sync::atomic::AtomicBool;
 use anyhow::{Context, Result, bail};
 
 use crate::Kind;
-use crate::tools::{InstalledTools, MediaTools};
+use crate::tools::{InstalledTools, MediaTools, Reads};
 
 /// The longest side of a Thumbnail, in pixels. A smaller original keeps its
 /// own size.
@@ -195,7 +195,7 @@ pub(crate) fn make_thumbnail_with(
         "mjpeg".into(),
     ];
     tools
-        .transcode(&args, dest, Some(stop))
+        .transcode(&args, dest, Reads::OneFrame, Some(stop))
         .with_context(|| format!("thumbnail of {}", src.display()))
 }
 
@@ -288,8 +288,12 @@ pub(crate) fn make_preview_with(
             ]);
         }
     }
+    let reads = match kind {
+        Kind::Image => Reads::OneFrame,
+        Kind::Audio | Kind::Video => Reads::All(src),
+    };
     tools
-        .transcode(&args, dest, Some(stop))
+        .transcode(&args, dest, reads, Some(stop))
         .with_context(|| format!("preview of {}", src.display()))
 }
 
