@@ -983,8 +983,8 @@ describe("ImportFormFields programs the import needs", () => {
 
   it("keeps asking while the start-up check runs, and unblocks once wtsexporter arrives", async () => {
     desktop.isTauri = true;
-    // Every read says the check has not looked at wtsexporter yet, until the
-    // test lets the check finish; only the next poll can then bring it.
+    // Every read while the form appears says the check has not looked at
+    // wtsexporter yet.
     desktop.toolsStatus.mockResolvedValue(
       status({ checking: true, wtsexporter: { state: "missing" } }),
     );
@@ -993,10 +993,11 @@ describe("ImportFormFields programs the import needs", () => {
     await settle();
     expect(screen.getByText(/wtsexporter not found/)).toBeTruthy();
     expect(importButton()).toBeDisabled();
+    // The check finds wtsexporter. Only the next poll, and no earlier read,
+    // may bring it.
+    desktop.toolsStatus.mockResolvedValue(status({}));
     await advanceTimersAndSettle(DOWNLOAD_POLL_MS - 1);
     expect(importButton()).toBeDisabled();
-    // The check finds wtsexporter, and the next poll asks again.
-    desktop.toolsStatus.mockResolvedValue(status({}));
     await advanceTimersAndSettle(1);
     expect(importButton()).toBeEnabled();
   });

@@ -13,13 +13,13 @@ are in `fakeTimers.ts` and `deferred.ts` in this directory.*
 
 ## Why `waitFor` and `findBy…` aren't used
 
-`waitFor` and every `findBy…` and `findAllBy…` query poll the screen every 50 ms until the check
-passes or their timeout runs out, 1000 ms unless the test passes another. So
-each one is a timed wait, whatever the number. A polling test passes on an idle
-machine and fails on a busy one, because there the screen reaches the state
-after the timeout (#1654, #2881, #2888). Widening the timeout only moves the
-load at which the test fails. `waitForElementToBeRemoved` polls the same way and
-isn't used either.
+`waitFor` and every `findBy…` and `findAllBy…` query poll the screen every
+50 ms until the check passes or their timeout runs out, 1000 ms unless the test
+passes another. So each one is a timed wait, whatever the number. A polling
+test passes on an idle machine and fails on a busy one, because there the
+screen reaches the state after the timeout (#1654, #2881, #2888). Widening the
+timeout only moves the load at which the test fails.
+`waitForElementToBeRemoved` polls the same way and isn't used either.
 
 A test that is told when the state is reached has no timeout to lose to. On a
 busy machine it runs slower and passes the same way.
@@ -110,7 +110,8 @@ fake clock too, so moving the clock moves it.
 `startTransition`, `useDeferredValue`, a state update in an effect, and a
 `Suspense` boundary waiting on a lazy component all finish inside `act`.
 `settle()` runs inside `act`, so it finishes them too. A lazy chunk's importer
-is a promise the test supplies, so it lands in the same `settle()`.
+is a function the test supplies, and the promise it returns lands in the same
+`settle()`.
 
 ```tsx
 const Arrives = lazyChunk("SettingsScreen", async () => ({ default: () => <p>Settings</p> }));
@@ -208,9 +209,10 @@ runs what is queued rather than racing it.
 Real I/O, a dynamic `import()`, or an event from outside the page has no
 notification on its own. The test gives it one before it relies on it: it
 awaits the import before `render`, or the fake that stands in for the outside
-event resolves a `deferred()`. Where neither works, the component resolves a
-`deferred()` the test passes in, or the test moves to Playwright. Polling isn't
-used here either, because it races a timeout the same way.
+event resolves a `deferred()`. Where neither works, the component exposes the
+event it already has, such as a callback prop or a returned promise, for the
+test to await, or the test moves to Playwright. Polling doesn't help here:
+`waitFor` still races its timeout, and that race is the reason for this page.
 
 ## Checking a test
 
