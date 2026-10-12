@@ -33,19 +33,14 @@ static DUMMY_PASSWORD_HASH: OnceLock<String> = OnceLock::new();
 /// The wait before the answer to every refused credential. `serve` sleeps
 /// [`REFUSAL_WAIT`]; the test harness counts each wait and returns at once,
 /// so no test sleeps or reads the clock.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub(crate) enum RefusalWait {
     /// Sleep [`REFUSAL_WAIT`].
+    #[default]
     Sleep,
     /// Count the wait and return at once.
     #[cfg(test)]
     Counted(Arc<AtomicUsize>),
-}
-
-impl Default for RefusalWait {
-    fn default() -> Self {
-        Self::Sleep
-    }
 }
 
 impl RefusalWait {
