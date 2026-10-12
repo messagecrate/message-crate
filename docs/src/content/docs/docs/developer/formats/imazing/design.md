@@ -100,7 +100,7 @@ That text is in the phone's language and in words iMazing, Messages and WhatsApp
 
 The conversation's address is the number in `Chat Session`, a `Chat Session` that is itself an address, or else the address of the earliest received row that has one, so new messages from a second address do not change it.
 The conversation lists that one address as its participant. A person's other address is not a participant: it is the sender of the messages written from it, with the same `Sender Name`.
-Without any of these, the conversation is known by its name: its `chat_identifier` is a name stem, it is counted as `name_only_chat`, and the server matches the name to a contact on import.
+Without any of these, the conversation is known by its name: its `chat_identifier` is a name stem, it is counted as `name_only_conversation`, and the server matches the name to a contact on import.
 A received row with no `Sender ID` is from the conversation's number or short code.
 
 ### Groups

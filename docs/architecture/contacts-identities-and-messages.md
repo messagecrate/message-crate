@@ -163,12 +163,12 @@ person two contacts
 ([#1541](https://github.com/messagecrate/message-crate/issues/1541)).
 
 **A group's chat handle is `other`, whatever its shape.** A group's chat
-handle, and the key of a conversation of orphaned messages, is stored with
-the type `other`, whatever it looks like. The conversation's type says it is
-a group, and a group's id is nobody's address. A one-to-one chat handle is an
-address, typed by its service and shape like every other (below). Why: a
-WhatsApp group id (`120363042@g.us`) holds an `@`, and typed by shape alone
-it was stored as an email identity that reaches nobody
+handle, and the key of a conversation of orphaned messages, is stored with the
+type `other`, whatever it looks like. The conversation's type says it is a
+group, and a group's id is nobody's address. A one-to-one conversation's chat
+handle is an address, typed by its service and shape like every other (below).
+Why: a WhatsApp group id (`120363042@g.us`) holds an `@`, and typed by shape
+alone it was stored as an email identity that reaches nobody
 ([#1141](https://github.com/messagecrate/message-crate/issues/1141)).
 
 **An identity's type is decided by its service first and its shape second.**
@@ -199,29 +199,28 @@ new service or type would have been carried everywhere without anyone
 deciding it. Now a new one does not compile until someone does
 ([#2212](https://github.com/messagecrate/message-crate/issues/2212)).
 
-**The server types every address; the conversation file states no type.**
-An import types each address it meets by the rule above (`db/handles.rs`,
-`handle_type_on`): a one-to-one chat handle, a participant, a message's
-sender, a reaction's sender and the holder's own address. A participant, a
-message's sender and a reaction's sender go through one function,
-`HandleValue::handle_type_on` (`imports_api/records.rs`), which also
-keeps a name the source gave in place of an address as `other`. The
-server knows it is a name because the file gave it in the name's place.
-A participant is typed by the conversation's service, and a sender or a
-reaction's sender by its message's service. The conversation file
-carries no `identity_type`. Why:
-the type follows from the service and the address, so a type in the file
-could only disagree with it, and every place it did made one person two
-identities. A message's sender took the type the header gave a participant
-with the same address, while a reaction's sender was typed by its shape. So
-a participant the file typed `other` whose address reads as a number became
-a `phone` identity when they reacted, on a new contact with no name
-([#1959](https://github.com/messagecrate/message-crate/issues/1959)).
-Checked against every exporter, the file never knew more than the service
-and the shape: an Apple Messages sender that is an email address has an
-`@`, an SMS short code such as `72727` is written as a number and is
-`phone`, an alphanumeric sender such as `AMAZON` is `other`, and a WhatsApp
-internal id has an `@` on WhatsApp
+**The server types every address; the conversation file states no type.** An
+import types each address it meets by the rule above (`db/handles.rs`,
+`handle_type_on`): a one-to-one conversation's chat handle, a participant, a
+message's sender, a reaction's sender and the holder's own address. A
+participant, a message's sender and a reaction's sender go through one
+function, `HandleValue::handle_type_on` (`imports_api/records.rs`), which also
+keeps a name the source gave in place of an address as `other`. The server
+knows it is a name because the file gave it in the name's place. A participant
+is typed by the conversation's service, and a sender or a reaction's sender by
+its message's service. The conversation file carries no `identity_type`. Why:
+the type follows from the service and the address, so a type in the file could
+only disagree with it, and every place it did made one person two identities.
+A message's sender took the type the header gave a participant with the same
+address, while a reaction's sender was typed by its shape. So a participant
+the file typed `other` whose address reads as a number became a `phone`
+identity when they reacted, on a new contact with no name
+([#1959](https://github.com/messagecrate/message-crate/issues/1959)). Checked
+against every exporter, the file never knew more than the service and the
+shape: an Apple Messages sender that is an email address has an `@`, an SMS
+short code such as `72727` is written as a number and is `phone`, an
+alphanumeric sender such as `AMAZON` is `other`, and a WhatsApp internal id
+has an `@` on WhatsApp
 ([#1933](https://github.com/messagecrate/message-crate/issues/1933)).
 
 **Text Message is one service, and a message's transport never changes an
@@ -798,19 +797,19 @@ computed when it is shown, even when the backup gave the chat a name. `with:me`
 finds it. Why: the other person in it is the holder, and the holder is never a
 participant. A contact for the holder would be a second record of the account.
 
-Import decides it by the chat's own identity, against the identities it loads
-once per run: a one-to-one chat whose identifier is one of them gets no contact
-for that identifier, drops the senders of its received rows, and marks a
-reaction in it as the holder's own (`imports_api/staging.rs`,
-`FileStaging::stage`). The header's participant, if the source lists the holder
-as one (WhatsApp's "Message yourself" does), is dropped as any account identity
-is. A read asks the same question of the identities the account has now
-(`db/conversations.rs`, `is_with_yourself_sql`): the conversation list and the
-conversation page do not read its chat handle back as a participant
-(`db/participant_names.rs`), and the title (`shown_title_sql`) is the
-one expression the conversation list, the conversation page, the Messages list,
-`title:`, `in:` and plain text all read
-([#1094](https://github.com/messagecrate/message-crate/issues/1094)).
+Import decides it by the conversation's own identity, against the identities
+it loads once per run: a one-to-one conversation whose identifier is one of
+them gets no contact for that identifier, drops the senders of its received
+rows, and marks a reaction in it as the holder's own
+(`imports_api/staging.rs`, `FileStaging::stage`). The header's participant, if
+the source lists the holder as one (WhatsApp's "Message yourself" does), is
+dropped as any account identity is. A read asks the same question of the
+identities the account has now (`db/conversations.rs`,
+`is_with_yourself_sql`): the conversation list and the conversation page do
+not read its chat handle back as a participant (`db/participant_names.rs`),
+and the title (`shown_title_sql`) is the one expression the conversation list,
+the conversation page, the Messages list, `title:`, `in:` and plain text all
+read ([#1094](https://github.com/messagecrate/message-crate/issues/1094)).
 
 Participants and the holder's contact follow the identity list. When an
 account's identities change, the server runs the rule again over the
@@ -841,14 +840,14 @@ identity it held.
 
 Removing an identity gives back what linking it set aside. Each participant
 set aside at it returns as it was, with its name. Each of its identities that
-a conversation holds as a participant, a one-to-one chat handle or a received
-row's sender gets a contact when it has none, as an import would make one.
-That contact takes the Import Run records and Contact Group memberships set
-aside for the identity. A conversation that is no longer with yourself also
-gets its chat handle as a participant when it has none. Its name is the name
-of the contact on the chat handle, when the contact has one. A conversation
-imported while the chat handle was an identity has no participant row to give
-back, so that name is the only one there is.
+a conversation holds as a participant, a one-to-one conversation's chat handle
+or a received row's sender gets a contact when it has none, as an import would
+make one. That contact takes the Import Run records and Contact Group
+memberships set aside for the identity. A conversation that is no longer with
+yourself also gets its chat handle as a participant when it has none. Its name
+is the name of the contact on the chat handle, when the contact has one. A
+conversation imported while the chat handle was an identity has no participant
+row to give back, so that name is the only one there is.
 
 An import while the identity is linked writes no participant at it, so a
 participant set aside comes back with the name it had when it was set aside,
@@ -901,12 +900,12 @@ The key is the conversation's own and nobody's address: it gets no contact,
 and search reads it as no text, as it does a group's id. Every title says
 "Orphaned", so the word `orphaned` finds every one of these conversations by
 its title, while `"orphaned:"` finds none. The title is computed on every read
-(`db/conversations.rs`, `shown_title_sql`) from the first participant's
-name as the conversation shows it, so it follows a rename of the person's
-contact. The Apple Messages Reader writes these conversations for messages in
-no chat (`emit.rs`, `orphaned_conversation`). It reads the person from the
-row's `handle_id` in both directions: a received row's sender, and a sent
-row's recipient, which Apple records on a one-to-one chat's sent rows and
+(`db/conversations.rs`, `shown_title_sql`) from the first participant's name
+as the conversation shows it, so it follows a rename of the person's contact.
+The Apple Messages Reader writes these conversations for messages in no chat
+(`emit.rs`, `orphaned_conversation`). It reads the person from the row's
+`handle_id` in both directions: a received row's sender, and a sent row's
+recipient, which Apple records on a one-to-one conversation's sent rows and
 leaves 0 on a group's. OpenExtract writes the one that names nobody for a sent
 row that names no recipient, and those rows carry a vendor key so that the
 same text sent to several people in the same second stays several messages.

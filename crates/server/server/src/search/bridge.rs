@@ -350,7 +350,7 @@ pub(crate) fn contact_conversations_link(c2: &str) -> String {
 
 /// `FROM … WHERE …` over the messages contact `ct` sent: a received message
 /// (alias `m`) whose sender is one of the contact's handles, in any
-/// conversation (alias `c`), direct or group, duplicates left out, and a
+/// conversation (alias `c`), one-to-one or group, duplicates left out, and a
 /// conversation in the trash left out unless `trash` says it counts. The
 /// one definition of "a message the contact sent": `date:`, `messages:`,
 /// `first-message:` and `last-message:` on Contacts, the contact list's

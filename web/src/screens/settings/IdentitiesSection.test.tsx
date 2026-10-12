@@ -94,7 +94,7 @@ describe("IdentitiesSection", () => {
       /First sent/,
       /Last sent/,
       /Conversations/,
-      /Direct messages/,
+      /One-to-one messages/,
       /Group messages/,
     ]) {
       expect(within(table).getByRole("columnheader", { name })).toBeInTheDocument();
@@ -211,7 +211,7 @@ describe("IdentitiesSection", () => {
     const dialog = screen.getByRole("dialog", { name: "Remove identity?" });
     expect(
       within(dialog).getByText(
-        "12 direct messages and 30 group messages will no longer be associated with this account.",
+        "12 one-to-one messages and 30 group messages will no longer be associated with this account.",
       ),
     ).toBeInTheDocument();
     expect(mutateAsync).not.toHaveBeenCalled();
@@ -351,10 +351,10 @@ describe("IdentitiesSection", () => {
 describe("removeBody", () => {
   it("names only the kind of message the identity has, singular when it is one", () => {
     expect(removeBody(identities[1])).toBe(
-      "1 direct message will no longer be associated with this account.",
+      "1 one-to-one message will no longer be associated with this account.",
     );
     expect(removeBody(identities[0])).toBe(
-      "12 direct messages and 30 group messages will no longer be associated with this account.",
+      "12 one-to-one messages and 30 group messages will no longer be associated with this account.",
     );
   });
 

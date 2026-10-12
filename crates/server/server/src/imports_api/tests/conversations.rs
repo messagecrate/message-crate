@@ -4,13 +4,13 @@
 
 use super::*;
 
-/// One incoming message of the one-to-one chat with +15555550119, whose text
+/// One incoming message of the one-to-one conversation with +15555550119, whose text
 /// is its guid.
 fn same_second_message(guid: &str, ms: i64) -> MessageLine {
     message_line(guid, guid).at(ms).sender("+15555550119")
 }
 
-/// The header of the one-to-one chat with +15555550119.
+/// The header of the one-to-one conversation with +15555550119.
 fn same_second_header() -> ConversationHeaderLine {
     conversation_header("imessage", "+15555550119").participant("+15555550119", Some("Bob"))
 }
@@ -135,7 +135,7 @@ async fn an_append_in_a_second_already_held_sorts_after_the_stored_messages() {
     );
 }
 
-/// The header of an Apple Messages one-to-one chat keyed by `chat`, whose
+/// The header of an Apple Messages one-to-one conversation keyed by `chat`, whose
 /// one participant is written as `chat` too.
 fn one_to_one_header(chat: &str) -> String {
     conversation_header("imessage", chat)

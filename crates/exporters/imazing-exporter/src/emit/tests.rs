@@ -84,7 +84,7 @@ Bob Sample,2020-01-01 12:01:00,SMS,Outgoing,,,Read,,,Hi,,,\n",
     let out = dir.path().join("out");
     let report = convert(dir.path(), &out).unwrap();
     assert_eq!(report.conversations, 1);
-    assert_eq!(report.extra(message_crate_core::NAME_ONLY_CHAT), 0);
+    assert_eq!(report.extra(message_crate_core::NAME_ONLY_CONVERSATION), 0);
     assert_eq!(report.messages, 2);
     let csv_path = out.join("+13215550100.csv");
     let body = fs::read_to_string(&csv_path).unwrap();
@@ -95,7 +95,7 @@ Bob Sample,2020-01-01 12:01:00,SMS,Outgoing,,,Read,,,Hi,,,\n",
 }
 
 #[test]
-fn name_without_any_address_becomes_a_name_only_chat() {
+fn name_without_any_address_becomes_a_name_only_conversation() {
     let dir = tempfile::tempdir().unwrap();
     write(
         &dir,
@@ -106,7 +106,7 @@ Mystery Person,2020-01-01 12:01:00,SMS,Outgoing,,,Read,,,Hi,,,\n",
     );
     let out = dir.path().join("out");
     let report = convert(dir.path(), &out).unwrap();
-    assert!(report.extra(message_crate_core::NAME_ONLY_CHAT) >= 1);
+    assert!(report.extra(message_crate_core::NAME_ONLY_CONVERSATION) >= 1);
     assert_eq!(report.conversations, 1);
     let file = out.join("name_Mystery_Person.csv");
     assert!(file.is_file());
@@ -1229,7 +1229,7 @@ fn a_groups_chat_id_does_not_depend_on_row_order() {
     );
 }
 
-/// A one-to-one chat keeps its address when the person later writes from a
+/// A one-to-one conversation keeps its address when the person later writes from a
 /// second one, even an address that sorts first.
 #[test]
 fn a_one_to_one_conversation_keeps_its_address_when_a_second_one_writes() {

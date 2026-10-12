@@ -31,7 +31,7 @@ Each person keeps the phone number and the name the backup holds for them.
 - A group's participants are its members, including a member who never wrote, and anyone else who wrote in it. The phone's owner is not one of them. A group whose member list the backup doesn't hold has the people who wrote in it.
 - A group message's sender has the phone number WhatsApp stores for them. A person WhatsApp knows only by an internal id, with no phone number in the backup, is imported under that id, with their name when the backup has one, and is listed under Unknown until given a phone number.
 - A name is the one in the phone's address book first, then the name the person set in their own WhatsApp profile.
-- A one-to-one chat's person has the chat's name.
+- A one-to-one conversation's person has the name of its WhatsApp chat.
 - Some old group messages name no sender in the backup, and are imported with none.
 
 ## WhatsApp on Android
@@ -107,8 +107,8 @@ When the backup doesn't hold it, Import uses **WhatsApp phone number** under **P
 
 - A run can't be cancelled while `wtsexporter` is working, or while an encrypted iPhone backup is being decrypted. It ends when that step finishes.
 - Using files from two different backups together fails, because a key decrypts only the backup it was made with.
-- Status updates aren't imported, because a Status is a post to many people that expires after 24 hours, not a conversation. The run summary counts them, as in `Skipped 4 status updates`. A reply to someone's Status is a message in the chat with that person and is imported.
-- A quoted reply is linked to the message it quotes only when that message is in the same chat of the same backup, because the reply names it by the id the backup gave it there. A reply whose quoted message isn't there is imported as a reply that names no message.
+- Status updates aren't imported, because a Status is a post to many people that expires after 24 hours, not a conversation. The run summary counts them, as in `Skipped 4 status updates`. A reply to someone's Status is a message in the one-to-one conversation with that person and is imported.
+- A quoted reply is linked to the message it quotes only when that message is in the same conversation of the same backup, because the reply names it by the id the backup gave it there. A reply whose quoted message isn't there is imported as a reply that names no message.
 - Channel posts aren't imported, because a Channel is a one-way feed from a publisher that nobody can write back to. The run summary counts them, as in `Skipped 3 channel posts`.
 
 The run itself is the same as in [Import your backup](/docs/user/your-messages/import-your-backup/#start-the-import).

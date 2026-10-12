@@ -160,7 +160,7 @@ export function previewHandleStubRows(
   return rows;
 }
 
-/** A contact's conversations: its direct, group, and orphaned ones, which add up to all of them. */
+/** A contact's conversations: its one-to-one, group, and orphaned ones, which add up to all of them. */
 export function contactConversations(detail: ContactDetail): number {
   return conversationTotal(
     detail.direct_conversations,

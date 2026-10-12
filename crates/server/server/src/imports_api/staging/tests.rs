@@ -703,7 +703,7 @@ async fn email_identities_on(conn: &mut SqliteConnection, service: &str) -> Vec<
     .unwrap()
 }
 
-/// Every place an import meets an address on WhatsApp: a one-to-one chat id
+/// Every place an import meets an address on WhatsApp: a one-to-one conversation's chat id
 /// no participant names, a participant, a sender the header does
 /// not list, a reaction's sender, and the holder's own address. Each holds an
 /// `@`, and none becomes an email identity, because WhatsApp carries none

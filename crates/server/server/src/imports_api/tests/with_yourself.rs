@@ -3,7 +3,7 @@
 
 use super::*;
 
-/// A one-to-one chat whose identifier is one of the account's identities is a
+/// A one-to-one conversation whose identifier is one of the account's identities is a
 /// conversation the holder has with themselves: Apple Messages' chat with the
 /// owner's own number, WhatsApp's "Message yourself". It makes no contact and
 /// no participant; both rows of a note are kept and the received one has no

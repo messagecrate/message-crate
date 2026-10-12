@@ -191,7 +191,7 @@ fn display_name_for(session: &MailSession, handle_id: i32) -> Option<String> {
 /// The members are the chat's `chat_handle_join` rows, each one handle's
 /// own address, less any address of the owner's: Apple lists the owner's own
 /// handle among a group's members, and the account holder is never a
-/// participant. A one-to-one chat with no handle rows takes its identifier's
+/// participant. A one-to-one conversation with no handle rows takes its identifier's
 /// address as its member; a group with none lists nobody.
 fn participants_for(session: &MailSession, chatroom: &Chat) -> (Vec<Participant>, &'static str) {
     let group = session.is_group(chatroom);
@@ -231,8 +231,9 @@ fn participants_for(session: &MailSession, chatroom: &Chat) -> (Vec<Participant>
 /// names, with that person as its only participant, kept apart from their
 /// one-to-one conversation because the backup does not say the message was
 /// said there. A received row names its sender, and a sent row names its
-/// recipient in the same `handle_id`, as Apple writes a one-to-one chat's
-/// sent rows, so both directions of one person's orphaned rows sit together.
+/// recipient in the same `handle_id`, as Apple writes the sent rows of a
+/// one-to-one conversation, so both directions of one person's orphaned rows
+/// sit together.
 /// A row that names nobody, sent with `handle_id` 0 as a group's rows are,
 /// received with no sender, or received from one of the holder's own
 /// addresses, sits in the one conversation with no participants (#1778).

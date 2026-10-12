@@ -14030,7 +14030,7 @@
           "total_messages": {
             "type": "integer",
             "format": "int64",
-            "description": "Messages the contact sent, in any of its conversations, direct,\ngroup, or orphaned: the account holder's own messages and other people's messages\nin a shared group are not counted, and neither are conversations in\nthe trash or duplicate messages. `messages:` on Contacts counts the\nsame messages.",
+            "description": "Messages the contact sent, in any of its conversations, one-to-one,\ngroup, or orphaned: the account holder's own messages and other people's messages\nin a shared group are not counted, and neither are conversations in\nthe trash or duplicate messages. `messages:` on Contacts counts the\nsame messages.",
             "minimum": 0
           },
           "unknown": {
@@ -15308,7 +15308,7 @@
           "conversations": {
             "type": "integer",
             "format": "int64",
-            "description": "Direct, group, and orphaned conversations: for a contact, those the identity\ntakes part in, whoever wrote in them; for an account, those holding\nat least one of the identity's messages. Trashed conversations are\nexcluded.",
+            "description": "One-to-one, group, and orphaned conversations: for a contact, those the identity\ntakes part in, whoever wrote in them; for an account, those holding\nat least one of the identity's messages. Trashed conversations are\nexcluded.",
             "minimum": 0
           },
           "country_unknown": {
@@ -18042,7 +18042,7 @@
                 "conversations": {
                   "type": "integer",
                   "format": "int64",
-                  "description": "Direct, group, and orphaned conversations: for a contact, those the identity\ntakes part in, whoever wrote in them; for an account, those holding\nat least one of the identity's messages. Trashed conversations are\nexcluded.",
+                  "description": "One-to-one, group, and orphaned conversations: for a contact, those the identity\ntakes part in, whoever wrote in them; for an account, those holding\nat least one of the identity's messages. Trashed conversations are\nexcluded.",
                   "minimum": 0
                 },
                 "country_unknown": {

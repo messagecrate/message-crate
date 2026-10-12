@@ -185,7 +185,7 @@ impl<'a> RowOrder<'a> {
     }
 }
 
-/// The address of a one-to-one chat: the session name when it is an
+/// The address of a one-to-one conversation: the session name when it is an
 /// address, else the first number written in it ("Bob (+13215550100)"),
 /// else the address of the earliest received row that has one. New messages
 /// do not change it; it changes only when the oldest messages are gone from
@@ -450,7 +450,7 @@ fn numbers_in_name(name: &str) -> Vec<Handle> {
 /// keys it as written, and the server gives it an identity of type `other`.
 /// It never becomes a conversation's key or a group's member.
 ///
-/// Only a one-to-one chat with a number or short code fills a received row
+/// Only a one-to-one conversation with a number or short code fills a received row
 /// that names no sender: it can only be from the chat's one other person. A
 /// group's row with no sender has no sender, and a chat keyed by a name has
 /// no address to give.

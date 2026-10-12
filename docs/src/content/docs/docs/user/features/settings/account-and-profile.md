@@ -171,7 +171,7 @@ The table has one row per Identity:
 | **First sent** | The date of the earliest message the account holder sent from this Identity |
 | **Last sent** | The date of the latest message the account holder sent from this Identity |
 | **Conversations** | How many conversations it takes part in |
-| **Direct messages** | Messages in one-to-one conversations |
+| **One-to-one messages** | Messages in one-to-one conversations |
 | **Group messages** | Messages in group conversations |
 
 A column heading sorts the table by that column.
@@ -183,7 +183,7 @@ An Identity already in the list on the same service is refused.
 The same number on **Text Message** and on **WhatsApp** counts as two Identities, so both can be listed.
 
 The trash button on a row removes that Identity after a confirmation.
-The confirmation states how many direct and group messages will no longer be associated with the account.
+The confirmation states how many one-to-one and group messages will no longer be associated with the account.
 
 The Owner has no **My Identities** section, because the Owner holds no messages to match.
 

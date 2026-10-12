@@ -698,7 +698,7 @@ async fn a_sender_is_never_linked_to_a_trashed_contact() {
     );
 }
 
-/// Report (c): a one-to-one chat whose handle this run first met as a sender
+/// Report (c): a one-to-one conversation whose handle this run first met as a sender
 /// used to skip contact creation, because the handle cache said "seen" and
 /// the chat path read that as "has a contact". The sender fix alone makes
 /// this pass; it stays to guard the chat path against leaning on the cache

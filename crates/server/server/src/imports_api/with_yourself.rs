@@ -62,7 +62,7 @@ pub(crate) async fn before_identity_change(
 ///
 /// For an identity removed: each participant set aside at it comes back as
 /// it was. Each of its handles the conversations hold as a participant, a
-/// one-to-one chat handle or a received row's sender gets a contact when it
+/// one-to-one conversation's chat handle or a received row's sender gets a contact when it
 /// has none, with the import run records and groups set aside for it. Each
 /// conversation that was with yourself and is not now gets its chat handle
 /// as a participant when it has none, named as its contact is.
