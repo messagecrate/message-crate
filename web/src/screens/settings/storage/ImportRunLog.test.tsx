@@ -1,7 +1,8 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settle, startFakeClock, stopFakeClock } from "../../../test/fakeTimers";
 import { installIntersectionObserver } from "../../../test/intersectionObserver";
 import { Providers } from "../../../test/providers";
 import { setupUser } from "../../../test/user";
@@ -40,6 +41,7 @@ function renderRow(importRunId: number) {
 
 describe("ImportRunLog", () => {
   beforeEach(() => {
+    startFakeClock();
     vi.clearAllMocks();
     installIntersectionObserver();
     desktop.on = true;
@@ -80,15 +82,18 @@ describe("ImportRunLog", () => {
 
   afterEach(() => {
     cleanup();
+    stopFakeClock();
   });
 
   it("opens the run's log from its row when the log is on this computer", async () => {
     const user = setupUser();
     renderRow(42);
+    await settle();
 
-    await user.click(await screen.findByRole("button", { name: "Open this run's log" }));
+    await user.click(screen.getByRole("button", { name: "Open this run's log" }));
+    await settle();
 
-    expect(await screen.findByText("a.jpg: missing")).toBeInTheDocument();
+    expect(screen.getByText("a.jpg: missing")).toBeInTheDocument();
     const reader = { messageCrateId: HERE, accountId: 2, owner: false };
     expect(invokeListImportRunLogs).toHaveBeenCalledWith(reader);
     expect(invokeReadImportRunLogLines).toHaveBeenCalledWith(
@@ -111,11 +116,13 @@ describe("ImportRunLog", () => {
     ]);
     const user = setupUser();
     renderRow(42);
+    await settle();
 
-    await user.click(await screen.findByRole("button", { name: "Open this run's log" }));
+    await user.click(screen.getByRole("button", { name: "Open this run's log" }));
+    await settle();
 
     expect(
-      await screen.findByText(/written before its lines carried a time and a level/),
+      screen.getByText(/written before its lines carried a time and a level/),
     ).toBeInTheDocument();
     expect(screen.queryByText("No line at this level")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download" })).toBeInTheDocument();
@@ -124,7 +131,8 @@ describe("ImportRunLog", () => {
   it("offers nothing for a run whose log is not on this computer", async () => {
     renderRow(43);
 
-    await waitFor(() => expect(invokeListImportRunLogs).toHaveBeenCalled());
+    await settle();
+    expect(invokeListImportRunLogs).toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Open this run's log" })).not.toBeInTheDocument();
   });
 

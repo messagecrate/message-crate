@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/api";
 import { loadAddressBook } from "../../lib/serverApi";
@@ -40,6 +40,7 @@ function chooseFile(name: string, body: string) {
 
 describe("AddressBookSection", () => {
   beforeEach(() => {
+    startFakeClock();
     vi.clearAllMocks();
   });
 
@@ -71,12 +72,14 @@ describe("AddressBookSection", () => {
     post.mockResolvedValue(NOTHING);
     render(<AddressBookSection />);
     chooseFile("address-book.csv", FILE);
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(post).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenLastCalledWith(FILE, "append");
 
     fireEvent.click(screen.getByLabelText(/^Edit/));
     chooseFile("address-book.csv", FILE);
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+    await settle();
+    expect(post).toHaveBeenCalledTimes(2);
     expect(post).toHaveBeenLastCalledWith(FILE, "edit");
   });
 
@@ -85,7 +88,8 @@ describe("AddressBookSection", () => {
     expect(screen.getByLabelText("Address book file").getAttribute("accept")).toBe(".csv,text/csv");
     chooseFile("Contacts.vcf", "BEGIN:VCARD\nEND:VCARD\n");
 
-    expect(await screen.findByText(/Choose a \.csv file/)).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText(/Choose a \.csv file/)).toBeInTheDocument();
     expect(post).not.toHaveBeenCalled();
   });
 
@@ -103,7 +107,8 @@ describe("AddressBookSection", () => {
     render(<AddressBookSection />);
     chooseFile("address-book.csv", FILE);
 
-    const counts = await screen.findByLabelText("What the load changed");
+    await settle();
+    const counts = screen.getByLabelText("What the load changed");
     const rows = within(counts)
       .getAllByRole("term")
       .map((term) => `${term.textContent}: ${term.nextElementSibling?.textContent}`);
@@ -129,7 +134,8 @@ describe("AddressBookSection", () => {
     render(<AddressBookSection />);
     chooseFile("address-book.csv", FILE);
 
-    const list = await screen.findByLabelText("Numbers written without +");
+    await settle();
+    const list = screen.getByLabelText("Numbers written without +");
     expect(
       within(list)
         .getAllByRole("listitem")
@@ -142,7 +148,8 @@ describe("AddressBookSection", () => {
     render(<AddressBookSection />);
     chooseFile("address-book.csv", FILE);
 
-    await screen.findByLabelText("What the load changed");
+    await settle();
+    expect(screen.getByLabelText("What the load changed")).toBeInTheDocument();
     expect(screen.queryByLabelText("Numbers written without +")).toBeNull();
   });
 
@@ -151,11 +158,11 @@ describe("AddressBookSection", () => {
     render(<AddressBookSection />);
     chooseFile("address-book.csv", FILE);
 
-    await waitFor(() => expect(invalidateAccount).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(invalidateAccount).toHaveBeenCalledTimes(1);
   });
 
   it("lists every row a refused load names, each on its own line", async () => {
-    startFakeClock();
     post.mockRejectedValue(
       new ApiError(422, "row 3: service; row 7: identity", {
         type: "https://messagecrate.app/docs/developer/reference/errors/validation-failed",
@@ -185,7 +192,6 @@ describe("AddressBookSection", () => {
   });
 
   it("shows the reason when the load fails some other way", async () => {
-    startFakeClock();
     post.mockRejectedValue(new Error("address book is empty"));
     render(<AddressBookSection />);
     chooseFile("address-book.csv", "  ");
@@ -201,7 +207,8 @@ describe("AddressBookSection", () => {
     Object.defineProperty(file, "size", { value: 9 * MIB });
     fireEvent.change(input, { target: { files: [file] } });
 
-    expect(await screen.findByText("That file is larger than 8 MB.")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText("That file is larger than 8 MB.")).toBeInTheDocument();
     expect(post).not.toHaveBeenCalled();
   });
 });
