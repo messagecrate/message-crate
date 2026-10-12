@@ -1073,11 +1073,6 @@ fn compress_video(
         ]);
         if let Err(hevc_err) = tools.transcode(&hevc_args, &tmp, Reads::All(path), None) {
             let _ = fs::remove_file(&tmp);
-            // A file HEVC ran out of time on would run H.264 out of time
-            // too, so the second run is not tried.
-            if hevc_err.downcast_ref::<crate::RanTooLong>().is_some() {
-                return Err(hevc_err.context(format!("compress video {}", path.display())));
-            }
             let mut avc_args = base_video_args(path, &vf);
             avc_args.extend([
                 "-c:v".into(),

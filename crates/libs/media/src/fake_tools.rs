@@ -147,7 +147,7 @@ impl MediaTools for FakeTools {
             .push(reads.source().map(Path::to_path_buf));
         std::fs::write(dest, &self.output)?;
         if args.iter().any(|arg| self.too_long.contains(arg)) {
-            return Err(crate::RanTooLong::ffmpeg(std::time::Duration::from_secs(600)).into());
+            return Err(crate::RanTooLong::ffmpeg(crate::tools::SHORTEST_FFMPEG_TIME_LIMIT).into());
         }
         if args.iter().any(|arg| self.failing.contains(arg)) {
             bail!("ffmpeg failed (fake) on {}", args.join(" "));

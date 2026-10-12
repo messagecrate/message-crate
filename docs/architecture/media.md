@@ -194,7 +194,7 @@ ffprobe gets 2 minutes.
 An ffmpeg run that reads one frame, a Thumbnail or the Preview of an image, gets 10 minutes.
 One that reads the whole file, the Preview of a video or of audio, gets 20 times as long as ffprobe says the file plays, at least 10 minutes and at most 6 hours, rounded up to whole minutes.
 When ffprobe reads no length, as for a WebM a browser recorded, it gets an hour.
-The Media Stage's compression does not try H.264 after a HEVC run that ran out of time, because the same file would run out of time again.
+The Media Stage's compression still tries H.264 after a HEVC run that ran out of time, because libx265 is several times slower than libx264 and a slow computer can finish one and not the other.
 A program still running at its limit is killed and waited for.
 The conversion then fails like any other, and the reason recorded on the Asset's rows says that ffmpeg did not finish within the limit.
 Every ffmpeg and ffprobe run reads nothing from standard input and opens only local files and pipes (`-nostdin`, `-protocol_whitelist file,pipe`).

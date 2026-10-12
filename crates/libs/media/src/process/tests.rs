@@ -1373,11 +1373,11 @@ fn the_done_line_counts_one_file_and_many_files() {
     );
 }
 
-/// A HEVC run that ran out of time is not followed by an H.264 run, which
-/// the same file would run out of time on too, so a file that hangs ffmpeg
-/// costs the Media Stage one time limit, not two (#2059).
+/// A HEVC run that ran out of time is followed by an H.264 run, because
+/// libx265 is several times slower than libx264, and a video HEVC is too
+/// slow for on a slow computer can still be compressed with H.264 (#2059).
 #[test]
-fn compress_tries_no_h264_after_hevc_ran_out_of_time() {
+fn compress_tries_h264_after_hevc_ran_out_of_time() {
     let dir = tempfile::tempdir().unwrap();
     let (files, opts) = two_large_videos(dir.path());
     let tools = FakeTools::new()
@@ -1394,13 +1394,13 @@ fn compress_tries_no_h264_after_hevc_ran_out_of_time() {
     )
     .unwrap();
 
-    assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
-    assert!(
-        report.errors[0].contains("did not finish within 10 minutes"),
-        "{:?}",
-        report.errors
-    );
+    assert_eq!(report.processed, 1, "{:?}", report.errors);
+    let line = report.hevc_fallback.line().expect("a fallback reason");
+    assert!(line.contains("did not finish within 10 minutes"), "{line}");
     let runs = tools.runs();
-    assert_eq!(runs.len(), 1, "{runs:?}");
-    assert!(has(&runs[0], "libx265"), "{runs:?}");
+    assert_eq!(runs.len(), 2, "{runs:?}");
+    assert!(
+        has(&runs[0], "libx265") && has(&runs[1], "libx264"),
+        "{runs:?}"
+    );
 }

@@ -296,7 +296,7 @@ impl MediaTools for InstalledTools {
         reads: Reads<'_>,
         stop: Option<&AtomicBool>,
     ) -> Result<()> {
-        if stop.is_some_and(|stop| stop.load(Ordering::Relaxed)) {
+        if is_set(stop) {
             bail!("stopped before ffmpeg started");
         }
         let limit = reads.source().map_or(SHORTEST_FFMPEG_TIME_LIMIT, |src| {
@@ -527,7 +527,7 @@ const PROBE_TIME_LIMIT: Duration = Duration::from_secs(2 * 60);
 
 /// The least time one ffmpeg run is given before it is killed, and all a run
 /// that reads one frame or a still gets ([`Reads::OneFrame`]).
-const SHORTEST_FFMPEG_TIME_LIMIT: Duration = Duration::from_secs(10 * 60);
+pub(crate) const SHORTEST_FFMPEG_TIME_LIMIT: Duration = Duration::from_secs(10 * 60);
 
 /// The time one ffmpeg run that reads a whole file is given when ffprobe
 /// reads no length for the file, as for a WebM a browser recorded, whose
@@ -561,8 +561,8 @@ pub(crate) enum Reads<'a> {
 }
 
 impl<'a> Reads<'a> {
-    /// The file a run that reads it whole reads, whose length sets its time
-    /// limit; `None` for a run that reads one frame.
+    /// The file a run reads whole, whose length sets its time limit; `None`
+    /// for a run that reads one frame.
     pub(crate) fn source(self) -> Option<&'a Path> {
         match self {
             Self::OneFrame => None,
@@ -651,9 +651,6 @@ fn run_ffmpeg_watched(
     limit: Duration,
     expired: &dyn Fn() -> bool,
 ) -> Result<()> {
-    if stop.is_some_and(|stop| stop.load(Ordering::Relaxed)) {
-        bail!("stopped before ffmpeg started");
-    }
     let ffmpeg = resolve_tools()?
         .ffmpeg
         .ok_or_else(|| anyhow::anyhow!("ffmpeg not found {}", where_looked()))?;
@@ -710,9 +707,6 @@ fn run_ffprobe_watched(
     stop: Option<&AtomicBool>,
     expired: &dyn Fn() -> bool,
 ) -> Result<Vec<u8>> {
-    if stop.is_some_and(|stop| stop.load(Ordering::Relaxed)) {
-        bail!("stopped before ffprobe started");
-    }
     let mut command = ffprobe_command()?;
     command
         .args(LOCAL_FILES_ONLY)
@@ -755,6 +749,11 @@ impl std::fmt::Display for Program {
     }
 }
 
+/// Whether `stop` is given and set.
+fn is_set(stop: Option<&AtomicBool>) -> bool {
+    stop.is_some_and(|stop| stop.load(Ordering::Relaxed))
+}
+
 /// What ends a run of ffmpeg or ffprobe early, and what the errors call it.
 struct Watch<'a> {
     /// The program, as the errors name it.
@@ -782,7 +781,10 @@ struct Ran {
 /// for it, so no process is left behind.
 fn run_watched(mut command: Command, watch: &Watch<'_>) -> Result<Ran> {
     let program = watch.program;
-    let stopped = || watch.stop.is_some_and(|stop| stop.load(Ordering::Relaxed));
+    let stopped = || is_set(watch.stop);
+    if stopped() {
+        bail!("stopped before {program} started");
+    }
     let mut child = command
         .stdin(Stdio::null())
         .stderr(Stdio::piped())
