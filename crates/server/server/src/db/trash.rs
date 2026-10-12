@@ -396,7 +396,7 @@ pub struct EmptiedTrash {
 
 /// One attachment's stored files, read before its message is deleted so the
 /// reference check afterwards knows what to look for: sha256, assets_path,
-/// derived_sha256, derived_assets_path, thumbnail_sha256,
+/// preview_sha256, preview_assets_path, thumbnail_sha256,
 /// thumbnail_assets_path.
 type AttachmentFilesRow = (
     Option<String>,
@@ -428,12 +428,12 @@ async fn delete_conversations(
         let placeholders = in_placeholders(1, chunk.len());
         let sql = format!(
             "SELECT DISTINCT a.sha256, a.assets_path,
-                    a.derived_sha256, a.derived_assets_path,
+                    a.preview_sha256, a.preview_assets_path,
                     a.thumbnail_sha256, a.thumbnail_assets_path
              FROM attachments a
              JOIN messages m ON m.id = a.message_id
              WHERE m.conversation_id IN ({placeholders})
-               AND (a.sha256 IS NOT NULL OR a.derived_sha256 IS NOT NULL
+               AND (a.sha256 IS NOT NULL OR a.preview_sha256 IS NOT NULL
                     OR a.thumbnail_sha256 IS NOT NULL)"
         );
         let mut q = sqlx::query_as::<_, AttachmentFilesRow>(sqlx::AssertSqlSafe(sql));
@@ -482,8 +482,8 @@ async fn orphaned_files(
     for (
         sha256,
         assets_path,
-        derived_sha256,
-        derived_assets_path,
+        preview_sha256,
+        preview_assets_path,
         thumbnail_sha256,
         thumbnail_path,
     ) in candidates
@@ -499,7 +499,7 @@ async fn orphaned_files(
         // A Preview and a Thumbnail share the converted directory, so a file
         // there goes only when no row names it as either.
         for (sha256, assets_path) in [
-            (derived_sha256, derived_assets_path),
+            (preview_sha256, preview_assets_path),
             (thumbnail_sha256, thumbnail_path),
         ] {
             if let (Some(sha256), Some(assets_path)) = (sha256, assets_path)

@@ -63,7 +63,7 @@ optional `duplicate_of`).
 ### `attachments` / `tapbacks`
 
 Files and reactions tied to a message. Attachments may store `sha256`, and
-the paths of the Preview (`derived_*`) and the Thumbnail (`thumbnail_*`) the
+the paths of the Preview (`preview_*`) and the Thumbnail (`thumbnail_*`) the
 server makes for the browser. Reactions record `sender_handle_id`
 → `handles`.
 

@@ -176,7 +176,8 @@ why each version was not made on the Asset's attachment rows
 (`attachments.preview_not_made_reason` and
 `attachments.thumbnail_not_made_reason`), and the `/v1` Attachment answers it
 in `preview_not_made_reason` and `thumbnail_not_made_reason`, so the viewer
-says why there is no Preview. Beside each reason it records its kind
+says why there is no Preview and a conversation says why a photo or video
+shows no Thumbnail. Beside each reason it records its kind
 (`attachments.preview_not_made_kind` and `thumbnail_not_made_kind`):
 `conversion_failed` when ffmpeg exited with an error, `stalled` when it made
 no progress for `[server] transcode_stall_secs`, `ran_past_length` when it ran past twice the

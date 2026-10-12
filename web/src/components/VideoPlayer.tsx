@@ -44,7 +44,7 @@ export default function VideoPlayer({ attachment }: { attachment: MessageAttachm
   return (
     <ThumbnailTile tileRef={ref}>
       <div className="h-full overflow-hidden rounded-md border border-border">
-        <ThumbnailPicture name={name} url={thumbnail.url} />
+        <ThumbnailPicture name={name} thumbnail={thumbnail} />
       </div>
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5">
         {media.playable ? (

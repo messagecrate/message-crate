@@ -1,5 +1,5 @@
 //! The versions the server makes of an attachment's original, as the
-//! `attachments` rows name them: the Preview in `derived_*` and the
+//! `attachments` rows name them: the Preview in `preview_*` and the
 //! Thumbnail in `thumbnail_*` (`docs/architecture/media.md`, rule 3). Every
 //! row of the account that names the original carries the same versions.
 //! The column names live here and nowhere else.
@@ -11,7 +11,7 @@ use crate::db::begin_write;
 /// One of the two versions the server makes of an original.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Version {
-    /// A copy every browser shows, in `attachments.derived_*`.
+    /// A copy every browser shows, in `attachments.preview_*`.
     Preview,
     /// A small picture, in `attachments.thumbnail_*`.
     Thumbnail,
@@ -24,7 +24,7 @@ impl Version {
     /// The columns that name this version: fingerprint, path, media type.
     pub(crate) fn columns(self) -> [&'static str; 3] {
         match self {
-            Self::Preview => ["derived_sha256", "derived_assets_path", "derived_mime_type"],
+            Self::Preview => ["preview_sha256", "preview_assets_path", "preview_mime_type"],
             Self::Thumbnail => [
                 "thumbnail_sha256",
                 "thumbnail_assets_path",
@@ -130,9 +130,9 @@ pub struct StoredOriginal {
     pub sha256: String,
     pub assets_path: String,
     pub mime_type: Option<String>,
-    pub derived_assets_path: Option<String>,
-    pub derived_sha256: Option<String>,
-    pub derived_mime_type: Option<String>,
+    pub preview_assets_path: Option<String>,
+    pub preview_sha256: Option<String>,
+    pub preview_mime_type: Option<String>,
     /// Rows that name no Preview yet, such as the rows of a source imported
     /// after the Preview was made.
     pub rows_without_preview: i64,
@@ -161,9 +161,9 @@ impl StoredOriginal {
     pub(crate) fn named(&self, version: Version) -> Named {
         let (sha256, assets_path, mime_type, rows_without) = match version {
             Version::Preview => (
-                &self.derived_sha256,
-                &self.derived_assets_path,
-                &self.derived_mime_type,
+                &self.preview_sha256,
+                &self.preview_assets_path,
+                &self.preview_mime_type,
                 self.rows_without_preview,
             ),
             Version::Thumbnail => (
@@ -214,10 +214,10 @@ pub async fn stored_originals(
             a.sha256 AS sha256,
             a.assets_path AS assets_path,
             MAX(a.mime_type) AS mime_type,
-            MAX(a.derived_assets_path) AS derived_assets_path,
-            MAX(a.derived_sha256) AS derived_sha256,
-            MAX(a.derived_mime_type) AS derived_mime_type,
-            SUM(CASE WHEN COALESCE(a.derived_assets_path, '') = '' THEN 1 ELSE 0 END)
+            MAX(a.preview_assets_path) AS preview_assets_path,
+            MAX(a.preview_sha256) AS preview_sha256,
+            MAX(a.preview_mime_type) AS preview_mime_type,
+            SUM(CASE WHEN COALESCE(a.preview_assets_path, '') = '' THEN 1 ELSE 0 END)
                 AS rows_without_preview,
             MAX(a.thumbnail_assets_path) AS thumbnail_assets_path,
             MAX(a.thumbnail_sha256) AS thumbnail_sha256,
@@ -576,13 +576,13 @@ pub async fn named_files(
     account_id: i64,
 ) -> Result<Vec<NamedFiles>, sqlx::Error> {
     sqlx::query_as(
-        "SELECT a.sha256, a.assets_path, a.derived_sha256, a.derived_assets_path,
+        "SELECT a.sha256, a.assets_path, a.preview_sha256, a.preview_assets_path,
                 a.thumbnail_sha256, a.thumbnail_assets_path
          FROM attachments a
          JOIN messages m ON m.id = a.message_id
          WHERE m.account_id = $1
          UNION ALL
-         SELECT sa.sha256, sa.assets_path, sa.derived_sha256, sa.derived_assets_path,
+         SELECT sa.sha256, sa.assets_path, sa.preview_sha256, sa.preview_assets_path,
                 NULL, NULL
          FROM staging_attachments sa
          JOIN staging_messages sm ON sm.id = sa.message_id
@@ -598,8 +598,8 @@ pub async fn named_files(
 pub struct NamedFiles {
     pub sha256: Option<String>,
     pub assets_path: Option<String>,
-    pub derived_sha256: Option<String>,
-    pub derived_assets_path: Option<String>,
+    pub preview_sha256: Option<String>,
+    pub preview_assets_path: Option<String>,
     pub thumbnail_sha256: Option<String>,
     pub thumbnail_assets_path: Option<String>,
 }

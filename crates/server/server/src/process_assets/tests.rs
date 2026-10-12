@@ -19,9 +19,9 @@ fn row(assets_path: &str) -> StoredOriginal {
         sha256: SHA.to_string(),
         assets_path: assets_path.to_string(),
         mime_type: None,
-        derived_assets_path: None,
-        derived_sha256: None,
-        derived_mime_type: None,
+        preview_assets_path: None,
+        preview_sha256: None,
+        preview_mime_type: None,
         rows_without_preview: 1,
         thumbnail_assets_path: None,
         thumbnail_sha256: None,
@@ -732,13 +732,13 @@ async fn thumbnail_of(
     Some((sha?, path?, mime?))
 }
 
-/// The derived columns of one attachment row, `None` until a preview is recorded.
-async fn derived_of(
+/// The Preview columns of one attachment row, `None` until a preview is recorded.
+async fn preview_of(
     conn: &mut SqliteConnection,
     attachment_id: i64,
 ) -> Option<(String, String, String)> {
     let (sha, path, mime): (Option<String>, Option<String>, Option<String>) = sqlx::query_as(
-        "SELECT derived_sha256, derived_assets_path, derived_mime_type FROM attachments WHERE id = $1",
+        "SELECT preview_sha256, preview_assets_path, preview_mime_type FROM attachments WHERE id = $1",
     )
     .bind(attachment_id)
     .fetch_one(&mut *conn)
@@ -764,14 +764,14 @@ fn with_real_ffmpeg(test: impl Future<Output = ()>) {
 
 fn stats(
     scanned: u64,
-    derived: u64,
+    previews: u64,
     thumbnails: u64,
     skipped: u64,
     not_made: u64,
 ) -> ProcessAssetsStats {
     ProcessAssetsStats {
         scanned,
-        derived,
+        previews,
         thumbnails,
         skipped,
         not_made,
@@ -780,7 +780,7 @@ fn stats(
 }
 
 #[tokio::test]
-async fn store_and_update_derived_db() {
+async fn store_and_update_preview_db() {
     let (opened, dir) = open_db().await;
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
@@ -808,7 +808,7 @@ async fn store_and_update_derived_db() {
     .unwrap();
 
     assert_eq!(
-        derived_of(&mut conn, attachment_id).await,
+        preview_of(&mut conn, attachment_id).await,
         Some((
             version_file.sha256,
             version_file.assets_path,
@@ -859,7 +859,7 @@ fn a_run_writes_a_jpeg_preview_under_the_converted_directory_and_records_it() {
 
         assert_eq!(first, stats(1, 1, 1, 0, 0));
         let mut conn = opened.conn().await.unwrap();
-        let (sha, rel, mime) = derived_of(&mut conn, attachment_id)
+        let (sha, rel, mime) = preview_of(&mut conn, attachment_id)
             .await
             .expect("the row points at its preview");
         let preview = opened
@@ -915,7 +915,7 @@ fn a_dry_run_counts_the_preview_it_would_write_and_writes_nothing() {
         let converted = opened.cfg.paths.assets_converted_dir_for_account(ACCOUNT);
         assert_eq!(fs::read_dir(&converted).unwrap().count(), 0);
         let mut conn = opened.conn().await.unwrap();
-        assert_eq!(derived_of(&mut conn, attachment_id).await, None);
+        assert_eq!(preview_of(&mut conn, attachment_id).await, None);
     });
 }
 
@@ -923,7 +923,7 @@ fn a_dry_run_counts_the_preview_it_would_write_and_writes_nothing() {
 /// names it: its fingerprint and its path on disk.
 async fn preview_on_disk(opened: &OpenDb, attachment_id: i64) -> (String, PathBuf) {
     let mut conn = opened.conn().await.unwrap();
-    let (sha, rel, _) = derived_of(&mut conn, attachment_id)
+    let (sha, rel, _) = preview_of(&mut conn, attachment_id)
         .await
         .expect("the row points at its preview");
     let path = opened
@@ -1020,7 +1020,7 @@ fn a_second_source_imported_after_the_preview_was_made_gets_the_preview() {
         let message_id = seed_message(&mut conn, "whatsapp").await;
         let whatsapp_attachment =
             attach_stored_original(&opened, &mut conn, message_id, SHA, "image/bmp", BMP_1X1).await;
-        assert_eq!(derived_of(&mut conn, whatsapp_attachment).await, None);
+        assert_eq!(preview_of(&mut conn, whatsapp_attachment).await, None);
 
         // The Thumbnail and the Preview are shared with the new rows, so the
         // original is not left as it was (#1849).
@@ -1041,9 +1041,9 @@ fn a_second_source_imported_after_the_preview_was_made_gets_the_preview() {
             "once every row names them, nothing is shared again"
         );
 
-        let preview = derived_of(&mut conn, imessage_attachment).await;
+        let preview = preview_of(&mut conn, imessage_attachment).await;
         assert!(preview.is_some());
-        assert_eq!(derived_of(&mut conn, whatsapp_attachment).await, preview);
+        assert_eq!(preview_of(&mut conn, whatsapp_attachment).await, preview);
         let thumbnail = thumbnail_of(&mut conn, imessage_attachment).await;
         assert!(thumbnail.is_some());
         assert_eq!(
@@ -1075,7 +1075,7 @@ fn a_png_gets_a_thumbnail_and_no_preview() {
         );
 
         let mut conn = opened.conn().await.unwrap();
-        assert_eq!(derived_of(&mut conn, attachment_id).await, None);
+        assert_eq!(preview_of(&mut conn, attachment_id).await, None);
         let (sha, rel, mime) = thumbnail_of(&mut conn, attachment_id)
             .await
             .expect("the row names its Thumbnail");
@@ -1154,9 +1154,9 @@ fn a_file_two_sources_share_is_converted_once_for_both() {
             stats(1, 1, 1, 0, 0)
         );
 
-        let preview = derived_of(&mut conn, imessage_attachment).await;
+        let preview = preview_of(&mut conn, imessage_attachment).await;
         assert!(preview.is_some());
-        assert_eq!(derived_of(&mut conn, sms_attachment).await, preview);
+        assert_eq!(preview_of(&mut conn, sms_attachment).await, preview);
     });
 }
 
@@ -1179,7 +1179,7 @@ async fn a_stopped_run_fails_and_converts_nothing_more() {
     assert!(err.to_string().starts_with("stopped"), "got: {err}");
     let mut conn = opened.conn().await.unwrap();
     assert_eq!(thumbnail_of(&mut conn, attachment).await, None);
-    assert_eq!(derived_of(&mut conn, attachment).await, None);
+    assert_eq!(preview_of(&mut conn, attachment).await, None);
 }
 
 #[tokio::test]
@@ -1240,7 +1240,7 @@ async fn an_asset_that_is_not_media_is_left_as_is_by_the_run() {
         .unwrap(),
         stats(1, 0, 0, 1, 0)
     );
-    assert_eq!(derived_of(&mut conn, attachment_id).await, None);
+    assert_eq!(preview_of(&mut conn, attachment_id).await, None);
 }
 
 #[tokio::test]
@@ -1275,7 +1275,7 @@ async fn a_missing_original_is_counted_as_a_failure_and_the_run_goes_on() {
         .unwrap(),
         stats(2, 0, 0, 1, 1)
     );
-    assert_eq!(derived_of(&mut conn, attachment_id).await, None);
+    assert_eq!(preview_of(&mut conn, attachment_id).await, None);
 }
 
 /// A missing original says nothing about its bytes, so its type decides
@@ -1489,7 +1489,7 @@ fn a_failed_remake_of_a_working_version_records_no_reason() {
         )
         .await
         .unwrap();
-        let made = derived_of(&mut conn, attachment_id).await;
+        let made = preview_of(&mut conn, attachment_id).await;
         assert!(made.is_some(), "the first run makes the Preview");
         let original = opened
             .cfg
@@ -1507,7 +1507,7 @@ fn a_failed_remake_of_a_working_version_records_no_reason() {
             .unwrap();
 
         assert_eq!(stats.not_made, 1, "{stats:?}");
-        assert_eq!(derived_of(&mut conn, attachment_id).await, made);
+        assert_eq!(preview_of(&mut conn, attachment_id).await, made);
         assert_eq!(
             not_made_reasons(&mut conn, attachment_id).await,
             (None, None)
@@ -1621,7 +1621,7 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
     let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query(
         "UPDATE attachments
-         SET derived_sha256 = $1, derived_assets_path = $2, derived_mime_type = 'image/jpeg'",
+         SET preview_sha256 = $1, preview_assets_path = $2, preview_mime_type = 'image/jpeg'",
     )
     .bind(&preview_sha)
     .bind(&rel)
@@ -1654,7 +1654,7 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
         dropped_and_not_made
     );
     assert!(preview.is_file(), "a dry run deletes nothing");
-    assert_eq!(derived_of(&mut conn, imessage_attachment).await, named);
+    assert_eq!(preview_of(&mut conn, imessage_attachment).await, named);
 
     assert_eq!(
         run(
@@ -1668,17 +1668,17 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
         dropped_and_not_made
     );
     assert!(!preview.exists(), "the damaged Preview is deleted");
-    assert_eq!(derived_of(&mut conn, imessage_attachment).await, None);
-    assert_eq!(derived_of(&mut conn, sms_attachment).await, None);
+    assert_eq!(preview_of(&mut conn, imessage_attachment).await, None);
+    assert_eq!(preview_of(&mut conn, sms_attachment).await, None);
     let named_columns: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM attachments
-         WHERE derived_sha256 IS NOT NULL OR derived_assets_path IS NOT NULL
-            OR derived_mime_type IS NOT NULL",
+         WHERE preview_sha256 IS NOT NULL OR preview_assets_path IS NOT NULL
+            OR preview_mime_type IS NOT NULL",
     )
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    assert_eq!(named_columns, 0, "every derived column is cleared");
+    assert_eq!(named_columns, 0, "every Preview column is cleared");
 }
 
 /// A `version` file named `<sha>.jpg` holding `bytes` under the converted
@@ -1904,8 +1904,8 @@ async fn a_damaged_preview_the_original_no_longer_gets_is_counted_as_dropped() {
         dropped(2, 2)
     );
     assert!(!first_preview.exists() && !second_preview.exists());
-    assert_eq!(derived_of(&mut conn, first).await, None);
-    assert_eq!(derived_of(&mut conn, second).await, None);
+    assert_eq!(preview_of(&mut conn, first).await, None);
+    assert_eq!(preview_of(&mut conn, second).await, None);
 }
 
 /// A Thumbnail given to the rows of a second source is counted as shared,
@@ -2386,7 +2386,7 @@ async fn a_live_pass_keeps_its_work_directory_young() {
 fn the_done_line_counts_one_and_many() {
     let one = ProcessAssetsStats {
         scanned: 1,
-        derived: 1,
+        previews: 1,
         thumbnails: 1,
         removed: 1,
         dropped: 1,
@@ -2409,7 +2409,7 @@ fn the_done_line_counts_one_and_many() {
     );
     let many = ProcessAssetsStats {
         scanned: 9,
-        derived: 2,
+        previews: 2,
         thumbnails: 3,
         removed: 2,
         dropped: 3,

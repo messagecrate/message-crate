@@ -125,12 +125,12 @@ CREATE TABLE IF NOT EXISTS staging_attachments (
     size_bytes INTEGER,
     -- Why bytes are absent; NULL if present.
     missing_reason TEXT,
-    -- SHA-256 hex of a converted/compressed derivative.
-    derived_sha256 TEXT,
-    -- Path under the assets store for the derivative file.
-    derived_assets_path TEXT,
-    -- MIME type of the derivative file.
-    derived_mime_type TEXT
+    -- SHA-256 hex of the Preview, as `attachments.preview_sha256`.
+    preview_sha256 TEXT,
+    -- Path of the Preview, as `attachments.preview_assets_path`.
+    preview_assets_path TEXT,
+    -- MIME type of the Preview, as `attachments.preview_mime_type`.
+    preview_mime_type TEXT
 );
 
 CREATE INDEX IF NOT EXISTS ix_staging_attachments_sha256 ON staging_attachments (sha256);
