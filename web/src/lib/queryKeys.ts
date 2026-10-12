@@ -7,7 +7,7 @@
  * literals typed at each call site, that knowledge lived in comments, and
  * screens kept their own override maps rather than trusting a prefix they
  * could not name. Marking entries stale needs no prefix from here: every
- * write marks the whole account's cache stale (`invalidateAccount` in
+ * write marks the whole account's cache stale (`useMarkAccountStale` in
  * `routeQuery.ts`).
  *
  * One rule, for every resource: a namespace whose `all` is the prefix, with
