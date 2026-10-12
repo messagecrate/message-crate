@@ -32,7 +32,10 @@ mod logs;
 mod seed;
 
 pub use client::http_client;
-pub use fixture::{ImportingAccount, PASSWORD, TestFixture, fixture_with_account, test_fixture};
+pub use fixture::{
+    ImportingAccount, PASSWORD, TestFixture, fixture_with_account, test_fixture,
+    test_fixture_with_busy_timeout,
+};
 pub use http::{
     RegisteredAccount, TestServer, claim_as_owner, delete_json, delete_json_raw,
     delete_json_with_body, delete_raw, delete_status, delete_status_with_body,
@@ -49,7 +52,7 @@ pub use imports::{
 pub use lines::{
     ConversationHeaderLine, MessageLine, attachment, conversation_header, message_line,
 };
-pub use logs::{log_event, small_log_files, write_log_line};
+pub use logs::{lines_written_by, log_event, small_log_files, write_log_line};
 pub(crate) use seed::write_stored_original;
 pub use seed::{
     ConversationRow, MessageRow, SeedConversation, SeedMessage, attach_stored_file, fake_sha256,

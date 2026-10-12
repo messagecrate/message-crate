@@ -40,7 +40,7 @@ tempfile = { workspace = true }
 tokio = { version = "1.53.0", features = ["macros", "rt-multi-thread", "net", "signal", "fs", "io-util", "time", "sync"] }
 tokio-util = { version = "0.7", features = ["io"] }
 toml = "1.1.2"
-tower-http = { version = "0.7.1", features = ["limit", "cors", "fs", "trace"] }
+tower-http = { version = "0.7.1", features = ["catch-panic", "limit", "cors", "fs", "trace"] }
 uuid = { version = "1.18.1", features = ["v4"] }
 message-crate-api-types = { path = "../../libs/api-types", features = ["schema"] }
 message-crate-serve-protocol = { path = "../../libs/serve-protocol" }

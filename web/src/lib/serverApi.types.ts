@@ -2435,8 +2435,11 @@ export interface components {
             bytes: number;
             /**
              * @description Media type of the file, such as `image/jpeg`. The server stores it
-             *     beside the Asset and serves the Asset with it. Null, blank or left
-             *     out stores none.
+             *     beside the Asset and serves the Asset with it, unless the file's
+             *     first bytes show another type, which is stored instead. A value that
+             *     is not a `type/subtype` pair of tokens of at most 255 bytes, null,
+             *     blank or left out stores none, and the Asset is served as
+             *     `application/octet-stream`.
              */
             mime?: string | null;
         };
@@ -5137,8 +5140,8 @@ export interface components {
          *     same request.
          *
          *     The extension members belong to the types named here: `word` and
-         *     `did_you_mean` to `search-query-invalid`, `retry_after` to `rate-limited`,
-         *     `line` to `malformed-body` and `validation-failed` from an import batch,
+         *     `did_you_mean` to `search-query-invalid`, `retry_after` to `rate-limited`
+         *     and `database-busy`, `line` to `malformed-body` and `validation-failed` from an import batch,
          *     `holder` to `identity-exists`.
          */
         Problem: {
@@ -5176,8 +5179,8 @@ export interface components {
             request_id?: string | null;
             /**
              * Format: int64
-             * @description `rate-limited`: seconds until an attempt may succeed, the same figure
-             *     as the `Retry-After` header.
+             * @description `rate-limited` and `database-busy`: seconds until the request may
+             *     succeed, the same figure as the `Retry-After` header.
              */
             retry_after?: number | null;
             /**
@@ -7387,7 +7390,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The asset's bytes, in the media type it was stored with, or `application/octet-stream` when none was stored */
+            /** @description The asset's bytes, in the media type its first bytes show or else the one it was stored with, or `application/octet-stream` when neither is known */
             200: {
                 headers: {
                     /** @description `bytes` */

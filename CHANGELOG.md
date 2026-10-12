@@ -917,6 +917,18 @@ released versions carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-11: **An attachment's type comes from its contents, not only
+  from what the import called it.** A video an export called a plain file
+  showed as a download and never got a thumbnail or a copy a browser can
+  play, and the type the first import gave a file stayed its type for good,
+  even when it was wrong. The server now reads the start of each stored
+  file: a video, photo or recording is treated as what it is, whatever it
+  was called, gets its thumbnail and, where a browser needs one, its
+  playable copy, and is downloaded under its real type. A file type an
+  import gave in a broken form is no longer kept: the file's name decides
+  its type instead, and with nothing to go on it downloads as plain bytes
+  rather than with no type at all. An attachment whose file has
+  gone missing keeps what the server last decided about it.
 - 2026-10-11: **An attachment is opened as it is only when its contents
   match its type.** A file an import called a JPEG, PNG, GIF, WebP or MP3
   was opened in the browser as one without anyone checking, so a file
@@ -1029,12 +1041,34 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-11: **The server's log holds what it was missing.** A request
+  that broke the server in an unexpected way closed the connection with no
+  answer and left nothing in the log. It now gets the same "internal server
+  error" answer, with a request id, as any other failure, and the log names
+  what broke and the place in the code it happened. The same holds for any
+  other part of the server that breaks this way. The lines a starting server
+  writes, and the reason it stops or will not start, are now in the log as
+  well, so the Logs panel shows them, and so is every step of adding or
+  rebuilding the Demo Account. A server whose desktop app has crashed no
+  longer fails every request while it waits to stop. A request with a very
+  long address now leaves at most the first 2,048 bytes of it in the log, so
+  nobody can fill the log with a few long requests and push older lines out
+  (#2060, #2086, #2079, #2018, #2088).
+- 2026-10-11: **A busy server says it is busy, and stays busy less often.**
+  While two imports ran, every other page and action shared what was left of
+  the server's database connections, and one that waited too long failed as
+  "internal server error", with an error in the server's log. The server now
+  keeps more connections free beside the imports, and a request that still
+  finds the database busy says so and to try again in a few seconds. An
+  import's upload sends it again by itself, and the server's log notes it as
+  a warning rather than an error (#2084, #2124).
 - 2026-10-11: **Logins under made-up usernames are limited.** Each username
   that names no account had its own limit, so a script trying a new name
   each time was never slowed, kept the server busy checking passwords, and
   filled the Audit Trail with refused logins. Past 120 such logins a minute
   in all, the server now turns them away without checking them or recording
   them, and the answer still doesn't say whether a username exists.
+
 - 2026-10-11: **No single attachment or error stops Thumbnails and Previews
   for good.** The server makes Thumbnails and Previews one attachment at a
   time, and three things could stop that work for every account. A file
@@ -1049,6 +1083,7 @@ released versions carry their date on the heading.
   minutes. ffmpeg and ffprobe now also open only files on this
   computer, never a network address named inside an attachment
   (#2059, #2072, #2091).
+
 - 2026-10-11: **Two uploads of one attachment at the same moment both
   succeed.** The server named an upload's temporary file from the clock
   alone, so two uploads of the same file that started in one clock tick

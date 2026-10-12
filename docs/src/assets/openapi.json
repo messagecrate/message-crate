@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Message Crate HTTP API",
-    "description": "HTTP API for a Message Crate server. Bearer Session tokens come from logging in. API tokens come from Settings → Account.\n\nA method a path does not take answers `405 Method Not Allowed` as a [`method-not-allowed`](https://messagecrate.app/docs/developer/reference/errors/method-not-allowed) problem document on every `/v1` path. No operation lists it, because it is the answer for an operation that does not exist.\n\nEvery `/v1` answer carries `Cache-Control: no-store` unless the operation lists a `Cache-Control` of its own, as the asset reads do.",
+    "description": "HTTP API for a Message Crate server. Bearer Session tokens come from logging in. API tokens come from Settings → Account.\n\nA method a path does not take answers `405 Method Not Allowed` as a [`method-not-allowed`](https://messagecrate.app/docs/developer/reference/errors/method-not-allowed) problem document on every `/v1` path. No operation lists it, because it is the answer for an operation that does not exist.\n\nAn operation that reads or writes the database answers `503 Service Unavailable` as a [`database-busy`](https://messagecrate.app/docs/developer/reference/errors/database-busy) problem document, with `Retry-After`, when the database stays busy for longer than the request can wait. No operation lists it, because almost every operation can answer it.\n\nEvery `/v1` answer carries `Cache-Control: no-store` unless the operation lists a `Cache-Control` of its own, as the asset reads do.",
     "license": {
       "name": "Fair Core License 1.0 (ALv2 future)",
       "url": "https://github.com/messagecrate/message-crate/blob/main/LICENSE.md"
@@ -2585,7 +2585,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The asset's bytes, in the media type it was stored with, or `application/octet-stream` when none was stored",
+            "description": "The asset's bytes, in the media type its first bytes show or else the one it was stored with, or `application/octet-stream` when neither is known",
             "headers": {
               "Accept-Ranges": {
                 "schema": {
@@ -14465,7 +14465,7 @@
               "string",
               "null"
             ],
-            "description": "Media type of the file, such as `image/jpeg`. The server stores it\nbeside the Asset and serves the Asset with it. Null, blank or left\nout stores none."
+            "description": "Media type of the file, such as `image/jpeg`. The server stores it\nbeside the Asset and serves the Asset with it, unless the file's\nfirst bytes show another type, which is stored instead. A value that\nis not a `type/subtype` pair of tokens of at most 255 bytes, null,\nblank or left out stores none, and the Asset is served as\n`application/octet-stream`."
           }
         }
       },
@@ -19074,7 +19074,7 @@
       },
       "Problem": {
         "type": "object",
-        "description": "An RFC 7807 problem document: the body of every failure the server answers,\nserved as `application/problem+json` (`docs/architecture/http-api.md`).\n\n`type` is the URL of the page describing this kind of failure, one page per\ntype, or `about:blank` for an internal error. A validation failure carries\n`errors`, every field that failed, in place of `detail`. Every problem\nrepeats the response's `x-request-id` as `request_id`, so the person\nreading the failure and the operator reading the log are looking at the\nsame request.\n\nThe extension members belong to the types named here: `word` and\n`did_you_mean` to `search-query-invalid`, `retry_after` to `rate-limited`,\n`line` to `malformed-body` and `validation-failed` from an import batch,\n`holder` to `identity-exists`.",
+        "description": "An RFC 7807 problem document: the body of every failure the server answers,\nserved as `application/problem+json` (`docs/architecture/http-api.md`).\n\n`type` is the URL of the page describing this kind of failure, one page per\ntype, or `about:blank` for an internal error. A validation failure carries\n`errors`, every field that failed, in place of `detail`. Every problem\nrepeats the response's `x-request-id` as `request_id`, so the person\nreading the failure and the operator reading the log are looking at the\nsame request.\n\nThe extension members belong to the types named here: `word` and\n`did_you_mean` to `search-query-invalid`, `retry_after` to `rate-limited`\nand `database-busy`, `line` to `malformed-body` and `validation-failed` from an import batch,\n`holder` to `identity-exists`.",
         "required": [
           "type",
           "title",
@@ -19138,7 +19138,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "`rate-limited`: seconds until an attempt may succeed, the same figure\nas the `Retry-After` header.",
+            "description": "`rate-limited` and `database-busy`: seconds until the request may\nsucceed, the same figure as the `Retry-After` header.",
             "minimum": 0
           },
           "status": {

@@ -34,9 +34,62 @@ read it.
 Rejected: a table in the database. It is the one store that is missing when
 the log is needed most.
 
+`serve` opens the log before it touches the database, then writes every
+line through it: where the log is, the database it opened and its journal
+mode, a part-built Demo Account it removed, the attachment limits, a SIGTERM
+it cannot catch, and the Demo Account build it runs on a new database or for
+the owner. An error that stops `serve` after the log is open is written at
+`ERROR` with its whole chain (`logging::write_failure`). Such errors include
+a database that cannot be opened, another server holding the operation lock,
+and an address that cannot be bound. When `RUST_LOG` leaves out `ERROR`
+lines, the error and a panic go to stderr as Rust writes them instead, so
+neither is lost. One line is on stderr alone: the one that says
+where the server listens (`LISTENING_LINE` in
+`crates/libs/serve-protocol`), which the desktop app and the tests read
+there by how it starts.
+
+A line that cannot be written to stderr is dropped, and the file still gets
+it. Why: the desktop app reads its server's stderr through a pipe, and an
+app that crashes takes the pipe's read end with it. Reporting the failed
+write would panic, so every request would fail until the server noticed the
+app was gone
+([#1934](https://github.com/messagecrate/message-crate/issues/1934)).
+
+Why: a Message Crate that will not start, or misbehaves from its first
+minute, is when the owner needs these lines, and stderr is the place the
+owner of Docker or the desktop app cannot read
+([#2079](https://github.com/messagecrate/message-crate/issues/2079),
+[#2018](https://github.com/messagecrate/message-crate/issues/2018)).
+
 The other subcommands (`import`, `reset-demo`, `process-assets`, and the rest)
-write to stderr only. They are run by hand from a shell that already shows
-their output, and they are not the server.
+write to their own standard output and standard error only, never to the
+server's log: their progress is their output (`crate::progress::Progress`).
+They are run by hand from a shell that already shows their output, and they
+are not the server.
+
+## A panic is written as an `ERROR` line
+
+A panic on any thread of the server, in a request handler, the media pass or
+any other work, leaves one `ERROR` line, `A thread of the server panicked`,
+with the panic's message and the file and line it happened at. The panic hook
+`logging::init` installs writes it, under the span the panic happened in, so
+a handler's panic carries its request's id. Rust's own hook, which writes to
+stderr alone, runs as well only when `RUST_BACKTRACE` asks for a backtrace
+or `RUST_LOG` leaves out the `ERROR` line.
+A handler that panics is answered with a `500 Internal Server Error`
+([The HTTP interface, "Failures"](http-api.md#failures)), which writes its
+own `ERROR` line as every `500` does, so such a request leaves two.
+
+Why: a panic was the one failure that reached stderr alone, so the owner's
+Logs panel showed nothing for the request that broke
+([#2060](https://github.com/messagecrate/message-crate/issues/2060),
+[#2086](https://github.com/messagecrate/message-crate/issues/2086)).
+
+The panic's message is written as Rust gives it. The server's own panics
+carry fixed text, but a panic inside the standard library can quote a value,
+such as the text a string was sliced from. That is the one place a line can
+hold what the rule below keeps out, and it is accepted: a panic is a bug, and
+its message is what makes it possible to fix.
 
 ## One line per event
 
@@ -80,19 +133,28 @@ written out a second time.
 
 ## A refused request names its problem type
 
-A request the server refuses with a registered problem type (a
-`4xx`, or `server-stopping`, the one `503`) leaves one more line,
-written where its problem document is built, with the problem type's slug
-and the status (`problem=invalid-credentials status=401`). It is at `WARN`
-for `401 Unauthorized`, `403 Forbidden` and `429 Too Many Requests`, and at
-`INFO` for every other refusal. The level follows from the status, in
+A request the server refuses with a registered problem type (a `4xx`, or
+one of the two `503 Service Unavailable` types, `server-stopping` and
+`database-busy`) leaves one more line, written where its problem document is
+built, with the problem type's slug and the status
+(`problem=invalid-credentials status=401`). It is at `WARN` for
+`401 Unauthorized`, `403 Forbidden`, `429 Too Many Requests` and
+`database-busy`, and at `INFO` for every other refusal. The level follows
+from the problem type, by its status and, for `database-busy`, by name, in
 `crates/server/server/src/problem.rs`, where each problem type is declared.
-The problem's `detail` is never written.
+The problem's `detail` is never written. A `database-busy` line also
+carries the error's chain as `error`, as the `ERROR` line of a `500` does
+(below).
 
-Why `WARN` for those three: a run of them is what a password guesser or an
-API token that lost its rights looks like, and the owner's Logs panel opens
-at warnings and up. A `404 Not Found` or a refused search is a client asking
-for something that is not there, which the owner has nothing to do about.
+Why `WARN` for those three statuses: a run of them is what a password
+guesser or an API token that lost its rights looks like, and the owner's Logs
+panel opens at warnings and up. Why `WARN` for `database-busy`: a run of it
+says the server has more work than its database keeps up with, or that
+something holds the database's lock and never lets it go, while one of them
+is no bug, so it is not an `ERROR`. Why the chain: it names the step that
+met the lock, so a lock that never clears can be told from a busy spell. A
+`404 Not Found` or a refused search is a client asking for something that is
+not there, which the owner has nothing to do about.
 
 Why not `detail`: it can repeat what a person typed, such as a search word or
 a value that broke a rule, and a line holds only outcomes (below). The slug
@@ -121,10 +183,12 @@ typed, and a guesser's list of usernames is not an outcome.
 
 A request that fails with `500 Internal Server Error` leaves one `ERROR`
 line, written where its problem document is built, with the error's whole
-chain, outermost first. Each database statement adds the step it does to
-that chain, in a few words (`read the attachments of a page of messages`),
-so the line reads as the step and then the database's own message. The
-step is a fixed phrase: it never holds a value bound into the statement.
+chain, outermost first. A busy database answers `database-busy` instead,
+and its refusal line, above, carries the chain at `WARN`. Each database
+statement adds the step it does to that chain, in a few words (`read the
+attachments of a page of messages`), so the line reads as the step and then
+the database's own message. The step is a fixed phrase: it never holds a
+value bound into the statement.
 The trace layer writes no second `ERROR` line for the `5xx`, only the
 response's `INFO` line.
 
@@ -244,6 +308,14 @@ fixed word (`after`, `around`, `before`, `deleted_account_id`, `level`,
 credential; the log's own `text` filter; and any parameter added later, until
 someone adds it to the list. Every event the server writes is held to the same
 rule by whoever writes it.
+
+The path and query a line names are cut at 2,048 bytes, on a character
+boundary, and end in `...[cut]` when they are (`logged_uri` in
+`crates/server/server/src/server.rs`). Why: a request needs no credential to
+leave its line, and a URI can be 64 KiB long, so without the cut anyone who
+can reach the port could fill the 250 MB the log keeps with a few thousand
+requests and push every other line off the disk
+([#2088](https://github.com/messagecrate/message-crate/issues/2088)).
 
 `crates/server/server/tests/server_log.rs` checks it: it runs `serve` at
 `RUST_LOG=trace`, has an owner, an account and an API token log in, import a

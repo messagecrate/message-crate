@@ -2239,6 +2239,7 @@ dependencies = [
  "chrono",
  "mail-builder",
  "mailparse",
+ "media",
  "message-ir",
  "serde",
  "serde_json",

@@ -755,6 +755,7 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
             account: None,
         },
         &stop,
+        crate::progress::Progress::Print,
     )
     .await;
     stopper.abort();

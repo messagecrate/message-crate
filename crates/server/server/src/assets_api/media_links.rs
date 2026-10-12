@@ -153,15 +153,31 @@ fn now_unix() -> i64 {
 /// A request that sends the header is judged by the header alone, as on
 /// every other route: a session, or an API token with the export scope
 /// (`require_asset_read_access`).
+///
+/// The account is private to this type: a handler reaches it only through
+/// [`Self::answer`], which puts the read's `Cache-Control` on whatever the
+/// handler answers. So an asset read route added later cannot answer
+/// without it (#2585).
 pub(crate) struct AssetReadAccess {
     /// The account whose asset store the read looks in.
-    pub(crate) account_id: i64,
+    account_id: i64,
     /// Whether a media link, not the `Authorization` header, admitted the
     /// read.
     by_media_link: bool,
 }
 
 impl AssetReadAccess {
+    /// Run `read` for the account the read reaches, and answer what it
+    /// answers with the read's `Cache-Control`
+    /// ([`Self::with_cache_control`]).
+    pub(crate) async fn answer(
+        self,
+        read: impl AsyncFnOnce(i64) -> Result<Response, ApiError>,
+    ) -> Response {
+        let answer = read(self.account_id).await;
+        self.with_cache_control(answer)
+    }
+
     /// `answer` with its `Cache-Control`, whether it carries the bytes or a
     /// problem: `private` always, because the bytes are one account's
     /// attachment, and `no-store` as well when a media link admitted the
@@ -171,7 +187,7 @@ impl AssetReadAccess {
     /// would keep the bytes on disk past the hour. A problem gets it too,
     /// because a cache may keep a `404 Not Found` and hide a Preview made
     /// later.
-    pub(crate) fn with_cache_control(&self, answer: Result<Response, ApiError>) -> Response {
+    fn with_cache_control(&self, answer: Result<Response, ApiError>) -> Response {
         let mut response = answer.into_response();
         let value = if self.by_media_link {
             "private, no-store"

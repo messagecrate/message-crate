@@ -20,6 +20,7 @@ use futures_util::StreamExt;
 use serde::Serialize;
 use sqlx::SqliteConnection;
 use tokio::io::AsyncWriteExt;
+use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::ServeDir;
@@ -37,18 +38,6 @@ use crate::exit_with_parent::ParentWatch;
 use crate::keyed_locks::KeyedLocks;
 use crate::open_db::OpenDb;
 use crate::problem::{Problem, ProblemType};
-
-/// Write a line to standard error as `eprintln!` does, except that a failed
-/// write is dropped rather than panicking. The desktop app reads `serve`'s
-/// standard error through a pipe, and an app that crashes takes the pipe's
-/// read end with it, so a write can fail at any point until the server
-/// notices the app is gone (#1934).
-macro_rules! say {
-    ($($arg:tt)*) => {{
-        use std::io::Write as _;
-        let _ = writeln!(std::io::stderr(), $($arg)*);
-    }};
-}
 
 /// What a Bearer credential is allowed to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -638,7 +627,10 @@ pub enum ApiError {
     /// `503` — the server is stopping and refused work it had not started.
     ServerStopping(String),
     /// `500` — unexpected failure. The whole context chain goes to the log;
-    /// the client sees a fixed sentence and `about:blank`.
+    /// the client sees a fixed sentence and `about:blank`. One whose chain
+    /// holds a busy database ([`is_database_busy`]) is no failure of the
+    /// server: it answers `503 Service Unavailable` (`database-busy`) with
+    /// `Retry-After`, and its chain goes on the refusal's `WARN` line.
     Internal(anyhow::Error),
 }
 
@@ -757,6 +749,7 @@ impl ApiError {
             Self::MediaLinkInvalid(_) => ProblemType::MediaLinkInvalid,
             Self::RangeNotSatisfiable { .. } => ProblemType::RangeNotSatisfiable,
             Self::ServerStopping(_) => ProblemType::ServerStopping,
+            Self::Internal(err) if is_database_busy(err) => ProblemType::DatabaseBusy,
             Self::Internal(_) => return None,
         })
     }
@@ -770,8 +763,8 @@ impl ApiError {
 
     /// The problem document this failure answers with. Every failure is
     /// logged here, once: an internal error at `ERROR` with its whole chain,
-    /// which the document says nothing of, and a refused request with
-    /// `log_refusal`'s line.
+    /// which the document says nothing of, and a refused request, a busy
+    /// database's included, with `log_refusal`'s line.
     #[must_use]
     pub fn to_problem(&self) -> Problem {
         let request_id = crate::request_id::current();
@@ -794,7 +787,11 @@ impl ApiError {
                 holder: None,
             };
         };
-        log_refusal(kind);
+        let cause = match self {
+            Self::Internal(err) => Some(err),
+            _ => None,
+        };
+        log_refusal(kind, cause);
         let mut problem = Problem {
             kind: kind.url(),
             title: kind.title().to_string(),
@@ -838,9 +835,17 @@ impl ApiError {
                 problem.errors = Some(errors.clone());
                 problem.line = Some(*line as u64);
             }
-            Self::Internal(_) => unreachable!("handled above"),
+            // An internal error's answer follows from its type, below.
+            Self::Internal(_) => {}
             // The variants that carry only a sentence, which `message` lists.
             _ => problem.detail = Some(self.sentence().to_string()),
+        }
+        if kind == ProblemType::DatabaseBusy {
+            problem.retry_after = Some(crate::problem::DATABASE_BUSY_RETRY_AFTER_SECS);
+            problem.detail = Some(format!(
+                "the database is busy, so try again in {} seconds",
+                crate::problem::DATABASE_BUSY_RETRY_AFTER_SECS
+            ));
         }
         problem
     }
@@ -852,14 +857,19 @@ impl ApiError {
 /// `INFO` otherwise. The problem's
 /// `detail` is never written: it can repeat what a person typed, and a log
 /// line holds only ids, counts, routes and outcomes
-/// (`docs/architecture/server-log.md`).
-fn log_refusal(kind: ProblemType) {
+/// (`docs/architecture/server-log.md`). A refusal whose `cause` is an
+/// internal error (a busy database) also carries that error's chain as
+/// `error`, as the `ERROR` line of a `500` does, so a lock that never clears
+/// names the step that met it.
+fn log_refusal(kind: ProblemType, cause: Option<&anyhow::Error>) {
     let status = kind.status();
     let problem = kind.slug();
+    let error = cause.map(error_chain);
+    let error = error.as_deref();
     if kind.refusal_is_a_warning() {
-        tracing::warn!(%problem, status = status.as_u16(), "The server refused a request");
+        tracing::warn!(%problem, status = status.as_u16(), error, "The server refused a request");
     } else {
-        tracing::info!(%problem, status = status.as_u16(), "The server refused a request");
+        tracing::info!(%problem, status = status.as_u16(), error, "The server refused a request");
     }
 }
 
@@ -940,6 +950,31 @@ impl IntoResponse for ApiError {
         }
         response
     }
+}
+
+/// SQLite's primary result code `SQLITE_BUSY`. Its extended codes, such as
+/// `SQLITE_BUSY_SNAPSHOT`, carry it in their low byte.
+const SQLITE_BUSY: i32 = 5;
+
+/// Whether `err`, anywhere in its chain, is a database too busy to take the
+/// request: SQLite answered `SQLITE_BUSY` once the busy timeout ran out, or
+/// no pool connection came free before sqlx's acquire timeout
+/// (`PoolTimedOut`). Both pass once the import batch or the requests holding
+/// the database finish, so the request answers `database-busy` rather than
+/// `500 Internal Server Error` (#2084, #2124).
+fn is_database_busy(err: &anyhow::Error) -> bool {
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<sqlx::Error>()
+            .is_some_and(|sqlx_error| match sqlx_error {
+                sqlx::Error::PoolTimedOut => true,
+                sqlx::Error::Database(db) => db
+                    .code()
+                    .and_then(|code| code.parse::<i32>().ok())
+                    .is_some_and(|code| code & 0xff == SQLITE_BUSY),
+                _ => false,
+            })
+    })
 }
 
 /// An error's whole context chain on one line, outermost first, so the log
@@ -1425,7 +1460,29 @@ fn decoded_query_name(raw_name: &str) -> Option<String> {
 /// nowhere else, and `q` is a search over what the messages say; the log
 /// holds neither (`docs/architecture/server-log.md`). A parameter added
 /// later is hidden until it is added to the list.
+///
+/// A URI longer than [`LOGGED_URI_BYTES`] is cut there and ends in
+/// [`LOGGED_URI_CUT`], so a request with a long path, which needs no
+/// credential, cannot write a line of any length and push the rest of the
+/// log off the disk (#2088).
 pub(crate) fn logged_uri(uri: &axum::http::Uri) -> String {
+    let mut logged = uri_with_hidden_values(uri);
+    if logged.len() > LOGGED_URI_BYTES {
+        logged.truncate(logged.floor_char_boundary(LOGGED_URI_BYTES - LOGGED_URI_CUT.len()));
+        logged.push_str(LOGGED_URI_CUT);
+    }
+    logged
+}
+
+/// The most bytes of a request's URI a log line holds, the mark of a cut
+/// included. A URI the server's own clients send is far shorter.
+const LOGGED_URI_BYTES: usize = 2048;
+
+/// What ends a URI [`logged_uri`] cut.
+const LOGGED_URI_CUT: &str = "...[cut]";
+
+/// [`logged_uri`] before the cut.
+fn uri_with_hidden_values(uri: &axum::http::Uri) -> String {
     let Some(query) = uri.query() else {
         return uri.path().to_string();
     };
@@ -1450,12 +1507,6 @@ pub(crate) fn logged_uri(uri: &axum::http::Uri) -> String {
 /// Assemble the full router: API routes, auth routes, the optional OpenAPI UI, CORS, and the static web app.
 pub(crate) fn http_app(state: AppState) -> Router {
     let openapi_ui = state.cfg.server.as_ref().is_some_and(|s| s.openapi_ui);
-    let cors_origins = state
-        .cfg
-        .server
-        .as_ref()
-        .map(|s| s.cors_origins.clone())
-        .unwrap_or_default();
     let static_dir = state
         .cfg
         .server
@@ -1501,12 +1552,33 @@ pub(crate) fn http_app(state: AppState) -> Router {
     if openapi_ui {
         api = api.merge(utoipa_swagger_ui::SwaggerUi::new("/docs").url("/openapi.json", spec));
     }
-    api.method_not_allowed_fallback(api_method_not_allowed)
+    let routes = api
+        .method_not_allowed_fallback(api_method_not_allowed)
         .fallback_service(
             Router::new()
                 .fallback_service(ServeDir::new(static_dir))
                 .layer(axum::middleware::map_response(mark_routine)),
-        )
+        );
+    with_server_layers(routes, state)
+}
+
+/// `routes` under the layers every answer of the server passes through: the
+/// panic catch, the body limits, CORS, `Cache-Control`, the request's log
+/// line and its id. `http_app` puts the server's routes under them; a test
+/// puts a route of its own there to see how the server answers it.
+pub(crate) fn with_server_layers(routes: Router<AppState>, state: AppState) -> Router {
+    let cors_origins = state
+        .cfg
+        .server
+        .as_ref()
+        .map(|s| s.cors_origins.clone())
+        .unwrap_or_default();
+    routes
+        // Innermost, so a handler that panics is answered like any other
+        // internal failure: every layer below then treats the `500` as it
+        // treats one, with the CORS headers a browser needs to show it, the
+        // request id in its body and on its header, and its log line (#2060).
+        .layer(CatchPanicLayer::custom(answer_panic))
         // The cap `extract::Json` reads a body against. The routes that read
         // a body of their own hold it to their own figure instead.
         .layer(DefaultBodyLimit::max(MAX_JSON_BODY_BYTES))
@@ -1559,6 +1631,16 @@ pub(crate) fn http_app(state: AppState) -> Router {
         .with_state(state)
 }
 
+/// The answer to a request whose handler panicked: the `500 Internal Server
+/// Error` problem document every internal failure answers, with the
+/// request's id, so the person has an id to report. Its `ERROR` line says
+/// only that the handler panicked: the panic hook (`logging::init`) has
+/// already written the panic's message and place, under the request's span,
+/// on the thread that panicked.
+fn answer_panic(_panic: Box<dyn std::any::Any + Send + 'static>) -> Response {
+    ApiError::Internal(anyhow::anyhow!("the request's handler panicked")).into_response()
+}
+
 /// Marks a response whose log line is written at `debug` when it succeeds:
 /// a file of the website, and the answer to `GET /health`, which the web app
 /// asks for every 30 seconds in each open tab. At `info`, these lines would
@@ -1608,14 +1690,16 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     media::set_tools_dir(server.tools_dir.clone());
     let bind = server.bind.clone();
     // Before the database is opened, so a database that fails to open is in
-    // the server's log as well as on stderr.
+    // the server's log as well as on stderr: from here on, `main` writes the
+    // error this returns through `tracing` (`logging::write_failure`), and
+    // every start-up line below goes through it too.
     let log = crate::logging::write_files_in(&cfg.paths.data_dir).map_err(|error| {
         anyhow::Error::from(error).context(format!(
             "could not open the server's log in {}",
             crate::logging::log_dir(&cfg.paths.data_dir).display()
         ))
     })?;
-    say!("The server's log is in {}", log.dir().display());
+    tracing::info!("The server's log is in {}", log.dir().display());
     let _operation_lock = crate::operation_lock::acquire_for_serve(&cfg.paths.db)?;
 
     // Every new Message Crate starts with the Demo Account: seed first, then
@@ -1629,13 +1713,13 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     let mode = crate::db::engine::journal_mode_or_warn(&opened.db)
         .await
         .map_or_else(|| "unknown".to_owned(), |mode| mode.to_string());
-    say!(
+    tracing::info!(
         "The database at {} is open, in journal mode {mode}",
         opened.cfg.paths.db.display()
     );
     let state = AppState::new(opened, server.asset_part_size);
     if crate::server_api::recover_stopped_demo_build(&state).await? {
-        say!(
+        tracing::warn!(
             "The server stopped during a Demo Account build, so the part-built Demo Account was removed"
         );
     }
@@ -1651,7 +1735,7 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     // Reported as they stand now; each upload reads them again. Any stored
     // limit starts the server: a part is never larger than the limit.
     let upload_limits = state.upload_limits().await?;
-    say!(
+    tracing::info!(
         "An attachment may be up to {} MiB, and is uploaded in parts of {} MiB",
         upload_limits.max_bytes / message_ir::MIB,
         upload_limits.part_size as u64 / message_ir::MIB
@@ -1667,13 +1751,22 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
             anyhow::Error::from(error).context(format!("could not listen on {bind}"))
         })?;
     // The address the listener holds, not the one it was given, so a bind to
-    // port 0 names the port the operating system chose.
-    say!(
-        "{}http://{}",
-        message_crate_serve_protocol::LISTENING_LINE,
-        listener.local_addr()?
-    );
-    say!(
+    // port 0 names the port the operating system chose. A plain line on
+    // stderr, not a `tracing` one, because the desktop app and the tests
+    // read it there by its start (`LISTENING_LINE`). A failed write is
+    // dropped rather than panicking, as `eprintln!` would: the desktop app
+    // reads stderr through a pipe, and an app that crashes takes the pipe's
+    // read end with it (#1934).
+    {
+        use std::io::Write as _;
+        let _ = writeln!(
+            std::io::stderr(),
+            "{}http://{}",
+            message_crate_serve_protocol::LISTENING_LINE,
+            listener.local_addr()?
+        );
+    }
+    tracing::info!(
         "`message-crate-server dump-openapi` lists every route, and [server] openapi_ui = true serves the API reference at /docs"
     );
     let served = serve_until_shutdown(listener, app, exit_with_parent, on_signal).await;
@@ -1741,7 +1834,7 @@ pub(crate) async fn stop_requested() {
             // Without a SIGTERM handler the process still stops on SIGTERM,
             // only without draining; Ctrl-C keeps working.
             Err(e) => {
-                say!(
+                tracing::warn!(
                     "SIGTERM cannot be caught, so it ends this process at once, without finishing the work in progress: {e}"
                 );
                 std::future::pending::<()>().await;

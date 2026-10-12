@@ -50,14 +50,31 @@ gives the original.
 The server makes Previews by the same rule, in `media::browser_shows`: the
 types every browser shows are exactly JPEG, PNG, GIF and WebP images, MP3
 audio, and MP4 with H.264 video, and every other image, video or audio file
-gets a Preview. The type comes from the stored file's extension, then the
-type the import declared, then the name the export gave the file, the order
-the server reads a type everywhere. That type is only a claim, and the first
-import to name a fingerprint's type decides it for good. So a JPEG, PNG, GIF,
+gets a Preview. A declared type is only a claim, so the type comes first
+from the file's first bytes, where they match a known signature
+(`media::media_type_from_bytes`): a video declared
+`application/octet-stream` is a video, gets a Thumbnail, and gets a Preview
+when `media::browser_shows` says it needs one (#2805). Where one signature fits several
+types, as an MP4 and an `.m4a` share one, the declared type is kept when it
+is one of them, read in its usual spelling (`audio/aac` is `audio/mp4`). A
+declared audio type the signature does not name still keeps the file audio,
+as the signature's first audio type, because a voice note in a 3GP or MP4
+container is audio and a video player would show it as an empty frame. Bytes that match no signature fall back to the stored
+file's extension, then the type the import declared, then the name the
+export gave the file. The server stores and serves the Asset under the same
+type: each store decides it from the bytes and writes it over a first
+claim the bytes rule out. A first claim the bytes allow stays, so a later
+import cannot flip an `.m4a` to an MP4, and bytes that show no type keep
+the first type declared for them. Every attachment row of the Asset names
+the type it is served under (#2804). A declared type that is not a `type/subtype` pair of tokens
+of at most 255 bytes counts as no type at all, so the file's name decides as
+it would for a missing one, and with nothing known the Asset is served as
+`application/octet-stream` (#2101). So a JPEG, PNG, GIF,
 WebP or MP3 is shown as it is only when its first bytes are that type's
 signature. One that starts as anything else gets a Preview, a file called a
 GIF included (#2257). One that cannot be read keeps the decision an earlier
-pass recorded, because nothing is known about its bytes. Its type alone then
+pass recorded, because nothing is known about its bytes, and the pass plans
+it from that decision (#2804). With no decision recorded, its type alone
 decides whether the pass wants a Preview of it, so a missing JPEG is not
 recorded as a Preview not made, which its type never needs. An MP4 is opened by ffprobe, to read
 its video codec, so a HEVC video in an `.mp4` gets a Preview too. The list is

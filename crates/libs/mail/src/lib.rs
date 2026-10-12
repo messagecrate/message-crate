@@ -559,25 +559,16 @@ fn dot_atom(text: &str) -> String {
 }
 
 /// The `Content-Type` of an attachment's MIME part: its type when that is a
-/// `type/subtype` pair of RFC 2045 tokens (section 5.1), else
-/// `application/octet-stream`.
+/// `type/subtype` pair of RFC 2045 tokens (section 5.1,
+/// [`media::is_media_type`], the check the server holds an upload's type
+/// to), else `application/octet-stream`.
 ///
 /// Written as it was, a line break in the type ended the part's headers,
 /// and the part's bytes were lost. The type itself is kept in
 /// `X-ME-Attachment-Meta`, which the reader takes it from.
 fn part_content_type(mime: Option<&str>) -> &str {
-    let is_token = |s: &str| {
-        !s.is_empty()
-            && s.bytes()
-                .all(|b| b.is_ascii_graphic() && !b"()<>@,;:\\\"/[]?=".contains(&b))
-    };
     match mime {
-        Some(m)
-            if m.split_once('/')
-                .is_some_and(|(t, s)| is_token(t) && is_token(s)) =>
-        {
-            m
-        }
+        Some(m) if media::is_media_type(m) => m,
         _ => "application/octet-stream",
     }
 }

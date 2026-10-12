@@ -1619,6 +1619,14 @@ fn every_api_error_answers_the_status_its_problem_type_declares() {
             StatusCode::NOT_ACCEPTABLE,
         ),
         (
+            ApiError::ServerStopping("x".into()),
+            StatusCode::SERVICE_UNAVAILABLE,
+        ),
+        (
+            ApiError::from(sqlx::Error::PoolTimedOut),
+            StatusCode::SERVICE_UNAVAILABLE,
+        ),
+        (
             ApiError::Internal(anyhow::anyhow!("x")),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
@@ -1750,6 +1758,101 @@ fn every_message_variant_answers_its_sentence_as_the_detail() {
         );
         assert_eq!(error.to_string(), "the sentence", "{error:?}");
     }
+}
+
+/// A request that waited for a pool connection until sqlx gave up is not a
+/// bug in the server: it answers `503 Service Unavailable` with
+/// `Retry-After`, whether the error arrives as it is or under the step that
+/// hit it (#2084, #2124).
+#[test]
+fn a_pool_timeout_answers_database_busy_with_retry_after() {
+    for error in [
+        ApiError::from(sqlx::Error::PoolTimedOut),
+        ApiError::from(anyhow::Error::new(sqlx::Error::PoolTimedOut).context("read the account")),
+    ] {
+        let problem = error.to_problem();
+        assert_eq!(problem.kind, ProblemType::DatabaseBusy.url(), "{error:?}");
+        assert_eq!(problem.status, 503);
+        assert_eq!(
+            problem.retry_after,
+            Some(crate::problem::DATABASE_BUSY_RETRY_AFTER_SECS)
+        );
+        assert_eq!(
+            problem.detail.as_deref(),
+            Some("the database is busy, so try again in 5 seconds")
+        );
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(response.headers()[header::RETRY_AFTER], "5");
+    }
+}
+
+/// A busy database leaves one `WARN` line, not an `ERROR`, and the line
+/// names the step that met the lock, so a lock that never clears can be
+/// traced (#2084).
+#[test]
+fn a_busy_database_leaves_a_warning_naming_the_step() {
+    use crate::logging::{LogFiles, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
+
+    let dir = TempDir::new().unwrap();
+    let log_dir = dir.path().join("logs");
+    let files = LogFiles::open(&log_dir, SERVER_LOG_LIMITS).unwrap();
+    let error =
+        ApiError::from(anyhow::Error::new(sqlx::Error::PoolTimedOut).context("read the account"));
+    tracing::subscriber::with_default(crate::logging::subscriber_for(files, "info"), || {
+        error.to_problem()
+    });
+    let lines = read_lines(
+        &log_dir,
+        &LogLinesQuery {
+            limit: 10,
+            ..LogLinesQuery::default()
+        },
+    )
+    .unwrap()
+    .0;
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(lines[0].level, LogLevel::Warn);
+    assert!(lines[0].text.contains("database-busy"), "{}", lines[0].text);
+    assert!(
+        lines[0].text.contains("read the account"),
+        "{}",
+        lines[0].text
+    );
+}
+
+/// A write that meets another connection's write lock until the busy
+/// timeout runs out answers `503 Service Unavailable` (`database-busy`) with
+/// `Retry-After`, not `500 Internal Server Error` (#2084). The pool's busy
+/// timeout is zero, so SQLite answers `SQLITE_BUSY` at once and the test
+/// waits on nothing.
+#[tokio::test]
+async fn a_write_that_meets_a_held_write_lock_answers_database_busy() {
+    let fixture =
+        crate::test_support::test_fixture_with_busy_timeout(std::time::Duration::ZERO).await;
+    let account =
+        crate::test_support::register_via_api(&fixture.state, "alice", "hunter2hunter2").await;
+    let server = crate::test_support::serve(&fixture.state).await;
+    let mut writer = fixture.conn().await;
+    sqlx::query(crate::db::engine::BEGIN_IMMEDIATE_SQL)
+        .execute(&mut *writer)
+        .await
+        .unwrap();
+
+    let response = http_client()
+        .post(format!("{}/v1/saved-searches", server.base()))
+        .bearer_auth(&account.token)
+        .json(&serde_json::json!({"name": "Ada", "query": "ada"}))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.headers()[header::RETRY_AFTER], "5");
+    let status = response.status();
+    let text = response.text().await.unwrap();
+    let problem = expect_problem(status, &text, ProblemType::DatabaseBusy);
+    assert_eq!(problem.retry_after, Some(5));
+    sqlx::query("ROLLBACK").execute(&mut *writer).await.unwrap();
 }
 
 #[test]
@@ -2525,6 +2628,84 @@ fn a_logged_uri_hides_a_search_and_every_value_that_is_not_a_number_or_a_fixed_w
         let uri: axum::http::Uri = uri.parse().unwrap();
         assert_eq!(logged_uri(&uri), logged, "{uri}");
     }
+}
+
+/// A URI longer than the limit is cut on a character boundary and marked,
+/// so a request with a long path, which needs no credential, writes a line
+/// of a bounded length (#2088). One at the limit is kept whole.
+#[test]
+fn a_logged_uri_is_cut_at_its_limit_and_marked() {
+    for filler in ["a", "é"] {
+        // 60 KB of path, near the most a URI holds (64 KiB); `é` is two
+        // bytes, so the cut can land inside one.
+        let long: axum::http::Uri = format!("/{}?q=Ada", filler.repeat(60_000 / filler.len()))
+            .parse()
+            .unwrap();
+        let logged = logged_uri(&long);
+        assert!(logged.len() <= LOGGED_URI_BYTES, "{}", logged.len());
+        assert!(
+            logged.len() > LOGGED_URI_BYTES - LOGGED_URI_CUT.len() - filler.len(),
+            "{}",
+            logged.len()
+        );
+        assert!(logged.ends_with(LOGGED_URI_CUT), "{logged}");
+        assert!(logged.starts_with(&format!("/{filler}")), "{logged}");
+    }
+
+    let at_limit: axum::http::Uri = format!("/{}", "a".repeat(LOGGED_URI_BYTES - 1))
+        .parse()
+        .unwrap();
+    assert_eq!(logged_uri(&at_limit), at_limit.path());
+}
+
+/// A handler that panics is answered like any other internal failure: a
+/// `500 Internal Server Error` problem document carrying the request's id,
+/// the same id as the `x-request-id` header, and one `ERROR` line in the
+/// server's log that says the handler panicked, under that request's id
+/// (#2060). Without the catch, the connection closed with no answer at all.
+#[tokio::test]
+async fn a_handler_that_panics_answers_a_500_problem_with_its_request_id() {
+    async fn panics() -> StatusCode {
+        panic!("the handler this test makes panic");
+    }
+
+    let fixture = test_fixture().await;
+    let routes = Router::new().route("/v1/panics", axum::routing::get(panics));
+    let (response, lines) = crate::test_support::lines_written_by("info", async {
+        let server =
+            crate::test_support::serve_router(with_server_layers(routes, fixture.state.clone()))
+                .await;
+        http_client()
+            .get(format!("{}/v1/panics", server.base()))
+            .send()
+            .await
+            .expect("the server answers a request whose handler panicked")
+    })
+    .await;
+
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let header_id = response
+        .headers()
+        .get(crate::request_id::HEADER)
+        .and_then(|v| v.to_str().ok())
+        .expect("the answer carries its request id")
+        .to_string();
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["status"], 500, "{body}");
+    assert_eq!(body["type"], crate::problem::INTERNAL_TYPE, "{body}");
+    assert_eq!(body["request_id"], header_id.as_str(), "{body}");
+
+    let errors: Vec<_> = lines
+        .iter()
+        .filter(|line| line.level == LogLevel::Error)
+        .collect();
+    assert_eq!(errors.len(), 1, "{lines:#?}");
+    assert!(
+        errors[0].text.contains("the request's handler panicked"),
+        "{}",
+        errors[0].text
+    );
+    assert!(errors[0].text.contains(&header_id), "{}", errors[0].text);
 }
 
 /// Every `/v1` answer that sets no `Cache-Control` of its own carries
