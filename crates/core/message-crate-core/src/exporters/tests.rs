@@ -15,14 +15,14 @@ static FOUND: LazyLock<Arc<dyn MediaTools>> = LazyLock::new(|| Arc::new(FakeTool
 fn no_ffmpeg() -> FormContext<'static> {
     FormContext {
         scratch_dir: Path::new("/cache"),
-        tools: &MISSING,
+        tools: Arc::clone(&MISSING),
     }
 }
 
 /// [`no_ffmpeg`], with ffmpeg available.
 fn with_ffmpeg() -> FormContext<'static> {
     FormContext {
-        tools: &FOUND,
+        tools: Arc::clone(&FOUND),
         ..no_ffmpeg()
     }
 }
@@ -404,7 +404,7 @@ fn the_tools_the_caller_passes_reach_the_run() {
         .to_config(
             Exporter::Whatsapp,
             FormContext {
-                tools: &tools,
+                tools: Arc::clone(&tools),
                 ..no_ffmpeg()
             },
         )

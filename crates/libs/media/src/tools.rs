@@ -344,9 +344,10 @@ impl MediaTools for InstalledTools {
         self.tools_dir.as_deref()
     }
 
-    /// Both on `PATH`, else both in the Tools Directory ([`find_tools`]). Every call searches again, so a program
-    /// that arrives, moves or leaves is seen at once without a restart; only
-    /// the `-version` answer of a file is kept ([`answered`]).
+    /// Both on `PATH`, else both in the Tools Directory ([`find_tools`]).
+    /// Every call searches again, so a program that arrives, moves or leaves
+    /// is seen at once without a restart; only the `-version` answer of a
+    /// file is kept ([`answered`]).
     ///
     /// # Errors
     ///

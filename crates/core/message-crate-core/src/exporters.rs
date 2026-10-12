@@ -283,7 +283,7 @@ impl Default for Form {
 
 /// What [`Form::to_config`] needs to know beyond the form. The caller passes
 /// it in, so validating a form reads no process-wide state.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct FormContext<'a> {
     /// The Scratch Directory the run's scratch data goes under
     /// ([`ExporterConfig::scratch_dir`]).
@@ -294,7 +294,7 @@ pub struct FormContext<'a> {
     /// refuses Convert and Compress unless it obfuscates. The form asks
     /// whether they can be used only for those two choices, so a form that
     /// asks for neither starts no program.
-    pub tools: &'a Arc<dyn MediaTools>,
+    pub tools: Arc<dyn MediaTools>,
 }
 
 impl Form {
@@ -369,7 +369,7 @@ impl Form {
             output: OutputConfig {
                 obfuscate,
                 media: MediaConfig {
-                    tools: Arc::clone(ctx.tools),
+                    tools: ctx.tools,
                     ..media
                 },
                 ..OutputConfig::new(self.output.trim(), self.output_format)

@@ -22,7 +22,7 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use media::{CompressOptions, InstalledTools, MaxResolution, MediaTools};
+use media::{CompressOptions, InstalledTools, MaxResolution};
 use message_crate_core::{
     AttachmentMedia, ExporterConfig, Form, FormContext, OutputFormat, RunResult,
 };
@@ -438,10 +438,9 @@ fn build_exporter_config(
         exporters::import_source(source).ok_or_else(|| format!("unsupported source '{source}'"))?;
     (import_source.fill)(&mut form, path, options);
 
-    let tools: Arc<dyn MediaTools> = Arc::new(installed.clone());
     let ctx = FormContext {
         scratch_dir,
-        tools: &tools,
+        tools: Arc::new(installed.clone()),
     };
     form.to_config(import_source.exporter, ctx)
         .map_err(|errors| errors.join("; "))
