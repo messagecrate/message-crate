@@ -53,8 +53,8 @@ use crate::paging::{
     DEFAULT_LIST_LIMIT, Page, PageQuery, page_from_rows, page_params, parse_status, sorted_page,
 };
 use crate::server::{
-    ApiError, AppState, Created, ImportAccess, content_type_base, is_jsonl_content_type,
-    resolve_import_account, run_blocking, stream_body_to_file,
+    ApiError, AppState, BATCH_BODY_IDLE, Created, ImportAccess, content_type_base,
+    is_jsonl_content_type, resolve_import_account, run_blocking, stream_body_to_file,
 };
 use crate::text_caps::{
     MAX_DEVICE_ID_CHARS, MAX_IMPORT_ERROR_TEXT_CHARS, MAX_IMPORT_NOTE_TEXT_CHARS,
@@ -1863,21 +1863,27 @@ pub(crate) async fn create_import_batch(
     if is_jsonl_content_type(ct) {
         // A body that says it is over the cap is refused before it waits
         // for a slot; one that does not say is cut off as it is read.
-        if crate::server::declared_length(&headers)
-            .is_some_and(|bytes| bytes > MAX_IMPORT_BATCH_BYTES as u64)
-        {
+        if crate::server::declared_over(&headers, MAX_IMPORT_BATCH_BYTES) {
             return Err(ApiError::PayloadTooLarge);
         }
         // The slot comes before the body, so a batch waiting behind the
-        // running imports holds no disk (#2095).
+        // running imports holds no disk (#2095). The read gives up once the
+        // body stops arriving, so a client gone part-way never holds the
+        // slot for good.
         let permit = take_import_slot(&state).await?;
-        let temp = crate::imports_api::batch_bodies::new_dir(&state.cfg.paths.data_dir)
+        let temp = batch_bodies::new_dir(&state.cfg.paths.data_dir)
             .map_err(|e| ApiError::Internal(anyhow::anyhow!("import batch directory: {e}")))?;
         let jsonl_path = temp.path().join("_import.jsonl");
-        let n =
-            stream_body_to_file(request.into_body(), &jsonl_path, MAX_IMPORT_BATCH_BYTES).await?;
+        let body = crate::server::idle_bounded(request.into_body(), BATCH_BODY_IDLE);
+        let n = stream_body_to_file(body, &jsonl_path, MAX_IMPORT_BATCH_BYTES).await?;
         if n == 0 {
             return Err(ImportFailure::Empty.into());
+        }
+        // A server told to stop while the body arrived refuses the batch
+        // before its import starts, as it refuses one waiting for a slot,
+        // so the stop never waits for a whole import more.
+        if state.import_slots.is_closed() {
+            return Err(server_stopping());
         }
         // The import pipeline does blocking file IO (JSONL parse, asset
         // hashing and copies) — run it off the async workers so a large
@@ -1928,11 +1934,14 @@ async fn take_import_slot(state: &AppState) -> Result<OwnedSemaphorePermit, ApiE
     Arc::clone(&state.import_slots)
         .acquire_owned()
         .await
-        .map_err(|_| {
-            ApiError::ServerStopping(
-                "the server is stopping, so it did not start this batch; send it again once the server is running".into(),
-            )
-        })
+        .map_err(|_| server_stopping())
+}
+
+/// The refusal of a batch the server did not start because it is stopping.
+fn server_stopping() -> ApiError {
+    ApiError::ServerStopping(
+        "the server is stopping, so it did not start this batch; send it again once the server is running".into(),
+    )
 }
 
 /// `create_import_batch` is the only entry point, and the run's `source`,

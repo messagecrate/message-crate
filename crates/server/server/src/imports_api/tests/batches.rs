@@ -121,6 +121,83 @@ async fn a_batch_one_byte_over_the_cap_is_payload_too_large() {
     );
 }
 
+/// A body sent with no `Content-Length` is cut off at the same cap as it is
+/// read, so a script streaming one large batch is refused as well.
+#[tokio::test]
+async fn a_streamed_batch_over_the_cap_is_payload_too_large() {
+    use futures_util::StreamExt;
+    let (state, _fixture, token) = importer().await;
+    let path = batches_path(&state, &token, "imessage").await;
+    let mib = vec![b'\n'; 1024 * 1024];
+    let chunks = message_crate_api_types::MAX_IMPORT_BATCH_BYTES / mib.len();
+    let body = futures_util::stream::iter(0..chunks)
+        .map(move |_| Ok::<_, std::io::Error>(axum::body::Bytes::from(mib.clone())))
+        .chain(futures_util::stream::iter([Ok(
+            axum::body::Bytes::from_static(b"\n"),
+        )]));
+
+    let (status, text) = crate::test_support::post_raw(
+        &state,
+        &path,
+        &token,
+        "application/jsonl",
+        reqwest::Body::wrap_stream(body),
+    )
+    .await;
+    crate::test_support::expect_problem(
+        status,
+        &text,
+        crate::problem::ProblemType::PayloadTooLarge,
+    );
+}
+
+/// A batch whose body is still arriving when the server is told to stop
+/// holds a slot already, but is refused before its import starts and stores
+/// nothing, so the stop never waits for a whole import more (#2203).
+#[tokio::test]
+async fn a_batch_still_arriving_when_the_server_stops_is_refused_and_stores_nothing() {
+    use futures_util::StreamExt;
+    let (state, _fixture, token) = importer().await;
+    let path = batches_path(&state, &token, "imessage").await;
+    let (finish, finished) = tokio::sync::oneshot::channel::<()>();
+    let rest = futures_util::stream::once(async move {
+        let _ = finished.await;
+    })
+    .filter_map(|()| async { None::<Result<axum::body::Bytes, std::io::Error>> });
+    let body =
+        futures_util::stream::iter([Ok(axum::body::Bytes::from(one_message_batch()))]).chain(rest);
+    let posting = crate::request_id::spawn_in_current_span({
+        let state = state.clone();
+        let token = token.clone();
+        async move {
+            crate::test_support::post_raw(
+                &state,
+                &path,
+                &token,
+                "application/jsonl",
+                reqwest::Body::wrap_stream(body),
+            )
+            .await
+        }
+    });
+
+    // The batch's directory exists once it holds a slot and reads its body.
+    let root = crate::imports_api::batch_bodies::root(&state.cfg.paths.data_dir);
+    while std::fs::read_dir(&root).map_or(true, |mut entries| entries.next().is_none()) {
+        tokio::task::yield_now().await;
+    }
+    state.on_stop_signal()();
+    finish.send(()).unwrap();
+
+    let (status, text) = posting.await.unwrap();
+    crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::ServerStopping);
+    let stored: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages")
+        .fetch_one(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(stored, 0, "the refused batch stored a message");
+}
+
 /// One iMessage conversation with one message.
 fn one_message_batch() -> String {
     format!(

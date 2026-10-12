@@ -1232,7 +1232,7 @@ async fn limit_request_body(
     } else {
         MAX_REQUEST_BODY_BYTES
     };
-    if declared_length(request.headers()).is_some_and(|bytes| bytes > limit as u64) {
+    if declared_over(request.headers(), limit) {
         return ApiError::PayloadTooLarge.into_response();
     }
     let request =
@@ -1974,13 +1974,43 @@ pub(crate) fn upload_content_type(headers: &HeaderMap) -> Option<String> {
     }
 }
 
-/// The body length the request's `Content-Length` declares, or `None` when it
-/// declares none that reads as a number.
-pub(crate) fn declared_length(headers: &HeaderMap) -> Option<u64> {
+/// Whether the request's `Content-Length` declares a body over `limit`
+/// bytes. A request that declares no length, or one that does not read as a
+/// number, is not over: its body is cut off as it is read.
+pub(crate) fn declared_over(headers: &HeaderMap, limit: usize) -> bool {
     headers
         .get(header::CONTENT_LENGTH)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok())
+        .is_some_and(|bytes| bytes > limit as u64)
+}
+
+/// How long an import batch's body may go without a byte arriving before
+/// the read gives up. The batch holds an import slot while it reads, and
+/// there are only two, so a client that stops sending part-way, such as a
+/// laptop that goes to sleep, must not hold one for good.
+pub(crate) const BATCH_BODY_IDLE: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The read of a body ended because nothing arrived for the idle bound.
+#[derive(Debug, thiserror::Error)]
+#[error("no bytes arrived for {} seconds", .0.as_secs())]
+pub(crate) struct BodyStalled(std::time::Duration);
+
+/// `body`, ending with a [`BodyStalled`] error once `idle` passes with no
+/// chunk arriving. Reading it answers `400 Bad Request` then, as a body that
+/// stops arriving for any other reason does.
+pub(crate) fn idle_bounded(body: axum::body::Body, idle: std::time::Duration) -> axum::body::Body {
+    type BoxError = Box<dyn std::error::Error + Send + Sync>;
+    let chunks =
+        futures_util::stream::unfold(Some(body.into_data_stream()), move |stream| async move {
+            let mut stream = stream?;
+            match tokio::time::timeout(idle, stream.next()).await {
+                Ok(Some(chunk)) => Some((chunk.map_err(BoxError::from), Some(stream))),
+                Ok(None) => None,
+                Err(_) => Some((Err(BoxError::from(BodyStalled(idle))), None)),
+            }
+        });
+    axum::body::Body::from_stream(chunks)
 }
 
 /// True when the request body is JSON Lines (one JSON object per line).

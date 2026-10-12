@@ -65,7 +65,10 @@ demo-seed = { path = "../demo-seed", features = ["testutil"] }
 media = { path = "../../libs/media", features = ["testutil"] }
 # `message_ir::testutil::sample_attachment`, which `test_support::lines::attachment` builds on.
 message-ir = { workspace = true, features = ["testutil"] }
-reqwest = { workspace = true }
+# `stream`, so a test can send a body with no declared length.
+reqwest = { workspace = true, features = ["stream"] }
+# `test-util`, so a test can pause time and let a wait pass at once.
+tokio = { version = "1.53.0", features = ["test-util"] }
 # The desktop app's import library, so a test can run an Upload as the app
 # sends one against the server binary.
 message-crate-import = { path = "../../libs/import" }

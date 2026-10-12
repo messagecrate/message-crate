@@ -1287,7 +1287,7 @@ pub(crate) async fn replace_asset_upload_part(
         })
         .await?
     };
-    if crate::server::declared_length(&headers).is_some_and(|bytes| bytes > part_size as u64) {
+    if crate::server::declared_over(&headers, part_size) {
         return Err(ApiError::PayloadTooLarge);
     }
     let body = read_body_limited(request.into_body(), part_size).await?;
