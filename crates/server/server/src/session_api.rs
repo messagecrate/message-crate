@@ -182,7 +182,7 @@ pub async fn create_session(
     let app = crate::server::connecting_app(&headers);
     // `log_in` has given its connection back by the time it answers, so a
     // refusal waits holding none.
-    match log_in(&state, &username, &req.password, app.as_ref(), Utc::now()).await? {
+    match log_in(&state, &username, &req.password, app.as_ref()).await? {
         Some(body) => Ok(Created {
             location: "/v1/session".to_string(),
             body,
@@ -192,20 +192,20 @@ pub async fn create_session(
 }
 
 /// Check `username` and `password` and open the account's Session.
-/// `Ok(None)` when the login is refused; the Audit Trail records why. Every
-/// entry it writes is stamped `now`.
+/// `Ok(None)` when the login is refused; the Audit Trail records why. Each
+/// entry is stamped when it is written, after the password check, so the
+/// entries keep the order the writes land in however long each check took.
 async fn log_in(
     state: &AppState,
     username: &str,
     password: &str,
     app: Option<&ConnectingApp>,
-    now: DateTime<Utc>,
 ) -> Result<Option<CreateSessionResponse>, ApiError> {
     let mut conn = state.db.acquire().await?;
     let account_id = account_profile::lookup_account_by_username(&mut conn, username).await?;
     // Refused logins for usernames nobody holds are kept for a fixed time,
     // and a login is when the old ones go.
-    audit_trail::trim_refused_logins(&mut conn, now).await?;
+    audit_trail::trim_refused_logins(&mut conn, Utc::now()).await?;
 
     // The username the account's row holds. An account deleted since the
     // lookup above is a username nobody holds by now, so it takes the same
@@ -229,7 +229,7 @@ async fn log_in(
             None,
             AuditReason::UnknownUsername,
             app,
-            now,
+            Utc::now(),
         )
         .await?;
         return Ok(None);
@@ -251,6 +251,7 @@ async fn log_in(
     drop(conn);
     let verified = verify_login_password(password_hash.as_deref(), password).await?;
     let mut conn = state.db.acquire().await?;
+    let now = Utc::now();
     if !verified {
         audit_trail::record_refused_login(
             &mut conn,
