@@ -960,6 +960,13 @@ released versions carry their date on the heading.
   seconds.** SMS Backup+ itself records an MMS's time in seconds, and the
   import now reads it that way, so an MMS exported to SMS Backup+ mail goes
   out to the second (#2603).
+- 2026-10-12: **An export's conversation files mark each attachment it
+  could not fetch.** The export's log named the attachment, but the
+  conversation file still pointed at a file that was not there with nothing
+  saying why, so importing or converting that export later reported a plain
+  missing file. The conversation file now marks the attachment as not
+  fetched, an import of that export keeps the mark, and the conversation
+  shows the attachment as not fetched by the export (#2899).
 - 2026-10-11: **One missing attachment no longer throws away a whole
   export.** When the desktop app could not fetch one attachment, for
   instance because its file was gone from the server, the export stopped
