@@ -1264,11 +1264,12 @@ carry their date on the heading.
   deleted text readable in the database file, its search index, and the
   write-ahead log beside it, so anyone who copied the files later could
   still read it. Now the server writes over it, writes the search index
-  again without it, and clears the log. Each delete takes about a second
-  longer on a Message Crate of 636,000 messages. Attachment files, backups
-  and exports made earlier, and the copy kept before a database rebuild
-  still hold what they held; the Trash page of the user guide says what
-  covers them (#2108).
+  again without it, and clears the log. Each delete takes up to about a
+  second longer on a Message Crate of 636,000 messages. Attachment files,
+  backups and exports made earlier, the copy kept before a database
+  rebuild, and the backups the messages were imported from still hold what
+  they held; the Trash page of the user guide says what covers them
+  (#2108).
 - 2026-10-12: **Other people who log in to the same computer can no longer
   read your messages.** The database, the directory with every account's
   attachments, and the server's log were readable by every user of the
@@ -1490,6 +1491,11 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-12: Text deleted for good before this release can still be in
+  the database file's free space and in its search index. The first delete
+  for good after the update clears the search index, and the Trash page of
+  the user guide gives the command that erases both with the server
+  stopped (#2108).
 - 2026-10-12: The server now makes its data directory and its database
   file readable by its own user alone each time it opens the database. A
   backup job or another program that read either as a different user,

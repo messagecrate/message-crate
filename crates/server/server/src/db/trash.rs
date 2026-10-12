@@ -275,9 +275,7 @@ pub enum OrphanedFile {
 /// Permanently delete a trashed conversation, or make a trashed contact
 /// Unknown again, its `last_modified` set to `now`. See the module notes for
 /// what each means. A conversation's Audit Trail entry is stamped `now` too.
-/// What was deleted is erased from the database's files
-/// ([`crate::db::erase`]): a conversation's words from the search indexes in
-/// the same transaction, and the write-ahead log once it commits.
+/// What was deleted is erased from the database's files ([`crate::db::erase`]).
 ///
 /// # Errors
 ///
@@ -314,15 +312,15 @@ pub async fn delete_trashed(
                 now,
             )
             .await?;
-            erase::erase_deleted_words(&mut tx).await?;
+            erase::erase_and_commit(tx).await?;
             orphaned
         }
         Trashable::Contact(id) => {
             forget_contacts(&mut tx, account_id, &[id], now).await?;
+            tx.commit().await?;
             Vec::new()
         }
     };
-    tx.commit().await?;
     erase::clear_write_ahead_log(conn).await;
     Ok(DeleteOutcome::Deleted(orphaned))
 }
@@ -331,9 +329,7 @@ pub async fn delete_trashed(
 /// every trashed contact Unknown, its `last_modified` set to `now`, then
 /// clear both marker tables and record it in the Audit Trail at `now`. One
 /// transaction, so the trash is either emptied or untouched. What was
-/// deleted is erased from the database's files ([`crate::db::erase`]): its
-/// words from the search indexes in that transaction, and the write-ahead
-/// log once it commits.
+/// deleted is erased from the database's files ([`crate::db::erase`]).
 ///
 /// # Errors
 ///
@@ -386,8 +382,7 @@ pub async fn empty_trash(
         now,
     )
     .await?;
-    erase::erase_deleted_words(&mut tx).await?;
-    tx.commit().await?;
+    erase::erase_and_commit(tx).await?;
     erase::clear_write_ahead_log(conn).await;
     Ok(EmptiedTrash {
         orphaned,

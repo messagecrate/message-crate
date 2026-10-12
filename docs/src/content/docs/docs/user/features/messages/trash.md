@@ -98,13 +98,30 @@ A copy of the database's files made afterwards holds none of the deleted text.
 
 Does deleting take longer on a large Message Crate?
 
-Yes, by about a second on a Message Crate of 636,000 messages, because the search index is written again whole each time.
+Yes, by up to about a second on a Message Crate of 636,000 messages, because the search index is written again whole each time.
 
 When another request is reading the database at that moment, the write-ahead log can't be cleared at once.
-The server clears it the next time the log starts over, which happens on its own as later changes are written.
+The server tries again every 30 seconds until it is cleared, and stopping the server clears it as well.
 
-Three places outside the database's files keep what they held:
+The database's files are not the only place the messages are kept.
+The attachment files, the copies made before the delete, and the sources the messages came from keep what they held.
 
-- **Attachment files.** The server removes a deleted attachment's file, and the disk keeps its bytes in free space until something else is written there. Full-disk encryption is what keeps them unreadable on a lost or stolen disk, as [Encrypt the disk that holds the volume](/docs/user/features/owner/run-on-another-machine/#encrypt-the-disk-that-holds-the-volume) describes.
-- **Copies made before the delete**, such as a backup of the data directory or an export. Each holds the messages it was made with until it is deleted.
-- **The copy kept before a schema rebuild**, named like `messagecrate.db.before-rebuild-1176793189`. It holds every message the database held before the rebuild until it is deleted, as [Update Message Crate](/docs/user/features/owner/update/) describes.
+A deleted attachment's file is removed, but the disk keeps its bytes in free space until something else is written there.
+Full-disk encryption is what keeps them unreadable on a lost or stolen disk, as [Encrypt the disk that holds the volume](/docs/user/features/owner/run-on-another-machine/#encrypt-the-disk-that-holds-the-volume) describes.
+
+A backup of the data directory or an export made before the delete holds the messages it was made with until it is deleted.
+So does the copy the server keeps before a schema rebuild, named like `messagecrate.db.before-rebuild-1176793189`, as [Update Message Crate](/docs/user/features/owner/update/) describes.
+
+The phone or app backup the messages were imported from still holds them, and so do the conversation files the desktop app wrote while importing it.
+Deleting from Message Crate leaves both as they are.
+
+What about text deleted for good before Message Crate 0.11.0?
+
+Releases before 0.11.0 left its words in the search index and its rows in the database file's free space.
+The first delete for good after the update writes the search index again without those words.
+The free space keeps the rows until that space is used again.
+With the server stopped, the `sqlite3` command-line tool erases both at once, run in the data directory:
+
+```bash title="With the server stopped: write the search index and the database file again"
+sqlite3 messagecrate.db "INSERT INTO messages_fts(messages_fts) VALUES('optimize'); INSERT INTO message_versions_fts(message_versions_fts) VALUES('optimize'); VACUUM;"
+```

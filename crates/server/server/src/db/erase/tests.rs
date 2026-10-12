@@ -16,7 +16,7 @@ use super::*;
 use crate::db::account_profile;
 use crate::db::audit_trail::AuditActor;
 use crate::db::trash::{self, Trashable};
-use crate::test_support::{ConversationRow, MessageRow, fixed_instant};
+use crate::test_support::{ConversationRow, MessageRow, fake_sha256, fixed_instant};
 
 const ACCOUNT: i64 = 7;
 const OTHER_ACCOUNT: i64 = 8;
@@ -81,6 +81,19 @@ async fn either_holds(conn: &mut SqliteConnection, word: &str) -> bool {
     !traces(conn, &[word]).await.is_empty()
 }
 
+/// Insert the phone handle `raw` of `account_id`, returning its id.
+async fn insert_handle(conn: &mut SqliteConnection, account_id: i64, raw: &str) -> i64 {
+    sqlx::query_scalar(
+        "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
+         VALUES ($1, $2, $2, 'phone', 'phone') RETURNING id",
+    )
+    .bind(account_id)
+    .bind(raw)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap()
+}
+
 /// Insert a group conversation of `account_id` titled [`TITLE`] on the
 /// handle `raw`, with one message holding every deleted word: its body,
 /// subject, an attachment's name and transcription, and an earlier version.
@@ -90,15 +103,7 @@ async fn insert_conversation_with_every_word(
     account_id: i64,
     raw: &str,
 ) -> i64 {
-    let handle_id: i64 = sqlx::query_scalar(
-        "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES ($1, $2, $2, 'phone', 'phone') RETURNING id",
-    )
-    .bind(account_id)
-    .bind(raw)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap();
+    let handle_id = insert_handle(conn, account_id, raw).await;
     let conversation_id = ConversationRow::group(account_id, handle_id, TITLE)
         .insert(conn)
         .await;
@@ -116,7 +121,7 @@ async fn insert_conversation_with_every_word(
          VALUES ($1, $2, 'aa/a.m4a', $3, $4)",
     )
     .bind(message_id)
-    .bind("a".repeat(64))
+    .bind(fake_sha256('a'))
     .bind(format!("{FILE_NAME}.m4a"))
     .bind(format!("I said {TRANSCRIPTION} twice"))
     .execute(&mut *tx)
@@ -135,15 +140,7 @@ async fn insert_conversation_with_every_word(
 /// Insert a conversation of `account_id` on the handle `raw` with one
 /// message whose body is [`KEPT`].
 async fn insert_kept_conversation(conn: &mut SqliteConnection, account_id: i64, raw: &str) {
-    let handle_id: i64 = sqlx::query_scalar(
-        "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES ($1, $2, $2, 'phone', 'phone') RETURNING id",
-    )
-    .bind(account_id)
-    .bind(raw)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap();
+    let handle_id = insert_handle(conn, account_id, raw).await;
     let conversation_id = ConversationRow::new(account_id, handle_id)
         .insert(conn)
         .await;
@@ -294,14 +291,11 @@ async fn deleting_an_account_leaves_no_deleted_text_in_the_file_or_its_log() {
 }
 
 /// Another connection still reading keeps the log from being cleared at
-/// once. The log is cleared the next time it starts over: a checkpoint
-/// SQLite runs on its own once the reader is done, then the next commit,
-/// which `journal_size_limit` 0 cuts the log back to.
+/// once. The database is remembered, and the next retry, once the read has
+/// ended, clears the log.
 #[tokio::test]
-async fn a_log_kept_by_a_reader_is_cleared_when_it_next_starts_over() {
-    // No wait on the reader, so the checkpoint answers busy at once.
-    let fixture =
-        crate::test_support::test_fixture_with_busy_timeout(std::time::Duration::ZERO).await;
+async fn a_log_kept_by_a_reader_is_cleared_by_the_next_retry() {
+    let fixture = crate::test_support::test_fixture().await;
     fixture.account_with_id(ACCOUNT, "a").await;
     let mut conn = fixture.conn().await;
     let id = insert_conversation_with_every_word(&mut conn, ACCOUNT, "+15550101").await;
@@ -309,7 +303,7 @@ async fn a_log_kept_by_a_reader_is_cleared_when_it_next_starts_over() {
     trash::move_to_trash(&mut conn, ACCOUNT, Trashable::Conversation(id))
         .await
         .unwrap();
-    let (_, wal) = files(&mut conn).await;
+    let (db, wal) = files(&mut conn).await;
     assert!(
         holds(&wal, BODY),
         "the log holds the body before the delete"
@@ -329,24 +323,22 @@ async fn a_log_kept_by_a_reader_is_cleared_when_it_next_starts_over() {
         .await
         .unwrap();
     assert!(holds(&wal, BODY), "the reader kept the log as it was");
-    assert_eq!(clear_write_ahead_log(&mut conn).await, LogCleared::Busy);
+    assert!(LOGS_TO_CLEAR.lock().unwrap().contains(&db));
+    // The connection's own wait is back after the checkpoint's short one.
+    let own: i64 = sqlx::query_scalar("SELECT timeout FROM pragma_busy_timeout")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(own, 15_000);
 
     sqlx::query("ROLLBACK").execute(&mut *reader).await.unwrap();
     drop(reader);
-    // The checkpoint SQLite runs on its own after a commit: it copies the
-    // log into the file and lets the next commit start the log over.
-    sqlx::query("PRAGMA wal_checkpoint(PASSIVE)")
-        .execute(&mut *conn)
-        .await
-        .unwrap();
-    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
-    sqlx::query("INSERT INTO contacts (account_id, preferred_name) VALUES ($1, 'Pat')")
-        .bind(ACCOUNT)
-        .execute(&mut *tx)
-        .await
-        .unwrap();
-    tx.commit().await.unwrap();
+    drop(conn);
+    retry_clearing(&fixture.state.db).await;
 
+    assert!(!LOGS_TO_CLEAR.lock().unwrap().contains(&db));
+    assert_eq!(std::fs::metadata(&wal).unwrap().len(), 0);
+    let mut conn = fixture.conn().await;
     assert_only_the_kept_text_is_left(&mut conn).await;
 }
 

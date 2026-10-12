@@ -1730,6 +1730,9 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
         Arc::clone(&state.cfg),
         Arc::clone(&state.media_tools),
     );
+    // Clears a write-ahead log that a read kept from being cleared after a
+    // delete for good (#2108).
+    crate::db::erase::keep_retrying(state.db.clone());
     // Reported as they stand now; each upload reads them again. Any stored
     // limit starts the server: a part is never larger than the limit.
     let upload_limits = state.upload_limits().await?;
