@@ -225,7 +225,7 @@ pub async fn run_reset_demo(size: DemoSize, cfg: &Config) -> Result<ResetDemoSta
     // nothing sets the flag.
     let seed_stats = demo_seed::generate_size_to(size, &bundle, &AtomicBool::new(false))
         .context("generate demo bundle (demo-seed)")?;
-    for line in demo_seed::count_lines(&seed_stats) {
+    for line in demo_seed::summary_lines(&seed_stats) {
         progress.say(line);
     }
     let reset_stats = reset_prepared_bundle(cfg, &bundle, DEMO_ACCOUNT_ID).await?;

@@ -46,7 +46,7 @@ fn main() -> Result<()> {
     let stats = demo_seed::generate(&cfg)?;
     println!("The Demo Data is written to {}", cfg.out);
     println!("  seed:          {}", cfg.seed);
-    for line in demo_seed::count_lines(&stats) {
+    for line in demo_seed::summary_lines(&stats) {
         println!("  {line}");
     }
     Ok(())

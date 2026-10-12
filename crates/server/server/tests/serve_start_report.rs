@@ -11,7 +11,7 @@ use std::time::Instant;
 use message_crate_serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE;
 
 use common::log::{listen_then_close_stderr, newest_log};
-use common::{Running, WAIT, empty_message_crate, listen, serve};
+use common::{Running, WAIT, empty_message_crate, listen, new_message_crate, serve};
 
 #[test]
 fn serve_says_it_listens_and_a_second_serve_exits_with_the_lock_held_code() {
@@ -85,9 +85,7 @@ fn serve_writes_its_start_up_lines_in_the_server_log() {
 #[test]
 fn a_database_that_cannot_be_opened_is_named_in_the_server_log() {
     let root = tempfile::tempdir().unwrap();
-    let data_dir = root.path().join("data");
-    let static_dir = root.path().join("static");
-    std::fs::create_dir_all(&static_dir).unwrap();
+    let (data_dir, static_dir) = new_message_crate(root.path());
     // A directory where the database file should be.
     std::fs::create_dir_all(data_dir.join("messagecrate.db")).unwrap();
 

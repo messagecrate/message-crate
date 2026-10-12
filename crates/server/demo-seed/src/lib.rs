@@ -119,7 +119,7 @@ pub fn generate_cancellable(cfg: &SeedConfig, cancel: &AtomicBool) -> Result<Gen
 /// `reset-demo` commands print them, and `serve`, which builds the Demo
 /// Account from the same data, writes nothing to standard output (#2018).
 #[must_use]
-pub fn count_lines(stats: &GenStats) -> [String; 5] {
+pub fn summary_lines(stats: &GenStats) -> [String; 5] {
     [
         format!("contacts:      {}", stats.contacts),
         format!("groups:        {}", stats.groups),

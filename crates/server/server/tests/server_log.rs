@@ -21,7 +21,7 @@ use common::claim::{
 };
 use common::lines::{attachment, conversation_header, message_line};
 use common::log::newest_log;
-use common::{empty_message_crate, listen, serve};
+use common::{empty_message_crate, listen, listen_however_long, new_message_crate, serve};
 
 /// The account's new password.
 const ALICE_NEW_PASSWORD: &str = "Alice-Pw-Next-5Hd2Qm";
@@ -494,13 +494,11 @@ async fn a_refused_request_leaves_a_line_with_its_problem_type() {
 #[test]
 fn the_first_start_builds_the_demo_account_with_nothing_on_standard_output() {
     let root = tempfile::tempdir().unwrap();
-    let data_dir = root.path().join("data");
-    let static_dir = root.path().join("static");
-    std::fs::create_dir_all(&static_dir).unwrap();
+    let (data_dir, static_dir) = new_message_crate(root.path());
     let stdout_path = root.path().join("stdout.txt");
     let stdout = std::fs::File::create(&stdout_path).unwrap();
 
-    let (_server, _address) = listen(
+    let (_server, _address) = listen_however_long(
         serve(&data_dir, &static_dir)
             .env("RUST_LOG", "info")
             .stdout(stdout),

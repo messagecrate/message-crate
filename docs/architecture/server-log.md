@@ -43,7 +43,7 @@ the owner. An error that stops `serve` after the log is open is written at
 a database that cannot be opened, another server holding the operation lock,
 and an address that cannot be bound. When `RUST_LOG` leaves out `ERROR`
 lines, the error and a panic go to stderr as Rust writes them instead, so
-neither is written nowhere. One line is on stderr alone: the one that says
+neither is lost. One line is on stderr alone: the one that says
 where the server listens (`LISTENING_LINE` in
 `crates/libs/serve-protocol`), which the desktop app and the tests read
 there by how it starts.

@@ -80,7 +80,7 @@ pub fn init() {
 ///
 /// The default hook still runs when `RUST_BACKTRACE` asks for a backtrace,
 /// because only it writes one, and when `RUST_LOG` leaves out the `ERROR`
-/// line, so a panic is never written nowhere.
+/// line, so a panic always reaches stderr or the log.
 fn log_panics() {
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -98,7 +98,7 @@ fn log_panics() {
 /// would not start or why it stopped (#2079). Before then, in every other
 /// subcommand, and when `RUST_LOG` leaves out the `ERROR` line, it goes to
 /// stderr alone, as `fn main() -> Result<()>` would write it, so the reason
-/// is never written nowhere.
+/// always reaches stderr.
 pub fn write_failure(error: &anyhow::Error) {
     let writes_files = SERVER_LOG.read().is_ok_and(|slot| slot.is_some());
     if writes_files && tracing::event_enabled!(tracing::Level::ERROR) {

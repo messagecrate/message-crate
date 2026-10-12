@@ -106,6 +106,16 @@ pub fn empty_message_crate(root: &Path) -> (PathBuf, PathBuf) {
     (data_dir, static_dir)
 }
 
+/// An empty website directory under `root`, and the path of a Data
+/// Directory beside it that holds nothing yet, so `serve` starts on a new
+/// database. Returns the two directories. Only some test binaries use it.
+#[allow(dead_code)]
+pub fn new_message_crate(root: &Path) -> (PathBuf, PathBuf) {
+    let static_dir = root.join("static");
+    std::fs::create_dir_all(&static_dir).unwrap();
+    (root.join("data"), static_dir)
+}
+
 /// The address a line of the server's output names, when it is a listening
 /// line that names one. A listening line without an address is passed over
 /// like any other line, and the caller's report of every line it saw shows
@@ -171,4 +181,33 @@ pub fn listen(command: &mut Command) -> (Running, SocketAddr) {
             ),
         }
     }
+}
+
+/// [`listen`] with no deadline, for a start that builds the Demo Account
+/// first, which takes as long as the machine needs: a slow machine makes
+/// the test slower, never failing. A server that closes its output first
+/// still fails the test, with every line it wrote. Only some test binaries
+/// use it.
+#[allow(dead_code)]
+pub fn listen_however_long(command: &mut Command) -> (Running, SocketAddr) {
+    let mut child = Running::spawn(command);
+    let stderr = child.0.stderr.take().unwrap();
+    let (lines, received) = mpsc::channel();
+    // Reads until the server's output closes, so the pipe never fills.
+    thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            let _ = lines.send(line);
+        }
+    });
+    let mut seen = Vec::new();
+    while let Ok(line) = received.recv() {
+        match listening_address(&line) {
+            Some(address) => return (child, address),
+            None => seen.push(line),
+        }
+    }
+    panic!(
+        "the server closed its output before the listening line:\n{}",
+        seen.join("\n")
+    );
 }
