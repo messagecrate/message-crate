@@ -650,6 +650,28 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-12: **An import's connection that stalls is no longer reported as
+  bad data.** When the connection stopped delivering part of an import, the
+  server answered as though the file were damaged. It now says the
+  connection stopped, that nothing is wrong with the messages, and that
+  running the import again continues it. The server gives up on a part
+  after a minute with nothing arriving, as before, or after 5 minutes in
+  all, down from 10, so a stalled import holds up other imports for less
+  time. The owner can change both times in the server's config file with
+  `upload_stall_secs` and `upload_piece_secs`, and the desktop app waits as
+  long as the server it imports into says. The same limits hold for
+  attachments, which now go up in parts of 16 MiB, down from 64 MiB, so a
+  large photo or video arrives in time on the same slow connection a part of
+  an import does (#2897).
+- 2026-10-12: **Logging in while someone else imports no longer waits as
+  long.** The desktop app now sends an import in parts of at most 16 MiB,
+  down from 64 MiB, so the server saves each part in a quarter of the time
+  and other changes, a login among them, wait for it less (#2062).
+- 2026-10-12: **Stopping the server no longer waits for an import part
+  still arriving.** A part that was still arriving when the server was told
+  to stop held up the stop until it had all arrived, up to 10 minutes on a
+  slow connection. The server now stops reading it at once and stores none
+  of it, and running the import again sends it (#2878).
 - 2026-10-11: **An import no longer fills the server's temporary space or
   memory.** The server wrote each import batch it received to the operating
   system's temporary directory. That directory is often small or held in

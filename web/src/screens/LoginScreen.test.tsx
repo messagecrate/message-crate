@@ -128,6 +128,8 @@ function serveAt(answer: (address: string) => Answer) {
       schema_fingerprint: 1,
       journal_mode: "wal",
       asset_max_bytes: 1024,
+      upload_stall_secs: 60,
+      upload_piece_secs: 300,
     };
   });
 }
