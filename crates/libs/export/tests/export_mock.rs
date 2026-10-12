@@ -1620,6 +1620,11 @@ fn an_exported_message_keeps_its_earlier_versions() {
 /// for a test that must act while a request is in hand: `answer` gets the
 /// request line and returns the whole response to write. Returns the base
 /// URL and every request line it saw, in order, without the HTTP version.
+///
+/// httpmock runs no code of the test's when a request arrives, so a test
+/// built on it could press Cancel only after the answer, racing the retry.
+/// The Upload's tests use a server of the same shape for the same reason
+/// (`serve_answering_batches_with` in `message-crate-import`).
 fn serve_by_hand(
     answer: impl Fn(&str) -> String + Send + 'static,
 ) -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
@@ -1697,8 +1702,9 @@ fn requests_to(seen: &std::sync::Mutex<Vec<String>>, prefix: &str) -> usize {
         .count()
 }
 
-/// The routes every run below calls before the one that fails: login, and
-/// the run recorded with every message.
+/// The answer to a route every run below calls before the one that fails:
+/// login, and the run recorded with every message. `None` for any other
+/// request, which the test answers itself.
 fn answer_login_and_create(request: &str) -> Option<String> {
     if request == "GET /v1/session" {
         Some(response(
