@@ -34,9 +34,10 @@ Do not run either Compose file at the same time as `./scripts/run-dev.sh`. That 
 Both files start the container with the same limits. It keeps no Linux capability (`cap_drop: [ALL]`), cannot gain one through a setuid program (`no-new-privileges`), and its root filesystem is read-only (`read_only: true`), with `/tmp` in memory for temporary files. The server writes only under `/app/data`, the data volume, so it runs under all three.
 
 Both files also set `stop_grace_period: 40s`.
-A stopping server waits up to 30 seconds for the requests in flight, such as an import batch, before it stops without them (`STOP_DRAIN_LIMIT` in `crates/server/server/src/server.rs`), and Docker's default of 10 seconds would kill it part-way, with no line in the log saying why.
-The 10 seconds more leave time for the server to stop its conversions and exit after its own limit, so Docker never has to kill it.
-The documented `docker run` commands carry the same 40 seconds as `--stop-timeout 40`, and a test in the server's crate fails when a Compose file or one of those commands gives less than the server's limit.
+A stopping server waits up to 30 seconds for the requests in flight, such as an import batch, and for its conversions to stop, before it stops without them (`STOP_DRAIN_LIMIT` in `crates/server/server/src/server.rs`).
+Docker's default of 10 seconds would kill it part-way, with no line in the log saying why.
+The 10 seconds more leave time for the server to write its log and exit after its own limit, so Docker never has to kill it.
+The documented `docker run` commands carry the same 40 seconds as `--stop-timeout 40`, and a test in the server's crate fails when a Compose file or one of those commands gives no more than the server's limit.
 
 A change that makes the server write anywhere else fails with a read-only file system error: at start, the container stops, and during an import or an export, that work fails. `scripts/check-docker-compose.sh` starts `docker/compose.release.yml` on a built image, checks the limits are in force, and logs in to the Demo Account, which catches a write at start.
 It then claims the Message Crate, creates an account, and imports one conversation with an HEVC video through `/v1`, because the Demo Account may not import.

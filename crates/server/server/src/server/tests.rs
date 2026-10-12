@@ -2155,7 +2155,7 @@ async fn sigterm_drains_the_request_in_flight_then_stops_the_server() {
         listener,
         app,
         shutdown_signal(None),
-        || {},
+        || async {},
         std::future::pending::<()>,
     ));
 
@@ -2204,12 +2204,11 @@ async fn sigterm_drains_the_request_in_flight_then_stops_the_server() {
 }
 
 /// A request that does not finish holds a stopping server only until the
-/// drain limit passes, and the server can then name it (#2122). The limit
+/// drain limit passes, and the server's log then names it (#2122). The limit
 /// is a future the test resolves, so nothing here waits on the clock.
 #[tokio::test]
 async fn a_stopping_server_gives_up_on_a_request_still_running_at_the_drain_limit() {
     use std::sync::atomic::{AtomicBool, Ordering};
-    use std::time::Duration;
     use tokio::sync::{Notify, oneshot};
 
     let in_flight = crate::in_flight::InFlight::default();
@@ -2240,7 +2239,7 @@ async fn a_stopping_server_gives_up_on_a_request_still_running_at_the_drain_limi
         async move {
             let _ = stop_rx.await;
         },
-        || {},
+        || async {},
         {
             let limit_started = Arc::clone(&limit_started);
             move || {
@@ -2255,12 +2254,11 @@ async fn a_stopping_server_gives_up_on_a_request_still_running_at_the_drain_limi
     let request = crate::request_id::spawn_in_current_span(async move {
         http_client()
             .post(format!("http://{addr}/never"))
+            .header(crate::request_id::HEADER, "req-never")
             .send()
             .await
     });
-    tokio::time::timeout(Duration::from_secs(10), entered.notified())
-        .await
-        .expect("the request never reached the handler");
+    entered.notified().await;
     assert!(
         !limit_started.load(Ordering::SeqCst),
         "the drain limit counts from the stop, not from the start"
@@ -2268,20 +2266,116 @@ async fn a_stopping_server_gives_up_on_a_request_still_running_at_the_drain_limi
 
     stop_tx.send(()).unwrap();
     limit_tx.send(()).unwrap();
-    let stopped = tokio::time::timeout(Duration::from_secs(10), server)
-        .await
-        .expect("the server kept waiting for the request after the drain limit")
-        .unwrap()
-        .unwrap();
+    let stopped = server.await.unwrap().unwrap();
     assert!(matches!(stopped, Stopped::GaveUp), "{stopped:?}");
     assert!(limit_started.load(Ordering::SeqCst));
-    let running = in_flight.running();
-    assert_eq!(running.len(), 1, "{running:?}");
-    assert_eq!(
-        (running[0].method.as_str(), running[0].uri.as_str()),
-        ("POST", "/never")
+
+    let lines = log_lines_of(|| stopped.log(&in_flight));
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert!(
+        lines.iter().all(|line| line.level == LogLevel::Warn),
+        "{lines:?}"
+    );
+    assert!(
+        lines[0].text.contains("stopped waiting 30 seconds")
+            && lines[0].text.contains("Requests still running: 1."),
+        "{}",
+        lines[0].text
+    );
+    assert!(
+        lines[1].text.contains("request req-never, POST /never"),
+        "{}",
+        lines[1].text
     );
     request.abort();
+}
+
+/// The work the stop signal starts, such as a Demo Account build's cleanup,
+/// holds the stop within the same limit as the requests in flight, so no
+/// work after the limit can outlast Docker's stop time (#2122).
+#[tokio::test]
+async fn a_stopping_server_gives_up_on_its_own_work_at_the_drain_limit() {
+    use tokio::sync::oneshot;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let (stop_tx, stop_rx) = oneshot::channel::<()>();
+    let (limit_tx, limit_rx) = oneshot::channel::<()>();
+    let (work_tx, work_rx) = oneshot::channel::<()>();
+    let server = crate::request_id::spawn_in_current_span(serve_until_shutdown(
+        listener,
+        Router::new(),
+        async move {
+            let _ = stop_rx.await;
+        },
+        move || async move {
+            let _ = work_tx.send(());
+            std::future::pending::<()>().await;
+        },
+        move || async move {
+            let _ = limit_rx.await;
+        },
+    ));
+
+    stop_tx.send(()).unwrap();
+    work_rx.await.expect("the stop signal started the work");
+    limit_tx.send(()).unwrap();
+    let stopped = server.await.unwrap().unwrap();
+    assert!(matches!(stopped, Stopped::GaveUp), "{stopped:?}");
+}
+
+/// A stop with no request in flight still waits for the work the signal
+/// started, and then counts as drained.
+#[tokio::test]
+async fn a_stopping_server_waits_for_its_own_work() {
+    use tokio::sync::oneshot;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let (stop_tx, stop_rx) = oneshot::channel::<()>();
+    let (started_tx, started_rx) = oneshot::channel::<()>();
+    let (finish_tx, finish_rx) = oneshot::channel::<()>();
+    let server = crate::request_id::spawn_in_current_span(serve_until_shutdown(
+        listener,
+        Router::new(),
+        async move {
+            let _ = stop_rx.await;
+        },
+        move || async move {
+            let _ = started_tx.send(());
+            let _ = finish_rx.await;
+        },
+        std::future::pending::<()>,
+    ));
+
+    stop_tx.send(()).unwrap();
+    started_rx.await.expect("the stop signal started the work");
+    assert!(
+        !server.is_finished(),
+        "the server stopped before the work the signal started ended"
+    );
+    finish_tx.send(()).unwrap();
+    let stopped = server.await.unwrap().unwrap();
+    assert!(matches!(stopped, Stopped::Drained), "{stopped:?}");
+}
+
+/// The server log's lines, oldest first, while `f` runs.
+fn log_lines_of(f: impl FnOnce()) -> Vec<LogLine> {
+    use crate::logging::{LogFiles, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
+
+    let dir = TempDir::new().unwrap();
+    let log_dir = dir.path().join("logs");
+    let files = LogFiles::open(&log_dir, SERVER_LOG_LIMITS).unwrap();
+    tracing::subscriber::with_default(crate::logging::subscriber_for(files, "info"), f);
+    let mut lines = read_lines(
+        &log_dir,
+        &LogLinesQuery {
+            limit: 10,
+            ..LogLinesQuery::default()
+        },
+    )
+    .unwrap()
+    .0;
+    lines.reverse();
+    lines
 }
 
 /// `docker stop` kills a container that has not exited when its stop time

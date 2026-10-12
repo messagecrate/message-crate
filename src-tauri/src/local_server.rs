@@ -31,9 +31,11 @@
 //! An app that crashes kills nothing on Unix, so the server ends itself
 //! instead. The app starts it with `--exit-with-parent` and this app's
 //! process id, and the server stops once that process is gone, the way it
-//! stops on Ctrl-C or SIGTERM: ffmpeg stopped and the work in flight finished,
-//! for up to the 30 seconds the server allows it (#1934, #2122). It checks every two seconds on Unix (`PARENT_CHECK_INTERVAL`) and
-//! waits on the app's process handle on Windows. On Windows the Job Object
+//! stops on Ctrl-C or SIGTERM: ffmpeg stopped and the work in flight
+//! finished, for as long as the server's own drain limit allows
+//! (#1934, #2122). It checks every two seconds on Unix
+//! (`PARENT_CHECK_INTERVAL`) and waits on the app's process handle on
+//! Windows. On Windows the Job Object
 //! usually ends the tree first: the system closes the crashed app's handle to
 //! the job, and the job kills the server and its ffmpeg the way closing the
 //! app does. The server's own watch is then left for a server the system

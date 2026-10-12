@@ -1464,6 +1464,12 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-12: A Message Crate started with `docker run` before this release
+  keeps Docker's 10 seconds to stop, which can cut off an import. Stop it
+  with `docker stop -t 40 message-crate`, and start it again with the
+  `docker run` command in the user guide, which now carries
+  `--stop-timeout 40`. The Compose files set the 40 seconds themselves
+  (#2122).
 - 2026-10-08: The **ffmpeg directory** field in Settings → System is gone,
   and the `MESSAGE_CRATE_BIN` and `WTSEXPORTER` environment variables are no
   longer read. ffmpeg and ffprobe beside the app, in a `lib/` directory

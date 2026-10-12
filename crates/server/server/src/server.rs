@@ -1593,6 +1593,13 @@ pub(crate) fn with_server_layers(routes: Router<AppState>, state: AppState) -> R
         // answering a preflight), so their answers are marked as well as the
         // handlers'.
         .layer(axum::middleware::from_fn(no_store_unless_set))
+        // Inside the request id layer, so the id it set is on the request
+        // this records. Every request is tracked until its answer's body is
+        // sent, so a stop that gives up waiting names it (#2122).
+        .layer(axum::middleware::from_fn_with_state(
+            state.in_flight.clone(),
+            crate::in_flight::track,
+        ))
         // One line per response (method, path, status, latency), at `debug`
         // for a successful `Routine` answer and at `info` for every other
         // (`log_response`). Nothing more for a 5xx, because
@@ -1602,13 +1609,6 @@ pub(crate) fn with_server_layers(routes: Router<AppState>, state: AppState) -> R
         // CORS so the status it logs is the one the client receives. The span
         // carries method and path; its level must match the line's or the
         // default `info` filter drops it.
-        // Inside the trace span, so the request id the layer below set is on
-        // the request it records. Every request is tracked until its answer's
-        // body is sent, so a stop that gives up waiting names it (#2122).
-        .layer(axum::middleware::from_fn_with_state(
-            state.in_flight.clone(),
-            crate::in_flight::track,
-        ))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &axum::extract::Request| {
@@ -1779,7 +1779,27 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     tracing::info!(
         "`message-crate-server dump-openapi` lists every route, and [server] openapi_ui = true serves the API reference at /docs"
     );
-    let served = serve_until_shutdown(
+    // A Demo Account build the owner started would otherwise end part-way
+    // when the process exits (#1215), and an ffmpeg the pass started would
+    // go on converting after it (#1729). Both are stopped as the signal
+    // comes, and the stop waits for them alongside the requests in flight,
+    // within the same limit, so nothing after the limit can outlast Docker's
+    // stop time. A build cut off at the limit is removed at the next start.
+    let stop_work = move || {
+        let demo_build = demo_build.clone();
+        let media_queue = media_queue.clone();
+        async move {
+            tokio::join!(demo_build.stop(), media_queue.stop());
+        }
+    };
+    let on_signal = {
+        let stop_work = stop_work.clone();
+        move || {
+            on_signal();
+            stop_work()
+        }
+    };
+    match serve_until_shutdown(
         listener,
         app,
         shutdown_signal(exit_with_parent),
@@ -1787,20 +1807,21 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
         || tokio::time::sleep(STOP_DRAIN_LIMIT),
     )
     .await
-    .map(|stopped| stopped.log(&in_flight));
-    // A Demo Account build the owner started would otherwise end part-way
-    // when the process exits (#1215).
-    demo_build.stop().await;
-    // An ffmpeg the pass started would otherwise go on converting after the
-    // process exits (#1729). The pass was told to stop when the signal came;
-    // this waits for it.
-    media_queue.stop().await;
-    served?;
+    {
+        Ok(stopped) => stopped.log(&in_flight),
+        // A server that failed was never told to stop, so nothing stopped
+        // the build or the pass yet.
+        Err(error) => {
+            stop_work().await;
+            return Err(error.into());
+        }
+    }
     tracing::info!("The server has stopped");
     Ok(())
 }
 
-/// How long a stopping server waits for the requests in flight before it
+/// How long a stopping server waits for the requests in flight, a Demo
+/// Account build's cleanup and the Thumbnail and Preview pass, before it
 /// stops without them. An import batch whose import has started is the
 /// longest of them, and one cut off is rolled back by SQLite and sent again
 /// by the Upload, so the limit costs a batch's work and never its data.
@@ -1809,37 +1830,39 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
 /// `docker stop` killed the server after Docker's 10 seconds with no line in
 /// the log saying why (#2122). `stop_grace_period` in both Compose files and
 /// `--stop-timeout` in every documented `docker run` give the server 10
-/// seconds more than this, so Docker never has to kill it; the server's
+/// seconds more than this, so Docker never has to kill it. The server's
 /// tests hold them to that (`docker_stop_waits_longer_than_the_drain`).
 pub(crate) const STOP_DRAIN_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// How a stopping server's wait for its requests ended.
+/// How a stopping server's wait for its work ended.
 #[derive(Debug)]
 enum Stopped {
-    /// Every request in flight finished.
+    /// Every request in flight, and the work `on_signal` started, finished.
     Drained,
-    /// The drain limit passed with requests still in flight.
+    /// The drain limit passed with requests, or the work `on_signal`
+    /// started, still running.
     GaveUp,
 }
 
 impl Stopped {
-    /// Write the line that says how the wait ended: at `warn`, naming each
-    /// request the server stopped without, when it gave up.
+    /// When the server gave up, write a `WARN` line saying so and one naming
+    /// each request it stopped without. A server that drained writes
+    /// nothing here.
     fn log(self, in_flight: &crate::in_flight::InFlight) {
         match self {
             Self::Drained => {}
             Self::GaveUp => {
                 let running = in_flight.running();
                 tracing::warn!(
-                    "The server stopped waiting {} seconds after it was told to stop, and exits without the requests still running ({}). An import batch among them is rolled back, and the Upload sends it again",
+                    "The server stopped waiting {} seconds after it was told to stop, and exits without the work still running. Requests still running: {}. A Demo Account build or Thumbnail and Preview pass that had not ended stops with it. An import batch among the requests is rolled back, and the Upload sends it again",
                     STOP_DRAIN_LIMIT.as_secs(),
                     running.len()
                 );
                 for request in running {
                     tracing::warn!(
-                        request_id = %request.request_id,
-                        "Still running after {} seconds: {} {}",
+                        "Still running after {} seconds: request {}, {} {}",
                         request.running_for.as_secs(),
+                        request.request_id,
                         request.method,
                         request.uri
                     );
@@ -1850,50 +1873,65 @@ impl Stopped {
 }
 
 /// Serve `app` on `listener` until `stop` resolves, then stop accepting
-/// connections and return once the requests in flight have finished, or
-/// once the future `drain_limit` makes resolves, whichever comes first.
+/// connections and return once the requests in flight and the work
+/// `on_signal` started have finished, or once the future `drain_limit`
+/// makes resolves, whichever comes first.
 ///
-/// `on_signal` runs as `stop` resolves, before the requests drain; `serve`
-/// passes [`AppState::on_stop_signal`]. `drain_limit` is called at that
-/// moment too, so the limit counts from the stop; `serve` passes a sleep of
-/// [`STOP_DRAIN_LIMIT`], and a test a future it resolves itself. A request
-/// still running when the limit passes is left to end with the process
-/// (`main` shuts the runtime down without waiting for it).
-async fn serve_until_shutdown<D>(
+/// `on_signal` runs as `stop` resolves, before the requests drain, and
+/// returns the work that ends alongside them. `serve` passes
+/// [`AppState::on_stop_signal`] followed by the stop of the Demo Account
+/// build and of the Thumbnail and Preview pass. `drain_limit` is called at
+/// that moment too, so the limit counts from the stop. `serve` passes a
+/// sleep of [`STOP_DRAIN_LIMIT`], and a test a future it resolves itself.
+/// What is still running when the limit passes is left to end with the
+/// process (`main` shuts the runtime down without waiting for it).
+async fn serve_until_shutdown<W, D>(
     listener: tokio::net::TcpListener,
     app: Router,
     stop: impl Future<Output = ()> + Send + 'static,
-    on_signal: impl FnOnce() + Send + 'static,
+    on_signal: impl FnOnce() -> W + Send + 'static,
     drain_limit: impl FnOnce() -> D,
 ) -> std::io::Result<Stopped>
 where
+    W: Future<Output = ()> + Send + 'static,
     D: Future<Output = ()>,
 {
-    let (stopped_tx, stopped_rx) = tokio::sync::oneshot::channel::<()>();
+    let (work_tx, work_rx) = tokio::sync::oneshot::channel::<W>();
+    let (signaled_tx, signaled_rx) = tokio::sync::oneshot::channel::<()>();
     let served = axum::serve(listener, app)
         .with_graceful_shutdown(async move {
             stop.await;
-            on_signal();
-            let _ = stopped_tx.send(());
+            let _ = work_tx.send(on_signal());
+            let _ = signaled_tx.send(());
         })
         .into_future();
+    // A server that fails before it is told to stop drops both senders. The
+    // work is then nothing to wait for, and the limit never starts.
+    let work = async move {
+        if let Ok(work) = work_rx.await {
+            work.await;
+        }
+    };
+    let finished = async move {
+        let (served, ()) = tokio::join!(served, work);
+        served
+    };
     let limit_passed = async move {
-        // A server that fails before it is told to stop drops the sender,
-        // and the limit never starts.
-        if stopped_rx.await.is_err() {
+        if signaled_rx.await.is_err() {
             std::future::pending::<()>().await;
         }
         drain_limit().await;
     };
     tokio::select! {
-        served = served => served.map(|()| Stopped::Drained),
+        served = finished => served.map(|()| Stopped::Drained),
         () = limit_passed => Ok(Stopped::GaveUp),
     }
 }
 
 /// Resolve on Ctrl-C, or on SIGTERM on Unix, or once the process
 /// `exit_with_parent` names is gone, so axum drains in-flight requests, for
-/// up to [`STOP_DRAIN_LIMIT`], before exiting. A crashed desktop app ends its server this way (#1934).
+/// up to [`STOP_DRAIN_LIMIT`], before exiting. A crashed desktop app ends
+/// its server this way (#1934).
 async fn shutdown_signal(exit_with_parent: Option<ParentWatch>) {
     let parent_gone = async {
         match exit_with_parent {

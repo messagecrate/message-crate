@@ -107,12 +107,13 @@ A body over its cap is refused with `413 Payload Too Large` and the [`payload-to
 ### Stopping the server
 
 `serve` stops on Ctrl-C, on SIGTERM (what `docker stop` and a service manager send), and, under `--exit-with-parent`, once the process it names is gone.
-It stops taking connections, refuses an import batch that has not started its import with [`server-stopping`](/docs/developer/reference/errors/server-stopping/), and waits up to 30 seconds for the requests in flight.
+It stops taking connections, refuses an import batch that has not started its import with [`server-stopping`](/docs/developer/reference/errors/server-stopping/), and waits up to 30 seconds for the requests in flight and for a running Demo Account build and Thumbnail and Preview pass to stop.
 The 30 seconds are fixed in the server, not a config key, because Docker's stop time has to be longer than them, and the Compose files and the documented `docker run` commands set that time to 40 seconds (`stop_grace_period: 40s`, `--stop-timeout 40`).
 A server run any other way, such as under a service manager, needs at least that long between SIGTERM and a kill too.
 
-A request still running after the 30 seconds is cut off, and the server exits.
+Work still running after the 30 seconds is cut off, and the server exits.
 The log then holds one `WARN` line saying how many requests the server stopped without, and one `WARN` line for each, with its request id, method, path and how long it had run.
+A Demo Account build cut off this way is removed at the next start.
 An import batch cut off this way is rolled back by SQLite, so it stores nothing, and the desktop app's Upload pauses and sends it again when it resumes.
 The desktop app kills the server it started when it closes, without this wait, because the only work it can cut off is the app's own Upload.
 
