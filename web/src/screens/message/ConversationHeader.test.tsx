@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -12,6 +12,7 @@ import {
 } from "../../lib/serverApi";
 import type { Conversation } from "../../lib/types";
 import { participant } from "../../test/apiShapes";
+import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { mockedAuth, Providers } from "../../test/providers";
 import { fill, setupUser } from "../../test/user";
 import ConversationHeader from "./ConversationHeader";
@@ -129,25 +130,17 @@ function renderHeader(
 }
 
 /**
- * Open the ⋯ menu and choose an item, opening the menu again until the item
- * is there: an item that waits on a fetch appears once it lands.
+ * Open the ⋯ menu and choose an item. An item that waits on a fetch is there
+ * only once the test has settled the fetch's answer.
  */
 async function openMenuItem(user: ReturnType<typeof setupUser>, name: string) {
-  await waitFor(async () => {
-    if (!screen.queryByRole("menu")) {
-      await user.click(screen.getByRole("button", { name: "More for this conversation" }));
-    }
-    const item = screen.queryByRole("menuitem", { name });
-    if (!item) {
-      await user.keyboard("{Escape}");
-      throw new Error(`no ${name} yet`);
-    }
-  });
+  await user.click(screen.getByRole("button", { name: "More for this conversation" }));
   await user.click(screen.getByRole("menuitem", { name }));
 }
 
 describe("ConversationHeader", () => {
   beforeEach(() => {
+    startFakeClock();
     trashConversationMock.mockReset();
     getAccountProfileMock.mockReset();
     listContactGroupsMock.mockReset();
@@ -159,19 +152,25 @@ describe("ConversationHeader", () => {
 
   afterEach(() => {
     cleanup();
+    stopFakeClock();
   });
 
   describe("Make a Contact Group", () => {
     it("is offered on a group conversation and not on a one-to-one conversation", async () => {
       const user = setupUser();
-      renderHeader(conversation());
+      // The same people as the group chat, so only the conversation's kind
+      // keeps the item off the menu.
+      renderHeader(conversation({ participants: groupChat().participants }));
+      // The profile the item waits for has landed, so its absence is the screen's choice.
+      await settle();
       await user.click(screen.getByRole("button", { name: "More for this conversation" }));
       expect(screen.queryByRole("menuitem", { name: "Make a Contact Group" })).toBeNull();
       cleanup();
 
       renderHeader(groupChat());
       // The owner's profile decides who is left out, so the item waits for it.
-      await waitFor(() => expect(getAccountProfileMock).toHaveBeenCalled());
+      await settle();
+      expect(getAccountProfileMock).toHaveBeenCalled();
       await openMenuItem(user, "Make a Contact Group");
     });
 
@@ -188,6 +187,7 @@ describe("ConversationHeader", () => {
       updateContactGroupMembersMock.mockResolvedValue({ added: 2, removed: 0 });
       const user = setupUser();
       renderHeader(groupChat());
+      await settle();
 
       await openMenuItem(user, "Make a Contact Group");
       // The chat's label is offered as the name.
@@ -196,16 +196,13 @@ describe("ConversationHeader", () => {
       await fill(user, input, "Readers");
       await user.click(screen.getByRole("button", { name: "Create" }));
 
-      await waitFor(() => {
-        expect(createContactGroupMock).toHaveBeenCalledWith({ name: "Readers" });
+      await settle();
+      expect(createContactGroupMock).toHaveBeenCalledWith({ name: "Readers" });
+      expect(updateContactGroupMembersMock).toHaveBeenCalledWith(9, {
+        add: [2, 3],
+        remove: [],
       });
-      await waitFor(() => {
-        expect(updateContactGroupMembersMock).toHaveBeenCalledWith(9, {
-          add: [2, 3],
-          remove: [],
-        });
-      });
-      expect(await screen.findByText("Added 2 people to Readers.")).toBeTruthy();
+      expect(screen.getByText("Added 2 people to Readers.")).toBeTruthy();
     });
 
     it("adds to an existing group of that name instead of creating a second one", async () => {
@@ -213,18 +210,18 @@ describe("ConversationHeader", () => {
       updateContactGroupMembersMock.mockResolvedValue({ added: 2, removed: 0 });
       const user = setupUser();
       renderHeader(groupChat());
+      await settle();
 
       await openMenuItem(user, "Make a Contact Group");
-      const input = await screen.findByDisplayValue("Book Club");
+      const input = screen.getByDisplayValue("Book Club");
       await user.clear(input);
       await fill(user, input, "readers");
       await user.click(screen.getByRole("button", { name: "Create" }));
 
-      await waitFor(() => {
-        expect(updateContactGroupMembersMock).toHaveBeenCalledWith(4, {
-          add: [2, 3],
-          remove: [],
-        });
+      await settle();
+      expect(updateContactGroupMembersMock).toHaveBeenCalledWith(4, {
+        add: [2, 3],
+        remove: [],
       });
       expect(createContactGroupMock).not.toHaveBeenCalled();
     });
@@ -284,9 +281,8 @@ describe("ConversationHeader", () => {
     await openMenuItem(user, "Move to trash");
 
     expect(trashConversationMock).toHaveBeenCalledWith(42, expect.anything());
-    await waitFor(() => {
-      expect(screen.getByText("Conversations list")).toBeInTheDocument();
-    });
+    await settle();
+    expect(screen.getByText("Conversations list")).toBeInTheDocument();
   });
 
   it("shows an error and stays put when trashing fails", async () => {
@@ -295,8 +291,9 @@ describe("ConversationHeader", () => {
     renderHeader(conversation());
 
     await openMenuItem(user, "Move to trash");
+    await settle();
 
-    expect(await screen.findByText("Could not move this conversation.")).toBeInTheDocument();
+    expect(screen.getByText("Could not move this conversation.")).toBeInTheDocument();
     expect(screen.queryByText("Conversations list")).not.toBeInTheDocument();
   });
 });
