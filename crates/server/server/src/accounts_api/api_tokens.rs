@@ -13,10 +13,10 @@ use axum::extract::State;
 use serde::{Deserialize, Serialize};
 
 use super::{Admits, Reach, require_account_reach};
+use crate::db::account_profile;
 use crate::db::api_tokens;
 use crate::db::audit_trail::{self, AuditAction, Details};
 use crate::db::permissions::Permissions;
-use crate::db::{account_profile, schema};
 use crate::server::{ApiError, AppState, Created, FullAccess, LoggedIn, refuse_for_demo_account};
 
 /// Admit only the account whose tokens the path names, for making and
@@ -153,7 +153,6 @@ pub async fn list_api_tokens(
     let reach = require_account_reach(&mut conn, &auth, account_id, Admits::Owner).await?;
     let params = page_params(query.limit, query.offset, DEFAULT_LIST_LIMIT, None)?;
 
-    schema::ensure_accounts_schema(&mut conn).await?;
     let rows = api_tokens::list_api_tokens(&mut conn, account_id).await?;
     let account_permissions = holder_permissions(&mut conn, account_id).await?;
     let items: Vec<ApiToken> = rows
@@ -220,7 +219,6 @@ pub async fn get_api_token(
 ) -> Result<Json<ApiToken>, ApiError> {
     let mut conn = state.db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, account_id, Admits::Owner).await?;
-    schema::ensure_accounts_schema(&mut conn).await?;
     let row = api_tokens::get_api_token(&mut conn, account_id, id)
         .await?
         .ok_or_else(|| ApiError::not_found("API token"))?;
@@ -265,7 +263,6 @@ pub async fn create_api_token(
         Permissions::token(req.can_import, req.can_export).intersect(auth.permissions());
     let expires_in_days = req.expires_in_days;
 
-    schema::ensure_accounts_schema(&mut conn).await?;
     let created =
         api_tokens::create_api_token(&mut conn, account_id, &label, permissions, expires_in_days)
             .await
@@ -323,7 +320,6 @@ pub async fn delete_api_token(
 ) -> Result<axum::http::StatusCode, ApiError> {
     let mut conn = state.db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, account_id, Admits::Owner).await?;
-    schema::ensure_accounts_schema(&mut conn).await?;
     let token = api_tokens::list_api_tokens(&mut conn, account_id)
         .await?
         .into_iter()
@@ -374,7 +370,6 @@ pub async fn update_api_token(
     let reach = require_account_reach(&mut conn, &auth, account_id, HOLDER_ONLY).await?;
     let label = req.label;
 
-    schema::ensure_accounts_schema(&mut conn).await?;
     let trimmed = label.trim().to_string();
     let ok = api_tokens::update_api_token_label(&mut conn, account_id, id, &trimmed)
         .await

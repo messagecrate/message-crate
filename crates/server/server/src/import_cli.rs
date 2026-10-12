@@ -207,14 +207,9 @@ async fn import_under_session(
         phone_country: None,
         progress: opts.progress,
     };
-    let result = imports_api::import_jsonl_files_on_conn(
-        conn,
-        paths,
-        &import_opts,
-        imports_api::ImportSchemaMode::AssumeReady,
-    )
-    .await
-    .map_err(anyhow::Error::from);
+    let result = imports_api::import_jsonl_files_on_conn(conn, paths, &import_opts)
+        .await
+        .map_err(anyhow::Error::from);
     let import_id = import_run.id;
     import_run.finish(conn, &result).await;
     // No server runs the background pass here, so the Assets wait in the

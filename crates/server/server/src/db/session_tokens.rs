@@ -544,7 +544,7 @@ mod tests {
 
     #[tokio::test]
     async fn lookup_rejects_expired_session() {
-        let (pool, _dir) = crate::db::engine::test_pool().await;
+        let (pool, _dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
         let token = insert_account_session_token(&mut conn, 7).await.unwrap();
@@ -561,7 +561,7 @@ mod tests {
     /// show that the clock is read at all.
     #[tokio::test]
     async fn lookup_rejects_a_session_that_expired_an_hour_ago() {
-        let (pool, _dir) = crate::db::engine::test_pool().await;
+        let (pool, _dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
         let token = insert_account_session_token(&mut conn, 7).await.unwrap();
@@ -585,7 +585,7 @@ mod tests {
     #[tokio::test]
     async fn a_session_expires_thirty_days_after_login() {
         const THIRTY_DAYS_SECS: u64 = 2_592_000;
-        let (pool, _dir) = crate::db::engine::test_pool().await;
+        let (pool, _dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
         let before = now_unix_secs();
@@ -608,7 +608,7 @@ mod tests {
 
     #[tokio::test]
     async fn insert_session_with_ttl_sets_expires_at() {
-        let (pool, _dir) = crate::db::engine::test_pool().await;
+        let (pool, _dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
         let before = now_unix_secs();
@@ -629,7 +629,7 @@ mod tests {
 
     #[tokio::test]
     async fn revoke_session_token_removes_row() {
-        let (pool, _dir) = crate::db::engine::test_pool().await;
+        let (pool, _dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
         let token = insert_account_session_token(&mut conn, 7).await.unwrap();
