@@ -159,7 +159,10 @@ pub struct ServerConfig {
     pub asset_part_size: usize,
     /// Seconds an upload body (an import batch, an attachment, or a part of
     /// one) may go with no byte arriving before the server stops reading it
-    /// and answers `upload-stalled`. Default 60. Must be greater than 0.
+    /// and answers `upload-stalled`. An attachment upload nothing has been
+    /// written to for this long, with no request to it running, is abandoned
+    /// and removed ([`crate::asset_store::sweep_incoming`]). Default 60. Must
+    /// be greater than 0.
     #[serde(default = "default_upload_stall_secs")]
     pub upload_stall_secs: u64,
     /// Seconds a whole upload body may take to arrive, from the start of the

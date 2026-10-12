@@ -433,7 +433,10 @@ async fn run_imports_discard(args: ImportsDiscardArgs) -> Result<()> {
         crate::db::imports::discard_running_import(&mut conn, account, chrono::Utc::now()).await?;
     drop(conn);
     if discarded.is_some() {
-        crate::asset_store::sweep_after_run(&opened.db, &opened.cfg.paths, account).await;
+        // Only the unreferenced files: `.incoming/` is left to `serve`,
+        // which may be running and is the only one that knows which uploads
+        // its requests are using (#2652).
+        crate::asset_store::sweep_unreferenced_logged(&opened.db, &opened.cfg.paths, account).await;
     }
     opened.close().await;
     print!(

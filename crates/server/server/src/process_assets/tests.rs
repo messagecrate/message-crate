@@ -2109,8 +2109,11 @@ async fn opening_an_account_without_an_assets_directory_gives_nothing_to_process
     );
 }
 
+/// #2652: `process-assets` may run while `serve` does, and cannot see which
+/// uploads a request of `serve` is using, so it leaves `.incoming/` to
+/// `serve`, even an upload temp whose files look abandoned.
 #[tokio::test]
-async fn opening_an_account_makes_its_converted_directory_and_cleans_its_incoming_temps() {
+async fn opening_an_account_makes_its_converted_directory_and_leaves_its_incoming_uploads() {
     let (opened, _dir) = open_db().await;
     let opts = ProcessAssetsOptions::default();
     let work = tempfile::tempdir().unwrap();
@@ -2119,8 +2122,6 @@ async fn opening_an_account_makes_its_converted_directory_and_cleans_its_incomin
     fs::create_dir_all(part.parent().unwrap()).unwrap();
     fs::write(&part, b"half").unwrap();
     make_abandoned(&part);
-    let live_part = assets.join(".incoming").join(format!("{SHA}-2.part"));
-    fs::write(&live_part, b"an upload in progress").unwrap();
 
     let pass = AccountPass::open(
         &opened.cfg,
@@ -2139,11 +2140,7 @@ async fn opening_an_account_makes_its_converted_directory_and_cleans_its_incomin
     assert_eq!(pass.converted_dir, converted);
     assert_eq!(pass.account_id, ACCOUNT);
     assert!(converted.is_dir());
-    assert!(
-        !part.exists(),
-        "an abandoned upload temp is removed on open"
-    );
-    assert!(live_part.exists(), "a live upload's temp is kept on open");
+    assert!(part.exists(), "an upload temp is left to serve");
 }
 
 /// A run killed between creating a temporary file in a shard directory and

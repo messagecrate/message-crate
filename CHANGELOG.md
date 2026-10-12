@@ -764,6 +764,14 @@ carry their date on the heading.
   converts, the warning in the server's log now carries ffmpeg's reason, as
   the Import Run's log already did, with every file it names left out
   (#2802).
+- 2026-10-12: **Two stopped Uploads no longer block large attachments for a
+  day.** When the desktop app was closed or stopped during an Upload, the
+  large attachments it was sending in parts stayed open on the server for a
+  day. Two such stops reached the 128 the server allows at once, and the
+  next Upload failed every large attachment, with nothing saying to wait. An
+  upload nothing has arrived for in a minute, or the time `upload_stall_secs`
+  sets, is now given up, and when an Upload reaches the limit the server
+  removes the account's given-up uploads first and goes on (#2652).
 - 2026-10-12: **A refused Import Run names every problem at once.** When
   the server refuses to start or finish an Import Run, it now lists every
   problem it found, rather than only the first, so fixing one no longer

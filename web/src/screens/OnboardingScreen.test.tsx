@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { lendTestingLibraryTheFakeClock } from "../test/fakeTimers";
+import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { renderWithProviders as render } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 
@@ -58,7 +58,7 @@ describe("OnboardingScreen", () => {
     // machine it can move more, the second check reads as a second look, and
     // the message blanks for REPEATED_ERROR_BLINK_MS. The clock stands still
     // here, so one click is always one gesture.
-    vi.useFakeTimers({ toFake: ["Date"] });
+    startFakeClock();
     logout.mockReset();
     apiPost.mockReset();
     profile = blankProfile;
@@ -67,8 +67,7 @@ describe("OnboardingScreen", () => {
 
   afterEach(() => {
     cleanup();
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
+    stopFakeClock();
   });
 
   it("names the section Your Accounts and explains nothing further", () => {
@@ -123,7 +122,8 @@ describe("OnboardingScreen", () => {
     ];
     render(<OnboardingScreen />);
 
-    expect(await screen.findByRole("button", { name: "Email Account 2 type" })).toBeInTheDocument();
+    await settle();
+    expect(screen.getByRole("button", { name: "Email Account 2 type" })).toBeInTheDocument();
     expect(rowValue(1)).toHaveValue("+15555550100");
     expect(rowValue(2)).toHaveValue("bob@example.com");
     expect(screen.queryByText(/Already on this account/)).not.toBeInTheDocument();
@@ -138,9 +138,8 @@ describe("OnboardingScreen", () => {
     const user = setupUser();
     render(<OnboardingScreen />);
 
-    expect(
-      await screen.findByRole("button", { name: "WhatsApp Account 2 type" }),
-    ).toBeInTheDocument();
+    await settle();
+    expect(screen.getByRole("button", { name: "WhatsApp Account 2 type" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Text Message Account 1 type" })).toBeInTheDocument();
     expect(rowValue(1)).toHaveValue("+15555550123");
     expect(rowValue(2)).toHaveValue("+15555550123");
@@ -149,7 +148,8 @@ describe("OnboardingScreen", () => {
     expect(go).toBeEnabled();
     await user.click(go);
     expect(screen.queryByText("This account is already in the list.")).not.toBeInTheDocument();
-    await waitFor(() => expect(apiPost).toHaveBeenCalled());
+    await settle();
+    expect(apiPost).toHaveBeenCalled();
     expect(apiPost).toHaveBeenCalledWith(
       expect.objectContaining({ identities: [], remove_identities: [] }),
     );
@@ -159,16 +159,16 @@ describe("OnboardingScreen", () => {
     identities = [{ address: "+15555550123", service: "whatsapp" }];
     render(<OnboardingScreen />);
 
-    expect(
-      await screen.findByRole("button", { name: "WhatsApp Account 1 type" }),
-    ).toBeInTheDocument();
+    await settle();
+    expect(screen.getByRole("button", { name: "WhatsApp Account 1 type" })).toBeInTheDocument();
     expect(rowValue(1)).toHaveValue("+15555550123");
   });
 
   it("counts an identity the owner added, so another is not required", async () => {
     identities = [{ address: "+15555550100", service: "phone" }];
     render(<OnboardingScreen />);
-    await waitFor(() => expect(rowValue(1)).toHaveValue("+15555550100"));
+    await settle();
+    expect(rowValue(1)).toHaveValue("+15555550100");
 
     const go = screen.getByRole("button", { name: "Continue to Message Crate" });
     expect(go).toBeDisabled();
@@ -184,13 +184,15 @@ describe("OnboardingScreen", () => {
     ];
     const user = setupUser();
     render(<OnboardingScreen />);
-    await waitFor(() => expect(rowValue(2)).toHaveValue("+15555550101"));
+    await settle();
+    expect(rowValue(2)).toHaveValue("+15555550101");
 
     await user.clear(rowValue(1));
     await user.paste("+1 555-555-0199");
     await user.click(screen.getByRole("button", { name: "Continue to Message Crate" }));
 
-    await waitFor(() => expect(apiPost).toHaveBeenCalled());
+    await settle();
+    expect(apiPost).toHaveBeenCalled();
     expect(apiPost).toHaveBeenCalledWith(
       expect.objectContaining({
         identities: [{ address: "+1 555-555-0199", service: "phone" }],
@@ -207,11 +209,13 @@ describe("OnboardingScreen", () => {
     ];
     const user = setupUser();
     render(<OnboardingScreen />);
+    await settle();
 
-    await user.click(await screen.findByRole("button", { name: "Remove account 2" }));
+    await user.click(screen.getByRole("button", { name: "Remove account 2" }));
     await user.click(screen.getByRole("button", { name: "Continue to Message Crate" }));
 
-    await waitFor(() => expect(apiPost).toHaveBeenCalled());
+    await settle();
+    expect(apiPost).toHaveBeenCalled();
     expect(apiPost).toHaveBeenCalledWith(
       expect.objectContaining({
         identities: [],
@@ -233,12 +237,14 @@ describe("OnboardingScreen", () => {
     const user = setupUser();
     render(<OnboardingScreen />);
 
-    expect(await screen.findByText("2 more are in Settings.")).toBeInTheDocument();
+    await settle();
+    expect(screen.getByText("2 more are in Settings.")).toBeInTheDocument();
     expect(rowValue(4)).toHaveValue("+15555550103");
     expect(screen.queryByRole("textbox", { name: "Account 5 value" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Continue to Message Crate" }));
-    await waitFor(() => expect(apiPost).toHaveBeenCalled());
+    await settle();
+    expect(apiPost).toHaveBeenCalled();
     expect(apiPost).toHaveBeenCalledWith(
       expect.objectContaining({ identities: [], remove_identities: [] }),
     );
@@ -426,10 +432,7 @@ describe("OnboardingScreen", () => {
     // the message back on a REPEATED_ERROR_BLINK_MS timer. Both run on Vitest's
     // fake clock, so the blank line is read before the timer can fire however
     // long the click takes, and the message comes back when the test moves the
-    // clock, not when the machine gets to it. `delay: null` keeps user-event
-    // off the faked setTimeout.
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
-    lendTestingLibraryTheFakeClock();
+    // clock, not when the machine gets to it.
     const user = setupUser();
     render(<OnboardingScreen />);
 
@@ -446,9 +449,9 @@ describe("OnboardingScreen", () => {
     await user.click(screen.getByRole("button", { name: "+ Add account" }));
     expect(screen.queryByText(message)).not.toBeInTheDocument();
 
-    act(() => {
-      vi.advanceTimersByTime(REPEATED_ERROR_BLINK_MS);
-    });
+    await advanceTimersAndSettle(REPEATED_ERROR_BLINK_MS - 1);
+    expect(screen.queryByText(message)).not.toBeInTheDocument();
+    await advanceTimersAndSettle(1);
     expect(screen.getByText(message)).toBeInTheDocument();
   });
 
