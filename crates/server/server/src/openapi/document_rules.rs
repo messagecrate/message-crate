@@ -39,6 +39,7 @@ use super::response_fields::{self, schema_named};
 use super::shared_parts::{PROBLEM_TYPES, split_first_sentence};
 use crate::paging::MAX_LIST_OFFSET;
 use crate::problem::{Problem, ProblemType};
+use crate::server::{BEARER_CHALLENGE, REFUSED_TOKEN_CHALLENGE};
 use crate::test_support::{self, http_client};
 
 /// The one route nested three deep (`docs/architecture/http-api.md`,
@@ -309,7 +310,7 @@ async fn called_rules(doc: &Value, world: &World<'_>, op: &Operation, spec: &Val
             ProblemType::AuthenticationRequired,
             "no credential",
         ));
-        broken.extend(answer.challenge_rule("no credential", NO_CREDENTIAL_CHALLENGE));
+        broken.extend(answer.challenge_rule("no credential", BEARER_CHALLENGE));
         let answer = call(world, op, &path, Some(NEVER_ISSUED_TOKEN), sent()).await;
         broken.extend(answer.problem_rule(
             op,
@@ -504,13 +505,6 @@ struct Answer {
 
 /// A Bearer token in the form of a Session token that no account holds.
 const NEVER_ISSUED_TOKEN: &str = "mc-user-never-issued";
-
-/// The challenge a `401` carries when the request sent no token.
-const NO_CREDENTIAL_CHALLENGE: &str = r#"Bearer realm="message-crate""#;
-
-/// The challenge a `401` carries when the request sent a token the server
-/// refused (RFC 6750, section 3.1).
-const REFUSED_TOKEN_CHALLENGE: &str = r#"Bearer realm="message-crate", error="invalid_token""#;
 
 impl Answer {
     /// What is wrong with this `401`'s `WWW-Authenticate` header, if

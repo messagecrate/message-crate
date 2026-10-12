@@ -32,8 +32,8 @@ pub const MAX_IMPORT_TOOL_CHARS: usize = 64;
 pub const MAX_DEVICE_ID_CHARS: usize = 64;
 /// Most characters in a path a client stores, such as an Import Run's
 /// directory: Linux's `PATH_MAX`, 4,096 bytes. A path Linux accepts has no
-/// more characters than bytes, so every one fits, and macOS takes 1,024
-/// bytes, Windows 260 characters unless long paths are turned on.
+/// more characters than bytes, so every one fits. macOS takes 1,024 bytes.
+/// Windows takes 260 characters unless long paths are turned on.
 pub const MAX_PATH_CHARS: usize = 4_096;
 /// Most bytes in each JSON value an Import Run stores as it is created
 /// (`form`, `source_fingerprint`, `source_identities`), measured as the
@@ -53,6 +53,17 @@ impl From<TooLong> for ApiError {
     fn from(error: TooLong) -> Self {
         Self::validation(error.to_string())
     }
+}
+
+/// The sentence of each [`TooLong`] among `results`, in order, for a route
+/// that checks several fields and names every one over its cap in one
+/// `validation-failed`.
+pub fn too_long_sentences<'a, T: 'a>(
+    results: impl IntoIterator<Item = &'a Result<T, TooLong>>,
+) -> impl Iterator<Item = String> {
+    results
+        .into_iter()
+        .filter_map(|result| result.as_ref().err().map(ToString::to_string))
 }
 
 /// `value` trimmed, or [`TooLong`] naming `field` when the trimmed value is

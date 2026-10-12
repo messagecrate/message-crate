@@ -889,6 +889,15 @@ impl std::fmt::Display for ApiError {
     }
 }
 
+/// The `WWW-Authenticate` challenge of a `401` whose request sent no Bearer
+/// token.
+pub(crate) const BEARER_CHALLENGE: &str = r#"Bearer realm="message-crate""#;
+
+/// The `WWW-Authenticate` challenge of a `401` whose request sent a Bearer
+/// token that the server refused (RFC 6750, section 3.1).
+pub(crate) const REFUSED_TOKEN_CHALLENGE: &str =
+    r#"Bearer realm="message-crate", error="invalid_token""#;
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let problem = self.to_problem();
@@ -921,9 +930,9 @@ impl IntoResponse for ApiError {
         // `invalid_token`; a request that sent none gets no error code.
         if status == StatusCode::UNAUTHORIZED {
             let challenge = if matches!(self, Self::TokenRefused(_)) {
-                r#"Bearer realm="message-crate", error="invalid_token""#
+                REFUSED_TOKEN_CHALLENGE
             } else {
-                r#"Bearer realm="message-crate""#
+                BEARER_CHALLENGE
             };
             response.headers_mut().insert(
                 header::WWW_AUTHENTICATE,

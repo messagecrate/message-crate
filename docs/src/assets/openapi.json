@@ -14580,7 +14580,7 @@
               "string",
               "null"
             ],
-            "description": "Which install is creating the Import Run, stored trimmed. Over 64\ncharacters is refused with `422 Unprocessable Entity`.",
+            "description": "Which install is creating the Import Run, stored trimmed. Null when\nthe request leaves it out, or blank. Over 64 characters is refused\nwith `422 Unprocessable Entity`.",
             "maxLength": 64
           },
           "form": {
@@ -14631,7 +14631,7 @@
               "string",
               "null"
             ],
-            "description": "Name of the program that runs the import, such as\n`message-crate-import`, stored on the run trimmed. Null when the\nrequest leaves it out. Over 64 characters is refused with\n`422 Unprocessable Entity`.",
+            "description": "Name of the program that runs the import, such as\n`message-crate-import`, stored on the run trimmed. Null when the\nrequest leaves it out, or blank. Over 64 characters is refused with\n`422 Unprocessable Entity`.",
             "maxLength": 64
           }
         }

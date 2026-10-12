@@ -458,16 +458,16 @@ released versions carry their date on the heading.
 
 - 2026-10-11: **An import's notes and details have a length limit too.**
   Each part of a note an import records may be up to 2,000 characters, the
-  name of the program that ran the import and the id of the computer it ran
-  on up to 64 each, and the path of the import's directory up to 4,096.
+  name of the program that ran the import and the id of the install that
+  ran it up to 64 each, and the path of the import's directory up to 4,096.
   Anything longer is refused with a message naming the limit, where before
   it was kept at any length. The desktop app shortens a longer note to the
   limit, ending it with "…", so the import still finishes (#2668).
-- 2026-10-11: **A refused login token tells a program how to log in.** When
-  the server turns a request away because it carries no login, or a login
-  token it does not accept, its answer now says that a token is wanted, in
-  the form the HTTP standards set out, and whether the token sent was the
-  problem. A generic HTTP tool or library reads that answer on its own. The
+- 2026-10-11: **A refused Session or API Token tells a program how to
+  authenticate.** When the server turns a request away because it carries
+  no Session or API Token, or one it does not accept, its answer now says
+  that one is wanted, in the form the HTTP standards set out, and whether
+  the one sent was the problem. A generic HTTP tool or library reads that answer on its own. The
   website and the desktop app work as before (#2230).
 - 2026-10-11: **Names, addresses and Import Errors have a length limit.**
   A display name or a contact's name may be up to 200 characters, an

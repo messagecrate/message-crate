@@ -567,6 +567,69 @@ async fn an_import_stores_its_text_fields_at_the_cap() {
     assert_eq!(run["device_id"], device_id.as_str());
 }
 
+/// A blank `tool` or `device_id` is stored as none. Trimmed to `""`, a blank
+/// `device_id` read as no `device_id`, which the desktop app takes to mean
+/// a run of its own, so it would offer to resume another install's run and
+/// delete its directory on a Discard.
+#[tokio::test]
+async fn an_import_stores_a_blank_tool_or_device_id_as_none() {
+    let (state, _fixture, token) = importer().await;
+    let (_, created): (String, serde_json::Value) = post_created_json(
+        &state,
+        "/v1/imports",
+        &token,
+        serde_json::json!({ "source": "imessage", "tool": "  ", "device_id": " \t " }),
+    )
+    .await;
+    let id = created["id"].as_i64().unwrap();
+    let run: serde_json::Value = get_json(&state, &format!("/v1/imports/{id}"), &token).await;
+    assert_eq!(run["tool"], serde_json::Value::Null, "{run}");
+    assert_eq!(run["device_id"], serde_json::Value::Null, "{run}");
+}
+
+/// A completion with an Import Error and a note both over the cap names
+/// both, not only the first list it checked.
+#[tokio::test]
+async fn a_completion_names_every_issue_and_note_over_the_cap() {
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    let (_, created): (String, serde_json::Value) = post_created_json(
+        state,
+        "/v1/imports",
+        token,
+        serde_json::json!({ "source": "imessage" }),
+    )
+    .await;
+    let id = created["id"].as_i64().unwrap();
+    let long = "x".repeat(2_001);
+    let (status, text) = crate::test_support::post_json_raw(
+        state,
+        &format!("/v1/imports/{id}/complete"),
+        token,
+        serde_json::json!({
+            "status": "completed_with_issues",
+            "issues": [{ "kind": "skip", "stage": "media", "item": long, "reason": "r" }],
+            "notes": [{ "stage": "staging", "item": "a", "text": long }]
+        }),
+    )
+    .await;
+    crate::test_support::expect_problem(
+        status,
+        &text,
+        crate::problem::ProblemType::ValidationFailed,
+    );
+    let errors: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        errors["errors"],
+        serde_json::json!([
+            "issues[0].item: must be at most 2000 characters",
+            "notes[0].text: must be at most 2000 characters"
+        ]),
+        "{text}"
+    );
+}
+
 /// A note's `item` and `text` are each at most 2,000 characters, on a
 /// completion and a discard alike, and a body over the cap leaves the run
 /// running. They were stored at any length a JSON body could carry (#2668).

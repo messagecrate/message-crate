@@ -1464,7 +1464,6 @@ fn every_401_carries_a_bearer_challenge_and_nothing_else_does() {
             .get(header::WWW_AUTHENTICATE)
             .map(|v| (response.status(), v.to_str().unwrap().to_string()))
     };
-    let plain = r#"Bearer realm="message-crate""#;
     for error in [
         ApiError::AuthenticationRequired("x".into()),
         ApiError::InvalidCredentials("x".into()),
@@ -1472,19 +1471,19 @@ fn every_401_carries_a_bearer_challenge_and_nothing_else_does() {
     ] {
         assert_eq!(
             challenge(error),
-            Some((StatusCode::UNAUTHORIZED, plain.to_string()))
+            Some((StatusCode::UNAUTHORIZED, BEARER_CHALLENGE.to_string()))
         );
     }
     assert_eq!(
         challenge(ApiError::TokenRefused("x".into())),
         Some((
             StatusCode::UNAUTHORIZED,
-            r#"Bearer realm="message-crate", error="invalid_token""#.to_string()
+            REFUSED_TOKEN_CHALLENGE.to_string()
         ))
     );
     assert_eq!(
         challenge(ApiError::account_gone()).map(|(_, value)| value),
-        Some(r#"Bearer realm="message-crate", error="invalid_token""#.to_string()),
+        Some(REFUSED_TOKEN_CHALLENGE.to_string()),
         "a token whose account is gone was sent and refused"
     );
     for error in [

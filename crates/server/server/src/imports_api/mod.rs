@@ -57,7 +57,7 @@ use crate::server::{
 use crate::text_caps::{
     MAX_DEVICE_ID_CHARS, MAX_IMPORT_ERROR_TEXT_CHARS, MAX_IMPORT_NOTE_TEXT_CHARS,
     MAX_IMPORT_RUN_JSON_BYTES, MAX_IMPORT_TOOL_CHARS, MAX_PATH_CHARS, capped_json, capped_path,
-    capped_text,
+    capped_text, too_long_sentences,
 };
 
 /// Full import settings: paths, mode, and media handling.
@@ -638,6 +638,8 @@ pub(crate) struct DedupeCounts {
 
 /// Source, mode and tool for a new Import Run. The bearer token
 /// names the account.
+// `max_length` takes only a literal; `the_reference_states_the_import_run_text_caps`
+// holds each to its `text_caps` constant.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct CreateImportRequest {
     /// Source id the run imports, such as `imessage` or `whatsapp`, which
@@ -663,10 +665,8 @@ pub(crate) struct CreateImportRequest {
     pub(crate) phone_country: Option<String>,
     /// Name of the program that runs the import, such as
     /// `message-crate-import`, stored on the run trimmed. Null when the
-    /// request leaves it out. Over 64 characters is refused with
+    /// request leaves it out, or blank. Over 64 characters is refused with
     /// `422 Unprocessable Entity`.
-    // `max_length` takes only a literal; a test holds it to
-    // `MAX_IMPORT_TOOL_CHARS`.
     #[serde(default)]
     #[schema(max_length = 64)]
     pub(crate) tool: Option<String>,
@@ -681,8 +681,9 @@ pub(crate) struct CreateImportRequest {
     #[serde(default)]
     #[schema(max_length = 4096)]
     pub(crate) run_dir: Option<String>,
-    /// Which install is creating the Import Run, stored trimmed. Over 64
-    /// characters is refused with `422 Unprocessable Entity`.
+    /// Which install is creating the Import Run, stored trimmed. Null when
+    /// the request leaves it out, or blank. Over 64 characters is refused
+    /// with `422 Unprocessable Entity`.
     #[serde(default)]
     #[schema(max_length = 64)]
     pub(crate) device_id: Option<String>,
@@ -773,14 +774,14 @@ pub(crate) struct DiscardImportRequest {
 /// One note a Stage of the Import Run recorded: something it did with an
 /// item that is worth knowing but did not fail, such as a message it kept
 /// with a caveat.
+// `max_length` takes only a literal; `the_reference_states_the_import_run_text_caps`
+// holds each to `MAX_IMPORT_NOTE_TEXT_CHARS`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct ImportNoteRequest {
     /// Stage the note came from.
     pub(crate) stage: crate::db::imports::ImportIssueStage,
     /// The file, message or address the note is about. Stored trimmed; over
     /// 2,000 characters is refused with `422 Unprocessable Entity`.
-    // `max_length` takes only a literal; a test holds it to
-    // `MAX_IMPORT_NOTE_TEXT_CHARS`.
     #[schema(max_length = 2000)]
     pub(crate) item: String,
     /// What the run did with it, in one sentence. Stored trimmed; over 2,000
@@ -790,14 +791,12 @@ pub(crate) struct ImportNoteRequest {
 }
 
 /// The requested notes as the database records them, their text trimmed.
-/// Refuses an `item` or `text` over its cap (`text_caps`), naming every
-/// one. Checked before a connection is opened, so a refused request writes
-/// nothing.
+/// Adds to `errors` every `item` or `text` over its cap (`text_caps`).
 fn note_rows(
     notes: &[ImportNoteRequest],
-) -> Result<Vec<crate::db::imports::ImportNoteRow>, ApiError> {
+    errors: &mut Vec<String>,
+) -> Vec<crate::db::imports::ImportNoteRow> {
     let mut rows = Vec::with_capacity(notes.len());
-    let mut errors = Vec::new();
     for (at, note) in notes.iter().enumerate() {
         let cap = |field: &str, text| {
             capped_text(
@@ -806,22 +805,38 @@ fn note_rows(
                 MAX_IMPORT_NOTE_TEXT_CHARS,
             )
         };
-        match (cap("item", &note.item), cap("text", &note.text)) {
-            (Ok(item), Ok(text)) => rows.push(crate::db::imports::ImportNoteRow {
+        let (item, text) = (cap("item", &note.item), cap("text", &note.text));
+        errors.extend(too_long_sentences([&item, &text]));
+        if let (Ok(item), Ok(text)) = (item, text) {
+            rows.push(crate::db::imports::ImportNoteRow {
                 stage: note.stage,
                 item: item.to_string(),
                 text: text.to_string(),
-            }),
-            (item, text) => errors.extend(
-                [item.err(), text.err()]
-                    .into_iter()
-                    .flatten()
-                    .map(|e| e.to_string()),
-            ),
+            });
         }
     }
+    rows
+}
+
+/// The issues and notes a completion or a discard carries, as the database
+/// records them. Refuses the request naming every rule [`import_issue_inputs`]
+/// and [`note_rows`] find broken, in both lists. Checked before a connection
+/// is opened, so a refused request writes nothing.
+fn issues_and_notes(
+    issues: &[ImportIssueRequest],
+    notes: &[ImportNoteRequest],
+) -> Result<
+    (
+        Vec<crate::db::imports::ImportIssueInput>,
+        Vec<crate::db::imports::ImportNoteRow>,
+    ),
+    ApiError,
+> {
+    let mut errors = Vec::new();
+    let issues = import_issue_inputs(issues, &mut errors);
+    let notes = note_rows(notes, &mut errors);
     ApiError::unless_broken(errors)?;
-    Ok(rows)
+    Ok((issues, notes))
 }
 
 /// One error or skip a Stage of the Import Run reported.
@@ -851,13 +866,12 @@ pub(crate) struct ImportIssueRequest {
 /// The requested issues as the database records them, their text trimmed.
 /// Refuses an issue that is not an Import Error, since the run stores only
 /// `error` and `skip` rows as its issues, and an `item` or `reason` over its
-/// cap (`text_caps`), naming every one. Checked before a connection is
-/// opened, so a refused request writes nothing.
+/// cap (`text_caps`): each one is added to `errors`.
 fn import_issue_inputs(
     issues: &[ImportIssueRequest],
-) -> Result<Vec<crate::db::imports::ImportIssueInput>, ApiError> {
+    errors: &mut Vec<String>,
+) -> Vec<crate::db::imports::ImportIssueInput> {
     let mut inputs = Vec::with_capacity(issues.len());
-    let mut errors = Vec::new();
     for (at, issue) in issues.iter().enumerate() {
         if matches!(issue.kind, RunIssueKind::Note | RunIssueKind::Resolved) {
             errors.push(format!(
@@ -872,23 +886,18 @@ fn import_issue_inputs(
                 MAX_IMPORT_ERROR_TEXT_CHARS,
             )
         };
-        match (cap("item", &issue.item), cap("reason", &issue.reason)) {
-            (Ok(item), Ok(reason)) => inputs.push(crate::db::imports::ImportIssueInput {
+        let (item, reason) = (cap("item", &issue.item), cap("reason", &issue.reason));
+        errors.extend(too_long_sentences([&item, &reason]));
+        if let (Ok(item), Ok(reason)) = (item, reason) {
+            inputs.push(crate::db::imports::ImportIssueInput {
                 kind: issue.kind,
                 stage: issue.stage,
                 item: item.to_string(),
                 reason: reason.to_string(),
-            }),
-            (item, reason) => errors.extend(
-                [item.err(), reason.err()]
-                    .into_iter()
-                    .flatten()
-                    .map(|e| e.to_string()),
-            ),
+            });
         }
     }
-    ApiError::unless_broken(errors)?;
-    Ok(inputs)
+    inputs
 }
 
 fn validate_import_status(status: &str) -> Result<(), ApiError> {
@@ -1384,18 +1393,16 @@ pub(crate) async fn create_import(
         .as_deref()
         .map(|id| capped_text("device_id", id, MAX_DEVICE_ID_CHARS))
         .transpose();
-    let (tool, run_dir, device_id) = match (tool, run_dir, device_id) {
-        (Ok(tool), Ok(run_dir), Ok(device_id)) => (tool, run_dir, device_id),
-        (tool, run_dir, device_id) => {
-            return Err(ApiError::ValidationFailed(
-                [tool.err(), run_dir.err(), device_id.err()]
-                    .into_iter()
-                    .flatten()
-                    .map(|e| e.to_string())
-                    .collect(),
-            ));
-        }
-    };
+    ApiError::unless_broken(too_long_sentences([&tool, &run_dir, &device_id]).collect())?;
+    // Each is `Ok` now. A blank `tool` or `device_id` is stored as none, so
+    // a blank `device_id` never reads as this install's own run, which the
+    // desktop app takes a run with no `device_id` to be.
+    fn blank_as_none(value: Option<&str>) -> Option<&str> {
+        value.filter(|v| !v.is_empty())
+    }
+    let tool = blank_as_none(tool.ok().flatten());
+    let run_dir = run_dir.ok().flatten();
+    let device_id = blank_as_none(device_id.ok().flatten());
     let account = resolve_import_account(&auth);
     let stage = body.stage.unwrap_or(crate::db::imports::ImportStage::Parse);
     // Credentials never reach the row, whoever the client is.
@@ -1460,8 +1467,7 @@ pub(crate) async fn complete_import(
     Json(body): Json<CompleteImportRequest>,
 ) -> Result<Json<ImportRun>, ApiError> {
     let account = resolve_import_account(&auth);
-    let issues = import_issue_inputs(&body.issues)?;
-    let notes = note_rows(&body.notes)?;
+    let (issues, notes) = issues_and_notes(&body.issues, &body.notes)?;
     validate_import_status(&body.status)?;
     let summary_json =
         match body.summary {
@@ -1785,8 +1791,7 @@ pub(crate) async fn discard_import(
     Json(body): Json<DiscardImportRequest>,
 ) -> Result<Json<ImportRun>, ApiError> {
     let account = resolve_import_account(&auth);
-    let issues = import_issue_inputs(&body.issues)?;
-    let notes = note_rows(&body.notes)?;
+    let (issues, notes) = issues_and_notes(&body.issues, &body.notes)?;
     let now = chrono::Utc::now();
     let mut conn = state.db.acquire().await?;
     crate::db::imports::discard_import(&mut conn, account, import_id, &issues, &notes, now).await?;

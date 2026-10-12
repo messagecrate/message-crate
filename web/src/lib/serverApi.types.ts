@@ -2533,8 +2533,9 @@ export interface components {
          */
         CreateImportRequest: {
             /**
-             * @description Which install is creating the Import Run, stored trimmed. Over 64
-             *     characters is refused with `422 Unprocessable Entity`.
+             * @description Which install is creating the Import Run, stored trimmed. Null when
+             *     the request leaves it out, or blank. Over 64 characters is refused
+             *     with `422 Unprocessable Entity`.
              */
             device_id?: string | null;
             /**
@@ -2595,7 +2596,7 @@ export interface components {
             /**
              * @description Name of the program that runs the import, such as
              *     `message-crate-import`, stored on the run trimmed. Null when the
-             *     request leaves it out. Over 64 characters is refused with
+             *     request leaves it out, or blank. Over 64 characters is refused with
              *     `422 Unprocessable Entity`.
              */
             tool?: string | null;
