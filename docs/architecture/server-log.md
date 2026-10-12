@@ -110,8 +110,10 @@ step is a fixed phrase: it never holds a value bound into the statement.
 The trace layer writes no second `ERROR` line for the `5xx`, only the
 response's `INFO` line.
 
-A source whose text the error before it already ends with is left out of
-the chain (`error_chain` in `crates/server/server/src/server.rs`). Why:
+A source whose text the error before it already ends with, after a `: `,
+is left out of the chain (`error_chain` in
+`crates/server/server/src/server.rs`). A cause whose words only happen to
+end the step's phrase is kept, because it still says something new. Why:
 `sqlx`'s database error writes "error returned from database:" and the
 database's message, then gives the same message again as its source, so
 the line would name it twice.

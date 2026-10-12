@@ -61,6 +61,14 @@ async fn error_chain_names_a_database_message_once() {
     );
 }
 
+/// A cause whose words only happen to end the step's phrase still says
+/// something new, so the chain keeps it.
+#[test]
+fn error_chain_keeps_a_cause_that_ends_the_step_by_chance() {
+    let err = anyhow::anyhow!("conversation").context("stage conversation");
+    assert_eq!(error_chain(&err), "stage conversation: conversation");
+}
+
 #[test]
 fn internal_error_keeps_the_chain_and_answers_500() {
     let err = ApiError::from(anyhow::anyhow!("disk full").context("stage conversation"));

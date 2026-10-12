@@ -916,16 +916,21 @@ impl IntoResponse for ApiError {
 /// shows the sqlx or io failure under the step that hit it. `Display` alone
 /// would print only the outermost message.
 ///
-/// A source whose text the error before it already ends with is left out,
-/// because it says nothing new: `sqlx::Error::Database` writes the
+/// A source the error before it already ends with, after a `": "`, is left
+/// out, because it says nothing new: `sqlx::Error::Database` writes the
 /// database's message after "error returned from database:" and gives that
-/// same message again as its source (#2675).
+/// same message again as its source (#2675). A cause whose words only happen
+/// to end the step's phrase ("conversation" under "stage conversation") is
+/// kept.
 pub(crate) fn error_chain(err: &anyhow::Error) -> String {
     let mut line = String::new();
     let mut previous: Option<String> = None;
     for link in err.chain() {
         let text = link.to_string();
-        if previous.as_deref().is_some_and(|p| p.ends_with(&text)) {
+        let repeated = previous
+            .as_deref()
+            .is_some_and(|p| p == text || p.ends_with(&format!(": {text}")));
+        if repeated {
             continue;
         }
         if !line.is_empty() {
