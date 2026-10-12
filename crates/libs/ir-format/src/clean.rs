@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 /// distinguish a real export directory from a person's own directory that was
 /// pointed at by mistake. It also lists, one per line, the files and
 /// directories a merged archive wrote into the directory
-/// ([`record_archive_outputs`]), which the next clean removes.
+/// (`record_archive_outputs`), which the next clean removes.
 pub const EXPORT_SENTINEL: &str = ".message-crate-export";
 
 /// Whether `output_dir` holds the sentinel, which only an export writes.
@@ -90,7 +90,7 @@ pub fn mark_export_directory(output_dir: &Path) -> Result<()> {
 /// Clean a directory an earlier export marked, or mark an empty one.
 ///
 /// A directory that holds the sentinel loses the files and directories a
-/// merged archive recorded in it ([`record_archive_outputs`]) and its
+/// merged archive recorded in it (`record_archive_outputs`) and its
 /// previous CSV, JSON, JSON Lines, meta, temps, staged attachments, and mail
 /// archives, and keeps every other file. The crate that owns an archive names
 /// its outputs, and this crate knows none. A directory without the sentinel

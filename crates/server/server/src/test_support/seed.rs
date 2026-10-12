@@ -314,8 +314,8 @@ pub struct ConversationRow<'a> {
     pub id: Option<i64>,
     /// `conversations.account_id`.
     pub account_id: i64,
-    /// `conversations.chat_handle_id`: the peer's handle for a 1:1
-    /// conversation, the group chat's handle for a group.
+    /// `conversations.chat_handle_id`: the peer's handle for a one-to-one
+    /// conversation, the group conversation's handle for a group.
     pub chat_handle_id: i64,
     /// `conversations.conversation_type`: `individual` or `group`.
     pub conversation_type: &'a str,

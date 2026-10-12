@@ -13938,7 +13938,7 @@
           "direct_conversations": {
             "type": "integer",
             "format": "int64",
-            "description": "1:1 conversations the contact appears in.",
+            "description": "One-to-one conversations the contact appears in.",
             "minimum": 0
           },
           "group_conversations": {
@@ -14045,13 +14045,13 @@
           "individual_conversations": {
             "type": "integer",
             "format": "int64",
-            "description": "1:1 conversations with the contact.",
+            "description": "One-to-one conversations with the contact.",
             "minimum": 0
           },
           "individual_message_count": {
             "type": "integer",
             "format": "int64",
-            "description": "Messages the contact sent in 1:1 conversations.",
+            "description": "Messages the contact sent in one-to-one conversations.",
             "minimum": 0
           },
           "name": {
@@ -14123,7 +14123,7 @@
               "string",
               "null"
             ],
-            "description": "When the account last heard from the contact: the newest message one of\nthe contact's identities sent (RFC 3339, UTC), conversations in the\ntrash and duplicate messages left out. Null when none of them ever\nsent a message. Not the contact's last activity: a message the\naccount owner sent, or another member of a group chat, does not\ncount. The same question `last-message:` asks on Contacts."
+            "description": "When the account last heard from the contact: the newest message one of\nthe contact's identities sent (RFC 3339, UTC), conversations in the\ntrash and duplicate messages left out. Null when none of them ever\nsent a message. Not the contact's last activity: a message the\naccount owner sent, or another member of a group conversation, does not\ncount. The same question `last-message:` asks on Contacts."
           },
           "last_modified": {
             "type": "string",
@@ -17224,13 +17224,13 @@
                 "individual_conversations": {
                   "type": "integer",
                   "format": "int64",
-                  "description": "1:1 conversations with the contact.",
+                  "description": "One-to-one conversations with the contact.",
                   "minimum": 0
                 },
                 "individual_message_count": {
                   "type": "integer",
                   "format": "int64",
-                  "description": "Messages the contact sent in 1:1 conversations.",
+                  "description": "Messages the contact sent in one-to-one conversations.",
                   "minimum": 0
                 },
                 "name": {
@@ -17334,7 +17334,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "When the account last heard from the contact: the newest message one of\nthe contact's identities sent (RFC 3339, UTC), conversations in the\ntrash and duplicate messages left out. Null when none of them ever\nsent a message. Not the contact's last activity: a message the\naccount owner sent, or another member of a group chat, does not\ncount. The same question `last-message:` asks on Contacts."
+                  "description": "When the account last heard from the contact: the newest message one of\nthe contact's identities sent (RFC 3339, UTC), conversations in the\ntrash and duplicate messages left out. Null when none of them ever\nsent a message. Not the contact's last activity: a message the\naccount owner sent, or another member of a group conversation, does not\ncount. The same question `last-message:` asks on Contacts."
                 },
                 "last_modified": {
                   "type": "string",

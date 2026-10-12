@@ -200,7 +200,7 @@ For an import batch, `line` carries the line of the request body that could not 
 /// A handler never writes an error status out by hand. The failures every
 /// route of a kind shares, such as `401` for a route that takes a credential
 /// or `415` for one that takes a body, are added by
-/// [`crate::openapi::shared_parts`], which also files each type named here
+/// `crate::openapi::shared_parts`, which also files each type named here
 /// under its status and builds the one problem response for it
 /// (`docs/architecture/http-api.md`, "The reference").
 pub mod openapi {

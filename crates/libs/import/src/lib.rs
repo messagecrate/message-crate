@@ -4,7 +4,7 @@
 //! desktop app's Import screen calls this crate.
 //!
 //! Module map:
-//! - [`run`] — configuration, login, and the main loop that ties the rest together.
+//! - `run` — configuration, login, and the main loop that ties the rest together.
 //! - `prepare` — read one conversation, upload its media, cut it into chunks (worker threads).
 //! - `pipeline` — batch chunks into import requests and settle each conversation's result.
 //! - `progress` — the log file and live progress callback.

@@ -19,6 +19,7 @@ document and the code is a bug in one of them.
 | [The server's log](server-log.md) | Where the server keeps its log (rotating files in the Data Directory), how much it keeps (5 files of 50 MB), who reads it (the owner), and what a line never holds |
 | [Import Run logs](import-run-logs.md) | Where the desktop app keeps each Import Run's log (the Logs Directory, never deleted), the line that names the account that ran it, and who reads it (the owner and that account, on that computer) |
 | [The HTTP interface](http-api.md) | Every rule the `/v1` routes follow: identifiers, naming, methods, status codes, lists, failures, credentials, runs, the generated reference, and how the server code behind a route is named and layered |
+| [Outbound connections](outbound-connections.md) | What Message Crate connects to beyond its own computer: the server the desktop app uses and the tool downloads from GitHub, and no telemetry |
 
 ## What goes where
 

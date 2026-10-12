@@ -26,7 +26,7 @@ pub fn normalize_body(body: Option<&str>) -> String {
 
 /// Stable chat identity for content keys.
 ///
-/// 1:1 chats use the conversation handle's normalized form (E.164 phones,
+/// One-to-one conversations use the conversation handle's normalized form (E.164 phones,
 /// lowercased emails, verbatim usernames). Groups use sorted normalized
 /// participant handles so the same people across exporters (different
 /// `chat_identifier`s) share one fingerprint.

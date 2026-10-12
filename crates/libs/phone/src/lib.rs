@@ -145,7 +145,7 @@ const MAX_PHONE_DIGITS: usize = 15;
 ///
 /// Two conditions are added. The value must be nothing but digits and phone
 /// punctuation, so prose is rejected before any digits are collected. And the
-/// digits that remain must number no more than [`MAX_PHONE_DIGITS`], so two
+/// digits that remain must number no more than `MAX_PHONE_DIGITS`, so two
 /// numbers run together are rejected rather than concatenated into a handle
 /// that matches nothing.
 ///
@@ -716,7 +716,7 @@ fn is_national_form_of(digits: &str, owner: &str) -> bool {
     !country.is_empty() && (digits == national || digits.strip_prefix('0') == Some(national))
 }
 
-/// A group chat's id and display title from the [`Handle`] keys of its
+/// A group conversation's id and display title from the [`Handle`] keys of its
 /// non-owner participants. The id is `prefix` plus a length-prefixed slug of
 /// the sorted, deduplicated keys, so `["12","34"]` and `["123","4"]` cannot
 /// collide, hashed when it would pass 180 bytes so it stays a safe file
