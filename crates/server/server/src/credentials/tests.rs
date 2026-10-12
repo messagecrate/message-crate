@@ -83,27 +83,27 @@ fn a_username_is_trimmed_and_checked() {
 
 #[test]
 fn auth_rate_limit_forgets_idle_buckets() {
-    let limits: AuthRateLimits = Arc::new(Mutex::new(HashMap::new()));
+    let limits = AuthRateLimits::default();
     let start = Instant::now();
-    check_auth_rate_limit_at(&limits, "login:alice", start).unwrap();
-    check_auth_rate_limit_at(&limits, "login:bob", start).unwrap();
+    limits.count_at(&RateBucket::Password(1), start).unwrap();
+    limits.count_at(&RateBucket::Password(2), start).unwrap();
     assert_eq!(limits.lock().unwrap().len(), 2);
 
     let later = start + AUTH_RATE_WINDOW + Duration::from_secs(1);
-    check_auth_rate_limit_at(&limits, "login:carol", later).unwrap();
+    limits.count_at(&RateBucket::Password(3), later).unwrap();
     let map = limits.lock().unwrap();
     assert_eq!(map.len(), 1);
-    assert!(map.contains_key("login:carol"));
+    assert!(map.contains_key(&RateBucket::Password(3).key()));
 }
 
 #[test]
 fn auth_rate_limit_trips_after_max() {
-    let limits: AuthRateLimits = Arc::new(Mutex::new(HashMap::new()));
-    let bucket = "register:someone";
+    let limits = AuthRateLimits::frozen_at(Instant::now());
+    let bucket = RateBucket::Register;
     for _ in 0..AUTH_RATE_MAX {
-        check_auth_rate_limit(&limits, bucket).unwrap();
+        limits.count(&bucket).unwrap();
     }
-    let err = check_auth_rate_limit(&limits, bucket).unwrap_err();
+    let err = limits.count(&bucket).unwrap_err();
     match err {
         ApiError::RateLimited { retry_after_secs } => {
             assert!((1..=AUTH_RATE_WINDOW.as_secs()).contains(&retry_after_secs));
@@ -114,15 +114,59 @@ fn auth_rate_limit_trips_after_max() {
 
 #[test]
 fn auth_rate_limits_do_not_cross_servers() {
-    let one: AuthRateLimits = Arc::new(Mutex::new(HashMap::new()));
-    let two: AuthRateLimits = Arc::new(Mutex::new(HashMap::new()));
-    let bucket = "register:someone";
+    let now = Instant::now();
+    let one = AuthRateLimits::frozen_at(now);
+    let two = AuthRateLimits::frozen_at(now);
+    let bucket = RateBucket::Register;
     for _ in 0..AUTH_RATE_MAX {
-        check_auth_rate_limit(&one, bucket).unwrap();
+        one.count(&bucket).unwrap();
     }
-    check_auth_rate_limit(&one, bucket).unwrap_err();
-    check_auth_rate_limit(&two, bucket)
+    one.count(&bucket).unwrap_err();
+    two.count(&bucket)
         .expect("a second server's limiter must not see the first server's hits");
+}
+
+/// A hit given back no longer counts, so attempts that are each given back
+/// never fill the bucket, and a refused attempt is not counted at all.
+#[test]
+fn a_hit_given_back_no_longer_counts() {
+    let limits = AuthRateLimits::frozen_at(Instant::now());
+    let bucket = RateBucket::Password(TEST_ACCOUNT);
+    for _ in 0..=AUTH_RATE_MAX {
+        let hit = limits.count(&bucket).unwrap();
+        limits.give_back(&bucket, hit).unwrap();
+    }
+    assert!(limits.lock().unwrap().is_empty(), "nothing is left counted");
+
+    let hits: Vec<Hit> = (0..AUTH_RATE_MAX)
+        .map(|_| limits.count(&bucket).unwrap())
+        .collect();
+    limits.count(&bucket).unwrap_err();
+    limits.give_back(&bucket, hits[0]).unwrap();
+    limits
+        .count(&bucket)
+        .expect("one hit given back leaves room for one attempt");
+    limits.count(&bucket).unwrap_err();
+}
+
+/// Logins as unknown usernames share one count across the server, which
+/// holds more than an account's, and each username keeps its own count
+/// beneath it.
+#[test]
+fn unknown_usernames_share_one_larger_count_across_the_server() {
+    let limits = AuthRateLimits::frozen_at(Instant::now());
+    for n in 0..UNKNOWN_USERNAME_RATE_MAX {
+        limits.count(&RateBucket::UnknownUsernames).unwrap();
+        limits
+            .count(&RateBucket::unknown_username(&format!("nobody{n}")))
+            .unwrap();
+    }
+    limits.count(&RateBucket::UnknownUsernames).unwrap_err();
+    assert_eq!(
+        RateBucket::unknown_username("NoBody"),
+        RateBucket::unknown_username("nobody"),
+        "the spellings of one username share its count"
+    );
 }
 
 async fn password_change_setup() -> (
@@ -461,4 +505,51 @@ fn a_username_is_one_to_128_characters_of_a_known_set() {
     // pasted name with a trailing newline is accepted and stored trimmed.
     assert!(is_valid_username("  matt  "));
     assert_eq!(normalize_username("  matt\n"), "matt");
+}
+
+/// A count that fills writes one warning with its kind, the account and
+/// `retry_after_secs`, however many attempts it then refuses, and writes
+/// again only after it has emptied (#2119).
+#[test]
+fn a_full_count_warns_once_until_it_empties() {
+    use crate::logging::{LogFiles, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
+
+    let dir = tempfile::tempdir().unwrap();
+    let log_dir = dir.path().join("logs");
+    let files = LogFiles::open(&log_dir, SERVER_LOG_LIMITS).unwrap();
+    let limits = AuthRateLimits::default();
+    let bucket = RateBucket::Password(TEST_ACCOUNT);
+    let start = Instant::now();
+    let later = start + AUTH_RATE_WINDOW + Duration::from_secs(1);
+
+    tracing::subscriber::with_default(crate::logging::subscriber_for(files, "warn"), || {
+        for at in [start, later] {
+            for _ in 0..AUTH_RATE_MAX {
+                limits.count_at(&bucket, at).unwrap();
+            }
+            for _ in 0..3 {
+                limits.count_at(&bucket, at).unwrap_err();
+            }
+        }
+    });
+
+    let (lines, _) = read_lines(
+        &log_dir,
+        &LogLinesQuery {
+            limit: 10,
+            ..LogLinesQuery::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(lines.len(), 2, "one warning per fill: {lines:?}");
+    for line in &lines {
+        for part in [
+            "Too many authentication attempts",
+            "bucket=\"password\"",
+            &format!("account_id={TEST_ACCOUNT}"),
+            "retry_after_secs=",
+        ] {
+            assert!(line.text.contains(part), "{part}: {}", line.text);
+        }
+    }
 }

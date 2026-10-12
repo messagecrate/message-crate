@@ -273,6 +273,37 @@ pub async fn open_pool_for_path(path: &Path) -> Result<SqlitePool> {
     Ok(pool)
 }
 
+/// Close `pool` and every connection it opened, so none is left attached to
+/// the database file when this returns.
+///
+/// sqlx 0.8.6's `Pool::close` alone can return with a connection still
+/// open. A dropped connection goes back to the pool through a task that
+/// pings it first. The close waits for every connection's permit, but each
+/// idle connection it closes hands back one permit more than it held, so
+/// the wait can end while that task is still pinging. The task then puts
+/// the connection among the idle ones, open, after the close has taken
+/// them. So this closes again, letting that task run in between, until the
+/// pool counts no connection. Each pass ends: once the pool is closed a
+/// connection on its way back is either closed by its task or left idle for
+/// the next pass, and none can be checked out.
+///
+/// The connection left open matters before the file is removed, replaced or
+/// renamed. When it closes later as the last connection on its file, SQLite
+/// deletes the `-wal` and `-shm` files by name, and by then those names can
+/// be another database's: the next start's new database lost its
+/// write-ahead log, and the tables in it, that way (#2592).
+///
+/// This goes once a sqlx release's `Pool::close` closes every connection
+/// (#2884).
+#[allow(clippy::disallowed_methods)] // the one place that calls Pool::close
+pub async fn close_pool(pool: &SqlitePool) {
+    pool.close().await;
+    while pool.size() > 0 {
+        tokio::task::yield_now().await;
+        pool.close().await;
+    }
+}
+
 /// Shared test pool: file-backed SQLite in a fresh temp dir, returned with
 /// the pool so the test's files live there too. It runs in WAL mode, as
 /// [`open_pool_for_path`] does, because a write that lands between another

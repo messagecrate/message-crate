@@ -21,6 +21,12 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-11: **The owner's Logs panel shows refused logins.** A login
+  refused for a wrong password, an unknown username or a disabled account
+  now leaves a warning in the server's log naming the account and the
+  reason, and so does an account whose limit of attempts fills, so someone
+  guessing a password shows in the Logs panel. The username typed and the
+  password are never written.
 - 2026-10-11: **Owner Home says when the database runs without write-ahead
   logging.** The server turns write-ahead logging on each time it starts, so
   pages load while an import writes. When it cannot, most often because
@@ -341,6 +347,12 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-11: **Logging in often no longer locks you out.** Every login
+  counted toward the limit of 20 attempts a minute for an account, the
+  successful ones too, so an account that logged in often, such as the Demo
+  Account on a shared server, could be told to wait. Only failed logins
+  count now. Twenty wrong passwords in a minute still make the account wait,
+  even with the right password, until the minute passes.
 - 2026-10-11: **A screen that fails says why instead of going blank.** A
   screen that broke while showing itself, or whose code didn't arrive, left
   an empty page with no message. It now shows what went wrong and a Reload
@@ -1012,6 +1024,13 @@ released versions carry their date on the heading.
   finds the database busy says so and to try again in a few seconds. An
   import's upload sends it again by itself, and the server's log notes it as
   a warning rather than an error (#2084, #2124).
+
+- 2026-10-11: **Logins under made-up usernames are limited.** Each username
+  that names no account had its own limit, so a script trying a new name
+  each time was never slowed, kept the server busy checking passwords, and
+  filled the Audit Trail with refused logins. Past 120 such logins a minute
+  in all, the server now turns them away without checking them or recording
+  them, and the answer still doesn't say whether a username exists.
 
 - 2026-10-11: **No single attachment or error stops Thumbnails and Previews
   for good.** The server makes Thumbnails and Previews one attachment at a
