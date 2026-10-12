@@ -96,7 +96,7 @@ old message\r\n"
 fn sent_detection_uses_exact_owner_email() {
     fn headers_with_from(from: &str) -> MailHeaders {
         MailHeaders {
-            smssync_datatype: String::new(),
+            smssync_datatype: Datatype::Missing,
             smssync_type: String::new(),
             smssync_address: String::new(),
             smssync_date: String::new(),
@@ -152,7 +152,7 @@ fn a_subject_naming_a_number_gives_no_contact_name_beside_an_address() {
 #[test]
 fn a_mail_without_the_smssync_date_is_timed_by_its_date_header() {
     let headers = MailHeaders {
-        smssync_datatype: String::new(),
+        smssync_datatype: Datatype::Missing,
         smssync_type: "1".into(),
         smssync_address: "4075550107".into(),
         smssync_date: String::new(),
@@ -163,6 +163,129 @@ fn a_mail_without_the_smssync_date_is_timed_by_its_date_header() {
         date: "Fri, 01 Jan 2021 00:00:00 +0000".into(),
     };
     assert_eq!(timestamp_seconds(&headers), Some((1_609_459_200.0, false)));
+}
+
+/// The headers of a received mail of `datatype` whose `X-smssync-date` is
+/// `smssync_date` and whose `Date` header is `date`.
+fn dated(datatype: &str, smssync_date: &str, date: &str) -> MailHeaders {
+    MailHeaders {
+        smssync_datatype: Datatype::from_header(datatype),
+        smssync_type: "1".into(),
+        smssync_address: "4075550107".into(),
+        smssync_date: smssync_date.into(),
+        smssync_id: String::new(),
+        subject: "SMS with Alice".into(),
+        from: String::new(),
+        to: String::new(),
+        date: date.into(),
+    }
+}
+
+/// 2021-01-01T00:00:00Z, as SMS Backup+ writes it in `Date`.
+const NEW_YEAR_2021: &str = "Fri, 01 Jan 2021 00:00:00 +0000";
+
+/// An SMS's, a call's and a WhatsApp message's date are milliseconds.
+#[test]
+fn an_sms_date_is_read_in_milliseconds() {
+    for datatype in ["SMS", "sms", "CALLLOG", "WHATSAPP"] {
+        assert_eq!(
+            timestamp_seconds(&dated(datatype, "1609459200123", "")),
+            Some((1_609_459_200.123, true)),
+            "{datatype}"
+        );
+    }
+}
+
+/// An MMS's date is Android's seconds, however small or large the number.
+#[test]
+fn an_mms_date_is_read_in_seconds() {
+    for datatype in ["MMS", "mms"] {
+        assert_eq!(
+            timestamp_seconds(&dated(datatype, "1609459200", "")),
+            Some((1_609_459_200.0, false)),
+            "{datatype}"
+        );
+    }
+    // 1973, which the old size guess read as milliseconds.
+    assert_eq!(
+        timestamp_seconds(&dated("MMS", "100000000", "")),
+        Some((100_000_000.0, false))
+    );
+}
+
+/// A date past the year 9999 in its unit is unreadable, and the mail takes
+/// its time from `Date`, or has none.
+#[test]
+fn a_date_past_the_bound_is_not_read() {
+    // The millisecond date of a 2021 MMS is past the bound when read in
+    // seconds, as is a millisecond date past 9999.
+    for (datatype, date) in [("MMS", "1609459200000"), ("SMS", "253402300800000")] {
+        assert_eq!(
+            timestamp_seconds(&dated(datatype, date, "")),
+            None,
+            "{datatype}"
+        );
+        assert_eq!(
+            timestamp_seconds(&dated(datatype, date, NEW_YEAR_2021)),
+            Some((1_609_459_200.0, false)),
+            "{datatype}"
+        );
+    }
+}
+
+/// A mail with no datatype comes from an SMS Backup+ older than the header,
+/// and may be an SMS or an MMS: its date is read in the unit that agrees
+/// with `Date`, and in milliseconds when it has no `Date`.
+#[test]
+fn a_mail_without_a_datatype_is_dated_in_the_unit_its_date_header_agrees_with() {
+    // An SMS of October 2010, and an MMS of the same second.
+    let sent = "Mon, 25 Oct 2010 09:46:40 +0000";
+    assert_eq!(
+        timestamp_seconds(&dated("", "1288000000123", sent)),
+        Some((1_288_000_000.123, true))
+    );
+    assert_eq!(
+        timestamp_seconds(&dated("", "1288000000", sent)),
+        Some((1_288_000_000.0, false))
+    );
+    // With no `Date`, milliseconds.
+    assert_eq!(
+        timestamp_seconds(&dated("", "1609459200123", "")),
+        Some((1_609_459_200.123, true))
+    );
+    // Agreeing with `Date` in neither unit, the time is `Date`'s.
+    assert_eq!(
+        timestamp_seconds(&dated("", "1609459260123", NEW_YEAR_2021)),
+        Some((1_609_459_200.0, false))
+    );
+}
+
+/// A datatype SMS Backup+ never writes names no unit: the time comes from
+/// `Date`, or the mail has none.
+#[test]
+fn a_mail_of_an_unknown_datatype_is_timed_by_its_date_header() {
+    assert_eq!(
+        timestamp_seconds(&dated("RCS", "1609459260123", NEW_YEAR_2021)),
+        Some((1_609_459_200.0, false))
+    );
+    assert_eq!(timestamp_seconds(&dated("RCS", "1609459260123", "")), None);
+}
+
+/// The committed MMS fixture carries its date in seconds, as SMS Backup+
+/// writes an MMS's.
+#[test]
+fn the_mms_fixture_is_dated_in_seconds() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/flat_mms_seconds.eml");
+    let bytes = std::fs::read(&path).unwrap();
+    let mail = mailparse::parse_mail(&bytes).unwrap();
+    let headers = MailHeaders::from_mail(&mail);
+    let owners = OwnerHandleSet::from_phones(&["5555550100".to_string()]).unwrap();
+    let owner = Owner::new(owners, &["me@example.com".to_string()]);
+    let message = parse_flat_eml_mail(&path, &mail, &headers, &owner).unwrap();
+    assert_eq!(message.timestamp_secs, 1_609_459_380.0);
+    assert!(!message.has_milliseconds);
+    assert_eq!(message.text.trim(), "An MMS dated in seconds");
 }
 
 #[test]

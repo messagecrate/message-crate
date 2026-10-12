@@ -76,7 +76,8 @@ pub(super) enum ParsedEmlKind {
     Flat {
         message: Box<ParsedMessage>,
     },
-    FlatNone,
+    /// A message whose date cannot be read, from `X-smssync-date` or `Date`.
+    FlatNoDate,
     /// A call from the phone's call log; Message Crate has no model for a call.
     CallLog,
     NotSms,
@@ -130,7 +131,7 @@ pub(super) fn parse_one_eml(eml_path: &Path, rel_path: String, owner: &Owner) ->
                     message: Box::new(message),
                 }
             }
-            None => ParsedEmlKind::FlatNone,
+            None => ParsedEmlKind::FlatNoDate,
         }
     } else {
         ParsedEmlKind::NotSms
