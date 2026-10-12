@@ -64,8 +64,9 @@ use crate::report::{
 pub const DEFAULT_BATCH_SIZE: usize = 1_000;
 /// Soft max size of one import request body (about 64 MiB).
 ///
-/// Kept under Cloudflare's ~100 MiB upload cap so a large group chat is
-/// split into several requests instead of one giant one that gets rejected.
+/// Kept under Cloudflare's ~100 MiB upload cap so a large group conversation
+/// is split into several requests instead of one giant one that gets
+/// rejected.
 pub const MAX_IMPORT_BODY_BYTES: usize = 64 * 1024 * 1024;
 /// Sentinel for "do not flush import batches on message count; size only".
 ///

@@ -155,10 +155,10 @@ runs an action named by a verb sub-resource. `DELETE` removes. A read is a
 A read by id takes no filter. `GET /v1/conversations/{id}/messages` opens a
 conversation; searching inside one is `GET /v1/messages?q=in:#{id} …`.
 Why: opening and searching answer different questions. The read by id answers
-`404 Not Found` for an id the caller does not hold and shows a conversation in the
-trash; a search answers an empty page and leaves the trash out. A filter on the
-read by id is a second search that can drift from the first, as `?year=` beside
-`date:` did.
+`404 Not Found` for an id the caller does not hold and shows a conversation in
+the trash; a search answers an empty page and leaves the trash out. A filter on
+the read by id is a second search that can drift from the first, as `?year=`
+beside `date:` did.
 
 A file the server reads is the request body, with `Content-Type` naming its
 format, and anything about how to apply it is a declared query parameter.
@@ -184,18 +184,20 @@ current one, because that account reaches every other.
 - A creation answers `201 Created` with a `Location` header naming the new
   resource, whatever the method that made it: a `PUT` that stores an asset the
   database did not hold, and a claim that makes the owner's Session
-  (`Location: /v1/session`), both answer `201 Created`. A create that takes a batch
-  answers `200 OK` with a summary of what was created, updated and skipped,
-  because no single resource was made. A Media Link is made though nothing is
-  stored: `POST /v1/assets/{sha256}/media-links` answers `201 Created` with the link's
-  own URL in `Location`, which the Session that made it can `GET`.
+  (`Location: /v1/session`), both answer `201 Created`. A create that takes a
+  batch answers `200 OK` with a summary of what was created, updated and
+  skipped, because no single resource was made. A Media Link is made though
+  nothing is stored: `POST /v1/assets/{sha256}/media-links` answers
+  `201 Created` with the link's own URL in `Location`, which the Session that
+  made it can `GET`.
 - A write with nothing to return answers `204 No Content`.
 - A write the server finishes after it answers is `202 Accepted`, with the
   resource in its body and a `status` that says the work is under way. The
   client reads the resource with `GET` until `status` changes; a second write
-  while the first is under way answers `409 Conflict`. `PUT /v1/server/demo-account`
-  is the one such route: it removes the Demo Account and builds it again,
-  which takes from seconds to a minute, and answers with `status` `building`.
+  while the first is under way answers `409 Conflict`.
+  `PUT /v1/server/demo-account` is the one such route: it removes the Demo
+  Account and builds it again, which takes from seconds to a minute, and
+  answers with `status` `building`.
   Why: an answer held for a minute is lost to a closed tab or a proxy's
   timeout while the work carries on unseen, and `200 OK` would say the Demo
   Account is there when it is not yet.
@@ -208,9 +210,9 @@ current one, because that account reaches every other.
   the number the account's own, so it belongs to `PATCH /v1/accounts/{id}`,
   which runs the with-yourself rule and takes the number off its contact.
   `state-conflict` fits because the contact's number is in a state, held by
-  the account, that this route does not change; `422 Unprocessable Entity` would say the request
-  broke a rule the client could fix by rewriting it, and no body sent to this
-  route can do the merge.
+  the account, that this route does not change; `422 Unprocessable Entity`
+  would say the request broke a rule the client could fix by rewriting it, and
+  no body sent to this route can do the merge.
 - A request that would join two records into one, and so cannot be undone,
   answers `409 Conflict` with nothing changed the first time, and the client
   confirms by sending the same request again with `merge: true`. The problem
@@ -227,7 +229,8 @@ current one, because that account reaches every other.
 - A failed credential answers `401 Unauthorized`. A refused one, including a
   token without the needed scope and a disabled account, answers
   `403 Forbidden`. A login is the exception: every refused login, a
-  disabled account's included, answers the same `401 Unauthorized` (`invalid-credentials`).
+  disabled account's included, answers the same `401 Unauthorized`
+  (`invalid-credentials`).
   Why: a disabled account's own answer would come only after the right
   password, so a guesser would learn which guess was right, and the password
   works again once the owner enables the account. The Audit Trail records the
@@ -237,7 +240,8 @@ current one, because that account reaches every other.
   whose body is optional, a request with no body is read as no body, and a
   body sent without a `Content-Type` is still `415 Unsupported Media Type`.
 - A request that cannot be read is `400 Bad Request` (`malformed-body`): JSON
-  that does not parse, or a body of the wrong type. Nothing else is `400 Bad Request`.
+  that does not parse, or a body of the wrong type. Nothing else is
+  `400 Bad Request`.
 - A request that was read and broke a rule is `422 Unprocessable Entity`,
   whether the rule was on a query parameter, a path segment or a body field: a
   field or parameter missing or blank, a value out of range, an id that names
@@ -276,16 +280,16 @@ current one, because that account reaches every other.
   a time and seeks by asking for another (`docs/architecture/media.md`).
   Rejected: answering several ranges as `multipart/byteranges`. No media
   element sends several, and the whole file is a correct answer to them.
-- An unknown `/v1` path answers `404 Not Found` as a problem document, and a wrong method
-  `405 Method Not Allowed`, never Axum's plain text.
+- An unknown `/v1` path answers `404 Not Found` as a problem document, and a
+  wrong method `405 Method Not Allowed`, never Axum's plain text.
 
 There is no `ok` flag on any success, and none in any request: the status
 carries the meaning, and a run's outcome is its `status`.
 
-Rejected: a search query that does not parse as `400 Bad Request`, "the query could not be
-read". The request was read; the query is a value that broke the rules of the
-search language, which is what `422 Unprocessable Entity` means. One line with no exception is
-easier to hold than a line with one.
+Rejected: a search query that does not parse as `400 Bad Request`, "the query
+could not be read". The request was read; the query is a value that broke the
+rules of the search language, which is what `422 Unprocessable Entity` means.
+One line with no exception is easier to hold than a line with one.
 
 ## Lists
 
@@ -510,8 +514,8 @@ refused. Why: a waiting batch used to take a slot once an earlier
 batch ended and import in full, so the stop waited for a whole batch more
 ([#2203](https://github.com/messagecrate/message-crate/issues/2203)). It is
 its own type because the remedy, sending the same request again, is not the
-remedy for a `500 Internal Server Error`, and the request was not the client's mistake, so it is
-not a `4xx`.
+remedy for a `500 Internal Server Error`, and the request was not the client's
+mistake, so it is not a `4xx`.
 
 ## Content negotiation
 
@@ -538,15 +542,15 @@ send one, and the rule would refuse the web app on its first request.
 
 Every `/v1` answer carries `Cache-Control: no-store` unless its route sets a
 `Cache-Control` of its own. The rule covers every status and every answer a
-layer gives before the handler runs: a `401 Unauthorized` or `403 Forbidden` from the credential
-check, a `405 Method Not Allowed`, a `406 Not Acceptable`, a `413 Payload Too Large`, the `404 Not Found` of a path no route matches, and
-the answer to a CORS preflight. The
-only routes that set their own are the three asset reads, which send
-`private`, or `private, no-store` under a Media Link, once the credential is
-accepted (see [Credentials and reach](#credentials-and-reach)). Their
-refusals before that point take `no-store` from this rule. Nothing outside
-`/v1` is marked: the website's built files and `/health` keep their own
-caching.
+layer gives before the handler runs: a `401 Unauthorized` or `403 Forbidden`
+from the credential check, a `405 Method Not Allowed`, a `406 Not Acceptable`,
+a `413 Payload Too Large`, the `404 Not Found` of a path no route matches, and
+the answer to a CORS preflight. The only routes that set their own are the
+three asset reads, which send `private`, or `private, no-store` under a Media
+Link, once the credential is accepted (see [Credentials and
+reach](#credentials-and-reach)). Their refusals before that point take
+`no-store` from this rule. Nothing outside `/v1` is marked: the website's built
+files and `/health` keep their own caching.
 Why: the answers carry a Session token (`POST /v1/session`), message text,
 contacts and attachments. RFC 9111 already keeps a compliant shared cache
 from storing an answer to a request that sent `Authorization`, and a browser
@@ -556,8 +560,8 @@ one. `no-store` says in the answer itself that nothing may keep it.
 How: one layer in `server.rs` wraps the whole router, so a route added later
 is covered without remembering to, and it sets the header only when the
 answer has none. The OpenAPI document states the rule once, in its
-description, as it does for `405 Method Not Allowed`, and the walk over every operation checks
-it (see [The reference](#the-reference)).
+description, as it does for `405 Method Not Allowed`, and the walk over every
+operation checks it (see [The reference](#the-reference)).
 
 Rejected: `private` for every answer. It still lets the browser write message
 text and a Session token to its disk cache, and the web app fetches afresh
@@ -592,9 +596,9 @@ security scheme with its scopes, so every route says which it accepts.
 - `GET /v1/session` answers whose credential the caller holds — the account's
   id and username — for a session or a token. Why: a program holding a token
   needs to know which account it writes to before it starts, and push and export
-  label their work with it. `DELETE /v1/session` refuses a token with `403 Forbidden`,
-  because a token is not a Session and a `204 No Content` would say something ended when
-  nothing did.
+  label their work with it. `DELETE /v1/session` refuses a token with
+  `403 Forbidden`, because a token is not a Session and a `204 No Content`
+  would say something ended when nothing did.
 - A **Media Link** reads one asset, its Preview and its Thumbnail, in the
   account that made it, with no `Authorization` header. A Session makes it
   with `POST /v1/assets/{sha256}/media-links`, which answers the URLs to
@@ -629,9 +633,9 @@ security scheme with its scopes, so every route says which it accepts.
   attachment, and one read with a Media Link carries `private, no-store`:
   that request sends no `Authorization` header, so a shared cache in front
   of the server would otherwise keep the answer under the link's URL and
-  serve it after the hour or the Session has ended. A problem such as `404 Not Found`
-  or `416 Range Not Satisfiable` carries it too, because a cache may keep a `404 Not Found` and hide a
-  Preview made later.
+  serve it after the hour or the Session has ended. A problem such as
+  `404 Not Found` or `416 Range Not Satisfiable` carries it too, because a
+  cache may keep a `404 Not Found` and hide a Preview made later.
   Why an hour: a phone video is watched and sought in within minutes, and an
   hour leaves room for a long one; a link copied out of the page stops
   working soon after. The web app makes a new link whenever it opens an
@@ -815,10 +819,11 @@ What each reaches:
   naming the limit, until one of them is completed, aborted, or removed as
   stale after a day untouched. Why: an open upload keeps its parts on the
   disk every account shares, and with no cap one account could leave enough
-  of them to fill it (#2176). It is `409 Conflict` and not `422 Unprocessable Entity` because the
-  account's state refuses the start, and no rewrite of the request gets
-  past it. The number is twice the uploads the desktop app runs at once, so
-  a run that was stopped and started again is not refused.
+  of them to fill it (#2176). It is `409 Conflict` and not
+  `422 Unprocessable Entity` because the account's state refuses the start, and
+  no rewrite of the request gets past it. The number is twice the uploads the
+  desktop app runs at once, so a run that was stopped and started again is not
+  refused.
 
 The credential names the account. No route takes an `account=` parameter. A
 Media Link is a credential, so its `media_link` parameter names the account
@@ -846,11 +851,12 @@ password: by the account's id when the username names one, and otherwise by
 the username folded the way the lookup folds it, so no spelling of a username
 gets a count of its own. A wrong `current_password` sent to
 `PUT /v1/accounts/{id}/password` or `DELETE /v1/accounts/{id}` counts in the
-same per-account count, and past the limit those routes answer `429 Too Many Requests` without
-checking the guess: an open session must not guess faster than the login.
-`POST /v1/accounts` and `POST /v1/server/claim` count once for the
-whole server, because they guard against a flood of new accounts, and a count
-per name lets a script that tries a new name each time straight through.
+same per-account count, and past the limit those routes answer
+`429 Too Many Requests` without checking the guess: an open session must not
+guess faster than the login. `POST /v1/accounts` and `POST /v1/server/claim`
+count once for the whole server, because they guard against a flood of new
+accounts, and a count per name lets a script that tries a new name each time
+straight through.
 
 Rejected: counting registrations by the caller's address. Behind a reverse
 proxy every visitor shares one address, and believing a forwarded address
@@ -868,28 +874,30 @@ settings are stated once on creation, never per batch or per page, and
 `complete`, `discard` (imports) and `cancel` (exports) are the only ways out.
 There is no sessionless import and no unrecorded export.
 
-A run that has finished answers `409 Conflict` to `complete`, `discard`, `cancel`, a
-batch, and a change of stage; its record is never rewritten. Its outcome is
-stated once, as `status`. Why: the finished record is the history the person
-reads, and a cancelled run marked completed afterwards would lie. A program
-unsure how a run ended reads it with `GET` rather than repeating the call.
+A run that has finished answers `409 Conflict` to `complete`, `discard`,
+`cancel`, a batch, and a change of stage; its record is never rewritten. Its
+outcome is stated once, as `status`. Why: the finished record is the history
+the person reads, and a cancelled run marked completed afterwards would lie. A
+program unsure how a run ended reads it with `GET` rather than repeating the
+call.
 
-Rejected: a repeatable `complete`, answering `200 OK` when the run already ended
-the same way. It makes one call safe to retry at the cost of a second rule,
-and `GET` already answers the question a retry is asking.
+Rejected: a repeatable `complete`, answering `200 OK` when the run already
+ended the same way. It makes one call safe to retry at the cost of a second
+rule, and `GET` already answers the question a retry is asking.
 
 A running Import Run's stage moves only to the next stage in the order a run
 passes through (`parse`, `write`, `staging_review`, `media`, `media_review`,
 `upload`), from `staging_review` straight to `upload` (the move a client makes
 when the import has no Media Stage), or to the stage it is already at. Any
 other change of stage, backwards or skipping a stage, answers
-`409 Conflict` `state-conflict` naming both stages, and the run keeps its stage and
-summary. Why: the next visit resumes a run at the stage the server holds, so a
-client that sent a wrong stage would have the run resumed at work it already
-did (#1227). A run opens only at `parse`: `POST /v1/imports` with any other
-`stage` answers `422 Unprocessable Entity` (`validation-failed`) and opens no
-run. Why: a run opened later in the order would be resumed at work nobody did
-(#2638), and `422 Unprocessable Entity` because the client fixes it by sending `parse`.
+`409 Conflict` `state-conflict` naming both stages, and the run keeps its stage
+and summary. Why: the next visit resumes a run at the stage the server holds,
+so a client that sent a wrong stage would have the run resumed at work it
+already did (#1227). A run opens only at `parse`: `POST /v1/imports` with any
+other `stage` answers `422 Unprocessable Entity` (`validation-failed`) and
+opens no run. Why: a run opened later in the order would be resumed at work
+nobody did (#2638), and `422 Unprocessable Entity` because the client fixes it
+by sending `parse`.
 
 A running run with no stored stage is refused any change of stage with
 `500 Internal Server Error`. Why: the server never writes such a row, so there
@@ -949,19 +957,21 @@ handlers by `message-crate-server dump-openapi` and checked in; a test fails
 when the two differ, and CI checks the web app's generated types against it.
 
 An operation's error responses are built from shared parts, never written out
-by hand. The credential a route accepts brings its `401 Unauthorized` and `403 Forbidden`, and a
-Media Link brings `media-link-invalid`; a request
-body brings `400 Bad Request`, `413 Payload Too Large`, `415 Unsupported Media Type` and `422 Unprocessable Entity`; an id in the path brings `404 Not Found` and
-`422 Unprocessable Entity`; every `/v1` route brings `422 Unprocessable Entity` for a query parameter it does not
-declare; and every `/v1` route that answers JSON brings `406 Not Acceptable` for an `Accept`
-that names nothing JSON. `405 Method Not Allowed` is said once, in the document's own
-description, because it answers a method no operation has. The handler adds
-only what is its own, such as `409 Conflict` for a run in the wrong state, by naming
-the problem type (`crate::problem::openapi`).
-Every error response is declared as `application/problem+json`, names the
-problem types it can carry (in its description and in `x-problem-types`), and
-has a description. The first sentence of a handler's doc comment is the
-operation's summary, and the rest is its description.
+by hand. The credential a route accepts brings its `401 Unauthorized` and
+`403 Forbidden`, and a Media Link brings `media-link-invalid`; a request
+body brings `400 Bad Request`, `413 Payload Too Large`,
+`415 Unsupported Media Type` and `422 Unprocessable Entity`; an id in the path
+brings `404 Not Found` and `422 Unprocessable Entity`; every `/v1` route brings
+`422 Unprocessable Entity` for a query parameter it does not declare; and every
+`/v1` route that answers JSON brings `406 Not Acceptable` for an `Accept` that
+names nothing JSON. `405 Method Not Allowed` is said once, in the document's
+own description, because it answers a method no operation has. The handler adds
+only what is its own, such as `409 Conflict` for a run in the wrong state, by
+naming the problem type (`crate::problem::openapi`). Every error response is
+declared as `application/problem+json`, names the problem types it can carry
+(in its description and in `x-problem-types`), and has a description. The first
+sentence of a handler's doc comment is the operation's summary, and the rest is
+its description.
 Why: every mismatch between the reference and the handlers that the September
 2026 review found was in a hand-written list.
 
@@ -986,16 +996,17 @@ field's name to go on.
 A rule that can be checked by walking every operation in the document is
 checked that way, by one test, as `openapi/credential_matrix.rs` checks every
 route's reach: the page shape and paging parameters on every list, a
-`Location` on every `201 Created` that the credential which made it can `GET`, a
-problem document on every failure, `401 Unauthorized` without a credential, a refused
-unknown query parameter, `415 Unsupported Media Type` for a body without an accepted `Content-Type`,
-`400 Bad Request` for a JSON body that is not JSON, `406 Not Acceptable` exactly where the document lists
-it, a successful `GET` in a media type its document declares, every property of
-a success answer required and every one of them in what the route answers
-([Fields](#fields)), no body on a `HEAD` answer, `Cache-Control: no-store`
-on every answer but those of an operation that lists its own
-([Caching](#caching)), kebab-case paths and the nesting depth. Why: a rule checked one
-route at a time is checked on the routes someone remembered.
+`Location` on every `201 Created` that the credential which made it can `GET`,
+a problem document on every failure, `401 Unauthorized` without a credential, a
+refused unknown query parameter, `415 Unsupported Media Type` for a body
+without an accepted `Content-Type`, `400 Bad Request` for a JSON body that is
+not JSON, `406 Not Acceptable` exactly where the document lists it, a
+successful `GET` in a media type its document declares, every property of a
+success answer required and every one of them in what the route answers
+([Fields](#fields)), no body on a `HEAD` answer, `Cache-Control: no-store` on
+every answer but those of an operation that lists its own
+([Caching](#caching)), kebab-case paths and the nesting depth. Why: a rule
+checked one route at a time is checked on the routes someone remembered.
 
 The shared failures are checked by calling each operation into them, and the
 status and problem type the server answers must be ones the document lists.

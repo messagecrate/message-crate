@@ -48,7 +48,8 @@ through `apiClient`, and no account to name a cache entry after.
 **The Import Run's own server calls.** `getServerState`, `getActiveImportRun`,
 `createImport`, `setImportStage`, `completeImport` and `discardImportRun` are
 called from `web/src/screens/import/run/` through `endSessionIfRefused` in
-`serverCalls.ts`, straight over `serverApi.ts`. A run is not a screen's data:
+`serverCalls.ts`, straight over `serverApi.ts` and its wrappers in
+`web/src/lib/importRun.ts`. A run is not a screen's data:
 it runs on after the Import screen is left, and it stops where the server
 holds it when its session is refused. A `401 Unauthorized` that ended the
 session through the query client would end it with no word to the run, so the
@@ -60,11 +61,15 @@ through TanStack Query like any screen's.
 
 **The check of a saved login at start.** `checkSavedLogin` in
 `web/src/lib/savedLogin.ts` calls `getSession` once, from an effect in
-`web/src/lib/auth.tsx`, before anything that shows account data renders. It
-asks only whether the saved token still works: a `401 Unauthorized` forgets
-the login, and any other failure leaves it in place. Its answer is the
-account the cache entries are named with, so it has to be settled before
-there is an account to name an entry after.
+`web/src/lib/auth.tsx`, when the app starts with a saved login. The saved
+session is applied before anything renders, so the screens' first queries
+run beside the check rather than after it. The check decides only what
+becomes of the saved login, by a rule of its own: a `401 Unauthorized`
+forgets it, and a server that gives no answer leaves it saved for a later
+retry. In both cases this session shows the login screen. The query
+client knows only the first half of that rule (`endsSession` in
+`web/src/lib/routeQuery.ts`), and the check returns no data any screen
+shows, so it has nothing to cache.
 
 ## Why
 
