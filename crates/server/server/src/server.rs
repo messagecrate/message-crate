@@ -1750,7 +1750,12 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
         );
     }
     // Uploads a stopped server left open, which no upload start sweeps (#2261).
-    crate::asset_store::sweep_incoming_at_start(&state.db, &state.cfg.paths).await;
+    crate::asset_store::sweep_incoming_at_start(
+        &state.db,
+        &state.cfg.paths,
+        state.upload_time_limits.stall,
+    )
+    .await;
     // Import batch bodies a stopped server left, before any batch can start.
     crate::imports_api::batch_bodies::sweep_at_start(&state.cfg.paths.data_dir);
     // Works through what earlier Import Runs queued, a server stopped

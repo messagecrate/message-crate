@@ -1,5 +1,29 @@
 use super::*;
+use crate::asset_store::tests::{STALL, make_abandoned, written_at};
 use tempfile::tempdir;
+
+/// Start an upload of `data` under `root`, sweeping as if the clock read
+/// `now` should the account be at the limit, and return its fingerprint and
+/// upload id.
+fn start_at(
+    root: &Path,
+    data: &[u8],
+    limits: UploadLimits,
+    now: SystemTime,
+) -> Result<(Sha256, String), AssetError> {
+    let sha = Sha256::of_bytes(data);
+    let abandoned = crate::asset_store::tests::abandoned_at(now);
+    start_upload_with(
+        root,
+        &sha,
+        data.len() as u64,
+        None,
+        limits,
+        abandoned,
+        new_upload_id,
+    )
+    .map(|(_, started)| (sha, started.unwrap().upload_id))
+}
 
 fn hash_bytes(data: &[u8]) -> Sha256 {
     Sha256::of_bytes(data)
@@ -159,8 +183,15 @@ fn put_part_and_complete_via_api() {
     let sha = hash_bytes(data);
     // Tiny parts, set on this test's own limits so no other test sees them.
     let limits = UploadLimits::within(10, 1024);
-    let (existing, start) =
-        start_upload(root, &sha, data.len() as u64, Some("text/plain"), limits).unwrap();
+    let (existing, start) = start_upload(
+        root,
+        &sha,
+        data.len() as u64,
+        Some("text/plain"),
+        limits,
+        STALL,
+    )
+    .unwrap();
     assert!(existing.is_none());
     let start = start.expect("upload started");
     assert_eq!(start.part_size, 10);
@@ -188,8 +219,15 @@ fn start_returns_existing() {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, data).unwrap();
 
-    let (existing, start) =
-        start_upload(root, &sha, data.len() as u64, None, UploadLimits::default()).unwrap();
+    let (existing, start) = start_upload(
+        root,
+        &sha,
+        data.len() as u64,
+        None,
+        UploadLimits::default(),
+        STALL,
+    )
+    .unwrap();
     assert!(existing.is_some());
     assert!(start.is_none());
 }
@@ -203,7 +241,7 @@ fn start_rejects_over_max_bytes() {
         part_size: 1024,
         max_bytes: 2048,
     };
-    let err = start_upload(root, &sha, 4096, None, limits).unwrap_err();
+    let err = start_upload(root, &sha, 4096, None, limits, STALL).unwrap_err();
     assert!(err.to_string().contains("server limit"));
 }
 
@@ -218,9 +256,9 @@ fn a_part_is_never_larger_than_the_limit() {
     assert_eq!((small_part.part_size, small_part.max_bytes), (10, 1024));
 }
 
-/// An account with as many uploads open as it may have is refused the
-/// next one, with the limit named. Finishing one or aborting one makes
-/// room for the next.
+/// An account with as many uploads open as it may have, none of them
+/// abandoned, is refused the next one, with the limit named. Finishing one
+/// or aborting one makes room for the next.
 #[test]
 fn an_upload_past_the_open_upload_limit_is_refused_until_one_ends() {
     let dir = tempdir().unwrap();
@@ -229,11 +267,9 @@ fn an_upload_past_the_open_upload_limit_is_refused_until_one_ends() {
         part_size: 1024,
         max_bytes: 2048,
     };
-    let start = |data: &[u8]| {
-        let sha = Sha256::of_bytes(data);
-        start_upload(root, &sha, data.len() as u64, None, limits)
-            .map(|(_, started)| (sha, started.unwrap().upload_id))
-    };
+    // Every upload was written to after this, so none is abandoned at it.
+    let began = SystemTime::now();
+    let start = |data: &[u8]| start_at(root, data, limits, began);
     let files: Vec<Vec<u8>> = (0..=MAX_OPEN_UPLOADS)
         .map(|n| format!("file {n}").into_bytes())
         .collect();
@@ -276,8 +312,11 @@ fn two_starts_given_the_same_upload_id_get_an_upload_each() {
     };
     let mut ids = ["aa", "aa", "bb"].into_iter().map(String::from);
     let mut start = |bytes: u64| {
-        let (_, started) =
-            start_upload_with_ids(root, &sha, bytes, None, limits, || ids.next().unwrap()).unwrap();
+        let abandoned = crate::asset_store::tests::abandoned_at(SystemTime::now());
+        let (_, started) = start_upload_with(root, &sha, bytes, None, limits, abandoned, || {
+            ids.next().unwrap()
+        })
+        .unwrap();
         started.unwrap().upload_id
     };
 
@@ -294,34 +333,104 @@ fn two_starts_given_the_same_upload_id_get_an_upload_each() {
     assert_eq!(second_manifest.bytes, 6);
 }
 
-/// #2261: a start no longer sweeps `.incoming/` each time, so an account
-/// whose open uploads are all abandoned ones would be held at the limit
-/// until a run ended. A start at the limit sweeps them first and goes
-/// on, and an abandoned upload under the limit stays until a sweep.
+/// #2261, #2652: a start no longer sweeps `.incoming/` each time, so an
+/// account whose open uploads are all abandoned ones, such as those of two
+/// Uploads stopped part-way, would be held at the limit. A start at the
+/// limit removes the uploads nothing was written to for the stall limit
+/// first and goes on. One written to inside the limit is kept.
 #[test]
-fn a_start_at_the_open_upload_limit_sweeps_abandoned_uploads_first() {
+fn a_start_at_the_open_upload_limit_removes_abandoned_uploads_first() {
     let dir = tempdir().unwrap();
     let root = dir.path();
     let limits = UploadLimits {
         part_size: 1024,
         max_bytes: 2048,
     };
+    let now = SystemTime::now();
     let start = |data: &[u8]| {
-        let sha = Sha256::of_bytes(data);
-        let (_, started) = start_upload(root, &sha, data.len() as u64, None, limits).unwrap();
-        session_dir(root, &sha, &started.unwrap().upload_id)
+        let (sha, upload_id) = start_at(root, data, limits, now).unwrap();
+        session_dir(root, &sha, &upload_id)
     };
-    let abandoned: Vec<PathBuf> = (0..MAX_OPEN_UPLOADS)
+    let mut abandoned: Vec<PathBuf> = (0..MAX_OPEN_UPLOADS)
         .map(|n| start(format!("file {n}").as_bytes()))
         .collect();
     for session in &abandoned {
-        crate::asset_store::tests::make_abandoned(&manifest_path(session));
+        written_at(&manifest_path(session), now - STALL);
     }
+    let live = abandoned.pop().unwrap();
+    written_at(&manifest_path(&live), now - STALL + Duration::from_secs(1));
 
     let fresh = start(b"one more");
 
     assert!(abandoned.iter().all(|session| !session.exists()));
+    assert!(
+        manifest_path(&live).is_file(),
+        "an upload written to inside the limit is kept"
+    );
     assert!(manifest_path(&fresh).is_file());
+}
+
+/// #2652: the account is at the limit with uploads written to inside the
+/// stall limit only, so the start is refused and none of them is removed.
+#[test]
+fn a_start_at_the_open_upload_limit_keeps_uploads_written_to_inside_the_stall_limit() {
+    let dir = tempdir().unwrap();
+    let root = dir.path();
+    let limits = UploadLimits {
+        part_size: 1024,
+        max_bytes: 2048,
+    };
+    let now = SystemTime::now();
+    let open: Vec<PathBuf> = (0..MAX_OPEN_UPLOADS)
+        .map(|n| {
+            let (sha, upload_id) =
+                start_at(root, format!("file {n}").as_bytes(), limits, now).unwrap();
+            session_dir(root, &sha, &upload_id)
+        })
+        .collect();
+    for session in &open {
+        written_at(
+            &manifest_path(session),
+            now - STALL + Duration::from_secs(1),
+        );
+    }
+
+    let err = start_at(root, b"one more", limits, now).unwrap_err();
+
+    assert!(matches!(err, AssetError::TooManyUploads), "{err}");
+    assert!(open.iter().all(|session| manifest_path(session).is_file()));
+}
+
+/// #2652: a part arrives into memory before anything of it is written, so
+/// an upload whose part is arriving keeps its old manifest time. The
+/// start at the limit leaves it, while it removes the rest.
+#[test]
+fn a_start_at_the_open_upload_limit_keeps_an_upload_a_request_is_using() {
+    let dir = tempdir().unwrap();
+    let root = dir.path();
+    let limits = UploadLimits {
+        part_size: 1024,
+        max_bytes: 2048,
+    };
+    let now = SystemTime::now();
+    let mut open: Vec<(Sha256, String)> = (0..MAX_OPEN_UPLOADS)
+        .map(|n| start_at(root, format!("file {n}").as_bytes(), limits, now).unwrap())
+        .collect();
+    for (sha, upload_id) in &open {
+        written_at(
+            &manifest_path(&session_dir(root, sha, upload_id)),
+            now - STALL,
+        );
+    }
+    let (sha, upload_id) = open.pop().unwrap();
+    let in_use = hold_upload(root, &sha, &upload_id).unwrap();
+
+    start_at(root, b"one more", limits, now).unwrap();
+
+    assert!(manifest_path(&session_dir(root, &sha, &upload_id)).is_file());
+    drop(in_use);
+    put_part(root, &sha, &upload_id, 1, b"file 127").unwrap();
+    complete_upload(root, &sha, &upload_id).unwrap();
 }
 
 /// #2261: under the limit, a start leaves an abandoned upload to the
@@ -335,11 +444,11 @@ fn a_start_under_the_open_upload_limit_does_not_sweep() {
         max_bytes: 2048,
     };
     let sha = Sha256::of_bytes(b"left");
-    let (_, started) = start_upload(root, &sha, 4, None, limits).unwrap();
+    let (_, started) = start_upload(root, &sha, 4, None, limits, STALL).unwrap();
     let abandoned = session_dir(root, &sha, &started.unwrap().upload_id);
-    crate::asset_store::tests::make_abandoned(&manifest_path(&abandoned));
+    make_abandoned(&manifest_path(&abandoned));
 
-    start_upload(root, &Sha256::of_bytes(b"next"), 4, None, limits).unwrap();
+    start_upload(root, &Sha256::of_bytes(b"next"), 4, None, limits, STALL).unwrap();
 
     assert!(manifest_path(&abandoned).is_file());
 }
@@ -364,7 +473,7 @@ fn started_upload() -> (tempfile::TempDir, Sha256, String, PathBuf) {
         part_size: 1024,
         max_bytes: 2048,
     };
-    let (_, start) = start_upload(dir.path(), &sha, 5, None, limits).unwrap();
+    let (_, start) = start_upload(dir.path(), &sha, 5, None, limits, STALL).unwrap();
     let upload_id = start.unwrap().upload_id;
     let session = session_dir(dir.path(), &sha, &upload_id);
     (dir, sha, upload_id, session)
