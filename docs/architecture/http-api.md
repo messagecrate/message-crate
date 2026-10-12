@@ -240,8 +240,12 @@ current one, because that account reaches every other.
   whose body is optional, a request with no body is read as no body, and a
   body sent without a `Content-Type` is still `415 Unsupported Media Type`.
 - A request that cannot be read is `400 Bad Request` (`malformed-body`): JSON
-  that does not parse, or a body of the wrong type. Nothing else is
-  `400 Bad Request`.
+  that does not parse, a body of the wrong type, or a body that failed to
+  arrive, an import batch body that stalled or ran past its deadline among
+  them. Nothing else is `400 Bad Request`. A body that failed to arrive is
+  this type and not one of its own because the server has no request to
+  judge: the client that sent it has usually gone, and one that is still
+  there sends the body again, as it would after any broken connection.
 - A request that was read and broke a rule is `422 Unprocessable Entity`,
   whether the rule was on a query parameter, a path segment or a body field: a
   field or parameter missing or blank, a value out of range, an id that names
@@ -525,11 +529,15 @@ its own database is the `500 Internal Server Error` no page could help with.
 Every registered problem type is a `4xx` but one: `server-stopping`, a
 `503 Service Unavailable`. A server told to stop closes its import slots
 (`AppState::on_stop_signal` in `crates/server/server/src/server.rs`), so an
-import batch still waiting for a slot is refused with it and stores nothing.
+import batch still waiting for a slot is refused with it, having read none of
+its body, and stores nothing. A batch that holds a slot but is still reading
+its body is refused the same way once the body has arrived, before its import
+starts.
 The Upload retries it as it retries any `5xx`; if the server is not back in
-time, the Upload pauses, and resuming the run sends the batch. A batch that already holds a slot is not
-refused. Why: a waiting batch used to take a slot once an earlier
-batch ended and import in full, so the stop waited for a whole batch more
+time, the Upload pauses, and resuming the run sends the batch. A batch whose
+import has started is not refused. Why: a waiting batch used to take a slot
+once an earlier batch ended and import in full, so the stop waited for a
+whole batch more
 ([#2203](https://github.com/messagecrate/message-crate/issues/2203)). It is
 its own type because the remedy, sending the same request again, is not the
 remedy for a `500 Internal Server Error`, and the request was not the client's
@@ -806,6 +814,22 @@ What each reaches:
   other route has a body cap fixed in the code. Why: the owner may set any
   limit of 1 byte or more, and a limit that held every body would refuse
   the login and the settings change that raise it again.
+- An import batch body is held to 64 MiB, the most the desktop app's Upload
+  packs into one (`MAX_IMPORT_BATCH_BYTES` in `message-crate-api-types`, the
+  one figure both sides read), and a larger one answers
+  `413 Payload Too Large`. A batch takes its import slot before it reads its
+  body, and writes the body under the Data Directory
+  (`data_dir/.import-batches/`), which `serve` empties as it starts. A body
+  that goes 60 seconds with no byte arriving, or is still arriving after
+  600 seconds, the Upload's own timeout for one batch, ends the read with
+  `400 Bad Request`, which frees the slot. Why: the server accepted eight
+  times what its client sends, and held a batch's whole text in memory
+  beside its parsed records (#2075); every batch waiting for a slot held its
+  body on disk (#2095); and that disk was the operating system's temporary
+  directory, often small or held in memory, where nothing removed what a
+  stopped server left (#2123). Only two slots exist, so without the bounds
+  two clients that went to sleep part-way through a body, or sent a byte
+  now and then, would stop every import on the server.
 - `GET /v1/server` reports the journal mode SQLite runs the database in,
   `journal_mode`, read when the request is answered, to any client. Owner
   Home says so when it is not `wal`. It is `null` when the mode cannot be
