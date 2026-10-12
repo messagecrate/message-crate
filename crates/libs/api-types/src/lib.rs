@@ -52,10 +52,6 @@ pub const APP_VERSION_HEADER: &str = "x-message-crate-version";
 /// server's default 5-minute limit for one at about 0.45 Mbit/s.
 pub const MAX_IMPORT_BATCH_BYTES: usize = 16 * 1024 * 1024;
 
-/// The id each exporter writes into a conversation file's `export.source`,
-/// one constant per backup type. `message-crate-core`'s
-/// `Exporter::source_id` returns these, and each exporter writes what it
-/// returns.
 /// The slugs of the problem types a client branches on, the last segment
 /// of a problem's `type` URL ([`Problem::slug`]). The server's own list of
 /// types is checked against these, so a renamed type fails a test rather
@@ -68,6 +64,10 @@ pub mod problem_slug {
     pub const DATABASE_BUSY: &str = "database-busy";
 }
 
+/// The id each exporter writes into a conversation file's `export.source`,
+/// one constant per backup type. `message-crate-core`'s
+/// `Exporter::source_id` returns these, and each exporter writes what it
+/// returns.
 pub mod source_id {
     /// GO SMS Pro.
     pub const GO_SMS_PRO: &str = "go-sms-pro";

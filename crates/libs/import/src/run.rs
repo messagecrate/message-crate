@@ -162,8 +162,8 @@ pub(crate) struct Session {
     /// Set once the server refuses the session token. It is this run's own,
     /// and stops the run as the caller's cancel flag does.
     pub refused: Arc<AtomicBool>,
-    /// Set once a request fails because the server was not there to take
-    /// it, with why: it is stopping, or it could not be reached. Like
+    /// Set once a request fails because the server could not take it, with
+    /// why: it was stopping, too busy, or could not be reached. Like
     /// `refused`, it stops the run as a cancel does.
     pub away: Arc<OnceLock<ServerAway>>,
     /// How long a request that sends a piece (an import batch, an
@@ -202,8 +202,8 @@ impl Session {
     /// or the server not being there to take the request.
     ///
     /// A refused session refuses every later request too, and a server that
-    /// is stopping or cannot be reached fails every later request until it
-    /// is back. So the run stops as it would for a cancel, and what it did
+    /// is stopping, too busy, or out of reach fails the later requests the
+    /// same way until it is back. So the run stops as it would for a cancel, and what it did
     /// not send stays for the next Upload rather than being recorded as
     /// failed. The first reason the server was away is the one kept.
     fn note_halt(&self, error: &anyhow::Error) {

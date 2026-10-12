@@ -117,8 +117,8 @@ pub struct ImportReport {
     /// requests it refused fail no conversation. The caller ends the session
     /// on its side as well, since every later request would be refused.
     pub session_refused: bool,
-    /// Set when a request failed because the server was not there to take
-    /// it, with why: it is stopping, or it could not be reached. That
+    /// Set when a request failed because the server could not take it,
+    /// with why: it was stopping, too busy, or could not be reached. That
     /// halted the run as for a cancel, and the request fails no
     /// conversation: the next Upload sends what this one did not.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -293,8 +293,8 @@ pub(crate) fn format_ms_seconds(ms: u64) -> String {
 /// Upload paused and in its summary.
 pub(crate) fn what_the_server_did(away: ServerAway) -> &'static str {
     match away {
-        ServerAway::Stopping => "is stopping",
-        ServerAway::Busy => "was too busy to take the Upload",
+        ServerAway::Stopping => "was stopping",
+        ServerAway::Busy => "was too busy",
         ServerAway::Unavailable => "could not be reached",
     }
 }
@@ -519,7 +519,7 @@ mod tests {
                 server_away: Some(ServerAway::Stopping),
                 ..not_ok.clone()
             }),
-            "The Upload paused after 1m00s, because the server is stopping."
+            "The Upload paused after 1m00s, because the server was stopping."
         );
         assert_eq!(
             first_line(ImportReport {
@@ -536,7 +536,7 @@ mod tests {
                 server_away: Some(ServerAway::Busy),
                 ..not_ok.clone()
             }),
-            "The Upload paused after 1m00s, because the server was too busy to take the Upload."
+            "The Upload paused after 1m00s, because the server was too busy."
         );
         assert_eq!(
             first_line(ImportReport {

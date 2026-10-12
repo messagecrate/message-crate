@@ -3159,7 +3159,7 @@ fn serve_answering_batches_with(batch_answer: &'static str) -> (String, Arc<Atom
 
 /// The sentence the Upload's log and the desktop app show when the server
 /// it sends to is stopping.
-const SERVER_STOPPING_LINE: &str = "The server is stopping, so the Upload paused. \
+const SERVER_STOPPING_LINE: &str = "The server was stopping, so the Upload paused. \
                                     The next Upload sends what this one did not.";
 
 /// A batch the server refuses because it was told to stop is not the
@@ -3221,7 +3221,10 @@ fn a_server_told_to_stop_pauses_the_upload_and_fails_no_conversation() {
     assert!(journal_events(dir.path(), "fail").is_empty());
     let log = read_log(dir.path());
     assert!(log.contains(SERVER_STOPPING_LINE), "{log}");
-    assert!(log.contains(", because the server is stopping.\n"), "{log}");
+    assert!(
+        log.contains(", because the server was stopping.\n"),
+        "{log}"
+    );
     assert!(
         shown.iter().any(|line| line == SERVER_STOPPING_LINE),
         "{shown:?}"

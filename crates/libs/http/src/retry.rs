@@ -133,10 +133,11 @@ pub enum ServerAway {
     Unavailable,
 }
 
-/// Whether `error` says the server was not there to take the request, and
-/// why. Every request fails the same way until the server is back, so a run
-/// that sees one stops rather than recording each request it could not
-/// send as failed. A `500 Internal Server Error` is not one: the server took
+/// Whether `error` says the server could not take the request, and why: it
+/// was stopping, its database was too busy, or no answer came. Nothing in
+/// the request was the cause, and the requests after it fail the same way
+/// until the server is back, so a run that sees one stops rather than
+/// recording each request it could not send as failed. A `500 Internal Server Error` is not one: the server took
 /// the request and failed on it, and the next request may succeed.
 pub fn server_away(error: &anyhow::Error) -> Option<ServerAway> {
     if let Some(http) = error.downcast_ref::<HttpError>() {
