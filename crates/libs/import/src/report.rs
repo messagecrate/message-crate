@@ -230,7 +230,12 @@ pub(crate) fn now_stamp() -> String {
 
 /// Milliseconds since `started` (for the timing fields of [`UploadProfile`]).
 pub(crate) fn elapsed_ms(started: Instant) -> u64 {
-    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+    ms_between(started, Instant::now())
+}
+
+/// Milliseconds from `start` to `end`, or 0 when `end` is earlier.
+pub(crate) fn ms_between(start: Instant, end: Instant) -> u64 {
+    u64::try_from(end.saturating_duration_since(start).as_millis()).unwrap_or(u64::MAX)
 }
 
 /// Turn a millisecond count into a short human string like `34m12s` or `1h02m03s`.

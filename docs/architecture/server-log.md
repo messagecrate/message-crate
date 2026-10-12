@@ -99,6 +99,24 @@ a value that broke a rule, and a line holds only outcomes (below). The slug
 says which problem it was, and the request id joins the line to the answer
 the client received.
 
+A refused login leaves one more `WARN` line, beside its Audit Trail entry,
+with the account's id (none for a username that names no account), the
+reason (`unknown_username`, `wrong_password` or `account_disabled`) and the
+connecting app and its Build. A login as an unknown username refused
+unchecked, because the count of them for the whole server is full, leaves
+none: that count's own line says so once. A rate-limit count that fills
+leaves one `WARN` line with the count's kind (`password`, `unknown_username`,
+`unknown_usernames`, `register` or `claim`), the account's id when it is a
+password's, and `retry_after_secs`. It writes that line once, when it first
+refuses an attempt, and again only after it has emptied.
+
+Why: the Audit Trail is read one account at a time, so a run of password
+guesses showed in the owner's Logs panel only as `invalid-credentials` lines
+that do not say which account or why. Why once per count: each refused
+attempt already leaves its `rate-limited` line, and a sustained attack must
+not write the rest of the log away. Why not the username: it is what a person
+typed, and a guesser's list of usernames is not an outcome.
+
 ## A failed request names the step that failed
 
 A request that fails with `500 Internal Server Error` leaves one `ERROR`

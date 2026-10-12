@@ -737,6 +737,11 @@ impl Inner {
 #[derive(Debug, Clone)]
 pub struct LocalServer {
     inner: Arc<Mutex<Inner>>,
+    /// [`LocalServer::apply`] notifies this after each event has gone
+    /// through [`step`], so a test can wait for the phase it is about rather
+    /// than poll for it.
+    #[cfg(test)]
+    changed: Arc<std::sync::Condvar>,
 }
 
 impl Default for LocalServer {
@@ -753,6 +758,8 @@ impl Default for LocalServer {
                 deadline: Instant::now(),
                 generation: 0,
             })),
+            #[cfg(test)]
+            changed: Arc::default(),
         }
     }
 }
@@ -862,6 +869,19 @@ impl LocalServer {
                 }
             }
         }
+        #[cfg(test)]
+        self.changed.notify_all();
+    }
+
+    /// Wait while `waiting` holds for the phase, and return the phase that
+    /// ended the wait.
+    #[cfg(test)]
+    fn phase_after(&self, waiting: impl Fn(&Phase) -> bool) -> Phase {
+        let inner = self
+            .changed
+            .wait_while(self.lock(), |inner| waiting(&inner.state.phase))
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        inner.state.phase.clone()
     }
 
     /// Ask the address what it is after `wait`, and report the answer.

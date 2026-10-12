@@ -90,7 +90,7 @@ async fn close_test_db(pool: sqlx::SqlitePool, conn: sqlx::pool::PoolConnection<
     // connection to be returned, and the sqlx worker thread closes it
     // later — racing the checkpoint/copy that follows can SIGBUS.
     conn.close().await.expect("close test connection");
-    pool.close().await;
+    engine::close_pool(&pool).await;
 }
 
 #[tokio::test]
@@ -1173,7 +1173,7 @@ async fn sqlite_table_names(db: &Path) -> Vec<String> {
             .await
             .expect("list tables");
     conn.close().await.expect("close");
-    pool.close().await;
+    engine::close_pool(&pool).await;
     names
 }
 
@@ -1594,7 +1594,7 @@ async fn a_generated_demo_bundle_imports_whole_and_its_overlap_dedupes() {
         "every demo message is held at one of the owner's identities"
     );
     conn.close().await.expect("close");
-    pool.close().await;
+    engine::close_pool(&pool).await;
 }
 
 /// One contact of a generated bundle's address book, read back from the file.
@@ -1904,7 +1904,7 @@ async fn the_wipe_removes_the_demo_rows_and_directory_and_leaves_other_accounts(
     wipe_demo_account(&cfg, &build, DEMO_ACCOUNT_ID, AuditActor::CommandLine)
         .await
         .expect("wipe the demo account");
-    build.close().await;
+    engine::close_pool(&build).await;
 
     let (pool, mut conn) = test_db(&db).await;
     let demo_rows: i64 = sqlx::query_scalar(
@@ -2112,7 +2112,7 @@ async fn accounts_and_demo_conversations(cfg: &Config) -> (i64, i64) {
             .await
             .expect("count demo conversations");
     conn.close().await.expect("close");
-    pool.close().await;
+    engine::close_pool(&pool).await;
     (accounts, conversations)
 }
 
@@ -2165,7 +2165,7 @@ async fn a_new_database_is_seeded_once_with_the_demo_account_and_no_owner() {
         Some("demo")
     );
     conn.close().await.expect("close");
-    pool.close().await;
+    engine::close_pool(&pool).await;
 }
 
 /// A database made empty on purpose (`create-database`, or any earlier
@@ -2200,7 +2200,7 @@ async fn another_programs_sqlite_file_is_not_new_and_reset_demo_refuses_it() {
         .execute(&pool)
         .await
         .expect("create its table");
-    pool.close().await;
+    engine::close_pool(&pool).await;
     checkpoint_and_clean_sidecars(&cfg.paths.db, "in the test")
         .await
         .expect("fold the log into the file");
@@ -2283,7 +2283,10 @@ async fn a_first_start_stopped_after_the_account_row_is_seeded_whole_by_the_next
     // A killed process holds no connection to the seeding file. Dropping the
     // seed above leaves its pool closing in the background, so it is closed
     // here, before the next start removes and recreates the file (#1949).
-    stopped_pool.close().await;
+    // `close_pool` closes every connection: one sqlx's close leaves open
+    // would delete the new database's `-wal` file when it closes (#2592).
+    engine::close_pool(&stopped_pool).await;
+    assert_eq!(stopped_pool.size(), 0, "no connection is left on the file");
 
     assert!(
         !cfg.paths.db.exists(),
@@ -2466,7 +2469,7 @@ async fn another_account_writes_between_the_demo_builds_import_batches() {
             .expect("count demo messages");
     assert_eq!(demo_messages, 4);
     drop(conn);
-    others.close().await;
+    engine::close_pool(&others).await;
     build.close().await;
 }
 
@@ -2494,7 +2497,7 @@ async fn every_import_contact_group_of_a_built_demo_has_members() {
     )
     .await
     .expect("build the demo account");
-    build.close().await;
+    engine::close_pool(&build).await;
 
     let (pool, mut conn) = test_db(&db_path).await;
     let groups: Vec<(String, i64)> = sqlx::query_as(&format!(
@@ -2613,7 +2616,7 @@ async fn another_account_writes_between_the_demo_wipes_delete_batches() {
         "the other account keeps its last write"
     );
     drop(conn);
-    others.close().await;
+    engine::close_pool(&others).await;
     build.close().await;
 }
 
@@ -2627,7 +2630,7 @@ async fn free_pages(db: &Path) -> i64 {
         .fetch_one(&pool)
         .await
         .expect("read the free page count");
-    pool.close().await;
+    engine::close_pool(&pool).await;
     pages
 }
 
@@ -2830,7 +2833,7 @@ async fn the_wipe_deletes_duplicates_before_the_messages_they_duplicate() {
     )
     .await
     .expect("wipe the demo account");
-    build.close().await;
+    engine::close_pool(&build).await;
 
     assert_eq!(
         left_after_batches.first(),
