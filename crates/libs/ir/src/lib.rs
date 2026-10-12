@@ -641,8 +641,8 @@ pub struct IrAttachment {
     pub size_bytes: Option<u64>,
     /// None when the attachment was imported; set only when bytes were
     /// skipped, to one of a closed set: `file_missing`, `too_large`,
-    /// `not_copied`, [`NOT_FETCHED`], `convert_failed: <detail>`, or
-    /// `unknown: <raw>`.
+    /// `not_copied`, `not_fetched` ([`NOT_FETCHED`]), `convert_failed:
+    /// <detail>`, or `unknown: <raw>`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub missing_reason: Option<String>,
     /// In-memory bytes for EML embedding; never written to JSON.
