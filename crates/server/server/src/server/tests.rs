@@ -2817,3 +2817,19 @@ async fn every_v1_answer_without_its_own_cache_control_is_no_store() {
     assert_eq!(health.status(), StatusCode::OK);
     assert_eq!(cache_control(&health), None);
 }
+
+/// The Demo Account's refusal is one sentence in lowercase with no final
+/// period, the form `docs/architecture/http-api.md`, "Failures", gives every
+/// `detail`, and keeps "Demo Account" capitalized (#2817). Any other account
+/// passes.
+#[test]
+fn the_demo_account_refusal_is_one_lowercase_sentence() {
+    let demo = account_profile::DEMO_ACCOUNT_ID;
+    let refusal = refuse_for_demo_account(demo, "password cannot be set")
+        .expect_err("the Demo Account is refused");
+    let ApiError::DemoAccountProtected(detail) = refusal else {
+        panic!("not demo-account-protected: {refusal:?}");
+    };
+    assert_eq!(detail, "the Demo Account's password cannot be set");
+    assert!(refuse_for_demo_account(demo + 1, "password cannot be set").is_ok());
+}

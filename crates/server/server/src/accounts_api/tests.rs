@@ -2000,10 +2000,15 @@ async fn an_account_deletes_itself_with_its_password_and_the_demo_account_refuse
         serde_json::json!({ "confirm": true }),
     )
     .await;
-    crate::test_support::expect_problem(
+    let problem = crate::test_support::expect_problem(
         status,
         &text,
         crate::problem::ProblemType::DemoAccountProtected,
+    );
+    assert_eq!(
+        problem.sentence(),
+        "the Demo Account cannot delete itself",
+        "one sentence in lowercase with no final period (#2817)"
     );
 }
 
