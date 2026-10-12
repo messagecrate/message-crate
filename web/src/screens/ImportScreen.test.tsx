@@ -11,7 +11,9 @@ import { errorText } from "../lib/apiErrorMessage";
 import type { ActiveImportRun } from "../lib/importRun";
 import type { MediaToolName, StagingSummary } from "../lib/tauri";
 import { activeImportRun } from "../test/apiShapes";
+import { deferred } from "../test/deferred";
 import { mockedAuth, renderWithProviders } from "../test/providers";
+import { storedForm } from "../test/storedForm";
 import { MIB } from "../test/units";
 import { setupUser } from "../test/user";
 import type { RunDirDeleteFailure } from "./import/importRunStore";
@@ -205,45 +207,6 @@ function stagingSummary(overrides: Partial<StagingSummary> = {}): StagingSummary
     mediaMode: "copy",
     ...overrides,
   };
-}
-
-/** A stored form snapshot for an iPhone backup, as `formSnapshot` writes it. */
-function storedForm(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    source: "imessage-ios",
-    backupPath: "/backups/iphone.tar",
-    attachmentMedia: "copy",
-    maxResolution: "720p",
-    maxFps: "30",
-    minSizeMb: "20",
-    ownerPhones: [],
-    ownerEmails: [],
-    obfuscate: false,
-    attachmentRoot: "",
-    appleContacts: "",
-    whatsappWa: "",
-    whatsappMedia: "",
-    whatsappDb: "",
-    isBusinessApp: false,
-    whatsappOwnerPhone: "",
-    timeZone: "America/New_York",
-    phoneCountry: "",
-    backupPasswordGiven: false,
-    whatsappKeyGiven: false,
-    assetMaxBytes: 512 * MIB,
-    ...overrides,
-  };
-}
-
-/** A promise plus the functions to settle it later, for controlling when the check resolves. */
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
 }
 
 describe("ImportScreen entering Import", () => {

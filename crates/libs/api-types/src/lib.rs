@@ -437,6 +437,29 @@ impl std::fmt::Display for ExportStatus {
     }
 }
 
+/// How a client says its reading of an Export Run ended, in the body of
+/// `POST /v1/exports/{id}/complete`: the two statuses that route records. A
+/// run the person gave up is closed with `cancel`, and only the server sets
+/// `running`, so neither is a value here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CompleteExportStatus {
+    /// The client wrote everything it read.
+    Completed,
+    /// An error stopped the client.
+    Failed,
+}
+
+impl From<CompleteExportStatus> for ExportStatus {
+    fn from(status: CompleteExportStatus) -> Self {
+        match status {
+            CompleteExportStatus::Completed => Self::Completed,
+            CompleteExportStatus::Failed => Self::Failed,
+        }
+    }
+}
+
 api_shape! {
     /// One Export Run: what was asked for and how much matched, never what
     /// the messages said. `POST /v1/exports` creates one, every route under

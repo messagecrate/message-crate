@@ -938,6 +938,16 @@ released versions carry their date on the heading.
   seconds.** SMS Backup+ itself records an MMS's time in seconds, and the
   import now reads it that way, so an MMS exported to SMS Backup+ mail goes
   out to the second (#2603).
+- 2026-10-11: **One missing attachment no longer throws away a whole
+  export.** When the desktop app could not fetch one attachment, for
+  instance because its file was gone from the server, the export stopped
+  with the attachments on disk and none of the conversations. Every
+  conversation is now written, the export's log names each attachment it
+  could not fetch, and its last line says how many are missing (#2070).
+- 2026-10-11: **An export that fails is recorded as failed.** An export
+  that stopped on an error showed in the Audit Trail and the export history
+  as cancelled, as if you had stopped it. It now shows as failed, and only
+  an export you cancel shows as cancelled (#2069).
 
 #### Browsing and search
 

@@ -1005,7 +1005,7 @@ async fn a_run_belongs_to_its_account() {
             &fixture.state,
             &format!("/v1/exports/{id}/{action}"),
             &bob.token,
-            json!({}),
+            json!({ "status": "completed" }),
         )
         .await;
         expect_problem(status, &text, ProblemType::NotFound);
@@ -1105,7 +1105,7 @@ async fn a_finished_run_refuses_pages_and_a_second_close() {
         &fixture.state,
         &format!("/v1/exports/{id}/complete"),
         &alice.token,
-        json!({}),
+        json!({ "status": "completed" }),
     )
     .await;
     assert_eq!(completed["id"], id);
@@ -1129,7 +1129,7 @@ async fn a_finished_run_refuses_pages_and_a_second_close() {
             &fixture.state,
             &format!("/v1/exports/{id}/{action}"),
             &alice.token,
-            json!({}),
+            json!({ "status": "completed" }),
         )
         .await;
         expect_problem(status, &text, ProblemType::StateConflict);
@@ -1150,10 +1150,59 @@ async fn a_finished_run_refuses_pages_and_a_second_close() {
         &fixture.state,
         &format!("/v1/exports/{other_id}/complete"),
         &alice.token,
-        json!({}),
+        json!({ "status": "completed" }),
     )
     .await;
     expect_problem(status, &text, ProblemType::StateConflict);
+}
+
+/// A run an error stopped is recorded as `failed`, never as `cancelled`,
+/// which says the person gave it up (#2069). `complete` takes only the two
+/// outcomes it records, and a refused status leaves the run open.
+#[tokio::test]
+async fn complete_records_a_failed_run_as_failed() {
+    let (fixture, alice, _dinner, _menu) = fixture_with_two_conversations().await;
+    let run = create_run(&fixture, &alice.token, json!({ "kind": "everything" })).await;
+    let id = run["id"].as_i64().unwrap();
+
+    for status in ["running", "cancelled", "bogus"] {
+        let (code, text) = post_json_raw(
+            &fixture.state,
+            &format!("/v1/exports/{id}/complete"),
+            &alice.token,
+            json!({ "status": status }),
+        )
+        .await;
+        expect_problem(code, &text, ProblemType::ValidationFailed);
+    }
+    let still: Value = get_json(&fixture.state, &format!("/v1/exports/{id}"), &alice.token).await;
+    assert_eq!(still["status"], "running");
+
+    let failed: Value = post_json(
+        &fixture.state,
+        &format!("/v1/exports/{id}/complete"),
+        &alice.token,
+        json!({ "status": "failed" }),
+    )
+    .await;
+    assert_eq!(failed["status"], "failed");
+    assert!(failed["finished_at"].is_string(), "{failed}");
+
+    let listed: Value = get_json(&fixture.state, "/v1/exports?status=failed", &alice.token).await;
+    assert_eq!(listed["total"], 1);
+    assert_eq!(listed["items"][0]["id"], id);
+    let (code, text) = post_json_raw(
+        &fixture.state,
+        &format!("/v1/exports/{id}/complete"),
+        &alice.token,
+        json!({ "status": "completed" }),
+    )
+    .await;
+    let problem = expect_problem(code, &text, ProblemType::StateConflict);
+    assert_eq!(
+        problem.detail.as_deref(),
+        Some(format!("export {id} is not running (status=failed)").as_str())
+    );
 }
 
 /// Open a write on `other` that completes run `id` the way `complete` does,
@@ -1260,7 +1309,7 @@ async fn an_export_token_reads_messages_only_through_a_run() {
         &fixture.state,
         &format!("/v1/exports/{id}/complete"),
         &token,
-        json!({}),
+        json!({ "status": "completed" }),
     )
     .await;
     assert_eq!(closed["status"], "completed");
@@ -1481,7 +1530,7 @@ async fn a_run_hands_over_exactly_what_matched_when_it_started() {
         &fixture.state,
         &format!("/v1/exports/{id}/complete"),
         &alice.token,
-        json!({}),
+        json!({ "status": "completed" }),
     )
     .await;
     assert_eq!(closed["message_count"], json!(delivered.len()));
@@ -1533,7 +1582,7 @@ async fn a_deleted_message_leaves_its_place_empty_and_closing_drops_the_list() {
         &fixture.state,
         &format!("/v1/exports/{id}/complete"),
         &alice.token,
-        json!({}),
+        json!({ "status": "completed" }),
     )
     .await;
     assert_eq!(closed["message_count"], 3, "the record keeps what matched");

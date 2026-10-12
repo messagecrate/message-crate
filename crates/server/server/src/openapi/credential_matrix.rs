@@ -751,6 +751,7 @@ pub(super) fn body_for(op: &Operation, n: usize) -> Option<(&'static str, Vec<u8
         ("post", "/v1/contacts/unmatched-identities") => json(json!({ "identifiers": [] })),
         ("patch", "/v1/contacts/{id}") => json(json!({ "name": "Samantha" })),
         ("post", "/v1/exports") => json(json!({ "scope": { "kind": "everything" } })),
+        ("post", "/v1/exports/{id}/complete") => json(json!({ "status": "completed" })),
         ("post", "/v1/imports") => json(json!({ "source": "imessage" })),
         ("patch", "/v1/imports/{id}") => json(json!({ "stage": "parse" })),
         ("post", "/v1/imports/{id}/batches") => Some(("application/x-ndjson", Vec::new())),
