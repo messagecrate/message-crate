@@ -655,13 +655,10 @@ async fn the_claimed_owner_row_holds_no_permission() {
     assert_eq!(response.status(), StatusCode::CREATED);
 
     let mut conn = state.db.acquire().await.unwrap();
-    let stored: (i64, i64, i64) =
-        sqlx::query_as("SELECT can_import, can_export, can_delete FROM accounts WHERE id = $1")
-            .bind(account_profile::OWNER_ACCOUNT_ID)
-            .fetch_one(&mut *conn)
-            .await
-            .unwrap();
-    assert_eq!(stored, (0, 0, 0));
+    assert_eq!(
+        crate::test_support::stored_permissions(&mut conn, account_profile::OWNER_ACCOUNT_ID).await,
+        (0, 0, 0)
+    );
 }
 
 /// The owner holds no messages, so profile setup would ask for a name

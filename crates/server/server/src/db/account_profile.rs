@@ -1372,22 +1372,8 @@ mod tests {
         let alice = insert_account(&mut conn, "alice", None, None)
             .await
             .unwrap();
-        let stored = |id: i64| {
-            sqlx::query_as::<_, (i64, i64, i64)>(
-                "SELECT can_import, can_export, can_delete FROM accounts WHERE id = $1",
-            )
-            .bind(id)
-        };
-        assert_eq!(
-            stored(OWNER_ACCOUNT_ID)
-                .fetch_one(&mut *conn)
-                .await
-                .unwrap(),
-            (0, 0, 0)
-        );
-        assert_eq!(
-            stored(alice).fetch_one(&mut *conn).await.unwrap(),
-            (1, 1, 1)
-        );
+        let stored = crate::test_support::stored_permissions;
+        assert_eq!(stored(&mut conn, OWNER_ACCOUNT_ID).await, (0, 0, 0));
+        assert_eq!(stored(&mut conn, alice).await, (1, 1, 1));
     }
 }
