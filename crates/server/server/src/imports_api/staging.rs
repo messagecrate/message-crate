@@ -169,10 +169,18 @@ fn store_claimed_or_path(
     if let Some(claimed) = stated_sha256(att, line)? {
         if let Some(found) = assets_api::lookup_by_sha256(assets_dir, &claimed) {
             asset_stats.deduped += 1;
-            return Ok(Some(StoredAsset {
-                mime_type: att.mime_type.clone().or(found.mime_type),
-                ..found
-            }));
+            // The stored bytes decide the type where they can, as when the
+            // file is stored, and the sidecar follows them. The claim is read
+            // as storing reads it: one that is not a type falls back to what
+            // the attachment's path says.
+            let declared = assets_api::resolve_mime(
+                att.mime_type.as_deref(),
+                Path::new(att.path.as_deref().unwrap_or_default()),
+            );
+            let mime_type =
+                assets_api::record_media_type(assets_dir, &claimed, declared.as_deref())
+                    .map_err(StagingError::Internal)?;
+            return Ok(Some(StoredAsset { mime_type, ..found }));
         }
         if let Some(source) = safe_path {
             return match assets_api::store_verified(

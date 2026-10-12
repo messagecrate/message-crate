@@ -29,6 +29,7 @@ fn row(assets_path: &str) -> StoredOriginal {
         rows_without_thumbnail: 1,
         original_name: None,
         source_path: None,
+        shown_as_is: None,
     }
 }
 
@@ -39,6 +40,7 @@ const FRESH: OnDisk = OnDisk {
     preview: PreviewFile::Missing,
     thumbnail: PreviewFile::Missing,
     browser_shows: false,
+    type_by_bytes: None,
 };
 
 /// [`FRESH`], of a type every browser shows as it is.
@@ -189,6 +191,36 @@ fn an_extensionless_asset_is_planned_by_its_declared_mime_or_its_attachment_name
     );
 }
 
+/// The type an original's bytes show decides its kind over the type its
+/// rows declare (#2805): a video declared `application/octet-stream` gets a
+/// Thumbnail and a Preview, and a file declared a photo whose bytes are a
+/// PDF is not media.
+#[test]
+fn the_type_the_bytes_show_decides_the_kind_over_the_declared_one() {
+    let opts = ProcessAssetsOptions::default();
+    let mut clip = row(&format!("ab/{SHA}"));
+    clip.mime_type = Some("application/octet-stream".to_string());
+    assert_eq!(
+        plan(&clip, &opts, FRESH),
+        Plan::Skip(SkipReason::NotMedia),
+        "with nothing read from its bytes, the declared type decides"
+    );
+    let read_as = |by_bytes| OnDisk {
+        type_by_bytes: Some(by_bytes),
+        ..FRESH
+    };
+    assert_eq!(
+        plan(&clip, &opts, read_as("video/mp4")),
+        versions(Kind::Video, Need::Make, Need::Make)
+    );
+    let mut photo = row(&format!("ab/{SHA}"));
+    photo.mime_type = Some("image/heic".to_string());
+    assert_eq!(
+        plan(&photo, &opts, read_as("application/pdf")),
+        Plan::Skip(SkipReason::NotMedia)
+    );
+}
+
 #[test]
 fn each_skip_option_turns_off_its_kind_and_nothing_else() {
     let photo = row("aa/photo.heic");
@@ -319,6 +351,7 @@ fn a_missing_original_is_an_error_only_when_a_version_is_wanted() {
         preview: PreviewFile::Intact,
         thumbnail: PreviewFile::Intact,
         browser_shows: false,
+        type_by_bytes: None,
     };
     assert_eq!(
         plan(&row("aa/photo.heic"), &opts, missing_but_made),
@@ -342,6 +375,7 @@ fn a_missing_original_is_an_error_only_when_a_version_is_wanted() {
         preview: PreviewFile::Damaged,
         thumbnail: PreviewFile::Missing,
         browser_shows: false,
+        type_by_bytes: None,
     };
     assert_eq!(
         plan(&row("aa/photo.heic"), &opts, missing_and_damaged),
@@ -1281,6 +1315,59 @@ async fn a_missing_original_of_a_type_shown_as_is_wants_no_preview() {
             "{mime}"
         );
     }
+}
+
+/// An original that cannot be read is planned from the decision a pass
+/// recorded while it could (#2804), not from its declared type: a file
+/// declared a JPEG whose bytes were not one was decided not shown as it is,
+/// so once it is missing its Preview is still one that could not be made.
+#[tokio::test]
+async fn a_missing_original_is_planned_from_the_decision_recorded_for_it() {
+    let (opened, _dir) = open_db().await;
+    let mut conn = opened.conn().await.unwrap();
+    seed_account(&mut conn, ACCOUNT).await;
+    let message_id = seed_message(&mut conn, "imessage").await;
+    let attachment_id = attach_stored_original(
+        &opened,
+        &mut conn,
+        message_id,
+        SHA,
+        "image/jpeg",
+        b"not a jpeg at all",
+    )
+    .await;
+    decide_shown_as_is(&opened.cfg, &opened.db, ACCOUNT, None)
+        .await
+        .unwrap();
+    let shown: Option<i64> =
+        sqlx::query_scalar("SELECT shown_as_is FROM attachments WHERE id = $1")
+            .bind(attachment_id)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    assert_eq!(
+        shown,
+        Some(0),
+        "a JPEG whose bytes are not one is not shown as it is"
+    );
+    fs::remove_file(
+        opened
+            .cfg
+            .paths
+            .assets_dir_for_account(ACCOUNT)
+            .join(format!("ab/{SHA}")),
+    )
+    .unwrap();
+
+    run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
+        .await
+        .unwrap();
+
+    let missing = Some("the original file is missing".to_string());
+    assert_eq!(
+        not_made_reasons(&mut conn, attachment_id).await,
+        (missing.clone(), missing)
+    );
 }
 
 /// Why each version of one attachment row was not made: Preview, then

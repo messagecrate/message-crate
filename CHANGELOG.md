@@ -923,6 +923,18 @@ released versions carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-11: **An attachment's type comes from its contents, not only
+  from what the import called it.** A video an export called a plain file
+  showed as a download and never got a thumbnail or a copy a browser can
+  play, and the type the first import gave a file stayed its type for good,
+  even when it was wrong. The server now reads the start of each stored
+  file: a video, photo or recording is treated as what it is, whatever it
+  was called, gets its thumbnail and, where a browser needs one, its
+  playable copy, and is downloaded under its real type. A file type an
+  import gave in a broken form is no longer kept: the file's name decides
+  its type instead, and with nothing to go on it downloads as plain bytes
+  rather than with no type at all. An attachment whose file has
+  gone missing keeps what the server last decided about it.
 - 2026-10-11: **An attachment is opened as it is only when its contents
   match its type.** A file an import called a JPEG, PNG, GIF, WebP or MP3
   was opened in the browser as one without anyone checking, so a file
