@@ -715,7 +715,7 @@ fn apply_transcode(
                 RunIssueKind::Skip,
                 &format!("could not be converted, so the original file is kept: {err:#}"),
             ));
-            let reason = format!("convert_failed: {err:#}");
+            let reason = format!("convert_failed: {}", why_not_converted(&err));
             if is_heal {
                 // `recorded_rel` is the phantom `-mv` name a crashed prior
                 // run already wrote into the document; nothing will ever
@@ -831,6 +831,30 @@ fn apply_transcode(
             Ok(hevc_failure)
         }
     }
+}
+
+/// Why ffmpeg did not convert a file, short enough to keep on the
+/// attachment: why it was stopped, or the last line ffmpeg wrote before it
+/// failed, or the error's first line. The whole error, with everything
+/// ffmpeg wrote, goes to the run's log through the Import Error.
+fn why_not_converted(err: &anyhow::Error) -> String {
+    if let Some(killed) = err.downcast_ref::<media::Killed>() {
+        return killed.to_string();
+    }
+    if let Some(failed) = err.downcast_ref::<media::FfmpegFailed>()
+        && let Some(last) = failed
+            .said()
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+    {
+        return last.trim().to_string();
+    }
+    format!("{err:#}")
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_string()
 }
 
 /// The attachments in `doc` recorded at `recorded_rel`.

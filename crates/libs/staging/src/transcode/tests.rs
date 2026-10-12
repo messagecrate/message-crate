@@ -1439,7 +1439,9 @@ fn a_cancel_while_ffmpeg_runs_ends_the_stage_as_canceled_not_as_a_failed_file() 
 
 /// The reason recorded on an attachment ffmpeg could not convert carries why
 /// ffmpeg failed or was stopped, not only which file it was working on, so
-/// a stalled or looping video says so (#2898).
+/// a stalled or looping video says so (#2898). Of what ffmpeg wrote, only
+/// the last line is kept, so a damaged file's thousands of warnings do not
+/// ride along on the attachment.
 #[cfg(unix)]
 #[test]
 fn a_failed_conversion_records_why_ffmpeg_failed() {
@@ -1453,6 +1455,7 @@ fn a_failed_conversion_records_why_ffmpeg_failed() {
             &program,
             "#!/bin/sh\n[ \"$1\" = -version ] && exit 0\n\
              case \"$*\" in *fail-me.png*) ;; *) exit 1 ;; esac\n\
+             echo 'warning for packet 1' >&2\n\
              echo 'the encoder made no progress' >&2\nexit 1\n",
         )
         .unwrap();
@@ -1478,8 +1481,5 @@ fn a_failed_conversion_records_why_ffmpeg_failed() {
         .missing_reason
         .clone()
         .unwrap();
-    assert!(
-        reason.starts_with("convert_failed: ") && reason.contains("the encoder made no progress"),
-        "{reason}"
-    );
+    assert_eq!(reason, "convert_failed: the encoder made no progress");
 }
