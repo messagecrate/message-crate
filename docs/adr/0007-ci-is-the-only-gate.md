@@ -26,7 +26,7 @@ jobs read them:
 | `license` | always | `check-license.sh` |
 | `docker-context` | always | `check-docker-context.sh` |
 | `docker-build` | `docker`, pull requests only | `docker/build-push-action` with `push: false`: the release Dockerfile builds; then `check-docker-compose.sh` starts it with `docker/compose.release.yml` and logs in to the Demo Account |
-| `version` | always | `check-version-lockstep.sh`: the four product version files and their lockfiles agree, and on a `v*` tag agree with the tag |
+| `version` | always | `check-version-lockstep.sh`: the four product version files and their lockfiles agree, and on a `v*` tag agree with the tag; then `check-changelog.sh`: `CHANGELOG.md`'s width, tight lists and dated entries |
 
 The ruleset requires eleven of them: every job but `windows-config`. Whether
 it should require that one too is open in #2788.
