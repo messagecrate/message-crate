@@ -1509,3 +1509,96 @@ fn a_failed_conversion_records_why_ffmpeg_failed() {
         .unwrap();
     assert_eq!(reason, "convert_failed: the encoder made no progress");
 }
+
+/// The reason an attachment records when ffmpeg failed on it is the last
+/// line ffmpeg wrote, with no path in it: the same reason the attachment
+/// jobs record for the same failure (`message-crate-core`'s
+/// `a_failed_conversion_records_the_short_reason_the_media_stage_records`)
+/// (#2801). The whole error, path and all, goes in the row for the log.
+#[test]
+fn a_failed_conversion_records_the_reason_the_attachment_jobs_record() {
+    let tools = media::testutil::FakeTools::new().failing_on("-q:v");
+    let (dir, jsonl, original) = staged_one("photo.png", PNG_1X1_RGB);
+    let (issues, rows) = collecting_sink();
+
+    let report = transcode_staged(
+        dir.path(),
+        &options(MediaMode::Convert, u64::MAX),
+        &tools,
+        &CancelFlag::default(),
+        &issues,
+        &LogSink::none(),
+        &mut |_| {},
+    )
+    .unwrap();
+
+    assert_eq!(report.failed, 1);
+    let doc = read_conversation_jsonl(&jsonl).unwrap();
+    assert_eq!(
+        doc.messages[0].attachments[0].missing_reason.as_deref(),
+        Some("convert_failed: -q:v: fake failure (fake)")
+    );
+    let rows = rows.lock().unwrap();
+    let row = rows.last().expect("a row for the failed file");
+    assert!(
+        row.reason.contains(&original.display().to_string()),
+        "the row keeps the whole error: {}",
+        row.reason
+    );
+}
+
+/// A video staged under `attachments/` with compress options that send it
+/// to the encoder, and a fake ffmpeg whose HEVC run fails and H.264 run
+/// works.
+fn staged_video_hevc_fails() -> (
+    tempfile::TempDir,
+    media::testutil::FakeTools,
+    TranscodeOptions,
+) {
+    let (dir, _, _) = staged_one("clip.mov", b"an h264 video");
+    let tools = media::testutil::FakeTools::new()
+        .probing(media::testutil::video_probe("h264", 30.0))
+        .failing_on("libx265");
+    let options = TranscodeOptions {
+        mode: MediaMode::Compress,
+        compress: CompressOptions {
+            min_size_bytes: 0,
+            ..CompressOptions::default()
+        },
+        asset_max_bytes: u64::MAX,
+    };
+    (dir, tools, options)
+}
+
+/// The Media Stage sends why HEVC failed to the log's warnings, once, the
+/// way the desktop app's Import Run log takes it (#2801).
+#[test]
+fn the_media_stage_warns_why_hevc_failed() {
+    let (dir, tools, options) = staged_video_hevc_fails();
+    let warnings = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let sink_warnings = std::sync::Arc::clone(&warnings);
+    let log =
+        LogSink::none().with_warnings(move |w| sink_warnings.lock().unwrap().push(w.to_string()));
+
+    let report = transcode_staged(
+        dir.path(),
+        &options,
+        &tools,
+        &CancelFlag::default(),
+        &IssueSink::none(),
+        &log,
+        &mut |_| {},
+    )
+    .unwrap();
+
+    assert_eq!(report.converted, 1);
+    let warnings = warnings.lock().unwrap();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(
+        warnings[0]
+            .starts_with("HEVC encoding failed, so videos were compressed as H.264 instead: ")
+            && warnings[0].ends_with("libx265: fake failure (fake)"),
+        "{warnings:?}"
+    );
+    assert!(!warnings[0].contains("clip"), "{warnings:?}");
+}

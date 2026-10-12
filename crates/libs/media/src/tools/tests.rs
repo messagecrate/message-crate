@@ -711,6 +711,20 @@ fn real_ffmpeg_failure_names_the_missing_input() {
         message.contains("No such file or directory"),
         "message was {message:?}"
     );
+    // What the real ffmpeg says names the input by its path, and the reason
+    // kept from it names neither file (#2801, #2802).
+    let failed = err.downcast_ref::<FfmpegFailed>().expect("ffmpeg failed");
+    let without = failed.without_files(failed.said());
+    assert!(
+        failed.said().contains(&missing.display().to_string()),
+        "ffmpeg named the input: {:?}",
+        failed.said()
+    );
+    assert!(
+        !without.contains("missing.mov") && !without.contains("out.mp4"),
+        "{without:?}"
+    );
+    assert!(without.contains("<input>"), "{without:?}");
 }
 
 /// Both programs from `dir`.

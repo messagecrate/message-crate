@@ -762,6 +762,50 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
     );
 }
 
+/// A file ffmpeg could not convert records the last line ffmpeg wrote, with
+/// no path in it: the same reason the desktop app's Media Stage records for
+/// the same failure (`message-staging`'s
+/// `a_failed_conversion_records_the_reason_the_attachment_jobs_record`),
+/// not the whole error, which goes to the log (#2801).
+#[test]
+fn a_failed_conversion_records_the_short_reason_the_media_stage_records() {
+    let dir = tempfile::tempdir().unwrap();
+    let att_dir = dir.path().join("attachments");
+    std::fs::create_dir_all(&att_dir).unwrap();
+    let mut photo = empty_att("photo.png");
+    photo.mime_type = Some("image/png".into());
+    {
+        let mut jobs = [AttachmentJob {
+            attachment: &mut photo,
+            timestamp_unix_ms: 1_609_459_200_000,
+            size_hint: None,
+        }];
+        run_attachment_jobs(
+            &mut jobs,
+            &att_dir,
+            &MediaConfig {
+                tools: std::sync::Arc::new(media::testutil::FakeTools::new().failing_on("-q:v")),
+                ..media_cfg(MediaMode::Convert)
+            },
+            |_| Ok(Some(PNG_1X1_RGB.to_vec())),
+            |_| {},
+            &LogSink::none(),
+            &CancelFlag::default(),
+        )
+        .unwrap();
+    }
+
+    assert_eq!(
+        photo.missing_reason.as_deref(),
+        Some("convert_failed: -q:v: fake failure (fake)")
+    );
+    assert!(
+        photo.path.as_deref().is_some_and(|p| p.ends_with(".png")),
+        "the original is kept: {:?}",
+        photo.path
+    );
+}
+
 /// Convert must leave each attachment pointing at the file it produced, with
 /// that file's type, and mark the one it could not convert.
 #[test]
@@ -853,10 +897,17 @@ fn a_convert_error_marks_only_the_attachment_it_names() {
                 size_hint: None,
             },
         ];
-        let failed = dir.path().join("attachments").join("a.heic");
-        mark_convert_error(&mut jobs, &format!("{}: ffmpeg failed", failed.display()));
-        // A line with no path in front of it names nothing.
-        mark_convert_error(&mut jobs, "ffmpeg failed");
+        let failed = media::NotConverted {
+            path: dir.path().join("attachments").join("a.heic"),
+            reason: "ffmpeg failed".into(),
+        };
+        mark_convert_error(&mut jobs, dir.path(), &failed);
+        // A file whose path only ends like an attachment's names nothing.
+        let elsewhere = media::NotConverted {
+            path: dir.path().join("other").join("attachments").join("b.heic"),
+            reason: "ffmpeg failed".into(),
+        };
+        mark_convert_error(&mut jobs, dir.path(), &elsewhere);
     }
     assert_eq!(
         named.missing_reason.as_deref(),

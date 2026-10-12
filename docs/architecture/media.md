@@ -243,6 +243,15 @@ The Media Stage compresses a video with HEVC first, and tries H.264 after a HEVC
 | Past twice the file's length | No: a damaged file loops in H.264 too |
 | Stopped by the person or the server | No: nothing is wrong, and the run ends as stopped, not as a failure |
 
+When H.264 stands in, the run says why HEVC failed once, as a warning: in the Import Run's log, and in the server's log for an import the server converts.
+The reason is ffmpeg's error with each file ffmpeg was given written as `<input>` or `<output>`, never by its path (`FfmpegFailed::without_files` in the `media` crate).
+Why: ffmpeg names the files by their full paths, and the server's log holds only what the owner may see, which an attachment's file name is not (`docs/architecture/server-log.md`, "What a line never holds").
+
+A file the desktop app could not convert records `convert_failed:` and a short reason on its attachment, the same on either path that converts it: the Media Stage and the convert pass of a run that converts as it stages (`media::why_not_converted`).
+The reason is why ffmpeg was stopped, or the last line ffmpeg wrote, with its files written as `<input>` and `<output>`.
+The whole error goes to the Import Run's log.
+Why: the reason is the label the attachment shows, so it has to fit on one line, and the same failure must read the same whichever path met it (#2801).
+
 Every ffmpeg and ffprobe run reads nothing from standard input and opens only local files and pipes (`-nostdin`, `-protocol_whitelist file,pipe`).
 An Asset whose work panics fails the same way: it leaves the queue, the panic is logged at `error`, and the pass goes on to the next Asset.
 A pass that fails or panics outside one Asset's work, such as on a database busy past its timeout, is logged and runs again after a wait, or at the next wake if that comes sooner.

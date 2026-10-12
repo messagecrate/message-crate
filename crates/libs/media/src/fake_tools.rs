@@ -10,13 +10,14 @@
 //! is tested against the real programs ([`crate::testutil::real_ffmpeg`]).
 
 use std::path::{Path, PathBuf};
+use std::process::ExitStatus;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError};
 
 use anyhow::{Result, anyhow, bail};
 
 use crate::tools::ffmpeg_command_line;
-use crate::{FfmpegTools, KillReason, Killed, MediaProbe, MediaTools, Reads};
+use crate::{FfmpegFailed, FfmpegTools, KillReason, Killed, MediaProbe, MediaTools, Reads};
 
 /// What ffprobe reports about a small, low-bitrate 320x240 video in
 /// `codec` at `fps` frames per second.
@@ -40,7 +41,9 @@ pub struct FakeTools {
     /// What ffmpeg writes to the file it is asked to write.
     output: Vec<u8>,
     /// A run whose arguments hold any of these fails, after writing its
-    /// output, as an ffmpeg that fails partway leaves a partial file.
+    /// output, as an ffmpeg that fails partway leaves a partial file. It
+    /// fails with [`FfmpegFailed`], having said what ffmpeg says: the files
+    /// it was given, by their paths, and last the argument it failed on.
     failing: Vec<String>,
     /// The arguments of every ffmpeg run, in order.
     runs: Mutex<Vec<Vec<String>>>,
@@ -114,6 +117,18 @@ impl FakeTools {
     }
 }
 
+/// The exit status of an ffmpeg that failed with exit code 1.
+fn failed_status() -> ExitStatus {
+    #[cfg(unix)]
+    {
+        std::os::unix::process::ExitStatusExt::from_raw(1 << 8)
+    }
+    #[cfg(windows)]
+    {
+        std::os::windows::process::ExitStatusExt::from_raw(1)
+    }
+}
+
 impl Default for FakeTools {
     fn default() -> Self {
         Self::new()
@@ -174,8 +189,21 @@ impl MediaTools for FakeTools {
             .unwrap_or_else(PoisonError::into_inner)
             .push(reads.source().map(Path::to_path_buf));
         std::fs::write(dest, &self.output)?;
-        if args.iter().any(|arg| self.failing.contains(arg)) {
-            bail!("ffmpeg failed (fake) on {}", args.join(" "));
+        if let Some(arg) = args.iter().find(|arg| self.failing.contains(arg)) {
+            // What ffmpeg writes when it fails: the files it was given, by
+            // the paths it was given them, and what went wrong last.
+            let command_line = ffmpeg_command_line(args, dest);
+            let input = args
+                .windows(2)
+                .find(|pair| pair[0] == "-i")
+                .map_or("", |pair| pair[1].as_str());
+            let stderr = format!(
+                "Input #0, from '{input}':\nOutput #0, to '{}':\n{arg}: fake failure (fake)",
+                dest.display()
+            );
+            return Err(
+                FfmpegFailed::new(failed_status(), stderr.as_bytes(), &command_line).into(),
+            );
         }
         Ok(())
     }

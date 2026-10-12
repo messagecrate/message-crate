@@ -880,11 +880,7 @@ impl InstalledTools {
         if ran.status.success() {
             return Ok(());
         }
-        Err(FfmpegFailed {
-            status: ran.status,
-            said: String::from_utf8_lossy(&ran.stderr_tail).trim().to_string(),
-        }
-        .into())
+        Err(FfmpegFailed::new(ran.status, &ran.stderr_tail, args).into())
     }
 
     /// Run ffprobe with [`LOCAL_FILES_ONLY`], `args`, then `path`, and
@@ -1295,15 +1291,54 @@ fn clock(at: Duration) -> String {
 pub struct FfmpegFailed {
     status: ExitStatus,
     said: String,
+    /// The files ffmpeg was given, each with the word that stands for it in
+    /// [`FfmpegFailed::without_files`], longest first.
+    files: Vec<(String, &'static str)>,
 }
 
 impl FfmpegFailed {
+    /// ffmpeg, run with `command_line`, exited with `status` after writing
+    /// `stderr_tail`, the end of its standard error.
+    pub(crate) fn new(status: ExitStatus, stderr_tail: &[u8], command_line: &[String]) -> Self {
+        let inputs = command_line
+            .windows(2)
+            .filter(|pair| pair[0] == "-i")
+            .map(|pair| (pair[1].clone(), "<input>"));
+        let output = command_line.last().map(|dest| (dest.clone(), "<output>"));
+        let mut files: Vec<(String, &'static str)> = inputs
+            .chain(output)
+            .filter(|(path, _)| !path.is_empty())
+            .collect();
+        // The longest first, so a file whose path starts with another's is
+        // replaced whole.
+        files.sort_by_key(|(path, _)| std::cmp::Reverse(path.len()));
+        Self {
+            status,
+            said: String::from_utf8_lossy(stderr_tail).trim().to_string(),
+            files,
+        }
+    }
+
     /// The last lines ffmpeg wrote to stderr, trimmed, at most
     /// `STDERR_TAIL_BYTES`; empty when it said nothing. It names each file
     /// as it was passed to ffmpeg, so it can carry full paths.
     #[must_use]
     pub fn said(&self) -> &str {
         &self.said
+    }
+
+    /// `text` with each file this run of ffmpeg was given written as
+    /// `<input>`, for a file it read (each one after a `-i`), or `<output>`,
+    /// for the file it wrote (its last argument). What ffmpeg says names
+    /// those files by their full paths, which an attachment's reason and the
+    /// server's log must not hold.
+    #[must_use]
+    pub fn without_files(&self, text: &str) -> String {
+        self.files
+            .iter()
+            .fold(text.to_string(), |text, (path, word)| {
+                text.replace(path, word)
+            })
     }
 }
 

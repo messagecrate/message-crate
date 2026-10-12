@@ -753,6 +753,17 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-12: **A file that could not be converted says why in one short
+  line.** An attachment ffmpeg could not convert read differently depending
+  on which step converted it: one showed the last line ffmpeg wrote, the
+  other every line, and either could hold full file paths. Both now show the
+  last line, with the files ffmpeg was given written as `<input>` and
+  `<output>`. The whole error stays in the Import Run's log (#2801).
+- 2026-10-12: **The server's log says why videos were compressed as H.264.**
+  When ffmpeg could not compress a video as HEVC during an import the server
+  converts, the warning in the server's log now carries ffmpeg's reason, as
+  the Import Run's log already did, with every file it names left out
+  (#2802).
 - 2026-10-12: **A refused Import Run names every problem at once.** When
   the server refuses to start or finish an Import Run, it now lists every
   problem it found, rather than only the first, so fixing one no longer
