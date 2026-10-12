@@ -213,6 +213,9 @@ ffmpeg reports its position in the file (`out_time`) on its `-progress` stream, 
 The wait is 2 minutes.
 A server started with a config file takes it from `[server] transcode_stall_secs` (`docs/src/content/docs/docs/developer/reference/config-and-accounts.md`); a server started with `--data-dir`, and the desktop app's own conversions, use the 2 minutes.
 A conversion whose position passes twice the length ffprobe reads for the file is stopped too, as looping on a damaged file.
+A length ffprobe only estimated from the bitrate of the first frames doesn't count, because such an estimate can be under half the real length.
+Once the position reaches the file's length, the wait becomes at least twice the time the run took to get there.
+Why: with `-movflags +faststart`, ffmpeg rewrites the whole output after its last frame and reports no progress meanwhile, which takes minutes for a large video on a slow disk.
 A program stopped is killed and waited for.
 The conversion then fails like any other, and the reason recorded on the Asset's rows says why it was stopped: no progress for the wait, before or after converting part of the file, past twice the file's length, or a short step over its 15 seconds.
 A `-version` run stopped at its 15 seconds counts as a program that does not run, so the lookup passes over it.
