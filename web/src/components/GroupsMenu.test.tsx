@@ -1,14 +1,20 @@
 /** @vitest-environment jsdom */
 
 import { act, cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/api";
 import { CONTACT_GROUP_MENU_COPY, MESSAGE_TAG_MENU_COPY } from "../lib/namedSetCopy";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { fill, setupUser } from "../test/user";
 import GroupsMenu from "./GroupsMenu";
 
+beforeEach(() => {
+  startFakeClock();
+});
+
 afterEach(() => {
   cleanup();
+  stopFakeClock();
 });
 
 const GROUPS = ["College", "Family", "Work"] as const;
@@ -99,7 +105,8 @@ describe("GroupsMenu", () => {
     await user.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onCreate).toHaveBeenCalledWith("Work; 2024");
-    expect(await screen.findByText(refusal)).toBeTruthy();
+    await settle();
+    expect(screen.getByText(refusal)).toBeTruthy();
     expect(screen.getByPlaceholderText("Contact Group name")).toHaveValue("Work; 2024");
   });
 
@@ -113,7 +120,8 @@ describe("GroupsMenu", () => {
     await user.type(screen.getByPlaceholderText("Contact Group name"), "Friends{Enter}");
 
     expect(onCreate).toHaveBeenCalledWith("Friends");
-    expect(await screen.findByRole("searchbox", { name: "Search Contact Groups…" })).toBeTruthy();
+    await settle();
+    expect(screen.getByRole("searchbox", { name: "Search Contact Groups…" })).toBeTruthy();
     expect(screen.queryByPlaceholderText("Contact Group name")).toBeNull();
   });
 

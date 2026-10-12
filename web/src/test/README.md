@@ -105,6 +105,27 @@ expect(screen.getByRole("button", { name: "Reset Demo Account" })).toBeEnabled()
 A screen that decides with `Date.now()` how long to keep polling reads the
 fake clock too, so moving the clock moves it.
 
+### An animation frame
+
+The screen, or React Aria under it, does something on the next frame: React
+Aria puts focus back on a menu's trigger a frame after the menu closes, and a
+drawer measures a column on the frame after a scroll. `startFakeClock()` fakes
+`requestAnimationFrame`, so the frame comes only when the test moves the clock
+to it with `vi.advanceTimersToNextFrame()` inside `act`. The frame has no
+constant in the source to move by, and `settle()` doesn't move the clock, so
+it never runs the frame. Reading the screen before the move shows that it
+waits for the frame. Where the frame is scheduled from a promise or a
+`MutationObserver` report, `settle()` lands that first.
+
+```tsx
+await user.keyboard("{Escape}");
+expect(document.activeElement).not.toBe(trigger);
+act(() => {
+  vi.advanceTimersToNextFrame();
+});
+expect(document.activeElement).toBe(trigger);
+```
+
 ### Two things stamped with `Date.now()`
 
 The fake clock stands still between moves, so two things the code stamps with
@@ -223,7 +244,9 @@ expect(result.current).toBe("ok");
 `await new Promise((resolve) => setTimeout(resolve, 0))` inside `act` waits for
 real time too: it hopes everything queued lands before the timer fires. On the
 fake clock it never fires at all. `settle()` replaces it, because `settle()`
-runs what is queued rather than racing it.
+runs what is queued rather than racing it. A sleep for a frame,
+`await new Promise((resolve) => requestAnimationFrame(resolve))`, becomes the
+frame move ("An animation frame").
 
 ### Something the fake clock doesn't drive
 
