@@ -31,8 +31,10 @@
 //! app:
 //!
 //! - **The pinned one stays.** A file is the pinned one when its entry
-//!   names the pinned release and its stamp is the one recorded, so no file
-//!   is read again at start-up. One that does not run is not downloaded
+//!   names the pinned release and its stamp is the one recorded, so ffmpeg
+//!   and ffprobe are not read again at start-up. wtsexporter is read once
+//!   per start, because its lookup counts it only by its SHA-256 (#2692).
+//!   One that does not run is not downloaded
 //!   again, because the download would be the same file: Settings says it
 //!   doesn't run until a newer pin or another file changes that.
 //! - **A pinned file with no entry is adopted.** A file with no entry, or
@@ -306,6 +308,12 @@ fn need(pinned: &Pinned, dir: &Path, manifest: &Manifest) -> Need {
     let Ok(stamp) = Stamp::at(&path) else {
         return Need::Download;
     };
+    // The lookup reads wtsexporter whatever the record says, so the check
+    // reads it too, or a file changed under the same stamp would show as
+    // missing while every check keeps it.
+    if not_the_pinned_file(pinned, dir) {
+        return Need::Download;
+    }
     if let Some(written) = manifest.get(&pinned.program)
         && written.is(pinned)
         && written.stamp == stamp
@@ -316,7 +324,7 @@ fn need(pinned: &Pinned, dir: &Path, manifest: &Manifest) -> Need {
             Need::DoesNotRun
         };
     }
-    if file_io::file_sha256(&path).is_ok_and(|sha256| sha256 == pinned.program_sha256) {
+    if media::file_has_sha256(&path, pinned.program_sha256) {
         Need::Adopt
     } else {
         Need::Download
@@ -336,15 +344,22 @@ fn runs(program: Program, dir: &Path) -> bool {
     }
 }
 
+/// Whether `pin`'s program is a wtsexporter in `dir` that is not the pinned
+/// file, such as a copy still being written or another build. Only the
+/// pinned wtsexporter counts, as the WhatsApp import's lookup asks (#2692),
+/// so such a file is not used. ffmpeg and ffprobe are never one. The file is
+/// read once per version of it ([`media::file_has_sha256`]).
+fn not_the_pinned_file(pin: &Pinned, dir: &Path) -> bool {
+    let path = dir.join(pin.program.file_name());
+    pin.program == Program::Wtsexporter
+        && path.is_file()
+        && !media::file_has_sha256(&path, pin.program_sha256)
+}
+
 /// Whether `pin`'s program in `dir` is in place for the lookup that uses
-/// it: it [`runs`], and a wtsexporter is the pinned file too, as the
-/// WhatsApp import's lookup asks (#2692). A copy still being written, or
-/// another build, is not. The file is read once per version of it
-/// ([`media::file_has_sha256`]).
+/// it: it [`runs`], and is not [`not_the_pinned_file`].
 fn in_place(pin: &Pinned, dir: &Path) -> bool {
-    runs(pin.program, dir)
-        && (pin.program != Program::Wtsexporter
-            || media::file_has_sha256(&dir.join(pin.program.file_name()), pin.program_sha256))
+    runs(pin.program, dir) && !not_the_pinned_file(pin, dir)
 }
 
 /// The reason a download of `pin`'s program into `dir` failed with `err`.
@@ -352,22 +367,15 @@ fn in_place(pin: &Pinned, dir: &Path) -> bool {
 /// reason starts by saying so, because Settings shows wtsexporter as
 /// missing though a file is there (#2692).
 fn failure_reason(pin: &Pinned, dir: &Path, err: &DownloadError) -> String {
-    let path = dir.join(pin.program.file_name());
-    if pin.program == Program::Wtsexporter
-        && path.is_file()
-        && !media::file_has_sha256(&path, pin.program_sha256)
-    {
+    if not_the_pinned_file(pin, dir) {
         format!(
-            "The {} in the Tools Directory is not the file of release {}, or is still being \
-             copied there, so it is not used. {err}",
-            pin.program.name(),
-            pin.release
+            "{} {err}",
+            whatsapp_exporter::not_pinned_reason(pin.release)
         )
     } else {
         err.to_string()
     }
 }
-
 /// The advice that ends the text of a program in the Tools Directory that
 /// does not run: ffmpeg and ffprobe are found on `PATH` too. wtsexporter
 /// has none here, because the run's error and Settings add its

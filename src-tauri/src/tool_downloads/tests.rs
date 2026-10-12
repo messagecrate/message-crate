@@ -527,8 +527,28 @@ fn ffmpeg_on_path_without_ffprobe_is_downloaded() {
     );
 }
 
-/// A program the app wrote from the pinned release is not downloaded again,
-/// and its file is not read to know it.
+/// A wtsexporter whose record and stamp say it is the pinned file, and whose
+/// bytes are not, is downloaded again: the lookup reads its SHA-256 and
+/// shows it as missing, so a check that kept it would never fix that
+/// (#2692).
+#[test]
+fn a_recorded_wtsexporter_that_is_not_the_pinned_file_is_downloaded() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, _) = pin(Program::Wtsexporter, "r1", b"pinned", false);
+    let target = tools.path().join(Program::Wtsexporter.file_name());
+    std::fs::write(&target, b"pinnex").unwrap();
+    make_executable(&target).unwrap();
+    let mut manifest = Manifest::new();
+    manifest.insert(
+        Program::Wtsexporter,
+        Written::of(&pinned, Stamp::at(&target).unwrap()),
+    );
+
+    assert_eq!(need(&pinned, tools.path(), &manifest), Need::Download);
+}
+
+/// A program the app wrote from the pinned release is not downloaded again.
 #[test]
 fn the_pinned_program_the_app_wrote_is_kept() {
     let tools = tempfile::tempdir().unwrap();

@@ -14,7 +14,7 @@ use message_crate_core::{CancelFlag, Cancelled};
 use tauri::AppHandle;
 
 use super::events::{self, ImportProgressEvent, Step};
-use crate::tool_downloads::{self, DownloadState, Program, ToolDownloads, WaitError};
+use crate::tool_downloads::{self, DownloadState, Pinned, Program, ToolDownloads, WaitError};
 
 /// Where one program is, as Settings shows it.
 ///
@@ -118,15 +118,12 @@ pub struct ToolsStatus {
 /// and say how each one's download stands.
 #[tauri::command]
 pub fn tools_status(downloads: tauri::State<'_, ToolDownloads>) -> ToolsStatus {
-    tools_status_with(&downloads, &pinned_programs())
+    tools_status_with(&downloads, &pinned_here())
 }
 
-/// The programs the app has a download of for this computer.
-fn pinned_programs() -> Vec<Program> {
+/// The downloads the app has for this computer.
+fn pinned_here() -> Vec<Pinned> {
     tool_downloads::pinned_for(std::env::consts::OS, std::env::consts::ARCH)
-        .into_iter()
-        .map(|pin| pin.program)
-        .collect()
 }
 
 /// What Try again did, as [`retry_tool_downloads`] tells the window.
@@ -157,7 +154,8 @@ pub fn retry_tool_downloads(downloads: tauri::State<'_, ToolDownloads>) -> Retry
     let Some(dir) = media::tools_dir() else {
         return RetryResult::NoToolsDirectory;
     };
-    let status = tools_status_with(&downloads, &pinned_programs());
+    let pinned = pinned_here();
+    let status = tools_status_with(&downloads, &pinned);
     let not_found: Vec<Program> = [
         (Program::Ffmpeg, &status.ffmpeg),
         (Program::Ffprobe, &status.ffprobe),
@@ -167,7 +165,6 @@ pub fn retry_tool_downloads(downloads: tauri::State<'_, ToolDownloads>) -> Retry
     .filter(|(_, status)| !matches!(status, ToolStatus::Found { .. }))
     .map(|(program, _)| program)
     .collect();
-    let pinned = tool_downloads::pinned_for(std::env::consts::OS, std::env::consts::ARCH);
     match tool_downloads::retry(
         dir,
         tool_downloads::GITHUB.to_string(),
@@ -240,12 +237,14 @@ fn worth_sending(
     program != now.0 || total != now.2 || now.1.abs_diff(received) >= WAITING_STEP_BYTES
 }
 
-/// [`tools_status`], with the downloads in `downloads` and a download for
-/// this computer of each of `pinned`.
-fn tools_status_with(downloads: &ToolDownloads, pinned: &[Program]) -> ToolsStatus {
+/// [`tools_status`], with the downloads in `downloads` and `pinned` as the
+/// downloads for this computer. A wtsexporter counts only when it is the
+/// pinned one, where there is one (#2692).
+fn tools_status_with(downloads: &ToolDownloads, pinned: &[Pinned]) -> ToolsStatus {
+    let pin = |program: Program| pinned.iter().find(|pin| pin.program == program);
     let status = |program: Program, found: ToolStatus| {
         found
-            .with_pin(pinned.contains(&program))
+            .with_pin(pin(program).is_some())
             .with_download(downloads.get(program))
     };
     let (ffmpeg, ffprobe) = match media::ffmpeg_tools() {
@@ -258,7 +257,10 @@ fn tools_status_with(downloads: &ToolDownloads, pinned: &[Program]) -> ToolsStat
             (unusable.clone(), unusable)
         }
     };
-    let wtsexporter = match whatsapp_exporter::wtsexporter_path() {
+    let wtsexporter = match whatsapp_exporter::wtsexporter_in_dir(
+        media::tools_dir().as_deref(),
+        pin(Program::Wtsexporter).map(|pin| pin.program_sha256),
+    ) {
         Ok(path) => ToolStatus::of(path),
         Err(err) => ToolStatus::Unusable {
             reason: err.to_string(),
@@ -336,23 +338,42 @@ mod tests {
         );
     }
 
+    /// wtsexporter pinned to `bytes`, as the download for this computer.
+    fn wtsexporter_pinned_to(bytes: &[u8]) -> Pinned {
+        Pinned {
+            program: Program::Wtsexporter,
+            repo: "owner/project",
+            release: "r1",
+            asset: "wtsexporter-test",
+            sha256: Box::leak(file_io::sha256_hex(bytes).into_boxed_str()),
+            program_sha256: Box::leak(file_io::sha256_hex(bytes).into_boxed_str()),
+            gzipped: false,
+        }
+    }
+
     /// A Tools Directory without wtsexporter reports it missing. A file
-    /// there that is not the pinned release's file, such as a copy still
-    /// being written, is reported missing too where the app has a download
-    /// for this computer, and found where it has none (#2692).
+    /// there that is not the pinned file, such as a copy still being
+    /// written, is reported missing too, and the pinned file is found
+    /// (#2692). Where the app has no download, a file there that may run is
+    /// found.
     #[test]
     fn wtsexporter_is_reported_from_the_tools_directory() {
         let _lock = media::testutil::tools_test_lock();
         let previous = media::tools_dir();
         let tools = tempfile::tempdir().unwrap();
         let name = whatsapp_exporter::wtsexporter_file_name();
+        let program = tools.path().join(name);
         media::set_tools_dir(Some(tools.path().to_path_buf()));
         let downloads = ToolDownloads::default();
-        let pinned = [Program::Wtsexporter];
+        let pinned = [wtsexporter_pinned_to(b"the pinned file")];
         let missing = tools_status_with(&downloads, &pinned).wtsexporter;
         let unavailable = tools_status_with(&downloads, &[]).wtsexporter;
-        media::testutil::write_with_mode(&tools.path().join(name), 0o755);
-        let not_pinned = tools_status_with(&downloads, &pinned).wtsexporter;
+        media::testutil::write_with_mode(&program, 0o755);
+        std::fs::write(&program, b"the pinned").unwrap();
+        let truncated = tools_status_with(&downloads, &pinned).wtsexporter;
+        let found_by_hand = tools_status_with(&downloads, &[]).wtsexporter;
+        std::fs::write(&program, b"the pinned file").unwrap();
+        let found = tools_status_with(&downloads, &pinned).wtsexporter;
         media::set_tools_dir(previous);
 
         assert_eq!(missing, ToolStatus::Missing);
@@ -363,15 +384,12 @@ mod tests {
             serde_json::to_value(&unavailable).unwrap(),
             serde_json::json!({ "state": "unavailable" })
         );
-        let here =
-            whatsapp_exporter::pinned_wtsexporter(std::env::consts::OS, std::env::consts::ARCH);
-        let expected = match here {
-            Some(_) => ToolStatus::Missing,
-            None => ToolStatus::Found {
-                path: tools.path().join(name).display().to_string(),
-            },
+        assert_eq!(truncated, ToolStatus::Missing);
+        let at = ToolStatus::Found {
+            path: program.display().to_string(),
         };
-        assert_eq!(not_pinned, expected);
+        assert_eq!(found_by_hand, at);
+        assert_eq!(found, at);
     }
 
     /// A download in progress is sent with its bytes so far and its total,

@@ -630,8 +630,14 @@ fn a_truncated_wtsexporter_is_treated_as_missing() {
     let whole = wtsexporter_in(Some(tools.path()), Some(&pin)).unwrap();
 
     assert_eq!(truncated, Lookup::NotPinned(program.clone()));
-    assert!(message.contains("still being copied"), "{message}");
-    assert!(message.contains(WTSEXPORTER_RELEASE), "{message}");
+    assert!(
+        message.starts_with(&not_pinned_reason(WTSEXPORTER_RELEASE)),
+        "{message}"
+    );
+    assert!(
+        message.contains("The Import form's Try again downloads that file."),
+        "{message}"
+    );
     assert!(message.ends_with(WTSEXPORTER_TROUBLESHOOTING), "{message}");
     assert_eq!(whole, program);
 }

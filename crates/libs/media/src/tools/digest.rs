@@ -18,10 +18,6 @@ use super::FileStamp;
 struct Digest {
     stamp: FileStamp,
     sha256: String,
-    /// How many times the file was read, for the tests that a file is not
-    /// read again while it is unchanged.
-    #[cfg(any(test, feature = "testutil"))]
-    reads: u32,
 }
 
 /// The digests read in this process, by path.
@@ -60,32 +56,47 @@ pub fn file_has_sha256(path: &Path, sha256: &str) -> bool {
     let Ok(read) = file_io::file_sha256(path) else {
         return false;
     };
+    #[cfg(any(test, feature = "testutil"))]
+    count_read(path);
     if stamp_at(path).is_some_and(|after| after == before) {
-        let mut digests = digests().lock().expect("digests lock");
-        #[cfg(any(test, feature = "testutil"))]
-        let reads = digests.get(path).map_or(0, |digest| digest.reads) + 1;
-        digests.insert(
+        digests().lock().expect("digests lock").insert(
             path.to_path_buf(),
             Digest {
                 stamp: before,
                 sha256: read.clone(),
-                #[cfg(any(test, feature = "testutil"))]
-                reads,
             },
         );
     }
     read == sha256
 }
 
-/// How many times [`file_has_sha256`] read the file at `path` and kept
-/// what it read.
+/// How many times [`file_has_sha256`] read each file, by path, for the
+/// tests that a file is not read again while it is unchanged.
+#[cfg(any(test, feature = "testutil"))]
+fn reads() -> &'static Mutex<HashMap<PathBuf, u32>> {
+    static READS: OnceLock<Mutex<HashMap<PathBuf, u32>>> = OnceLock::new();
+    READS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Count one read of the file at `path`.
+#[cfg(any(test, feature = "testutil"))]
+fn count_read(path: &Path) {
+    *reads()
+        .lock()
+        .expect("reads lock")
+        .entry(path.to_path_buf())
+        .or_default() += 1;
+}
+
+/// How many times [`file_has_sha256`] read the file at `path`.
 #[cfg(any(test, feature = "testutil"))]
 pub fn times_read(path: &Path) -> u32 {
-    digests()
+    reads()
         .lock()
-        .expect("digests lock")
+        .expect("reads lock")
         .get(path)
-        .map_or(0, |digest| digest.reads)
+        .copied()
+        .unwrap_or(0)
 }
 
 #[cfg(test)]

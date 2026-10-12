@@ -96,8 +96,21 @@ pub fn wtsexporter_file_name() -> &'static str {
 /// Returns an error when the file is there but is not executable by this
 /// account.
 pub fn wtsexporter_path() -> Result<Option<PathBuf>> {
-    let lookup = find_wtsexporter(media::tools_dir().as_deref(), pinned_sha256_here())?;
-    Ok(match lookup {
+    wtsexporter_in_dir(media::tools_dir().as_deref(), pinned_sha256_here())
+}
+
+/// [`wtsexporter_path`] in `tools_dir`, counting only a file whose SHA-256
+/// is `pinned_sha256` where that is `Some`, so a test can name the pin.
+///
+/// # Errors
+///
+/// Returns an error when the file is there but is not executable by this
+/// account.
+pub fn wtsexporter_in_dir(
+    tools_dir: Option<&Path>,
+    pinned_sha256: Option<&str>,
+) -> Result<Option<PathBuf>> {
+    Ok(match find_wtsexporter(tools_dir, pinned_sha256)? {
         Lookup::Found(path) => Some(path),
         Lookup::Missing | Lookup::NotPinned(_) => None,
     })
@@ -111,6 +124,16 @@ pub fn wtsexporter_path() -> Result<Option<PathBuf>> {
 /// Returns an error when it is not there, or is not the pinned file.
 pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
     wtsexporter_in(media::tools_dir().as_deref(), pinned_sha256_here())
+}
+
+/// Why a wtsexporter in the Tools Directory that is not the file of
+/// `release` is not used (#2692). The import's error and the desktop app's
+/// failed download both start with it, so it reads the same in each.
+pub fn not_pinned_reason(release: &str) -> String {
+    format!(
+        "The wtsexporter in the Tools Directory is not the file of release {release}, or is \
+         still being copied there, so it is not used."
+    )
 }
 
 /// What [`find_wtsexporter`] found.
@@ -183,9 +206,9 @@ fn wtsexporter_in(tools_dir: Option<&Path>, pinned_sha256: Option<&str>) -> Resu
     match find_wtsexporter(tools_dir, pinned_sha256)? {
         Lookup::Found(found) => Ok(found),
         Lookup::NotPinned(path) => bail!(
-            "{} is not the file of release {WTSEXPORTER_RELEASE}, or is still being copied \
-             there, so it is not used. It must be {RELEASE_FILE_HINT}. Try again on the \
-             Import form downloads it. {WTSEXPORTER_TROUBLESHOOTING}",
+            "{} It is {}, and must be {RELEASE_FILE_HINT}. The Import form's Try again \
+             downloads that file. {WTSEXPORTER_TROUBLESHOOTING}",
+            not_pinned_reason(WTSEXPORTER_RELEASE),
             path.display()
         ),
         Lookup::Missing => match tools_dir {
