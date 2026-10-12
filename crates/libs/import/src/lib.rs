@@ -27,6 +27,7 @@ pub use journal::{JOURNAL_NAME, LOG_NAME, REPORT_NAME};
 pub use message_crate_api_types::ImportMode;
 pub use message_crate_http::AuthError;
 pub use message_crate_http::AuthInfo;
+pub use message_crate_http::ServerAway;
 pub use progress::{FileStatus, ProgressEvent, ProgressFn};
 pub use report::{
     FileResult, ImportReport, UploadProfile, format_duration_ms, format_import_summary,

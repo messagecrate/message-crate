@@ -753,6 +753,16 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-12: **An Upload pauses when the server stops or drops out.** When
+  the server was told to stop during an Upload, or could not be reached for
+  more than about four seconds, such as while Wi-Fi reconnected, the Upload
+  recorded every conversation it then tried to send as failed, and its
+  report listed failures that were nobody's fault. The Upload now waits at
+  least 15 seconds before its last try, and if the server is still away it
+  pauses, records no failure, and says in its log whether the server was
+  stopping, too busy, or out of reach. Pausing the Upload no longer waits
+  for those tries to run out. Resuming the Import Run sends what the
+  Upload did not (#2727, #2092).
 - 2026-10-12: **A file that could not be converted says why in one short
   line.** An attachment ffmpeg could not convert read differently depending
   on which step converted it: one showed the last line ffmpeg wrote, the
