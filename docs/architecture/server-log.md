@@ -62,10 +62,25 @@ written with `%`, so the file writer escapes them all. A terminal that
 decodes UTF-8 can act on U+0080 to U+009F as well, and U+009B alone starts a
 sequence as ESC `[` does.
 
-## A refused request names its problem type
+## A routine answer is written at `DEBUG`
 
 Every request leaves an `INFO` line with its method, path, status and
-latency. A request the server refuses with a registered problem type (a
+latency, except a successful `GET /health` and a successful file of the
+website, which leave theirs at `DEBUG`. A failed probe and a file the
+website doesn't have stay at `INFO`.
+
+Why: the web app asks `/health` every 30 seconds in each open tab, and
+loading the website asks for one file per asset. At `INFO` those lines bury
+the requests that did something in the owner's Logs panel.
+
+The health route and the website's fallback mark their responses
+(`Routine` in `crates/server/server/src/server.rs`), and the trace layer
+reads the mark. So the rule follows the route that answered, and no path is
+written out a second time.
+
+## A refused request names its problem type
+
+A request the server refuses with a registered problem type (a
 `4xx`, or `server-stopping`, the one `503`) leaves one more line,
 written where its problem document is built, with the problem type's slug
 and the status (`problem=invalid-credentials status=401`). It is at `WARN`
@@ -92,6 +107,14 @@ chain, outermost first. Each database statement adds the step it does to
 that chain, in a few words (`read the attachments of a page of messages`),
 so the line reads as the step and then the database's own message. The
 step is a fixed phrase: it never holds a value bound into the statement.
+The trace layer writes no second `ERROR` line for the `5xx`, only the
+response's `INFO` line.
+
+A source whose text the error before it already ends with is left out of
+the chain (`error_chain` in `crates/server/server/src/server.rs`). Why:
+`sqlx`'s database error writes "error returned from database:" and the
+database's message, then gives the same message again as its source, so
+the line would name it twice.
 
 Why: the request's span already names the route, but a route that runs
 several statements gives the same database message for each, and a line
