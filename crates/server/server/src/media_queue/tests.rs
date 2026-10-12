@@ -392,6 +392,53 @@ fn the_pass_decides_which_originals_are_shown_as_they_are() {
     });
 }
 
+/// A declared type is only a claim. A video uploaded and imported as
+/// `application/octet-stream` is a video by its bytes (#2805): the
+/// attachment says `video/mp4`, the original is served as one, the pass
+/// makes its Thumbnail, a HEVC one gets a Preview, and an H.264 one is
+/// shown as it is.
+#[test]
+fn a_video_declared_as_no_media_type_is_a_video_by_its_bytes() {
+    with_real_ffmpeg(async {
+        let (fixture, alice) = fixture_with_account().await;
+        let state = &fixture.state;
+        let files: Vec<(&str, &str, Vec<u8>)> = ["hevc.mp4", "h264.mp4"]
+            .into_iter()
+            .map(|name| (name, "application/octet-stream", fixture_bytes(name)))
+            .collect();
+        let (shas, conversation_id) = import_files(&fixture, &alice, &files).await;
+
+        let before = attachments(state, &alice, conversation_id).await;
+        for sha in &shas {
+            let attachment = before.iter().find(|a| a["sha256"] == sha.as_str()).unwrap();
+            assert_eq!(attachment["mime_type"], "video/mp4", "{attachment}");
+            let (status, content_type, _) =
+                get_bytes(state, &format!("/v1/assets/{sha}"), Some(&alice.token)).await;
+            assert_eq!(
+                (status, content_type.as_str()),
+                (StatusCode::OK, "video/mp4")
+            );
+        }
+
+        work_through(&state.db, &state.cfg, &AtomicBool::new(false))
+            .await
+            .unwrap();
+
+        let after = attachments(state, &alice, conversation_id).await;
+        let [hevc, h264] = [&shas[0], &shas[1]]
+            .map(|sha| after.iter().find(|a| a["sha256"] == sha.as_str()).unwrap());
+        assert_eq!(hevc["preview_mime_type"], "video/mp4", "{hevc}");
+        assert_eq!(hevc["shown_as_is"], false, "{hevc}");
+        assert_eq!(h264["shown_as_is"], true, "{h264}");
+        for attachment in [hevc, h264] {
+            assert_eq!(
+                attachment["thumbnail_mime_type"], "image/jpeg",
+                "{attachment}"
+            );
+        }
+    });
+}
+
 /// The queue is a table, so what a stopped server left in it is worked on
 /// when the server starts again: a new state over the same database, whose
 /// pass starts with the queue as it was.

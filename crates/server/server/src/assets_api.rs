@@ -265,8 +265,9 @@ fn store_verified_inner(
 ) -> Result<(StoredAsset, bool), AssetError> {
     file_io::ensure_regular_file(source)?;
     // The export's claim, else a guess from the source file's name. The stored
-    // file has no extension, so it can say nothing about its own type.
-    let mime_type = resolve_mime(export_mime, source);
+    // file has no extension, so its name can say nothing about its type; its
+    // bytes decide where they can ([`record_media_type`]).
+    let declared = resolve_mime(export_mime, source);
     let already = install_asset(
         source,
         assets_root,
@@ -275,9 +276,7 @@ fn store_verified_inner(
         copy_ready,
         selection_ready,
     )?;
-    if let Some(mime) = mime_type.as_deref() {
-        store_mime_metadata(assets_root, claimed, mime)?;
-    }
+    let mime_type = record_media_type(assets_root, claimed, declared.as_deref())?;
     Ok((
         StoredAsset {
             assets_path: shard_rel_path(claimed, ""),
@@ -511,29 +510,72 @@ pub(crate) mod hashed {
     }
 }
 
-/// Read the MIME sidecar for `sha`, if present and non-empty.
+/// Read the MIME sidecar for `sha`, when it holds a media type
+/// ([`media::checked_media_type`]). A sidecar longer than a media type can
+/// be, or holding anything else, reads as none, so the Asset is served as
+/// `application/octet-stream` rather than under a type cut short or one
+/// that was never checked.
 fn read_mime_metadata(assets_root: &Path, sha: &Sha256) -> Option<String> {
     let file = file_io::open_nofollow(&sidecar_path(assets_root, sha)).ok()?;
     let mut mime = String::new();
-    file.take(1024).read_to_string(&mut mime).ok()?;
+    // One byte past the longest type, with room for a trailing line break,
+    // tells a sidecar over the cap from one at it.
+    file.take(media::MEDIA_TYPE_MAX_LEN as u64 + 2)
+        .read_to_string(&mut mime)
+        .ok()?;
     let mime = mime.trim();
-    if mime.is_empty() {
-        None
-    } else {
-        Some(mime.to_string())
+    if mime.len() > media::MEDIA_TYPE_MAX_LEN {
+        return None;
     }
+    media::checked_media_type(mime)
 }
 
-/// Write the MIME sidecar for `sha` unless one already exists. Empty types are not recorded.
-fn store_mime_metadata(assets_root: &Path, sha: &Sha256, mime: &str) -> Result<()> {
-    let mime = mime.trim();
-    if mime.is_empty() {
-        return Ok(());
+/// Decide the media type of the Asset stored as `sha`, record it in its
+/// MIME sidecar, and answer it (`docs/architecture/media.md`, rule 2).
+///
+/// The stored bytes decide when they match a signature
+/// ([`media::media_type_in_file`]): that type is written over whatever the
+/// sidecar held, so a wrong first claim does not stay the Asset's type. A
+/// file whose bytes say nothing keeps the first type declared for it, and
+/// `declared` is written only when the sidecar holds none. `declared` is
+/// taken only when it is a media type ([`media::checked_media_type`]);
+/// `application/octet-stream` says nothing and is not recorded.
+///
+/// The answer is the type the bytes show, else `declared`, else the type
+/// already recorded.
+///
+/// # Errors
+///
+/// Returns an error when the sidecar cannot be written.
+pub(crate) fn record_media_type(
+    assets_root: &Path,
+    sha: &Sha256,
+    declared: Option<&str>,
+) -> Result<Option<String>> {
+    let declared = declared
+        .and_then(media::checked_media_type)
+        .filter(|mime| mime != "application/octet-stream");
+    let stored = assets_root.join(shard_rel_path(sha, ""));
+    let recorded = read_mime_metadata(assets_root, sha);
+    if let Some(shown) = media::media_type_in_file(&stored, declared.as_deref()) {
+        if recorded.as_deref() != Some(shown) {
+            write_mime_metadata(assets_root, sha, shown, true)?;
+        }
+        return Ok(Some(shown.to_string()));
     }
+    if let Some(declared) = declared.as_deref()
+        && recorded.is_none()
+    {
+        write_mime_metadata(assets_root, sha, declared, false)?;
+    }
+    Ok(declared.or(recorded))
+}
+
+/// Write `mime` as the MIME sidecar of `sha`: over the one there when
+/// `replace`, else only when there is none, so the first of two racing
+/// writes stays.
+fn write_mime_metadata(assets_root: &Path, sha: &Sha256, mime: &str, replace: bool) -> Result<()> {
     let path = sidecar_path(assets_root, sha);
-    if read_mime_metadata(assets_root, sha).is_some() {
-        return Ok(());
-    }
     let Some(parent) = path.parent() else {
         return Err(anyhow::anyhow!("asset MIME metadata has no parent"));
     };
@@ -542,8 +584,13 @@ fn store_mime_metadata(assets_root: &Path, sha: &Sha256, mime: &str) -> Result<(
     temporary.write_all(mime.as_bytes())?;
     temporary.flush()?;
     temporary.as_file().sync_all()?;
-    match temporary.persist_noclobber(&path) {
-        Ok(_) => Ok(()),
+    let installed = if replace {
+        temporary.persist(&path).map(drop)
+    } else {
+        temporary.persist_noclobber(&path).map(drop)
+    };
+    match installed {
+        Ok(()) => Ok(()),
         Err(err) if err.error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
         Err(err) => Err(err.error).with_context(|| format!("install {}", path.display())),
     }
@@ -552,7 +599,7 @@ fn store_mime_metadata(assets_root: &Path, sha: &Sha256, mime: &str) -> Result<(
 /// The export's MIME claim when it has one, else a guess from the file extension.
 fn resolve_mime(export_mime: Option<&str>, source: &Path) -> Option<String> {
     if let Some(mime) = export_mime
-        && !mime.is_empty()
+        && !mime.trim().is_empty()
     {
         return Some(mime.to_string());
     }
@@ -670,7 +717,7 @@ pub(crate) async fn head_asset(
     responses(
         (
             status = 200,
-            description = "The asset's bytes, in the media type it was stored with, or `application/octet-stream` when none was stored",
+            description = "The asset's bytes, in the media type its first bytes show or else the one it was stored with, or `application/octet-stream` when neither is known",
             content_type = "*/*",
             headers(
                 ("Accept-Ranges" = String, description = "`bytes`"),
@@ -698,22 +745,21 @@ pub(crate) async fn get_asset(
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
 ) -> Response {
-    let account = reader.account_id;
-    let answer = async {
-        let Some(stored) = lookup_for_read(&state, account, &sha256).await? else {
-            return Err(ApiError::not_found("asset"));
-        };
-        let assets_dir = state.cfg.paths.assets_dir_for_account(account);
-        stream_file(
-            &assets_dir.join(&stored.assets_path),
-            stored.mime_type,
-            &headers,
-            Some(format!("\"{sha256}\"")),
-        )
+    reader
+        .answer(async |account| {
+            let Some(stored) = lookup_for_read(&state, account, &sha256).await? else {
+                return Err(ApiError::not_found("asset"));
+            };
+            let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+            stream_file(
+                &assets_dir.join(&stored.assets_path),
+                stored.mime_type,
+                &headers,
+                Some(format!("\"{sha256}\"")),
+            )
+            .await
+        })
         .await
-    }
-    .await;
-    reader.with_cache_control(answer)
 }
 
 /// Download the preview of a stored asset: the JPEG, MP4 or MP3 the server
@@ -830,42 +876,41 @@ async fn stream_version(
     sha256: &Sha256,
     version: Version,
 ) -> Response {
-    let account = reader.account_id;
-    let answer = async {
-        let Some(stored) = lookup_for_read(state, account, sha256).await? else {
-            return Err(ApiError::not_found("asset"));
-        };
-        let file = crate::db::attachment_versions::file_of(
-            &mut *state.db.acquire().await?,
-            version,
-            OriginalRows {
-                account_id: account,
-                original_sha: &stored.sha256,
-            },
-        )
-        .await?;
-        let no_version = || {
-            ApiError::NotFound(format!(
-                "asset has no {} yet",
-                version.to_string().to_lowercase()
-            ))
-        };
-        let Some((path, mime_type)) = file else {
-            return Err(no_version());
-        };
-        let converted_dir = state.cfg.paths.assets_converted_dir_for_account(account);
-        let Some(full) = crate::asset_store::join_stored(
-            &converted_dir,
-            &path,
-            account,
-            &version.describe_of(sha256.as_str()),
-        ) else {
-            return Err(no_version());
-        };
-        stream_file(&full, mime_type, headers, None).await
-    }
-    .await;
-    reader.with_cache_control(answer)
+    reader
+        .answer(async |account| {
+            let Some(stored) = lookup_for_read(state, account, sha256).await? else {
+                return Err(ApiError::not_found("asset"));
+            };
+            let file = crate::db::attachment_versions::file_of(
+                &mut *state.db.acquire().await?,
+                version,
+                OriginalRows {
+                    account_id: account,
+                    original_sha: &stored.sha256,
+                },
+            )
+            .await?;
+            let no_version = || {
+                ApiError::NotFound(format!(
+                    "asset has no {} yet",
+                    version.to_string().to_lowercase()
+                ))
+            };
+            let Some((path, mime_type)) = file else {
+                return Err(no_version());
+            };
+            let converted_dir = state.cfg.paths.assets_converted_dir_for_account(account);
+            let Some(full) = crate::asset_store::join_stored(
+                &converted_dir,
+                &path,
+                account,
+                &version.describe_of(sha256.as_str()),
+            ) else {
+                return Err(no_version());
+            };
+            stream_file(&full, mime_type, headers, None).await
+        })
+        .await
 }
 
 /// Find `sha256` in `account`'s store without hashing the file. A read
@@ -890,8 +935,8 @@ pub(crate) async fn lookup_for_read(
 /// when none is known: the whole file, or the one byte range the request's
 /// `Range` selects ([`ranges::select`]). `etag` is the file's strong entity
 /// tag when it has one, which an `If-Range` must name for a range to be
-/// served. The caller adds the reader's `Cache-Control`
-/// ([`AssetReadAccess::with_cache_control`]).
+/// served. The reader's `Cache-Control` is added by
+/// [`AssetReadAccess::answer`], the only way a read reaches its account.
 async fn stream_file(
     path: &Path,
     mime_type: Option<String>,
@@ -1000,7 +1045,9 @@ async fn stream_file(
 
 /// Refuse a raw-bytes body that names no media type. Any type is accepted,
 /// because it is the asset's own (`image/jpeg`, or `application/octet-stream`
-/// when the client does not know); what is refused is saying nothing.
+/// when the client does not know); what is refused is saying nothing. A
+/// value that is not a `type/subtype` media type is kept as no type at all
+/// when the Asset is stored ([`record_media_type`]).
 fn require_content_type(headers: &HeaderMap) -> Result<(), ApiError> {
     match content_type_base(headers) {
         Some(base) if !base.is_empty() => Ok(()),
@@ -1136,8 +1183,11 @@ pub(crate) struct CreateAssetUploadRequest {
     /// in the Server Settings is refused with `422 Unprocessable Entity`.
     bytes: u64,
     /// Media type of the file, such as `image/jpeg`. The server stores it
-    /// beside the Asset and serves the Asset with it. Null, blank or left
-    /// out stores none.
+    /// beside the Asset and serves the Asset with it, unless the file's
+    /// first bytes show another type, which is stored instead. A value that
+    /// is not a `type/subtype` pair of tokens of at most 255 bytes, null,
+    /// blank or left out stores none, and the Asset is served as
+    /// `application/octet-stream`.
     #[serde(default)]
     mime: Option<String>,
 }

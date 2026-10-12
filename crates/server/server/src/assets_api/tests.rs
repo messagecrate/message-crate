@@ -1082,11 +1082,21 @@ impl<'a> StartedUpload<'a> {
         token: &'a str,
         bytes: &'a [u8],
     ) -> Self {
+        Self::start_as(server, token, bytes, "image/png").await
+    }
+
+    /// [`Self::start`], declaring the file's media type as `mime`.
+    async fn start_as(
+        server: &'a crate::test_support::TestServer,
+        token: &'a str,
+        bytes: &'a [u8],
+        mime: &str,
+    ) -> Self {
         let sha = Sha256::of_bytes(bytes);
         let response = http_client()
             .post(format!("{}/v1/assets/{sha}/uploads", server.base()))
             .bearer_auth(token)
-            .json(&serde_json::json!({ "bytes": bytes.len(), "mime": "image/png" }))
+            .json(&serde_json::json!({ "bytes": bytes.len(), "mime": mime }))
             .send()
             .await
             .unwrap();
@@ -1307,6 +1317,124 @@ async fn an_asset_put_keeps_its_media_type_but_not_octet_stream() {
     assert!(
         !crate::asset_store::sidecar_path(&assets_dir, &octet_stream_sha).exists(),
         "octet-stream must not be recorded as the asset's type"
+    );
+}
+
+/// A declared media type is written into the download's `Content-Type`, so
+/// only a `type/subtype` pair of tokens of at most 255 bytes is kept, from a
+/// `PUT` and from a multipart upload alike. Anything else is stored as no
+/// type, and the download answers `application/octet-stream`, rather than
+/// dropping the header or serving the value cut short (#2101).
+#[tokio::test]
+async fn a_declared_type_that_is_not_a_media_type_is_served_as_octet_stream() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let state = &fixture.state;
+    let server = crate::test_support::serve(state).await;
+    let too_long = format!("image/{}", "x".repeat(2000));
+    for (n, declared) in ["text/html<script>", too_long.as_str()]
+        .into_iter()
+        .enumerate()
+    {
+        let put = format!("put-{n}").into_bytes();
+        let sha = Sha256::of_bytes(&put);
+        let (status, text) = crate::test_support::put_raw(
+            state,
+            &format!("/v1/assets/{sha}"),
+            &user.token,
+            declared,
+            put,
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{text}");
+        let served = fetch(state, &format!("/v1/assets/{sha}"), Some(&user.token), &[]).await;
+        assert_eq!(
+            served.header("content-type"),
+            Some("application/octet-stream"),
+            "PUT as {declared:.40}"
+        );
+
+        let parts = format!("parts-{n}").into_bytes();
+        let outcome = StartedUpload::start_as(&server, &user.token, &parts, declared)
+            .await
+            .send_parts_and_complete()
+            .await;
+        assert_eq!(
+            outcome.served_type, "application/octet-stream",
+            "multipart as {declared:.40}"
+        );
+    }
+}
+
+/// A sidecar is read back only when it holds a media type: one longer than a
+/// media type can be is not served cut short, and one that is not a type is
+/// not served at all.
+#[test]
+fn a_sidecar_that_holds_no_media_type_reads_as_none() {
+    let dir = tempdir().unwrap();
+    let sha = Sha256::of_bytes(b"sidecar");
+    let sidecar = crate::asset_store::sidecar_path(dir.path(), &sha);
+    fs::create_dir_all(sidecar.parent().unwrap()).unwrap();
+    for (held, read) in [
+        ("image/png\n".to_string(), Some("image/png")),
+        (format!("image/{}", "x".repeat(250)), None),
+        (format!("image/{}", "x".repeat(1500)), None),
+        ("text/html<script>".to_string(), None),
+        ("   ".to_string(), None),
+    ] {
+        fs::write(&sidecar, &held).unwrap();
+        assert_eq!(
+            read_mime_metadata(dir.path(), &sha).as_deref(),
+            read,
+            "{held:.40}"
+        );
+    }
+    let longest = format!("image/{}", "x".repeat(media::MEDIA_TYPE_MAX_LEN - 6));
+    fs::write(&sidecar, &longest).unwrap();
+    assert_eq!(read_mime_metadata(dir.path(), &sha), Some(longest));
+}
+
+/// The stored bytes decide an Asset's type where they show one, so the first
+/// type declared for a fingerprint does not stay its type when it is wrong
+/// (#2804): a PNG uploaded as `image/jpeg` is served as `image/png`, and a
+/// sidecar an earlier store got wrong is put right by the next. Bytes that
+/// show no type keep the first type declared for them.
+#[tokio::test]
+async fn the_stored_bytes_decide_the_type_over_the_first_declared() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let state = &fixture.state;
+    let png = media::testutil::PNG_1X1_RGB.to_vec();
+    let sha = Sha256::of_bytes(&png);
+    let (status, text) = crate::test_support::put_raw(
+        state,
+        &format!("/v1/assets/{sha}"),
+        &user.token,
+        "image/jpeg",
+        png.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{text}");
+    let served = fetch(state, &format!("/v1/assets/{sha}"), Some(&user.token), &[]).await;
+    assert_eq!(served.header("content-type"), Some("image/png"));
+
+    let dir = tempdir().unwrap();
+    let root = dir.path();
+    let source = root.join("source");
+    fs::write(&source, &png).unwrap();
+    store_verified(&source, &sha, root, Some("image/png"), false).unwrap();
+    fs::write(crate::asset_store::sidecar_path(root, &sha), "image/jpeg").unwrap();
+    let (stored, present) = store_verified(&source, &sha, root, Some("image/jpeg"), false).unwrap();
+    assert!(present);
+    assert_eq!(stored.mime_type.as_deref(), Some("image/png"));
+    assert_eq!(read_mime_metadata(root, &sha).as_deref(), Some("image/png"));
+
+    let words = b"no signature at all";
+    let words_sha = Sha256::of_bytes(words);
+    fs::write(&source, words).unwrap();
+    store_verified(&source, &words_sha, root, Some("audio/amr"), false).unwrap();
+    store_verified(&source, &words_sha, root, Some("image/heic"), false).unwrap();
+    assert_eq!(
+        read_mime_metadata(root, &words_sha).as_deref(),
+        Some("audio/amr")
     );
 }
 

@@ -96,6 +96,10 @@ async fn a_media_link_opens_its_asset_and_preview_with_no_header() {
 /// `no-store` as well: whole or in part, and a `404 Not Found` or
 /// `416 Range Not Satisfiable` too, since a shared cache may keep a `404`
 /// and hide a Preview made later.
+///
+/// The routes are every `GET` the OpenAPI document opens to a Media Link,
+/// not a list written here, so a read route added later is held to the
+/// rule without anyone remembering to add it (#2585).
 #[tokio::test]
 async fn an_asset_read_with_a_media_link_is_never_stored_by_a_cache() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
@@ -103,9 +107,29 @@ async fn an_asset_read_with_a_media_link_is_never_stored_by_a_cache() {
     let seeded = seed_attachment_with_preview(state, user.account_id).await;
     let sha = &seeded.with_preview;
     give_thumbnail_the_preview_file(state, sha).await;
-    let link = minted(state, sha, &user).await;
+    let minted_link = minted(state, sha, &user).await;
+    let link = link_of(minted_link["url"].as_str().unwrap());
 
-    for url in ["url", "preview_url", "thumbnail_url"].map(|key| link[key].as_str().unwrap()) {
+    let paths: Vec<String> = media_link_routes()
+        .iter()
+        .map(|route| route.replace("{sha256}", sha))
+        .collect();
+    for key in ["url", "preview_url", "thumbnail_url"] {
+        let minted_path = minted_link[key]
+            .as_str()
+            .unwrap()
+            .split('?')
+            .next()
+            .unwrap();
+        assert!(
+            paths.iter().any(|path| path == minted_path),
+            "{minted_path}, which a Media Link opens, is a route the document opens to one: {paths:?}"
+        );
+    }
+
+    for path in &paths {
+        let url = format!("{path}?media_link={link}");
+        let url = url.as_str();
         let whole = fetch(state, url, None, &[]).await;
         assert_eq!(whole.status, StatusCode::OK, "{url}: {}", whole.text());
         let part = fetch(state, url, None, &[("range", "bytes=0-2")]).await;
@@ -141,9 +165,8 @@ async fn an_asset_read_with_a_media_link_is_never_stored_by_a_cache() {
     expect_problem(answer.status, &answer.text(), ProblemType::NotFound);
     assert_eq!(answer.header("cache-control"), Some("private, no-store"));
 
-    for version in ["", "/preview", "/thumbnail"] {
-        let path = format!("/v1/assets/{sha}{version}");
-        let answer = fetch(state, &path, Some(&user.token), &[]).await;
+    for path in &paths {
+        let answer = fetch(state, path, Some(&user.token), &[]).await;
         assert_eq!(answer.status, StatusCode::OK, "{path}: {}", answer.text());
         assert_eq!(answer.header("cache-control"), Some("private"), "{path}");
     }
@@ -151,6 +174,23 @@ async fn an_asset_read_with_a_media_link_is_never_stored_by_a_cache() {
     let answer = fetch(state, &path, Some(&user.token), &[]).await;
     expect_problem(answer.status, &answer.text(), ProblemType::NotFound);
     assert_eq!(answer.header("cache-control"), Some("private"));
+}
+
+/// Every `GET` path the OpenAPI document opens to a Media Link: the asset
+/// read routes.
+fn media_link_routes() -> Vec<String> {
+    let doc: Value = serde_json::from_str(&crate::openapi::dump_openapi_json()).unwrap();
+    doc["paths"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .filter(|(_, item)| {
+            item["get"]["security"]
+                .as_array()
+                .is_some_and(|schemes| schemes.iter().any(|s| s.get("media-link").is_some()))
+        })
+        .map(|(path, _)| path.clone())
+        .collect()
 }
 
 /// A media link names one asset. Put on another asset's address, even one

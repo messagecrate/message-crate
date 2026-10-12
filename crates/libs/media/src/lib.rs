@@ -15,19 +15,24 @@ mod fake_tools;
 mod mime;
 mod probe;
 mod process;
+mod signature;
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;
 mod tools;
 mod versions;
 
 pub use estimate::{SizeVerdict, classify_probed, estimate_bytes, needs_probe};
-pub use mime::{Kind, ext_for_mime, kind_for_ext, kind_for_mime, mime_for_ext};
+pub use mime::{
+    Kind, MEDIA_TYPE_MAX_LEN, checked_media_type, ext_for_mime, is_media_type, kind_for_ext,
+    kind_for_mime, mime_for_ext,
+};
 pub use probe::{MediaProbe, probe_media};
 pub use process::{
     HevcFallback, MediaReport, TranscodeOutcome, classify, collect_media_files, derivative_name,
     derivative_name_for_missing, done_line, format_bytes, kind_of, process_attachment_files,
     transcode_file, transcode_file_as,
 };
+pub use signature::{SIGNATURE_LEN, media_type_from_bytes, media_type_in_file};
 pub use tools::{
     FfmpegFailed, FfmpegTools, RanTooLong, ffmpeg_available, ffmpeg_on_path, ffmpeg_path,
     ffmpeg_tools, ffprobe_path, is_executable, require_ffmpeg, set_tools_dir, tool_in_dir,

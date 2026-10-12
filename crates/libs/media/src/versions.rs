@@ -17,6 +17,7 @@ use std::sync::atomic::AtomicBool;
 use anyhow::{Context, Result, bail};
 
 use crate::Kind;
+use crate::signature::{media_type_from_bytes, read_head};
 use crate::tools::{InstalledTools, MediaTools, Reads};
 
 /// The longest side of a Thumbnail, in pixels. A smaller original keeps its
@@ -27,32 +28,17 @@ pub const THUMBNAIL_LONG_EDGE: u32 = 560;
 const PREVIEW_VIDEO_LONG_EDGE: u32 = 1920;
 
 /// The media types every browser shows as they are (rule 2): JPEG, PNG, GIF
-/// and WebP images, and MP3 audio, each with the test its file's first
-/// [`HEAD_LEN`] bytes must pass to be one. MP4 is one too, but only with
-/// H.264 video, which only the file can tell ([`browser_shows`]).
-const SHOWN_AS_IS: &[(&str, StartsAs)] = &[
-    ("image/jpeg", |head| head.starts_with(&[0xFF, 0xD8, 0xFF])),
-    ("image/png", |head| head.starts_with(b"\x89PNG\r\n\x1A\n")),
-    ("image/gif", |head| head.starts_with(b"GIF8")),
-    ("image/webp", |head| {
-        head.starts_with(b"RIFF") && head.get(8..12) == Some(b"WEBP")
-    }),
-    ("audio/mpeg", is_mp3),
+/// and WebP images, and MP3 audio. A file declared one of them is shown as
+/// it is only when its first bytes are that type's signature
+/// ([`media_type_from_bytes`]). MP4 is one too, but only with H.264 video,
+/// which only the file can tell ([`browser_shows`]).
+const SHOWN_AS_IS: &[&str] = &[
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "audio/mpeg",
 ];
-
-/// Whether the first bytes of a file are those of one media type.
-type StartsAs = fn(&[u8]) -> bool;
-
-/// How many bytes from the start of a file [`SHOWN_AS_IS`] reads.
-const HEAD_LEN: u64 = 12;
-
-/// Whether `head` starts an MP3: an `ID3` tag, or an MPEG audio frame sync
-/// of layer I, II or III. An AAC ADTS frame, whose layer bits are `00`, is
-/// not an MP3.
-fn is_mp3(head: &[u8]) -> bool {
-    head.starts_with(b"ID3")
-        || matches!(head, [0xFF, second, ..] if second & 0xE0 == 0xE0 && second & 0x06 != 0)
-}
 
 /// The media type of an attachment, lowercased and without parameters, from
 /// what is known about it, in the order [`kind_of`](crate::kind_of) reads
@@ -100,7 +86,8 @@ pub fn media_type_of(
 ///
 /// A declared type is only a claim, so a JPEG, PNG, GIF, WebP or MP3 is
 /// shown as it is only when its first bytes are that type's
-/// (`SHOWN_AS_IS`). One that starts as something else gets a Preview.
+/// ([`media_type_from_bytes`]). One that starts as something else gets a
+/// Preview.
 /// `None` for one that cannot be read: nothing is known about its bytes, so
 /// a caller keeps what it knew before.
 ///
@@ -121,8 +108,10 @@ pub(crate) fn browser_shows_with(
     let Some(media_type) = media_type else {
         return Some(false);
     };
-    if let Some((_, starts_as)) = SHOWN_AS_IS.iter().find(|(shown, _)| *shown == media_type) {
-        return read_head(src).ok().map(|head| starts_as(&head));
+    if SHOWN_AS_IS.contains(&media_type) {
+        return read_head(src)
+            .ok()
+            .map(|head| media_type_from_bytes(&head, Some(media_type)) == Some(media_type));
     }
     if media_type != "video/mp4" {
         return Some(false);
@@ -139,17 +128,7 @@ pub(crate) fn browser_shows_with(
 /// original that cannot be read is not given a Preview its type never needs.
 #[must_use]
 pub fn shown_as_is_by_type(media_type: Option<&str>) -> bool {
-    media_type.is_some_and(|media_type| SHOWN_AS_IS.iter().any(|(shown, _)| *shown == media_type))
-}
-
-/// The first [`HEAD_LEN`] bytes of `src`, or all of it when it is shorter.
-fn read_head(src: &Path) -> std::io::Result<Vec<u8>> {
-    use std::io::Read;
-    let mut head = Vec::new();
-    std::fs::File::open(src)?
-        .take(HEAD_LEN)
-        .read_to_end(&mut head)?;
-    Ok(head)
+    media_type.is_some_and(|media_type| SHOWN_AS_IS.contains(&media_type))
 }
 
 /// Write the Thumbnail of the image or video `src` to `dest`, a JPEG: the

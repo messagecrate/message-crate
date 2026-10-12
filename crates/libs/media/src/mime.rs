@@ -109,6 +109,37 @@ pub fn ext_for_mime(mime: &str) -> Option<&'static str> {
         .map(|(ext, _, _)| *ext)
 }
 
+/// The longest media type [`is_media_type`] accepts, in bytes: RFC 6838
+/// section 4.2 allows 127 for the type and 127 for the subtype.
+pub const MEDIA_TYPE_MAX_LEN: usize = 255;
+
+/// Whether `value` is a bare media type: a `type/subtype` pair of RFC 2045
+/// tokens (section 5.1), with no parameters and no surrounding space, at
+/// most [`MEDIA_TYPE_MAX_LEN`] bytes long. A value that is not one could
+/// end a mail part's headers or break a header line, so it is never written
+/// as a type.
+#[must_use]
+pub fn is_media_type(value: &str) -> bool {
+    let is_token = |s: &str| {
+        !s.is_empty()
+            && s.bytes()
+                .all(|b| b.is_ascii_graphic() && !b"()<>@,;:\\\"/[]?=".contains(&b))
+    };
+    value.len() <= MEDIA_TYPE_MAX_LEN
+        && value
+            .split_once('/')
+            .is_some_and(|(top, sub)| is_token(top) && is_token(sub))
+}
+
+/// The media type `value` declares, lowercased and without parameters, when
+/// it is one ([`is_media_type`]); `None` for anything else, a blank value
+/// included. `image/JPEG; charset=binary` is `image/jpeg`.
+#[must_use]
+pub fn checked_media_type(value: &str) -> Option<String> {
+    let base = value.split(';').next().unwrap_or(value).trim();
+    is_media_type(base).then(|| base.to_ascii_lowercase())
+}
+
 /// Media kind for a MIME type by its top-level type: `image/*`, `video/*`,
 /// `audio/*`; `None` for anything else. Parameters after `;` are ignored.
 /// For a file stored without an extension, this is what the caller has.
@@ -261,5 +292,44 @@ mod tests {
         assert_eq!(kind_for_ext("opus"), Some(Kind::Audio));
         assert_eq!(kind_for_ext("3g2"), Some(Kind::Video));
         assert_eq!(kind_for_ext("oga"), Some(Kind::Audio));
+    }
+
+    /// A declared type is written into a header, so only a `type/subtype`
+    /// pair of tokens is taken, and nothing that could end or stretch the
+    /// header line.
+    #[test]
+    fn only_a_type_slash_subtype_of_tokens_is_a_media_type() {
+        for good in ["image/jpeg", "application/vnd.ms-excel", "video/x-matroska"] {
+            assert!(is_media_type(good), "{good}");
+        }
+        let longest = format!("a/{}", "b".repeat(MEDIA_TYPE_MAX_LEN - 2));
+        assert!(is_media_type(&longest));
+        let too_long = format!("a/{}", "b".repeat(MEDIA_TYPE_MAX_LEN - 1));
+        for bad in [
+            "",
+            "image",
+            "image/",
+            "/jpeg",
+            "text/html<script>",
+            "image/jpeg; charset=x",
+            "image/jpeg\r\nX-Evil: 1",
+            " image/jpeg",
+            "image/jp eg",
+            "a/b/c",
+            "imäge/jpeg",
+            too_long.as_str(),
+        ] {
+            assert!(!is_media_type(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_checked_media_type_is_lowercased_and_drops_its_parameters() {
+        assert_eq!(
+            checked_media_type(" Image/JPEG; charset=binary ").as_deref(),
+            Some("image/jpeg")
+        );
+        assert_eq!(checked_media_type("text/html<script>"), None);
+        assert_eq!(checked_media_type("   "), None);
     }
 }

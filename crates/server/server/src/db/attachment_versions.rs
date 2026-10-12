@@ -97,6 +97,10 @@ pub struct StoredOriginal {
     pub original_name: Option<String>,
     /// Attachment path inside the export (`attachments.path`).
     pub source_path: Option<String>,
+    /// What the media pass last decided about whether every browser shows
+    /// the original as it is (`attachments.shown_as_is`), `None` until it
+    /// has decided. An original that cannot be read is planned from it.
+    pub shown_as_is: Option<bool>,
 }
 
 impl StoredOriginal {
@@ -173,7 +177,8 @@ pub async fn stored_originals(
             SUM(CASE WHEN COALESCE(a.thumbnail_assets_path, '') = '' THEN 1 ELSE 0 END)
                 AS rows_without_thumbnail,
             MAX(a.original_name) AS original_name,
-            MAX(a.path) AS source_path
+            MAX(a.path) AS source_path,
+            MAX(a.shown_as_is) AS shown_as_is
         FROM attachments a
         JOIN messages m ON m.id = a.message_id
         WHERE m.account_id = $1
@@ -252,7 +257,7 @@ pub async fn record_shown_as_is(
          SET shown_as_is = $1,
              {reason_column} = CASE WHEN $1 THEN NULL ELSE {reason_column} END
          WHERE sha256 = $2
-           AND (shown_as_is != $1 OR ($1 AND {reason_column} IS NOT NULL))
+           AND (shown_as_is IS NOT $1 OR ($1 AND {reason_column} IS NOT NULL))
            AND message_id IN (SELECT id FROM messages WHERE account_id = $3)"
     ))
     .bind(shown_as_is)

@@ -614,7 +614,11 @@ the answer to a CORS preflight. The only routes that set their own are the
 three asset reads, which send `private`, or `private, no-store` under a Media
 Link, once the credential is accepted (see [Credentials and
 reach](#credentials-and-reach)). Their refusals before that point take
-`no-store` from this rule. Nothing outside `/v1` is marked: the website's built
+`no-store` from this rule. An asset read's handler reaches the account the
+read opens only through `AssetReadAccess::answer`, which sets the header on
+whatever it answers, so an asset read route added later cannot answer
+without it, and a test walks every route the document opens to a Media
+Link (#2585). Nothing outside `/v1` is marked: the website's built
 files and `/health` keep their own caching.
 Why: the answers carry a Session token (`POST /v1/session`), message text,
 contacts and attachments. RFC 9111 already keeps a compliant shared cache
