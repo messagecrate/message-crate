@@ -756,7 +756,7 @@ impl<'a> Export<'a> {
     }
 }
 
-/// Mark each attachment whose Asset this run could not fetch `file_missing`,
+/// Mark each attachment whose Asset this run could not fetch `not_fetched`,
 /// so the conversation file itself says the file is not there, and a later
 /// Import or Convert of the directory does not meet an unexplained missing
 /// file once the run's log is gone. The path and fingerprint stay, so a next
@@ -774,16 +774,23 @@ fn mark_unfetched(
         .flat_map(|(_, messages)| messages.iter_mut())
         .flat_map(|msg| msg.attachments.iter_mut())
     {
-        // Lowercase, as `note_asset_refs` keys each Asset.
         let unfetched = att
             .digest_sha256
             .as_deref()
-            .and_then(message_ir::trimmed)
-            .is_some_and(|sha| failed.contains(sha.to_ascii_lowercase().as_str()));
+            .and_then(asset_key)
+            .is_some_and(|sha| failed.contains(sha.as_str()));
         if unfetched {
-            att.missing_reason = Some("file_missing".to_string());
+            att.missing_reason = Some(message_ir::NOT_FETCHED.to_string());
         }
     }
+}
+
+/// The key an Asset is fetched, journaled and reported under: its trimmed
+/// SHA-256 in lowercase, so one fingerprint in two cases is one fetch, never
+/// two fetches writing one temporary file on a case-insensitive file system.
+/// `None` for a blank fingerprint.
+fn asset_key(sha256: &str) -> Option<String> {
+    message_ir::trimmed(sha256).map(str::to_ascii_lowercase)
 }
 
 /// Remember where each attachment a message references should land on disk,
@@ -809,14 +816,9 @@ fn note_asset_refs(
         if let Some(path) = refused_path {
             refused.push((path, rel.clone()));
         }
-        let (Some(sha), Some(rel)) = (att.sha256.as_deref().and_then(message_ir::trimmed), rel)
-        else {
+        let (Some(sha), Some(rel)) = (att.sha256.as_deref().and_then(asset_key), rel) else {
             continue;
         };
-        // Lowercase, so one fingerprint in two cases is one fetch, never two
-        // fetches writing one temporary file on a case-insensitive file
-        // system.
-        let sha = sha.to_ascii_lowercase();
         let first = assets.entry(sha.clone()).or_insert_with(|| rel.clone());
         if *first != rel {
             other_paths.entry(sha).or_default().insert(rel);

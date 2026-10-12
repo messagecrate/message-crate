@@ -1048,8 +1048,8 @@ fn an_asset_the_server_does_not_have_is_named_in_the_report_and_every_conversati
     for menu in menus {
         assert_eq!(
             menu.missing_reason.as_deref(),
-            Some("file_missing"),
-            "the conversation file says the menu's file is not there"
+            Some(message_ir::NOT_FETCHED),
+            "the conversation file says the Export could not fetch the menu"
         );
     }
     for photo in attachments
