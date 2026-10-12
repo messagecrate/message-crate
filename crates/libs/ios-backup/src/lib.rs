@@ -39,3 +39,8 @@ pub use backup::{ios_backup_date_unix_ms, ios_backup_domain_files, ios_backup_en
 pub use backup_domain::{DecryptedDomain, decrypt_ios_backup_domain};
 pub use helper::Helper;
 pub use identity::{backup_identities, ios_backup_phone_number};
+/// The sentences an iPhone backup with the wrong password setting is refused
+/// with, the same from the WhatsApp import as from `imessage-reader`.
+pub use imessage_reader_protocol::{
+    ENCRYPTED_BACKUP_PASSWORD_REQUIRED, UNENCRYPTED_BACKUP_CLEAR_PASSWORD,
+};

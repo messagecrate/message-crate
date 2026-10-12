@@ -137,6 +137,19 @@ pub fn bare_address(raw: &str) -> Option<String> {
 /// sides agree on, and it sits here with the rest of that agreement.
 pub const IOS_BACKUP_PASSWORD_INCORRECT: &str = "The iOS backup password was incorrect.";
 
+/// The [`Event::Error`] message the helper sends when an encrypted iPhone
+/// backup comes with no password. The WhatsApp import from an iPhone backup
+/// refuses the same case with the same sentence, so it sits here, where both
+/// sides of the process boundary can reach it.
+pub const ENCRYPTED_BACKUP_PASSWORD_REQUIRED: &str =
+    "The backup is encrypted. Fill in the Encryption password.";
+
+/// The [`Event::Error`] message the helper sends when a password comes with
+/// an iPhone backup that is not encrypted. The WhatsApp import from an
+/// iPhone backup refuses the same case with the same sentence.
+pub const UNENCRYPTED_BACKUP_CLEAR_PASSWORD: &str =
+    "This backup is not encrypted. Clear the Encryption password.";
+
 /// The file name of the helper executable, without the `.exe` Windows adds.
 pub const HELPER_NAME: &str = "imessage-reader";
 

@@ -11,7 +11,8 @@
 
 use anyhow::{Result, bail};
 use ios_backup::{
-    DecryptedDomain, decrypt_ios_backup_domain, ios_backup_domain_files, ios_backup_encrypted_flag,
+    DecryptedDomain, ENCRYPTED_BACKUP_PASSWORD_REQUIRED, UNENCRYPTED_BACKUP_CLEAR_PASSWORD,
+    decrypt_ios_backup_domain, ios_backup_domain_files, ios_backup_encrypted_flag,
 };
 use message_crate_core::{RunContext, WhatsappConfig};
 use message_staging::{Disk, check_headroom};
@@ -126,10 +127,8 @@ fn decrypt_with(
     };
     let password = source.backup_password.as_deref();
     match (ios_backup_encrypted_flag(backup), password) {
-        (Some(true), None) => bail!("The backup is encrypted. Fill in the Encryption password."),
-        (Some(false), Some(_)) => {
-            bail!("This backup is not encrypted. Clear the Encryption password.")
-        }
+        (Some(true), None) => bail!(ENCRYPTED_BACKUP_PASSWORD_REQUIRED),
+        (Some(false), Some(_)) => bail!(UNENCRYPTED_BACKUP_CLEAR_PASSWORD),
         (Some(true), Some(password)) => {
             let domain = domain(source);
             decrypt(backup, password, domain)?;
@@ -163,7 +162,10 @@ fn decrypt_with(
 
 #[cfg(test)]
 mod tests {
-    use super::{BUSINESS_DOMAIN, DOMAIN, DecryptedWhatsapp, decrypt_with, extract_bytes};
+    use super::{
+        BUSINESS_DOMAIN, DOMAIN, DecryptedWhatsapp, ENCRYPTED_BACKUP_PASSWORD_REQUIRED,
+        UNENCRYPTED_BACKUP_CLEAR_PASSWORD, decrypt_with, extract_bytes,
+    };
     use ios_backup::DecryptedDomain;
     use message_crate_core::WhatsappConfig;
     use std::fs;
@@ -210,10 +212,7 @@ mod tests {
         let backup = backup(true);
         let work = tempdir().unwrap();
         let err = decrypt_with(&source(backup.path(), None), work.path(), never).unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "The backup is encrypted. Fill in the Encryption password."
-        );
+        assert_eq!(err.to_string(), ENCRYPTED_BACKUP_PASSWORD_REQUIRED);
     }
 
     #[test]
@@ -222,10 +221,7 @@ mod tests {
         let work = tempdir().unwrap();
         let err =
             decrypt_with(&source(backup.path(), Some("secret")), work.path(), never).unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "This backup is not encrypted. Clear the Encryption password."
-        );
+        assert_eq!(err.to_string(), UNENCRYPTED_BACKUP_CLEAR_PASSWORD);
     }
 
     /// The password and the app's own domain go to the decryption, and the

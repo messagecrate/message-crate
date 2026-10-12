@@ -36,6 +36,7 @@ use crate::{
         ENCRYPTED_BACKUP_PASSWORD_REQUIRED, IOS_BACKUP_PASSWORD_INCORRECT, NOT_AN_IPHONE_BACKUP,
         RuntimeError, UNENCRYPTED_BACKUP_CLEAR_PASSWORD,
     },
+    log::emit_log,
     options::ReaderOptions,
 };
 
@@ -133,7 +134,7 @@ pub(crate) fn decrypt_backup(options: &ReaderOptions) -> Result<Option<Backup>, 
 
     let password = password_for_encrypted_backup(options.cleartext_password.as_deref())?;
 
-    options.emit_log("Decrypting iOS backup...");
+    emit_log("Decrypting iOS backup...");
     options.setup_step(1, DECRYPT_STEPS, "Deriving backup keys");
     let backup = match Backup::open(options.db_path.clone(), &Authentication::Password(password)) {
         Ok(backup) => backup,

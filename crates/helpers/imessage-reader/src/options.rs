@@ -66,16 +66,11 @@ impl ReaderOptions {
         &self.scratch_dir
     }
 
-    /// Send one log line to the app.
-    pub fn emit_log(&self, line: impl AsRef<str>) {
-        emit_log(line);
-    }
-
     /// Announce a numbered setup step (decrypting a backup, caching a table):
     /// a `[step/total] label...` log line for people and a
     /// [`Progress::Setup`] event for the progress bar.
     pub fn setup_step(&self, step: u64, total: u64, label: &str) {
-        self.emit_log(format!("  [{step}/{total}] {label}..."));
+        emit_log(format!("  [{step}/{total}] {label}..."));
         emit(&Event::Progress(Progress::Setup {
             label: label.to_string(),
             step,
@@ -156,22 +151,20 @@ mod tests {
         );
     }
 
-    /// A log line is one log event; a setup step is a numbered log line
-    /// for people followed by a setup progress event for the bar.
+    /// A setup step is a numbered log line for people followed by a setup
+    /// progress event for the bar.
     #[test]
-    fn setup_steps_and_log_lines_are_emitted() {
+    fn a_setup_step_is_a_log_line_and_a_progress_event() {
         let options = ReaderOptions::from_source(
             source(imessage_reader_protocol::Platform::MacOs),
             PathBuf::from("/scratch"),
         );
         let events = crate::log::capture::events(|| {
-            options.emit_log("hello");
             options.setup_step(1, 4, "Caching chats");
         });
         assert_eq!(
             events,
             [
-                serde_json::json!({"event": "log", "line": "hello"}),
                 serde_json::json!({"event": "log", "line": "  [1/4] Caching chats..."}),
                 serde_json::json!({
                     "event": "progress",
