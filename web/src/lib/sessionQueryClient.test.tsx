@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { ApiError } from "./api";
 import { SessionQueryClientProvider } from "./sessionQueryClient";
 import { onSessionRefused } from "./sessionRefusal";
@@ -12,12 +13,14 @@ describe("SessionQueryClientProvider", () => {
   let stop: () => void = () => {};
 
   beforeEach(() => {
+    startFakeClock();
     refused.mockReset();
     stop = onSessionRefused(refused);
   });
 
   afterEach(() => {
     stop();
+    stopFakeClock();
   });
 
   it("reports a query the server refuses as the session ending", async () => {
@@ -32,7 +35,8 @@ describe("SessionQueryClientProvider", () => {
       { wrapper: SessionQueryClientProvider },
     );
 
-    await waitFor(() => expect(refused).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(refused).toHaveBeenCalledTimes(1);
     // No token: the refusal is of the session in use now.
     expect(refused).toHaveBeenCalledWith();
   });
@@ -76,7 +80,8 @@ describe("SessionQueryClientProvider", () => {
       () => useQuery({ queryKey: ["kept"], queryFn, staleTime: Number.POSITIVE_INFINITY }),
       { wrapper: SessionQueryClientProvider },
     );
-    await waitFor(() => expect(result.current.data).toBe("value"));
+    await settle();
+    expect(result.current.data).toBe("value");
 
     rerender();
 

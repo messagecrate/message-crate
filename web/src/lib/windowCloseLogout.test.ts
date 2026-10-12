@@ -1,7 +1,8 @@
 /** @vitest-environment jsdom */
 
-import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { useLogoutOnWindowClose } from "./windowCloseLogout";
 
 const isTauri = vi.fn();
@@ -28,22 +29,27 @@ async function mountInDesktop(revokeSession: () => Promise<void>) {
     return unlisten;
   });
   const hook = renderHook(() => useLogoutOnWindowClose(revokeSession));
-  await waitFor(() => expect(handler).toBeTypeOf("function"));
+  await settle();
   if (!handler) throw new Error("expected a close handler");
   return { close: handler, unlisten, ...hook };
 }
 
 describe("useLogoutOnWindowClose", () => {
   beforeEach(() => {
+    startFakeClock();
     isTauri.mockReset().mockReturnValue(true);
     onWindowCloseRequested.mockReset();
     destroyWindow.mockReset().mockResolvedValue(undefined);
   });
 
+  afterEach(() => {
+    stopFakeClock();
+  });
+
   it("does not listen for a close outside the desktop app", async () => {
     isTauri.mockReturnValue(false);
     renderHook(() => useLogoutOnWindowClose(async () => {}));
-    await act(async () => {});
+    await settle();
     expect(onWindowCloseRequested).not.toHaveBeenCalled();
   });
 
