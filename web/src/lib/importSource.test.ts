@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { EXPORT_SOURCES } from "./exportSources";
 import { IMESSAGE_METHODS, IMESSAGE_SOURCE_ID } from "./imessageImport";
@@ -39,6 +41,13 @@ describe("sourceForMethod", () => {
 });
 
 describe("importRunCreateBody", () => {
+  it("names a tool within the cap the server's reference states (#2668)", () => {
+    const path = fileURLToPath(new URL("../../../docs/src/assets/openapi.json", import.meta.url));
+    const doc = JSON.parse(readFileSync(path, "utf8"));
+    const cap: number = doc.components.schemas.CreateImportRequest.properties.tool.maxLength;
+    expect(Array.from(importRunCreateBody("imessage-ios").tool).length).toBeLessThanOrEqual(cap);
+  });
+
   it("sends imessage when the form method is imessage-ios", () => {
     expect(importRunCreateBody("imessage-ios")).toEqual({
       source: "imessage",

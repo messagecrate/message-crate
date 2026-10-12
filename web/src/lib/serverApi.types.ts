@@ -2532,7 +2532,11 @@ export interface components {
          *     names the account.
          */
         CreateImportRequest: {
-            /** @description Which install is creating the Import Run. */
+            /**
+             * @description Which copy of the app is creating the Import Run, stored trimmed. Null when
+             *     the request leaves it out, or blank. Over 64 characters is refused
+             *     with `422 Unprocessable Entity`.
+             */
             device_id?: string | null;
             /**
              * @description Import form snapshot, stored so the screen can be restored.
@@ -2559,7 +2563,11 @@ export interface components {
              *     `422 Unprocessable Entity`.
              */
             phone_country?: string | null;
-            /** @description Absolute path to the run directory on the client that owns this Import Run. */
+            /**
+             * @description Absolute path to the run directory on the client that owns this
+             *     Import Run, stored as given, spaces at its ends included. Over 4,096
+             *     characters is refused with `422 Unprocessable Entity`.
+             */
             run_dir?: string | null;
             /**
              * @description Source id the run imports, such as `imessage` or `whatsapp`, which
@@ -2587,8 +2595,9 @@ export interface components {
             stage?: components["schemas"]["ImportStage"] | null;
             /**
              * @description Name of the program that runs the import, such as
-             *     `message-crate-import`, stored on the run as given. Null when the
-             *     request leaves it out.
+             *     `message-crate-import`, stored on the run trimmed. Null when the
+             *     request leaves it out, or blank. Over 64 characters is refused with
+             *     `422 Unprocessable Entity`.
              */
             tool?: string | null;
         };
@@ -3210,11 +3219,17 @@ export interface components {
          *     with a caveat.
          */
         ImportNoteRequest: {
-            /** @description The file, message or address the note is about. */
+            /**
+             * @description The file, message or address the note is about. Stored trimmed; over
+             *     2,000 characters is refused with `422 Unprocessable Entity`.
+             */
             item: string;
             /** @description Stage the note came from. */
             stage: components["schemas"]["ImportIssueStage"];
-            /** @description What the run did with it, in one sentence. */
+            /**
+             * @description What the run did with it, in one sentence. Stored trimmed; over 2,000
+             *     characters is refused with `422 Unprocessable Entity`.
+             */
             text: string;
         };
         /**

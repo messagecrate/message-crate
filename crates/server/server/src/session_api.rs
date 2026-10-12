@@ -295,9 +295,7 @@ pub async fn delete_session(
                 .into(),
         ));
     }
-    Err(ApiError::AuthenticationRequired(
-        "this token names no session".into(),
-    ))
+    Err(ApiError::TokenRefused("this token names no session".into()))
 }
 
 #[cfg(test)]

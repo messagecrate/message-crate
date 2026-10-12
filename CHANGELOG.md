@@ -414,6 +414,21 @@ released versions carry their date on the heading.
   the Demo Account is recorded too, with the set of Demo Data asked for. Before,
   neither left an entry, though opening or closing Message Crate to new
   accounts did (#2187).
+- 2026-10-11: **An import's notes and details have a length limit too.**
+  Each part of a note an import records may be up to 2,000 characters, the
+  name of the program that ran the import and the id of the copy of the
+  app that ran it up to 64 each, and the path of the import's directory up
+  to 4,096. Anything longer is refused with a message naming the limit,
+  where before it was kept at any length. The desktop app shortens a longer
+  note to the limit, ending it with "…", so the import still finishes
+  (#2668).
+- 2026-10-11: **A request turned away for want of a Session or API Token
+  says how to authenticate.** When the server turns a request away because
+  it is not logged in, or names a Session or API Token the server does not
+  accept, its answer now says what the server wants, in the form the HTTP
+  standards set out, and whether the one sent was the problem. A generic
+  HTTP tool or library reads that answer on its own. The website and the
+  desktop app work as before (#2230).
 - 2026-10-11: **Names, addresses and Import Errors have a length limit.**
   A display name or a contact's name may be up to 200 characters, an
   address up to 320, and each part of an Import Error up to 2,000. Anything

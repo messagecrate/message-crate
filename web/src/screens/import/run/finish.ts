@@ -11,6 +11,7 @@ import {
   filesSkippedOverRun,
   issueRequests,
   issuesToDiscard,
+  noteRequests,
   notesToDiscard,
   parseRunRecord,
   RUN_ERROR_ITEM,
@@ -128,7 +129,7 @@ export async function finishImport(
             messages_failed: finalSummary.messagesFailed,
           },
           issues: issueRequests(finalSummary.issues),
-          notes: whole.notes ?? [],
+          notes: noteRequests(whole.notes ?? []),
         }),
       );
     } catch (e: unknown) {
@@ -305,7 +306,7 @@ export async function discardRun(
   if (runId != null) {
     try {
       await endSessionIfRefused(ctx, () =>
-        ctx.server.discardImportRun(runId, issueRequests(issues), notes),
+        ctx.server.discardImportRun(runId, issueRequests(issues), noteRequests(notes)),
       );
     } catch (e: unknown) {
       const outcome = await outcomeOfFailedDiscard(ctx, runId, e);
