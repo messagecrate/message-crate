@@ -1,8 +1,6 @@
 use super::*;
-use message_crate_core::{
-    CancelFlag, FormatConfig, IssueSink, LogSink, MediaConfig, ObfuscateConfig, ProgressSink,
-    SourceConfig,
-};
+use message_crate_core::testutil::TestRun;
+use message_crate_core::{LogSink, ObfuscateConfig};
 use message_ir::IrAttachment;
 use message_ir_format::{read_conversation_csv, read_conversation_json};
 use std::sync::{Arc, Mutex};
@@ -19,22 +17,23 @@ fn write_fixture(dir: &Path, format: OutputFormat) {
     sink.finish(&mut ExportReport::default()).unwrap();
 }
 
-fn config(input: &Path, output: &Path, output_format: OutputFormat) -> ExporterConfig {
-    ExporterConfig {
+fn config(input: &Path, output: &Path, output_format: OutputFormat) -> TestRun<FormatConfig> {
+    TestRun {
+        context: RunContext::new(std::env::temp_dir().join("message-crate-test-cache")),
+        output: OutputConfig::new(output, output_format),
         inputs: vec![input.to_path_buf()],
-        output: output.to_path_buf(),
-        scratch_dir: std::env::temp_dir().join("message-crate-test-cache"),
-        timezone: None,
-        obfuscate: ObfuscateConfig::default(),
-        media: MediaConfig::default(),
-        cancel: CancelFlag::default(),
-        log: LogSink::none(),
-        progress: ProgressSink::none(),
-        issues: IssueSink::none(),
-        output_format,
-        resume: false,
-        source: SourceConfig::Format(FormatConfig::default()),
+        source: FormatConfig::default(),
     }
+}
+
+/// [`run`] with `config`'s parts.
+fn run_config(config: &TestRun<FormatConfig>) -> Result<RunResult> {
+    config.run(run)
+}
+
+/// [`convert_export`] of `input_dir` with `config`'s parts.
+fn convert(input_dir: &Path, config: &TestRun<FormatConfig>) -> Result<ReexportReport> {
+    convert_export(input_dir, &config.context, &config.output, &config.source)
 }
 
 /// The files in `dir` with `extension`, sorted, skipping `.meta.json`
@@ -89,7 +88,7 @@ fn detect_json_and_convert_to_csv() {
         OutputFormat::Json
     );
     let destination = tempfile::tempdir().unwrap();
-    let report = convert_export(
+    let report = convert(
         source.path(),
         &config(source.path(), destination.path(), OutputFormat::Csv),
     )
@@ -113,7 +112,7 @@ fn convert_csv_to_json() {
     let source = tempfile::tempdir().unwrap();
     write_fixture(source.path(), OutputFormat::Csv);
     let destination = tempfile::tempdir().unwrap();
-    convert_export(
+    convert(
         source.path(),
         &config(source.path(), destination.path(), OutputFormat::Json),
     )
@@ -141,7 +140,7 @@ fn convert_json_to_xml() {
     let source = tempfile::tempdir().unwrap();
     write_fixture(source.path(), OutputFormat::Json);
     let destination = tempfile::tempdir().unwrap();
-    convert_export(
+    convert(
         source.path(),
         &config(source.path(), destination.path(), OutputFormat::Xml),
     )
@@ -172,7 +171,7 @@ fn xml_writes_only_sms_and_mms_and_the_log_names_what_was_left_out() {
     sink.finish(&mut ExportReport::default()).unwrap();
 
     let destination = tempfile::tempdir().unwrap();
-    let result = run(&config(
+    let result = run_config(&config(
         source.path(),
         destination.path(),
         OutputFormat::Xml,
@@ -212,7 +211,7 @@ fn convert_xml_with_ir_reader() {
     )
     .unwrap();
     let destination = tempfile::tempdir().unwrap();
-    let report = convert_export(
+    let report = convert(
         source.path(),
         &config(source.path(), destination.path(), OutputFormat::Json),
     )
@@ -260,8 +259,8 @@ fn assert_broken_backup_keeps_previous_output(media: MediaMode, broken: impl Fn(
     fs::write(source.path().join("smses.xml"), backup).unwrap();
     let destination = tempfile::tempdir().unwrap();
     let mut config = config(source.path(), destination.path(), OutputFormat::Json);
-    config.media.mode = media;
-    convert_export(source.path(), &config).unwrap();
+    config.output.media.mode = media;
+    convert(source.path(), &config).unwrap();
     let previous = snapshot(destination.path());
     assert!(
         previous
@@ -279,7 +278,7 @@ fn assert_broken_backup_keeps_previous_output(media: MediaMode, broken: impl Fn(
     }
 
     fs::write(source.path().join("smses.xml"), broken(backup)).unwrap();
-    convert_export(source.path(), &config).unwrap_err();
+    convert(source.path(), &config).unwrap_err();
 
     assert_eq!(
         snapshot(destination.path()),
@@ -312,13 +311,13 @@ fn a_backup_converted_into_a_directory_inside_it_is_not_read_back() {
     .unwrap();
     let output = source.path().join("converted");
     let mut config = config(source.path(), &output, OutputFormat::Xml);
-    config.obfuscate = ObfuscateConfig {
+    config.output.obfuscate = ObfuscateConfig {
         enabled: true,
         seed: Some("00".repeat(32)),
     };
 
-    let first = convert_export(source.path(), &config).unwrap();
-    let second = convert_export(source.path(), &config).unwrap();
+    let first = convert(source.path(), &config).unwrap();
+    let second = convert(source.path(), &config).unwrap();
 
     assert_eq!(first.report.conversations, 1);
     assert_eq!(
@@ -350,7 +349,7 @@ fn an_output_that_is_or_contains_the_input_is_refused() {
     let json = find_file(&input, "json");
 
     for output in [input.clone(), tmp.path().to_path_buf()] {
-        let error = convert_export(&input, &config(&input, &output, OutputFormat::Csv))
+        let error = convert(&input, &config(&input, &output, OutputFormat::Csv))
             .unwrap_err()
             .to_string();
         assert!(
@@ -378,7 +377,7 @@ fn run_converts_an_export_and_reports_the_detected_format() {
     write_fixture(source.path(), OutputFormat::Jsonl);
     let destination = tempfile::tempdir().unwrap();
 
-    let result = run(&config(
+    let result = run_config(&config(
         source.path(),
         destination.path(),
         OutputFormat::Csv,
@@ -409,11 +408,11 @@ fn sms_fixture(name: &str) -> PathBuf {
 
 /// The config of a Convert from `input`, with every line it logs as it
 /// runs.
-fn logged_config(input: &Path, output: &Path) -> (ExporterConfig, Arc<Mutex<Vec<String>>>) {
+fn logged_config(input: &Path, output: &Path) -> (TestRun<FormatConfig>, Arc<Mutex<Vec<String>>>) {
     let lines = Arc::new(Mutex::new(Vec::new()));
     let sink_lines = Arc::clone(&lines);
     let mut config = config(input, output, OutputFormat::Csv);
-    config.log = LogSink::new(move |line: &str| {
+    config.context.log = LogSink::new(move |line: &str| {
         sink_lines.lock().unwrap().push(line.to_string());
     });
     (config, lines)
@@ -427,7 +426,7 @@ fn run_from_an_sms_backup_logs_the_reader_counts() {
     let destination = tempfile::tempdir().unwrap();
     let (config, logged) = logged_config(&sms_fixture("sms-backup-every-skip"), destination.path());
 
-    let result = run(&config).unwrap();
+    let result = run_config(&config).unwrap();
 
     let logged = logged.lock().unwrap().clone();
     for expected in [
@@ -460,7 +459,7 @@ fn a_convert_that_keeps_no_message_still_logs_why() {
     let (config, logged) =
         logged_config(&sms_fixture("sms-backup-nothing-kept"), destination.path());
 
-    let err = run(&config).unwrap_err().to_string();
+    let err = run_config(&config).unwrap_err().to_string();
 
     assert!(err.contains("no conversations loaded"), "{err}");
     let logged = logged.lock().unwrap().clone();
@@ -477,7 +476,7 @@ fn run_refuses_a_config_without_an_input() {
     let mut config = config(Path::new("unused"), destination.path(), OutputFormat::Csv);
     config.inputs.clear();
 
-    let error = run(&config).unwrap_err().to_string();
+    let error = run_config(&config).unwrap_err().to_string();
 
     assert_eq!(error, "input is required");
 }
@@ -488,7 +487,7 @@ fn run_refuses_an_empty_output_directory() {
     write_fixture(source.path(), OutputFormat::Json);
     let config = config(source.path(), Path::new(""), OutputFormat::Csv);
 
-    let error = run(&config).unwrap_err().to_string();
+    let error = run_config(&config).unwrap_err().to_string();
 
     assert_eq!(error, "output directory is required");
 }
@@ -699,7 +698,7 @@ fn converting_an_export_copies_its_attachments() {
     fs::write(attachments.join("nested/y.bin"), b"nested bytes").unwrap();
     let destination = tempfile::tempdir().unwrap();
 
-    convert_export(
+    convert(
         source.path(),
         &config(source.path(), destination.path(), OutputFormat::Csv),
     )
@@ -751,7 +750,8 @@ fn apply_reexport_convert_restages_attachments_and_marks_missing_files() {
     let mut report = ExportReport::default();
     apply_reexport_convert(
         std::slice::from_mut(&mut document),
-        &config,
+        &config.context,
+        &config.output.directory,
         &transforms,
         &mut report,
     )
@@ -965,7 +965,7 @@ fn an_mbox_export_is_detected_and_converts() {
     );
     let destination = tempfile::tempdir().unwrap();
 
-    let report = convert_export(
+    let report = convert(
         source.path(),
         &config(source.path(), destination.path(), OutputFormat::Jsonl),
     )
@@ -1074,7 +1074,7 @@ fn a_directory_with_two_sms_backups_is_refused() {
     fs::write(input.path().join("older.xml"), &backup).unwrap();
     let destination = tempfile::tempdir().unwrap();
 
-    let err = run(&config(input.path(), destination.path(), OutputFormat::Csv)).unwrap_err();
+    let err = run_config(&config(input.path(), destination.path(), OutputFormat::Csv)).unwrap_err();
 
     assert!(
         err.to_string()
@@ -1094,7 +1094,7 @@ fn a_dated_backup_beside_smses_xml_is_refused() {
     fs::write(input.path().join("sms-20240101120000.xml"), &backup).unwrap();
     let destination = tempfile::tempdir().unwrap();
 
-    let err = run(&config(input.path(), destination.path(), OutputFormat::Csv)).unwrap_err();
+    let err = run_config(&config(input.path(), destination.path(), OutputFormat::Csv)).unwrap_err();
 
     assert!(
         err.to_string()
@@ -1171,7 +1171,7 @@ fn a_directory_of_version_3_files_is_refused_by_name() {
         write_version_3_copy(source.path(), format, name);
         let destination = tempfile::tempdir().unwrap();
 
-        let error = convert_export(
+        let error = convert(
             source.path(),
             &config(source.path(), destination.path(), OutputFormat::Csv),
         )
@@ -1203,7 +1203,7 @@ fn a_version_3_file_among_current_files_stops_the_run_and_writes_nothing() {
     write_fixture(destination.path(), OutputFormat::Csv);
     let previous = find_file(destination.path(), "csv");
 
-    let error = convert_export(
+    let error = convert(
         source.path(),
         &config(source.path(), destination.path(), OutputFormat::Csv),
     )
@@ -1230,7 +1230,7 @@ fn convert_removes_the_backup_an_earlier_conversion_wrote() {
     let source = tempfile::tempdir().unwrap();
     write_fixture(source.path(), OutputFormat::Json);
     let destination = tempfile::tempdir().unwrap();
-    convert_export(
+    convert(
         source.path(),
         &config(source.path(), destination.path(), OutputFormat::Xml),
     )
@@ -1238,7 +1238,7 @@ fn convert_removes_the_backup_an_earlier_conversion_wrote() {
     // What a conversion stopped before it finished leaves behind.
     sms_backup_restore_exporter::testutil::leave_partial_backup(destination.path());
 
-    convert_export(
+    convert(
         source.path(),
         &config(source.path(), destination.path(), OutputFormat::Json),
     )
@@ -1268,7 +1268,7 @@ fn convert_keeps_the_names_two_groups_with_one_title_were_given() {
     assert_eq!(written.len(), 2, "{written:?}");
 
     let destination = tempfile::tempdir().unwrap();
-    convert_export(
+    convert(
         source.path(),
         &config(source.path(), destination.path(), OutputFormat::Json),
     )
@@ -1316,9 +1316,9 @@ fn read_output(dir: &Path, format: OutputFormat) -> ConversationDocument {
 fn assert_mail_attachment_survives(source: &Path, format: OutputFormat, media: MediaMode) {
     let destination = tempfile::tempdir().unwrap();
     let mut config = config(source, destination.path(), format);
-    config.media.mode = media;
+    config.output.media.mode = media;
 
-    convert_export(source, &config).unwrap();
+    convert(source, &config).unwrap();
 
     let out = read_output(destination.path(), format);
     let note = &out.messages[0].attachments[0];
@@ -1382,7 +1382,7 @@ fn a_mail_attachment_without_bytes_keeps_its_reason_and_is_counted() {
     write_mail_fixture(source.path(), OutputFormat::Mbox, true);
     let destination = tempfile::tempdir().unwrap();
 
-    let report = convert_export(
+    let report = convert(
         source.path(),
         &config(source.path(), destination.path(), OutputFormat::Jsonl),
     )
@@ -1411,7 +1411,7 @@ fn converting_a_mail_export_to_mail_keeps_its_attachments_embedded() {
     write_mail_fixture(source.path(), OutputFormat::Mbox, false);
     let destination = tempfile::tempdir().unwrap();
 
-    convert_export(
+    convert(
         source.path(),
         &config(source.path(), destination.path(), OutputFormat::Eml),
     )
@@ -1455,7 +1455,7 @@ fn sms_backup_plus_writes_only_sms_and_mms_and_says_what_it_left_out() {
     sink.finish(&mut ExportReport::default()).unwrap();
     let destination = tempfile::tempdir().unwrap();
 
-    let report = convert_export(
+    let report = convert(
         source.path(),
         &config(
             source.path(),
@@ -1521,11 +1521,11 @@ fn sms_backup_plus_mail_records_the_export_runs_start() {
         destination.path(),
         OutputFormat::SmsBackupPlus,
     );
-    config.source = SourceConfig::Format(FormatConfig {
+    config.source = FormatConfig {
         run_started: chrono::DateTime::from_timestamp_millis(1_791_000_000_000),
-    });
+    };
 
-    convert_export(source.path(), &config).unwrap();
+    convert(source.path(), &config).unwrap();
 
     let mail = fs::read_dir(destination.path().join("+15555550101"))
         .unwrap()
@@ -1548,7 +1548,7 @@ fn a_missing_attachment_converted_to_sms_backup_plus_is_counted_once() {
     write_mail_fixture(source.path(), OutputFormat::Mbox, true);
     let destination = tempfile::tempdir().unwrap();
 
-    let report = convert_export(
+    let report = convert(
         source.path(),
         &config(
             source.path(),
@@ -1583,7 +1583,7 @@ fn a_conversion_the_staging_disk_cannot_hold_is_refused_before_writing() {
     write_fixture(destination.path(), OutputFormat::Json);
     let previous = snapshot(destination.path());
 
-    let err = convert_export(
+    let err = convert(
         source.path(),
         &config(source.path(), destination.path(), OutputFormat::Csv),
     )
@@ -1607,7 +1607,7 @@ fn the_disk_check_of_a_conversion_leaves_out_an_attachment_with_no_file() {
     let destination = tempfile::tempdir().unwrap();
 
     for format in [OutputFormat::Csv, OutputFormat::Mbox] {
-        convert_export(
+        convert(
             source.path(),
             &config(source.path(), destination.path(), format),
         )
@@ -1628,9 +1628,9 @@ fn a_converted_conversion_stages_from_the_sources_its_disk_check_counted() {
     write_huge_attachments_with_no_file(source.path(), "too_large");
     let destination = tempfile::tempdir().unwrap();
     let mut converted = config(source.path(), destination.path(), OutputFormat::Jsonl);
-    converted.media.mode = MediaMode::Convert;
+    converted.output.media.mode = MediaMode::Convert;
 
-    let report = convert_export(source.path(), &converted).unwrap();
+    let report = convert(source.path(), &converted).unwrap();
 
     assert_eq!(report.report.extra(ATTACHMENTS_MISSING), 2);
     let out = read_output(destination.path(), OutputFormat::Jsonl);
@@ -1655,9 +1655,9 @@ fn assert_converted_writes_each_attachment_once(source: &Path) {
     for mode in [MediaMode::Clone, MediaMode::Convert, MediaMode::Compress] {
         let destination = tempfile::tempdir().unwrap();
         let mut converted = config(source, destination.path(), OutputFormat::Jsonl);
-        converted.media.mode = mode;
+        converted.output.media.mode = mode;
 
-        convert_export(source, &converted).unwrap();
+        convert(source, &converted).unwrap();
 
         let out = read_output(destination.path(), OutputFormat::Jsonl);
         let named = out.messages[0].attachments[0].path.clone().unwrap();
@@ -1764,7 +1764,7 @@ fn the_byte_total_of_a_conversion_stays_the_same_when_a_file_is_gone() {
     let output = tempfile::tempdir().unwrap();
     let (progress, totals) = message_crate_core::testutil::attachment_totals();
     let mut config = config(output.path(), output.path(), OutputFormat::Mbox);
-    config.progress = progress;
+    config.context.progress = progress;
     let sized = |name: &str, path: Option<&str>, size: u64, bytes: Option<&[u8]>| IrAttachment {
         size_bytes: Some(size),
         bytes: bytes.map(<[u8]>::to_vec),
@@ -1782,7 +1782,8 @@ fn the_byte_total_of_a_conversion_stays_the_same_when_a_file_is_gone() {
 
     apply_reexport_convert(
         std::slice::from_mut(&mut document),
-        &config,
+        &config.context,
+        &config.output.directory,
         &ExportTransforms::none(),
         &mut ExportReport::default(),
     )

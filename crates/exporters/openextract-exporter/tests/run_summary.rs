@@ -3,7 +3,7 @@
 //! wrote nothing, or a report that dropped the bad-date count, passed them.
 
 use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_run_config};
-use message_crate_core::{OpenExtractConfig, RunIssue, SourceConfig};
+use message_crate_core::{OpenExtractConfig, RunIssue};
 use std::fs;
 
 const ALL_CONVERSATIONS_CSV: &str = "\
@@ -19,13 +19,9 @@ fn run_writes_the_conversation_and_counts_the_bad_date_row() {
     let input = tmp.path().join("all_conversations.csv");
     fs::write(&input, ALL_CONVERSATIONS_CSV).unwrap();
     let output = tmp.path().join("out");
-    let config = jsonl_run_config(
-        &[&input],
-        &output,
-        SourceConfig::OpenExtract(OpenExtractConfig {}),
-    );
+    let config = jsonl_run_config(&[&input], &output, OpenExtractConfig {});
 
-    let result = crate::run(&config).expect("run");
+    let result = config.run(crate::run).expect("run");
 
     let written = assert_run_wrote_jsonl(&result, &output, 1);
     assert!(written.contains("Hello from Sam"), "{written}");
@@ -60,14 +56,10 @@ fn run_sends_an_import_error_for_an_unreadable_csv_and_a_note_for_a_name_only_ch
     )
     .unwrap();
     let output = tmp.path().join("out");
-    let mut config = jsonl_run_config(
-        &[&input],
-        &output,
-        SourceConfig::OpenExtract(OpenExtractConfig {}),
-    );
-    let issues = collect_issues(&mut config);
+    let mut config = jsonl_run_config(&[&input], &output, OpenExtractConfig {});
+    let issues = collect_issues(&mut config.context);
 
-    crate::run(&config).expect("run");
+    config.run(crate::run).expect("run");
 
     let issues = issues.lock().unwrap();
     let broken = input.join("broken.csv").display().to_string();

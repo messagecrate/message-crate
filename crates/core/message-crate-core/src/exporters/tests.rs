@@ -71,7 +71,7 @@ fn imazing_passes_obfuscate() {
         ..Form::default()
     };
     let config = form.to_config(Exporter::Imazing, no_ffmpeg()).unwrap();
-    assert!(config.obfuscate.enabled);
+    assert!(config.output.obfuscate.enabled);
     assert!(matches!(config.source, SourceConfig::Imazing(_)));
 }
 
@@ -117,9 +117,9 @@ fn seed_must_be_valid_hex() {
         ..Form::default()
     };
     let config = form.to_config(Exporter::OpenExtract, no_ffmpeg()).unwrap();
-    assert!(config.obfuscate.enabled);
+    assert!(config.output.obfuscate.enabled);
     assert_eq!(
-        config.obfuscate.seed.as_deref(),
+        config.output.obfuscate.seed.as_deref(),
         Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
     );
 }
@@ -211,7 +211,7 @@ fn imessage_requires_output_and_uses_caller_id() {
         ..Form::default()
     };
     let config = form.to_config(Exporter::Imessage, no_ffmpeg()).unwrap();
-    assert_eq!(config.output, PathBuf::from("out"));
+    assert_eq!(config.output.directory, PathBuf::from("out"));
     let SourceConfig::Apple(apple) = config.source else {
         panic!("expected Apple");
     };
@@ -253,10 +253,10 @@ fn sbr_passes_output_format() {
     let config = form
         .to_config(Exporter::SmsBackupRestore, no_ffmpeg())
         .unwrap();
-    assert_eq!(config.output_format, OutputFormat::Eml);
+    assert_eq!(config.output.format, OutputFormat::Eml);
 
     let go = form.to_config(Exporter::GoSmsPro, no_ffmpeg()).unwrap();
-    assert_eq!(go.output_format, OutputFormat::Eml);
+    assert_eq!(go.output.format, OutputFormat::Eml);
 }
 
 #[test]
@@ -267,7 +267,7 @@ fn imessage_passes_output_format() {
         ..Form::default()
     };
     let config = form.to_config(Exporter::Imessage, no_ffmpeg()).unwrap();
-    assert_eq!(config.output_format, OutputFormat::Eml);
+    assert_eq!(config.output.format, OutputFormat::Eml);
 }
 
 #[test]
@@ -280,7 +280,7 @@ fn android_passes_media_mode() {
         ..Form::default()
     };
     let config = form.to_config(Exporter::GoSmsPro, no_ffmpeg()).unwrap();
-    assert_eq!(config.media.mode, MediaMode::Clone);
+    assert_eq!(config.output.media.mode, MediaMode::Clone);
 
     let form = Form {
         input: std::env::current_dir().unwrap().display().to_string(),
@@ -290,7 +290,7 @@ fn android_passes_media_mode() {
         ..Form::default()
     };
     let config = form.to_config(Exporter::GoSmsPro, no_ffmpeg()).unwrap();
-    assert_eq!(config.media.mode, MediaMode::Disabled);
+    assert_eq!(config.output.media.mode, MediaMode::Disabled);
 }
 
 #[test]
@@ -313,10 +313,10 @@ fn imazing_passes_timezone_to_config() {
         ..Form::default()
     };
     let config = form.to_config(Exporter::Imazing, no_ffmpeg()).unwrap();
-    let SourceConfig::Imazing(_) = &config.source else {
+    let SourceConfig::Imazing(imazing) = &config.source else {
         panic!("expected Imazing");
     };
-    assert_eq!(config.timezone.as_deref(), Some("UTC-05:00"));
+    assert_eq!(imazing.timezone.as_deref(), Some("UTC-05:00"));
 }
 
 #[test]
@@ -334,7 +334,7 @@ fn whatsapp_passes_platform_and_media() {
     };
     let config = form.to_config(Exporter::Whatsapp, no_ffmpeg()).unwrap();
     assert!(config.inputs.is_empty());
-    assert_eq!(config.media.mode, MediaMode::Clone);
+    assert_eq!(config.output.media.mode, MediaMode::Clone);
     let SourceConfig::Whatsapp(wa) = config.source else {
         panic!("expected Whatsapp");
     };
@@ -487,7 +487,7 @@ fn imessage_with_attachments_disabled_does_not_copy_them() {
         panic!("expected Apple");
     };
     assert_eq!(apple.copy_method, "disabled");
-    assert_eq!(config.media.mode, MediaMode::Disabled);
+    assert_eq!(config.output.media.mode, MediaMode::Disabled);
 }
 
 #[test]
@@ -548,8 +548,8 @@ fn compress_settings_reach_the_config() {
     assert_eq!(form.compress_options().unwrap(), expected);
     for exporter in [Exporter::Imessage, Exporter::GoSmsPro] {
         let config = form.to_config(exporter, with_ffmpeg()).unwrap();
-        assert_eq!(config.media.mode, MediaMode::Compress);
-        assert_eq!(config.media.compress, expected, "{exporter:?}");
+        assert_eq!(config.output.media.mode, MediaMode::Compress);
+        assert_eq!(config.output.media.compress, expected, "{exporter:?}");
     }
 
     let bad = Form {
@@ -569,7 +569,7 @@ fn compress_settings_reach_the_config() {
 }
 
 /// Every source takes the output directory, the Scratch Directory, and the
-/// output format from the form; only iMazing reads the time zone field.
+/// output format from the form.
 #[test]
 fn every_source_carries_the_shared_form_fields() {
     let form = Form {
@@ -582,23 +582,59 @@ fn every_source_carries_the_shared_form_fields() {
         output_format: OutputFormat::Eml,
         ..Form::default()
     };
-    for exporter in [
-        Exporter::Imessage,
-        Exporter::Whatsapp,
-        Exporter::Imazing,
-        Exporter::OpenExtract,
-        Exporter::GoSmsPro,
-        Exporter::SmsBackupRestore,
-        Exporter::SmsBackupPlus,
-    ] {
+    for exporter in Exporter::ALL {
         let config = form
             .to_config(exporter, no_ffmpeg())
             .unwrap_or_else(|errors| panic!("{exporter:?}: {errors:?}"));
-        assert_eq!(config.output, PathBuf::from("out"), "{exporter:?}");
-        assert_eq!(config.scratch_dir, PathBuf::from("/cache"), "{exporter:?}");
-        assert_eq!(config.output_format, OutputFormat::Eml, "{exporter:?}");
-        let timezone = (exporter == Exporter::Imazing).then_some("UTC-05:00");
-        assert_eq!(config.timezone.as_deref(), timezone, "{exporter:?}");
-        assert!(!config.resume, "{exporter:?}");
+        assert_eq!(config.source.exporter(), exporter);
+        assert_eq!(
+            config.output.directory,
+            PathBuf::from("out"),
+            "{exporter:?}"
+        );
+        assert_eq!(
+            config.context.scratch_dir,
+            PathBuf::from("/cache"),
+            "{exporter:?}"
+        );
+        assert_eq!(config.output.format, OutputFormat::Eml, "{exporter:?}");
+        assert!(!config.output.resume, "{exporter:?}");
     }
+}
+
+/// How many backup types there are. A variant added to `Exporter` stops
+/// this match compiling until it is counted here.
+fn backup_type_count() -> usize {
+    match Exporter::default() {
+        Exporter::GoSmsPro
+        | Exporter::Imazing
+        | Exporter::Imessage
+        | Exporter::OpenExtract
+        | Exporter::SmsBackupRestore
+        | Exporter::SmsBackupPlus
+        | Exporter::Whatsapp => 7,
+    }
+}
+
+/// `Exporter::ALL` holds every backup type once: as many entries as there
+/// are variants, each at its own discriminant.
+#[test]
+fn every_backup_type_is_in_the_list_of_all() {
+    assert_eq!(Exporter::ALL.len(), backup_type_count());
+    for (index, exporter) in Exporter::ALL.into_iter().enumerate() {
+        assert_eq!(exporter as usize, index, "{exporter:?}");
+    }
+}
+
+/// Search's `source:` field accepts exactly the ids the exporters write
+/// into `export.source`, so a backup type added to the exporters and left
+/// out of search is caught here rather than refused as an unknown word in
+/// search after an import (#2102).
+#[test]
+fn search_accepts_the_source_id_of_every_backup_type() {
+    let mut written: Vec<&str> = Exporter::ALL.iter().map(|e| e.source_id()).collect();
+    let mut accepted = message_crate_api_types::SOURCE_IDS.to_vec();
+    written.sort_unstable();
+    accepted.sort_unstable();
+    assert_eq!(written, accepted);
 }

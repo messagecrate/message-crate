@@ -3,8 +3,9 @@
 //! wrote nothing, or a report that dropped a skip count or a file's parse
 //! error, passed them.
 
+use message_crate_core::GoSmsProConfig;
+use message_crate_core::testutil::TestRun;
 use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_run_config};
-use message_crate_core::{ExporterConfig, GoSmsProConfig, SourceConfig};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -16,7 +17,7 @@ struct Backup {
     _tmp: tempfile::TempDir,
     input: PathBuf,
     output: PathBuf,
-    config: ExporterConfig,
+    config: TestRun<GoSmsProConfig>,
 }
 
 /// A backup whose `gosms_sys_1.xml` is `xml`, owned by +15555550100.
@@ -29,9 +30,9 @@ fn backup(xml: &str) -> Backup {
     let config = jsonl_run_config(
         &[&input],
         &output,
-        SourceConfig::GoSmsPro(GoSmsProConfig {
+        GoSmsProConfig {
             owner_phones: vec!["+15555550100".into()],
-        }),
+        },
     );
     Backup {
         _tmp: tmp,
@@ -115,7 +116,7 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
     } = backup(SKIPS_XML);
     let broken = write_broken_xml(&input);
 
-    let result = crate::run(&config).expect("run");
+    let result = config.run(crate::run).expect("run");
 
     let written = assert_run_wrote_jsonl(&result, &output, 1);
     assert!(written.contains("\"hello\""), "{written}");
@@ -179,7 +180,7 @@ fn run_names_the_first_twenty_bad_address_rows_and_counts_the_rest() {
         config,
     } = backup(&go_sms_xml(&format!("{HELLO_SMS}{bad_rows}")));
 
-    let result = crate::run(&config).expect("run");
+    let result = config.run(crate::run).expect("run");
 
     assert!(
         result
@@ -209,13 +210,13 @@ fn a_resumed_run_with_no_bad_address_removes_the_earlier_skipped_file() {
         output,
         mut config,
     } = backup(SKIPS_XML);
-    crate::run(&config).expect("first run");
+    config.run(crate::run).expect("first run");
     let skipped = output.join("skipped_invalid_address.csv");
     assert!(skipped.exists(), "the first run wrote no skipped-row file");
 
     fs::write(input.join("gosms_sys_1.xml"), go_sms_xml(HELLO_SMS)).unwrap();
-    config.resume = true;
-    crate::run(&config).expect("resumed run");
+    config.output.resume = true;
+    config.run(crate::run).expect("resumed run");
 
     assert!(
         !skipped.exists(),
@@ -242,9 +243,9 @@ fn run_sends_an_import_error_for_each_file_it_cannot_read() {
         )
         .unwrap();
     }
-    let issues = collect_issues(&mut config);
+    let issues = collect_issues(&mut config.context);
 
-    crate::run(&config).expect("run");
+    config.run(crate::run).expect("run");
 
     let issues = issues.lock().unwrap();
     assert_eq!(issues.len(), 22, "{issues:?}");

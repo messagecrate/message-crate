@@ -2,21 +2,24 @@
 
 use crate::emit::{ConvertExportArgs, convert_export};
 use anyhow::{Result, bail};
-use message_crate_core::{ExporterConfig, RunResult, SourceConfig};
+use message_crate_core::{OutputConfig, RunContext, RunResult, SmsBackupPlusConfig};
+use std::path::PathBuf;
 
 /// Check the owner's phone number and email address, then run the shared
 /// pipeline.
 ///
 /// # Errors
 ///
-/// Returns an error when the source is not SMS Backup+, an input, owner phone,
-/// or owner email is missing, conversion fails, media processing fails for
-/// every candidate file, or the user cancels.
-pub fn run(config: &ExporterConfig) -> Result<RunResult> {
-    let SourceConfig::SmsBackupPlus(source) = &config.source else {
-        bail!("sms-backup-plus-exporter requires SourceConfig::SmsBackupPlus");
-    };
-    message_crate_core::check_cancel(&config.cancel)?;
+/// Returns an error when an input, owner phone, or owner email is missing,
+/// conversion fails, media processing fails for every candidate file, or the
+/// user cancels.
+pub fn run(
+    context: &RunContext,
+    output: &OutputConfig,
+    inputs: &[PathBuf],
+    source: &SmsBackupPlusConfig,
+) -> Result<RunResult> {
+    message_crate_core::check_cancel(&context.cancel)?;
 
     if source.owner_phones.is_empty() {
         bail!("SMS Backup+ needs the backup device's phone number");
@@ -25,16 +28,16 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         bail!("SMS Backup+ needs the backup device's email address");
     }
 
-    message_crate_core::run_pipeline(config, |convert_run| {
+    message_crate_core::run_pipeline(context, output, |convert_run| {
         convert_export(ConvertExportArgs {
-            inputs: &config.inputs,
-            output_dir: &config.output,
-            scratch_dir: &config.scratch_dir,
+            inputs,
+            output_dir: &output.directory,
+            scratch_dir: &context.scratch_dir,
             owner_phones: &source.owner_phones,
             owner_emails: &source.owner_emails,
             phone_country: source.phone_country,
             verbose: source.verbose,
-            log: &config.log,
+            log: &context.log,
             convert_run,
         })
     })
@@ -45,25 +48,24 @@ mod tests {
     use super::run;
     use crate::emit::{ConvertExportArgs, convert_export};
     use message_crate_core::{
-        ConvertRun, LogSink, OutputFormat, SmsBackupPlusConfig, SourceConfig,
-        testutil::jsonl_run_config,
+        ConvertRun, LogSink, OutputFormat, SmsBackupPlusConfig, testutil::jsonl_run_config,
     };
     use std::path::Path;
 
-    fn source(phones: &[&str], emails: &[&str]) -> SourceConfig {
-        SourceConfig::SmsBackupPlus(SmsBackupPlusConfig {
+    fn source(phones: &[&str], emails: &[&str]) -> SmsBackupPlusConfig {
+        SmsBackupPlusConfig {
             owner_phones: phones.iter().map(|p| (*p).to_string()).collect(),
             owner_emails: emails.iter().map(|e| (*e).to_string()).collect(),
             verbose: false,
             phone_country: None,
-        })
+        }
     }
 
     /// The error the desktop app shows for a run the exporter refuses.
-    fn refusal(inputs: &[&Path], source: SourceConfig) -> String {
+    fn refusal(inputs: &[&Path], source: SmsBackupPlusConfig) -> String {
         let tmp = tempfile::tempdir().unwrap();
         let config = jsonl_run_config(inputs, &tmp.path().join("out"), source);
-        run(&config).unwrap_err().to_string()
+        config.run(run).unwrap_err().to_string()
     }
 
     /// The exporters have no command line, so a refusal says what is

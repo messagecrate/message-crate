@@ -1,5 +1,5 @@
-//! Library entry: [`ExporterConfig`] to the shared conversation structure, then
-//! the chosen output format.
+//! Library entry: an Apple Messages source to the shared conversation
+//! structure, then the chosen output format.
 //!
 //! Everything a person can get wrong about the source is checked here, in
 //! this process, before the `imessage-reader` program is started: the
@@ -13,8 +13,8 @@ use anyhow::{Result, bail};
 use imessage_reader_protocol::{ExportRequest, Platform, Request, Source};
 use ios_backup::{Helper, ios_backup_encrypted_flag};
 use message_crate_core::{
-    AppleConfig, ApplePlatform, ConvertRun, ExporterConfig, IMESSAGE_READER_DIRECTORY, LogSink,
-    ProgressSink, RunResult, ScratchDir, SourceConfig, prepare_outputs,
+    AppleConfig, ApplePlatform, ConvertRun, IMESSAGE_READER_DIRECTORY, LogSink, OutputConfig,
+    ProgressSink, RunContext, RunResult, ScratchDir, prepare_outputs,
 };
 use message_staging::{Disk, check_headroom};
 
@@ -136,26 +136,34 @@ pub(crate) fn backup_taken_at_unix_ms(source: &Source) -> Option<i64> {
     }
 }
 
-/// Build options from [`ExporterConfig`], start the `imessage-reader`
-/// program on the Messages database, and write the export.
+/// Check the source, start the `imessage-reader` program on the Messages
+/// database, and write the export.
 ///
 /// # Errors
 ///
-/// Returns an error when the source is not Apple Messages, the program
-/// cannot be found or the database cannot be opened, conversion fails, media
-/// processing fails for every candidate file, or the user cancels.
-pub fn run(config: &ExporterConfig) -> Result<RunResult> {
-    run_with(config, Helper::spawn)
+/// Returns an error when the source is refused, the program cannot be found
+/// or the database cannot be opened, conversion fails, media processing
+/// fails for every candidate file, or the user cancels.
+pub fn run(
+    context: &RunContext,
+    output: &OutputConfig,
+    inputs: &[PathBuf],
+    source: &AppleConfig,
+) -> Result<RunResult> {
+    run_with(context, output, inputs, source, Helper::spawn)
 }
 
 /// [`run`], starting the program with `spawn`. Tests pass a fake program.
 fn run_with(
-    config: &ExporterConfig,
+    context: &RunContext,
+    output: &OutputConfig,
+    inputs: &[PathBuf],
+    source: &AppleConfig,
     spawn: impl FnOnce(&Request, LogSink, ProgressSink) -> Result<Helper>,
 ) -> Result<RunResult> {
-    let options = options_from_export_config(config)?;
+    let options = export_options(context, output, inputs, source)?;
     message_crate_core::check_cancel(&options.convert_run.cancel)?;
-    let output = convert::open_output(&options)?;
+    let writer = convert::open_output(&options)?;
 
     // The program writes decrypted files into a directory of this run's own
     // under the Scratch Directory, beside the identities request's: not
@@ -177,36 +185,37 @@ fn run_with(
             options.log.clone(),
             options.progress.clone(),
         )?;
-        let report = convert::export(&mut helper, &options, output)?;
+        let report = convert::export(&mut helper, &options, writer)?;
         helper.finish()?;
         report
     };
     message_crate_core::check_cancel(&options.convert_run.cancel)?;
 
-    message_crate_core::finish_run(config, &report, config.media.mode.needs_tools())
+    message_crate_core::finish_run(output, &report, output.media.mode.needs_tools())
 }
 
-/// Translate the shared exporter config into this exporter's options, rejecting non-Apple sources.
-fn options_from_export_config(config: &ExporterConfig) -> Result<ExportOptions> {
-    let SourceConfig::Apple(source) = &config.source else {
-        bail!("imessage-ir-exporter requires SourceConfig::Apple");
-    };
-
-    let db_path = db_path_for(config.primary_input());
+/// Check the run's Apple source and turn it into this exporter's options.
+fn export_options(
+    context: &RunContext,
+    output: &OutputConfig,
+    inputs: &[PathBuf],
+    source: &AppleConfig,
+) -> Result<ExportOptions> {
+    let db_path = db_path_for(inputs.first().map(PathBuf::as_path));
     let platform = platform_for(source, &db_path)?;
 
     if source.backup_password.is_some() && platform != Platform::Ios {
         bail!("backup password is enabled; it can only be used with iOS backups.");
     }
     check_macos_only_path(
-        config,
+        &context.log,
         platform,
         source.attachment_root.as_deref().map(Path::new),
         ATTACHMENT_DIRECTORY_MISSING,
         "An attachment directory was given, but iPhone backups keep attachments inside the backup, so it will be ignored.",
     )?;
     check_macos_only_path(
-        config,
+        &context.log,
         platform,
         source.apple_contacts.as_deref(),
         APPLE_CONTACTS_MISSING,
@@ -225,7 +234,7 @@ fn options_from_export_config(config: &ExporterConfig) -> Result<ExportOptions> 
     {
         inputs.push(PathBuf::from(root));
     }
-    prepare_outputs(&inputs, &config.output)?;
+    prepare_outputs(&inputs, &output.directory)?;
 
     Ok(ExportOptions {
         source: Source {
@@ -236,12 +245,12 @@ fn options_from_export_config(config: &ExporterConfig) -> Result<ExportOptions> 
         attachment_root: source.attachment_root.clone(),
         contacts_path: source.apple_contacts.clone(),
         use_caller_id: source.use_caller_id,
-        export_path: config.output.clone(),
-        scratch_dir: config.scratch_dir.clone(),
+        export_path: output.directory.clone(),
+        scratch_dir: context.scratch_dir.clone(),
         attachment_embed,
-        log: config.log.clone(),
-        progress: config.progress.clone(),
-        convert_run: config.convert_run(),
+        log: context.log.clone(),
+        progress: context.progress.clone(),
+        convert_run: ConvertRun::new(context, output),
     })
 }
 
@@ -301,7 +310,7 @@ fn detect_platform(db_path: &Path) -> Result<Platform> {
 /// A path option that only a macOS export reads: refused when it points
 /// nowhere, and noted in the log as having no effect on an iOS backup.
 fn check_macos_only_path(
-    config: &ExporterConfig,
+    log: &LogSink,
     platform: Platform,
     path: Option<&Path>,
     missing: &str,
@@ -314,7 +323,7 @@ fn check_macos_only_path(
         bail!("{missing}");
     }
     if platform == Platform::Ios {
-        config.log.emit(ignored_on_ios);
+        log.emit(ignored_on_ios);
     }
     Ok(())
 }

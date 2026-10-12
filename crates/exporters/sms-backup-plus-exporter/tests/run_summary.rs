@@ -3,7 +3,7 @@
 //! wrote nothing, or dropped its summary, passed them.
 
 use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_run_config};
-use message_crate_core::{RunIssue, SmsBackupPlusConfig, SourceConfig};
+use message_crate_core::{RunIssue, SmsBackupPlusConfig};
 use std::fs;
 use std::path::Path;
 
@@ -35,13 +35,13 @@ fn backup_directory(root: &Path) -> std::path::PathBuf {
     input
 }
 
-fn source() -> SourceConfig {
-    SourceConfig::SmsBackupPlus(SmsBackupPlusConfig {
+fn source() -> SmsBackupPlusConfig {
+    SmsBackupPlusConfig {
         owner_phones: vec!["+15555550100".into()],
         owner_emails: vec!["me@example.com".into()],
         verbose: false,
         phone_country: None,
-    })
+    }
 }
 
 #[test]
@@ -50,7 +50,9 @@ fn run_writes_the_conversation_and_counts_the_bad_date_row() {
     let input = backup_directory(tmp.path());
     let output = tmp.path().join("out");
 
-    let result = crate::run(&jsonl_run_config(&[&input], &output, source())).expect("run");
+    let result = jsonl_run_config(&[&input], &output, source())
+        .run(crate::run)
+        .expect("run");
 
     let written = assert_run_wrote_jsonl(&result, &output, 1);
     assert!(written.contains("Hello from Alice"), "{written}");
@@ -94,7 +96,9 @@ fn a_call_log_mail_is_skipped_and_counted_in_the_summary() {
     fs::write(input.join("2.eml"), CALL_LOG_EML).unwrap();
     let output = tmp.path().join("out");
 
-    let result = crate::run(&jsonl_run_config(&[&input], &output, source())).expect("run");
+    let result = jsonl_run_config(&[&input], &output, source())
+        .run(crate::run)
+        .expect("run");
 
     let written = assert_run_wrote_jsonl(&result, &output, 1);
     assert!(written.contains("Hello from Alice"), "{written}");
@@ -130,9 +134,9 @@ fn a_group_message_with_no_readable_sender_is_kept_and_counted_once() {
     fs::write(input.join("2.eml"), mail).unwrap();
     let output = tmp.path().join("out");
     let mut config = jsonl_run_config(&[&input], &output, source());
-    let issues = collect_issues(&mut config);
+    let issues = collect_issues(&mut config.context);
 
-    let result = crate::run(&config).expect("run");
+    let result = config.run(crate::run).expect("run");
 
     let written = assert_run_wrote_jsonl(&result, &output, 1);
     assert!(written.contains("Hello group"), "{written}");
@@ -181,9 +185,9 @@ fn a_group_message_not_naming_the_owner_is_counted_once() {
     fs::write(input.join("2.eml"), mail).unwrap();
     let output = tmp.path().join("out");
     let mut config = jsonl_run_config(&[&input], &output, source());
-    let issues = collect_issues(&mut config);
+    let issues = collect_issues(&mut config.context);
 
-    let result = crate::run(&config).expect("run");
+    let result = config.run(crate::run).expect("run");
 
     let written = assert_run_wrote_jsonl(&result, &output, 1);
     assert!(written.contains("Hello from Carol"), "{written}");
@@ -246,9 +250,9 @@ fn a_message_with_no_address_for_the_other_person_is_a_note() {
     fs::write(input.join("2.eml"), mail).unwrap();
     let output = tmp.path().join("out");
     let mut config = jsonl_run_config(&[&input], &output, source());
-    let issues = collect_issues(&mut config);
+    let issues = collect_issues(&mut config.context);
 
-    let result = crate::run(&config).expect("run");
+    let result = config.run(crate::run).expect("run");
 
     assert!(
         result.messages.iter().any(|l| l
@@ -290,9 +294,9 @@ fn a_group_member_with_no_number_in_the_archive_is_counted_once() {
     }
     let output = tmp.path().join("out");
     let mut config = jsonl_run_config(&[&input], &output, source());
-    let issues = collect_issues(&mut config);
+    let issues = collect_issues(&mut config.context);
 
-    let result = crate::run(&config).expect("run");
+    let result = config.run(crate::run).expect("run");
 
     let written = assert_run_wrote_jsonl(&result, &output, 1);
     assert!(written.contains("dave@example.com"), "{written}");
@@ -359,9 +363,9 @@ fn a_group_member_whose_address_has_two_numbers_keeps_the_address() {
     .unwrap();
     let output = tmp.path().join("out");
     let mut config = jsonl_run_config(&[&input], &output, source());
-    let issues = collect_issues(&mut config);
+    let issues = collect_issues(&mut config.context);
 
-    let result = crate::run(&config).expect("run");
+    let result = config.run(crate::run).expect("run");
 
     let group = fs::read_dir(&output)
         .unwrap()
@@ -406,9 +410,9 @@ fn a_message_kept_without_a_part_it_could_not_read_is_a_note() {
     .unwrap();
     let output = tmp.path().join("out");
     let mut config = jsonl_run_config(&[&input], &output, source());
-    let issues = collect_issues(&mut config);
+    let issues = collect_issues(&mut config.context);
 
-    let result = crate::run(&config).expect("run");
+    let result = config.run(crate::run).expect("run");
 
     assert!(
         result

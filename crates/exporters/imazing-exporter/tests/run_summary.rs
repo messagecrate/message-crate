@@ -2,8 +2,8 @@
 //! shows. The smoke tests call `convert_export` directly, so a `run()` that
 //! wrote nothing, or a report that dropped the bad-date count, passed them.
 
+use message_crate_core::ImazingConfig;
 use message_crate_core::testutil::{assert_run_wrote_jsonl, jsonl_run_config};
-use message_crate_core::{ImazingConfig, SourceConfig};
 use std::fs;
 
 const MESSAGES_CSV: &str = "\
@@ -19,10 +19,15 @@ fn run_writes_the_conversation_and_counts_the_bad_date_row() {
     let input = tmp.path().join("messages.csv");
     fs::write(&input, MESSAGES_CSV).unwrap();
     let output = tmp.path().join("out");
-    let mut config = jsonl_run_config(&[&input], &output, SourceConfig::Imazing(ImazingConfig {}));
-    config.timezone = Some("UTC".into());
+    let config = jsonl_run_config(
+        &[&input],
+        &output,
+        ImazingConfig {
+            timezone: Some("UTC".into()),
+        },
+    );
 
-    let result = crate::run(&config).expect("run");
+    let result = config.run(crate::run).expect("run");
 
     let written = assert_run_wrote_jsonl(&result, &output, 1);
     assert!(written.contains("Hello from Bob"), "{written}");

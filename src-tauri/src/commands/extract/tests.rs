@@ -1,6 +1,6 @@
 use super::*;
 use media::MediaMode;
-use message_crate_core::IssueSink;
+use message_crate_core::{ApplePlatform, IssueSink, SourceConfig, WhatsappPlatform};
 use std::fs;
 
 /// An attachment size limit for tests that do not look at it.
@@ -47,7 +47,7 @@ fn convert_and_compress_stage_originals_and_defer_the_media_stage() {
         )
         .unwrap();
         assert_eq!(
-            config.media.mode,
+            config.output.media.mode,
             MediaMode::Clone,
             "{chosen:?} must stage originals"
         );
@@ -68,7 +68,7 @@ fn copy_and_skip_reach_the_exporter_unchanged() {
         )
         .unwrap();
         assert_eq!(
-            config.media.mode,
+            config.output.media.mode,
             chosen.media_mode(),
             "{chosen:?} must reach the exporter unchanged"
         );
@@ -93,7 +93,7 @@ fn non_imessage_sources_defer_the_media_stage_too() {
         )
         .unwrap();
         assert_eq!(
-            config.media.mode,
+            config.output.media.mode,
             MediaMode::Clone,
             "{chosen:?} must stage originals"
         );
@@ -284,7 +284,7 @@ fn a_staging_issue_reaches_the_issue_sink_before_staging_ends() {
     let arrived = Arc::new(Mutex::new(Vec::new()));
     let sink_arrived = Arc::clone(&arrived);
     let sink_output = output.clone();
-    config.issues = IssueSink::new(move |issue| {
+    config.context.issues = IssueSink::new(move |issue| {
         let staging_ended = message_staging::read_media_settings(&sink_output).is_ok();
         sink_arrived
             .lock()
@@ -330,7 +330,7 @@ fn jailbreak_uses_macos_platform_and_attachment_root() {
         }
         other => panic!("expected Apple, got {other:?}"),
     }
-    assert!(!config.obfuscate.enabled);
+    assert!(!config.output.obfuscate.enabled);
 }
 
 #[test]
@@ -659,7 +659,7 @@ fn whatsapp_ios_sets_backup_from_directory_and_business() {
 #[test]
 fn imazing_reads_dates_in_the_zone_the_screen_sent() {
     // iMazing dates carry no zone. Dropping this field leaves
-    // `ExporterConfig.timezone` as None and the exporter reads every date in
+    // `ImazingConfig.timezone` as None and the exporter reads every date in
     // the machine's zone, so the same directory exports differently on
     // different machines (#689).
     let mut options = test_options(Vec::new());
@@ -673,8 +673,10 @@ fn imazing_reads_dates_in_the_zone_the_screen_sent() {
         &options,
     )
     .unwrap();
-    assert!(matches!(config.source, SourceConfig::Imazing(_)));
-    assert_eq!(config.timezone.as_deref(), Some("America/New_York"));
+    let SourceConfig::Imazing(imazing) = config.source else {
+        panic!("{:?}", config.source);
+    };
+    assert_eq!(imazing.timezone.as_deref(), Some("America/New_York"));
 }
 
 #[test]
@@ -689,7 +691,10 @@ fn imazing_with_no_zone_leaves_the_exporter_its_fallback() {
         &options,
     )
     .unwrap();
-    assert_eq!(config.timezone, None);
+    let SourceConfig::Imazing(imazing) = config.source else {
+        panic!("{:?}", config.source);
+    };
+    assert_eq!(imazing.timezone, None);
 }
 
 /// Run the SMS Backup & Restore exporter on one MMS that carries an
@@ -726,7 +731,7 @@ fn counts_for_a_jsonl_attachment(data: &str) -> (u64, u64) {
     )
     .unwrap();
 
-    let result = run_exporter(&config).unwrap();
+    let result = exporters::run(&config).unwrap();
     let staged: Vec<_> = fs::read_dir(output.join("attachments"))
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -765,9 +770,10 @@ fn a_staged_jsonl_attachment_that_is_not_utf8_does_not_fail_the_count() {
 /// waits for a program: Staging runs ffmpeg for none of them (#1053).
 #[test]
 fn only_a_whatsapp_import_waits_for_a_download() {
+    use crate::tool_downloads::Program;
     use message_crate_core::{
-        AppleConfig, FormatConfig, GoSmsProConfig, ImazingConfig, OpenExtractConfig,
-        SmsBackupPlusConfig, SmsBackupRestoreConfig, WhatsappConfig,
+        AppleConfig, GoSmsProConfig, ImazingConfig, OpenExtractConfig, SmsBackupPlusConfig,
+        SmsBackupRestoreConfig, WhatsappConfig,
     };
     let none: &[Program] = &[];
     let sources = [
@@ -786,16 +792,18 @@ fn only_a_whatsapp_import_waits_for_a_download() {
         SourceConfig::OpenExtract(OpenExtractConfig::default()),
         SourceConfig::Imazing(ImazingConfig::default()),
         SourceConfig::Apple(AppleConfig::default()),
-        SourceConfig::Format(FormatConfig::default()),
     ];
     for source in &sources {
-        assert_eq!(programs_run_by(source), none, "{source:?}");
+        assert_eq!(exporters::exporter(source).programs, none, "{source:?}");
     }
     for platform in [WhatsappPlatform::Android, WhatsappPlatform::Ios] {
         let source = SourceConfig::Whatsapp(WhatsappConfig {
             platform: Some(platform),
             ..WhatsappConfig::default()
         });
-        assert_eq!(programs_run_by(&source), [Program::Wtsexporter]);
+        assert_eq!(
+            exporters::exporter(&source).programs,
+            [Program::Wtsexporter]
+        );
     }
 }

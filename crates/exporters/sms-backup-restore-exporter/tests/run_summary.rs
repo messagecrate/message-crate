@@ -7,7 +7,6 @@ use crate::emit::{ConvertExportArgs, convert_export};
 use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_run_config};
 use message_crate_core::{
     CancelFlag, ConvertRun, LogSink, OutputFormat, ProgressSink, SmsBackupRestoreConfig,
-    SourceConfig,
 };
 use std::fs;
 use std::path::Path;
@@ -57,13 +56,13 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
     let mut config = jsonl_run_config(
         &[&input],
         &output,
-        SourceConfig::SmsBackupRestore(SmsBackupRestoreConfig {
+        SmsBackupRestoreConfig {
             owner_phones: vec!["+15555550100".into()],
-        }),
+        },
     );
-    let issues = collect_issues(&mut config);
+    let issues = collect_issues(&mut config.context);
 
-    let result = crate::run(&config).expect("run");
+    let result = config.run(crate::run).expect("run");
 
     let written = assert_run_wrote_jsonl(&result, &output, 1);
     assert!(written.contains("\"hello\""), "{written}");
@@ -155,11 +154,11 @@ fn convert_and_import_word_every_count_and_error_alike() {
     let config = jsonl_run_config(
         &[&input],
         &output,
-        SourceConfig::SmsBackupRestore(SmsBackupRestoreConfig {
+        SmsBackupRestoreConfig {
             owner_phones: vec!["+15555550100".into()],
-        }),
+        },
     );
-    let imported = crate::run(&config).expect("run").messages;
+    let imported = config.run(crate::run).expect("run").messages;
     let owner = ["+15555550100".to_string()];
     let (_, report) = crate::read_backup(
         &input,

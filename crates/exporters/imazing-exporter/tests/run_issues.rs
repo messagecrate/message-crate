@@ -4,17 +4,22 @@
 //! app never heard of either.
 
 use message_crate_core::testutil::{collect_issues, jsonl_run_config};
-use message_crate_core::{ImazingConfig, RunIssue, SourceConfig};
+use message_crate_core::{ImazingConfig, RunIssue};
 use std::fs;
 use std::path::Path;
 
 /// `run()` over `input` into `output`, copying attachments, and the rows it sent.
 fn run_collecting(input: &Path, output: &Path) -> Vec<RunIssue> {
-    let mut config = jsonl_run_config(&[input], output, SourceConfig::Imazing(ImazingConfig {}));
-    config.timezone = Some("UTC".into());
-    config.media.mode = media::MediaMode::Clone;
-    let issues = collect_issues(&mut config);
-    crate::run(&config).expect("run");
+    let mut config = jsonl_run_config(
+        &[input],
+        output,
+        ImazingConfig {
+            timezone: Some("UTC".into()),
+        },
+    );
+    config.output.media.mode = media::MediaMode::Clone;
+    let issues = collect_issues(&mut config.context);
+    config.run(crate::run).expect("run");
     issues.lock().unwrap().clone()
 }
 

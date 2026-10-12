@@ -12,12 +12,9 @@ use media::{MaxResolution, MediaMode};
 
 use crate::config::{
     AppleConfig, ExporterConfig, GoSmsProConfig, ImazingConfig, MediaConfig, ObfuscateConfig,
-    OpenExtractConfig, OutputFormat, SmsBackupPlusConfig, SmsBackupRestoreConfig, SourceConfig,
-    WhatsappConfig,
+    OpenExtractConfig, OutputConfig, OutputFormat, RunContext, SmsBackupPlusConfig,
+    SmsBackupRestoreConfig, SourceConfig, WhatsappConfig,
 };
-use crate::pipeline::IssueSink;
-use crate::process::{CancelFlag, LogSink};
-use crate::progress::ProgressSink;
 
 /// Validation message when Convert or Compress is selected and ffmpeg is missing.
 pub const CONVERT_COMPRESS_FFMPEG_REQUIRED: &str = "Convert and Compress need ffmpeg and ffprobe, both on PATH or both in the Tools Directory. Settings → System shows which can't be used and where the Tools Directory is.";
@@ -40,6 +37,36 @@ pub enum Exporter {
     SmsBackupPlus,
     /// WhatsApp backup type.
     Whatsapp,
+}
+
+impl Exporter {
+    /// Every backup type, in declaration order.
+    pub const ALL: [Self; 7] = [
+        Self::GoSmsPro,
+        Self::Imazing,
+        Self::Imessage,
+        Self::OpenExtract,
+        Self::SmsBackupRestore,
+        Self::SmsBackupPlus,
+        Self::Whatsapp,
+    ];
+
+    /// The id this backup type's exporter writes into a conversation file's
+    /// `export.source`, which the import stamps on every message it writes
+    /// and search's `source:` field matches. Each exporter writes the value
+    /// this returns, and `message_crate_api_types::SOURCE_IDS`, the list
+    /// search accepts, holds every one (a test here checks it).
+    pub const fn source_id(self) -> &'static str {
+        match self {
+            Self::GoSmsPro => "go-sms-pro",
+            Self::Imazing => "imazing",
+            Self::Imessage => "imessage",
+            Self::OpenExtract => "openextract",
+            Self::SmsBackupRestore => "sms-backup-restore",
+            Self::SmsBackupPlus => "sms-backup-plus",
+            Self::Whatsapp => "whatsapp",
+        }
+    }
 }
 
 /// Android vs iOS for the WhatsApp / wtsexporter bridge.
@@ -323,9 +350,8 @@ impl Form {
     /// the source's `inputs`, `obfuscate`, `media`, and `source`, and the
     /// Scratch Directory. The output directory and output format come from
     /// the form. A run started from the form does not resume. Its sinks drop
-    /// what they get until the caller sets its own, nothing sets its cancel
-    /// flag, and it has no zone for timestamps that carry none.
-    /// The iMazing builder sets that zone on the result.
+    /// what they get until the caller sets its own, and nothing sets its
+    /// cancel flag ([`RunContext::new`]).
     fn exporter_config(
         &self,
         inputs: Vec<PathBuf>,
@@ -336,17 +362,12 @@ impl Form {
     ) -> ExporterConfig {
         ExporterConfig {
             inputs,
-            output: PathBuf::from(self.output.trim()),
-            scratch_dir: scratch_dir.to_path_buf(),
-            timezone: None,
-            obfuscate,
-            media,
-            cancel: CancelFlag::default(),
-            log: LogSink::none(),
-            progress: ProgressSink::none(),
-            issues: IssueSink::none(),
-            output_format: self.output_format,
-            resume: false,
+            output: OutputConfig {
+                obfuscate,
+                media,
+                ..OutputConfig::new(self.output.trim(), self.output_format)
+            },
+            context: RunContext::new(scratch_dir),
             source,
         }
     }
@@ -457,15 +478,15 @@ impl Form {
         let input = require_single_existing_path(&self.input, "Input", errors);
         required_text(&self.output, "Output", errors);
         let media = self.validate_media(ctx.ffmpeg_available, errors);
-        let mut config = self.exporter_config(
+        self.exporter_config(
             input.into_iter().collect(),
             obfuscate,
             ctx.scratch_dir,
             media,
-            SourceConfig::Imazing(ImazingConfig {}),
-        );
-        config.timezone = message_ir::nonempty(&self.timezone);
-        config
+            SourceConfig::Imazing(ImazingConfig {
+                timezone: message_ir::nonempty(&self.timezone),
+            }),
+        )
     }
 
     /// Build an OpenExtract config, pushing path problems onto `errors`.

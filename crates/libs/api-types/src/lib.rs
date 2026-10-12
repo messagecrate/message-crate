@@ -48,6 +48,21 @@ pub const APP_VERSION_HEADER: &str = "x-message-crate-version";
 /// rejected.
 pub const MAX_IMPORT_BATCH_BYTES: usize = 64 * 1024 * 1024;
 
+/// The id each exporter writes into a conversation file's `export.source`,
+/// as written. The import stamps it on every message it writes, and
+/// search's `source:` field accepts these values and no others.
+/// `message-crate-core`'s `Exporter::source_id` is what the exporters
+/// write, and a test there fails when the two lists differ.
+pub const SOURCE_IDS: &[&str] = &[
+    "imessage",
+    "whatsapp",
+    "sms-backup-restore",
+    "imazing",
+    "openextract",
+    "go-sms-pro",
+    "sms-backup-plus",
+];
+
 /// Which app a session's requests come from. The server records it beside the
 /// app's Build and shows both to the owner; it never refuses a request
 /// on account of either.

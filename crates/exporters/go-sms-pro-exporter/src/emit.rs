@@ -21,7 +21,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const EXPORT_SOURCE: &str = "go-sms-pro";
+const EXPORT_SOURCE: &str = message_crate_core::Exporter::GoSmsPro.source_id();
 const EXPORT_TOOL: &str = "GO SMS Pro";
 /// This crate's version, recorded as the export tool version.
 const EXPORT_TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
