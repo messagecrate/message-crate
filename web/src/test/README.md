@@ -241,7 +241,11 @@ await act(() => cancelAsked.promise);
 ### A hook rendered with `renderHook`
 
 A hook test is told the same way as a screen test, and reads `result.current`
-where a screen test reads the screen.
+where a screen test reads the screen. A hook test file whose every wait is a
+promise it can await inside `act` (an action the hook returns, or a
+`deferred()` a fake resolves) needs no fake clock, as
+`useImportJob.test.tsx` shows. One that waits on a timer or a refetch starts
+the clock as above.
 
 ```tsx
 vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));

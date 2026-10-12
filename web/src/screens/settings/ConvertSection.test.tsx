@@ -120,7 +120,6 @@ describe("ConvertSection", () => {
       input_dir: "/home/demo/export-json",
       output_dir: CONVERT_DIR,
     });
-    await settle();
     expect(screen.getByText(/Conversion complete/)).toHaveTextContent(
       `Conversion complete. JSON Lines (.jsonl) written to ${CONVERT_DIR}.`,
     );
@@ -186,7 +185,6 @@ describe("ConvertSection", () => {
       output_format: "csv",
       started_from: "convert",
     });
-    await settle();
     expect(screen.getByText(/Conversion complete\. CSV \(\.csv\) written to/)).toBeTruthy();
   });
 

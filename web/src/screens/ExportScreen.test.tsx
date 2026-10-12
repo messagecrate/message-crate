@@ -156,7 +156,6 @@ describe("ExportScreen", () => {
       input_dir: EXPORT_DIR.exported,
       output_dir: EXPORT_DIR.converting,
     });
-    await settle();
     expect(invokeFinishExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir);
     expect(screen.getByText(/Export complete/)).toHaveTextContent(
       `Export complete. CSV (.csv) saved to ${EXPORT_DIR.dir}.`,
@@ -180,10 +179,11 @@ describe("ExportScreen", () => {
   });
 
   it("hands the conversion the time the Export Run started, before the export step", async () => {
-    // The fake clock stands still, so each step moves it 1 ms: a start time
-    // read after the export step would then be later than that step.
+    // The fake clock stands still, so the test moves it twice: 1 ms before
+    // the click, so the run starts after `before`, and 1 ms in the export
+    // step's fake, so a start time read after that step is later than it.
     let exportStepAt = 0;
-    invokeExport.mockImplementation(async () => {
+    invokeExport.mockImplementationOnce(async () => {
       exportStepAt = Date.now();
       vi.setSystemTime(exportStepAt + 1);
     });

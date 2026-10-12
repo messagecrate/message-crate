@@ -104,6 +104,28 @@ function recordWritten(
 }
 
 /**
+ * A call to a fake that waits until the test lets it answer: `asked` resolves
+ * when the run makes the call, and `answer` settles it. A test awaits `asked`
+ * inside `act` to learn the run reached the call.
+ */
+function heldCall<T = void>(): {
+  asked: Promise<void>;
+  answer: (value: T) => void;
+  fake: () => Promise<T>;
+} {
+  const asked = deferred();
+  const answered = deferred<T>();
+  return {
+    asked: asked.promise,
+    answer: answered.resolve,
+    fake: () => {
+      asked.resolve();
+      return answered.promise;
+    },
+  };
+}
+
+/**
  * `onDesktopJobEvents` stands in for the real Tauri event listener. Its default
  * implementation just captures the callbacks it was given (so a test can
  * fire `onProgress` manually to simulate an event arriving mid-call) and
@@ -2013,21 +2035,17 @@ describe("useImportJob wiring", () => {
   it("does not start the extract when Cancel is pressed while the run is being created", async () => {
     // A Cancel sent while no job runs stops nothing, and invokeExtract starts
     // its job with a cancel flag of its own, so the run must not start it.
-    const created = deferred<{ id: number }>();
-    const createAsked = deferred();
+    const create = heldCall<{ id: number }>();
     createImportMock.mockReset();
-    createImportMock.mockImplementationOnce(() => {
-      createAsked.resolve();
-      return created.promise;
-    });
+    createImportMock.mockImplementationOnce(create.fake);
     const { result } = renderJob();
     let started: Promise<void> = Promise.resolve();
     act(() => {
       started = result.current.startImport(importForm({ attachmentMedia: "copy" }));
     });
-    await act(() => createAsked.promise);
+    await act(() => create.asked);
     await act(() => result.current.cancel());
-    created.resolve({ id: 1 });
+    create.answer({ id: 1 });
     await act(() => started);
 
     expect(invokeExtractMock).not.toHaveBeenCalled();
@@ -2036,24 +2054,21 @@ describe("useImportJob wiring", () => {
   });
 
   it("does not start the upload when Cancel is pressed while the upload stage is written", async () => {
-    const stageWritten = deferred();
-    const uploadStageAsked = deferred();
+    const uploadStage = heldCall();
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "copy" })));
-    setImportStageMock.mockImplementation((_id: number, stage: string) => {
-      if (stage !== "upload") return Promise.resolve();
-      uploadStageAsked.resolve();
-      return stageWritten.promise;
-    });
+    setImportStageMock.mockImplementation((_id: number, stage: string) =>
+      stage === "upload" ? uploadStage.fake() : Promise.resolve(),
+    );
     runMock.mockImplementationOnce(runResult({ summary: "Upload finished.", report: okReport() }));
     let approved: Promise<void> = Promise.resolve();
     act(() => {
       approved = result.current.approve();
     });
-    await act(() => uploadStageAsked.promise);
+    await act(() => uploadStage.asked);
     expect(setImportStageMock).toHaveBeenCalledWith(1, "upload", expect.anything());
     await act(() => result.current.cancel());
-    stageWritten.resolve();
+    uploadStage.answer();
     await act(() => approved);
 
     expect(invokeUploadMock).not.toHaveBeenCalled();
@@ -2150,23 +2165,19 @@ describe("useImportJob wiring", () => {
   it("sends Cancel again once a job has started, when it was pressed while the job was starting", async () => {
     // A Cancel that reached the desktop side before the job started stopped
     // nothing, because no job was running yet, so it has to be sent again.
-    const uploaded = deferred();
-    const uploadAsked = deferred();
+    const upload = heldCall();
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "copy" })));
-    invokeUploadMock.mockImplementationOnce(() => {
-      uploadAsked.resolve();
-      return uploaded.promise;
-    });
+    invokeUploadMock.mockImplementationOnce(upload.fake);
     runMock.mockImplementationOnce(runResult({ summary: "Upload finished.", report: okReport() }));
     let approved: Promise<void> = Promise.resolve();
     act(() => {
       approved = result.current.approve();
     });
-    await act(() => uploadAsked.promise);
+    await act(() => upload.asked);
     await act(() => result.current.cancel());
     expect(cancelMock).toHaveBeenCalledTimes(1);
-    uploaded.resolve();
+    upload.answer();
     await act(() => approved);
 
     expect(cancelMock).toHaveBeenCalledTimes(2);
@@ -3422,34 +3433,29 @@ describe("useImportJob resumeAtReview", () => {
     // A deliberately unresolved run() call, so the state mid-stage can be
     // inspected before the Media stage (and the resume) finishes -- the same
     // pattern the double-click guard test above uses.
-    let resolveTranscode!: (value: DesktopJobResult) => void;
-    const pending = new Promise<DesktopJobResult>((resolve) => {
-      resolveTranscode = resolve;
-    });
+    const transcode = heldCall<DesktopJobResult>();
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
-      return pending;
+      return transcode.fake();
     });
     invokeSummarizeStagingMock.mockResolvedValueOnce(stagingSummary({ conversations: 7 }));
 
     const { result } = renderJob();
     let resumed!: Promise<void>;
-    await act(async () => {
+    act(() => {
       resumed = result.current.resumeAtReview(
         activeRun({ stage: "media" }),
         importForm({ attachmentMedia: "convert" }),
       );
-      // Let the microtasks up to (and including) invokeTranscodeStaging's
-      // own call run, without waiting for `pending` to settle.
-      await Promise.resolve();
-      await Promise.resolve();
     });
+    // The Media stage's job has started and waits for its answer.
+    await act(() => transcode.asked);
 
     expect(result.current.steps).toHaveLength(3);
     expect(result.current.steps.map((s) => s.status)).toEqual(["done", "active", "pending"]);
 
     await act(async () => {
-      resolveTranscode({ summary: "Transcode finished.", transcode: undefined });
+      transcode.answer({ summary: "Transcode finished.", transcode: undefined });
       await resumed;
     });
     expect(result.current.phase).toBe("media_review");
@@ -3758,24 +3764,20 @@ describe("one desktop app, two accounts (#1085)", () => {
   });
 
   it("creates no run when account A logs out while its backup is being read", async () => {
-    const probed = deferred<string[]>();
-    const probeAsked = deferred();
-    invokeImessageBackupIdentitiesMock.mockImplementation(() => {
-      probeAsked.resolve();
-      return probed.promise;
-    });
+    const probe = heldCall<string[]>();
+    invokeImessageBackupIdentitiesMock.mockImplementation(probe.fake);
     const a = renderJob();
     let runOfA: Promise<void> = Promise.resolve();
     act(() => {
       runOfA = a.result.current.startImport(importForm({ backupPassword: "secret-of-A" }));
     });
-    await act(() => probeAsked.promise);
+    await act(() => probe.asked);
 
     // A logs out and B logs in before the probe of A's backup ends. The
     // server calls go with B's session from here on.
     auth = ACCOUNT_B;
     await act(async () => {
-      probed.resolve([]);
+      probe.answer([]);
       await runOfA;
     });
 
