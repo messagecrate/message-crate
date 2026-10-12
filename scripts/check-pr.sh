@@ -3,10 +3,10 @@
 #
 #   ./scripts/check-pr.sh
 #
-# Stops on the first failure. Checks, never rewrites: rustfmt --check and
-# Clippy at -D warnings on the workspace and src-tauri, Biome ci, the check
-# that web/biome.json's restricted-import lists agree, and the web
-# type-check. Run ./scripts/format-all.sh to fix formatting failures.
+# Stops on the first failure. Checks, never rewrites: CHANGELOG.md's
+# formatting rules, rustfmt --check and Clippy at -D warnings on the
+# workspace and src-tauri, Biome ci, the check that web/biome.json's
+# restricted-import lists agree, and the web type-check. Run ./scripts/format-all.sh to fix formatting failures.
 # CI is the complete gate; ./scripts/check-all.sh runs the full set locally.
 # Why this split: docs/adr/0007-ci-is-the-only-gate.md.
 # Runs npm ci in web/ only when that tree has no node_modules yet.
@@ -15,6 +15,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
+
+echo "==> CHANGELOG.md formatting"
+./scripts/check-changelog.sh
 
 echo "==> cargo fmt --check (workspace)"
 cargo fmt --all -- --check
