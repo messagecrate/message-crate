@@ -1,5 +1,6 @@
 //! Length caps on stored names a person types, identity addresses, Import
-//! Error text and Import Run JSON.
+//! Error and note text, the program, install and directory an Import Run
+//! names, and Import Run JSON.
 //!
 //! A name, an address or an Import Error's text is stored, returned on every
 //! list that shows it, and written into the Audit Trail and the server log, so
@@ -19,6 +20,22 @@ pub const MAX_PERSON_NAME_CHARS: usize = 200;
 pub const MAX_IDENTITY_ADDRESS_CHARS: usize = 320;
 /// Most characters in an Import Error's `item` or `reason`.
 pub const MAX_IMPORT_ERROR_TEXT_CHARS: usize = 2_000;
+/// Most characters in an Import Run note's `item` or `text`, the same room
+/// an Import Error's text has: a note names the same kind of item and says
+/// what happened to it in one sentence.
+pub const MAX_IMPORT_NOTE_TEXT_CHARS: usize = 2_000;
+/// Most characters in the name of the program that runs an import. The
+/// desktop app sends `message-crate`.
+pub const MAX_IMPORT_TOOL_CHARS: usize = 64;
+/// Most characters in the id of the copy of the app that creates an Import
+/// Run. The
+/// desktop app sends a UUID, 36 characters.
+pub const MAX_DEVICE_ID_CHARS: usize = 64;
+/// Most characters in a path a client stores, such as an Import Run's
+/// directory: Linux's `PATH_MAX`, 4,096 bytes. A path Linux accepts has no
+/// more characters than bytes, so every one fits. macOS takes 1,024 bytes.
+/// Windows takes 260 characters unless long paths are turned on.
+pub const MAX_PATH_CHARS: usize = 4_096;
 /// Most bytes in each JSON value an Import Run stores as it is created
 /// (`form`, `source_fingerprint`, `source_identities`), measured as the
 /// server writes it. The desktop app sends well under 4 KiB in each.
@@ -39,6 +56,17 @@ impl From<TooLong> for ApiError {
     }
 }
 
+/// The sentence of each [`TooLong`] among `results`, in order, for a route
+/// that checks several fields and names every one over its cap in one
+/// `validation-failed`.
+pub fn too_long_sentences<'a, T: 'a>(
+    results: impl IntoIterator<Item = &'a Result<T, TooLong>>,
+) -> impl Iterator<Item = String> {
+    results
+        .into_iter()
+        .filter_map(|result| result.as_ref().err().map(ToString::to_string))
+}
+
 /// `value` trimmed, or [`TooLong`] naming `field` when the trimmed value is
 /// over `max_chars` characters. A blank value passes: whether a field may be
 /// blank is its route's rule, not this one's.
@@ -56,6 +84,25 @@ pub fn capped_text<'a>(field: &str, value: &'a str, max_chars: usize) -> Result<
         });
     }
     Ok(trimmed)
+}
+
+/// `path` as given, or [`TooLong`] naming `field` when it is over
+/// `max_chars` characters. Unlike [`capped_text`] it is not trimmed: a space
+/// at either end of a path is part of a file's name, and a path stored
+/// without it would name another file.
+///
+/// # Errors
+///
+/// [`TooLong`] when `path` is longer than `max_chars`.
+pub fn capped_path<'a>(field: &str, path: &'a str, max_chars: usize) -> Result<&'a str, TooLong> {
+    if path.chars().count() > max_chars {
+        return Err(TooLong {
+            field: field.to_string(),
+            max: max_chars,
+            unit: "characters",
+        });
+    }
+    Ok(path)
 }
 
 /// [`TooLong`] naming `field` when the JSON the server would store for it is
@@ -98,6 +145,17 @@ mod tests {
         assert_eq!(
             refusal(capped_text("name", &"é".repeat(6), 5)),
             vec!["name: must be at most 5 characters".to_string()]
+        );
+    }
+
+    /// A path keeps the spaces at its ends, which are part of its name, and
+    /// counts characters as a name does.
+    #[test]
+    fn a_path_at_the_cap_passes_as_given_and_one_over_is_refused() {
+        assert_eq!(capped_path("run_dir", " /é/ ", 5).unwrap(), " /é/ ");
+        assert_eq!(
+            refusal(capped_path("run_dir", "/é/é/", 4)),
+            vec!["run_dir: must be at most 4 characters".to_string()]
         );
     }
 

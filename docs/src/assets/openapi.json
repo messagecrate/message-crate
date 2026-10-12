@@ -14580,7 +14580,8 @@
               "string",
               "null"
             ],
-            "description": "Which install is creating the Import Run."
+            "description": "Which copy of the app is creating the Import Run, stored trimmed. Null when\nthe request leaves it out, or blank. Over 64 characters is refused\nwith `422 Unprocessable Entity`.",
+            "maxLength": 64
           },
           "form": {
             "description": "Import form snapshot, stored so the screen can be restored.\n\nCredentials are stripped before storage: a `backupPassword` or\n`whatsappKey` posted here is dropped rather than persisted. Over\n65,536 bytes of JSON is refused with `422 Unprocessable Entity`."
@@ -14601,7 +14602,8 @@
               "string",
               "null"
             ],
-            "description": "Absolute path to the run directory on the client that owns this Import Run."
+            "description": "Absolute path to the run directory on the client that owns this\nImport Run, stored as given, spaces at its ends included. Over 4,096\ncharacters is refused with `422 Unprocessable Entity`.",
+            "maxLength": 4096
           },
           "source": {
             "type": "string",
@@ -14629,7 +14631,8 @@
               "string",
               "null"
             ],
-            "description": "Name of the program that runs the import, such as\n`message-crate-import`, stored on the run as given. Null when the\nrequest leaves it out."
+            "description": "Name of the program that runs the import, such as\n`message-crate-import`, stored on the run trimmed. Null when the\nrequest leaves it out, or blank. Over 64 characters is refused with\n`422 Unprocessable Entity`.",
+            "maxLength": 64
           }
         }
       },
@@ -15591,7 +15594,8 @@
         "properties": {
           "item": {
             "type": "string",
-            "description": "The file, message or address the note is about."
+            "description": "The file, message or address the note is about. Stored trimmed; over\n2,000 characters is refused with `422 Unprocessable Entity`.",
+            "maxLength": 2000
           },
           "stage": {
             "$ref": "#/components/schemas/ImportIssueStage",
@@ -15599,7 +15603,8 @@
           },
           "text": {
             "type": "string",
-            "description": "What the run did with it, in one sentence."
+            "description": "What the run did with it, in one sentence. Stored trimmed; over 2,000\ncharacters is refused with `422 Unprocessable Entity`.",
+            "maxLength": 2000
           }
         }
       },
