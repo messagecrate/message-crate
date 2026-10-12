@@ -1555,6 +1555,8 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
             "The server stopped during a Demo Account build, so the part-built Demo Account was removed"
         );
     }
+    // Uploads a stopped server left open, which no upload start sweeps (#2261).
+    crate::asset_store::sweep_incoming_at_start(&state.db, &state.cfg.paths).await;
     // Works through what earlier Import Runs queued, a server stopped
     // part-way included, then waits for the next run to end.
     state

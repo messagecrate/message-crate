@@ -95,12 +95,15 @@ pub struct StartUpload {
     pub part_size: usize,
 }
 
-/// A fresh upload id: the current time in nanoseconds, hex-encoded.
-fn new_upload_id() -> String {
+/// A fresh upload id: the current time in nanoseconds and 16 random bytes,
+/// hex-encoded. The clock alone repeats for two uploads started in one tick,
+/// and a tick on Windows and macOS is far longer than a nanosecond (#2260).
+/// The raw upload route names its temp with one as well.
+pub(crate) fn new_upload_id() -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos());
-    format!("{nanos:x}")
+    format!("{nanos:x}{:032x}", rand::random::<u128>())
 }
 
 /// Reject path separators and non-hex ids before joining into `.incoming/…`.
@@ -263,6 +266,19 @@ pub fn start_upload(
     mime: Option<&str>,
     limits: UploadLimits,
 ) -> Result<(Option<StoredAsset>, Option<StartUpload>), AssetError> {
+    start_upload_with_ids(assets_root, sha, bytes, mime, limits, new_upload_id)
+}
+
+/// [`start_upload`], taking each upload id it tries from `next_id`. It is a
+/// parameter only so a test can hand two starts the same id.
+fn start_upload_with_ids(
+    assets_root: &Path,
+    sha: &Sha256,
+    bytes: u64,
+    mime: Option<&str>,
+    limits: UploadLimits,
+    mut next_id: impl FnMut() -> String,
+) -> Result<(Option<StoredAsset>, Option<StartUpload>), AssetError> {
     if bytes > limits.max_bytes {
         return Err(AssetError::Invalid(format!(
             "object exceeds {} byte server limit ({} MiB)",
@@ -270,21 +286,23 @@ pub fn start_upload(
             limits.max_bytes / message_ir::MIB
         )));
     }
-    // Abandoned upload temps go here, so `.incoming/` does not grow forever.
-    crate::asset_store::sweep_incoming(assets_root, false);
-
     if let Some(existing) = assets_api::lookup_by_sha256(assets_root, sha) {
         return Ok((Some(existing), None));
     }
 
     let _starting = STARTING.lock().unwrap_or_else(PoisonError::into_inner);
+    // Abandoned uploads are swept when an Import Run ends and when the
+    // server starts, not on every start, because the sweep walks the whole
+    // of `.incoming/` (#2261). An account at the limit may be there only
+    // because of abandoned ones, so it is swept before it is refused.
     if count_open_uploads(assets_root) >= MAX_OPEN_UPLOADS {
-        return Err(AssetError::TooManyUploads);
+        crate::asset_store::sweep_incoming(assets_root, false);
+        if count_open_uploads(assets_root) >= MAX_OPEN_UPLOADS {
+            return Err(AssetError::TooManyUploads);
+        }
     }
     let part_size = limits.part_size;
-    let upload_id = new_upload_id();
-    let session = session_dir(assets_root, sha, &upload_id);
-    fs::create_dir_all(&session).with_context(|| format!("mkdir {}", session.display()))?;
+    let (upload_id, session) = make_session_dir(assets_root, sha, &mut next_id)?;
     let manifest = UploadManifest {
         sha256: sha.to_string(),
         bytes,
@@ -300,6 +318,39 @@ pub fn start_upload(
             part_size,
         }),
     ))
+}
+
+/// Make a new upload's directory under `.incoming/{sha256}/`, named with an
+/// id from `next_id`, and return the id and the directory. The directory is
+/// made with `create_dir`, which fails on one that exists, so no two uploads
+/// share one. An id already taken is passed over for the next.
+///
+/// The `{sha256}` directory is made on each try, because a sweep that
+/// emptied it removes it, and may do so between the two steps.
+fn make_session_dir(
+    assets_root: &Path,
+    sha: &Sha256,
+    next_id: &mut impl FnMut() -> String,
+) -> Result<(String, PathBuf)> {
+    let sha_dir = assets_root.join(".incoming").join(sha.as_str());
+    loop {
+        fs::create_dir_all(&sha_dir).with_context(|| format!("mkdir {}", sha_dir.display()))?;
+        let upload_id = next_id();
+        let session = session_dir(assets_root, sha, &upload_id);
+        match fs::create_dir(&session) {
+            Ok(()) => return Ok((upload_id, session)),
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    std::io::ErrorKind::AlreadyExists | std::io::ErrorKind::NotFound
+                ) => {}
+            Err(err) => {
+                return Err(
+                    anyhow::Error::from(err).context(format!("mkdir {}", session.display()))
+                );
+            }
+        }
+    }
 }
 
 /// The part size an upload started with, from its manifest. The part route
@@ -828,6 +879,101 @@ mod tests {
         let (sha, upload_id) = open.pop().unwrap();
         abort_upload(root, &sha, &upload_id).unwrap();
         start(next).unwrap();
+    }
+
+    /// #2260: two starts for one fingerprint that are given the same upload
+    /// id, as two starts in one clock tick were, get an upload each. The
+    /// second takes the next id rather than writing over the first one's
+    /// manifest.
+    #[test]
+    fn two_starts_given_the_same_upload_id_get_an_upload_each() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let sha = Sha256::of_bytes(b"hello");
+        let limits = UploadLimits {
+            part_size: 1024,
+            max_bytes: 2048,
+        };
+        let mut ids = ["aa", "aa", "bb"].into_iter().map(String::from);
+        let mut start = |bytes: u64| {
+            let (_, started) =
+                start_upload_with_ids(root, &sha, bytes, None, limits, || ids.next().unwrap())
+                    .unwrap();
+            started.unwrap().upload_id
+        };
+
+        let first = start(5);
+        let second = start(6);
+
+        assert_eq!((first.as_str(), second.as_str()), ("aa", "bb"));
+        let first_manifest = read_manifest(&session_dir(root, &sha, &first)).unwrap();
+        let second_manifest = read_manifest(&session_dir(root, &sha, &second)).unwrap();
+        assert_eq!(
+            first_manifest.bytes, 5,
+            "the first upload keeps its manifest"
+        );
+        assert_eq!(second_manifest.bytes, 6);
+    }
+
+    /// #2261: a start no longer sweeps `.incoming/` each time, so an account
+    /// whose open uploads are all abandoned ones would be held at the limit
+    /// until a run ended. A start at the limit sweeps them first and goes
+    /// on, and an abandoned upload under the limit stays until a sweep.
+    #[test]
+    fn a_start_at_the_open_upload_limit_sweeps_abandoned_uploads_first() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let limits = UploadLimits {
+            part_size: 1024,
+            max_bytes: 2048,
+        };
+        let start = |data: &[u8]| {
+            let sha = Sha256::of_bytes(data);
+            let (_, started) = start_upload(root, &sha, data.len() as u64, None, limits).unwrap();
+            session_dir(root, &sha, &started.unwrap().upload_id)
+        };
+        let abandoned: Vec<PathBuf> = (0..MAX_OPEN_UPLOADS)
+            .map(|n| start(format!("file {n}").as_bytes()))
+            .collect();
+        for session in &abandoned {
+            crate::asset_store::tests::make_abandoned(&manifest_path(session));
+        }
+
+        let fresh = start(b"one more");
+
+        assert!(abandoned.iter().all(|session| !session.exists()));
+        assert!(manifest_path(&fresh).is_file());
+    }
+
+    /// #2261: under the limit, a start leaves an abandoned upload to the
+    /// sweep when a run ends rather than walking `.incoming/` itself.
+    #[test]
+    fn a_start_under_the_open_upload_limit_does_not_sweep() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let limits = UploadLimits {
+            part_size: 1024,
+            max_bytes: 2048,
+        };
+        let sha = Sha256::of_bytes(b"left");
+        let (_, started) = start_upload(root, &sha, 4, None, limits).unwrap();
+        let abandoned = session_dir(root, &sha, &started.unwrap().upload_id);
+        crate::asset_store::tests::make_abandoned(&manifest_path(&abandoned));
+
+        start_upload(root, &Sha256::of_bytes(b"next"), 4, None, limits).unwrap();
+
+        assert!(manifest_path(&abandoned).is_file());
+    }
+
+    /// #2260: an upload id carries random bytes beside the clock, so two
+    /// made at once differ, and the routes accept it.
+    #[test]
+    fn an_upload_id_is_one_the_routes_accept_and_two_differ() {
+        let first = new_upload_id();
+        let second = new_upload_id();
+
+        assert_ne!(first, second);
+        assert_eq!(require_upload_id(&first).unwrap(), first);
     }
 
     /// An upload of the five bytes `hello` in one part, started in a new

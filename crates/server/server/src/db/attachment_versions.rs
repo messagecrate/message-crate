@@ -419,20 +419,36 @@ pub async fn file_of(
         original_sha,
     } = rows;
     let [_, path_column, mime_column] = version.columns();
-    // Every row that names the fingerprint carries the same version, so any
-    // one of them answers.
-    sqlx::query_as::<_, (String, Option<String>)>(&format!(
+    // The media pass points every row that names the fingerprint at one
+    // version, so they agree. Rows that do not are a damaged store: the
+    // oldest row's version answers, so the answer does not change from one
+    // read to the next, and the disagreement is logged (#2806).
+    let mut named = sqlx::query_as::<_, (String, Option<String>)>(&format!(
         "SELECT a.{path_column}, a.{mime_column}
          FROM attachments a
          JOIN messages m ON m.id = a.message_id
          WHERE m.account_id = $1 AND a.sha256 = $2
            AND a.{path_column} IS NOT NULL AND a.{path_column} != ''
-         LIMIT 1"
+         GROUP BY a.{path_column}, a.{mime_column}
+         ORDER BY MIN(a.id)
+         LIMIT 2"
     ))
     .bind(account_id)
     .bind(original_sha)
-    .fetch_optional(&mut *conn)
-    .await
+    .fetch_all(&mut *conn)
+    .await?
+    .into_iter();
+    let first = named.next();
+    if let (Some((first_path, _)), Some((other_path, _))) = (&first, named.next()) {
+        tracing::warn!(
+            account_id,
+            sha256 = original_sha,
+            first_path,
+            other_path,
+            "The attachment rows of one original name different {version}s, so the oldest row's is served"
+        );
+    }
+    Ok(first)
 }
 
 /// True when any attachment of `account_id`, promoted or in staging, names

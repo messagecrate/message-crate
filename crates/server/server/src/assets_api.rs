@@ -9,7 +9,7 @@
 use std::fmt;
 use std::fs;
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -1062,14 +1062,8 @@ pub(crate) async fn replace_asset(
         .map_err(|e| {
             ApiError::Internal(anyhow::anyhow!("mkdir {}: {e}", incoming_dir.display()))
         })?;
-    // Named from the checked fingerprint, so the file is always inside
-    // `incoming_dir`.
-    let tmp_path = incoming_dir.join(format!(
-        "{sha256}-{}.part",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_nanos())
-    ));
+    let tmp_path =
+        reserve_upload_temp(&incoming_dir, &sha256, crate::asset_uploads::new_upload_id).await?;
     // An empty body is checked like any other: the empty file is stored when
     // the claim is its fingerprint and refused when it is not.
     if let Err(err) = stream_body_to_file(request.into_body(), &tmp_path, max_body_bytes).await {
@@ -1108,6 +1102,38 @@ pub(crate) async fn replace_asset(
         body,
     }
     .into_response())
+}
+
+/// A new, empty `{sha256}-{id}.part` temp in `incoming_dir` for a raw upload,
+/// named with an id from `next_id`. Named from the checked fingerprint, so
+/// the file is always inside `incoming_dir`. The file is made with
+/// `create_new`, which fails on one that exists, so no two uploads write
+/// into one temp, and an id already taken is passed over for the next
+/// (#2260). `next_id` is a parameter only so a test can hand two uploads the
+/// same id.
+async fn reserve_upload_temp(
+    incoming_dir: &Path,
+    sha256: &Sha256,
+    mut next_id: impl FnMut() -> String,
+) -> Result<PathBuf, ApiError> {
+    loop {
+        let path = incoming_dir.join(format!("{sha256}-{}.part", next_id()));
+        match tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .await
+        {
+            Ok(_) => return Ok(path),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => {
+                return Err(ApiError::Internal(anyhow::anyhow!(
+                    "create {}: {e}",
+                    path.display()
+                )));
+            }
+        }
+    }
 }
 
 /// Total bytes and optional MIME type for a chunked upload.

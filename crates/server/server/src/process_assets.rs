@@ -667,6 +667,8 @@ impl<'a> AccountPass<'a> {
             preview_file(
                 row.named(version).assets_path.as_deref(),
                 &self.converted_dir,
+                self.account_id,
+                &format!("{version} of {}", row.sha256),
             )
         };
         let decided = shown_as_is(&self.assets_dir, row);
@@ -944,8 +946,12 @@ impl<'a> AccountPass<'a> {
             return Ok(true);
         }
         versions_db::clear(&mut *db.acquire().await?, version, self.account_id, &rel).await?;
-        if let Some(path) = crate::asset_store::join_under(&self.converted_dir, &rel)
-            && path.is_file()
+        if let Some(path) = crate::asset_store::join_stored(
+            &self.converted_dir,
+            &rel,
+            self.account_id,
+            &format!("{version} of {}", row.sha256),
+        ) && path.is_file()
         {
             crate::asset_store::remove_file(&path)
                 .with_context(|| format!("remove damaged {version} {}", path.display()))?;
@@ -1232,9 +1238,18 @@ fn plan(row: &StoredOriginal, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> P
 /// The state of the version `assets_path` names under `converted_dir`. A
 /// path that is empty or leaves `converted_dir` names no file there, and a
 /// name that carries no fingerprint, which the server never writes, is
-/// damaged.
-fn preview_file(assets_path: Option<&str>, converted_dir: &Path) -> PreviewFile {
-    let Some(path) = assets_path.and_then(|rel| crate::asset_store::join_under(converted_dir, rel))
+/// damaged. A path that leaves `converted_dir` is logged with
+/// `account_id` and `describes`, as [`crate::asset_store::join_stored`]
+/// says, so the damaged row can be found (#2806).
+fn preview_file(
+    assets_path: Option<&str>,
+    converted_dir: &Path,
+    account_id: i64,
+    describes: &str,
+) -> PreviewFile {
+    let Some(path) = assets_path
+        .filter(|rel| !rel.is_empty())
+        .and_then(|rel| crate::asset_store::join_stored(converted_dir, rel, account_id, describes))
     else {
         return PreviewFile::Missing;
     };

@@ -1020,6 +1020,17 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-11: **Two uploads of one attachment at the same moment both
+  succeed.** The server named an upload's temporary file from the clock
+  alone, so two uploads of the same file that started in one clock tick
+  wrote into one temporary file and both failed. Each upload now gets a
+  name of its own. Starting an upload no longer looks through every upload
+  the account left unfinished, which slowed an import of many attachments.
+  Those left for a day are now removed when an import ends and when the
+  server starts. A Preview or Thumbnail the server will not open because
+  its stored location is damaged is now named in the server's log
+  (#2260, #2261, #2806).
+
 - 2026-10-11: **The server warns when every website may call it.** A `*` in
   the server's list of websites allowed to call it lets a page on any
   website, opened by anyone on the network, reach the server through their

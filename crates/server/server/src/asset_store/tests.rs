@@ -464,6 +464,51 @@ fn the_incoming_sweep_removes_part_temps_and_stale_sessions_and_nothing_else() {
     );
 }
 
+/// An abandoned `.part` temp and a live one in the `.incoming/` of
+/// `account_id`, returned in that order.
+fn abandoned_and_live_part(paths: &PathsConfig, account_id: i64) -> (PathBuf, PathBuf) {
+    let incoming = paths.assets_dir_for_account(account_id).join(".incoming");
+    fs::create_dir_all(&incoming).unwrap();
+    let abandoned = incoming.join(format!("{SHA}-1.part"));
+    fs::write(&abandoned, b"half an upload").unwrap();
+    make_abandoned(&abandoned);
+    let live = incoming.join(format!("{SHA}-2.part"));
+    fs::write(&live, b"an upload in progress").unwrap();
+    (abandoned, live)
+}
+
+/// #2261: an upload start no longer sweeps `.incoming/`, so the end of an
+/// Import Run does, and the uploads it left for a day go then.
+#[tokio::test]
+async fn the_sweep_after_a_run_removes_abandoned_uploads() {
+    let fixture = fixture_with_removal_account().await;
+    let paths = fixture.state.cfg.paths.clone();
+    let (abandoned, live) = abandoned_and_live_part(&paths, ACCOUNT);
+
+    sweep_after_run(&fixture.state.db, &paths, ACCOUNT).await;
+
+    assert!(!abandoned.exists());
+    assert!(live.is_file());
+}
+
+/// #2261: a server that stopped with uploads open sweeps them as it next
+/// starts, for every account, even when no Import Run ends after it.
+#[tokio::test]
+async fn the_sweep_as_the_server_starts_removes_every_accounts_abandoned_uploads() {
+    let fixture = fixture_with_removal_account().await;
+    fixture.account_with_id(ACCOUNT + 1, "another").await;
+    let paths = fixture.state.cfg.paths.clone();
+    let (abandoned, live) = abandoned_and_live_part(&paths, ACCOUNT);
+    let (other_abandoned, other_live) = abandoned_and_live_part(&paths, ACCOUNT + 1);
+
+    sweep_incoming_at_start(&fixture.state.db, &paths).await;
+
+    assert!(!abandoned.exists());
+    assert!(!other_abandoned.exists());
+    assert!(live.is_file());
+    assert!(other_live.is_file());
+}
+
 /// A `.part` file is abandoned after a day on the clock, the same limit a
 /// multipart session has.
 #[test]
