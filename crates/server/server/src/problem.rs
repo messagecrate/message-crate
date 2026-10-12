@@ -10,6 +10,8 @@
 use axum::http::StatusCode;
 pub use message_crate_api_types::Problem;
 
+use crate::server::{ApiError, is_database_busy};
+
 /// Where the type pages are published; each `type` URL is this plus the slug.
 pub const ERRORS_URL: &str = "https://messagecrate.app/docs/developer/reference/errors/";
 
@@ -17,20 +19,28 @@ pub const ERRORS_URL: &str = "https://messagecrate.app/docs/developer/reference/
 /// reader could act on.
 pub const INTERNAL_TYPE: &str = "about:blank";
 
-/// Declares [`ProblemType`], its [`ProblemType::ALL`], and each type's slug,
-/// status and title from one list, written
-/// `Variant => ("slug", STATUS_CODE_CONSTANT, "Title"),`. A type cannot be
-/// declared and left out of `ALL`: the error pages ([`crate::error_docs`])
-/// and the OpenAPI problem types ([`crate::openapi::shared_parts`]) walk
-/// `ALL`, and a type missing from it would ship with neither. Nor can a type
-/// be declared without its slug, status or title, because the pattern
-/// requires all three in each entry. A new type also needs its
-/// [`ProblemType::page`] arm, which the compiler demands, and an
-/// [`crate::server::ApiError`] variant mapped to it in
-/// `ApiError::problem_type`, which nothing checks: a type no variant maps to
-/// is never answered.
+/// Declares [`ProblemType`], its [`ProblemType::ALL`], each type's slug,
+/// status and title, and [`ApiError::problem_type`], from one list, written
+/// `Variant => ("slug", STATUS_CODE_CONSTANT, "Title") from <pattern>,`,
+/// where `<pattern>` matches the [`ApiError`] variants that answer the type,
+/// with an `if` guard where the variant alone does not decide it. A type
+/// cannot be declared and left out of `ALL`: the error pages
+/// ([`crate::error_docs`]) and the OpenAPI problem types
+/// ([`crate::openapi::shared_parts`]) walk `ALL`, and a type missing from it
+/// would ship with neither. Nor can a type be declared without its slug,
+/// status, title or the variants that answer it, because the macro
+/// requires all four in each entry. An [`ApiError`] variant no entry matches
+/// fails to compile, because `problem_type` must match every variant.
+/// [`ApiError::Internal`] is the one failure with no type: its arm comes
+/// after the list's, so an entry with a guard can still take an internal
+/// error, as `database-busy` does. A new type also needs its
+/// [`ProblemType::page`] arm, which the compiler demands.
 macro_rules! problem_types {
-    ($($(#[$doc:meta])* $name:ident => ($slug:literal, $status:ident, $title:literal),)*) => {
+    ($(
+        $(#[$doc:meta])*
+        $name:ident => ($slug:literal, $status:ident, $title:literal)
+            from $answers:pat $(if $guard:expr)?,
+    )*) => {
         /// One registered kind of failure.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         pub enum ProblemType {
@@ -66,62 +76,98 @@ macro_rules! problem_types {
                 }
             }
         }
+
+        impl ApiError {
+            /// The registered type, or `None` for an internal error.
+            #[must_use]
+            pub fn problem_type(&self) -> Option<ProblemType> {
+                match self {
+                    $($answers $(if $guard)? => Some(ProblemType::$name),)*
+                    ApiError::Internal(_) => None,
+                }
+            }
+        }
     };
 }
 
 problem_types! {
     /// A query parameter, path segment or body field parsed and then broke a rule.
-    ValidationFailed => ("validation-failed", UNPROCESSABLE_ENTITY, "Validation failed"),
+    ValidationFailed => ("validation-failed", UNPROCESSABLE_ENTITY, "Validation failed")
+        from ApiError::ValidationFailed(_) | ApiError::InvalidImportLines { .. },
     /// The request cannot be read: not valid JSON or JSONL, or a body that failed to arrive.
-    MalformedBody => ("malformed-body", BAD_REQUEST, "Malformed body"),
+    MalformedBody => ("malformed-body", BAD_REQUEST, "Malformed body")
+        from ApiError::MalformedBody(_) | ApiError::MalformedImportLine { .. },
     /// `Content-Type` is absent or not one the route accepts.
-    UnsupportedMediaType => ("unsupported-media-type", UNSUPPORTED_MEDIA_TYPE, "Unsupported media type"),
+    UnsupportedMediaType => ("unsupported-media-type", UNSUPPORTED_MEDIA_TYPE, "Unsupported media type")
+        from ApiError::UnsupportedMediaType(_),
     /// The body is over the configured cap.
-    PayloadTooLarge => ("payload-too-large", PAYLOAD_TOO_LARGE, "Payload too large"),
+    PayloadTooLarge => ("payload-too-large", PAYLOAD_TOO_LARGE, "Payload too large")
+        from ApiError::PayloadTooLarge,
     /// A username, password, or current-password check failed.
-    InvalidCredentials => ("invalid-credentials", UNAUTHORIZED, "Invalid credentials"),
+    InvalidCredentials => ("invalid-credentials", UNAUTHORIZED, "Invalid credentials")
+        from ApiError::InvalidCredentials(_),
     /// The bearer token is missing, malformed, unknown or expired.
-    AuthenticationRequired => ("authentication-required", UNAUTHORIZED, "Authentication required"),
+    AuthenticationRequired => ("authentication-required", UNAUTHORIZED, "Authentication required")
+        from ApiError::AuthenticationRequired(_) | ApiError::TokenRefused(_),
     /// A new account's username collides with an existing one.
-    UsernameTaken => ("username-taken", CONFLICT, "Username taken"),
+    UsernameTaken => ("username-taken", CONFLICT, "Username taken")
+        from ApiError::UsernameTaken(_),
     /// A Contact Group, Message Tag, or Saved Search name collides.
-    NameTaken => ("name-taken", CONFLICT, "Name taken"),
+    NameTaken => ("name-taken", CONFLICT, "Name taken")
+        from ApiError::NameTaken(_),
     /// The demo account refuses a destructive operation.
-    DemoAccountProtected => ("demo-account-protected", FORBIDDEN, "Demo account protected"),
+    DemoAccountProtected => ("demo-account-protected", FORBIDDEN, "Demo account protected")
+        from ApiError::DemoAccountProtected(_),
     /// The account is not the owner.
-    NotTheOwner => ("not-the-owner", FORBIDDEN, "Not the owner"),
+    NotTheOwner => ("not-the-owner", FORBIDDEN, "Not the owner")
+        from ApiError::NotTheOwner(_),
     /// The server does not let strangers create their own account.
-    RegistrationClosed => ("registration-closed", FORBIDDEN, "Registration closed"),
+    RegistrationClosed => ("registration-closed", FORBIDDEN, "Registration closed")
+        from ApiError::RegistrationClosed(_),
     /// The token is valid but lacks the scope the route needs.
-    InsufficientScope => ("insufficient-scope", FORBIDDEN, "Insufficient scope"),
+    InsufficientScope => ("insufficient-scope", FORBIDDEN, "Insufficient scope")
+        from ApiError::InsufficientScope(_),
     /// The account exists but may not log in or act.
-    AccountDisabled => ("account-disabled", FORBIDDEN, "Account disabled"),
+    AccountDisabled => ("account-disabled", FORBIDDEN, "Account disabled")
+        from ApiError::AccountDisabled(_),
     /// The search language refused a word.
-    SearchQueryInvalid => ("search-query-invalid", UNPROCESSABLE_ENTITY, "Search query invalid"),
+    SearchQueryInvalid => ("search-query-invalid", UNPROCESSABLE_ENTITY, "Search query invalid")
+        from ApiError::SearchQueryInvalid { .. },
     /// The resource is not in a state that allows the operation.
-    StateConflict => ("state-conflict", CONFLICT, "State conflict"),
+    StateConflict => ("state-conflict", CONFLICT, "State conflict")
+        from ApiError::StateConflict(_),
     /// A country picked for a phone number gives it a `+` form another
     /// identity already holds, and the request did not ask to merge them.
-    IdentityExists => ("identity-exists", CONFLICT, "Identity exists"),
+    IdentityExists => ("identity-exists", CONFLICT, "Identity exists")
+        from ApiError::IdentityExists { .. },
     /// A part number, upload id, or completion does not match the upload.
-    AssetUploadInvalid => ("asset-upload-invalid", UNPROCESSABLE_ENTITY, "Asset upload invalid"),
+    AssetUploadInvalid => ("asset-upload-invalid", UNPROCESSABLE_ENTITY, "Asset upload invalid")
+        from ApiError::AssetUploadInvalid(_),
     /// The addressed resource does not exist for this account.
-    NotFound => ("not-found", NOT_FOUND, "Not found"),
+    NotFound => ("not-found", NOT_FOUND, "Not found")
+        from ApiError::NotFound(_),
     /// The path exists and the method does not.
-    MethodNotAllowed => ("method-not-allowed", METHOD_NOT_ALLOWED, "Method not allowed"),
+    MethodNotAllowed => ("method-not-allowed", METHOD_NOT_ALLOWED, "Method not allowed")
+        from ApiError::MethodNotAllowed(_),
     /// `Accept` names nothing this route can produce.
-    NotAcceptable => ("not-acceptable", NOT_ACCEPTABLE, "Not acceptable"),
+    NotAcceptable => ("not-acceptable", NOT_ACCEPTABLE, "Not acceptable")
+        from ApiError::NotAcceptable(_),
     /// A media link that is malformed, for another asset, expired, or minted
     /// by a Session that has ended.
-    MediaLinkInvalid => ("media-link-invalid", UNAUTHORIZED, "Media link invalid"),
+    MediaLinkInvalid => ("media-link-invalid", UNAUTHORIZED, "Media link invalid")
+        from ApiError::MediaLinkInvalid(_),
     /// A `Range` that selects no byte of the file.
-    RangeNotSatisfiable => ("range-not-satisfiable", RANGE_NOT_SATISFIABLE, "Range not satisfiable"),
+    RangeNotSatisfiable => ("range-not-satisfiable", RANGE_NOT_SATISFIABLE, "Range not satisfiable")
+        from ApiError::RangeNotSatisfiable { .. },
     /// An upload body stopped arriving, or took too long to arrive.
-    UploadStalled => ("upload-stalled", REQUEST_TIMEOUT, "Upload stalled"),
+    UploadStalled => ("upload-stalled", REQUEST_TIMEOUT, "Upload stalled")
+        from ApiError::UploadStalled(_),
     /// The server is stopping and refused work it had not started.
-    ServerStopping => ("server-stopping", SERVICE_UNAVAILABLE, "Server stopping"),
+    ServerStopping => ("server-stopping", SERVICE_UNAVAILABLE, "Server stopping")
+        from ApiError::ServerStopping(_),
     /// The database stayed busy for longer than the request could wait.
-    DatabaseBusy => ("database-busy", SERVICE_UNAVAILABLE, "Database busy"),
+    DatabaseBusy => ("database-busy", SERVICE_UNAVAILABLE, "Database busy")
+        from ApiError::Internal(err) if is_database_busy(err),
 }
 
 /// The seconds a `database-busy` answer's `Retry-After` asks a client to
