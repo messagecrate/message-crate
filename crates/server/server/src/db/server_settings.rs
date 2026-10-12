@@ -7,8 +7,6 @@
 use anyhow::Result;
 use sqlx::SqliteConnection;
 
-use crate::db::schema;
-
 /// What the attachment size limit reads as until the owner sets it: 512 MiB.
 pub const DEFAULT_ASSET_MAX_BYTES: u64 = 512 * 1024 * 1024;
 
@@ -37,7 +35,6 @@ impl Default for ServerSettings {
 
 /// Read the server's settings, or the defaults when nothing has been written.
 pub async fn load(conn: &mut SqliteConnection) -> Result<ServerSettings> {
-    schema::ensure_accounts_schema(conn).await?;
     let row: Option<(i64, i64)> = sqlx::query_as(
         "SELECT public_registration, asset_max_bytes FROM server_settings WHERE id = 1",
     )
@@ -61,7 +58,6 @@ pub async fn load(conn: &mut SqliteConnection) -> Result<ServerSettings> {
 ///
 /// Returns an error when `bytes` does not fit the column, or the write fails.
 pub async fn set_asset_max_bytes(conn: &mut SqliteConnection, bytes: u64) -> Result<()> {
-    schema::ensure_accounts_schema(conn).await?;
     let bytes = i64::try_from(bytes)?;
     sqlx::query(
         "INSERT INTO server_settings (id, asset_max_bytes) VALUES (1, $1)
@@ -76,7 +72,6 @@ pub async fn set_asset_max_bytes(conn: &mut SqliteConnection, bytes: u64) -> Res
 /// Turn public registration on or off, creating the settings row if this is
 /// the first thing ever written to it.
 pub async fn set_public_registration(conn: &mut SqliteConnection, enabled: bool) -> Result<()> {
-    schema::ensure_accounts_schema(conn).await?;
     sqlx::query(
         "INSERT INTO server_settings (id, public_registration) VALUES (1, $1)
          ON CONFLICT(id) DO UPDATE SET public_registration = excluded.public_registration",
@@ -93,7 +88,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_unwritten_database_reads_as_closed() {
-        let (pool, _dir) = crate::db::engine::test_pool().await;
+        let (pool, _dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         assert!(
             !load(&mut conn).await.unwrap().public_registration,
@@ -103,7 +98,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_setting_round_trips_and_can_be_turned_back_off() {
-        let (pool, _dir) = crate::db::engine::test_pool().await;
+        let (pool, _dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
 
         set_public_registration(&mut conn, true).await.unwrap();
@@ -125,7 +120,7 @@ mod tests {
     /// 2 GiB, which a 32-bit column would not hold.
     #[tokio::test]
     async fn the_limit_and_registration_are_written_independently() {
-        let (pool, _dir) = crate::db::engine::test_pool().await;
+        let (pool, _dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         assert_eq!(
             load(&mut conn).await.unwrap().asset_max_bytes,

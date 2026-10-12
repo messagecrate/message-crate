@@ -16,7 +16,7 @@ pub async fn import_jsonl_text(
     body: &str,
 ) -> crate::imports_api::ImportCounts {
     use crate::imports_api::{
-        FixedImportArgs, ImportMode, ImportOptions, ImportSchemaMode, import_jsonl_files_on_conn,
+        FixedImportArgs, ImportMode, ImportOptions, import_jsonl_files_on_conn,
     };
     let tmp = TempDir::new().unwrap();
     let path = tmp.path().join("conversation.jsonl");
@@ -34,7 +34,6 @@ pub async fn import_jsonl_text(
             import_id: None,
             phone_country: None,
         }),
-        ImportSchemaMode::AssumeReady,
     )
     .await
     .unwrap()

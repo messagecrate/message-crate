@@ -7,7 +7,6 @@ use sqlx::SqliteConnection;
 
 use crate::db::begin_write;
 use crate::db::handles::{ApiIdentityService, normalize_handle, upsert_handle_row};
-use crate::db::schema;
 
 /// Contact points linked to an account, for profile display.
 #[derive(Debug, Clone)]
@@ -252,7 +251,6 @@ pub async fn lookup_account_by_username(
     if username.is_empty() {
         return Ok(None);
     }
-    schema::ensure_accounts_schema(conn).await?;
     let by_user: Option<i64> =
         sqlx::query_scalar("SELECT id FROM accounts WHERE username = $1 COLLATE NOCASE")
             .bind(username)
@@ -270,7 +268,6 @@ pub async fn lookup_account_ref(
 ) -> Result<Option<i64>> {
     let account_ref = account_ref.trim();
     if let Ok(id) = account_ref.parse::<i64>() {
-        schema::ensure_accounts_schema(conn).await?;
         let by_id: Option<i64> = sqlx::query_scalar("SELECT id FROM accounts WHERE id = $1")
             .bind(id)
             .fetch_optional(&mut *conn)
@@ -300,7 +297,6 @@ pub async fn username_for_account(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<Option<String>> {
-    schema::ensure_accounts_schema(conn).await?;
     let name: Option<String> = sqlx::query_scalar("SELECT username FROM accounts WHERE id = $1")
         .bind(account_id)
         .fetch_optional(&mut *conn)
@@ -494,7 +490,6 @@ pub fn is_server_owner(account_id: i64) -> bool {
 
 /// True when there is an owner: this Message Crate is claimed.
 pub async fn is_claimed(conn: &mut SqliteConnection) -> Result<bool> {
-    schema::ensure_accounts_schema(conn).await?;
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts WHERE id = $1")
         .bind(OWNER_ACCOUNT_ID)
         .fetch_one(&mut *conn)
@@ -526,7 +521,6 @@ pub async fn load_account_auth(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<Option<AccountAuth>> {
-    schema::ensure_accounts_schema(conn).await?;
     let row: Option<(i64, i64, i64, i64, i64)> = sqlx::query_as(
         "SELECT disabled, must_set_up_profile, can_import, can_export, can_delete
          FROM accounts WHERE id = $1",
@@ -561,7 +555,6 @@ pub async fn set_must_set_up_profile(
     account_id: i64,
     must_set_up: bool,
 ) -> Result<()> {
-    schema::ensure_accounts_schema(conn).await?;
     sqlx::query("UPDATE accounts SET must_set_up_profile = $1 WHERE id = $2")
         .bind(i32::from(must_set_up))
         .bind(account_id)
@@ -588,7 +581,6 @@ pub async fn delete_all_messages_for_account(
     account_id: i64,
     actor: crate::db::audit_trail::AuditActor,
 ) -> Result<DeletedMessagesStats> {
-    schema::ensure_schema(conn).await?;
     let mut tx = begin_write(conn).await?;
     let attachment_count: i64 = sqlx::query_scalar(
         r"
@@ -830,7 +822,6 @@ pub async fn insert_account(
     password_hash: Option<&str>,
     preferred_name: Option<&str>,
 ) -> Result<i64> {
-    schema::ensure_accounts_schema(conn).await?;
     // The id is chosen here rather than by the database's own generator,
     // because that generator would hand out 1 on an empty table, and 1 is
     // the owner. Ids below `FIRST_GENERATED_ACCOUNT_ID` belong to the accounts
@@ -869,7 +860,6 @@ pub async fn insert_account_at(
     password_hash: Option<&str>,
     preferred_name: Option<&str>,
 ) -> Result<()> {
-    schema::ensure_accounts_schema(conn).await?;
     let granted = i32::from(!is_server_owner(id));
     sqlx::query(
         "INSERT INTO accounts (id, username, password_hash, preferred_name,

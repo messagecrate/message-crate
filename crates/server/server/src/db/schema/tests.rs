@@ -551,6 +551,172 @@ async fn other_fingerprint_rebuilds_to_current() {
     assert_eq!(accounts, 0, "the rebuild drops data");
 }
 
+/// The database file behind `conn`, which every test pool has.
+async fn file_of(conn: &mut SqliteConnection) -> std::path::PathBuf {
+    database_file(conn).await.unwrap().unwrap()
+}
+
+/// The path of the copy a rebuild of `db` from fingerprint `stamped` keeps
+/// first, before any suffix that tells it from an earlier one.
+fn rebuild_copy_path(db: &std::path::Path, stamped: i64) -> std::path::PathBuf {
+    db.with_file_name(format!(
+        "{}.before-rebuild-{stamped}",
+        db.file_name().unwrap().to_string_lossy()
+    ))
+}
+
+/// The files beside `db` whose name is `db`'s followed by
+/// `.before-rebuild-`, sorted.
+fn rebuild_copies(db: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let prefix = format!(
+        "{}.before-rebuild-",
+        db.file_name().unwrap().to_string_lossy()
+    );
+    let mut found: Vec<_> = std::fs::read_dir(db.parent().unwrap())
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(&prefix)
+        })
+        .collect();
+    found.sort();
+    found
+}
+
+/// A rebuild drops every table, so a database stamped by another server
+/// and holding a message is copied beside its file first, and the copy
+/// still holds the message after the rebuild (#2068).
+#[tokio::test]
+async fn a_rebuild_keeps_a_copy_that_still_holds_the_messages() {
+    let (pool, _fixture) = seeded_schema_fixture().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let conversation = conversation_id(&mut conn, A1).await;
+    MessageRow {
+        guid: Some("g-kept".into()),
+        body: Some("keepme"),
+        ..MessageRow::new(A1, conversation)
+    }
+    .insert(&mut conn)
+    .await;
+    let other = SCHEMA_FINGERPRINT ^ 1;
+    stamp_user_version(&mut conn, other).await.unwrap();
+    let db = file_of(&mut conn).await;
+
+    ensure_schema(&mut conn).await.unwrap();
+
+    let messages: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(messages, 0, "the rebuild empties the database");
+    let copy = rebuild_copy_path(&db, other);
+    assert_eq!(rebuild_copies(&db), vec![copy.clone()]);
+    let mut kept = crate::db::engine::connect_read_only(&copy).await.unwrap();
+    let body: String = sqlx::query_scalar("SELECT body FROM messages WHERE guid = 'g-kept'")
+        .fetch_one(&mut kept)
+        .await
+        .unwrap();
+    assert_eq!(body, "keepme");
+    let stamped: i64 = sqlx::query_scalar("PRAGMA user_version")
+        .fetch_one(&mut kept)
+        .await
+        .unwrap();
+    assert_eq!(stamped, other, "the copy keeps the stamp it was made with");
+}
+
+/// A second rebuild from the same fingerprint, as after switching from one
+/// release to another and back, keeps a second copy rather than failing on
+/// the first or writing over it.
+#[tokio::test]
+async fn a_second_rebuild_from_the_same_fingerprint_keeps_both_copies() {
+    let (pool, _fixture) = seeded_schema_fixture().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let other = SCHEMA_FINGERPRINT ^ 1;
+    let db = file_of(&mut conn).await;
+    let first = rebuild_copy_path(&db, other);
+    std::fs::write(&first, b"an earlier copy").unwrap();
+    stamp_user_version(&mut conn, other).await.unwrap();
+
+    ensure_schema(&mut conn).await.unwrap();
+
+    let second = first.with_file_name(format!(
+        "{}-2",
+        first.file_name().unwrap().to_string_lossy()
+    ));
+    assert_eq!(rebuild_copies(&db), vec![first.clone(), second]);
+    assert_eq!(std::fs::read(&first).unwrap(), b"an earlier copy");
+}
+
+/// When the copy can't be written, here because the database's directory
+/// can't be written, the rebuild does not run: the database keeps its rows
+/// and its stamp, and no file is left beside it.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_copy_that_fails_leaves_the_database_as_it_is() {
+    let (pool, _fixture) = seeded_schema_fixture().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let other = SCHEMA_FINGERPRINT ^ 1;
+    let db = file_of(&mut conn).await;
+    stamp_user_version(&mut conn, other).await.unwrap();
+
+    let Some(result) = crate::process_assets::tests::with_read_only(
+        db.parent().unwrap(),
+        ensure_schema(&mut conn),
+    )
+    .await
+    else {
+        return;
+    };
+
+    let error = format!("{:#}", result.unwrap_err());
+    assert!(error.contains("so it was left as it is"), "{error}");
+    assert_eq!(user_version(&mut conn).await.unwrap(), other);
+    let accounts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(accounts, 2, "the database keeps its rows");
+    assert_eq!(rebuild_copies(&db), Vec::<std::path::PathBuf>::new());
+}
+
+/// A copy cut off while it was written, as by the server being stopped,
+/// leaves only its `.partial` file. The next rebuild passes over that name
+/// and keeps its copy under the next one, and leaves the `.partial` file as
+/// it is.
+#[tokio::test]
+async fn a_copy_cut_off_earlier_is_passed_over() {
+    let (pool, _fixture) = seeded_schema_fixture().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let other = SCHEMA_FINGERPRINT ^ 1;
+    let db = file_of(&mut conn).await;
+    let first = rebuild_copy_path(&db, other);
+    let cut_off = std::path::PathBuf::from(format!("{}.partial", first.display()));
+    std::fs::write(&cut_off, b"a copy cut off").unwrap();
+    stamp_user_version(&mut conn, other).await.unwrap();
+
+    ensure_schema(&mut conn).await.unwrap();
+
+    let second = std::path::PathBuf::from(format!("{}-2", first.display()));
+    assert_eq!(rebuild_copies(&db), vec![second, cut_off.clone()]);
+    assert_eq!(std::fs::read(&cut_off).unwrap(), b"a copy cut off");
+}
+
+/// A file that holds no table has nothing to keep, so building the schema
+/// in it leaves no copy beside it.
+#[tokio::test]
+async fn building_a_new_database_keeps_no_copy() {
+    let (pool, _dir) = test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let db = file_of(&mut conn).await;
+
+    ensure_schema(&mut conn).await.unwrap();
+
+    assert_eq!(rebuild_copies(&db), Vec::<std::path::PathBuf>::new());
+}
+
 /// `VACUUM` lists a full-text search table's shadow tables before the table
 /// itself, and defensive mode refuses to drop a shadow table on its own. The
 /// rebuild still runs on a database that has been through `VACUUM`, as one

@@ -8,7 +8,7 @@ use crate::assets_api::{self, AssetStats};
 use crate::imports_api::records::AttachmentRecord;
 use crate::imports_api::{
     FixedImportArgs, ImportCounts, ImportError, ImportFailure, ImportMode, ImportOptions,
-    ImportSchemaMode, import_jsonl_files_on_conn,
+    import_jsonl_files_on_conn,
 };
 use crate::test_support::{attachment, conversation_header, message_line};
 use message_ir::{IrAttachment, IrMessageKind, IrService};
@@ -47,7 +47,7 @@ async fn import_one(
     std::fs::write(&path, body).unwrap();
     let assets = tmp.path().join("assets");
     let opts = append_opts(&assets, tmp.path(), "sms-backup-restore");
-    Ok(import_jsonl_files_on_conn(conn, &[path], &opts, ImportSchemaMode::Ensure).await?)
+    Ok(import_jsonl_files_on_conn(conn, &[path], &opts).await?)
 }
 
 /// Append-mode options for one test import into [`TEST_ACCOUNT`] under the
@@ -184,7 +184,7 @@ fn a_path_that_leaves_the_export_directory_is_refused_whether_or_not_its_fingerp
 /// answers with the failure's own status rather than `500`.
 #[tokio::test]
 async fn an_attachment_staging_refuses_is_a_rejection_naming_its_file() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let tmp = TempDir::new().unwrap();
     let header = one_to_one_header();
@@ -196,14 +196,9 @@ async fn an_attachment_staging_refuses_is_a_rejection_naming_its_file() {
     let assets = tmp.path().join("assets");
     let opts = append_opts(&assets, tmp.path(), "imessage");
 
-    let err = import_jsonl_files_on_conn(
-        &mut conn,
-        std::slice::from_ref(&path),
-        &opts,
-        ImportSchemaMode::Ensure,
-    )
-    .await
-    .expect_err("the path is refused");
+    let err = import_jsonl_files_on_conn(&mut conn, std::slice::from_ref(&path), &opts)
+        .await
+        .expect_err("the path is refused");
 
     match err {
         ImportError::Rejected {
@@ -320,21 +315,16 @@ fn a_malformed_fingerprint_is_refused_before_a_conversion() {
 /// file and the operating system's reason both.
 #[tokio::test]
 async fn a_file_that_cannot_be_opened_is_internal_with_its_whole_cause() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let tmp = TempDir::new().unwrap();
     let path = tmp.path().join("gone.jsonl");
     let assets = tmp.path().join("assets");
     let opts = append_opts(&assets, tmp.path(), "imessage");
 
-    let err = import_jsonl_files_on_conn(
-        &mut conn,
-        std::slice::from_ref(&path),
-        &opts,
-        ImportSchemaMode::Ensure,
-    )
-    .await
-    .expect_err("the file is not there");
+    let err = import_jsonl_files_on_conn(&mut conn, std::slice::from_ref(&path), &opts)
+        .await
+        .expect_err("the file is not there");
 
     assert!(matches!(err, ImportError::Internal(_)), "{err:?}");
     let printed = format!("{:#}", anyhow::Error::from(err));
@@ -350,7 +340,7 @@ async fn a_file_that_cannot_be_opened_is_internal_with_its_whole_cause() {
 /// not answered as a fault of the server.
 #[tokio::test]
 async fn a_directory_import_refuses_a_header_without_a_source() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let tmp = TempDir::new().unwrap();
     let header = conversation_header("  ", "+15555550154").line();
@@ -366,14 +356,9 @@ async fn a_directory_import_refuses_a_header_without_a_source() {
         ..append_opts(&assets, tmp.path(), "")
     };
 
-    let err = import_jsonl_files_on_conn(
-        &mut conn,
-        std::slice::from_ref(&path),
-        &opts,
-        ImportSchemaMode::Ensure,
-    )
-    .await
-    .expect_err("the header has no source");
+    let err = import_jsonl_files_on_conn(&mut conn, std::slice::from_ref(&path), &opts)
+        .await
+        .expect_err("the header has no source");
 
     match err {
         ImportError::Rejected {
@@ -398,7 +383,7 @@ async fn a_directory_import_refuses_a_header_without_a_source() {
 /// attachment as missing.
 #[tokio::test]
 async fn a_file_that_does_not_match_its_claimed_sha256_fails_the_import_and_is_not_stored() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let tmp = TempDir::new().unwrap();
     let assets = tmp.path().join("assets");
@@ -415,7 +400,7 @@ async fn a_file_that_does_not_match_its_claimed_sha256_fails_the_import_and_is_n
     std::fs::write(&path, format!("{header}{message}\n")).unwrap();
     let opts = append_opts(&assets, tmp.path(), "imessage");
 
-    let err = import_jsonl_files_on_conn(&mut conn, &[path], &opts, ImportSchemaMode::Ensure)
+    let err = import_jsonl_files_on_conn(&mut conn, &[path], &opts)
         .await
         .expect_err("a mismatched file fails the import");
 
@@ -437,7 +422,7 @@ async fn a_file_that_does_not_match_its_claimed_sha256_fails_the_import_and_is_n
 /// does (#1095).
 #[tokio::test]
 async fn an_orphaned_conversation_is_staged_by_its_type_not_its_file_name() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = orphaned_header()
         + &incoming("g-orphan-1", "+15555550154")
@@ -484,7 +469,7 @@ async fn an_orphaned_conversation_is_staged_by_its_type_not_its_file_name() {
 /// refuses the file before staging sees it.
 #[tokio::test]
 async fn a_file_with_messages_and_no_header_is_refused() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     for name in ["_import.jsonl", "+15555550100.jsonl"] {
         let result = import_one(&mut conn, name, &incoming("g1", "+15555550100")).await;
@@ -498,7 +483,7 @@ async fn a_file_with_messages_and_no_header_is_refused() {
 
 #[tokio::test]
 async fn a_file_with_neither_header_nor_messages_is_refused() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let result = import_one(&mut conn, "+15555550100.jsonl", "\n").await;
     assert_eq!(
@@ -530,7 +515,7 @@ async fn handle_types(conn: &mut SqliteConnection) -> Vec<(String, String)> {
 /// an email identity (#1141).
 #[tokio::test]
 async fn a_group_chat_id_is_stored_as_other_whatever_its_shape() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("whatsapp", "120363042@g.us")
         .group()
@@ -557,7 +542,7 @@ async fn a_group_chat_id_is_stored_as_other_whatever_its_shape() {
 /// (#1141).
 #[tokio::test]
 async fn a_whatsapp_lid_chat_its_participant_and_its_sender_are_one_other_identity() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("whatsapp", "123456@lid")
         .participant("123456@lid", None)
@@ -596,7 +581,7 @@ fn incoming_unknown_service(guid: &str, sender: &str) -> String {
 /// on a new contact with no name (#1144).
 #[tokio::test]
 async fn a_participants_message_on_an_unknown_service_is_from_the_participant() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("imessage", "+15555550101")
         .participant("+15555550101", Some("Sam"))
@@ -628,7 +613,7 @@ async fn a_participants_message_on_an_unknown_service_is_from_the_participant() 
 /// one number became two identities that were never linked (#1432).
 #[tokio::test]
 async fn a_number_is_one_type_as_a_sender_and_as_a_participant() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("imessage", "chat1000000006")
         .group()
@@ -658,7 +643,7 @@ async fn a_number_is_one_type_as_a_sender_and_as_a_participant() {
 /// service but SMS, iMessage, WhatsApp and RCS (#1144).
 #[tokio::test]
 async fn a_phone_number_sender_is_phone_on_any_service() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("imessage", "chat1000000005")
         .group()
@@ -685,7 +670,7 @@ async fn a_phone_number_sender_is_phone_on_any_service() {
 /// (#1671).
 #[tokio::test]
 async fn a_whatsapp_participant_with_an_at_is_other() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("whatsapp", "123456789012345@lid")
         .participant("123456789012345@lid", Some("Ada"))
@@ -722,7 +707,7 @@ async fn email_identities_on(conn: &mut SqliteConnection, service: &str) -> Vec<
 /// (#1671).
 #[tokio::test]
 async fn an_import_writes_no_email_identity_on_whatsapp() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let group = conversation_header("whatsapp", "120363042@g.us")
         .group()
@@ -773,7 +758,7 @@ async fn an_import_writes_no_email_identity_on_whatsapp() {
 /// no name, as #1144 did for a phone number.
 #[tokio::test]
 async fn an_at_address_on_text_message_is_one_identity_over_sms_and_imessage() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let one_to_one = conversation_header("sms-backup-restore", "alerts@example.com")
         .participant("alerts@example.com", Some("Alerts"))
@@ -829,7 +814,7 @@ async fn an_at_address_on_text_message_is_one_identity_over_sms_and_imessage() {
 /// `other`, as a schema version 12 file does, and the server ignores it.
 #[tokio::test]
 async fn a_participant_who_reacts_is_one_identity_on_one_contact() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let header = conversation_header("sms-backup-restore", "chat1000000008")
         .group()
@@ -881,7 +866,7 @@ async fn a_participant_who_reacts_is_one_identity_on_one_contact() {
 /// address is `email` whatever transport carried it (#1933).
 #[tokio::test]
 async fn text_message_types_a_short_code_a_sender_name_and_an_email_by_shape() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("sms-backup-restore", "chat1000000009")
         .group()
@@ -919,7 +904,7 @@ async fn text_message_types_a_short_code_a_sender_name_and_an_email_by_shape() {
 /// email identity on the phone service.
 #[tokio::test]
 async fn an_imessage_sender_with_an_email_address_is_email() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("imessage", "ada@example.com").line()
         + &incoming("g-im-email-1", "ada@example.com");

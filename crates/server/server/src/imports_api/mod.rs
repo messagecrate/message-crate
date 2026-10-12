@@ -30,7 +30,6 @@ use crate::counts::words;
 use crate::db::engine;
 use crate::db::imports::{self, CompleteImportArgs};
 use crate::db::maintenance;
-use crate::db::schema;
 use crate::progress::Progress;
 use media::MediaMode;
 use message_crate_api_types::{MAX_IMPORT_BATCH_BYTES, RunIssueKind};
@@ -293,16 +292,8 @@ async fn complete_run_at(
     Ok(row)
 }
 
-/// Whether import should run DDL/schema ensure on the connection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ImportSchemaMode {
-    /// Tests: ensure the schema first.
-    Ensure,
-    /// HTTP serve hot path: schema already ensured on the warm connection.
-    AssumeReady,
-}
-
-/// Test helper: open a configured database and run one import.
+/// Test helper: open a configured database, make sure of its schema, and run
+/// one import.
 ///
 /// Production paths run [`import_jsonl_files_on_conn`] on their own
 /// connection: HTTP serve, the `import` command and the Demo Account build.
@@ -323,9 +314,10 @@ pub(crate) async fn import_jsonl_files(
         .await
         .with_context(|| format!("failed to open database {}", db_path.display()))?;
     let mut conn = pool.acquire().await?;
+    crate::db::schema::ensure_schema(&mut conn).await?;
     opts.progress
         .say(format_args!("Opened the database at {}", db_path.display()));
-    Ok(import_jsonl_files_on_conn(&mut conn, paths, opts, ImportSchemaMode::Ensure).await?)
+    Ok(import_jsonl_files_on_conn(&mut conn, paths, opts).await?)
 }
 
 /// Import onto an existing connection: HTTP serve, the `import` command, the
@@ -345,9 +337,8 @@ pub async fn import_jsonl_files_on_conn(
     conn: &mut SqliteConnection,
     paths: &[PathBuf],
     opts: &ImportOptions<'_>,
-    schema_mode: ImportSchemaMode,
 ) -> Result<ImportCounts, ImportError> {
-    let wipe_sources = prepare_import(conn, opts, schema_mode)
+    let wipe_sources = prepare_import(conn, opts)
         .await
         .map_err(ImportError::Internal)?;
     opts.progress.say(format_args!(
@@ -418,7 +409,7 @@ pub async fn import_jsonl_files_on_conn(
 }
 
 /// Everything an import does before its transaction: the asset store
-/// directory, the schema when asked for, the account row, an empty staging
+/// directory, the account row, an empty staging
 /// area, and the source ids a replace-mode import wipes, which it returns.
 /// None of it reads the files, so every error here is the server's.
 ///
@@ -429,21 +420,12 @@ pub async fn import_jsonl_files_on_conn(
 async fn prepare_import(
     conn: &mut SqliteConnection,
     opts: &ImportOptions<'_>,
-    schema_mode: ImportSchemaMode,
 ) -> Result<Vec<String>> {
     fs::create_dir_all(opts.assets_dir)
         .with_context(|| format!("failed to create {}", opts.assets_dir.display()))?;
-    if schema_mode == ImportSchemaMode::Ensure {
-        schema::ensure_schema(conn).await?;
-    }
     crate::db::account_profile::ensure_account_row(conn, opts.account_id).await?;
 
-    if schema_mode == ImportSchemaMode::Ensure {
-        opts.progress
-            .say("Checking the database schema and clearing the account's staging tables…");
-    } else {
-        opts.progress.say("Clearing the account's staging tables…");
-    }
+    opts.progress.say("Clearing the account's staging tables…");
     crate::db::staging::reset_for_account(conn, opts.account_id).await?;
     sources_to_wipe(opts)
 }
@@ -2007,13 +1989,8 @@ async fn run_import_path(
         import_id: Some(import_id),
         phone_country,
     });
-    let import_result = imports_api::import_jsonl_files_on_conn(
-        &mut conn,
-        &[jsonl_path],
-        &opts,
-        imports_api::ImportSchemaMode::AssumeReady,
-    )
-    .await;
+    let import_result =
+        imports_api::import_jsonl_files_on_conn(&mut conn, &[jsonl_path], &opts).await;
     let counts = import_result?;
     // Every batch is followed by the full dedupe, within one source and
     // across sources: there is no reason ever to leave a duplicate shown

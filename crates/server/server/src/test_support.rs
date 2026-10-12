@@ -33,7 +33,7 @@ mod seed;
 
 pub use client::http_client;
 pub use fixture::{
-    ImportingAccount, PASSWORD, TestFixture, fixture_with_account, test_fixture,
+    ImportingAccount, PASSWORD, TestFixture, fixture_with_account, schema_pool, test_fixture,
     test_fixture_with_busy_timeout,
 };
 pub use http::{

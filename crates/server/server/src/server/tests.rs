@@ -111,6 +111,38 @@ async fn api_token_cannot_exceed_its_owner() {
     assert!(identity.permissions().export);
 }
 
+/// The schema is made sure of when the pool opens, and never by a request:
+/// a database another program stamped with another fingerprint while this
+/// server serves it is not rebuilt by the next request, which would empty
+/// it from inside a request (#2064).
+#[tokio::test]
+async fn a_request_never_rebuilds_the_database() {
+    let fixture = test_fixture().await;
+    fixture.account_with_id(TEST_ACCOUNT, "alice").await;
+    let mut conn = fixture.conn().await;
+    let token = session_tokens::insert_account_session_token(&mut conn, TEST_ACCOUNT)
+        .await
+        .unwrap();
+    let other = crate::db::schema::SCHEMA_FINGERPRINT ^ 1;
+    sqlx::query(&format!("PRAGMA user_version = {other}"))
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+
+    resolve_auth_on_conn(&mut conn, &token, None).await.unwrap();
+
+    let accounts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(accounts, 1, "the request left the database as it was");
+    let stamped: i64 = sqlx::query_scalar("PRAGMA user_version")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(stamped, other);
+}
+
 #[tokio::test]
 async fn disabling_an_account_kills_its_live_session() {
     let fixture = test_fixture().await;

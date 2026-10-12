@@ -288,7 +288,6 @@ async fn append_on_conn(conn: &mut SqliteConnection, path: &Path, root: &Path, s
             import_id: None,
             phone_country: None,
         }),
-        ImportSchemaMode::AssumeReady,
     )
     .await
     .unwrap();

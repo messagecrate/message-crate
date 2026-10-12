@@ -22,7 +22,7 @@ async fn promote_stamps_messages_with_import_id() {
     );
 
     let (_pool, mut conn) = open_verify(&db).await;
-    schema::ensure_schema(&mut conn).await.unwrap();
+    crate::db::schema::ensure_schema(&mut conn).await.unwrap();
     crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();
@@ -46,7 +46,6 @@ async fn promote_stamps_messages_with_import_id() {
             import_id: Some(import_id),
             phone_country: None,
         }),
-        ImportSchemaMode::AssumeReady,
     )
     .await
     .unwrap();
@@ -127,7 +126,7 @@ async fn trunk_zero_phone_imports_digits_with_review_note() {
     );
 
     let (_pool, mut conn) = open_verify(&db).await;
-    schema::ensure_schema(&mut conn).await.unwrap();
+    crate::db::schema::ensure_schema(&mut conn).await.unwrap();
     crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();
@@ -144,7 +143,6 @@ async fn trunk_zero_phone_imports_digits_with_review_note() {
             import_id: None,
             phone_country: None,
         }),
-        ImportSchemaMode::AssumeReady,
     )
     .await
     .unwrap();
@@ -338,7 +336,7 @@ async fn fail_every_message_insert(conn: &mut SqliteConnection) {
 /// the database gains no contacts with no messages.
 #[tokio::test]
 async fn failed_promote_keeps_the_trashed_contact_and_adds_no_contacts() {
-    let (pool, dir) = crate::db::engine::test_pool().await;
+    let (pool, dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let assets = dir.path().join("assets");
     let export_dir = dir.path().join("export");
@@ -360,7 +358,7 @@ async fn failed_promote_keeps_the_trashed_contact_and_adds_no_contacts() {
         "ada.jsonl",
         &one_message_conversation("g-ada-1", "+15555550165"),
     );
-    import_jsonl_files_on_conn(&mut conn, &[first], &opts, ImportSchemaMode::Ensure)
+    import_jsonl_files_on_conn(&mut conn, &[first], &opts)
         .await
         .unwrap();
     let ada: i64 = sqlx::query_scalar("SELECT id FROM contacts WHERE account_id = $1")
@@ -408,14 +406,9 @@ async fn failed_promote_keeps_the_trashed_contact_and_adds_no_contacts() {
         "newcomer.jsonl",
         &one_message_conversation("g-new-1", "+15555550166"),
     );
-    let err = import_jsonl_files_on_conn(
-        &mut conn,
-        &[again, newcomer],
-        &opts,
-        ImportSchemaMode::AssumeReady,
-    )
-    .await
-    .unwrap_err();
+    let err = import_jsonl_files_on_conn(&mut conn, &[again, newcomer], &opts)
+        .await
+        .unwrap_err();
     assert!(
         format!("{err:#}").contains("promote fails on purpose"),
         "expected the promote failure, got: {err:#}"

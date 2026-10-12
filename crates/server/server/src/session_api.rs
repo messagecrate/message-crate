@@ -16,7 +16,7 @@ use crate::credentials::{
 };
 use crate::db::audit_trail::{self, AuditReason};
 use crate::db::session_tokens::ConnectingApp;
-use crate::db::{account_profile, api_tokens, dedupe, schema, session_tokens};
+use crate::db::{account_profile, api_tokens, dedupe, session_tokens};
 use crate::extract::Json;
 use crate::server::{ApiError, AppState, AuthIdentity, Created};
 
@@ -105,7 +105,6 @@ pub(crate) async fn get_session(
 
 /// Source ids this account has imported, oldest first.
 async fn list_account_sources(pool: &SqlitePool, account_id: i64) -> Result<Vec<String>, ApiError> {
-    // Read-only: do not run ensure_schema (avoids write locks on auth).
     let mut conn = pool.acquire().await?;
     Ok(dedupe::sources_in_import_order(&mut conn, account_id).await?)
 }
@@ -344,7 +343,6 @@ pub async fn delete_session(
 ) -> Result<axum::http::StatusCode, ApiError> {
     let token = crate::server::bearer_token(&headers)?;
     let mut conn = state.db.acquire().await?;
-    schema::ensure_accounts_schema(&mut conn).await?;
     if logout_on_conn(&mut conn, &token).await? {
         return Ok(axum::http::StatusCode::NO_CONTENT);
     }

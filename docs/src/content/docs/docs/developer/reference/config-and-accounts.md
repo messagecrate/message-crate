@@ -47,6 +47,10 @@ Only `serve`, `create-database` and `reset-demo` make a new database, at a path 
 Every other command (`import`, `imports discard`, `dedupe-cross-source`, `process-assets`, `create-owner`, `reset-owner-password`) stops with an error naming the path when no database is there, so a mistyped `--db` creates nothing.
 
 A Message Crate database stamped with another Schema Fingerprint is still rebuilt empty on open, as after any schema change.
+Before the rebuild drops its tables, the server copies it with `VACUUM INTO` to `<database>.before-rebuild-<old fingerprint>` beside it, and refuses to rebuild when the copy fails.
+`reset-demo` refuses a database at another fingerprint before it takes a snapshot, because the snapshot would be rebuilt and its copy kept in the reset's work directory, which is deleted.
+`serve` keeps the copy beside the database and rebuilds it, and a reset can follow.
+The schema is made sure of only when the pool opens and when `reset-demo` builds a database, never by a request, so a request never rebuilds a database the server is serving.
 
 ### Video and audio conversions
 

@@ -6,9 +6,7 @@ const ACCOUNT_ID: i64 = 7;
 async fn setup_accounts_only() -> (sqlx::SqlitePool, tempfile::TempDir) {
     let (pool, dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    crate::db::schema::ensure_accounts_schema(&mut conn)
-        .await
-        .unwrap();
+    crate::db::schema::ensure_schema(&mut conn).await.unwrap();
     crate::test_support::insert_account_with_id(&mut conn, ACCOUNT_ID, "alice").await;
     (pool, dir)
 }

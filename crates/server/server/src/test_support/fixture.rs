@@ -30,14 +30,24 @@ pub async fn test_fixture_with_busy_timeout(busy_timeout: std::time::Duration) -
     fixture_on(crate::db::engine::test_pool_with_busy_timeout(busy_timeout).await).await
 }
 
+/// A pool on a new database in a temp directory, with the schema applied
+/// as [`crate::open_db::OpenDb`] applies it when the server opens its pool:
+/// no request makes sure of the schema, so a test that writes through a
+/// bare pool starts here. Drop the `TempDir` last.
+pub async fn schema_pool() -> (sqlx::SqlitePool, TempDir) {
+    let (pool, tmp) = crate::db::engine::test_pool().await;
+    {
+        let mut conn = pool.acquire().await.unwrap();
+        crate::db::schema::ensure_schema(&mut conn).await.unwrap();
+    }
+    (pool, tmp)
+}
+
 /// The fixture on `pool`, which lives in `tmp`, with the schema applied.
 async fn fixture_on((pool, tmp): (sqlx::SqlitePool, TempDir)) -> TestFixture {
     {
         let mut conn = pool.acquire().await.unwrap();
         crate::db::schema::ensure_schema(&mut conn).await.unwrap();
-        crate::db::schema::ensure_accounts_schema(&mut conn)
-            .await
-            .unwrap();
         crate::db::server_settings::set_public_registration(&mut conn, true)
             .await
             .unwrap();
