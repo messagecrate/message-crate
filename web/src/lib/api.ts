@@ -73,7 +73,12 @@ const RAW_BODY_FALLBACK_LIMIT = 200;
  * A failed response from the server: the HTTP status, the problem's slug so a
  * screen can branch on what went wrong, and `message`, the sentence a person
  * reads — the problem's `detail`, or its `errors` joined for a validation
- * failure.
+ * failure, followed by the request id for a `5xx` (`problemFromBody`).
+ *
+ * A call that got no answer at all is an `ApiError` of status 0 too, so every
+ * screen shows a sentence rather than the browser's own text: `timedOut` when
+ * its time limit ended it (`requestTimeoutError`), and not when the server
+ * could not be reached (`noAnswerError`).
  */
 export class ApiError extends Error {
   readonly status: number;
@@ -134,7 +139,10 @@ function parseProblem(text: string): Problem | null {
  *
  * The server answers a problem document, and its `detail` (or, for a
  * validation failure, every one of its `errors`) is what a user should read —
- * not the status code and not the envelope around it. Anything else (a
+ * not the status code and not the envelope around it. A `5xx` hides its cause
+ * from the client, so its sentence ends with the problem's request id, which
+ * a person can quote to find the matching line in the server's log
+ * (`docs/architecture/http-api.md`, "Failures"). Anything else (a
  * proxy's HTML error page, an empty body) falls back to the raw text — clamped
  * to `RAW_BODY_FALLBACK_LIMIT` characters, since a reverse proxy or other
  * host can answer with a whole HTML page — then to a generic sentence.
@@ -147,8 +155,10 @@ export function problemFromBody(status: number, text: string): ApiError {
   if (problem) {
     const detail = problem.detail?.trim();
     const errors = (problem.errors ?? []).map((e) => e.trim()).filter(Boolean);
-    const message =
+    const sentence =
       detail || errors.join("; ") || problem.title.trim() || `Request failed (${status})`;
+    const requestId = problem.request_id?.trim();
+    const message = status >= 500 && requestId ? `${sentence} (request ${requestId})` : sentence;
     return new ApiError(status, message, problem);
   }
   if (trimmed.length > RAW_BODY_FALLBACK_LIMIT) {
@@ -204,6 +214,17 @@ export function requestTimeoutError(ms: number): ApiError {
 }
 
 /**
+ * The error for a call that reached no server: an `ApiError` of status 0 whose
+ * message names the address tried, in place of the browser's own text
+ * ("Failed to fetch", "Load failed"), which says neither. An empty base URL
+ * means this page's own host, so that is the address named.
+ */
+export function noAnswerError(): ApiError {
+  const address = baseUrl || location.origin;
+  return new ApiError(0, `The server at ${address} didn't answer.`);
+}
+
+/**
  * The headers every call carries: this app and its Build, the Session's
  * token when there is one, and `contentType` when the call has a body.
  */
@@ -227,7 +248,8 @@ function callHeaders(contentType: string | null): Record<string, string> {
  *
  * A call the limit ends rejects with `requestTimeoutError`. A call its
  * caller's signal ends rejects with that abort, as before, since a cancel is
- * not a failure to show.
+ * not a failure to show. A request that reaches no server, which `fetch`
+ * rejects with a `TypeError`, rejects with `noAnswerError`.
  */
 async function exchange<T>(
   method: string,
@@ -246,6 +268,9 @@ async function exchange<T>(
       body: body?.text,
       signal: limit.signal,
       redirect: NEVER_FOLLOW,
+    }).catch((e: unknown) => {
+      // An aborted signal, the caller's or the time limit's, is sorted below.
+      throw limit.signal.aborted ? e : noAnswerError();
     });
     if (untilHeaders) limit.stopClock();
     return await read(res);

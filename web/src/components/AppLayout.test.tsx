@@ -95,7 +95,14 @@ vi.mock("./ContactDrawer", () => ({
 // The screens beside the lists stand in as their names; this file is about
 // which route shows which list, not about what those screens do.
 vi.mock("../screens/TrashScreen", () => ({ default: () => <div data-testid="trash-screen" /> }));
-vi.mock("../screens/SettingsScreen", () => ({ default: () => null }));
+// Settings throws while it renders when a test sets `broken.settings`.
+const broken = vi.hoisted(() => ({ settings: false }));
+vi.mock("../screens/SettingsScreen", () => ({
+  default: () => {
+    if (broken.settings) throw new Error("settings broke");
+    return null;
+  },
+}));
 vi.mock("../screens/ImportScreen", () => ({ default: () => null }));
 vi.mock("../screens/ExportScreen", () => ({ default: () => null }));
 // The real one holds the lazy screen's Suspense boundary, so this one does too.
@@ -150,6 +157,7 @@ vi.mock("../lib/savedSearches", () => ({
 afterEach(() => {
   cleanup();
   desktop.on = false;
+  broken.settings = false;
   sets.groups = [];
   sets.groupsLoading = false;
   sets.tags = [];
@@ -282,6 +290,23 @@ describe("Each route under the app layout", () => {
     expect(screen.queryByTestId("docked-contact")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Contacts" }));
     expect(screen.getByTestId("docked-contact").textContent).toBe("c1");
+  });
+});
+
+describe("AppLayout when a screen throws", () => {
+  it("shows why in the screen's place, and the navigation panel still opens another screen", async () => {
+    // React reports the caught error on the console; the test reads the screen.
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    broken.settings = true;
+    const user = setupUser();
+    renderLayout("/settings");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Settings broke");
+
+    await user.click(screen.getByRole("button", { name: "Contacts" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(await screen.findByTestId("contact-list")).toBeTruthy();
+    consoleError.mockRestore();
   });
 });
 

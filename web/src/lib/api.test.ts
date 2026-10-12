@@ -78,6 +78,29 @@ describe("problemFromBody", () => {
     expect(err.message).toBe("Internal server error");
   });
 
+  it("names the request id of a server failure, so the line in the server's log can be found", () => {
+    const err = problemFromBody(
+      500,
+      JSON.stringify({
+        type: "about:blank",
+        title: "Internal Server Error",
+        status: 500,
+        detail: "internal server error",
+        request_id: PROBLEM.request_id,
+      }),
+    );
+    expect(err.message).toBe(
+      "internal server error (request 3f2b1c0e-8d4a-4b6e-9f21-5c7d8e9a0b1c)",
+    );
+    expect(err.detail).toBe("internal server error");
+  });
+
+  it("leaves the request id out of a refusal, whose sentence already says what to change", () => {
+    expect(problemFromBody(401, JSON.stringify(PROBLEM)).message).toBe(
+      "invalid username or password",
+    );
+  });
+
   it("falls back to the raw body when it is not a problem", () => {
     const err = problemFromBody(502, "<html>Bad Gateway</html>");
     expect(err.message).toBe("<html>Bad Gateway</html>");
@@ -342,6 +365,31 @@ describe("apiClient request shape", () => {
     const err = await call.catch((e: unknown) => e);
     expect(err).not.toBeInstanceOf(ApiError);
     expect((err as DOMException).name).toBe("AbortError");
+  });
+
+  it("names the server's address when the server can't be reached", async () => {
+    setBaseUrl("http://127.0.0.1:8080");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+
+    const err = await apiClient.get("/v1/conversations").catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({
+      status: 0,
+      timedOut: false,
+      message: "The server at http://127.0.0.1:8080 didn't answer.",
+    });
+  });
+
+  it("names this page's own address when the server is on the same host", async () => {
+    vi.stubGlobal("location", { origin: "https://crate.example.org" });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Load failed")));
+
+    const err = await apiClient.getBlob("/v1/assets/abc").catch((e: unknown) => e);
+
+    expect((err as ApiError).message).toBe(
+      "The server at https://crate.example.org didn't answer.",
+    );
   });
 
   it("posts a raw body under its own media type without re-encoding it", async () => {

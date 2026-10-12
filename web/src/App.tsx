@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { ApiTokenRevealProvider } from "./components/ApiTokenRevealDialog";
 import AppLayout from "./components/AppLayout";
@@ -14,6 +14,7 @@ import {
 import ImportExportRoute from "./components/ImportExportRoute";
 import { useMouseHistoryNavigation } from "./hooks/useMouseHistoryNavigation";
 import { useAuth } from "./lib/authContext";
+import { lazyScreen } from "./lib/screenLoad";
 import { ThemeProvider } from "./lib/ThemeProvider";
 import { TimeZoneProvider } from "./lib/TimeZoneProvider";
 import { useIsOwner } from "./lib/useIsOwner";
@@ -27,12 +28,12 @@ import OwnerHome from "./screens/OwnerHome";
  * importer forms, the job runner and the Tauri bridge behind them — is split out
  * and never downloaded by a browser visiting the website build.
  */
-const ImportScreen = lazy(() => import("./screens/ImportScreen"));
-const ExportScreen = lazy(() => import("./screens/ExportScreen"));
+const ImportScreen = lazyScreen(() => import("./screens/ImportScreen"));
+const ExportScreen = lazyScreen(() => import("./screens/ExportScreen"));
 
 /** Settings and trash are their own routes and are not on the first paint path. */
-const SettingsScreen = lazy(() => import("./screens/SettingsScreen"));
-const TrashScreen = lazy(() => import("./screens/TrashScreen"));
+const SettingsScreen = lazyScreen(() => import("./screens/SettingsScreen"));
+const TrashScreen = lazyScreen(() => import("./screens/TrashScreen"));
 
 /** Every route of the app; exported so tests drive the real route table. */
 export function AppRoutes() {
