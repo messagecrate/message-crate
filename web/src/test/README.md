@@ -154,7 +154,7 @@ the earlier step moves the clock with `vi.setSystemTime`. That moves `Date`
 and fires no timer, so a time read after that step is later than it.
 
 ```tsx
-invokeExport.mockImplementation(async () => {
+invokeExport.mockImplementationOnce(async () => {
   exportStepAt = Date.now();
   vi.setSystemTime(exportStepAt + 1);
 });
@@ -271,7 +271,7 @@ those inside `act` instead, and needs no clock at all.
 await act(async () => {
   const first = result.current.approve();
   const second = result.current.approve();
-  resolveTranscode({ summary: "Transcode finished.", transcode: undefined });
+  transcode.answer({ summary: "Transcode finished.", transcode: undefined });
   await Promise.all([first, second]);
 });
 ```

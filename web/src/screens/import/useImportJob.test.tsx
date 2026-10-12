@@ -2285,15 +2285,12 @@ describe("useImportJob wiring", () => {
   });
 
   it("does not run the Media stage twice on a double click", async () => {
-    let resolveTranscode!: (value: DesktopJobResult) => void;
-    const pending = new Promise<DesktopJobResult>((resolve) => {
-      resolveTranscode = resolve;
-    });
-    // Deliberately left unresolved: lets the two approve() calls below
-    // race while the Media stage is still "running".
+    // Held until both approve() calls are made, so the second one comes
+    // while the Media stage is still "running".
+    const transcode = heldCall<DesktopJobResult>();
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
-      return pending;
+      return transcode.fake();
     });
     // A fallback that keeps calling through, so if the double-click guard
     // were ever removed, a genuine second (or third) run() call would show
@@ -2308,7 +2305,7 @@ describe("useImportJob wiring", () => {
     await act(async () => {
       const first = result.current.approve();
       const second = result.current.approve();
-      resolveTranscode({ summary: "Transcode finished.", transcode: undefined });
+      transcode.answer({ summary: "Transcode finished.", transcode: undefined });
       await Promise.all([first, second]);
     });
 
@@ -3448,8 +3445,11 @@ describe("useImportJob resumeAtReview", () => {
         importForm({ attachmentMedia: "convert" }),
       );
     });
-    // The Media stage's job has started and waits for its answer.
-    await act(() => transcode.asked);
+    // The Media stage's job has started and waits for its answer. A resume
+    // that ends before reaching it settles `resumed` instead, and fails here
+    // at once with its cause.
+    await act(() => Promise.race([transcode.asked, resumed]));
+    expect(runMock).toHaveBeenCalledTimes(1);
 
     expect(result.current.steps).toHaveLength(3);
     expect(result.current.steps.map((s) => s.status)).toEqual(["done", "active", "pending"]);
