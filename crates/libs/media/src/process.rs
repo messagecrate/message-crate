@@ -145,18 +145,15 @@ pub(crate) fn process_attachment_files_with(
     emit(&mut log, "");
     emit(&mut log, &starting_line(verb, total, report.bytes_before));
 
+    let asked = Asked {
+        mode,
+        compress,
+        stop,
+    };
     let mut done = 0usize;
     for path in files {
         let mut hevc_failure = None;
-        let outcome = process_one(
-            tools,
-            output_dir,
-            path,
-            mode,
-            compress,
-            stop,
-            &mut hevc_failure,
-        );
+        let outcome = process_one(tools, output_dir, path, asked, &mut hevc_failure);
         report.hevc_fallback.record(hevc_failure);
         match outcome {
             Ok(Outcome::Changed { old_rel, new_rel }) => {
@@ -549,25 +546,12 @@ fn process_one(
     tools: &dyn MediaTools,
     output_dir: &Path,
     path: &Path,
-    mode: MediaMode,
-    compress: &CompressOptions,
-    stop: Option<&AtomicBool>,
+    asked: Asked<'_>,
     hevc_failure: &mut Option<String>,
 ) -> Result<Outcome> {
     let old_rel = rel_path(output_dir, path)?;
     let kind = classify(path).context("unknown media kind")?;
-    match run_one(
-        tools,
-        path,
-        kind,
-        Asked {
-            mode,
-            compress,
-            stop,
-        },
-        Commit::InPlace,
-        hevc_failure,
-    )? {
+    match run_one(tools, path, kind, asked, Commit::InPlace, hevc_failure)? {
         Some(new_path) => changed(output_dir, &old_rel, &new_path),
         None => Ok(Outcome::Skipped),
     }
@@ -721,7 +705,17 @@ pub(crate) fn transcode_file_with(
         return Ok(TranscodeOutcome::Skipped);
     }
     let kind = kind.context("unknown media kind")?;
-    transcode_as(tools, src, kind, dest, mode, compress, stop)
+    transcode_as(
+        tools,
+        src,
+        kind,
+        dest,
+        Asked {
+            mode,
+            compress,
+            stop,
+        },
+    )
 }
 
 /// [`transcode_file`] for a source whose kind the caller already knows,
@@ -767,7 +761,17 @@ pub(crate) fn transcode_file_as_with(
     if matches!(mode, MediaMode::Clone | MediaMode::Disabled) {
         return Ok(TranscodeOutcome::Skipped);
     }
-    transcode_as(tools, src, kind, dest, mode, compress, stop)
+    transcode_as(
+        tools,
+        src,
+        kind,
+        dest,
+        Asked {
+            mode,
+            compress,
+            stop,
+        },
+    )
 }
 
 /// The shared tail of the two `transcode_file` entry points.
@@ -776,24 +780,11 @@ fn transcode_as(
     src: &Path,
     kind: Kind,
     dest: &Path,
-    mode: MediaMode,
-    compress: &CompressOptions,
-    stop: Option<&AtomicBool>,
+    asked: Asked<'_>,
 ) -> Result<TranscodeOutcome> {
     tools.require()?;
     let mut hevc_failure = None;
-    match run_one(
-        tools,
-        src,
-        kind,
-        Asked {
-            mode,
-            compress,
-            stop,
-        },
-        Commit::To(dest),
-        &mut hevc_failure,
-    )? {
+    match run_one(tools, src, kind, asked, Commit::To(dest), &mut hevc_failure)? {
         Some(_) => Ok(TranscodeOutcome::Produced { hevc_failure }),
         None => Ok(TranscodeOutcome::Skipped),
     }
