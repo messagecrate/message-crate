@@ -265,8 +265,8 @@ pub(crate) async fn decide_shown_as_is(
 
 /// Make the versions of every stored original of the account `opts` names,
 /// or of every account in the database when it names none, saying what it
-/// does through `progress`: standard output for the `process-assets`
-/// command, the server's log for a Demo Account build under `serve`. An
+/// does through `progress`, which the caller picks: a command run from a
+/// shell prints it, and work under `serve` writes it to the server's log. An
 /// account's attachments from every source share one originals directory and
 /// one converted directory, so each account is one pass.
 ///

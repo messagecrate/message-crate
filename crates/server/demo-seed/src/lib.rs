@@ -111,15 +111,22 @@ pub fn generate_cancellable(cfg: &SeedConfig, cancel: &AtomicBool) -> Result<Gen
         Ok(stats) => stats,
         Err(error) => return Err(keep_prepared_if_restore_failed(prepared, error)),
     };
-
-    println!("The Demo Data is written to {}", out.display());
-    println!("  seed:          {}", cfg.seed);
-    println!("  contacts:      {}", stats.contacts);
-    println!("  groups:        {}", stats.groups);
-    println!("  conversations: {}", stats.conversation_files);
-    println!("  messages:      {}", stats.messages);
-    println!("  attachments:   {}", stats.attachment_refs);
     Ok(stats)
+}
+
+/// What a generated data set holds, one line per count, aligned as a table.
+/// The caller says them where its output goes: the `demo-seed` and
+/// `reset-demo` commands print them, and `serve`, which builds the Demo
+/// Account from the same data, writes nothing to standard output (#2018).
+#[must_use]
+pub fn count_lines(stats: &GenStats) -> [String; 5] {
+    [
+        format!("contacts:      {}", stats.contacts),
+        format!("groups:        {}", stats.groups),
+        format!("conversations: {}", stats.conversation_files),
+        format!("messages:      {}", stats.messages),
+        format!("attachments:   {}", stats.attachment_refs),
+    ]
 }
 
 /// Parent directory of `out`, or `.` when `out` has no parent (for example `demo`).

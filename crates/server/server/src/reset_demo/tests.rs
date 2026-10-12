@@ -2322,37 +2322,22 @@ async fn a_first_start_stopped_after_the_account_row_is_seeded_whole_by_the_next
 /// The Demo Account build `serve` runs on a new database says every step
 /// through `tracing`, so each line reaches the server's log and the owner's
 /// Logs panel, from the removal of an old Demo Account to the Previews and
-/// Thumbnails, and none is printed past it (#2018).
+/// Thumbnails (#2018). That nothing reaches standard output instead is
+/// checked on the `serve` process, in `tests/server_log.rs`.
 #[tokio::test]
 async fn the_build_under_serve_says_every_step_in_the_server_log() {
-    use crate::logging::{LogFiles, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
-
     let temp = tempfile::tempdir().expect("create test directory");
     let cfg = crate::open_db::fresh_config(&temp.path().join("crate"));
-    let log_dir = temp.path().join("logs");
-    let files = LogFiles::open(&log_dir, SERVER_LOG_LIMITS).expect("open the log");
-    {
-        // The test's runtime has one thread, so the build's tasks write
-        // through this thread's subscriber too.
-        let _subscriber =
-            tracing::subscriber::set_default(crate::logging::subscriber_for(files, "info"));
+    let (seeded, lines) = crate::test_support::lines_written_by(
+        "info",
         seed_new_database_with(&cfg, |bundle| {
             write_tiny_reset_bundle(bundle);
             Ok(())
-        })
-        .await
-        .expect("seed the new database");
-    }
-
-    let lines = read_lines(
-        &log_dir,
-        &LogLinesQuery {
-            limit: 1000,
-            ..LogLinesQuery::default()
-        },
+        }),
     )
-    .expect("read the log")
-    .0;
+    .await;
+    seeded.expect("seed the new database");
+
     let text: Vec<&str> = lines.iter().map(|line| line.text.as_str()).collect();
     let media_step = if media::ffmpeg_available() {
         "Processing account"

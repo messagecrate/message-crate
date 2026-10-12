@@ -31,3 +31,34 @@ pub fn log_event(second: usize, level: &str, text: &str) -> String {
         second % 60
     )
 }
+
+/// What `run` returns, and the lines it left in a log of its own, oldest
+/// first. `run` is awaited with a subscriber at `filter` as this thread's
+/// default, so on a test's one-thread runtime the tasks it starts write
+/// through it too.
+pub async fn lines_written_by<F: Future>(
+    filter: &str,
+    run: F,
+) -> (F::Output, Vec<crate::logging::LogLine>) {
+    use crate::logging::{LogFiles, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let log_dir = dir.path().join("logs");
+    let files = LogFiles::open(&log_dir, SERVER_LOG_LIMITS).unwrap();
+    let output = {
+        let _subscriber =
+            tracing::subscriber::set_default(crate::logging::subscriber_for(files, filter));
+        run.await
+    };
+    let mut lines = read_lines(
+        &log_dir,
+        &LogLinesQuery {
+            limit: 1000,
+            ..LogLinesQuery::default()
+        },
+    )
+    .unwrap()
+    .0;
+    lines.reverse();
+    (output, lines)
+}

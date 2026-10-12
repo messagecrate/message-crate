@@ -29,6 +29,11 @@ pub mod lines;
 #[allow(dead_code)]
 pub mod claim;
 
+// Only the tests that read the server's log use it, and those use only some
+// of it, so the rest would warn as dead code in each test binary.
+#[allow(dead_code)]
+pub mod log;
+
 /// How long a server on an empty database may take to listen or to exit.
 pub const WAIT: Duration = Duration::from_secs(60);
 

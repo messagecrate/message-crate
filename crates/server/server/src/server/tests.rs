@@ -2665,22 +2665,13 @@ fn a_logged_uri_is_cut_at_its_limit_and_marked() {
 /// (#2060). Without the catch, the connection closed with no answer at all.
 #[tokio::test]
 async fn a_handler_that_panics_answers_a_500_problem_with_its_request_id() {
-    use crate::logging::{LogFiles, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
-
     async fn panics() -> StatusCode {
         panic!("the handler this test makes panic");
     }
 
     let fixture = test_fixture().await;
     let routes = Router::new().route("/v1/panics", axum::routing::get(panics));
-    let dir = TempDir::new().unwrap();
-    let log_dir = dir.path().join("logs");
-    let files = LogFiles::open(&log_dir, SERVER_LOG_LIMITS).unwrap();
-    let response = {
-        // The test's runtime has one thread, so the server's tasks write
-        // through this thread's subscriber too.
-        let _subscriber =
-            tracing::subscriber::set_default(crate::logging::subscriber_for(files, "info"));
+    let (response, lines) = crate::test_support::lines_written_by("info", async {
         let server =
             crate::test_support::serve_router(with_server_layers(routes, fixture.state.clone()))
                 .await;
@@ -2689,7 +2680,8 @@ async fn a_handler_that_panics_answers_a_500_problem_with_its_request_id() {
             .send()
             .await
             .expect("the server answers a request whose handler panicked")
-    };
+    })
+    .await;
 
     assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     let header_id = response
@@ -2703,15 +2695,6 @@ async fn a_handler_that_panics_answers_a_500_problem_with_its_request_id() {
     assert_eq!(body["type"], crate::problem::INTERNAL_TYPE, "{body}");
     assert_eq!(body["request_id"], header_id.as_str(), "{body}");
 
-    let lines = read_lines(
-        &log_dir,
-        &LogLinesQuery {
-            limit: 100,
-            ..LogLinesQuery::default()
-        },
-    )
-    .unwrap()
-    .0;
     let errors: Vec<_> = lines
         .iter()
         .filter(|line| line.level == LogLevel::Error)

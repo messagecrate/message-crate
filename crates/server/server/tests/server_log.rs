@@ -20,6 +20,7 @@ use common::claim::{
     ALICE_PASSWORD, Claimed, OWNER_PASSWORD, call, claimed_with_account, json_body,
 };
 use common::lines::{attachment, conversation_header, message_line};
+use common::log::newest_log;
 use common::{empty_message_crate, listen, serve};
 
 /// The account's new password.
@@ -483,5 +484,39 @@ async fn a_refused_request_leaves_a_line_with_its_problem_type() {
     assert!(
         !warnings.contains("search-query-invalid"),
         "a refused search is not a warning: {lines}"
+    );
+}
+
+/// A new Message Crate's first start builds the Demo Account under `serve`,
+/// and the build says every step in the server's log and nothing on
+/// standard output (#2018), which the desktop app reads through a pipe a
+/// crashed app closes.
+#[test]
+fn the_first_start_builds_the_demo_account_with_nothing_on_standard_output() {
+    let root = tempfile::tempdir().unwrap();
+    let data_dir = root.path().join("data");
+    let static_dir = root.path().join("static");
+    std::fs::create_dir_all(&static_dir).unwrap();
+    let stdout_path = root.path().join("stdout.txt");
+    let stdout = std::fs::File::create(&stdout_path).unwrap();
+
+    let (_server, _address) = listen(
+        serve(&data_dir, &static_dir)
+            .env("RUST_LOG", "info")
+            .stdout(stdout),
+    );
+
+    let log = newest_log(&data_dir);
+    for step in [
+        "The Demo Account is built from these files",
+        "The demo address book named",
+        "The Demo Account was added",
+    ] {
+        assert!(log.contains(step), "no line says {step:?}:\n{log}");
+    }
+    let printed = std::fs::read_to_string(&stdout_path).unwrap();
+    assert!(
+        printed.is_empty(),
+        "the build printed on standard output:\n{printed}"
     );
 }

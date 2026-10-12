@@ -219,11 +219,15 @@ fn reset_account_work_dir(data_dir: &Path) -> Result<tempfile::TempDir> {
 pub async fn run_reset_demo(size: DemoSize, cfg: &Config) -> Result<ResetDemoStats> {
     let work = tempfile::tempdir().context("create temporary demo bundle directory")?;
     let bundle = work.path().join("bundle");
-    println!("Generating the {size} Demo Data set");
+    let progress = BuildRun::Command.progress();
+    progress.heading(format_args!("Generating the {size} Demo Data set"));
     // `reset-demo` runs in the foreground and stops with its process, so
     // nothing sets the flag.
     let seed_stats = demo_seed::generate_size_to(size, &bundle, &AtomicBool::new(false))
         .context("generate demo bundle (demo-seed)")?;
+    for line in demo_seed::count_lines(&seed_stats) {
+        progress.say(line);
+    }
     let reset_stats = reset_prepared_bundle(cfg, &bundle, DEMO_ACCOUNT_ID).await?;
 
     Ok(ResetDemoStats {

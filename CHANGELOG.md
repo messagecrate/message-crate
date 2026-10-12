@@ -1019,14 +1019,16 @@ released versions carry their date on the heading.
 - 2026-10-11: **The server's log holds what it was missing.** A request
   that broke the server in an unexpected way closed the connection with no
   answer and left nothing in the log. It now gets the same "internal server
-  error" answer, with a request id, as any other failure, and the log says
-  what went wrong, where. The same holds for any other part of the server
-  that breaks this way. The lines a starting server writes, and the reason
-  it stops or will not start, are now in the log as well, so the Logs panel
-  shows them, and so is every step of adding or rebuilding the Demo
-  Account. A request with a very long address now leaves a line of at most
-  2,048 characters, so nobody can fill the log with a few long requests and
-  push older lines out.
+  error" answer, with a request id, as any other failure, and the log names
+  what broke and the place in the code it happened. The same holds for any
+  other part of the server that breaks this way. The lines a starting server
+  writes, and the reason it stops or will not start, are now in the log as
+  well, so the Logs panel shows them, and so is every step of adding or
+  rebuilding the Demo Account. A server whose desktop app has crashed no
+  longer fails every request while it waits to stop. A request with a very
+  long address now leaves at most the first 2,048 bytes of it in the log, so
+  nobody can fill the log with a few long requests and push older lines out
+  (#2060, #2086, #2079, #2018, #2088).
 - 2026-10-11: **A busy server says it is busy, and stays busy less often.**
   While two imports ran, every other page and action shared what was left of
   the server's database connections, and one that waited too long failed as

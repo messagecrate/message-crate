@@ -43,6 +43,11 @@ fn main() -> Result<()> {
     if let Some(seed) = cli.seed {
         cfg.seed = seed;
     }
-    demo_seed::generate(&cfg)?;
+    let stats = demo_seed::generate(&cfg)?;
+    println!("The Demo Data is written to {}", cfg.out);
+    println!("  seed:          {}", cfg.seed);
+    for line in demo_seed::count_lines(&stats) {
+        println!("  {line}");
+    }
     Ok(())
 }

@@ -52,7 +52,7 @@ pub use imports::{
 pub use lines::{
     ConversationHeaderLine, MessageLine, attachment, conversation_header, message_line,
 };
-pub use logs::{log_event, small_log_files, write_log_line};
+pub use logs::{lines_written_by, log_event, small_log_files, write_log_line};
 pub(crate) use seed::write_stored_original;
 pub use seed::{
     ConversationRow, MessageRow, SeedConversation, SeedMessage, attach_stored_file, fake_sha256,

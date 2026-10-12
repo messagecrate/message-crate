@@ -34,17 +34,26 @@ read it.
 Rejected: a table in the database. It is the one store that is missing when
 the log is needed most.
 
-`serve` opens the log before anything else that can fail, then writes
-every line through it: where the log is, the database it opened and its
-journal mode, a part-built Demo Account it removed, the attachment limits,
-a SIGTERM it cannot catch, and the Demo Account build it runs on a new
-database or for the owner. An error that stops `serve` after the log is open,
+`serve` opens the log before it touches the database, then writes every
+line through it: where the log is, the database it opened and its journal
+mode, a part-built Demo Account it removed, the attachment limits, a SIGTERM
+it cannot catch, and the Demo Account build it runs on a new database or for
+the owner. An error that stops `serve` after the log is open is written at
+`ERROR` with its whole chain (`logging::write_failure`). Such errors include
 a database that cannot be opened, another server holding the operation lock,
-an address that cannot be bound, is written at `ERROR` with its whole chain
-(`logging::write_failure`). One line is on stderr alone: the one that says
+and an address that cannot be bound. When `RUST_LOG` leaves out `ERROR`
+lines, the error and a panic go to stderr as Rust writes them instead, so
+neither is written nowhere. One line is on stderr alone: the one that says
 where the server listens (`LISTENING_LINE` in
 `crates/libs/serve-protocol`), which the desktop app and the tests read
 there by how it starts.
+
+A line that cannot be written to stderr is dropped, and the file still gets
+it. Why: the desktop app reads its server's stderr through a pipe, and an
+app that crashes takes the pipe's read end with it. Reporting the failed
+write would panic, so every request would fail until the server noticed the
+app was gone
+([#1934](https://github.com/messagecrate/message-crate/issues/1934)).
 
 Why: a Message Crate that will not start, or misbehaves from its first
 minute, is when the owner needs these lines, and stderr is the place the
@@ -53,8 +62,10 @@ owner of Docker or the desktop app cannot read
 [#2018](https://github.com/messagecrate/message-crate/issues/2018)).
 
 The other subcommands (`import`, `reset-demo`, `process-assets`, and the rest)
-write to stderr only. They are run by hand from a shell that already shows
-their output, and they are not the server.
+write to their own standard output and standard error only, never to the
+server's log: their progress is their output (`crate::progress::Progress`).
+They are run by hand from a shell that already shows their output, and they
+are not the server.
 
 ## A panic is written as an `ERROR` line
 
@@ -63,7 +74,8 @@ any other work, leaves one `ERROR` line, `A thread of the server panicked`,
 with the panic's message and the file and line it happened at. The panic hook
 `logging::init` installs writes it, under the span the panic happened in, so
 a handler's panic carries its request's id. Rust's own hook, which writes to
-stderr alone, runs as well only when `RUST_BACKTRACE` asks for a backtrace.
+stderr alone, runs as well only when `RUST_BACKTRACE` asks for a backtrace
+or `RUST_LOG` leaves out the `ERROR` line.
 A handler that panics is answered with a `500 Internal Server Error`
 ([The HTTP interface, "Failures"](http-api.md#failures)), which writes its
 own `ERROR` line as every `500` does, so such a request leaves two.
