@@ -27,16 +27,22 @@ and `getUnknownEmail` in `PersonRecord.java` (lines 36–52 and 83–86).
 
 SMS Backup+ copies `X-smssync-date` straight from Android's database, so its
 unit is the one Android stores for the message's kind: milliseconds for an
-SMS and a call, seconds for an MMS (`setSmsHeaders`, `setMmsHeaders` and
-`setCallLogHeaders` in
-`app/src/main/java/sms/backup/plus/mail/HeaderGenerator.java`, lines 64–88).
-The exporter reads the date in the unit `X-smssync-datatype` gives, by the
-date rule every Android reader shares: a whole number, at most the last
-millisecond of the year 9999. A mail with no `X-smssync-datatype` comes from a
-version older than the header, which SMS Backup+ added in November 2010, a
-month after it began backing up MMS, so its date is read in milliseconds. A
-date that cannot be read in its unit, or a mail of any other datatype, takes
-its time from the `Date` header, which SMS Backup+ writes on every mail to the
+SMS and a call, seconds for an MMS. The source is `setSmsHeaders`,
+`setMmsHeaders` and `setCallLogHeaders` in
+`app/src/main/java/sms/backup/plus/mail/HeaderGenerator.java` at commit
+`fd33c32` (lines 64–88). The exporter reads the date in the unit
+`X-smssync-datatype` gives, by the date rule every Android reader shares: a
+whole number, at most the last millisecond of the year 9999.
+
+`WHATSAPP`, which SMS Backup+ wrote for WhatsApp messages from 2013 to 2015
+(commits `e77c56d` and `24b549e`), is read in milliseconds too. A mail with no
+`X-smssync-datatype` comes from a version older than the header, which SMS
+Backup+ added in November 2010 (commit `33f87f2`), a month after it began
+backing up MMS. Its date is read in the unit that agrees with the `Date`
+header to the second, and in milliseconds when it has no `Date`.
+
+A date that cannot be read, or one in a mail of any other datatype, leaves the
+time to the `Date` header, which SMS Backup+ writes on every mail to the
 second. A mail with neither is skipped and counted as a message with an
 invalid date.
 

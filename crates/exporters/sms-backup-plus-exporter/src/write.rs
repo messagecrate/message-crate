@@ -8,6 +8,7 @@
 //! `-version` are never written; Gmail's `X-GM-THRID` and `X-Gmail-Labels`
 //! belong to Gmail, not the app, and are never written either.
 
+use crate::flat_eml::Datatype;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use mail::{attachment_part, eml_file_name, text_body_part};
@@ -222,7 +223,8 @@ impl SmsBackupPlusArchive {
         };
         // SMS Backup+ copies Android's `date`: milliseconds for an SMS, and
         // seconds for an MMS, so an MMS goes out to the second.
-        let smssync_date = if is_mms {
+        let datatype = if is_mms { Datatype::Mms } else { Datatype::Sms };
+        let smssync_date = if datatype == Datatype::Mms {
             message.timestamp_unix_ms.div_euclid(1000)
         } else {
             message.timestamp_unix_ms
@@ -235,10 +237,7 @@ impl SmsBackupPlusArchive {
             .date(Date::new(message.timestamp_unix_ms.div_euclid(1000)))
             .message_id(format!("{}@{DOMAIN}", message.guid))
             .references(format!("{}@{DOMAIN}", conversation.thread))
-            .header(
-                "X-smssync-datatype",
-                Text::new(if is_mms { "MMS" } else { "SMS" }),
-            )
+            .header("X-smssync-datatype", Text::new(datatype.name()))
             .header("X-smssync-address", Text::new(conversation.address()))
             .header("X-smssync-date", Text::new(smssync_date.to_string()))
             .header("X-smssync-type", Text::new(android_type))

@@ -24,11 +24,54 @@ const SENT_TYPES: &[&str] = &["2", "128", "4", "135", "6", "5"];
 /// Android SMS/MMS type codes for inbox / received messages.
 const RECEIVED_TYPES: &[&str] = &["1", "132", "130"];
 
+/// What `X-smssync-datatype` says a mail holds. SMS Backup+ writes the name
+/// in capitals and reads it back without regard to case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Datatype {
+    Sms,
+    Mms,
+    CallLog,
+    /// A WhatsApp message, which SMS Backup+ backed up from 2013 to 2015
+    /// (commits `e77c56d` and `24b549e`).
+    WhatsApp,
+    /// No header: a mail from a version older than it, which SMS Backup+
+    /// added in November 2010 (commit `33f87f2`).
+    Missing,
+    /// A name SMS Backup+ never writes.
+    Other,
+}
+
+impl Datatype {
+    /// The datatype a header value names.
+    pub(crate) fn from_header(value: &str) -> Self {
+        [Self::Sms, Self::Mms, Self::CallLog, Self::WhatsApp]
+            .into_iter()
+            .find(|datatype| value.eq_ignore_ascii_case(datatype.name()))
+            .unwrap_or(if value.is_empty() {
+                Self::Missing
+            } else {
+                Self::Other
+            })
+    }
+
+    /// The name SMS Backup+ writes in the header; empty for a mail without
+    /// one or with a name it never writes.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Sms => "SMS",
+            Self::Mms => "MMS",
+            Self::CallLog => "CALLLOG",
+            Self::WhatsApp => "WHATSAPP",
+            Self::Missing | Self::Other => "",
+        }
+    }
+}
+
 /// Cached headers read once per EML (avoids repeated `get_first_value` + alloc).
 #[derive(Debug, Clone)]
 pub(crate) struct MailHeaders {
-    /// `SMS`, `MMS` or `CALLLOG`; SMS Backup+ writes it on every mail.
-    pub smssync_datatype: String,
+    /// SMS Backup+ writes it on every mail since November 2010.
+    pub smssync_datatype: Datatype,
     pub smssync_type: String,
     pub smssync_address: String,
     pub smssync_date: String,
@@ -51,7 +94,7 @@ impl MailHeaders {
                 .to_string()
         }
         Self {
-            smssync_datatype: one(mail, "X-smssync-datatype"),
+            smssync_datatype: Datatype::from_header(&one(mail, "X-smssync-datatype")),
             smssync_type: one(mail, "X-smssync-type"),
             smssync_address: one(mail, "X-smssync-address"),
             smssync_date: one(mail, "X-smssync-date"),
@@ -68,7 +111,7 @@ impl MailHeaders {
     /// Such a mail carries `X-smssync-type` too, holding the call's type, so
     /// only `X-smssync-datatype` tells a call from a text message.
     pub(crate) fn is_call_log(&self) -> bool {
-        self.smssync_datatype.eq_ignore_ascii_case("CALLLOG")
+        self.smssync_datatype == Datatype::CallLog
     }
 }
 
@@ -350,42 +393,52 @@ pub(crate) fn group_key(members: &[Handle]) -> (String, String) {
 /// read in its unit leaves the time to `Date`, which SMS Backup+ writes on
 /// every mail from the same moment, to the second.
 fn timestamp_seconds(headers: &MailHeaders) -> Option<(f64, bool)> {
-    if let Some(time) = smssync_date_seconds(headers) {
-        return Some(time);
-    }
+    let sent = date_header_seconds(headers);
+    smssync_date_seconds(headers, sent).or(sent.map(|secs| (secs, false)))
+}
+
+/// Unix seconds from the `Date` header, whole seconds only.
+fn date_header_seconds(headers: &MailHeaders) -> Option<f64> {
     if headers.date.is_empty() {
         return None;
     }
     // mailparse does not parse Date headers; try chrono RFC2822.
     chrono::DateTime::parse_from_rfc2822(&headers.date)
         .ok()
-        .map(|d| (d.timestamp() as f64, false))
+        .map(|d| d.timestamp() as f64)
 }
 
 /// Unix seconds from `X-smssync-date`, read in the unit its
 /// `X-smssync-datatype` gives, and whether the time carries milliseconds.
+/// `sent` is the time in the `Date` header, if it has one.
 ///
 /// SMS Backup+ copies the date straight from Android's database, where an
 /// SMS's and a call's `date` are milliseconds and an MMS's is seconds
 /// (`setSmsHeaders`, `setMmsHeaders` and `setCallLogHeaders` in
 /// <https://github.com/jberkel/sms-backup-plus/blob/fd33c3209c80598632d0323237fc86fa4ffea710/app/src/main/java/sms/backup/plus/mail/HeaderGenerator.java#L64-L88>).
-/// A mail with no `X-smssync-datatype` comes from a version older than the
-/// header, which SMS Backup+ added in November 2010 (commit `33f87f2`), a
-/// month after it began backing up MMS: such a mail is almost always an SMS,
-/// so its date is read in milliseconds. A datatype SMS Backup+ never writes
-/// names no unit, so its date is not read.
-fn smssync_date_seconds(headers: &MailHeaders) -> Option<(f64, bool)> {
+/// A WhatsApp message's date is milliseconds too (`messageFromMapWhatsApp`,
+/// commit `e77c56d`). A datatype SMS Backup+ never writes names no unit, so
+/// its date is not read.
+///
+/// A mail with no datatype comes from a version older than the header, and
+/// may be an SMS or, in the month before the header, an MMS, so its date is
+/// read in the unit that agrees with `Date`, which SMS Backup+ wrote from
+/// the same date to the second. With no `Date` to compare, it is read in
+/// milliseconds, the unit of nearly every such mail.
+fn smssync_date_seconds(headers: &MailHeaders, sent: Option<f64>) -> Option<(f64, bool)> {
     let date = headers.smssync_date.as_str();
-    let datatype = headers.smssync_datatype.as_str();
-    if datatype.eq_ignore_ascii_case("MMS") {
-        android_fields::unix_secs_from_date_secs(date).map(|secs| (secs, false))
-    } else if datatype.is_empty()
-        || datatype.eq_ignore_ascii_case("SMS")
-        || datatype.eq_ignore_ascii_case("CALLLOG")
-    {
-        android_fields::unix_secs_from_date_ms(date).map(|secs| (secs, true))
-    } else {
-        None
+    let millis = || android_fields::unix_secs_from_date_ms(date).map(|secs| (secs, true));
+    let secs = || android_fields::unix_secs_from_date_secs(date).map(|secs| (secs, false));
+    match headers.smssync_datatype {
+        Datatype::Sms | Datatype::CallLog | Datatype::WhatsApp => millis(),
+        Datatype::Mms => secs(),
+        Datatype::Missing => match sent {
+            None => millis(),
+            Some(sent) => millis()
+                .filter(|(secs, _)| secs.floor() == sent)
+                .or_else(|| secs().filter(|(secs, _)| *secs == sent)),
+        },
+        Datatype::Other => None,
     }
 }
 

@@ -96,7 +96,7 @@ old message\r\n"
 fn sent_detection_uses_exact_owner_email() {
     fn headers_with_from(from: &str) -> MailHeaders {
         MailHeaders {
-            smssync_datatype: String::new(),
+            smssync_datatype: Datatype::Missing,
             smssync_type: String::new(),
             smssync_address: String::new(),
             smssync_date: String::new(),
@@ -152,7 +152,7 @@ fn a_subject_naming_a_number_gives_no_contact_name_beside_an_address() {
 #[test]
 fn a_mail_without_the_smssync_date_is_timed_by_its_date_header() {
     let headers = MailHeaders {
-        smssync_datatype: String::new(),
+        smssync_datatype: Datatype::Missing,
         smssync_type: "1".into(),
         smssync_address: "4075550107".into(),
         smssync_date: String::new(),
@@ -169,7 +169,7 @@ fn a_mail_without_the_smssync_date_is_timed_by_its_date_header() {
 /// `smssync_date` and whose `Date` header is `date`.
 fn dated(datatype: &str, smssync_date: &str, date: &str) -> MailHeaders {
     MailHeaders {
-        smssync_datatype: datatype.into(),
+        smssync_datatype: Datatype::from_header(datatype),
         smssync_type: "1".into(),
         smssync_address: "4075550107".into(),
         smssync_date: smssync_date.into(),
@@ -184,10 +184,10 @@ fn dated(datatype: &str, smssync_date: &str, date: &str) -> MailHeaders {
 /// 2021-01-01T00:00:00Z, as SMS Backup+ writes it in `Date`.
 const NEW_YEAR_2021: &str = "Fri, 01 Jan 2021 00:00:00 +0000";
 
-/// An SMS's and a call's date are Android's milliseconds.
+/// An SMS's, a call's and a WhatsApp message's date are milliseconds.
 #[test]
 fn an_sms_date_is_read_in_milliseconds() {
-    for datatype in ["SMS", "sms", "CALLLOG"] {
+    for datatype in ["SMS", "sms", "CALLLOG", "WHATSAPP"] {
         assert_eq!(
             timestamp_seconds(&dated(datatype, "1609459200123", "")),
             Some((1_609_459_200.123, true)),
@@ -234,12 +234,29 @@ fn a_date_past_the_bound_is_not_read() {
 }
 
 /// A mail with no datatype comes from an SMS Backup+ older than the header,
-/// when almost every mail was an SMS: its date is milliseconds.
+/// and may be an SMS or an MMS: its date is read in the unit that agrees
+/// with `Date`, and in milliseconds when it has no `Date`.
 #[test]
-fn a_mail_without_a_datatype_is_dated_in_milliseconds() {
+fn a_mail_without_a_datatype_is_dated_in_the_unit_its_date_header_agrees_with() {
+    // An SMS of October 2010, and an MMS of the same second.
+    let sent = "Mon, 25 Oct 2010 09:46:40 +0000";
     assert_eq!(
-        timestamp_seconds(&dated("", "1609459200123", NEW_YEAR_2021)),
+        timestamp_seconds(&dated("", "1288000000123", sent)),
+        Some((1_288_000_000.123, true))
+    );
+    assert_eq!(
+        timestamp_seconds(&dated("", "1288000000", sent)),
+        Some((1_288_000_000.0, false))
+    );
+    // With no `Date`, milliseconds.
+    assert_eq!(
+        timestamp_seconds(&dated("", "1609459200123", "")),
         Some((1_609_459_200.123, true))
+    );
+    // Agreeing with `Date` in neither unit, the time is `Date`'s.
+    assert_eq!(
+        timestamp_seconds(&dated("", "1609459260123", NEW_YEAR_2021)),
+        Some((1_609_459_200.0, false))
     );
 }
 
