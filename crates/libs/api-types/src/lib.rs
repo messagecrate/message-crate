@@ -71,8 +71,8 @@ pub mod source_id {
 
 /// Every id in [`source_id`]. The import stamps a file's id on every message
 /// it writes, and search's `source:` field accepts these values and no
-/// others. A test in `message-crate-core` fails when a backup type's id is
-/// missing here.
+/// others. A test in `message-crate-core` fails when this list and the
+/// backup types' ids differ.
 pub const SOURCE_IDS: &[&str] = &[
     source_id::IMESSAGE,
     source_id::WHATSAPP,
