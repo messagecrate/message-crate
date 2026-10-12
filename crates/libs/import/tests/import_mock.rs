@@ -66,6 +66,23 @@ fn write_jsonl(dir: &Path, doc: &ConversationDocument) {
     }
 }
 
+/// The limit the mock server states for a whole piece to arrive.
+const PIECE_SECS: u64 = 300;
+
+/// A mock Message Crate that answers `GET /v1/server` with its upload time
+/// limits, as every Upload reads them once it has logged in.
+fn mock_server() -> MockServer {
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/v1/server");
+        then.status(200).json_body(json!({
+            "upload_stall_secs": 60,
+            "upload_piece_secs": PIECE_SECS,
+        }));
+    });
+    server
+}
+
 /// The server's answer to `POST /v1/imports`: an Import Run with `id`. Every
 /// import starts one, so every test mocks it; the batches then go to
 /// `/v1/imports/{id}/batches`. A test that checks how the import completes the
@@ -155,7 +172,7 @@ fn run_showing(cfg: &ImportConfig) -> (ImportReport, Vec<String>) {
 
 #[test]
 fn authenticate_and_import_text_only_conversation() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200).json_body(json!({
@@ -236,7 +253,7 @@ fn authenticate_and_import_text_only_conversation() {
 /// conversation again (#1889).
 #[test]
 fn an_unreadable_journal_line_is_a_sentence_in_the_uploads_log() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 42);
     let import = server.mock(|when, then| {
@@ -283,7 +300,7 @@ fn an_unreadable_journal_line_is_a_sentence_in_the_uploads_log() {
 
 #[test]
 fn reuses_supplied_import_run_without_starting_or_completing_one() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200).json_body(json!({
@@ -359,7 +376,7 @@ fn reuses_supplied_import_run_without_starting_or_completing_one() {
 #[test]
 fn an_import_completes_its_import_run_with_the_bytes_it_sent() {
     const PHOTO: &[u8] = b"photo bytes";
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start(&server, 42);
     let digest = file_io::sha256_hex(PHOTO);
@@ -407,7 +424,7 @@ fn an_import_completes_its_import_run_with_the_bytes_it_sent() {
 /// so the server does not show it as running.
 #[test]
 fn an_import_where_nothing_lands_completes_its_import_run_as_failed() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start(&server, 42);
     let _import = server.mock(|when, then| {
@@ -447,7 +464,7 @@ fn an_import_where_nothing_lands_completes_its_import_run_as_failed() {
 /// nothing may report the Upload as a success.
 #[test]
 fn a_refused_completion_is_an_error_the_upload_returns() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start(&server, 42);
     let _import = server.mock(|when, then| {
@@ -555,7 +572,7 @@ fn run_paused_upload(
 /// it finished (#1635).
 #[test]
 fn a_paused_upload_whose_completion_is_refused_returns_its_report() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start(&server, 42);
     let complete = server.mock(|when, then| {
@@ -609,7 +626,7 @@ fn a_paused_upload_whose_completion_is_refused_returns_its_report() {
 /// still ends the session on its side.
 #[test]
 fn a_paused_upload_whose_completion_refuses_the_session_says_so() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start(&server, 42);
     let _complete = server.mock(|when, then| {
@@ -642,7 +659,7 @@ fn a_paused_upload_whose_completion_refuses_the_session_says_so() {
 /// the caller must hear about.
 #[test]
 fn a_refused_completion_outranks_a_report_that_cannot_be_written() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start(&server, 42);
     let _import = server.mock(|when, then| {
@@ -682,7 +699,7 @@ fn a_refused_completion_outranks_a_report_that_cannot_be_written() {
 
 #[test]
 fn aggregates_multiple_conversations_into_one_import_request() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200).json_body(json!({
@@ -729,7 +746,7 @@ fn aggregates_multiple_conversations_into_one_import_request() {
 
 #[test]
 fn flushes_at_message_limit_across_two_batches_of_one_run() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200).json_body(json!({
@@ -778,7 +795,7 @@ fn flushes_at_message_limit_across_two_batches_of_one_run() {
 
 #[test]
 fn failed_combined_request_only_fails_its_files() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200).json_body(json!({
@@ -848,7 +865,7 @@ fn failed_combined_request_only_fails_its_files() {
 /// message, on its line 3 because of the blank line above it.
 #[test]
 fn a_refused_line_of_a_batch_is_reported_as_the_line_of_its_staged_file() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
     let refused = server.mock(|when, then| {
@@ -922,7 +939,7 @@ fn directory_with_a_bad_middle_file(dir: &Path) {
 /// files around it still share one request.
 #[test]
 fn an_import_imports_the_files_after_a_bad_one() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
@@ -950,7 +967,7 @@ fn an_import_imports_the_files_after_a_bad_one() {
 
 #[test]
 fn resumes_message_batches_from_compacted_journal() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200).json_body(json!({
@@ -990,7 +1007,7 @@ fn resumes_message_batches_from_compacted_journal() {
 /// refuses it, rather than be left out as already sent.
 #[test]
 fn a_message_with_a_blank_guid_is_sent_again_on_resume() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
@@ -1022,7 +1039,7 @@ fn a_message_with_a_blank_guid_is_sent_again_on_resume() {
 /// leave them missing.
 #[test]
 fn a_replace_import_ignores_the_journal_and_sends_every_message_again() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200).json_body(json!({
@@ -1067,7 +1084,7 @@ fn a_replace_import_ignores_the_journal_and_sends_every_message_again() {
 fn profiles_attachment_upload_phases() {
     const ASSET_BYTES: &[u8] = b"attachment profile fixture";
 
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200).json_body(json!({
@@ -1216,7 +1233,7 @@ fn puts_two_new_assets_after_one_preflight_head() {
     const A: &[u8] = b"new-asset-alpha";
     const B: &[u8] = b"new-asset-bravo";
 
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200).json_body(json!({
@@ -1296,7 +1313,7 @@ fn heads_later_assets_after_put_reports_already_present() {
     const FIRST: &[u8] = b"already-on-server-first";
     const SECOND: &[u8] = b"already-on-server-second";
 
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200).json_body(json!({
@@ -1374,7 +1391,7 @@ fn preflight_head_skips_puts_when_first_asset_already_present() {
     const A: &[u8] = b"server-already-has-alpha";
     const B: &[u8] = b"server-already-has-bravo";
 
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200).json_body(json!({
@@ -1433,7 +1450,7 @@ fn multipart_upload_when_over_proxy_threshold() {
     // File larger than the test threshold; mock server returns a tiny part_size.
     const ASSET_BYTES: &[u8] = b"0123456789abcdef0123456789abcdef01234567"; // 40 bytes
 
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200).json_body(json!({
@@ -1544,7 +1561,7 @@ fn multipart_upload_when_over_proxy_threshold() {
 fn multipart_aborts_on_hash_mismatch_complete() {
     const ASSET_BYTES: &[u8] = b"mismatch-fixture-bytes!!";
 
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200).json_body(json!({
@@ -1613,7 +1630,7 @@ fn multipart_aborts_on_hash_mismatch_complete() {
 
 #[test]
 fn authenticate_maps_http_failures_to_typed_errors() {
-    let server = MockServer::start();
+    let server = mock_server();
 
     let _unauthorized = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
@@ -1631,7 +1648,7 @@ fn authenticate_maps_http_failures_to_typed_errors() {
 
 #[test]
 fn authenticate_maps_html_and_status_failures() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _html = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200)
@@ -1642,7 +1659,7 @@ fn authenticate_maps_html_and_status_failures() {
     assert!(err.to_string().contains("HTML"));
 
     // Fresh server for a non-401 status.
-    let server = MockServer::start();
+    let server = mock_server();
     let _forbidden = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(403).body("username does not match API key");
@@ -1670,7 +1687,7 @@ fn a_digest_that_does_not_match_its_file_is_a_sentence_in_the_log() {
     let other_disk_digest = file_io::sha256_hex(OTHER_BYTES);
     let wrong_digest = file_io::sha256_hex(b"other bytes");
 
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
     let _import = server.mock(|when, then| {
@@ -1751,7 +1768,7 @@ fn shared_attachment_uploaded_once_across_conversations() {
     const ASSET_BYTES: &[u8] = b"shared attachment bytes";
     let digest = file_io::sha256_hex(ASSET_BYTES);
 
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200).json_body(json!({
@@ -1917,6 +1934,11 @@ fn serve_a_held_first_upload(first_put: &'static str) -> (String, Arc<Mutex<Vec<
                 let log = |event: String| seen.lock().unwrap().push(event);
                 let response = if request_line.starts_with("GET /v1/session ") {
                     answer("200 OK", r#"{"account_id":1,"username":"alice"}"#)
+                } else if request_line.starts_with("GET /v1/server ") {
+                    answer(
+                        "200 OK",
+                        r#"{"upload_stall_secs":60,"upload_piece_secs":300}"#,
+                    )
                 } else if request_line.starts_with("POST /v1/imports ") {
                     answer("201 Created", r#"{"id":7}"#)
                 } else if request_line.starts_with("POST /v1/imports/7/batches ") {
@@ -2078,7 +2100,7 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
     const SMALL: &[u8] = b"ok-bytes";
     const BIG: &[u8] = b"this-file-is-too-large-for-the-test-limit!!";
 
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200).json_body(json!({
@@ -2210,7 +2232,7 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
 fn skips_missing_attachment_file_keeps_conversation_ok() {
     const SMALL: &[u8] = b"present-bytes";
 
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200).json_body(json!({
@@ -2302,7 +2324,7 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
 /// keep the metadata rather than failing the whole conversation.
 #[test]
 fn keeps_conversation_ok_when_skipped_attachment_has_no_path() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200).json_body(json!({
@@ -2367,7 +2389,7 @@ fn keeps_conversation_ok_when_skipped_attachment_has_no_path() {
 /// as missing, but surface a skip row so the defect stays visible.
 #[test]
 fn reports_pathless_attachment_without_reason_as_no_path() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200).json_body(json!({
@@ -2431,7 +2453,7 @@ fn reports_pathless_attachment_without_reason_as_no_path() {
 /// sources go out in two requests even when both would fit in one.
 #[test]
 fn conversations_from_two_sources_go_out_in_separate_requests() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
     let sms = server.mock(|when, then| {
@@ -2525,7 +2547,7 @@ fn mock_session(server: &MockServer) -> httpmock::Mock<'_> {
 /// the failed try, fails here.
 #[test]
 fn a_batch_retried_after_a_503_is_counted_and_journaled_once() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
     let mut busy = server.mock(|when, then| {
@@ -2585,7 +2607,7 @@ fn a_batch_retried_after_a_503_is_counted_and_journaled_once() {
 /// already packed when the cancel arrived still goes out.
 #[test]
 fn a_cancelled_import_sends_no_further_batch_and_resumes_later() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
     let mut import = server.mock(|when, then| {
@@ -2659,7 +2681,7 @@ fn a_cancelled_import_sends_no_further_batch_and_resumes_later() {
 /// the report names those files.
 #[test]
 fn a_cancelled_import_reports_every_conversation_in_one_category() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
     let _import = server.mock(|when, then| {
@@ -2730,7 +2752,7 @@ fn a_cancelled_import_reports_every_conversation_in_one_category() {
 /// count, and journalling it as done would lose its unsent messages.
 #[test]
 fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_cancelled() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
     // The delay keeps the first batch in flight long enough to cancel while
@@ -2796,7 +2818,7 @@ fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_cancelled() {
 /// `failed`, although no conversation was left for the next Upload.
 #[test]
 fn a_cancel_after_the_last_request_leaves_a_completed_upload() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start(&server, 7);
     // The delay keeps the only batch in flight long enough to cancel while
@@ -2860,7 +2882,7 @@ fn a_cancel_after_the_last_request_leaves_a_completed_upload() {
 /// the report said the session was refused and the Upload completed.
 #[test]
 fn a_refused_session_after_a_failed_batch_still_halts_the_upload() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let failed = server.mock(|when, then| {
         when.method(POST)
@@ -2926,7 +2948,7 @@ fn a_refused_session_after_a_failed_batch_still_halts_the_upload() {
 /// good file would send it twice.
 #[test]
 fn a_second_import_sends_only_the_conversation_whose_batch_failed() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
     let mut failing = server.mock(|when, then| {
@@ -3015,7 +3037,7 @@ fn a_second_import_sends_only_the_conversation_whose_batch_failed() {
 /// and the next import sends it again for the server to dedupe.
 #[test]
 fn an_unreadable_2xx_answer_is_not_retried() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
@@ -3086,6 +3108,11 @@ fn serve_a_200_that_drops_the_batch_body() -> (String, Arc<AtomicUsize>) {
             };
             let response = if request_line.starts_with("GET /v1/session ") {
                 answer("200 OK", r#"{"account_id":1,"username":"alice"}"#)
+            } else if request_line.starts_with("GET /v1/server ") {
+                answer(
+                    "200 OK",
+                    r#"{"upload_stall_secs":60,"upload_piece_secs":300}"#,
+                )
             } else if request_line.starts_with("POST /v1/imports ") {
                 answer("201 Created", r#"{"id":7}"#)
             } else if request_line.starts_with("POST /v1/imports/7/batches ") {
@@ -3143,7 +3170,7 @@ fn a_2xx_answer_whose_body_is_cut_off_is_not_retried() {
 /// journaled as done, so a later import would never send it.
 #[test]
 fn a_chunk_that_overflows_the_pending_batch_is_sent_in_the_next_one() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
     let first = server.mock(|when, then| {
@@ -3201,7 +3228,7 @@ fn a_chunk_that_overflows_the_pending_batch_is_sent_in_the_next_one() {
 /// inside the export directory.
 #[test]
 fn an_import_keeps_its_journal_in_the_export_directory() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
@@ -3230,7 +3257,7 @@ fn an_import_keeps_its_journal_in_the_export_directory() {
 /// still being prepared. That early send succeeding must not end the import.
 #[test]
 fn an_import_goes_on_after_sending_a_large_batch_early() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
@@ -3278,7 +3305,7 @@ fn an_import_with_the_default_size_limit_uploads_a_photo_of_two_mebibytes() {
     let photo = vec![0x5a_u8; 2 * 1024 * 1024];
     let digest = file_io::sha256_hex(&photo);
 
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
     let _head = server.mock(|when, then| {
@@ -3325,7 +3352,7 @@ fn an_import_with_the_default_size_limit_uploads_a_photo_of_two_mebibytes() {
 /// import keeps sending a token the server has ended.
 #[test]
 fn a_refused_session_stops_the_import_as_a_pause_and_fails_no_conversation() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let accepted = server.mock(|when, then| {
         when.method(POST)
@@ -3415,7 +3442,7 @@ fn a_refused_session_stops_the_import_as_a_pause_and_fails_no_conversation() {
 /// next import, not recorded as failed (#1491).
 #[test]
 fn a_refused_attachment_upload_stops_the_import_and_fails_no_conversation() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = mock_session(&server);
     let _head = server.mock(|when, then| {
         when.method("HEAD").path_includes("/v1/assets/");
@@ -3451,7 +3478,7 @@ fn a_refused_attachment_upload_stops_the_import_and_fails_no_conversation() {
 /// conversation left for the next import, rather than failing it (#1491).
 #[test]
 fn a_session_refused_at_login_stops_the_import_as_a_pause() {
-    let server = MockServer::start();
+    let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(401).json_body(json!({
@@ -3496,7 +3523,7 @@ fn a_session_refused_at_login_stops_the_import_as_a_pause() {
 /// (#1676).
 #[test]
 fn the_phone_country_is_stated_on_the_import_run() {
-    let server = MockServer::start();
+    let server = mock_server();
     server.mock(|when, then| {
         when.method(GET).path("/v1/session");
         then.status(200).json_body(json!({

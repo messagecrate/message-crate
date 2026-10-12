@@ -53,9 +53,9 @@ use crate::paging::{
     DEFAULT_LIST_LIMIT, Page, PageQuery, page_from_rows, page_params, parse_status, sorted_page,
 };
 use crate::server::{
-    ApiError, AppState, Created, ImportAccess, batch_body_bounded, content_type_base,
-    declared_over, is_jsonl_content_type, resolve_import_account, run_blocking,
-    stream_body_to_file,
+    ApiError, AppState, Created, ImportAccess, content_type_base, declared_over,
+    is_jsonl_content_type, resolve_import_account, run_blocking, stream_body_to_file,
+    upload_body_bounded,
 };
 use crate::text_caps::{
     MAX_DEVICE_ID_CHARS, MAX_IMPORT_ERROR_TEXT_CHARS, MAX_IMPORT_NOTE_TEXT_CHARS,
@@ -1835,6 +1835,7 @@ pub(crate) async fn discard_import(
     responses(
         (status = 200, body = CreateImportBatchResponse),
         crate::problem::openapi::StateConflict,
+        crate::problem::openapi::UploadStalled,
         crate::problem::openapi::ServerStopping,
     )
 )]
@@ -1869,22 +1870,31 @@ pub(crate) async fn create_import_batch(
         }
         // The slot comes before the body, so a batch waiting behind the
         // running imports holds no disk (#2095). The read gives up once the
-        // body stops arriving or takes too long, so a client gone part-way,
-        // or one that sends a byte now and then, never holds the slot for
-        // good.
+        // body stops arriving or takes too long (`upload-stalled`), so a
+        // client gone part-way, or one that sends a byte now and then, never
+        // holds the slot for good.
         let permit = take_import_slot(&state).await?;
         let temp = batch_bodies::new_dir(&state.cfg.paths.data_dir)
             .map_err(|e| ApiError::Internal(anyhow::anyhow!("import batch directory: {e}")))?;
         let jsonl_path = temp.path().join("_import.jsonl");
-        let body = batch_body_bounded(request.into_body());
-        let n = stream_body_to_file(body, &jsonl_path, MAX_IMPORT_BATCH_BYTES).await?;
+        let body = upload_body_bounded(request.into_body(), state.upload_time_limits);
+        // A server told to stop while the body arrives stops reading it at
+        // once and refuses the batch, as it refuses one waiting for a slot,
+        // so the stop never waits for the rest of a body (#2878). Dropping
+        // the read leaves only the part-written file, which goes with
+        // `temp`.
+        let n = tokio::select! {
+            biased;
+            () = state.stopping.cancelled() => return Err(server_stopping()),
+            read = stream_body_to_file(body, &jsonl_path, MAX_IMPORT_BATCH_BYTES) => read?,
+        };
         if n == 0 {
             return Err(ImportFailure::Empty.into());
         }
-        // A server told to stop while the body arrived refuses the batch
-        // before its import starts, as it refuses one waiting for a slot,
-        // so the stop never waits for a whole import more.
-        if state.import_slots.is_closed() {
+        // A server told to stop as the body's last byte arrived refuses the
+        // batch before its import starts, so the stop never waits for a
+        // whole import more.
+        if state.stopping.is_cancelled() {
             return Err(server_stopping());
         }
         // The import pipeline does blocking file IO (JSONL parse, asset

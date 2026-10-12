@@ -152,20 +152,20 @@ async fn a_streamed_batch_over_the_cap_is_payload_too_large() {
 }
 
 /// A batch whose body is still arriving when the server is told to stop
-/// holds a slot already, but is refused before its import starts and stores
-/// nothing, so the stop never waits for a whole import more (#2203).
+/// holds a slot already, but stops reading at once and is refused with
+/// `server-stopping`, storing nothing, so the stop waits neither for the rest
+/// of the body nor for a whole import more (#2203). The body here never ends:
+/// before #2878 the read went on until the client stopped sending or the
+/// upload time limits ran out, and the stop waited for it.
 #[tokio::test]
 async fn a_batch_still_arriving_when_the_server_stops_is_refused_and_stores_nothing() {
     use futures_util::StreamExt;
     let (state, _fixture, token) = importer().await;
     let path = batches_path(&state, &token, "imessage").await;
-    let (finish, finished) = tokio::sync::oneshot::channel::<()>();
-    let rest = futures_util::stream::once(async move {
-        let _ = finished.await;
-    })
-    .filter_map(|()| async { None::<Result<axum::body::Bytes, std::io::Error>> });
-    let body =
-        futures_util::stream::iter([Ok(axum::body::Bytes::from(one_message_batch()))]).chain(rest);
+    let body = futures_util::stream::iter([Ok::<_, std::io::Error>(axum::body::Bytes::from(
+        one_message_batch(),
+    ))])
+    .chain(futures_util::stream::pending());
     let posting = crate::request_id::spawn_in_current_span({
         let state = state.clone();
         let token = token.clone();
@@ -187,7 +187,6 @@ async fn a_batch_still_arriving_when_the_server_stops_is_refused_and_stores_noth
         tokio::task::yield_now().await;
     }
     state.on_stop_signal()();
-    finish.send(()).unwrap();
 
     let (status, text) = posting.await.unwrap();
     crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::ServerStopping);
