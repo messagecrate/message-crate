@@ -5,15 +5,18 @@
 // may flash on screen while that check is in flight, and a server that
 // can't answer falls through to the form rather than blocking it.
 
-import { act, cleanup, screen } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { errorText } from "../lib/apiErrorMessage";
 import type { ActiveImportRun } from "../lib/importRun";
+import { keys } from "../lib/queryKeys";
 import type { MediaToolName, StagingSummary } from "../lib/tauri";
 import { activeImportRun } from "../test/apiShapes";
 import { deferred } from "../test/deferred";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { mockedAuth, renderWithProviders } from "../test/providers";
+import { mockedAuth, renderWithProviders, testQueryClient } from "../test/providers";
+import { freshEntries, seedEntries } from "../test/staleEntries";
 import { storedForm } from "../test/storedForm";
 import { MIB } from "../test/units";
 import { setupUser } from "../test/user";
@@ -575,6 +578,35 @@ describe("ImportScreen entering Import", () => {
     const [form, resume] = startImportMock.mock.calls[0] as [unknown, unknown];
     expect(form).toMatchObject({ source: "imessage-ios", backupPath: "/backups/iphone.tar" });
     expect(resume).toBeUndefined();
+  });
+
+  it("marks the account's screens stale once a restart has discarded the old run", async () => {
+    // The old run is gone from the server, so the Import list and the
+    // sidebar's badge must ask again rather than keep showing it.
+    const shown = [keys.imports.all];
+    const client = testQueryClient();
+    seedEntries(client, mockedAuth.accountId, shown);
+    const user = setupUser();
+    getActiveImportRunMock.mockResolvedValue(
+      activeImportRun({
+        stage: "parse",
+        form: storedForm(),
+      }),
+    );
+    render(
+      <QueryClientProvider client={client}>
+        <ImportScreen />
+      </QueryClientProvider>,
+    );
+
+    await settle();
+    expect(screen.getByTestId("resume-kind")).toHaveTextContent("restart");
+    expect(freshEntries(client, mockedAuth.accountId, shown)).toEqual(shown);
+    await user.click(screen.getByText("resume-action"));
+    await settle();
+
+    expect(startImportMock).toHaveBeenCalledTimes(1);
+    expect(freshEntries(client, mockedAuth.accountId, shown)).toEqual([]);
   });
 
   it("resumes an interrupted copy in the directory it was already writing into", async () => {

@@ -26,6 +26,23 @@ async fn import_slots_belong_to_one_server() {
     assert_eq!(status, axum::http::StatusCode::OK, "{text}");
 }
 
+/// The Upload pauses for a server that is stopping or busy, rather than
+/// failing the batch, by reading these types' slugs from
+/// `message_crate_api_types::problem_slug`. A type renamed here alone would
+/// turn every stop into "could not be reached" with no other test failing.
+#[test]
+fn the_upload_reads_the_stopping_and_busy_types_by_their_slugs() {
+    use message_crate_api_types::problem_slug;
+    assert_eq!(
+        crate::problem::ProblemType::ServerStopping.slug(),
+        problem_slug::SERVER_STOPPING
+    );
+    assert_eq!(
+        crate::problem::ProblemType::DatabaseBusy.slug(),
+        problem_slug::DATABASE_BUSY
+    );
+}
+
 /// A batch still waiting for an import slot when the server is told to stop
 /// is refused with `server-stopping`, which the Upload retries, and
 /// stores nothing. Before #2203 nothing closed the slots, so the batch took

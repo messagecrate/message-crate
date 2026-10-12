@@ -3,7 +3,7 @@ import { Label, Radio, RadioGroup } from "react-aria-components";
 import Button from "../../components/Button";
 import { ApiError } from "../../lib/api";
 import { errorLine } from "../../lib/apiErrorMessage";
-import { useRouteCache } from "../../lib/routeQuery";
+import { useRouteMutation } from "../../lib/routeQuery";
 import { type AddressBookLoadMode, loadAddressBook } from "../../lib/serverApi";
 import type { components } from "../../lib/serverApi.types";
 import { focusOutlineClass } from "../../lib/uiStyles";
@@ -62,7 +62,12 @@ function refusalLines(err: unknown): string[] {
  * is refused whole, with each row and its reason listed.
  */
 export function AddressBookSection() {
-  const cache = useRouteCache();
+  // A load renames contacts and moves identities, so the account's screens
+  // fetch again once it settles.
+  const loadBook = useRouteMutation({
+    mutationFn: ({ content, mode }: { content: string; mode: AddressBookLoadMode }) =>
+      loadAddressBook(content, mode),
+  });
   const fileRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<AddressBookLoadMode>("append");
   const [busy, setBusy] = useState(false);
@@ -83,9 +88,7 @@ export function AddressBookSection() {
         return;
       }
       const content = await file.text();
-      setCounts(await loadAddressBook(content, mode));
-      // A load renames contacts and moves identities.
-      cache.invalidateAccount();
+      setCounts(await loadBook.mutateAsync({ content, mode }));
     } catch (err) {
       setErrors(refusalLines(err));
     } finally {
