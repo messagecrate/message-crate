@@ -45,10 +45,10 @@ pub const PNG_1X1_RGB: &[u8] = &[
 pub const PNG_1X1_RGB_BASE64: &str =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
 
-/// The error an ffmpeg run fails with when it is killed after `limit`
-/// ([`crate::RanTooLong`]), for a test of what a caller makes of it.
-pub fn ffmpeg_ran_too_long(limit: std::time::Duration) -> anyhow::Error {
-    crate::RanTooLong::ffmpeg(limit).into()
+/// The error an ffmpeg run fails with when it is killed for `why`
+/// ([`crate::Killed`]), for a test of what a caller makes of it.
+pub fn ffmpeg_killed(why: crate::KillReason) -> anyhow::Error {
+    crate::Killed::ffmpeg(why).into()
 }
 
 /// The lock over the process-wide tool location.

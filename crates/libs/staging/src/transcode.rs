@@ -256,7 +256,7 @@ pub fn transcode_staged(
                         is_heal,
                     };
                     let hevc_failure =
-                        apply_transcode(&target, &mut doc, options, issues, &mut report)?;
+                        apply_transcode(&target, &mut doc, options, cancel, issues, &mut report)?;
                     if let Some(line) = hevc_fallback.record(hevc_failure) {
                         log.warn(line);
                     }
@@ -664,10 +664,13 @@ struct TranscodeTarget<'a> {
 /// itself.
 ///
 /// Returns why HEVC failed when the video was compressed as H.264 instead.
+/// Setting `cancel` kills the ffmpeg that runs, and the stage ends as
+/// cancelled rather than recording the file as one that failed.
 fn apply_transcode(
     target: &TranscodeTarget<'_>,
     doc: &mut ConversationDocument,
     options: &TranscodeOptions,
+    cancel: &CancelFlag,
     issues: &IssueSink,
     report: &mut TranscodeReport,
 ) -> Result<Option<String>> {
@@ -694,8 +697,16 @@ fn apply_transcode(
         recorded_rel.to_string()
     };
 
-    match media::transcode_file(src, &marker, options.mode, &options.compress) {
+    match media::transcode_file(
+        src,
+        &marker,
+        options.mode,
+        &options.compress,
+        Some(cancel.as_ref()),
+    ) {
         Err(err) => {
+            // A conversion the cancel killed says nothing about the file.
+            check_cancel(cancel)?;
             issues.emit(media_issue(
                 jsonl,
                 doc,

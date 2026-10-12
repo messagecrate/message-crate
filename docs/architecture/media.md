@@ -205,25 +205,40 @@ it is an hour old, the grace that keeps another pass's file with the same
 bytes.
 
 No single Asset and no single error stops the pass (#2059, #2072, #2091).
-Every ffmpeg run has a time limit, and so does every ffprobe run, in the
-pass and in the desktop app's Media Stage alike.
-ffprobe gets 2 minutes.
-An ffmpeg run that reads one frame, a Thumbnail or the Preview of an image, gets 10 minutes.
-One that reads the whole file, the Preview of a video or of audio, gets 20 times as long as ffprobe says the file plays, at least 10 minutes and at most 6 hours, rounded up to whole minutes.
-When ffprobe reads no length, as for a WebM a browser recorded, it gets an hour.
-The Media Stage's compression still tries H.264 after a HEVC run that ran out of time, because libx265 is several times slower than libx264 and a slow computer can finish one and not the other.
-A program still running at its limit is killed and waited for.
-The conversion then fails like any other, and the reason recorded on the Asset's rows says that ffmpeg did not finish within the limit.
+Every ffmpeg and ffprobe run is stopped when it hangs, in the pass and in the desktop app's Media Stage alike (#2898).
+A short step gets a fixed 15 seconds: ffprobe reading a file's details, an ffmpeg run that reads one frame (a Thumbnail, or the Preview of an image), and the `-version` run that finds ffmpeg and ffprobe.
+A conversion that reads the whole file has no time limit: the Preview of a video or of audio, and every video or audio conversion of the Media Stage.
+It is stopped when it makes no progress instead.
+ffmpeg reports its position in the file (`out_time`) on its `-progress` stream, and a position that has not moved for the no-progress wait stops the run.
+The wait is 2 minutes.
+A server started with a config file takes it from `[server] transcode_stall_secs` (`docs/src/content/docs/docs/developer/reference/config-and-accounts.md`); a server started with `--data-dir`, and the desktop app's own conversions, use the 2 minutes.
+A conversion whose position passes twice the length ffprobe reads for the file is stopped too, as looping on a damaged file.
+A program stopped is killed and waited for.
+The conversion then fails like any other, and the reason recorded on the Asset's rows says why it was stopped: no progress for the wait, before or after converting part of the file, past twice the file's length, or a short step over its 15 seconds.
+A `-version` run stopped at its 15 seconds counts as a program that does not run, so the lookup passes over it.
+
+The Media Stage compresses a video with HEVC first, and tries H.264 after a HEVC run that failed in a way H.264 may not:
+
+| How the HEVC run ended | Try H.264 next? |
+|---|---|
+| ffmpeg exited with an error, as when the encoder is missing or refused the file | Yes |
+| No progress, and the position never moved from the start | Yes: most likely the HEVC encoder hung, as a hardware encoder can |
+| No progress after the position moved | No: most likely the file is damaged at that point, and H.264 stalls there too |
+| Past twice the file's length | No: a damaged file loops in H.264 too |
+| Stopped by the person or the server | No: nothing is wrong, and the run ends as stopped, not as a failure |
+
 Every ffmpeg and ffprobe run reads nothing from standard input and opens only local files and pipes (`-nostdin`, `-protocol_whitelist file,pipe`).
 An Asset whose work panics fails the same way: it leaves the queue, the panic is logged at `error`, and the pass goes on to the next Asset.
 A pass that fails or panics outside one Asset's work, such as on a database busy past its timeout, is logged and runs again after a wait, or at the next wake if that comes sooner.
 The wait is 5 seconds, doubles with each failure in a row up to 5 minutes, and starts at 5 seconds again after a pass that ends cleanly.
 
-Why a time limit: the pass works on one Asset at a time for every account, so an ffmpeg that never ended held it until the server stopped.
+Why stop a run that hangs: the pass works on one Asset at a time for every account, so an ffmpeg that never ended held it until the server stopped.
 The Asset stayed queued, so at the next start the pass took it again and hung again.
-Why the limit follows the length: converting a two-hour video legitimately takes far longer than a photo, and a fixed limit long enough for it would leave a hung photo holding the pass for hours.
-Why a ceiling of 6 hours: a damaged or crafted file can claim any length, every Asset queued behind it waits that long, and a work directory a day old counts as left behind.
-Why an hour for an unknown length: such a file can be long, and a file that hangs ffmpeg often says nothing about its length either.
+Why watch progress rather than give a conversion time by its length: converting a two-hour video on a slow computer, such as a small NAS converting iPhone HEVC video, can take many times the video's length, and any limit by length cut such a conversion off.
+A hung 5-second clip, meanwhile, waited out the shortest limit, 10 minutes.
+Why the position and not the size of what ffmpeg writes: a hung ffmpeg can keep writing without moving forward.
+Why twice the length: a damaged or crafted file can make ffmpeg go round the same part for ever while the position still moves, and no working conversion goes past the end of its file.
+Why 15 seconds for a short step: each takes well under a second on a working file, and a fixed limit is all a step that does not read the whole file needs.
 Why only local files: the files come from phone backups, and a playlist or a container inside one can name a network address that ffmpeg would otherwise open.
 Why run again on a timer rather than wait for an Import Run: only the end of an Import Run woke the pass, so on a server imported into once a busy database left the queue untouched until a restart.
 

@@ -78,9 +78,15 @@ fn transform(
         Kind::Audio => ("aud", "mp3"),
     };
     let out = work_dir.join(format!("{tag}-{}.{target}", stem_token(source_path)));
-    let outcome =
-        media::transcode_file_as(source_path, kind, &out, mode, &server_compress_options())
-            .with_context(|| format!("convert {}", source_path.display()))?;
+    let outcome = media::transcode_file_as(
+        source_path,
+        kind,
+        &out,
+        mode,
+        &server_compress_options(),
+        None,
+    )
+    .with_context(|| format!("convert {}", source_path.display()))?;
     Ok(Some(match outcome {
         TranscodeOutcome::Produced { hevc_failure } => ResolvedMedia {
             path: out,

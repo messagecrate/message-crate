@@ -48,6 +48,20 @@ Every other command (`import`, `imports discard`, `dedupe-cross-source`, `proces
 
 A Message Crate database stamped with another Schema Fingerprint is still rebuilt empty on open, as after any schema change.
 
+### Video and audio conversions
+
+`[server]` also accepts one optional conversion setting:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `transcode_stall_secs` | `120` (2 minutes) | How many seconds a video or audio conversion may go without moving forward in the file before ffmpeg is stopped. Must be greater than 0; a file that sets 0 is refused with an error naming the key. |
+
+A conversion that keeps moving runs as long as it needs, so a long video on a slow computer is never cut off for its length.
+One that stops moving for this many seconds is stopped, and so is one that runs past twice the file's length, as looping on a damaged file.
+Reading a file's details, reading the one frame of a Thumbnail or of an image's Preview, and the check that finds ffmpeg have a fixed limit of 15 seconds that no key changes, because each takes well under a second on a working file.
+`serve`, `process-assets` and `import` read the key; a server started with `--data-dir` and the desktop app's own conversions use the default.
+Why the rules: `docs/architecture/media.md`.
+
 ### Server asset limits
 
 `[server]` also accepts one optional upload setting:

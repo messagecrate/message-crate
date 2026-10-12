@@ -126,13 +126,21 @@ impl ConfigFile {
                 paths.assets_dir
             );
         }
-        Ok(Config {
-            paths,
-            server: self
-                .server
-                .map(|section| known_keys("server", section))
-                .transpose()?,
-        })
+        let server = self
+            .server
+            .map(|section| known_keys("server", section))
+            .transpose()?;
+        if server
+            .as_ref()
+            .is_some_and(|server| server.transcode_stall_secs == 0)
+        {
+            bail!(
+                "[server] transcode_stall_secs = 0 is not a wait. It is how many seconds a \
+                 video or audio conversion may go without progress before it is stopped, and \
+                 must be greater than 0"
+            );
+        }
+        Ok(Config { paths, server })
     }
 }
 
@@ -172,6 +180,10 @@ pub struct ServerConfig {
     /// on `PATH` or makes no Previews or Thumbnails (#1053).
     #[serde(skip)]
     pub tools_dir: Option<PathBuf>,
+    /// How many seconds a video or audio conversion may go without moving
+    /// forward before ffmpeg is stopped (default 120). Greater than 0.
+    #[serde(default = "default_transcode_stall_secs")]
+    pub transcode_stall_secs: u64,
 }
 
 impl Default for ServerConfig {
@@ -184,8 +196,23 @@ impl Default for ServerConfig {
             openapi_ui: default_openapi_ui(),
             static_dir: default_static_dir(),
             tools_dir: None,
+            transcode_stall_secs: default_transcode_stall_secs(),
         }
     }
+}
+
+impl ServerConfig {
+    /// How long a conversion may go without progress before ffmpeg is
+    /// stopped (`transcode_stall_secs`).
+    #[must_use]
+    pub fn transcode_stall_wait(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.transcode_stall_secs)
+    }
+}
+
+/// serde default for `[server] transcode_stall_secs`.
+fn default_transcode_stall_secs() -> u64 {
+    media::DEFAULT_STALL_WAIT.as_secs()
 }
 
 /// serde default for `[server] static_dir`.
@@ -436,6 +463,18 @@ impl Config {
             }
         }
         Ok(())
+    }
+
+    /// How long a conversion may go without progress before ffmpeg is
+    /// stopped: `[server] transcode_stall_secs`, or its default when the
+    /// file has no `[server]` section.
+    #[must_use]
+    pub fn transcode_stall_wait(&self) -> std::time::Duration {
+        self.server
+            .as_ref()
+            .map_or(media::DEFAULT_STALL_WAIT, |server| {
+                server.transcode_stall_wait()
+            })
     }
 
     /// Server settings for `serve`. Fails if `[server]` is missing.

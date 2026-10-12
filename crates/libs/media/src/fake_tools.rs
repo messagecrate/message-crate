@@ -13,8 +13,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Result, anyhow, bail};
 
-use crate::MediaProbe;
 use crate::tools::{MediaTools, Reads, ffmpeg_command_line};
+use crate::{KillReason, Killed, MediaProbe};
 
 /// What ffprobe reports about a small, low-bitrate 320x240 video in
 /// `codec` at `fps` frames per second.
@@ -39,13 +39,13 @@ pub(crate) struct FakeTools {
     /// A run whose arguments hold any of these fails, after writing its
     /// output, as an ffmpeg that fails part way leaves a partial file.
     failing: Vec<String>,
-    /// A run whose arguments hold any of these runs out of time, after
-    /// writing its output, as an ffmpeg killed at its time limit does.
-    too_long: Vec<String>,
+    /// A run whose arguments hold the first of a pair is killed for the
+    /// second, after writing its output, as an ffmpeg killed part way is.
+    killing: Vec<(String, KillReason)>,
     /// The arguments of every ffmpeg run, in order.
     runs: RefCell<Vec<Vec<String>>>,
-    /// What every ffmpeg run read, in order: the file whose length sets its
-    /// time limit, or `None` for one frame.
+    /// What every ffmpeg run read, in order: the file it read whole, or
+    /// `None` for one frame.
     reads: RefCell<Vec<Option<PathBuf>>>,
 }
 
@@ -58,7 +58,7 @@ impl FakeTools {
             probe: None,
             output: b"fake ffmpeg output".to_vec(),
             failing: Vec::new(),
-            too_long: Vec::new(),
+            killing: Vec::new(),
             runs: RefCell::new(Vec::new()),
             reads: RefCell::new(Vec::new()),
         }
@@ -90,9 +90,9 @@ impl FakeTools {
         self
     }
 
-    /// A run whose arguments hold `arg` runs out of time.
-    pub(crate) fn running_too_long_on(mut self, arg: &str) -> Self {
-        self.too_long.push(arg.to_string());
+    /// A run whose arguments hold `arg` is killed for `why`.
+    pub(crate) fn killed_on(mut self, arg: &str, why: KillReason) -> Self {
+        self.killing.push((arg.to_string(), why));
         self
     }
 
@@ -101,8 +101,8 @@ impl FakeTools {
         self.runs.borrow().clone()
     }
 
-    /// What every ffmpeg run so far read, in order: the file whose length
-    /// set its time limit, or `None` for a run that reads one frame.
+    /// What every ffmpeg run so far read, in order: the file it read whole,
+    /// or `None` for a run that reads one frame.
     pub(crate) fn reads(&self) -> Vec<Option<PathBuf>> {
         self.reads.borrow().clone()
     }
@@ -139,15 +139,19 @@ impl MediaTools for FakeTools {
     ) -> Result<()> {
         self.require()?;
         if stop.is_some_and(|stop| stop.load(Ordering::Relaxed)) {
-            bail!("stopped before ffmpeg started");
+            return Err(Killed::ffmpeg(KillReason::StoppedBeforeStart).into());
         }
         self.runs.borrow_mut().push(ffmpeg_command_line(args, dest));
         self.reads
             .borrow_mut()
             .push(reads.source().map(Path::to_path_buf));
         std::fs::write(dest, &self.output)?;
-        if args.iter().any(|arg| self.too_long.contains(arg)) {
-            return Err(crate::RanTooLong::ffmpeg(crate::tools::SHORTEST_FFMPEG_TIME_LIMIT).into());
+        if let Some((_, why)) = self
+            .killing
+            .iter()
+            .find(|(killed_on, _)| args.contains(killed_on))
+        {
+            return Err(Killed::ffmpeg(*why).into());
         }
         if args.iter().any(|arg| self.failing.contains(arg)) {
             bail!("ffmpeg failed (fake) on {}", args.join(" "));

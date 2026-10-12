@@ -1028,6 +1028,25 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-12: **A hung video conversion is given up on within about 2
+  minutes, and a slow computer is no longer cut off on long videos.** A
+  conversion was stopped only after many times the video's length, so a
+  hung 5-second clip held up Thumbnails and Previews for 10 minutes, while
+  a long video on a slow computer, such as a small NAS converting iPhone
+  video, could still be cut off before it finished. A conversion now runs as
+  long as it keeps moving through the file. It is stopped once it hasn't
+  moved for 2 minutes, or once it goes past twice the file's length, as a
+  damaged file does when it loops. A server's config file can change the
+  wait with `transcode_stall_secs`. Reading a file's details, making a
+  Thumbnail and the check that finds ffmpeg are stopped after 15 seconds,
+  and an ffmpeg or ffprobe that never answers that check is passed over
+  rather than holding every lookup. The reason an attachment gives says
+  which happened: no progress, past twice its length, or a step that took
+  too long. When an Import Run compresses a video, HEVC that fails, or
+  hangs before converting anything, still falls back to H.264. A video that
+  stalls partway or loops isn't tried again with H.264, and cancelling
+  stops the conversion at once as cancelled, not as a file that failed
+  (#2898, #2883).
 - 2026-10-11: **The server's log holds what it was missing.** A request
   that broke the server in an unexpected way closed the connection with no
   answer and left nothing in the log. It now gets the same "internal server

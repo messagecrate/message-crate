@@ -2,7 +2,7 @@
 //! Media Stage's compression, and the check whether a browser plays an MP4.
 //! [`probe_media`] is the one place that reads a file's shape, so all three
 //! judge a file the same way. [`played_for`] reads how long a file plays,
-//! for the time limit of the ffmpeg run that converts it.
+//! so the ffmpeg run that converts it is stopped when it runs past twice that.
 
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
