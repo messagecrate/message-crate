@@ -341,6 +341,20 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-11: **A screen that fails says why instead of going blank.** A
+  screen that broke while showing itself, or whose code didn't arrive, left
+  an empty page with no message. It now shows what went wrong and a Reload
+  button, and the navigation panel stays usable, so another screen is one
+  click away. A screen that didn't arrive because a new release of Message
+  Crate replaced the app under an open tab reloads the page once by itself.
+- 2026-10-11: **A server that doesn't answer is named.** When the server
+  could not be reached, screens showed the browser's own "Failed to fetch"
+  or "Load failed". They now say that the server didn't answer, and at which
+  address.
+- 2026-10-11: **A server failure shows its request id.** When the server
+  fails on its side, the message on screen now ends with the request's id,
+  which matches the line the server wrote to its log, so the cause can be
+  found there.
 - 2026-10-11: **Deleting an account names an Import Run's directory the
   desktop app may not read.** When a person deletes their own account in
   the desktop app, the app deletes the directories of the account's Import
