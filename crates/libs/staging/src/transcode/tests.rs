@@ -1376,3 +1376,110 @@ fn crash_recovery_reads_only_the_too_large_note_of_its_own_original() {
     assert_eq!(note("x-mv.jpg"), Some(2));
     assert_eq!(note("z-mv.mp4"), None);
 }
+
+/// A cancel while ffmpeg converts a file kills it and ends the Media stage
+/// as canceled: the file is not recorded as one that could not be
+/// converted, and no Import Error is sent for it (#2898).
+#[cfg(unix)]
+#[test]
+fn a_cancel_while_ffmpeg_runs_ends_the_stage_as_canceled_not_as_a_failed_file() {
+    use std::os::unix::fs::PermissionsExt;
+    // The mocks hang only on this test's own file, so another test that
+    // runs them while this one has the tools located fails at once rather
+    // than waiting out a limit.
+    let tools = tempfile::tempdir().unwrap();
+    for name in ["ffmpeg", "ffprobe"] {
+        let program = tools.path().join(name);
+        std::fs::write(
+            &program,
+            "#!/bin/sh\n[ \"$1\" = -version ] && exit 0\n\
+             case \"$*\" in *cancel-me.png*) ;; *) exit 1 ;; esac\n\
+             touch \"$(dirname \"$0\")/started\"\nexec sleep 600\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let _located =
+        media::testutil::locate_tools(std::ffi::OsString::new(), tools.path().to_path_buf());
+    let (dir, jsonl, original) = staged_one("cancel-me.png", PNG_1X1_RGB);
+    let (issues, rows) = collecting_sink();
+    let cancel = CancelFlag::default();
+    let canceler = {
+        let cancel = std::sync::Arc::clone(&cancel);
+        let started = tools.path().join("started");
+        std::thread::spawn(move || {
+            while !started.exists() {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            cancel.store(true, Ordering::Relaxed);
+        })
+    };
+
+    let err = transcode_staged(
+        dir.path(),
+        &options(MediaMode::Convert, u64::MAX),
+        &cancel,
+        &issues,
+        &LogSink::none(),
+        &mut |_| {},
+    )
+    .expect_err("a canceled Media stage fails");
+    canceler.join().unwrap();
+
+    assert_eq!(err.to_string(), "cancelled");
+    assert!(
+        rows.lock().unwrap().is_empty(),
+        "{:?}",
+        rows.lock().unwrap()
+    );
+    let doc = read_conversation_jsonl(&jsonl).unwrap();
+    assert_eq!(doc.messages[0].attachments[0].missing_reason, None);
+    assert!(original.exists(), "the original is kept");
+}
+
+/// The reason recorded on an attachment ffmpeg could not convert carries why
+/// ffmpeg failed or was stopped, not only which file it was working on, so
+/// a stalled or looping video says so (#2898). Of what ffmpeg wrote, only
+/// the last line is kept, so a damaged file's thousands of warnings do not
+/// ride along on the attachment.
+#[cfg(unix)]
+#[test]
+fn a_failed_conversion_records_why_ffmpeg_failed() {
+    use std::os::unix::fs::PermissionsExt;
+    // The mocks fail only on this test's own file, so another test that
+    // runs them while this one has the tools located is not misled.
+    let tools = tempfile::tempdir().unwrap();
+    for name in ["ffmpeg", "ffprobe"] {
+        let program = tools.path().join(name);
+        std::fs::write(
+            &program,
+            "#!/bin/sh\n[ \"$1\" = -version ] && exit 0\n\
+             case \"$*\" in *fail-me.png*) ;; *) exit 1 ;; esac\n\
+             echo 'warning for packet 1' >&2\n\
+             echo 'the encoder made no progress' >&2\nexit 1\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let _located =
+        media::testutil::locate_tools(std::ffi::OsString::new(), tools.path().to_path_buf());
+    let (dir, jsonl, _) = staged_one("fail-me.png", PNG_1X1_RGB);
+
+    let report = transcode_staged(
+        dir.path(),
+        &options(MediaMode::Convert, u64::MAX),
+        &CancelFlag::default(),
+        &IssueSink::none(),
+        &LogSink::none(),
+        &mut |_| {},
+    )
+    .unwrap();
+
+    assert_eq!(report.failed, 1);
+    let doc = read_conversation_jsonl(&jsonl).unwrap();
+    let reason = doc.messages[0].attachments[0]
+        .missing_reason
+        .clone()
+        .unwrap();
+    assert_eq!(reason, "convert_failed: the encoder made no progress");
+}

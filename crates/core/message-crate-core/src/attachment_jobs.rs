@@ -183,7 +183,7 @@ pub fn run_attachment_jobs(
         if cancel.load(Ordering::Relaxed) {
             return Err("cancelled".into());
         }
-        apply_convert_or_compress(jobs, attachments_dir, media, log)?;
+        apply_convert_or_compress(jobs, attachments_dir, media, log, cancel)?;
         on_progress(AttachmentProgress {
             done: total,
             total,
@@ -343,6 +343,7 @@ fn apply_convert_or_compress(
     attachments_dir: &Path,
     media: &MediaConfig,
     log: &LogSink,
+    cancel: &AtomicBool,
 ) -> Result<(), String> {
     let Some(output_dir) = attachments_dir.parent() else {
         return Err("attachments directory has no parent".into());
@@ -355,8 +356,16 @@ fn apply_convert_or_compress(
         media.mode,
         &media.compress,
         Some(&mut emit),
+        Some(cancel),
     )
-    .map_err(|e| format!("{e:#}"))?;
+    .map_err(|e| {
+        // A conversion the cancel killed ends the run as canceled.
+        if cancel.load(Ordering::Relaxed) {
+            "cancelled".to_string()
+        } else {
+            format!("{e:#}")
+        }
+    })?;
     if let Some(line) = report.hevc_fallback.line() {
         log.warn(line);
     }
