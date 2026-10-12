@@ -3,7 +3,7 @@
 //! JSON Lines means one JSON object per line. Message Crate is the HTTP server
 //! that stores imported messages.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -480,6 +480,7 @@ impl<'a> Export<'a> {
             place_other_paths(&self.cfg.out_dir, &fetched.assets, &fetched.other_paths)?;
             counts
         };
+        mark_unfetched(&mut fetched.by_conv, &assets.failed);
         let conversations = self.write_conversations(fetched.by_conv)?;
         self.finish_journal(
             out,
@@ -751,6 +752,36 @@ impl<'a> Export<'a> {
                     journal::EXPORT_JOURNAL_NAME
                 )),
             );
+        }
+    }
+}
+
+/// Mark each attachment whose Asset this run could not fetch `file_missing`,
+/// so the conversation file itself says the file is not there, and a later
+/// Import or Convert of the directory does not meet an unexplained missing
+/// file once the run's log is gone. The path and fingerprint stay, so a next
+/// Export into the same directory still knows what to fetch.
+fn mark_unfetched(
+    by_conv: &mut BTreeMap<String, (Message, Vec<message_ir::IrMessage>)>,
+    failed: &[AssetFailure],
+) {
+    if failed.is_empty() {
+        return;
+    }
+    let failed: HashSet<&str> = failed.iter().map(|f| f.sha256.as_str()).collect();
+    for att in by_conv
+        .values_mut()
+        .flat_map(|(_, messages)| messages.iter_mut())
+        .flat_map(|msg| msg.attachments.iter_mut())
+    {
+        // Lowercase, as `note_asset_refs` keys each Asset.
+        let unfetched = att
+            .digest_sha256
+            .as_deref()
+            .and_then(message_ir::trimmed)
+            .is_some_and(|sha| failed.contains(sha.to_ascii_lowercase().as_str()));
+        if unfetched {
+            att.missing_reason = Some("file_missing".to_string());
         }
     }
 }
