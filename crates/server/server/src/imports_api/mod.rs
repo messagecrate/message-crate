@@ -1421,15 +1421,18 @@ pub(crate) async fn create_import(
     } else if let Err(e) = validate_source_id(&body.source) {
         errors.push(e.to_string());
     }
-    let mut phone_country = None;
-    if let Some(code) = body.phone_country.as_deref() {
-        match phone::country(code) {
-            Some(country) => phone_country = Some(country),
-            None => errors.push(format!(
-                "phone_country {code:?} is not a country GET /v1/phone-countries lists"
-            )),
+    let phone_country = match body.phone_country.as_deref() {
+        None => None,
+        Some(code) => {
+            let country = phone::country(code);
+            if country.is_none() {
+                errors.push(format!(
+                    "phone_country {code:?} is not a country GET /v1/phone-countries lists"
+                ));
+            }
+            country
         }
-    }
+    };
     let tool = body
         .tool
         .as_deref()

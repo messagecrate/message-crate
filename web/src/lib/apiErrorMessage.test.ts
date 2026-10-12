@@ -39,11 +39,11 @@ describe("errorText", () => {
   });
 });
 
-/** A refusal from the search language, as `apiClient` rejects with it. */
-function searchRefusal(detail: string): ApiError {
+/** A `422` refusal of problem type `slug`, as `apiClient` rejects with it. */
+function refusal(slug: string, detail: string): ApiError {
   return new ApiError(422, detail, {
-    type: "https://messagecrate.app/docs/developer/reference/errors/search-query-invalid",
-    title: "Search query invalid",
+    type: `https://messagecrate.app/docs/developer/reference/errors/${slug}`,
+    title: "Refused",
     status: 422,
     detail,
   });
@@ -58,20 +58,18 @@ describe("searchErrorLine", () => {
 
   it("keeps a refusal that starts with a search word as the word is typed", () => {
     expect(
-      searchErrorLine(searchRefusal("from: is not a Contacts word; it works on Messages"), "F."),
+      searchErrorLine(
+        refusal("search-query-invalid", "from: is not a Contacts word; it works on Messages"),
+        "F.",
+      ),
     ).toBe("from: is not a Contacts word; it works on Messages");
-    expect(searchErrorLine(searchRefusal("first-message: needs a value"), "F.")).toBe(
-      "first-message: needs a value",
-    );
+    expect(
+      searchErrorLine(refusal("search-query-invalid", "first-message: needs a value"), "F."),
+    ).toBe("first-message: needs a value");
   });
 
   it("starts any other refusal that names a parameter first with a capital", () => {
-    const sort = new ApiError(422, "sort: unknown key 'size'", {
-      type: "https://messagecrate.app/docs/developer/reference/errors/validation-failed",
-      title: "Validation failed",
-      status: 422,
-      errors: ["sort: unknown key 'size'"],
-    });
+    const sort = refusal("validation-failed", "sort: unknown key 'size'");
     expect(searchErrorLine(sort, "F.")).toBe("Sort: unknown key 'size'");
     expect(searchErrorLine(new Error("from: is not a word"), "F.")).toBe("From: is not a word");
   });
