@@ -387,6 +387,14 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-12: **Every name that is too long is refused in the same words.**
+  A Contact Group, Message Tag or Saved Search name over 80 characters, an
+  API Token label over 120 and a username over 128 now get the message
+  every other length limit gives, such as "name: must be at most 80
+  characters", in place of wordings of their own. A blank name or label is
+  refused as "name required" or "label required". An API Token label is
+  counted in characters, so a label in a script that takes several bytes a
+  letter is no longer refused short of 120 (#2665).
 - 2026-10-12: **The Demo Account's refusals read like every other error.**
   When the Demo Account refuses something, such as setting its password or
   deleting itself, the message is now one short sentence that names what

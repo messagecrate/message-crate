@@ -17,7 +17,7 @@
 //! `docs/adr/0020-the-audit-trail-outlives-the-account.md`).
 //!
 //! A refused login as a username no account holds keeps the username,
-//! trimmed, only when `is_valid_username` accepts it
+//! trimmed, only when `require_valid_username` accepts it
 //! ([`record_refused_login`]), because a person whose browser fills the
 //! wrong field types their password there. Anything else is recorded with no
 //! username. A password that is also a valid username is still kept.
@@ -29,7 +29,7 @@ use sqlx::{Row, SqliteConnection};
 
 use message_crate_api_types::{ExportQueryList, ExportStatus};
 
-use crate::credentials::{is_valid_username, normalize_username};
+use crate::credentials::require_valid_username;
 use crate::db::account_profile;
 use crate::db::address_book::LoadMode;
 use crate::db::demo_account_build::DemoDataSize;
@@ -855,9 +855,10 @@ pub async fn record_session_end(
 
 /// Write the entry for a refused login. `account` is the account the
 /// username named, when it named one. Otherwise the entry belongs to no
-/// account and keeps the username, trimmed, only when `is_valid_username`
-/// accepts it; the module comment says why. It also writes a warning to the
-/// server's log, with the account's id, the reason and the app.
+/// account and keeps the username, trimmed, only when
+/// `require_valid_username` accepts it; the module comment says why. It also
+/// writes a warning to the server's log, with the account's id, the reason
+/// and the app.
 ///
 /// # Errors
 ///
@@ -880,8 +881,8 @@ pub async fn record_refused_login(
         app_build = app.map(|app| app.build.as_str()),
         "A login was refused"
     );
-    let typed = normalize_username(typed_username);
-    let typed = is_valid_username(&typed).then_some(typed.as_str());
+    let typed = require_valid_username(typed_username).ok();
+    let typed = typed.as_deref();
     let entry = NewEntry {
         action: AuditAction::LoginRefused,
         actor: AuditActor::Anonymous,

@@ -289,9 +289,10 @@ async fn an_import_leaves_a_hand_made_contact_group_with_its_name_alone() {
         format!("WHATSAPP IMPORT {day} 2"),
     ];
     for name in &hand_made_names {
-        let (group, _) = crate::db::named_membership::create_set(spec, &mut conn, account, name)
+        let group = crate::db::named_membership::create_set(spec, &mut conn, account, name)
             .await
-            .unwrap();
+            .unwrap()
+            .id;
         crate::db::named_membership::patch_members(spec, &mut conn, account, group, &[friend], &[])
             .await
             .unwrap();

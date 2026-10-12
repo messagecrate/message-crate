@@ -16,9 +16,18 @@ use anyhow::Result as AnyResult;
 use sqlx::{AssertSqlSafe, SqlSafeStr, SqlStr, SqliteConnection};
 
 use crate::db::begin_write;
+use crate::text_caps::{MAX_COLLECTION_NAME_CHARS, required_capped_text};
 
-/// Longest allowed name for either kind of set (characters).
-pub const MAX_NAME_LEN: usize = 80;
+/// One Contact Group or Message Tag: its id and name.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, sqlx::FromRow, utoipa::ToSchema)]
+pub struct NamedSet {
+    /// Id of the Contact Group or Message Tag, which its routes name in their
+    /// path.
+    pub id: i64,
+    /// The name as stored: trimmed, at most 80 characters, and unique among
+    /// the account's sets of this kind whatever its letter case.
+    pub name: String,
+}
 
 /// Create / rename / delete / membership failures for a named set.
 #[derive(Debug)]
@@ -79,8 +88,6 @@ pub struct MembershipSpec {
     pub reserved_label: &'static str,
     /// Member label used in error messages (`"conversation"` / `"contact"`).
     pub member_label: &'static str,
-    /// Longest allowed name (characters).
-    pub max_name_len: usize,
     /// Names that must not be created.
     pub reserved: &'static [&'static str],
     /// Reserved names with dedicated error messages (lowercase name, message).
@@ -103,7 +110,6 @@ pub fn tag_spec() -> &'static MembershipSpec {
         label: "tag",
         reserved_label: "Message Tag",
         member_label: "conversation",
-        max_name_len: MAX_NAME_LEN,
         reserved: &[
             "home",
             "contacts",
@@ -144,7 +150,6 @@ pub fn group_spec() -> &'static MembershipSpec {
         label: "group",
         reserved_label: "Contact Group",
         member_label: "contact",
-        max_name_len: MAX_NAME_LEN,
         reserved: &[
             "home",
             "contacts",
@@ -266,19 +271,12 @@ fn reserved_error(spec: &MembershipSpec, name: &str) -> String {
     format!("\"{}\" is a reserved {}", name.trim(), spec.reserved_label)
 }
 
-/// Trim and validate a set name against the spec's length, refused-character
-/// and reserved-name rules.
+/// Trim and validate a set name: not blank and within the cap every
+/// collection name shares, then the spec's refused-character and
+/// reserved-name rules.
 fn normalize_name(spec: &MembershipSpec, name: &str) -> Result<String, MembershipError> {
-    let trimmed = name.trim();
-    if trimmed.is_empty() {
-        return Err(MembershipError::BadRequest("name required".into()));
-    }
-    if trimmed.chars().count() > spec.max_name_len {
-        return Err(MembershipError::BadRequest(format!(
-            "name must be at most {} characters",
-            spec.max_name_len
-        )));
-    }
+    let trimmed = required_capped_text("name", name, MAX_COLLECTION_NAME_CHARS)
+        .map_err(|refusal| MembershipError::BadRequest(refusal.to_string()))?;
     if let Some((refused, reason)) = spec.refused_char
         && trimmed.contains(refused)
     {
@@ -424,23 +422,23 @@ fn sorted_ids(mut ids: Vec<i64>) -> Vec<i64> {
     ids
 }
 
-/// Sets for this account with their ids, A–Z, excluding reserved leftovers.
+/// Sets for this account, A–Z, excluding reserved leftovers.
 pub async fn list_sets(
     spec: &MembershipSpec,
     conn: &mut SqliteConnection,
     account_id: i64,
-) -> Result<Vec<(i64, String)>, MembershipError> {
+) -> Result<Vec<NamedSet>, MembershipError> {
     let sql = format!(
         "SELECT id, name FROM {table} WHERE account_id = $1 ORDER BY lower(name)",
         table = spec.table
     );
-    let rows = sqlx::query_as::<_, (i64, String)>(AssertSqlSafe(sql))
+    let rows = sqlx::query_as::<_, NamedSet>(AssertSqlSafe(sql))
         .bind(account_id)
         .fetch_all(&mut *conn)
         .await?;
     Ok(rows
         .into_iter()
-        .filter(|(_, name)| !is_reserved(spec, name))
+        .filter(|set| !is_reserved(spec, &set.name))
         .collect())
 }
 
@@ -450,12 +448,12 @@ pub async fn get_set(
     conn: &mut SqliteConnection,
     account_id: i64,
     id: i64,
-) -> Result<(i64, String), MembershipError> {
+) -> Result<NamedSet, MembershipError> {
     let sql = format!(
         "SELECT id, name FROM {table} WHERE id = $1 AND account_id = $2",
         table = spec.table
     );
-    let row = sqlx::query_as::<_, (i64, String)>(AssertSqlSafe(sql))
+    let set = sqlx::query_as::<_, NamedSet>(AssertSqlSafe(sql))
         .bind(id)
         .bind(account_id)
         .fetch_optional(&mut *conn)
@@ -464,27 +462,27 @@ pub async fn get_set(
     // A reserved-name row can only be a leftover (create_set and rename_set
     // both refuse reserved names): list_sets never shows it, so its id must
     // not work either.
-    if is_reserved(spec, &row.1) {
+    if is_reserved(spec, &set.name) {
         return Err(MembershipError::SetNotFound(spec.label));
     }
-    Ok(row)
+    Ok(set)
 }
 
-/// Create a set and answer its id and trimmed name. Fails when the name is
-/// taken (ignoring case) or reserved.
+/// Create a set and answer it, under its trimmed name. Fails when the name
+/// is taken (ignoring case) or reserved.
 pub async fn create_set(
     spec: &MembershipSpec,
     conn: &mut SqliteConnection,
     account_id: i64,
     name: &str,
-) -> Result<(i64, String), MembershipError> {
+) -> Result<NamedSet, MembershipError> {
     let name = normalize_name(spec, name)?;
     // One statement checks the name and inserts the row, so a set created
     // under the name meanwhile, in any letter case, makes this a conflict.
     match crate::db::free_name::insert_if_name_free(conn, spec.table, account_id, &name, &[])
         .await?
     {
-        Some(id) => Ok((id, name)),
+        Some(id) => Ok(NamedSet { id, name }),
         None => Err(MembershipError::Conflict(format!(
             "{} already exists",
             spec.label
@@ -492,22 +490,23 @@ pub async fn create_set(
     }
 }
 
-/// Rename a set by id. A case-only change of its own name is allowed; another
-/// set's name (ignoring case) is a conflict.
+/// Rename a set by id and answer it under its new name. A case-only change
+/// of its own name is allowed; another set's name (ignoring case) is a
+/// conflict.
 pub async fn rename_set(
     spec: &MembershipSpec,
     conn: &mut SqliteConnection,
     account_id: i64,
     id: i64,
     name: &str,
-) -> Result<String, MembershipError> {
+) -> Result<NamedSet, MembershipError> {
     let new_name = normalize_name(spec, name)?;
     // The checks and the update are one write transaction, so the name
     // cannot be taken, nor the set deleted, between them.
     let mut tx = begin_write(conn).await?;
-    let (_, old_name) = get_set(spec, &mut tx, account_id, id).await?;
-    if old_name == new_name {
-        return Ok(new_name);
+    let old = get_set(spec, &mut tx, account_id, id).await?;
+    if old.name == new_name {
+        return Ok(old);
     }
     if let Some(other) = find_id(spec, &mut tx, account_id, &new_name).await?
         && other != id
@@ -528,7 +527,7 @@ pub async fn rename_set(
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    Ok(new_name)
+    Ok(NamedSet { id, name: new_name })
 }
 
 /// Delete a set by id, and its memberships, in one transaction. The

@@ -13863,7 +13863,7 @@
           },
           "username": {
             "type": "string",
-            "description": "Login username for the owner."
+            "description": "Login username for the owner, which the server trims: 1 to 128\ncharacters, each a letter A to Z, a digit, `_`, `-` or `.`. Any other\nis refused with `422 Unprocessable Entity`."
           }
         }
       },
@@ -14320,7 +14320,7 @@
           },
           "username": {
             "type": "string",
-            "description": "Login username."
+            "description": "Login username, which the server trims: 1 to 128 characters, each a\nletter A to Z, a digit, `_`, `-` or `.`. Any other is refused with\n`422 Unprocessable Entity`."
           }
         }
       },
@@ -14374,7 +14374,7 @@
           },
           "label": {
             "type": "string",
-            "description": "User-chosen label shown in Settings."
+            "description": "User-chosen label shown in Settings, which the server trims. A label\nthat is blank or over 120 characters is refused with\n`422 Unprocessable Entity`."
           }
         },
         "additionalProperties": false
@@ -19571,29 +19571,41 @@
         }
       },
       "ServerSettings": {
-        "type": "object",
-        "description": "The server settings the owner controls, with the database's journal\nbeside them, which the owner reads and cannot change.",
-        "required": [
-          "public_registration",
-          "asset_max_bytes",
-          "journal"
-        ],
-        "properties": {
-          "asset_max_bytes": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The attachment size limit, in bytes: the largest asset the server\naccepts. 536870912 (512 MiB) until the owner changes it.",
-            "minimum": 0
+        "allOf": [
+          {
+            "type": "object",
+            "description": "The server settings the owner controls.",
+            "required": [
+              "public_registration",
+              "asset_max_bytes"
+            ],
+            "properties": {
+              "asset_max_bytes": {
+                "type": "integer",
+                "format": "int64",
+                "description": "The attachment size limit, in bytes: the largest asset the server\naccepts. 536870912 (512 MiB) until the owner changes it.",
+                "minimum": 0
+              },
+              "public_registration": {
+                "type": "boolean",
+                "description": "Anyone reaching the server may create their own account."
+              }
+            }
           },
-          "journal": {
-            "$ref": "#/components/schemas/DatabaseJournal",
-            "description": "The journal SQLite keeps the database with. Not a setting: the\nserver reports it here because only the owner may read it."
-          },
-          "public_registration": {
-            "type": "boolean",
-            "description": "Anyone reaching the server may create their own account."
+          {
+            "type": "object",
+            "required": [
+              "journal"
+            ],
+            "properties": {
+              "journal": {
+                "$ref": "#/components/schemas/DatabaseJournal",
+                "description": "The journal SQLite keeps the database with. Not a setting: the\nserver reports it here because only the owner may read it."
+              }
+            }
           }
-        }
+        ],
+        "description": "The server settings the owner controls, with the database's journal\nbeside them, which the owner reads and cannot change."
       },
       "ServerState": {
         "type": "string",
@@ -19937,7 +19949,7 @@
         "properties": {
           "label": {
             "type": "string",
-            "description": "Replacement label."
+            "description": "Replacement label, under the rules a new token's label follows."
           }
         }
       },

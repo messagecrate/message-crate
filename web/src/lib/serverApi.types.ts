@@ -2077,7 +2077,11 @@ export interface components {
         ClaimServerRequest: {
             /** @description Password for the owner. Must satisfy the server's password policy. */
             password: string;
-            /** @description Login username for the owner. */
+            /**
+             * @description Login username for the owner, which the server trims: 1 to 128
+             *     characters, each a letter A to Z, a digit, `_`, `-` or `.`. Any other
+             *     is refused with `422 Unprocessable Entity`.
+             */
             username: string;
         };
         /**
@@ -2385,7 +2389,11 @@ export interface components {
              *     refused with `422 Unprocessable Entity`.
              */
             preferred_name?: string | null;
-            /** @description Login username. */
+            /**
+             * @description Login username, which the server trims: 1 to 128 characters, each a
+             *     letter A to Z, a digit, `_`, `-` or `.`. Any other is refused with
+             *     `422 Unprocessable Entity`.
+             */
             username: string;
         };
         /**
@@ -2414,7 +2422,11 @@ export interface components {
              * @description Days until expiry. Omit for the default (365 days). Pass `0` for no expiry.
              */
             expires_in_days?: number | null;
-            /** @description User-chosen label shown in Settings. */
+            /**
+             * @description User-chosen label shown in Settings, which the server trims. A label
+             *     that is blank or over 120 characters is refused with
+             *     `422 Unprocessable Entity`.
+             */
             label: string;
         };
         /** @description The created token, including its plaintext secret (returned once). */
@@ -5514,13 +5526,14 @@ export interface components {
              *     accepts. 536870912 (512 MiB) until the owner changes it.
              */
             asset_max_bytes: number;
+            /** @description Anyone reaching the server may create their own account. */
+            public_registration: boolean;
+        } & {
             /**
              * @description The journal SQLite keeps the database with. Not a setting: the
              *     server reports it here because only the owner may read it.
              */
             journal: components["schemas"]["DatabaseJournal"];
-            /** @description Anyone reaching the server may create their own account. */
-            public_registration: boolean;
         };
         /**
          * @description What state a Message Crate is in, from outside.
@@ -5720,7 +5733,7 @@ export interface components {
         };
         /** @description Body for renaming a token. */
         UpdateApiTokenRequest: {
-            /** @description Replacement label. */
+            /** @description Replacement label, under the rules a new token's label follows. */
             label: string;
         };
         /** @description The previous and new addresses for a link change. */
