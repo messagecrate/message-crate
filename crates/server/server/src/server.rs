@@ -561,10 +561,12 @@ impl<T: Serialize> IntoResponse for Created<T> {
 ///
 /// A variant names what went wrong, never a status: the status, the `type`
 /// URL and the title come from the type's declaration in [`crate::problem`],
-/// so no call site picks a status by hand. The `String` a variant carries is
-/// the `detail`, one sentence written for the person reading it; a
-/// `500 Internal Server Error` carries the whole error chain for the log and
-/// shows the client a fixed sentence.
+/// so no call site picks a status by hand. That declaration also names the
+/// variants that answer the type, and generates [`Self::problem_type`] from
+/// them, so a new variant fails to compile until a type names it. The
+/// `String` a variant carries is the `detail`, one sentence written for the
+/// person reading it. A `500 Internal Server Error` carries the whole error
+/// chain for the log and shows the client a fixed sentence.
 #[derive(Debug)]
 pub enum ApiError {
     /// `422` — fields that parsed and then broke a rule, every one of them.
@@ -749,43 +751,6 @@ impl ApiError {
             unreachable!("{self:?} has fields of its own and needs its own arm");
         };
         sentence
-    }
-
-    /// The registered type, or `None` for an internal error.
-    #[must_use]
-    pub fn problem_type(&self) -> Option<ProblemType> {
-        Some(match self {
-            Self::ValidationFailed(_) | Self::InvalidImportLines { .. } => {
-                ProblemType::ValidationFailed
-            }
-            Self::MalformedBody(_) | Self::MalformedImportLine { .. } => ProblemType::MalformedBody,
-            Self::UnsupportedMediaType(_) => ProblemType::UnsupportedMediaType,
-            Self::PayloadTooLarge => ProblemType::PayloadTooLarge,
-            Self::InvalidCredentials(_) => ProblemType::InvalidCredentials,
-            Self::AuthenticationRequired(_) | Self::TokenRefused(_) => {
-                ProblemType::AuthenticationRequired
-            }
-            Self::UsernameTaken(_) => ProblemType::UsernameTaken,
-            Self::NameTaken(_) => ProblemType::NameTaken,
-            Self::DemoAccountProtected(_) => ProblemType::DemoAccountProtected,
-            Self::NotTheOwner(_) => ProblemType::NotTheOwner,
-            Self::RegistrationClosed(_) => ProblemType::RegistrationClosed,
-            Self::InsufficientScope(_) => ProblemType::InsufficientScope,
-            Self::AccountDisabled(_) => ProblemType::AccountDisabled,
-            Self::SearchQueryInvalid { .. } => ProblemType::SearchQueryInvalid,
-            Self::StateConflict(_) => ProblemType::StateConflict,
-            Self::IdentityExists { .. } => ProblemType::IdentityExists,
-            Self::AssetUploadInvalid(_) => ProblemType::AssetUploadInvalid,
-            Self::NotFound(_) => ProblemType::NotFound,
-            Self::MethodNotAllowed(_) => ProblemType::MethodNotAllowed,
-            Self::NotAcceptable(_) => ProblemType::NotAcceptable,
-            Self::MediaLinkInvalid(_) => ProblemType::MediaLinkInvalid,
-            Self::RangeNotSatisfiable { .. } => ProblemType::RangeNotSatisfiable,
-            Self::UploadStalled(_) => ProblemType::UploadStalled,
-            Self::ServerStopping(_) => ProblemType::ServerStopping,
-            Self::Internal(err) if is_database_busy(err) => ProblemType::DatabaseBusy,
-            Self::Internal(_) => return None,
-        })
     }
 
     /// The status this failure answers.
@@ -986,7 +951,7 @@ const SQLITE_BUSY: i32 = 5;
 /// (`PoolTimedOut`). Both pass once the import batch or the requests holding
 /// the database finish, so the request answers `database-busy` rather than
 /// `500 Internal Server Error` (#2084, #2124).
-fn is_database_busy(err: &anyhow::Error) -> bool {
+pub(crate) fn is_database_busy(err: &anyhow::Error) -> bool {
     err.chain().any(|cause| {
         cause
             .downcast_ref::<sqlx::Error>()
