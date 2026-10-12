@@ -9,6 +9,8 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import {
   screen,
+  // biome-ignore lint/plugin/noTimedWaitsInTests: canary for an imported waitForElementToBeRemoved
+  waitForElementToBeRemoved,
   // biome-ignore lint/plugin/noTimedWaitsInTests: canary for an imported waitFor, aliased
   waitFor as wf,
   within,
@@ -23,6 +25,12 @@ export async function everyTimedWait(element: HTMLElement): Promise<void> {
   await vi.waitUntil(() => element);
   // biome-ignore lint/plugin/noTimedWaitsInTests: canary for expect.poll
   await expect.poll(() => element).toBeTruthy();
+  // biome-ignore lint/plugin/noTimedWaitsInTests: canary for poll taken off expect
+  const { poll } = expect;
+  // biome-ignore lint/plugin/noTimedWaitsInTests: canary for a call to poll taken off expect
+  await poll(() => element).toBeTruthy();
+  // biome-ignore lint/plugin/noTimedWaitsInTests: canary for waitForElementToBeRemoved
+  await waitForElementToBeRemoved(element);
   // biome-ignore lint/plugin/noTimedWaitsInTests: canary for screen.findBy
   await screen.findByRole("button");
   // biome-ignore lint/plugin/noTimedWaitsInTests: canary for a typed findBy
@@ -48,6 +56,17 @@ export async function everyRealTimer(): Promise<void> {
   // biome-ignore lint/plugin/noTimedWaitsInTests: canary for setInterval
   const id = setInterval(() => {}, 1);
   clearInterval(id);
+  // biome-ignore lint/plugin/noTimedWaitsInTests: canary for globalThis.setInterval
+  clearInterval(globalThis.setInterval(() => {}, 1));
+  // biome-ignore lint/plugin/noTimedWaitsInTests: canary for setImmediate
+  await new Promise((resolve) => setImmediate(resolve));
+  // biome-ignore lint/plugin/noTimedWaitsInTests: canary for requestIdleCallback
+  await new Promise((resolve) => requestIdleCallback(resolve));
+  // biome-ignore lint/style/useNodejsImportProtocol: the canary needs the name without node:
+  // biome-ignore lint/plugin/noTimedWaitsInTests: canary for timers/promises with no node: prefix
+  await import("timers/promises");
+  // biome-ignore lint/plugin/noTimedWaitsInTests: canary for timers/promises in a template literal
+  await import(`node:timers/promises`);
   // biome-ignore lint/plugin/noTimedWaitsInTests: canary for requestAnimationFrame
   await new Promise((resolve) => requestAnimationFrame(resolve));
   await sleep(1);

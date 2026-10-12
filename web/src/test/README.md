@@ -30,8 +30,8 @@ busy machine it runs slower and passes the same way.
 `web/biome.json` runs on every test file in `web/src` and every helper in this
 directory. `biome ci` fails on `waitFor`, `vi.waitFor`, `vi.waitUntil`,
 `expect.poll`, `waitForElementToBeRemoved`, a `findBy…` or `findAllBy…` query,
-`setTimeout`, `setInterval`, `setImmediate`, `requestAnimationFrame`, and an
-import from `timers/promises`. It matches the name wherever it appears, so an
+`setTimeout`, `setInterval`, `setImmediate`, `requestAnimationFrame`,
+`requestIdleCallback`, and an import from `timers/promises`. It matches the name wherever it appears, so an
 import, an alias, a typed or optional call, and a timer passed on as a value
 fail too. Each error names the file, the line, and the section of this page
 that says what to write instead. `check-pr.sh` and CI's web job run it.
@@ -47,8 +47,12 @@ setTimeout(() => setValue(q), 0);
 ```
 
 A string such as `toFake: ["setTimeout"]` is not a name, so the check passes
-it. A query of Testing Library's own is caught by its full name, such as
-`findByRole`, so a helper of the test's such as `findByName` passes.
+it. Only Testing Library's own query names are caught (`findByRole`,
+`findAllByText`, and the rest), so a test's own helper whose name starts with
+`findBy` passes. The other way round, a name that starts no wait is caught
+too: `typeof setTimeout` in a type, a stub's `setTimeout` key, or any name
+`poll`. Such a name opts out with the same comment, or the test names its own
+binding something else.
 
 Biome reports a plugin that fails to run as an info, not an error, so a
 broken pattern or a Biome upgrade could switch the check off without failing

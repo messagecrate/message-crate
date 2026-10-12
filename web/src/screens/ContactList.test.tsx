@@ -40,13 +40,14 @@ vi.mock("../lib/serverApi", () => ({
 
 vi.mock("../lib/saveFile", () => ({ saveFile: vi.fn().mockResolvedValue(true) }));
 
-// A searched list's first page, such as a Contact Group's, holds PAGE_SIZE_FIRST
-// rows. Here it holds 15, so a test of the rows past the first page draws 20
-// rows rather than 120, and stays well inside Vitest's test timeout on a busy
-// machine (#2955). It must stay above the 10 rows from the end at which the
-// list asks for the next page (NEAR_END_THRESHOLD in InfiniteOffsetList.tsx),
-// because jsdom lays nothing out and every row reads as on screen, so a first
-// page of 10 or fewer loads the rest by itself.
+// A searched list's first page, such as a Contact Group's, holds 40 rows
+// (PAGE_SIZE_FIRST in lib/listPaging.ts). The mock below sets it to 15, so a
+// test of the rows past the first page draws 20 rows rather than 120, and
+// stays well inside Vitest's test timeout on a busy machine (#2955). It must
+// stay above the 10 rows from the end at which the list asks for the next
+// page (NEAR_END_THRESHOLD in InfiniteOffsetList.tsx), because jsdom lays
+// nothing out and every row reads as on screen, so a first page of 10 or
+// fewer loads the rest by itself.
 vi.mock("../lib/listPaging", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/listPaging")>()),
   PAGE_SIZE_FIRST: 15,
@@ -511,7 +512,8 @@ describe("ContactList", () => {
     }));
 
     beforeEach(() => {
-      // The server's paging: a group page's first page holds PAGE_SIZE_FIRST of them.
+      // The server's paging: a group page's first page holds PAGE_SIZE_FIRST of
+      // the PAGE_SIZE_FIRST + 5 in `everyone`.
       listContactsMock.mockImplementation(
         async ({ limit = PAGE_SIZE_FIRST, offset = 0 }) =>
           ({
