@@ -47,7 +47,7 @@ export function ThumbnailPicture({ name, thumbnail }: { name: string; thumbnail:
   }
   return (
     <span className="flex h-full w-[200px] flex-col bg-elevated px-3 text-center text-[0.75rem] text-muted">
-      <span className="flex min-h-0 flex-1 items-center justify-center overflow-hidden break-all">
+      <span className="flex min-h-0 flex-1 items-center-safe justify-center overflow-hidden break-all">
         {name}
       </span>
       {note ? (
