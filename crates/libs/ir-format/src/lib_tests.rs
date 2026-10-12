@@ -204,6 +204,56 @@ fn roundtrip_csv_sms_and_imessage() {
     }
 }
 
+/// A spreadsheet runs a cell that starts with `=`, `+`, `-`, `@`, a tab or
+/// a carriage return as a formula, and a message's sender writes its text.
+/// The CSV puts a `'` in front of every such cell, and reading the file back
+/// takes it off, so the messages come back exactly as they were.
+#[test]
+fn csv_quotes_every_cell_a_spreadsheet_would_run_and_reads_it_back() {
+    let mut doc = message_ir::testutil::sample_document("=1+1");
+    let template = doc.messages[0].clone();
+    for (n, text) in [
+        "+1 call me",
+        "-- signed",
+        "@Ada hi",
+        "\tindented",
+        "\rcr",
+        "'=kept",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut msg = template.clone();
+        msg.guid = format!("FORMULA-{n}");
+        msg.text = text.to_string();
+        doc.messages.push(msg);
+    }
+    doc.messages[0].sender_identity = Some("+15551234567".into());
+    doc.messages[0].sender_display_name = Some("=HYPERLINK(\"x\")".into());
+    doc.finalize_stats();
+
+    let tmp = tempfile::tempdir().unwrap();
+    let csv_path = write_conversation_csv(tmp.path(), &doc).unwrap();
+    let mut rdr = csv::Reader::from_path(&csv_path).unwrap();
+    let headers = rdr.headers().unwrap().clone();
+    let at = |name: &str| headers.iter().position(|c| c == name).unwrap();
+    let rows: Vec<csv::StringRecord> = rdr.records().map(Result::unwrap).collect();
+    assert_eq!(&rows[0][at("text")], "'=1+1");
+    assert_eq!(&rows[0][at("sender_identity")], "'+15551234567");
+    assert_eq!(&rows[0][at("sender_display_name")], "'=HYPERLINK(\"x\")");
+    for (row, msg) in rows.iter().zip(&doc.messages) {
+        assert_eq!(row[at("text")], format!("'{}", msg.text), "{}", msg.guid);
+    }
+
+    let back = read_conversation_csv(&csv_path).unwrap();
+    assert_eq!(back.messages[0].text, "=1+1");
+    assert_eq!(
+        back.messages[0].sender_identity.as_deref(),
+        Some("+15551234567")
+    );
+    assert_docs_equal_after_normalize(doc, back);
+}
+
 /// A `deletion` cell that names neither mark is refused rather than read as
 /// a message with no mark.
 #[test]

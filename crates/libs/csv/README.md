@@ -1,6 +1,6 @@
 # message-csv
 
-CSV helpers shared by converters: the attachment and participant JSON cells and CSV reading helpers.
+CSV helpers shared by converters: the attachment and participant JSON cells, CSV reading helpers, and the `'` that keeps a spreadsheet from running a cell as a formula (`written_cell`, `read_cell`).
 
 `message-ir-format` and several exporters use this crate.
 

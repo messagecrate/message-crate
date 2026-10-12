@@ -3,7 +3,7 @@
 use crate::CSV_HEADERS;
 use crate::normalize::{imessage_from_parts, source_from_parts};
 use anyhow::{Context, Result, bail};
-use message_csv::{AttachmentCell, ParticipantCell};
+use message_csv::{AttachmentCell, ParticipantCell, read_cell};
 use message_ir::{
     ConversationDocument, ConversationHeader, ConversationMeta, ConversationStats, EarlierVersion,
     ExportMeta, IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage,
@@ -210,13 +210,14 @@ fn validate_headers(headers: &[String]) -> Result<HashMap<&str, usize>> {
     Ok(cols)
 }
 
-/// The value of the named column in this row, if the column exists.
+/// The value of the named column in this row, if the column exists, with
+/// the `'` the writer put in front of a formula-like cell taken off.
 fn cell<'a>(
     cols: &HashMap<&str, usize>,
     row: &'a csv::StringRecord,
     name: &str,
 ) -> Option<&'a str> {
-    row.get(*cols.get(name)?)
+    row.get(*cols.get(name)?).map(read_cell)
 }
 
 /// Parse a JSON cell. The writer leaves the cell blank when there is no
