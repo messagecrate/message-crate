@@ -66,6 +66,10 @@ Opened from any other screen, or with no search running, it starts in **Everythi
 An Export Run hands over the messages that matched when it started.
 A message imported or trashed while the run is being read does not change what the run writes.
 
+An attachment that can't be fetched, such as one whose file is gone from the server, doesn't stop the export.
+Every conversation is still written, and the export's log names each attachment whose file is missing.
+A later JSON Lines export into the same directory fetches those attachments again.
+
 ## Formats
 
 | Format | What is written |

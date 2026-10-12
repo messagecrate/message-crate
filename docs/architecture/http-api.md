@@ -1055,6 +1055,14 @@ settings are stated once on creation, never per batch or per page, and
 `complete`, `discard` (imports) and `cancel` (exports) are the only ways out.
 There is no sessionless import and no unrecorded export.
 
+`complete` states the outcome in its body, as `status`: `completed`,
+`completed_with_issues` or `failed` for an Import Run, and `completed` or
+`failed` for an Export Run. An Export Run's `cancel` is for a run the person
+gave up. A run an error stopped is closed with `complete` as `failed`, never
+with `cancel`. Why: the Audit Trail and the export history show `cancelled` as
+the person's own choice, so a failed run recorded that way lies the same way
+a cancelled run marked completed would (#2069).
+
 A run that has finished answers `409 Conflict` to `complete`, `discard`,
 `cancel`, a batch, and a change of stage; its record is never rewritten. Its
 outcome is stated once, as `status`. Why: the finished record is the history

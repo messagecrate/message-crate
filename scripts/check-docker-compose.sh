@@ -244,7 +244,8 @@ import_media_export() {
     return 1
   fi
   local status
-  status="$(api POST "/v1/exports/${export_id}/complete" "${auth[@]}" | jq -r .status)" || return 1
+  status="$(api POST "/v1/exports/${export_id}/complete" "${auth[@]}" \
+    -H 'Content-Type: application/json' -d '{"status":"completed"}' | jq -r .status)" || return 1
   if [[ "${status}" != "completed" ]]; then
     echo "The Export Run ended ${status}, not completed" >&2
     return 1
