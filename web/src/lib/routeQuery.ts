@@ -75,22 +75,23 @@ function timedOut(error: unknown): boolean {
  * A database too busy to take the request (`database-busy`) says how many
  * seconds to wait, because the import holding the write lock will not let go
  * sooner, and a second try at once meets the same lock. Anything else waits
- * `libraryRetryDelay`.
+ * `tanstackDefaultRetryDelay`.
  */
 function retryDelay(failureCount: number, error: unknown): number {
   if (error instanceof ApiError && error.type === "database-busy" && error.retryAfter !== null) {
     return error.retryAfter * 1000;
   }
-  return libraryRetryDelay(failureCount);
+  return tanstackDefaultRetryDelay(failureCount);
 }
 
 /**
- * TanStack Query's own default wait before a retry, copied from its
- * `retryer.ts`, which does not export it: a second doubling each failure, at
- * most half a minute. A `retryDelay` replaces the default for every failure,
- * so the failures that are not `database-busy` keep the default through this.
+ * TanStack Query's own default wait before a retry. It is copied from the
+ * library's `retryer.ts`, which does not export it. The wait starts at one
+ * second and doubles with each failure, up to 30 seconds. A `retryDelay`
+ * replaces the default for every failure, so the failures that are not
+ * `database-busy` keep the default through this.
  */
-function libraryRetryDelay(failureCount: number): number {
+function tanstackDefaultRetryDelay(failureCount: number): number {
   return Math.min(1000 * 2 ** failureCount, 30_000);
 }
 
