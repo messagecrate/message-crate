@@ -58,12 +58,18 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// How many connections the pool opens at most. Up to two import batches
 /// (`MAX_CONCURRENT_IMPORTS`) hold one each for their whole run, and the
-/// Asset sweep after an Import Run holds one more, so eight leave five for
+/// sweep of unreferenced files after an Import Run
+/// (`asset_store::sweep_after_run`) holds one more, so eight leave five for
 /// every other request. Under write-ahead logging a reader never waits for a
 /// writer, so those five serve reads side by side. Each connection keeps a
-/// page cache of its own (`cache_size` in [`with_pragmas`]), which is why
-/// the count is not higher.
+/// page cache of its own of up to [`CACHE_KIB`], so the pool's caches can
+/// hold `MAX_CONNECTIONS * CACHE_KIB` in all; the two are set together.
 const MAX_CONNECTIONS: u32 = 8;
+
+/// The most page cache one connection keeps, in KiB (`PRAGMA cache_size`
+/// with a negative value). About 100 MB, so eight connections hold at most
+/// about 800 MB, what four held at 200 MB each before the pool grew (#2124).
+const CACHE_KIB: u32 = 100_000;
 
 /// How long a request waits for a free connection before sqlx gives up with
 /// `PoolTimedOut`. The request then answers `503 Service Unavailable`
@@ -73,11 +79,13 @@ const ACQUIRE_TIMEOUT: Duration = Duration::from_secs(10);
 /// The server's pragma set, applied to each new connection: `trusted_schema`
 /// OFF first ([`distrust_schema`]), then `busy_timeout` (overlapping auth and
 /// UI writes wait that long for the write lock), foreign keys on, synchronous
-/// NORMAL, `temp_store` MEMORY, `cache_size` -200000.
+/// NORMAL, `temp_store` MEMORY, `cache_size` -[`CACHE_KIB`].
 fn with_pragmas(pool: SqlitePoolOptions, busy_timeout: Duration) -> SqlitePoolOptions {
     let busy_timeout_sql = format!("PRAGMA busy_timeout = {}", busy_timeout.as_millis());
+    let cache_size_sql = format!("PRAGMA cache_size = -{CACHE_KIB}");
     pool.after_connect(move |conn, _meta| {
         let busy_timeout_sql = busy_timeout_sql.clone();
+        let cache_size_sql = cache_size_sql.clone();
         Box::pin(async move {
             distrust_schema(conn).await?;
             sqlx::query(&busy_timeout_sql).execute(&mut *conn).await?;
@@ -90,9 +98,7 @@ fn with_pragmas(pool: SqlitePoolOptions, busy_timeout: Duration) -> SqlitePoolOp
             sqlx::query("PRAGMA temp_store = MEMORY")
                 .execute(&mut *conn)
                 .await?;
-            sqlx::query("PRAGMA cache_size = -200000")
-                .execute(&mut *conn)
-                .await?;
+            sqlx::query(&cache_size_sql).execute(&mut *conn).await?;
             Ok(())
         })
     })
@@ -305,7 +311,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(busy_timeout, 15000, "busy_timeout");
-        // Two imports and the Asset sweep leave connections for every other
+        // Two imports and the sweep after an Import Run leave connections for every other
         // request, and a request gives up waiting for one well before a
         // browser or a proxy gives up on it (#2124).
         assert_eq!(pool.options().get_max_connections(), 8);
@@ -332,7 +338,7 @@ mod tests {
             .fetch_one(&pool)
             .await
             .unwrap();
-        assert_eq!(cache_size, -200000, "cache_size");
+        assert_eq!(cache_size, -100000, "cache_size");
         // A view, trigger, CHECK constraint or index expression in the file
         // may call only a function registered innocuous (#2249).
         let trusted_schema: i64 =

@@ -549,23 +549,26 @@ A request that reaches a busy database answers `database-busy`, with a
 the error's chain is searched for sqlx's `PoolTimedOut` or a SQLite
 `SQLITE_BUSY` (`is_database_busy` in `crates/server/server/src/server.rs`),
 so no handler has to map it. The refusal leaves one `WARN` line naming the
-type, and no `ERROR` line with the chain
+type and carrying the chain, and no `ERROR` line
 ([The server's log](server-log.md#a-refused-request-names-its-problem-type)).
-Both clients retry a `5xx`, so they retry it with no change of their own. The
-pool (`crates/server/server/src/db/engine.rs`) holds 8 connections: two
-import batches and the Asset sweep after an Import Run can each hold one for
-a whole run, and under write-ahead logging the rest serve reads side by side.
-A request waits 10 seconds for a connection, and a write waits SQLite's
-15-second busy timeout for the write lock. Why: with 4 connections, two
-imports and a sweep left one for every other request, and a request waited
-sqlx's default 30 seconds for it before answering `500 Internal Server Error`
-([#2124](https://github.com/messagecrate/message-crate/issues/2124)). Not
-more than 8, because each connection keeps a page cache of its own.
+The desktop app's HTTP client (`classify_retry` in `crates/libs/http`)
+retries a `5xx`, so it retries this with no change of its own. The pool
+(`crates/server/server/src/db/engine.rs`) holds 8 connections: two import
+batches and the sweep of unreferenced files after an Import Run
+(`asset_store::sweep_after_run`) can each hold one for a whole run, and
+under write-ahead logging the rest serve reads side by side. A request waits
+10 seconds for a connection, and a write waits SQLite's 15-second busy
+timeout for the write lock. Why: with 4 connections, two imports and a sweep
+left one for every other request, and a request waited sqlx's default 30
+seconds for it before answering `500 Internal Server Error`
+([#2124](https://github.com/messagecrate/message-crate/issues/2124)). Each
+connection's page cache is capped at about 100 MB, half what it was, so the
+8 hold no more memory in all than the 4 did.
 
 A server told to stop closes its import slots
 (`AppState::on_stop_signal` in `crates/server/server/src/server.rs`), so an
-import batch still waiting for a slot is refused with `server-stopping`, having read none of
-its body, and stores nothing. A batch that holds a slot but is still reading
+import batch still waiting for a slot is refused with `server-stopping`,
+having read none of its body, and stores nothing. A batch that holds a slot but is still reading
 its body is refused the same way once the body has arrived, before its import
 starts.
 The Upload retries it as it retries any `5xx`; if the server is not back in

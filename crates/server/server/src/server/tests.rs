@@ -1779,12 +1779,46 @@ fn a_pool_timeout_answers_database_busy_with_retry_after() {
         );
         assert_eq!(
             problem.detail.as_deref(),
-            Some("the database is busy; try again in 5 seconds")
+            Some("the database is busy, so try again in 5 seconds")
         );
         let response = error.into_response();
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(response.headers()[header::RETRY_AFTER], "5");
     }
+}
+
+/// A busy database leaves one `WARN` line, not an `ERROR`, and the line
+/// names the step that met the lock, so a lock that never clears can be
+/// traced (#2084).
+#[test]
+fn a_busy_database_leaves_a_warning_naming_the_step() {
+    use crate::logging::{LogFiles, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
+
+    let dir = TempDir::new().unwrap();
+    let log_dir = dir.path().join("logs");
+    let files = LogFiles::open(&log_dir, SERVER_LOG_LIMITS).unwrap();
+    let error =
+        ApiError::from(anyhow::Error::new(sqlx::Error::PoolTimedOut).context("read the account"));
+    tracing::subscriber::with_default(crate::logging::subscriber_for(files, "info"), || {
+        error.to_problem()
+    });
+    let lines = read_lines(
+        &log_dir,
+        &LogLinesQuery {
+            limit: 10,
+            ..LogLinesQuery::default()
+        },
+    )
+    .unwrap()
+    .0;
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(lines[0].level, LogLevel::Warn);
+    assert!(lines[0].text.contains("database-busy"), "{}", lines[0].text);
+    assert!(
+        lines[0].text.contains("read the account"),
+        "{}",
+        lines[0].text
+    );
 }
 
 /// A write that meets another connection's write lock until the busy
