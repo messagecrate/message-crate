@@ -663,6 +663,14 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-12: **SMS Backup+ dates are read in the unit the app wrote.**
+  SMS Backup+ records a text message's time in milliseconds and an MMS's in
+  seconds, but the import guessed the unit from the size of the number and
+  took a date far past any calendar as it was. It now reads each date in its
+  message's unit, by the same rule as the SMS Backup & Restore and GO SMS Pro
+  imports. A date it cannot read takes the time the mail carries to the
+  second, and a mail with no readable time counts as a message with an
+  invalid date (#2603).
 - 2026-10-12: **An import's connection that stalls is no longer reported as
   bad data.** When the connection stopped delivering part of an import, the
   server answered as though the file were damaged. It now says the
@@ -936,6 +944,13 @@ released versions carry their date on the heading.
   own addresses, sit in "Orphaned · Unknown person". `kind:orphaned` still
   finds both kinds, and the word "orphaned" now finds them by their titles
   too.
+
+#### Exporting and converting
+
+- 2026-10-12: **An export to SMS Backup+ mail writes an MMS's time in
+  seconds.** SMS Backup+ itself records an MMS's time in seconds, and the
+  import now reads it that way, so an MMS exported to SMS Backup+ mail goes
+  out to the second (#2603).
 
 #### Browsing and search
 

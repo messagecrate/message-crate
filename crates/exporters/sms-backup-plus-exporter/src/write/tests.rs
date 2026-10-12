@@ -180,13 +180,8 @@ fn each_message_carries_the_headers_its_importer_reads() {
         .collect();
     assert_eq!(
         dates,
-        [
-            "1400773262123",
-            "1400773263123",
-            "1400773264123",
-            "1400773265123"
-        ],
-        "epoch milliseconds"
+        ["1400773262123", "1400773263123", "1400773264", "1400773265"],
+        "epoch milliseconds for an SMS, epoch seconds for an MMS, as SMS Backup+ writes them"
     );
 }
 
