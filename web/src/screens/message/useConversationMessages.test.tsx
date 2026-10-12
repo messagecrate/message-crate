@@ -324,13 +324,16 @@ describe("useConversationMessages", () => {
     expect(result.current.highlightId).toBeNull();
     // A refined term whose newest match is still message 60.
     act(() => result.current.find.setTerm("pizza"));
-    await waitFor(() =>
+    // The refined term's answer has landed once Find has its count and asks
+    // nothing more; the effect that would mark the match has run by then.
+    await waitFor(() => {
       expect(searchMessages).toHaveBeenLastCalledWith(
         expect.objectContaining({ q: "in:#7 trashed:any pizza" }),
         expect.anything(),
-      ),
-    );
-    await new Promise((resolve) => setTimeout(resolve, 50));
+      );
+      expect(result.current.find.searching).toBe(false);
+      expect(result.current.find.total).toBe(1);
+    });
     expect(result.current.highlightId).toBeNull();
   });
 

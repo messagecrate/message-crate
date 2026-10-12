@@ -22,6 +22,10 @@ pub(crate) struct KeyedLocks {
     /// A `std` mutex: it is only ever held for one map operation, never
     /// across an `.await`, and `Drop` cannot await.
     map: Arc<StdMutex<LockMap>>,
+    /// Told each time a task finds its key's mutex held and starts to wait,
+    /// so a test can act once a task is waiting rather than after a sleep.
+    #[cfg(test)]
+    waiting: Arc<tokio::sync::Notify>,
 }
 
 /// Holds the key's mutex until dropped.
@@ -36,7 +40,17 @@ impl KeyedLocks {
     /// Wait for and take the mutex for `key`.
     pub(crate) async fn lock(&self, key: String) -> KeyedLockGuard {
         let mutex = self.map_guard().entry(key.clone()).or_default().clone();
-        let guard = mutex.lock_owned().await;
+        // A free mutex is taken at once. A held one is waited for: tokio's
+        // mutex hands it to its waiters in turn, and `try_lock_owned` fails
+        // while any waits, so trying first never overtakes one.
+        let guard = match Arc::clone(&mutex).try_lock_owned() {
+            Ok(guard) => guard,
+            Err(_) => {
+                #[cfg(test)]
+                self.waiting.notify_one();
+                mutex.lock_owned().await
+            }
+        };
         KeyedLockGuard {
             guard,
             key,
@@ -51,6 +65,13 @@ impl KeyedLocks {
     /// process when a guard drops during an unwind.
     fn map_guard(&self) -> MutexGuard<'_, LockMap> {
         self.map.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Wait until a task has found its key's mutex held and is waiting for
+    /// it, or return at once when one has since the last call.
+    #[cfg(test)]
+    pub(crate) async fn a_task_waits(&self) {
+        self.waiting.notified().await;
     }
 
     /// Number of keys currently known. Tests use it to show the map shrinks.
@@ -75,7 +96,7 @@ impl Drop for KeyedLockGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
+    use futures_util::FutureExt;
 
     #[tokio::test]
     async fn entry_is_removed_when_the_last_holder_leaves() {
@@ -98,8 +119,7 @@ mod tests {
                 locks.len()
             })
         };
-        // Give the waiter time to queue on the mutex.
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        locks.a_task_waits().await;
         assert_eq!(locks.len(), 1);
         drop(first);
         // The waiter held the entry, so it was still there when it ran.
@@ -139,8 +159,9 @@ mod tests {
     async fn different_keys_do_not_block_each_other() {
         let locks = KeyedLocks::default();
         let _a = locks.lock("a".into()).await;
-        let _b = tokio::time::timeout(Duration::from_millis(100), locks.lock("b".into()))
-            .await
+        let _b = locks
+            .lock("b".into())
+            .now_or_never()
             .expect("lock on a different key must not wait");
         assert_eq!(locks.len(), 2);
     }

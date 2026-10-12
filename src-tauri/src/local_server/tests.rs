@@ -915,33 +915,45 @@ mod with_a_script {
     #[test]
     fn turning_the_network_setting_off_during_a_start_is_applied() {
         let dir = tempfile::tempdir().unwrap();
+        // A pipe each server writes the address it was told to listen on
+        // into. Writing waits for the test to read and reading waits for a
+        // server to write, so the test reads each server's address as it
+        // comes, with no clock.
         let binds = dir.path().join("binds");
-        // Records the address it was told to listen on, then never answers.
+        let path = std::ffi::CString::new(binds.as_os_str().as_encoded_bytes()).unwrap();
+        // SAFETY: `path` is a NUL-terminated path the call only reads.
+        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+        // Says where it was told to listen, then never answers.
         let program = script(
             dir.path(),
-            &format!("echo \"$5\" >> {}\nexec sleep 600", binds.display()),
+            &format!("echo \"$5\" > {}\nexec sleep 600", binds.display()),
         );
         let address = free_address();
+        let next_bind = || std::fs::read_to_string(&binds).unwrap().trim().to_string();
         let server = LocalServer::default();
         server.ensure_started(Launch {
             open_to_network: true,
             ..launch_at(address, &program, dir.path())
         });
-        let deadline = Instant::now() + Duration::from_secs(20);
-        while server.lock().server.is_none() {
-            assert!(Instant::now() < deadline, "the server was never started");
-            thread::sleep(Duration::from_millis(20));
-        }
+        assert_eq!(
+            next_bind(),
+            SocketAddr::from(([0, 0, 0, 0], address.port())).to_string(),
+            "the first server listens on every address"
+        );
 
         // The person unticks the setting while the start is under way.
         server.ensure_started(launch_at(address, &program, dir.path()));
-        thread::sleep(Duration::from_secs(1));
-
-        let recorded = std::fs::read_to_string(&binds).unwrap();
-        let last = recorded.lines().last().unwrap().to_string();
+        // The app has killed the open server and started a closed one by the
+        // time the call returns, so the pipe has a writer coming.
+        assert_eq!(
+            server.lock().state.phase,
+            Phase::Starting { open: false },
+            "no closed server was started in place of the open one"
+        );
+        let restarted = next_bind();
         server.stop();
         assert_eq!(
-            last,
+            restarted,
             address.to_string(),
             "the running server listens where the setting no longer says"
         );

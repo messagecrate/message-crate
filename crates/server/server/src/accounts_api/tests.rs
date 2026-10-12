@@ -1809,7 +1809,7 @@ async fn deleting_messages_waits_for_a_batch_in_progress() {
         .account_import_locks
         .lock(alice.account_id.to_string())
         .await;
-    let delete = crate::request_id::spawn_in_current_span({
+    let mut delete = crate::request_id::spawn_in_current_span({
         let state = state.clone();
         let path = format!("{}/messages", member(alice.account_id));
         let token = alice.token.clone();
@@ -1823,11 +1823,14 @@ async fn deleting_messages_waits_for_a_batch_in_progress() {
             .await
         }
     });
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-    assert!(
-        !delete.is_finished(),
-        "the delete finished while a batch held the account's import lock"
-    );
+    // The delete reaches the account's import lock, finds the batch holding
+    // it, and waits.
+    tokio::select! {
+        () = state.account_import_locks.a_task_waits() => {}
+        status = &mut delete => panic!(
+            "the delete finished ({status:?}) while a batch held the account's import lock"
+        ),
+    }
     let mut conn = state.db.acquire().await.unwrap();
     let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM conversations WHERE account_id = $1")
         .bind(alice.account_id)

@@ -1039,33 +1039,55 @@ fn no_bundle(
     anyhow::bail!("the generator has nothing to write")
 }
 
-/// The directory [`long_bundle`] was last given, so a test can look for it
-/// once the build has stopped.
-static LONG_BUNDLE: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mutex::new(None);
+static LONG_BUILD_GATE: BundleGate = BundleGate::new();
 
-/// Writes one small file into the bundle every few milliseconds for half a
-/// minute, the way the Large set keeps the generator busy. Like the real
-/// generator, which checks the flag between conversations, it checks the
-/// flag once every 20 files, and stops with an error once it is set. Each
-/// file recreates the directory it goes in, so a generator still writing after
-/// its directory was removed leaves the directory behind.
+/// What [`long_bundle`] was last given and how it ended, so a test can look
+/// at them once the build has stopped.
+static LONG_BUNDLE: std::sync::Mutex<LongBundle> = std::sync::Mutex::new(LongBundle {
+    bundle: None,
+    stopped: None,
+});
+
+struct LongBundle {
+    /// The bundle directory the generator writes into.
+    bundle: Option<std::path::PathBuf>,
+    /// Whether the generator ended at the flag (`true`) or wrote every file
+    /// (`false`); `None` until it ends.
+    stopped: Option<bool>,
+}
+
+/// How many files [`long_bundle`] writes when nothing stops it: far more
+/// than the 20 it writes between two looks at the flag.
+const LONG_BUNDLE_FILES: u64 = 2_000;
+
+/// Writes one small file into the bundle, waits at [`LONG_BUILD_GATE`] until
+/// the test opens it, then writes [`LONG_BUNDLE_FILES`] more, the way the
+/// Large set keeps the generator busy. Like the real generator, which checks
+/// the flag between conversations, it checks the flag once every 20 files,
+/// and stops with an error once it is set. Each file recreates the directory
+/// it goes in, so a generator still writing after its directory was removed
+/// leaves the directory behind.
 fn long_bundle(
     _size: demo_seed::DemoSize,
     bundle: &std::path::Path,
     cancel: &AtomicBool,
 ) -> anyhow::Result<()> {
-    *LONG_BUNDLE.lock().unwrap() = Some(bundle.to_path_buf());
-    let started = std::time::Instant::now();
-    let mut written = 0u64;
-    while started.elapsed() < std::time::Duration::from_secs(30) {
-        if written.is_multiple_of(20) && cancel.load(std::sync::atomic::Ordering::Relaxed) {
-            anyhow::bail!("the generator was stopped");
-        }
+    let write = |written: u64| -> anyhow::Result<()> {
         std::fs::create_dir_all(bundle)?;
         std::fs::write(bundle.join(format!("{written}.jsonl")), b"{}\n")?;
-        written += 1;
-        std::thread::sleep(std::time::Duration::from_millis(5));
+        Ok(())
+    };
+    LONG_BUNDLE.lock().unwrap().bundle = Some(bundle.to_path_buf());
+    write(0)?;
+    LONG_BUILD_GATE.pass();
+    for written in 1..=LONG_BUNDLE_FILES {
+        if written.is_multiple_of(20) && cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            LONG_BUNDLE.lock().unwrap().stopped = Some(true);
+            anyhow::bail!("the generator was stopped");
+        }
+        write(written)?;
     }
+    LONG_BUNDLE.lock().unwrap().stopped = Some(false);
     Ok(())
 }
 
@@ -1385,17 +1407,23 @@ async fn stopping_the_server_during_a_demo_build_leaves_no_demo_account() {
 }
 
 /// Stopping the server while a build generates its bundle stops the
-/// generator within moments, and leaves no temporary bundle directory. The
-/// generator runs as a blocking task, which the server's shutdown waits for,
-/// so without a flag the server waits for the whole data set, and the
-/// generator writes on into a directory the build already removed (#1431).
+/// generator at its next look at the flag, and leaves no temporary bundle
+/// directory. The generator runs as a blocking task, which the server's
+/// shutdown waits for, so without a flag the server waits for the whole data
+/// set, and the generator writes on into a directory the build already
+/// removed (#1431).
 #[test]
 fn stopping_the_server_during_generation_stops_the_generator_and_leaves_no_bundle() {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap();
-    let (stopping, bundle) = runtime.block_on(async {
+    let gate = LONG_BUILD_GATE.close();
+    *LONG_BUNDLE.lock().unwrap() = LongBundle {
+        bundle: None,
+        stopped: None,
+    };
+    runtime.block_on(async {
         let fixture = test_fixture().await;
         let mut state = fixture.state.clone();
         state.demo_bundle_generator = long_bundle;
@@ -1403,32 +1431,27 @@ fn stopping_the_server_during_generation_stops_the_generator_and_leaves_no_bundl
 
         let (status, body) = start_demo_build(&state, &owner.token).await;
         assert_eq!(status, StatusCode::ACCEPTED, "{body}");
-        let mut waited = 0;
-        let bundle = loop {
-            let given = LONG_BUNDLE.lock().unwrap().clone();
-            if let Some(bundle) = given.filter(|bundle| bundle.join("0.jsonl").is_file()) {
-                break bundle;
-            }
-            waited += 1;
-            assert!(waited < 400, "the generator never started writing");
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-        };
-
-        let stopping = std::time::Instant::now();
+        // The generator has written its first file and waits.
+        gate.arrival(&state).await;
         state.demo_build.stop().await;
-        (stopping, bundle)
+        // The build was dropped, which set the flag; the generator goes on
+        // writing until it looks at it.
+        gate.open();
     });
     // What `main` does once `serve` returns: dropping the runtime waits for
     // every blocking task, the generator among them.
     drop(runtime);
 
-    assert!(
-        stopping.elapsed() < std::time::Duration::from_secs(10),
-        "the server took {:?} to stop",
-        stopping.elapsed()
+    let generated = LONG_BUNDLE.lock().unwrap();
+    assert_eq!(
+        generated.stopped,
+        Some(true),
+        "the generator wrote the whole data set rather than stopping at the flag"
     );
-    let work = bundle
-        .parent()
+    let work = generated
+        .bundle
+        .as_deref()
+        .and_then(std::path::Path::parent)
         .expect("the bundle sits in the build's directory");
     assert!(
         !work.exists(),
