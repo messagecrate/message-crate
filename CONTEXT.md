@@ -386,11 +386,11 @@ _Avoid_: Setup, First run, Provisioning
 **Session**:
 One account's logged-in state, made by logging in with the account's
 password and ended by logging out, by expiry, or by the owner disabling or
-deleting the account. There is one per logged-in
-account, and it is what the browser and the desktop app hold between
-requests. It is not an API token: a token is a named, scoped credential the
-person makes for a program, and it never logs in. Nothing else on the
-product is a session; the record of an import attempt is an Import Run.
+deleting the account. There is one per logged-in account, and it is what the
+browser and the desktop app hold between requests. It is not an API token: a
+token is a named, scoped credential the person makes for a program, and it
+never logs in. Nothing else on the product is a session; the record of an
+import attempt is an Import Run.
 _Avoid_: Login, Auth, Import session, Token
 
 **API Token**:

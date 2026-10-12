@@ -54,10 +54,10 @@ The Owner may have set the account's **Status** to **Disabled**.
 A disabled account's login gets the same answer as a wrong password, so someone guessing passwords can't tell which guess was right.
 The Owner checks the **Status** under **User Accounts**, in the account's [User Settings](/docs/user/features/owner/owner-home/#account), and sets it back to **Active**.
 
-### "this account is disabled"
+### A program reports "this account is disabled"
 
-The Owner set the account's **Status** to **Disabled**, and a program used one of the account's API tokens.
-Disabling the account also logs out the person using it, so they see the login card instead.
+The Owner set the account's **Status** to **Disabled**, and the program used one of the account's API tokens.
+A person using the account sees the login card instead, because disabling the account logs them out.
 The Owner sets it back to **Active** under **User Accounts**, in the account's [User Settings](/docs/user/features/owner/owner-home/#account).
 
 ### An account's password is forgotten
