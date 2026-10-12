@@ -4,8 +4,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { Suspense } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { problemFromBody } from "../lib/api";
+import { ChunkLoadError, lazyChunk } from "../lib/chunkLoad";
 import { pageAnswers, reloadPage } from "../lib/pageReload";
-import { lazyScreen, ScreenLoadError } from "../lib/screenLoad";
 import { setupUser } from "../test/user";
 import ErrorBoundary from "./ErrorBoundary";
 
@@ -14,6 +14,11 @@ vi.mock("../lib/pageReload", () => ({ reloadPage: vi.fn(), pageAnswers: vi.fn() 
 /** A child that throws `error` while it renders. */
 function Throws({ error }: { error: unknown }): never {
   throw error;
+}
+
+/** What `lazyChunk` rejects with when the download of `chunk` fails. */
+function chunkFailed(chunk: string): ChunkLoadError {
+  return new ChunkLoadError(chunk, new TypeError("Failed to fetch dynamically imported module"));
 }
 
 beforeEach(() => {
@@ -89,9 +94,7 @@ describe("ErrorBoundary", () => {
   it("reloads the page once for a screen that didn't load", async () => {
     render(
       <ErrorBoundary scope="screen">
-        <Throws
-          error={new ScreenLoadError(new TypeError("Failed to fetch dynamically imported module"))}
-        />
+        <Throws error={chunkFailed("SettingsScreen")} />
       </ErrorBoundary>,
     );
 
@@ -103,9 +106,7 @@ describe("ErrorBoundary", () => {
     vi.mocked(pageAnswers).mockResolvedValue(false);
     render(
       <ErrorBoundary scope="screen">
-        <Throws
-          error={new ScreenLoadError(new TypeError("Failed to fetch dynamically imported module"))}
-        />
+        <Throws error={chunkFailed("SettingsScreen")} />
       </ErrorBoundary>,
     );
 
@@ -113,7 +114,7 @@ describe("ErrorBoundary", () => {
     expect(reloadPage).not.toHaveBeenCalled();
   });
 
-  it("says which panel failed for a panel over a screen", () => {
+  it("says a panel failed, in the panel's place", () => {
     render(
       <ErrorBoundary scope="panel">
         <Throws error={new Error("broken")} />
@@ -125,8 +126,8 @@ describe("ErrorBoundary", () => {
     expect(alert).toHaveTextContent("Reload to try again.");
   });
 
-  it("reloads for a lazy screen whose download fails, and again after one that arrives", async () => {
-    const Missing = lazyScreen<object>(() =>
+  it("reloads for a lazy chunk whose download fails, and again once it has arrived", async () => {
+    const Missing = lazyChunk<object>("SettingsScreen", () =>
       Promise.reject(new TypeError("Failed to fetch dynamically imported module")),
     );
     const first = render(
@@ -139,7 +140,9 @@ describe("ErrorBoundary", () => {
     await waitFor(() => expect(reloadPage).toHaveBeenCalledTimes(1));
     first.unmount();
 
-    const Arrives = lazyScreen(async () => ({ default: () => <p>Settings</p> }));
+    const Arrives = lazyChunk("SettingsScreen", async () => ({
+      default: () => <p>Settings</p>,
+    }));
     render(
       <Suspense fallback={null}>
         <Arrives />
@@ -149,19 +152,44 @@ describe("ErrorBoundary", () => {
 
     render(
       <ErrorBoundary scope="screen">
-        <Throws error={new ScreenLoadError(new TypeError("Importing a module script failed."))} />
+        <Throws error={chunkFailed("SettingsScreen")} />
       </ErrorBoundary>,
     );
     await waitFor(() => expect(reloadPage).toHaveBeenCalledTimes(2));
   });
 
-  it("says the screen didn't load when it still doesn't after the reload", async () => {
-    const failed = new ScreenLoadError(
-      new TypeError("Failed to fetch dynamically imported module"),
+  it("does not reload again for a chunk that failed, when another chunk loads in between", async () => {
+    const first = render(
+      <ErrorBoundary scope="panel">
+        <Throws error={chunkFailed("AdvancedSearchForm")} />
+      </ErrorBoundary>,
     );
+    await waitFor(() => expect(reloadPage).toHaveBeenCalledTimes(1));
+    first.unmount();
+
+    const Settings = lazyChunk("SettingsScreen", async () => ({
+      default: () => <p>Settings</p>,
+    }));
+    render(
+      <Suspense fallback={null}>
+        <Settings />
+      </Suspense>,
+    );
+    expect(await screen.findByText("Settings")).toBeInTheDocument();
+
+    render(
+      <ErrorBoundary scope="panel">
+        <Throws error={chunkFailed("AdvancedSearchForm")} />
+      </ErrorBoundary>,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("This panel didn't load");
+    expect(reloadPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("says the screen didn't load when it still doesn't after the reload", async () => {
     const first = render(
       <ErrorBoundary scope="screen">
-        <Throws error={failed} />
+        <Throws error={chunkFailed("TrashScreen")} />
       </ErrorBoundary>,
     );
     await waitFor(() => expect(reloadPage).toHaveBeenCalledTimes(1));
@@ -170,7 +198,7 @@ describe("ErrorBoundary", () => {
 
     render(
       <ErrorBoundary scope="screen">
-        <Throws error={failed} />
+        <Throws error={chunkFailed("TrashScreen")} />
       </ErrorBoundary>,
     );
 
@@ -178,5 +206,32 @@ describe("ErrorBoundary", () => {
     expect(reloadPage).not.toHaveBeenCalled();
     expect(alert).toHaveTextContent("This screen didn't load");
     expect(alert).toHaveTextContent("Failed to fetch dynamically imported module");
+  });
+});
+
+describe("pageAnswers", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("counts a page that never answers as one that doesn't", async () => {
+    const { pageAnswers: realPageAnswers, PAGE_ANSWER_TIMEOUT_MS } =
+      await vi.importActual<typeof import("../lib/pageReload")>("../lib/pageReload");
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+          }),
+      ),
+    );
+
+    const answer = realPageAnswers();
+    await vi.advanceTimersByTimeAsync(PAGE_ANSWER_TIMEOUT_MS);
+
+    expect(await answer).toBe(false);
   });
 });

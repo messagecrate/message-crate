@@ -20,13 +20,13 @@ import {
   Popover,
   Text,
 } from "react-aria-components";
+import { lazyChunk } from "../lib/chunkLoad";
 import {
   clearRecentSearches,
   loadRecentSearches,
   pushRecentSearch,
   type SearchScope,
 } from "../lib/recentSearches";
-import { lazyScreen } from "../lib/screenLoad";
 import {
   type MarkedWord,
   SEARCH_LIST_NAMES,
@@ -50,7 +50,7 @@ import PlainButton from "./PlainButton";
 
 // The advanced form pulls in the date picker and calendar, about 150 kB of
 // the entry chunk that most visits never open. It loads when the panel does.
-const AdvancedSearchForm = lazyScreen(() => import("./AdvancedSearchForm"));
+const AdvancedSearchForm = lazyChunk("AdvancedSearchForm", () => import("./AdvancedSearchForm"));
 
 /** While the advanced panel is open, focusing the box does not open the popdown over it. */
 function KeepPopdownClosed({ when }: { when: boolean }) {

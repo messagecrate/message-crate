@@ -142,9 +142,9 @@ function parseProblem(text: string): Problem | null {
  * not the status code and not the envelope around it. A `5xx` hides its cause
  * from the client, so its sentence ends with the problem's request id, which
  * a person can quote to find the matching line in the server's log
- * (`docs/architecture/server-log.md`, "A failed request names the step that
- * failed"). Anything else (a
- * proxy's HTML error page, an empty body) falls back to the raw text — clamped
+ * (`docs/architecture/server-log.md`, "A request's lines carry its id,
+ * spawned work included"). Anything else (a proxy's HTML error page, an
+ * empty body) falls back to the raw text — clamped
  * to `RAW_BODY_FALLBACK_LIMIT` characters, since a reverse proxy or other
  * host can answer with a whole HTML page — then to a generic sentence.
  */
