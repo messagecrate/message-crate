@@ -120,8 +120,9 @@ const FORMULA_STARTS: [char; 6] = ['=', '+', '-', '@', '\t', '\r'];
 const TEXT_MARK: char = '\'';
 
 /// A cell as Message Crate writes it into a CSV file: with a `'` in front
-/// when a spreadsheet would otherwise run it as a formula, or, for a phone
-/// number, drop its `+`. A cell that already starts with `'`s and then one
+/// when it starts with a character a spreadsheet reads as the start of a
+/// formula. Without the `'`, the spreadsheet would run the cell, or drop the
+/// `+` of a phone number. A cell that already starts with `'`s and then one
 /// of those characters gets one more `'`, so the one [`read_cell`] takes
 /// off leaves the cell as it was.
 pub fn written_cell(cell: &str) -> Cow<'_, str> {
@@ -138,7 +139,10 @@ pub fn written_cell(cell: &str) -> Cow<'_, str> {
 /// A cell as Message Crate reads it from a CSV file: one `'` taken off when
 /// one of the characters a spreadsheet reads as a formula follows it, which
 /// undoes [`written_cell`]. A spreadsheet can keep that `'` when it saves or
-/// drop it, and both read the same.
+/// drop it, and both read the same, for every cell that did not itself start
+/// with `'` and one of those characters. Such a cell, `'=x`, is written
+/// `''=x`; a spreadsheet that drops the outer `'` saves `'=x`, which reads
+/// back as `=x`.
 pub fn read_cell(cell: &str) -> &str {
     match cell.strip_prefix(TEXT_MARK) {
         Some(rest)

@@ -122,8 +122,8 @@ pub fn csv_rows(path: &Path) -> Vec<BTreeMap<String, String>> {
                 .iter()
                 .enumerate()
                 .map(|(i, h)| {
-                    let cell = message_csv::read_cell(rec.get(i).unwrap_or("").trim());
-                    (h.clone(), cell.to_string())
+                    let cell = message_csv::field(&rec, i);
+                    (h.clone(), message_csv::read_cell(&cell).to_string())
                 })
                 .collect()
         })

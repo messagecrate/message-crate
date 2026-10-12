@@ -662,7 +662,7 @@ fn remove_if_exists(path: &Path) {
 
 /// Write `T`'s file in `output_dir` (or remove a stale one) with its header and one row per item
 /// of `details`. When `more` entries were left out, a last row says so in its final column,
-/// padded with empty columns to the header's width. Every row's cells go through
+/// padded with empty columns to the header's width. Every detail row's cells go through
 /// [`message_csv::written_cell`], because the addresses and text come from the backup and a
 /// spreadsheet would run one that starts with `=` as a formula.
 fn write_skipped_csv<const N: usize, T: SkippedCsv<N>>(
