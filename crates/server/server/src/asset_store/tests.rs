@@ -67,6 +67,11 @@ fn a_stored_name_gives_its_fingerprint_and_any_other_name_gives_none() {
 /// hold uploads to.
 pub(crate) const STALL: Duration = Duration::from_secs(60);
 
+/// Abandonment at `now` after [`STALL`].
+pub(crate) fn at(now: SystemTime) -> Abandonment {
+    Abandonment { now, stall: STALL }
+}
+
 /// Set `path`'s modified time, a file's or a directory's, to `at`.
 pub(crate) fn written_at(path: &Path, at: SystemTime) {
     fs::File::options()
@@ -95,22 +100,19 @@ fn an_upload_session_is_abandoned_once_nothing_was_written_for_the_stall_limit()
     let second = Duration::from_secs(1);
 
     for session in [&with_manifest, &without_manifest] {
-        assert!(!upload_session_is_stale(session, written, STALL).unwrap());
-        assert!(!upload_session_is_stale(session, written + STALL - second, STALL).unwrap());
-        assert!(upload_session_is_stale(session, written + STALL, STALL).unwrap());
+        assert!(!upload_session_is_stale(session, at(written)).unwrap());
+        assert!(!upload_session_is_stale(session, at(written + STALL - second)).unwrap());
+        assert!(upload_session_is_stale(session, at(written + STALL)).unwrap());
     }
 }
 
 /// Set `path`'s modified time to two days ago, past every age limit a sweep
 /// holds a file to, so every sweep treats it as abandoned.
 pub(crate) fn make_abandoned(path: &Path) {
-    let two_days_ago = SystemTime::now() - Duration::from_secs(2 * 24 * 60 * 60);
-    fs::File::options()
-        .write(true)
-        .open(path)
-        .unwrap()
-        .set_modified(two_days_ago)
-        .unwrap();
+    written_at(
+        path,
+        SystemTime::now() - Duration::from_secs(2 * 24 * 60 * 60),
+    );
 }
 
 /// `process-assets` writes a Preview before the row that names it. The
@@ -458,7 +460,7 @@ fn incoming_with_leftovers() -> Incoming {
 fn the_incoming_sweep_removes_part_temps_and_stale_sessions_and_nothing_else() {
     let incoming = incoming_with_leftovers();
 
-    let removed = sweep_incoming(&incoming.assets, incoming.began, STALL);
+    let removed = sweep_incoming(&incoming.assets, at(incoming.began));
 
     assert_eq!(removed, 2, "the abandoned .part temp and the stale session");
     assert!(!incoming.stale_part.exists());
@@ -589,10 +591,10 @@ fn the_incoming_sweep_leaves_an_upload_a_request_is_using() {
     let session_use = crate::asset_uploads::hold(&incoming.stale_session);
     let part_use = crate::asset_uploads::hold(&incoming.stale_part);
 
-    assert_eq!(sweep_incoming(&incoming.assets, incoming.began, STALL), 0);
+    assert_eq!(sweep_incoming(&incoming.assets, at(incoming.began)), 0);
     assert!(incoming.stale_session.join("manifest.json").exists());
     assert!(incoming.stale_part.exists());
 
     drop((session_use, part_use));
-    assert_eq!(sweep_incoming(&incoming.assets, incoming.began, STALL), 2);
+    assert_eq!(sweep_incoming(&incoming.assets, at(incoming.began)), 2);
 }

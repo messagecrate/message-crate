@@ -1017,8 +1017,8 @@ What each reaches:
   before it is answered. A request still running keeps its upload however
   old its files are, because a part arrives into memory before any of it is
   written, and a completion writes no manifest. Only `serve` removes them,
-  not `process-assets`: that command may run beside `serve` and cannot see
-  its requests.
+  not `process-assets` or `imports discard`: those commands may run beside
+  `serve` and cannot see its requests.
 
 The credential names the account. No route takes an `account=` parameter. A
 Media Link is a credential, so its `media_link` parameter names the account

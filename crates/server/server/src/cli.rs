@@ -433,12 +433,18 @@ async fn run_imports_discard(args: ImportsDiscardArgs) -> Result<()> {
         crate::db::imports::discard_running_import(&mut conn, account, chrono::Utc::now()).await?;
     drop(conn);
     if discarded.is_some() {
-        // The stall limit of the server the config file describes, or the
-        // default when it describes none.
-        let stall =
-            crate::server::UploadTimeLimits::of(&opened.cfg.server.clone().unwrap_or_default())
-                .stall;
-        crate::asset_store::sweep_after_run(&opened.db, &opened.cfg.paths, account, stall).await;
+        // Only the unreferenced files: `.incoming/` is left to `serve`,
+        // which may be running and is the only one that knows which uploads
+        // its requests are using (#2652).
+        if let Err(error) =
+            crate::asset_store::sweep_unreferenced(&opened.db, &opened.cfg.paths, account).await
+        {
+            tracing::warn!(
+                account_id = account,
+                error = format!("{error:#}"),
+                "Unreferenced files could not be swept after the Import Run was discarded"
+            );
+        }
     }
     opened.close().await;
     print!(

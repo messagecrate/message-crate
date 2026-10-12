@@ -12,6 +12,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::asset_store::Abandonment;
 use crate::assets_api::{self, AssetError, Sha256, StoredAsset};
 
 /// Default part size advertised to clients: the largest import batch, so an
@@ -233,8 +234,23 @@ pub(crate) fn hold(path: &Path) -> InUse {
 }
 
 /// Whether a request is using `path` now ([`hold`]).
+#[cfg(test)]
 pub(crate) fn in_use(path: &Path) -> bool {
     uses().contains_key(path)
+}
+
+/// Run `remove` on `path` unless a request is using it, and return what it
+/// returned, or `None` when a request is. [`IN_USE`] stays locked while
+/// `remove` runs, so no request starts using `path` in between: one that
+/// tries waits, then finds what `remove` left.
+pub(crate) fn unless_in_use<T>(path: &Path, remove: impl FnOnce() -> T) -> Option<T> {
+    let uses = uses();
+    if uses.contains_key(path) {
+        return None;
+    }
+    let removed = remove();
+    drop(uses);
+    Some(removed)
 }
 
 /// Count the upload `upload_id` of `sha` as in use until the answer is
@@ -244,7 +260,11 @@ pub(crate) fn in_use(path: &Path) -> bool {
 /// # Errors
 ///
 /// Returns [`AssetError::Invalid`] when the upload id is invalid.
-pub fn hold_upload(assets_root: &Path, sha: &Sha256, upload_id: &str) -> Result<InUse, AssetError> {
+pub(crate) fn hold_upload(
+    assets_root: &Path,
+    sha: &Sha256,
+    upload_id: &str,
+) -> Result<InUse, AssetError> {
     let upload_id = require_upload_id(upload_id)?;
     Ok(hold(&session_dir(assets_root, sha, &upload_id)))
 }
@@ -340,20 +360,9 @@ pub fn start_upload(
         bytes,
         mime,
         limits,
-        Abandoned {
-            now: SystemTime::now(),
-            stall,
-        },
+        Abandonment::now(stall),
         new_upload_id,
     )
-}
-
-/// When an upload counts as abandoned: nothing written to it for `stall`
-/// before `now`.
-#[derive(Debug, Clone, Copy)]
-struct Abandoned {
-    now: SystemTime,
-    stall: Duration,
 }
 
 /// [`start_upload`], at the time `abandoned` gives, taking each upload id it
@@ -365,7 +374,7 @@ fn start_upload_with(
     bytes: u64,
     mime: Option<&str>,
     limits: UploadLimits,
-    abandoned: Abandoned,
+    abandoned: Abandonment,
     mut next_id: impl FnMut() -> String,
 ) -> Result<(Option<StoredAsset>, Option<StartUpload>), AssetError> {
     if bytes > limits.max_bytes {
@@ -386,7 +395,7 @@ fn start_upload_with(
     // because of abandoned ones, such as those of an Upload that was
     // stopped, so they are removed before it is refused (#2652).
     if count_open_uploads(assets_root) >= MAX_OPEN_UPLOADS {
-        crate::asset_store::sweep_incoming(assets_root, abandoned.now, abandoned.stall);
+        crate::asset_store::sweep_incoming(assets_root, abandoned);
         if count_open_uploads(assets_root) >= MAX_OPEN_UPLOADS {
             return Err(AssetError::TooManyUploads);
         }

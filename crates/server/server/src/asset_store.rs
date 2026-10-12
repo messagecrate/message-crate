@@ -666,7 +666,7 @@ async fn sweep_incoming_of(paths: &PathsConfig, account_ids: Vec<i64>, stall: Du
         .collect();
     let swept = crate::request_id::spawn_blocking_in_current_span(move || {
         for dir in &dirs {
-            sweep_incoming(dir, SystemTime::now(), stall);
+            sweep_incoming(dir, Abandonment::now(stall));
         }
     })
     .await;
@@ -777,11 +777,36 @@ fn sweep_store_dir(
     removed
 }
 
+/// When an upload under `.incoming/` counts as abandoned: nothing was
+/// written to it for `stall` before `now`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Abandonment {
+    /// The time the sweep runs at.
+    pub(crate) now: SystemTime,
+    /// `[server] upload_stall_secs`.
+    pub(crate) stall: Duration,
+}
+
+impl Abandonment {
+    /// Abandoned after `stall`, as the clock reads now.
+    pub(crate) fn now(stall: Duration) -> Self {
+        Self {
+            now: SystemTime::now(),
+            stall,
+        }
+    }
+
+    /// Whether nothing was written to `path` for the stall limit.
+    fn idle(self, path: &Path) -> io::Result<bool> {
+        modified_at_least(path, self.now, self.stall.as_secs())
+    }
+}
+
 /// Remove the abandoned uploads under `originals_dir/.incoming/`, and
 /// return how many it removed: each `{sha}-*.part` temp and each multipart
 /// upload's directory `{sha}/{upload_id}/` that nothing was written to for
-/// `stall` before `now`, and that no request is using
-/// ([`crate::asset_uploads::in_use`]).
+/// the stall limit ([`Abandonment`]), and that no request is using
+/// ([`crate::asset_uploads::unless_in_use`]).
 ///
 /// `stall` is `[server] upload_stall_secs`, the longest the server lets an
 /// upload's body go with no byte arriving. A part is held in memory until
@@ -795,7 +820,7 @@ fn sweep_store_dir(
 /// The server writes and removes these files while the sweep runs, so a
 /// file that is gone by the time the sweep reaches it is passed over, and
 /// any other failure is logged and the sweep goes on.
-pub(crate) fn sweep_incoming(originals_dir: &Path, now: SystemTime, stall: Duration) -> u64 {
+pub(crate) fn sweep_incoming(originals_dir: &Path, at: Abandonment) -> u64 {
     let incoming = originals_dir.join(".incoming");
     let entries = match std::fs::read_dir(&incoming) {
         Ok(entries) => entries,
@@ -814,18 +839,28 @@ pub(crate) fn sweep_incoming(originals_dir: &Path, now: SystemTime, stall: Durat
                 continue;
             }
         };
-        if crate::asset_uploads::in_use(&path) {
-            continue;
-        }
         if path.is_file() && has_part_extension(&path) {
             parts.push(path);
         } else if path.is_dir() {
             sha_dirs.push(path);
         }
     }
-    let mut removed = remove_stale_files(&parts, now, stall.as_secs(), false);
+    let mut removed = 0;
+    for part in parts {
+        // Held while it is checked and removed, so no request starts using
+        // it in between.
+        removed += crate::asset_uploads::unless_in_use(&part, || {
+            remove_stale_files(
+                std::slice::from_ref(&part),
+                at.now,
+                at.stall.as_secs(),
+                false,
+            )
+        })
+        .unwrap_or(0);
+    }
     for sha_dir in &sha_dirs {
-        removed += remove_stale_sessions(sha_dir, now, stall);
+        removed += remove_stale_sessions(sha_dir, at);
     }
     removed
 }
@@ -933,10 +968,10 @@ fn remove_stale_files(files: &[PathBuf], now: SystemTime, secs: u64, dry_run: bo
 }
 
 /// Remove each multipart session directory under `sha_dir`
-/// (`.incoming/{sha256}/{upload_id}/`) that nothing was written to for
-/// `stall` before `now` and that no request is using, then `sha_dir`
-/// itself once it is empty. Returns how many sessions it removed.
-fn remove_stale_sessions(sha_dir: &Path, now: SystemTime, stall: Duration) -> u64 {
+/// (`.incoming/{sha256}/{upload_id}/`) that is abandoned at `at` and that
+/// no request is using, then `sha_dir` itself once it is empty. Returns how
+/// many sessions it removed.
+fn remove_stale_sessions(sha_dir: &Path, at: Abandonment) -> u64 {
     let entries = match std::fs::read_dir(sha_dir) {
         Ok(entries) => entries,
         Err(err) => {
@@ -953,20 +988,31 @@ fn remove_stale_sessions(sha_dir: &Path, now: SystemTime, stall: Duration) -> u6
                 continue;
             }
         };
-        if !session.is_dir() || crate::asset_uploads::in_use(&session) {
+        if !session.is_dir() {
             continue;
         }
-        match upload_session_is_stale(&session, now, stall) {
-            Ok(true) => {}
-            Ok(false) => continue,
-            Err(err) => {
-                log_sweep_error("read", &session, &err);
-                continue;
+        // Held while it is checked and removed, so no request starts using
+        // it in between: a part that arrives then waits, and finds the
+        // upload gone.
+        let removed_one = crate::asset_uploads::unless_in_use(&session, || {
+            match upload_session_is_stale(&session, at) {
+                Ok(true) => {}
+                Ok(false) => return false,
+                Err(err) => {
+                    log_sweep_error("read", &session, &err);
+                    return false;
+                }
             }
-        }
-        match remove_tree(&session) {
-            Ok(()) => removed += 1,
-            Err(err) => log_sweep_error("removed", &session, &err),
+            match remove_tree(&session) {
+                Ok(()) => true,
+                Err(err) => {
+                    log_sweep_error("removed", &session, &err);
+                    false
+                }
+            }
+        });
+        if removed_one == Some(true) {
+            removed += 1;
         }
     }
     let is_empty = std::fs::read_dir(sha_dir).is_ok_and(|mut rest| rest.next().is_none());
@@ -978,16 +1024,16 @@ fn remove_stale_sessions(sha_dir: &Path, now: SystemTime, stall: Duration) -> u6
     removed
 }
 
-/// True when nothing was written to a multipart upload for `stall` before
-/// `now`. Every part written rewrites the manifest after the part, so the
-/// manifest's modified time is the upload's last write; an upload with no
-/// manifest yet goes by its directory's.
-fn upload_session_is_stale(session: &Path, now: SystemTime, stall: Duration) -> io::Result<bool> {
+/// True when a multipart upload is abandoned at `at`. Every part written
+/// rewrites the manifest after the part, so the manifest's modified time is
+/// the upload's last write; an upload with no manifest yet goes by its
+/// directory's.
+fn upload_session_is_stale(session: &Path, at: Abandonment) -> io::Result<bool> {
     let manifest = session.join("manifest.json");
     if manifest.is_file() {
-        modified_at_least(&manifest, now, stall.as_secs())
+        at.idle(&manifest)
     } else {
-        modified_at_least(session, now, stall.as_secs())
+        at.idle(session)
     }
 }
 

@@ -571,8 +571,8 @@ enum Derived {
 
 impl<'a> AccountPass<'a> {
     /// Find the directories, remove the temporary files a killed write left
-    /// in the shard directories, and make the converted directory. `None` when the account has no assets directory
-    /// to process.
+    /// in the shard directories, and make the converted directory. `None`
+    /// when the account has no assets directory to process.
     ///
     /// # Errors
     ///
