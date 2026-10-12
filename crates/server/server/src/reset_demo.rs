@@ -198,8 +198,7 @@ fn parent_dir_or_cwd(path: &Path) -> &Path {
 /// Work directory for the prepared account tree. Must live on the same mount
 /// as `data_dir` so the later install can `rename` into `data_dir/<account>`.
 fn reset_account_work_dir(data_dir: &Path) -> Result<tempfile::TempDir> {
-    fs::create_dir_all(data_dir)
-        .with_context(|| format!("create data directory {}", data_dir.display()))?;
+    crate::owner_only::keep_data_dir_to_owner(data_dir)?;
     tempfile::Builder::new()
         .prefix(".reset-demo-data-")
         .tempdir_in(data_dir)
@@ -630,7 +629,7 @@ async fn reset_prepared_bundle_with(
     let _operation_lock = crate::operation_lock::acquire_for_reset(&cfg.paths.db)?;
     let mut ready = crate::operation_lock::ReadyWhileRebuilding::clear(&cfg.paths.db)?;
     let db_parent = parent_dir_or_cwd(&cfg.paths.db);
-    fs::create_dir_all(db_parent)
+    file_io::create_dir_all_owner_only(db_parent)
         .with_context(|| format!("create database parent {}", db_parent.display()))?;
     let db_work = tempfile::Builder::new()
         .prefix(".reset-demo-db-")

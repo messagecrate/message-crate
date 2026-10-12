@@ -62,7 +62,10 @@ impl LogFiles {
     /// Returns an error when the directory cannot be made or read, or the
     /// newest file cannot be opened.
     pub fn open(dir: &Path, limits: LogLimits) -> io::Result<Self> {
-        fs::create_dir_all(dir)?;
+        // Owner-only, as the Data Directory it is made in (#2097): `serve`
+        // opens its log before the database, so on a new Message Crate this
+        // is what makes the Data Directory.
+        file_io::create_dir_all_owner_only(dir)?;
         let number = file_numbers(dir)?.last().copied().unwrap_or(1);
         let path = file_path(dir, number);
         let cut_short = ends_mid_line(&path)?;

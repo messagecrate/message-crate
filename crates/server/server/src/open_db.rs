@@ -99,14 +99,17 @@ impl OpenDb {
         if let Some(parent) = cfg.paths.db.parent()
             && !parent.as_os_str().is_empty()
         {
-            std::fs::create_dir_all(parent)
+            file_io::create_dir_all_owner_only(parent)
                 .with_context(|| format!("create {}", parent.display()))?;
         }
         Self::open_pool(cfg).await
     }
 
     /// Open the pool on the file `cfg` names and make sure of the schema.
+    /// The Data Directory is made, or kept, readable by the server's user
+    /// alone first ([`crate::owner_only`]), whichever command opens it.
     async fn open_pool(cfg: Config) -> Result<Self> {
+        crate::owner_only::keep_data_dir_to_owner(&cfg.paths.data_dir)?;
         let engine::OpenedPool {
             pool: db,
             wal_error,
@@ -283,6 +286,62 @@ mod tests {
         std::fs::write(&empty.paths.db, b"").unwrap();
         assert!(OpenDb::open(empty.clone()).await.is_err());
         OpenDb::create_or_open(empty).await.unwrap().close().await;
+    }
+
+    /// Every account's messages are in the database and the Data Directory,
+    /// so a new Message Crate makes both readable by the server's user alone,
+    /// and the `-wal` and `-shm` files SQLite makes beside the database take
+    /// its mode (#2097).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_new_database_and_data_directory_are_the_owner_s_alone() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = fresh_config(dir.path());
+        cfg.paths.db = dir.path().join("database/messagecrate.db");
+        let opened = OpenDb::create_or_open(cfg.clone()).await.unwrap();
+        let mut conn = opened.conn().await.unwrap();
+        account_profile::insert_account(&mut conn, "alice", None, None)
+            .await
+            .unwrap();
+
+        assert_eq!(mode(&cfg.paths.data_dir), 0o700);
+        assert_eq!(mode(dir.path().join("database").as_path()), 0o700);
+        for suffix in ["", "-wal", "-shm"] {
+            let file = dir.path().join(format!("database/messagecrate.db{suffix}"));
+            assert_eq!(mode(&file), 0o600, "{}", file.display());
+        }
+        drop(conn);
+        opened.close().await;
+    }
+
+    /// A Message Crate made before #2097 has a Data Directory and a
+    /// database other users can read. Opening it takes that away.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn opening_a_database_others_could_read_makes_it_the_owner_s_alone() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        let open_to_all = |path: &Path, mode| {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = fresh_config(dir.path());
+        OpenDb::create_or_open(cfg.clone())
+            .await
+            .unwrap()
+            .close()
+            .await;
+        open_to_all(&cfg.paths.data_dir, 0o755);
+        open_to_all(&cfg.paths.db, 0o644);
+
+        OpenDb::open(cfg.clone()).await.unwrap().close().await;
+
+        assert_eq!(mode(&cfg.paths.data_dir), 0o700);
+        assert_eq!(mode(&cfg.paths.db), 0o600);
     }
 
     #[tokio::test]

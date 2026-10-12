@@ -178,19 +178,12 @@ fn belongs_to_a_running_request(directory: &Path) -> bool {
 }
 
 /// Make `directory` readable by its owner only, because it holds decrypted
-/// message data or attachment payloads.
-#[cfg(unix)]
+/// message data or attachment payloads. Off Unix the directory keeps the
+/// permissions of the Scratch Directory it sits in ([`file_io::owner_only`]).
 fn restrict_to_owner(directory: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(directory, fs::Permissions::from_mode(0o700))
+    file_io::restrict_to_owner(directory)
+        .map(drop)
         .with_context(|| format!("restrict {} to its owner", directory.display()))
-}
-
-/// Off Unix the directory keeps the permissions of the Scratch Directory it
-/// sits in.
-#[cfg(not(unix))]
-fn restrict_to_owner(_directory: &Path) -> Result<()> {
-    Ok(())
 }
 
 #[cfg(test)]

@@ -629,6 +629,26 @@ async fn a_rebuild_keeps_a_copy_that_still_holds_the_messages() {
     assert_eq!(stamped, other, "the copy keeps the stamp it was made with");
 }
 
+/// The copy holds every account's messages, so it is readable by the
+/// server's user alone wherever the database lives (#2097).
+#[cfg(unix)]
+#[tokio::test]
+async fn the_copy_a_rebuild_keeps_is_the_owner_s_alone() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let (pool, _fixture) = seeded_schema_fixture().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let other = SCHEMA_FINGERPRINT ^ 1;
+    stamp_user_version(&mut conn, other).await.unwrap();
+    let db = file_of(&mut conn).await;
+
+    ensure_schema(&mut conn).await.unwrap();
+
+    let copy = rebuild_copy_path(&db, other);
+    let mode = std::fs::metadata(&copy).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600);
+}
+
 /// A second rebuild from the same fingerprint, as after switching from one
 /// release to another and back, keeps a second copy rather than failing on
 /// the first or writing over it.

@@ -88,11 +88,18 @@ pub struct RunLog {
 
 impl RunLog {
     /// The log of the run whose directory is `run_dir`, in `logs_dir`,
-    /// opened to add to it.
+    /// opened to add to it. The Logs Directory is made, or kept, readable by
+    /// the user alone ([`file_io::restrict_to_owner`]), because a run's log
+    /// names the phone numbers and email addresses in its file names (#2097).
     pub fn open(logs_dir: &Path, run_dir: &Path) -> Self {
         let path = import_run_log(logs_dir, run_dir);
-        let file = std::fs::create_dir_all(logs_dir)
-            .and_then(|()| File::options().create(true).append(true).open(&path))
+        let file = file_io::create_dir_all_owner_only(logs_dir)
+            .and_then(|()| {
+                // A Logs Directory that cannot be tightened still takes the
+                // log.
+                let _ = file_io::restrict_to_owner(logs_dir);
+                File::options().create(true).append(true).open(&path)
+            })
             .ok()
             .map(|file| Arc::new(Mutex::new(file)));
         Self { file }
@@ -259,5 +266,26 @@ mod tests {
             ),
             Path::new("/app-data/logs/import-iphone-ios-261004-143000.log")
         );
+    }
+
+    /// A run's log names the phone numbers and email addresses in its file
+    /// names, so the Logs Directory is readable by the user alone: a new one
+    /// is made so, and one other users could read is tightened (#2097).
+    #[cfg(unix)]
+    #[test]
+    fn the_logs_directory_is_the_user_s_alone() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        let app_data = tempfile::tempdir().unwrap();
+        let logs = logs_dir_in(app_data.path());
+        let run = Path::new("/home/sam/message-crate/staging-iphone-ios-261004-143000");
+
+        RunLog::open(&logs, run).line("made");
+        assert_eq!(mode(&logs), 0o700);
+
+        std::fs::set_permissions(&logs, std::fs::Permissions::from_mode(0o755)).unwrap();
+        RunLog::open(&logs, run).line("tightened");
+        assert_eq!(mode(&logs), 0o700);
     }
 }

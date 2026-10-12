@@ -312,10 +312,17 @@ pub struct OpenedPool {
 /// asked for write-ahead logging, so Owner Home can say why the database
 /// runs without it.
 ///
+/// The file and its `-wal`, `-shm` and `-journal` files are made readable by
+/// the server's user alone first ([`crate::owner_only::keep_database_to_owner`]),
+/// so every database the server opens or makes is, the one `reset-demo`
+/// builds and renames into place among them.
+///
 /// # Errors
 ///
 /// Returns an error when the file cannot be opened or created.
 pub async fn open_pool_keeping_wal_error(path: &Path) -> Result<OpenedPool> {
+    crate::owner_only::keep_database_to_owner(path)
+        .with_context(|| format!("failed to open database {}", path.display()))?;
     let pool = sqlite_pool_options(BUSY_TIMEOUT)
         .connect_with(connect_options(path))
         .await
