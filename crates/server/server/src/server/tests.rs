@@ -2648,9 +2648,9 @@ async fn a_body_that_trickles_is_upload_stalled_at_the_piece_limit() {
     );
 }
 
-/// A body read into memory, as a multipart part is, and one read and
-/// dropped, as an attachment the server already holds is, answer
-/// `upload-stalled` the same way.
+/// A body streamed to a file, as an attachment and a multipart part are,
+/// and one read and dropped, as an attachment the server already holds is,
+/// answer `upload-stalled` the same way.
 #[tokio::test(start_paused = true)]
 async fn every_upload_read_answers_upload_stalled() {
     let stalled = || {
@@ -2662,7 +2662,10 @@ async fn every_upload_read_answers_upload_stalled() {
         )
     };
 
-    let read = read_body_limited(stalled(), 1024).await.unwrap_err();
+    let dir = TempDir::new().unwrap();
+    let read = stream_body_to_file(stalled(), &dir.path().join("upload"), 1024)
+        .await
+        .unwrap_err();
     let discarded = discard_body(stalled(), 1024).await.unwrap_err();
 
     assert_eq!(

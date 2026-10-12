@@ -29,6 +29,107 @@ fn hash_bytes(data: &[u8]) -> Sha256 {
     Sha256::of_bytes(data)
 }
 
+/// Send `body` as part `part` the way the part route does: into the part's
+/// temp file ([`begin_part`]), then recorded ([`put_part`]).
+fn send_part(
+    root: &Path,
+    sha: &Sha256,
+    upload_id: &str,
+    part: u32,
+    body: &[u8],
+) -> Result<u64, AssetError> {
+    let mut temp = begin_part(root, sha, upload_id, part)?;
+    write_into(&mut temp, body);
+    put_part(temp)
+}
+
+/// Write `body` into `temp`'s file, as [`PartTemp::receive`] does with a
+/// request's body.
+fn write_into(temp: &mut PartTemp, body: &[u8]) {
+    temp.file.as_mut().unwrap().write_all(body).unwrap();
+}
+
+/// The files in an upload's directory other than its manifest.
+fn files_beside_manifest(session: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(session)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name != "manifest.json")
+        .collect();
+    names.sort();
+    names
+}
+
+/// #2114: a part streams into a temp file and is checked once it is all
+/// in. A part of the wrong size, short or long, is refused, and neither
+/// the part nor its temp is left in the upload's directory.
+#[test]
+fn a_part_of_the_wrong_size_is_refused_and_leaves_no_file() {
+    let (dir, sha, upload_id, session) = started_upload();
+
+    for body in [&b"hell"[..], &b"hello!"[..]] {
+        let err = send_part(dir.path(), &sha, &upload_id, 1, body).unwrap_err();
+
+        assert!(matches!(err, AssetError::Invalid(_)), "{err}");
+        assert_eq!(files_beside_manifest(&session), Vec::<String>::new());
+        assert!(read_manifest(&session).unwrap().received.is_empty());
+    }
+}
+
+/// #2114: a part of the right size takes the part's name, the manifest
+/// records it, and no temp is left. The part file is its owner's alone.
+#[test]
+fn a_part_of_the_right_size_is_recorded_in_the_manifest() {
+    let (dir, sha, upload_id, session) = started_upload();
+
+    let written = send_part(dir.path(), &sha, &upload_id, 1, b"hello").unwrap();
+
+    assert_eq!(written, 5);
+    assert_eq!(files_beside_manifest(&session), vec!["part-0001"]);
+    assert_eq!(fs::read(part_path(&session, 1)).unwrap(), b"hello");
+    assert_eq!(
+        read_manifest(&session).unwrap().received,
+        BTreeSet::from([1])
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = fs::metadata(part_path(&session, 1))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+}
+
+/// #2114: a part whose client goes away part-way never reaches
+/// [`put_part`]; dropping its temp removes what arrived.
+#[test]
+fn a_part_dropped_before_it_is_recorded_leaves_no_file() {
+    let (dir, sha, upload_id, session) = started_upload();
+    let mut temp = begin_part(dir.path(), &sha, &upload_id, 1).unwrap();
+    write_into(&mut temp, b"he");
+    assert_eq!(files_beside_manifest(&session).len(), 1);
+
+    drop(temp);
+
+    assert_eq!(files_beside_manifest(&session), Vec::<String>::new());
+}
+
+/// A part number the upload has no part for is refused before its body is
+/// read, so no temp is made for it.
+#[test]
+fn a_part_out_of_range_is_refused_before_its_body() {
+    let (dir, sha, upload_id, session) = started_upload();
+
+    for part in [0, 2] {
+        let err = begin_part(dir.path(), &sha, &upload_id, part).unwrap_err();
+
+        assert!(matches!(err, AssetError::Invalid(_)), "{err}");
+        assert_eq!(files_beside_manifest(&session), Vec::<String>::new());
+    }
+}
+
 #[test]
 fn multipart_roundtrip() {
     let dir = tempdir().unwrap();
@@ -200,7 +301,7 @@ fn put_part_and_complete_via_api() {
     let mut part = 1u32;
     while offset < data.len() {
         let end = (offset + start.part_size).min(data.len());
-        put_part(root, &sha, &start.upload_id, part, &data[offset..end]).unwrap();
+        send_part(root, &sha, &start.upload_id, part, &data[offset..end]).unwrap();
         offset = end;
         part += 1;
     }
@@ -287,7 +388,7 @@ fn an_upload_past_the_open_upload_limit_is_refused_until_one_ends() {
     );
 
     let (sha, upload_id) = open.pop().unwrap();
-    put_part(root, &sha, &upload_id, 1, &files[MAX_OPEN_UPLOADS - 1]).unwrap();
+    send_part(root, &sha, &upload_id, 1, &files[MAX_OPEN_UPLOADS - 1]).unwrap();
     complete_upload(root, &sha, &upload_id).unwrap();
     open.push(start(next).unwrap());
     assert!(start(b"one more").is_err());
@@ -401,7 +502,7 @@ fn a_start_at_the_open_upload_limit_keeps_uploads_written_to_inside_the_stall_li
     assert!(open.iter().all(|session| manifest_path(session).is_file()));
 }
 
-/// #2652: a part arrives into memory before anything of it is written, so
+/// #2652: a part arriving writes only its own temp until all of it is in, so
 /// an upload whose part is arriving keeps its old manifest time. The
 /// start at the limit leaves it, while it removes the rest.
 #[test]
@@ -429,7 +530,7 @@ fn a_start_at_the_open_upload_limit_keeps_an_upload_a_request_is_using() {
 
     assert!(manifest_path(&session_dir(root, &sha, &upload_id)).is_file());
     drop(in_use);
-    put_part(root, &sha, &upload_id, 1, b"file 127").unwrap();
+    send_part(root, &sha, &upload_id, 1, b"file 127").unwrap();
     complete_upload(root, &sha, &upload_id).unwrap();
 }
 
@@ -502,7 +603,7 @@ fn a_request_to_an_upload_part_way_through_its_removal_finds_no_upload() {
     let (dir, sha, upload_id, session) = started_upload();
     fs::remove_file(manifest_path(&session)).unwrap();
 
-    let err = put_part(dir.path(), &sha, &upload_id, 1, b"hello").unwrap_err();
+    let err = send_part(dir.path(), &sha, &upload_id, 1, b"hello").unwrap_err();
     assert!(matches!(err, AssetError::UploadNotFound), "{err}");
     let err = complete_upload(dir.path(), &sha, &upload_id).unwrap_err();
     assert!(matches!(err, AssetError::UploadNotFound), "{err}");
@@ -516,12 +617,12 @@ fn a_request_to_an_upload_part_way_through_its_removal_finds_no_upload() {
 #[test]
 fn a_completion_whose_received_part_is_gone_asks_for_the_part_again() {
     let (dir, sha, upload_id, session) = started_upload();
-    put_part(dir.path(), &sha, &upload_id, 1, b"hello").unwrap();
+    send_part(dir.path(), &sha, &upload_id, 1, b"hello").unwrap();
     fs::remove_file(part_path(&session, 1)).unwrap();
 
     let err = complete_upload(dir.path(), &sha, &upload_id).unwrap_err();
     assert!(matches!(err, AssetError::Invalid(_)), "{err}");
-    put_part(dir.path(), &sha, &upload_id, 1, b"hello").unwrap();
+    send_part(dir.path(), &sha, &upload_id, 1, b"hello").unwrap();
     complete_upload(dir.path(), &sha, &upload_id).unwrap();
 }
 

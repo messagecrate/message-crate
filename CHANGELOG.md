@@ -1267,6 +1267,13 @@ carry their date on the heading.
   the upload time limits, not only an upload. This guards against a
   misbehaving device on your network; it does not make the server safe to
   put on the internet (#2100).
+- 2026-10-12: **An attachment sent in parts no longer fills the server's
+  memory.** The server held each part of a large attachment in memory until
+  all of it had arrived, up to 16 MiB a part, and nothing limited how many
+  parts one account sent at once, so one account could use up the memory of
+  a server it shared with others. Each part now goes to disk as it arrives,
+  and the server holds only a small piece of it at a time. The desktop app
+  still sends as many attachments at once as before (#2114).
 - 2026-10-12: **A stopping server waits at most 30 seconds, and Docker
   gives it 40.** A server told to stop waited as long as the longest
   request still running, and an import could take minutes, so `docker stop`
