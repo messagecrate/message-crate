@@ -452,10 +452,7 @@ async fn import_files(conn: &mut sqlx::SqliteConnection, files: &[(&str, String)
         import_id: None,
         phone_country: None,
     });
-    crate::db::account_profile::create_account_row_if_missing(conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
-    crate::imports_api::import_jsonl_files_on_conn(conn, &paths, &opts)
+    crate::test_support::import_for_account(conn, &paths, &opts)
         .await
         .unwrap();
 }

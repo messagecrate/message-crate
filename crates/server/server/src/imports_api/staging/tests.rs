@@ -8,9 +8,8 @@ use crate::assets_api::{self, AssetStats};
 use crate::imports_api::records::AttachmentRecord;
 use crate::imports_api::{
     FixedImportArgs, ImportCounts, ImportError, ImportFailure, ImportMode, ImportOptions,
-    import_jsonl_files_on_conn,
 };
-use crate::test_support::{attachment, conversation_header, message_line};
+use crate::test_support::{attachment, conversation_header, import_for_account, message_line};
 use message_ir::{IrAttachment, IrMessageKind, IrService};
 
 const TEST_ACCOUNT: i64 = 7;
@@ -47,8 +46,7 @@ async fn import_one(
     std::fs::write(&path, body).unwrap();
     let assets = tmp.path().join("assets");
     let opts = append_opts(&assets, tmp.path(), "sms-backup-restore");
-    crate::db::account_profile::create_account_row_if_missing(conn, TEST_ACCOUNT).await?;
-    Ok(import_jsonl_files_on_conn(conn, &[path], &opts).await?)
+    Ok(import_for_account(conn, &[path], &opts).await?)
 }
 
 /// Append-mode options for one test import into [`TEST_ACCOUNT`] under the
@@ -187,9 +185,6 @@ fn a_path_that_leaves_the_export_directory_is_refused_whether_or_not_its_fingerp
 async fn an_attachment_staging_refuses_is_a_rejection_naming_its_file() {
     let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    crate::db::account_profile::create_account_row_if_missing(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
     let tmp = TempDir::new().unwrap();
     let header = one_to_one_header();
     // The path is the input under test, so the line stays written out.
@@ -200,7 +195,7 @@ async fn an_attachment_staging_refuses_is_a_rejection_naming_its_file() {
     let assets = tmp.path().join("assets");
     let opts = append_opts(&assets, tmp.path(), "imessage");
 
-    let err = import_jsonl_files_on_conn(&mut conn, std::slice::from_ref(&path), &opts)
+    let err = import_for_account(&mut conn, std::slice::from_ref(&path), &opts)
         .await
         .expect_err("the path is refused");
 
@@ -321,15 +316,12 @@ fn a_malformed_fingerprint_is_refused_before_a_conversion() {
 async fn a_file_that_cannot_be_opened_is_internal_with_its_whole_cause() {
     let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    crate::db::account_profile::create_account_row_if_missing(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
     let tmp = TempDir::new().unwrap();
     let path = tmp.path().join("gone.jsonl");
     let assets = tmp.path().join("assets");
     let opts = append_opts(&assets, tmp.path(), "imessage");
 
-    let err = import_jsonl_files_on_conn(&mut conn, std::slice::from_ref(&path), &opts)
+    let err = import_for_account(&mut conn, std::slice::from_ref(&path), &opts)
         .await
         .expect_err("the file is not there");
 
@@ -349,9 +341,6 @@ async fn a_file_that_cannot_be_opened_is_internal_with_its_whole_cause() {
 async fn a_directory_import_refuses_a_header_without_a_source() {
     let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    crate::db::account_profile::create_account_row_if_missing(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
     let tmp = TempDir::new().unwrap();
     let header = conversation_header("  ", "+15555550154").line();
     let path = tmp.path().join("+15555550154.jsonl");
@@ -366,7 +355,7 @@ async fn a_directory_import_refuses_a_header_without_a_source() {
         ..append_opts(&assets, tmp.path(), "")
     };
 
-    let err = import_jsonl_files_on_conn(&mut conn, std::slice::from_ref(&path), &opts)
+    let err = import_for_account(&mut conn, std::slice::from_ref(&path), &opts)
         .await
         .expect_err("the header has no source");
 
@@ -395,9 +384,6 @@ async fn a_directory_import_refuses_a_header_without_a_source() {
 async fn a_file_that_does_not_match_its_claimed_sha256_fails_the_import_and_is_not_stored() {
     let (pool, _dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    crate::db::account_profile::create_account_row_if_missing(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
     let tmp = TempDir::new().unwrap();
     let assets = tmp.path().join("assets");
     std::fs::write(tmp.path().join("photo.bin"), b"the bytes on disk").unwrap();
@@ -413,7 +399,7 @@ async fn a_file_that_does_not_match_its_claimed_sha256_fails_the_import_and_is_n
     std::fs::write(&path, format!("{header}{message}\n")).unwrap();
     let opts = append_opts(&assets, tmp.path(), "imessage");
 
-    let err = import_jsonl_files_on_conn(&mut conn, &[path], &opts)
+    let err = import_for_account(&mut conn, &[path], &opts)
         .await
         .expect_err("a mismatched file fails the import");
 

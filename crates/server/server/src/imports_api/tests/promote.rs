@@ -338,9 +338,6 @@ async fn fail_every_message_insert(conn: &mut SqliteConnection) {
 async fn failed_promote_keeps_the_trashed_contact_and_adds_no_contacts() {
     let (pool, dir) = crate::test_support::schema_pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    crate::db::account_profile::create_account_row_if_missing(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
     let assets = dir.path().join("assets");
     let export_dir = dir.path().join("export");
     fs::create_dir_all(&export_dir).unwrap();
@@ -361,7 +358,7 @@ async fn failed_promote_keeps_the_trashed_contact_and_adds_no_contacts() {
         "ada.jsonl",
         &one_message_conversation("g-ada-1", "+15555550165"),
     );
-    import_jsonl_files_on_conn(&mut conn, &[first], &opts)
+    crate::test_support::import_for_account(&mut conn, &[first], &opts)
         .await
         .unwrap();
     let ada: i64 = sqlx::query_scalar("SELECT id FROM contacts WHERE account_id = $1")

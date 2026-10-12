@@ -5,6 +5,25 @@ use tempfile::TempDir;
 
 use super::{conversation_header, message_line};
 
+/// Import `paths` with `opts` on `conn` through the real entry point, after
+/// creating the row of `opts.account_id` when it has none. The import itself
+/// never makes the account (#2061), so a test that names one makes it here.
+///
+/// # Errors
+///
+/// Whatever the import refuses or fails with, and an internal error when the
+/// account row cannot be written.
+pub async fn import_for_account(
+    conn: &mut sqlx::SqliteConnection,
+    paths: &[std::path::PathBuf],
+    opts: &crate::imports_api::ImportOptions<'_>,
+) -> Result<crate::imports_api::ImportCounts, crate::imports_api::ImportError> {
+    crate::db::account_profile::create_account_row_if_missing(conn, opts.account_id)
+        .await
+        .map_err(crate::imports_api::ImportError::Internal)?;
+    crate::imports_api::import_jsonl_files_on_conn(conn, paths, opts).await
+}
+
 /// Import one JSON Lines text into `account_id` in append mode on `conn`, as
 /// the serve path does once the schema is in place, and answer the run's
 /// counts. The file and its asset directory live in a temporary directory that
@@ -15,18 +34,12 @@ pub async fn import_jsonl_text(
     source: &str,
     body: &str,
 ) -> crate::imports_api::ImportCounts {
-    use crate::imports_api::{
-        FixedImportArgs, ImportMode, ImportOptions, import_jsonl_files_on_conn,
-    };
+    use crate::imports_api::{FixedImportArgs, ImportMode, ImportOptions};
     let tmp = TempDir::new().unwrap();
     let path = tmp.path().join("conversation.jsonl");
     std::fs::write(&path, body).unwrap();
     let assets = tmp.path().join("assets");
-    // The import never makes the account (#2061), so the test does.
-    crate::db::account_profile::create_account_row_if_missing(conn, account_id)
-        .await
-        .unwrap();
-    import_jsonl_files_on_conn(
+    import_for_account(
         conn,
         &[path],
         &ImportOptions::fixed(FixedImportArgs {
