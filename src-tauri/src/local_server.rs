@@ -31,17 +31,18 @@
 //! An app that crashes kills nothing on Unix, so the server ends itself
 //! instead. The app starts it with `--exit-with-parent` and this app's
 //! process id, and the server stops once that process is gone, the way it
-//! stops on Ctrl-C or SIGTERM: ffmpeg stopped and the work in flight finished
-//! (#1934). It checks every two seconds on Unix (`PARENT_CHECK_INTERVAL`) and
-//! waits on the app's process handle on Windows. On Windows the Job Object
-//! usually ends the tree first: the system closes the crashed app's handle to
-//! the job, and the job kills the server and its ffmpeg the way closing the
-//! app does. The server's own watch is then left for a server the system
-//! would not put in a job. An app started again before that server is gone
-//! finds it answering and uses it. The screens ask for the state every three
-//! seconds while it is ready (`READY_POLL_MS` in
-//! `web/src/lib/useLocalServer.ts`), and the check that finds the address
-//! free starts the app's own.
+//! stops on Ctrl-C or SIGTERM: ffmpeg stopped and the work in flight
+//! finished, for as long as the server's own drain limit allows
+//! (#1934, #2122). It checks every two seconds on Unix
+//! (`PARENT_CHECK_INTERVAL`) and waits on the app's process handle on
+//! Windows. On Windows the Job Object usually ends the tree first: the
+//! system closes the crashed app's handle to the job, and the job kills the
+//! server and its ffmpeg the way closing the app does. The server's own
+//! watch is then left for a server the system would not put in a job. An
+//! app started again before that server is gone finds it answering and uses
+//! it. The screens ask for the state every three seconds while it is ready
+//! (`READY_POLL_MS` in `web/src/lib/useLocalServer.ts`), and the check that
+//! finds the address free starts the app's own.
 //!
 //! The same checks ask the app's own server whether it still answers. One
 //! that runs but no longer answers is killed once [`UNANSWERED_CHECKS`]

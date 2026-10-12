@@ -23,6 +23,7 @@ The server is published as a Docker image.
 
 ```bash title="Start a Message Crate"
 docker run -d --name message-crate \
+  --stop-timeout 40 \
   --restart unless-stopped \
   -p 127.0.0.1:8080:8080 \
   -v message-crate-data:/app/data \
@@ -36,6 +37,7 @@ What each part does:
 | Part | Meaning |
 |---|---|
 | `--name message-crate` | Names the container, so later commands can refer to it. |
+| `--stop-timeout 40` | Gives the server 40 seconds to stop. A stopping server waits up to 30 seconds for the work in progress, such as an import, and Docker's own 10 seconds would cut that wait short. |
 | `--restart unless-stopped` | Starts the server again after the computer restarts. |
 | `-p 127.0.0.1:8080:8080` | Makes the server reachable at port 8080 from this computer only. |
 | `-v message-crate-data:/app/data` | Keeps the database in a Docker volume named `message-crate-data`. |
