@@ -59,7 +59,7 @@ describe("IdentityTable", () => {
       "First heard from",
       "Last heard from",
       "Conversations",
-      "Direct messages",
+      "One-to-one messages",
       "Group messages",
       "",
     ]);
@@ -94,7 +94,7 @@ describe("IdentityTable", () => {
       "First heard from",
       "Last heard from",
       "Conversations",
-      "Direct messages",
+      "One-to-one messages",
       "Group messages",
       "Orphaned messages",
       "",
@@ -168,7 +168,7 @@ describe("IdentityTable", () => {
     await user.click(identity);
     expect(identities()[0]).toBe("someone.with.a.long.address@example.com");
 
-    await user.click(screen.getByRole("columnheader", { name: /Direct messages/ }));
+    await user.click(screen.getByRole("columnheader", { name: /One-to-one messages/ }));
     expect(identities()[0]).toBe("someone.with.a.long.address@example.com");
     expect(identity.querySelector("[aria-hidden]")?.className).toContain("invisible");
   });

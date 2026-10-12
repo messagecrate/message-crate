@@ -206,7 +206,7 @@ export default function IdentityTable({
         <Column id="direct_messages" allowsSorting className={`${headerClass} text-right`}>
           {({ sortDirection }) => (
             <Heading sortDirection={sortDirection}>
-              Direct <span className="block">messages</span>
+              One-to-one <span className="block">messages</span>
             </Heading>
           )}
         </Column>

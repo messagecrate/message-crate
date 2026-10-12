@@ -132,7 +132,7 @@ The importer does not read it: discovery skips Contacts exports so they are neve
 These limitations come from the exported files. The importer cannot recover information that iMazing did not include:
 
 1. Outgoing rows do not contain the owner’s number or name.
-2. Many one-to-one chats use a display name as `Chat Session` instead of a phone number.
+2. Many one-to-one conversations use a display name as `Chat Session` instead of a phone number.
 3. A silent Messages group member has no phone, because no row pairs their display name with an address.
 4. WhatsApp has no complete group roster. Participants are inferred from senders.
 5. `Message Date` values do not contain a timezone.

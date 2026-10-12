@@ -90,7 +90,7 @@ Do **not** use the `X-smssync-*` header namespace. This format is not Plus-compa
 - Phone: `+15555550119@sms.local` (E.164 in local-part; `+` allowed in addr-spec via quoting if required by the builder).
 - Email / Apple identity: `user=example.com@identity.local` or a documented safe encoding of the raw identity — never name-only as the sole identifier.
 - Display name may appear in the phrase (`Alice <+1555…@sms.local>`).
-- The local part is the identity, with its `@` written as `=` when it holds one `@` and no `=`. When that is not an RFC 5322 `dot-atom-text`, or holds a `%`, each byte outside `atext`, and each `%` and `.`, is written as `%XX`, as for `Message-ID` below: the identity `Ann Lee` is `Ann%20Lee@sms.local`. A space or line break written as it was would break the header. Two identities never share an address. The identity itself is read from its `X-ME-*` header, never from the address. The mbox `From_` line names the same address, and a group chat's `…@chat.local` address writes its chat identifier the same way.
+- The local part is the identity, with its `@` written as `=` when it holds one `@` and no `=`. When that is not an RFC 5322 `dot-atom-text`, or holds a `%`, each byte outside `atext`, and each `%` and `.`, is written as `%XX`, as for `Message-ID` below: the identity `Ann Lee` is `Ann%20Lee@sms.local`. A space or line break written as it was would break the header. Two identities never share an address. The identity itself is read from its `X-ME-*` header, never from the address. The mbox `From_` line names the same address, and a group conversation's `…@chat.local` address writes its chat identifier the same way.
 
 ### Message-ID
 
@@ -103,9 +103,9 @@ Do **not** use the `X-smssync-*` header namespace. This format is not Plus-compa
 
 Browse-oriented so mail-client **Correspondents** / Subject columns stay readable. Machine identity remains in `X-ME-*`.
 
-**1:1 incoming:** `From` = peer (display name when known); `To` = owner as `Me <…>`.
+**One-to-one incoming:** `From` = peer (display name when known); `To` = owner as `Me <…>`.
 
-**1:1 outgoing:** `From` = `Me <owner>`; `To` = peer.
+**One-to-one outgoing:** `From` = `Me <owner>`; `To` = peer.
 
 **Group incoming:** `From` = actual sender; `To` = one conversation address (`Group Title <chat-id@chat.local>`); full roster in `X-ME-Participants` only.
 
@@ -133,7 +133,7 @@ A mail an earlier Message Crate wrote names its addresses with `X-ME-Sender-Hand
 |--------|----------------|-------|
 | `X-ME-Chat-Identifier` | string | Same role as CSV `chat_identifier` |
 | `X-ME-Conversation-Type` | `individual` \| `group` | |
-| `X-ME-Group-Title` | string | Empty/absent for 1:1 |
+| `X-ME-Group-Title` | string | Empty/absent for one-to-one |
 | `X-ME-Participants` | JSON `[{ "identity", "display_name" }]` | **Required for groups**; E.164 preferred for phones |
 | `X-ME-Direction` | `incoming` \| `outgoing` | |
 | `X-ME-Sender-Identity` | string | Peer or owner (outgoing); omit when unknown |

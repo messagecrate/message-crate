@@ -51,7 +51,7 @@ describe("CheckedContactsPanel", () => {
       "First heard from",
       "Last heard from",
       "Conversations",
-      "DirectMessages",
+      "One-to-oneMessages",
       "GroupMessages",
     ]);
   });
@@ -83,7 +83,7 @@ describe("CheckedContactsPanel", () => {
     const cells = within(row as HTMLElement)
       .getAllByRole("gridcell")
       .map((c) => c.textContent);
-    // Conversations: 2 direct + 1 group + 4 orphaned.
+    // Conversations: 2 one-to-one + 1 group + 4 orphaned.
     expect(cells.slice(2)).toEqual(["7", "314", "15", "9"]);
   });
 

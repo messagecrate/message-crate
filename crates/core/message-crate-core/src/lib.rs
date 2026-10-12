@@ -31,7 +31,7 @@ pub use config::{
 };
 pub use counter::{
     ATTACHMENTS_MISSING, ATTACHMENTS_SAVED, CONVERSATION_FILES_PREPARING, CONVERSATIONS_OBFUSCATED,
-    CONVERSATIONS_RESUMED, Counter, DUPLICATES_DROPPED, ItemKind, NAME_ONLY_CHAT,
+    CONVERSATIONS_RESUMED, Counter, DUPLICATES_DROPPED, ItemKind, NAME_ONLY_CONVERSATION,
     NOT_SMS_OR_MMS_LEFT_OUT, NOTIFICATIONS, SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS,
     SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART, count_of, count_of_files, error_and_note_lines,
     import_error_lines, item_line, item_reason,
@@ -41,8 +41,8 @@ pub use exporters::{
     WhatsappPlatform, ensure_output_dir,
 };
 pub use pipeline::{
-    CSV_NOT_READ, ExportReport, IssueSink, NAME_ONLY_CHAT_NOTE, RunIssue, RunIssueKind, RunResult,
-    discover_files, export_meta, file_modified_unix_ms, newest_file_modified_unix_ms,
+    CSV_NOT_READ, ExportReport, IssueSink, NAME_ONLY_CONVERSATION_NOTE, RunIssue, RunIssueKind,
+    RunResult, discover_files, export_meta, file_modified_unix_ms, newest_file_modified_unix_ms,
     prepare_outputs, project_conversation, unreadable_parts_note,
 };
 pub use process::{CancelFlag, Cancelled, LogSink, check_cancel, is_cancelled, parallel_for_each};

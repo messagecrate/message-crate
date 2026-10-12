@@ -5,13 +5,13 @@ import type { components } from "../../lib/serverApi.types";
 export type Identity = components["schemas"]["Identity"];
 
 /**
- * "12 direct messages and 30 group messages", "1 direct message", or null when
+ * "12 one-to-one messages and 30 group messages", "1 one-to-one message", or null when
  * there are none. Orphaned messages are named only when there are some.
  */
 export function messagesPhrase(identity: Identity): string | null {
   const parts: string[] = [];
   const count = (n: number, kind: string) => countOf(n, `${kind} message`);
-  if (identity.direct_messages > 0) parts.push(count(identity.direct_messages, "direct"));
+  if (identity.direct_messages > 0) parts.push(count(identity.direct_messages, "one-to-one"));
   if (identity.group_messages > 0) parts.push(count(identity.group_messages, "group"));
   if (identity.orphaned_messages > 0) parts.push(count(identity.orphaned_messages, "orphaned"));
   if (parts.length === 0) return null;

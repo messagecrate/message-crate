@@ -1,16 +1,16 @@
 ---
 title: Database tables
-description: SQLite tables in Message Crate and how chats, contacts, and messages link through typed handles.
+description: SQLite tables in Message Crate and how conversations, contacts, and messages link through typed handles.
 ---
 
 The Message Crate SQLite database falls into four groups:
 
-1. **Chats and texts** — threads, participants, messages, files, reactions
+1. **Conversations and messages** — conversations, participants, messages, files, reactions
 2. **People and groups** — handles, contacts, contact groups, accounts
 3. **Staging** — temporary copies used while importing
-4. **Trash markers** — soft-delete lists without removing chat data
+4. **Trash markers** — soft-delete lists without removing message data
 
-Chats and people are **not** joined by a shared person ID. They meet through
+Conversations and people are **not** joined by a shared person ID. They meet through
 the **`handles`** table: every phone number, email, or username appears once
 per account **per platform** (`phone` or `whatsapp`) as a typed handle, and
 conversations, participants, messages, and contacts all point at the same
@@ -35,19 +35,19 @@ erDiagram
     message_tags ||--o{ message_tag_members : "has"
 ```
 
-## Chats and texts
+## Conversations and messages
 
 ### `conversations`
 
-One row = one chat thread (`account_id`, `chat_handle_id` → `handles`,
+One row = one conversation (`account_id`, `chat_handle_id` → `handles`,
 `conversation_type`, `group_title`, and related fields). There is no
 conversation-level messaging transport: SMS vs iMessage vs RCS varies per
-message. Thread chrome for “which backup” uses distinct `messages.source`
+message. The conversation view's “which backup” uses distinct `messages.source`
 values.
 
 ### `participants`
 
-One row = one handle in one chat (`handle_id` → `handles`, required, and an
+One row = one handle in one conversation (`handle_id` → `handles`, required, and an
 optional `name_alias`). A person the backup names with no address has a handle
 of type `other` holding the name. The participant's contact is the one its
 handle is on in `contact_handles`.
@@ -184,21 +184,21 @@ status names.
 
 ### `message_tags` / `message_tag_members`
 
-Named stamps on whole conversation threads (not on individual messages). A
-thread can have several tags. New messages in a tagged thread stay under that
-tag. A new thread is untagged until someone adds a tag.
+Named stamps on whole conversations (not on individual messages). A
+conversation can have several tags. New messages in a tagged conversation stay
+under that tag. A new conversation is untagged until someone adds a tag.
 
-## How chats meet people
+## How conversations meet people
 
 There is no `contact_id` on conversations. The link is the `handles` table:
 
-- 1:1 `conversations.chat_handle_id` and `participants.handle_id` on the chat
-  side
+- One-to-one `conversations.chat_handle_id` and `participants.handle_id` on the
+  conversation side
 - `contact_handles.handle_id` on the contact side
 
-Chat-side and contact-side reference the same per-account handle rows, so when
-a chat handle and a contact handle are the same identity, the UI treats that
-chat as belonging to that contact.
+The conversation side and the contact side reference the same per-account
+handle rows, so when a conversation's chat handle and a contact handle are the
+same identity, the UI treats that conversation as belonging to that contact.
 
 ```mermaid
 flowchart LR
@@ -256,8 +256,8 @@ SQLite, so it is reported once for the whole database and never per account.
 
 | You want… | Look in… |
 |-----------|----------|
-| A chat thread | `conversations` |
-| Who is listed in a chat | `participants` |
+| A conversation | `conversations` |
+| Who is listed in a conversation | `participants` |
 | An identity (phone, email, username) | `handles` |
 | The texts | `messages` |
 | Photos and files | `attachments` |

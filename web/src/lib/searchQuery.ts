@@ -336,7 +336,7 @@ export function forPerson(word: string, id: string): string {
 export type ConversationKind = "all" | "direct" | "group";
 
 /**
- * Narrow `query` to direct or group conversations, or leave it unchanged for
+ * Narrow `query` to one-to-one or group conversations, or leave it unchanged for
  * `all` rather than adding an empty term.
  */
 export function withKind(query: string, kind: ConversationKind): string {

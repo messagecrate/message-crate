@@ -414,7 +414,7 @@ pub struct Identity {
     pub start_date: Option<String>,
     /// When the newest such message was sent, or null when there is none.
     pub end_date: Option<String>,
-    /// Direct, group, and orphaned conversations: for a contact, those the identity
+    /// One-to-one, group, and orphaned conversations: for a contact, those the identity
     /// takes part in, whoever wrote in them; for an account, those holding
     /// at least one of the identity's messages. Trashed conversations are
     /// excluded.
@@ -452,7 +452,7 @@ pub enum IdentitiesOf {
 }
 
 /// One row of [`identities`]: address, service, whether its country is
-/// unknown, first and last timestamp, conversation count, direct, group, and
+/// unknown, first and last timestamp, conversation count, one-to-one, group, and
 /// orphaned message counts.
 type IdentityRow = (
     String,

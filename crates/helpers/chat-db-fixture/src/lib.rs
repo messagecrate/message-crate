@@ -112,16 +112,17 @@ pub fn apple_nanos(seconds_since_2001: i64) -> i64 {
 /// - handle 4: [`OWNER`], the owner's own number, which Apple lists among a
 ///   group's members
 ///
-/// `chat.style` is Apple's: 45 for a one-to-one chat, 43 for a group.
+/// `chat.style` is Apple's: 45 for the `chat` row of a one-to-one
+/// conversation, 43 for a group's.
 ///
-/// - chat 1: direct with [`FRIEND_PHONE`], `account_login` `P:` + [`OWNER`]
+/// - chat 1: one-to-one with [`FRIEND_PHONE`], `account_login` `P:` + [`OWNER`]
 /// - chat 2: the group [`GROUP_TITLE`], both friends and the owner's own
 ///   handle, the same account
-/// - chat 3: direct with [`FRIEND_EMAIL`], `account_login` `E:` +
+/// - chat 3: one-to-one with [`FRIEND_EMAIL`], `account_login` `E:` +
 ///   [`OWNER_EMAIL`]
 /// - chat 4: the unnamed group [`SHRUNK_GROUP_IDENTIFIER`], with
 ///   [`FRIEND_EMAIL`] the one member left
-/// - chat 5: direct with [`FRIEND_PHONE_EMAIL`], with no
+/// - chat 5: one-to-one with [`FRIEND_PHONE_EMAIL`], with no
 ///   `chat_handle_join` rows
 /// - chat 6: the owner's chat with the owner's own number [`OWNER`], whose
 ///   one member is the owner's handle
