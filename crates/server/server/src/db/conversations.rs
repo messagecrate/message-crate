@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
-use sqlx::SqliteConnection;
+use sqlx::{SqlSafeStr, SqliteConnection};
 
 use crate::db::ownership::owns_conversation;
 use crate::db::participant_names::{Participant, load_for_conversations};
@@ -145,9 +145,10 @@ pub async fn list_conversations_sorted(
     let where_sql = filter.where_sql();
 
     let count_sql = format!("SELECT COUNT(*) FROM conversations c WHERE {where_sql}");
-    let total: i64 = sqlx::query_scalar_with(&count_sql, bind_args(filter.params()))
-        .fetch_one(&mut *conn)
-        .await?;
+    let total: i64 =
+        sqlx::query_scalar_with(sqlx::AssertSqlSafe(count_sql), bind_args(filter.params()))
+            .fetch_one(&mut *conn)
+            .await?;
     let total = total.max(0) as u64;
 
     let mut params = filter.params().to_vec();
@@ -163,7 +164,7 @@ pub async fn list_conversations_sorted(
         select = conversation_row_select(),
         order_by = conversation_order_by(order),
     );
-    let out = load_conversation_rows(conn, account_id, &sql, &params).await?;
+    let out = load_conversation_rows(conn, account_id, sqlx::AssertSqlSafe(sql), &params).await?;
     Ok(page_from_rows(out, total, PageParams { limit, offset }))
 }
 
@@ -184,7 +185,7 @@ pub async fn get_conversation_summary(
         conversation_row_select()
     );
     let params = [SqlParam::Int(conversation_id), SqlParam::Int(account_id)];
-    let out = load_conversation_rows(conn, account_id, &sql, &params).await?;
+    let out = load_conversation_rows(conn, account_id, sqlx::AssertSqlSafe(sql), &params).await?;
     Ok(out.into_iter().next())
 }
 
@@ -275,7 +276,7 @@ fn conversation_row_select() -> String {
 async fn load_conversation_rows(
     conn: &mut SqliteConnection,
     account_id: i64,
-    sql: &str,
+    sql: impl SqlSafeStr,
     params: &[SqlParam],
 ) -> Result<Vec<ConversationSummary>, ApiError> {
     let rows: Vec<RawConversationRow> = sqlx::query_as_with(sql, bind_args(params))
@@ -382,7 +383,7 @@ async fn load_conversation_sources(
                  GROUP BY conversation_id, source
                  ORDER BY conversation_id, source"
             );
-            let mut q = sqlx::query_as::<_, (i64, String)>(&sql);
+            let mut q = sqlx::query_as::<_, (i64, String)>(sqlx::AssertSqlSafe(sql));
             for id in chunk {
                 q = q.bind(*id);
             }
@@ -470,12 +471,12 @@ pub async fn with_yourself_ids(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> anyhow::Result<Vec<i64>> {
-    Ok(sqlx::query_scalar(&format!(
+    Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT c.id FROM conversations c
          WHERE c.account_id = $1 AND {}
          ORDER BY c.id",
         is_with_yourself_sql("c")
-    ))
+    )))
     .bind(account_id)
     .fetch_all(&mut *conn)
     .await?)

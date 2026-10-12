@@ -487,7 +487,7 @@ async fn a_replace_run_deletes_only_its_own_sources_old_messages() {
         )
     };
     for table in ["attachments", "tapbacks"] {
-        let n: i64 = sqlx::query_scalar(&children(table))
+        let n: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(children(table)))
             .fetch_one(&mut *conn)
             .await
             .unwrap();
@@ -536,10 +536,11 @@ async fn a_replace_run_deletes_only_its_own_sources_old_messages() {
         ]
     );
     for table in ["attachments", "tapbacks"] {
-        let n: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
-            .fetch_one(&mut *conn)
-            .await
-            .unwrap();
+        let n: i64 =
+            sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT COUNT(*) FROM {table}")))
+                .fetch_one(&mut *conn)
+                .await
+                .unwrap();
         assert_eq!(
             n, 1,
             "only the other account's g-gone keeps a row in {table}"

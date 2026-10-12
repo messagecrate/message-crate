@@ -48,9 +48,9 @@ async fn owns_row(
     account_id: i64,
     id: i64,
 ) -> Result<bool, sqlx::Error> {
-    let found: Option<i64> = sqlx::query_scalar(&format!(
+    let found: Option<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT 1 FROM {table} WHERE id = $1 AND account_id = $2"
-    ))
+    )))
     .bind(id)
     .bind(account_id)
     .fetch_optional(&mut *conn)
@@ -98,7 +98,9 @@ pub async fn missing_ids(
     );
     let mut params = vec![SqlParam::Int(account_id)];
     params.extend(ids.iter().map(|id| SqlParam::Int(*id)));
-    let rows = (&mut *conn).fetch_all(bind_all(&sql, &params)).await?;
+    let rows = (&mut *conn)
+        .fetch_all(bind_all(sqlx::AssertSqlSafe(sql), &params))
+        .await?;
     let found = rows
         .iter()
         .map(|row| row.try_get::<i64, _>(0))

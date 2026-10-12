@@ -174,7 +174,7 @@ pub(in crate::db) fn tally_sql(import_id: &str) -> [String; 2] {
 pub async fn counts(conn: &mut SqliteConnection, import_id: i64) -> Result<ContactCounts> {
     let [new, changed] = tally_sql("$1");
     let (new_count, changed_count): (i64, i64) =
-        sqlx::query_as(&format!("SELECT {new}, {changed}"))
+        sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {new}, {changed}")))
             .bind(import_id)
             .fetch_one(&mut *conn)
             .await?;

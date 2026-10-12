@@ -346,12 +346,12 @@ pub async fn live_contact_exists(
     account_id: i64,
     contact_id: i64,
 ) -> Result<bool> {
-    let found: Option<i64> = sqlx::query_scalar(&format!(
+    let found: Option<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT ct.id
          FROM contacts ct
          WHERE ct.id = $1 AND ct.account_id = $2
            AND {NOT_TRASHED_CONTACT}",
-    ))
+    )))
     .bind(contact_id)
     .bind(account_id)
     .fetch_optional(&mut *conn)
@@ -631,7 +631,7 @@ pub async fn holder_contacts_in_conversations(
     account_id: i64,
 ) -> Result<Vec<i64>> {
     let with_yourself = crate::db::conversations::is_with_yourself_sql("c");
-    Ok(sqlx::query_scalar(&format!(
+    Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT DISTINCT ch.contact_id
          FROM contact_handles ch
          JOIN handles h ON h.id = ch.handle_id
@@ -647,7 +647,7 @@ pub async fn holder_contacts_in_conversations(
                              AND m.is_from_me = 0))
          ORDER BY ch.contact_id",
         holder = crate::db::account_profile::is_account_identity_sql("h", "$1"),
-    ))
+    )))
     .bind(account_id)
     .fetch_all(&mut *conn)
     .await?)
@@ -683,7 +683,7 @@ pub async fn delete_untouched_holder_contact(
     account_id: i64,
     contact_id: i64,
 ) -> Result<bool> {
-    let deletable: bool = sqlx::query_scalar(&format!(
+    let deletable: bool = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT EXISTS (
            SELECT 1 FROM contacts ct
            WHERE ct.account_id = $1 AND ct.id = $2
@@ -703,7 +703,7 @@ pub async fn delete_untouched_holder_contact(
                       OR EXISTS (SELECT 1 FROM staging_conversations
                                  WHERE account_id = $1 AND chat_handle_id = h.id))))",
         holder = crate::db::account_profile::is_account_identity_sql("h", "$1"),
-    ))
+    )))
     .bind(account_id)
     .bind(contact_id)
     .fetch_one(&mut *conn)

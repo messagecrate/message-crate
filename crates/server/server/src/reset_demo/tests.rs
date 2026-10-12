@@ -90,7 +90,7 @@ async fn close_test_db(pool: sqlx::SqlitePool, conn: sqlx::pool::PoolConnection<
     // connection to be returned, and the sqlx worker thread closes it
     // later — racing the checkpoint/copy that follows can SIGBUS.
     conn.close().await.expect("close test connection");
-    engine::close_pool(&pool).await;
+    pool.close().await;
 }
 
 #[tokio::test]
@@ -292,7 +292,7 @@ async fn a_reset_builds_in_the_configured_database_and_leaves_the_config_as_it_i
     let mut conn = test_db_conn(&elsewhere.join("messagecrate.db")).await;
     let demo_messages = count(
         &mut conn,
-        &format!("SELECT COUNT(*) FROM messages WHERE account_id = {DEMO_ACCOUNT_ID}"),
+        "SELECT COUNT(*) FROM messages WHERE account_id = $1",
     )
     .await;
     assert_eq!(
@@ -765,11 +765,13 @@ async fn reset_refuses_a_database_with_another_layout() {
     let pool = engine::open_pool_for_path(&db)
         .await
         .expect("open test database");
-    sqlx::query(&format!("PRAGMA user_version = {other}"))
-        .execute(&pool)
-        .await
-        .expect("stamp another fingerprint");
-    engine::close_pool(&pool).await;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "PRAGMA user_version = {other}"
+    )))
+    .execute(&pool)
+    .await
+    .expect("stamp another fingerprint");
+    pool.close().await;
     let bundle = temp.path().join("bundle");
     write_tiny_reset_bundle(&bundle);
     let cfg = test_config(&db, &temp.path().join("data"));
@@ -790,7 +792,7 @@ async fn reset_refuses_a_database_with_another_layout() {
         .fetch_one(&pool)
         .await
         .expect("count messages");
-    engine::close_pool(&pool).await;
+    pool.close().await;
     assert_eq!(stamped, other, "the database keeps its stamp");
     assert!(messages > 0, "the database keeps its messages");
 }
@@ -1218,7 +1220,7 @@ async fn sqlite_table_names(db: &Path) -> Vec<String> {
             .await
             .expect("list tables");
     conn.close().await.expect("close");
-    engine::close_pool(&pool).await;
+    pool.close().await;
     names
 }
 
@@ -1470,7 +1472,7 @@ fn read_generated_bundle(bundle: &Path) -> BundleContents {
     contents
 }
 
-async fn count(conn: &mut SqliteConnection, sql: &str) -> i64 {
+async fn count(conn: &mut SqliteConnection, sql: &'static str) -> i64 {
     sqlx::query_scalar(sql)
         .bind(DEMO_ACCOUNT_ID)
         .fetch_one(&mut *conn)
@@ -1639,7 +1641,7 @@ async fn a_generated_demo_bundle_imports_whole_and_its_overlap_dedupes() {
         "every demo message is held at one of the owner's identities"
     );
     conn.close().await.expect("close");
-    engine::close_pool(&pool).await;
+    pool.close().await;
 }
 
 /// One contact of a generated bundle's address book, read back from the file.
@@ -1955,7 +1957,7 @@ async fn the_wipe_removes_the_demo_rows_and_directory_and_leaves_other_accounts(
     )
     .await
     .expect("wipe the demo account");
-    engine::close_pool(&build).await;
+    build.close().await;
 
     let (pool, mut conn) = test_db(&db).await;
     let demo_rows: i64 = sqlx::query_scalar(
@@ -2071,7 +2073,7 @@ async fn a_reset_leaves_a_demo_that_logs_in_and_holds_nothing_old() {
     );
     // Issue #1107: each of the build's runs has its Contact Group and its
     // Saved Search, as a run a person imports does.
-    let runs: Vec<(String, i64, i64)> = sqlx::query_as(&format!(
+    let runs: Vec<(String, i64, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT i.source,
                 (SELECT COUNT(*) FROM contact_groups g
                  WHERE g.account_id = i.account_id AND g.kind = 'import'
@@ -2079,7 +2081,7 @@ async fn a_reset_leaves_a_demo_that_logs_in_and_holds_nothing_old() {
                 (SELECT COUNT(*) FROM saved_searches s
                  WHERE s.account_id = i.account_id AND s.query = 'import:#' || i.id)
          FROM imports i WHERE i.account_id = $1 ORDER BY i.id"
-    ))
+    )))
     .bind(DEMO_ACCOUNT_ID)
     .fetch_all(&mut *conn)
     .await
@@ -2163,7 +2165,7 @@ async fn accounts_and_demo_conversations(cfg: &Config) -> (i64, i64) {
             .await
             .expect("count demo conversations");
     conn.close().await.expect("close");
-    engine::close_pool(&pool).await;
+    pool.close().await;
     (accounts, conversations)
 }
 
@@ -2216,7 +2218,7 @@ async fn a_new_database_is_seeded_once_with_the_demo_account_and_no_owner() {
         Some("demo")
     );
     conn.close().await.expect("close");
-    engine::close_pool(&pool).await;
+    pool.close().await;
 }
 
 /// A database made empty on purpose (`create-database`, or any earlier
@@ -2251,7 +2253,7 @@ async fn another_programs_sqlite_file_is_not_new_and_reset_demo_refuses_it() {
         .execute(&pool)
         .await
         .expect("create its table");
-    engine::close_pool(&pool).await;
+    pool.close().await;
     checkpoint_and_clean_sidecars(&cfg.paths.db, "in the test")
         .await
         .expect("fold the log into the file");
@@ -2334,9 +2336,9 @@ async fn a_first_start_stopped_after_the_account_row_is_seeded_whole_by_the_next
     // A killed process holds no connection to the seeding file. Dropping the
     // seed above leaves its pool closing in the background, so it is closed
     // here, before the next start removes and recreates the file (#1949).
-    // `close_pool` closes every connection: one sqlx's close leaves open
-    // would delete the new database's `-wal` file when it closes (#2592).
-    engine::close_pool(&stopped_pool).await;
+    // The close must close every connection: one left open would delete the
+    // new database's `-wal` file when it closes later (#2592).
+    stopped_pool.close().await;
     assert_eq!(stopped_pool.size(), 0, "no connection is left on the file");
 
     assert!(
@@ -2560,7 +2562,7 @@ async fn another_account_writes_between_the_demo_builds_import_batches() {
             .expect("count demo messages");
     assert_eq!(demo_messages, 4);
     drop(conn);
-    engine::close_pool(&others).await;
+    others.close().await;
     build.close().await;
 }
 
@@ -2588,17 +2590,17 @@ async fn every_import_contact_group_of_a_built_demo_has_members() {
     )
     .await
     .expect("build the demo account");
-    engine::close_pool(&build).await;
+    build.close().await;
 
     let (pool, mut conn) = test_db(&db_path).await;
-    let groups: Vec<(String, i64)> = sqlx::query_as(&format!(
+    let groups: Vec<(String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT i.source,
                 (SELECT COUNT(*) FROM contact_group_members m
                  JOIN contact_groups g ON g.id = m.group_id
                  WHERE g.account_id = i.account_id AND g.kind = 'import'
                    AND g.name = {IMPORT_CONTACT_GROUP_NAME_SQL})
          FROM imports i WHERE i.account_id = $1 ORDER BY i.id"
-    ))
+    )))
     .bind(DEMO_ACCOUNT_ID)
     .fetch_all(&mut *conn)
     .await
@@ -2708,7 +2710,7 @@ async fn another_account_writes_between_the_demo_wipes_delete_batches() {
         "the other account keeps its last write"
     );
     drop(conn);
-    engine::close_pool(&others).await;
+    others.close().await;
     build.close().await;
 }
 
@@ -2722,7 +2724,7 @@ async fn free_pages(db: &Path) -> i64 {
         .fetch_one(&pool)
         .await
         .expect("read the free page count");
-    engine::close_pool(&pool).await;
+    pool.close().await;
     pages
 }
 
@@ -2926,7 +2928,7 @@ async fn the_wipe_deletes_duplicates_before_the_messages_they_duplicate() {
     )
     .await
     .expect("wipe the demo account");
-    engine::close_pool(&build).await;
+    build.close().await;
 
     assert_eq!(
         left_after_batches.first(),

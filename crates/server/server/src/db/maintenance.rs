@@ -9,9 +9,13 @@ use sqlx::SqliteConnection;
 use crate::progress::Progress;
 
 /// Run each statement, giving a warning instead of failing when one errors.
-async fn run_sql_warn(conn: &mut SqliteConnection, statements: &[&str], progress: Progress) {
+async fn run_sql_warn(
+    conn: &mut SqliteConnection,
+    statements: &[&'static str],
+    progress: Progress,
+) {
     for sql in statements {
-        if let Err(err) = sqlx::query(sql).execute(&mut *conn).await {
+        if let Err(err) = sqlx::query(*sql).execute(&mut *conn).await {
             progress.warn(format_args!("{sql} did not complete: {err}"));
         }
     }

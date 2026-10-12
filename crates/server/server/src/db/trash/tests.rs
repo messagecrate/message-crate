@@ -361,7 +361,7 @@ async fn insert_attachment(
     tx.commit().await.unwrap();
 }
 
-async fn count(conn: &mut SqliteConnection, sql: &str, id: i64) -> i64 {
+async fn count(conn: &mut SqliteConnection, sql: &'static str, id: i64) -> i64 {
     sqlx::query_scalar(sql)
         .bind(id)
         .fetch_one(&mut *conn)

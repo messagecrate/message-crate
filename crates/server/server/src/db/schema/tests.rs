@@ -452,10 +452,12 @@ async fn old_database_rebuilds_empty_at_current_version() {
     )
     .await
     .unwrap();
-    sqlx::query(&format!("PRAGMA application_id = {APPLICATION_ID}"))
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "PRAGMA application_id = {APPLICATION_ID}"
+    )))
+    .execute(&mut *conn)
+    .await
+    .unwrap();
     sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'alice')")
         .bind(A1)
         .execute(&mut *conn)

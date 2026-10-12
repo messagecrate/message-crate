@@ -124,10 +124,12 @@ async fn a_request_never_rebuilds_the_database() {
         .await
         .unwrap();
     let other = crate::db::schema::SCHEMA_FINGERPRINT ^ 1;
-    sqlx::query(&format!("PRAGMA user_version = {other}"))
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "PRAGMA user_version = {other}"
+    )))
+    .execute(&mut *conn)
+    .await
+    .unwrap();
 
     resolve_auth_on_conn(&mut conn, &token, None).await.unwrap();
 
@@ -452,7 +454,7 @@ fn response_lines(lines: &[LogLine]) -> Vec<(LogLevel, String)> {
 async fn a_500_writes_one_error_line_and_an_info_response_line() {
     let fixture = test_fixture().await;
     // A closed pool fails the health check's statement.
-    crate::db::engine::close_pool(&fixture.state.db).await;
+    fixture.state.db.close().await;
     let lines = log_lines_serving(&fixture.state, "info", &["/health"]).await;
 
     let errors: Vec<_> = lines
@@ -1546,7 +1548,7 @@ async fn health_answers_a_probe_that_accepts_only_text() {
 async fn health_fails_when_the_database_cannot_be_reached() {
     let fixture = crate::test_support::test_fixture().await;
     let server = crate::test_support::serve(&fixture.state).await;
-    crate::db::engine::close_pool(&fixture.state.db).await;
+    fixture.state.db.close().await;
 
     let response = http_client()
         .get(format!("{}/health", server.base()))
@@ -2065,10 +2067,10 @@ async fn an_api_token_records_no_app() {
 /// Make every UPDATE of `table` fail, as it does when another connection
 /// holds SQLite's write lock past `busy_timeout`. Reads still succeed.
 async fn fail_updates_of(conn: &mut SqliteConnection, table: &str) {
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TEMP TRIGGER fail_update_{table} BEFORE UPDATE ON main.{table}
          BEGIN SELECT RAISE(ABORT, 'database is locked'); END"
-    ))
+    )))
     .execute(&mut *conn)
     .await
     .unwrap();

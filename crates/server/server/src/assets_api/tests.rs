@@ -1983,7 +1983,7 @@ async fn file_of_with_a_second_row(
     let sha = seeded.with_preview;
     let mut conn = state.db.acquire().await.unwrap();
     let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO attachments (
             message_id, original_name, mime_type, sha256, assets_path,
             derived_sha256, derived_assets_path, derived_mime_type
@@ -1991,7 +1991,7 @@ async fn file_of_with_a_second_row(
          SELECT message_id, original_name, mime_type, sha256, assets_path,
             derived_sha256, {derived_path}, {derived_mime}
          FROM attachments WHERE sha256 = $1"
-    ))
+    )))
     .bind(&sha)
     .execute(&mut *tx)
     .await
