@@ -359,7 +359,7 @@ fn apply_convert_or_compress(
         Some(cancel),
     )
     .map_err(|e| {
-        // A conversion the cancel killed ends the run as cancelled.
+        // A conversion the cancel killed ends the run as canceled.
         if cancel.load(Ordering::Relaxed) {
             "cancelled".to_string()
         } else {

@@ -1378,11 +1378,11 @@ fn crash_recovery_reads_only_the_too_large_note_of_its_own_original() {
 }
 
 /// A cancel while ffmpeg converts a file kills it and ends the Media stage
-/// as cancelled: the file is not recorded as one that could not be
+/// as canceled: the file is not recorded as one that could not be
 /// converted, and no Import Error is sent for it (#2898).
 #[cfg(unix)]
 #[test]
-fn a_cancel_while_ffmpeg_runs_ends_the_stage_as_cancelled_not_as_a_failed_file() {
+fn a_cancel_while_ffmpeg_runs_ends_the_stage_as_canceled_not_as_a_failed_file() {
     use std::os::unix::fs::PermissionsExt;
     // The mocks hang only on this test's own file, so another test that
     // runs them while this one has the tools located fails at once rather
@@ -1404,7 +1404,7 @@ fn a_cancel_while_ffmpeg_runs_ends_the_stage_as_cancelled_not_as_a_failed_file()
     let (dir, jsonl, original) = staged_one("cancel-me.png", PNG_1X1_RGB);
     let (issues, rows) = collecting_sink();
     let cancel = CancelFlag::default();
-    let canceller = {
+    let canceler = {
         let cancel = std::sync::Arc::clone(&cancel);
         let started = tools.path().join("started");
         std::thread::spawn(move || {
@@ -1423,8 +1423,8 @@ fn a_cancel_while_ffmpeg_runs_ends_the_stage_as_cancelled_not_as_a_failed_file()
         &LogSink::none(),
         &mut |_| {},
     )
-    .expect_err("a cancelled Media stage fails");
-    canceller.join().unwrap();
+    .expect_err("a canceled Media stage fails");
+    canceler.join().unwrap();
 
     assert_eq!(err.to_string(), "cancelled");
     assert!(

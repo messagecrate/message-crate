@@ -665,7 +665,7 @@ struct TranscodeTarget<'a> {
 ///
 /// Returns why HEVC failed when the video was compressed as H.264 instead.
 /// Setting `cancel` kills the ffmpeg that runs, and the stage ends as
-/// cancelled rather than recording the file as one that failed.
+/// canceled rather than recording the file as one that failed.
 fn apply_transcode(
     target: &TranscodeTarget<'_>,
     doc: &mut ConversationDocument,

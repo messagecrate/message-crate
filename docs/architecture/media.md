@@ -237,7 +237,7 @@ The Asset stayed queued, so at the next start the pass took it again and hung ag
 Why watch progress rather than give a conversion time by its length: converting a two-hour video on a slow computer, such as a small NAS converting iPhone HEVC video, can take many times the video's length, and any limit by length cut such a conversion off.
 A hung 5-second clip, meanwhile, waited out the shortest limit, 10 minutes.
 Why the position and not the size of what ffmpeg writes: a hung ffmpeg can keep writing without moving forward.
-Why twice the length: a damaged or crafted file can make ffmpeg go round the same part for ever while the position still moves, and no working conversion goes past the end of its file.
+Why twice the length: a damaged or crafted file can make ffmpeg go around the same part forever while the position still moves, and no working conversion goes past the end of its file.
 Why 15 seconds for a short step: each takes well under a second on a working file, and a fixed limit is all a step that does not read the whole file needs.
 Why only local files: the files come from phone backups, and a playlist or a container inside one can name a network address that ffmpeg would otherwise open.
 Why run again on a timer rather than wait for an Import Run: only the end of an Import Run woke the pass, so on a server imported into once a busy database left the queue untouched until a restart.

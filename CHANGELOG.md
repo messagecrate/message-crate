@@ -1044,8 +1044,8 @@ released versions carry their date on the heading.
   which happened: no progress, past twice its length, or a step that took
   too long. When an Import Run compresses a video, HEVC that fails, or
   hangs before converting anything, still falls back to H.264. A video that
-  stalls partway or loops isn't tried again with H.264, and cancelling
-  stops the conversion at once as cancelled, not as a file that failed
+  stalls partway or loops isn't tried again with H.264, and canceling
+  stops the conversion at once as canceled, not as a file that failed
   (#2898, #2883).
 - 2026-10-11: **The server's log holds what it was missing.** A request
   that broke the server in an unexpected way closed the connection with no
