@@ -34,11 +34,11 @@ const failures = [];
 for (const override of config.overrides ?? []) {
   const rule = override.linter?.rules?.style?.noRestrictedImports;
   // "off" lifts every restriction for the override's files, on purpose.
-  if (rule === undefined || rule === "off") continue;
+  if (rule === undefined || rule === "off" || rule.level === "off") continue;
   const where = `the override for ${(override.includes ?? []).join(", ") || "no includes"}`;
   const paths = rule.options?.paths;
   if (paths === undefined) {
-    failures.push(`${where} sets noRestrictedImports without paths; write it as "off" or with paths.`);
+    failures.push(`${where} sets noRestrictedImports without paths. Write it as "off" or with paths.`);
     continue;
   }
   if (rule.level !== rootRule.level) {
@@ -54,7 +54,7 @@ for (const override of config.overrides ?? []) {
   const missing = Object.keys(rootPaths).filter((name) => !(name in paths));
   if (missing.length !== 1) {
     failures.push(
-      `${where} leaves out ${missing.length} of the root rule's paths (${missing.join(", ") || "none"}). An override leaves out exactly the one path it lifts; to lift two for the same files, write two overrides.`,
+      `${where} leaves out ${missing.length} of the root rule's paths (${missing.join(", ") || "none"}). An override leaves out exactly the one path it lifts. Lifting two paths for the same files needs a change to this check.`,
     );
   }
 }
