@@ -9,8 +9,8 @@ and a new test follows this page from the start.
 *The short version: `startFakeClock()` before `render`, `await settle()` after
 anything that starts work, `advanceTimersAndSettle(ms)` past a debounce or a
 poll, `advanceToNextFrame()` past an animation frame, and `deferred()` when the
-test decides when a fake answers. The helpers
-are in `fakeTimers.ts` and `deferred.ts` in this directory.*
+test decides when a fake answers. The helpers are in `fakeTimers.ts` and
+`deferred.ts` in this directory.*
 
 ## Why `waitFor` and `findBy…` aren't used
 
@@ -114,8 +114,8 @@ frame after a scroll. `startFakeClock()` fakes `requestAnimationFrame`, so the
 frame comes only when the test moves the clock to it. `advanceToNextFrame()`
 makes that move inside `act`.
 
-The source has no constant for a frame, so the timer section's move by an
-exported delay doesn't fit. `settle()` doesn't move the clock, so `settle()`
+The source has no constant for a frame to move the clock by, as "A timer: a
+debounce, a poll, or a delay the screen waits out" has. `settle()` doesn't move the clock, so `settle()`
 never runs a frame. Reading the screen before the move shows that the screen
 waits for the frame. Where a promise or a `MutationObserver` report schedules
 the frame, `settle()` lands that report first.
@@ -246,8 +246,8 @@ expect(result.current).toBe("ok");
 real time too: it hopes everything queued lands before the timer fires. On the
 fake clock it never fires at all. `settle()` replaces it, because `settle()`
 runs what is queued rather than racing it. A sleep for a frame,
-`await new Promise((resolve) => requestAnimationFrame(resolve))`, becomes the
-`advanceToNextFrame()` ("An animation frame").
+`await new Promise((resolve) => requestAnimationFrame(resolve))`, becomes a
+call to `advanceToNextFrame()` ("An animation frame").
 
 ### Something the fake clock doesn't drive
 
