@@ -211,8 +211,7 @@ pub enum AuditReason {
 }
 
 impl AuditReason {
-    /// The value as the database and the server's log spell it.
-    pub(crate) fn as_str(self) -> &'static str {
+    fn as_str(self) -> &'static str {
         match self {
             Self::LoggedOut => "logged_out",
             Self::Replaced => "replaced",
@@ -800,7 +799,8 @@ pub async fn record_session_end(
 /// Write the entry for a refused login. `account` is the account the
 /// username named, when it named one. Otherwise the entry belongs to no
 /// account and keeps the username, trimmed, only when `is_valid_username`
-/// accepts it; the module comment says why.
+/// accepts it; the module comment says why. It also writes a warning to the
+/// server's log, with the account's id, the reason and the app.
 ///
 /// # Errors
 ///
@@ -812,6 +812,17 @@ pub async fn record_refused_login(
     reason: AuditReason,
     app: Option<&ConnectingApp>,
 ) -> Result<()> {
+    // The owner's Logs panel shows what the Audit Trail shows one account at
+    // a time. The line names the account by its id, never the username
+    // typed: the log holds ids and outcomes only
+    // (`docs/architecture/server-log.md`).
+    tracing::warn!(
+        account_id = account.map(|(id, _)| id),
+        reason = reason.as_str(),
+        app = app.map(|app| app.kind.as_str()),
+        app_build = app.map(|app| app.build.as_str()),
+        "A login was refused"
+    );
     let typed = normalize_username(typed_username);
     let typed = is_valid_username(&typed).then_some(typed.as_str());
     let entry = NewEntry {

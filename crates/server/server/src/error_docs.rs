@@ -145,10 +145,6 @@ mod tests {
             "inside {} seconds",
             crate::credentials::AUTH_RATE_WINDOW.as_secs()
         )));
-        assert!(page.contains(&format!(
-            "more than {} logins as usernames that name no account",
-            crate::credentials::UNKNOWN_USERNAME_RATE_MAX
-        )));
     }
 
     #[test]

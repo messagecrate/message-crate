@@ -506,3 +506,50 @@ fn a_username_is_one_to_128_characters_of_a_known_set() {
     assert!(is_valid_username("  matt  "));
     assert_eq!(normalize_username("  matt\n"), "matt");
 }
+
+/// A count that fills writes one warning with its kind, the account and
+/// `retry_after_secs`, however many attempts it then refuses, and writes
+/// again only after it has emptied (#2119).
+#[test]
+fn a_full_count_warns_once_until_it_empties() {
+    use crate::logging::{LogFiles, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
+
+    let dir = tempfile::tempdir().unwrap();
+    let log_dir = dir.path().join("logs");
+    let files = LogFiles::open(&log_dir, SERVER_LOG_LIMITS).unwrap();
+    let limits = AuthRateLimits::default();
+    let bucket = RateBucket::Password(TEST_ACCOUNT);
+    let start = Instant::now();
+    let later = start + AUTH_RATE_WINDOW + Duration::from_secs(1);
+
+    tracing::subscriber::with_default(crate::logging::subscriber_for(files, "warn"), || {
+        for at in [start, later] {
+            for _ in 0..AUTH_RATE_MAX {
+                limits.count_at(&bucket, at).unwrap();
+            }
+            for _ in 0..3 {
+                limits.count_at(&bucket, at).unwrap_err();
+            }
+        }
+    });
+
+    let (lines, _) = read_lines(
+        &log_dir,
+        &LogLinesQuery {
+            limit: 10,
+            ..LogLinesQuery::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(lines.len(), 2, "one warning per fill: {lines:?}");
+    for line in &lines {
+        for part in [
+            "Too many authentication attempts",
+            "bucket=\"password\"",
+            &format!("account_id={TEST_ACCOUNT}"),
+            "retry_after_secs=",
+        ] {
+            assert!(line.text.contains(part), "{part}: {}", line.text);
+        }
+    }
+}

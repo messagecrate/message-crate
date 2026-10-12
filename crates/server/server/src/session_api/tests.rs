@@ -647,12 +647,14 @@ async fn the_right_password_to_a_disabled_account_stays_counted() {
 }
 
 /// Logins as usernames nobody holds are counted once for the whole server
-/// as well as per username, so a script that tries a new username each time
-/// is refused past the server's count, before Argon2 runs and with nothing
-/// written to the Audit Trail (#2078).
+/// as well as per username. Past the server's count, a script that tries a
+/// new username each time is refused unchecked: Argon2 does not run and the
+/// Audit Trail gets no entry (#2078). The answer is the one a wrong password
+/// to a real account gets, so a full count does not tell a stranger which
+/// usernames name an account.
 #[tokio::test]
-async fn logins_as_ever_new_unknown_usernames_are_rate_limited_across_the_server() {
-    let fixture = test_fixture().await;
+async fn logins_as_ever_new_unknown_usernames_are_refused_unchecked_past_the_servers_count() {
+    let (fixture, _alice) = fixture_with_account().await;
     let state = with_a_stopped_clock(&fixture);
     let max = crate::credentials::UNKNOWN_USERNAME_RATE_MAX;
     for attempt in 0..max {
@@ -664,7 +666,45 @@ async fn logins_as_ever_new_unknown_usernames_are_rate_limited_across_the_server
             ProblemType::InvalidCredentials,
         );
     }
-    let (status, text) = log_in_raw(&state, "one-more-nobody", "guess").await;
-    expect_problem(status, &text, ProblemType::RateLimited);
-    assert_eq!(refused_logins(&state).await, i64::try_from(max).unwrap());
+    for (username, why) in [
+        ("one-more-nobody", "an unknown username past the count"),
+        ("alice", "a wrong password to a real account"),
+    ] {
+        let (status, text) = log_in_raw(&state, username, "guess").await;
+        expect_problem_for(why, status, &text, ProblemType::InvalidCredentials);
+    }
+    // The `max` unknown usernames and alice's wrong password; nothing for the
+    // login refused unchecked.
+    assert_eq!(
+        refused_logins(&state).await,
+        i64::try_from(max).unwrap() + 1
+    );
+}
+
+/// A login the username's own count refuses is given back to the server's
+/// count, so one username guessed past its limit does not use up the
+/// server's count for everyone else.
+#[tokio::test]
+async fn a_login_refused_by_its_usernames_count_leaves_the_servers_count_alone() {
+    let fixture = test_fixture().await;
+    let state = with_a_stopped_clock(&fixture);
+    for _ in 0..crate::credentials::AUTH_RATE_MAX {
+        log_in_raw(&state, "nobody", "guess").await;
+    }
+    for attempt in 0..crate::credentials::UNKNOWN_USERNAME_RATE_MAX {
+        let (status, text) = log_in_raw(&state, "nobody", "guess").await;
+        expect_problem_for(
+            &format!("past the username's limit, attempt {attempt}"),
+            status,
+            &text,
+            ProblemType::RateLimited,
+        );
+    }
+    let (status, text) = log_in_raw(&state, "somebody-else", "guess").await;
+    expect_problem(status, &text, ProblemType::InvalidCredentials);
+    assert_eq!(
+        refused_logins(&state).await,
+        i64::try_from(crate::credentials::AUTH_RATE_MAX).unwrap() + 1,
+        "the other username was checked and recorded"
+    );
 }

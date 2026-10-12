@@ -6,6 +6,7 @@
 //! so a password rule is written once.
 
 use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -62,14 +63,13 @@ impl RateBucket {
         Self::UnknownUsername(username.to_ascii_lowercase())
     }
 
-    /// The key the bucket's hits are kept under.
+    /// The key the bucket's hits are kept under: its kind, and the account
+    /// or username it counts for.
     fn key(&self) -> String {
         match self {
-            Self::Register => "register".to_string(),
-            Self::Claim => "claim".to_string(),
-            Self::Password(account_id) => format!("password:{account_id}"),
-            Self::UnknownUsername(folded) => format!("password:unknown:{folded}"),
-            Self::UnknownUsernames => "password:unknown".to_string(),
+            Self::Password(account_id) => format!("{}:{account_id}", self.kind()),
+            Self::UnknownUsername(folded) => format!("{}:{folded}", self.kind()),
+            Self::Register | Self::Claim | Self::UnknownUsernames => self.kind().to_string(),
         }
     }
 
@@ -352,7 +352,8 @@ pub(crate) async fn verify_login_password(
     password: &str,
 ) -> Result<bool, ApiError> {
     let (hash, password) = (password_hash.map(str::to_owned), password.to_owned());
-    run_argon2("password check", move || {
+    let started = Instant::now();
+    let verified = run_argon2("password check", move || {
         Ok(match hash.as_deref() {
             None | Some("") => {
                 let _ = verify_password(dummy_password_hash(), &password);
@@ -361,7 +362,23 @@ pub(crate) async fn verify_login_password(
             Some(hash) => verify_password(hash, &password),
         })
     })
-    .await
+    .await?;
+    let took = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+    LAST_LOGIN_CHECK_NANOS.store(took, Ordering::Relaxed);
+    Ok(verified)
+}
+
+/// How long the last [`verify_login_password`] took, waiting for its permit
+/// included, in nanoseconds.
+static LAST_LOGIN_CHECK_NANOS: AtomicU64 = AtomicU64::new(0);
+
+/// Wait as long as the last login's password check took, without running
+/// Argon2. A login refused unchecked, because the count of logins as unknown
+/// usernames is full, takes about the time a checked one does, so its timing
+/// does not say the username names no account, and it costs no CPU.
+pub(crate) async fn wait_as_long_as_a_login_check() {
+    let nanos = LAST_LOGIN_CHECK_NANOS.load(Ordering::Relaxed);
+    tokio::time::sleep(Duration::from_nanos(nanos)).await;
 }
 
 /// Hash the owner's password, on the blocking thread pool. The owner must

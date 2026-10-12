@@ -901,7 +901,9 @@ same per-account count, and past the limit those routes answer
 guess faster than the login. Each attempt is counted before its password is
 checked, so many guesses sent at once cannot all pass while none has been
 counted, and a login that succeeds, or a right `current_password`, is taken
-back out of the count, so the holder's own logins never fill it. A right
+back out of the count, so the holder's own logins never fill it. A login
+still being checked holds its place until it succeeds, so more logins than
+the limit sent to one account at the same moment can still be refused. A right
 password to a disabled account stays counted, because taking it back would
 show a guesser which guess was right.
 
@@ -913,12 +915,24 @@ rejected below, and a count that let the holder past it would be a count a
 guesser could pass too.
 
 Logins as usernames that name no account are also counted once for the whole
-server, at a higher limit than an account's (the developer reference gives
-both), checked before the Argon2 run that keeps their timing equal with a
-real account's and before the Audit Trail entry. A count per username alone
-lets a script that tries a new username each time run Argon2 and write to the
-Audit Trail as fast as it likes. The limit is well above what people mistyping
-their usernames produce, so the count never stops a person.
+server, at 120 a minute, checked first, before the count for the username,
+the Argon2 run that keeps their timing equal with a real account's, and the
+Audit Trail entry. Past it, such a login is refused unchecked: no Argon2, no
+Audit Trail entry, no log line of its own. It answers `401 Unauthorized` like a
+wrong password, after waiting as long as the last password check took. A
+count per username alone lets a script that tries a new username each time
+run Argon2 and write to the Audit Trail as fast as it likes. The limit is
+well above what people mistyping their usernames produce, so the count never
+stops a person.
+
+Rejected: answering `429 Too Many Requests` past the count for unknown
+usernames. Only usernames that name no account would get it, so once a
+stranger had filled the count, a `401` would tell them that a username names
+an account. The login works to hide that: the dummy Argon2 run, and one
+answer for a wrong password, an unknown username and a disabled account.
+Rejected too: one count for every login, known usernames included. It would
+hide nothing more, and a stranger filling it would keep every account on the
+server from logging in.
 `POST /v1/accounts` and `POST /v1/server/claim`
 count once for the whole server, because they guard against a flood of new
 accounts, and a count per name lets a script that tries a new name each time

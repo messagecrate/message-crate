@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::credentials::{
-    MAX_PASSWORD_BYTES, RateBucket, normalize_username, verify_login_password,
+    AuthRateLimits, MAX_PASSWORD_BYTES, RateBucket, normalize_username, verify_login_password,
+    wait_as_long_as_a_login_check,
 };
 use crate::db::audit_trail::{self, AuditReason};
 use crate::db::session_tokens::ConnectingApp;
@@ -124,28 +125,25 @@ fn invalid_login() -> ApiError {
     ApiError::InvalidCredentials("invalid username or password".into())
 }
 
-/// Record a refused login in the Audit Trail and write a warning to the
-/// server's log, then answer [`invalid_login`]. The log line names the
-/// account by its id, never the username typed, and never the password: the
-/// log holds ids and outcomes only (`docs/architecture/server-log.md`).
-async fn refuse_login(
-    conn: &mut SqliteConnection,
-    typed_username: &str,
-    account: Option<(i64, &str)>,
-    reason: AuditReason,
-    app: Option<&ConnectingApp>,
-) -> ApiError {
-    tracing::warn!(
-        account_id = account.map(|(id, _)| id),
-        reason = reason.as_str(),
-        app = app.map(|app| app.kind.as_str()),
-        app_build = app.map(|app| app.build.as_str()),
-        "A login was refused"
-    );
-    match audit_trail::record_refused_login(conn, typed_username, account, reason, app).await {
-        Ok(()) => invalid_login(),
-        Err(err) => ApiError::Internal(err),
+/// Count a login as `username`, which names no account: once for the whole
+/// server, then under the username. `Ok(false)` when the server's count is
+/// full, and the login is to be refused unchecked.
+///
+/// The server's count comes first, so a login it refuses touches no count of
+/// its own username and adds no bucket. A login the username's count refuses
+/// is given back to the server's count, because a refused attempt is not
+/// counted.
+fn count_unknown_username(limits: &AuthRateLimits, username: &str) -> Result<bool, ApiError> {
+    let server_hit = match limits.count(&RateBucket::UnknownUsernames) {
+        Ok(hit) => hit,
+        Err(ApiError::RateLimited { .. }) => return Ok(false),
+        Err(err) => return Err(err),
+    };
+    if let Err(err) = limits.count(&RateBucket::unknown_username(username)) {
+        limits.give_back(&RateBucket::UnknownUsernames, server_hit)?;
+        return Err(err);
     }
+    Ok(true)
 }
 
 /// Log in: verify a local username and password and answer the Session, a
@@ -175,6 +173,11 @@ pub async fn create_session(
     if username.is_empty() {
         return Err(ApiError::validation("username is required"));
     }
+    // Before any count, so the answer is the same whether or not the
+    // username names an account and whatever its count holds.
+    if req.password.len() > MAX_PASSWORD_BYTES {
+        return Err(ApiError::validation("password is too long"));
+    }
     let app = crate::server::connecting_app(&headers);
     let app = app.as_ref();
     let mut conn = state.db.acquire().await?;
@@ -190,6 +193,12 @@ pub async fn create_session(
     // username nobody holds is counted under that username, and once more for
     // the whole server, so a script trying a new username each time cannot
     // run Argon2 and write to the Audit Trail as fast as it likes.
+    //
+    // Past the server's count a login as a username nobody holds is refused
+    // unchecked: no Argon2, no Audit Trail entry, no log line. Its answer is
+    // the one a wrong password gets, after about as long, not `429`, because
+    // a `429` that only unknown usernames get would tell a stranger which
+    // usernames name an account.
     let limits = &state.auth_rate_limits;
     let counted = match account_id {
         Some(id) => {
@@ -198,14 +207,14 @@ pub async fn create_session(
             Some((bucket, hit))
         }
         None => {
-            limits.count(&RateBucket::unknown_username(&username))?;
-            limits.count(&RateBucket::UnknownUsernames)?;
+            if !count_unknown_username(limits, &username)? {
+                drop(conn);
+                wait_as_long_as_a_login_check().await;
+                return Err(invalid_login());
+            }
             None
         }
     };
-    if req.password.len() > MAX_PASSWORD_BYTES {
-        return Err(ApiError::validation("password is too long"));
-    }
     // Refused logins for usernames nobody holds are kept for a fixed time,
     // and a login is when the old ones go.
     audit_trail::trim_refused_logins(&mut conn).await?;
@@ -227,14 +236,15 @@ pub async fn create_session(
         drop(conn);
         let _ = verify_login_password(None, &password).await?;
         let mut conn = state.db.acquire().await?;
-        return Err(refuse_login(
+        audit_trail::record_refused_login(
             &mut conn,
             &username,
             None,
             AuditReason::UnknownUsername,
             app,
         )
-        .await);
+        .await?;
+        return Err(invalid_login());
     };
 
     // The Demo Account cannot be entered while it is being built: until the
@@ -254,14 +264,15 @@ pub async fn create_session(
     let verified = verify_login_password(password_hash.as_deref(), &password).await?;
     let mut conn = state.db.acquire().await?;
     if !verified {
-        return Err(refuse_login(
+        audit_trail::record_refused_login(
             &mut conn,
             &username,
             account,
             AuditReason::WrongPassword,
             app,
         )
-        .await);
+        .await?;
+        return Err(invalid_login());
     }
 
     let auth = account_profile::load_account_auth(&mut conn, account_id)
@@ -274,14 +285,15 @@ pub async fn create_session(
     // stays counted for the same reason: given back, it would show in the
     // count which guess was right.
     if auth.disabled {
-        return Err(refuse_login(
+        audit_trail::record_refused_login(
             &mut conn,
             &username,
             account,
             AuditReason::AccountDisabled,
             app,
         )
-        .await);
+        .await?;
+        return Err(invalid_login());
     }
 
     let body =
