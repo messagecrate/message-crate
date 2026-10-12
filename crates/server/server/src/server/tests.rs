@@ -417,7 +417,7 @@ fn response_lines(lines: &[LogLine]) -> Vec<(LogLevel, String)> {
 /// is a failed health probe, which is not routine, so its line stays at
 /// `INFO` too (#2274).
 #[tokio::test]
-async fn a_500_writes_one_error_line() {
+async fn a_500_writes_one_error_line_and_an_info_response_line() {
     let fixture = test_fixture().await;
     // A closed pool fails the health check's statement.
     fixture.state.db.close().await;
@@ -468,8 +468,8 @@ async fn a_successful_probe_or_website_file_writes_no_info_line() {
     );
 }
 
-/// The lines left out at `info` are written at `DEBUG`, so `RUST_LOG=debug`
-/// still shows every response (#2274).
+/// The trace layer writes the lines left out at `info` at `DEBUG`, so a
+/// `debug` filter still shows every response (#2274).
 #[tokio::test]
 async fn a_successful_probe_or_website_file_writes_a_debug_line() {
     let fixture = test_fixture().await;
