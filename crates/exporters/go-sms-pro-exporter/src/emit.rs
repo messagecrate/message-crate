@@ -1,5 +1,5 @@
 //! Convert a GO SMS Pro backup into the shared conversation structure
-//! ([`ConversationDocument`]) every exporter writes, then write the chosen
+//! ([`message_ir::ConversationDocument`]) every exporter writes, then write the chosen
 //! output format via [`ExportWriter`].
 
 use crate::attachments_emit::queue_pdu_attachments;
@@ -441,7 +441,7 @@ pub(crate) struct ConvertExportArgs<'a> {
 }
 
 /// Convert a GO SMS Pro export directory into the shared conversation structure
-/// ([`ConversationDocument`]), then write the chosen output format.
+/// ([`message_ir::ConversationDocument`]), then write the chosen output format.
 ///
 /// When `cancel` is set, cooperative cancellation is checked between XML files
 /// and between PDU files. A cancelled run returns

@@ -100,7 +100,7 @@ pub fn media_type_of(
 ///
 /// A declared type is only a claim, so a JPEG, PNG, GIF, WebP or MP3 is
 /// shown as it is only when its first bytes are that type's
-/// ([`SHOWN_AS_IS`]). One that starts as something else gets a Preview.
+/// (`SHOWN_AS_IS`). One that starts as something else gets a Preview.
 /// `None` for one that cannot be read: nothing is known about its bytes, so
 /// a caller keeps what it knew before.
 ///

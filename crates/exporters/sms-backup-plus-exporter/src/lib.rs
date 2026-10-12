@@ -1,10 +1,10 @@
-//! SMS Backup+ (jberkel) mail, in both directions: [`run`] turns its `.eml`
+//! SMS Backup+ (jberkel) mail, in both directions: [`run()`] turns its `.eml`
 //! files into the shared conversation structure
 //! ([`message_ir::ConversationDocument`]) every exporter writes, and
 //! [`SmsBackupPlusArchive`] writes the SMS and MMS of conversations back out
 //! as that mail.
 //!
-//! Library entry: [`run`] for the full pipeline; the desktop app calls it
+//! Library entry: [`run()`] for the full pipeline; the desktop app calls it
 //! in process.
 
 mod assets;

@@ -73,7 +73,7 @@ pub fn embeds_attachments(format: OutputFormat) -> bool {
 }
 
 /// Refuse a write of `needed` bytes into `dir` that its disk plainly cannot
-/// hold, with `needed` plus [`DISK_HEADROOM_SLACK`] as the requirement.
+/// hold, with `needed` plus `DISK_HEADROOM_SLACK` as the requirement.
 ///
 /// A filesystem that cannot say how much is free never blocks a run.
 ///

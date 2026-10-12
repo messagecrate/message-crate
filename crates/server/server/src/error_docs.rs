@@ -8,7 +8,7 @@
 //! drift test below fails the build before that can happen.
 //!
 //! This sits beside [`crate::cli_docs`], which does the same job for the CLI
-//! reference, and [`crate::openapi::write_openapi`] for the OpenAPI document.
+//! reference, and `crate::openapi::write_openapi` for the OpenAPI document.
 
 use std::path::Path;
 

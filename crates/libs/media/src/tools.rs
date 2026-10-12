@@ -17,7 +17,7 @@ struct ToolsState {
     /// --tools-dir`); a server started by hand has none.
     tools_dir: Option<PathBuf>,
     /// The `PATH` searched instead of the process's own. Only tests set it
-    /// ([`set_search_path`]), so a test decides what is found whether or
+    /// (`set_search_path`), so a test decides what is found whether or
     /// not the machine has ffmpeg installed.
     search_path: Option<OsString>,
     generation: u64,
@@ -189,7 +189,7 @@ pub fn ffmpeg_on_path() -> bool {
 }
 
 /// The `PATH` the lookup searches: the one a test put in place
-/// ([`set_search_path`]), else the process's own.
+/// (`set_search_path`), else the process's own.
 fn searched_path() -> Option<OsString> {
     tools_state()
         .lock()
@@ -614,7 +614,7 @@ pub struct FfmpegFailed {
 
 impl FfmpegFailed {
     /// The last lines ffmpeg wrote to stderr, trimmed, at most
-    /// [`STDERR_TAIL_BYTES`]; empty when it said nothing. It names each file
+    /// `STDERR_TAIL_BYTES`; empty when it said nothing. It names each file
     /// as it was passed to ffmpeg, so it can carry full paths.
     #[must_use]
     pub fn said(&self) -> &str {

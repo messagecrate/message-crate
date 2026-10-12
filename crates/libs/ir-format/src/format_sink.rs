@@ -237,7 +237,7 @@ fn remove_staged_attachments(output_dir: &Path) -> Result<()> {
 }
 
 /// Write every document through the sink with the shared "Preparing N
-/// conversation files" log line and [`ProgressEvent::Prepare`] events,
+/// conversation files" log line and [`message_crate_core::ProgressEvent::Prepare`] events,
 /// bumping `report.conversations` per document, then finish the sink. The
 /// shared tail of every exporter's non-queue arm.
 pub fn write_documents_through_sink(

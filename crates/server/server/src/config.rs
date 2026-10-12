@@ -153,7 +153,10 @@ pub struct ServerConfig {
     /// allowed. CORS is the browser rule that decides which other websites may
     /// call this API. Empty is the right setting for a server serving its own
     /// website, since that UI is same-origin and needs no header at all.
-    /// Use `["*"]` only for local debugging. Example: `["https://app.example.com"]`.
+    /// Each `serve --cors-origin` adds one more origin to this list.
+    /// `["*"]` allows every website, so it is for local debugging only, and
+    /// the server writes a `WARN` line to its log as it starts when the list
+    /// holds a `*` (#2218). Example: `["https://app.example.com"]`.
     #[serde(default)]
     pub cors_origins: Vec<String>,
     /// Serve Swagger UI at `/docs` and the spec at `/openapi.json`. Default false.
@@ -289,7 +292,7 @@ impl PathsConfig {
 impl Config {
     /// Read and parse a TOML config file. A relative path in it (`[paths] db`,
     /// `[paths] data_dir`, `[server] static_dir`) resolves against
-    /// [`config_root`], the directory above the config file's directory: the
+    /// `config_root`, the directory above the config file's directory: the
     /// repository root for `config/config.toml`.
     ///
     /// # Errors

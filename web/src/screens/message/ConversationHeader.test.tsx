@@ -56,7 +56,7 @@ const PROFILE = {
   storage_bytes: 0,
 };
 
-/** A group chat: the owner, two people with contacts, one nobody has a contact for. */
+/** A group conversation: the owner, two people with contacts, one nobody has a contact for. */
 function groupChat(): Conversation {
   return conversation({
     is_group: true,
@@ -162,7 +162,7 @@ describe("ConversationHeader", () => {
   });
 
   describe("Make a Contact Group", () => {
-    it("is offered on a group chat and not on a direct conversation", async () => {
+    it("is offered on a group conversation and not on a one-to-one conversation", async () => {
       const user = setupUser();
       renderHeader(conversation());
       await user.click(screen.getByRole("button", { name: "More for this conversation" }));

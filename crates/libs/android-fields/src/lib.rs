@@ -62,7 +62,7 @@ fn parse_android_type(s: &str) -> Option<i32> {
 
 /// The [`IrSource`] of one message from an Android backup: `fields`
 /// with the conversation title added as `android_group_title`, and the
-/// message's `android_type` extra read with [`parse_android_type`]. The
+/// message's `android_type` extra read with `parse_android_type`. The
 /// title is stored as data only; filenames do not use it.
 pub fn android_source(
     conversation: &PendingConversation,

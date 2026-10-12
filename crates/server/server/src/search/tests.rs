@@ -2191,7 +2191,7 @@ mod kind_words {
         "sms-backup-plus",
     ];
 
-    /// Import, through the whole pipeline, one direct conversation with one
+    /// Import, through the whole pipeline, a single one-to-one conversation with one
     /// message from `source`, and return the conversation's and the
     /// message's ids.
     async fn import_from(
@@ -2977,7 +2977,7 @@ mod measure_words {
             msg(silent_c, "2019-04-02T10:00:00Z", true, None, "hi"),
         )
         .await;
-        // A 2015 group chat: one member never spoke, one first spoke in 2018.
+        // A 2015 group conversation: one member never spoke, one first spoke in 2018.
         let lurker_h = handle(&mut conn, a, "+15555550143", "sms").await;
         let lurker = contact(&mut conn, a, "Lurker", &[lurker_h]).await;
         let late_h = handle(&mut conn, a, "+15555550144", "sms").await;
@@ -3081,7 +3081,7 @@ mod measure_words {
             run(&mut conn, ListKind::Contacts, "last-message:2025").await,
             Vec::<i64>::new()
         );
-        // A busy group chat makes nobody recently heard from: the book club's
+        // A busy group conversation makes nobody recently heard from: the book club's
         // March 2024 message is Sam's, so Ana and Bo stay where they were.
         assert_eq!(
             run(&mut conn, ListKind::Contacts, "last-message:>=2024").await,

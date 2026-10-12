@@ -104,7 +104,7 @@ pub struct Contact {
     pub unknown: bool,
     /// Every identity linked to the contact, with per-identity stats.
     pub identities: Vec<Identity>,
-    /// 1:1 conversations the contact appears in.
+    /// One-to-one conversations the contact appears in.
     pub direct_conversations: u64,
     /// Group conversations the contact appears in.
     pub group_conversations: u64,
