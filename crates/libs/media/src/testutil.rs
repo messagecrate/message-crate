@@ -193,3 +193,17 @@ pub fn write_with_mode(path: &Path, mode: u32) {
     #[cfg(not(unix))]
     let _ = mode;
 }
+
+/// A clock for a watched run that reads zero until `started` exists, and
+/// then an hour more on every read, so every limit and wait passes once the
+/// mock has started, and none before. It waits on no real clock.
+#[cfg(test)]
+pub(crate) fn clock_from(started: &Path) -> impl Fn() -> std::time::Duration + '_ {
+    let hours = std::cell::Cell::new(0u64);
+    move || {
+        if started.is_file() {
+            hours.set(hours.get() + 1);
+        }
+        std::time::Duration::from_secs(hours.get() * 3600)
+    }
+}

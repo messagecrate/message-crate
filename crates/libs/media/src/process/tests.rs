@@ -2,7 +2,10 @@ use super::*;
 use crate::fake_tools::{FakeTools, video_probe};
 use crate::kind_for_mime;
 use crate::testutil::PNG_1X1_RGB;
-use crate::tools::run_ffmpeg;
+use crate::testutil::clock_from;
+use crate::tools::{
+    Limit, MediaTools, Reads, StallWatch, ffmpeg_command_line, run_ffmpeg, run_ffmpeg_watched,
+};
 use crate::{MediaProbe, probe_media};
 
 /// The one ffmpeg run `tools` made, failing the test when there were more
@@ -1407,13 +1410,109 @@ fn the_done_line_counts_one_file_and_many_files() {
     );
 }
 
-/// Compress the first of [`two_large_videos`] with `tools`, whose HEVC run
-/// ends however the test set it up, and answer the report and every ffmpeg
-/// run made.
-fn compress_one_video(tools: &FakeTools) -> (MediaReport, Vec<Vec<String>>) {
+/// The no-progress wait the fallback tests give.
+const WAIT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// ffmpeg as a mock program whose HEVC run follows a row's script and whose
+/// H.264 run writes its output and succeeds, watched as the real one is.
+/// Every run appends its arguments to `runs`. The HEVC run's clock starts
+/// once the script marks itself `started` ([`clock_from`]) when `stalls`,
+/// and never moves otherwise; the H.264 run's clock never moves.
+struct ScriptedTools {
+    dir: tempfile::TempDir,
+    stalls: bool,
+    _located: crate::testutil::ToolsHidden,
+}
+
+/// How long the scripted source plays.
+const SCRIPTED_LENGTH: std::time::Duration = std::time::Duration::from_secs(5);
+
+impl ScriptedTools {
+    /// Tools whose HEVC run runs `hevc`, a shell script body.
+    fn new(hevc: &str, stalls: bool) -> Self {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let ffmpeg = dir.path().join("ffmpeg");
+        fs::write(
+            &ffmpeg,
+            format!(
+                "#!/bin/sh\n[ \"$1\" = -version ] && exit 0\n\
+                 dir=\"$(dirname \"$0\")\"\necho \"$*\" >> \"$dir/runs\"\n\
+                 case \"$*\" in *libx265*)\n{hevc}\n;; esac\n\
+                 for a; do last=$a; done\necho h264 > \"$last\"\nexit 0\n"
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&ffmpeg, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::copy(&ffmpeg, dir.path().join("ffprobe")).unwrap();
+        let located =
+            crate::testutil::locate_tools(std::ffi::OsString::new(), dir.path().to_path_buf());
+        Self {
+            dir,
+            stalls,
+            _located: located,
+        }
+    }
+
+    /// The arguments of every ffmpeg run so far, one line each.
+    fn runs(&self) -> Vec<String> {
+        fs::read_to_string(self.dir.path().join("runs"))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// Whether a run went on to H.264 after HEVC.
+    fn tried_h264(&self) -> bool {
+        let runs = self.runs();
+        assert!(runs[0].contains("libx265"), "HEVC runs first: {runs:?}");
+        runs.iter().skip(1).any(|run| run.contains("libx264"))
+    }
+}
+
+impl MediaTools for ScriptedTools {
+    fn require(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn can_probe(&self) -> bool {
+        true
+    }
+
+    fn probe(&self, _path: &Path) -> Result<MediaProbe> {
+        Ok(video_probe("h264", 30.0))
+    }
+
+    fn transcode(
+        &self,
+        args: &[String],
+        dest: &Path,
+        reads: Reads<'_>,
+        stop: Option<&AtomicBool>,
+    ) -> Result<()> {
+        let limit = match reads {
+            Reads::OneFrame => Limit::ShortStep,
+            Reads::All(_) => Limit::Progress(StallWatch::new(WAIT, Some(SCRIPTED_LENGTH))),
+        };
+        let line = ffmpeg_command_line(args, dest);
+        let started = self.dir.path().join("started");
+        if self.stalls && has(args, "libx265") {
+            run_ffmpeg_watched(&line, stop, limit, &clock_from(&started))
+        } else {
+            run_ffmpeg_watched(&line, stop, limit, &|| std::time::Duration::ZERO)
+        }
+    }
+}
+
+/// A HEVC script that marks itself started and never exits.
+const HANG: &str = "touch \"$dir/started\"\nexec sleep 600";
+
+/// Compress the first of [`two_large_videos`] with `tools`.
+fn compress_scripted(tools: &ScriptedTools) -> MediaReport {
     let dir = tempfile::tempdir().unwrap();
     let (files, opts) = two_large_videos(dir.path());
-    let (report, _) = process_attachment_files_with(
+    process_attachment_files_with(
         tools,
         dir.path(),
         &files[..1],
@@ -1422,45 +1521,36 @@ fn compress_one_video(tools: &FakeTools) -> (MediaReport, Vec<Vec<String>>) {
         None,
         None,
     )
-    .unwrap();
-    (report, tools.runs())
+    .unwrap()
+    .0
 }
-
-/// Whether the runs went on to H.264 after HEVC.
-fn tried_h264(runs: &[Vec<String>]) -> bool {
-    assert!(has(&runs[0], "libx265"), "HEVC runs first: {runs:?}");
-    runs.iter().skip(1).any(|run| has(run, "libx264"))
-}
-
-/// The no-progress wait the fallback tests give.
-const WAIT: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// A HEVC run that ffmpeg ended with an error, as when libx265 is missing
 /// or refused the file, is followed by H.264 (#2898).
+#[cfg(unix)]
 #[test]
 fn compress_tries_h264_after_hevc_failed() {
-    let tools = FakeTools::new()
-        .probing(video_probe("h264", 30.0))
-        .failing_on("libx265");
+    let tools = ScriptedTools::new("echo 'Unknown encoder libx265' >&2\nexit 1", false);
 
-    let (report, runs) = compress_one_video(&tools);
+    let report = compress_scripted(&tools);
 
-    assert!(tried_h264(&runs), "{runs:?}");
+    assert!(tools.tried_h264(), "{:?}", tools.runs());
     assert_eq!(report.processed, 1, "{:?}", report.errors);
+    let line = report.hevc_fallback.line().expect("a fallback reason");
+    assert!(line.contains("Unknown encoder libx265"), "{line}");
 }
 
-/// A HEVC run that made no progress and had never moved from the start most
-/// likely hung in the encoder, as a hardware encoder can, so H.264 is tried,
-/// and the fallback names the stall (#2898).
+/// A HEVC run that writes no progress and never exits most likely hung in
+/// the encoder, as a hardware encoder can: it is stopped once the wait has
+/// passed, and H.264 is tried, with the fallback naming the stall (#2898).
+#[cfg(unix)]
 #[test]
 fn compress_tries_h264_after_hevc_stalled_before_any_output() {
-    let tools = FakeTools::new()
-        .probing(video_probe("h264", 30.0))
-        .killed_on("libx265", KillReason::StalledBeforeOutput { wait: WAIT });
+    let tools = ScriptedTools::new(HANG, true);
 
-    let (report, runs) = compress_one_video(&tools);
+    let report = compress_scripted(&tools);
 
-    assert!(tried_h264(&runs), "{runs:?}");
+    assert!(tools.tried_h264(), "{:?}", tools.runs());
     assert_eq!(report.processed, 1, "{:?}", report.errors);
     let line = report.hevc_fallback.line().expect("a fallback reason");
     assert!(
@@ -1469,51 +1559,50 @@ fn compress_tries_h264_after_hevc_stalled_before_any_output() {
     );
 }
 
-/// A HEVC run that stalled after moving most likely reached a damaged part
-/// of the file, where H.264 would stall too: the file fails, naming the
-/// stall, and H.264 is not tried (#2898).
+/// A HEVC run whose position moves and then stops most likely reached a
+/// damaged part of the file, where H.264 would stall too: the file fails,
+/// naming the stall, and H.264 is not tried (#2898).
+#[cfg(unix)]
 #[test]
 fn compress_does_not_try_h264_after_hevc_stalled_partway() {
-    let tools = FakeTools::new()
-        .probing(video_probe("h264", 30.0))
-        .killed_on(
-            "libx265",
-            KillReason::StalledPartway {
-                wait: WAIT,
-                at: std::time::Duration::from_secs(42),
-            },
-        );
+    // 256 KiB of lines with no position, past what a pipe holds, before
+    // the mock marks itself started: the reader has read the position by
+    // then, so the clock starts after it.
+    let tools = ScriptedTools::new(
+        "printf 'out_time=00:00:02.000000\\nprogress=continue\\n'\n\
+         yes frame=1 | head -c 262144\n\
+         touch \"$dir/started\"\nexec sleep 600",
+        true,
+    );
 
-    let (report, runs) = compress_one_video(&tools);
+    let report = compress_scripted(&tools);
 
-    assert!(!tried_h264(&runs), "{runs:?}");
+    assert!(!tools.tried_h264(), "{:?}", tools.runs());
     assert_eq!(report.processed, 0);
     assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
     assert!(
-        report.errors[0].contains("made no progress for 2 minutes after converting 0:42"),
+        report.errors[0].contains("made no progress for 2 minutes after converting 0:02"),
         "{:?}",
         report.errors
     );
     assert_eq!(report.hevc_fallback.line(), None);
 }
 
-/// A HEVC run past twice the file's length is a damaged file looping, which
-/// H.264 would loop on too: the file fails, naming why, and H.264 is not
-/// tried (#2898).
+/// A HEVC run whose position passes twice the file's length is a damaged
+/// file looping, which H.264 would loop on too: the file fails, naming why,
+/// and H.264 is not tried. The clock never moves, so only the position ends
+/// the run (#2898).
+#[cfg(unix)]
 #[test]
 fn compress_does_not_try_h264_after_hevc_ran_past_its_length() {
-    let tools = FakeTools::new()
-        .probing(video_probe("h264", 30.0))
-        .killed_on(
-            "libx265",
-            KillReason::RanPastLength {
-                length: std::time::Duration::from_secs(5),
-            },
-        );
+    let tools = ScriptedTools::new(
+        "printf 'out_time=00:00:11.000000\\nprogress=continue\\n'\nexec sleep 600",
+        false,
+    );
 
-    let (report, runs) = compress_one_video(&tools);
+    let report = compress_scripted(&tools);
 
-    assert!(!tried_h264(&runs), "{runs:?}");
+    assert!(!tools.tried_h264(), "{:?}", tools.runs());
     assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
     assert!(
         report.errors[0].contains("ran past twice the file's length of 0:05"),
@@ -1522,25 +1611,44 @@ fn compress_does_not_try_h264_after_hevc_ran_past_its_length() {
     );
 }
 
-/// A HEVC run that was stopped is not followed by H.264, and the error
-/// says it was stopped, not that the file failed (#2898).
+/// A HEVC run the run's stop ends while it runs is killed, is not followed
+/// by H.264, and fails as stopped, not as a failed file (#2898).
+#[cfg(unix)]
 #[test]
 fn compress_does_not_try_h264_after_hevc_was_stopped() {
+    let tools = ScriptedTools::new(HANG, false);
     let dir = tempfile::tempdir().unwrap();
     let (files, opts) = two_large_videos(dir.path());
     let dest = dir.path().join("out.mp4");
-    let tools = FakeTools::new()
-        .probing(video_probe("h264", 30.0))
-        .killed_on("libx265", KillReason::Stopped);
+    let stop = std::sync::Arc::new(AtomicBool::new(false));
+    let stopper = {
+        let stop = std::sync::Arc::clone(&stop);
+        let started = tools.dir.path().join("started");
+        std::thread::spawn(move || {
+            while !started.exists() {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            stop.store(true, Ordering::Relaxed);
+        })
+    };
 
-    let err = transcode_file_with(&tools, &files[0], &dest, MediaMode::Compress, &opts, None)
-        .expect_err("a stopped compression fails");
+    let err = transcode_file_with(
+        &tools,
+        &files[0],
+        &dest,
+        MediaMode::Compress,
+        &opts,
+        Some(&stop),
+    )
+    .expect_err("a stopped compression fails");
+    stopper.join().unwrap();
 
-    assert!(
-        err.downcast_ref::<Killed>().is_some_and(Killed::is_stop),
+    assert_eq!(
+        err.downcast_ref::<Killed>().map(Killed::reason),
+        Some(KillReason::Stopped),
         "{err:#}"
     );
-    assert!(!tried_h264(&tools.runs()), "{:?}", tools.runs());
+    assert!(!tools.tried_h264(), "{:?}", tools.runs());
 }
 
 /// The run's stop reaches the HEVC run: a compression asked for once it is

@@ -1,5 +1,5 @@
 use super::*;
-use crate::testutil::tools_test_lock;
+use crate::testutil::{clock_from, tools_test_lock};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
@@ -69,19 +69,6 @@ fn still_runs(pid: &str) -> bool {
         .status()
         .unwrap()
         .success()
-}
-
-/// A clock for a watched run that reads zero until `started` exists, and
-/// then an hour more on every read, so every limit and wait passes once the
-/// mock has started, and none before. It waits on no real clock.
-fn clock_from(started: &Path) -> impl Fn() -> Duration + '_ {
-    let hours = std::cell::Cell::new(0u64);
-    move || {
-        if started.is_file() {
-            hours.set(hours.get() + 1);
-        }
-        Duration::from_secs(hours.get() * 3600)
-    }
 }
 
 /// An ffmpeg that never exits on one frame is killed once the short step's
@@ -171,6 +158,57 @@ fn a_conversion_that_never_moves_is_killed_as_stalled_before_any_output() {
         "{err:#}"
     );
     let pid = fs::read_to_string(&pid_file).unwrap().trim().to_string();
+    assert!(!still_runs(&pid), "ffmpeg {pid} still runs");
+}
+
+/// A mock ffmpeg body that writes its pid, then `progress` on its progress
+/// stream, then marks itself `started` and never exits. Between the two it
+/// writes 256 KiB of progress lines that carry no position: a pipe holds 64
+/// KiB, so the mock gets past them only once the reader has read, and so
+/// recorded, the position before them. The test's clock starts only then,
+/// with no race between the reader and the watch.
+fn progress_then_hang(progress: &str) -> String {
+    format!(
+        "echo $$ > \"$(dirname \"$0\")/pid\"\n\
+         printf '{progress}'\n\
+         yes frame=1 | head -c 262144\n\
+         touch \"$(dirname \"$0\")/started\"\nexec sleep 600"
+    )
+}
+
+/// A conversion whose position moves and then stops is killed once the
+/// no-progress wait has passed, as stalled partway, at the furthest
+/// position, and the process is reaped (#2898).
+#[cfg(unix)]
+#[test]
+fn a_conversion_that_stops_moving_partway_is_killed_and_reaped() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let dir = mock_ffmpeg_dir(&progress_then_hang(
+        "out_time=00:00:01.000000\\nprogress=continue\\nout_time=00:00:42.000000\\nprogress=continue\\n",
+    ));
+    let wait = Duration::from_secs(120);
+
+    let err = run_ffmpeg_watched(
+        &["out.mp4".to_string()],
+        None,
+        Limit::Progress(StallWatch::new(wait, Some(Duration::from_secs(600)))),
+        &clock_from(&dir.path().join("started")),
+    )
+    .expect_err("a stalled run fails");
+
+    assert_eq!(
+        err.downcast_ref::<Killed>().map(Killed::reason),
+        Some(KillReason::StalledPartway {
+            wait,
+            at: Duration::from_secs(42)
+        }),
+        "{err:#}"
+    );
+    let pid = fs::read_to_string(dir.path().join("pid"))
+        .unwrap()
+        .trim()
+        .to_string();
     assert!(!still_runs(&pid), "ffmpeg {pid} still runs");
 }
 

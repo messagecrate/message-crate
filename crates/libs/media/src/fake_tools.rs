@@ -39,9 +39,6 @@ pub(crate) struct FakeTools {
     /// A run whose arguments hold any of these fails, after writing its
     /// output, as an ffmpeg that fails part way leaves a partial file.
     failing: Vec<String>,
-    /// A run whose arguments hold the first of a pair is killed for the
-    /// second, after writing its output, as an ffmpeg killed part way is.
-    killing: Vec<(String, KillReason)>,
     /// The arguments of every ffmpeg run, in order.
     runs: RefCell<Vec<Vec<String>>>,
     /// What every ffmpeg run read, in order: the file it read whole, or
@@ -58,7 +55,6 @@ impl FakeTools {
             probe: None,
             output: b"fake ffmpeg output".to_vec(),
             failing: Vec::new(),
-            killing: Vec::new(),
             runs: RefCell::new(Vec::new()),
             reads: RefCell::new(Vec::new()),
         }
@@ -87,12 +83,6 @@ impl FakeTools {
     /// A run whose arguments hold `arg` fails.
     pub(crate) fn failing_on(mut self, arg: &str) -> Self {
         self.failing.push(arg.to_string());
-        self
-    }
-
-    /// A run whose arguments hold `arg` is killed for `why`.
-    pub(crate) fn killed_on(mut self, arg: &str, why: KillReason) -> Self {
-        self.killing.push((arg.to_string(), why));
         self
     }
 
@@ -146,13 +136,6 @@ impl MediaTools for FakeTools {
             .borrow_mut()
             .push(reads.source().map(Path::to_path_buf));
         std::fs::write(dest, &self.output)?;
-        if let Some((_, why)) = self
-            .killing
-            .iter()
-            .find(|(killed_on, _)| args.contains(killed_on))
-        {
-            return Err(Killed::ffmpeg(*why).into());
-        }
         if args.iter().any(|arg| self.failing.contains(arg)) {
             bail!("ffmpeg failed (fake) on {}", args.join(" "));
         }

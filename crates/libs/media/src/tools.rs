@@ -611,7 +611,7 @@ fn short_step_over(ran: Duration) -> Option<KillReason> {
 }
 
 /// What ends one run of ffmpeg or ffprobe early, besides a stop.
-enum Limit {
+pub(crate) enum Limit {
     /// A short step, killed after [`SHORT_STEP_LIMIT`].
     ShortStep,
     /// A conversion that reads a whole file, killed when [`StallWatch`]
@@ -788,7 +788,7 @@ fn stop_follows(stopped: impl Fn() -> bool) -> bool {
 /// setting it kills ffmpeg, waits for it, and fails the run. A run asked
 /// for after `stop` is set never starts ffmpeg. What ffmpeg wrote before it
 /// was killed is the caller's to remove.
-fn run_ffmpeg_watched(
+pub(crate) fn run_ffmpeg_watched(
     args: &[String],
     stop: Option<&AtomicBool>,
     limit: Limit,
