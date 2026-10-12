@@ -1,4 +1,5 @@
 use super::*;
+use media::MediaTools as _;
 
 /// A config file at `<dir>/config/server.toml` holding `text`.
 fn config_file(dir: &Path, text: &str) -> PathBuf {

@@ -108,8 +108,8 @@ pub fn wtsexporter_in_dir(
 }
 
 /// Locate `wtsexporter` (the Python WhatsApp export tool this crate shells
-/// out to) in `tools_dir`, the Tools Directory the run names
-/// ([`message_crate_core::RunContext::tools_dir`]).
+/// out to) in `tools_dir`, the Tools Directory of the run's tools
+/// ([`media::MediaTools::tools_dir`]).
 ///
 /// # Errors
 ///

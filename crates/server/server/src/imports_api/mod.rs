@@ -31,7 +31,7 @@ use crate::db::engine;
 use crate::db::imports::{self, CompleteImportArgs};
 use crate::db::maintenance;
 use crate::progress::Progress;
-use media::{InstalledTools, MediaMode, MediaTools};
+use media::{MediaMode, MediaTools, NoTools};
 use message_crate_api_types::{MAX_IMPORT_BATCH_BYTES, RunIssueKind};
 
 pub(crate) mod batch_bodies;
@@ -120,8 +120,8 @@ pub struct FixedImportArgs<'a> {
 }
 
 /// The tools an import that copies its media as it is
-/// ([`ImportOptions::fixed`]) is given: it runs neither program.
-static COPIED_AS_IS: InstalledTools = InstalledTools::new(None);
+/// ([`ImportOptions::fixed`]) is given: none, since it runs neither program.
+static COPIED_AS_IS: NoTools = NoTools;
 
 impl<'a> ImportOptions<'a> {
     /// HTTP / tests / reset-demo: fixed source + assets dir, copy media,

@@ -22,7 +22,7 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use media::{CompressOptions, InstalledTools, MaxResolution};
+use media::{CompressOptions, InstalledTools, MaxResolution, MediaTools};
 use message_crate_core::{
     AttachmentMedia, ExporterConfig, Form, FormContext, OutputFormat, RunResult,
 };
@@ -405,7 +405,7 @@ fn run_staging(
 /// checked here: `Form` sees Clone for a real Compress choice, and
 /// [`media_settings_for`] checks them against the real one. For the same
 /// reason the form's ffmpeg check never refuses here: the form carries only
-/// Clone or Disabled, so `installed` is not asked whether ffmpeg runs. The
+/// Clone or Disabled, so `installed` is never asked whether ffmpeg runs. The
 /// Media stage checks ffmpeg against the real choice. `installed` is passed
 /// on, so the WhatsApp exporter finds `wtsexporter` in its Tools Directory.
 fn build_exporter_config(
@@ -438,10 +438,10 @@ fn build_exporter_config(
         exporters::import_source(source).ok_or_else(|| format!("unsupported source '{source}'"))?;
     (import_source.fill)(&mut form, path, options);
 
+    let tools: Arc<dyn MediaTools> = Arc::new(installed.clone());
     let ctx = FormContext {
         scratch_dir,
-        tools: installed,
-        ffmpeg_available: form.attachment_media.needs_ffmpeg() && installed.require().is_ok(),
+        tools: &tools,
     };
     form.to_config(import_source.exporter, ctx)
         .map_err(|errors| errors.join("; "))

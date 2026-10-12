@@ -104,14 +104,22 @@ impl FfmpegTools {
 /// [`MediaTools::probe`] and [`MediaTools::transcode`] run the programs;
 /// [`MediaTools::find`], [`MediaTools::require`] and
 /// [`MediaTools::can_probe`] say whether the programs were found where they
-/// were looked for and answered `-version`.
+/// were looked for and answered `-version`. [`MediaTools::tools_dir`] says
+/// where the app's own copies are kept, which is also where the WhatsApp
+/// exporter finds `wtsexporter`.
 pub trait MediaTools: Send + Sync + std::fmt::Debug {
+    /// The Tools Directory these programs are looked for in after `PATH`,
+    /// if any. `None` unless an implementation names one.
+    fn tools_dir(&self) -> Option<&Path> {
+        None
+    }
+
     /// Where ffmpeg and ffprobe are.
     ///
     /// # Errors
     ///
     /// Returns an error when the two are found in different places, which
-    /// leaves neither used ([`InstalledTools::find`]).
+    /// leaves neither used ([`MediaTools::find`]).
     fn find(&self) -> Result<FfmpegTools>;
 
     /// Fail, naming what is missing and where it was looked for, when
@@ -159,6 +167,49 @@ pub trait MediaTools: Send + Sync + std::fmt::Debug {
         reads: Reads<'_>,
         stop: Option<&AtomicBool>,
     ) -> Result<()>;
+}
+
+/// No ffmpeg or ffprobe at all: what a run is given when its caller passes
+/// none, as one that only copies its attachments does. Every lookup fails,
+/// saying no tools were given, so a caller that forgets to pass its tools to
+/// a run that converts fails at once rather than looking somewhere it was
+/// not told to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct NoTools;
+
+impl NoTools {
+    /// The error every lookup fails with.
+    fn error() -> anyhow::Error {
+        anyhow::anyhow!("no ffmpeg or ffprobe was given to this run")
+    }
+}
+
+impl MediaTools for NoTools {
+    fn find(&self) -> Result<FfmpegTools> {
+        Err(Self::error())
+    }
+
+    fn require(&self) -> Result<()> {
+        Err(Self::error())
+    }
+
+    fn can_probe(&self) -> bool {
+        false
+    }
+
+    fn probe(&self, _path: &Path) -> Result<crate::MediaProbe> {
+        Err(Self::error())
+    }
+
+    fn transcode(
+        &self,
+        _args: &[String],
+        _dest: &Path,
+        _reads: Reads<'_>,
+        _stop: Option<&AtomicBool>,
+    ) -> Result<()> {
+        Err(Self::error())
+    }
 }
 
 /// The ffmpeg and ffprobe installed on this computer: both on `PATH`, else
@@ -221,41 +272,20 @@ impl InstalledTools {
         self
     }
 
-    /// The Tools Directory, if one was named.
-    #[must_use]
-    pub fn tools_dir(&self) -> Option<&Path> {
-        self.tools_dir.as_deref()
-    }
-
     /// The no-progress wait ([`InstalledTools::with_stall_wait`]).
     #[must_use]
     pub fn stall_wait(&self) -> Duration {
         self.stall_wait
     }
 
-    /// Where ffmpeg and ffprobe are: both on `PATH`, else both in the Tools
-    /// Directory ([`find_tools`]). Every call searches again, so a program
-    /// that arrives, moves or leaves is seen at once without a restart; only
-    /// the `-version` answer of a file is kept ([`answered`]).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error naming both paths when one is found only on `PATH`
-    /// and the other only in the Tools Directory, because two builds of
-    /// different versions would then work on one file.
-    pub fn find(&self) -> Result<FfmpegTools> {
-        let search_path = self.searched_path();
-        find_tools(search_path.as_deref(), self.tools_dir())
-    }
-
-    /// Where ffmpeg is, by [`InstalledTools::find`]. `None` when it is not
+    /// Where ffmpeg is, by [`MediaTools::find`]. `None` when it is not
     /// found, does not run, or is in a different place from ffprobe.
     #[must_use]
     pub fn ffmpeg_path(&self) -> Option<PathBuf> {
         self.find().ok().and_then(|tools| tools.ffmpeg)
     }
 
-    /// Where ffprobe is, by [`InstalledTools::find`]. `None` when it is not
+    /// Where ffprobe is, by [`MediaTools::find`]. `None` when it is not
     /// found, does not run, or is in a different place from ffmpeg.
     #[must_use]
     pub fn ffprobe_path(&self) -> Option<PathBuf> {
@@ -271,26 +301,6 @@ impl InstalledTools {
         ["ffmpeg", "ffprobe"]
             .iter()
             .all(|name| find_on_path(name, search_path.as_deref()).is_some())
-    }
-
-    /// Fail, naming which tool is missing and where it was looked for, when
-    /// ffmpeg or ffprobe is not found.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when either tool is missing, or when the two are in
-    /// different places ([`InstalledTools::find`]).
-    pub fn require(&self) -> Result<()> {
-        let missing = self.find()?.missing();
-        if missing.is_empty() {
-            return Ok(());
-        }
-        bail!(
-            "ffmpeg and ffprobe are required to convert or compress attachments. {} {} not found {}.",
-            missing.join(" and "),
-            if missing.len() == 1 { "was" } else { "were" },
-            self.where_looked()
-        )
     }
 
     /// The `PATH` the lookup searches: the one a test put in place
@@ -330,12 +340,42 @@ impl InstalledTools {
 }
 
 impl MediaTools for InstalledTools {
-    fn find(&self) -> Result<FfmpegTools> {
-        InstalledTools::find(self)
+    fn tools_dir(&self) -> Option<&Path> {
+        self.tools_dir.as_deref()
     }
 
+    /// Both on `PATH`, else both in the Tools Directory ([`find_tools`]). Every call searches again, so a program
+    /// that arrives, moves or leaves is seen at once without a restart; only
+    /// the `-version` answer of a file is kept ([`answered`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error naming both paths when one is found only on `PATH`
+    /// and the other only in the Tools Directory, because two builds of
+    /// different versions would then work on one file.
+    fn find(&self) -> Result<FfmpegTools> {
+        let search_path = self.searched_path();
+        find_tools(search_path.as_deref(), self.tools_dir())
+    }
+
+    /// Fail, naming which tool is missing and where it was looked for, when
+    /// ffmpeg or ffprobe is not found.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when either tool is missing, or when the two are in
+    /// different places ([`MediaTools::find`]).
     fn require(&self) -> Result<()> {
-        InstalledTools::require(self)
+        let missing = self.find()?.missing();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        bail!(
+            "ffmpeg and ffprobe are required to convert or compress attachments. {} {} not found {}.",
+            missing.join(" and "),
+            if missing.len() == 1 { "was" } else { "were" },
+            self.where_looked()
+        )
     }
 
     fn can_probe(&self) -> bool {

@@ -135,7 +135,7 @@ async fn dedupe_and_process_assets(
     // ffmpeg for anything but an MP4, and the viewer opens an original only
     // when its rows say so, so that is still recorded.
     let tools = cfg.media_tools();
-    if tools.require().is_err() {
+    if !media::MediaTools::available(&tools) {
         progress.heading(
             "ffmpeg was not found, so the Demo Account's attachments get no Previews or Thumbnails",
         );

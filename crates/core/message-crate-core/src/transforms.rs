@@ -6,7 +6,7 @@ use crate::process::LogSink;
 use crate::progress::ProgressSink;
 use std::sync::Arc;
 
-use media::{CompressOptions, InstalledTools, MediaMode, MediaTools};
+use media::{CompressOptions, MediaMode, MediaTools, NoTools};
 
 /// The transforms a run applies at write time, handed to the format sink.
 #[derive(Debug, Clone)]
@@ -33,7 +33,7 @@ impl Default for ExportTransforms {
         Self {
             media: MediaMode::Clone,
             compress: CompressOptions::default(),
-            tools: Arc::new(InstalledTools::default()),
+            tools: Arc::new(NoTools),
             obfuscate: false,
             obfuscate_seed: None,
             log: LogSink::none(),

@@ -2333,6 +2333,9 @@ pub(crate) fn test_app_state(pool: sqlx::SqlitePool, data_dir: &Path) -> AppStat
     // A refused login counts its wait rather than sleeping it, so no test
     // sleeps and a test can read how many refusals waited.
     state.refusal_wait = crate::credentials::RefusalWait::counted();
+    // The tools on `PATH`, the ones `media::testutil::real_ffmpeg` answers,
+    // so a test that skips without them runs the programs it checked for.
+    state.media_tools = Arc::new(media::testutil::path_ffmpeg());
     state
 }
 

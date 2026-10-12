@@ -1,23 +1,28 @@
 use super::*;
 
-/// The tools a form is validated with: on `PATH`, with no Tools Directory.
-/// Validating the form runs neither program.
-static PATH_ONLY: InstalledTools = InstalledTools::new(None);
+use std::sync::LazyLock;
+
+use media::testutil::FakeTools;
+
+/// Neither ffmpeg nor ffprobe.
+static MISSING: LazyLock<Arc<dyn MediaTools>> = LazyLock::new(|| Arc::new(FakeTools::missing()));
+
+/// ffmpeg and ffprobe, both found.
+static FOUND: LazyLock<Arc<dyn MediaTools>> = LazyLock::new(|| Arc::new(FakeTools::new()));
 
 /// The context of a form validated with its Scratch Directory at `/cache`
 /// and no ffmpeg.
 fn no_ffmpeg() -> FormContext<'static> {
     FormContext {
         scratch_dir: Path::new("/cache"),
-        tools: &PATH_ONLY,
-        ffmpeg_available: false,
+        tools: &MISSING,
     }
 }
 
 /// [`no_ffmpeg`], with ffmpeg available.
 fn with_ffmpeg() -> FormContext<'static> {
     FormContext {
-        ffmpeg_available: true,
+        tools: &FOUND,
         ..no_ffmpeg()
     }
 }
@@ -380,16 +385,13 @@ fn whatsapp_passes_platform_and_media() {
     );
 }
 
-/// An Android crypt backup does not carry the account holder's number,
-/// so the form is the only source: an empty field is a validation
-/// problem, not an import that runs and records no owner.
-/// The tools the caller passes reach the run: the Tools Directory, where
-/// the WhatsApp exporter finds `wtsexporter`, and the ffmpeg and ffprobe
-/// the media passes run, looked for there (#2696).
+/// The tools the caller passes reach the run, as the ffmpeg and ffprobe the
+/// media passes run and the Tools Directory the WhatsApp exporter finds
+/// `wtsexporter` in (#2696).
 #[test]
 fn the_tools_the_caller_passes_reach_the_run() {
     let tools_dir = PathBuf::from("/home/someone/message-crate/tools");
-    let tools = InstalledTools::new(Some(tools_dir.clone()));
+    let tools: Arc<dyn MediaTools> = Arc::new(media::InstalledTools::new(Some(tools_dir.clone())));
     let form = Form {
         output: "out".into(),
         owner_phones: "+15555550100".into(),
@@ -408,14 +410,16 @@ fn the_tools_the_caller_passes_reach_the_run() {
         )
         .unwrap();
 
-    assert_eq!(config.context.tools_dir, Some(tools_dir.clone()));
-    assert!(
-        format!("{:?}", config.output.media.tools).contains(&tools_dir.display().to_string()),
-        "{:?}",
-        config.output.media.tools
+    assert!(Arc::ptr_eq(&config.output.media.tools, &tools));
+    assert_eq!(
+        config.output.media.tools.tools_dir(),
+        Some(tools_dir.as_path())
     );
 }
 
+/// An Android crypt backup does not carry the account holder's number,
+/// so the form is the only source: an empty field is a validation
+/// problem, not an import that runs and records no owner.
 #[test]
 fn whatsapp_android_requires_the_owner_number() {
     let form = Form {

@@ -50,9 +50,7 @@ fn launch(app: &AppHandle, open_to_network: bool) -> Result<Launch, String> {
             .map_err(|e| format!("{}: {e}", local_server::OWN_ADDRESS))?,
         open_to_network,
         cors_origins: dev_origins(app),
-        tools_dir: app
-            .state::<media::InstalledTools>()
-            .tools_dir()
+        tools_dir: media::MediaTools::tools_dir(app.state::<media::InstalledTools>().inner())
             .map(Path::to_path_buf),
     })
 }

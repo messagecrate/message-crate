@@ -18,7 +18,7 @@
 use std::io::Write;
 use std::path::Path;
 
-use crate::tools::InstalledTools;
+use crate::tools::{InstalledTools, MediaTools};
 
 pub use crate::fake_tools::{FakeTools, video_probe};
 
@@ -71,7 +71,7 @@ fn running_in_ci() -> bool {
 /// When `CI` is set and ffmpeg or ffprobe cannot be found.
 #[must_use]
 pub fn real_ffmpeg() -> Option<InstalledTools> {
-    let tools = InstalledTools::default();
+    let tools = path_ffmpeg();
     if tools.require().is_ok() {
         return Some(tools);
     }
@@ -89,6 +89,14 @@ pub fn real_ffmpeg() -> Option<InstalledTools> {
         "skipped {test}: ffmpeg or ffprobe was not found"
     );
     None
+}
+
+/// ffmpeg and ffprobe as this machine has them on `PATH`, with no Tools
+/// Directory: the tools [`real_ffmpeg`] checks for, for a test that builds
+/// state once and checks for the programs elsewhere.
+#[must_use]
+pub fn path_ffmpeg() -> InstalledTools {
+    InstalledTools::default()
 }
 
 /// ffmpeg and ffprobe looked for on an empty `PATH` and in a Tools

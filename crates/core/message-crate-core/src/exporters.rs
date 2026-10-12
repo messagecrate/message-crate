@@ -9,7 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use media::{InstalledTools, MaxResolution, MediaMode};
+use media::{MaxResolution, MediaMode, MediaTools};
 
 use crate::config::{
     AppleConfig, ExporterConfig, GoSmsProConfig, ImazingConfig, MediaConfig, ObfuscateConfig,
@@ -281,25 +281,20 @@ impl Default for Form {
     }
 }
 
-/// What [`Form::to_config`] needs to know beyond the form. The caller finds
-/// it out and passes it in, so validating a form reads no process-wide state
-/// and starts no program.
+/// What [`Form::to_config`] needs to know beyond the form. The caller passes
+/// it in, so validating a form reads no process-wide state.
 #[derive(Debug, Clone, Copy)]
 pub struct FormContext<'a> {
     /// The Scratch Directory the run's scratch data goes under
     /// ([`ExporterConfig::scratch_dir`]).
     pub scratch_dir: &'a Path,
-    /// The ffmpeg and ffprobe the run's Convert and Compress use, and the
-    /// Tools Directory the WhatsApp exporter finds `wtsexporter` in
-    /// ([`RunContext::tools_dir`]). The form only passes them on: it runs
-    /// neither program.
-    pub tools: &'a InstalledTools,
-    /// Whether ffmpeg and ffprobe can be used, as
-    /// [`media::MediaTools::available`] answers for `tools`. Without them
-    /// the form refuses Convert and Compress unless it obfuscates. It is
-    /// read for no other choice, so a caller whose form asks for neither may
-    /// pass `false` without asking.
-    pub ffmpeg_available: bool,
+    /// The ffmpeg and ffprobe the run's Convert and Compress use, whose
+    /// Tools Directory is also where the WhatsApp exporter finds
+    /// `wtsexporter` ([`MediaTools::tools_dir`]). Without them the form
+    /// refuses Convert and Compress unless it obfuscates. The form asks
+    /// whether they can be used only for those two choices, so a form that
+    /// asks for neither starts no program.
+    pub tools: &'a Arc<dyn MediaTools>,
 }
 
 impl Form {
@@ -374,15 +369,12 @@ impl Form {
             output: OutputConfig {
                 obfuscate,
                 media: MediaConfig {
-                    tools: Arc::new(ctx.tools.clone()),
+                    tools: Arc::clone(ctx.tools),
                     ..media
                 },
                 ..OutputConfig::new(self.output.trim(), self.output_format)
             },
-            context: RunContext {
-                tools_dir: ctx.tools.tools_dir().map(Path::to_path_buf),
-                ..RunContext::new(ctx.scratch_dir)
-            },
+            context: RunContext::new(ctx.scratch_dir),
             source,
         }
     }
@@ -395,7 +387,7 @@ impl Form {
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
         required_text(&self.output, "Output directory", errors);
-        self.require_ffmpeg_for_media(ctx.ffmpeg_available, errors);
+        self.require_ffmpeg_for_media(ctx.tools.as_ref(), errors);
         let media = self.media_config_for(
             matches!(self.attachment_media, AttachmentMedia::Compress),
             errors,
@@ -458,7 +450,7 @@ impl Form {
         if self.whatsapp_platform == WhatsappPlatform::Android && owner_phone.is_none() {
             errors.push("Owner's WhatsApp number is required.".into());
         }
-        let media = self.validate_media(ctx.ffmpeg_available, errors);
+        let media = self.validate_media(ctx.tools.as_ref(), errors);
         self.exporter_config(
             inputs,
             obfuscate,
@@ -492,7 +484,7 @@ impl Form {
     ) -> ExporterConfig {
         let input = require_single_existing_path(&self.input, "Input", errors);
         required_text(&self.output, "Output", errors);
-        let media = self.validate_media(ctx.ffmpeg_available, errors);
+        let media = self.validate_media(ctx.tools.as_ref(), errors);
         self.exporter_config(
             input.into_iter().collect(),
             obfuscate,
@@ -513,7 +505,7 @@ impl Form {
     ) -> ExporterConfig {
         let input = require_single_existing_path(&self.input, "Input", errors);
         required_text(&self.output, "Output", errors);
-        let media = self.validate_media(ctx.ffmpeg_available, errors);
+        let media = self.validate_media(ctx.tools.as_ref(), errors);
         self.exporter_config(
             input.into_iter().collect(),
             obfuscate,
@@ -530,7 +522,7 @@ impl Form {
         ctx: FormContext<'_>,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
-        let (inputs, media, owner_phones) = self.android_common(ctx.ffmpeg_available, errors);
+        let (inputs, media, owner_phones) = self.android_common(ctx.tools.as_ref(), errors);
         self.exporter_config(
             inputs,
             obfuscate,
@@ -547,7 +539,7 @@ impl Form {
         ctx: FormContext<'_>,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
-        let (inputs, media, owner_phones) = self.android_common(ctx.ffmpeg_available, errors);
+        let (inputs, media, owner_phones) = self.android_common(ctx.tools.as_ref(), errors);
         // SMS Backup & Restore writes each backup as one file, and an
         // Import Run reads one backup.
         if let Some(dir) = inputs.iter().find(|input| input.is_dir()) {
@@ -572,7 +564,7 @@ impl Form {
         ctx: FormContext<'_>,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
-        let (inputs, media, owner_phones) = self.android_common(ctx.ffmpeg_available, errors);
+        let (inputs, media, owner_phones) = self.android_common(ctx.tools.as_ref(), errors);
         let owner_emails: Vec<String> = values(&self.owner_emails)
             .into_iter()
             .map(str::to_string)
@@ -597,7 +589,7 @@ impl Form {
     /// Shared Android backup fields: input path, owner phones, media.
     fn android_common(
         &self,
-        ffmpeg_available: bool,
+        tools: &dyn MediaTools,
         errors: &mut Vec<String>,
     ) -> (Vec<PathBuf>, MediaConfig, Vec<String>) {
         let input = require_single_existing_path(&self.input, "Input", errors);
@@ -609,23 +601,23 @@ impl Form {
         if owner_phones.is_empty() {
             errors.push("At least one phone number is required.".into());
         }
-        let media = self.validate_media(ffmpeg_available, errors);
+        let media = self.validate_media(tools, errors);
         (input.into_iter().collect(), media, owner_phones)
     }
 
     /// Media options for every exporter except iMessage; compress settings are
     /// validated only in Compress mode.
-    fn validate_media(&self, ffmpeg_available: bool, errors: &mut Vec<String>) -> MediaConfig {
-        self.require_ffmpeg_for_media(ffmpeg_available, errors);
+    fn validate_media(&self, tools: &dyn MediaTools, errors: &mut Vec<String>) -> MediaConfig {
+        self.require_ffmpeg_for_media(tools, errors);
         let mode = self.attachment_media.media_mode();
         self.media_config_for(matches!(mode, MediaMode::Compress), errors)
     }
 
     /// Refuse Convert and Compress when ffmpeg is not available. Obfuscate
     /// skips copy and convert, so it needs no ffmpeg.
-    fn require_ffmpeg_for_media(&self, ffmpeg_available: bool, errors: &mut Vec<String>) {
+    fn require_ffmpeg_for_media(&self, tools: &dyn MediaTools, errors: &mut Vec<String>) {
         let obfuscate_active = self.obfuscate || !self.obfuscate_seed.trim().is_empty();
-        if !obfuscate_active && self.attachment_media.needs_ffmpeg() && !ffmpeg_available {
+        if !obfuscate_active && self.attachment_media.needs_ffmpeg() && !tools.available() {
             errors.push(CONVERT_COMPRESS_FFMPEG_REQUIRED.into());
         }
     }

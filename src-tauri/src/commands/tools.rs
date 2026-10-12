@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 
-use media::InstalledTools;
+use media::{InstalledTools, MediaTools};
 use message_crate_core::{CancelFlag, Cancelled};
 use tauri::AppHandle;
 

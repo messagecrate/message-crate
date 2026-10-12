@@ -37,7 +37,7 @@ pub use process::{
 pub use signature::{SIGNATURE_LEN, media_type_from_bytes, media_type_in_file};
 pub use tools::{
     DEFAULT_STALL_WAIT, FfmpegFailed, FfmpegTools, InstalledTools, KillReason, Killed, MediaTools,
-    Reads, file_has_sha256, is_executable, tool_in_dir,
+    NoTools, Reads, file_has_sha256, is_executable, tool_in_dir,
 };
 pub use versions::{
     THUMBNAIL_LONG_EDGE, browser_shows, make_preview, make_thumbnail, media_type_of,

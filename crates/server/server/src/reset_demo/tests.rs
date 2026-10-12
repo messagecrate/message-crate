@@ -2406,7 +2406,7 @@ async fn the_build_under_serve_says_every_step_in_the_server_log() {
     seeded.expect("seed the new database");
 
     let text: Vec<&str> = lines.iter().map(|line| line.text.as_str()).collect();
-    let media_step = if cfg.media_tools().require().is_ok() {
+    let media_step = if media::MediaTools::available(&cfg.media_tools()) {
         "Processing account"
     } else {
         "ffmpeg was not found"

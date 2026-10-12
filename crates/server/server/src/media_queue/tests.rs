@@ -180,9 +180,9 @@ async fn instant_after_newest_queued(
     })
 }
 
-/// Run `test` on its own runtime when the real ffmpeg is on `PATH`, where
-/// the state's tools look ([`crate::server::AppState::media_tools`]), or skip
+/// Run `test` on its own runtime when the real ffmpeg is on `PATH`, or skip
 /// it the way every ffmpeg test in the workspace skips (and fail under CI).
+/// The test state runs the same tools ([`crate::server::test_app_state`]).
 fn with_real_ffmpeg(test: impl Future<Output = ()>) {
     if media::testutil::real_ffmpeg().is_none() {
         return;
@@ -752,7 +752,7 @@ async fn an_asset_queued_again_while_it_is_worked_on_stays_queued() {
 /// A video that takes ffmpeg seconds to convert: the HEVC fixture played
 /// 8000 times over, copied rather than encoded, so it is made in an instant.
 fn long_video() -> Vec<u8> {
-    let ffmpeg = media::InstalledTools::default()
+    let ffmpeg = media::testutil::path_ffmpeg()
         .ffmpeg_path()
         .expect("ffmpeg, which with_real_ffmpeg found");
     let dir = tempfile::tempdir().unwrap();
