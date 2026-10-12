@@ -125,7 +125,7 @@ describe("InfiniteOffsetList in the desktop app", () => {
       expect(pill).toHaveTextContent("1–8 of 90");
 
       // The new search's rows are twice as tall, so four of its six fit where
-      // eight fitted. Until the list measures them, the old 1–8 reads as
+      // eight fit before. Until the list measures them, the old 1–8 reads as
       // all six.
       restore();
       restore = layOutDrawnRows(98);
