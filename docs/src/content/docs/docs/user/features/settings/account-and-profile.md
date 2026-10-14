@@ -139,7 +139,7 @@ The Owner has no **Danger zone**, because the Owner holds no messages and can't 
 
 **Display Name** is the account holder's name.
 The account menu shows it under the username, and the Owner's list of accounts shows it beside the username.
-**Save** stores it.
+It saves when you leave the field, press Enter, or move to another tab. There is no **Save** button.
 An empty field removes the name.
 
 ### Time Zone
