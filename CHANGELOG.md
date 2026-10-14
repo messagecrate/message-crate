@@ -147,7 +147,8 @@ carry their date on the heading.
   Identities**, with **Pick country**. Picking one gives the number its full
   form; when another identity already has that form, Message Crate says whose
   it is and asks before it merges the two, their one-to-one conversations
-  with them (#1676).
+  with them. The owner picks one the same way on the Profile tab of an
+  account opened from User Accounts (#1676, #2987).
 - 2026-10-08: **Owner Home's Logs shows the server's log and the Import Run
   logs on this computer.** The owner picks the server's log or, in the
   desktop app, any Import Run's log on this computer, whoever ran it. An
@@ -387,11 +388,6 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
-- 2026-10-14: **The owner can pick the country of an account's number.** On
-  an account opened from User Accounts, the Profile tab offers a country for
-  a phone number written without its country code, but the server refused
-  the owner the list of countries, so the owner could not pick one. The
-  owner now gets the list, as the account holder does (#2987).
 - 2026-10-12: **One-to-one, not direct or chat.** The identities on Settings →
   Profile, the identities in a contact's drawer, and the totals of checked
   contacts head their first message count "One-to-one messages" rather than
