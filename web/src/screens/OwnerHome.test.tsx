@@ -676,10 +676,33 @@ describe("OwnerHome", () => {
     updateAccount.mockResolvedValue({ ...anAccount, preferred_name: "Robert" });
     await user.clear(name);
     await fill(user, name, "Robert");
-    // Moving on to another tab is all it takes; there is no Save to forget (#2985).
+    // Moving on to another tab is all it takes. There is no Save to forget (#2985).
     await user.click(screen.getByRole("tab", { name: "Account" }));
     await settle();
     expect(updateAccount).toHaveBeenCalledWith(101, { preferred_name: "Robert" });
+  });
+
+  it("shows a display name refused after a tab switch when the owner comes back to Profile", async () => {
+    const user = setupUser();
+    renderHome(["/owner/accounts/101"]);
+    await settle();
+
+    await user.click(screen.getByRole("tab", { name: "Profile" }));
+    await settle();
+
+    updateAccount.mockRejectedValue(new ApiError(400, "display name is too long"));
+    const name = screen.getByLabelText("Display name");
+    await user.clear(name);
+    await fill(user, name, "Robert");
+    // The refusal arrives after the Profile panel is gone.
+    await user.click(screen.getByRole("tab", { name: "Account" }));
+    await settle();
+    expect(updateAccount).toHaveBeenCalledWith(101, { preferred_name: "Robert" });
+
+    await user.click(screen.getByRole("tab", { name: "Profile" }));
+    await settle();
+    expect(screen.getByLabelText("Display name")).toHaveValue("Robert");
+    expect(screen.getByText("Display name is too long")).toBeInTheDocument();
   });
 
   it("removes an identity from an account's Profile once the owner agrees", async () => {

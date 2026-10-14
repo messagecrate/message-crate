@@ -7,6 +7,7 @@ import { useSettingsAccount, useUpdateSettingsProfile } from "../../lib/useSetti
 import { AccountActivitySection } from "./AccountActivitySection";
 import { AddressBookSection } from "./AddressBookSection";
 import { IdentitiesSection } from "./IdentitiesSection";
+import type { NameEdit } from "./nameEdit";
 import { sectionTitleClass } from "./profileStyles";
 
 /**
@@ -17,21 +18,57 @@ import { sectionTitleClass } from "./profileStyles";
  * does, and reads when it last logged in and which app it connects with. The
  * address book is the account's contacts, which the owner does not reach.
  */
-export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: number }) {
+export function ProfileSettingsPanel({
+  managedAccountId,
+  nameEdit,
+}: {
+  managedAccountId?: number;
+  nameEdit: NameEdit;
+}) {
   const { profile, loading, error: loadError } = useSettingsAccount(managedAccountId);
   const updateProfile = useUpdateSettingsProfile(managedAccountId);
   const managed = managedAccountId !== undefined;
-  // What the person has typed and not yet saved; null shows the stored name.
-  const [nameDraft, setNameDraft] = useState<string | null>(null);
-  const [nameError, setNameError] = useState("");
+  const {
+    draft: nameDraft,
+    setDraft: setNameDraft,
+    error: nameError,
+    setError: setNameError,
+  } = nameEdit;
   const [zoneError, setZoneError] = useState("");
   const [zoneSaving, setZoneSaving] = useState(false);
-  // The name a save has sent and not yet heard back about, so leaving the
-  // field and then the panel cannot send it twice.
-  const nameInFlight = useRef<string | null>(null);
-  // This render's name save. A tab switch removes the field without a blur,
-  // so the panel runs the last render's save as it goes.
-  const saveNameOnLeave = useRef<() => Promise<void>>(async () => {});
+
+  // Leaving the field is the whole gesture, as picking a zone is: no Save
+  // button, so a typed name cannot be left behind unsaved (#2985). A name that
+  // reads as the stored one sends nothing.
+  const handleSaveName = async () => {
+    if (nameDraft === null || !profile) return;
+    const next = nameDraft.trim();
+    if (next === (profile.preferred_name ?? "")) {
+      setNameDraft(null);
+      setNameError("");
+      return;
+    }
+    if (nameEdit.inFlight.current === next) return;
+    nameEdit.inFlight.current = next;
+    setNameError("");
+    try {
+      await updateProfile.mutateAsync({ preferred_name: next || null });
+      // Only the name that was sent is cleared. A name typed while it was on
+      // the way stays, to be saved in its turn.
+      setNameDraft((d) => (d !== null && d.trim() === next ? null : d));
+    } catch (e) {
+      setNameError(errorLine(e));
+    } finally {
+      nameEdit.inFlight.current = null;
+    }
+  };
+
+  // A tab switch removes the field without a blur, so the panel runs the
+  // last committed render's save as it goes.
+  const saveNameOnLeave = useRef(handleSaveName);
+  useEffect(() => {
+    saveNameOnLeave.current = handleSaveName;
+  });
   useEffect(() => () => void saveNameOnLeave.current(), []);
 
   if (loadError) {
@@ -44,30 +81,6 @@ export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: 
 
   const name = nameDraft ?? profile.preferred_name ?? "";
   const fixed = fixedSettings(profile);
-
-  // Leaving the field is the whole gesture, as picking a zone is: no Save
-  // button, so a typed name cannot be left behind unsaved (#2985). A name that
-  // reads as the stored one sends nothing.
-  const handleSaveName = async () => {
-    if (nameDraft === null) return;
-    const next = nameDraft.trim();
-    if (next === (profile.preferred_name ?? "")) {
-      setNameDraft(null);
-      return;
-    }
-    if (nameInFlight.current === next) return;
-    nameInFlight.current = next;
-    setNameError("");
-    try {
-      await updateProfile.mutateAsync({ preferred_name: next || null });
-      setNameDraft(null);
-    } catch (e) {
-      setNameError(errorLine(e));
-    } finally {
-      nameInFlight.current = null;
-    }
-  };
-  saveNameOnLeave.current = handleSaveName;
 
   // Picking a zone is the whole gesture: no Save button, the server answers
   // with the profile as it now stands and every date label re-renders from it.
@@ -95,9 +108,10 @@ export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: 
           readOnly={fixed.displayName}
           onChange={(e) => setNameDraft(e.target.value)}
           onBlur={() => void handleSaveName()}
-          // Enter leaves the field, so the save runs once, from the blur.
+          // Enter leaves the field, so the save runs once, from the blur. An
+          // Enter that picks an input method's candidate is not one.
           onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) e.currentTarget.blur();
           }}
           className={`${textInputClass} flex-1${fixed.displayName ? " !text-muted" : ""}`}
         />

@@ -1,12 +1,13 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
 import { ApiError } from "../../lib/api";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { mockedAuth, renderWithProviders as render } from "../../test/providers";
 import { fill, setupUser } from "../../test/user";
+import { useNameEdit } from "./nameEdit";
 import { ProfileSettingsPanel } from "./ProfileSettingsPanel";
 
 const getAccountProfile = vi.hoisted(() => vi.fn());
@@ -52,6 +53,11 @@ afterEach(() => {
   stopFakeClock();
 });
 
+// The Settings screen holds the typed name; here the panel holds its own.
+function Panel() {
+  return <ProfileSettingsPanel nameEdit={useNameEdit()} />;
+}
+
 function nameField() {
   return screen.getByRole("textbox", { name: "Display name" }) as HTMLInputElement;
 }
@@ -69,14 +75,14 @@ describe("ProfileSettingsPanel", () => {
     timeout: 15_000,
   }, async () => {
     const user = setupUser();
-    render(<ProfileSettingsPanel />);
+    render(<Panel />);
     await settle();
     expect(nameField().value).toBe("Stored Name");
 
     await user.clear(nameField());
     await fill(user, nameField(), "Typed Name");
 
-    // Leaving the field for the time zone saves the name; there is no Save
+    // Leaving the field for the time zone saves the name. There is no Save
     // to forget (#2985).
     await fill(user, zoneField(), "dallas");
     expect(updateAccountProfile).toHaveBeenCalledWith({ preferred_name: "Typed Name" });
@@ -91,7 +97,7 @@ describe("ProfileSettingsPanel", () => {
 
   it("clears the display name when Enter is pressed in an emptied field", async () => {
     const user = setupUser();
-    render(<ProfileSettingsPanel />);
+    render(<Panel />);
     await settle();
     expect(nameField().value).toBe("Stored Name");
 
@@ -111,7 +117,7 @@ describe("ProfileSettingsPanel", () => {
       new ApiError(403, "display name and time zone are fixed"),
     );
     const user = setupUser();
-    render(<ProfileSettingsPanel />);
+    render(<Panel />);
     await settle();
 
     await fill(user, nameField(), " Jr");
@@ -123,9 +129,59 @@ describe("ProfileSettingsPanel", () => {
     expect(nameField().value).toBe("Stored Name Jr");
   });
 
+  it("clears a refusal when the field is put back to the stored name", async () => {
+    updateAccountProfile.mockRejectedValueOnce(new ApiError(400, "display name is too long"));
+    const user = setupUser();
+    render(<Panel />);
+    await settle();
+
+    await fill(user, nameField(), " Jr");
+    await user.keyboard("{Enter}");
+    await settle();
+    expect(screen.getByText("Display name is too long")).toBeInTheDocument();
+
+    await user.clear(nameField());
+    await fill(user, nameField(), "Stored Name");
+    await user.keyboard("{Enter}");
+    await settle();
+    expect(screen.queryByText("Display name is too long")).toBeNull();
+  });
+
+  it("keeps a name typed while the previous one is still being saved", async () => {
+    let answer: (p: AccountProfile) => void = () => {};
+    updateAccountProfile.mockImplementationOnce(
+      () => new Promise<AccountProfile>((resolve) => (answer = resolve)),
+    );
+    const user = setupUser();
+    render(<Panel />);
+    await settle();
+
+    await user.clear(nameField());
+    await fill(user, nameField(), "Ann");
+    await user.keyboard("{Enter}");
+    await fill(user, nameField(), "e");
+    answer({ ...stored, preferred_name: "Ann" });
+    await settle();
+
+    expect(nameField().value).toBe("Anne");
+  });
+
+  it("does not leave the field on an Enter that picks an input method's candidate", async () => {
+    const user = setupUser();
+    render(<Panel />);
+    await settle();
+
+    await fill(user, nameField(), " Jr");
+    fireEvent.keyDown(nameField(), { key: "Enter", isComposing: true });
+    await settle();
+
+    expect(nameField()).toHaveFocus();
+    expect(updateAccountProfile).not.toHaveBeenCalled();
+  });
+
   it("sends nothing when the field is left with the stored name", async () => {
     const user = setupUser();
-    render(<ProfileSettingsPanel />);
+    render(<Panel />);
     await settle();
 
     await user.click(nameField());
@@ -145,7 +201,7 @@ describe("ProfileSettingsPanel", () => {
       is_owner: false,
       is_demo: true,
     }));
-    render(<ProfileSettingsPanel />);
+    render(<Panel />);
     await settle();
     expect(nameField().value).toBe("Demo User");
 
