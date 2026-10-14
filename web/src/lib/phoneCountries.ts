@@ -6,7 +6,8 @@
  * A number whose country nobody stated is stored as the digits typed and
  * matches no number written with its `+` (#1676). The import form states the
  * phone's country for a whole run, and the Contacts and My Identities screens
- * pick one for a single identity; both offer this list.
+ * pick one for a single identity, as does the owner on the Profile tab of an
+ * account opened from User Accounts; each offers this list.
  */
 
 import { keys } from "./queryKeys";
