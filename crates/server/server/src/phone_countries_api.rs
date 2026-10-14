@@ -9,7 +9,7 @@ use crate::extract::{Json, Query};
 use serde::{Deserialize, Serialize};
 
 use crate::paging::{DEFAULT_LIST_LIMIT, MAX_LIST_OFFSET, Page, page_of, page_params};
-use crate::server::{ApiError, FullAccess};
+use crate::server::{ApiError, LoggedIn};
 
 /// One country a phone number can be read in.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -36,19 +36,24 @@ pub(crate) struct ListPhoneCountriesQuery {
 }
 
 /// The countries a phone number written without its `+` code can be read
-/// in, by ISO code.
+/// in, by ISO code. Any logged-in person reads it, the owner included: the
+/// owner picks the country of a number on an account it opens from User
+/// Accounts (`set_identity_country` on `PATCH /v1/accounts/{id}`).
 #[utoipa::path(
     get,
     path = "/v1/phone-countries",
     tag = "Contacts",
-    security(("session" = [])),
+    security(
+        ("session" = []),
+        ("session" = ["owner"])
+    ),
     params(ListPhoneCountriesQuery),
     responses(
         (status = 200, body = crate::paging::Page<PhoneCountry>),
     )
 )]
 pub(crate) async fn list_phone_countries(
-    FullAccess(_auth): FullAccess,
+    LoggedIn(_auth): LoggedIn,
     Query(query): Query<ListPhoneCountriesQuery>,
 ) -> Result<Json<Page<PhoneCountry>>, ApiError> {
     let params = page_params(
@@ -65,4 +70,34 @@ pub(crate) async fn list_phone_countries(
         })
         .collect();
     Ok(Json(page_of(countries, params)))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::paging::Page;
+    use crate::test_support::{claim_as_owner, get_json, test_fixture};
+
+    /// The owner picks the country of a managed account's number from that
+    /// account's Profile tab (`set_identity_country` on
+    /// `PATCH /v1/accounts/{id}`), so the owner's session reads the list the
+    /// picker offers (#2987).
+    #[tokio::test]
+    async fn the_owner_reads_the_country_list() {
+        let fixture = test_fixture().await;
+        let owner = claim_as_owner(&fixture.state, "keeper", "hunter2hunter2").await;
+
+        let page: Page<serde_json::Value> = get_json(
+            &fixture.state,
+            "/v1/phone-countries?limit=500&offset=0",
+            &owner.token,
+        )
+        .await;
+
+        assert_eq!(page.total, phone::COUNTRIES.len() as u64);
+        assert!(
+            page.items.iter().any(|country| country["code"] == "GB"),
+            "the owner's list names GB: {:?}",
+            page.items
+        );
+    }
 }

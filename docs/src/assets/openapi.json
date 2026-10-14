@@ -10902,6 +10902,7 @@
           "Contacts"
         ],
         "summary": "The countries a phone number written without its `+` code can be read in, by ISO code.",
+        "description": "Any logged-in person reads it, the owner included: the owner picks the country of a number on an account it opens from User Accounts (`set_identity_country` on `PATCH /v1/accounts/{id}`).",
         "operationId": "list_phone_countries",
         "parameters": [
           {
@@ -10999,6 +11000,11 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "session": [
+              "owner"
+            ]
           }
         ]
       }

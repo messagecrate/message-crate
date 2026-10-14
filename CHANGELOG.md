@@ -387,6 +387,11 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-14: **The owner can pick the country of an account's number.** On
+  an account opened from User Accounts, the Profile tab offers a country for
+  a phone number written without its country code, but the server refused
+  the owner the list of countries, so the owner could not pick one. The
+  owner now gets the list, as the account holder does (#2987).
 - 2026-10-12: **One-to-one, not direct or chat.** The identities on Settings →
   Profile, the identities in a contact's drawer, and the totals of checked
   contacts head their first message count "One-to-one messages" rather than
