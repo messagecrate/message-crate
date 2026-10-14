@@ -1,4 +1,5 @@
-import { type Dispatch, type RefObject, type SetStateAction, useRef, useState } from "react";
+import { type Dispatch, type SetStateAction, useCallback, useRef, useState } from "react";
+import { errorLine } from "../../lib/apiErrorMessage";
 
 /**
  * A display name typed on the Profile tab and not yet saved, with the
@@ -12,14 +13,47 @@ export interface NameEdit {
   draft: string | null;
   setDraft: Dispatch<SetStateAction<string | null>>;
   error: string;
-  setError: Dispatch<SetStateAction<string>>;
-  /** The name a save has sent and not yet heard back about, so it is not sent twice. */
-  inFlight: RefObject<string | null>;
+  /**
+   * Save the draft, given the stored name and the call that sends a name
+   * (`null` clears it). A draft that reads as the stored name sends nothing.
+   */
+  save: (stored: string | null, send: (name: string | null) => Promise<unknown>) => Promise<void>;
 }
 
 export function useNameEdit(): NameEdit {
   const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const inFlight = useRef<string | null>(null);
-  return { draft, setDraft, error, setError, inFlight };
+  // The name the newest save sent, until its answer arrives. Leaving the field
+  // and then the panel does not send it twice, and the answer to an older
+  // save, which a newer one has overtaken, changes nothing.
+  const sending = useRef<string | null>(null);
+
+  const save = useCallback(
+    async (stored: string | null, send: (name: string | null) => Promise<unknown>) => {
+      if (draft === null) return;
+      const next = draft.trim();
+      if (next === (stored ?? "")) {
+        setDraft(null);
+        setError("");
+        return;
+      }
+      if (sending.current === next) return;
+      sending.current = next;
+      setError("");
+      try {
+        await send(next || null);
+        if (sending.current !== next) return;
+        // Only the name that was sent is cleared. A name typed while it was
+        // on the way stays, to be saved in its turn.
+        setDraft((d) => (d !== null && d.trim() === next ? null : d));
+      } catch (e) {
+        if (sending.current === next) setError(errorLine(e));
+      } finally {
+        if (sending.current === next) sending.current = null;
+      }
+    },
+    [draft],
+  );
+
+  return { draft, setDraft, error, save };
 }

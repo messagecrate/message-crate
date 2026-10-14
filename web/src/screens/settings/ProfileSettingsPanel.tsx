@@ -28,39 +28,17 @@ export function ProfileSettingsPanel({
   const { profile, loading, error: loadError } = useSettingsAccount(managedAccountId);
   const updateProfile = useUpdateSettingsProfile(managedAccountId);
   const managed = managedAccountId !== undefined;
-  const {
-    draft: nameDraft,
-    setDraft: setNameDraft,
-    error: nameError,
-    setError: setNameError,
-  } = nameEdit;
+  const { draft: nameDraft, setDraft: setNameDraft, error: nameError } = nameEdit;
   const [zoneError, setZoneError] = useState("");
   const [zoneSaving, setZoneSaving] = useState(false);
 
   // Leaving the field is the whole gesture, as picking a zone is: no Save
-  // button, so a typed name cannot be left behind unsaved (#2985). A name that
-  // reads as the stored one sends nothing.
+  // button, so a typed name cannot be left behind unsaved (#2985).
   const handleSaveName = async () => {
-    if (nameDraft === null || !profile) return;
-    const next = nameDraft.trim();
-    if (next === (profile.preferred_name ?? "")) {
-      setNameDraft(null);
-      setNameError("");
-      return;
-    }
-    if (nameEdit.inFlight.current === next) return;
-    nameEdit.inFlight.current = next;
-    setNameError("");
-    try {
-      await updateProfile.mutateAsync({ preferred_name: next || null });
-      // Only the name that was sent is cleared. A name typed while it was on
-      // the way stays, to be saved in its turn.
-      setNameDraft((d) => (d !== null && d.trim() === next ? null : d));
-    } catch (e) {
-      setNameError(errorLine(e));
-    } finally {
-      nameEdit.inFlight.current = null;
-    }
+    if (!profile) return;
+    await nameEdit.save(profile.preferred_name ?? null, (name) =>
+      updateProfile.mutateAsync({ preferred_name: name }),
+    );
   };
 
   // A tab switch removes the field without a blur, so the panel runs the

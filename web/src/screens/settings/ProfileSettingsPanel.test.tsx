@@ -4,6 +4,7 @@ import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
 import { ApiError } from "../../lib/api";
+import { deferred } from "../../test/deferred";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { mockedAuth, renderWithProviders as render } from "../../test/providers";
 import { fill, setupUser } from "../../test/user";
@@ -148,10 +149,8 @@ describe("ProfileSettingsPanel", () => {
   });
 
   it("keeps a name typed while the previous one is still being saved", async () => {
-    let answer: (p: AccountProfile) => void = () => {};
-    updateAccountProfile.mockImplementationOnce(
-      () => new Promise<AccountProfile>((resolve) => (answer = resolve)),
-    );
+    const save = deferred<AccountProfile>();
+    updateAccountProfile.mockReturnValueOnce(save.promise);
     const user = setupUser();
     render(<Panel />);
     await settle();
@@ -160,9 +159,30 @@ describe("ProfileSettingsPanel", () => {
     await fill(user, nameField(), "Ann");
     await user.keyboard("{Enter}");
     await fill(user, nameField(), "e");
-    answer({ ...stored, preferred_name: "Ann" });
+    save.resolve({ ...stored, preferred_name: "Ann" });
     await settle();
 
+    expect(nameField().value).toBe("Anne");
+  });
+
+  it("drops the refusal of a save that a newer save has overtaken", async () => {
+    const first = deferred<AccountProfile>();
+    updateAccountProfile.mockReturnValueOnce(first.promise);
+    const user = setupUser();
+    render(<Panel />);
+    await settle();
+
+    await user.clear(nameField());
+    await fill(user, nameField(), "Ann");
+    await user.keyboard("{Enter}");
+    await fill(user, nameField(), "e");
+    await user.keyboard("{Enter}");
+    expect(updateAccountProfile).toHaveBeenLastCalledWith({ preferred_name: "Anne" });
+    await settle();
+    first.reject(new ApiError(503, "database is busy"));
+    await settle();
+
+    expect(screen.queryByText("Database is busy")).toBeNull();
     expect(nameField().value).toBe("Anne");
   });
 
