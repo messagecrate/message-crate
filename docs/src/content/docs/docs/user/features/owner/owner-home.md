@@ -132,6 +132,11 @@ The screen has three tabs: **Account**, **Profile**, and **Storage**.
 
 **Username** shows the username. It can't be changed.
 
+Under it, two more parts are for reading only:
+
+- **Last Login** is the date and time of the account's last login, or **Never**.
+- **App** is the app the account last connected with, **Desktop app** or **Website**, and that app's version. It reads **Never connected.** for an account that hasn't connected. When the app's version differs from the server's, a line under it gives the server's version. The server serves that app all the same.
+
 **Status** is **Active** or **Disabled**.
 The server refuses a disabled account's login.
 Disabling the account ends any Session it has open, so the person logs in again after the account is enabled.
@@ -175,11 +180,6 @@ The Owner sets the same three things the account's holder sets:
 - **Display Name**, saved with **Save**.
 - **Time Zone**, the zone the account's message times are shown in. It saves when a zone is chosen.
 - **Identities**, the account holder's own phone numbers and email addresses.
-
-Two more parts are for reading only:
-
-- **Last Login** is the date and time of the account's last login, or **Never**.
-- **App** is the app the account last connected with, **Desktop app** or **Website**, and that app's version. It reads **Never connected.** for an account that hasn't connected. When the app's version differs from the server's, a line under it gives the server's version. The server serves that app all the same.
 
 #### Storage
 

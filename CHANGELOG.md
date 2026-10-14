@@ -387,6 +387,11 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-14: **Last Login and App are on an account's Account tab.** When
+  the owner opens an account from User Accounts, when it last logged in and
+  the app it last connected with now sit under its username on **Account**,
+  rather than under its identities on **Profile**, which holds what the
+  account's holder sets about themselves (#2988).
 - 2026-10-12: **One-to-one, not direct or chat.** The identities on Settings →
   Profile, the identities in a contact's drawer, and the totals of checked
   contacts head their first message count "One-to-one messages" rather than

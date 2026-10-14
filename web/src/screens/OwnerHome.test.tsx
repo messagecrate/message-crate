@@ -709,7 +709,7 @@ describe("OwnerHome", () => {
     expect(screen.getByText("No identities yet")).toBeInTheDocument();
   });
 
-  it("shows an account's last login and its app on Profile, marking another release", async () => {
+  it("shows an account's last login and its app on Account, marking another release", async () => {
     getServerState.mockResolvedValue({
       state: "closed",
       version: "0.10.0+343fe0d8",
@@ -725,9 +725,8 @@ describe("OwnerHome", () => {
     renderHome(["/owner/accounts/101"]);
     await settle();
 
-    await user.click(screen.getByRole("tab", { name: "Profile" }));
-    await settle();
-
+    // Last Login and App are facts about the account, on its Account tab (#2988).
+    expect(screen.getByRole("tab", { name: "Account" })).toHaveAttribute("aria-selected", "true");
     const lastLogin = screen.getByRole("heading", { name: "Last Login" });
     expect(lastLogin.nextElementSibling).toHaveTextContent("2026");
     const app = screen.getByRole("heading", { name: "App" }).nextElementSibling as HTMLElement;
@@ -735,14 +734,13 @@ describe("OwnerHome", () => {
     expect(app).toHaveTextContent("The server is 0.10.0");
   });
 
-  it("says Never and not connected on Profile for an account that has done neither", async () => {
+  it("says Never and not connected on Account for an account that has done neither", async () => {
     const user = setupUser();
     renderHome(["/owner/accounts/101"]);
     await settle();
 
-    await user.click(screen.getByRole("tab", { name: "Profile" }));
-    await settle();
-
+    // Last Login and App are facts about the account, on its Account tab (#2988).
+    expect(screen.getByRole("tab", { name: "Account" })).toHaveAttribute("aria-selected", "true");
     const lastLogin = screen.getByRole("heading", { name: "Last Login" });
     expect(lastLogin.nextElementSibling).toHaveTextContent("Never");
     expect(screen.getByText("Never connected.")).toBeInTheDocument();

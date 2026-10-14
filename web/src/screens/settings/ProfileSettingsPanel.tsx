@@ -5,7 +5,6 @@ import TimeZoneField from "../../components/TimeZoneField";
 import { fixedSettings } from "../../lib/account";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { useSettingsAccount, useUpdateSettingsProfile } from "../../lib/useSettingsAccount";
-import { AccountActivitySection } from "./AccountActivitySection";
 import { AddressBookSection } from "./AddressBookSection";
 import { IdentitiesSection } from "./IdentitiesSection";
 import { sectionTitleClass } from "./profileStyles";
@@ -15,8 +14,8 @@ import { sectionTitleClass } from "./profileStyles";
  *
  * Given `managedAccountId`, the account is one the owner opened from
  * User Accounts. The owner sets its name, zone and identities as the holder
- * does, and reads when it last logged in and which app it connects with. The
- * address book is the account's contacts, which the owner does not reach.
+ * does. The address book is the account's contacts, which the owner does not
+ * reach.
  */
 export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: number }) {
   const { profile, loading, error: loadError } = useSettingsAccount(managedAccountId);
@@ -107,7 +106,6 @@ export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: 
       {profile.is_owner ? null : (
         <>
           <IdentitiesSection profile={profile} managedAccountId={managedAccountId} />
-          {managed && <AccountActivitySection profile={profile} />}
           {!managed && !fixed.addressBook && <AddressBookSection />}
         </>
       )}
