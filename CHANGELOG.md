@@ -387,6 +387,13 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-14: **A typed display name is no longer lost.** On Settings →
+  Profile, and on an account's Profile in Owner Home, the display name saves
+  when you leave the field, press Enter, or move to another tab, as the time
+  zone and identities already did. The **Save** button is gone. Before, a
+  name typed without pressing **Save** was dropped without a word, so an
+  account the owner had named could still open on Profile Setup with an
+  empty name (#2985).
 - 2026-10-12: **One-to-one, not direct or chat.** The identities on Settings →
   Profile, the identities in a contact's drawer, and the totals of checked
   contacts head their first message count "One-to-one messages" rather than

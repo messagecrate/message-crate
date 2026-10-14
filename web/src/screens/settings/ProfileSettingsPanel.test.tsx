@@ -65,7 +65,7 @@ describe("ProfileSettingsPanel", () => {
   // narrows them, inside the whole settings panel. The test takes about 0.5 s
   // on an idle machine and 3.3 to 5.4 s at a load average near 100, past the
   // 5000 ms test budget (#1417).
-  it("keeps a typed, unsaved display name when the time zone changes", {
+  it("saves a typed display name when the person moves on to the time zone", {
     timeout: 15_000,
   }, async () => {
     const user = setupUser();
@@ -76,7 +76,10 @@ describe("ProfileSettingsPanel", () => {
     await user.clear(nameField());
     await fill(user, nameField(), "Typed Name");
 
+    // Leaving the field for the time zone saves the name; there is no Save
+    // to forget (#2985).
     await fill(user, zoneField(), "dallas");
+    expect(updateAccountProfile).toHaveBeenCalledWith({ preferred_name: "Typed Name" });
     await user.click(within(screen.getByRole("listbox")).getAllByRole("option")[0]);
     expect(updateAccountProfile).toHaveBeenCalledWith({ time_zone: "America/Chicago" });
     // The server's answer has reached the profile entry the panel reads.
@@ -86,14 +89,14 @@ describe("ProfileSettingsPanel", () => {
     expect(nameField().value).toBe("Typed Name");
   });
 
-  it("clears the display name when an emptied field is saved", async () => {
+  it("clears the display name when Enter is pressed in an emptied field", async () => {
     const user = setupUser();
     render(<ProfileSettingsPanel />);
     await settle();
     expect(nameField().value).toBe("Stored Name");
 
     await user.clear(nameField());
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.keyboard("{Enter}");
 
     // The server clears the name on `null`; leaving the field out keeps it.
     expect(updateAccountProfile).toHaveBeenCalledWith({ preferred_name: null });
@@ -111,10 +114,27 @@ describe("ProfileSettingsPanel", () => {
     render(<ProfileSettingsPanel />);
     await settle();
 
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    await fill(user, nameField(), " Jr");
+    await user.keyboard("{Enter}");
     await settle();
 
     expect(screen.getByText("Display name and time zone are fixed")).toBeInTheDocument();
+    // The refused name stays in the field, to correct or leave again.
+    expect(nameField().value).toBe("Stored Name Jr");
+  });
+
+  it("sends nothing when the field is left with the stored name", async () => {
+    const user = setupUser();
+    render(<ProfileSettingsPanel />);
+    await settle();
+
+    await user.click(nameField());
+    await user.keyboard("{Enter}");
+    await fill(user, nameField(), " ");
+    await user.click(zoneField());
+    await settle();
+
+    expect(updateAccountProfile).not.toHaveBeenCalled();
   });
 
   it("shows the Demo Account's name and zone as fixed and offers no address book load", async () => {
@@ -131,7 +151,6 @@ describe("ProfileSettingsPanel", () => {
 
     // The server refuses each of these for the Demo Account, so none is offered.
     expect(nameField().readOnly).toBe(true);
-    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
     expect(zoneField().disabled).toBe(true);
     expect(screen.queryByRole("button", { name: "Choose a file" })).toBeNull();
     expect(screen.getByText(/display name and time zone are fixed/)).toBeTruthy();

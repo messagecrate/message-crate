@@ -1,5 +1,4 @@
-import { useState } from "react";
-import Button from "../../components/Button";
+import { useEffect, useRef, useState } from "react";
 import { textInputClass } from "../../components/TextField";
 import TimeZoneField from "../../components/TimeZoneField";
 import { fixedSettings } from "../../lib/account";
@@ -26,6 +25,14 @@ export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: 
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [nameError, setNameError] = useState("");
   const [zoneError, setZoneError] = useState("");
+  const [zoneSaving, setZoneSaving] = useState(false);
+  // The name a save has sent and not yet heard back about, so leaving the
+  // field and then the panel cannot send it twice.
+  const nameInFlight = useRef<string | null>(null);
+  // This render's name save. A tab switch removes the field without a blur,
+  // so the panel runs the last render's save as it goes.
+  const saveNameOnLeave = useRef<() => Promise<void>>(async () => {});
+  useEffect(() => () => void saveNameOnLeave.current(), []);
 
   if (loadError) {
     return <div className="text-danger">Could not load profile: {loadError}</div>;
@@ -38,27 +45,42 @@ export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: 
   const name = nameDraft ?? profile.preferred_name ?? "";
   const fixed = fixedSettings(profile);
 
+  // Leaving the field is the whole gesture, as picking a zone is: no Save
+  // button, so a typed name cannot be left behind unsaved (#2985). A name that
+  // reads as the stored one sends nothing.
   const handleSaveName = async () => {
+    if (nameDraft === null) return;
+    const next = nameDraft.trim();
+    if (next === (profile.preferred_name ?? "")) {
+      setNameDraft(null);
+      return;
+    }
+    if (nameInFlight.current === next) return;
+    nameInFlight.current = next;
     setNameError("");
     try {
-      await updateProfile.mutateAsync({
-        preferred_name: name.trim() || null,
-      });
+      await updateProfile.mutateAsync({ preferred_name: next || null });
       setNameDraft(null);
     } catch (e) {
       setNameError(errorLine(e));
+    } finally {
+      nameInFlight.current = null;
     }
   };
+  saveNameOnLeave.current = handleSaveName;
 
   // Picking a zone is the whole gesture: no Save button, the server answers
   // with the profile as it now stands and every date label re-renders from it.
   const handleChangeZone = async (zone: string) => {
     if (zone === profile.time_zone) return;
     setZoneError("");
+    setZoneSaving(true);
     try {
       await updateProfile.mutateAsync({ time_zone: zone });
     } catch (e) {
       setZoneError(errorLine(e));
+    } finally {
+      setZoneSaving(false);
     }
   };
 
@@ -72,17 +94,13 @@ export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: 
           value={name}
           readOnly={fixed.displayName}
           onChange={(e) => setNameDraft(e.target.value)}
+          onBlur={() => void handleSaveName()}
+          // Enter leaves the field, so the save runs once, from the blur.
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+          }}
           className={`${textInputClass} flex-1${fixed.displayName ? " !text-muted" : ""}`}
         />
-        {fixed.displayName ? null : (
-          <Button
-            variant="primary"
-            onClick={handleSaveName}
-            className="!px-[0.85rem] !py-[0.35rem]"
-          >
-            Save
-          </Button>
-        )}
       </div>
       {nameError && <div className="mb-6 text-[0.813rem] text-danger">{nameError}</div>}
       {!nameError && <div className="mb-6" />}
@@ -91,7 +109,7 @@ export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: 
       <TimeZoneField
         value={profile.time_zone}
         onChange={(zone) => void handleChangeZone(zone)}
-        isDisabled={fixed.timeZone || updateProfile.isPending}
+        isDisabled={fixed.timeZone || zoneSaving}
         className="mb-[0.35rem] max-w-[28rem]"
       />
       <div className="text-[0.813rem] text-muted">

@@ -676,7 +676,8 @@ describe("OwnerHome", () => {
     updateAccount.mockResolvedValue({ ...anAccount, preferred_name: "Robert" });
     await user.clear(name);
     await fill(user, name, "Robert");
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    // Moving on to another tab is all it takes; there is no Save to forget (#2985).
+    await user.click(screen.getByRole("tab", { name: "Account" }));
     await settle();
     expect(updateAccount).toHaveBeenCalledWith(101, { preferred_name: "Robert" });
   });
