@@ -787,7 +787,8 @@ security scheme with its scopes, so every route says which it accepts.
   account's own permissions: `import`, `export`, `delete`. The owner's session
   carries none of those and reaches only the accounts collection, the server
   settings and the installation's storage totals, because the owner holds no
-  messages.
+  messages. It also reads the country list (`GET /v1/phone-countries`),
+  because the owner picks the country of a number on an account it manages.
 - An **API token** is a named credential an account makes for a program, with
   the scopes the person chose from `import` and `export`, capped by the
   account's own. The cap holds on every request, when the token is made, and

@@ -147,7 +147,8 @@ carry their date on the heading.
   Identities**, with **Pick country**. Picking one gives the number its full
   form; when another identity already has that form, Message Crate says whose
   it is and asks before it merges the two, their one-to-one conversations
-  with them (#1676).
+  with them. The owner picks one the same way on the Profile tab of an
+  account opened from User Accounts (#1676, #2987).
 - 2026-10-08: **Owner Home's Logs shows the server's log and the Import Run
   logs on this computer.** The owner picks the server's log or, in the
   desktop app, any Import Run's log on this computer, whoever ran it. An

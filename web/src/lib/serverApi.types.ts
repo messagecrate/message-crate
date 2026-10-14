@@ -1268,7 +1268,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The countries a phone number written without its `+` code can be read in, by ISO code. */
+        /**
+         * The countries a phone number written without its `+` code can be read in, by ISO code.
+         * @description Any logged-in person reads it, the owner included: the owner picks the country of a number on an account it opens from User Accounts (`set_identity_country` on `PATCH /v1/accounts/{id}`).
+         */
         get: operations["list_phone_countries"];
         put?: never;
         post?: never;
