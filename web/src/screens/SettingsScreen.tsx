@@ -10,6 +10,7 @@ import { AppearanceSection } from "./settings/AppearanceSection";
 import { AuditTrailSection } from "./settings/AuditTrailSection";
 import { ConvertSection } from "./settings/ConvertSection";
 import { NewAccountPanel } from "./settings/NewAccountPanel";
+import { useNameEdit } from "./settings/nameEdit";
 import { ProfileSettingsPanel } from "./settings/ProfileSettingsPanel";
 import { StorageSection } from "./settings/StorageSection";
 import { SystemSection } from "./settings/SystemSection";
@@ -110,6 +111,9 @@ export default function SettingsScreen({
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const { profile } = useSettingsAccount(managedAccountId);
+  // Held here, not in the Profile panel, so a tab switch keeps a typed name
+  // and the server's refusal of it.
+  const nameEdit = useNameEdit();
   const managed = managedAccountId !== undefined;
   const tabs = creating
     ? visibleTabs(isTauri(), true, false)
@@ -171,7 +175,7 @@ export default function SettingsScreen({
           )}
         </TabPanel>
         <TabPanel id="profile" className="mt-6">
-          <ProfileSettingsPanel managedAccountId={managedAccountId} />
+          <ProfileSettingsPanel managedAccountId={managedAccountId} nameEdit={nameEdit} />
         </TabPanel>
         {tabs.includes("storage") ? (
           <TabPanel id="storage" className="mt-6">
