@@ -27,7 +27,8 @@ use message_crate_core::{
 };
 use message_ir::{
     Attachment, ConversationDocument, ConversationMeta, ConversationType, Direction, ExportMeta,
-    Imessage, Message, MessageKind, Participant, SCHEMA_VERSION, Transport, nonempty, owner_sender,
+    Imessage, Message, MessageKind, Participant, SCHEMA_VERSION, Transport, missing_reason,
+    nonempty, owner_sender,
 };
 use message_ir_format::FormatSink;
 use message_staging::{
@@ -521,7 +522,7 @@ fn attachment_to_ir(
         bytes: None,
     };
     if embed == AttachmentEmbed::Disabled {
-        ir.missing_reason = Some("not_copied".to_string());
+        ir.missing_reason = Some(missing_reason::NOT_COPIED.to_string());
         return (ir, AttachmentLoad::Missing);
     }
     let load = match attachment.source {
@@ -534,7 +535,7 @@ fn attachment_to_ir(
         AttachmentLoad::Bytes(bytes) => ir.size_bytes = Some(bytes.len() as u64),
         // When files are staged the runner says `file_missing` itself.
         AttachmentLoad::Missing if !stages_files => {
-            ir.missing_reason = Some("file_missing".to_string());
+            ir.missing_reason = Some(missing_reason::FILE_MISSING.to_string());
         }
         AttachmentLoad::Missing => {}
     }
@@ -702,7 +703,7 @@ fn embed_attachment_bytes(
                     Some(AttachmentLoad::Missing) | None => Vec::new(),
                 };
                 if bytes.is_empty() {
-                    attachment.missing_reason = Some("file_missing".to_string());
+                    attachment.missing_reason = Some(missing_reason::FILE_MISSING.to_string());
                 } else {
                     attachment.size_bytes = Some(bytes.len() as u64);
                     attachment.bytes = Some(bytes);

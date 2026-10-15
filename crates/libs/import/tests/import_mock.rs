@@ -2376,7 +2376,7 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
             path: Some("attachments/unfetched.pdf".into()),
             original_name: Some("unfetched.pdf".into()),
             mime_type: Some("application/pdf".into()),
-            missing_reason: Some(message_ir::NOT_FETCHED.into()),
+            missing_reason: Some(message_ir::missing_reason::NOT_FETCHED.into()),
             ..message_ir::testutil::sample_attachment()
         },
     ];

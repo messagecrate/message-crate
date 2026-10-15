@@ -815,7 +815,7 @@ fn mark_unfetched(
             .and_then(asset_key)
             .is_some_and(|sha| failed.contains(sha.as_str()));
         if unfetched {
-            att.missing_reason = Some(message_ir::NOT_FETCHED.to_string());
+            att.missing_reason = Some(message_ir::missing_reason::NOT_FETCHED.to_string());
         }
     }
 }

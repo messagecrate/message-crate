@@ -8,7 +8,7 @@ use crate::process::{Cancelled, LogSink, Sinks};
 use crate::progress::{ProgressEvent, ProgressSink};
 use anyhow::Context as _;
 use file_io::sha256_hex;
-use message_ir::{Attachment, ConversationDocument, Message};
+use message_ir::{Attachment, ConversationDocument, Message, missing_reason};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -74,8 +74,9 @@ impl std::error::Error for LoadError {}
 ///
 /// `load(i)` returns `Ok(None)` when the source is missing. `Ok(Some(bytes))`
 /// is the file to stage. [`LoadError::Unreadable`] is treated the same as a
-/// missing source: the attachment gets `missing_reason = "file_missing"` and
-/// the run continues rather than aborting. A write or rename of the staged
+/// missing source: the attachment's `missing_reason` is
+/// [`missing_reason::FILE_MISSING`] and the run continues rather than
+/// aborting. A write or rename of the staged
 /// file that fails is handled the same way, and its error goes to `log`.
 /// Cancel is checked before each job.
 ///
@@ -108,7 +109,7 @@ pub fn run_attachment_jobs(
     }
     if files == AttachmentFiles::Skip {
         for job in jobs.iter_mut() {
-            job.attachment.missing_reason = Some("not_copied".into());
+            job.attachment.missing_reason = Some(missing_reason::NOT_COPIED.into());
         }
         on_progress(AttachmentProgress {
             done: total,
@@ -140,7 +141,7 @@ pub fn run_attachment_jobs(
         let bytes = match loaded {
             Some(bytes) if !bytes.is_empty() => bytes,
             _ => {
-                job.attachment.missing_reason = Some("file_missing".into());
+                job.attachment.missing_reason = Some(missing_reason::FILE_MISSING.into());
                 bytes_total = bytes_total.saturating_sub(job.size_hint.unwrap_or(0));
                 on_progress(AttachmentProgress {
                     done: i + 1,
@@ -166,7 +167,7 @@ pub fn run_attachment_jobs(
                     .as_deref()
                     .unwrap_or("(no name)")
             ));
-            job.attachment.missing_reason = Some("file_missing".into());
+            job.attachment.missing_reason = Some(missing_reason::FILE_MISSING.into());
             bytes_total = bytes_total.saturating_sub(bytes.len() as u64);
             on_progress(AttachmentProgress {
                 done: i + 1,

@@ -98,7 +98,7 @@ use media::{CompressOptions, HevcFallback, MediaMode, MediaTools, TranscodeOutco
 use message_crate_core::{
     CancelFlag, IssueSink, LogSink, RunIssue, RunIssueKind, check_cancel, mime_for_rel,
 };
-use message_ir::{Attachment, ConversationDocument};
+use message_ir::{Attachment, ConversationDocument, missing_reason};
 
 use message_ir_format::read_conversation_jsonl;
 use message_ir_format::write_conversation_jsonl_to;
@@ -727,7 +727,7 @@ fn apply_transcode(
             ));
             // Short, with no path: the whole error went into the row above,
             // and so into the run's log.
-            let reason = format!("convert_failed: {}", media::why_not_converted(&err, src));
+            let reason = missing_reason::convert_failed(&media::why_not_converted(&err, src));
             if is_heal {
                 // `recorded_rel` is the phantom `-mv` name a crashed prior
                 // run already wrote into the document; nothing will ever
@@ -862,7 +862,7 @@ fn had_convert_failure(doc: &ConversationDocument, recorded_rel: &str) -> bool {
     recorded_at(doc, recorded_rel).any(|att| {
         att.missing_reason
             .as_deref()
-            .is_some_and(|reason| reason.starts_with("convert_failed"))
+            .is_some_and(missing_reason::is_convert_failed)
     })
 }
 
@@ -955,7 +955,7 @@ fn apply_too_large(
     patch_all_matching(doc, recorded_rel, |att| {
         att.path = None;
         att.digest_sha256 = None;
-        att.missing_reason = Some("too_large".to_string());
+        att.missing_reason = Some(missing_reason::TOO_LARGE.to_string());
         att.size_bytes = Some(size);
     });
     write_conversation_jsonl_to(jsonl, doc)?;
@@ -984,7 +984,7 @@ fn apply_unrecoverable(
     patch_all_matching(doc, recorded_rel, |att| {
         att.path = None;
         att.digest_sha256 = None;
-        att.missing_reason = Some("file_missing".to_string());
+        att.missing_reason = Some(missing_reason::FILE_MISSING.to_string());
         att.size_bytes = None;
     });
     write_conversation_jsonl_to(jsonl, doc)?;

@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use message_crate_core::parallel_for_each;
-use message_ir::{Attachment, ConversationDocument, ConversationHeader, Message};
+use message_ir::{Attachment, ConversationDocument, ConversationHeader, Message, missing_reason};
 use message_ir_format::read_conversation_jsonl_with_lines;
 
 use crate::directory::{attachment_label, resolve_attachment};
@@ -314,7 +314,7 @@ fn scan_one_attachment(
 ) -> Result<AttachmentProjection> {
     let Some(rel) = att.path.as_deref().and_then(message_ir::trimmed) else {
         // No path means the bytes were never staged. "Do not copy" exports
-        // look like this, and the reason the exporter set ("not_copied")
+        // look like this, and the reason the exporter set (`not_copied`)
         // explains why.
         // Keep the metadata so the thread still shows the file was there.
         scan.skipped += 1;
@@ -330,7 +330,11 @@ fn scan_one_attachment(
         }
         return Ok(AttachmentProjection::Missing {
             index,
-            reason: att.missing_reason.as_deref().unwrap_or("no_path").into(),
+            reason: att
+                .missing_reason
+                .as_deref()
+                .unwrap_or(missing_reason::NO_PATH)
+                .into(),
             size: att.size_bytes,
         });
     };
@@ -349,7 +353,7 @@ fn scan_one_attachment(
             reason: att
                 .missing_reason
                 .as_deref()
-                .unwrap_or("file_missing")
+                .unwrap_or(missing_reason::FILE_MISSING)
                 .into(),
             size: att.size_bytes,
         });
@@ -371,7 +375,7 @@ fn scan_one_attachment(
         });
         return Ok(AttachmentProjection::Missing {
             index,
-            reason: "too_large".into(),
+            reason: missing_reason::TOO_LARGE.into(),
             size: Some(file_len),
         });
     }

@@ -21,6 +21,7 @@ use serde_json::{Map, Value};
 mod attachment_path;
 mod conversation_key;
 mod identity;
+pub mod missing_reason;
 mod projection;
 mod schema_version;
 #[cfg(feature = "testutil")]
@@ -657,19 +658,15 @@ pub struct Attachment {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size_bytes: Option<u64>,
     /// None when the attachment was imported; set only when bytes were
-    /// skipped, to one of a closed set: `file_missing`, `too_large`,
-    /// `not_copied`, `not_fetched` ([`NOT_FETCHED`]), `convert_failed:
-    /// <detail>`, or `unknown: <raw>`.
+    /// skipped, to one of the closed set in [`missing_reason`]:
+    /// `file_missing`, `too_large`, `not_copied`, `not_fetched`, `no_path`,
+    /// `convert_failed: <detail>`, or `unknown: <raw>`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub missing_reason: Option<String>,
     /// In-memory bytes for EML embedding; never written to JSON.
     #[serde(skip)]
     pub bytes: Option<Vec<u8>>,
 }
-
-/// The [`Attachment::missing_reason`] of an attachment an Export could not
-/// fetch from the server, so its file is not in the Export's directory.
-pub const NOT_FETCHED: &str = "not_fetched";
 
 /// Vendor leftovers. Display names live on `sender_display_name`, not here.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
