@@ -22,6 +22,11 @@ carry their date on the heading.
 
 ### Features
 
+- 2026-10-15: **The Import form says when a disk it writes to is low.** When
+  the disk that holds the Staging Directory or the Scratch Directory has less
+  than 10 GB free, the form names the disk, the directory and the space free
+  above the Import button, so space can be freed before the run starts. The
+  import can still start (#2010).
 - 2026-10-15: **The login card says when the password would cross the
   network unencrypted.** Opened over plain HTTP from another computer, such
   as at `http://192.168.1.20:8080`, the login card and Create Owner now say
