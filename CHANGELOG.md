@@ -209,6 +209,12 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-15: **An import hides its duplicates once, when it ends.** The
+  server used to hide the duplicates of the whole account after every part
+  of an import it received, so a large import into a large account went
+  over every message hundreds of times while other changes waited.
+  It now does that once, when the import finishes or is given up.
+  Duplicates the import brings stay shown until then (#2040).
 - 2026-10-12: **A wrong password now costs a short wait instead of counting
   toward a lockout.** A refused login, and a wrong current password when
   changing the owner's password or deleting an account, waits about a second

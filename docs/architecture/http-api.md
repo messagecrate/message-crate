@@ -1408,7 +1408,7 @@ Does the rule stop at handlers? No. An import stage (`imports_api/staging.rs`,
 `imports_api/promote.rs`) is not a handler, but it holds no SQL either: it
 sequences its statements, logs them and keeps the counts, and the statements
 are in `db/staging.rs`, the module for the staging tables. The dedupe every
-import batch runs (`dedupe.rs`) is a stage too: it hashes the content keys
+Import Run runs as it ends (`dedupe.rs`) is a stage too: it hashes the content keys
 and picks the copy shown, and the statements that read and write
 `messages.content_key` and `messages.duplicate_of` for it are in
 `db/dedupe.rs`. Why: the point of the rule is that the SQL for a table is

@@ -429,8 +429,13 @@ async fn run_imports_discard(args: ImportsDiscardArgs) -> Result<()> {
     let opened = OpenDb::open(cfg).await?;
     let account = opened.account_id(&args.account).await?;
     let mut conn = opened.conn().await?;
-    let discarded =
-        crate::db::imports::discard_running_import(&mut conn, account, chrono::Utc::now()).await?;
+    let discarded = crate::imports_api::discard_running_run(
+        &mut conn,
+        account,
+        chrono::Utc::now(),
+        crate::progress::Progress::Print,
+    )
+    .await?;
     drop(conn);
     if discarded.is_some() {
         // Only the unreferenced files: `.incoming/` is left to `serve`,

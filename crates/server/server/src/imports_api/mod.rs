@@ -613,7 +613,8 @@ impl BatchContext {
     }
 }
 
-/// Import result: the import counts and the dedupe counts.
+/// Import result: the batch's import counts. The batch hides no
+/// duplicates; the run's end does, once for the whole run.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct CreateImportBatchResponse {
     /// Source id of the Import Run the batch belongs to, such as `imessage`.
@@ -622,30 +623,6 @@ pub(crate) struct CreateImportBatchResponse {
     account: i64,
     #[serde(flatten)]
     counts: ImportCounts,
-    /// What the dedupe after this batch did, counted over the whole account
-    /// rather than the batch alone. Every batch runs it.
-    dedupe: DedupeCounts,
-}
-
-/// What one dedupe did.
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub(crate) struct DedupeCounts {
-    /// Content keys the pass wrote: one for each message whose key was
-    /// missing or whose inputs changed. A content key is a fingerprint of a
-    /// message's conversation, direction, sender, time, text and attachments.
-    /// This is not a count of duplicates.
-    keys_filled: u64,
-    /// Groups of messages that share one content key and come from two or
-    /// more sources. Copies one source alone holds are not a group.
-    exact_groups: u64,
-    /// Messages hidden as exact duplicates. In each group, the source with
-    /// the most copies sets how many stay shown, and the rest are hidden.
-    exact_flagged: u64,
-    /// Messages hidden as near duplicates: a message that matches one from
-    /// another source in the same conversation, from the same sender in the
-    /// same direction, within 2 seconds, with the same text or the same
-    /// attachments.
-    near_flagged: u64,
 }
 
 /// Source, mode and tool for a new Import Run. The bearer token
@@ -1519,6 +1496,13 @@ pub(crate) async fn create_import(
 
 /// Record the outcome of an Import Run started with POST /v1/imports. The
 /// answer is the run as it now stands.
+///
+/// Before it records the outcome, the server hides the duplicates of the
+/// whole account, within one source and across sources. A batch hides
+/// none, so the duplicates a run brings stay shown until the run ends. In
+/// a large account this takes minutes. A server told to stop refuses the
+/// request with `503 Service Unavailable` (`server-stopping`), and the run
+/// stays running.
 #[utoipa::path(
     post,
     path = "/v1/imports/{id}/complete",
@@ -1528,7 +1512,8 @@ pub(crate) async fn create_import(
     request_body = CompleteImportRequest,
     responses(
         (status = 200, body = ImportRun),
-        crate::problem::openapi::StateConflict
+        crate::problem::openapi::StateConflict,
+        crate::problem::openapi::ServerStopping,
     )
 )]
 pub(crate) async fn complete_import(
@@ -1563,8 +1548,8 @@ pub(crate) async fn complete_import(
         notes,
     };
     let now = chrono::Utc::now();
+    let row = end_run_deduped(&state, account, import_id, RunEnd::Complete(args), now).await?;
     let mut conn = state.db.acquire().await?;
-    let row = complete_run_at(&mut conn, account, import_id, &args, now).await?;
     let run = import_run(&mut conn, row).await;
     drop(conn);
     crate::asset_store::sweep_after_run(
@@ -1577,6 +1562,103 @@ pub(crate) async fn complete_import(
     crate::media_queue::queue_import_run(&state.db, &state.media_queue, account, import_id, now)
         .await;
     run.map(Json)
+}
+
+/// How an Import Run ends: completed with its outcome, or discarded with
+/// the Import Errors and notes it recorded before it was given up.
+enum RunEnd {
+    Complete(CompleteImportArgs),
+    Discard {
+        issues: Vec<crate::db::imports::ImportIssueInput>,
+        notes: Vec<crate::db::imports::ImportNoteRow>,
+    },
+}
+
+/// Hide the duplicates of `account`, then end its running Import Run
+/// `import_id` as `end` says at the instant `now`, and return the run's row
+/// as it now stands. Both routes that end a run come here.
+///
+/// The full dedupe runs once per Import Run, here, and not after each
+/// batch: each run of it works over the whole account, so one after every
+/// batch made an import's cost grow with the account for every batch
+/// (#2040). Duplicates may show between batches while a run is open.
+///
+/// It runs before the run ends, so a dedupe that fails leaves the run
+/// running and the client can end it again, rather than a run that ended
+/// with its duplicates shown. It holds an import slot and the account's
+/// import lock, as a batch does, in the same order (slot, account, pool):
+/// the pass holds one pooled connection and the write lock for as long as
+/// it takes, and no batch of the run can land between the dedupe and the
+/// end. The run is checked first, so a request for a run that is not
+/// running is refused before the pass. Like a batch, it runs off the async
+/// workers, because hashing every content key again is CPU work.
+///
+/// # Errors
+///
+/// [`ApiError::ServerStopping`] when the server is stopping, the
+/// [`imports::ImportLookupError`] of a run that is not the account's or not
+/// running, and the error of the dedupe or of the write that ends the run.
+async fn end_run_deduped(
+    state: &AppState,
+    account: i64,
+    import_id: i64,
+    end: RunEnd,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<imports::ImportRow, ApiError> {
+    let permit = take_import_slot(state).await?;
+    let state = state.clone();
+    let handle = tokio::runtime::Handle::current();
+    run_blocking("end import run", move || {
+        handle.block_on(async move {
+            let _permit = permit;
+            let _guard = state.account_import_locks.lock(account.to_string()).await;
+            let mut conn = state.db.acquire().await?;
+            imports::require_running_import(&mut conn, account, import_id).await?;
+            dedupe::dedupe_cross_source(
+                &mut conn,
+                account,
+                None,
+                dedupe::NEAR_WINDOW_SECS,
+                Progress::Log,
+            )
+            .await?;
+            let row: Result<imports::ImportRow, ApiError> = match end {
+                RunEnd::Complete(args) => {
+                    Ok(complete_run_at(&mut conn, account, import_id, &args, now).await?)
+                }
+                RunEnd::Discard { issues, notes } => {
+                    imports::discard_import(&mut conn, account, import_id, &issues, &notes, now)
+                        .await?;
+                    Ok(imports::get_owned_import(&mut conn, account, import_id).await?)
+                }
+            };
+            row
+        })
+    })
+    .await
+}
+
+/// Hide the duplicates of `account`, then discard its running Import Run,
+/// whichever it is, at the instant `now`, and return the row as it was
+/// before the discard; `None`, with no dedupe, when the account has no
+/// running run. This is the server's `imports discard` command, the way out
+/// of a run a killed client left open: the run's batches did not hide their
+/// duplicates (#2040), so its end does, as the discard route's does.
+///
+/// # Errors
+///
+/// Returns the error of the dedupe or of the discard.
+pub(crate) async fn discard_running_run(
+    conn: &mut SqliteConnection,
+    account: i64,
+    now: chrono::DateTime<chrono::Utc>,
+    progress: Progress,
+) -> Result<Option<imports::ImportRow>> {
+    if !imports::has_running_import(conn, account).await? {
+        return Ok(None);
+    }
+    dedupe::dedupe_cross_source(conn, account, None, dedupe::NEAR_WINDOW_SECS, progress).await?;
+    imports::discard_running_import(conn, account, now).await
 }
 
 /// Add the sidebar shortcut to the messages this run brought in.
@@ -1852,6 +1934,12 @@ pub(crate) async fn update_import(
 
 /// Discard a running Import Run, freeing the account's single slot. The
 /// answer is the run, now `cancelled`, with the issues the request carried.
+///
+/// The messages the run's batches brought stay in the account, and before
+/// it discards the run the server hides the duplicates of the whole
+/// account, as a completion does. A server told to stop refuses the request
+/// with `503 Service Unavailable` (`server-stopping`), and the run stays
+/// running.
 #[utoipa::path(
     post,
     path = "/v1/imports/{id}/discard",
@@ -1861,7 +1949,8 @@ pub(crate) async fn update_import(
     request_body = DiscardImportRequest,
     responses(
         (status = 200, body = ImportRun),
-        crate::problem::openapi::StateConflict
+        crate::problem::openapi::StateConflict,
+        crate::problem::openapi::ServerStopping,
     )
 )]
 pub(crate) async fn discard_import(
@@ -1873,9 +1962,16 @@ pub(crate) async fn discard_import(
     let account = resolve_import_account(&auth);
     let (issues, notes) = issues_and_notes(&body.issues, &body.notes, Vec::new())?;
     let now = chrono::Utc::now();
+    let row = end_run_deduped(
+        &state,
+        account,
+        import_id,
+        RunEnd::Discard { issues, notes },
+        now,
+    )
+    .await?;
     let mut conn = state.db.acquire().await?;
-    crate::db::imports::discard_import(&mut conn, account, import_id, &issues, &notes, now).await?;
-    let run = full_import_run(&mut conn, account, import_id).await;
+    let run = import_run(&mut conn, row).await;
     drop(conn);
     crate::asset_store::sweep_after_run(
         &state.db,
@@ -1894,7 +1990,9 @@ pub(crate) async fn discard_import(
 /// Every message needs a non-empty `guid`. A batch with a message without
 /// one is refused with `422`, naming its lines, and nothing in it is stored.
 /// A message whose `guid` the source already holds is skipped, so a batch
-/// sent again after its answer was lost stores nothing twice.
+/// sent again after its answer was lost stores nothing twice. A batch hides
+/// no duplicates: the run's completion or discard hides them, once for the
+/// whole run.
 #[utoipa::path(
     post,
     path = "/v1/imports/{id}/batches",
@@ -2005,8 +2103,9 @@ pub(crate) fn import_slots() -> Arc<tokio::sync::Semaphore> {
 
 /// Take one of the server's import slots, waiting while every one is held.
 ///
-/// An import holds one pooled connection for its whole run (JSONL parse,
-/// asset IO, promote), so the slots bound concurrent imports and they can
+/// An import batch holds one pooled connection for its whole run (JSONL
+/// parse, asset IO, promote), and so does the dedupe that ends an Import Run
+/// (`end_run_deduped`), so the slots bound concurrent imports and they can
 /// never drain the pool. A batch takes its slot before it reads its body,
 /// so the batches waiting behind the running ones hold nothing on disk, and
 /// before the per-account lock, so lock order (slot → account → pool) is
@@ -2024,10 +2123,11 @@ async fn take_import_slot(state: &AppState) -> Result<OwnedSemaphorePermit, ApiE
         .map_err(|_| server_stopping())
 }
 
-/// The refusal of a batch the server did not start because it is stopping.
+/// The refusal of a batch, or of the end of an Import Run, that the server
+/// did not start because it is stopping.
 fn server_stopping() -> ApiError {
     ApiError::ServerStopping(
-        "the server is stopping, so it did not start this batch; send it again once the server is running".into(),
+        "the server is stopping, so it did not start this request; send it again once the server is running".into(),
     )
 }
 
@@ -2086,28 +2186,13 @@ async fn run_import_path(
     let import_result =
         imports_api::import_jsonl_files_on_conn(&mut conn, &[jsonl_path], &opts).await;
     let counts = import_result?;
-    // Every batch is followed by the full dedupe, within one source and
-    // across sources: there is no reason ever to leave a duplicate shown
-    // (#1969).
-    let dedupe_stats = dedupe::dedupe_cross_source(
-        &mut conn,
-        account,
-        None,
-        dedupe::NEAR_WINDOW_SECS,
-        Progress::Log,
-    )
-    .await?;
+    // No dedupe here: the run's end hides the duplicates, once for the
+    // whole run (`end_run_deduped`, #2040).
 
     Ok(Json(CreateImportBatchResponse {
         source: source_id,
         account,
         counts,
-        dedupe: DedupeCounts {
-            keys_filled: dedupe_stats.keys_filled,
-            exact_groups: dedupe_stats.exact_groups,
-            exact_flagged: dedupe_stats.exact_flagged,
-            near_flagged: dedupe_stats.near_flagged,
-        },
     }))
 }
 

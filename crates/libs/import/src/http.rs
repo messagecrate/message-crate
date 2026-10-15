@@ -392,7 +392,9 @@ impl Session {
                 &format!("/v1/imports/{import_id}/complete"),
                 &self.token,
             )
-            .timeout(Duration::from_secs(60))
+            // The server hides the duplicates of the whole account before it
+            // completes the run, which takes minutes in a large account.
+            .timeout(Duration::from_secs(600))
             .header("Content-Type", "application/json")
             .json(&body)
             .send()

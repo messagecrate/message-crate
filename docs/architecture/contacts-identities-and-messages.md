@@ -687,18 +687,32 @@ was written, not when a part was unsent, so they cannot tell
 [#1804](https://github.com/messagecrate/message-crate/issues/1804),
 [#1924](https://github.com/messagecrate/message-crate/issues/1924)).
 
-**Every Import Run hides duplicates.** After each batch, the server runs the
-full dedupe over the account, within one source and across sources
-(`dedupe_cross_source` in `dedupe.rs`): `POST /v1/imports/{id}/batches`, the
-server's `import` command and the Demo Account build alike. Nothing turns it
-off. It computes every content key again, so it also puts right the flag of a
-stored message whose content the import changed: a later edit changes a
-message's text, and an attachment added or given its file changes what its
-content key hashes. Why: there is no reason ever to leave a duplicate shown,
-and a flag an import made wrong would hide a message behind a copy whose text
-no longer matches, where no search finds it
+**Every Import Run hides duplicates.** When an Import Run ends, the server
+runs the full dedupe over the account, within one source and across sources
+(`dedupe_cross_source` in `dedupe.rs`), once for the whole run. An Upload's
+run ends at `POST /v1/imports/{id}/complete` or `/discard`, or by the
+server's `imports discard` command, and each runs the dedupe before it ends
+the run (`end_run_deduped` and `discard_running_run` in
+`imports_api/mod.rs`); a dedupe that fails leaves the run running. The
+server's `import` command and the Demo Account build run it once, after their
+last run. Nothing turns it off. It computes every content key again, so it
+also puts right the flag of a stored message whose content the import
+changed: a later edit changes a message's text, and an attachment added or
+given its file changes what its content key hashes. Why: there is no reason
+ever to leave a duplicate shown, and a flag an import made wrong would hide a
+message behind a copy whose text no longer matches, where no search finds it
 ([#1805](https://github.com/messagecrate/message-crate/issues/1805),
 [#1969](https://github.com/messagecrate/message-crate/issues/1969)).
+
+**A batch hides no duplicates.** `POST /v1/imports/{id}/batches` stores its
+messages and leaves the dedupe to the run's end, so the duplicates a run
+brings are shown while it is open. Why: each dedupe works over the whole
+account and holds the write lock, so one after every batch made an import of
+many batches into a large account rehash the account once per batch, while
+every other write waited. No dedupe scoped to a batch gives the full one's
+result, because the rank below reads the open run's growing message count
+and the account's source order
+([#2040](https://github.com/messagecrate/message-crate/issues/2040)).
 
 **Which copy is shown.** Of the copies of one message, the dedupe shows the
 first by these, in order (`rank` in `dedupe.rs`):
@@ -716,8 +730,8 @@ order. Why: the copy that carries the most is the one shown, and of two
 backups the larger import is the more complete one. A run's size is the
 count of the messages stamped with it, the ones it added. Every message
 carries that stamp, while the count a run records is written only when it
-completes. A run still going counts what it has added so far, and the
-dedupe after its next batch counts again. The last rank only makes the
+completes. The dedupe runs as the run ends, when every message it adds is
+in. The last rank only makes the
 result the same every time
 ([#1969](https://github.com/messagecrate/message-crate/issues/1969)).
 
