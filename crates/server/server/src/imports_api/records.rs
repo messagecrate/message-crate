@@ -79,6 +79,10 @@ pub struct ParticipantRecord {
     pub handle: HandleValue,
     /// Display-name alias, when the export supplied one.
     pub name_alias: Option<String>,
+    /// The country the file says the source read this identity in, when it
+    /// names one: a phone number written without its `+` code is a number
+    /// there.
+    pub country: Option<&'static phone::Country>,
 }
 
 /// What a conversation file gave for a person: an address, or a name in
@@ -136,6 +140,9 @@ pub struct MessageRecord {
     /// Sender for incoming messages: the address, or the name when the
     /// source named the sender with no address.
     pub sender: Option<HandleValue>,
+    /// The country the file says the source read the sender's identity in,
+    /// as [`ParticipantRecord::country`] says.
+    pub sender_country: Option<&'static phone::Country>,
     /// The account holder's own address on this message, sent from or
     /// received at: the message's owner handle, else the header's.
     pub owner: Option<String>,
@@ -211,6 +218,10 @@ pub struct TapbackRecord {
     pub is_from_me: bool,
     /// Reactor handle for incoming reactions.
     pub sender: Option<String>,
+    /// The country staging reads the reactor's identity in. The file names
+    /// none for a reactor, so staging takes the one its conversation names
+    /// for the same identity, as a participant or a sender.
+    pub sender_country: Option<&'static phone::Country>,
 }
 
 /// Strip Apple's attachment object-replacement character (U+FFFC) from body text.
@@ -337,7 +348,8 @@ fn is_ir_header(value: &Value) -> bool {
 /// # Errors
 ///
 /// Returns an error when the backup date is outside the times a timestamp
-/// can hold.
+/// can hold, or a participant's `country` is not a country Message Crate
+/// knows.
 fn conversation_from_ir(header: &ConversationHeader, line: usize) -> Result<ConversationRecord> {
     let export_source = {
         let s = header.export.source.trim();
@@ -375,8 +387,8 @@ fn conversation_from_ir(header: &ConversationHeader, line: usize) -> Result<Conv
             .conversation
             .participants
             .iter()
-            .filter_map(participant_from_ir)
-            .collect(),
+            .filter_map(|p| participant_from_ir(p).transpose())
+            .collect::<Result<_>>()?,
         export_source,
         backup_taken_at,
     })
@@ -411,12 +423,15 @@ fn message_from_ir(
         .iter()
         .map(earlier_version_from_ir)
         .collect::<Result<Vec<_>>>()?;
-    let sender = if is_from_me {
-        None
+    let (sender, sender_country) = if is_from_me {
+        (None, None)
     } else {
-        handle_value(
-            msg.sender_identity.as_deref(),
-            msg.sender_display_name.as_deref(),
+        (
+            handle_value(
+                msg.sender_identity.as_deref(),
+                msg.sender_display_name.as_deref(),
+            ),
+            stated_country(msg.sender_country.as_deref())?,
         )
     };
 
@@ -427,6 +442,7 @@ fn message_from_ir(
         time_precision: msg.time_precision,
         is_from_me,
         sender,
+        sender_country,
         owner: msg
             .owner_identity
             .as_deref()
@@ -475,10 +491,37 @@ fn earlier_version_from_ir(version: &EarlierVersion) -> Result<EarlierVersionRec
 /// (`docs/architecture/contacts-identities-and-messages.md`). The file
 /// states no type: staging types an address by its service and shape
 /// (`db::handles::handle_type_on`).
-fn participant_from_ir(p: &IrParticipant) -> Option<ParticipantRecord> {
+///
+/// # Errors
+///
+/// Returns an error when the participant's `country` is not a country
+/// Message Crate knows.
+fn participant_from_ir(p: &IrParticipant) -> Result<Option<ParticipantRecord>> {
     let name_alias = p.display_name.clone();
-    let handle = handle_value(p.identity.as_deref(), p.display_name.as_deref())?;
-    Some(ParticipantRecord { handle, name_alias })
+    let Some(handle) = handle_value(p.identity.as_deref(), p.display_name.as_deref()) else {
+        return Ok(None);
+    };
+    Ok(Some(ParticipantRecord {
+        handle,
+        name_alias,
+        country: stated_country(p.country.as_deref())?,
+    }))
+}
+
+/// The country a file names for an identity, as an ISO 3166-1 alpha-2 code.
+///
+/// # Errors
+///
+/// Returns an error naming the code when it is not one of the countries
+/// `GET /v1/phone-countries` lists: a file that names a country names a
+/// real one, and a number is never read in a country nobody stated.
+fn stated_country(code: Option<&str>) -> Result<Option<&'static phone::Country>> {
+    code.map(|code| {
+        phone::country(code).with_context(|| {
+            format!("country {code:?} is not a country GET /v1/phone-countries lists")
+        })
+    })
+    .transpose()
 }
 
 /// The address, else the name the source gave with no address. `None` when
@@ -520,6 +563,7 @@ fn tapback_from_reaction(reaction: &Reaction) -> TapbackRecord {
         } else {
             reaction.reactor_identity.clone()
         },
+        sender_country: None,
     }
 }
 

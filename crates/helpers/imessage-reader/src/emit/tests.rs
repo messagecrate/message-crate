@@ -350,6 +350,28 @@ fn the_owner_is_not_a_participant_of_a_group() {
     );
 }
 
+/// A one-to-one chat with no `chat_handle_join` rows takes its
+/// participant from its identifier, and the country from the `handle` row
+/// with that address, as a joined chat takes it from its member's row.
+#[test]
+fn a_chat_with_no_handle_rows_takes_the_country_of_its_address() {
+    let fixture = FixtureDb::write();
+    rusqlite::Connection::open(&fixture.db_path)
+        .unwrap()
+        .execute_batch(
+            "ALTER TABLE handle ADD COLUMN country TEXT;
+             UPDATE handle SET country = 'gb' WHERE ROWID = 3;",
+        )
+        .unwrap();
+    let session = fixture.session();
+    let messages = FixtureDb::messages(&session);
+
+    let (chat, record) = build_record(&session, &messages[6]).unwrap();
+    assert_eq!(chat.chat_identifier, FRIEND_PHONE_EMAIL);
+    assert_eq!(chat.participants[0].country.as_deref(), Some("GB"));
+    assert_eq!(record.sender_country.as_deref(), Some("GB"));
+}
+
 /// A chat with no `chat_handle_join` rows keeps its own identifier, and
 /// a one-to-one conversation takes the identifier's address as its participant.
 /// A message in no chat is orphaned and keeps its sender.

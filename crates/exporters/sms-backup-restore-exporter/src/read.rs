@@ -681,6 +681,7 @@ fn ir_message(
             fields: message.source_fields.clone(),
         }
         .into_option(),
+        sender_country: None,
     }
 }
 
@@ -711,6 +712,7 @@ fn ir_participants(conversation: &ConversationInProgress) -> Vec<IrParticipant> 
         .map(|handle| IrParticipant {
             identity: Some(handle.clone()),
             display_name: names.get(handle).cloned(),
+            country: None,
         })
         .collect()
 }

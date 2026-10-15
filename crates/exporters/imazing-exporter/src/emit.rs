@@ -1019,10 +1019,12 @@ impl ProjectionHooks for ImazingProjection<'_> {
             ConversationKey::OneToOne(handle) => vec![IrParticipant {
                 identity: Some(handle.clone()),
                 display_name: pending.first_contact_name(),
+                country: None,
             }],
             ConversationKey::NameOnly(_) => vec![IrParticipant {
                 identity: None,
                 display_name: pending.first_contact_name(),
+                country: None,
             }],
         }
     }

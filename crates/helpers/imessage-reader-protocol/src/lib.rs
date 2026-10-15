@@ -82,7 +82,10 @@ use serde_json::Value;
 /// replaced.
 /// 15: a message carries [`Message::time_precision`], whether `chat.db`
 /// recorded its time below the second.
-pub const PROTOCOL_VERSION: u32 = 15;
+/// 16: a [`Participant`] carries [`Participant::country`] and a message
+/// [`Message::sender_country`], the country `chat.db`'s `handle` row names
+/// for that identity.
+pub const PROTOCOL_VERSION: u32 = 16;
 
 /// The [`Conversation::conversation_type`] of a conversation that holds
 /// orphaned messages: messages the backup holds without recording which
@@ -379,6 +382,11 @@ pub struct Participant {
     pub identity: String,
     /// The contact name, when the address book knows one.
     pub display_name: Option<String>,
+    /// The country Messages read this identity in: the `country` column of
+    /// its `handle` row, as an upper-case ISO 3166-1 alpha-2 code (`GB`).
+    /// `None` when the row names none, or the conversation has no `handle`
+    /// row for the identity.
+    pub country: Option<String>,
 }
 
 /// One message row, already classified.
@@ -406,6 +414,9 @@ pub struct Message {
     pub sender_identity: Option<String>,
     /// The sender's contact name, for an incoming message.
     pub sender_display_name: Option<String>,
+    /// The country Messages read the sender's identity in, as
+    /// [`Participant::country`] says, for an incoming message.
+    pub sender_country: Option<String>,
     /// The subject line, when the message has one.
     pub subject: Option<String>,
     /// The body, or the sentence that stands in for a tapback or

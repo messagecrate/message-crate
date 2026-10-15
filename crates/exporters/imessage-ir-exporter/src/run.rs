@@ -180,11 +180,13 @@ fn run_with(
             decrypted_bytes(&options.source),
             Disk::Scratch,
         )?;
+        // Cancel kills the program even while it sends nothing (#2085).
         let mut helper = spawn(
             &options.export_request(scratch.path()),
             options.log.clone(),
             options.progress.clone(),
-        )?;
+        )?
+        .cancel_on(options.convert_run.cancel.clone());
         let report = convert::export(&mut helper, &options, writer)?;
         helper.finish()?;
         report

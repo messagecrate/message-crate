@@ -840,6 +840,7 @@ mod tests {
                 message_kind: IrMessageKind::Mms,
                 sender_identity: None,
                 sender_display_name: None,
+                sender_country: None,
                 owner_identity: None,
                 subject: None,
                 text: "hi".into(),

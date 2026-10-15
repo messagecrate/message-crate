@@ -184,6 +184,7 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
             participants: vec![IrParticipant {
                 identity: Some("LEAK-05".into()),
                 display_name: Some("LEAK-06".into()),
+                country: None,
             }],
             stats: ConversationStats {
                 message_count: 1,
@@ -251,6 +252,7 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
                 android_type: Some(1),
                 fields: serde_json::Map::from_iter([("address".into(), json!("LEAK-26"))]),
             }),
+            sender_country: None,
         }],
         packaging_stem_suffix: None,
     }
