@@ -1511,11 +1511,12 @@ fn a_failed_conversion_records_why_ffmpeg_failed() {
     assert_eq!(reason, "convert_failed: the encoder made no progress");
 }
 
-/// The reason an attachment records when ffmpeg failed on it is the last
-/// line ffmpeg wrote, with no path in it (#2801). The whole error, path and
-/// all, goes in the row for the log.
+/// The reason an attachment records when ffmpeg failed on it is the line
+/// ffmpeg wrote that names the cause, which here is its last line, with no
+/// path in it (#2801, #2959). The whole error, path and all, goes in the
+/// row for the log.
 #[test]
-fn a_failed_conversion_records_the_reason_the_attachment_jobs_record() {
+fn a_failed_conversion_records_the_line_that_names_the_cause() {
     let tools = media::testutil::FakeTools::new().failing_on("-q:v");
     let (dir, jsonl, original) = staged_one("photo.png", PNG_1X1_RGB);
     let (issues, rows) = collecting_sink();
