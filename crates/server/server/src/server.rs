@@ -1592,17 +1592,8 @@ pub(crate) fn http_app(state: AppState) -> Router {
     with_server_layers(routes, state)
 }
 
-/// The `Content-Security-Policy` on every answer (#2073). The website keeps
-/// the Session token in browser storage, and a cookie is not an option
-/// (`docs/architecture/http-api.md`, "Rejected: a cookie"), so this policy is
-/// what keeps a script that should not run from running at all: only the
-/// server's own script files run, never inline script, and no other site can
-/// frame the login card. Styles may be inline, because the website's
-/// components set `style` attributes. `connect-src`, `img-src` and `media-src`
-/// allow other hosts because the login card's **Change server address**
-/// points the website at another server, the same reason the desktop
-/// window's policy in `src-tauri/tauri.conf.json` allows them; `blob:` and
-/// `data:` are the attachment and image URLs the website makes itself.
+/// The `Content-Security-Policy` on every answer (#2073). Each directive's
+/// reason is in `docs/architecture/http-api.md`, "Protective headers".
 const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self'; \
      style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; \
      media-src 'self' blob: http: https:; connect-src 'self' http: https:; \

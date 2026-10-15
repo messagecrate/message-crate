@@ -82,9 +82,8 @@ pub enum Commands {
     ResetOwnerPassword(ResetOwnerPasswordArgs),
 }
 
-/// Options for `create-owner`. The password is read from standard input:
-/// typed without echo at a terminal, or else the first line, never an
-/// argument, which `ps` would show to every local user (#2094).
+/// Options for `create-owner`. The password is read from standard input
+/// (`owner_cli::read_password`), never taken as an argument.
 #[derive(Debug, Args)]
 pub struct CreateOwnerArgs {
     /// Login username for the owner
@@ -97,7 +96,7 @@ pub struct CreateOwnerArgs {
 }
 
 /// Options for `reset-owner-password`. The new password is read from
-/// standard input, as `create-owner` reads it.
+/// standard input (`owner_cli::read_password`).
 #[derive(Debug, Args)]
 pub struct ResetOwnerPasswordArgs {
     /// Path to config.toml

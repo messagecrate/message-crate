@@ -1,8 +1,8 @@
 // The theme's first paint: runs before the page draws, so the page is never
-// the wrong colors for a frame before React starts. It is a file of its own,
-// not inline in index.html, because the Content-Security-Policy the server
-// sends allows only the server's own script files (#2073). The keys and
-// defaults are those of src/lib/theme.ts: change the two together.
+// the wrong colors for a frame before React starts. A file of its own for
+// the Content-Security-Policy (docs/architecture/http-api.md, "Protective
+// headers"). The keys and defaults are those of src/lib/theme.ts: change the
+// two together.
 (() => {
   try {
     const mk = "mc-theme";
