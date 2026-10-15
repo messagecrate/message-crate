@@ -574,17 +574,20 @@ enum GroupingKey {
     Blank(usize),
 }
 
-/// Check every row and gather the rows into contacts. Every broken rule is
-/// collected, so one refusal names them all.
-fn plan(rows: &[FileRow], snapshot: &Snapshot) -> Result<Vec<FileContact>, Vec<String>> {
-    let mut errors: Vec<String> = Vec::new();
-    let mut file: Vec<FileContact> = Vec::new();
-    let mut by_key: HashMap<GroupingKey, usize> = HashMap::new();
-    // Where each identity was first listed: the contact and the row.
-    let mut listed: HashMap<IdentityKey, (usize, usize)> = HashMap::new();
+/// The contacts [`plan`] gathers as it reads the rows.
+#[derive(Debug, Default)]
+struct Gathering {
+    file: Vec<FileContact>,
+    /// Which contact of `file` the rows of each key gather into.
+    by_key: HashMap<GroupingKey, usize>,
+    /// Where each identity was first listed: the contact and the row.
+    listed: HashMap<IdentityKey, (usize, usize)>,
+}
 
-    for row in rows {
-        let n = row.number;
+impl Gathering {
+    /// Where in `file` the contact `row` speaks for is, gathered the first
+    /// time a row names it.
+    fn contact_of(&mut self, row: &FileRow, snapshot: &Snapshot) -> usize {
         let known = row
             .contact_id
             .parse::<i64>()
@@ -592,122 +595,186 @@ fn plan(rows: &[FileRow], snapshot: &Snapshot) -> Result<Vec<FileContact>, Vec<S
             .filter(|id| snapshot.contacts.contains_key(id));
         let grouping = match known {
             Some(id) => GroupingKey::Known(id),
-            None if row.contact_id.is_empty() => GroupingKey::Blank(n),
+            None if row.contact_id.is_empty() => GroupingKey::Blank(row.number),
             None => GroupingKey::Text(row.contact_id.clone()),
         };
-        let at = *by_key.entry(grouping).or_insert_with(|| {
+        let file = &mut self.file;
+        *self.by_key.entry(grouping).or_insert_with(|| {
             file.push(FileContact {
                 target: known.map_or(Target::New, Target::Known),
                 id_text: row.contact_id.clone(),
-                first_row: n,
+                first_row: row.number,
                 name: None,
                 groups: None,
                 identities: Vec::new(),
             });
             file.len() - 1
-        });
-        let contact = &mut file[at];
+        })
+    }
 
-        if !row.display_name.is_empty() {
-            match &contact.name {
-                None => contact.name = Some((row.display_name.clone(), n)),
-                Some((name, first)) if *name != row.display_name => errors.push(format!(
-                    "row {n}: display_name \"{}\" disagrees with \"{name}\" on row {first}; \
-                     the rows of contact_id {} must agree or be blank",
-                    row.display_name, contact.id_text
-                )),
-                Some(_) => {}
-            }
-        }
-
-        if !row.groups.is_empty() {
-            match row_groups(row) {
-                Err(reason) => errors.push(reason),
-                Ok(names) => match &contact.groups {
-                    None => contact.groups = Some((names, n)),
-                    Some((first_names, first)) if !same_groups(first_names, &names) => {
-                        errors.push(format!(
-                            "row {n}: groups \"{}\" disagrees with \"{}\" on row {first}; \
-                             the rows of contact_id {} must agree or be blank",
-                            names.join("; "),
-                            first_names.join("; "),
-                            contact.id_text
-                        ));
-                    }
-                    Some(_) => {}
-                },
-            }
-        }
-
+    /// Add the identity `row` lists to the contact at `at` in `file`. The
+    /// row is refused when the identity is not one Message Crate can store,
+    /// or when another contact of the file listed it first.
+    fn list_identity(
+        &mut self,
+        at: usize,
+        row: &FileRow,
+        snapshot: &Snapshot,
+        errors: &mut Vec<String>,
+    ) {
+        let contact = &mut self.file[at];
+        let known = match contact.target {
+            Target::Known(id) => Some(id),
+            Target::New => None,
+        };
         match row_identity(row, known, snapshot) {
             Err(reason) => errors.push(reason),
             Ok(None) => {}
-            Ok(Some(identity)) => match listed.get(&identity.key) {
+            Ok(Some(identity)) => match self.listed.get(&identity.key) {
                 Some(&(other, first)) if other != at => errors.push(format!(
-                    "row {n}: {} is also on row {first} under another contact_id; \
+                    "row {}: {} is also on row {first} under another contact_id; \
                      an identity belongs to one contact",
-                    identity.key.normalized
+                    row.number, identity.key.normalized
                 )),
                 // The same identity twice under one contact says it once.
                 Some(_) => {}
                 None => {
-                    listed.insert(identity.key.clone(), (at, n));
+                    self.listed.insert(identity.key.clone(), (at, row.number));
                     contact.identities.push(identity);
                 }
             },
         }
     }
+}
 
-    let in_file: HashSet<i64> = file
-        .iter()
+/// Take the name `row` gives `contact`, or refuse the row when an earlier
+/// row of the contact gave another.
+fn agree_on_name(contact: &mut FileContact, row: &FileRow, errors: &mut Vec<String>) {
+    if row.display_name.is_empty() {
+        return;
+    }
+    match &contact.name {
+        None => contact.name = Some((row.display_name.clone(), row.number)),
+        Some((name, first)) if *name != row.display_name => errors.push(format!(
+            "row {}: display_name \"{}\" disagrees with \"{name}\" on row {first}; \
+             the rows of contact_id {} must agree or be blank",
+            row.number, row.display_name, contact.id_text
+        )),
+        Some(_) => {}
+    }
+}
+
+/// Take the Contact Groups `row` lists for `contact`, or refuse the row
+/// when a group name is one a person could not create, or when an earlier
+/// row of the contact listed other groups.
+fn agree_on_groups(contact: &mut FileContact, row: &FileRow, errors: &mut Vec<String>) {
+    if row.groups.is_empty() {
+        return;
+    }
+    let names = match row_groups(row) {
+        Ok(names) => names,
+        Err(reason) => return errors.push(reason),
+    };
+    match &contact.groups {
+        None => contact.groups = Some((names, row.number)),
+        Some((first_names, first)) if !same_groups(first_names, &names) => {
+            errors.push(format!(
+                "row {}: groups \"{}\" disagrees with \"{}\" on row {first}; \
+                 the rows of contact_id {} must agree or be blank",
+                row.number,
+                names.join("; "),
+                first_names.join("; "),
+                contact.id_text
+            ));
+        }
+        Some(_) => {}
+    }
+}
+
+/// Refuse a new contact that has neither a name nor an identity, which
+/// nothing could ever reach.
+fn check_new_contact_has_a_name_or_identity(contact: &FileContact, errors: &mut Vec<String>) {
+    if contact.target == Target::New && contact.name.is_none() && contact.identities.is_empty() {
+        errors.push(format!(
+            "row {}: a new contact needs a display_name or an identity",
+            contact.first_row
+        ));
+    }
+}
+
+/// Refuse each identity of `contact` that another contact holds and the
+/// load may not take from it: a named contact outside the file (`in_file`),
+/// or one in the Trash.
+fn check_identities_may_move(
+    contact: &FileContact,
+    snapshot: &Snapshot,
+    in_file: &HashSet<i64>,
+    errors: &mut Vec<String>,
+) {
+    for identity in &contact.identities {
+        let Some(&(_, Some(holder))) = snapshot.handles.get(&identity.key) else {
+            continue;
+        };
+        if contact.target == Target::Known(holder) {
+            continue;
+        }
+        if snapshot.may_take_from(holder, in_file) {
+            continue;
+        }
+        let holder_name = snapshot.name_of(holder);
+        // A trashed holder cannot be added to the file, because its id
+        // reads as unknown text, so the way through is the Trash.
+        let (where_it_is, way_through) = if snapshot.trashed.contains_key(&holder) {
+            (
+                "is in the Trash",
+                format!(
+                    "restore \"{holder_name}\" and add it to the file, \
+                     or delete \"{holder_name}\" for good,"
+                ),
+            )
+        } else {
+            (
+                "is not in the file",
+                format!("add \"{holder_name}\" to the file"),
+            )
+        };
+        errors.push(format!(
+            "row {}: {} belongs to \"{holder_name}\" (contact {holder}), which {where_it_is}, \
+             so it cannot move to {}; {way_through} to move it",
+            identity.row,
+            identity.key.normalized,
+            contact.describe()
+        ));
+    }
+}
+
+/// The contacts the account holds that the file speaks for.
+fn known_contacts(file: &[FileContact]) -> HashSet<i64> {
+    file.iter()
         .filter_map(|c| match c.target {
             Target::Known(id) => Some(id),
             Target::New => None,
         })
-        .collect();
+        .collect()
+}
+
+/// Check every row and gather the rows into contacts. Every broken rule is
+/// collected, so one refusal names them all.
+fn plan(rows: &[FileRow], snapshot: &Snapshot) -> Result<Vec<FileContact>, Vec<String>> {
+    let mut errors: Vec<String> = Vec::new();
+    let mut gathering = Gathering::default();
+    for row in rows {
+        let at = gathering.contact_of(row, snapshot);
+        agree_on_name(&mut gathering.file[at], row, &mut errors);
+        agree_on_groups(&mut gathering.file[at], row, &mut errors);
+        gathering.list_identity(at, row, snapshot, &mut errors);
+    }
+
+    let file = gathering.file;
+    let in_file = known_contacts(&file);
     for contact in &file {
-        if contact.target == Target::New && contact.name.is_none() && contact.identities.is_empty()
-        {
-            errors.push(format!(
-                "row {}: a new contact needs a display_name or an identity",
-                contact.first_row
-            ));
-        }
-        for identity in &contact.identities {
-            let Some(&(_, Some(holder))) = snapshot.handles.get(&identity.key) else {
-                continue;
-            };
-            if contact.target == Target::Known(holder) {
-                continue;
-            }
-            if snapshot.may_take_from(holder, &in_file) {
-                continue;
-            }
-            let holder_name = snapshot.name_of(holder);
-            // A trashed holder cannot be added to the file, because its id
-            // reads as unknown text, so the way through is the Trash.
-            let (where_it_is, way_through) = if snapshot.trashed.contains_key(&holder) {
-                (
-                    "is in the Trash",
-                    format!(
-                        "restore \"{holder_name}\" and add it to the file, \
-                         or delete \"{holder_name}\" for good,"
-                    ),
-                )
-            } else {
-                (
-                    "is not in the file",
-                    format!("add \"{holder_name}\" to the file"),
-                )
-            };
-            errors.push(format!(
-                "row {}: {} belongs to \"{holder_name}\" (contact {holder}), which {where_it_is}, \
-                 so it cannot move to {}; {way_through} to move it",
-                identity.row,
-                identity.key.normalized,
-                contact.describe()
-            ));
-        }
+        check_new_contact_has_a_name_or_identity(contact, &mut errors);
+        check_identities_may_move(contact, snapshot, &in_file, &mut errors);
     }
 
     if errors.is_empty() {
@@ -886,6 +953,45 @@ fn write_book(rows: impl IntoIterator<Item = [String; 6]>) -> Result<String> {
     String::from_utf8(bytes).context("the address book is not UTF-8")
 }
 
+/// What a load tracks as it writes a checked file, which each step of
+/// [`apply`] reads and changes.
+struct LoadState<'a> {
+    account_id: i64,
+    snapshot: &'a Snapshot,
+    mode: LoadMode,
+    counts: LoadCounts,
+    /// Contact Groups by lower-cased name, with the ones this load created.
+    groups: HashMap<String, i64>,
+    /// Who holds each identity as the load goes: it changes as rows move them.
+    holder_of: HashMap<i64, i64>,
+    /// Contacts this load changed.
+    changed: HashSet<i64>,
+    /// Contacts this load took an identity from.
+    lost_identity: HashSet<i64>,
+    /// Each file contact's id and the identity rows it lists.
+    placed: Vec<(i64, HashSet<i64>)>,
+}
+
+impl<'a> LoadState<'a> {
+    fn new(account_id: i64, snapshot: &'a Snapshot, mode: LoadMode, contacts: usize) -> Self {
+        Self {
+            account_id,
+            snapshot,
+            mode,
+            counts: LoadCounts::default(),
+            groups: snapshot.groups.clone(),
+            holder_of: snapshot
+                .handles
+                .values()
+                .filter_map(|&(handle_id, holder)| holder.map(|h| (handle_id, h)))
+                .collect(),
+            changed: HashSet::new(),
+            lost_identity: HashSet::new(),
+            placed: Vec::with_capacity(contacts),
+        }
+    }
+}
+
 /// Write a checked file, stamping each contact it changes `now`. Nothing
 /// here refuses: [`plan`] already has.
 async fn apply(
@@ -897,197 +1003,260 @@ async fn apply(
     now: DateTime<Utc>,
 ) -> Result<LoadCounts> {
     let conn: &mut SqliteConnection = tx;
-    let mut counts = LoadCounts::default();
-    let mut groups = snapshot.groups.clone();
-    // Who holds each identity as the load goes: it changes as rows move them.
-    let mut holder_of: HashMap<i64, i64> = snapshot
-        .handles
-        .values()
-        .filter_map(|&(handle_id, holder)| holder.map(|h| (handle_id, h)))
-        .collect();
-    // Contacts the account already held that this load changed, and the ones
-    // it took an identity from.
-    let mut changed: HashSet<i64> = HashSet::new();
-    let mut lost_identity: HashSet<i64> = HashSet::new();
-    // Each file contact's id and the identity rows it lists.
-    let mut placed: Vec<(i64, HashSet<i64>)> = Vec::with_capacity(file.len());
+    let mut state = LoadState::new(account_id, snapshot, mode, file.len());
+    take_listed_identities(conn, &mut state, file, now).await?;
+    if mode == LoadMode::Edit {
+        release_unlisted_identities(conn, &mut state).await?;
+    }
+    delete_empty_contacts(conn, &mut state).await?;
+    stamp_changed_contacts(conn, &mut state, file, now).await?;
+    write_notes(&mut state, file);
+    Ok(state.counts)
+}
 
-    // First every contact takes what its rows list. Removal waits until all
-    // of them have, so an identity that goes from one file contact to another
-    // is one move, whichever of the two comes first in the file.
+/// Every file contact takes what its rows list: its name, its identities
+/// and its Contact Groups. Removal of an identity waits until all of them
+/// have, so an identity that goes from one file contact to another is one
+/// move, whichever of the two comes first in the file.
+async fn take_listed_identities(
+    conn: &mut SqliteConnection,
+    state: &mut LoadState<'_>,
+    file: &[FileContact],
+    now: DateTime<Utc>,
+) -> Result<()> {
     for contact in file {
-        let contact_id = match contact.target {
-            Target::Known(id) => {
-                // The file is the person typing, so its name replaces
-                // whatever the contact carried; `propose_name` holds the rule.
-                if let Some((name, _)) = &contact.name
-                    && contacts::propose_name(conn, account_id, id, name, Origin::AddressBook, now)
-                        .await?
-                {
-                    changed.insert(id);
-                }
-                id
+        let contact_id = name_or_create(conn, state, contact, now).await?;
+        let listed = take_identities(conn, state, contact, contact_id).await?;
+        set_groups(conn, state, contact, contact_id).await?;
+        state.placed.push((contact_id, listed));
+    }
+    Ok(())
+}
+
+/// The id of the contact `contact` speaks for: a known contact given the
+/// file's name, or a contact created for it.
+async fn name_or_create(
+    conn: &mut SqliteConnection,
+    state: &mut LoadState<'_>,
+    contact: &FileContact,
+    now: DateTime<Utc>,
+) -> Result<i64> {
+    match contact.target {
+        Target::Known(id) => {
+            // The file is the person typing, so its name replaces
+            // whatever the contact carried; `propose_name` holds the rule.
+            if let Some((name, _)) = &contact.name
+                && contacts::propose_name(
+                    conn,
+                    state.account_id,
+                    id,
+                    name,
+                    Origin::AddressBook,
+                    now,
+                )
+                .await?
+            {
+                state.changed.insert(id);
             }
-            Target::New => {
-                let name = contact.name.as_ref().map_or("", |(name, _)| name.as_str());
-                counts.contacts_created += 1;
-                contacts::create_contact(conn, account_id, name, Origin::AddressBook).await?
+            Ok(id)
+        }
+        Target::New => {
+            let name = contact.name.as_ref().map_or("", |(name, _)| name.as_str());
+            state.counts.contacts_created += 1;
+            contacts::create_contact(conn, state.account_id, name, Origin::AddressBook).await
+        }
+    }
+}
+
+/// Give `contact_id` each identity `contact` lists: a new one is created,
+/// one with no holder is linked, and one another contact holds moves.
+/// Returns the identity rows the contact lists.
+async fn take_identities(
+    conn: &mut SqliteConnection,
+    state: &mut LoadState<'_>,
+    contact: &FileContact,
+    contact_id: i64,
+) -> Result<HashSet<i64>> {
+    let account_id = state.account_id;
+    let mut listed: HashSet<i64> = HashSet::new();
+    for identity in &contact.identities {
+        let handle_id = match state.snapshot.handles.get(&identity.key) {
+            Some(&(handle_id, _)) => handle_id,
+            None => {
+                sqlx::query_scalar(
+                    "INSERT INTO handles
+                       (account_id, raw, normalized, handle_type, service, origin)
+                     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+                )
+                .bind(account_id)
+                .bind(&identity.written)
+                .bind(&identity.key.normalized)
+                .bind(identity.key.handle_type)
+                .bind(identity.key.service.as_str())
+                .bind(Origin::AddressBook.as_str())
+                .fetch_one(&mut *conn)
+                .await?
             }
         };
-
-        let mut listed: HashSet<i64> = HashSet::new();
-        for identity in &contact.identities {
-            let handle_id = match snapshot.handles.get(&identity.key) {
-                Some(&(handle_id, _)) => handle_id,
-                None => {
-                    sqlx::query_scalar(
-                        "INSERT INTO handles
-                           (account_id, raw, normalized, handle_type, service, origin)
-                         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
-                    )
-                    .bind(account_id)
-                    .bind(&identity.written)
-                    .bind(&identity.key.normalized)
-                    .bind(identity.key.handle_type)
-                    .bind(identity.key.service.as_str())
-                    .bind(Origin::AddressBook.as_str())
-                    .fetch_one(&mut *conn)
-                    .await?
-                }
-            };
-            listed.insert(handle_id);
-            match holder_of.insert(handle_id, contact_id) {
-                Some(holder) if holder == contact_id => {}
-                Some(holder) => {
-                    let goes = contacts::IdentityGoes::To(contact_id, Origin::AddressBook);
-                    contacts::move_identity(conn, account_id, handle_id, goes).await?;
-                    counts.identities_moved += 1;
-                    lost_identity.insert(holder);
-                    changed.insert(holder);
-                    changed.insert(contact_id);
-                }
-                None => {
-                    contacts::link_handle_to_contact(
-                        conn,
-                        account_id,
-                        handle_id,
-                        contact_id,
-                        Origin::AddressBook,
-                    )
-                    .await?;
-                    counts.identities_added += 1;
-                    changed.insert(contact_id);
-                }
+        listed.insert(handle_id);
+        match state.holder_of.insert(handle_id, contact_id) {
+            Some(holder) if holder == contact_id => {}
+            Some(holder) => {
+                let goes = contacts::IdentityGoes::To(contact_id, Origin::AddressBook);
+                contacts::move_identity(conn, account_id, handle_id, goes).await?;
+                state.counts.identities_moved += 1;
+                state.lost_identity.insert(holder);
+                state.changed.insert(holder);
+                state.changed.insert(contact_id);
+            }
+            None => {
+                contacts::link_handle_to_contact(
+                    conn,
+                    account_id,
+                    handle_id,
+                    contact_id,
+                    Origin::AddressBook,
+                )
+                .await?;
+                state.counts.identities_added += 1;
+                state.changed.insert(contact_id);
             }
         }
+    }
+    Ok(listed)
+}
 
-        let mut wanted: HashSet<i64> = HashSet::new();
-        for name in contact.groups.iter().flat_map(|(names, _)| names) {
-            let group_id = match groups.get(&name.to_lowercase()) {
-                Some(&id) => id,
-                None => {
-                    let id: i64 = sqlx::query_scalar(
-                        "INSERT INTO contact_groups (account_id, name) VALUES ($1, $2) RETURNING id",
-                    )
-                    .bind(account_id)
-                    .bind(name)
-                    .fetch_one(&mut *conn)
-                    .await?;
-                    groups.insert(name.to_lowercase(), id);
-                    counts.groups_created += 1;
-                    id
-                }
-            };
-            wanted.insert(group_id);
+/// Make `contact_id` a member of each Contact Group `contact` lists,
+/// creating a group no name matches, and in Edit take it out of every
+/// other group.
+async fn set_groups(
+    conn: &mut SqliteConnection,
+    state: &mut LoadState<'_>,
+    contact: &FileContact,
+    contact_id: i64,
+) -> Result<()> {
+    let mut wanted: HashSet<i64> = HashSet::new();
+    for name in contact.groups.iter().flat_map(|(names, _)| names) {
+        let group_id = match state.groups.get(&name.to_lowercase()) {
+            Some(&id) => id,
+            None => {
+                let id: i64 = sqlx::query_scalar(
+                    "INSERT INTO contact_groups (account_id, name) VALUES ($1, $2) RETURNING id",
+                )
+                .bind(state.account_id)
+                .bind(name)
+                .fetch_one(&mut *conn)
+                .await?;
+                state.groups.insert(name.to_lowercase(), id);
+                state.counts.groups_created += 1;
+                id
+            }
+        };
+        wanted.insert(group_id);
+    }
+    let held = state.snapshot.memberships.get(&contact_id);
+    for &group_id in &wanted {
+        if held.is_some_and(|h| h.contains(&group_id)) {
+            continue;
         }
-        let held = snapshot.memberships.get(&contact_id);
-        for &group_id in &wanted {
-            if held.is_some_and(|h| h.contains(&group_id)) {
+        sqlx::query(
+            "INSERT INTO contact_group_members (contact_id, group_id) VALUES ($1, $2)
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(contact_id)
+        .bind(group_id)
+        .execute(&mut *conn)
+        .await?;
+        state.changed.insert(contact_id);
+    }
+    if state.mode == LoadMode::Edit {
+        for &group_id in held.into_iter().flatten() {
+            if wanted.contains(&group_id) {
                 continue;
             }
             sqlx::query(
-                "INSERT INTO contact_group_members (contact_id, group_id) VALUES ($1, $2)
-                 ON CONFLICT DO NOTHING",
+                "DELETE FROM contact_group_members WHERE contact_id = $1 AND group_id = $2",
             )
             .bind(contact_id)
             .bind(group_id)
             .execute(&mut *conn)
             .await?;
-            changed.insert(contact_id);
-        }
-        if mode == LoadMode::Edit {
-            for &group_id in held.into_iter().flatten() {
-                if wanted.contains(&group_id) {
-                    continue;
-                }
-                sqlx::query(
-                    "DELETE FROM contact_group_members WHERE contact_id = $1 AND group_id = $2",
-                )
-                .bind(contact_id)
-                .bind(group_id)
-                .execute(&mut *conn)
-                .await?;
-                changed.insert(contact_id);
-            }
-        }
-        placed.push((contact_id, listed));
-    }
-
-    // Edit: an identity a file contact still holds and no row of it lists
-    // comes off the contact, the one way an identity leaves a contact: one in
-    // a conversation goes to a new contact with no name, so the person is
-    // Unknown for it again, and one nothing uses is deleted.
-    if mode == LoadMode::Edit {
-        for (contact_id, listed) in &placed {
-            let mut unlisted: Vec<i64> = holder_of
-                .iter()
-                .filter(|&(handle_id, holder)| holder == contact_id && !listed.contains(handle_id))
-                .map(|(&handle_id, _)| handle_id)
-                .collect();
-            unlisted.sort_unstable();
-            contacts::take_identities_off(conn, account_id, &unlisted).await?;
-            for handle_id in unlisted {
-                holder_of.remove(&handle_id);
-                counts.identities_removed += 1;
-                lost_identity.insert(*contact_id);
-                changed.insert(*contact_id);
-            }
+            state.changed.insert(contact_id);
         }
     }
+    Ok(())
+}
 
-    // A contact this load left with neither a name nor an identity is one
-    // nothing could ever reach, so it goes.
-    for contact_id in lost_identity {
-        if contacts::delete_if_empty(conn, account_id, contact_id).await? {
-            changed.remove(&contact_id);
-            counts.contacts_deleted += 1;
+/// Edit: an identity a file contact still holds and no row of it lists
+/// comes off the contact, the one way an identity leaves a contact: one in
+/// a conversation goes to a new contact with no name, so the person is
+/// Unknown for it again, and one nothing uses is deleted.
+async fn release_unlisted_identities(
+    conn: &mut SqliteConnection,
+    state: &mut LoadState<'_>,
+) -> Result<()> {
+    for (contact_id, listed) in &state.placed {
+        let mut unlisted: Vec<i64> = state
+            .holder_of
+            .iter()
+            .filter(|&(handle_id, holder)| holder == contact_id && !listed.contains(handle_id))
+            .map(|(&handle_id, _)| handle_id)
+            .collect();
+        unlisted.sort_unstable();
+        contacts::take_identities_off(conn, state.account_id, &unlisted).await?;
+        for handle_id in unlisted {
+            state.holder_of.remove(&handle_id);
+            state.counts.identities_removed += 1;
+            state.lost_identity.insert(*contact_id);
+            state.changed.insert(*contact_id);
         }
     }
+    Ok(())
+}
 
-    let in_file: HashSet<i64> = file
-        .iter()
-        .filter_map(|c| match c.target {
-            Target::Known(id) => Some(id),
-            Target::New => None,
-        })
-        .collect();
-    for contact_id in changed {
-        contacts::touch_contact(conn, account_id, contact_id, now).await?;
+/// A contact this load left with neither a name nor an identity is one
+/// nothing could ever reach, so it goes.
+async fn delete_empty_contacts(
+    conn: &mut SqliteConnection,
+    state: &mut LoadState<'_>,
+) -> Result<()> {
+    for contact_id in std::mem::take(&mut state.lost_identity) {
+        if contacts::delete_if_empty(conn, state.account_id, contact_id).await? {
+            state.changed.remove(&contact_id);
+            state.counts.contacts_deleted += 1;
+        }
+    }
+    Ok(())
+}
+
+/// Stamp each contact the load changed `now`, and count the ones the file
+/// speaks for as updated.
+async fn stamp_changed_contacts(
+    conn: &mut SqliteConnection,
+    state: &mut LoadState<'_>,
+    file: &[FileContact],
+    now: DateTime<Utc>,
+) -> Result<()> {
+    let in_file = known_contacts(file);
+    for contact_id in std::mem::take(&mut state.changed) {
+        contacts::touch_contact(conn, state.account_id, contact_id, now).await?;
         if in_file.contains(&contact_id) {
-            counts.contacts_updated += 1;
+            state.counts.contacts_updated += 1;
         }
     }
+    Ok(())
+}
 
-    // The notes in the order of the file's rows, which a contact's rows need
-    // not be.
+/// The notes in the order of the file's rows, which a contact's rows need
+/// not be.
+fn write_notes(state: &mut LoadState<'_>, file: &[FileContact]) {
     let mut notes: Vec<(usize, &String)> = file
         .iter()
         .flat_map(|contact| &contact.identities)
         .filter_map(|identity| identity.note.as_ref().map(|note| (identity.row, note)))
         .collect();
     notes.sort_by_key(|&(row, _)| row);
-    counts.notes = notes.into_iter().map(|(_, note)| note.clone()).collect();
-    Ok(counts)
+    state.counts.notes = notes.into_iter().map(|(_, note)| note.clone()).collect();
 }
 
 /// An address book [`export_csv`] wrote, with how many contacts and

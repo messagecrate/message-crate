@@ -1498,6 +1498,31 @@ async fn a_new_identity_of_bare_digits_is_named_in_the_result() {
     );
 }
 
+/// The notes come in the order of the file's rows, though a contact's rows
+/// are gathered together and need not sit next to each other.
+#[tokio::test]
+async fn the_notes_follow_the_order_of_the_rows() {
+    let (mut conn, _pool, _dir) = account().await;
+    let counts = loaded(
+        &mut conn,
+        &file(&[
+            "ada,Ada,,phone,phone,447700900123",
+            "bob,Bob,,phone,phone,447700900124",
+            "ada,,,phone,phone,447700900125",
+        ]),
+        LoadMode::Append,
+    )
+    .await;
+    assert_eq!(
+        counts.notes,
+        [
+            "row 2: 447700900123 has no +, so it became the new identity 447700900123",
+            "row 3: 447700900124 has no +, so it became the new identity 447700900124",
+            "row 4: 447700900125 has no +, so it became the new identity 447700900125",
+        ]
+    );
+}
+
 /// A ten-digit number written without `+` or its country code is not read
 /// as a US number (#1676): it is an identity of its own digits, even when
 /// the contact holds the `+1` number, and the result says so. A `+` a
