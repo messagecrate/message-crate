@@ -997,8 +997,11 @@ impl<'a> LoadState<'a> {
 /// here refuses: [`plan`] already has.
 ///
 /// The steps run in this order, each reading what the ones before it left
-/// in [`LoadState`]: [`delete_empty_contacts`] and [`stamp_changed_contacts`]
-/// empty the sets they read, so no step that needs those sets can follow them.
+/// in [`LoadState`]. [`release_unlisted_identities`] needs every file
+/// contact placed. [`delete_empty_contacts`] reads the contacts that placing
+/// and releasing took an identity from, and takes each one it deletes out of
+/// the changed contacts, so it runs before [`stamp_changed_contacts`], which
+/// stamps the changed contacts that are left.
 async fn apply(
     tx: &mut WriteTx<'_>,
     account_id: i64,
