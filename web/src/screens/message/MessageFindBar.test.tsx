@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { setupUser } from "../../test/user";
 import MessageFindBar from "./MessageFindBar";
 
@@ -28,14 +28,15 @@ function renderBar(
   return { onPrevMatch, onNextMatch, onClose };
 }
 
-afterEach(() => {
-  cleanup();
-});
-
 describe("MessageFindBar", () => {
   it("counts the current match from one", () => {
     renderBar({ matchCount: 3, matchPosition: 0 });
-    expect(screen.getByText("1 of 3")).toBeTruthy();
+    expect(screen.getByText("1 of 3")).toBeInTheDocument();
+  });
+
+  it("counts a later match from its position", () => {
+    renderBar({ matchCount: 3, matchPosition: 1 });
+    expect(screen.getByText("2 of 3")).toBeInTheDocument();
   });
 
   it("steps to the older match on Enter and the newer one on Shift+Enter", async () => {
@@ -73,14 +74,14 @@ describe("MessageFindBar", () => {
     await user.keyboard("{Shift>}{Enter}{/Shift}");
     expect(onPrevMatch).not.toHaveBeenCalled();
     expect(onNextMatch).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Older match" })).toHaveProperty("disabled", true);
-    expect(screen.getByRole("button", { name: "Newer match" })).toHaveProperty("disabled", true);
-    expect(screen.getByText("No matches")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Older match" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Newer match" })).toBeDisabled();
+    expect(screen.getByText("No matches")).toBeInTheDocument();
   });
 
   it("says it is finding while the matches are still being read", () => {
     renderBar({ matchCount: 0, searching: true });
-    expect(screen.getByText("Finding…")).toBeTruthy();
+    expect(screen.getByText("Finding…")).toBeInTheDocument();
     expect(screen.queryByText("No matches")).toBeNull();
   });
 

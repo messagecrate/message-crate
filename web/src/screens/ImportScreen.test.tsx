@@ -141,7 +141,8 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
 
 vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 
-vi.mock("../lib/tauriCheck", () => ({
+vi.mock("../lib/tauriCheck", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/tauriCheck")>()),
   isTauri: () => false,
 }));
 
