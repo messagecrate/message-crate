@@ -18,9 +18,9 @@ export type ProfilePhones = {
 };
 
 /**
- * The Import form's props: the form's state and its dispatch, the two
- * changes the screen does more with than set a field, and what the form
- * shows beside its fields.
+ * The Import form's props: the form's state and its dispatch,
+ * `onSourceChange` and `onPathChange`, which the screen handles beyond
+ * setting a field, and what the form shows beside its fields.
  */
 export type ImportFormFieldsProps = {
   form: ImportFormState;

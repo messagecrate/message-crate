@@ -281,7 +281,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
       <CollapsibleSection
         title="Import Messages"
         open={form.formatOpen}
-        onToggle={() => dispatch({ type: "set", field: "formatOpen", value: !form.formatOpen })}
+        onToggle={() => dispatch({ type: "toggle", field: "formatOpen" })}
       >
         <div className={sectionGapClass}>
           <Select
@@ -354,9 +354,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
       <CollapsibleSection
         title="Processing Options (Advanced)"
         open={form.processingOpen}
-        onToggle={() =>
-          dispatch({ type: "set", field: "processingOpen", value: !form.processingOpen })
-        }
+        onToggle={() => dispatch({ type: "toggle", field: "processingOpen" })}
       >
         <div className="mb-2 flex flex-col items-start gap-3">
           {processingOptions.includes("obfuscate") ? (

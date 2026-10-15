@@ -41,7 +41,7 @@ const NO_PATHS: SourcePaths = {
   whatsappDb: "",
 };
 
-function typed(form: ImportFormState): ImportFormState {
+function withSecretsTypedAndSectionsOpen(form: ImportFormState): ImportFormState {
   return {
     ...form,
     backupPassword: "typed password",
@@ -60,7 +60,10 @@ describe("importFormReducer", () => {
   // The secrets are never stored with a run, and a typed one must not carry
   // over into a resumed run's form.
   it("clears the secrets and keeps how the form is shown when it refills", () => {
-    const refilled = importFormReducer(typed(newImportForm("")), { type: "refill", form: STORED });
+    const refilled = importFormReducer(withSecretsTypedAndSectionsOpen(newImportForm("")), {
+      type: "refill",
+      form: STORED,
+    });
     expect(refilled.backupPassword).toBe("");
     expect(refilled.whatsappKey).toBe("");
     expect(refilled.showBackupPassword).toBe(true);

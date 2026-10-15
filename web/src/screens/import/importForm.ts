@@ -56,11 +56,19 @@ export type ImportFormState = {
   seeded: Seeded;
 };
 
-/** The fields a `set` action changes: every one but the seeded marks. */
-type FormField = Exclude<keyof ImportFormState, "seeded">;
-
 /** The path fields the form remembers: the backup, and the ones beside it. */
 export type ImportPathField = "backupPath" | ImporterExtraField;
+
+/**
+ * The fields a `set` action changes. The source and the paths are left out,
+ * because the screen does more than set them: it picks a source with its
+ * remembered paths (`source`), and remembers a path the person changes
+ * (`path`). The seeded marks are the reducer's own.
+ */
+type FormField = Exclude<keyof ImportFormState, "seeded" | "source" | ImportPathField>;
+
+/** The fields that open, close, show or hide, which a `toggle` action flips. */
+type ToggleField = "showBackupPassword" | "showWhatsappKey" | "formatOpen" | "processingOpen";
 
 /** The paths a source is picked with, as the remembered paths give them. */
 export type SourcePaths = Record<ImportPathField, string>;
@@ -68,6 +76,10 @@ export type SourcePaths = Record<ImportPathField, string>;
 export type ImportFormAction =
   /** One field, as the person changed it. */
   | { [K in FormField]: { type: "set"; field: K; value: ImportFormState[K] } }[FormField]
+  /** One path field, as the person or the Mac Messages pre-fill changed it. */
+  | { type: "path"; field: ImportPathField; value: string }
+  /** A section opened or closed, or a secret shown or hidden. */
+  | { type: "toggle"; field: ToggleField }
   /** A source or a method picked, with the paths remembered for it. */
   | { type: "source"; source: string; paths: SourcePaths }
   /** The form a resumed or restarted Import Run was started with. */
@@ -149,6 +161,10 @@ export function importFormReducer(
         ? { ...next, seeded: { ...state.seeded, [action.field]: true } }
         : next;
     }
+    case "path":
+      return { ...state, [action.field]: action.value };
+    case "toggle":
+      return { ...state, [action.field]: !state[action.field] };
     case "source":
       return {
         ...state,

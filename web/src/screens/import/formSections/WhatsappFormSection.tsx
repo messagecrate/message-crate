@@ -58,9 +58,7 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
             onChange={(value) => dispatch({ type: "set", field: "whatsappKey", value })}
             autoComplete="new-password"
             showPassword={form.showWhatsappKey}
-            onToggle={() =>
-              dispatch({ type: "set", field: "showWhatsappKey", value: !form.showWhatsappKey })
-            }
+            onToggle={() => dispatch({ type: "toggle", field: "showWhatsappKey" })}
           />
           <p className={hintClass}>{WHATSAPP_KEY_HINT}</p>
           <FieldStatus message={errors.key} />
@@ -83,13 +81,7 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
             onChange={(value) => dispatch({ type: "set", field: "backupPassword", value })}
             autoComplete="new-password"
             showPassword={form.showBackupPassword}
-            onToggle={() =>
-              dispatch({
-                type: "set",
-                field: "showBackupPassword",
-                value: !form.showBackupPassword,
-              })
-            }
+            onToggle={() => dispatch({ type: "toggle", field: "showBackupPassword" })}
           />
           <FieldStatus message={errors.backupPassword} />
         </StackedField>

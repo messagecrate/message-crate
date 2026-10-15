@@ -517,7 +517,7 @@ export default function ImportScreen() {
           rememberedPath: loadedBackup,
         });
         if (prefill === "") return;
-        dispatch({ type: "set", field: "backupPath", value: prefill });
+        dispatch({ type: "path", field: "backupPath", value: prefill });
         if (getRememberImporterPaths()) setImporterPath(resolved, prefill);
       } catch {
         // Home directory and path checks are best-effort on Mac only.
@@ -527,7 +527,7 @@ export default function ImportScreen() {
 
   /** Set a path field, and remember it for the source when the source keeps it. */
   const changePath = (field: ImportPathField, path: string) => {
-    dispatch({ type: "set", field, value: path });
+    dispatch({ type: "path", field, value: path });
     if (!getRememberImporterPaths()) return;
     if (field === "backupPath") {
       setImporterPath(source, path);

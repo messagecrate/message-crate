@@ -33,7 +33,7 @@ import { DIRECTORY_STAT, FILE_STAT, MISSING_STAT } from "../../test/pathStats";
 import { renderWithProviders as render } from "../../test/providers";
 import { MIB } from "../../test/units";
 import { setupUser } from "../../test/user";
-import type { ImportFormFieldsProps } from "./formSections/types";
+import type { ImportFormFieldsProps, ProfilePhones } from "./formSections/types";
 import ImportFormFields from "./ImportFormFields";
 import { type ImportFormState, newImportForm } from "./importForm";
 
@@ -83,9 +83,7 @@ const copyAttachments: AttachmentChoices = {
  */
 type FormOverride = Partial<Omit<ImportFormState, "seeded">> &
   Partial<Omit<ImportFormFieldsProps, "form" | "profilePhones">> & {
-    profilePhones?: string[];
-    profilePhonesReady?: boolean;
-    profilePhonesError?: boolean;
+    profilePhones?: Partial<ProfilePhones>;
   };
 
 function renderForm(override: FormOverride = {}) {
@@ -101,9 +99,7 @@ function renderForm(override: FormOverride = {}) {
     },
     whatsappStats = emptyWhatsappPathStats(),
     androidSmsStats = { backup: null },
-    profilePhones = [],
-    profilePhonesReady = true,
-    profilePhonesError = false,
+    profilePhones = {},
     accountTimeZone = "America/New_York",
     phoneCountries = [],
     running = false,
@@ -123,7 +119,7 @@ function renderForm(override: FormOverride = {}) {
     pathStats,
     whatsappStats,
     androidSmsStats,
-    profilePhones: { phones: profilePhones, ready: profilePhonesReady, error: profilePhonesError },
+    profilePhones: { phones: [], ready: true, error: false, ...profilePhones },
     accountTimeZone,
     phoneCountries,
     running,
@@ -566,7 +562,7 @@ describe("ImportFormFields Import button", () => {
       ownerPhones: ["+15555550100"],
       // The same number is on the account profile, so there is no mismatch to
       // acknowledge and the form is ready.
-      profilePhones: ["+15555550100"],
+      profilePhones: { phones: ["+15555550100"] },
       ownerEmails: "me@example.com",
     });
 
@@ -663,7 +659,7 @@ describe("ImportFormFields Import button", () => {
       backupPath: "/backups/sms.xml",
       androidSmsStats: { backup: FILE_STAT },
       ownerPhones: [],
-      profilePhones: ["+15555550100"],
+      profilePhones: { phones: ["+15555550100"] },
       ownerEmails: "me@example.com",
     });
 
@@ -679,7 +675,7 @@ describe("ImportFormFields Import button", () => {
    */
   const androidReady: FormOverride = {
     ownerPhones: ["+15555550100"],
-    profilePhones: ["+15555550100"],
+    profilePhones: { phones: ["+15555550100"] },
     ownerEmails: "me@example.com",
   };
 
@@ -819,7 +815,7 @@ const androidSmsProps: FormOverride = {
   backupPath: "/backups/sms",
   androidSmsStats: { backup: DIRECTORY_STAT },
   ownerPhones: ["+15555550100"],
-  profilePhones: ["+15555550100"],
+  profilePhones: { phones: ["+15555550100"] },
   ownerEmails: "me@example.com",
 };
 const androidSmsFields: FormCase["fields"] = [

@@ -44,13 +44,7 @@ export default function ImessageFormSection(props: ImportFormSectionProps) {
             onChange={(value) => dispatch({ type: "set", field: "backupPassword", value })}
             autoComplete="new-password"
             showPassword={form.showBackupPassword}
-            onToggle={() =>
-              dispatch({
-                type: "set",
-                field: "showBackupPassword",
-                value: !form.showBackupPassword,
-              })
-            }
+            onToggle={() => dispatch({ type: "toggle", field: "showBackupPassword" })}
           />
           <FieldStatus message={errors.backupPassword} />
         </StackedField>
