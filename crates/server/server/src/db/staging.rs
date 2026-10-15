@@ -436,8 +436,8 @@ pub async fn insert_messages(
     let returned = q.fetch_all(&mut *conn).await?;
     let mut by_sort = HashMap::with_capacity(returned.len());
     for row in &returned {
-        let id: i64 = row.try_get(0)?;
-        let sort_order: i64 = row.try_get(1)?;
+        let id: i64 = row.try_get("id")?;
+        let sort_order: i64 = row.try_get("sort_order")?;
         by_sort.insert(sort_order, id);
     }
     Ok(by_sort)

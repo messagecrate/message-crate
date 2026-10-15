@@ -93,48 +93,50 @@ pub struct StartExportArgs<'a> {
     pub tool: Option<&'a str>,
 }
 
-/// Column list for `exports`, in the order [`export_from_row`] reads.
+/// Column list for `exports`, each read by name in [`export_from_row`].
 const EXPORT_COLUMNS: &str = "id, scope_kind, scope_query, scope_conversation_ids, \
      scope_message_ids, tool, status, started_at, finished_at, message_count, \
      conversation_count, attachment_count, total_bytes, messages_delivered, scope_list";
 
-/// Map one `exports` row by column position.
+/// Map one `exports` row, reading each column by name.
 fn export_from_row(row: &SqliteRow) -> Result<ExportRun> {
-    let kind: String = row.try_get(1)?;
+    let kind: String = row.try_get("scope_kind")?;
     let scope = match ExportScopeKind::parse(&kind) {
         Some(ExportScopeKind::Everything) => ExportScope::Everything,
         Some(ExportScopeKind::Query) => {
-            let list: Option<String> = row.try_get(14)?;
+            let list: Option<String> = row.try_get("scope_list")?;
             ExportScope::Query {
                 list: list
                     .as_deref()
                     .and_then(ExportQueryList::parse)
                     .with_context(|| format!("exports.scope_list holds unknown value {list:?}"))?,
-                q: row.try_get::<Option<String>, _>(2)?.unwrap_or_default(),
+                q: row
+                    .try_get::<Option<String>, _>("scope_query")?
+                    .unwrap_or_default(),
             }
         }
         Some(ExportScopeKind::Selection) => ExportScope::Selection {
-            conversation_ids: id_list(row.try_get(3)?)?,
-            message_ids: id_list(row.try_get(4)?)?,
+            conversation_ids: id_list(row.try_get("scope_conversation_ids")?)?,
+            message_ids: id_list(row.try_get("scope_message_ids")?)?,
         },
         None => anyhow::bail!("exports.scope_kind holds unknown value '{kind}'"),
     };
     Ok(ExportRun {
-        id: row.try_get(0)?,
+        id: row.try_get("id")?,
         scope,
-        tool: row.try_get(5)?,
+        tool: row.try_get("tool")?,
         status: {
-            let raw: String = row.try_get(6)?;
+            let raw: String = row.try_get("status")?;
             ExportStatus::parse(&raw)
                 .ok_or_else(|| anyhow::anyhow!("exports.status holds unknown value '{raw}'"))?
         },
-        started_at: row.try_get(7)?,
-        finished_at: row.try_get(8)?,
-        message_count: row.try_get(9)?,
-        conversation_count: row.try_get(10)?,
-        attachment_count: row.try_get(11)?,
-        total_bytes: row.try_get(12)?,
-        messages_delivered: row.try_get(13)?,
+        started_at: row.try_get("started_at")?,
+        finished_at: row.try_get("finished_at")?,
+        message_count: row.try_get("message_count")?,
+        conversation_count: row.try_get("conversation_count")?,
+        attachment_count: row.try_get("attachment_count")?,
+        total_bytes: row.try_get("total_bytes")?,
+        messages_delivered: row.try_get("messages_delivered")?,
     })
 }
 
@@ -407,7 +409,7 @@ pub async fn export_counts(
     export_id: i64,
 ) -> Result<ExportCounts, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT COUNT(*), COUNT(DISTINCT m.conversation_id)
+        "SELECT COUNT(*) AS messages, COUNT(DISTINCT m.conversation_id) AS conversations
          FROM export_messages e
          JOIN messages m ON m.id = e.message_id
          WHERE e.export_id = $1",
@@ -415,10 +417,11 @@ pub async fn export_counts(
     .bind(export_id)
     .fetch_one(&mut *conn)
     .await?;
-    let (messages, conversations): (i64, i64) = (row.try_get(0)?, row.try_get(1)?);
+    let (messages, conversations): (i64, i64) =
+        (row.try_get("messages")?, row.try_get("conversations")?);
 
     let row = sqlx::query(
-        "SELECT COUNT(*), COALESCE(SUM(sz), 0)
+        "SELECT COUNT(*) AS attachments, COALESCE(SUM(sz), 0) AS total_bytes
          FROM (
            SELECT MAX(a.size_bytes) AS sz
            FROM export_messages e
@@ -432,7 +435,8 @@ pub async fn export_counts(
     .bind(export_id)
     .fetch_one(&mut *conn)
     .await?;
-    let (attachments, total_bytes): (i64, i64) = (row.try_get(0)?, row.try_get(1)?);
+    let (attachments, total_bytes): (i64, i64) =
+        (row.try_get("attachments")?, row.try_get("total_bytes")?);
 
     Ok(ExportCounts {
         messages: messages.max(0),
