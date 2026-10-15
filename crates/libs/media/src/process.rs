@@ -1050,7 +1050,7 @@ fn convert_audio(
     }
     with_temp_output(&tmp, || {
         tools
-            .transcode(&args, &tmp, Reads::All(path), stop)
+            .transcode(&args, &tmp, Reads::Audio(path), stop)
             .with_context(|| format!("convert audio {}", path.display()))?;
         if keep_smaller && !is_smaller(&tmp, path)? {
             let _ = fs::remove_file(&tmp);
@@ -1097,7 +1097,7 @@ fn convert_video(
             "+faststart".into(),
         ];
         tools
-            .transcode(&args, &tmp, Reads::All(path), stop)
+            .transcode(&args, &tmp, Reads::Video(path), stop)
             .with_context(|| format!("convert video {}", path.display()))?;
         commit_produced(commit, path, &tmp)
     })
@@ -1119,7 +1119,7 @@ fn remux_mp4(
         "-movflags".into(),
         "+faststart".into(),
     ];
-    tools.transcode(&args, tmp, Reads::All(path), stop)
+    tools.transcode(&args, tmp, Reads::Video(path), stop)
 }
 
 /// Leave an MP4 as it is; remux anything else into one, so every video the
@@ -1198,7 +1198,7 @@ fn compress_video(
             "-movflags".into(),
             "+faststart".into(),
         ]);
-        if let Err(hevc_err) = tools.transcode(&hevc_args, &tmp, Reads::All(path), stop) {
+        if let Err(hevc_err) = tools.transcode(&hevc_args, &tmp, Reads::Video(path), stop) {
             let _ = fs::remove_file(&tmp);
             if !h264_follows(&hevc_err) {
                 return Err(hevc_err.context(format!("compress video {}", path.display())));
@@ -1219,7 +1219,7 @@ fn compress_video(
                 "+faststart".into(),
             ]);
             tools
-                .transcode(&avc_args, &tmp, Reads::All(path), stop)
+                .transcode(&avc_args, &tmp, Reads::Video(path), stop)
                 .with_context(|| format!("HEVC failed ({hevc_err:#}), and then H.264 failed"))
                 .with_context(|| format!("compress video {}", path.display()))?;
             *hevc_failure = Some(error_line_without_files(&hevc_err));
@@ -1238,8 +1238,8 @@ fn compress_video(
 ///   damaged at that point, and H.264 would stall there too.
 /// - It ran past twice the file's length: no, because a damaged file loops.
 /// - It was stopped: no, because nothing is wrong, and the run is ending.
-/// - A short step over its limit is not a conversion, and never reaches
-///   here; it is not followed either.
+/// - A run over its time limit, a short step or an audio conversion, never
+///   reaches here; it is not followed either.
 fn h264_follows(hevc_err: &anyhow::Error) -> bool {
     match hevc_err.downcast_ref::<Killed>().map(Killed::reason) {
         None | Some(KillReason::StalledBeforeOutput { .. }) => true,
@@ -1248,7 +1248,7 @@ fn h264_follows(hevc_err: &anyhow::Error) -> bool {
             | KillReason::RanPastLength { .. }
             | KillReason::Stopped
             | KillReason::StoppedBeforeStart
-            | KillReason::ShortStepTooLong { .. },
+            | KillReason::TookTooLong { .. },
         ) => false,
     }
 }

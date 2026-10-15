@@ -1624,7 +1624,9 @@ impl MediaTools for ScriptedTools {
     ) -> Result<()> {
         let limit = match reads {
             Reads::OneFrame => Limit::ShortStep,
-            Reads::All(_) => Limit::Progress(StallWatch::new(WAIT, Some(SCRIPTED_LENGTH))),
+            Reads::Video(_) | Reads::Audio(_) => {
+                Limit::Progress(StallWatch::video(WAIT, Some(SCRIPTED_LENGTH)))
+            }
         };
         let line = ffmpeg_command_line(args, dest);
         let started = self.dir.path().join("started");
@@ -1854,7 +1856,86 @@ fn h264_follows_hevc_only_after_a_failure_or_a_stall_before_output() {
     })));
     assert!(!h264_follows(&killed(KillReason::Stopped)));
     assert!(!h264_follows(&killed(KillReason::StoppedBeforeStart)));
-    assert!(!h264_follows(&killed(KillReason::ShortStepTooLong {
+    assert!(!h264_follows(&killed(KillReason::TookTooLong {
         limit: std::time::Duration::from_secs(15),
     })));
+}
+
+/// An MP3 made with the real ffmpeg by joining recordings back to back: a
+/// one-second part whose Xing header counts only its own frames, then
+/// twenty minutes more, long enough that ffmpeg reports its position before
+/// it finishes. The header's byte count is set to the whole file's
+/// size, as a joining tool that rewrites it leaves it, so ffprobe reads one
+/// second without a warning that it estimated it.
+fn joined_mp3(tools: &InstalledTools, dir: &Path) -> PathBuf {
+    let part = |name: &str, seconds: u32| {
+        let path = dir.join(name);
+        tools
+            .run_ffmpeg(&[
+                "-y".into(),
+                "-f".into(),
+                "lavfi".into(),
+                "-i".into(),
+                format!("sine=duration={seconds}"),
+                "-c:a".into(),
+                "libmp3lame".into(),
+                "-q:a".into(),
+                "4".into(),
+                path_str(&path),
+            ])
+            .unwrap();
+        fs::read(path).unwrap()
+    };
+    let mut joined = part("first.mp3", 1);
+    let rest = part("rest.mp3", 10);
+    for _ in 0..120 {
+        joined.extend_from_slice(&rest);
+    }
+    let xing = joined
+        .windows(4)
+        .position(|window| window == b"Xing")
+        .expect("the first part has a Xing header");
+    let flags = u32::from_be_bytes(joined[xing + 4..xing + 8].try_into().unwrap());
+    assert_eq!(flags & 0b11, 0b11, "the header counts frames and bytes");
+    let size = u32::try_from(joined.len()).unwrap().to_be_bytes();
+    joined[xing + 12..xing + 16].copy_from_slice(&size);
+    let path = dir.join("joined");
+    fs::write(&path, joined).unwrap();
+    path
+}
+
+/// A joined MP3 whose header states under half its real length converts:
+/// the twice-the-length stop is for video only, and an audio conversion
+/// is held to a time limit instead (#2909).
+#[test]
+fn a_joined_mp3_whose_header_states_under_half_its_length_converts() {
+    let Some(tools) = crate::testutil::real_ffmpeg() else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let src = joined_mp3(&tools, dir.path());
+    assert_eq!(
+        crate::probe::played_for(&tools, &src, None),
+        Some(std::time::Duration::from_secs(1)),
+        "ffprobe trusts the first part's header"
+    );
+    let dest = dir.path().join("joined.mp3.in_progress");
+
+    let outcome = transcode_file_as(
+        &tools,
+        &src,
+        Kind::Audio,
+        &dest,
+        MediaMode::Convert,
+        &CompressOptions::default(),
+        None,
+    )
+    .unwrap_or_else(|err| panic!("{err:#}"));
+
+    assert_eq!(outcome, TranscodeOutcome::Produced { hevc_failure: None });
+    assert!(
+        crate::probe::played_for(&tools, &dest, None)
+            .is_some_and(|length| length > std::time::Duration::from_secs(20 * 60)),
+        "the whole file was converted"
+    );
 }

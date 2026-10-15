@@ -64,7 +64,8 @@ The command takes the database's operation lock (`<database>.operation.lock`, th
 | `transcode_stall_secs` | `120` (2 minutes) | How many seconds a video or audio conversion may go without moving forward in the file before ffmpeg is stopped. Must be greater than 0; a file that sets 0 is refused with an error naming the key. |
 
 A conversion that keeps moving runs as long as it needs, so a long video on a slow computer is never cut off for its length.
-One that stops moving for this many seconds is stopped, and so is one that runs past twice the file's length, as looping on a damaged file.
+One that stops moving for this many seconds is stopped, and so is a video conversion that runs past twice the file's length, as looping on a damaged file.
+An audio conversion has a time limit instead: twenty times the file's length, at least 10 minutes and at most 6 hours.
 Reading a file's details, reading the one frame of a Thumbnail or of an image's Preview, and the check that finds ffmpeg have a fixed limit of 15 seconds that no key changes, because each takes well under a second on a working file.
 `serve`, `process-assets` and `import` read the key; a server started with `--data-dir` and the desktop app's own conversions use the default.
 Why the rules: `docs/architecture/media.md`.

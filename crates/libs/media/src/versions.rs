@@ -248,7 +248,8 @@ pub fn make_preview(
     }
     let reads = match kind {
         Kind::Image => Reads::OneFrame,
-        Kind::Audio | Kind::Video => Reads::All(src),
+        Kind::Audio => Reads::Audio(src),
+        Kind::Video => Reads::Video(src),
     };
     tools
         .transcode(&args, dest, reads, Some(stop))

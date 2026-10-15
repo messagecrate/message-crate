@@ -81,7 +81,7 @@ fn ffmpeg_that_never_finishes_one_frame_is_killed_after_the_short_step_limit() {
 
     assert_eq!(
         err.downcast_ref::<Killed>().map(Killed::reason),
-        Some(KillReason::ShortStepTooLong {
+        Some(KillReason::TookTooLong {
             limit: SHORT_STEP_LIMIT
         }),
         "{err:#}"
@@ -134,7 +134,7 @@ fn a_conversion_that_never_moves_is_killed_as_stalled_before_any_output() {
         .run_ffmpeg_watched(
             &["out.mp4".to_string()],
             None,
-            Limit::Progress(StallWatch::new(wait, Some(Duration::from_secs(60)))),
+            Limit::Progress(StallWatch::video(wait, Some(Duration::from_secs(60)))),
             &clock_from(&pid_file),
         )
         .expect_err("a stalled run fails");
@@ -163,7 +163,7 @@ fn a_conversion_that_stops_moving_partway_is_killed_and_reaped() {
         .run_ffmpeg_watched(
             &["out.mp4".to_string()],
             None,
-            Limit::Progress(StallWatch::new(wait, Some(Duration::from_secs(600)))),
+            Limit::Progress(StallWatch::video(wait, Some(Duration::from_secs(600)))),
             &clock_from(&dir.path().join("started")),
         )
         .expect_err("a stalled run fails");
@@ -202,7 +202,7 @@ fn a_conversion_past_twice_its_length_is_killed() {
         .run_ffmpeg_watched(
             &["out.mp4".to_string()],
             None,
-            Limit::Progress(StallWatch::new(
+            Limit::Progress(StallWatch::video(
                 Duration::from_secs(120),
                 Some(Duration::from_secs(1)),
             )),
@@ -240,7 +240,7 @@ fn a_conversion_that_exits_after_its_progress_succeeds() {
         .run_ffmpeg_watched(
             &["out.mp4".to_string()],
             None,
-            Limit::Progress(StallWatch::new(
+            Limit::Progress(StallWatch::video(
                 Duration::from_secs(120),
                 Some(Duration::from_secs(2)),
             )),
@@ -331,7 +331,7 @@ const MINUTE: Duration = Duration::from_secs(60);
 /// of the file every minute (#2898).
 #[test]
 fn a_conversion_that_keeps_moving_is_never_stopped() {
-    let mut watch = StallWatch::new(2 * MINUTE, None);
+    let mut watch = StallWatch::video(2 * MINUTE, None);
     for minute in 0..60_000u64 {
         let now = MINUTE * u32::try_from(minute).unwrap();
         assert_eq!(
@@ -347,7 +347,7 @@ fn a_conversion_that_keeps_moving_is_never_stopped() {
 #[test]
 fn a_slow_conversion_within_its_length_is_never_stopped() {
     let length = Duration::from_secs(3600);
-    let mut watch = StallWatch::new(2 * MINUTE, Some(length));
+    let mut watch = StallWatch::video(2 * MINUTE, Some(length));
     for second in 0..=7200u64 {
         let now = MINUTE * u32::try_from(second).unwrap();
         assert_eq!(watch.observe(Some(Duration::from_secs(second)), now), None);
@@ -359,7 +359,7 @@ fn a_slow_conversion_within_its_length_is_never_stopped() {
 #[test]
 fn a_conversion_that_stops_moving_is_stopped_after_the_wait() {
     let wait = 2 * MINUTE;
-    let mut watch = StallWatch::new(wait, Some(10 * MINUTE));
+    let mut watch = StallWatch::video(wait, Some(10 * MINUTE));
     let at = Duration::from_secs(30);
     assert_eq!(watch.observe(Some(at), MINUTE), None);
     assert_eq!(watch.observe(Some(at), 2 * MINUTE), None);
@@ -378,7 +378,7 @@ fn a_conversion_that_stops_moving_is_stopped_after_the_wait() {
 #[test]
 fn a_position_that_goes_back_is_not_progress() {
     let wait = 2 * MINUTE;
-    let mut watch = StallWatch::new(wait, None);
+    let mut watch = StallWatch::video(wait, None);
     let furthest = Duration::from_secs(40);
     assert_eq!(watch.observe(Some(furthest), Duration::ZERO), None);
     assert_eq!(watch.observe(Some(Duration::from_secs(10)), MINUTE), None);
@@ -393,7 +393,7 @@ fn a_position_that_goes_back_is_not_progress() {
 #[test]
 fn a_conversion_that_never_moves_is_stalled_before_any_output() {
     let wait = 2 * MINUTE;
-    let mut watch = StallWatch::new(wait, None);
+    let mut watch = StallWatch::video(wait, None);
     assert_eq!(watch.observe(None, MINUTE), None);
     assert_eq!(watch.observe(Some(Duration::ZERO), MINUTE), None);
     assert_eq!(
@@ -407,7 +407,7 @@ fn a_conversion_that_never_moves_is_stalled_before_any_output() {
 #[test]
 fn a_conversion_past_twice_its_length_is_stopped() {
     let length = Duration::from_secs(5);
-    let mut watch = StallWatch::new(2 * MINUTE, Some(length));
+    let mut watch = StallWatch::video(2 * MINUTE, Some(length));
     assert_eq!(
         watch.observe(Some(Duration::from_secs(10)), Duration::ZERO),
         None
@@ -416,6 +416,42 @@ fn a_conversion_past_twice_its_length_is_stopped() {
         watch.observe(Some(Duration::from_millis(10_001)), Duration::ZERO),
         Some(KillReason::RanPastLength { length })
     );
+}
+
+/// An audio conversion is not stopped past twice the length its header
+/// states, which can be under half its real length (#2909); it is stopped
+/// once it has run its time limit, and not before.
+#[test]
+fn an_audio_conversion_runs_past_twice_its_length_until_its_time_limit() {
+    let length = Duration::from_secs(5);
+    let limit = audio_time_limit(Some(length));
+    let mut watch = StallWatch::audio(2 * MINUTE, Some(length));
+    assert_eq!(watch.observe(Some(Duration::from_secs(60)), MINUTE), None);
+    assert_eq!(
+        watch.observe(
+            Some(Duration::from_secs(61)),
+            limit - Duration::from_millis(1)
+        ),
+        None
+    );
+    assert_eq!(
+        watch.observe(Some(Duration::from_secs(62)), limit),
+        Some(KillReason::TookTooLong { limit })
+    );
+}
+
+/// An audio conversion gets twenty times the file's length, at least 10
+/// minutes and at most 6 hours, rounded up to whole minutes, and an hour
+/// when the length is not known.
+#[test]
+fn an_audio_time_limit_follows_the_files_length() {
+    assert_eq!(audio_time_limit(Some(Duration::from_secs(1))), 10 * MINUTE);
+    assert_eq!(audio_time_limit(Some(Duration::from_secs(61))), 21 * MINUTE);
+    assert_eq!(
+        audio_time_limit(Some(Duration::from_secs(24 * 3600))),
+        360 * MINUTE
+    );
+    assert_eq!(audio_time_limit(None), 60 * MINUTE);
 }
 
 /// ffmpeg's `out_time` lines are read as positions; other lines, `N/A` and
@@ -469,7 +505,7 @@ fn the_no_progress_wait_is_the_default_until_named() {
 fn a_conversion_finishing_its_file_gets_twice_the_time_it_took() {
     let wait = 2 * MINUTE;
     let length = Duration::from_secs(600);
-    let mut watch = StallWatch::new(wait, Some(length));
+    let mut watch = StallWatch::video(wait, Some(length));
     // Reaches the end, a frame short of it, after 10 minutes.
     let end = length - Duration::from_millis(40);
     assert_eq!(watch.observe(Some(end), 10 * MINUTE), None);
@@ -489,7 +525,7 @@ fn a_conversion_finishing_its_file_gets_twice_the_time_it_took() {
 #[test]
 fn a_conversion_short_of_its_end_gets_only_the_wait() {
     let wait = 2 * MINUTE;
-    let mut watch = StallWatch::new(wait, Some(Duration::from_secs(600)));
+    let mut watch = StallWatch::video(wait, Some(Duration::from_secs(600)));
     let at = Duration::from_secs(500);
     assert_eq!(watch.observe(Some(at), 60 * MINUTE), None);
     assert_eq!(
@@ -1209,7 +1245,7 @@ fn a_stopped_transcode_runs_neither_program() {
         .transcode(
             &["-i".to_string(), "in.mov".to_string()],
             Path::new("out.mp4"),
-            Reads::All(Path::new("in.mov")),
+            Reads::Video(Path::new("in.mov")),
             Some(&AtomicBool::new(true)),
         )
         .expect_err("a stopped run fails");

@@ -2600,7 +2600,7 @@ fn each_way_ffmpeg_is_stopped_is_sorted_into_its_kind() {
             NotMadeKind::RanPastLength,
         ),
         (
-            media::KillReason::ShortStepTooLong {
+            media::KillReason::TookTooLong {
                 limit: std::time::Duration::from_secs(15),
             },
             NotMadeKind::TookTooLong,

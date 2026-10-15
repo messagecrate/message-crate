@@ -797,6 +797,14 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-15: **A joined MP3 converts again.** An MP3 made by joining
+  recordings back to back keeps the first recording's header, which states
+  only that recording's length. When the whole file played more than twice
+  that, its conversion was stopped as looping on a damaged file and the
+  attachment was recorded as one that could not be converted. Only a video
+  conversion is now stopped for running past twice its length. An audio
+  conversion is stopped when it makes no progress, or after twenty times
+  the file's length, at least 10 minutes and at most 6 hours (#2909).
 - 2026-10-15: **Other users of the computer can no longer read a staged
   Import Run.** Each Import Run's directory in the Staging Directory, which
   holds the conversations and attachments it staged until the run ends, could
