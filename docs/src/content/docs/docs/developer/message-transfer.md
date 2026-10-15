@@ -68,6 +68,16 @@ Some files come from tools that were not built for this project, or that drop me
 | OpenExtract | `openextract-exporter` | [Converter capabilities](/docs/developer/formats/) |
 | SMS Backup+ | `sms-backup-plus-exporter` | [File layout](/docs/developer/formats/sms-backup-plus/format/) · [Field mapping](/docs/developer/formats/sms-backup-plus/mapping/) |
 
+## Inside a converter crate
+
+Every converter crate names the same steps the same way, so a step found in one is found by the same name in the next:
+
+- `src/read.rs` reads the vendor's files.
+- `src/emit.rs` turns what was read into conversations and writes the chat files. Its entry point is `convert_export`, which takes a `ConvertExportArgs`.
+- `src/run.rs` holds the crate's `run`, the one function the desktop app calls.
+
+`convert_export` hands its read step and its projection step to `message_staging::convert_backup`, which opens the writer, reads, projects each conversation, and writes the files. `imessage-ir-exporter` is the exception: the Apple Messages Reader, a separate program, reads the backup, so the crate has no `read.rs`, and its `emit.rs` keeps a write step of its own, because the loader that reads an encrypted backup's attachments cannot go through the shared one.
+
 ## Libraries that talk to a running server
 
 These do not read a phone backup. They load or save the chat-file directory, or change a directory that is already in Message Crate's format. The desktop app links them directly; none is a command a person runs.

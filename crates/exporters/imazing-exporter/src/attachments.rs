@@ -7,7 +7,7 @@
 //! when it wrote the file ([`names_on_disk`]).
 
 use crate::chat_directory::regular_files;
-use crate::parse::RawRow;
+use crate::read::RawRow;
 use anyhow::Result;
 use chrono::NaiveDateTime;
 use message_csv::AttachmentCell;

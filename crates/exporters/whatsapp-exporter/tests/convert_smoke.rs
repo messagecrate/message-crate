@@ -1,4 +1,4 @@
-use crate::emit::{ConvertRequest, convert_json};
+use crate::emit::{ConvertExportArgs, convert_export};
 use message_crate_core::testutil::assert_jsonl_resumes;
 use message_crate_core::{ConvertRun, OutputFormat};
 use std::fs;
@@ -10,7 +10,7 @@ fn convert_fixture_json_individual_and_group() {
     assert!(fixture.is_file(), "missing {}", fixture.display());
 
     let tmp = tempfile::tempdir().expect("tempdir");
-    let report = convert_json(ConvertRequest {
+    let report = convert_export(ConvertExportArgs {
         json_path: &fixture,
         output: tmp.path(),
         media_search_roots: &[],
@@ -84,7 +84,7 @@ fn copies_ios_style_media_true_data_paths() {
     fs::write(&json_path, json.to_string()).expect("write json");
 
     let out = tempfile::tempdir().expect("out");
-    let report = convert_json(ConvertRequest {
+    let report = convert_export(ConvertExportArgs {
         json_path: &json_path,
         output: out.path(),
         media_search_roots: &[media_root.path().to_path_buf()],
@@ -121,7 +121,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/result.json");
     let tmp = tempfile::tempdir().expect("tempdir");
     let report = assert_jsonl_resumes(tmp.path(), |resume| {
-        convert_json(ConvertRequest {
+        convert_export(ConvertExportArgs {
             json_path: &fixture,
             output: tmp.path(),
             media_search_roots: &[],
@@ -160,7 +160,7 @@ fn convert_with_owner(
     let json_path = dir.path().join("result.json");
     fs::write(&json_path, json.to_string()).expect("write json");
     let out = dir.path().join("out");
-    let report = convert_json(ConvertRequest {
+    let report = convert_export(ConvertExportArgs {
         json_path: &json_path,
         output: &out,
         media_search_roots: &[dir.path().to_path_buf()],
@@ -457,7 +457,7 @@ fn a_json_without_the_forks_fields_is_refused() {
         let dir = tempfile::tempdir().expect("tempdir");
         let json_path = dir.path().join("result.json");
         fs::write(&json_path, json.to_string()).expect("write json");
-        let err = convert_json(ConvertRequest {
+        let err = convert_export(ConvertExportArgs {
             json_path: &json_path,
             output: &dir.path().join("out"),
             media_search_roots: &[],
@@ -535,7 +535,7 @@ fn a_media_path_in_the_media_field_is_copied() {
     fs::write(&json_path, json.to_string()).expect("write json");
 
     let out = dir.path().join("out");
-    let report = convert_json(ConvertRequest {
+    let report = convert_export(ConvertExportArgs {
         json_path: &json_path,
         output: &out,
         media_search_roots: &[dir.path().to_path_buf()],
@@ -585,7 +585,7 @@ fn a_media_file_not_found_is_kept_as_file_missing_and_the_guid_does_not_change()
     let json_path = dir.path().join("result.json");
     fs::write(&json_path, photo_only_chat().to_string()).expect("write json");
     let out = dir.path().join("out");
-    let report = convert_json(ConvertRequest {
+    let report = convert_export(ConvertExportArgs {
         json_path: &json_path,
         output: &out,
         media_search_roots: &[dir.path().to_path_buf()],

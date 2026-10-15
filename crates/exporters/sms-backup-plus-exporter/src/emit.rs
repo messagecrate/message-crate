@@ -1,5 +1,5 @@
 //! Convert SMS Backup+ `.eml` trees into the shared conversation structure,
-//! then write the chosen output format via [`ExportWriter`].
+//! then write the chosen output format through [`convert_backup`].
 
 use crate::attachments_emit::queue_attachments;
 use crate::email_numbers::{
@@ -7,19 +7,19 @@ use crate::email_numbers::{
 };
 use crate::flat_eml::Owner;
 use crate::identity::{chat_id_for, timestamp_ms};
-use crate::parse_emit::{ParsedEmlKind, collect_eml_paths, parse_one_eml};
+use crate::read::{ParsedEmlKind, collect_eml_paths, parse_one_eml};
 use crate::types::ParsedMessage;
 use android_fields::android_source;
 use anyhow::{Result, bail};
 use message_crate_core::{
-    CancelFlag, Cancelled, ConvertRun, Counter, ExportReport, IssueSink, ItemKind, LogSink,
-    RunIssue, RunIssueKind, count_of, prepare_outputs, project_conversation,
+    CancelFlag, Cancelled, ConvertRun, Counter, ExportReport, ItemKind, LogSink, RunIssue,
+    RunIssueKind, count_of, prepare_outputs, project_conversation,
 };
 use message_ir::{
     ConversationDocument, ExportMeta, IrConversationType, IrDirection, IrService, IrSource,
     PendingAttachment, PendingConversation, PendingMessage, ProjectionHooks,
 };
-use message_staging::{AttachmentSource, AttachmentSpool, ExportWriter};
+use message_staging::{AttachmentSpool, ExportWriter, Project, Read, WriterSetup, convert_backup};
 use phone::{Handle, OwnerHandleSet};
 use rayon::prelude::*;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -414,8 +414,6 @@ impl Verbose<'_> {
 pub(crate) struct ConvertExportArgs<'a, P: AsRef<Path>> {
     pub inputs: &'a [P],
     pub output_dir: &'a Path,
-    /// the Scratch Directory, which the run's attachment spool goes under.
-    pub scratch_dir: &'a Path,
     pub owner_phones: &'a [String],
     pub owner_emails: &'a [String],
     /// The country of the phone the archive came from, when the import form
@@ -431,8 +429,8 @@ pub(crate) struct ConvertExportArgs<'a, P: AsRef<Path>> {
 ///
 /// Copies of one message, such as two exports of one mailbox, are reduced to
 /// one by the shared projection (`message_ir::one_copy_per_message`).
-/// When `cancel` is set, cooperative cancellation is checked during the EML walk
-/// and while merging parse results.
+/// Cancellation is checked during the EML walk, while merging parse
+/// results, and between conversations.
 ///
 /// # Errors
 ///
@@ -445,20 +443,12 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
     let ConvertExportArgs {
         inputs,
         output_dir,
-        scratch_dir,
         owner_phones,
         owner_emails,
         phone_country,
         verbose,
         log,
-        convert_run:
-            ConvertRun {
-                transforms,
-                output_format,
-                cancel,
-                resume,
-                issues,
-            },
+        convert_run,
     } = args;
     // Checked before the output directory is cleaned, so a refused run leaves it.
     if inputs.is_empty() {
@@ -489,74 +479,105 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
 
     let input_paths: Vec<PathBuf> = inputs.iter().map(|p| p.as_ref().to_path_buf()).collect();
     let (inputs, output_dir) = prepare_outputs(&input_paths, output_dir)?;
-    let writer =
-        ExportWriter::open(&output_dir, output_format, transforms, resume)?.with_spool(scratch_dir);
+    convert_backup(
+        &output_dir,
+        convert_run,
+        WriterSetup {
+            spool: true,
+            archive: None,
+        },
+        |writer, cancel, report| {
+            let eml_paths = collect_eml_paths(&inputs, cancel)?;
+            verbose.line(format!(
+                "Reading {}",
+                count_of(eml_paths.len() as u64, ".eml file", ".eml files")
+            ));
+            message_crate_core::check_cancel(cancel)?;
 
-    let eml_paths = collect_eml_paths(&inputs, &cancel)?;
-    verbose.line(format!(
-        "Reading {}",
-        count_of(eml_paths.len() as u64, ".eml file", ".eml files")
-    ));
-    message_crate_core::check_cancel(&cancel)?;
+            let parse = ParseInputs {
+                file_inputs: inputs.iter().filter(|p| p.is_file()).cloned().collect(),
+                input_roots: inputs,
+                owner,
+            };
+            let mut ingest = EmlIngest::new(writer.spool(), eml_paths.len(), report);
+            parse_all_emls(&eml_paths, &parse, cancel, verbose, &mut ingest)?;
+            ingest.add_members_by_number(verbose);
+            let EmlIngest {
+                conversations,
+                report,
+                caveats,
+                ..
+            } = ingest;
 
-    let parse = ParseInputs {
-        file_inputs: inputs.iter().filter(|p| p.is_file()).cloned().collect(),
-        input_roots: inputs,
-        owner,
-    };
-    let mut ingest = EmlIngest::new(writer.spool(), eml_paths.len(), &issues);
-    parse_all_emls(&eml_paths, &parse, &cancel, verbose, &mut ingest)?;
-    ingest.add_members_by_number(verbose);
-    let EmlIngest {
-        conversations,
-        mut report,
-        caveats,
-        ..
-    } = ingest;
+            // SMS Backup+ writes no backup date of its own, so the backup is
+            // as new as the newest mail file read.
+            let hooks = SbpProjection {
+                export: message_crate_core::export_meta(
+                    EXPORT_SOURCE,
+                    EXPORT_TOOL,
+                    EXPORT_TOOL_VERSION,
+                    Some(owner_identity),
+                    None,
+                    message_crate_core::newest_file_modified_unix_ms(
+                        eml_paths.iter().map(PathBuf::as_path),
+                    ),
+                ),
+            };
+            Ok(Read {
+                conversations: conversations.into_iter().collect(),
+                project: SbpDocuments {
+                    hooks,
+                    caveats,
+                    verbose,
+                },
+                report,
+            })
+        },
+    )
+}
 
-    // SMS Backup+ writes no backup date of its own, so the backup is as new
-    // as the newest mail file read.
-    let hooks = SbpProjection {
-        export: message_crate_core::export_meta(
-            EXPORT_SOURCE,
-            EXPORT_TOOL,
-            EXPORT_TOOL_VERSION,
-            Some(owner_identity),
-            None,
-            message_crate_core::newest_file_modified_unix_ms(
-                eml_paths.iter().map(PathBuf::as_path),
-            ),
-        ),
-    };
-    let mut documents = Vec::new();
-    for (chat_id, mut conversation) in conversations {
-        message_crate_core::check_cancel(&cancel)?;
-        if let Some(document) =
-            project_and_count(&chat_id, &mut conversation, &hooks, &caveats, &mut report)
-        {
-            documents.push(document);
+/// The projection of each conversation read, for [`convert_backup`], with
+/// the verbose log lines around the write.
+struct SbpDocuments<'a> {
+    hooks: SbpProjection,
+    caveats: Caveats,
+    verbose: Verbose<'a>,
+}
+
+impl Project for SbpDocuments<'_> {
+    type Conversation = (String, PendingConversation);
+
+    fn project(
+        &mut self,
+        (chat_id, mut conversation): (String, PendingConversation),
+        report: &mut ExportReport,
+    ) -> Option<ConversationDocument> {
+        project_and_count(
+            &chat_id,
+            &mut conversation,
+            &self.hooks,
+            &self.caveats,
+            report,
+        )
+    }
+
+    fn before_write(&mut self, documents: &[ConversationDocument], writer: &ExportWriter) {
+        if !writer.use_queue() {
+            self.verbose.line(format!(
+                "Writing {}",
+                count_of(
+                    documents.len() as u64,
+                    "conversation file",
+                    "conversation files"
+                )
+            ));
         }
     }
 
-    if !writer.use_queue() {
-        verbose.line(format!(
-            "Writing {}",
-            count_of(
-                documents.len() as u64,
-                "conversation file",
-                "conversation files"
-            )
-        ));
+    fn after_write(self, report: &ExportReport) -> Result<()> {
+        self.verbose.errors(report);
+        Ok(())
     }
-    writer.finish(
-        documents,
-        &mut AttachmentSource::take_bytes,
-        &cancel,
-        &mut report,
-    )?;
-
-    verbose.errors(&report);
-    Ok(report)
 }
 
 /// Read-only inputs every parallel EML parse needs.
@@ -635,12 +656,12 @@ struct EmlIngest<'a> {
 
 impl<'a> EmlIngest<'a> {
     /// Empty state, pre-sized for the typical ratio of chats to EML files,
-    /// whose report sends its rows to `issues`.
-    fn new(spool: Option<&'a AttachmentSpool>, eml_count: usize, issues: &IssueSink) -> Self {
+    /// that counts into `report`.
+    fn new(spool: Option<&'a AttachmentSpool>, eml_count: usize, report: ExportReport) -> Self {
         Self {
             spool,
             conversations: HashMap::with_capacity((eml_count / 4).min(50_000)),
-            report: ExportReport::with_issues(issues.clone()),
+            report,
             caveats: Caveats::default(),
             email_numbers: EmailNumbers::default(),
             by_email: Vec::new(),
@@ -768,6 +789,7 @@ mod tests {
     use message_ir::{
         ConversationMeta, ConversationStats, IrMessage, IrMessageKind, SCHEMA_VERSION,
     };
+    use message_staging::AttachmentSource;
 
     /// An EML given as an input is recorded under its own file name. An EML
     /// found in a directory input is recorded under its path inside that directory.
@@ -899,7 +921,7 @@ mod tests {
     /// The messages of every conversation as the shared projection writes
     /// them, with the copies of one message reduced to one.
     fn project(parsed: Vec<ParsedMessage>) -> (Vec<IrMessage>, ExportReport) {
-        let mut ingest = EmlIngest::new(None, parsed.len(), &IssueSink::none());
+        let mut ingest = EmlIngest::new(None, parsed.len(), ExportReport::default());
         for message in parsed {
             ingest.add_parsed(message).unwrap();
         }
@@ -955,7 +977,7 @@ mod tests {
     /// `Cancelled`, so a caller tells a cancel from a failure by its type.
     #[test]
     fn a_cancelled_parse_stops_the_scan_with_cancelled() {
-        let mut ingest = EmlIngest::new(None, 1, &IssueSink::none());
+        let mut ingest = EmlIngest::new(None, 1, ExportReport::default());
         let error = ingest.absorb(ParsedEmlKind::Cancelled).unwrap_err();
         assert!(error.downcast_ref::<Cancelled>().is_some(), "{error:#}");
     }
@@ -963,7 +985,7 @@ mod tests {
     /// A MIME part that could not be decoded reaches the run's report by name.
     #[test]
     fn unreadable_parts_are_counted_in_the_report() {
-        let mut ingest = EmlIngest::new(None, 2, &IssueSink::none());
+        let mut ingest = EmlIngest::new(None, 2, ExportReport::default());
         for unreadable_parts in [2, 1] {
             let message = ParsedMessage {
                 unreadable_parts,

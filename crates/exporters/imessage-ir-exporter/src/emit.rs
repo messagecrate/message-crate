@@ -996,7 +996,6 @@ mod tests {
             contacts_path: None,
             use_caller_id: false,
             export_path: PathBuf::from("/nowhere/out"),
-            scratch_dir: PathBuf::from("/nowhere/cache"),
             attachment_embed: AttachmentEmbed::Embed,
             log: LogSink::none(),
             progress: ProgressSink::none(),
@@ -1006,6 +1005,7 @@ mod tests {
                     ..message_crate_core::ExportTransforms::none()
                 },
                 output_format,
+                scratch_dir: PathBuf::from("/nowhere/cache"),
                 ..message_crate_core::ConvertRun::default()
             },
         }

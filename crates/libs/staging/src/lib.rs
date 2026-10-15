@@ -1,8 +1,9 @@
 //! Staging: the resumable path that writes a run's conversations and
 //! attachments into the Staging Directory.
 //!
-//! Parse finishes before anything is written; an exporter hands its
-//! documents to [`ExportWriter`], which either drains the bounded write
+//! Parse finishes before anything is written. Every exporter but Apple
+//! Messages runs its convert step through [`convert_backup`], which opens
+//! the writer, reads, projects, and hands the documents to [`ExportWriter`], which either drains the bounded write
 //! queue (JSON Lines, the import path: a conversation file lands only after
 //! everything it references, so an interrupted run resumes by skipping what
 //! is already there) or stages attachments and writes through
@@ -25,6 +26,7 @@
 //! `message-crate-core`. Why this is its own crate:
 //! `docs/adr/0012-four-crates-in-the-export-pipeline.md`.
 
+mod convert;
 mod counted_attachments;
 mod export_writer;
 mod headroom;
@@ -34,6 +36,7 @@ mod staging_summary;
 mod transcode;
 mod write_queue;
 
+pub use convert::{Project, Read, WriterSetup, convert_backup};
 pub use counted_attachments::{CountedAttachments, PathSources};
 pub use export_writer::{ExportWriter, ExportWriterParts};
 pub use headroom::{

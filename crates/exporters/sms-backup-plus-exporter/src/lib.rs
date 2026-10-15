@@ -13,7 +13,7 @@ mod email_numbers;
 mod emit;
 mod flat_eml;
 mod identity;
-mod parse_emit;
+mod read;
 mod run;
 mod types;
 mod write;

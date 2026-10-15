@@ -16,7 +16,7 @@
 //! [`run()`] is this crate's whole public surface
 //! (`docs/adr/0001-no-command-line-except-the-server.md`).
 
-mod convert;
+mod emit;
 mod run;
 
 pub use run::run;

@@ -1,5 +1,5 @@
 //! `run()`, the entry point the desktop app calls, and the counts its summary
-//! shows. The smoke tests call `convert_json` directly, so a `run()` that
+//! shows. The smoke tests call `convert_export` directly, so a `run()` that
 //! wrote nothing, or a report that dropped the bad-date count, passed them.
 
 use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_test_run};

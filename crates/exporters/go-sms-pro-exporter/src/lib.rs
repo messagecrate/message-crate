@@ -6,8 +6,8 @@
 
 mod attachments_emit;
 mod emit;
+mod read;
 mod run;
-mod xml;
 
 pub use run::run;
 
