@@ -72,9 +72,9 @@ RUN cargo build --release -p message-crate-server
 # -----------------------------------------------------------------------------
 # Stage 3: slim runtime
 # -----------------------------------------------------------------------------
-# Debian 12 (bookworm) alone, the release the build stages use. The running container needs
-# no Node.js: the website is built in Stage 1 and the health check is a server
-# command (#2065).
+# Debian 12 (bookworm) alone, the release the build stages use. The running
+# container needs no Node.js: the website is built in Stage 1 and the health
+# check is a server command (#2065).
 FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS runtime
 
 # The container runs as user and group 1000, named app. Both Compose files

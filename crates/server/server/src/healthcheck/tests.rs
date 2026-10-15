@@ -63,7 +63,7 @@ fn an_ipv4_mapped_address_is_asked_as_ipv4() {
 }
 
 #[test]
-fn an_ipv6_address_is_asked_in_brackets() {
+fn an_ipv6_address_is_asked_where_it_is() {
     let mut loopback = [0u8; 16];
     loopback[15] = 1;
     assert_eq!(hosts_of(&proc_hex(&loopback)), Some(vec![ip("::1")]));
