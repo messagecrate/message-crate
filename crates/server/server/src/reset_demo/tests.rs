@@ -2402,9 +2402,9 @@ async fn a_generator_warning_under_serve_reaches_the_server_log() {
     .await;
 
     assert!(
-        lines
-            .iter()
-            .any(|line| line.text.contains("the backup at /somewhere could not be removed")),
+        lines.iter().any(|line| line
+            .text
+            .contains("the backup at /somewhere could not be removed")),
         "{lines:#?}"
     );
 }
@@ -3018,6 +3018,19 @@ async fn audit_entries_of(db: &Path) -> Vec<BuildEntry> {
 /// Assert that `entry` records a Demo Account build: `action` by `actor`
 /// with the `size` set, about no account.
 fn assert_build_entry(entry: &BuildEntry, action: &str, actor: &str, size: &str) {
+    assert_build_entry_about(entry, action, actor, size, (None, None, None));
+}
+
+/// Assert that `entry` records a Demo Account build: `action` by `actor`
+/// with the `size` set, with the account id, username and deletion entry
+/// `about`.
+fn assert_build_entry_about(
+    entry: &BuildEntry,
+    action: &str,
+    actor: &str,
+    size: &str,
+    about: (Option<i64>, Option<&str>, Option<i64>),
+) {
     assert_eq!(
         (entry.action.as_str(), entry.actor.as_str()),
         (action, actor),
@@ -3025,18 +3038,34 @@ fn assert_build_entry(entry: &BuildEntry, action: &str, actor: &str, size: &str)
     );
     assert_eq!(entry.demo_data_size.as_deref(), Some(size), "{entry:#?}");
     assert_eq!(
-        (entry.account_id, &entry.username, entry.deletion_entry_id),
-        (None, &None, None),
-        "the build's entry is about no account: {entry:#?}"
+        (
+            entry.account_id,
+            entry.username.as_deref(),
+            entry.deletion_entry_id
+        ),
+        about,
+        "{entry:#?}"
     );
 }
 
-/// `reset-demo` on a database that holds a Demo Account records the old
-/// account's deletion, then the reset, by the command and with its set of
-/// Demo Data (#2686). The check that the reset changed nothing outside the
-/// Demo Account accepts the reset's entry, so the reset is installed.
+/// Assert that `entry` is an `account_deleted` entry written by `actor`.
+fn assert_deletion(entry: &BuildEntry, actor: &str) {
+    assert_eq!(
+        (entry.action.as_str(), entry.actor.as_str()),
+        ("account_deleted", actor),
+        "{entry:#?}"
+    );
+    assert_eq!(entry.deletion_entry_id, Some(entry.id), "{entry:#?}");
+}
+
+/// `reset-demo` on a database that holds a Demo Account records the reset,
+/// by the command and with its set of Demo Data, before it deletes the old
+/// account, as a reset from Owner Home does. The reset's entry is about the
+/// Demo Account, so the deletion files it in that account's record (#2977).
+/// The check that the reset changed nothing outside the Demo Account
+/// accepts it, so the reset is installed.
 #[tokio::test]
-async fn the_reset_demo_command_records_its_reset_after_the_deletion() {
+async fn the_reset_demo_command_records_its_reset_before_the_deletion() {
     let temp = tempfile::tempdir().expect("create test directory");
     let db = temp.path().join("messagecrate.db");
     let data_dir = temp.path().join("data");
@@ -3050,16 +3079,93 @@ async fn the_reset_demo_command_records_its_reset_after_the_deletion() {
         .expect("a complete bundle resets");
 
     let entries = audit_entries_of(&db).await;
-    let [deleted, reset] = entries.as_slice() else {
-        panic!("a deletion and a reset: {entries:#?}");
+    let [reset, deleted] = entries.as_slice() else {
+        panic!("a reset and a deletion: {entries:#?}");
     };
-    assert_eq!(
-        (deleted.action.as_str(), deleted.actor.as_str()),
-        ("account_deleted", "command_line"),
-        "{deleted:#?}"
+    assert_deletion(deleted, "command_line");
+    assert_build_entry_about(
+        reset,
+        "demo_account_reset",
+        "command_line",
+        "large",
+        (None, deleted.username.as_deref(), Some(deleted.id)),
     );
-    assert_eq!(deleted.deletion_entry_id, Some(deleted.id));
-    assert_build_entry(reset, "demo_account_reset", "command_line", "large");
+}
+
+/// A reset from Owner Home and a reset by `reset-demo` each leave their
+/// entry in the record of the Demo Account they replaced, one beside the
+/// other, wherever the reset was started (#2977).
+#[tokio::test]
+async fn owner_home_and_reset_demo_file_their_resets_alike() {
+    let temp = tempfile::tempdir().expect("create test directory");
+    let db = temp.path().join("messagecrate.db");
+    let data_dir = temp.path().join("data");
+    seed_previous_demo(&db, &data_dir).await;
+    let bundle = temp.path().join("bundle");
+    write_tiny_reset_bundle(&bundle);
+    let cfg = test_config(&db, &data_dir);
+
+    // The Owner Home reset: the owner's request records the build, then the
+    // build runs in the live database.
+    let (pool, mut conn) = test_db(&db).await;
+    crate::db::audit_trail::record_demo_build(
+        &mut conn,
+        AuditActor::Owner,
+        DemoDataSize::Medium,
+        chrono::Utc::now(),
+    )
+    .await
+    .expect("record the owner's reset");
+    drop(conn);
+    build_from_bundle(
+        &cfg,
+        &pool,
+        &bundle,
+        BuildBy {
+            actor: AuditActor::Owner,
+            record_with_size: None,
+        },
+        &AtomicBool::new(false),
+    )
+    .await
+    .expect("the owner's reset builds");
+    pool.close().await;
+    checkpoint_and_clean_sidecars(&db, "after the owner's reset")
+        .await
+        .expect("checkpoint the owner's reset");
+
+    reset_prepared_bundle(&cfg, &bundle, DEMO_ACCOUNT_ID, DemoDataSize::Large)
+        .await
+        .expect("the command's reset installs");
+
+    let entries = audit_entries_of(&db).await;
+    let [owner_reset, owner_deleted, command_reset, command_deleted] = entries.as_slice() else {
+        panic!("two resets, each before its deletion: {entries:#?}");
+    };
+    assert_deletion(owner_deleted, "owner");
+    assert_deletion(command_deleted, "command_line");
+    assert_build_entry_about(
+        owner_reset,
+        "demo_account_reset",
+        "owner",
+        "medium",
+        (
+            None,
+            owner_deleted.username.as_deref(),
+            Some(owner_deleted.id),
+        ),
+    );
+    assert_build_entry_about(
+        command_reset,
+        "demo_account_reset",
+        "command_line",
+        "large",
+        (
+            None,
+            command_deleted.username.as_deref(),
+            Some(command_deleted.id),
+        ),
+    );
 }
 
 /// `reset-demo` on a database with no Demo Account adds one, and records the

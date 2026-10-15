@@ -680,49 +680,45 @@ pub async fn record_about(
 }
 
 /// Record that `actor` is building the Demo Account with the `size` set of
-/// Demo Data, once the build has removed the Demo Account it replaces, if
-/// any: the `reset-demo` command and the build `serve` runs on a new
-/// database (#2686). The owner's build from Owner Home records its own entry
-/// when the owner asks for it, before the build starts.
+/// Demo Data, before the build removes the Demo Account it replaces: the
+/// owner's build from Owner Home, the `reset-demo` command and the build
+/// `serve` runs on a new database all record it here, so every reset is
+/// filed alike (#2977). It is stamped `now`.
 ///
-/// The entry is `demo_account_reset` when the build `replaced` a Demo
-/// Account and `demo_account_added` when there was none. It is about no
-/// account: the old Demo Account is deleted by then, and the new one not
-/// yet written. It is stamped `now`.
+/// The entry is `demo_account_reset` about the Demo Account when there is
+/// one, so it stays in that account's record once the build deletes it. It
+/// is `demo_account_added` about no account when there is none: an entry
+/// with a username and no account reads as one whose account was deleted.
 ///
 /// # Errors
 ///
-/// Returns an error when the insert fails.
-pub async fn record_demo_build_after_removal(
+/// Returns an error when the lookup or the insert fails.
+pub async fn record_demo_build(
     conn: &mut SqliteConnection,
     actor: AuditActor,
     size: DemoDataSize,
-    replaced: bool,
     now: DateTime<Utc>,
 ) -> Result<()> {
-    record(conn, &demo_build_entry(actor, size, replaced, None), now).await?;
+    let demo =
+        account_profile::username_for_account(conn, account_profile::DEMO_ACCOUNT_ID).await?;
+    let about = demo
+        .as_deref()
+        .map(|username| (account_profile::DEMO_ACCOUNT_ID, username));
+    record(conn, &demo_build_entry(actor, size, about), now).await?;
     Ok(())
 }
 
 /// The entry that records a build of the Demo Account by `actor` with the
-/// `size` set: `demo_account_reset` when it `replaced` a Demo Account,
-/// `demo_account_added` when there was none. It is about `account` when one
-/// is given, and about no account otherwise.
-#[must_use]
-pub fn demo_build_entry<'a>(
+/// `size` set: `demo_account_reset` about the Demo Account `replaced`, and
+/// `demo_account_added` about no account when there was none.
+fn demo_build_entry(
     actor: AuditActor,
     size: DemoDataSize,
-    replaced: bool,
-    account: Option<(i64, &'a str)>,
-) -> NewEntry<'a> {
-    let action = if replaced {
-        AuditAction::DemoAccountReset
-    } else {
-        AuditAction::DemoAccountAdded
-    };
-    let entry = match account {
-        Some(account) => NewEntry::about(action, actor, account),
-        None => NewEntry::about_no_account(action, actor),
+    replaced: Option<(i64, &str)>,
+) -> NewEntry<'_> {
+    let entry = match replaced {
+        Some(account) => NewEntry::about(AuditAction::DemoAccountReset, actor, account),
+        None => NewEntry::about_no_account(AuditAction::DemoAccountAdded, actor),
     };
     entry.with_details(Details {
         demo_data_size: Some(size),

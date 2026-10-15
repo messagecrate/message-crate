@@ -388,6 +388,12 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-14: **A reset by `reset-demo` is filed with the Demo Account.**
+  The `reset-demo` server command recorded its reset after deleting the old
+  Demo Account, so its entry belonged to no account and appeared only in the
+  owner's whole Audit Trail. It now records the reset first, as a reset from
+  Owner Home does, so both are read among the old Demo Account's entries
+  (#2977).
 - 2026-10-14: **A typed display name is no longer lost.** On Settings →
   Profile, and on an account's Profile in Owner Home, the display name saves
   when you leave the field, press Enter, or move to another tab, as the time

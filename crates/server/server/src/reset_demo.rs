@@ -619,9 +619,9 @@ async fn build_from_bundle(
 
 /// The `reset-demo` command's build from the bundle of the `size` set: build
 /// the new state in a prepared database next to the active one, recording
-/// the build in its Audit Trail as the command's after the deletion of the
-/// old Demo Account, prove nothing outside the demo account changed, then
-/// swap it in.
+/// the build in its Audit Trail as the command's before the deletion of the
+/// old Demo Account, as a reset from Owner Home is recorded, prove nothing
+/// outside the demo account changed, then swap it in.
 async fn reset_prepared_bundle(
     cfg: &Config,
     bundle: &Path,
@@ -759,18 +759,12 @@ async fn rebuild_demo_account(
 ) -> Result<ResetPreparedStats> {
     let progress = run.progress();
     begin_demo_build(db).await?;
-    let replaced = wipe_demo_account(cfg, db, account_id, by.actor, progress).await?;
     if let Some(size) = by.record_with_size {
         let mut conn = db.acquire().await?;
-        crate::db::audit_trail::record_demo_build_after_removal(
-            &mut conn,
-            by.actor,
-            size,
-            replaced,
-            chrono::Utc::now(),
-        )
-        .await?;
+        crate::db::audit_trail::record_demo_build(&mut conn, by.actor, size, chrono::Utc::now())
+            .await?;
     }
+    wipe_demo_account(cfg, db, account_id, by.actor, progress).await?;
     say_reset_header(account_id, prepared, &cfg.paths.db.display(), progress);
     seed_demo_account(db, account_id, &prepared.seed).await?;
     let import = import_demo_sources(cfg, db, prepared, account_id, progress).await?;
@@ -800,12 +794,12 @@ struct BuildBy {
     /// Who acts: the wipe's `account_deleted` entry names them, and so does
     /// the build's own entry.
     actor: AuditActor,
-    /// The set of Demo Data the build records itself with, right after the
-    /// wipe ([`audit_trail::record_demo_build_after_removal`]): the
-    /// `reset-demo` command and the build on a new database do. `None` for
-    /// the owner's build, which the owner's request recorded already.
+    /// The set of Demo Data the build records itself with, right before the
+    /// wipe ([`audit_trail::record_demo_build`]): the `reset-demo` command
+    /// and the build on a new database do. `None` for the owner's build,
+    /// which the owner's request recorded already.
     ///
-    /// [`audit_trail::record_demo_build_after_removal`]: crate::db::audit_trail::record_demo_build_after_removal
+    /// [`audit_trail::record_demo_build`]: crate::db::audit_trail::record_demo_build
     record_with_size: Option<DemoDataSize>,
 }
 
@@ -1326,8 +1320,10 @@ async fn last_audit_entry(conn: &mut sqlx::SqliteConnection) -> Result<i64> {
 /// entries and runs keep no account id; they name the `account_deleted`
 /// entry instead (ADR 0020). An `account_deleted` entry after
 /// `last_entry_before_reset`, the last entry of the active database, is the
-/// one the reset wrote when it deleted the Demo Account. So is the entry
-/// after it that records the reset's build ([`build_recorded_by_reset_sql`]).
+/// one the reset wrote when it deleted the Demo Account; the reset's own
+/// `demo_account_reset` entry, written just before, is among the entries it
+/// unlinked. The entry of a reset that added the Demo Account names no
+/// deletion ([`build_recorded_by_reset_sql`]).
 #[derive(Debug, Clone, Copy)]
 struct DemoRows {
     account: i64,
@@ -1349,15 +1345,15 @@ fn unlinked_by_reset_sql(column: &str, param: &str) -> String {
 }
 
 /// The SQL condition that an `audit_entries` row, `t`, is the entry a reset
-/// wrote of its own build, after the entry id bound to `param`:
-/// `demo_account_reset`, or `demo_account_added` when the database held no
-/// Demo Account. It is about no account, since the reset writes it once the
-/// old Demo Account is deleted and before the new one is
-/// ([`crate::db::audit_trail::record_demo_build_after_removal`]), so nothing
-/// else marks it as the reset's own.
+/// that found no Demo Account wrote of its own build, after the entry id
+/// bound to `param`: `demo_account_added`. It is about no account
+/// ([`crate::db::audit_trail::record_demo_build`]), so no deletion unlinks
+/// it and nothing else marks it as the reset's own. A reset that replaced a
+/// Demo Account wrote `demo_account_reset` about that account, which the
+/// account's deletion unlinked ([`unlinked_by_reset_sql`]).
 fn build_recorded_by_reset_sql(param: &str) -> String {
     format!(
-        "t.action IN ('demo_account_reset', 'demo_account_added')
+        "t.action = 'demo_account_added'
          AND t.actor = 'command_line' AND t.account_id IS NULL
          AND t.{DELETION_ENTRY_COLUMN} IS NULL AND t.id > {param}"
     )

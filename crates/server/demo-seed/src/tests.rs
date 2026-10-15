@@ -758,10 +758,7 @@ fn an_installed_replacement_returns_a_warning_when_its_backup_cannot_be_removed(
 
     assert_bundle_paths(&active, b"new");
     assert!(warning.contains("could not be removed"), "{warning}");
-    assert!(
-        warning.contains(&backup.display().to_string()),
-        "{warning}"
-    );
+    assert!(warning.contains(&backup.display().to_string()), "{warning}");
 }
 
 /// When the install fails and every previous path is moved back, but the
