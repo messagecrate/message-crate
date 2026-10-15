@@ -751,7 +751,7 @@ fn write_one_unit(
         .count();
     drop(jobs);
 
-    message_ir_format::clear_attachments_when_disabled(&mut doc, options.files);
+    message_ir_format::clear_attachments_when_skipped(&mut doc, options.files);
     for msg in &mut doc.messages {
         for att in &mut msg.attachments {
             att.bytes = None;

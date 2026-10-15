@@ -16,7 +16,7 @@ use std::path::Path;
 
 /// Drop attachment paths and bytes when no attachment files are copied,
 /// keeping the metadata.
-pub fn clear_attachments_when_disabled(doc: &mut ConversationDocument, files: AttachmentFiles) {
+pub fn clear_attachments_when_skipped(doc: &mut ConversationDocument, files: AttachmentFiles) {
     if files.copies() {
         return;
     }
@@ -258,7 +258,7 @@ pub(crate) fn apply_transforms(
     // Keep MIME/path for placeholder classification when obfuscating.
     if !transforms.obfuscate {
         for doc in docs.iter_mut() {
-            clear_attachments_when_disabled(doc, transforms.files);
+            clear_attachments_when_skipped(doc, transforms.files);
         }
     }
 
