@@ -544,7 +544,7 @@ impl From<crate::db::saved_searches::SavedSearchError> for ApiError {
             SavedSearchError::BadRequest(m) => Self::validation(m),
             SavedSearchError::Query(e) => e.into(),
             SavedSearchError::NotFound => Self::not_found("saved search"),
-            SavedSearchError::NameTaken(m) => Self::NameTaken(m),
+            SavedSearchError::NameTaken(m) | SavedSearchError::NoFreeName(m) => Self::NameTaken(m),
             SavedSearchError::Internal(e) => Self::Internal(e),
         }
     }

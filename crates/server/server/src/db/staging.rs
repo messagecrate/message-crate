@@ -283,7 +283,9 @@ pub struct StagingTapback {
     pub sender_display_name: Option<String>,
 }
 
-/// One earlier version of one part of an edited message.
+/// One earlier version of one part of an edited message, as the import read
+/// it from the conversation file, before it has a staging message id;
+/// [`StagingEarlierVersion`] is its staging row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EarlierVersionRecord {
     /// The part of the message this version belongs to.
@@ -291,9 +293,8 @@ pub struct EarlierVersionRecord {
     /// The part's text in this version; `None` when the source recorded the
     /// edit and not the text it replaced, as iMazing does.
     pub text: Option<String>,
-    /// When this version was written, to the millisecond in the form
-    /// `MessageRecord::timestamp` takes; `None` when the source does not
-    /// record it.
+    /// When this version was written, to the millisecond; `None` when the
+    /// source does not record it.
     pub edited_at: Option<StoredTime>,
 }
 

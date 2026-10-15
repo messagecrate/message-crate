@@ -56,9 +56,12 @@ pub enum SavedSearchError {
     /// The query breaks a rule of the search language that every list shares.
     Query(crate::search::QueryError),
     NotFound,
-    /// The name is not free: another saved search of the account has it, or
-    /// an import found no free name for the day. Carries the sentence.
+    /// Another saved search of the account has the name; carries the
+    /// sentence naming it.
     NameTaken(String),
+    /// An import found no free name for its saved search on the day;
+    /// carries the sentence.
+    NoFreeName(String),
     Internal(anyhow::Error),
 }
 
@@ -279,7 +282,7 @@ pub async fn create_for_import(
     )
     .await?;
     let Some((id, name)) = claimed else {
-        return Err(SavedSearchError::NameTaken(
+        return Err(SavedSearchError::NoFreeName(
             "too many imports named alike on one day".into(),
         ));
     };
