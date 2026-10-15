@@ -66,7 +66,7 @@ impl From<sqlx::Error> for SavedSearchError {
     }
 }
 
-impl From<SavedSearchError> for crate::server::ApiError {
+impl From<SavedSearchError> for crate::api_error::ApiError {
     fn from(e: SavedSearchError) -> Self {
         match e {
             SavedSearchError::BadRequest(m) => Self::validation(m),

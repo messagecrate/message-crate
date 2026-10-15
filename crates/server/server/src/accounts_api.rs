@@ -22,6 +22,8 @@ use message_ir::IdentityService;
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
+use crate::api_error::ApiError;
+use crate::auth::{AuthIdentity, LoggedIn, Owner, refuse_for_demo_account};
 use crate::credentials::{
     change_password_on_conn, hash_owner_password, hash_user_password, passwords_match,
     require_username_free, require_valid_username,
@@ -37,9 +39,7 @@ use crate::extract::{Json, Path, Query};
 use crate::imports_api::dto::{ImportRun, ImportRunSummary, OwnerImportRun, OwnerImportRunSummary};
 use crate::imports_api::with_yourself;
 use crate::paging::{DEFAULT_LIST_LIMIT, Page, PageQuery, page_from_rows, page_of, page_params};
-use crate::server::{
-    ApiError, AppState, AuthIdentity, Created, LoggedIn, Owner, refuse_for_demo_account,
-};
+use crate::server::{AppState, Created};
 use crate::text_caps::{MAX_IDENTITY_ADDRESS_CHARS, MAX_PERSON_NAME_CHARS, capped_text};
 
 pub(crate) mod api_tokens;
@@ -430,7 +430,7 @@ pub async fn create_account(
         None
     } else {
         // Registering opens a Session, so it is the account's first login.
-        let app = crate::server::connecting_app(&headers);
+        let app = crate::auth::connecting_app(&headers);
         let token = session_tokens::open_session(&mut tx, account_id, &username, app.as_ref(), now)
             .await
             .map_err(ApiError::Internal)?;
@@ -1258,7 +1258,7 @@ pub async fn delete_account_messages(
     // open onto nothing. The owner removes Demo Data by deleting the account.
     refuse_for_demo_account(target, "messages cannot be deleted for good")?;
     if reach.is_own() {
-        crate::server::require_delete_access(&auth)?;
+        crate::auth::require_delete_access(&auth)?;
         if !body.is_some_and(|Json(req)| req.confirm) {
             return Err(ApiError::validation("confirmation flag must be true"));
         }

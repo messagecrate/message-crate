@@ -675,7 +675,7 @@ async fn create_import_contact_group(
         Err(e) => {
             tracing::warn!(
                 import_id = row.id,
-                error = %crate::server::error_chain(&e),
+                error = %crate::api_error::error_chain(&e),
                 "The Import Run could not list the contacts it touched"
             );
             return;
@@ -692,7 +692,7 @@ async fn create_import_contact_group(
         Err(e) => {
             tracing::warn!(
                 import_id = row.id,
-                error = %crate::server::error_chain(&e),
+                error = %crate::api_error::error_chain(&e),
                 "The Import Run's Contact Group could not be created"
             );
             return;

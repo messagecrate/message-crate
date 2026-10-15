@@ -10,11 +10,11 @@ use anyhow::Context;
 use serde::Serialize;
 use sqlx::{SqlSafeStr, SqliteConnection};
 
+use crate::api_error::ApiError;
 use crate::db::ownership::owns_conversation;
 use crate::db::participant_names::{Participant, load_for_conversations};
 use crate::db::sql::{SqlParam, bind_args, fold_in_id_chunks, in_placeholders};
 use crate::paging::{Direction, Page, PageParams, SortKey, page_from_rows};
-use crate::server::ApiError;
 
 /// The keys `GET /v1/conversations` accepts in `sort=`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

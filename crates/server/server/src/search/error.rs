@@ -2,7 +2,7 @@
 
 use std::ops::Range;
 
-use crate::server::ApiError;
+use crate::api_error::ApiError;
 
 /// Why a query was refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

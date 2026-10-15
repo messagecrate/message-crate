@@ -139,7 +139,7 @@ loading the website asks for one file per asset. At `INFO` those lines bury
 the requests that did something in the owner's Logs panel.
 
 The health route and the website's fallback mark their responses
-(`Routine` in `crates/server/server/src/server.rs`), and the trace layer
+(`Routine` in `crates/server/server/src/middleware.rs`), and the trace layer
 reads the mark. So the rule follows the route that answered, and no path is
 written out a second time.
 
@@ -198,7 +198,7 @@ response's `INFO` line.
 
 A source whose text the error before it already is, or already ends with
 after a `: `, is left out of the chain (`error_chain` in
-`crates/server/server/src/server.rs`). A cause whose words only happen to
+`crates/server/server/src/api_error.rs`). A cause whose words only happen to
 end the step's phrase is kept, because it still says something new. Why:
 `sqlx`'s database error writes "error returned from database:" and the
 database's message, then gives the same message again as its source, so
@@ -316,7 +316,7 @@ rule by whoever writes it.
 
 The path and query a line names are cut at 2,048 bytes, on a character
 boundary, and end in `...[cut]` when they are (`logged_uri` in
-`crates/server/server/src/server.rs`). Why: a request needs no credential to
+`crates/server/server/src/middleware.rs`). Why: a request needs no credential to
 leave its line, and a URI can be 64 KiB long, so without the cut anyone who
 can reach the port could fill the 250 MB the log keeps with a few thousand
 requests and push every other line off the disk

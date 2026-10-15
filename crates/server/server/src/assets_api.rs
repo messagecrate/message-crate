@@ -22,13 +22,14 @@ use axum::extract::{Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 
+use crate::api_error::{ApiError, run_blocking};
 use crate::asset_store::sidecar_path;
 use crate::asset_uploads;
-use crate::server::{
-    ApiError, AppState, AuthIdentity, Created, ImportAccess, ImportOrExportAccess,
-    content_type_base, discard_body, resolve_import_account, run_blocking, stream_body_to_file,
-    upload_body_bounded, upload_content_type,
+use crate::auth::{AuthIdentity, ImportAccess, ImportOrExportAccess, resolve_import_account};
+use crate::request_body::{
+    content_type_base, discard_body, stream_body_to_file, upload_body_bounded, upload_content_type,
 };
+use crate::server::{AppState, Created};
 
 pub(crate) mod media_links;
 mod ranges;
@@ -64,7 +65,7 @@ pub struct StoredAsset {
 }
 
 /// Why the asset store refused or failed, by kind. The HTTP status for each
-/// kind is chosen once, in `server.rs`; no handler picks one.
+/// kind is chosen once, in `api_error.rs`; no handler picks one.
 #[derive(Debug, thiserror::Error)]
 pub enum AssetError {
     /// The bytes do not hash to the fingerprint they were sent under.
@@ -1359,7 +1360,7 @@ pub(crate) async fn replace_asset_upload_part(
     };
     // The part size this upload started with, not the one the Server
     // Settings give now: lowering the limit holds from the next upload.
-    if crate::server::declared_over(&headers, temp.part_size()) {
+    if crate::request_body::declared_over(&headers, temp.part_size()) {
         return Err(ApiError::PayloadTooLarge);
     }
     // One read of the body is in memory at a time, never the whole part
