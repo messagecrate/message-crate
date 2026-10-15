@@ -4,7 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use anyhow::Result as AnyResult;
+use anyhow::{Context, Result as AnyResult};
 use serde::Serialize;
 use sqlx::SqliteConnection;
 
@@ -179,7 +179,8 @@ pub async fn list_contacts_sorted(
     let total: i64 =
         sqlx::query_scalar_with(sqlx::AssertSqlSafe(count_sql), bind_args(filter.params()))
             .fetch_one(&mut *conn)
-            .await?;
+            .await
+            .context("count the contacts a list query matches")?;
     let total = total.max(0) as u64;
 
     let order_by = contact_order_by(order);
@@ -228,7 +229,8 @@ pub async fn list_contacts_sorted(
     ));
     let rows: Vec<ContactRow> = sqlx::query_as_with(sqlx::AssertSqlSafe(sql), bind_args(&params))
         .fetch_all(&mut *conn)
-        .await?;
+        .await
+        .context("read a page of contacts")?;
 
     let contacts = rows
         .into_iter()
@@ -294,7 +296,8 @@ pub async fn contact_ids_matching(
     let ids: Vec<i64> =
         sqlx::query_scalar_with(sqlx::AssertSqlSafe(sql), bind_args(filter.params()))
             .fetch_all(&mut *conn)
-            .await?;
+            .await
+            .context("read the contacts a query matches")?;
     Ok(ids.into_iter().collect())
 }
 
@@ -336,7 +339,7 @@ pub async fn contact_name_and_modified(
     conn: &mut SqliteConnection,
     account_id: i64,
     contact_id: i64,
-) -> Result<Option<(String, bool, String)>, sqlx::Error> {
+) -> AnyResult<Option<(String, bool, String)>> {
     let row: Option<(String, i64, String)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT ct.preferred_name,
                 CASE WHEN {unknown} THEN 1 ELSE 0 END,
@@ -350,7 +353,8 @@ pub async fn contact_name_and_modified(
     .bind(contact_id)
     .bind(account_id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read a contact's name")?;
     Ok(row.map(|(name, unknown, last_modified)| (name, unknown != 0, last_modified)))
 }
 
@@ -378,7 +382,7 @@ pub async fn contact_totals(
     conn: &mut SqliteConnection,
     account_id: i64,
     contact_id: i64,
-) -> Result<ContactTotals, sqlx::Error> {
+) -> AnyResult<ContactTotals> {
     let (direct, groups, orphaned, messages): (i64, i64, i64, i64) =
         sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "WITH involved AS (
@@ -401,7 +405,8 @@ pub async fn contact_totals(
         .bind(account_id)
         .bind(contact_id)
         .fetch_one(&mut *conn)
-        .await?;
+        .await
+        .context("count a contact's conversations and messages")?;
     Ok(ContactTotals {
         direct: direct.max(0) as u64,
         groups: groups.max(0) as u64,
@@ -486,7 +491,10 @@ pub async fn get_contact_summaries(
     for id in &unique {
         q = q.bind(*id);
     }
-    let rows: Vec<ContactSelectionRow> = q.fetch_all(&mut *conn).await?;
+    let rows: Vec<ContactSelectionRow> = q
+        .fetch_all(&mut *conn)
+        .await
+        .context("read the summaries of the selected contacts")?;
 
     let mut by_id = HashMap::new();
     for (
@@ -600,7 +608,12 @@ pub async fn unknown_contact_identifiers(
     for (_, normalized) in &unique {
         q = q.bind(normalized);
     }
-    let known: HashSet<String> = q.fetch_all(&mut *conn).await?.into_iter().collect();
+    let known: HashSet<String> = q
+        .fetch_all(&mut *conn)
+        .await
+        .context("read which identifiers a contact holds")?
+        .into_iter()
+        .collect();
 
     Ok(unique
         .into_iter()
