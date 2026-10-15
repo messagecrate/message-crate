@@ -153,6 +153,10 @@ impl std::fmt::Display for UnknownDeletion {
 impl std::error::Error for UnknownDeletion {}
 
 /// Schema version written into every [`ConversationDocument`].
+///
+/// Version 16 names a one-to-one conversation `one-to-one` in
+/// [`ConversationMeta::conversation_type`], where version 15 said
+/// `individual`.
 pub const SCHEMA_VERSION: u32 = 16;
 
 /// One exported conversation: export metadata, conversation roster and
@@ -1053,6 +1057,8 @@ mod storage_id_round_trip_tests {
             assert_eq!(ConversationType::parse(v.as_str()), v);
             assert_matches_serde(v, v.as_str());
         }
+        // The serde rename is a literal; it must be the protocol's constant.
+        assert_matches_serde(ConversationType::OneToOne, ONE_TO_ONE_CONVERSATION_TYPE);
     }
 
     #[test]

@@ -246,8 +246,8 @@ struct PduTarget {
     chat_id: String,
     is_group: bool,
     group_title: Option<String>,
-    /// The handle keys of a group's non-owner peers; empty for an
-    /// one-to-one chat.
+    /// The handle keys of a group's non-owner peers; empty for a
+    /// one-to-one conversation.
     peers: Vec<String>,
 }
 

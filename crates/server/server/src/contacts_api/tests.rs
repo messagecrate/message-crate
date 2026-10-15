@@ -2218,7 +2218,7 @@ async fn insert_contact_with_handle(
     contact_id
 }
 
-async fn insert_direct_conversation(
+async fn insert_one_to_one_conversation(
     conn: &mut SqliteConnection,
     account: i64,
     conversation_id: i64,
@@ -2278,7 +2278,7 @@ async fn list_contacts_filters_has_messages_and_never_messaged() {
     let mut conn = fixture.conn().await;
     insert_contact_with_handle(&mut conn, account, "Messaged", "+15555550100").await;
     insert_contact_with_handle(&mut conn, account, "Silent", "+15555550135").await;
-    insert_direct_conversation(
+    insert_one_to_one_conversation(
         &mut conn,
         account,
         1,
@@ -2361,9 +2361,9 @@ async fn list_contacts_sorts_by_last_heard_with_silent_contacts_last() {
     account_profile::link_account_handle(&mut conn, account, "+15555550128", IdentityType::Phone)
         .await
         .unwrap();
-    insert_direct_conversation(&mut conn, account, 1, "+15555550100", "imessage", &[]).await;
-    insert_direct_conversation(&mut conn, account, 2, "+15555550135", "imessage", &[]).await;
-    insert_direct_conversation(&mut conn, account, 3, "+15555550143", "imessage", &[]).await;
+    insert_one_to_one_conversation(&mut conn, account, 1, "+15555550100", "imessage", &[]).await;
+    insert_one_to_one_conversation(&mut conn, account, 2, "+15555550135", "imessage", &[]).await;
+    insert_one_to_one_conversation(&mut conn, account, 3, "+15555550143", "imessage", &[]).await;
     insert_message_from(
         &mut conn,
         account,
@@ -2547,7 +2547,7 @@ async fn list_contacts_filters_service_or() {
     insert_contact_with_handle(&mut conn, account, "IMsg", "+15555550100").await;
     insert_contact_with_handle(&mut conn, account, "Sms", "+15555550135").await;
     insert_contact_with_handle(&mut conn, account, "Wa", "+15555550143").await;
-    insert_direct_conversation(
+    insert_one_to_one_conversation(
         &mut conn,
         account,
         1,
@@ -2556,7 +2556,7 @@ async fn list_contacts_filters_service_or() {
         &["2024-06-01T12:00:00Z"],
     )
     .await;
-    insert_direct_conversation(
+    insert_one_to_one_conversation(
         &mut conn,
         account,
         2,
@@ -2565,7 +2565,7 @@ async fn list_contacts_filters_service_or() {
         &["2024-06-01T12:00:00Z"],
     )
     .await;
-    insert_direct_conversation(
+    insert_one_to_one_conversation(
         &mut conn,
         account,
         3,
@@ -3232,7 +3232,7 @@ async fn trashed_contact_row_count(conn: &mut SqliteConnection, account_id: i64,
 async fn trashed_contact_fixture() -> (TestFixture, RegisteredAccount, i64) {
     let (fixture, account) = contacts_fixture_with_handles(&["+15550100"]).await;
     let mut conn = fixture.conn().await;
-    insert_direct_conversation(
+    insert_one_to_one_conversation(
         &mut conn,
         account.account_id,
         1,
