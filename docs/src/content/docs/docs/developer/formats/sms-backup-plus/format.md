@@ -70,10 +70,15 @@ Message Crate has no model for a call, so the exporter skips every `CALLLOG` mai
 
 ## WhatsApp mails
 
-From SMS Backup+ 1.5.0 (June 2013) to 1.5.9-BETA5 (2015), SMS Backup+ also backed up WhatsApp messages, one mail per message, into a label of its own ("WhatsApp"), between commits `e77c56d` ("Adding whatsapp support") and `24b549e` ("Remove whatsapp for real") of jberkel/sms-backup-plus.
+From version 1.5.0 (June 2013) to 1.5.9-BETA5 (2015), SMS Backup+ also backed up WhatsApp messages, one mail per message, into a label of its own ("WhatsApp").
+Commit [`e77c56d`](https://github.com/jberkel/sms-backup-plus/commit/e77c56d) ("Adding whatsapp support") added the feature, and commit [`24b549e`](https://github.com/jberkel/sms-backup-plus/commit/24b549e) ("Remove whatsapp for real") removed it.
 Such a mail carries `X-smssync-datatype: WHATSAPP`, and its `X-smssync-type` holds WhatsApp's own status number, not an Android message type.
 The exporter skips every `WHATSAPP` mail and counts it as `skipped_whatsapp`, which the run summary prints as `Skipped N WhatsApp messages`.
-It is not read as an SMS, because its type gives no direction, and not as WhatsApp either: the feature never covered group chats, SMS Backup+ removed it because it did not work for most people (jberkel/sms-backup-plus#564), and no real backup is at hand to test a mapping against.
+It is not read as an SMS, because its type gives no direction.
+It is not read as WhatsApp either, for three reasons.
+The feature never covered group chats.
+SMS Backup+ removed it because it did not work for most people ([jberkel/sms-backup-plus#564](https://github.com/jberkel/sms-backup-plus/issues/564)).
+No real backup is at hand to test a mapping against.
 
 ## Import mapping and deduplication
 

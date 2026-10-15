@@ -817,10 +817,10 @@ carry their date on the heading.
 
 - 2026-10-15: **An SMS Backup+ import skips the WhatsApp messages in it.**
   From 2013 to 2015, SMS Backup+ also backed up WhatsApp messages. An
-  import read each one as a text message to or from its number, with a
-  wrong direction. They are now skipped and counted, as call log entries
-  already were, and the summary says how many, such as "Skipped 12 WhatsApp
-  messages" (#2912).
+  import read each one as a text message with its number, and could show a
+  message you received as one you sent. They are now skipped and counted,
+  as call log entries already were, and the summary says how many, such as
+  "Skipped 12 WhatsApp messages" (#2912).
 - 2026-10-15: **A damaged SMS Backup & Restore file is refused whole.** A
   backup file cut off or damaged partway was imported up to the damage, and
   only when its owner's phone number was given; without one, it was refused
