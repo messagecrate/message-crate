@@ -55,6 +55,39 @@ use crate::db::ownership::{owns_contact, owns_conversation};
 use crate::db::sql::{SQLITE_IN_CHUNK, in_placeholders};
 use crate::db::{WriteTx, begin_write};
 
+/// Conversation `conv` is not in the trash, as a SQL condition. Every
+/// statement that leaves trashed conversations out writes it with this
+/// function or [`not_trashed_conversation_id`], so the lists, the counts,
+/// the names and search cannot drift apart.
+pub(crate) fn not_trashed_conversation(conv: &str) -> String {
+    not_trashed_conversation_id(&format!("{conv}.account_id"), &format!("{conv}.id"))
+}
+
+/// The conversation with id `id_expr` in account `account_expr` is not in
+/// the trash, for a row that carries a conversation id without joining
+/// `conversations` (a `messages` row).
+pub(crate) fn not_trashed_conversation_id(account_expr: &str, id_expr: &str) -> String {
+    format!(
+        "NOT EXISTS (SELECT 1 FROM trashed_conversations tc WHERE tc.account_id = {account_expr} AND tc.conversation_id = {id_expr})"
+    )
+}
+
+/// Contact `ct` is not in the trash, as a SQL condition. Every statement
+/// that leaves trashed contacts out writes it with this function or
+/// [`not_trashed_contact_id`].
+pub(crate) fn not_trashed_contact(ct: &str) -> String {
+    not_trashed_contact_id(&format!("{ct}.account_id"), &format!("{ct}.id"))
+}
+
+/// The contact with id `id_expr` in account `account_expr` is not in the
+/// trash, for a row that carries a contact id without joining `contacts`
+/// (a `contact_handles` or a `participants` row).
+pub(crate) fn not_trashed_contact_id(account_expr: &str, id_expr: &str) -> String {
+    format!(
+        "NOT EXISTS (SELECT 1 FROM trashed_contacts tct WHERE tct.account_id = {account_expr} AND tct.contact_id = {id_expr})"
+    )
+}
+
 /// A thing that can be put in the trash, named by id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Trashable {

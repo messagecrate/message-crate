@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
 use crate::db::contacts::{self, Origin};
+use crate::db::trash::not_trashed_contact;
 use crate::db::{WriteTx, begin_write};
 use crate::db::{handles, named_membership};
 
@@ -221,12 +222,11 @@ impl Snapshot {
     /// Read the account's contacts, identities and Contact Groups.
     async fn read(conn: &mut SqliteConnection, account_id: i64) -> Result<Self> {
         let mut snapshot = Self::default();
-        let rows: Vec<(i64, String, i64)> = sqlx::query_as(
-            "SELECT ct.id, ct.preferred_name,
-                    EXISTS (SELECT 1 FROM trashed_contacts t
-                            WHERE t.account_id = ct.account_id AND t.contact_id = ct.id)
+        let rows: Vec<(i64, String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT ct.id, ct.preferred_name, NOT ({not_trashed})
              FROM contacts ct WHERE ct.account_id = $1",
-        )
+            not_trashed = not_trashed_contact("ct"),
+        )))
         .bind(account_id)
         .fetch_all(&mut *conn)
         .await?;
@@ -1301,18 +1301,18 @@ pub async fn export_csv(
     account_id: i64,
     only: Option<&HashSet<i64>>,
 ) -> Result<WrittenAddressBook> {
-    let rows: Vec<ExportRow> = sqlx::query_as(
+    let rows: Vec<ExportRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT ct.id, ct.preferred_name, h.service, h.handle_type, h.normalized
          FROM contacts ct
          LEFT JOIN contact_handles ch
            ON ch.account_id = ct.account_id AND ch.contact_id = ct.id
          LEFT JOIN handles h ON h.id = ch.handle_id
          WHERE ct.account_id = $1
-           AND NOT EXISTS (SELECT 1 FROM trashed_contacts t
-                           WHERE t.account_id = ct.account_id AND t.contact_id = ct.id)
+           AND {not_trashed}
          ORDER BY lower(ct.preferred_name), ct.id,
                   h.handle_type, h.service, h.normalized",
-    )
+        not_trashed = not_trashed_contact("ct"),
+    )))
     .bind(account_id)
     .fetch_all(&mut *conn)
     .await?;
