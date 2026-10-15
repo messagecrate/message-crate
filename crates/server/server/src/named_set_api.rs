@@ -201,8 +201,8 @@ pub(crate) async fn members_update(
 /// Contact Groups and Message Tags are the same seven operations over
 /// [`MembershipSpec`]; what differs is the paths, the tag, the noun in the
 /// prose, and which spec function to call. utoipa needs a concrete function
-/// per route with literal strings in its attribute — it cannot describe a
-/// generic, and it cannot see through `concat!` — so the handlers are stamped
+/// per route with literal strings in its attribute. It cannot describe a
+/// generic, and it cannot see through `concat!`, so the handlers are stamped
 /// out here rather than written twice.
 ///
 /// The function names and doc comments are load-bearing: `operationId` comes
@@ -211,7 +211,7 @@ pub(crate) async fn members_update(
 ///
 /// Adding a third collection is this macro invoked a third time, plus a
 /// `MembershipSpec` for it in `db/named_membership.rs` and seven
-/// `.routes(routes!(..))` lines in `openapi.rs` — `utoipa_axum` needs each
+/// `.routes(routes!(..))` lines in `openapi.rs`, because `utoipa_axum` needs each
 /// route named there and that cannot be folded in here.
 ///
 /// The formatting is pinned because rustfmt reindents an attribute body

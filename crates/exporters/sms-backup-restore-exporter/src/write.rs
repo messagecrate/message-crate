@@ -175,7 +175,7 @@ fn restore_mms(
     output_dir: &Path,
 ) -> Result<Option<SbrMessage>> {
     if parts.is_empty() && addrs.is_empty() {
-        // Incomplete bag — fall back to synthesis.
+        // Incomplete bag: fall back to synthesis.
         return Ok(None);
     }
     set_attr(&mut attrs, "date", message.timestamp_unix_ms.to_string());

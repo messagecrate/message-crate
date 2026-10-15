@@ -235,7 +235,7 @@ fn participants_from_seed(seed: &Message) -> Vec<Participant> {
             // person (ADR-0006). Carrying a bare handle through as a display
             // name would let a later import write it onto a Contact as that
             // person's name, turning a correctly nameless Contact into a
-            // wrongly-named one — so only a name distinct from the handle
+            // wrongly-named one. So only a name distinct from the handle
             // counts as a display name here. A participant with no handle at
             // all has nothing to be identical to, so their name always counts.
             display_name: (p.identity.as_deref() != Some(p.name.as_str())).then(|| p.name.clone()),

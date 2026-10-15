@@ -1,4 +1,4 @@
-//! `format` command — convert an existing extract directory to another format.
+//! `format` command: convert an existing extract directory to another format.
 
 use message_crate_core::{FormatConfig, LogSink, OutputConfig, OutputFormat, RunContext};
 use std::path::PathBuf;

@@ -170,7 +170,7 @@ pub async fn list_conversations_sorted(
 }
 
 /// One conversation by id, scoped to `account_id`. `None` when the id does
-/// not exist or belongs to another account — the two cases look identical to
+/// not exist or belongs to another account. The two cases look identical to
 /// the caller, which is what keeps this a 404 rather than a 403.
 ///
 /// # Errors

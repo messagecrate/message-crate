@@ -23,7 +23,7 @@ use crate::request_body::{declared_over, upload_body_bounded};
 ///
 /// These are allowed whatever the config says. A server built from source starts
 /// with `cors_origins` commented out, and the desktop app pointed at it then
-/// fails in a way that reads as a network problem — the browser refuses the
+/// fails in a way that reads as a network problem. The browser refuses the
 /// response before any code can see it, so the app reports the server as
 /// unreachable while `curl` to the same port succeeds. That sends people to
 /// their firewall for a missing line of TOML.
@@ -83,7 +83,7 @@ pub(crate) fn build_cors_layer(origins: &[String]) -> CorsLayer {
 
 /// `tower_http`'s `RequestBodyLimitLayer` answers a plain-text `413` itself,
 /// bypassing every extractor, the moment a `Content-Length` header already
-/// announces a payload over the limit — `extract::Json`'s own 413 handling
+/// announces a payload over the limit. `extract::Json`'s own 413 handling
 /// only ever sees a body that had to be read to discover it was too long.
 /// Rewrite that one plain-text response into the `payload-too-large` problem
 /// so a body over the limit answers the same way however the client declares

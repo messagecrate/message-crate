@@ -1,8 +1,8 @@
 //! The one check that refuses a file from another schema version.
 //!
 //! Every reader of a [`ConversationDocument`](crate::ConversationDocument) or
-//! its JSON Lines header — the format reader, the import client, the server's
-//! import — refuses a version other than [`SCHEMA_VERSION`] with the same
+//! its JSON Lines header (the format reader, the import client, the server's
+//! import) refuses a version other than [`SCHEMA_VERSION`] with the same
 //! words, and refuses it before parsing the rest of the file. The refusal is
 //! the one rule for every bump, whichever way the shapes differ. A version-13
 //! file would parse under version 14's rules, because version 14 only made

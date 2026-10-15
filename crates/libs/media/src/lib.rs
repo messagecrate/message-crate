@@ -1,10 +1,10 @@
 //! Convert or compress attachment media under a converter export directory.
 //!
 //! Modes:
-//! - **Disabled** — do not copy or write attachment files (the export form's "Do not copy" choice)
-//! - **Clone** — leave exported files as-is (a no-op after export)
-//! - **Convert** — rewrite images to `.jpg`, videos to `.mp4`, audio to `.mp3`
-//! - **Compress** — re-encode to shrink files, with optional video settings
+//! - **Disabled**: do not copy or write attachment files (the export form's "Do not copy" choice)
+//! - **Clone**: leave exported files as-is (a no-op after export)
+//! - **Convert**: rewrite images to `.jpg`, videos to `.mp4`, audio to `.mp3`
+//! - **Compress**: re-encode to shrink files, with optional video settings
 //!
 //! Convert and compress need `ffmpeg` / `ffprobe`, both on `PATH` or both
 //! in the Tools Directory, and nowhere else. The caller says where the Tools

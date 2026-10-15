@@ -69,7 +69,7 @@ pub fn run(
         backup_taken_at_unix_ms,
         work,
     } = if let Some(json) = &source.json {
-        // Allowed roots are only the backup input and the JSON parent — never
+        // Allowed roots are only the backup input and the JSON parent, never
         // the process CWD, which would let crafted paths copy arbitrary files.
         let mut media_roots = Vec::new();
         if let Some(path) = &input {

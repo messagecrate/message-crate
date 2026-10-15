@@ -28,7 +28,7 @@ use crate::text_caps::{self, MAX_IDENTITY_ADDRESS_CHARS, MAX_PERSON_NAME_CHARS, 
 /// guessed: `mutate_contact` returned `anyhow` and the handler downcast the
 /// error, calling it a 400 unless it found a `sqlx::Error` underneath. That
 /// made "not a database error" mean "the person's fault", so any other
-/// internal failure — one wrapped in `context`, one from a helper — reached
+/// internal failure (one wrapped in `context`, one from a helper) reached
 /// the person as a 400 wearing an internal sentence.
 #[derive(Debug)]
 pub enum ContactEditError {

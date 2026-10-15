@@ -5,8 +5,8 @@
 //! [`HttpSession`] (built on [`build_client`]), log in through
 //! [`auth_check`], share [`truncate`] for error snippets, and classify
 //! retryable failures through `classify_retry` / `with_retries`.
-//! [`AuthError`] and [`AuthInfo`] live here so both crates — and the desktop
-//! app through their re-exports — share one auth surface, and [`ok_json`]
+//! [`AuthError`] and [`AuthInfo`] live here so both crates (and the desktop
+//! app through their re-exports) share one auth surface, and [`ok_json`]
 //! reads every server answer, so the server's RFC 7807 problem document is
 //! understood in one place rather than in each client.
 

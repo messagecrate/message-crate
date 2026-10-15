@@ -1,8 +1,8 @@
 //! Settings that belong to the whole server rather than to one account.
 //!
 //! One row, at id 1. A database that has never been written to has no row at
-//! all, which reads the same as a row of defaults — `public_registration`
-//! off, `asset_max_bytes` at 512 MiB — so nothing has to seed it.
+//! all, which reads the same as a row of defaults (`public_registration`
+//! off, `asset_max_bytes` at 512 MiB), so nothing has to seed it.
 
 use anyhow::{Context as _, Result};
 use sqlx::SqliteConnection;

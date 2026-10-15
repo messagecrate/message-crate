@@ -6889,7 +6889,7 @@
         "tags": [
           "Conversations"
         ],
-        "summary": "One conversation, in the same shape a list row already has — so a caller that opens a conversation from a list does not have to convert between two shapes, and paging through the whole list to find one id is never necessary.",
+        "summary": "One conversation, in the same shape a list row already has, so a caller that opens a conversation from a list does not have to convert between two shapes, and paging through the whole list to find one id is never necessary.",
         "description": "Trash is a property the list applies, not a bar to reading: a trashed conversation still answers here.",
         "operationId": "get_conversation",
         "parameters": [
@@ -14879,7 +14879,7 @@
           },
           "token": {
             "type": "string",
-            "description": "Plaintext secret — returned once at creation."
+            "description": "Plaintext secret, returned once at creation."
           },
           "token_hint": {
             "type": "string",
@@ -16499,7 +16499,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Raw identifiers — phone numbers, emails — as they appear in an export."
+            "description": "Raw identifiers (phone numbers, emails) as they appear in an export."
           }
         }
       },
@@ -19625,7 +19625,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "Linked contact id: when the identity is on a Contact, or — for a\nparticipant with no identity — the contact the server bound the name to\ndirectly, since that is the only place the link is recorded for\nthem. Matches the `id` every other contact shape uses, so a caller\ncan compare the two without converting either."
+            "description": "Linked contact id: when the identity is on a Contact, or, for a\nparticipant with no identity, the contact the server bound the name to\ndirectly, since that is the only place the link is recorded for\nthem. Matches the `id` every other contact shape uses, so a caller\ncan compare the two without converting either."
           },
           "identity": {
             "type": [
@@ -19636,7 +19636,7 @@
           },
           "name": {
             "type": "string",
-            "description": "What to show for this person. Never empty — the server falls back to\nthe identity when nothing else names them, and to the name alone for\nsomeone a backup named without recording any address."
+            "description": "What to show for this person. Never empty: the server falls back to\nthe identity when nothing else names them, and to the name alone for\nsomeone a backup named without recording any address."
           },
           "service": {
             "type": [
@@ -20480,7 +20480,7 @@
             "description": "The stage the run moves to."
           },
           "summary": {
-            "description": "What the person approved at the Review they just passed, when they passed one.\n\nRecorded here rather than at completion so an approval survives a\nreload: the summary shown at a Review is recomputed from the directory, but\nwhat was approved is a different question and only the run\nremembers it. Absent leaves the stored `summary_json` untouched —\nmost stage changes carry nothing, and treating absent as null would\nthrow away the plan the outcome is later judged against."
+            "description": "What the person approved at the Review they just passed, when they passed one.\n\nRecorded here rather than at completion so an approval survives a\nreload: the summary shown at a Review is recomputed from the directory, but\nwhat was approved is a different question and only the run\nremembers it. Absent leaves the stored `summary_json` untouched, because\nmost stage changes carry nothing, and treating absent as null would\nthrow away the plan the outcome is later judged against."
           }
         }
       },

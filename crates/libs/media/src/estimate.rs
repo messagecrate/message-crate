@@ -124,8 +124,8 @@ fn size_only(size_bytes: u64, limit_bytes: u64, over: SizeVerdict) -> SizeVerdic
 
 /// Does media conversion recognize this extension at all?
 ///
-/// Mirrors [`crate::process::classify`] exactly — same three extension lists,
-/// `false` for anything else — by calling it on a synthetic path, so a new
+/// Mirrors [`crate::process::classify`] exactly (same three extension lists,
+/// `false` for anything else) by calling it on a synthetic path, so a new
 /// extension added to media conversion cannot be missed by the forecast.
 fn is_processable(ext: &str) -> bool {
     classify(&Path::new("f").with_extension(ext)).is_some()
@@ -143,7 +143,7 @@ fn is_processable(ext: &str) -> bool {
 /// case by statting the file on disk, and this classifier is handed a size it
 /// already knows for a file that may not exist on disk at all (a forecast
 /// runs before any conversion). Reusing it here would mean synthesizing a
-/// path to stat — and a missing path reads as size zero, which would wrongly
+/// path to stat, and a missing path reads as size zero, which would wrongly
 /// mark every JPEG/MP3 in `Compress` mode as untouched regardless of its real
 /// size. The 500 KB / 100 KB floors stay out of this function on purpose: a
 /// file under either floor is small enough that it never reaches this check
@@ -257,12 +257,12 @@ fn format_factor(ext: &str, probe: Option<&MediaProbe>, mode: MediaMode) -> f64 
         //
         // `compress_video` re-encodes to HEVC (libx265) at a fixed CRF, so a
         // source under `min_size_bytes` or already on efficient HEVC never
-        // reaches this arm at all — it is caught upstream by
+        // reaches this arm at all. It is caught upstream by
         // `only_remuxed_by_compress` and judged on its unchanged size
         // instead. What *does* land here in `Compress` mode is a video at or
         // over the minimum on a codec (HEVC included) that failed the
-        // efficiency check — too big, too high-bitrate, or the wrong
-        // resolution — so the flat 0.7 general compress factor applies
+        // efficiency check (too big, too high-bitrate, or the wrong
+        // resolution), so the flat 0.7 general compress factor applies
         // uniformly; there is no case left where the convert-mode growth
         // factor also belongs to a compressing file.
         _ => match probe.map(|p| p.codec.as_str()) {

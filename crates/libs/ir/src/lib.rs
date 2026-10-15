@@ -281,7 +281,7 @@ pub struct ConversationStats {
 /// One conversation member: an identity, a display name, or both.
 ///
 /// `identity` is `None` when the source named a person without recording any
-/// address for them — the rescue exporters (iMazing, OpenExtract, SMS
+/// address for them. The rescue exporters (iMazing, OpenExtract, SMS
 /// Backup+) read formats that identify the other party by name alone. Such a
 /// participant always carries a `display_name`; the server reconciles it
 /// against contacts on import rather than the exporter inventing an address.

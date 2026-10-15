@@ -56,8 +56,8 @@ pub fn parse_status<'a>(raw: Option<&'a str>, all: &[&str]) -> Result<Option<&'a
 
 /// Cut a page out of rows already in memory.
 ///
-/// A list whose whole set is small and already loaded — the account's API
-/// tokens, its Contact Groups, the search fields — pages here rather than in
+/// A list whose whole set is small and already loaded (the account's API
+/// tokens, its Contact Groups, the search fields) pages here rather than in
 /// SQL: the total is the row count, and the page is `offset..offset + limit`.
 /// An offset past the end is an empty page, not a failure, because a caller
 /// walking a list that shrank under it has asked a legal question.
@@ -73,8 +73,8 @@ pub fn page_of<T>(rows: Vec<T>, params: PageParams) -> Page<T> {
 
 /// The whole of a body-bounded read as one page.
 ///
-/// A `POST` that reads the rows its body names — contact summaries, unmatched
-/// handles — answers a page like every other list, but takes no `offset` or
+/// A `POST` that reads the rows its body names (contact summaries, unmatched
+/// handles) answers a page like every other list, but takes no `offset` or
 /// `limit`: the body already says which rows to read, and it may name at most
 /// `limit` of them. So `total` is the row count, `limit` is that cap, and
 /// `offset` is 0.

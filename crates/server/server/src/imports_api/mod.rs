@@ -632,7 +632,7 @@ pub(crate) async fn create_import_batch(
             return Err(server_stopping());
         }
         // The import pipeline does blocking file IO (JSONL parse, asset
-        // hashing and copies) — run it off the async workers so a large
+        // hashing and copies), so run it off the async workers so a large
         // import cannot stall unrelated requests.
         let handle = tokio::runtime::Handle::current();
         let response = run_blocking("import", move || {

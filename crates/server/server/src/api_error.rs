@@ -20,11 +20,11 @@ use crate::problem::{Problem, ProblemType};
 /// chain for the log and shows the client a fixed sentence.
 #[derive(Debug)]
 pub enum ApiError {
-    /// `422` — fields that parsed and then broke a rule, every one of them.
+    /// `422 Unprocessable Entity`: fields that parsed and then broke a rule, every one of them.
     ValidationFailed(Vec<String>),
-    /// `400` — the request cannot be read at all.
+    /// `400 Bad Request`: the request cannot be read at all.
     MalformedBody(String),
-    /// `400` — a line of an import batch is not the JSON Lines the server
+    /// `400 Bad Request`: a line of an import batch is not the JSON Lines the server
     /// reads. A `malformed-body` that also carries the line as `line`.
     MalformedImportLine {
         /// The sentence, naming the line as a line of the batch.
@@ -32,7 +32,7 @@ pub enum ApiError {
         /// The line of the batch, counted from 1 with blank lines included.
         line: usize,
     },
-    /// `422` — lines of an import batch were read and broke a rule. A
+    /// `422 Unprocessable Entity`: lines of an import batch were read and broke a rule. A
     /// `validation-failed` that also carries the first such line as `line`.
     InvalidImportLines {
         /// One sentence per rule, naming the lines as lines of the batch.
@@ -41,38 +41,38 @@ pub enum ApiError {
         /// lines included.
         line: usize,
     },
-    /// `415` — `Content-Type` absent or not one the route accepts.
+    /// `415 Unsupported Media Type`: `Content-Type` absent or not one the route accepts.
     UnsupportedMediaType(String),
-    /// `413` — the body is over its cap. It carries no sentence of its own:
+    /// `413 Payload Too Large`: the body is over its cap. It carries no sentence of its own:
     /// every cap answers "the request body is too large", so a client sees
     /// one sentence for one condition whichever cap refused the body and
     /// however the body declared its size. The problem type's page names
     /// each cap.
     PayloadTooLarge,
-    /// `401` — a username, password or current-password check failed.
+    /// `401 Unauthorized`: a username, password or current-password check failed.
     InvalidCredentials(String),
-    /// `401` — no usable bearer token: none sent, or a header that is not
+    /// `401 Unauthorized`: no usable bearer token: none sent, or a header that is not
     /// `Bearer <token>`.
     AuthenticationRequired(String),
-    /// `401` — a bearer token was sent and refused: unknown, expired, or its
+    /// `401 Unauthorized`: a bearer token was sent and refused: unknown, expired, or its
     /// account is gone. An `authentication-required` whose challenge names
     /// `error="invalid_token"` (RFC 6750, section 3.1).
     TokenRefused(String),
-    /// `409` — the username already belongs to an account.
+    /// `409 Conflict`: the username already belongs to an account.
     UsernameTaken(String),
-    /// `409` — a Contact Group, Message Tag or Saved Search name collides.
+    /// `409 Conflict`: a Contact Group, Message Tag or Saved Search name collides.
     NameTaken(String),
-    /// `403` — the demo account refuses a destructive operation.
+    /// `403 Forbidden`: the demo account refuses a destructive operation.
     DemoAccountProtected(String),
-    /// `403` — the route belongs to the owner.
+    /// `403 Forbidden`: the route belongs to the owner.
     NotTheOwner(String),
-    /// `403` — the server does not let strangers create their own account.
+    /// `403 Forbidden`: the server does not let strangers create their own account.
     RegistrationClosed(String),
-    /// `403` — the credential is valid but lacks the scope the route needs.
+    /// `403 Forbidden`: the credential is valid but lacks the scope the route needs.
     InsufficientScope(String),
-    /// `403` — the account may not log in or act.
+    /// `403 Forbidden`: the account may not log in or act.
     AccountDisabled(String),
-    /// `422` — the search language refused a word.
+    /// `422 Unprocessable Entity`: the search language refused a word.
     SearchQueryInvalid {
         /// The sentence, naming the word and the list.
         detail: String,
@@ -81,9 +81,9 @@ pub enum ApiError {
         /// A word the language does have, when one is close.
         did_you_mean: Option<&'static str>,
     },
-    /// `409` — the resource is not in a state that allows the operation.
+    /// `409 Conflict`: the resource is not in a state that allows the operation.
     StateConflict(String),
-    /// `409` — a country picked for a phone number gives it the `+` form
+    /// `409 Conflict`: a country picked for a phone number gives it the `+` form
     /// another identity already holds, and the request did not ask to merge.
     IdentityExists {
         /// The sentence, naming the number, its `+` form and who holds it.
@@ -91,17 +91,17 @@ pub enum ApiError {
         /// Who holds the `+` form.
         holder: message_crate_api_types::IdentityHolder,
     },
-    /// `422` — a part, upload id or completion does not match the upload.
+    /// `422 Unprocessable Entity`: a part, upload id or completion does not match the upload.
     AssetUploadInvalid(String),
-    /// `404` — the addressed resource does not exist for this account.
+    /// `404 Not Found`: the addressed resource does not exist for this account.
     NotFound(String),
-    /// `405` — the path exists but not for this method.
+    /// `405 Method Not Allowed`: the path exists but not for this method.
     MethodNotAllowed(String),
-    /// `406` — `Accept` names nothing the route can produce.
+    /// `406 Not Acceptable`: `Accept` names nothing the route can produce.
     NotAcceptable(String),
-    /// `401` — the `media_link` in the URL opens nothing here.
+    /// `401 Unauthorized`: the `media_link` in the URL opens nothing here.
     MediaLinkInvalid(String),
-    /// `416` — the `Range` selects no byte of a file `length` bytes long. The
+    /// `416 Range Not Satisfiable`: the `Range` selects no byte of a file `length` bytes long. The
     /// answer carries `Content-Range: bytes */<length>`.
     RangeNotSatisfiable {
         /// The sentence, naming the range.
@@ -109,11 +109,11 @@ pub enum ApiError {
         /// The file's length in bytes.
         length: u64,
     },
-    /// `408` — an upload body stopped arriving, or took too long to arrive.
+    /// `408 Request Timeout`: an upload body stopped arriving, or took too long to arrive.
     UploadStalled(String),
-    /// `503` — the server is stopping and refused work it had not started.
+    /// `503 Service Unavailable`: the server is stopping and refused work it had not started.
     ServerStopping(String),
-    /// `500` — unexpected failure. The whole context chain goes to the log;
+    /// `500 Internal Server Error`: unexpected failure. The whole context chain goes to the log;
     /// the client sees a fixed sentence and `about:blank`. One whose chain
     /// holds a busy database (`is_database_busy`) is no failure of the
     /// server: it answers `503 Service Unavailable` (`database-busy`) with
@@ -317,7 +317,7 @@ fn log_refusal(kind: ProblemType, cause: Option<&anyhow::Error>) {
     }
 }
 
-/// The message a person reads when the failure does not travel over HTTP —
+/// The message a person reads when the failure does not travel over HTTP:
 /// the CLI, a log line, a test assertion. The client-facing body is built by
 /// [`IntoResponse`], which hides an internal error's detail; here the whole
 /// context chain is shown, because the reader is the operator.

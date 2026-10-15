@@ -104,7 +104,7 @@ pub(crate) struct MessageJson {
     /// `true` when the owner of the phone sent the message.
     #[serde(default)]
     pub from_me: bool,
-    /// Unix seconds (or milliseconds — converted when writing the conversation).
+    /// Unix seconds, or milliseconds converted when writing the conversation.
     pub timestamp: Option<f64>,
     /// The message text, or the media file's path when `media` is `true`.
     pub data: Option<Value>,

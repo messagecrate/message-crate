@@ -106,7 +106,7 @@ fn with_suffix(stem: &str, suffix: Option<&str>) -> String {
     }
 }
 
-/// Standard per-conversation filename stem (no extension — callers append
+/// Standard per-conversation filename stem (no extension: callers append
 /// `.csv`, `.jsonl`, …).
 ///
 /// - One-to-one → `sanitize_stem(chat_id)` (+ optional suffix); `unknown`

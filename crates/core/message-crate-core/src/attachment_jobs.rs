@@ -302,8 +302,8 @@ pub fn report_attachment_progress<'a>(
 /// Monotonic counter distinguishing concurrent temp files.
 ///
 /// The final name is content-addressed, so two workers staging identical
-/// bytes produce the same `dest` — that is fine, the second rename is a
-/// no-op overwrite of identical bytes — but they must not share a temp path
+/// bytes produce the same `dest`. That is fine, because the second rename is
+/// a no-op overwrite of identical bytes. But they must not share a temp path
 /// mid-write, or one worker's rename pulls the file out from under the
 /// other's still-open write.
 static CLONE_TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -337,8 +337,8 @@ fn persist_clone(
 
 /// MIME type inferred from a `attachments/…` relative path's extension.
 ///
-/// Thin wrapper over [`media::mime_for_ext`] — the one shared
-/// extension-to-mime table — kept because many pipeline callers hand paths
+/// Thin wrapper over [`media::mime_for_ext`] (the one shared
+/// extension-to-mime table), kept because many pipeline callers hand paths
 /// rather than extensions. `None` for unrecognized extensions.
 pub fn mime_for_rel(rel: &str) -> Option<String> {
     let ext = Path::new(rel).extension().and_then(|e| e.to_str())?;

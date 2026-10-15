@@ -59,7 +59,7 @@ pub(crate) enum AttachmentEmbed {
 /// Map `AppleConfig.copy_method` to attachment handling.
 ///
 /// `clone` copies files, `basic` embeds thumbnails, and `full` embeds
-/// originals — all three resolve bytes through the same embed path in this
+/// originals. All three resolve bytes through the same embed path in this
 /// exporter. `disabled` skips media bytes entirely.
 fn attachment_embed_from_copy_method(copy_method: &str) -> Result<AttachmentEmbed> {
     match copy_method.trim().to_ascii_lowercase().as_str() {

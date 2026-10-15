@@ -70,7 +70,7 @@ pub(crate) async fn list_conversations(
     Ok(Json(result))
 }
 
-/// One conversation, in the same shape a list row already has — so a caller
+/// One conversation, in the same shape a list row already has, so a caller
 /// that opens a conversation from a list does not have to convert between two
 /// shapes, and paging through the whole list to find one id is never
 /// necessary. Trash is a property the list applies, not a bar to reading:

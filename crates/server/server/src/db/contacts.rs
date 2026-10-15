@@ -151,7 +151,7 @@ pub async fn create_contact(
 }
 
 /// Link `handle_id` to `contact_id`, doing nothing when the link exists.
-/// Returns true when the link was made here, false when it already existed —
+/// Returns true when the link was made here, false when it already existed:
 /// the difference a caller needs to decide whether the contact changed.
 ///
 /// # Errors

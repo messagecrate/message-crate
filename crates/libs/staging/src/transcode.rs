@@ -12,12 +12,12 @@
 //!
 //! ## Naming and resume
 //!
-//! The final name for a converted attachment is `{original_stem}-mv.{target_ext}`
-//! — never the bare name [`media::derivative_name`] returns. A same-format
+//! The final name for a converted attachment is `{original_stem}-mv.{target_ext}`,
+//! never the bare name [`media::derivative_name`] returns. A same-format
 //! compress (`photo.jpg` → `photo.jpg`) or a video in either mode
 //! (`clip.mp4` → `clip.mp4`) would otherwise produce a final name equal to
 //! the source's own name, or equal to an already-committed derivative's own
-//! name on a later resume — both break the "an original on disk means work
+//! name on a later resume. Both break the "an original on disk means work
 //! remains" invariant the Media stage depends on for resume. The `-mv` suffix
 //! cannot collide with a staged original's own name: staged names come from
 //! `attachment_dest_name` (`{utc-date}-{digest16}{ext}`), whose stem is
@@ -26,7 +26,7 @@
 //! An attachment is pending when its recorded path exists on disk,
 //! [`media::derivative_name`] returns `Some` for that file, and the file's
 //! stem does not end in `-mv` (a `-mv` stem marks an already-committed
-//! derivative, which must never re-enter the pending list — for a video, or
+//! derivative, which must never re-enter the pending list: for a video, or
 //! a compressed same-format file, `derivative_name` would otherwise call it
 //! pending forever and re-degrade it on every resume).
 //!
@@ -35,7 +35,7 @@
 //! renaming the derivative into place. The original is still there under its
 //! old name, so the Media stage heals: it strips the `-mv` suffix and looks under
 //! `attachments/` for a file with that stem (any extension) that
-//! `derivative_name` still wants, and re-transcodes it — the recorded
+//! `derivative_name` still wants, and re-transcodes it. The recorded
 //! digest/size/path are stale regardless, so a heal re-patches
 //! exactly like a fresh conversion. When no such file exists but another
 //! attachment sharing the original dropped it for size, the note it left
@@ -46,8 +46,8 @@
 //! ## Aliasing
 //!
 //! Staged names are content-addressed (`attachment_dest_name`), and both
-//! writers are idempotent by name, so two attachments — in the same document
-//! or in different ones — can legitimately record the identical `path` when
+//! writers are idempotent by name, so two attachments (in the same document
+//! or in different ones) can legitimately record the identical `path` when
 //! they carry the same bytes. Every patch here therefore applies to *every*
 //! attachment recorded at a given path, not just the one that happened to be
 //! scanned first, and a recorded path that has gone missing without a `-mv`
@@ -67,12 +67,12 @@
 //!
 //! ## Tool availability and failure
 //!
-//! ffmpeg/ffprobe are probed once, before any document is touched — parity
-//! with `media::process_attachment_files`. A missing pair fails the whole
+//! ffmpeg/ffprobe are probed once, before any document is touched, the same
+//! as in `media::process_attachment_files`. A missing pair fails the whole
 //! Media stage; it must never brand every attachment `convert_failed: ffmpeg not
 //! found`. An attachment ffmpeg genuinely fails on, by contrast, is an
 //! item-level issue: `missing_reason` gets `convert_failed: <detail>` and the
-//! original — still on disk, untouched — keeps its `path` and
+//! original, still on disk and untouched, keeps its `path` and
 //! `digest_sha256` so a resume retries it rather than treating a transient
 //! failure as permanent loss.
 //!
@@ -106,7 +106,7 @@ use message_ir_format::write_conversation_jsonl_to;
 /// Suffix on a derivative that is written but not yet committed.
 ///
 /// Named so it survives the media crate's ffmpeg-scratch sweep, which matches
-/// `.msgmedia.tmp.` — deleting this file would delete the resume signal.
+/// `.msgmedia.tmp.`. Deleting this file would delete the resume signal.
 const IN_PROGRESS_SUFFIX: &str = ".in_progress";
 
 /// Suffix on the note left beside a dropped original's name: the original
@@ -163,13 +163,13 @@ pub struct TranscodeReport {
     pub too_large: usize,
     /// Attachments ffmpeg could not process.
     pub failed: usize,
-    /// Attachments an interrupted prior run lost beyond recovery — neither
+    /// Attachments an interrupted prior run lost beyond recovery: neither
     /// the original nor a usable derivative survived. `missing_reason` is set
     /// to `file_missing`.
     pub missing: usize,
     /// Attachments repointed at an already-existing derivative without a
-    /// transcode — the aliasing case: another attachment (this document or
-    /// another) already converted and deleted the shared original.
+    /// transcode. This is the aliasing case: another attachment (this document
+    /// or another) already converted and deleted the shared original.
     pub repointed: usize,
     /// Total bytes of the originals the Media stage replaced.
     pub bytes_before: u64,
@@ -297,7 +297,7 @@ pub fn transcode_staged(
     Ok(report)
 }
 
-/// `*.jsonl` files directly under `run_dir`, sorted, non-recursive — the
+/// `*.jsonl` files directly under `run_dir`, sorted, non-recursive. The
 /// sink writes them flat (`FormatSink::open_prepared`).
 ///
 /// `pub(crate)`: shared with `staging_summary`, which walks the same list.
@@ -312,7 +312,7 @@ pub(crate) fn conversation_files(run_dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
-/// Sum of [`pending_in`] over every conversation file — the progress total.
+/// Sum of [`pending_in`] over every conversation file: the progress total.
 fn count_remaining(run_dir: &Path, files: &[PathBuf], mode: MediaMode) -> Result<usize> {
     let mut total = 0usize;
     for jsonl in files {
@@ -350,8 +350,8 @@ enum PendingWork {
         is_heal: bool,
     },
     /// The recorded path is gone, but its would-be derivative already
-    /// exists — the aliasing case, or the crash window right after the
-    /// shared original's delete. Repoint, no transcode needed.
+    /// exists. That happens in the aliasing case, or in the crash window right
+    /// after the shared original's delete. Repoint, no transcode needed.
     Repoint {
         recorded_rel: String,
         derivative: PathBuf,
@@ -438,7 +438,7 @@ fn pending_in(
 
             // Not committed, not on disk: maybe another attachment sharing
             // the same bytes (this document or another) already converted
-            // it and deleted the shared original — or the shared original
+            // it and deleted the shared original. Or the shared original
             // was dropped for good (too_large deletes both the derivative
             // and the original, and leaves a note saying so).
             // The recorded file has no
@@ -446,7 +446,7 @@ fn pending_in(
             // the size floors exist to skip a small *live* file, and are
             // meaningless against a file that is not there. When
             // `derivative_name` returns `None`, the mode converts nothing
-            // for this kind of file at all — its absence has nothing to do
+            // for this kind of file at all. Its absence has nothing to do
             // with the Media stage, and it is left alone.
             if let Some(name) = final_derivative_name_for_missing(&abs, mode) {
                 let derivative = run_dir.join("attachments").join(&name);
@@ -475,7 +475,7 @@ fn pending_in(
 }
 
 /// Find a file under `run_dir/attachments` whose stem is `orig_stem` and
-/// that the Media stage would still touch — the crash-heal search.
+/// that the Media stage would still touch. This is the crash-heal search.
 fn find_recoverable_original(
     run_dir: &Path,
     orig_stem: &str,
@@ -490,7 +490,7 @@ fn find_recoverable_original(
 }
 
 /// The derivative size recorded in the too-large note of the original that
-/// `committed` — a missing `-mv` name — was converted from, or `None` when
+/// `committed` (a missing `-mv` name) was converted from, or `None` when
 /// `attachments/` holds no such note.
 ///
 /// The note is named `{original_name}.too_large`, and the original's
@@ -539,8 +539,8 @@ fn find_in_attachments<T>(
 
 /// The name a committed derivative of `src` gets: `{original_stem}-mv.{target_ext}`.
 ///
-/// Never the bare name [`media::derivative_name`] returns — see the module
-/// docs for why a same-format compress or a video in either mode makes that
+/// Never the bare name [`media::derivative_name`] returns. The module docs
+/// say why a same-format compress or a video in either mode makes that
 /// name collide with the source, or with an already-committed derivative on
 /// a later resume.
 fn final_derivative_name(src: &Path, mode: MediaMode) -> Option<String> {
@@ -557,7 +557,7 @@ fn final_derivative_name_for_missing(src: &Path, mode: MediaMode) -> Option<Stri
 
 /// Turn a bare `derivative_name`-shaped `forecast` (`"{stem}.{ext}"`) into the
 /// committed `-mv` name, keyed off `src`'s own stem rather than the
-/// forecast's — see the module docs on why the committed name must never
+/// forecast's. The module docs say why the committed name must never
 /// equal the bare forecast.
 fn committed_name_from(src: &Path, forecast: Option<String>) -> Option<String> {
     let forecast = forecast?;
@@ -587,7 +587,7 @@ fn read_too_large_note(original: &Path) -> Option<u64> {
         .ok()
 }
 
-/// `attachments/{file name of path}` — the doc-relative form every patch
+/// `attachments/{file name of path}`: the doc-relative form every patch
 /// records.
 fn attachment_rel(path: &Path) -> Result<String> {
     let name = path
@@ -599,9 +599,9 @@ fn attachment_rel(path: &Path) -> Result<String> {
 
 /// Apply `patch` to every attachment across `doc` recorded at `recorded_rel`.
 ///
-/// Content-addressed staging means more than one attachment — in the same
-/// document — can legitimately share a path; every one of them must move
-/// together; see the module docs.
+/// Content-addressed staging means more than one attachment in the same
+/// document can legitimately share a path. Every one of them must move
+/// together, as the module docs explain.
 fn patch_all_matching(
     doc: &mut ConversationDocument,
     recorded_rel: &str,
@@ -630,8 +630,8 @@ struct DiskAttachmentFields {
 /// Used by [`apply_repoint`] (aiming at an existing derivative) and by both
 /// places a heal has to fall back to the recovered original rather than a
 /// derivative: the Media stage declining the file (`Skipped`), and ffmpeg
-/// failing on it (`Err`). In the heal cases `recorded_rel` — the phantom
-/// `-mv` name a crashed prior run already wrote into the document — must not
+/// failing on it (`Err`). In the heal cases `recorded_rel`, the phantom
+/// `-mv` name a crashed prior run already wrote into the document, must not
 /// be left standing, since nothing will ever exist under it.
 fn disk_attachment_fields(src: &Path) -> Result<DiskAttachmentFields> {
     let rel = attachment_rel(src)?;
@@ -731,8 +731,8 @@ fn apply_transcode(
             if is_heal {
                 // `recorded_rel` is the phantom `-mv` name a crashed prior
                 // run already wrote into the document; nothing will ever
-                // exist under it. Keeping it here — the way a non-heal
-                // failure keeps its path — would strand the document
+                // exist under it. Keeping it here, the way a non-heal
+                // failure keeps its path, would strand the document
                 // pointing at a name that can never exist. Repoint at the
                 // recovered original first, exactly like the `Skipped` heal
                 // arm below, then record the failure on it.
@@ -749,7 +749,7 @@ fn apply_transcode(
                 // would sever the only reference to bytes that still exist,
                 // turning a transient failure into permanent loss, and
                 // `pending_in` (which skips `path == None`) would never
-                // retry it — so only the reason changes; everything else
+                // retry it. So only the reason changes, and everything else
                 // (path, digest, size, mime) stays exactly as recorded.
                 patch_all_matching(doc, recorded_rel, |att| {
                     att.missing_reason = Some(reason.clone());
@@ -762,8 +762,8 @@ fn apply_transcode(
         Ok(TranscodeOutcome::Skipped) => {
             if is_heal {
                 // The doc currently points at a phantom `-mv` name that
-                // nothing will ever produce — the Media stage declined this
-                // file. Repoint it back at the recovered original so a
+                // nothing will ever produce, because the Media stage declined
+                // this file. Repoint it back at the recovered original so a
                 // resume does not chase a name that can never exist.
                 let r = disk_attachment_fields(src)?;
                 patch_all_matching(doc, recorded_rel, |att| {
@@ -917,7 +917,7 @@ fn too_large_issue(
 }
 
 /// Repoint every attachment recorded at `recorded_rel` to `derivative`,
-/// which already exists — no transcode needed. The aliasing case: another
+/// which already exists, so no transcode is needed. The aliasing case: another
 /// attachment already converted and deleted the shared original.
 fn apply_repoint(
     jsonl: &Path,

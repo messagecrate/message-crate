@@ -150,7 +150,7 @@ pub fn looks_like_html(body: &str) -> bool {
 }
 
 /// Map HTTP 401. When `http://` was redirected to `https://`, the token was
-/// dropped with the Authorization header — tell the user to use https.
+/// dropped with the Authorization header. Tell the user to use https.
 fn classify_unauthorized(
     requested_base: &str,
     requested_url: &reqwest::Url,
