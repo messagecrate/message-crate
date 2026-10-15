@@ -76,7 +76,7 @@ Every converter crate names the same steps the same way, so a step found in one 
 - `src/emit.rs` turns what was read into conversations and writes the chat files. Its entry point is `convert_export`, which takes a `ConvertExportArgs`.
 - `src/run.rs` holds the crate's `run`, the one function the desktop app calls.
 
-`convert_export` hands its read step and its projection step to `message_staging::convert_backup`, which opens the writer, reads, projects each conversation, and writes the files. `imessage-ir-exporter` is the exception: the Apple Messages Reader, a separate program, reads the backup, so the crate has no `read.rs`, and its `emit.rs` keeps a write step of its own, because the loader that reads an encrypted backup's attachments cannot go through the shared one.
+`convert_export` hands its read step and its projection step to `message_staging::convert_backup`, which opens the writer, reads, projects each conversation, and writes the files. `imessage-ir-exporter` is the exception: the Apple Messages Reader, a separate program, reads the backup, so the crate has no `read.rs`, and its `convert_export` keeps a write step of its own instead of calling `convert_backup`, because the loader that reads an encrypted backup's attachments cannot go through the shared one.
 
 ## Libraries that talk to a running server
 

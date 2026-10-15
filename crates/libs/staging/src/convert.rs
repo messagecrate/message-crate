@@ -30,7 +30,7 @@ pub struct WriterSetup {
 /// What an exporter's read step hands back to [`convert_backup`]: the
 /// conversations it read, the step that turns each into its document, and
 /// the report so far.
-pub struct Read<P: Project> {
+pub struct ReadBackup<P: Project> {
     /// Every conversation read, in the order their documents are written.
     pub conversations: Vec<P::Conversation>,
     /// Turns each of `conversations` into its document.
@@ -100,7 +100,7 @@ pub fn convert_backup<P: Project>(
     output_dir: &Path,
     run: ConvertRun,
     setup: WriterSetup,
-    read: impl FnOnce(&ExportWriter, &CancelFlag, ExportReport) -> Result<Read<P>>,
+    read: impl FnOnce(&ExportWriter, &CancelFlag, ExportReport) -> Result<ReadBackup<P>>,
 ) -> Result<ExportReport> {
     let ConvertRun {
         transforms,
@@ -117,7 +117,7 @@ pub fn convert_backup<P: Project>(
     if let Some(archive) = setup.archive {
         writer = writer.with_archive(archive);
     }
-    let Read {
+    let ReadBackup {
         conversations,
         mut project,
         mut report,

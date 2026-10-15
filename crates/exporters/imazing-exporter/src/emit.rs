@@ -23,7 +23,7 @@ use message_ir::{
     IrParticipant, IrService, IrSource, PendingAttachment, PendingConversation, PendingMessage,
     PendingReply, ProjectedRole, ProjectionHooks, Reaction,
 };
-use message_staging::{AttachmentSource, Project, Read, WriterSetup, convert_backup};
+use message_staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
 use serde_json::Map;
 use session::{
     Session, group_vendor_id, group_vendor_id_with_name, is_notification, is_outgoing,
@@ -100,7 +100,7 @@ pub(crate) struct ConvertExportArgs<'a> {
 /// `timezone`: a fixed UTC offset (`UTC-05:00`) or an IANA zone name
 /// (`America/New_York`). When `None`, use the host local zone.
 /// When `transforms` copies attachments, media files are copied into `output/attachments/`.
-/// When `cancel` is set, cooperative cancellation is checked between CSV files.
+/// Cancellation is checked between CSV files and between conversations.
 ///
 /// # Errors
 ///
@@ -163,7 +163,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
                 None,
                 backup_taken_at_unix_ms,
             );
-            Ok(Read {
+            Ok(ReadBackup {
                 conversations: conversations.into_values().collect(),
                 project: ImazingDocuments {
                     export,

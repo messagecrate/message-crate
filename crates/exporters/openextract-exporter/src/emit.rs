@@ -10,7 +10,7 @@ use message_ir::{
     IrConversationType, IrParticipant, IrService, IrSource, NAMELESS_CHAT_ID, PendingConversation,
     PendingMessage, ProjectionHooks, orphaned_chat_id,
 };
-use message_staging::{AttachmentSource, Project, Read, WriterSetup, convert_backup};
+use message_staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
 use phone::Handle;
 use serde_json::{Map, json};
 use sha2::{Digest, Sha256};
@@ -35,7 +35,7 @@ pub(crate) struct ConvertExportArgs<'a> {
 /// Convert OpenExtract CSV(s) under `input`.
 ///
 /// Cancellation is checked between CSV files, between conversations, and
-/// before writing. A cancelled run returns
+/// before writing. A canceled run returns
 /// what [`message_crate_core::Sinks::cancel`] says.
 ///
 /// # Errors
@@ -76,7 +76,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
                     csv_files.iter().map(PathBuf::as_path),
                 ),
             );
-            Ok(Read {
+            Ok(ReadBackup {
                 conversations: ingest.conversations.into_iter().collect(),
                 project: OpenExtractDocuments { export },
                 report: ingest.report,

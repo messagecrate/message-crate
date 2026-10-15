@@ -10,7 +10,7 @@ use message_crate_core::{
 };
 use message_ir::ConversationDocument;
 use message_ir_format::MergedArchive;
-use message_staging::{Project, Read, WriterSetup, convert_backup};
+use message_staging::{Project, ReadBackup, WriterSetup, convert_backup};
 use std::path::Path;
 
 /// Map the reader's [`ReadReport`] onto the shared [`ExportReport`] shape,
@@ -83,6 +83,9 @@ pub(crate) struct ConvertExportArgs<'a> {
 /// Convert SMS Backup & Restore XML into the shared conversation structure,
 /// then write the chosen output format.
 ///
+/// Cancellation is checked while the backup is read and between
+/// conversations.
+///
 /// # Errors
 ///
 /// Returns an error when the XML cannot be read, a conversation cannot be
@@ -111,11 +114,11 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
                 },
             )?;
             // The reader already counted conversations; zero the
-            // conversation counter so the shared write tail's fold counts
-            // only the documents it actually writes.
+            // conversation counter so `ExportWriter::finish`, which
+            // `convert_backup` runs, counts only the documents it writes.
             let mut report = to_core_report(read_report, &report.issues);
             report.conversations = 0;
-            Ok(Read {
+            Ok(ReadBackup {
                 conversations: documents,
                 project: ReadDocuments,
                 report,

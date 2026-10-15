@@ -3,7 +3,8 @@
 //!
 //! Parse finishes before anything is written. Every exporter but Apple
 //! Messages runs its convert step through [`convert_backup`], which opens
-//! the writer, reads, projects, and hands the documents to [`ExportWriter`], which either drains the bounded write
+//! the writer, reads, projects, and hands the documents to
+//! [`ExportWriter`], which either drains the bounded write
 //! queue (JSON Lines, the import path: a conversation file lands only after
 //! everything it references, so an interrupted run resumes by skipping what
 //! is already there) or stages attachments and writes through
@@ -36,7 +37,7 @@ mod staging_summary;
 mod transcode;
 mod write_queue;
 
-pub use convert::{Project, Read, WriterSetup, convert_backup};
+pub use convert::{Project, ReadBackup, WriterSetup, convert_backup};
 pub use counted_attachments::{CountedAttachments, PathSources};
 pub use export_writer::{ExportWriter, ExportWriterParts};
 pub use headroom::{

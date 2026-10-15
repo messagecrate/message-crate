@@ -17,7 +17,7 @@ use message_ir::{
     IrSource, PendingAttachment, PendingConversation, PendingMessage, PendingReply,
     ProjectionHooks, Reaction, SortKeyUnit,
 };
-use message_staging::{AttachmentSource, Project, Read, WriterSetup, convert_backup};
+use message_staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
 use serde_json::Map;
 use std::collections::{BTreeMap, VecDeque};
 use std::fs;
@@ -101,7 +101,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
                 }
             }
 
-            Ok(Read {
+            Ok(ReadBackup {
                 conversations: conversations.into_iter().collect(),
                 project: WhatsappDocuments {
                     hooks: WhatsappProjection {

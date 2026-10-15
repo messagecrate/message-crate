@@ -199,7 +199,11 @@ fn run_with(
             options.progress.clone(),
         )?
         .cancel_on(options.convert_run.cancel.clone());
-        let report = emit::export(&mut helper, &options, writer)?;
+        let report = emit::convert_export(emit::ConvertExportArgs {
+            helper: &mut helper,
+            options: &options,
+            output: writer,
+        })?;
         helper.finish()?;
         report
     };

@@ -19,7 +19,9 @@ use message_ir::{
     ConversationDocument, ExportMeta, IrConversationType, IrDirection, IrService, IrSource,
     PendingAttachment, PendingConversation, PendingMessage, ProjectionHooks,
 };
-use message_staging::{AttachmentSpool, ExportWriter, Project, Read, WriterSetup, convert_backup};
+use message_staging::{
+    AttachmentSpool, ExportWriter, Project, ReadBackup, WriterSetup, convert_backup,
+};
 use phone::{Handle, OwnerHandleSet};
 use rayon::prelude::*;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -241,13 +243,6 @@ fn add_message(
     conversation
         .messages
         .push(pending_from_parsed(message, pending_atts));
-}
-
-/// True when the path has a `.eml` extension (any case).
-pub(super) fn is_eml_file(p: &Path) -> bool {
-    p.extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("eml"))
 }
 
 /// SMS Backup+ deltas of the shared [`message_ir::pending_to_document`] projection.
@@ -523,7 +518,7 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
                     ),
                 ),
             };
-            Ok(Read {
+            Ok(ReadBackup {
                 conversations: conversations.into_iter().collect(),
                 project: SbpDocuments {
                     hooks,

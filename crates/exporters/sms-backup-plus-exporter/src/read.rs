@@ -1,12 +1,18 @@
 //! Parse pipeline: discover `.eml` inputs and turn each file into
 //! [`ParsedMessage`]s in parallel chunks.
 
-use crate::emit::is_eml_file;
 use crate::flat_eml::{MailHeaders, Owner, is_flat_sms_eml, parse_flat_eml_mail};
 use crate::types::ParsedMessage;
 use anyhow::{Result, bail};
 use message_crate_core::CancelFlag;
 use std::path::{Path, PathBuf};
+
+/// True when the path has a `.eml` extension (any case).
+fn is_eml_file(p: &Path) -> bool {
+    p.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("eml"))
+}
 
 /// Collect `.eml` paths from files and directories, skipping `duplicate` /
 /// `exclude` / `.git` directories.

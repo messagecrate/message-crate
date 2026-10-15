@@ -4,7 +4,7 @@ The code that turns a phone backup into files on disk is four crates, and each
 one holds a single job.
 
 - **`message-crate-core`** is the run model: the configuration a run is given,
-  the report it produces, the shared run skeleton, and the one function that
+  the report it produces, the shared run skeleton (`run_pipeline`), and the one function that
   stages a conversation's attachments. It holds `ScratchDir` too, the
   locked directory under the desktop app's Scratch Directory that a run writes its
   scratch data into (the attachment spool, the databases `imessage-reader`
@@ -17,6 +17,10 @@ one holds a single job.
   emits — JSON, JSON Lines, CSV, EML, MBOX — and nothing else.
 - **`message-staging`** is the resumable write path: the bounded write queue, the
   transcode pass, the staging summary, and the `ExportWriter` that drives them.
+  It also holds `convert_backup`, the convert step every exporter but Apple
+  Messages runs (open the writer, read, project, write). That step opens an
+  `ExportWriter`, and this crate depends on `message-crate-core`, so it lives
+  here and not in core.
 - **`sms-backup-restore-exporter`** owns the SMS Backup & Restore wire shape in
   both directions, reading `smses.xml` and writing it. Beside `run` and
   `RunResult`, it exports `read_backup`, `ReadOptions`, `ReadReport` and

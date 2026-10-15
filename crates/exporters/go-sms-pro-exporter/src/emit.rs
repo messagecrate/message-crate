@@ -3,7 +3,7 @@
 //! output format through [`convert_backup`].
 
 use crate::attachments_emit::queue_pdu_attachments;
-use crate::read::{SkippedBadAddrDetail, XmlMessage, parse_xml_file};
+use crate::read::{MAX_SKIP_DETAILS, SkippedBadAddrDetail, XmlMessage, parse_xml_file};
 use android_fields::android_source;
 use anyhow::{Context, Result, bail};
 use go_sms_mms::{ParsedPdu, PduError, parse_pdu_file};
@@ -16,7 +16,7 @@ use message_ir::{
     ConversationDocument, ExportMeta, IrService, IrSource, PendingAttachment, PendingConversation,
     PendingMessage, ProjectionHooks, ensure_conversation,
 };
-use message_staging::{AttachmentSpool, Project, Read, WriterSetup, convert_backup};
+use message_staging::{AttachmentSpool, Project, ReadBackup, WriterSetup, convert_backup};
 use phone::{Handle, OwnerHandleSet};
 use std::collections::BTreeMap;
 use std::fs;
@@ -26,8 +26,6 @@ const EXPORT_SOURCE: &str = message_crate_core::Exporter::GoSmsPro.source_id();
 const EXPORT_TOOL: &str = "GO SMS Pro";
 /// This crate's version, recorded as the export tool version.
 const EXPORT_TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
-/// Cap on retained skip-detail rows; overflow is counted and reported.
-pub(crate) const MAX_SKIP_DETAILS: usize = 20;
 
 /// Messages read from PDU files.
 pub(crate) const PDU_MESSAGES: Counter = Counter::new(
@@ -443,7 +441,7 @@ pub(crate) struct ConvertExportArgs<'a> {
 /// ([`message_ir::ConversationDocument`]), then write the chosen output format.
 ///
 /// Cancellation is checked between XML files, between PDU files, and
-/// between conversations. A cancelled run returns
+/// between conversations. A canceled run returns
 /// what [`message_crate_core::Sinks::cancel`] says.
 ///
 /// # Errors
@@ -503,7 +501,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
                 skips,
                 ..
             } = ingest;
-            Ok(Read {
+            Ok(ReadBackup {
                 conversations: conversations.into_iter().collect(),
                 project: GoSmsDocuments {
                     hooks: GoSmsProjection {
