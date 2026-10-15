@@ -161,13 +161,15 @@ export function stageForStep(step: ImportProgressEvent["step"]): ImportIssueStag
 }
 
 /**
- * An Import Error the desktop app reported, as the run records it: `kind` is
- * the event's, once the caller has told it from a note or a `resolved` row.
- * The server takes it without `conversation` (`issueRequests`).
+ * An Import Error the desktop app reported, as the run records it: an event
+ * the caller has told from a note or a `resolved` row. The server takes it
+ * without `conversation` (`issueRequests`).
  */
-export function issueFromEvent(event: ImportIssueEvent, kind: ImportIssue["kind"]): ImportIssue {
+export function issueFromEvent(
+  event: ImportIssueEvent & { kind: ImportIssue["kind"] },
+): ImportIssue {
   const issue: ImportIssue = {
-    kind,
+    kind: event.kind,
     stage: stageForStep(event.step),
     item: event.item,
     reason: event.reason,
