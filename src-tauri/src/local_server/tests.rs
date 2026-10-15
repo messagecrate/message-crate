@@ -244,12 +244,13 @@ fn own(open: bool) -> Phase {
     }
 }
 
-/// The app's own server exited at `at`, having written `output`.
-fn exited_at(at: Instant, output: &str) -> Event {
+/// The app's own server exited, found at `found_at`, having written
+/// `output`.
+fn exited_at(found_at: Instant, output: &str) -> Event {
     Event::ChildExited {
         output: output.into(),
         code: Some(1),
-        at,
+        found_at,
     }
 }
 
@@ -300,11 +301,7 @@ fn a_server_that_keeps_exiting_is_started_again_only_a_few_times() {
         state.phase,
         Phase::Failed {
             reason: FailureReason::StartFailed,
-            message: format!(
-                "Message Crate stopped {} times within {} minutes.",
-                MAX_RESTARTS + 1,
-                RESTART_WINDOW.as_secs() / 60
-            ),
+            message: "Message Crate stopped 4 times within 10 minutes.".into(),
             details: "crashed".into(),
         }
     );
@@ -535,7 +532,7 @@ fn only_the_apps_own_server_saying_it_listens_makes_the_start_its_own() {
         Event::ChildExited {
             output: "lost".into(),
             code: Some(1),
-            at: Instant::now(),
+            found_at: Instant::now(),
         },
     );
     assert_eq!(actions, [Action::Probe]);
@@ -550,7 +547,7 @@ fn only_the_apps_own_server_saying_it_listens_makes_the_start_its_own() {
         Event::ChildExited {
             output: "any words at all".into(),
             code: Some(i32::from(OPERATION_LOCK_HELD_EXIT_CODE)),
-            at: Instant::now(),
+            found_at: Instant::now(),
         },
     );
     let (state, actions) = step(state, probed(Probe::Free));
@@ -565,7 +562,7 @@ fn only_the_apps_own_server_saying_it_listens_makes_the_start_its_own() {
         Event::ChildExited {
             output: "while reset-demo or another server is active".into(),
             code: Some(1),
-            at: Instant::now(),
+            found_at: Instant::now(),
         },
     );
     let (state, actions) = step(state, probed(Probe::Free));
@@ -576,7 +573,7 @@ fn only_the_apps_own_server_saying_it_listens_makes_the_start_its_own() {
         Event::ChildExited {
             output: "database is locked".into(),
             code: None,
-            at: Instant::now(),
+            found_at: Instant::now(),
         },
     );
     let (state, actions) = step(state, probed(Probe::Free));

@@ -53,7 +53,7 @@
 //! The app's own server that exits on its own once ready, as in a crash or
 //! an out-of-memory kill, is started again, so an Upload in progress gets its
 //! server back without anyone pressing Retry (#2089). It is started again at
-//! most [`MAX_RESTARTS`] times within [`RESTART_WINDOW`]; the exit after
+//! most [`MAX_RESTARTS`] times within [`RESTART_WINDOW`]. The exit after
 //! that fails the start, so a server that dies at once is not started
 //! forever. Retry on the login card starts the count again.
 //!
@@ -336,7 +336,7 @@ enum Event {
         code: Option<i32>,
         /// When the app found it had exited. Given with the event, so
         /// [`step`] reads no clock.
-        at: Instant,
+        found_at: Instant,
     },
     /// The app's server has not listened within [`START_TIMEOUT`].
     Deadline {
@@ -493,7 +493,11 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
                 };
             }
         }
-        Event::ChildExited { output, code, at } => match state.phase {
+        Event::ChildExited {
+            output,
+            code,
+            found_at,
+        } => match state.phase {
             // Another Message Crate may have taken the port first; it is
             // used if it answers.
             Phase::Starting { .. } => {
@@ -511,11 +515,11 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
             // A crash or an out-of-memory kill: started again, so an Upload
             // in progress gets its server back, unless it keeps exiting.
             Phase::Own { .. } => {
-                state
-                    .restarts
-                    .retain(|&restart| at.saturating_duration_since(restart) < RESTART_WINDOW);
+                state.restarts.retain(|&restart| {
+                    found_at.saturating_duration_since(restart) < RESTART_WINDOW
+                });
                 if state.restarts.len() < MAX_RESTARTS as usize {
-                    state.restarts.push(at);
+                    state.restarts.push(found_at);
                     state.phase = Phase::Starting {
                         open: state.wanted_open,
                     };
@@ -588,8 +592,8 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
 
 /// The app's own server has ended, whether it was starting or ready: it
 /// exited too often to be started again, it was killed because it stopped
-/// answering, or the app is closing. `message` says which. `details` holds what it last wrote, and
-/// is empty when the app is closing.
+/// answering, or the app is closing. `message` says which. `details` holds
+/// what it last wrote, and is empty when the app is closing.
 fn own_server_ended(state: &mut State, message: &str, details: String) {
     state.phase = Phase::Failed {
         reason: FailureReason::StartFailed,
@@ -1017,7 +1021,7 @@ impl LocalServer {
                             Event::ChildExited {
                                 output,
                                 code,
-                                at: Instant::now(),
+                                found_at: Instant::now(),
                             },
                         );
                     }

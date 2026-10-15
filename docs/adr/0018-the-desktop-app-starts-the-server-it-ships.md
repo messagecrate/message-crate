@@ -132,6 +132,6 @@ crash or an out-of-memory kill, is started again at once (#2089). Before,
 the login card said it stopped and waited for Retry, and an Upload in
 progress had no server until someone noticed. A server that dies at once
 must not be started forever, so the app starts it again at most three times
-within ten minutes; the fourth exit in that time fails the start as before,
+within ten minutes. The fourth exit in that time fails the start as before,
 and Retry starts the count again. The app gives each exit the time it found
 it, so the rule that counts them reads no clock and is tested without one.
