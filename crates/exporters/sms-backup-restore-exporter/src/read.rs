@@ -1,13 +1,11 @@
 //! Read SMS Backup & Restore XML into [`ConversationDocument`] values.
 
 use anyhow::{Result, bail};
-use std::sync::Arc;
 
-use media::{CompressOptions, MediaMode, MediaTools};
 use message_crate_core::{
-    CancelFlag, Cancelled, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, MediaConfig,
-    ProgressSink, SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE,
-    SKIPPED_UNREADABLE_PART, check_cancel, document_messages, import_error_lines, item_line,
+    AttachmentFiles, Cancelled, Counter, DUPLICATES_DROPPED, ItemKind, SKIPPED_INVALID_DATE,
+    SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART, Sinks, check_cancel,
+    document_messages, import_error_lines, item_line,
 };
 use message_csv::format_local_ts;
 use message_ir::{
@@ -221,18 +219,11 @@ pub struct ReadOptions<'a> {
     /// parsed, so no payload stays in memory; `None` when the run does not
     /// copy attachments, and then no payload is kept at all.
     pub spool: Option<&'a AttachmentSpool>,
-    /// How to write attachment files after parse.
-    pub media: MediaMode,
-    /// Image/video compress settings used when `media` converts or compresses.
-    pub compress: CompressOptions,
-    /// The ffmpeg and ffprobe used when `media` converts or compresses.
-    pub tools: Arc<dyn MediaTools>,
-    /// Human-readable notes and warnings while reading.
-    pub log: &'a LogSink,
-    /// Typed progress events while staging attachments.
-    pub progress: &'a ProgressSink,
-    /// Cancellation flag checked between records.
-    pub cancel: &'a CancelFlag,
+    /// Whether attachment files are staged after parse.
+    pub files: AttachmentFiles,
+    /// Where the read writes its notes and warnings and the staging sends
+    /// its progress, and the cancel flag checked between records.
+    pub sinks: Sinks<'a>,
 }
 
 /// One attachment of a [`MessageInProgress`], named by the digest its
@@ -339,18 +330,14 @@ pub fn spooled_attachments<'a>(
     documents: &'a mut [ConversationDocument],
     options: &ReadOptions<'_>,
 ) -> CountedAttachments<'a> {
-    let mode = if options.spool.is_some() {
-        options.media
+    let files = if options.spool.is_some() {
+        options.files
     } else {
-        MediaMode::Disabled
+        AttachmentFiles::Skip
     };
     CountedAttachments::new(
         document_messages(documents),
-        MediaConfig {
-            mode,
-            compress: options.compress.clone(),
-            tools: Arc::clone(&options.tools),
-        },
+        files,
         PathSources::OnDisk,
         |att| {
             options
@@ -358,7 +345,7 @@ pub fn spooled_attachments<'a>(
                 .and_then(|spool| spool.source(att))
                 .unwrap_or((AttachmentSource::Missing, None))
         },
-        options.log,
+        options.sinks.log,
     )
 }
 
@@ -396,9 +383,7 @@ pub fn stage_read_attachments(
     spooled_attachments(documents, options).stage(
         attachments_dir,
         load_attachment_source,
-        options.log,
-        options.progress,
-        options.cancel,
+        options.sinks,
     )?;
     Ok(())
 }
@@ -756,7 +741,7 @@ pub fn read_backup(
     let mut report = ReadReport::default();
     let mut conversations = BTreeMap::new();
     let file_path = input.display().to_string();
-    check_cancel(options.cancel)?;
+    check_cancel(options.sinks.cancel)?;
     // Each record's attachment payloads go to the spool as the record is
     // parsed; staging waits until every conversation is built. Messages
     // that parse before an XML error are kept, and so are the counts.
@@ -765,7 +750,7 @@ pub fn read_backup(
     // as an error in the file.
     let mut spool_error = None;
     let parse_result = parse_file_with(input, owners.as_ref(), &mut stats, |record| {
-        check_cancel(options.cancel)?;
+        check_cancel(options.sinks.cancel)?;
         let attachments = match queue_attachments(&record.attachments, options.spool) {
             Ok(attachments) => attachments,
             Err(error) => {
@@ -794,7 +779,7 @@ pub fn read_backup(
         return Err(error);
     }
     keep_parse_error(parse_result, input, &mut report)?;
-    check_cancel(options.cancel)?;
+    check_cancel(options.sinks.cancel)?;
     let mut documents = Vec::new();
     for (id, mut conversation) in conversations {
         report.duplicates_dropped += dedupe(&mut conversation.messages);

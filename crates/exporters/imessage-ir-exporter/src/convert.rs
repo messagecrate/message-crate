@@ -22,8 +22,8 @@ use imessage_reader_protocol::{
 };
 use ios_backup::Helper;
 use message_crate_core::{
-    Counter, ExportReport, ItemKind, LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent,
-    RunIssue, RunIssueKind, item_line, item_reason,
+    Counter, ExportReport, ItemKind, LoadError, LogSink, OutputFormat, ProgressEvent, RunIssue,
+    RunIssueKind, item_line, item_reason,
 };
 use message_ir::{
     ConversationDocument, ConversationMeta, ExportMeta, IrAttachment, IrConversationType,
@@ -851,17 +851,11 @@ fn drain_conversations(
         .collect();
 
     let queue = WriteQueueOptions {
-        media: options.convert_run.transforms.media,
-        compress: options.convert_run.transforms.compress.clone(),
-        tools: std::sync::Arc::clone(&options.convert_run.transforms.tools),
+        files: options.convert_run.transforms.files,
         resume: options.convert_run.resume,
         writer_count: 0,
     };
-    let sinks = message_staging::Sinks {
-        log: &options.log,
-        progress: &options.progress,
-        cancel: &options.convert_run.cancel,
-    };
+    let sinks = options.sinks();
 
     let queue_report = if collected.encrypted {
         // The program decrypts one file at a time over one pipe, so the
@@ -912,11 +906,6 @@ fn stage_attachments(
     attachments_dir: &Path,
     not_decrypted: &mut NotDecrypted,
 ) -> Result<u64> {
-    let media = MediaConfig {
-        mode: options.convert_run.transforms.media,
-        compress: options.convert_run.transforms.compress.clone(),
-        tools: std::sync::Arc::clone(&options.convert_run.transforms.tools),
-    };
     let encrypted = collected.encrypted;
     let mut loads = Vec::new();
     for conversation in collected.conversations.values_mut() {
@@ -928,7 +917,7 @@ fn stage_attachments(
             .conversations
             .values_mut()
             .flat_map(|conversation| conversation.messages.iter_mut()),
-        media,
+        options.convert_run.transforms.files,
         if encrypted {
             PathSources::ReadByLoader
         } else {
@@ -965,9 +954,7 @@ fn stage_attachments(
                 }
                 other => load_attachment_source(other),
             },
-            &options.log,
-            &options.progress,
-            &options.convert_run.cancel,
+            options.sinks(),
         )
         .context("stage attachments")?;
     Ok(saved)

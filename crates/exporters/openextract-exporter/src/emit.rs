@@ -36,7 +36,7 @@ pub(crate) struct ConvertExportArgs<'a> {
 ///
 /// When `cancel` is set, cooperative cancellation is checked between CSV files
 /// and before writing. A cancelled run returns
-/// what [`message_staging::Sinks::cancel`] says.
+/// what [`message_crate_core::Sinks::cancel`] says.
 ///
 /// # Errors
 ///

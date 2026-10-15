@@ -5,6 +5,8 @@ use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use crate::progress::ProgressSink;
+
 /// Shared cancel flag for cooperative in-process jobs.
 /// `CancelFlag::default()` is a flag nobody sets, for a run that cannot be
 /// cancelled.
@@ -110,6 +112,22 @@ pub fn check_cancel(cancel: &CancelFlag) -> Result<(), Cancelled> {
     } else {
         Ok(())
     }
+}
+
+/// Where a step of a run reports and what stops it: the log, the progress
+/// events, and the cancel flag. Every staging step takes the three together,
+/// such as the write queue's drains, [`crate::stage_attachment_jobs`], and
+/// the format sink's write. A caller with no log, no progress bar or no cancel passes
+/// [`LogSink::none`], [`ProgressSink::none`] or a `CancelFlag::default()`.
+#[derive(Debug, Clone, Copy)]
+pub struct Sinks<'a> {
+    /// Where the step writes its log lines.
+    pub log: &'a LogSink,
+    /// Where the step sends its progress events.
+    pub progress: &'a ProgressSink,
+    /// Set to stop the step. The step then fails with [`Cancelled`] in its
+    /// error chain (#2077).
+    pub cancel: &'a CancelFlag,
 }
 
 /// Run `f` over `jobs` on up to `workers` scoped threads and return one result
