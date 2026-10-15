@@ -3,9 +3,9 @@
 use anyhow::{Result, bail};
 
 use message_crate_core::{
-    AttachmentFiles, Counter, DUPLICATES_DROPPED, ItemKind, SKIPPED_INVALID_DATE,
-    SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART, Sinks, check_cancel,
-    document_messages, import_error_lines, item_line,
+    AttachmentFiles, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, RunLogLevel,
+    SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART,
+    Sinks, check_cancel, document_messages, import_error_lines, item_line,
 };
 use message_csv::format_local_ts;
 use message_ir::{
@@ -164,17 +164,52 @@ impl ReadReport {
         ]
     }
 
+    /// [`Self::leveled_lines`] without their levels: what Convert's log
+    /// gives, and an import's summary gives in the same words.
+    pub fn log_lines(&self) -> Vec<String> {
+        self.leveled_lines()
+            .into_iter()
+            .map(|(_, line)| line)
+            .collect()
+    }
+
+    /// Write [`Self::leveled_lines`] to `log`, each at its level.
+    pub fn write_log(&self, log: &LogSink) {
+        for (level, line) in self.leveled_lines() {
+            match level {
+                RunLogLevel::Info => log.emit(line),
+                RunLogLevel::Warn | RunLogLevel::Error => log.warn(line),
+            }
+        }
+    }
+
     /// One log line for each count the read reports, leaving out the ones
     /// it found none of, then a sentence for every error under the Import
     /// Errors heading, so a person can tell what did not come across. Each
     /// line has the words an import's summary gives the same count or
-    /// error.
-    pub fn log_lines(&self) -> Vec<String> {
+    /// error. A count of what was read, or of repeated copies dropped,
+    /// whose message is kept once, is at `INFO`; a count of what the run
+    /// went on without, and every line under the Import Errors heading, at
+    /// `WARN`.
+    fn leveled_lines(&self) -> Vec<(RunLogLevel, String)> {
+        /// The counts of what the run kept.
+        const KEPT: [Counter; 3] = [SMS_SEEN, MMS_SEEN, DUPLICATES_DROPPED];
         self.counts()
             .into_iter()
             .filter(|(_, count)| *count > 0)
-            .map(|(counter, count)| counter.line(count))
-            .chain(import_error_lines(&self.errors))
+            .map(|(counter, count)| {
+                let level = if KEPT.iter().any(|kept| kept.key() == counter.key()) {
+                    RunLogLevel::Info
+                } else {
+                    RunLogLevel::Warn
+                };
+                (level, counter.line(count))
+            })
+            .chain(
+                import_error_lines(&self.errors)
+                    .into_iter()
+                    .map(|line| (RunLogLevel::Warn, line)),
+            )
             .collect()
     }
 }

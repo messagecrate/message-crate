@@ -325,7 +325,8 @@ fn detect_platform(db_path: &Path) -> Result<Platform> {
 }
 
 /// A path option that only a macOS export reads: refused when it points
-/// nowhere, and noted in the log as having no effect on an iOS backup.
+/// nowhere, and a warning in the log on an iOS backup, which goes on
+/// without it.
 fn check_macos_only_path(
     log: &LogSink,
     platform: Platform,
@@ -340,7 +341,7 @@ fn check_macos_only_path(
         bail!("{missing}");
     }
     if platform == Platform::Ios {
-        log.emit(ignored_on_ios);
+        log.warn(ignored_on_ios);
     }
     Ok(())
 }

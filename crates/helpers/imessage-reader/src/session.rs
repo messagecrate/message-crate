@@ -21,7 +21,10 @@ use imessage_database::{
 use rusqlite::Connection;
 
 use crate::{
-    data_source::DataSource, error::RuntimeError, identities::OwnerAddresses, log::emit_log,
+    data_source::DataSource,
+    error::RuntimeError,
+    identities::OwnerAddresses,
+    log::{emit_log, emit_warning},
     options::ReaderOptions,
 };
 
@@ -117,7 +120,7 @@ impl MailSession {
         let chat_id = message.chat_id.or(message.deleted_from)?;
         let chat = self.chatrooms.get(&chat_id);
         if chat.is_none() {
-            emit_log(format!(
+            emit_warning(format!(
                 "A message names conversation {chat_id}, which is not in the messages database"
             ));
         }
