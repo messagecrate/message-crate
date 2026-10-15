@@ -78,8 +78,9 @@ mutant never fails anything.
 The nightly run lives in `nightly.yml` for the same reason. It builds the
 release Dockerfile from `main` once a night and starts the image with
 `scripts/check-docker-compose.sh` and `docker/compose.release.yml`. It is the
-only build of the image before a release: no pull request builds it (see
-the amendment of 2026-10-14 below). A change can break the image, or make
+only run that starts the image before a release: no pull request builds it,
+and the release's `docker` job builds it without starting it (see the
+amendment of 2026-10-14 below). A change can break the image, or make
 the server write outside `/app/data` at start, so that it no longer starts
 under the Compose files' read-only root filesystem.
 It then loads the website the image serves in a headless browser
