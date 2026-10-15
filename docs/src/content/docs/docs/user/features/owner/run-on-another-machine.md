@@ -25,6 +25,10 @@ Without it, Docker publishes port 8080 on every network the computer is connecte
 docker run -d --name message-crate \
   --stop-timeout 40 \
   --restart unless-stopped \
+  --cap-drop ALL \
+  --security-opt no-new-privileges:true \
+  --read-only \
+  --tmpfs /tmp \
   -p 8080:8080 \
   -v message-crate-data:/app/data \
   bitrealm/message-crate:latest
