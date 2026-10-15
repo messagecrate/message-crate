@@ -12,12 +12,12 @@ import {
 } from "../../test/fakeTimers";
 import { installIntersectionObserver, scrollNear } from "../../test/intersectionObserver";
 import { nth } from "../../test/nth";
-import { Providers } from "../../test/providers";
+import { authModule, Providers } from "../../test/providers";
 import { setupUser } from "../../test/user";
 import LogViewer, { LOG_PAGE_SIZE, SEARCH_DELAY_MS } from "./LogViewer";
 import type { LinesRequest, LogSource } from "./logSource";
 
-vi.mock("../../lib/authContext", () => ({ useAuth: () => ({ accountId: 1 }) }));
+vi.mock("../../lib/authContext", () => authModule({ accountId: 1 }));
 vi.mock("../../lib/saveFile", () => ({ saveFile: vi.fn() }));
 
 const saveMock = vi.mocked(saveFile);

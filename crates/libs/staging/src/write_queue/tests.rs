@@ -1,5 +1,6 @@
 use super::*;
-use message_crate_core::{AttachmentFiles, CancelFlag, LogSink, ProgressSink, Sinks};
+use message_crate_core::testutil::{level_of, recorded_log};
+use message_crate_core::{AttachmentFiles, CancelFlag, LogSink, ProgressSink, RunLogLevel, Sinks};
 use message_ir::{ConversationDocument, IrAttachment};
 use message_ir_format::read_conversation_jsonl;
 use std::fs;
@@ -299,9 +300,7 @@ fn an_attachment_the_drain_cannot_stage_is_named_in_its_log() {
         ".jpg",
     );
     fs::create_dir_all(out.join("attachments").join(staged).join("occupied")).unwrap();
-    let lines = Arc::new(Mutex::new(Vec::<String>::new()));
-    let sink_lines = Arc::clone(&lines);
-    let sink = LogSink::new(move |l: &str| sink_lines.lock().unwrap().push(l.to_string()));
+    let (sink, recorded) = recorded_log();
 
     drain_write_queue_with_loader(
         &out,
@@ -315,12 +314,10 @@ fn an_attachment_the_drain_cannot_stage_is_named_in_its_log() {
     )
     .unwrap();
 
-    let lines = lines.lock().unwrap().clone();
-    assert!(
-        lines
-            .iter()
-            .any(|l| l.starts_with("  attachment f0.jpg not staged: ")),
-        "{lines:?}"
+    assert_eq!(
+        level_of(&recorded, "  attachment f0.jpg not staged: "),
+        Some(RunLogLevel::Warn),
+        "the run went on without the attachment: {recorded:?}"
     );
 }
 
@@ -791,9 +788,7 @@ fn an_unreadable_attachment_is_logged_before_it_becomes_a_chip() {
     fs::create_dir_all(&out).unwrap();
     let missing = tmp.path().join("gone.jpg");
 
-    let lines = Arc::new(Mutex::new(Vec::<String>::new()));
-    let sink_lines = Arc::clone(&lines);
-    let sink = LogSink::new(move |l: &str| sink_lines.lock().unwrap().push(l.to_string()));
+    let (sink, recorded) = recorded_log();
 
     let units = vec![unit_from(
         doc_with(&test_number(6), 1),
@@ -811,14 +806,17 @@ fn an_unreadable_attachment_is_logged_before_it_becomes_a_chip() {
     .unwrap();
 
     assert_eq!(report.conversations_written, 1, "the drain carries on");
-    let lines = lines.lock().unwrap().clone();
     let said = format!(
         "Attachment {} could not be read: no file there",
         missing.display()
     );
     assert!(
-        lines.contains(&said),
-        "an unreadable attachment says why, as a sentence, before it turns into a chip: {lines:?}"
+        recorded
+            .lock()
+            .unwrap()
+            .contains(&(RunLogLevel::Warn, said)),
+        "an unreadable attachment says why, as a sentence, at WARN, since the run goes on \
+         without it, before it turns into a chip: {recorded:?}"
     );
 
     let doc =

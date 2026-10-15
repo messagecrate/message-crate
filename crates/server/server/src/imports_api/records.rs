@@ -12,6 +12,7 @@ use serde_json::Value;
 
 use super::ImportFailure;
 use crate::config::validate_source_id;
+use crate::db::staging::EarlierVersionRecord;
 use crate::models::{StoredTime, utc_timestamp_text};
 
 /// One JSONL conversation after IR → database-row mapping.
@@ -166,20 +167,6 @@ pub struct MessageRecord {
     /// The earlier versions of an edited message, in the order the file
     /// lists them; `text` is the final version.
     pub earlier_versions: Vec<EarlierVersionRecord>,
-}
-
-/// One earlier version of one part of an edited message.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EarlierVersionRecord {
-    /// The part of the message this version belongs to.
-    pub part_index: i64,
-    /// The part's text in this version; `None` when the source recorded the
-    /// edit and not the text it replaced, as iMazing does.
-    pub text: Option<String>,
-    /// When this version was written, to the millisecond in the form
-    /// `MessageRecord::timestamp` takes; `None` when the source does not
-    /// record it.
-    pub edited_at: Option<StoredTime>,
 }
 
 /// One attachment of an imported message.

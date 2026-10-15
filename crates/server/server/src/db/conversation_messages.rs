@@ -22,7 +22,6 @@ pub use message_crate_api_types::{
     TimePrecision,
 };
 
-use crate::api_error::ApiError;
 use crate::db::conversations::is_group_type;
 use crate::db::ownership::owns_conversation;
 use crate::db::participant_names::load_for_conversations;
@@ -31,6 +30,38 @@ use crate::db::trash::not_trashed_conversation_id;
 use crate::models::StoredTime;
 use crate::paging::{Direction, Page, PageParams, SortKey, page_from_rows};
 use crate::search::bridge::Sql;
+
+/// Why a page of messages was not read.
+#[derive(Debug)]
+pub enum MessagePageError {
+    /// The request asks for a page no statement gives: a sort with no
+    /// meaning for it, or a message to read beside that the conversation
+    /// does not show. Carries the sentence naming the parameter.
+    Invalid(String),
+    /// A statement failed.
+    Internal(anyhow::Error),
+}
+
+impl std::fmt::Display for MessagePageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Invalid(sentence) => f.write_str(sentence),
+            Self::Internal(err) => write!(f, "{err:#}"),
+        }
+    }
+}
+
+impl From<anyhow::Error> for MessagePageError {
+    fn from(e: anyhow::Error) -> Self {
+        Self::Internal(e)
+    }
+}
+
+impl From<sqlx::Error> for MessagePageError {
+    fn from(e: sqlx::Error) -> Self {
+        Self::Internal(e.into())
+    }
+}
 
 /// Sorted, deduplicated ids for an `IN` list.
 fn unique_ids(ids: impl IntoIterator<Item = i64>) -> Vec<i64> {
@@ -163,7 +194,7 @@ pub async fn load_messages(
     order: &[SortKey<MessageSort>],
     limit: usize,
     offset: usize,
-) -> Result<Vec<Message>, ApiError> {
+) -> anyhow::Result<Vec<Message>> {
     let direction = order
         .iter()
         .find(|k| k.key == MessageSort::Date)
@@ -281,16 +312,17 @@ pub(crate) fn ranked_messages_from_sql() -> String {
 ///
 /// # Errors
 ///
-/// `validation-failed` when `order` names `relevance` and the filter has no
-/// free-text word to rank by, or names `-relevance`, which has no meaning;
-/// otherwise an error when a statement fails.
+/// [`MessagePageError::Invalid`] when `order` names `relevance` and the
+/// filter has no free-text word to rank by, or names `-relevance`, which has
+/// no meaning; otherwise [`MessagePageError::Internal`] when a statement
+/// fails.
 pub async fn load_message_list_page(
     conn: &mut SqliteConnection,
     filter: &crate::search::Filter,
     order: &[SortKey<MessageListSort>],
     limit: usize,
     offset: usize,
-) -> Result<Vec<Message>, ApiError> {
+) -> Result<Vec<Message>, MessagePageError> {
     let (sql, params) = message_list_page_sql(filter, order, limit, offset)?;
     let mut page = fetch_message_page(conn, sqlx::AssertSqlSafe(sql), &params).await?;
     mark_earlier_version_matches(conn, filter, &mut page).await?;
@@ -311,7 +343,7 @@ async fn mark_earlier_version_matches(
     conn: &mut SqliteConnection,
     filter: &crate::search::Filter,
     page: &mut [Message],
-) -> Result<(), ApiError> {
+) -> anyhow::Result<()> {
     let (Some((final_where, final_params)), Some((matching_sql, matching_params))) =
         (filter.final_text(), filter.matching_earlier_version_ids())
     else {
@@ -398,13 +430,14 @@ pub(crate) fn message_list_page_sql(
     order: &[SortKey<MessageListSort>],
     limit: usize,
     offset: usize,
-) -> Result<(String, Vec<SqlParam>), ApiError> {
+) -> Result<(String, Vec<SqlParam>), MessagePageError> {
     if order
         .iter()
         .any(|k| k.key == MessageListSort::Relevance && k.direction == Direction::Desc)
     {
-        return Err(ApiError::validation(
-            "sort: relevance has one direction, best match first; write `relevance`, not `-relevance`",
+        return Err(MessagePageError::Invalid(
+            "sort: relevance has one direction, best match first; write `relevance`, not `-relevance`"
+                .into(),
         ));
     }
 
@@ -413,8 +446,9 @@ pub(crate) fn message_list_page_sql(
     let mut params = Vec::new();
     if ranked {
         let Some(rank_query) = filter.rank_query() else {
-            return Err(ApiError::validation(
-                "sort: relevance needs a free-text word in q to rank by; sort by date instead",
+            return Err(MessagePageError::Invalid(
+                "sort: relevance needs a free-text word in q to rank by; sort by date instead"
+                    .into(),
             ));
         };
         from_sql = ranked_messages_from_sql();
@@ -470,7 +504,7 @@ pub(crate) async fn load_messages_from(
     order_by: &str,
     limit: usize,
     offset: usize,
-) -> Result<Vec<Message>, ApiError> {
+) -> anyhow::Result<Vec<Message>> {
     let (sql, params) = message_page_sql(from_sql, where_sql, params, order_by, limit, offset);
     fetch_message_page(conn, sqlx::AssertSqlSafe(sql), &params).await
 }
@@ -514,7 +548,7 @@ async fn fetch_message_page(
     conn: &mut SqliteConnection,
     sql: impl SqlSafeStr,
     params: &[SqlParam],
-) -> Result<Vec<Message>, ApiError> {
+) -> anyhow::Result<Vec<Message>> {
     let page_rows: Vec<RawRow> = (&mut *conn)
         .fetch_all(bind_all(sql, params))
         .await
@@ -817,7 +851,7 @@ async fn load_earlier_versions(
 pub(crate) async fn count_matching_messages(
     conn: &mut SqliteConnection,
     filter: &crate::search::Filter,
-) -> Result<u64, ApiError> {
+) -> anyhow::Result<u64> {
     let sql = format!(
         "SELECT COUNT(*)
          {messages_from_sql}
@@ -942,9 +976,9 @@ fn window_sides(
 ///
 /// # Errors
 ///
-/// `validation-failed` when `window` names a message this conversation does
-/// not show: one of another conversation, a duplicate, or no message at all.
-/// `Internal` when a statement fails.
+/// [`MessagePageError::Invalid`] when `window` names a message this
+/// conversation does not show: one of another conversation, a duplicate, or
+/// no message at all. [`MessagePageError::Internal`] when a statement fails.
 pub async fn get_conversation_messages(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -952,7 +986,7 @@ pub async fn get_conversation_messages(
     order: &[SortKey<MessageSort>],
     page: PageParams,
     window: MessageWindow,
-) -> Result<Option<Page<Message>>, ApiError> {
+) -> Result<Option<Page<Message>>, MessagePageError> {
     if !owns_conversation(conn, account_id, conversation_id)
         .await
         .context("check that the account holds the conversation")?
@@ -993,7 +1027,7 @@ pub async fn get_conversation_messages(
     .await
     .context("read the place of the message a page of a conversation is read beside")?;
     let Some((timestamp, sort_order)) = anchor else {
-        return Err(ApiError::validation(format!(
+        return Err(MessagePageError::Invalid(format!(
             "{parameter}: message {anchor_id} is not in this conversation"
         )));
     };

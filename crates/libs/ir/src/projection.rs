@@ -1,6 +1,8 @@
 //! Shared projection from [`PendingConversation`] to [`ConversationDocument`].
 //!
-//! Every exporter used to carry its own copy of this loop. The skeleton —
+//! Every exporter but Apple Messages builds its documents here (the
+//! [`ProjectionHooks`] documentation says why Apple Messages does not). The
+//! skeleton —
 //! participants with the single-peer fallback, owner sender handling,
 //! sent/received tallying, the dedupe step, GUID derivation, linking each
 //! reply to the message it quotes, and document assembly — lives here once;
@@ -82,6 +84,18 @@ pub struct PendingReply {
 /// Only [`export`](Self::export), [`service`](Self::service), and
 /// [`source`](Self::source) are required; every other method has a default
 /// matching the common exporter behavior.
+///
+/// Every exporter projects through these hooks except Apple Messages
+/// (`imessage-ir-exporter`), which builds its documents from the messages
+/// the Apple Messages Reader sends, already in [`IrMessage`] form, for two
+/// reasons. Each message keeps `chat.db`'s own `guid` as its guid, because
+/// that is the name the database's replies (`thread_originator_guid`, read
+/// into [`IrMessage::reply_to`]) and tapbacks (`associated_message_guid`,
+/// read into [`IrImessage::associated_guid`](crate::IrImessage)) give the
+/// message they point at; a [`MessageGuid`] made here would leave every one
+/// of them pointing at nothing. And the dedupe step has nothing to do there:
+/// `chat.db` holds each message once, as one row with a `guid` no other
+/// row has, so no copy repeats another.
 pub trait ProjectionHooks {
     /// Export metadata (source / tool / version / owner) stamped on the document.
     fn export(&self) -> ExportMeta;
@@ -260,12 +274,39 @@ struct Prepared {
 /// [`prepare_conversation`] (or an equivalent prune) first.
 ///
 /// Returns the document and a [`ProjectionTally`] for the caller to fold into
-/// its report.
+/// its report. [`project_pending`] also says which pending message each of
+/// the document's messages was made from.
 pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
     chat_id: &str,
     conversation: &PendingConversation,
     hooks: &H,
 ) -> (ConversationDocument, ProjectionTally) {
+    let projection = project_pending(chat_id, conversation, hooks);
+    (projection.document, projection.tally)
+}
+
+/// What [`project_pending`] made of one pending conversation.
+#[derive(Debug, Clone)]
+pub struct Projection {
+    /// The conversation's document, as [`pending_to_document`] returns it.
+    pub document: ConversationDocument,
+    /// The counts, as [`pending_to_document`] returns them.
+    pub tally: ProjectionTally,
+    /// For each message of [`Self::document`], in order, the index in the
+    /// conversation's `messages` of the pending message it was made from. A
+    /// copy the dedupe step dropped has no entry.
+    pub kept: Vec<usize>,
+}
+
+/// [`pending_to_document`], also naming the pending message each message of
+/// the document was made from, for an exporter that reports something about
+/// each message it kept (SMS Backup & Restore names each one with a part
+/// left out, at the time the dedupe step kept).
+pub fn project_pending<H: ProjectionHooks + ?Sized>(
+    chat_id: &str,
+    conversation: &PendingConversation,
+    hooks: &H,
+) -> Projection {
     let export = hooks.export();
     let (owner_sender_identity, owner_sender_display) = owner_sender(&export);
     let unit = hooks.sort_key_unit();
@@ -303,13 +344,21 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
 
     let mut tally = ProjectionTally::default();
     let mut messages = Vec::with_capacity(conversation.messages.len());
+    let mut kept_indices = Vec::with_capacity(conversation.messages.len());
     let mut replies: Vec<(usize, PendingReply)> = Vec::new();
     let mut guid_by_reply_key: HashMap<String, Option<String>> = HashMap::new();
-    for ((message, p), kept) in conversation.messages.iter().zip(&prepared).zip(kept) {
+    for (index, ((message, p), kept)) in conversation
+        .messages
+        .iter()
+        .zip(&prepared)
+        .zip(kept)
+        .enumerate()
+    {
         let Some((timestamp_unix_ms, time_precision)) = kept else {
             tally.duplicates += 1;
             continue;
         };
+        kept_indices.push(index);
         let role = hooks.role(message);
         tally.messages += 1;
         match role {
@@ -412,7 +461,11 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
         messages,
         packaging_stem_suffix: hooks.packaging_stem_suffix(conversation),
     };
-    (document, tally)
+    Projection {
+        document,
+        tally,
+        kept: kept_indices,
+    }
 }
 
 /// Map of handle → display name from message extras and sender fields.
@@ -675,6 +728,28 @@ mod tests {
         assert_eq!(reply_of("ambiguous"), unlinked);
         assert_eq!(reply_of("no key"), unlinked);
         assert_eq!(reply_of("itself"), unlinked);
+    }
+
+    #[test]
+    fn a_projection_names_the_pending_message_each_kept_message_was_made_from() {
+        let mut conversation =
+            PendingConversation::new("+15555550122", false, None, vec!["+15555550122".into()]);
+        conversation.messages = vec![
+            pending_message(1_609_459_200, false, "hi"),
+            pending_message(1_609_459_200, false, "hi"),
+            pending_message(1_609_459_260, true, "yo"),
+        ];
+
+        let projection = project_pending("+15555550122", &conversation, &TestHooks);
+        assert_eq!(projection.tally.duplicates, 1);
+        let texts: Vec<_> = projection
+            .document
+            .messages
+            .iter()
+            .map(|m| m.text.as_str())
+            .collect();
+        assert_eq!(texts, ["hi", "yo"]);
+        assert_eq!(projection.kept, [0, 2], "the repeated copy has no entry");
     }
 
     #[test]

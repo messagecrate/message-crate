@@ -839,6 +839,12 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-15: **What an import went on without is a warning in its log.**
+  An attachment that could not be read or decrypted, a contacts database
+  that could not be read, a message left out, and each record a backup's
+  reader skipped were written to the Import Run's log as ordinary lines, so
+  the level filter in the Logs panel did not find them under Warn. They are
+  now written at the warning level (#2047).
 - 2026-10-15: **A reaction shows the name of whoever gave it when the
   backup has no address for them.** An iMazing export names the person who
   reacted by display name alone. The name was dropped on import, so the

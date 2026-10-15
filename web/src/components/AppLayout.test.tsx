@@ -7,7 +7,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { AppRoutes } from "../App";
 import type { SearchList } from "../lib/searchFields";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { mockedAuth, Providers } from "../test/providers";
+import { Providers } from "../test/providers";
 import { searchFieldsFor } from "../test/searchFields";
 import { setupUser } from "../test/user";
 import { LEFT_PANEL_STORAGE_KEY } from "./leftPanelWidth";
@@ -115,7 +115,7 @@ vi.mock("./ImportExportRoute", () => ({
 vi.mock("./MessageRoute", () => ({ default: () => <div data-testid="message-route" /> }));
 vi.mock("./CheckedContactsPanel", () => ({ default: () => null }));
 
-vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", async () => (await import("../test/providers")).authModule());
 // The desktop app with a profile shows Export in the left panel.
 const desktop = vi.hoisted(() => ({ on: false }));
 vi.mock("../lib/useAccountProfile", () => ({

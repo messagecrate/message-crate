@@ -15,12 +15,12 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { account } from "../../test/apiShapes";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
-import { mockedAuth, Providers } from "../../test/providers";
+import { authModule, Providers } from "../../test/providers";
 import { OwnerAccountsPanel } from "./OwnerAccountsPanel";
 
 const listAccounts = vi.hoisted(() => vi.fn());
 
-vi.mock("../../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../lib/authContext", () => authModule());
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),

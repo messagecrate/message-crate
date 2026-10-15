@@ -3,12 +3,12 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Providers } from "../../test/providers";
+import { authModule, Providers } from "../../test/providers";
 import LocalAuthTabs from "./LocalAuthTabs";
 
-vi.mock("../../lib/authContext", () => ({
-  useAuth: () => ({ login: vi.fn(), setServer: vi.fn(), serverUrl: "" }),
-}));
+vi.mock("../../lib/authContext", () =>
+  authModule(() => ({ login: vi.fn(), setServer: vi.fn(), serverUrl: "" })),
+);
 
 afterEach(cleanup);
 

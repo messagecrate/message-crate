@@ -8,7 +8,7 @@ use anyhow::{Context, Result as AnyResult};
 use serde::Serialize;
 use sqlx::SqliteConnection;
 
-use crate::api_error::ApiError;
+use crate::db::SearchListError;
 use crate::db::contacts::UNKNOWN_CONTACT_SQL;
 use crate::db::sql::{SqlParam, bind_args, in_placeholders};
 use crate::db::trash::{not_trashed_contact, not_trashed_conversation};
@@ -162,8 +162,8 @@ fn contact_order_by(keys: &[SortKey<ContactSort>]) -> String {
 ///
 /// # Errors
 ///
-/// `BadRequest` for a query the language refuses; `Internal` when a
-/// statement fails.
+/// [`SearchListError::Query`] for a query the language refuses;
+/// [`SearchListError::Internal`] when a statement fails.
 pub async fn list_contacts_sorted(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -171,7 +171,7 @@ pub async fn list_contacts_sorted(
     order: &[SortKey<ContactSort>],
     page: PageParams,
     clock: (chrono_tz::Tz, chrono::NaiveDate),
-) -> Result<Page<ContactSummary>, ApiError> {
+) -> Result<Page<ContactSummary>, SearchListError> {
     let filter = compile_contacts_query(account_id, q, clock)?;
     let where_sql = filter.where_sql();
 
@@ -283,14 +283,14 @@ pub async fn list_contacts_sorted(
 ///
 /// # Errors
 ///
-/// `BadRequest` for a query the language refuses; `Internal` when the
-/// statement fails.
+/// [`SearchListError::Query`] for a query the language refuses;
+/// [`SearchListError::Internal`] when the statement fails.
 pub async fn contact_ids_matching(
     conn: &mut SqliteConnection,
     account_id: i64,
     q: &str,
     clock: (chrono_tz::Tz, chrono::NaiveDate),
-) -> Result<HashSet<i64>, ApiError> {
+) -> Result<HashSet<i64>, SearchListError> {
     let filter = compile_contacts_query(account_id, q, clock)?;
     let sql = format!("SELECT ct.id FROM contacts ct WHERE {}", filter.where_sql());
     let ids: Vec<i64> =
@@ -307,14 +307,14 @@ fn compile_contacts_query(
     account_id: i64,
     q: &str,
     (zone, today): (chrono_tz::Tz, chrono::NaiveDate),
-) -> Result<crate::search::Filter, ApiError> {
-    Ok(crate::search::compile(crate::search::CompileRequest {
+) -> Result<crate::search::Filter, crate::search::QueryError> {
+    crate::search::compile(crate::search::CompileRequest {
         list: crate::search::ListKind::Contacts,
         query: q,
         account_id,
         today,
         zone,
-    })?)
+    })
 }
 
 type ContactRow = (
@@ -431,7 +431,7 @@ pub async fn get_contact_summaries(
     conn: &mut SqliteConnection,
     account_id: i64,
     ids: &[i64],
-) -> Result<Vec<ContactSelectionSummary>, ApiError> {
+) -> anyhow::Result<Vec<ContactSelectionSummary>> {
     let mut seen = HashSet::new();
     let mut unique = Vec::new();
     for id in ids.iter().copied() {

@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../lib/queryKeys";
 import { routeQueryKey } from "../../lib/routeQueryKey";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
-import { testQueryClient } from "../../test/providers";
+import { authModule, testQueryClient } from "../../test/providers";
 import { freshEntries, seedEntries } from "../../test/staleEntries";
 import { fill, setupUser } from "../../test/user";
 import { ProfileDangerZone } from "./ProfileDangerZone";
@@ -27,9 +27,7 @@ vi.mock("../../lib/importRun", async (importOriginal) => ({
   accountRunDirectories: (...a: unknown[]) => accountRunDirectories(...a),
 }));
 
-vi.mock("../../lib/authContext", () => ({
-  useAuth: () => ({ accountId: 7, logout }),
-}));
+vi.mock("../../lib/authContext", () => authModule(() => ({ accountId: 7, logout })));
 
 vi.mock("../owner/useOwnerAccounts", () => ({
   useDeleteAccount: () => ({ mutateAsync: vi.fn() }),

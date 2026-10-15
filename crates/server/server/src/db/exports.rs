@@ -11,7 +11,6 @@ use sqlx::{Executor, Row, SqliteConnection};
 
 use crate::db::begin_write;
 
-use crate::api_error::ApiError;
 use crate::db::conversation_messages::{
     Message, MessageSort, conversation_join_sql, load_messages_from, messages_from_sql,
 };
@@ -488,7 +487,7 @@ fn page_places(total: u64, page: PageParams, direction: Direction) -> (i64, i64)
 pub async fn export_messages(
     conn: &mut SqliteConnection,
     opts: ExportPageOpts,
-) -> Result<Page<Message>, ApiError> {
+) -> anyhow::Result<Page<Message>> {
     let direction = opts
         .order
         .iter()

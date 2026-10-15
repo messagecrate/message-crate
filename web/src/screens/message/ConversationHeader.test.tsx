@@ -14,11 +14,11 @@ import type { Conversation } from "../../lib/types";
 import { participant } from "../../test/apiShapes";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { nth } from "../../test/nth";
-import { mockedAuth, Providers } from "../../test/providers";
+import { authModule, Providers } from "../../test/providers";
 import { fill, setupUser } from "../../test/user";
 import ConversationHeader from "./ConversationHeader";
 
-vi.mock("../../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../lib/authContext", () => authModule());
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),

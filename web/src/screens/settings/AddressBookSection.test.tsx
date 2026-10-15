@@ -7,7 +7,7 @@ import { ApiError } from "../../lib/api";
 import { keys } from "../../lib/queryKeys";
 import { loadAddressBook } from "../../lib/serverApi";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
-import { renderWithProviders, testQueryClient } from "../../test/providers";
+import { authModule, renderWithProviders, testQueryClient } from "../../test/providers";
 import { freshEntries, seedEntries } from "../../test/staleEntries";
 import { MIB } from "../../test/units";
 import { setupUser } from "../../test/user";
@@ -15,9 +15,7 @@ import { AddressBookSection } from "./AddressBookSection";
 
 vi.mock("../../lib/serverApi", () => ({ loadAddressBook: vi.fn() }));
 
-vi.mock("../../lib/authContext", () => ({
-  useAuth: () => ({ accountId: 7 }),
-}));
+vi.mock("../../lib/authContext", () => authModule({ accountId: 7 }));
 
 const post = vi.mocked(loadAddressBook);
 
