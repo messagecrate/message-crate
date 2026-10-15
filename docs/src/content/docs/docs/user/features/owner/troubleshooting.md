@@ -72,11 +72,12 @@ Nothing in the browser or the desktop app can set the Owner's password, because 
 The server program sets it from a command line on the computer that runs Docker.
 
 ```bash title="Set a new Owner password"
-docker exec message-crate \
-  message-crate-server reset-owner-password --password 'the-new-password'
+docker exec -it message-crate message-crate-server reset-owner-password
 ```
 
-The command prints the Owner's username and ends every Session the Owner had open.
+The command asks for the new password and doesn't show it as it's typed.
+It takes the password that way, not on the command line, because a command line is visible to everyone signed in to the computer while the command runs, and stays in the shell's history afterwards.
+It prints the Owner's username and ends every Session the Owner had open.
 
 ### There is no Create Account on the login card
 

@@ -209,6 +209,12 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-15: **The owner's password is typed, not written on the command
+  line.** The server's `create-owner` and `reset-owner-password` commands
+  now ask for the password and don't show it as it's typed, or read it from
+  the first line of their input when it is piped in. They no longer take
+  it as `--password`, because a command line is visible to everyone signed
+  in to the computer while it runs and stays in the shell's history (#2094).
 - 2026-10-12: **A wrong password now costs a short wait instead of counting
   toward a lockout.** A refused login, and a wrong current password when
   changing the owner's password or deleting an account, waits about a second
@@ -1299,6 +1305,18 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-15: **The website tells the browser to run only its own
+  scripts.** The website the server serves, and every answer from the
+  server, now carry a Content Security Policy and two related headers, as
+  the desktop app's window already did. A script slipped into a page can no
+  longer run there and read your login, and no other site can show the
+  login card inside its own page (#2073).
+- 2026-10-15: **A server command from another version no longer empties
+  the database under a running server.** A command such as `import` from a
+  build with a different database format rebuilt the database empty while
+  a server was serving it, and the server went on showing the empty
+  database until it restarted. The command now stops, names the database
+  and asks for the server to be stopped first (#2920).
 - 2026-10-14: **The Compose files publish the server to this computer
   only.** Both Compose files published port 8080 on every network the
   computer is on, unlike the `docker run` command in Run Message Crate
@@ -1587,6 +1605,11 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-15: A script that runs `create-owner` or
+  `reset-owner-password` with `--password` must write the password to the
+  command's input instead, for example
+  `printf '%s\n' "$PASSWORD" | message-crate-server reset-owner-password`.
+  With `docker exec`, add `-it` to type it when asked (#2094).
 - 2026-10-14: A Compose file saved from the repository before this
   release keeps publishing the server on every network the computer is
   on, because pulling a new image does not change the file. To keep the
