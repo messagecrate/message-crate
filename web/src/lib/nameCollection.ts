@@ -1,6 +1,7 @@
 import type { InfiniteData, UseMutationResult } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef } from "react";
 import { ApiError } from "./api";
+import type reservedNames from "./reservedNames.json";
 import {
   type OffsetPage,
   type RouteCacheEntries,
@@ -74,9 +75,16 @@ type NameCollectionConfig = {
   label: string;
   /** This collection's search term for one name, e.g. `forGroup` from `searchQuery.ts`. */
   forName: (name: string) => string;
-  reservedNames: ReadonlySet<string>;
-  reservedError: (name: string) => string;
+  /**
+   * This collection's entry in `reservedNames.json`: what the server calls
+   * it, the names it refuses, and the names it refuses with a sentence of
+   * their own. The server's test writes the file from its own lists, in
+   * lower case, and fails when the committed file differs.
+   */
+  reserved: ReservedNames;
 };
+
+type ReservedNames = (typeof reservedNames)[keyof typeof reservedNames];
 
 export type NameCollection = {
   /** Cache key parts, before the account is put in front of them. */
@@ -91,7 +99,14 @@ export type NameCollection = {
 };
 
 export function createNameCollection(config: NameCollectionConfig): NameCollection {
-  const isReserved = (name: string) => config.reservedNames.has(name.trim().toLowerCase());
+  const reservedSet = new Set(config.reserved.reserved);
+  const isReserved = (name: string) => reservedSet.has(name.trim().toLowerCase());
+  // The sentence the server answers for a reserved name, word for word.
+  const reservedError = (name: string) => {
+    const key = name.trim().toLowerCase();
+    const special = config.reserved.special.find((s) => s.name === key);
+    return special?.message ?? `"${name.trim()}" is a reserved ${config.reserved.label}`;
+  };
 
   function listQuery(name: string | "none" | null, search: string): string {
     return narrow(name ? config.forName(name) : "", search);
@@ -103,7 +118,7 @@ export function createNameCollection(config: NameCollectionConfig): NameCollecti
     chips: config.chips,
     label: config.label,
     isReserved,
-    reservedError: config.reservedError,
+    reservedError,
     listQuery,
   };
 }

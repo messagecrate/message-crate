@@ -22,6 +22,12 @@ carry their date on the heading.
 
 ### Features
 
+- 2026-10-15: **The login card says when the password would cross the
+  network unencrypted.** Opened over plain HTTP from another computer, such
+  as at `http://192.168.1.20:8080`, the login card and Create Owner now say
+  that the connection is not encrypted, so the password crosses the network
+  as typed. An address on the same computer, and any `https` address, shows
+  nothing new (#2115).
 - 2026-10-12: **Owner Home quotes SQLite's error when write-ahead logging is
   off.** When the server could not turn write-ahead logging on as it
   started, the notice above every Owner Home section now says what SQLite
