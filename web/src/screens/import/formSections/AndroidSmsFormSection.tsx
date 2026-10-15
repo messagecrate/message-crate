@@ -12,6 +12,7 @@ import type { ImportFormSectionProps } from "./types";
  * number being typed stays when the source changes among them.
  */
 export default function AndroidSmsFormSection(props: ImportFormSectionProps) {
+  const { form, dispatch } = props;
   const entry = props.ownerPhoneEntry;
   return (
     <>
@@ -20,8 +21,8 @@ export default function AndroidSmsFormSection(props: ImportFormSectionProps) {
       <StackedField label="Backup Device Phone Numbers" required>
         <PhoneTokenField
           ref={entry.fieldRef}
-          value={props.ownerPhones}
-          onChange={props.onOwnerPhonesChange}
+          value={form.ownerPhones}
+          onChange={(phones) => dispatch({ type: "set", field: "ownerPhones", value: phones })}
           onDraftChange={entry.onDraftChange}
           aria-label="Backup Device Phone Numbers"
         />
@@ -65,8 +66,8 @@ export default function AndroidSmsFormSection(props: ImportFormSectionProps) {
             type="text"
             inputMode="email"
             aria-label="Backup Device Email Addresses"
-            value={props.ownerEmails}
-            onChange={(e) => props.onOwnerEmailsChange(e.target.value)}
+            value={form.ownerEmails}
+            onChange={(e) => dispatch({ type: "set", field: "ownerEmails", value: e.target.value })}
             placeholder="you@example.com"
             className={textInputClass}
           />

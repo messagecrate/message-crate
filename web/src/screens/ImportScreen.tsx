@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { phoneNumbers, profileAddresses } from "../lib/account";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
-import { attachmentChoicesOf, DEFAULT_ATTACHMENT_CHOICES } from "../lib/attachmentChoices";
 import { type IdentityType, identityOnProfile, parseSourceIdentities } from "../lib/backupIdentity";
 import { getDeviceId } from "../lib/deviceId";
 import {
@@ -11,7 +10,6 @@ import {
 } from "../lib/imessageImport";
 import { type ActiveImportRun, getActiveImportRun } from "../lib/importRun";
 import { importSourceById, importSourceFor } from "../lib/importSources";
-import { splitEmails } from "../lib/importSources/androidSms";
 import { serverService } from "../lib/offeredService";
 import { probePath, toDesktopOs } from "../lib/pathChecks";
 import { usePhoneCountries } from "../lib/phoneCountries";
@@ -29,7 +27,6 @@ import {
 import { invokeHomeDir, invokePathStat } from "../lib/tauri";
 import { isTauri } from "../lib/tauriCheck";
 import { useTimeZone } from "../lib/timeZone";
-import type { AttachmentChoices } from "../lib/types";
 import {
   useAccountProfile,
   useFetchAccountProfile,
@@ -42,9 +39,17 @@ import {
 } from "../lib/useBackupPathStats";
 import BackupIdentityList from "./import/BackupIdentityList";
 import BackupIdentityStopScreen from "./import/BackupIdentityStopScreen";
+import type { ProfilePhones } from "./import/formSections/types";
 import { restoreFormFromSnapshot, snapshotSecret } from "./import/formSnapshot";
 import ImportFormFields from "./import/ImportFormFields";
 import ImportRunView from "./import/ImportRunView";
+import {
+  type ImportPathField,
+  importFormReducer,
+  importJobValues,
+  newImportForm,
+  type SourcePaths,
+} from "./import/importForm";
 import { isReviewPhase } from "./import/importRunStore";
 import ResumeImportPanel from "./import/ResumeImportPanel";
 import RunDirDeleteFailureNotice from "./import/RunDirDeleteFailureNotice";
@@ -60,7 +65,8 @@ import type { DiscardOutcome } from "./import/run/finish";
 import { parseStoredStagingSummary } from "./import/run/stagingSummary";
 import { useImportJob } from "./import/useImportJob";
 
-const DEFAULT_SOURCE = IMESSAGE_DEFAULT_METHOD;
+/** The account's phones before they are read, and for a source that does not ask for them. */
+const PROFILE_PHONES_UNREAD: ProfilePhones = { phones: [], ready: false, error: false };
 /** The server's own cap on one `/v1/contacts/unmatched-identities` request (`MAX_MATCH_IDENTIFIERS`,
  * `crates/server/server/src/contacts_api.rs`) — the client batches to it rather than
  * discovering the limit from a 422. */
@@ -93,7 +99,7 @@ export default function ImportScreen() {
     phase,
     steps,
     running,
-    form,
+    form: runForm,
     summaryView,
     runDir,
     importRunId,
@@ -178,52 +184,27 @@ export default function ImportScreen() {
     }
   };
 
-  const [source, setSource] = useState(DEFAULT_SOURCE);
-  const [backupPath, setBackupPath] = useState(() =>
-    getRememberImporterPaths() ? getImporterPath(DEFAULT_SOURCE) : "",
+  const [form, dispatch] = useReducer(importFormReducer, null, () =>
+    newImportForm(getRememberImporterPaths() ? getImporterPath(IMESSAGE_DEFAULT_METHOD) : ""),
   );
-  const [attachmentRoot, setAttachmentRoot] = useState("");
-  const [appleContacts, setAppleContacts] = useState("");
-  const [whatsappKey, setWhatsappKey] = useState("");
-  const [showWhatsappKey, setShowWhatsappKey] = useState(false);
-  const [whatsappWa, setWhatsappWa] = useState("");
-  const [whatsappMedia, setWhatsappMedia] = useState("");
-  const [whatsappDb, setWhatsappDb] = useState("");
-  const [isBusinessApp, setIsBusinessApp] = useState(false);
-  /** The holder's WhatsApp number; seeded from the profile's first phone. */
-  const [whatsappOwnerPhone, setWhatsappOwnerPhone] = useState("");
-  const pathStats = useImessagePathStats({ source, backupPath, attachmentRoot, appleContacts });
+  const { source, backupPath } = form;
+  const pathStats = useImessagePathStats({
+    source,
+    backupPath,
+    attachmentRoot: form.attachmentRoot,
+    appleContacts: form.appleContacts,
+  });
   const whatsappStats = useWhatsappPathStats({
     source,
     backupPath,
-    contactsDb: whatsappWa,
-    media: whatsappMedia,
-    db: whatsappDb,
+    contactsDb: form.whatsappWa,
+    media: form.whatsappMedia,
+    db: form.whatsappDb,
   });
   const androidSmsStats = useAndroidSmsPathStats({ source, backupPath });
-  const [backupPassword, setBackupPassword] = useState("");
-  const [showBackupPassword, setShowBackupPassword] = useState(false);
-  const [attachments, setAttachments] = useState<AttachmentChoices>(DEFAULT_ATTACHMENT_CHOICES);
-  const [ownerPhones, setOwnerPhones] = useState<string[]>([]);
-  /** Owner email addresses as typed; split into a list when the import starts. */
-  const [ownerEmails, setOwnerEmails] = useState("");
-  const [formatOpen, setFormatOpen] = useState(true);
-  const [processingOpen, setProcessingOpen] = useState(false);
-  const [obfuscate, setObfuscate] = useState(false);
-  const [phoneCountry, setPhoneCountry] = useState("");
   const { countries: phoneCountries } = usePhoneCountries();
-  /** The zone iMazing dates are read in. The account's zone until the person
-   * picks another under Processing Options; null means "the account's". */
   const accountTimeZone = useTimeZone();
-  const [timeZoneOverride, setTimeZoneOverride] = useState<string | null>(null);
-  const timeZone = timeZoneOverride ?? accountTimeZone;
-  /** Profile phones after SBR fetch; empty until ready (or after a failed fetch). */
-  const [profilePhones, setProfilePhones] = useState<string[]>([]);
-  const [profilePhonesReady, setProfilePhonesReady] = useState(false);
-  const [profilePhonesError, setProfilePhonesError] = useState(false);
-  const ownerPhonesSeededRef = useRef(false);
-  const ownerEmailsSeededRef = useRef(false);
-  const whatsappOwnerPhoneSeededRef = useRef(false);
+  const [profilePhones, setProfilePhones] = useState<ProfilePhones>(PROFILE_PHONES_UNREAD);
   // The method last picked for each source with several, by source id, so
   // picking the source again returns to it.
   const lastMethodRef = useRef<Record<string, string>>({});
@@ -304,33 +285,6 @@ export default function ImportScreen() {
     };
   }, [phase, cache]);
 
-  /** Populate the visible form from a resumed or restarted run's settings. */
-  function applyRestoredFormState(restored: ReturnType<typeof restoreFormFromSnapshot>): void {
-    if (!restored) return;
-    setSource(restored.source);
-    setBackupPath(restored.backupPath);
-    setBackupPassword("");
-    setAttachmentRoot(restored.attachmentRoot);
-    setAppleContacts(restored.appleContacts);
-    setWhatsappKey("");
-    setWhatsappWa(restored.whatsappWa);
-    setWhatsappMedia(restored.whatsappMedia);
-    setWhatsappDb(restored.whatsappDb);
-    setIsBusinessApp(restored.isBusinessApp);
-    whatsappOwnerPhoneSeededRef.current = true;
-    setWhatsappOwnerPhone(restored.whatsappOwnerPhone);
-    setAttachments(attachmentChoicesOf(restored));
-    // Restoring settings counts as seeding: the SBR profile-phones effect
-    // must not overwrite what was just restored.
-    ownerPhonesSeededRef.current = true;
-    setOwnerPhones(restored.ownerPhones);
-    ownerEmailsSeededRef.current = true;
-    setOwnerEmails(restored.ownerEmails.join(", "));
-    setObfuscate(restored.obfuscate);
-    setPhoneCountry(restored.phoneCountry);
-    setTimeZoneOverride(restored.timeZone);
-  }
-
   /**
    * Discard the run the panel offers (`discardRun`): it closes with the
    * Import Errors its record holds, and its directory goes, so it must not
@@ -400,7 +354,7 @@ export default function ImportScreen() {
         setResume({ kind: "settings_unreadable", run });
         return;
       }
-      applyRestoredFormState(storedForm);
+      dispatch({ type: "refill", form: storedForm });
       // The typed secret goes to this one run's extract and nowhere else:
       // not into the visible form's state, and never into a snapshot.
       const restoredForm = resumeSecret
@@ -479,56 +433,31 @@ export default function ImportScreen() {
   useEffect(() => {
     const descriptor = importSourceFor(source);
     if (!descriptor.asksOwnerPhones && !descriptor.asksWhatsappOwnerPhone) {
-      setProfilePhones([]);
-      setProfilePhonesReady(false);
-      setProfilePhonesError(false);
-      ownerPhonesSeededRef.current = false;
-      ownerEmailsSeededRef.current = false;
-      whatsappOwnerPhoneSeededRef.current = false;
+      setProfilePhones(PROFILE_PHONES_UNREAD);
+      dispatch({ type: "unseed" });
       return;
     }
     const wantsEmails = descriptor.asksOwnerEmails;
     let cancelled = false;
-    setProfilePhonesReady(false);
-    setProfilePhonesError(false);
+    setProfilePhones((current) => ({ ...current, ready: false, error: false }));
     void (async () => {
       try {
         const profile = await fetchAccountProfile();
         if (cancelled) return;
         if (!profile) throw new Error("profile unavailable");
         const phones = phoneNumbers(profile);
-        setProfilePhones(phones);
-        setProfilePhonesError(false);
-        setProfilePhonesReady(true);
+        setProfilePhones({ phones, ready: true, error: false });
         if (descriptor.asksWhatsappOwnerPhone) {
-          const [first] = phones;
-          if (first === undefined || whatsappOwnerPhoneSeededRef.current) return;
-          setWhatsappOwnerPhone((current) => {
-            if (current.trim().length > 0) return current;
-            whatsappOwnerPhoneSeededRef.current = true;
-            return first;
-          });
+          dispatch({ type: "seed", whatsappOwnerPhone: phones[0] });
           return;
         }
-        if (wantsEmails && profile.emails.length > 0 && !ownerEmailsSeededRef.current) {
-          setOwnerEmails((current) => {
-            if (current.trim().length > 0) return current;
-            ownerEmailsSeededRef.current = true;
-            return profile.emails.join(", ");
-          });
-        }
-        if (phones.length === 0 || ownerPhonesSeededRef.current) return;
-        setOwnerPhones((current) => {
-          if (current.length > 0) return current;
-          ownerPhonesSeededRef.current = true;
-          return phones;
+        dispatch({
+          type: "seed",
+          ownerPhones: phones,
+          ownerEmails: wantsEmails ? profile.emails.join(", ") : undefined,
         });
       } catch {
-        if (!cancelled) {
-          setProfilePhones([]);
-          setProfilePhonesError(true);
-          setProfilePhonesReady(true);
-        }
+        if (!cancelled) setProfilePhones({ phones: [], ready: true, error: true });
       }
     })();
     return () => {
@@ -542,17 +471,19 @@ export default function ImportScreen() {
     };
   }, []);
 
-  function applyRememberedPaths(nextSource: string): string {
+  /** The paths remembered for `nextSource`; a field it does not remember is empty. */
+  function rememberedPathsFor(nextSource: string): SourcePaths {
     const loaded = loadRememberedImportPaths(nextSource);
     const remembered = importSourceFor(nextSource).rememberedPaths;
     const pathOf = (field: ImporterExtraField) => (remembered.includes(field) ? loaded[field] : "");
-    setBackupPath(loaded.backupPath);
-    setAttachmentRoot(pathOf("attachmentRoot"));
-    setAppleContacts(pathOf("appleContacts"));
-    setWhatsappWa(pathOf("whatsappWa"));
-    setWhatsappMedia(pathOf("whatsappMedia"));
-    setWhatsappDb(pathOf("whatsappDb"));
-    return loaded.backupPath;
+    return {
+      backupPath: loaded.backupPath,
+      attachmentRoot: pathOf("attachmentRoot"),
+      appleContacts: pathOf("appleContacts"),
+      whatsappWa: pathOf("whatsappWa"),
+      whatsappMedia: pathOf("whatsappMedia"),
+      whatsappDb: pathOf("whatsappDb"),
+    };
   }
 
   function handleSourceChange(next: string): void {
@@ -560,10 +491,10 @@ export default function ImportScreen() {
     const picked = importSourceById(next);
     const resolved = picked ? (lastMethodRef.current[picked.id] ?? picked.defaultMethod) : next;
     const gen = ++sourceChangeGenRef.current;
-    setSource(resolved);
     lastMethodRef.current[importSourceFor(resolved).id] = resolved;
-    if (resolved !== "whatsapp-ios") setIsBusinessApp(false);
-    const loadedBackup = applyRememberedPaths(resolved);
+    const paths = rememberedPathsFor(resolved);
+    dispatch({ type: "source", source: resolved, paths });
+    const loadedBackup = paths.backupPath;
 
     if (resolved !== "imessage-macos" || loadedBackup.trim() !== "" || !isTauri()) {
       return;
@@ -586,7 +517,7 @@ export default function ImportScreen() {
           rememberedPath: loadedBackup,
         });
         if (prefill === "") return;
-        setBackupPath(prefill);
+        dispatch({ type: "path", field: "backupPath", value: prefill });
         if (getRememberImporterPaths()) setImporterPath(resolved, prefill);
       } catch {
         // Home directory and path checks are best-effort on Mac only.
@@ -594,41 +525,15 @@ export default function ImportScreen() {
     })();
   }
 
-  const updateBackupPath = (path: string) => {
-    setBackupPath(path);
-    if (getRememberImporterPaths()) setImporterPath(source, path);
-  };
-
-  /** Remember a path field beside the backup, when the source keeps it. */
-  const rememberExtraPath = (field: ImporterExtraField, path: string) => {
-    if (getRememberImporterPaths() && importSourceFor(source).rememberedPaths.includes(field)) {
+  /** Set a path field, and remember it for the source when the source keeps it. */
+  const changePath = (field: ImportPathField, path: string) => {
+    dispatch({ type: "path", field, value: path });
+    if (!getRememberImporterPaths()) return;
+    if (field === "backupPath") {
+      setImporterPath(source, path);
+    } else if (importSourceFor(source).rememberedPaths.includes(field)) {
       setImporterExtraPath(source, field, path);
     }
-  };
-
-  const updateAttachmentRoot = (path: string) => {
-    setAttachmentRoot(path);
-    rememberExtraPath("attachmentRoot", path);
-  };
-
-  const updateAppleContacts = (path: string) => {
-    setAppleContacts(path);
-    rememberExtraPath("appleContacts", path);
-  };
-
-  const updateWhatsappWa = (path: string) => {
-    setWhatsappWa(path);
-    rememberExtraPath("whatsappWa", path);
-  };
-
-  const updateWhatsappMedia = (path: string) => {
-    setWhatsappMedia(path);
-    rememberExtraPath("whatsappMedia", path);
-  };
-
-  const updateWhatsappDb = (path: string) => {
-    setWhatsappDb(path);
-    rememberExtraPath("whatsappDb", path);
   };
 
   return (
@@ -641,88 +546,21 @@ export default function ImportScreen() {
       )}
       {phase === "form" && resumeChecked && resume.kind === "none" && (
         <ImportFormFields
-          source={source}
+          form={form}
+          dispatch={dispatch}
           onSourceChange={handleSourceChange}
-          backupPath={backupPath}
-          onBackupPathChange={updateBackupPath}
-          backupPassword={backupPassword}
-          onBackupPasswordChange={setBackupPassword}
-          showBackupPassword={showBackupPassword}
-          onToggleBackupPassword={() => setShowBackupPassword((v) => !v)}
-          attachmentRoot={attachmentRoot}
-          onAttachmentRootChange={updateAttachmentRoot}
-          appleContacts={appleContacts}
-          onAppleContactsChange={updateAppleContacts}
+          onPathChange={changePath}
           pathStats={pathStats}
-          whatsappKey={whatsappKey}
-          onWhatsappKeyChange={setWhatsappKey}
-          showWhatsappKey={showWhatsappKey}
-          onToggleWhatsappKey={() => setShowWhatsappKey((v) => !v)}
-          whatsappWa={whatsappWa}
-          onWhatsappWaChange={updateWhatsappWa}
-          whatsappMedia={whatsappMedia}
-          onWhatsappMediaChange={updateWhatsappMedia}
-          whatsappDb={whatsappDb}
-          onWhatsappDbChange={updateWhatsappDb}
-          isBusinessApp={isBusinessApp}
-          onIsBusinessAppChange={setIsBusinessApp}
-          whatsappOwnerPhone={whatsappOwnerPhone}
-          onWhatsappOwnerPhoneChange={(value) => {
-            whatsappOwnerPhoneSeededRef.current = true;
-            setWhatsappOwnerPhone(value);
-          }}
           whatsappStats={whatsappStats}
           androidSmsStats={androidSmsStats}
-          attachments={attachments}
-          onAttachmentsChange={setAttachments}
-          ownerPhones={ownerPhones}
-          onOwnerPhonesChange={(phones) => {
-            ownerPhonesSeededRef.current = true;
-            setOwnerPhones(phones);
-          }}
-          ownerEmails={ownerEmails}
-          onOwnerEmailsChange={(value) => {
-            ownerEmailsSeededRef.current = true;
-            setOwnerEmails(value);
-          }}
           profilePhones={profilePhones}
-          profilePhonesReady={profilePhonesReady}
-          profilePhonesError={profilePhonesError}
-          showMissingAccountPhoneWarning={
-            profilePhonesReady && !profilePhonesError && profilePhones.length === 0
-          }
-          formatOpen={formatOpen}
-          onToggleFormat={() => setFormatOpen((o) => !o)}
-          processingOpen={processingOpen}
-          onToggleProcessing={() => setProcessingOpen((o) => !o)}
-          obfuscate={obfuscate}
-          onObfuscateChange={setObfuscate}
-          timeZone={timeZone}
-          onTimeZoneChange={setTimeZoneOverride}
-          phoneCountry={phoneCountry}
+          accountTimeZone={accountTimeZone}
           phoneCountries={phoneCountries}
-          onPhoneCountryChange={setPhoneCountry}
           running={running}
           onImport={(flushedPhones) =>
-            void startImport({
-              source,
-              backupPath,
-              backupPassword,
-              ...attachments,
-              ownerPhones: flushedPhones ?? ownerPhones,
-              ownerEmails: splitEmails(ownerEmails),
-              obfuscate,
-              timeZone,
-              phoneCountry,
-              attachmentRoot,
-              appleContacts,
-              whatsappKey,
-              whatsappWa,
-              whatsappMedia,
-              whatsappDb,
-              isBusinessApp,
-              whatsappOwnerPhone,
-            })
+            void startImport(
+              importJobValues(form, accountTimeZone, flushedPhones ?? form.ownerPhones),
+            )
           }
         />
       )}
@@ -742,7 +580,7 @@ export default function ImportScreen() {
           phase={phase}
           steps={steps}
           running={running}
-          form={form}
+          form={runForm}
           stagingSummary={stagingSummary}
           mediaSummary={mediaSummary}
           mediaFailedCount={mediaFailedCount}

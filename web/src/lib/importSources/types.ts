@@ -101,8 +101,8 @@ export type OwnerPhoneState = {
 
 /**
  * What a source's readiness reads from the Import form to decide whether
- * Import can start. The form's props are built on these fields, so the form
- * passes its props as they are, with the owner phone entry it builds.
+ * Import can start: the form's state, its path checks, whether the account's
+ * phones have been read, and the owner phone entry the form builds.
  */
 export type ReadinessInput = {
   /** The selected method's id. */
