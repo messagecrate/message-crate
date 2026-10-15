@@ -708,6 +708,14 @@ pub async fn record_demo_build(
     Ok(())
 }
 
+/// The id of the last Audit Trail entry, or 0 when there is none.
+pub async fn last_audit_entry_id(conn: &mut SqliteConnection) -> Result<i64> {
+    sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM audit_entries")
+        .fetch_one(&mut *conn)
+        .await
+        .context("read the last Audit Trail entry")
+}
+
 /// The entry that records a build of the Demo Account by `actor` with the
 /// `size` set: `demo_account_reset` about the Demo Account `replaced`, and
 /// `demo_account_added` about no account when there was none.

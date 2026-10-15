@@ -1,14 +1,37 @@
+use super::build::{
+    DEMO_IMPORT_SOURCES, build_from_bundle, import_batches, import_demo_sources,
+    import_demo_sources_with, load_demo_address_book, seed_demo_account, seed_demo_account_on_conn,
+    wipe_demo_account, wipe_demo_account_with,
+};
+use super::console::{not_done_line, say_generator_warnings};
+use super::snapshot::{
+    install_reset_state_with, replace_reset_state_with, seeding_path, sqlite_sidecar,
+};
+use super::verify::{DirectoryEntry, TableDigest, non_demo_state_on_conn, with_check_conn};
 use super::*;
 use crate::config::PathsConfig;
+use crate::db::account_profile;
+use crate::db::address_book;
+use crate::db::demo::DemoRows;
+use crate::db::engine;
+use crate::dedupe;
 use crate::imports_api::IMPORT_CONTACT_GROUP_NAME_SQL;
 use crate::progress::Progress;
 use crate::test_support::{
     ConversationRow, MessageRow, conversation_header, message_line, stored_time,
     with_trigger_lifted,
 };
+use anyhow::bail;
 use demo_seed::bundle::DemoOwner;
+use demo_seed::bundle::DemoSeed;
+use demo_seed::bundle::{IMESSAGE_SOURCE, SBR_SOURCE, WHATSAPP_SOURCE};
+use sqlx::AssertSqlSafe;
 use sqlx::SqliteConnection;
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::fs;
+use std::num::NonZeroU32;
+use std::path::PathBuf;
 
 pub(crate) fn write_tiny_reset_bundle(root: &Path) {
     fs::create_dir_all(root.join("config")).expect("create bundle config");

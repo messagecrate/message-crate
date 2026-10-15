@@ -205,11 +205,9 @@ fn record(logs: &mut LogsToClear, file: PathBuf, seen: Option<u64>, cleared: Log
 async fn checkpoint(file: &std::path::Path) -> sqlx::Result<bool> {
     use sqlx::Connection as _;
     let mut own = crate::db::engine::connect_for_checkpoint(file, CHECKPOINT_WAIT).await?;
-    let (busy, _, _) = sqlx::query_as::<_, (i64, i64, i64)>("PRAGMA wal_checkpoint(TRUNCATE)")
-        .fetch_one(&mut own)
-        .await?;
+    let finished = crate::db::maintenance::checkpoint_truncate(&mut own).await?;
     own.close().await?;
-    Ok(busy == 0)
+    Ok(finished)
 }
 
 /// Try again to clear the log of the database behind `pool`, when a read
