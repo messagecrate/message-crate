@@ -5,12 +5,12 @@ use axum::http::StatusCode;
 use serde_json::{Value, json};
 
 use crate::problem::ProblemType;
-use crate::server::{APP_HEADER, APP_VERSION_HEADER};
 use crate::test_support::{
     PASSWORD, claim_as_owner, delete_status, expect_problem, expect_problem_for, get_json, get_raw,
     log_in, log_in_raw, patch_status, post_created_json, register_via_api, serve, test_fixture,
     with_trigger_lifted,
 };
+use message_crate_api_types::{APP_HEADER, APP_VERSION_HEADER};
 
 /// The items of an Audit Trail page.
 async fn trail(state: &crate::server::AppState, path: &str, token: &str) -> Vec<Value> {

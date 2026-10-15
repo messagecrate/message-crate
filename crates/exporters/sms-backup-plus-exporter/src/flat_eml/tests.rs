@@ -375,6 +375,19 @@ fn a_call_log_mail_is_not_a_text_message() {
     assert!(message.is_none(), "{:?}", message.map(|m| m.text));
 }
 
+/// SMS Backup+ wrote `X-smssync-type` on a WhatsApp mail too, holding
+/// WhatsApp's own status, so only `X-smssync-datatype` tells it from a text
+/// message (#2912).
+#[test]
+fn a_whatsapp_mail_is_not_a_text_message() {
+    let fixture = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/whatsapp_mail.eml"),
+    )
+    .unwrap();
+    let message = parse(&fixture, &["5555550100"]);
+    assert!(message.is_none(), "{:?}", message.map(|m| m.text));
+}
+
 /// An MMS whose address list names the owner in national form
 /// (`07700900123` for `+447700900123`) is one-to-one with the other number.
 #[test]

@@ -8,8 +8,9 @@
 use crate::extract::{Json, Query};
 use serde::{Deserialize, Serialize};
 
+use crate::api_error::ApiError;
+use crate::auth::LoggedIn;
 use crate::paging::{DEFAULT_LIST_LIMIT, MAX_LIST_OFFSET, Page, page_of, page_params};
-use crate::server::{ApiError, LoggedIn};
 
 /// One country a phone number can be read in.
 #[derive(Debug, Serialize, utoipa::ToSchema)]

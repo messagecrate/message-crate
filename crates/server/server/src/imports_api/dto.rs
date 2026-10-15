@@ -5,7 +5,7 @@ use message_crate_api_types::{ImportErrorKind, ImportMode};
 use serde::{Deserialize, Serialize};
 
 use super::pipeline::ImportCounts;
-use crate::server::ApiError;
+use crate::api_error::ApiError;
 use crate::text_caps::{
     MAX_IMPORT_ERROR_TEXT_CHARS, MAX_IMPORT_NOTE_TEXT_CHARS, MAX_IMPORT_RUN_JSON_BYTES,
     capped_json, capped_text, too_long_sentences,

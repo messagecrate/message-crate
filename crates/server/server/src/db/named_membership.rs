@@ -48,7 +48,7 @@ impl From<sqlx::Error> for MembershipError {
     }
 }
 
-impl From<MembershipError> for crate::server::ApiError {
+impl From<MembershipError> for crate::api_error::ApiError {
     fn from(e: MembershipError) -> Self {
         match e {
             MembershipError::BadRequest(m) => Self::validation(m),

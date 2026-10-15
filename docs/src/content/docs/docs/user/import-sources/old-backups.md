@@ -41,5 +41,6 @@ Reads offline `.eml` files, not a live email account. SMS Backup+ was an older A
 
 - **What you need**: the `.eml` files from a local backup, owner phone numbers, and owner email addresses
 - **Known gaps**: sent-message detection depends on correct owner identity. Some MMS content and group threading may be incomplete
+- **Skipped**: call log entries, and the WhatsApp messages SMS Backup+ backed up from 2013 to 2015. Each is counted in the import's summary, and none is imported
 
 Field-level mapping: [Formats](/docs/developer/formats/).

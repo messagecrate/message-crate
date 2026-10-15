@@ -15,12 +15,14 @@ use axum::extract::State;
 use chrono::Utc;
 use serde::Deserialize;
 
+use crate::api_error::ApiError;
+use crate::auth::Owner;
 use crate::db::audit_trail::{self, AuditEntry, DeletedAccount, Scope};
 use crate::extract::{Json, Query};
 use crate::paging::{
     DEFAULT_LIST_LIMIT, MAX_LIST_OFFSET, Page, PageParams, page_from_rows, page_params,
 };
-use crate::server::{ApiError, AppState, Owner};
+use crate::server::AppState;
 
 /// Query string of `GET /v1/audit-trail`.
 #[derive(Debug, Deserialize)]

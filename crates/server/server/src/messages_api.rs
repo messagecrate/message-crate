@@ -11,6 +11,8 @@ use crate::extract::{Json, Path, Query};
 use axum::extract::State;
 use serde::Serialize;
 
+use crate::api_error::ApiError;
+use crate::auth::FullAccess;
 use crate::db::conversation_messages::{
     DEFAULT_MESSAGE_SORT, MESSAGE_LIST_SORT_KEYS, Message, count_matching_messages,
     default_message_list_sort, load_message_list_page, load_messages, message_list_sort_text,
@@ -18,7 +20,7 @@ use crate::db::conversation_messages::{
 use crate::db::sql::SqlParam;
 use crate::paging::{ListRequest, PageQuery};
 use crate::search::parse::TextTerm;
-use crate::server::{ApiError, AppState, FullAccess};
+use crate::server::AppState;
 
 /// One page of the Messages list and how the server read its search: the
 /// four keys of every page, and `search`, the one key a page carries beside

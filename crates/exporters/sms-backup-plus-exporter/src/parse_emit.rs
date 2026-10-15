@@ -80,6 +80,8 @@ pub(super) enum ParsedEmlKind {
     FlatNoDate,
     /// A call from the phone's call log; Message Crate has no model for a call.
     CallLog,
+    /// A WhatsApp message SMS Backup+ backed up; Message Crate skips it.
+    WhatsApp,
     NotSms,
     /// The file could not be read.
     IoError {
@@ -123,6 +125,8 @@ pub(super) fn parse_one_eml(eml_path: &Path, rel_path: String, owner: &Owner) ->
 
     if headers.is_call_log() {
         ParsedEmlKind::CallLog
+    } else if headers.is_whatsapp() {
+        ParsedEmlKind::WhatsApp
     } else if is_flat_sms_eml(&headers) {
         match parse_flat_eml_mail(eml_path, &mail, &headers, owner) {
             Some(mut message) => {
