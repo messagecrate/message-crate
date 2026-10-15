@@ -220,7 +220,7 @@ fn parses_concatenated_ir_conversations() {
 
 #[test]
 fn parse_ir_lines_refuses_schema_3_as_a_failure() {
-    let header = r#"{"schema_version":3,"export":{"source":"whatsapp","tool":"t","owner_identity":"+1","owner_display_name":"Me"},"conversation":{"chat_identifier":"+2","conversation_type":"individual","participants":[]}}"#;
+    let header = r#"{"schema_version":3,"export":{"source":"whatsapp","tool":"t","owner_identity":"+1","owner_display_name":"Me"},"conversation":{"chat_identifier":"+2","conversation_type":"one-to-one","participants":[]}}"#;
     let failure = parse_ir_lines([header]).unwrap_err();
     assert_eq!(
         failure,

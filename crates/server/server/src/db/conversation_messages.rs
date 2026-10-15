@@ -1205,7 +1205,7 @@ mod tests {
                 &SeedConversation {
                     account_id: account.account_id,
                     handle: "+15555550100",
-                    conversation_type: "individual",
+                    conversation_type: "one-to-one",
                     group_title: None,
                     source_file: "t.json",
                     messages: &[SeedMessage {

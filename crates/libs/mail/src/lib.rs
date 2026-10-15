@@ -97,7 +97,7 @@ pub struct MailMessage {
     /// Conversation id → `X-ME-Chat-Identifier`, and the local part of a
     /// group conversation's address.
     pub chat_identifier: String,
-    /// `individual` or `group`.
+    /// `one-to-one` or `group`.
     pub conversation_type: String,
     /// Group title → `X-ME-Group-Title`, To display name, subject label.
     pub group_title: Option<String>,

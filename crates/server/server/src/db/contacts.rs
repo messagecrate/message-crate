@@ -862,10 +862,10 @@ async fn identity_use(
            OR EXISTS (SELECT 1 FROM staging_tapbacks WHERE sender_handle_id = $2)
            OR EXISTS (SELECT 1 FROM conversations
                       WHERE account_id = $1 AND chat_handle_id = $2
-                        AND conversation_type = 'individual' COLLATE NOCASE)
+                        AND conversation_type = 'one-to-one' COLLATE NOCASE)
            OR EXISTS (SELECT 1 FROM staging_conversations
                       WHERE account_id = $1 AND chat_handle_id = $2
-                        AND conversation_type = 'individual' COLLATE NOCASE),
+                        AND conversation_type = 'one-to-one' COLLATE NOCASE),
            EXISTS (SELECT 1 FROM messages WHERE account_id = $1 AND owner_handle_id = $2)
            OR EXISTS (SELECT 1 FROM staging_messages
                       WHERE account_id = $1 AND owner_handle_id = $2)

@@ -438,7 +438,7 @@ pub struct Identity {
     pub conversations: u64,
     /// The identity's messages in one-to-one conversations, trashed
     /// conversations and duplicates excluded.
-    pub direct_messages: u64,
+    pub one_to_one_messages: u64,
     /// The identity's messages in group conversations, on the same terms.
     pub group_messages: u64,
     /// The identity's messages in conversations of orphaned messages, on the
@@ -540,7 +540,7 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
                 (SELECT MIN(m.timestamp) {messages}),
                 (SELECT MAX(m.timestamp) {messages}),
                 {conversations},
-                (SELECT COUNT(*) {messages} AND c.conversation_type = 'individual'),
+                (SELECT COUNT(*) {messages} AND c.conversation_type = 'one-to-one'),
                 (SELECT COUNT(*) {messages} AND c.conversation_type = 'group'),
                 (SELECT COUNT(*) {messages} AND c.conversation_type = 'orphaned')
          FROM linked l
@@ -563,7 +563,7 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
                 start_date,
                 end_date,
                 conversations,
-                direct,
+                one_to_one,
                 group,
                 orphaned,
             )| {
@@ -574,7 +574,7 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
                     start_date,
                     end_date,
                     conversations: conversations.max(0) as u64,
-                    direct_messages: direct.max(0) as u64,
+                    one_to_one_messages: one_to_one.max(0) as u64,
                     group_messages: group.max(0) as u64,
                     orphaned_messages: orphaned.max(0) as u64,
                 }
@@ -617,7 +617,7 @@ pub async fn is_met_in_conversations(
                         WHERE c.account_id = $1 AND p.handle_id = $2)
              OR EXISTS (SELECT 1 FROM conversations c
                         WHERE c.account_id = $1 AND c.chat_handle_id = $2
-                          AND c.conversation_type = 'individual' COLLATE NOCASE)
+                          AND c.conversation_type = 'one-to-one' COLLATE NOCASE)
              OR EXISTS (SELECT 1 FROM messages m
                         WHERE m.account_id = $1 AND m.sender_handle_id = $2
                           AND m.is_from_me = 0)",

@@ -129,7 +129,7 @@ pub(crate) fn key_members_by_number(
         message.group_title = Some(title);
     } else if let Some(peer) = participants.first() {
         message.chat_key = peer.key().to_string();
-        message.conversation_type = ConversationType::Individual;
+        message.conversation_type = ConversationType::OneToOne;
         message.group_title = None;
     }
     message.participants = participants;

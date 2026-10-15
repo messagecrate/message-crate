@@ -79,7 +79,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
 
     let chat_identifier = required_header(headers, hn::CHAT_IDENTIFIER)?;
     let conversation_type =
-        typed_header(headers, hn::CONVERSATION_TYPE).unwrap_or_else(|| "individual".into());
+        typed_header(headers, hn::CONVERSATION_TYPE).unwrap_or_else(|| "one-to-one".into());
     let group_title = optional_header(headers, hn::GROUP_TITLE);
     let participants = parse_participants(headers)?;
     let guid = required_header(headers, hn::GUID)?;

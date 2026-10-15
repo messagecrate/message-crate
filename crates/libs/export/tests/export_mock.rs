@@ -63,8 +63,8 @@ fn photo_attachment() -> Value {
     })
 }
 
-/// One exported message as `GET /v1/exports/{id}/messages` serializes it: an
-/// individual SMS conversation with Sam, `service` on the message rather than
+/// One exported message as `GET /v1/exports/{id}/messages` serializes it: a
+/// one-to-one SMS conversation with Sam, `service` on the message rather than
 /// on the conversation, received at the holder's own `+15555550100`.
 fn message(
     id: i64,
@@ -93,7 +93,7 @@ fn message(
         "conversation": {
             "id": 9,
             "chat_identifier": "+15555550101",
-            "conversation_type": "individual",
+            "conversation_type": "one-to-one",
             "is_group": false,
             "group_title": null,
             "participants": [

@@ -1154,7 +1154,7 @@ mod tests {
         );
         let chat = chat_from_record(ConversationRecord {
             chat_identifier: "07700 900123".into(),
-            conversation_type: "individual".into(),
+            conversation_type: "one-to-one".into(),
             group_title: None,
             participants: vec![imessage_reader_protocol::Participant {
                 identity: "07700 900123".into(),
@@ -1307,7 +1307,7 @@ mod tests {
             message_to_ir(record, AttachmentEmbed::Embed, true).0
         };
         let conversation = ChatInProgress {
-            conversation_type: ConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: Vec::new(),
             owner_identity: "owner@example.com".into(),
@@ -1342,7 +1342,7 @@ mod tests {
         let present = tmp.path().join("present.jpg");
         fs::write(&present, b"x").unwrap();
         let conversation = ChatInProgress {
-            conversation_type: ConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: Vec::new(),
             owner_identity: String::new(),
@@ -1427,7 +1427,7 @@ mod tests {
         // attachment and the second to the next message's.
         let first = PathBuf::from("first.jpg");
         let conversation = ChatInProgress {
-            conversation_type: ConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: Vec::new(),
             owner_identity: String::new(),

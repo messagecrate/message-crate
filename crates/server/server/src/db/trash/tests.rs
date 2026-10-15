@@ -585,7 +585,7 @@ async fn delete_reports_only_the_files_no_remaining_message_uses() {
     let staging_conversation: i64 = sqlx::query_scalar(
         "INSERT INTO staging_conversations (
             account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES ($1, 1, 'individual', 's.jsonl') RETURNING id",
+         ) VALUES ($1, 1, 'one-to-one', 's.jsonl') RETURNING id",
     )
     .bind(ACCOUNT_A)
     .fetch_one(&mut *conn)

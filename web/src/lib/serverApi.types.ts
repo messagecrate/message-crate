@@ -2197,11 +2197,6 @@ export interface components {
         Contact: {
             /**
              * Format: int64
-             * @description One-to-one conversations the contact appears in.
-             */
-            direct_conversations: number;
-            /**
-             * Format: int64
              * @description Group conversations the contact appears in.
              */
             group_conversations: number;
@@ -2218,6 +2213,11 @@ export interface components {
             last_modified: string;
             /** @description The contact's preferred name; empty when it has none. */
             name: string;
+            /**
+             * Format: int64
+             * @description One-to-one conversations the contact appears in.
+             */
+            one_to_one_conversations: number;
             /**
              * Format: int64
              * @description Conversations of orphaned messages the contact appears in: the three
@@ -2275,18 +2275,18 @@ export interface components {
              * @description Contact id.
              */
             id: number;
+            /** @description The contact's preferred name; empty when it has none. */
+            name: string;
             /**
              * Format: int64
              * @description One-to-one conversations with the contact.
              */
-            individual_conversations: number;
+            one_to_one_conversations: number;
             /**
              * Format: int64
              * @description Messages the contact sent in one-to-one conversations.
              */
-            individual_message_count: number;
-            /** @description The contact's preferred name; empty when it has none. */
-            name: string;
+            one_to_one_message_count: number;
             /**
              * Format: int64
              * @description Conversations of orphaned messages the contact is in: the three
@@ -3045,12 +3045,6 @@ export interface components {
              *     short code, under 7 digits, has no `+` form and is never flagged.
              */
             country_unknown: boolean;
-            /**
-             * Format: int64
-             * @description The identity's messages in one-to-one conversations, trashed
-             *     conversations and duplicates excluded.
-             */
-            direct_messages: number;
             /** @description When the newest such message was sent, or null when there is none. */
             end_date: string | null;
             /**
@@ -3058,6 +3052,12 @@ export interface components {
              * @description The identity's messages in group conversations, on the same terms.
              */
             group_messages: number;
+            /**
+             * Format: int64
+             * @description The identity's messages in one-to-one conversations, trashed
+             *     conversations and duplicates excluded.
+             */
+            one_to_one_messages: number;
             /**
              * Format: int64
              * @description The identity's messages in conversations of orphaned messages, on the
@@ -3715,7 +3715,7 @@ export interface components {
             /** @description The conversation's identifier as the export wrote it. */
             chat_identifier: string;
             /**
-             * @description `individual`, `group`, or `orphaned` for a conversation of
+             * @description `one-to-one`, `group`, or `orphaned` for a conversation of
              *     orphaned messages: ones the backup holds without recording which
              *     conversation they were said in.
              */
@@ -4325,18 +4325,18 @@ export interface components {
                  * @description Contact id.
                  */
                 id: number;
+                /** @description The contact's preferred name; empty when it has none. */
+                name: string;
                 /**
                  * Format: int64
                  * @description One-to-one conversations with the contact.
                  */
-                individual_conversations: number;
+                one_to_one_conversations: number;
                 /**
                  * Format: int64
                  * @description Messages the contact sent in one-to-one conversations.
                  */
-                individual_message_count: number;
-                /** @description The contact's preferred name; empty when it has none. */
-                name: string;
+                one_to_one_message_count: number;
                 /**
                  * Format: int64
                  * @description Conversations of orphaned messages the contact is in: the three
@@ -4629,12 +4629,6 @@ export interface components {
                  *     short code, under 7 digits, has no `+` form and is never flagged.
                  */
                 country_unknown: boolean;
-                /**
-                 * Format: int64
-                 * @description The identity's messages in one-to-one conversations, trashed
-                 *     conversations and duplicates excluded.
-                 */
-                direct_messages: number;
                 /** @description When the newest such message was sent, or null when there is none. */
                 end_date: string | null;
                 /**
@@ -4642,6 +4636,12 @@ export interface components {
                  * @description The identity's messages in group conversations, on the same terms.
                  */
                 group_messages: number;
+                /**
+                 * Format: int64
+                 * @description The identity's messages in one-to-one conversations, trashed
+                 *     conversations and duplicates excluded.
+                 */
+                one_to_one_messages: number;
                 /**
                  * Format: int64
                  * @description The identity's messages in conversations of orphaned messages, on the

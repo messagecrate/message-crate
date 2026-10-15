@@ -1108,7 +1108,7 @@ async fn a_conversation_carries_its_first_and_last_message_times_once() {
         &SeedConversation {
             account_id: user.account_id,
             handle: "+15555550161",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "t.jsonl",
             messages: &messages,
@@ -1289,7 +1289,7 @@ async fn the_conversation_list_labels_each_thread_by_its_sources() {
             &SeedConversation {
                 account_id: user.account_id,
                 handle,
-                conversation_type: "individual",
+                conversation_type: "one-to-one",
                 group_title: None,
                 source_file: "t.jsonl",
                 messages: &messages,
@@ -1830,7 +1830,7 @@ async fn conversation_delete_removes_files_only_the_deleted_conversation_used() 
         &crate::test_support::SeedConversation {
             account_id: user.account_id,
             handle: "+15550112",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "seed.jsonl",
             messages: &[crate::test_support::SeedMessage {
@@ -2388,7 +2388,7 @@ async fn a_page_starts_at_one_place_beside_a_message_of_this_conversation() {
         &SeedConversation {
             account_id: user.account_id,
             handle: "+15555550142",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "seed.jsonl",
             messages: &[SeedMessage {
@@ -2626,7 +2626,7 @@ async fn sources_fixture() -> (TestFixture, RegisteredAccount, i64) {
         &SeedConversation {
             account_id: alice.account_id,
             handle: "+15555550100",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "seed.jsonl",
             messages: &[

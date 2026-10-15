@@ -350,7 +350,7 @@ fn two_messages_that_differ_only_in_an_attachment_are_both_kept() {
 }
 
 #[test]
-fn a_contact_name_names_the_peer_of_a_direct_conversation() {
+fn a_contact_name_names_the_peer_of_a_one_to_one_conversation() {
     // Only sent messages, which name the peer but carry no sender.
     let docs = read_xml(
         r#"<sms protocol="0" address="+15555550101" date="1400773261000" type="2" body="hi" contact_name="Sam"/>"#,

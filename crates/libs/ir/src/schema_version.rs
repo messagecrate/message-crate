@@ -131,8 +131,7 @@ mod tests {
     /// import took over the address's shape; version 13 has none, and the
     /// server types every address from its service and shape. A file at
     /// either version is refused by its version, never read by rules that
-    /// are not its own. Version 15 adds the country an identity was read in
-    /// (`country`, `sender_country`); version 14 had none.
+    /// are not its own.
     #[test]
     fn refuses_a_version_12_file_by_name() {
         assert_eq!(
@@ -141,7 +140,7 @@ mod tests {
                 .to_string(),
             format!("this file is schema version 12; Message Crate reads version {SCHEMA_VERSION}")
         );
-        assert_eq!(SCHEMA_VERSION, 15);
+        assert_eq!(SCHEMA_VERSION, 16);
     }
 
     #[test]

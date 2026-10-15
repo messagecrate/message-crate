@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS staging_conversations (
     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     -- Conversation identity handle id (resolved into handles during staging).
     chat_handle_id INTEGER NOT NULL,
-    -- Conversation shape: 'individual' | 'group' (and any other values the importer writes).
+    -- Conversation shape: 'one-to-one' | 'group' (and any other values the importer writes).
     conversation_type TEXT NOT NULL,
     -- Group display title; NULL for a one-to-one conversation.
     group_title TEXT,

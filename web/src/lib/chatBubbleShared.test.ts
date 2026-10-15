@@ -60,7 +60,7 @@ describe("senderName / namesSender", () => {
       conversation: {
         id: 1,
         chat_identifier: "x",
-        conversation_type: "individual",
+        conversation_type: "one-to-one",
         is_group: false,
         group_title: null,
         shown_title: null,
@@ -74,7 +74,7 @@ describe("senderName / namesSender", () => {
     const conversation = {
       id: 1,
       chat_identifier: "x",
-      conversation_type: "individual",
+      conversation_type: "one-to-one",
       is_group: false,
       group_title: null,
       shown_title: null,
@@ -94,7 +94,7 @@ describe("senderName / namesSender", () => {
       conversation: {
         id: 1,
         chat_identifier: "x",
-        conversation_type: "individual",
+        conversation_type: "one-to-one",
         is_group: false,
         group_title: null,
         shown_title: null,
@@ -122,7 +122,7 @@ describe("senderName / namesSender", () => {
       conversation: {
         id: 1,
         chat_identifier: "x",
-        conversation_type: "individual",
+        conversation_type: "one-to-one",
         is_group: false,
         group_title: null,
         shown_title: null,

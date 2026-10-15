@@ -86,7 +86,7 @@ pub(crate) fn first_participant_name_sql(conv: &str) -> String {
 /// subquery's own alias is `nf_p`.
 pub(crate) fn named_from_chat_handle_sql(conv: &str) -> String {
     format!(
-        "({conv}.conversation_type = 'individual' COLLATE NOCASE
+        "({conv}.conversation_type = 'one-to-one' COLLATE NOCASE
           AND NOT {with_yourself}
           AND NOT EXISTS (SELECT 1 FROM participants nf_p WHERE nf_p.conversation_id = {conv}.id))",
         with_yourself = crate::db::conversations::is_with_yourself_sql(conv)
@@ -159,7 +159,7 @@ async fn load_participant_rows(
 /// The chat handle of each conversation in `conversation_ids` as its sole
 /// participant, for conversations that have no participants rows at all.
 ///
-/// Only a one-to-one (`individual`) conversation's chat handle is a person
+/// Only a one-to-one conversation's chat handle is a person
 /// (`docs/architecture/contacts-identities-and-messages.md`, "A group
 /// conversation is not a person"). Any other conversation type is left out,
 /// so it has no participants. The type is compared without case, as the import

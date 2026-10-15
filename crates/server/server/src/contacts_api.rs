@@ -106,7 +106,7 @@ pub struct Contact {
     /// Every identity linked to the contact, with per-identity stats.
     pub identities: Vec<Identity>,
     /// One-to-one conversations the contact appears in.
-    pub direct_conversations: u64,
+    pub one_to_one_conversations: u64,
     /// Group conversations the contact appears in.
     pub group_conversations: u64,
     /// Conversations of orphaned messages the contact appears in: the three
@@ -174,7 +174,7 @@ pub async fn get_contact_detail(
         name,
         unknown,
         identities,
-        direct_conversations: totals.direct,
+        one_to_one_conversations: totals.one_to_one,
         group_conversations: totals.groups,
         orphaned_conversations: totals.orphaned,
         total_messages: totals.messages,

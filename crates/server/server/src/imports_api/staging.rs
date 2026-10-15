@@ -599,13 +599,13 @@ impl FileStaging<'_> {
             }
         }
 
-        let individual = conversation
+        let one_to_one = conversation
             .conversation_type
-            .eq_ignore_ascii_case("individual");
+            .eq_ignore_ascii_case("one-to-one");
         // A one-to-one conversation's id is its person's address, read in
         // the country their participant or sender record names, so the chat
         // handle is the same identity they are.
-        let chat_country = if individual {
+        let chat_country = if one_to_one {
             stated.of_address(&conversation.chat_identifier)
         } else {
             None
@@ -615,7 +615,7 @@ impl FileStaging<'_> {
         // WhatsApp `…@g.us` has an `@`), and so is an orphaned conversation's
         // `orphaned:` key. A one-to-one conversation's id is an address, typed by the
         // service and its shape like every other (#1933).
-        let chat_handle_type = if individual {
+        let chat_handle_type = if one_to_one {
             handle_type_on(&conversation.chat_identifier, service)
         } else {
             IdentityType::Other
@@ -655,7 +655,7 @@ impl FileStaging<'_> {
         // none either, and the received copy of each note has no sender
         // (#1094). Its header's participant, if any, is the holder and
         // `insert_participant` drops it.
-        let chat_is_an_address = individual
+        let chat_is_an_address = one_to_one
             && message_ir::name_of_chat_id(&conversation.chat_identifier).is_none()
             && conversation.chat_identifier != message_ir::NAMELESS_CHAT_ID;
         let with_yourself = chat_is_an_address

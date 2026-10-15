@@ -408,7 +408,7 @@ pub fn stage_read_attachments(
 fn chat_id(record: &Record) -> String {
     match record.conversation_kind {
         ConversationKind::Group => format!("chat-{}", record.chat_key),
-        ConversationKind::Individual => record.chat_key.clone(),
+        ConversationKind::OneToOne => record.chat_key.clone(),
     }
 }
 

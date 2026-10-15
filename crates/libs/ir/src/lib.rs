@@ -55,13 +55,15 @@ pub use phone::IdentityType;
 /// (`docs/adr/0014-gpl-code-only-behind-a-process-boundary.md`).
 pub use imessage_reader_protocol::Reaction;
 
-/// The storage id of [`ConversationType::Orphaned`], what every chat id of
-/// an orphaned conversation starts with, and that chat id. Defined in
+/// The storage ids of [`ConversationType::OneToOne`] and
+/// [`ConversationType::Orphaned`], what every chat id of an orphaned
+/// conversation starts with, and that chat id. Defined in
 /// `imessage-reader-protocol` beside [`Reaction`], for the same reason: the
-/// Apple Messages Reader writes orphaned conversations in the shape the
-/// conversation file carries.
+/// Apple Messages Reader writes conversations in the shape the conversation
+/// file carries.
 pub use imessage_reader_protocol::{
-    ORPHANED_CHAT_ID_PREFIX, ORPHANED_CONVERSATION_TYPE, orphaned_chat_id,
+    ONE_TO_ONE_CONVERSATION_TYPE, ORPHANED_CHAT_ID_PREFIX, ORPHANED_CONVERSATION_TYPE,
+    orphaned_chat_id,
 };
 
 /// Why a message's content is gone in the app it came from: Deleted in the
@@ -151,7 +153,13 @@ impl std::fmt::Display for UnknownDeletion {
 impl std::error::Error for UnknownDeletion {}
 
 /// Schema version written into every [`ConversationDocument`].
-pub const SCHEMA_VERSION: u32 = 15;
+///
+/// Version 15 adds the country an identity was read in (`country`,
+/// `sender_country`); version 14 had none. Version 16 names a one-to-one
+/// conversation `one-to-one` in
+/// [`ConversationMeta::conversation_type`], where version 15 said
+/// `individual`.
+pub const SCHEMA_VERSION: u32 = 16;
 
 /// One exported conversation: export metadata, conversation roster and
 /// stats, and messages.
@@ -200,8 +208,9 @@ pub struct ExportMeta {
 #[serde(rename_all = "lowercase")]
 pub enum ConversationType {
     /// A one-to-one conversation: one with a single other person that the
-    /// source does not mark as a group.
-    Individual,
+    /// source does not mark as a group. Serialized `one-to-one`.
+    #[serde(rename = "one-to-one")]
+    OneToOne,
     /// A group conversation. Where the source marks its groups (a WhatsApp
     /// `@g.us` id, Apple's chat style), the mark decides, whatever the number
     /// of other people in it. Where the source has no mark, two or more
@@ -219,22 +228,22 @@ pub enum ConversationType {
 }
 
 impl ConversationType {
-    /// Lowercase storage id (`individual` / `group` / `orphaned`).
+    /// Lowercase storage id (`one-to-one` / `group` / `orphaned`).
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Individual => "individual",
+            Self::OneToOne => ONE_TO_ONE_CONVERSATION_TYPE,
             Self::Group => "group",
             Self::Orphaned => ORPHANED_CONVERSATION_TYPE,
         }
     }
 
     /// Parse a storage id, ignoring case; anything but `group` or `orphaned`
-    /// is `Individual`.
+    /// is `OneToOne`.
     pub fn parse(s: &str) -> Self {
         match s.trim().to_ascii_lowercase().as_str() {
             "group" => Self::Group,
             ORPHANED_CONVERSATION_TYPE => Self::Orphaned,
-            _ => Self::Individual,
+            _ => Self::OneToOne,
         }
     }
 }
@@ -244,9 +253,10 @@ impl ConversationType {
 pub struct ConversationMeta {
     /// Stable chat id from the source (E.164, group key, or app thread id).
     pub chat_identifier: String,
-    /// Individual or group.
+    /// One-to-one, group, or orphaned.
     pub conversation_type: ConversationType,
-    /// Group display title; `None` for individuals and untitled groups.
+    /// Group display title; `None` for one-to-one conversations and untitled
+    /// groups.
     pub group_title: Option<String>,
     /// Roster of identities and display names.
     pub participants: Vec<Participant>,
@@ -1042,11 +1052,14 @@ mod storage_id_round_trip_tests {
     #[test]
     fn conversation_type() {
         for v in [
-            ConversationType::Individual,
+            ConversationType::OneToOne,
             ConversationType::Group,
             ConversationType::Orphaned,
         ] {
             assert_eq!(ConversationType::parse(v.as_str()), v);
+            // `as_str` takes `one-to-one` and `orphaned` from
+            // `imessage-reader-protocol`'s constants, so this also pins the
+            // serde names to them.
             assert_matches_serde(v, v.as_str());
         }
     }

@@ -218,6 +218,9 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-15: **A one-to-one conversation has one name throughout.**
+  Message files and the server now use the name one-to-one for a
+  conversation with one other person; `kind:direct` still finds them (#2286).
 - 2026-10-15: **An Audit Trail entry names the request that wrote it.**
   Each entry now keeps the id the server gave the request that made it,
   the same id that request's lines in the server's log carry, so an entry
@@ -1718,9 +1721,10 @@ carry their date on the heading.
 
 ### Upgrading
 
-- 2026-10-15: Message files exported before they carried the country an
-  Apple Messages backup names for each number are refused when you import
-  or convert them. Export the backup again with this build.
+- 2026-10-15: Message files exported by an earlier build are refused when
+  you import or convert them. Export the backup again with this build. An
+  existing Message Crate is rebuilt empty on first start and its messages
+  must be imported again (#2286).
 - 2026-10-15: A script that runs `create-owner` or
   `reset-owner-password` with `--password` must write the password to the
   command's input instead, for example

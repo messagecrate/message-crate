@@ -163,7 +163,7 @@ fn every_fixture_row_builds_a_record() {
 
     let (conversation, photo) = build_record(&session, &messages[0]).unwrap();
     assert_eq!(conversation.chat_identifier, FRIEND_PHONE);
-    assert_eq!(conversation.conversation_type, "individual");
+    assert_eq!(conversation.conversation_type, "one-to-one");
     assert_eq!(conversation.group_title, None);
     assert_eq!(conversation.participants.len(), 1);
     assert_eq!(
@@ -240,11 +240,11 @@ fn a_chat_is_a_group_by_its_style() {
     };
     assert_eq!(
         participants_for(&session, &chat(1, FRIEND_PHONE, None)).1,
-        "individual"
+        "one-to-one"
     );
     assert_eq!(
         participants_for(&session, &chat(1, FRIEND_PHONE, Some("Just us"))).1,
-        "individual",
+        "one-to-one",
         "a name does not make a group"
     );
     assert_eq!(
@@ -272,7 +272,7 @@ fn without_a_style_column_a_group_id_makes_a_group() {
     assert_eq!(shrunk.chat_identifier, SHRUNK_GROUP_IDENTIFIER);
     assert_eq!(shrunk.conversation_type, "group");
     let (direct, _) = build_record(&session, &messages[0]).unwrap();
-    assert_eq!(direct.conversation_type, "individual");
+    assert_eq!(direct.conversation_type, "one-to-one");
 }
 
 /// Two handles that share a `person_centric_id` stay two addresses.
@@ -383,7 +383,7 @@ fn a_chat_with_no_handle_rows_keeps_its_identifier() {
 
     let (chat, record) = build_record(&session, &messages[6]).unwrap();
     assert_eq!(chat.chat_identifier, FRIEND_PHONE_EMAIL);
-    assert_eq!(chat.conversation_type, "individual");
+    assert_eq!(chat.conversation_type, "one-to-one");
     assert_eq!(handles_of(&chat.participants), vec![FRIEND_PHONE_EMAIL]);
     assert_eq!(
         chat.participants[0].display_name.as_deref(),
@@ -418,7 +418,7 @@ fn a_chat_with_the_owners_own_address_has_no_participants() {
 
     let (chat, sent) = build_record(&session, &messages[9]).unwrap();
     assert_eq!(chat.chat_identifier, OWNER);
-    assert_eq!(chat.conversation_type, "individual");
+    assert_eq!(chat.conversation_type, "one-to-one");
     assert!(chat.participants.is_empty(), "{:?}", chat.participants);
     assert!(sent.outgoing);
     let (chat, received) = build_record(&session, &messages[10]).unwrap();
@@ -481,7 +481,7 @@ fn the_owner_address_on_a_row_is_the_bare_caller_id_or_nothing() {
 
     let (conversation, from_mac) = build_record(&session, &messages[3]).unwrap();
     assert_eq!(conversation.chat_identifier, FRIEND_EMAIL);
-    assert_eq!(conversation.conversation_type, "individual");
+    assert_eq!(conversation.conversation_type, "one-to-one");
     let handles: Vec<_> = conversation
         .participants
         .iter()
@@ -588,7 +588,7 @@ fn orphaned_rows_make_one_conversation_for_each_person() {
 
     let (one_to_one, _) = build_record(&session, &FixtureDb::messages(&session)[0]).unwrap();
     assert_eq!(one_to_one.chat_identifier, FRIEND_PHONE);
-    assert_eq!(one_to_one.conversation_type, "individual");
+    assert_eq!(one_to_one.conversation_type, "one-to-one");
 }
 
 /// An orphaned row that names the other person sits in that person's

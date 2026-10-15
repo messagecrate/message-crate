@@ -884,7 +884,7 @@ mod tests {
             },
             conversation: ConversationMeta {
                 chat_identifier: "test".into(),
-                conversation_type: ConversationType::Individual,
+                conversation_type: ConversationType::OneToOne,
                 group_title: None,
                 participants: Vec::new(),
                 stats: ConversationStats::default(),
@@ -982,7 +982,7 @@ mod tests {
     fn parsed(timestamp_secs: f64, has_milliseconds: bool, eml_path: &str) -> ParsedMessage {
         ParsedMessage {
             chat_key: "+15555550101".into(),
-            conversation_type: ConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: Handle::parse("+15555550101").into_iter().collect(),
             timestamp_secs,

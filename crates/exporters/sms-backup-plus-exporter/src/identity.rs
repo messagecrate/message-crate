@@ -67,7 +67,7 @@ mod tests {
                 .as_ref()
                 .map(|p| p.key().to_string())
                 .unwrap_or_default(),
-            conversation_type: message_ir::ConversationType::Individual,
+            conversation_type: message_ir::ConversationType::OneToOne,
             group_title: None,
             participants: peer.iter().cloned().collect(),
             timestamp_secs,

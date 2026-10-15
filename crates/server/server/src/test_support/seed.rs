@@ -94,7 +94,7 @@ pub struct SeedConversation<'a> {
     /// The peer handle, created as a `handles` row. Must be unique per
     /// account: `handles` is keyed on the normalized value.
     pub handle: &'a str,
-    /// `individual` or `group`.
+    /// `one-to-one` or `group`.
     pub conversation_type: &'a str,
     /// The group's title, for a group conversation.
     pub group_title: Option<&'a str>,
@@ -311,7 +311,7 @@ impl MessageRow<'_> {
 /// tests write a conversation by hand, so a new required column is one edit
 /// here.
 ///
-/// [`ConversationRow::new`] fills every required column: an `individual`
+/// [`ConversationRow::new`] fills every required column: a `one-to-one`
 /// conversation from `test.jsonl` with no group title. A test sets what it
 /// cares about with struct update syntax:
 ///
@@ -329,7 +329,7 @@ pub struct ConversationRow<'a> {
     /// `conversations.chat_handle_id`: the peer's handle for a one-to-one
     /// conversation, the group conversation's handle for a group.
     pub chat_handle_id: i64,
-    /// `conversations.conversation_type`: `individual` or `group`.
+    /// `conversations.conversation_type`: `one-to-one` or `group`.
     pub conversation_type: &'a str,
     /// `conversations.group_title`.
     pub group_title: Option<&'a str>,
@@ -338,14 +338,14 @@ pub struct ConversationRow<'a> {
 }
 
 impl<'a> ConversationRow<'a> {
-    /// An `individual` conversation of `account_id` whose chat handle is
+    /// A `one-to-one` conversation of `account_id` whose chat handle is
     /// `chat_handle_id`, from `test.jsonl`, with no group title.
     pub fn new(account_id: i64, chat_handle_id: i64) -> Self {
         Self {
             id: None,
             account_id,
             chat_handle_id,
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "test.jsonl",
         }
@@ -503,7 +503,7 @@ pub async fn seed_one_message(state: &AppState, account_id: i64) {
         &SeedConversation {
             account_id,
             handle: &format!("+1555{account_id}"),
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "seed.jsonl",
             messages: &[SeedMessage {

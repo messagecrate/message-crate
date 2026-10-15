@@ -1318,7 +1318,7 @@ mod tests {
         sqlx::query(
             "INSERT INTO staging_conversations (
                 account_id, chat_handle_id, conversation_type, source_file
-             ) VALUES ($1, $2, 'individual', 'c.jsonl')",
+             ) VALUES ($1, $2, 'one-to-one', 'c.jsonl')",
         )
         .bind(ACCOUNT_ID)
         .bind(handle_id)

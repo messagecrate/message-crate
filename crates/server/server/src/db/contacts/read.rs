@@ -64,14 +64,14 @@ pub struct ContactSelectionSummary {
     /// When the contact sent its last message; `null` when it sent none.
     pub end_date: Option<String>,
     /// One-to-one conversations with the contact.
-    pub individual_conversations: u64,
+    pub one_to_one_conversations: u64,
     /// Group conversations with the contact.
     pub group_conversations: u64,
     /// Conversations of orphaned messages the contact is in: the three
     /// conversation counts add up to every conversation with the contact.
     pub orphaned_conversations: u64,
     /// Messages the contact sent in one-to-one conversations.
-    pub individual_message_count: u64,
+    pub one_to_one_message_count: u64,
     /// Messages the contact sent in group conversations.
     pub group_message_count: u64,
     /// Messages the contact sent in conversations of orphaned messages: the
@@ -361,7 +361,7 @@ pub async fn contact_name_and_modified(
 /// Conversation and message counts across every handle of one contact.
 pub struct ContactTotals {
     /// One-to-one conversations the contact appears in.
-    pub direct: u64,
+    pub one_to_one: u64,
     /// Group conversations the contact appears in.
     pub groups: u64,
     /// Conversations of orphaned messages the contact appears in.
@@ -383,7 +383,7 @@ pub async fn contact_totals(
     account_id: i64,
     contact_id: i64,
 ) -> AnyResult<ContactTotals> {
-    let (direct, groups, orphaned, messages): (i64, i64, i64, i64) =
+    let (one_to_one, groups, orphaned, messages): (i64, i64, i64, i64) =
         sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "WITH involved AS (
                SELECT c.id, c.conversation_type
@@ -393,7 +393,7 @@ pub async fn contact_totals(
                  AND {not_trashed_conversation}
              )
              SELECT
-               (SELECT COUNT(*) FROM involved WHERE conversation_type = 'individual'),
+               (SELECT COUNT(*) FROM involved WHERE conversation_type = 'one-to-one'),
                (SELECT COUNT(*) FROM involved WHERE conversation_type = 'group'),
                (SELECT COUNT(*) FROM involved WHERE conversation_type = 'orphaned'),
                COALESCE((SELECT (SELECT COUNT(*) {sent})
@@ -408,7 +408,7 @@ pub async fn contact_totals(
         .await
         .context("count a contact's conversations and messages")?;
     Ok(ContactTotals {
-        direct: direct.max(0) as u64,
+        one_to_one: one_to_one.max(0) as u64,
         groups: groups.max(0) as u64,
         orphaned: orphaned.max(0) as u64,
         messages: messages.max(0) as u64,
@@ -472,12 +472,12 @@ pub async fn get_contact_summaries(
             (SELECT MIN(m.timestamp) {sent}) AS start_date,
             (SELECT MAX(m.timestamp) {sent}) AS end_date,
             (SELECT COUNT(*) FROM involved i
-             WHERE i.contact_id = ct.id AND i.conversation_type = 'individual'),
+             WHERE i.contact_id = ct.id AND i.conversation_type = 'one-to-one'),
             (SELECT COUNT(*) FROM involved i
              WHERE i.contact_id = ct.id AND i.conversation_type = 'group'),
             (SELECT COUNT(*) FROM involved i
              WHERE i.contact_id = ct.id AND i.conversation_type = 'orphaned'),
-            (SELECT COUNT(*) {sent} AND c.conversation_type = 'individual'),
+            (SELECT COUNT(*) {sent} AND c.conversation_type = 'one-to-one'),
             (SELECT COUNT(*) {sent} AND c.conversation_type = 'group'),
             (SELECT COUNT(*) {sent} AND c.conversation_type = 'orphaned')
          FROM selected ct",
@@ -502,10 +502,10 @@ pub async fn get_contact_summaries(
         name,
         start_date,
         end_date,
-        individual_conversations,
+        one_to_one_conversations,
         group_conversations,
         orphaned_conversations,
-        individual_message_count,
+        one_to_one_message_count,
         group_message_count,
         orphaned_message_count,
     ) in rows
@@ -517,10 +517,10 @@ pub async fn get_contact_summaries(
                 name,
                 start_date,
                 end_date,
-                individual_conversations: individual_conversations.max(0) as u64,
+                one_to_one_conversations: one_to_one_conversations.max(0) as u64,
                 group_conversations: group_conversations.max(0) as u64,
                 orphaned_conversations: orphaned_conversations.max(0) as u64,
-                individual_message_count: individual_message_count.max(0) as u64,
+                one_to_one_message_count: one_to_one_message_count.max(0) as u64,
                 group_message_count: group_message_count.max(0) as u64,
                 orphaned_message_count: orphaned_message_count.max(0) as u64,
             },

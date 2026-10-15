@@ -813,7 +813,7 @@ api_shape! {
         pub id: i64,
         /// The conversation's identifier as the export wrote it.
         pub chat_identifier: String,
-        /// `individual`, `group`, or `orphaned` for a conversation of
+        /// `one-to-one`, `group`, or `orphaned` for a conversation of
         /// orphaned messages: ones the backup holds without recording which
         /// conversation they were said in.
         pub conversation_type: String,
@@ -945,7 +945,7 @@ mod tests {
             conversation: MessageConversation {
                 id: 9,
                 chat_identifier: "+15555550100".into(),
-                conversation_type: "individual".into(),
+                conversation_type: "one-to-one".into(),
                 is_group: false,
                 group_title: None,
                 shown_title: None,
@@ -1001,7 +1001,7 @@ mod tests {
             serde_json::json!({
                 "id": 9,
                 "chat_identifier": "+15555550100",
-                "conversation_type": "individual",
+                "conversation_type": "one-to-one",
                 "is_group": false,
                 "group_title": null,
                 "shown_title": null,

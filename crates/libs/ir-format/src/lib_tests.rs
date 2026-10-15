@@ -564,7 +564,7 @@ fn jsonl_refuses_a_version_9_file_by_name() {
         &path,
         concat!(
             r#"{"schema_version":9,"export":{"source":"imessage","tool":"t","tool_version":"1","owner_identity":"+15555550100","owner_display_name":null},"#,
-            r#""conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[],"#,
+            r#""conversation":{"chat_identifier":"+15555550101","conversation_type":"one-to-one","group_title":null,"participants":[],"#,
             r#""stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#,
             "\n",
             r#"{"guid":"g1","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hi","attachments":[],"#,

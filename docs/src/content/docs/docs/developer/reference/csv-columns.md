@@ -28,7 +28,7 @@ The diagnostic CSV files the GO SMS Pro import writes (`skipped_*.csv`) follow t
 | Column | Meaning |
 | --- | --- |
 | `chat_identifier` | Identifier for the conversation, usually a peer identity or group identifier. |
-| `conversation_type` | `individual` or `group`. |
+| `conversation_type` | `one-to-one` or `group`. |
 | `group_title` | Group name, or empty when none is known. |
 | `participants_json` | JSON array of participant identities and display names. |
 | `guid` | Stable message identifier. |
