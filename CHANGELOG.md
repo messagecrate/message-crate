@@ -821,6 +821,13 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-15: **A WhatsApp conversation stays on WhatsApp when its file is
+  imported again.** A message file written by Export names the source the
+  messages were stored under, and an import put a WhatsApp conversation on
+  WhatsApp only when that source was called `whatsapp`. Under any other
+  name it became a Text Message conversation, and a WhatsApp id such as
+  `123456@lid` became an email address there. An import now takes the
+  service from the messages themselves (#2050).
 - 2026-10-15: **The Import form checks an Android backup path's kind.**
   SMS Backup & Restore takes one `.xml` file, and GO SMS Pro and SMS
   Backup+ take a directory. A path of the other kind, or one that does not

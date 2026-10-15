@@ -31,8 +31,6 @@ pub struct ConversationRecord {
     pub line: usize,
     /// The conversation's identifier as the export wrote it.
     pub chat_identifier: String,
-    /// Platform service, e.g. `imessage`.
-    pub service: Option<String>,
     /// `individual` or `group`.
     pub conversation_type: String,
     /// Group label, when set.
@@ -370,17 +368,6 @@ fn conversation_from_ir(header: &ConversationHeader, line: usize) -> Result<Conv
     Ok(ConversationRecord {
         line,
         chat_identifier: header.conversation.chat_identifier.clone(),
-        // Platform identity for handles (phone | whatsapp), not SMS/iMessage/RCS.
-        service: Some(
-            if export_source
-                .as_deref()
-                .is_some_and(|s| s.eq_ignore_ascii_case("whatsapp"))
-            {
-                IdentityService::Whatsapp.as_str().to_string()
-            } else {
-                IdentityService::Phone.as_str().to_string()
-            },
-        ),
         conversation_type: header.conversation.conversation_type.as_str().to_string(),
         group_title: header.conversation.group_title.clone(),
         participants: header

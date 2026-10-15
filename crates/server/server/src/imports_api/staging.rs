@@ -494,8 +494,6 @@ pub(super) async fn import_file_to_staging(
 /// A conversation header as read from the file, with the source it resolved to.
 struct StagedConversation {
     chat_identifier: String,
-    /// `phone` | `whatsapp` for handle rows, when the header says.
-    header_service: Option<String>,
     conversation_type: String,
     group_title: Option<String>,
     participants: Vec<ParticipantRecord>,
@@ -509,7 +507,6 @@ impl StagedConversation {
     fn from_record(record: ConversationRecord, source: String) -> Self {
         Self {
             chat_identifier: record.chat_identifier,
-            header_service: record.service,
             conversation_type: record.conversation_type,
             // A title of blanks is no title, as the conversation list shows
             // it, so it never replaces a real one in a merge.
@@ -585,7 +582,7 @@ impl FileStaging<'_> {
                 .max()
                 .cloned()
         });
-        let service = service_for(conversation.header_service.as_deref(), &conversation.source);
+        let service = conversation_service(prepared_messages.iter().map(|(m, _)| m));
         let stated = StatedCountries::of(&conversation.participants, &prepared_messages);
         // One address is one identity in a conversation, so every place it
         // appears is read in the one country the conversation names for it:
@@ -799,19 +796,25 @@ impl StatedCountries {
     }
 }
 
-/// The service of chat and participant handles: the conversation's own hint,
-/// else WhatsApp for a WhatsApp export, else phone.
-fn service_for(header_service: Option<&str>, source: &str) -> IdentityService {
-    header_service.map_or_else(
-        || {
-            if source.eq_ignore_ascii_case("whatsapp") {
-                IdentityService::Whatsapp
-            } else {
-                IdentityService::Phone
-            }
-        },
-        IdentityService::parse,
-    )
+/// The service of a conversation's chat and participant handles: WhatsApp
+/// when any of its messages came over WhatsApp, else Text Message. The
+/// messages say so whatever the source is named: an Export Run writes the
+/// server's source name into the file, so a WhatsApp conversation stored
+/// under another name was read as Text Message on its next import (#2050).
+/// A conversation with no messages has nothing to say it and is Text
+/// Message.
+fn conversation_service<'a>(
+    messages: impl IntoIterator<Item = &'a MessageRecord>,
+) -> IdentityService {
+    if messages.into_iter().any(|m| {
+        m.service
+            .as_deref()
+            .is_some_and(|s| IdentityService::parse(s) == IdentityService::Whatsapp)
+    }) {
+        IdentityService::Whatsapp
+    } else {
+        IdentityService::Phone
+    }
 }
 
 /// Stage every message's attachments on disk, pairing each message with what

@@ -242,6 +242,17 @@ messages out
 
 WhatsApp is the other way, as above: its `@` ids are `other`.
 
+**A conversation's service is the one its messages came over.** An import
+puts a conversation, its chat handle and its participants on WhatsApp when
+any of its messages came over WhatsApp, and on Text Message otherwise; a
+conversation with no messages is Text Message (`imports_api/staging.rs`,
+`conversation_service`). The source's name plays no part. Why: an Export Run
+writes the source the messages were stored under into `export.source`, so a
+WhatsApp conversation stored under any name but `whatsapp` came back, read by
+that name, as Text Message, and its `@lid` participant became an `email`
+identity there
+([#2050](https://github.com/messagecrate/message-crate/issues/2050)).
+
 **A phone number's type never depends on the message's service.** The service
 only takes away a type it cannot carry, the email address; it never makes a
 phone number anything else. A phone number is a phone number on any service,
