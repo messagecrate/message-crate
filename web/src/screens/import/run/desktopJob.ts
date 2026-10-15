@@ -13,6 +13,7 @@ import type {
   ImportProgressEvent,
 } from "../../../lib/types";
 import {
+  isImportErrorEvent,
   isProgressStepComplete,
   issueFromEvent,
   noteFromEvent,
@@ -173,8 +174,8 @@ function recordIssue(ctx: RunContext, event: ImportIssueEvent): void {
     // In place: an exporter may send a row per item, tens of thousands in a
     // run, and copying the list for each would cost the square of that.
     scratch.notes.push(noteFromEvent(event));
-  } else {
-    scratch.issues.push(issueFromEvent({ ...event, kind: event.kind }));
+  } else if (isImportErrorEvent(event)) {
+    scratch.issues.push(issueFromEvent(event));
   }
   void saveCarriedRecord(ctx);
 }

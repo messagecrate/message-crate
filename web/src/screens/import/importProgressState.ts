@@ -160,14 +160,19 @@ export function stageForStep(step: ImportProgressEvent["step"]): ImportIssueStag
   return "staging";
 }
 
+/** An issue event whose `kind` is an Import Error's: neither a note nor a `resolved` row. */
+export type ImportErrorEvent = ImportIssueEvent & { kind: ImportIssue["kind"] };
+
+/** Whether `event` is an Import Error rather than a note or a `resolved` row. */
+export function isImportErrorEvent(event: ImportIssueEvent): event is ImportErrorEvent {
+  return event.kind === "skip" || event.kind === "error";
+}
+
 /**
- * An Import Error the desktop app reported, as the run records it: an event
- * the caller has told from a note or a `resolved` row. The server takes it
- * without `conversation` (`issueRequests`).
+ * An Import Error the desktop app reported, as the run records it. The server
+ * takes it without `conversation` (`issueRequests`).
  */
-export function issueFromEvent(
-  event: ImportIssueEvent & { kind: ImportIssue["kind"] },
-): ImportIssue {
+export function issueFromEvent(event: ImportErrorEvent): ImportIssue {
   const issue: ImportIssue = {
     kind: event.kind,
     stage: stageForStep(event.step),
