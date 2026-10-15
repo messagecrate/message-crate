@@ -71,7 +71,7 @@ The rule "The address book is a file for editing contacts, not a source of them"
 
 A group event (a member joined or left, the group was renamed or its picture changed) carries the text the fork of WhatsApp Chat Exporter writes in `group_action`, such as "Ada joined the group". The converter writes such a message with `message_kind` `announcement` and that text as its `text`, the shape an Apple Messages group announcement takes, so the server marks it as an announcement.
 
-Its sender is the member who acted, by the same rules as any group message's sender. `group_action_jid`, the id of the member the text names, is kept in `source.fields`. The fork writes `group_action` only for the kinds of event the backup states, and `null` for any other kind. An event of another kind has no `group_action` text and is written as before: its text is the backup's raw `data`, or empty when `data` is empty.
+Its sender is the member who acted, by the same rules as any group message's sender. `group_action_jid`, the id of the member the text names, is kept in `source.fields`. The fork writes `group_action` only for the kinds of event the backup states, and `null` for any other kind. An event of another kind has no `group_action` text. It is written as any other message, with its text built from `data` and `caption` as for any message.
 
 Discord, Signal, Telegram, and Slack are recognized services in the shared model (`IrService`), but no exporter parses those backup sources yet — they are future sources, listed as **no** until an exporter lands.
 

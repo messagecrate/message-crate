@@ -273,14 +273,14 @@ fn ingest_chat(
                     key_string(message.full_key_id.as_ref()).unwrap_or_default(),
                 );
                 if announcement.is_some() {
-                    e.insert("is_announcement".into(), "true".into());
+                    e.insert(IS_ANNOUNCEMENT.into(), "true".into());
                 }
-                if let Some(named) = message
+                if let Some(named_member_jid) = message
                     .group_action_jid
                     .as_deref()
                     .and_then(message_ir::trimmed)
                 {
-                    e.insert("group_action_jid".into(), named.to_string());
+                    e.insert(GROUP_ACTION_JID.into(), named_member_jid.to_string());
                 }
                 if is_reply(message) {
                     e.insert("is_reply".into(), "true".into());
