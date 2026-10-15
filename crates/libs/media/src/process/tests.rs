@@ -854,16 +854,34 @@ fn why_not_converted_names_the_cause_not_the_last_line() {
         "[out#0/adts @ 0x5cf2699e1a40] Error closing file: No space left on device"
     );
 
-    // When every line only follows from another, the last line is the
-    // reason, with the file written as <input>.
+    // libx265's report after a full disk stopped it is not the cause.
+    assert_eq!(
+        reason(
+            "[vf#0:0 @ 0x59b3ce069500] Error sending frames to consumers: No space left on device\n\
+             [vf#0:0 @ 0x59b3ce069500] Task finished with error code: -28 (No space left on \
+             device)\n\
+             [out#0/mp4 @ 0x59b3ce068380] Nothing was written into output file, because at \
+             least one of its streams received no packets.\n\
+             x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%\n\
+             \n\
+             encoded 0 frames\n"
+        ),
+        "[vf#0:0 @ 0x59b3ce069500] Error sending frames to consumers: No space left on device"
+    );
+
+    // When every line only follows from a failure, the first is the
+    // reason, as the one nearest the cause.
     assert_eq!(
         reason(
             "[in#0 @ 0x57c830ccfc40] Error opening input: No such file or directory\n\
              Error opening input file /home/someone/attachments/clip.mov.\n\
              Error opening input files: No such file or directory\n"
         ),
-        "Error opening input files: No such file or directory"
+        "[in#0 @ 0x57c830ccfc40] Error opening input: No such file or directory"
     );
+
+    // A line that is not a consequence is the reason, with the file
+    // written as <input>.
     assert_eq!(
         reason(
             "[out#0/mp4 @ 0x5e6836f4a340] Nothing was written into output file\n\
@@ -1722,7 +1740,7 @@ impl MediaTools for ScriptedTools {
         reads: Reads<'_>,
         stop: Option<&AtomicBool>,
     ) -> Result<()> {
-        let limit = Limit::of(reads, WAIT, |_| Some(SCRIPTED_LENGTH));
+        let limit = Limit::for_reads(reads, WAIT, |_| Some(SCRIPTED_LENGTH));
         let line = ffmpeg_command_line(args, dest);
         let started = self.dir.path().join("started");
         if self.stalls && has(args, "libx265") {

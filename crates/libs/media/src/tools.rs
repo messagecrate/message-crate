@@ -398,7 +398,7 @@ impl MediaTools for InstalledTools {
         if is_set(stop) {
             return Err(Killed::stopped_before_start(Program::Ffmpeg).into());
         }
-        let limit = Limit::of(reads, self.stall_wait, |src| {
+        let limit = Limit::for_reads(reads, self.stall_wait, |src| {
             crate::probe::played_for(self, src, stop)
         });
         let started = Instant::now();
@@ -698,7 +698,7 @@ const AUDIO_SECONDS_PER_SECOND_PLAYED: u32 = 20;
 const LONGEST_AUDIO_TIME_LIMIT: Duration = Duration::from_secs(6 * 60 * 60);
 
 /// How long an audio conversion of a file that plays for `played` may run
-/// in all, before ffmpeg's position passes `played` ([`StallWatch::audio`]): [`AUDIO_SECONDS_PER_SECOND_PLAYED`] times its length, at least
+/// in all: [`AUDIO_SECONDS_PER_SECOND_PLAYED`] times its length, at least
 /// [`SHORTEST_AUDIO_TIME_LIMIT`] and at most [`LONGEST_AUDIO_TIME_LIMIT`],
 /// rounded up to whole minutes; [`UNKNOWN_LENGTH_AUDIO_TIME_LIMIT`] when the
 /// length is not known.
@@ -730,7 +730,7 @@ impl Limit {
     /// What ends a run that `reads` what it reads: a short step for one
     /// frame, else a [`StallWatch`] for video or for audio with the
     /// no-progress `wait`, over a source as long as `length` says.
-    pub(crate) fn of(
+    pub(crate) fn for_reads(
         reads: Reads<'_>,
         wait: Duration,
         length: impl FnOnce(&Path) -> Option<Duration>,
@@ -778,11 +778,12 @@ enum MovingLimit {
     /// A video: its position passing twice the source's length, as a
     /// damaged file looping, which is where looping was seen.
     TwiceTheLength,
-    /// Audio: running this long in all ([`audio_time_limit`]), or the
-    /// limit for a file as long as the furthest position, when that is
-    /// longer. A header can state under half an audio file's real length
-    /// without ffprobe saying so (#2909), and a file joined from hours of
-    /// recordings must not be held to the limit for its first part.
+    /// Audio: running this long in all ([`audio_time_limit`]), or the limit
+    /// for a file of unknown length once the position passes the length
+    /// ffprobe read, when that is longer. A header can state under half an
+    /// audio file's real length without ffprobe saying so (#2909), and a
+    /// file joined from hours of recordings must not be held to the limit
+    /// for its first part.
     RunningFor(Duration),
 }
 
@@ -839,7 +840,16 @@ impl StallWatch {
             self.moved_at = now;
         }
         if let MovingLimit::RunningFor(limit) = self.moving_limit {
-            let limit = limit.max(audio_time_limit(Some(self.furthest)));
+            // A position past the length shows the length was wrong, so it
+            // is taken as unknown.
+            let wrong_length = self
+                .length
+                .is_some_and(|length| self.furthest > length + END_TOLERANCE);
+            let limit = if wrong_length {
+                limit.max(audio_time_limit(None))
+            } else {
+                limit
+            };
             if now >= limit {
                 return Some(KillReason::TookTooLong { limit });
             }

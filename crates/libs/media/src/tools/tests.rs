@@ -418,45 +418,44 @@ fn a_conversion_past_twice_its_length_is_stopped() {
     );
 }
 
-/// An audio conversion is not stopped past twice the length its header
-/// states, which can be under half its real length (#2909); it is stopped
-/// once it has run its time limit, and not before.
+/// An audio conversion within the length ffprobe read is stopped once it
+/// has run its time limit, and not before.
 #[test]
-fn an_audio_conversion_runs_past_twice_its_length_until_its_time_limit() {
-    let length = Duration::from_secs(5);
+fn an_audio_conversion_is_stopped_at_its_time_limit() {
+    let length = 5 * MINUTE;
     let limit = audio_time_limit(Some(length));
+    assert_eq!(limit, 100 * MINUTE);
     let mut watch = StallWatch::audio(2 * MINUTE, Some(length));
-    assert_eq!(watch.observe(Some(Duration::from_secs(20)), MINUTE), None);
+    assert_eq!(watch.observe(Some(MINUTE), MINUTE), None);
     assert_eq!(
-        watch.observe(
-            Some(Duration::from_secs(21)),
-            limit - Duration::from_millis(1)
-        ),
+        watch.observe(Some(2 * MINUTE), limit - Duration::from_millis(1)),
         None
     );
     assert_eq!(
-        watch.observe(Some(Duration::from_secs(22)), limit),
+        watch.observe(Some(3 * MINUTE), limit),
         Some(KillReason::TookTooLong { limit })
     );
 }
 
 /// An audio file whose header states a few seconds while it plays for
-/// hours gets the time limit of the length its position has reached, so a
-/// long joined recording on a slow computer is not stopped at the limit for
-/// its first part (#2909).
+/// hours is not stopped past twice that length, and gets the time limit
+/// of a file of unknown length once its position passes the stated length, so a long joined recording on a slow computer
+/// is not stopped at the limit for its first part (#2909). The limit does
+/// not grow past that with the position, so a damaged file looping is
+/// still stopped.
 #[test]
-fn an_audio_time_limit_grows_with_the_position_past_the_stated_length() {
+fn an_audio_time_limit_is_an_hour_once_the_position_passes_the_stated_length() {
     let length = Duration::from_secs(5);
+    let limit = audio_time_limit(None);
+    assert_eq!(limit, 60 * MINUTE);
     let mut watch = StallWatch::audio(2 * MINUTE, Some(length));
-    assert_eq!(watch.observe(Some(60 * MINUTE), 10 * MINUTE), None);
-    let limit = audio_time_limit(Some(90 * MINUTE));
-    assert_eq!(limit, 360 * MINUTE);
+    assert_eq!(watch.observe(Some(5 * MINUTE), 10 * MINUTE), None);
     assert_eq!(
-        watch.observe(Some(90 * MINUTE), limit - Duration::from_millis(1)),
+        watch.observe(Some(500 * MINUTE), limit - Duration::from_millis(1)),
         None
     );
     assert_eq!(
-        watch.observe(Some(91 * MINUTE), limit),
+        watch.observe(Some(600 * MINUTE), limit),
         Some(KillReason::TookTooLong { limit })
     );
 }

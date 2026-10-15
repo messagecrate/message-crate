@@ -804,8 +804,8 @@ carry their date on the heading.
   attachment was recorded as one that could not be converted. Only a video
   conversion is now stopped for running past twice its length. An audio
   conversion is stopped when it makes no progress, or after twenty times
-  the length it has reached, at least 10 minutes and at most 6 hours
-  (#2909).
+  the file's length, at least 10 minutes and at most 6 hours. One that runs
+  past the length its header states gets at least an hour (#2909).
 - 2026-10-15: **A file that could not be converted names the cause.** The
   short reason on an attachment ffmpeg could not convert was the last line
   ffmpeg wrote, which can follow from the cause rather than name it, such as

@@ -114,20 +114,37 @@ const CONSEQUENCES: [&str; 9] = [
     "Error opening output",
 ];
 
-/// Whether `line` of what ffmpeg wrote only follows from an earlier failure
-/// ([`CONSEQUENCES`]).
+/// Whether `line` is libx265's own report, which it writes to stderr at
+/// any `-loglevel` and which ends what ffmpeg wrote even when it failed:
+/// an `x265 [info]:` line, or its summary, `encoded <n> frames …`.
+fn is_x265_report(line: &str) -> bool {
+    line.starts_with("x265 [info]:")
+        || line
+            .strip_prefix("encoded ")
+            .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
+}
+
+/// Whether `line` of what ffmpeg wrote names no cause: it only follows from
+/// an earlier failure ([`CONSEQUENCES`]), or is libx265's own report
+/// ([`is_x265_report`]).
 fn is_consequence(line: &str) -> bool {
+    if is_x265_report(line) {
+        return true;
+    }
     let mut text = line;
     while let Some((_, rest)) = text.strip_prefix('[').and_then(|rest| rest.split_once(']')) {
         text = rest.trim_start();
     }
-    CONSEQUENCES.iter().any(|said| text.starts_with(said))
+    CONSEQUENCES
+        .iter()
+        .any(|consequence| text.starts_with(consequence))
 }
 
 /// The line of what ffmpeg `said` that names why it failed, trimmed: the
-/// last line that does not only follow from an earlier failure
-/// ([`is_consequence`]); the last line when every line does; `None` when it
-/// said nothing.
+/// last line that names a cause ([`is_consequence`]). When every line only
+/// follows from a failure, the first line that is not libx265's report,
+/// which comes nearest the cause. The last line when every line is
+/// libx265's report, and `None` when ffmpeg said nothing.
 ///
 /// ffmpeg writes the cause first and what follows from it after, such as
 /// that the encoder did not open and the output muxer's line that nothing
@@ -142,6 +159,7 @@ fn cause_line(said: &str) -> Option<&str> {
         .clone()
         .rev()
         .find(|line| !is_consequence(line))
+        .or_else(|| lines.clone().find(|line| !is_x265_report(line)))
         .or_else(|| lines.last())
 }
 

@@ -229,7 +229,7 @@ A server started with a config file takes it from `[server] transcode_stall_secs
 A video conversion whose position passes twice the length ffprobe reads for the file is stopped too, as looping on a damaged file.
 A length ffprobe only estimated from the bitrate of the first frames doesn't count, because such an estimate can be under half the real length.
 An audio conversion is never stopped for its position, and has a time limit instead: twenty times the length ffprobe reads, at least 10 minutes and at most 6 hours, or an hour when ffprobe reads no length or only estimated one.
-Once the position passes that length, the limit is the one for a file as long as the position.
+Once the position passes that length, the length was wrong, and the limit is at least the hour for a file of unknown length.
 Once the position reaches the file's length, the wait becomes at least twice the time the run took to get there.
 Why: with `-movflags +faststart`, ffmpeg rewrites the whole output after its last frame and reports no progress meanwhile, which takes minutes for a large video on a slow disk.
 A program stopped is killed and waited for.
@@ -253,7 +253,8 @@ Why no path: ffmpeg names the files by their full paths, and the server's log ho
 
 A file the desktop app could not convert records `convert_failed:` and a short reason on its attachment, the same on either path that converts it: the Media Stage and the convert pass of a run that converts as it stages (`media::why_not_converted`).
 The reason is why ffmpeg was stopped, or the line ffmpeg wrote that names the cause, with each file ffmpeg was given written as `<input>` or `<output>`.
-That line is the last one that does not only follow from an earlier failure, such as a task ending, an encoder or a file that then did not open, or that nothing was written; it is the last line when every line does (`cause_line`).
+That line is the last one that does not only follow from an earlier failure, such as a task ending, an encoder or a file that then did not open, or that nothing was written, and is not libx265's own report, which it writes whatever the log level (`cause_line`).
+When every line only follows from a failure, it is the first of them, which comes nearest the cause.
 The search goes back from the end, because a damaged file makes ffmpeg write errors it carries on past, such as a frame it could not decode, before the one it stopped on.
 Why not the last line: ffmpeg writes the cause first and what follows from it after, so its last line can be that nothing was written into the output file, which says nothing about why (#2959).
 An ffmpeg that wrote nothing gives how it exited.
@@ -275,7 +276,8 @@ Why twice the length: a damaged or crafted file can make ffmpeg go around the sa
 Why video only: looping was seen on video, and an audio file's header can state under half its real length without ffprobe saying so.
 An MP3 joined from recordings back to back keeps the first part's header, which counts only that part's frames, and such a file was stopped as looping (#2909).
 Why audio has a time limit at all: a damaged audio file can loop too, and its position keeps moving while it does, so the no-progress wait alone never ends it.
-The limit grows to the limit for the length the position has reached, so a file joined from hours of recordings is held to its whole length, not its first part's, and audio converts far faster than it plays, so a working conversion stays well inside it.
+Why an hour once the position passes the length: a file joined from hours of recordings must not be held to its first part's limit, and the limit must not grow with the position, or a file looping would never reach it.
+Audio converts far faster than it plays, so a working conversion stays well inside an hour.
 Why 15 seconds for a short step: each takes well under a second on a working file, and a fixed limit is all a step that does not read the whole file needs.
 Why only local files: the files come from phone backups, and a playlist or a container inside one can name a network address that ffmpeg would otherwise open.
 Why run again on a timer rather than wait for an Import Run: only the end of an Import Run woke the pass, so on a server imported into once a busy database left the queue untouched until a restart.
