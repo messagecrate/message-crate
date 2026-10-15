@@ -90,8 +90,11 @@ pub fn is_cancelled(cancel: &CancelFlag) -> bool {
 
 /// Error returned by [`check_cancel`] when cancel was requested.
 ///
-/// Displays as `canceled`, so callers at a `String` edge can use
-/// `.map_err(|e| e.to_string())` and `anyhow` callers can use `?`.
+/// A Cancel is told from a failure by this type, never by its text: the
+/// desktop app looks for it in the error's chain (`DesktopJobErrorEvent` in
+/// `src-tauri/src/commands/events.rs`), so any context added on the way out
+/// keeps it (#2077). Carry it with `?` into an `anyhow::Error` rather than
+/// turning it into a string, which loses the type. It displays as `canceled`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("canceled")]
 pub struct Cancelled;

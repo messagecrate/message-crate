@@ -301,8 +301,7 @@ impl ExportWriter {
                 &self.log,
                 &self.progress,
                 cancel,
-            )
-            .map_err(anyhow::Error::msg)?;
+            )?;
 
         write_documents_through_sink(
             documents,

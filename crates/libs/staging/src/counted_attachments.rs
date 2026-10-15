@@ -131,7 +131,7 @@ impl<'a> CountedAttachments<'a> {
         log: &LogSink,
         progress: &ProgressSink,
         cancel: &CancelFlag,
-    ) -> Result<u64, String> {
+    ) -> anyhow::Result<u64> {
         let Self {
             jobs,
             mut sources,

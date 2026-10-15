@@ -1292,3 +1292,44 @@ fn a_compressing_drain_warns_why_hevc_failed() {
         "{warnings:?}"
     );
 }
+
+/// A Cancel seen while a conversation's attachments are staged ends the
+/// drain with [`message_crate_core::Cancelled`] in its error chain, not with
+/// its text, so the desktop app tells it from a failure whatever context is
+/// added on the way out (#2077).
+#[test]
+fn a_cancel_while_attachments_are_staged_stays_a_cancel() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = tmp.path().join("out");
+    fs::create_dir_all(&out).unwrap();
+    let cancel = CancelFlag::default();
+    let units = vec![unit_from(
+        doc_with(&test_number(8), 2),
+        vec![
+            AttachmentSource::Bytes(b"first".to_vec()),
+            AttachmentSource::Bytes(b"second".to_vec()),
+        ],
+    )];
+
+    let error = drain_write_queue_with_loader(
+        &out,
+        units,
+        &options(MediaMode::Clone, false),
+        &mut |_: &str, source: &mut AttachmentSource| {
+            // The Cancel comes while the first attachment loads.
+            cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+            load_attachment_source(source)
+        },
+        Sinks {
+            cancel: &cancel,
+            ..no_sinks()
+        },
+    )
+    .expect_err("a canceled drain fails")
+    .context("write a conversation");
+
+    assert!(
+        error.chain().any(|e| e.is::<message_crate_core::Cancelled>()),
+        "{error:#}"
+    );
+}

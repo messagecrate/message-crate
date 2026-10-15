@@ -324,8 +324,7 @@ fn stage_again(
             &context.log,
             &context.progress,
             &context.cancel,
-        )
-        .map_err(anyhow::Error::msg)?;
+        )?;
     report.attachments_saved += saved;
     Ok(())
 }

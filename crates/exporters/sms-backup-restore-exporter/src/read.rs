@@ -400,8 +400,7 @@ pub fn stage_read_attachments(
             options.log,
             options.progress,
             options.cancel,
-        )
-        .map_err(anyhow::Error::msg)?;
+        )?;
     Ok(())
 }
 
