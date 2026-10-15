@@ -132,10 +132,14 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
 
 // The desktop commands this screen calls, faked by name. The rest of
 // lib/desktop/ stays real, since useImportJob.ts holds its imports at load.
+vi.mock("../lib/desktop/backup", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/desktop/backup")>()),
+  invokeIosBackupEncrypted: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock("../lib/desktop/fs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/desktop/fs")>()),
   invokeHomeDir: vi.fn().mockResolvedValue({ path: "/home/u", os: "linux" }),
-  invokeIosBackupEncrypted: vi.fn().mockResolvedValue(null),
   invokePathStat: (...args: unknown[]) => invokePathStatMock(...args),
 }));
 

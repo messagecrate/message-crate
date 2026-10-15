@@ -27,6 +27,10 @@ vi.mock("./tauriCheck", () => ({ isTauri: () => desktop.isTauri }));
 vi.mock("./desktop/fs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./desktop/fs")>()),
   invokePathStat: (path: string) => desktop.pathStat(path),
+}));
+
+vi.mock("./desktop/backup", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./desktop/backup")>()),
   invokeIosBackupEncrypted: (path: string) => desktop.encrypted(path),
 }));
 

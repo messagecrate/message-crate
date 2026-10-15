@@ -1,22 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
 /**
- * The staged directory `summarize_staging` and `transcode_staging` act on.
- *
- * It carries no media settings: `extract` recorded the run's in the directory,
- * and both commands read them from there, so they work to the values the
- * Import Run was started with.
- *
- * It carries no Staging Directory either. The desktop process keeps the
- * setting and the directories it made under it, and acts on a directory it made
- * wherever the setting points now, so changing the setting never strands a
- * run that started under the earlier one.
- */
-export interface RunDirConfig {
-  run_dir: string;
-}
-
-/**
  * Make a new run directory under the Staging Directory and return its path.
  * `label` is the Import source.
  */

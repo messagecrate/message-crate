@@ -1,8 +1,9 @@
 import { completionTextFor } from "../../components/import/ImportSummaryPanel";
 import { getAccountId, getBaseUrl, getToken } from "../../lib/api";
 import { useAuth } from "../../lib/authContext";
+import { invokeImessageBackupIdentities } from "../../lib/desktop/backup";
 import { invokeExtract } from "../../lib/desktop/extract";
-import { invokeImessageBackupIdentities, invokePathStat } from "../../lib/desktop/fs";
+import { invokePathStat } from "../../lib/desktop/fs";
 import { awaitDesktopJob, invokeCancel, onDesktopJobEvents } from "../../lib/desktop/job";
 import {
   invokeCreateRunDir,

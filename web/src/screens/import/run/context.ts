@@ -5,6 +5,7 @@
  * never share a run.
  */
 
+import type * as desktopBackup from "../../../lib/desktop/backup";
 import type * as desktopExtract from "../../../lib/desktop/extract";
 import type * as desktopFs from "../../../lib/desktop/fs";
 import type * as desktopJob from "../../../lib/desktop/job";
@@ -47,7 +48,7 @@ type RunDesktop = {
   invokeCreateRunDir: typeof desktopRunDir.invokeCreateRunDir;
   invokeDeleteRunDir: typeof desktopRunDir.invokeDeleteRunDir;
   invokeExtract: typeof desktopExtract.invokeExtract;
-  invokeImessageBackupIdentities: typeof desktopFs.invokeImessageBackupIdentities;
+  invokeImessageBackupIdentities: typeof desktopBackup.invokeImessageBackupIdentities;
   invokePathStat: typeof desktopFs.invokePathStat;
   invokeReadImportRunRecord: typeof desktopRunDir.invokeReadImportRunRecord;
   invokeSaveImportRunRecord: typeof desktopRunDir.invokeSaveImportRunRecord;

@@ -1,6 +1,21 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AttachmentMediaMode } from "../types";
-import type { RunDirConfig } from "./runDir";
+
+/**
+ * The staged directory `summarize_staging` and `transcode_staging` act on.
+ *
+ * It carries no media settings: `extract` recorded the run's in the directory,
+ * and both commands read them from there, so they work to the values the
+ * Import Run was started with.
+ *
+ * It carries no Staging Directory either. The desktop process keeps the
+ * setting and the directories it made under it, and acts on a directory it made
+ * wherever the setting points now, so changing the setting never strands a
+ * run that started under the earlier one.
+ */
+export interface RunDirConfig {
+  run_dir: string;
+}
 
 /** The Staging Directory, and the directory used when Settings name none. */
 interface StagingDirectorySetting {

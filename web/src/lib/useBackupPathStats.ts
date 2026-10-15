@@ -1,6 +1,6 @@
 import { type QueryKey, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { invokeIosBackupEncrypted } from "./desktop/fs";
+import { invokeIosBackupEncrypted } from "./desktop/backup";
 import { emptyImessagePathStats, type ImessagePathStats, isImessageMethod } from "./imessageImport";
 import {
   ANDROID_SMS_NO_STATS,

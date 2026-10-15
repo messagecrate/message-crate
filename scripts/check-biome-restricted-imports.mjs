@@ -3,8 +3,8 @@
  * Check that every override of `noRestrictedImports` in web/biome.json keeps
  * the root rule's level and path list, less what that override lifts for its
  * files: exactly one path, or every one of Tauri's packages (`@tauri-apps/`)
- * together, which the modules in web/src/lib/desktop/ import and nothing else
- * may. An override that sets the rule "off" is left alone.
+ * together, which only the override for the modules in web/src/lib/desktop/
+ * may lift. An override that sets the rule "off" is left alone.
  *
  * Usage:
  *   node scripts/check-biome-restricted-imports.mjs
@@ -31,8 +31,11 @@ if (rootPaths === undefined) {
   process.exit(1);
 }
 
-// Tauri's packages, which the desktop modules lift as one.
+// Tauri's packages, which the desktop modules lift as one, and the files of
+// the one override that may lift them: the modules in src/lib/desktop/, less
+// their tests.
 const tauriPaths = Object.keys(rootPaths).filter((name) => name.startsWith("@tauri-apps/"));
+const desktopIncludes = ["src/lib/desktop/*.ts", "!src/lib/desktop/*.test.ts"];
 
 const failures = [];
 for (const override of config.overrides ?? []) {
@@ -57,9 +60,13 @@ for (const override of config.overrides ?? []) {
   }
   const missing = Object.keys(rootPaths).filter((name) => !(name in paths));
   const liftsTauri = tauriPaths.length > 0 && isDeepStrictEqual(missing, tauriPaths);
-  if (missing.length !== 1 && !liftsTauri) {
+  if (liftsTauri && !isDeepStrictEqual(override.includes, desktopIncludes)) {
     failures.push(
-      `${where} leaves out ${missing.length} of the root rule's paths (${missing.join(", ") || "none"}). An override leaves out exactly the one path it lifts, or every @tauri-apps/ path together. Lifting any other set of paths for the same files needs a change to this check.`,
+      `${where} lifts every @tauri-apps/ path, which only the override for ${desktopIncludes.join(", ")} may do.`,
+    );
+  } else if (missing.length !== 1 && !liftsTauri) {
+    failures.push(
+      `${where} leaves out ${missing.length} of the root rule's paths (${missing.join(", ") || "none"}). An override leaves out exactly the one path it lifts, or, for src/lib/desktop/, every @tauri-apps/ path together. Lifting any other set of paths for the same files needs a change to this check.`,
     );
   }
 }
