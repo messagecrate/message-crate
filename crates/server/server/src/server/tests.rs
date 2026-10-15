@@ -1,10 +1,11 @@
 use super::*;
 use crate::extract::{Json, Path as AxumPath};
-use crate::imports_api::ImportMode;
-use crate::imports_api::{
+use crate::imports_api::dto::{
     CompleteImportRequest, CreateImportRequest, DiscardImportRequest, ImportIssueRequest,
-    UpdateImportRequest, complete_import, create_import, discard_import, get_import, list_imports,
-    update_import,
+    UpdateImportRequest,
+};
+use crate::imports_api::{
+    complete_import, create_import, discard_import, get_import, list_imports, update_import,
 };
 use crate::logging::{LogLevel, LogLine};
 use crate::problem::ProblemType;
@@ -12,6 +13,7 @@ use crate::test_support::{
     ImportingAccount, expect_problem, expect_problem_for, http_client, test_fixture,
 };
 use axum::extract::State;
+use message_crate_api_types::ImportMode;
 use tempfile::TempDir;
 
 #[test]
@@ -262,11 +264,11 @@ async fn disabling_an_account_kills_its_live_api_token() {
 async fn running_import(
     state: &AppState,
     token: &str,
-) -> Option<crate::imports_api::ImportRunSummary> {
+) -> Option<crate::imports_api::dto::ImportRunSummary> {
     list_imports(
         State(state.clone()),
         import_access(state, token).await,
-        crate::extract::Query(crate::imports_api::ListImportsQuery {
+        crate::extract::Query(crate::imports_api::dto::ListImportsQuery {
             sort: None,
             status: Some("running".into()),
             limit: None,

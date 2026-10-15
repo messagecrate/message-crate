@@ -397,19 +397,21 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
     .unwrap();
     let assets = dir.join("assets");
     let mut conn = fixture.conn().await;
-    let counts = crate::imports_api::import_jsonl_files_on_conn(
+    let counts = crate::imports_api::pipeline::import_jsonl_files_on_conn(
         &mut conn,
         &[path],
-        &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
-            assets_dir: &assets,
-            asset_root: Some(&dir),
-            mode: crate::imports_api::ImportMode::Append,
-            source: "imessage",
-            account_id,
-            import_id: None,
-            phone_country: None,
-            now: crate::test_support::fixed_instant(),
-        }),
+        &crate::imports_api::pipeline::ImportOptions::fixed(
+            crate::imports_api::pipeline::FixedImportArgs {
+                assets_dir: &assets,
+                asset_root: Some(&dir),
+                mode: message_crate_api_types::ImportMode::Append,
+                source: "imessage",
+                account_id,
+                import_id: None,
+                phone_country: None,
+                now: crate::test_support::fixed_instant(),
+            },
+        ),
     )
     .await
     .unwrap();
@@ -476,26 +478,28 @@ async fn import_conversation_file(
     name: &str,
     contents: &str,
     source: &str,
-) -> crate::imports_api::ImportCounts {
+) -> crate::imports_api::pipeline::ImportCounts {
     let dir = fixture.dir().join(name);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(format!("{name}.jsonl"));
     std::fs::write(&path, contents).unwrap();
     let assets = dir.join("assets");
     let mut conn = fixture.conn().await;
-    crate::imports_api::import_jsonl_files_on_conn(
+    crate::imports_api::pipeline::import_jsonl_files_on_conn(
         &mut conn,
         &[path],
-        &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
-            assets_dir: &assets,
-            asset_root: Some(&dir),
-            mode: crate::imports_api::ImportMode::Append,
-            source,
-            account_id,
-            import_id: None,
-            phone_country: None,
-            now: crate::test_support::fixed_instant(),
-        }),
+        &crate::imports_api::pipeline::ImportOptions::fixed(
+            crate::imports_api::pipeline::FixedImportArgs {
+                assets_dir: &assets,
+                asset_root: Some(&dir),
+                mode: message_crate_api_types::ImportMode::Append,
+                source,
+                account_id,
+                import_id: None,
+                phone_country: None,
+                now: crate::test_support::fixed_instant(),
+            },
+        ),
     )
     .await
     .unwrap()

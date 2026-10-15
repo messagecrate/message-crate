@@ -23,8 +23,9 @@ use crate::import_media;
 use crate::jsonl::{self, ReadRecordsError};
 use media::MediaMode;
 
+use super::ImportFailure;
 use super::contact_name::ensure_contact_for_handle;
-use super::{ImportCounts, ImportFailure, ImportOptions};
+use super::pipeline::{ImportCounts, ImportOptions};
 
 /// Why staging a file stopped: a refusal the sender can fix by changing the
 /// file, or a fault of the server.

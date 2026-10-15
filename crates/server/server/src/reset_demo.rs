@@ -30,7 +30,7 @@ use crate::db::address_book::LoadCounts;
 use crate::db::audit_trail::AuditActor;
 use crate::db::demo_account_build::DemoDataSize;
 use crate::db::schema;
-use crate::imports_api;
+use crate::imports_api::pipeline;
 use crate::open_db::OpenDb;
 use crate::process_assets;
 use crate::progress::Progress;
@@ -60,7 +60,7 @@ pub struct ResetDemoStats {
     /// Stats from regenerating the demo bundle.
     pub seed: demo_seed::GenStats,
     /// Stats from importing the regenerated bundle.
-    pub import: imports_api::ImportCounts,
+    pub import: pipeline::ImportCounts,
     /// What loading the bundle's address book changed, after the imports.
     pub address_book: LoadCounts,
     /// Dedupe content keys filled during the reset (one per message; not a duplicate count).

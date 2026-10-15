@@ -691,8 +691,8 @@ was written, not when a part was unsent, so they cannot tell
 runs the full dedupe over the account, within one source and across sources
 (`dedupe_cross_source` in `dedupe.rs`), once for the whole run. An Upload's
 run ends at `POST /v1/imports/{id}/complete` or `/discard`, or by the server's
-`imports discard` command (`end_run` and `discard_running_import_and_dedupe`
-in `imports_api/mod.rs`). A completion runs the dedupe before it ends the run,
+`imports discard` command (`end_run` in `imports_api/run_control.rs`, and
+`discard_running_import_and_dedupe` in `imports_api/pipeline.rs`). A completion runs the dedupe before it ends the run,
 so a dedupe that fails leaves the run running and the client completes it
 again. A discard ends the run first and then runs the dedupe, and a dedupe
 that fails is logged, so a dedupe that always fails never keeps the account
