@@ -210,7 +210,8 @@ that does not say which statement failed sends the owner to the code to
 guess. Why a fixed phrase: a bound value can be a search word or a message's
 text, which a line never holds (below).
 
-`db/conversation_messages.rs` names every statement it runs; the other `db/`
+`db/conversation_messages.rs`, `db/conversations.rs` and
+`db/contacts/read.rs` name every statement they run; the other `db/`
 modules do not all name theirs yet
 ([#2667](https://github.com/messagecrate/message-crate/issues/2667)).
 

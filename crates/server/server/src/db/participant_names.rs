@@ -32,23 +32,18 @@ use sqlx::{Row, SqliteConnection};
 pub use message_crate_api_types::Participant;
 
 use crate::db::sql::group_rows_by_id;
-
-/// Join condition that leaves a trashed contact `c` out. A trashed contact is
-/// not one of a conversation's contacts (CONTEXT.md, "Trash"), and
-/// `GET /v1/contacts/{id}` answers 404 for it, so its participant is named and
-/// linked as if no contact held the identity. Search does the same unless the
-/// query carries `trashed:`.
-fn not_trashed(c: &str) -> String {
-    format!(
-        "NOT EXISTS (SELECT 1 FROM trashed_contacts t
-                     WHERE t.account_id = {c}.account_id AND t.contact_id = {c}.id)"
-    )
-}
+use crate::db::trash::not_trashed_contact;
 
 /// The name shown for the participant row `p`, as a SQL expression, with `c`
-/// the contact its identity is on (joined with [`not_trashed`], so NULL for
-/// a trashed one) and `h` its identity: the contact's name, else what that
-/// backup called them in that conversation, else the identity.
+/// the contact its identity is on (joined with [`not_trashed_contact`], so
+/// NULL for a trashed one) and `h` its identity: the contact's name, else
+/// what that backup called them in that conversation, else the identity.
+///
+/// Every join of `c` here leaves a trashed contact out. A trashed contact is
+/// not one of a conversation's contacts (CONTEXT.md, "Trash"), and
+/// `GET /v1/contacts/{id}` answers 404 for it, so its participant is named
+/// and linked as if no contact held the identity. Search does the same
+/// unless the query carries `trashed:`.
 fn participant_name(p: &str, h: &str, c: &str) -> String {
     format!(
         "COALESCE(NULLIF({c}.preferred_name, ''),
@@ -78,7 +73,7 @@ pub(crate) fn first_participant_name_sql(conv: &str) -> String {
           ORDER BY fp_p.id
           LIMIT 1)",
         name = participant_name("fp_p", "fp_h", "fp_c"),
-        not_trashed = not_trashed("fp_c"),
+        not_trashed = not_trashed_contact("fp_c"),
     )
 }
 
@@ -153,7 +148,7 @@ async fn load_participant_rows(
                  WHERE p.conversation_id IN ({placeholders})
                  ORDER BY p.conversation_id, p.id",
                 name = participant_name("p", "h", "c"),
-                not_trashed = not_trashed("c"),
+                not_trashed = not_trashed_contact("c"),
             )
         },
         participant_row,
@@ -204,7 +199,7 @@ async fn load_from_chat_handle(
                   AND {not_trashed}
                  WHERE conv.id IN ({placeholders})
                    AND {named_from_chat_handle}",
-                not_trashed = not_trashed("c"),
+                not_trashed = not_trashed_contact("c"),
                 named_from_chat_handle = named_from_chat_handle_sql("conv")
             )
         },

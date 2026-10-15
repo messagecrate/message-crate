@@ -60,8 +60,7 @@ pub(crate) async fn list_conversations(
         auth.account_id,
         &list.q,
         &list.order,
-        list.page.limit,
-        list.page.offset,
+        list.page,
         list.clock,
     )
     .await?;
@@ -165,7 +164,7 @@ impl ListConversationMessagesQuery {
             (Some(id), _, _) => MessageWindow::Around(id),
             (_, Some(id), _) => MessageWindow::Before(id),
             (_, _, Some(id)) => MessageWindow::After(id),
-            _ => MessageWindow::Offset(self.offset.unwrap_or(0)),
+            _ => MessageWindow::Offset,
         })
     }
 }
@@ -218,7 +217,7 @@ pub(crate) async fn list_conversation_messages(
         auth.account_id,
         conversation_id,
         &order,
-        page.limit,
+        page,
         window,
     )
     .await?;

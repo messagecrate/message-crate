@@ -209,6 +209,7 @@ The Staging row shows:
 - **Options**, only when **Obfuscate** is on.
 
 Each run gets a new directory in the Staging Directory, named `staging-` followed by the source and the date and time.
+On macOS and Linux only the user the app runs as can open that directory, so another user of the same computer can't read the messages staged in it; the Staging Directory itself keeps the permissions it has.
 The Staging Directory is `~/message-crate` unless **Settings → System** names another **Staging directory**.
 
 While Staging reads the backup, it keeps its working files in the Scratch Directory, `scratch` in the operating system's app-data directory, never in the Staging Directory: the databases it decrypts from an encrypted iPhone backup, WhatsApp's files read out of a phone backup (decrypted first when the iPhone backup is encrypted), and the attachments it reads out of an SMS Backup & Restore, GO SMS Pro or SMS Backup+ backup.
