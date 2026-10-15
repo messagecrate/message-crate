@@ -200,7 +200,7 @@ pub struct Named {
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
+/// Returns an error naming the step when the query fails.
 pub async fn stored_originals(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -275,7 +275,7 @@ pub struct VersionWrite<'a> {
 ///
 /// # Errors
 ///
-/// Returns a database error when the statement fails.
+/// Returns an error naming the step when the statement fails.
 pub async fn record(conn: &mut SqliteConnection, write: VersionWrite<'_>) -> Result<u64> {
     point_rows(conn, write, false).await
 }
@@ -288,7 +288,7 @@ pub async fn record(conn: &mut SqliteConnection, write: VersionWrite<'_>) -> Res
 ///
 /// # Errors
 ///
-/// Returns a database error when the statement fails.
+/// Returns an error naming the step when the statement fails.
 pub async fn record_shown_as_is(
     conn: &mut SqliteConnection,
     rows: OriginalRows<'_>,
@@ -344,7 +344,7 @@ pub struct NotMade<'a> {
 ///
 /// # Errors
 ///
-/// Returns a database error when the statement fails.
+/// Returns an error naming the step when the statement fails.
 pub async fn record_not_made(conn: &mut SqliteConnection, not_made: NotMade<'_>) -> Result<()> {
     let NotMade {
         rows: OriginalRows {
@@ -390,7 +390,7 @@ pub async fn record_not_made(conn: &mut SqliteConnection, not_made: NotMade<'_>)
 ///
 /// # Errors
 ///
-/// Returns a database error when the statement fails.
+/// Returns an error naming the step when the statement fails.
 pub async fn share(conn: &mut SqliteConnection, write: VersionWrite<'_>) -> Result<u64> {
     point_rows(conn, write, true).await
 }
@@ -451,7 +451,7 @@ async fn point_rows(
 ///
 /// # Errors
 ///
-/// Returns a database error when the statement fails.
+/// Returns an error naming the step when the statement fails.
 pub async fn clear(
     conn: &mut SqliteConnection,
     version: Version,
@@ -487,7 +487,7 @@ pub async fn clear(
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
+/// Returns an error naming the step when the query fails.
 pub async fn file_of(
     conn: &mut SqliteConnection,
     version: Version,
@@ -544,7 +544,7 @@ pub async fn file_of(
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
+/// Returns an error naming the step when the query fails.
 pub async fn converted_file_is_named(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -584,7 +584,7 @@ pub async fn converted_file_is_named(
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
+/// Returns an error naming the step when the query fails.
 pub async fn named_files(conn: &mut SqliteConnection, account_id: i64) -> Result<Vec<NamedFiles>> {
     sqlx::query_as(
         "SELECT a.sha256, a.assets_path, a.preview_sha256, a.preview_assets_path,
@@ -669,7 +669,7 @@ pub struct NotMadeCount {
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
+/// Returns an error naming the step when the query fails.
 pub async fn not_made_for_import(
     conn: &mut SqliteConnection,
     import_id: i64,
@@ -701,7 +701,7 @@ pub async fn not_made_for_import(
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
+/// Returns an error naming the step when the query fails.
 pub async fn written_by_import(conn: &mut SqliteConnection, import_id: i64) -> Result<u64> {
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM attachments WHERE import_id = $1")
         .bind(import_id)

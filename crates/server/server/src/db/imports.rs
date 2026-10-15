@@ -775,7 +775,7 @@ pub async fn discard_import(
     insert_notes(&mut tx, import_id, notes, now).await?;
     tx.commit()
         .await
-        .map_err(failed("commit the cancelled Import Run"))?;
+        .map_err(failed("commit the canceled Import Run"))?;
     Ok(())
 }
 
@@ -785,7 +785,7 @@ pub async fn discard_import(
 ///
 /// # Errors
 ///
-/// Returns the database error.
+/// Returns an error naming the step when the query fails.
 pub async fn running_import(
     conn: &mut SqliteConnection,
     account_id: i64,

@@ -146,7 +146,7 @@ impl Trashable {
 ///
 /// # Errors
 ///
-/// Returns a database error when a statement fails.
+/// Returns an error naming the step when a statement fails.
 pub async fn move_to_trash(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -174,7 +174,7 @@ pub async fn move_to_trash(
 ///
 /// # Errors
 ///
-/// Returns a database error when a statement fails.
+/// Returns an error naming the step when a statement fails.
 pub async fn restore(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -199,7 +199,7 @@ pub async fn restore(
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
+/// Returns an error naming the step when the query fails.
 pub async fn is_contact_trashed(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -252,7 +252,7 @@ pub async fn discard_trashed_contact(
 ///
 /// # Errors
 ///
-/// Returns a database error when a statement fails.
+/// Returns an error naming the step when a statement fails.
 pub async fn purge_account(conn: &mut SqliteConnection, account_id: i64) -> Result<()> {
     sqlx::query("DELETE FROM trashed_conversations WHERE account_id = $1")
         .bind(account_id)
@@ -311,7 +311,7 @@ pub enum OrphanedFile {
 ///
 /// # Errors
 ///
-/// Returns a database error when a statement fails; the transaction is then
+/// Returns an error naming the step when a statement fails; the transaction is then
 /// rolled back.
 pub async fn delete_trashed(
     conn: &mut SqliteConnection,
@@ -367,7 +367,7 @@ pub async fn delete_trashed(
 ///
 /// # Errors
 ///
-/// Returns a database error when a statement fails; the transaction is then
+/// Returns an error naming the step when a statement fails; the transaction is then
 /// rolled back.
 pub async fn empty_trash(
     conn: &mut SqliteConnection,
@@ -508,7 +508,7 @@ async fn delete_conversations(
                 "trashed_conversations",
                 "conversation_id",
                 "",
-                "delete the deleted conversations' trash markers",
+                "delete the trash markers of the conversations deleted for good",
             ),
         ] {
             let sql = format!(

@@ -158,7 +158,7 @@ pub async fn is_account_identity(
     .bind(handle_id)
     .fetch_one(&mut *conn)
     .await
-    .context("check whether a handle is one of the account's identities")
+    .context("check whether an identity is one of the account's own")
 }
 
 /// The id of the account's own identity shown as `address` on `service`,
@@ -294,7 +294,7 @@ pub async fn link_account_handle_with_service(
     .bind(handle_id)
     .execute(&mut *conn)
     .await
-    .context("link a handle to the account")?;
+    .context("link an identity to the account")?;
     Ok(handle_id)
 }
 

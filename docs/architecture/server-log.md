@@ -213,7 +213,10 @@ text, which a line never holds (below).
 Every statement in `crates/server/server/src/db/` names its step where it
 runs. A shared helper that runs a statement for several callers, such as
 `begin_write`, `free_name` or the ownership checks, leaves the step to each
-caller, which knows what the statement is for.
+caller, which knows what the statement is for. The pragmas the pool runs on
+each new connection (`with_pragmas` in `db/engine.rs`) name none: sqlx
+requires that hook to return its own error type, which holds no step, and a
+failure there shows as the pool's failure to connect.
 
 ## A request's lines carry its id, spawned work included
 

@@ -40,14 +40,17 @@ async fn distrust_schema(conn: &mut SqliteConnection) -> sqlx::Result<()> {
 /// # Errors
 ///
 /// Returns an error when the file cannot be opened, or the pragma fails.
-pub(crate) async fn connect_read_only(path: &Path) -> sqlx::Result<SqliteConnection> {
+pub(crate) async fn connect_read_only(path: &Path) -> anyhow::Result<SqliteConnection> {
     crate::db::sqlite_functions::register();
     let mut conn = SqliteConnectOptions::new()
         .filename(path)
         .read_only(true)
         .connect()
-        .await?;
-    distrust_schema(&mut conn).await?;
+        .await
+        .context("open the database file read-only")?;
+    distrust_schema(&mut conn)
+        .await
+        .context("turn off trust in the database file's schema")?;
     Ok(conn)
 }
 
@@ -64,14 +67,17 @@ pub(crate) async fn connect_read_only(path: &Path) -> sqlx::Result<SqliteConnect
 pub(crate) async fn connect_for_checkpoint(
     path: &Path,
     wait: Duration,
-) -> sqlx::Result<SqliteConnection> {
+) -> anyhow::Result<SqliteConnection> {
     crate::db::sqlite_functions::register();
     let mut conn = SqliteConnectOptions::new()
         .filename(path)
         .busy_timeout(wait)
         .connect()
-        .await?;
-    distrust_schema(&mut conn).await?;
+        .await
+        .context("open the database file for a checkpoint")?;
+    distrust_schema(&mut conn)
+        .await
+        .context("turn off trust in the database file's schema")?;
     Ok(conn)
 }
 

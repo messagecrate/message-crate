@@ -113,7 +113,7 @@ fn logs_to_clear() -> std::sync::MutexGuard<'static, LogsToClear> {
 ///
 /// # Errors
 ///
-/// Returns the database error when a merge or the commit fails; the
+/// Returns an error naming the step when a merge or the commit fails; the
 /// transaction then rolls back with the delete in it.
 pub(crate) async fn erase_and_commit(mut tx: WriteTx<'_>) -> Result<()> {
     for (sql, step) in OPTIMIZE_SEARCH_INDEXES {
@@ -214,9 +214,7 @@ fn record(logs: &mut LogsToClear, file: PathBuf, seen: Option<u64>, cleared: Log
 /// `file`, and answer whether it finished.
 async fn checkpoint(file: &std::path::Path) -> Result<bool> {
     use sqlx::Connection as _;
-    let mut own = crate::db::engine::connect_for_checkpoint(file, CHECKPOINT_WAIT)
-        .await
-        .context("open a connection for the checkpoint")?;
+    let mut own = crate::db::engine::connect_for_checkpoint(file, CHECKPOINT_WAIT).await?;
     let finished = crate::db::maintenance::checkpoint_truncate(&mut own).await?;
     own.close()
         .await

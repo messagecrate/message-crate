@@ -27,7 +27,7 @@ pub struct QueuedAsset {
 ///
 /// # Errors
 ///
-/// Returns a database error when the statement fails.
+/// Returns an error naming the step when the statement fails.
 pub async fn queue_import_run(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -56,7 +56,7 @@ pub async fn queue_import_run(
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
+/// Returns an error naming the step when the query fails.
 pub async fn first(conn: &mut SqliteConnection) -> Result<Option<QueuedAsset>> {
     sqlx::query_as(
         "SELECT account_id, sha256, rowid FROM media_queue
@@ -74,7 +74,7 @@ pub async fn first(conn: &mut SqliteConnection) -> Result<Option<QueuedAsset>> {
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
+/// Returns an error naming the step when the query fails.
 pub async fn queued_after(conn: &mut SqliteConnection, rowid: i64) -> Result<Vec<QueuedAsset>> {
     sqlx::query_as(
         "SELECT account_id, sha256, rowid FROM media_queue
@@ -92,7 +92,7 @@ pub async fn queued_after(conn: &mut SqliteConnection, rowid: i64) -> Result<Vec
 ///
 /// # Errors
 ///
-/// Returns a database error when the statement fails.
+/// Returns an error naming the step when the statement fails.
 pub async fn remove(conn: &mut SqliteConnection, asset: &QueuedAsset) -> Result<()> {
     sqlx::query("DELETE FROM media_queue WHERE account_id = $1 AND sha256 = $2 AND rowid = $3")
         .bind(asset.account_id)
@@ -108,7 +108,7 @@ pub async fn remove(conn: &mut SqliteConnection, asset: &QueuedAsset) -> Result<
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
+/// Returns an error naming the step when the query fails.
 pub async fn count(conn: &mut SqliteConnection) -> Result<i64> {
     sqlx::query_scalar("SELECT COUNT(*) FROM media_queue")
         .fetch_one(&mut *conn)
