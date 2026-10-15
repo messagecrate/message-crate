@@ -317,14 +317,13 @@ fn stage_again(
     output_dir: &Path,
     report: &mut ExportReport,
 ) -> Result<()> {
-    let saved = counted
-        .stage(
-            &output_dir.join("attachments"),
-            load_attachment_source,
-            &context.log,
-            &context.progress,
-            &context.cancel,
-        )?;
+    let saved = counted.stage(
+        &output_dir.join("attachments"),
+        load_attachment_source,
+        &context.log,
+        &context.progress,
+        &context.cancel,
+    )?;
     report.attachments_saved += saved;
     Ok(())
 }

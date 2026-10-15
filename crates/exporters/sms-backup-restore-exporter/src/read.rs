@@ -393,14 +393,13 @@ pub fn stage_read_attachments(
     options: &ReadOptions<'_>,
 ) -> Result<()> {
     let attachments_dir = options.attachments_dir.unwrap_or_else(|| Path::new(""));
-    spooled_attachments(documents, options)
-        .stage(
-            attachments_dir,
-            load_attachment_source,
-            options.log,
-            options.progress,
-            options.cancel,
-        )?;
+    spooled_attachments(documents, options).stage(
+        attachments_dir,
+        load_attachment_source,
+        options.log,
+        options.progress,
+        options.cancel,
+    )?;
     Ok(())
 }
 

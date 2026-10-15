@@ -213,7 +213,7 @@ export function recordError(ctx: RunContext, stage: ImportIssueStage, message: s
 /**
  * Run one desktop job to its end, feeding its progress and issues into the
  * run. A job that a Cancel came before is never started, and fails with
- * `CANCELLED_MESSAGE` the way a job cancelled while it runs does.
+ * a `CanceledError` the way a job canceled while it runs does.
  */
 export function runJob(ctx: RunContext, invokeFn: () => Promise<void>): Promise<DesktopJobResult> {
   const guarded = ctx.scratch.runCancel.guard(invokeFn);

@@ -1,6 +1,6 @@
-import { errorLine, errorText } from "../../../lib/apiErrorMessage";
+import { errorLine } from "../../../lib/apiErrorMessage";
+import { CanceledError } from "../../../lib/canceledError";
 import type { ImportJobFormValues } from "../../../lib/importSources/types";
-import { CANCELLED_MESSAGE } from "../../../lib/runCancel";
 import {
   ffmpegMissing,
   type MediaToolName,
@@ -80,8 +80,7 @@ export async function runMediaStage(
     const result = await runJob(ctx, () => ctx.desktop.invokeTranscodeStaging({ run_dir: runDir }));
     transcodeReport = result.transcode;
   } catch (e: unknown) {
-    const msg = errorText(e);
-    if (msg === CANCELLED_MESSAGE) {
+    if (e instanceof CanceledError) {
       // The person asked for this: not an error, so no issue row for it.
       cancelled = true;
     } else {

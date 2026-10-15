@@ -1329,7 +1329,9 @@ fn a_cancel_while_attachments_are_staged_stays_a_cancel() {
     .context("write a conversation");
 
     assert!(
-        error.chain().any(|e| e.is::<message_crate_core::Cancelled>()),
+        error
+            .chain()
+            .any(|e| e.is::<message_crate_core::Cancelled>()),
         "{error:#}"
     );
 }

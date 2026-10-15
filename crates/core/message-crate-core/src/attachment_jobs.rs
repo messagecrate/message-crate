@@ -3,8 +3,8 @@
 use crate::attachments::attachment_dest_name;
 use crate::config::MediaConfig;
 use crate::process::{CancelFlag, Cancelled, LogSink};
-use anyhow::Context as _;
 use crate::progress::{ProgressEvent, ProgressSink};
+use anyhow::Context as _;
 use file_io::sha256_hex;
 use media::MediaMode;
 use message_ir::{ConversationDocument, IrAttachment, IrMessage};

@@ -1,10 +1,10 @@
-import { errorLine, errorText } from "../../../lib/apiErrorMessage";
+import { errorLine } from "../../../lib/apiErrorMessage";
+import { CanceledError } from "../../../lib/canceledError";
 import { getDeviceId } from "../../../lib/deviceId";
 import { buildSourceFingerprint } from "../../../lib/importRun";
 import { importRunCreateBody } from "../../../lib/importSource";
 import { importSourceFor } from "../../../lib/importSources";
 import type { ImportJobFormValues } from "../../../lib/importSources/types";
-import { CANCELLED_MESSAGE } from "../../../lib/runCancel";
 import { formSnapshot } from "../formSnapshot";
 import {
   attachmentDoneDetail,
@@ -303,14 +303,13 @@ export async function runImport(
     }
   } catch (e: unknown) {
     if (await leaveIfRefused(ctx, e, runId)) return;
-    const msg = errorText(e);
     // A cancelled Staging is not a failure: the conversations already
     // written are real work, and Staging can pick up from them. Leaving the
     // run at `write` is what lets the next Import visit offer that. A
     // `write` stage the server did not record stops the run where the server
     // has it, so it is not completed either. A genuine failure still
     // completes: a broken backup must not lock the account out of importing.
-    const cancelled = msg === CANCELLED_MESSAGE;
+    const cancelled = e instanceof CanceledError;
     const stageNotRecorded = e instanceof StageNotRecordedError;
     if (!cancelled) recordError(ctx, ctx.scratch.activeStage, errorLine(e));
     failActiveStep(ctx);

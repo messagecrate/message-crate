@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
 import { ApiError, setAccountId } from "../../lib/api";
 import { AuthContext } from "../../lib/authContext";
+import { CanceledError } from "../../lib/canceledError";
 import { currentDesktopJob } from "../../lib/desktopJob";
 import type { ActiveImportRun } from "../../lib/importRun";
 import { keys } from "../../lib/queryKeys";
@@ -1965,7 +1966,7 @@ describe("useImportJob wiring", () => {
     // failure, so run() rejects here exactly as it would for a real error.
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
-      throw new Error("canceled");
+      throw new CanceledError();
     });
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
@@ -1989,7 +1990,7 @@ describe("useImportJob wiring", () => {
     // "cancelled" outcome is still shown locally.
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
-      throw new Error("canceled");
+      throw new CanceledError();
     });
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
@@ -2023,7 +2024,7 @@ describe("useImportJob wiring", () => {
     runMock.mockReset();
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
-      throw new Error("canceled");
+      throw new CanceledError();
     });
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
@@ -2187,7 +2188,7 @@ describe("useImportJob wiring", () => {
     runMock.mockReset();
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
-      throw new Error("canceled");
+      throw new CanceledError();
     });
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "copy" })));
@@ -3827,7 +3828,7 @@ describe("one desktop app, two accounts (#1085)", () => {
       await fn();
       extractOfARunning.resolve();
       await extractOfAStopped.promise;
-      throw new Error("canceled");
+      throw new CanceledError();
     });
     runMock.mockImplementationOnce(runResult(EXTRACT_RESULT));
     cancelMock.mockImplementation(async () => extractOfAStopped.resolve());
