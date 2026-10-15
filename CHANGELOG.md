@@ -220,10 +220,11 @@ carry their date on the heading.
   the same id that request's lines in the server's log carry, so an entry
   and its lines can be found by each other rather than by time. An entry
   written by a server command, or by the Demo Account build of a new
-  Message Crate's first start, has no id. The server hands the id out with
-  each entry; nothing on screen shows it yet. The database format changed:
-  an existing Message Crate is rebuilt empty on first start and its
-  messages must be imported again (#2276).
+  Message Crate's first start, has no id, and neither has the entry for an
+  Import Run, an Export Run or a Session that ended by expiry. The server
+  hands the id out with each entry; nothing on screen shows it yet. The
+  database format changed: an existing Message Crate is rebuilt empty on
+  first start and its messages must be imported again (#2276).
 - 2026-10-15: **The Attachments choices say they convert media.** The
   Import form's **Attachments** field now reads **Copy**, **Convert media**,
   **Convert & Compress media** and **Skip**, and the Staging Review's button
