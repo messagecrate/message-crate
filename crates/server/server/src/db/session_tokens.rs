@@ -78,11 +78,21 @@ fn fill_random(buf: &mut [u8]) -> Result<()> {
     Ok(())
 }
 
-/// The `created_at` and `expires_at` a Session made at `now` and lasting
-/// `ttl_secs` stores, as Unix seconds.
-fn session_times(now: DateTime<Utc>, ttl_secs: u64) -> (u64, u64) {
-    let created_at = unix_secs(now);
-    (created_at, created_at.saturating_add(ttl_secs))
+/// The `created_at` and `expires_at` a Session row stores, as Unix seconds.
+struct SessionTimes {
+    created_at: u64,
+    expires_at: u64,
+}
+
+impl SessionTimes {
+    /// A Session made at `now` that lasts `ttl_secs`.
+    fn at(now: DateTime<Utc>, ttl_secs: u64) -> Self {
+        let created_at = unix_secs(now);
+        Self {
+            created_at,
+            expires_at: created_at.saturating_add(ttl_secs),
+        }
+    }
 }
 
 /// The app a request says it comes from, and the Build that app reports.
@@ -245,7 +255,10 @@ pub async fn rotate_account_session_token(
 ) -> Result<(String, u64)> {
     let token = generate_session_token()?;
     let token_hash = hash_api_token(&token);
-    let (created_at, expires) = session_times(now, SESSION_TTL_SECS);
+    let SessionTimes {
+        created_at,
+        expires_at: expires,
+    } = SessionTimes::at(now, SESSION_TTL_SECS);
     sqlx::query(
         r"
         INSERT INTO account_session_tokens (account_id, token_hash, created_at, expires_at)
@@ -314,7 +327,10 @@ pub async fn open_session(
     }
     let token = generate_session_token()?;
     let token_hash = hash_api_token(&token);
-    let (created_at, expires) = session_times(now, SESSION_TTL_SECS);
+    let SessionTimes {
+        created_at,
+        expires_at: expires,
+    } = SessionTimes::at(now, SESSION_TTL_SECS);
     let login_entry_id =
         audit_trail::record_login(conn, (account_id, username), app, expires, now).await?;
     sqlx::query(
@@ -375,7 +391,10 @@ pub async fn insert_account_session_token_with_ttl(
 ) -> Result<String> {
     let token = generate_session_token()?;
     let token_hash = hash_api_token(&token);
-    let (created_at, expires_at) = session_times(now, ttl_secs);
+    let SessionTimes {
+        created_at,
+        expires_at,
+    } = SessionTimes::at(now, ttl_secs);
     sqlx::query(
         "INSERT INTO account_session_tokens (account_id, token_hash, created_at, expires_at)
          VALUES ($1, $2, $3, $4)",
