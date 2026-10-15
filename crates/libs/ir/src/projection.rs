@@ -112,11 +112,11 @@ pub trait ProjectionHooks {
         message: &PendingMessage,
     ) -> VendorFields;
 
-    /// The Backup Date of one message
-    /// ([`Message::backup_taken_at_unix_ms`]): when the backup it was read
-    /// from was made, or `None` when nothing says. Required, so no exporter
-    /// leaves its messages undated by omission.
-    fn backup_taken_at_unix_ms(&self, message: &PendingMessage) -> Option<i64>;
+    /// The Backup Date of every message projected
+    /// ([`Message::backup_taken_at_unix_ms`]): when the one backup the
+    /// exporter read was made, or `None` when nothing says. Required, so no
+    /// exporter leaves its messages undated by omission.
+    fn backup_taken_at_unix_ms(&self) -> Option<i64>;
 
     /// Normalize a raw non-owner sender handle (e.g. guard phone digits).
     /// The default keeps the handle as-is.
@@ -427,7 +427,7 @@ pub fn project_pending<H: ProjectionHooks + ?Sized>(
             imessage: None,
             source: hooks.vendor_fields(conversation, message).into_option(),
             sender_country: None,
-            backup_taken_at_unix_ms: hooks.backup_taken_at_unix_ms(message),
+            backup_taken_at_unix_ms: hooks.backup_taken_at_unix_ms(),
         });
     }
     for (index, reply) in replies {
@@ -618,7 +618,7 @@ mod tests {
             }
         }
 
-        fn backup_taken_at_unix_ms(&self, _message: &PendingMessage) -> Option<i64> {
+        fn backup_taken_at_unix_ms(&self) -> Option<i64> {
             None
         }
 
@@ -661,7 +661,7 @@ mod tests {
             TestHooks.export()
         }
 
-        fn backup_taken_at_unix_ms(&self, _message: &PendingMessage) -> Option<i64> {
+        fn backup_taken_at_unix_ms(&self) -> Option<i64> {
             None
         }
 
@@ -908,7 +908,7 @@ mod tests {
             TestHooks.export()
         }
 
-        fn backup_taken_at_unix_ms(&self, _message: &PendingMessage) -> Option<i64> {
+        fn backup_taken_at_unix_ms(&self) -> Option<i64> {
             None
         }
 

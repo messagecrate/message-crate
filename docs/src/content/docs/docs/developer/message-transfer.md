@@ -35,8 +35,8 @@ flowchart LR
 
 Each conversation is one text file whose name ends in `.jsonl`. JSON Lines means one JSON object per line.
 
-1. The first line describes the conversation: who is in it, which backup it came from, and the current file layout (`schema_version` 17).
-2. Each later line is one message: when it was sent, who sent it, the text, and any attachments.
+1. The first line describes the conversation: who is in it, when the file was written, and the current file layout (`schema_version` 17).
+2. Each later line is one message: when it was sent, who sent it, the text, any attachments, and when the backup it came from was made.
 
 Pictures and other media sit next to those files in `attachments/`.
 

@@ -179,7 +179,7 @@ CSV carries it in the `backup_taken_at_unix_ms` column of each row, and EML and 
 
 ### When the file was written
 
-`export.exported_at_unix_ms`, the Export Date, is when the run that wrote the file wrote it, in Unix milliseconds: an import's exporter run or an Export Run. The run is given the instant by its caller, the desktop app, and never reads the clock itself. It is `null` for a file read from a format that does not say, such as SMS Backup & Restore XML.
+`export.exported_at_unix_ms`, the Export Date, is when the run that wrote the file wrote it, in Unix milliseconds: an import's exporter run or an Export Run. The run is given the instant by its caller, the desktop app, and never reads the clock itself. It is `null` for a file read from a format that does not say, such as SMS Backup & Restore XML. A Convert, which rewrites files already exported into another format, keeps the date each file carries: the files are the same export, and the run that wrote them is the one the date names.
 
 The date is for whoever opens the file. It decides nothing on import, and the server does not store it: the Audit Trail already records every Export Run with its time. CSV carries it in the `exported_at_unix_ms` column of every row, and EML and MBOX in the `X-ME-Exported-At-Unix-Ms` header of every mail.
 

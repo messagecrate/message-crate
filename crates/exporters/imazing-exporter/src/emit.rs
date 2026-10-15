@@ -948,7 +948,7 @@ impl ProjectionHooks for ImazingProjection<'_> {
         self.export.clone()
     }
 
-    fn backup_taken_at_unix_ms(&self, _message: &PendingMessage) -> Option<i64> {
+    fn backup_taken_at_unix_ms(&self) -> Option<i64> {
         self.backup_taken_at_unix_ms
     }
 
