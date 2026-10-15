@@ -1,6 +1,7 @@
 use super::*;
 use crate::write::SbrBackupSession;
 use message_crate_core::{CancelFlag, LogSink, ProgressSink};
+use message_ir::IrDirection;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -322,6 +323,30 @@ fn a_repeated_message_is_kept_once_and_counted() {
     assert_eq!(texts, ["hi", "hey"]);
     assert_eq!(report.sms_seen, 3);
     assert_eq!(report.duplicates_dropped, 1);
+}
+
+/// Two MMS alike in everything but the attachment are two messages: the
+/// attachment's digest is part of what the dedupe step compares.
+#[test]
+fn two_messages_that_differ_only_in_an_attachment_are_both_kept() {
+    let mms = |data: &str| {
+        format!(
+            r#"<mms date="1400773261000" msg_box="1" address="+15555550101"><parts><part ct="text/plain" text="look"/><part ct="image/jpeg" name="pic.jpg" data="{data}"/></parts><addrs><addr address="+15555550101" type="137"/><addr address="+15555550100" type="151"/></addrs></mms>"#
+        )
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("input.xml");
+    fs::write(
+        &input,
+        format!("<smses>{}{}</smses>", mms("aGVsbG8="), mms("d29ybGQ=")),
+    )
+    .unwrap();
+    let owner = vec!["+15555550100".to_string()];
+    let (docs, report) = read_backup(&input, opts(&owner, None, None)).unwrap();
+    assert_eq!(report.duplicates_dropped, 0);
+    let messages = &docs[0].messages;
+    assert_eq!(messages.len(), 2);
+    assert_ne!(messages[0].guid, messages[1].guid);
 }
 
 #[test]

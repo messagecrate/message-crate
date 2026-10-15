@@ -763,6 +763,8 @@ fn write_conversations(
 /// Project one accumulated conversation into the shared document shape,
 /// read from a backup made at `backup_taken_at_unix_ms`
 /// ([`ExportOptions::backup_taken_at_unix_ms`]).
+///
+/// Not through [`message_ir::ProjectionHooks`], whose documentation says why.
 fn chat_to_document(
     chat_identifier: String,
     conversation: ChatInProgress,
