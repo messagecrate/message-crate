@@ -65,9 +65,9 @@ While the app is open, a browser on this computer shows the same card at [http:/
 
 ## Where the messages are kept
 
-The Message Crate keeps its database and attachments in one directory on this computer.
-**Settings → System → Open data directory** opens it once logged in.
-A copy of that directory is a backup of the Message Crate.
+The Message Crate keeps its database and attachments in `data` in the Message Crate Directory, `message-crate` in the home directory, such as `/home/sam/message-crate/data` on Linux.
+**Settings → System → Open Message Crate directory** opens the Message Crate Directory once logged in.
+A copy of `data` is a backup of the Message Crate.
 
 Closing the app stops the server. The directory stays, and the next start picks it up.
 

@@ -1,23 +1,14 @@
 //! Commands for the Message Crate this app starts for itself
 //! (`crate::local_server`).
 
+use crate::app_directories::MessageCrateDirectory;
 use crate::local_server::{self, Launch, LocalServer, Status};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tauri::{AppHandle, Manager, State};
 
 /// The directory inside the installed app that holds the built website. It
 /// matches the `bundle.resources` target in `tauri.conf.json`.
 const WEBSITE_RESOURCE: &str = "website";
-
-/// The server's data directory for this app. A dev build has its own, so it
-/// never opens the installed app's database.
-fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let app_data = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Could not find the app-data directory: {e}"))?;
-    Ok(local_server::data_dir_in(&app_data, tauri::is_dev()))
-}
 
 /// The origin `cargo tauri dev` loads the screens from, which the server has
 /// to be told to allow. An installed app loads them from its own origin,
@@ -43,7 +34,7 @@ fn launch(app: &AppHandle, open_to_network: bool) -> Result<Launch, String> {
         .join(WEBSITE_RESOURCE);
     Ok(Launch {
         program: local_server::locate_server()?,
-        data_dir: data_dir(app)?,
+        data_dir: app.state::<MessageCrateDirectory>().data(),
         static_dir,
         address: local_server::OWN_ADDRESS
             .parse()
@@ -64,8 +55,8 @@ fn launch(app: &AppHandle, open_to_network: bool) -> Result<Launch, String> {
 ///
 /// # Errors
 ///
-/// Returns an error when the app cannot work out what to start: its data
-/// directory, its resources, or the server program is missing.
+/// Returns an error when the app cannot work out what to start: its
+/// resources or the server program is missing.
 #[tauri::command]
 pub fn start_local_server(
     app: AppHandle,
@@ -91,16 +82,18 @@ pub fn local_server_status(server: State<'_, LocalServer>) -> Status {
     server.status()
 }
 
-/// Open the server's data directory in the file manager, creating it first so
-/// the button works before the first start has finished.
+/// Open the Message Crate Directory in the file manager, making it first, in
+/// case it went since the app started, so the button always opens something.
 ///
 /// # Errors
 ///
-/// Returns an error when the directory cannot be found, created, or opened.
+/// Returns an error when the directory cannot be made or opened.
 #[tauri::command]
-pub fn open_data_directory(app: AppHandle) -> Result<(), String> {
-    let dir = data_dir(&app)?;
-    file_io::create_dir_all_owner_only(&dir)
+pub fn open_message_crate_directory(
+    directory: State<'_, MessageCrateDirectory>,
+) -> Result<(), String> {
+    let dir = directory.root();
+    file_io::create_dir_all_owner_only(dir)
         .map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
-    open::that_detached(&dir).map_err(|e| format!("Could not open {}: {e}", dir.display()))
+    open::that_detached(dir).map_err(|e| format!("Could not open {}: {e}", dir.display()))
 }

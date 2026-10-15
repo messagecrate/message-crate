@@ -90,7 +90,7 @@ pub fn upload(
     app: tauri::AppHandle,
     args: UploadArgs,
 ) -> Result<(), String> {
-    let logs = logs_dir(&app)?;
+    let logs = logs_dir(&app);
     let job = start_job(&state, JobName::Upload)?;
     let cancel = job.cancel_flag();
     let app_handle = app.clone();

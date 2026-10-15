@@ -33,7 +33,7 @@ export async function invokeLocalServerStatus(): Promise<LocalServerStatus> {
   return invoke<LocalServerStatus>("local_server_status");
 }
 
-/** Open the directory holding the app's own database and attachments. */
-export async function invokeOpenDataDirectory(): Promise<void> {
-  await invoke("open_data_directory");
+/** Open the Message Crate Directory, `~/message-crate`, which holds the app's own database. */
+export async function invokeOpenMessageCrateDirectory(): Promise<void> {
+  await invoke("open_message_crate_directory");
 }

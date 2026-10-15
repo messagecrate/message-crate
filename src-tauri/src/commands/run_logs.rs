@@ -23,14 +23,9 @@ pub struct StartRunLogArgs {
 /// Start the log of a new Import Run with the line that says which account
 /// runs it, on which server. The window calls it once the server has created
 /// the run, before Staging writes anything.
-///
-/// # Errors
-///
-/// Returns an error when the operating system names no app-data directory.
 #[tauri::command]
-pub fn start_import_run_log(app: tauri::AppHandle, args: StartRunLogArgs) -> Result<(), String> {
-    RunLog::open(&logs_dir(&app)?, Path::new(args.run_dir.trim())).account(&args.account);
-    Ok(())
+pub fn start_import_run_log(app: tauri::AppHandle, args: StartRunLogArgs) {
+    RunLog::open(&logs_dir(&app), Path::new(args.run_dir.trim())).account(&args.account);
 }
 
 /// The Import Run logs on this computer that `reader` may read: every one for
@@ -45,7 +40,7 @@ pub fn list_import_run_logs(
     app: tauri::AppHandle,
     reader: Reader,
 ) -> Result<Vec<RunLogEntry>, String> {
-    run_logs::list(&logs_dir(&app)?, &reader)
+    run_logs::list(&logs_dir(&app), &reader)
         .map_err(|error| format!("Could not list the Import Run logs: {error}"))
 }
 
@@ -72,7 +67,7 @@ pub fn read_import_run_log_lines(
     app: tauri::AppHandle,
     args: ReadLinesArgs,
 ) -> Result<LinesPage, String> {
-    run_logs::read_lines(&logs_dir(&app)?, &args.reader, &args.name, &args.query)
+    run_logs::read_lines(&logs_dir(&app), &args.reader, &args.name, &args.query)
 }
 
 /// Arguments for [`read_import_run_log`].
@@ -99,5 +94,5 @@ pub fn read_import_run_log(
     app: tauri::AppHandle,
     args: ReadLogArgs,
 ) -> Result<tauri::ipc::Response, String> {
-    run_logs::read_whole(&logs_dir(&app)?, &args.reader, &args.name).map(tauri::ipc::Response::new)
+    run_logs::read_whole(&logs_dir(&app), &args.reader, &args.name).map(tauri::ipc::Response::new)
 }

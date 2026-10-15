@@ -5,6 +5,7 @@
 use super::*;
 use httpmock::prelude::*;
 use std::net::TcpListener;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The sockets holding the tests' ports, kept until the test program ends.
@@ -192,13 +193,6 @@ fn the_server_is_told_the_tools_directory() {
         launch.arguments()[9..],
         ["--tools-dir", "/home/someone/message-crate/tools"]
     );
-}
-
-#[test]
-fn a_dev_build_keeps_its_data_apart_from_the_installed_app() {
-    let app_data = Path::new("/home/someone/.local/share/app.messagecrate.desktop");
-    assert_eq!(data_dir_in(app_data, false), app_data.join("data"));
-    assert_eq!(data_dir_in(app_data, true), app_data.join("data-dev"));
 }
 
 #[test]
