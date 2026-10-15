@@ -4,7 +4,7 @@ import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { settle, startFakeClock, stopFakeClock } from "../../../test/fakeTimers";
 import { nth } from "../../../test/nth";
-import { renderWithProviders } from "../../../test/providers";
+import { authModule, renderWithProviders } from "../../../test/providers";
 import { setupUser } from "../../../test/user";
 import { StorageSection } from "../StorageSection";
 
@@ -14,9 +14,7 @@ const listAccountImports = vi.hoisted(() => vi.fn());
 const listAccountExports = vi.hoisted(() => vi.fn());
 const getAccountImport = vi.hoisted(() => vi.fn());
 
-vi.mock("../../../lib/authContext", () => ({
-  useAuth: () => ({ accountId: 7 }),
-}));
+vi.mock("../../../lib/authContext", () => authModule({ accountId: 7 }));
 
 vi.mock("../../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../lib/serverApi")>()),

@@ -4,7 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/api";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
-import { Providers } from "../../test/providers";
+import { authModule, Providers } from "../../test/providers";
 import { MIB } from "../../test/units";
 import { fill, setupUser } from "../../test/user";
 import { ServerSettingsPanel } from "./ServerSettingsPanel";
@@ -12,9 +12,7 @@ import { ServerSettingsPanel } from "./ServerSettingsPanel";
 const getServerSettings = vi.hoisted(() => vi.fn());
 const updateServerSettings = vi.hoisted(() => vi.fn());
 
-vi.mock("../../lib/authContext", () => ({
-  useAuth: () => ({ accountId: 1 }),
-}));
+vi.mock("../../lib/authContext", () => authModule({ accountId: 1 }));
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),

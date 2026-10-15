@@ -5,7 +5,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../lib/queryKeys";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
-import { renderWithProviders, testQueryClient } from "../../test/providers";
+import { authModule, renderWithProviders, testQueryClient } from "../../test/providers";
 import { freshEntries, seedEntries } from "../../test/staleEntries";
 import { fill, setupUser } from "../../test/user";
 import { ChangePasswordSection } from "./ChangePasswordSection";
@@ -14,9 +14,7 @@ const changePassword = vi.hoisted(() => vi.fn());
 const setAccountPassword = vi.hoisted(() => vi.fn());
 const updateToken = vi.hoisted(() => vi.fn());
 
-vi.mock("../../lib/authContext", () => ({
-  useAuth: () => ({ accountId: 101, updateToken }),
-}));
+vi.mock("../../lib/authContext", () => authModule(() => ({ accountId: 101, updateToken })));
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),

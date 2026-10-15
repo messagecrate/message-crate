@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiTokenRevealProvider } from "../../components/ApiTokenRevealDialog";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { nth } from "../../test/nth";
-import { mockedAuth, Providers } from "../../test/providers";
+import { authModule, Providers } from "../../test/providers";
 import { fill, setupUser } from "../../test/user";
 import { ApiTokensSection } from "./ApiTokensSection";
 
@@ -31,7 +31,7 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
   deleteApiToken: vi.fn(),
 }));
 
-vi.mock("../../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../lib/authContext", () => authModule());
 
 afterEach(() => {
   cleanup();

@@ -9,7 +9,7 @@ import type { ImportJobFormValues } from "../../lib/importSources/types";
 import type { AttachmentForecast, StagingSummary, ToolStatus, ToolsStatus } from "../../lib/tauri";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { importForm } from "../../test/importForm";
-import { Providers } from "../../test/providers";
+import { authModule, Providers } from "../../test/providers";
 import { MIB } from "../../test/units";
 import { setupUser } from "../../test/user";
 import ImportRunView from "./ImportRunView";
@@ -65,9 +65,7 @@ vi.mock("../../lib/tauri", async (importOriginal) => ({
   invokeRetryToolDownloads: () => desktop.retry(),
 }));
 
-vi.mock("../../lib/authContext", () => ({
-  useAuth: () => ({ accountId: 7, token: "test-token", isAuthenticated: true }),
-}));
+vi.mock("../../lib/authContext", () => authModule());
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),

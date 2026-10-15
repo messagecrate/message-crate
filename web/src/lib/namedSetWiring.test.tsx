@@ -15,11 +15,12 @@
  * routes are faked, at the same boundary the rest of the suite uses.
  */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deferred } from "../test/deferred";
+import { authModule, testQueryClient } from "../test/providers";
 import { freshEntries, seedEntries } from "../test/staleEntries";
 import { ApiError } from "./api";
 import { contactGroups } from "./contactGroups";
@@ -38,9 +39,7 @@ const showGroups = [keys.contactGroups.all, keys.contacts.all];
 /** The lists that show a Message Tag's name, and the Trash count a tag search narrows. */
 const showTags = [keys.messageTags.all, keys.conversations.all, keys.trash.all];
 
-vi.mock("./authContext", () => ({
-  useAuth: () => ({ accountId: 7 }),
-}));
+vi.mock("./authContext", () => authModule({ accountId: 7 }));
 
 vi.mock("./serverApi", () => ({
   listContactGroups: vi.fn().mockResolvedValue([]),
@@ -63,9 +62,8 @@ function wrapper({ children }: { children: ReactNode }) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  client = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
+  client = // The seeded entries have no observer, so they must outlive collection.
+    testQueryClient({ keepUnread: true });
 });
 
 /** Of the entries in `shown`, the ones still fresh after `run`. */

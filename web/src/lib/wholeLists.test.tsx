@@ -12,7 +12,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { mockedAuth, Providers } from "../test/providers";
+import { authModule, Providers } from "../test/providers";
 import { apiClient } from "./api";
 import { useContactGroupActions } from "./contactGroups";
 import {
@@ -27,7 +27,7 @@ import {
 } from "./serverApi";
 import { useContactGroups } from "./useContactGroups";
 
-vi.mock("./authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("./authContext", () => authModule());
 
 vi.mock("./api", () => ({
   apiClient: {
