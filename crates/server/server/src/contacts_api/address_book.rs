@@ -9,6 +9,7 @@ use axum::extract::{Request, State};
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 
 use crate::api_error::ApiError;
 use crate::auth::{FullAccess, refuse_for_demo_account};
@@ -17,7 +18,6 @@ use crate::db::audit_trail::{self, AuditAction, AuditActor, Details};
 use crate::db::contacts::read::contact_ids_matching;
 use crate::extract::{Json, Query};
 use crate::request_body::{content_type_base, read_body_limited};
-use crate::server::AppState;
 
 /// What an address book load changed.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -141,7 +141,7 @@ impl From<LoadError> for ApiError {
     )
 )]
 pub(crate) async fn create_contacts(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Query(query): Query<CreateContactsQuery>,
     request: Request,
@@ -160,7 +160,7 @@ pub(crate) async fn create_contacts(
     if content.trim().is_empty() {
         return Err(ApiError::validation("address book is empty"));
     }
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let now = chrono::Utc::now();
     let counts = address_book::load(&mut conn, auth.account_id, content, query.mode, now).await?;
     let count = |n: u64| Some(i64::try_from(n).unwrap_or(i64::MAX));
@@ -229,11 +229,11 @@ pub(crate) struct GetAddressBookRequest {
     )
 )]
 pub(crate) async fn get_address_book(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Json(body): Json<GetAddressBookRequest>,
 ) -> Result<Response, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let now = chrono::Utc::now();
     let q = body.q.as_deref().unwrap_or("").trim();
     let only: Option<HashSet<i64>> = if q.is_empty() {
