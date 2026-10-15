@@ -27,7 +27,9 @@ services:
     tmpfs:
       - /tmp
     ports:
-      - "8080:8080"
+      # This computer only. To reach the server from other computers, see
+      # https://messagecrate.app/docs/user/features/owner/run-on-another-machine/#publish-the-server-on-the-network
+      - "127.0.0.1:8080:8080"
     volumes:
       - message-crate-data:/app/data
       - ./staging:/app/staging

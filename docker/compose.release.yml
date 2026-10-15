@@ -28,7 +28,9 @@ services:
         #   BUILD_METADATA=$(git rev-parse --short=8 HEAD) docker compose ... up --build
         BUILD_METADATA: ${BUILD_METADATA:-unknown}
     ports:
-      - "0.0.0.0:8080:8080"
+      # This computer only. To reach the server from other computers, see
+      # https://messagecrate.app/docs/user/features/owner/run-on-another-machine/#publish-the-server-on-the-network
+      - "127.0.0.1:8080:8080"
     user: "${UID:-1000}:${GID:-1000}"
     # The server needs no Linux capability and writes only under /app/data.
     # Dropping every capability, refusing a privilege gain through setuid
