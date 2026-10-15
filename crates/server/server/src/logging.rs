@@ -46,7 +46,7 @@ static SERVER_LOG: RwLock<Option<LogFiles>> = RwLock::new(None);
 /// process-wide subscriber.
 ///
 /// The call that installs the subscriber also installs the panic hook
-/// ([`log_panics`]), so a panic on any thread of the process reaches the
+/// (`log_panics`), so a panic on any thread of the process reaches the
 /// log as well.
 ///
 /// Neither layer reports a write it could not make. A layer that does
