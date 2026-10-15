@@ -92,11 +92,9 @@ fn reply_count_sql() -> String {
                WHERE t.duplicate_of IS NOT NULL) \
      SELECT COUNT(*) FROM shown JOIN messages sm ON sm.id = shown.id \
      WHERE sm.duplicate_of IS NULL \
-       AND ({reply_kept} \
-            OR EXISTS (SELECT 1 FROM trashed_conversations mtc \
-                       WHERE mtc.account_id = m.account_id \
-                         AND mtc.conversation_id = m.conversation_id))",
+       AND ({reply_kept} OR NOT ({quoted_kept}))",
         reply_kept = not_trashed_conversation_id("sm.account_id", "sm.conversation_id"),
+        quoted_kept = not_trashed_conversation_id("m.account_id", "m.conversation_id"),
     )
 }
 
@@ -739,12 +737,13 @@ pub(crate) fn earlier_versions_holder_sql(alias: &str) -> String {
                        JOIN hidden_under hu ON hn.duplicate_of = hu.id) \
                SELECT MIN(hm.id) FROM hidden_under hu JOIN messages hm ON hm.id = hu.id \
                WHERE EXISTS (SELECT 1 FROM message_versions hdv WHERE hdv.message_id = hm.id) \
-                 AND ({holder_kept} \
-                      OR EXISTS (SELECT 1 FROM trashed_conversations atc \
-                                 WHERE atc.account_id = {alias}.account_id \
-                                   AND atc.conversation_id = {alias}.conversation_id))) \
+                 AND ({holder_kept} OR NOT ({alias_kept}))) \
          END",
         holder_kept = not_trashed_conversation_id("hm.account_id", "hm.conversation_id"),
+        alias_kept = not_trashed_conversation_id(
+            &format!("{alias}.account_id"),
+            &format!("{alias}.conversation_id"),
+        ),
     )
 }
 
@@ -953,7 +952,6 @@ pub async fn get_conversation_messages(
     page: PageParams,
     window: MessageWindow,
 ) -> Result<Option<Page<Message>>, ApiError> {
-    let limit = page.limit;
     if !owns_conversation(conn, account_id, conversation_id)
         .await
         .context("check that the account holds the conversation")?
@@ -971,7 +969,8 @@ pub async fn get_conversation_messages(
     let total = total.max(0) as u64;
 
     let Some((parameter, anchor_id)) = window.anchor() else {
-        let items = load_messages(conn, &where_sql, &params, order, limit, page.offset).await?;
+        let items =
+            load_messages(conn, &where_sql, &params, order, page.limit, page.offset).await?;
         return Ok(Some(page_from_rows(items, total, page)));
     };
 
@@ -1038,7 +1037,7 @@ pub async fn get_conversation_messages(
         window,
         position,
         usize::try_from(total).unwrap_or(usize::MAX),
-        limit,
+        page.limit,
     );
 
     let from_sql = messages_from_sql();
@@ -1099,7 +1098,7 @@ pub async fn get_conversation_messages(
     Ok(Some(page_from_rows(
         items,
         total,
-        PageParams { limit, offset },
+        PageParams { offset, ..page },
     )))
 }
 

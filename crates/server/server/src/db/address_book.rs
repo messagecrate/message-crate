@@ -222,12 +222,11 @@ impl Snapshot {
     /// Read the account's contacts, identities and Contact Groups.
     async fn read(conn: &mut SqliteConnection, account_id: i64) -> Result<Self> {
         let mut snapshot = Self::default();
-        let rows: Vec<(i64, String, i64)> = sqlx::query_as(
-            "SELECT ct.id, ct.preferred_name,
-                    EXISTS (SELECT 1 FROM trashed_contacts t
-                            WHERE t.account_id = ct.account_id AND t.contact_id = ct.id)
+        let rows: Vec<(i64, String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT ct.id, ct.preferred_name, NOT ({not_trashed})
              FROM contacts ct WHERE ct.account_id = $1",
-        )
+            not_trashed = not_trashed_contact("ct"),
+        )))
         .bind(account_id)
         .fetch_all(&mut *conn)
         .await?;
