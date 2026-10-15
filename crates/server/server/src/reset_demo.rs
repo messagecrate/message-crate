@@ -1324,8 +1324,8 @@ async fn last_audit_entry(conn: &mut sqlx::SqliteConnection) -> Result<i64> {
 /// `last_entry_before_reset`, the last entry of the active database, is the
 /// one the reset wrote when it deleted the Demo Account. The reset's own
 /// `demo_account_reset` entry, written just before, is among the entries
-/// that deletion unlinked. The entry of a reset that added the Demo Account names no
-/// deletion ([`build_recorded_by_reset_sql`]).
+/// that deletion unlinked. The entry of a reset that added the Demo Account
+/// names no deletion ([`build_recorded_by_reset_sql`]).
 #[derive(Debug, Clone, Copy)]
 struct DemoRows {
     account: i64,

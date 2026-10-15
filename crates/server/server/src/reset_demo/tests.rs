@@ -3027,16 +3027,18 @@ fn assert_build_entry(entry: &BuildEntry, action: &str, actor: &str, size: &str)
 }
 
 /// Assert that `reset` records a reset of the Demo Account by `actor` with
-/// the `size` set, filed in the record of the account that `deleted`, its
-/// `account_deleted` entry, removed.
+/// the `size` set. It names the account that `deleted` removed: that entry's
+/// username and id, and no account id.
 fn assert_reset_filed_with(reset: &BuildEntry, deleted: &BuildEntry, actor: &str, size: &str) {
     assert_build_action(reset, "demo_account_reset", actor, size);
-    assert_eq!(reset.account_id, None, "{reset:#?}");
-    assert_eq!(reset.username, deleted.username, "{reset:#?}");
+    assert!(
+        deleted.username.is_some(),
+        "the deletion names the account: {deleted:#?}"
+    );
     assert_eq!(
-        reset.deletion_entry_id,
-        Some(deleted.id),
-        "the reset is filed with the account it replaced: {reset:#?}"
+        (reset.account_id, &reset.username, reset.deletion_entry_id),
+        (None, &deleted.username, Some(deleted.id)),
+        "the reset names the account it replaced: {reset:#?}"
     );
 }
 
