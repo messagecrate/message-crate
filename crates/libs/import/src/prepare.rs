@@ -147,9 +147,8 @@ impl<'a> PrepareContext<'a> {
     /// Lock the shared journal.
     ///
     /// A prepare that panicked while holding the lock leaves it poisoned. The
-    /// lock is read as it is then, so the rest of the Upload goes on: the
-    /// worker reports that conversation as failed, and the journal's sets
-    /// and rows hold only what earlier calls finished recording.
+    /// lock is read as it is then, so the rest of the Upload goes on, and the
+    /// worker reports that conversation as failed.
     pub(crate) fn lock_journal(&self) -> MutexGuard<'_, SharedJournal> {
         self.journal.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -1094,13 +1093,18 @@ impl PrepareQueue {
         Ok(())
     }
 
+    /// Tell every worker to exit once it has finished the jobs already sent.
+    fn close_jobs(&self) {
+        for _ in 0..self.workers {
+            let _ = self.job_tx.send(None);
+        }
+    }
+
     /// Tell every worker to exit and collect whatever they were still finishing.
     ///
     /// Their asset stats still count even if the import loop aborted.
     pub(crate) fn shutdown(self) -> Vec<PrepareResult> {
-        for _ in 0..self.workers {
-            let _ = self.job_tx.send(None);
-        }
+        self.close_jobs();
         let mut leftovers: Vec<PrepareResult> = self.ready.into_values().collect();
         while let Ok(result) = self.result_rx.recv() {
             leftovers.push(result);
@@ -1314,9 +1318,7 @@ mod tests {
             for (idx, name) in names.into_iter().enumerate() {
                 queue.submit(idx, PathBuf::from(name), name.to_owned());
             }
-            for _ in 0..queue.workers {
-                queue.job_tx.send(None).unwrap();
-            }
+            queue.close_jobs();
             let mut outcomes = Vec::new();
             for idx in 0..names.len() {
                 while !queue.is_ready(idx) {

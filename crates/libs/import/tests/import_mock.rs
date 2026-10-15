@@ -2979,17 +2979,7 @@ fn a_cancel_after_the_last_request_leaves_a_completed_upload() {
 fn a_refused_session_after_a_failed_batch_still_halts_the_upload() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let failed = server.mock(|when, then| {
-        when.method(POST)
-            .path("/v1/imports/7/batches")
-            .body_includes("guid-1");
-        then.status(500).json_body(json!({
-            "type": "about:blank",
-            "title": "Internal server error",
-            "status": 500,
-            "detail": "intentional batch failure"
-        }));
-    });
+    let failed = mock_batch_refusing(&server, "guid-1");
     let refused = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -3046,17 +3036,7 @@ fn a_second_import_sends_only_the_conversation_whose_batch_failed() {
     let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
-    let mut failing = server.mock(|when, then| {
-        when.method(POST)
-            .path("/v1/imports/7/batches")
-            .body_includes("guid-2");
-        then.status(500).json_body(json!({
-            "type": "about:blank",
-            "title": "Internal server error",
-            "status": 500,
-            "detail": "intentional batch failure"
-        }));
-    });
+    let mut failing = mock_batch_refusing(&server, "guid-2");
     let mut others = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
