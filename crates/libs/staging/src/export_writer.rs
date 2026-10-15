@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 /// queue-or-sink decision, attachment staging, and the format write.
 ///
 /// [`open`](Self::open) runs before parse (it cleans or resumes the output
-/// directory, so the exporter can query [`copies_attachments`](Self::copies_attachments),
+/// directory, so the exporter can query [`files`](Self::files),
 /// [`use_queue`](Self::use_queue), and [`attachments_dir`](Self::attachments_dir)
 /// while collecting messages); [`finish`](Self::finish) takes the collected
 /// documents and writes everything. An exporter whose drain cannot go
@@ -136,13 +136,6 @@ impl ExportWriter {
         &self.attachments_dir
     }
 
-    /// Whether this run stages attachment bytes (false when obfuscating or
-    /// no attachment files are copied). Exporters check this while parsing
-    /// to decide whether to keep payloads around.
-    pub fn copies_attachments(&self) -> bool {
-        self.files.copies()
-    }
-
     /// Whether [`finish`](Self::finish) will drain the write queue instead of
     /// the buffered sink.
     pub fn use_queue(&self) -> bool {
@@ -161,7 +154,9 @@ impl ExportWriter {
     }
 
     /// Whether this run stages the original attachment files
-    /// ([`AttachmentFiles::Skip`] when the transforms do not copy them).
+    /// ([`AttachmentFiles::Skip`] when obfuscating or when the transforms do
+    /// not copy them). Exporters check this while parsing to decide whether
+    /// to keep payloads around.
     pub fn files(&self) -> AttachmentFiles {
         self.files
     }
@@ -293,7 +288,6 @@ mod tests {
 
         let jsonl = open(OutputFormat::Jsonl, false);
         assert!(jsonl.use_queue());
-        assert!(jsonl.copies_attachments());
         assert_eq!(jsonl.files(), AttachmentFiles::Originals);
 
         assert!(!open(OutputFormat::Csv, false).use_queue());
@@ -301,7 +295,6 @@ mod tests {
 
         let obfuscated = open(OutputFormat::Jsonl, true);
         assert!(!obfuscated.use_queue());
-        assert!(!obfuscated.copies_attachments());
         assert_eq!(obfuscated.files(), AttachmentFiles::Skip);
     }
 

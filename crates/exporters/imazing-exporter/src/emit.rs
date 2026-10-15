@@ -122,7 +122,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     let (inputs, output) = prepare_outputs(&[input.to_path_buf()], output)?;
     let input = &inputs[0];
     let writer = ExportWriter::open(&output, output_format, transforms, resume)?;
-    let copy_attachments = writer.copies_attachments();
+    let copy_attachments = writer.files().copies();
 
     let mut ingest = Ingest {
         tz,
