@@ -210,7 +210,7 @@ fn a_run_log_is_still_listed_and_read_after_the_run_s_directory_is_deleted() {
         .directories
         .create("whatsapp", "261004-143000")
         .unwrap();
-    let logs = crate::app_directories::logs_dir_in(scratch.app_data.path());
+    let logs = scratch.logs();
     let log = RunLog::open(&logs, &run_dir);
     log.account(&RunLogAccount {
         import_run_id: 42,

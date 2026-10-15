@@ -117,7 +117,7 @@ The Import form found less than 10 GB free on the disk that holds the Staging Di
 A run stops with an error when its disk fills part-way, so freeing space before the run starts saves running it again.
 Freeing space on that disk removes the line the next time the form reads it.
 Moving the Staging Directory to a disk with more room in **Settings → System** works too.
-The Scratch Directory is `scratch` in the operating system's app-data directory, so it can't be moved.
+The Scratch Directory is `~/message-crate/scratch`, so it can't be moved.
 The import can still start with the line showing.
 
 ### A WhatsApp import doesn't stop when cancelled

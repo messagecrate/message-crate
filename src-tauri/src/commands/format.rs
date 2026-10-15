@@ -50,7 +50,7 @@ pub fn format(
         })
         .transpose()?;
 
-    let scratch_dir = scratch_dir(&app)?;
+    let scratch_dir = scratch_dir(&app);
     let job = start_job(&state, started_from.job_name())?;
     let cancel = job.cancel_flag();
 

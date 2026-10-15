@@ -509,21 +509,25 @@ complete exists to upload.
 _Avoid_: Delete run, Clear
 
 **Message Crate Directory**:
-The one directory the desktop app keeps on a computer, made the first time
-the app starts. It holds the Data Directory of the Message Crate the app
-starts, the Staging Directory, the Export Directory, the Logs Directory, the
-Scratch Directory, and the Tools Directory. It exists on every computer the
-app runs on, including one whose app connects to a Message Crate elsewhere.
-Decided, not built yet: #1053 tracks the work, and until it lands the app
-keeps its Message Crate's data in the operating system's app-data directory.
+The one directory the desktop app keeps on a computer, `message-crate` in
+the home directory, made the first time the app starts. It holds the Data
+Directory of the Message Crate the app starts (`data`), the Staging Directory
+(`staging`), the Export Directory (`exports`), the Logs Directory (`logs`),
+the Scratch Directory (`scratch`), and the Tools Directory (`tools`). It
+exists on every computer the app runs on, including one whose app connects
+to a Message Crate elsewhere. Only the user who owns it can read it. The
+record of the Staging Directory setting and of the run directories the app
+made (`staging.json`, with its lock file) stays outside it, in the operating
+system's app-data directory, because it is the app's state, not data.
 _Avoid_: Folder, App Data, Home Directory
 
 **Data Directory**:
 The directory a Message Crate keeps everything it stores in: its database,
 each account's attachments, and the server's log, in its `logs` directory.
-One Message Crate has one Data Directory,
-and a copy of it is a complete backup. The desktop app's is inside the
-Message Crate Directory; a Docker Message Crate's is the volume given to it.
+One Message Crate has one Data Directory, and a copy of it is a complete
+backup. The desktop app's is `data` in the Message Crate Directory
+(`data-dev` for a dev build); a Docker Message Crate's is the volume given
+to it.
 _Avoid_: Data Folder, DB Directory, Database Directory
 
 **Staging Directory**:
@@ -535,7 +539,8 @@ stays. An Import Run that can still be resumed, paused or waiting at a
 Review, keeps it, since the staged files are what Resume reads. A run's
 directory has no term of its own: on screen it is "this Import Run's
 directory". Exports and Converts never use it; they work in the Export
-Directory.
+Directory. It is `staging` in the Message Crate Directory unless Settings
+name another directory.
 _Avoid_: Import Staging Directory, Temp Folder, Working Directory
 
 **Export Directory**:
@@ -547,9 +552,8 @@ the run goes, it also holds the in-between files, such as the JSON Lines an
 Export writes before converting them; they are deleted when the run
 finishes, leaving only the result. A run that fails or is cancelled deletes
 its directory, and the app deletes one it did not see to its end the next
-time it starts. Message Crate never deletes a finished export from it. It belongs in the Message
-Crate Directory; until #1053 builds that, it is `exports` in the operating
-system's app-data directory.
+time it starts. Message Crate never deletes a finished export from it. It is
+`exports` in the Message Crate Directory.
 _Avoid_: Export Folder, Downloads, Output Directory
 
 **Logs Directory**:
@@ -559,9 +563,8 @@ computer that ran the import and is never deleted, so it outlives the run's
 directory in the Staging Directory. Its first line names the run, the
 account that ran it, the server's address and the Message Crate's id. The
 owner reads every log in it, and an account the logs of its own runs, in
-the desktop app on that computer. It belongs in the Message Crate
-Directory; until #1053 builds that, it is `logs` in the operating system's
-app-data directory. The server's own log is in the Data Directory.
+the desktop app on that computer. It is `logs` in the Message Crate
+Directory. The server's own log is in the Data Directory.
 _Avoid_: Log Folder, Run Log Directory
 
 **Scratch Directory**:
@@ -570,9 +573,8 @@ attachment spool, the databases the Apple Messages Reader decrypts from
 an encrypted iPhone backup, and a WhatsApp run's work files (WhatsApp's
 files decrypted from an encrypted iPhone backup, and what wtsexporter
 extracts). A run deletes what it wrote there when it ends,
-and the desktop app deletes what a killed run left when it starts. It
-belongs in the Message Crate Directory; until #1053 builds that, it is
-`scratch` in the operating system's app-data directory.
+and the desktop app deletes what a killed run left when it starts. It is
+`scratch` in the Message Crate Directory.
 _Avoid_: Cache Directory, Temp Folder, Temp Directory
 
 **Tools Directory**:

@@ -1,6 +1,6 @@
 ---
 title: System
-description: What the System tab of Settings holds, the Staging Directory, remembered importer paths, where ffmpeg, ffprobe and wtsexporter were found and how their download stands, the Export Directory, the data directory of the app's own Message Crate, and the app's version.
+description: What the System tab of Settings holds, the Staging Directory, remembered importer paths, where ffmpeg, ffprobe and wtsexporter were found and how their download stands, the Export Directory, the Message Crate Directory, and the app's version.
 ---
 
 The **System** tab of **Settings** holds the settings of one installed desktop app.
@@ -16,10 +16,10 @@ The Owner's own Settings has no **System** tab, because every setting here serve
 ### Staging directory
 
 **Staging directory** is the Staging Directory, where Import keeps the backup it prepares.
-The default is `message-crate` in the person's home directory, shown as `~/message-crate`.
+The default is `staging` in the Message Crate Directory, shown as `~/message-crate/staging`.
 
 Each Import Run writes into a directory of its own inside it.
-The line under the field gives an example, `~/message-crate/staging-iphone-ios-260809-143022`.
+The line under the field gives an example, `~/message-crate/staging/staging-iphone-ios-260809-143022`.
 Export and Convert don't use it: they work in the Export Directory, under [Exports](#exports).
 
 The field takes a typed path or a directory chosen with the picker.
@@ -99,30 +99,33 @@ Each [Export](/docs/user/features/messages/export/), and each [Convert](/docs/us
 The result is written there unless the Export form names another directory.
 The directory holds only the result once the run finishes; a run that fails or is cancelled deletes it, and one the app did not see to its end is deleted the next time the app starts.
 
-The Export Directory is `exports` in the operating system's app-data directory, such as `~/.local/share/app.messagecrate.desktop/exports` on Linux.
+The Export Directory is `exports` in the Message Crate Directory, such as `/home/sam/message-crate/exports` on Linux.
 Message Crate never deletes a finished export from it.
 
 ## Where the app keeps its files
 
-The desktop app keeps everything that is not a phone backup or a chosen destination in the operating system's app-data directory, `~/.local/share/app.messagecrate.desktop` on Linux, `~/Library/Application Support/app.messagecrate.desktop` on macOS and `%APPDATA%\app.messagecrate.desktop` on Windows.
+The desktop app keeps everything that is not a phone backup or a chosen destination in the Message Crate Directory, `message-crate` in the home directory: `/home/sam/message-crate` on Linux, `/Users/sam/message-crate` on macOS and `C:\Users\sam\message-crate` on Windows.
+The app makes it, and every directory below, each time it starts.
+Only the user who runs the app can read it, because it holds every account's messages.
 
-| Directory | In the app-data directory | Holds |
+| Directory | In the Message Crate Directory | Holds |
 |---|---|---|
-| Data Directory | `data` | The database, each account's attachments and the server's log, of the Message Crate this app starts |
+| Data Directory | `data` | The database, each account's attachments and the server's log, of the Message Crate this app starts. A copy of it is a backup |
+| Staging Directory | `staging` | One directory per Import Run, unless [Staging directory](#staging-directory) names another place |
 | Export Directory | `exports` | One directory per Export, and per Convert with no output directory chosen. See [Exports](#exports) |
 | Logs Directory | `logs` | Each Import Run's log, named for the run, such as `import-iphone-ios-261004-143000.log`. Never deleted. The run's account reads it from **Settings → Storage**, and the Owner from **Logs** on Owner Home |
 | Scratch Directory | `scratch` | Decrypted iPhone backup databases, the WhatsApp database decrypted from an Android backup, WhatsApp's files read out of a phone backup, and the attachments read out of SMS backups, while a run needs them. What a stopped run left is deleted the next time the app starts |
-
-The Staging Directory is the one directory outside it: see [Staging directory](#staging-directory).
+| Tools Directory | `tools` | ffmpeg, ffprobe and wtsexporter, when the app downloaded them or they were put there by hand. See [Media](#media) |
 
 ## Message Crate on this computer
 
 This part is about the Message Crate the desktop app starts for itself.
 
-### Open data directory
+### Open Message Crate directory
 
-**Open data directory** opens the directory where that Message Crate keeps its database and attachments.
-A copy of the directory, made while the app is closed, is a backup.
+**Open Message Crate directory** opens the Message Crate Directory.
+That Message Crate keeps its database and attachments in `data` inside it.
+A copy of `data`, made while the app is closed, is a backup.
 
 ### Let other devices on this network connect
 
