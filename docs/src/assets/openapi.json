@@ -14022,6 +14022,7 @@
           "permissions_added",
           "permissions_removed",
           "reason",
+          "request_id",
           "scope_kind",
           "scope_list",
           "source",
@@ -14234,6 +14235,13 @@
               }
             ],
             "description": "`session_ended`: how the Session ended. `login_refused`: why."
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The id of the request that wrote the entry, as its response's\n`x-request-id` and the request's lines in the server's log carry it.\n`null` for an entry written outside a request, by a server command or\nthe Demo Account build of the server's first start, and for a run and\na session that expired, which no one request wrote."
           },
           "scope_kind": {
             "oneOf": [
@@ -17541,6 +17549,7 @@
                 "permissions_added",
                 "permissions_removed",
                 "reason",
+                "request_id",
                 "scope_kind",
                 "scope_list",
                 "source",
@@ -17753,6 +17762,13 @@
                     }
                   ],
                   "description": "`session_ended`: how the Session ended. `login_refused`: why."
+                },
+                "request_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The id of the request that wrote the entry, as its response's\n`x-request-id` and the request's lines in the server's log carry it.\n`null` for an entry written outside a request, by a server command or\nthe Demo Account build of the server's first start, and for a run and\na session that expired, which no one request wrote."
                 },
                 "scope_kind": {
                   "oneOf": [
