@@ -1655,21 +1655,6 @@ async fn a_name_loaded_with_a_leading_tab_is_stored_trimmed_and_loads_back_uncha
     }
 }
 
-/// Every character a spreadsheet reads as the start of a formula gets the
-/// `'`, and the load takes exactly that `'` off again.
-#[test]
-fn every_formula_start_is_quoted_and_read_back() {
-    for cell in ["=1", "+1", "-1", "@a", "\ta", "\ra", "'=1", "''+1"] {
-        let written = written_cell(cell);
-        assert_eq!(written, format!("'{cell}"), "{cell:?}");
-        assert_eq!(read_cell(&written), cell, "{cell:?}");
-    }
-    for cell in ["", "Ada", "'Twas", "a=1", "15555550100"] {
-        assert_eq!(written_cell(cell), cell, "{cell:?}");
-        assert_eq!(read_cell(cell), cell, "{cell:?}");
-    }
-}
-
 /// LibreOffice Calc 26.2 opens the export with every `'` shown in its cell,
 /// and saves it back with every text cell in double quotes and the `'`
 /// kept. That file loads back without a change.

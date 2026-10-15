@@ -1996,6 +1996,7 @@ dependencies = [
  "message-crate-import",
  "message-crate-log-lines",
  "message-crate-serve-protocol",
+ "message-csv",
  "message-ir",
  "phone",
  "rand",

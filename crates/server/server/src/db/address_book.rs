@@ -16,6 +16,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
+use message_csv::{read_cell, write_guarded_record};
 use message_ir::{IdentityService, IdentityType};
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
@@ -332,46 +333,6 @@ fn parse_handle_type(text: &str) -> Option<IdentityType> {
     ]
     .into_iter()
     .find(|t| t.as_str().eq_ignore_ascii_case(text))
-}
-
-/// What a spreadsheet reads as the start of a formula when a cell begins
-/// with it.
-const FORMULA_STARTS: [char; 6] = ['=', '+', '-', '@', '\t', '\r'];
-
-/// The `'` a spreadsheet reads as "this cell is text".
-const TEXT_MARK: char = '\'';
-
-/// A cell as Export writes it: with a `'` in front when a spreadsheet would
-/// otherwise run it as a formula, or, for a phone number, drop its `+`. A
-/// cell that already starts with `'`s and then one of those characters gets
-/// one more `'`, so the one [`read_cell`] takes off leaves the cell as it
-/// was.
-fn written_cell(cell: &str) -> std::borrow::Cow<'_, str> {
-    if cell
-        .trim_start_matches(TEXT_MARK)
-        .starts_with(FORMULA_STARTS)
-    {
-        format!("{TEXT_MARK}{cell}").into()
-    } else {
-        cell.into()
-    }
-}
-
-/// A cell as the load reads it: one `'` taken off when one of the characters
-/// a spreadsheet reads as a formula follows it, which undoes
-/// [`written_cell`]. A spreadsheet can keep that `'` when it saves or drop
-/// it, and both read the same.
-fn read_cell(cell: &str) -> &str {
-    match cell.strip_prefix(TEXT_MARK) {
-        Some(rest)
-            if rest
-                .trim_start_matches(TEXT_MARK)
-                .starts_with(FORMULA_STARTS) =>
-        {
-            rest
-        }
-        _ => cell,
-    }
 }
 
 /// Read the CSV into rows. A row whose every field is blank is skipped, the
@@ -911,13 +872,13 @@ pub(crate) fn contact_ids_of(text: &str) -> Vec<String> {
 }
 
 /// The address book file of `rows`, each in the order of [`COLUMNS`], under
-/// the header, with every cell written as [`written_cell`] writes it.
+/// the header, with every cell written as [`message_csv::written_cell`]
+/// writes it.
 fn write_book(rows: impl IntoIterator<Item = [String; 6]>) -> Result<String> {
     let mut writer = csv::Writer::from_writer(Vec::new());
     writer.write_record(COLUMNS)?;
     for row in rows {
-        let cells = row.each_ref().map(|cell| written_cell(cell));
-        writer.write_record(cells.iter().map(|cell| cell.as_bytes()))?;
+        write_guarded_record(&mut writer, row)?;
     }
     let bytes = writer
         .into_inner()
