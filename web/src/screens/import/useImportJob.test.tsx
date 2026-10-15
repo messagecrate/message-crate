@@ -14,7 +14,7 @@
 // through approve first, because there is no other way to reach it.
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, renderHook, screen } from "@testing-library/react";
+import { render, renderHook, act as rtlAct, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
@@ -55,7 +55,7 @@ import {
   initialImportRunState,
 } from "./importRunStore";
 import type { ImportRunDeps } from "./run/context";
-import { createImportRunService } from "./run/service";
+import { createImportRunService, type ImportRunService } from "./run/service";
 import { parseStoredStagingSummary } from "./run/stagingSummary";
 import { useImportJob } from "./useImportJob";
 
@@ -196,9 +196,12 @@ function fakeDeps(store: ImportRunStore): ImportRunDeps {
 
 /**
  * The run under test, over the app's one store, which the desktop job follows
- * (`importRunStore.ts`).
+ * (`importRunStore.ts`). Each test gets a fresh one, built before the test's
+ * own setup: a test that fails while one of its calls is still held leaves
+ * that run's work and scratch in its own service, so the next test does not
+ * find the run busy.
  */
-const service = createImportRunService(fakeDeps(importRunStore));
+let service: ImportRunService;
 
 /** Where the identity check reads the account profile; each test gets an empty one. */
 let queryClient = new QueryClient();
@@ -237,7 +240,33 @@ function renderJob() {
   return renderHook(() => useImportJob(service), { wrapper: Providers });
 }
 
-beforeEach(() => {
+/** Rejects when the test running now times out. */
+let testTimedOut: Promise<never> = new Promise(() => {});
+
+/**
+ * Testing Library's `act`, given up when the test times out. React counts the
+ * `act` scopes open across the file, and renders inside a scope wait for every
+ * scope to close. A test that times out while it awaits a held call inside
+ * `act` would leave its scope open, and every later test's `renderHook` would
+ * then draw nothing. Racing the call against the test's signal closes the
+ * scope when the test times out, so that failure stays with that test.
+ */
+function act<T>(callback: () => Promise<T>): Promise<T>;
+function act(callback: () => void): void;
+function act(callback: () => unknown): unknown {
+  return rtlAct(() => {
+    const done = callback();
+    return done instanceof Promise ? Promise.race([done, testTimedOut]) : done;
+  });
+}
+
+beforeEach(({ signal }) => {
+  testTimedOut = new Promise<never>((_, reject) => {
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+  });
+  // A test that times out outside `act` has no race to take the rejection.
+  testTimedOut.catch(() => {});
+  service = createImportRunService(fakeDeps(importRunStore));
   queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
   });
@@ -385,7 +414,6 @@ function clearedFields(state: ImportRunState) {
 
 describe("useImportJob wiring", () => {
   beforeEach(() => {
-    service.reset();
     runMock.mockReset();
     // Every test's first run() call is extract; a test that also calls
     // approve() chains a second implementation for the Media stage or
@@ -2774,7 +2802,6 @@ describe("useImportJob wiring", () => {
 
 describe("useImportJob resume path", () => {
   beforeEach(() => {
-    service.reset();
     runMock.mockReset();
     // A resumed run only ever calls run() once, for the Upload — and, like
     // the wiring tests above, must actually call the invoke function so
@@ -3217,7 +3244,6 @@ function activeRun(overrides: Partial<ActiveImportRun> = {}): ActiveImportRun {
 
 describe("useImportJob resumeAtReview", () => {
   beforeEach(() => {
-    service.reset();
     runMock.mockReset();
     cancelMock.mockReset();
     createImportMock.mockReset();
@@ -3693,7 +3719,6 @@ describe("one desktop app, two accounts (#1085)", () => {
 
   beforeEach(() => {
     auth = ACCOUNT_A;
-    service.reset();
     runMock.mockReset();
     runMock.mockImplementationOnce(runResult(EXTRACT_RESULT));
     cancelMock.mockReset();
