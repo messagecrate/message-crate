@@ -139,14 +139,20 @@ pub(crate) struct DiskReading {
     disk: Disk,
     /// The directory, as the person set it or the app made it.
     dir: PathBuf,
-    /// The disk the directory is on, when that can be told, so two
-    /// directories on one disk are read as one.
-    disk_id: Option<String>,
-    /// The directory the disk is mounted at, which names it on screen:
-    /// `/mnt/data` on Unix, `C:\\` on Windows.
-    mount: Option<PathBuf>,
+    /// The disk the directory is on, when that can be told.
+    on: Option<OnDisk>,
     /// The bytes free on that disk.
     available: u64,
+}
+
+/// The disk a directory is on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OnDisk {
+    /// What tells this disk from another, so two directories on one disk
+    /// are read as one.
+    id: String,
+    /// The directory the disk is mounted at, which names it on screen.
+    mount: PathBuf,
 }
 
 /// What the Import form says about the disks that hold the Staging
@@ -170,60 +176,64 @@ pub fn low_disk_space(staging: &Path, scratch: &Path) -> Vec<String> {
 fn read_disk(disk: Disk, dir: &Path) -> Option<DiskReading> {
     let existing = dir.ancestors().find(|ancestor| ancestor.is_dir())?;
     let available = fs2::available_space(existing).ok()?;
-    let (disk_id, mount) = match disk_of(existing) {
-        Some((id, mount)) => (Some(id), Some(mount)),
-        None => (None, None),
-    };
     Some(DiskReading {
         disk,
         dir: dir.to_path_buf(),
-        disk_id,
-        mount,
+        on: disk_of(existing),
         available,
     })
 }
 
-/// The disk `dir` is on, and the directory it is mounted at: the device
-/// number on Unix, and the highest parent of `dir` on that device.
+/// The disk `dir` is on, on Unix: its device number, mounted at the highest
+/// parent of `dir` on that device. The path is resolved first, so a
+/// directory reached through a symbolic link is named by the disk it is on,
+/// not the one the link is on.
 #[cfg(unix)]
-fn disk_of(dir: &Path) -> Option<(String, PathBuf)> {
+fn disk_of(dir: &Path) -> Option<OnDisk> {
     use std::os::unix::fs::MetadataExt;
+    let resolved = std::fs::canonicalize(dir).ok()?;
     let device = |path: &Path| std::fs::metadata(path).ok().map(|meta| meta.dev());
-    let dev = device(dir)?;
-    let mount = dir
+    let dev = device(&resolved)?;
+    let mount = resolved
         .ancestors()
         .take_while(|ancestor| device(ancestor) == Some(dev))
         .last()?;
-    Some((dev.to_string(), mount.to_path_buf()))
+    Some(OnDisk {
+        id: dev.to_string(),
+        mount: mount.to_path_buf(),
+    })
 }
 
-/// The disk `dir` is on, and the directory it is mounted at, on Windows: the
-/// highest parent of `dir` whose disk has the same size and free space.
-/// Windows tells the volume of a path through no API the standard library
-/// has, and a volume mounted in a directory of `C:` shares its drive letter,
-/// so the drive letter alone would read two disks as one. Two volumes with
-/// the same size and the same free space to the byte are not met in
-/// practice.
+/// The disk `dir` is on, on Windows: the volume's mount point, as
+/// `GetVolumePathNameW` gives it (`C:\`, or `C:\mnt\big\` for a volume
+/// mounted in a directory of `C:`), which is also its name on screen.
 #[cfg(windows)]
-fn disk_of(dir: &Path) -> Option<(String, PathBuf)> {
-    let resolved = std::fs::canonicalize(dir).ok()?;
-    let space = |path: &Path| {
-        Some((
-            fs2::total_space(path).ok()?,
-            fs2::available_space(path).ok()?,
-        ))
-    };
-    let own = space(&resolved)?;
-    let mount = resolved
-        .ancestors()
-        .take_while(|ancestor| space(ancestor) == Some(own))
-        .last()?;
-    Some((mount.to_string_lossy().to_lowercase(), mount.to_path_buf()))
+fn disk_of(dir: &Path) -> Option<OnDisk> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use windows_sys::Win32::Storage::FileSystem::GetVolumePathNameW;
+
+    let wide: Vec<u16> = dir.as_os_str().encode_wide().chain(Some(0)).collect();
+    // A mount point is never longer than the path it was found from.
+    let mut buffer = vec![0u16; wide.len().max(4)];
+    let length = u32::try_from(buffer.len()).ok()?;
+    // SAFETY: `wide` is NUL-terminated, and `buffer` holds `length` UTF-16
+    // units, which is what the call is told it may write.
+    let found = unsafe { GetVolumePathNameW(wide.as_ptr(), buffer.as_mut_ptr(), length) };
+    if found == 0 {
+        return None;
+    }
+    let end = buffer.iter().position(|&unit| unit == 0)?;
+    let mount = PathBuf::from(OsString::from_wide(&buffer[..end]));
+    Some(OnDisk {
+        id: mount.to_string_lossy().to_lowercase(),
+        mount,
+    })
 }
 
 /// No disk can be told apart elsewhere, so each directory is its own.
 #[cfg(not(any(unix, windows)))]
-fn disk_of(_dir: &Path) -> Option<(String, PathBuf)> {
+fn disk_of(_dir: &Path) -> Option<OnDisk> {
     None
 }
 
@@ -233,8 +243,8 @@ pub(crate) fn low_disk_space_lines(readings: Vec<DiskReading>) -> Vec<String> {
     let mut disks: Vec<Vec<DiskReading>> = Vec::new();
     for reading in readings {
         let shared = disks.iter_mut().find(|disk| {
-            reading.disk_id.is_some()
-                && disk.first().map(|first| &first.disk_id) == Some(&reading.disk_id)
+            let id = |reading: &DiskReading| reading.on.as_ref().map(|on| on.id.clone());
+            id(&reading).is_some() && disk.first().map(id) == Some(id(&reading))
         });
         match shared {
             Some(disk) => disk.push(reading),
@@ -260,8 +270,8 @@ pub(crate) fn low_disk_space_lines(readings: Vec<DiskReading>) -> Vec<String> {
                 .collect::<Vec<_>>()
                 .join(" and ");
             let free = media::format_bytes(available);
-            let on = match disk.first().and_then(|reading| reading.mount.as_ref()) {
-                Some(mount) => format!("on {}, the disk that holds", mount.display()),
+            let on = match disk.first().and_then(|reading| reading.on.as_ref()) {
+                Some(on) => format!("on {}, the disk that holds", on.mount.display()),
                 None => "on the disk that holds".to_string(),
             };
             Some(format!(
@@ -353,8 +363,10 @@ mod tests {
         DiskReading {
             disk,
             dir: PathBuf::from(dir),
-            disk_id: disk_id.map(str::to_string),
-            mount: disk_id.map(|_| PathBuf::from("/home")),
+            on: disk_id.map(|id| OnDisk {
+                id: id.to_string(),
+                mount: PathBuf::from("/home"),
+            }),
             available,
         }
     }
@@ -455,11 +467,16 @@ mod tests {
         let scratch = read_disk(Disk::Scratch, &made).unwrap();
 
         assert_eq!(staging.dir, not_made);
-        assert!(staging.disk_id.is_some());
-        assert_eq!(staging.disk_id, scratch.disk_id);
-        let mount = staging.mount.unwrap();
-        assert!(dir.path().starts_with(&mount), "{mount:?}");
-        assert_eq!(scratch.mount, Some(mount));
+        let on = staging.on.unwrap();
+        // Unix names the disk from the resolved path; Windows from the path
+        // as given, whose drive prefix `canonicalize` would rewrite.
+        let base = if cfg!(windows) {
+            dir.path().to_path_buf()
+        } else {
+            std::fs::canonicalize(dir.path()).unwrap()
+        };
+        assert!(base.starts_with(&on.mount), "{on:?}");
+        assert_eq!(scratch.on, Some(on));
     }
 
     /// The check reads the disk that holds the directory it is given.
