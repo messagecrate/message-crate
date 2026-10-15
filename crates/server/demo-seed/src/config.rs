@@ -262,7 +262,7 @@ pub struct EdgeCasesConfig {
     /// written, even when this is 0.
     pub orphaned_messages: usize,
     /// Write a one-to-one conversation with no messages.
-    pub empty_individual: bool,
+    pub empty_one_to_one: bool,
     /// Write a group conversation with no messages.
     pub empty_group: bool,
 }

@@ -14430,7 +14430,7 @@
           "name",
           "unknown",
           "identities",
-          "direct_conversations",
+          "one_to_one_conversations",
           "group_conversations",
           "orphaned_conversations",
           "total_messages",
@@ -14438,12 +14438,6 @@
           "groups"
         ],
         "properties": {
-          "direct_conversations": {
-            "type": "integer",
-            "format": "int64",
-            "description": "One-to-one conversations the contact appears in.",
-            "minimum": 0
-          },
           "group_conversations": {
             "type": "integer",
             "format": "int64",
@@ -14476,6 +14470,12 @@
           "name": {
             "type": "string",
             "description": "The contact's preferred name; empty when it has none."
+          },
+          "one_to_one_conversations": {
+            "type": "integer",
+            "format": "int64",
+            "description": "One-to-one conversations the contact appears in.",
+            "minimum": 0
           },
           "orphaned_conversations": {
             "type": "integer",
@@ -14511,10 +14511,10 @@
         "required": [
           "id",
           "name",
-          "individual_conversations",
+          "one_to_one_conversations",
           "group_conversations",
           "orphaned_conversations",
-          "individual_message_count",
+          "one_to_one_message_count",
           "group_message_count",
           "orphaned_message_count",
           "end_date",
@@ -14545,21 +14545,21 @@
             "format": "int64",
             "description": "Contact id."
           },
-          "individual_conversations": {
+          "name": {
+            "type": "string",
+            "description": "The contact's preferred name; empty when it has none."
+          },
+          "one_to_one_conversations": {
             "type": "integer",
             "format": "int64",
             "description": "One-to-one conversations with the contact.",
             "minimum": 0
           },
-          "individual_message_count": {
+          "one_to_one_message_count": {
             "type": "integer",
             "format": "int64",
             "description": "Messages the contact sent in one-to-one conversations.",
             "minimum": 0
-          },
-          "name": {
-            "type": "string",
-            "description": "The contact's preferred name; empty when it has none."
           },
           "orphaned_conversations": {
             "type": "integer",
@@ -15709,7 +15709,7 @@
           "service",
           "country_unknown",
           "conversations",
-          "direct_messages",
+          "one_to_one_messages",
           "group_messages",
           "orphaned_messages",
           "end_date",
@@ -15730,12 +15730,6 @@
             "type": "boolean",
             "description": "True for a phone number written without its `+` code whose country\nnobody has stated: it is stored as the digits typed and matches no\nnumber written with its `+` until a country is picked for it. A\nshort code, under 7 digits, has no `+` form and is never flagged."
           },
-          "direct_messages": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The identity's messages in one-to-one conversations, trashed\nconversations and duplicates excluded.",
-            "minimum": 0
-          },
           "end_date": {
             "type": [
               "string",
@@ -15747,6 +15741,12 @@
             "type": "integer",
             "format": "int64",
             "description": "The identity's messages in group conversations, on the same terms.",
+            "minimum": 0
+          },
+          "one_to_one_messages": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The identity's messages in one-to-one conversations, trashed\nconversations and duplicates excluded.",
             "minimum": 0
           },
           "orphaned_messages": {
@@ -16791,7 +16791,7 @@
           },
           "conversation_type": {
             "type": "string",
-            "description": "`individual`, `group`, or `orphaned` for a conversation of\norphaned messages: ones the backup holds without recording which\nconversation they were said in."
+            "description": "`one-to-one`, `group`, or `orphaned` for a conversation of\norphaned messages: ones the backup holds without recording which\nconversation they were said in."
           },
           "group_title": {
             "type": [
@@ -17857,10 +17857,10 @@
               "required": [
                 "id",
                 "name",
-                "individual_conversations",
+                "one_to_one_conversations",
                 "group_conversations",
                 "orphaned_conversations",
-                "individual_message_count",
+                "one_to_one_message_count",
                 "group_message_count",
                 "orphaned_message_count",
                 "end_date",
@@ -17891,21 +17891,21 @@
                   "format": "int64",
                   "description": "Contact id."
                 },
-                "individual_conversations": {
+                "name": {
+                  "type": "string",
+                  "description": "The contact's preferred name; empty when it has none."
+                },
+                "one_to_one_conversations": {
                   "type": "integer",
                   "format": "int64",
                   "description": "One-to-one conversations with the contact.",
                   "minimum": 0
                 },
-                "individual_message_count": {
+                "one_to_one_message_count": {
                   "type": "integer",
                   "format": "int64",
                   "description": "Messages the contact sent in one-to-one conversations.",
                   "minimum": 0
-                },
-                "name": {
-                  "type": "string",
-                  "description": "The contact's preferred name; empty when it has none."
                 },
                 "orphaned_conversations": {
                   "type": "integer",
@@ -18459,7 +18459,7 @@
                 "service",
                 "country_unknown",
                 "conversations",
-                "direct_messages",
+                "one_to_one_messages",
                 "group_messages",
                 "orphaned_messages",
                 "end_date",
@@ -18480,12 +18480,6 @@
                   "type": "boolean",
                   "description": "True for a phone number written without its `+` code whose country\nnobody has stated: it is stored as the digits typed and matches no\nnumber written with its `+` until a country is picked for it. A\nshort code, under 7 digits, has no `+` form and is never flagged."
                 },
-                "direct_messages": {
-                  "type": "integer",
-                  "format": "int64",
-                  "description": "The identity's messages in one-to-one conversations, trashed\nconversations and duplicates excluded.",
-                  "minimum": 0
-                },
                 "end_date": {
                   "type": [
                     "string",
@@ -18497,6 +18491,12 @@
                   "type": "integer",
                   "format": "int64",
                   "description": "The identity's messages in group conversations, on the same terms.",
+                  "minimum": 0
+                },
+                "one_to_one_messages": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "The identity's messages in one-to-one conversations, trashed\nconversations and duplicates excluded.",
                   "minimum": 0
                 },
                 "orphaned_messages": {

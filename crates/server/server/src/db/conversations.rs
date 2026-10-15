@@ -198,7 +198,7 @@ pub async fn get_conversation_summary(
 #[must_use]
 pub fn is_with_yourself_sql(c: &str) -> String {
     format!(
-        "(lower({c}.conversation_type) = 'individual'
+        "(lower({c}.conversation_type) = 'one-to-one'
           AND EXISTS (SELECT 1 FROM handles hy WHERE hy.id = {c}.chat_handle_id AND {}))",
         crate::db::account_profile::is_account_identity_sql("hy", &format!("{c}.account_id"))
     )

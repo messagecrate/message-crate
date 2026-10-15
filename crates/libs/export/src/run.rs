@@ -1178,7 +1178,7 @@ mod asset_ref_tests {
             "conversation": {
                 "id": 9,
                 "chat_identifier": "+15555550101",
-                "conversation_type": "individual",
+                "conversation_type": "one-to-one",
                 "is_group": false,
                 "participants": []
             },

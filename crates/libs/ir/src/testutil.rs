@@ -41,7 +41,7 @@ pub fn sample_document(text: &str) -> ConversationDocument {
         },
         conversation: ConversationMeta {
             chat_identifier: "+15555550101".into(),
-            conversation_type: ConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: vec![Participant {
                 identity: Some("+15555550101".into()),
@@ -120,7 +120,7 @@ pub fn sample_imessage_document() -> ConversationDocument {
         },
         conversation: ConversationMeta {
             chat_identifier: "+15555550101".into(),
-            conversation_type: ConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: vec![Participant {
                 identity: Some("+15555550101".into()),

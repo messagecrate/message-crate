@@ -35,17 +35,17 @@ flowchart LR
 
 Each conversation is one text file whose name ends in `.jsonl`. JSON Lines means one JSON object per line.
 
-1. The first line describes the conversation: who is in it, which backup it came from, and the current file layout (`schema_version` 6).
+1. The first line describes the conversation: who is in it, which backup it came from, and the current file layout (`schema_version` 16).
 2. Each later line is one message: when it was sent, who sent it, the text, and any attachments.
 
 Pictures and other media sit next to those files in `attachments/`.
 
 ```jsonl title="One conversation file"
-{"schema_version":15,"export":{"source":"sms-backup-restore","tool":"SMS Backup & Restore","owner_identity":"+15555550100","owner_display_name":"Me","backup_taken_at_unix_ms":1400800000000},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","participants":[{"identity":"+15555550101","display_name":"Sam"}]}}
+{"schema_version":16,"export":{"source":"sms-backup-restore","tool":"SMS Backup & Restore","owner_identity":"+15555550100","owner_display_name":"Me","backup_taken_at_unix_ms":1400800000000},"conversation":{"chat_identifier":"+15555550101","conversation_type":"one-to-one","participants":[{"identity":"+15555550101","display_name":"Sam"}]}}
 {"guid":"msg-1","timestamp_unix_ms":1400773261000,"time_precision":"milliseconds","direction":"outgoing","service":"sms","text":"Hello"}
 ```
 
-The server only reads this current layout (schema version 14). A version-13 file is refused by name, never upgraded. The full field list is on [Export structure](/docs/developer/reference/export-structure/).
+The server only reads this current layout (schema version 16). A version-15 file is refused by name, never upgraded. The full field list is on [Export structure](/docs/developer/reference/export-structure/).
 
 ## Converters for full backups
 

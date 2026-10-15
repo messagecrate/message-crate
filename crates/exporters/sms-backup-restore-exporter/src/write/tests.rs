@@ -245,7 +245,7 @@ fn a_one_to_one_photo_from_another_app_keeps_its_conversation_sender_subject_and
     assert_eq!(read.len(), 1);
     let conversation = &read[0].conversation;
     assert_eq!(conversation.chat_identifier, "+15555550101");
-    assert_eq!(conversation.conversation_type, ConversationType::Individual);
+    assert_eq!(conversation.conversation_type, ConversationType::OneToOne);
     assert_eq!(
         conversation.participants[0].display_name.as_deref(),
         Some("Sam")
@@ -339,7 +339,7 @@ fn a_group_with_one_identified_participant_is_named_as_one_to_one() {
     assert_eq!(read.len(), 1);
     assert_eq!(
         read[0].conversation.conversation_type,
-        ConversationType::Individual
+        ConversationType::OneToOne
     );
     let message = &read[0].messages[0];
     assert_eq!(contact_name(message), Some("Sam"));
@@ -370,7 +370,7 @@ fn a_group_the_reader_finds_one_peer_in_is_named_as_one_to_one() {
         assert_eq!(read.len(), 1, "{handle}");
         assert_eq!(
             read[0].conversation.conversation_type,
-            ConversationType::Individual,
+            ConversationType::OneToOne,
             "{handle}"
         );
         let message = &read[0].messages[0];

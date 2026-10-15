@@ -5,7 +5,7 @@
 
 /// Conversation id header.
 pub(crate) const CHAT_IDENTIFIER: &str = "X-ME-Chat-Identifier";
-/// `individual` or `group`.
+/// `one-to-one` or `group`.
 pub(crate) const CONVERSATION_TYPE: &str = "X-ME-Conversation-Type";
 /// `incoming` or `outgoing`.
 pub(crate) const DIRECTION: &str = "X-ME-Direction";

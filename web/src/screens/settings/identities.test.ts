@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { type Identity, messagesPhrase } from "./identities";
 
-function identity(direct: number, group: number, orphaned: number): Identity {
+function identity(oneToOne: number, group: number, orphaned: number): Identity {
   return {
     address: "+15555550100",
     service: "phone",
@@ -9,7 +9,7 @@ function identity(direct: number, group: number, orphaned: number): Identity {
     start_date: null,
     end_date: null,
     conversations: 0,
-    direct_messages: direct,
+    one_to_one_messages: oneToOne,
     group_messages: group,
     orphaned_messages: orphaned,
   };

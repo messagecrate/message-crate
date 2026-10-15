@@ -46,7 +46,7 @@ pub struct StagingConversation<'a> {
     pub account_id: i64,
     /// The thread's identity handle, already written to `handles`.
     pub chat_handle_id: i64,
-    /// `individual` or `group`.
+    /// `one-to-one` or `group`.
     pub conversation_type: &'a str,
     /// Group label, when set.
     pub group_title: Option<&'a str>,

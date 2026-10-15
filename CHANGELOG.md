@@ -218,6 +218,12 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-15: **A one-to-one conversation has one name from the message file
+  to the screen.** Message files, the server's answers and the web app now
+  call a conversation with one other person a one-to-one conversation, where
+  they said "individual" in one place and "direct" in another. Nothing on
+  screen changes, and `kind:direct` still finds these conversations in a
+  search. The message file format and the database format changed (#2286).
 - 2026-10-15: **An Audit Trail entry names the request that wrote it.**
   Each entry now keeps the id the server gave the request that made it,
   the same id that request's lines in the server's log carry, so an entry
@@ -1718,6 +1724,10 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-15: Message files exported before one-to-one conversations were
+  named so in them are refused when you import or convert them. Export the
+  backup again with this build. An existing Message Crate is rebuilt empty
+  on first start and its messages must be imported again (#2286).
 - 2026-10-15: Message files exported before they carried the country an
   Apple Messages backup names for each number are refused when you import
   or convert them. Export the backup again with this build.

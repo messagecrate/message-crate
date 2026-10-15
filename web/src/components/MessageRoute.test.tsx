@@ -114,7 +114,7 @@ function message(id: number, conversationId: number): Message {
     conversation: {
       id: conversationId,
       chat_identifier: "+1",
-      conversation_type: "individual",
+      conversation_type: "one-to-one",
       is_group: false,
       group_title: null,
       shown_title: null,

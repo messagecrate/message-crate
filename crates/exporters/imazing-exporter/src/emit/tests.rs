@@ -1144,7 +1144,7 @@ Bob,2020-01-01 12:01:00,iMessage,Incoming,{second},Bob,Read,,,From the other,,,\
         let conversation = &documents[0].conversation;
         assert_eq!(
             conversation.conversation_type,
-            message_ir::ConversationType::Individual,
+            message_ir::ConversationType::OneToOne,
             "{second}"
         );
         assert_eq!(conversation.chat_identifier, "+15555550122", "{second}");

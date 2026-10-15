@@ -1919,7 +1919,7 @@ pub(crate) async fn seed_attachment_with_preview(
         &crate::test_support::SeedConversation {
             account_id,
             handle: "+15555550142",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "seed.jsonl",
             messages: &[crate::test_support::SeedMessage {

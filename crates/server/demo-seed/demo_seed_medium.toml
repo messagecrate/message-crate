@@ -91,7 +91,7 @@ apple_fallback_transport_fraction = 0.20
 unassigned_phones = 4
 unassigned_emails = 2
 orphaned_messages = 6
-empty_individual = true
+empty_one_to_one = true
 empty_group = true
 
 # Backup sources: imessage (primary), sms-backup-restore (Android XML-style), and whatsapp.

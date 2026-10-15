@@ -98,7 +98,7 @@ fn parallel_content_keys_match_serial() {
             id: 1,
             conversation_id: 10,
             chat_id: "+14075550106".into(),
-            conversation_type: "individual".into(),
+            conversation_type: "one-to-one".into(),
             is_from_me: 1,
             timestamp: "2015-03-12T18:04:22.000Z".into(),
             body: Some("hi".into()),
@@ -1347,7 +1347,7 @@ async fn received_notes_to_yourself(
     later_timestamp: &str,
 ) -> (i64, i64) {
     setup_account(conn).await;
-    let notes = conversation(conn, "+15555550199", "individual").await;
+    let notes = conversation(conn, "+15555550199", "one-to-one").await;
     let holder = handle(conn, "+15555550199").await;
     let before_link = MessageRow {
         source: "imazing",
@@ -1424,7 +1424,7 @@ async fn a_failed_dedupe_keeps_the_previous_duplicates_hidden() {
         let (pool, _dir) = engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         setup_account(&mut conn).await;
-        let peer = conversation(&mut conn, "+14075550106", "individual").await;
+        let peer = conversation(&mut conn, "+14075550106", "one-to-one").await;
         let mut ids = Vec::new();
         // An exact twin (same second) and a near-time twin (one second apart).
         for (source, guid, timestamp, body) in [
@@ -1549,7 +1549,7 @@ async fn generate_database(conn: &mut SqliteConnection, seed: u64) -> Vec<i64> {
     let mut chats = Vec::new();
     for (i, peer) in GEN_PEOPLE.iter().take(2).enumerate() {
         chats.push(GenChat {
-            conversations: vec![conversation(conn, peer, "individual").await],
+            conversations: vec![conversation(conn, peer, "one-to-one").await],
             senders: vec![people[i]],
         });
     }

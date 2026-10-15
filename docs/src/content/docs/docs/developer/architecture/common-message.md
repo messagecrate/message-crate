@@ -30,13 +30,13 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 
 - **Common-message path** (`ConversationDocument` → `message_ir_format::FormatSink`, one of json/jsonl/csv/eml/mbox/xml): all exporters, including iMessage (`imessage-ir-exporter`). Per-chat formats also accept `write_format`; XML uses a single `smses.xml` via the sink.
 - **Media + obfuscate** run inside `FormatSink::finish` for every format (`message_crate_core::ExportTransforms`: none / copy / convert / compress, plus optional obfuscate). When obfuscate is on, exporters skip staging real attachment bytes and convert/compress is not run — only placeholder files are written. Exporters pass transforms from `OutputConfig.media` / `.obfuscate`; there is no CSV-only post-step. EML / MBOX / XML embed media and drop the staged `attachments/` directory afterward.
-- **Schema version 15 only** (breaking). Version 15 lets a participant and a message's sender carry the country the source read their identity in (`country`, `sender_country`; see [Identity country](#identity-country)), which version 14 had no field for. Version 14 had let an earlier version of an edited message carry no `text` (see [Earlier versions](#earlier-versions)), for a source that records the edit and not the text it replaced, as iMazing does; version 13 required the text. A version-13 file would parse under version 14's rules, and is refused all the same: a file is imported by its own version's rules or not at all. Version 13 had given a participant no `identity_type`: the server works out every identity's type from the service and the address (see [Identity types](#identity-types)), where version 12 stated a type for each participant that the import took over the address. Version 12 had said whether each message's time has milliseconds, in its required `time_precision` (see [Time precision](#time-precision)), which version 11 did not, so a time ending in `.000` could be a whole second or a millisecond time, and the import could not tell a whole-second copy of a message from a millisecond one. Version 11 had said when the backup was made, in `export.backup_taken_at_unix_ms` (see [When the backup was made](#when-the-backup-was-made)), which version 10 did not, so an import could not tell which of two backups of one phone is the later one. Version 10 had kept the message a reply quotes in the message's own `reply_to`, for every source (see [Replies](#replies)), where version 9 kept the Apple Messages reply link in `imessage.is_reply` and `imessage.in_reply_to_guid`, and a reply count in `imessage.num_replies`. Version 9 had given orphaned messages conversations of type `orphaned` (see [Orphaned messages](#orphaned-messages)), where version 8 put them all in one `individual` conversation named `orphaned`. Version 8 had kept an edited message's earlier versions in its own `edits`, for every source, where version 7 kept the Apple Messages edit history as a JSON value in `imessage.edits`. Version 7 had moved a message's mark, Deleted in the source app or Unsent, in its own `deletion`, for every source, where version 6 kept the Apple Messages deleted mark in `imessage.is_deleted`. Version 6 had moved a message's reactions into its own `reactions` list, one shape for every source, where version 5 kept Apple Messages reactions as a JSON value in `imessage.tapbacks`. Version 5 had named every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`. Version 14 and older are refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
+- **Schema version 16 only** (breaking). Version 16 names a one-to-one conversation `one-to-one` in `conversation_type`, where version 15 said `individual`. Version 15 had let a participant and a message's sender carry the country the source read their identity in (`country`, `sender_country`; see [Identity country](#identity-country)), which version 14 had no field for. Version 14 had let an earlier version of an edited message carry no `text` (see [Earlier versions](#earlier-versions)), for a source that records the edit and not the text it replaced, as iMazing does; version 13 required the text. A version-13 file would parse under version 14's rules, and is refused all the same: a file is imported by its own version's rules or not at all. Version 13 had given a participant no `identity_type`: the server works out every identity's type from the service and the address (see [Identity types](#identity-types)), where version 12 stated a type for each participant that the import took over the address. Version 12 had said whether each message's time has milliseconds, in its required `time_precision` (see [Time precision](#time-precision)), which version 11 did not, so a time ending in `.000` could be a whole second or a millisecond time, and the import could not tell a whole-second copy of a message from a millisecond one. Version 11 had said when the backup was made, in `export.backup_taken_at_unix_ms` (see [When the backup was made](#when-the-backup-was-made)), which version 10 did not, so an import could not tell which of two backups of one phone is the later one. Version 10 had kept the message a reply quotes in the message's own `reply_to`, for every source (see [Replies](#replies)), where version 9 kept the Apple Messages reply link in `imessage.is_reply` and `imessage.in_reply_to_guid`, and a reply count in `imessage.num_replies`. Version 9 had given orphaned messages conversations of type `orphaned` (see [Orphaned messages](#orphaned-messages)), where version 8 put them all in one `individual` conversation named `orphaned`. Version 8 had kept an edited message's earlier versions in its own `edits`, for every source, where version 7 kept the Apple Messages edit history as a JSON value in `imessage.edits`. Version 7 had moved a message's mark, Deleted in the source app or Unsent, in its own `deletion`, for every source, where version 6 kept the Apple Messages deleted mark in `imessage.is_deleted`. Version 6 had moved a message's reactions into its own `reactions` list, one shape for every source, where version 5 kept Apple Messages reactions as a JSON value in `imessage.tapbacks`. Version 5 had named every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`. Version 15 and older are refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
 
-## Document schema (`schema_version: 15`)
+## Document schema (`schema_version: 16`)
 
 ```json
 {
-  "schema_version": 15,
+  "schema_version": 16,
   "export": {
     "source": "sms-backup-restore",
     "tool": "SMS Backup & Restore",
@@ -47,7 +47,7 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
   },
   "conversation": {
     "chat_identifier": "+15555550101",
-    "conversation_type": "individual",
+    "conversation_type": "one-to-one",
     "group_title": null,
     "participants": [
       { "identity": "+15555550101", "display_name": "Sam" }
@@ -247,7 +247,7 @@ Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + 
 
 ### Vocabulary (enums)
 
-- `conversation_type`: `individual` \| `group` \| `orphaned`
+- `conversation_type`: `one-to-one` \| `group` \| `orphaned`
 - `service`: `sms` \| `imessage` \| `whatsapp` \| `rcs` \| `discord` \| `signal` \| `telegram` \| `slack` \| `unknown`
 - `message_kind`: `sms` \| `mms` \| `imessage` \| `tapback` \| `sticker_tapback` \| `announcement` \| `location_share` \| `balloon` \| `unknown`
 
@@ -264,7 +264,7 @@ Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + 
 ## JSONL layout
 
 ```text
-{"schema_version":15,"export":{…},"conversation":{…}}
+{"schema_version":16,"export":{…},"conversation":{…}}
 {"guid":"…","timestamp_unix_ms":…, …}
 …
 ```

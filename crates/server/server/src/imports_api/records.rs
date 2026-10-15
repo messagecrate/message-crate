@@ -32,7 +32,7 @@ pub struct ConversationRecord {
     pub line: usize,
     /// The conversation's identifier as the export wrote it.
     pub chat_identifier: String,
-    /// `individual` or `group`.
+    /// `one-to-one` or `group`.
     pub conversation_type: String,
     /// Group label, when set.
     pub group_title: Option<String>,

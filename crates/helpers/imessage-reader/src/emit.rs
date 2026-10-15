@@ -25,8 +25,8 @@ use imessage_database::{
 };
 use imessage_reader_protocol::{
     Conversation as ConversationRecord, Deletion, Event, Imessage as ImessageRecord,
-    Message as MessageRecord, ORPHANED_CONVERSATION_TYPE, Participant, Progress, Reaction, ReplyTo,
-    TimePrecision, bare_address, orphaned_chat_id,
+    Message as MessageRecord, ONE_TO_ONE_CONVERSATION_TYPE, ORPHANED_CONVERSATION_TYPE,
+    Participant, Progress, Reaction, ReplyTo, TimePrecision, bare_address, orphaned_chat_id,
 };
 use serde_json::Value;
 
@@ -186,7 +186,7 @@ fn display_name_for(session: &MailSession, handle_id: i32) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Participants and conversation type (`individual` / `group`) for one chat room.
+/// Participants and conversation type (`one-to-one` / `group`) for one chat room.
 ///
 /// The members are the chat's `chat_handle_join` rows, each one handle's
 /// own address, less any address of the owner's: Apple lists the owner's own
@@ -232,7 +232,11 @@ fn participants_for(session: &MailSession, chatroom: &Chat) -> (Vec<Participant>
         }
         None => {}
     }
-    let conversation_type = if group { "group" } else { "individual" };
+    let conversation_type = if group {
+        "group"
+    } else {
+        ONE_TO_ONE_CONVERSATION_TYPE
+    };
     (records, conversation_type)
 }
 

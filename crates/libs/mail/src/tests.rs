@@ -4,7 +4,7 @@ use mailparse::MailHeaderMap;
 pub(crate) fn base_sms() -> MailMessage {
     MailMessage {
         chat_identifier: "+15555550101".into(),
-        conversation_type: "individual".into(),
+        conversation_type: "one-to-one".into(),
         group_title: None,
         participants: vec![Participant {
             identity: "+15555550101".into(),
@@ -50,7 +50,7 @@ fn im_mut(msg: &mut MailMessage) -> &mut message_ir::ImessageExtensions {
 }
 
 #[test]
-fn writes_individual_sms_text_only() {
+fn writes_one_to_one_sms_text_only() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = write_conversation(&tmp.path().join("+15555550101"), &[base_sms()]).unwrap();
 
@@ -1225,7 +1225,7 @@ fn group_conversations_keep_their_own_addresses() {
 /// conversation, in both directions.
 #[test]
 fn an_identity_with_a_line_break_keeps_the_address_headers_whole() {
-    for conversation_type in ["group", "individual"] {
+    for conversation_type in ["group", "one-to-one"] {
         for direction in [Direction::Incoming, Direction::Outgoing] {
             for (sender, owner, peer) in [
                 ("a\r\n b", "c\r\n d", "e\r\n f"),

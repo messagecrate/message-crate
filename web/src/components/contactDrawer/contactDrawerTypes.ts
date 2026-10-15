@@ -119,7 +119,7 @@ function emptyHandleRow(address: string): ContactHandle {
     start_date: null,
     end_date: null,
     conversations: 0,
-    direct_messages: 0,
+    one_to_one_messages: 0,
     group_messages: 0,
     orphaned_messages: 0,
   };
@@ -165,7 +165,7 @@ export function previewHandleStubRows(
 /** A contact's conversations: its one-to-one, group, and orphaned ones, which add up to all of them. */
 export function contactConversations(detail: ContactDetail): number {
   return conversationTotal(
-    detail.direct_conversations,
+    detail.one_to_one_conversations,
     detail.group_conversations,
     detail.orphaned_conversations,
   );
@@ -180,20 +180,20 @@ export function contactConversations(detail: ContactDetail): number {
  */
 export function contactTotals(detail: ContactDetail): {
   conversations: number;
-  direct_messages: number;
+  one_to_one_messages: number;
   group_messages: number;
   orphaned_messages: number;
   start_date: string | null;
   end_date: string | null;
 } {
   const conversations = contactConversations(detail);
-  let direct_messages = 0;
+  let one_to_one_messages = 0;
   let group_messages = 0;
   let orphaned_messages = 0;
   let start_date: string | null = null;
   let end_date: string | null = null;
   for (const h of detail.identities) {
-    direct_messages += h.direct_messages;
+    one_to_one_messages += h.one_to_one_messages;
     group_messages += h.group_messages;
     orphaned_messages += h.orphaned_messages;
     if (h.start_date && (!start_date || h.start_date < start_date)) start_date = h.start_date;
@@ -201,7 +201,7 @@ export function contactTotals(detail: ContactDetail): {
   }
   return {
     conversations,
-    direct_messages,
+    one_to_one_messages,
     group_messages,
     orphaned_messages,
     start_date,

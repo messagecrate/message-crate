@@ -16,7 +16,7 @@ async fn seed(fixture: &TestFixture, account: &RegisteredAccount, handle: &str) 
         &SeedConversation {
             account_id: account.account_id,
             handle,
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "seed.jsonl",
             messages: &[SeedMessage {

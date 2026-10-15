@@ -769,7 +769,7 @@ async fn the_owner_reads_the_server_totals_summed_over_every_account() {
             &SeedConversation {
                 account_id,
                 handle,
-                conversation_type: "individual",
+                conversation_type: "one-to-one",
                 group_title: None,
                 source_file: "seed.jsonl",
                 messages: &messages,

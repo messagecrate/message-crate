@@ -419,7 +419,7 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
         },
         conversation: ConversationMeta {
             chat_identifier: "+15555550101".into(),
-            conversation_type: ConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: vec![],
             stats: ConversationStats::default(),
@@ -666,7 +666,7 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
         },
         conversation: ConversationMeta {
             chat_identifier: "+15555550101".into(),
-            conversation_type: ConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: vec![],
             stats: ConversationStats::default(),

@@ -28,7 +28,7 @@ async fn a_name_created_meanwhile_is_taken_in_any_letter_case() {
                 &mut conn,
                 account,
                 second,
-                "kind:individual",
+                "kind:direct",
                 SavedSearchKind::Manual,
             ),
         )

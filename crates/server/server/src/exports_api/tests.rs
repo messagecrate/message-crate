@@ -121,7 +121,7 @@ async fn a_query_scope_takes_the_search_language() {
     );
 }
 
-/// A fixture with account `alice` (id 101) and two individual conversations
+/// A fixture with account `alice` (id 101) and two one-to-one conversations
 /// (`+1555`, `+1666`), each holding one SMS message ("hello one" in the
 /// first, "hello two" in the second) with ids 1 and 2. Returns the
 /// conversation ids the seeder made.
@@ -137,7 +137,7 @@ async fn seeded_export_fixture() -> (TestFixture, i64, i64) {
         &SeedConversation {
             account_id: account,
             handle: "+1555",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "backup-a.jsonl",
             messages: &[],
@@ -149,7 +149,7 @@ async fn seeded_export_fixture() -> (TestFixture, i64, i64) {
         &SeedConversation {
             account_id: account,
             handle: "+1666",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "backup-a.jsonl",
             messages: &[],
@@ -286,7 +286,7 @@ async fn a_conversations_query_hides_what_the_conversations_list_hides() {
         &SeedConversation {
             account_id: bob,
             handle: "+1777",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "backup-b.jsonl",
             messages: &[],
@@ -575,7 +575,7 @@ async fn a_comma_list_of_conversation_ids_exports_exactly_those_conversations() 
         &SeedConversation {
             account_id: 101,
             handle: "+1777",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "backup-a.jsonl",
             messages: &[],
@@ -687,7 +687,7 @@ async fn fixture_with_two_conversations() -> (TestFixture, RegisteredAccount, i6
         &SeedConversation {
             account_id: alice.account_id,
             handle: "+15555550100",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "backup-a.jsonl",
             messages: &[
@@ -712,7 +712,7 @@ async fn fixture_with_two_conversations() -> (TestFixture, RegisteredAccount, i6
         &SeedConversation {
             account_id: alice.account_id,
             handle: "+15555550101",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "backup-a.jsonl",
             messages: &[SeedMessage {

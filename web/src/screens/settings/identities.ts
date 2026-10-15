@@ -11,7 +11,8 @@ export type Identity = components["schemas"]["Identity"];
 export function messagesPhrase(identity: Identity): string | null {
   const parts: string[] = [];
   const count = (n: number, kind: string) => countOf(n, `${kind} message`);
-  if (identity.direct_messages > 0) parts.push(count(identity.direct_messages, "one-to-one"));
+  if (identity.one_to_one_messages > 0)
+    parts.push(count(identity.one_to_one_messages, "one-to-one"));
   if (identity.group_messages > 0) parts.push(count(identity.group_messages, "group"));
   if (identity.orphaned_messages > 0) parts.push(count(identity.orphaned_messages, "orphaned"));
   return joinWithAnd(parts);

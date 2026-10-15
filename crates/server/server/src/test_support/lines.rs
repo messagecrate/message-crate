@@ -34,7 +34,7 @@ pub fn conversation_header(source: &str, chat_identifier: &str) -> ConversationH
         },
         conversation: message_ir::ConversationMeta {
             chat_identifier: chat_identifier.to_string(),
-            conversation_type: message_ir::ConversationType::Individual,
+            conversation_type: message_ir::ConversationType::OneToOne,
             group_title: None,
             participants: Vec::new(),
             stats: message_ir::ConversationStats::default(),

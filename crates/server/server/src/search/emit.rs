@@ -1065,7 +1065,7 @@ fn emit_kind_word(
     match (term.spec.word, v) {
         ("kind", Value::Choice(k)) => {
             let ty = match *k {
-                "direct" => ConversationType::Individual,
+                "direct" => ConversationType::OneToOne,
                 "group" => ConversationType::Group,
                 "orphaned" => ConversationType::Orphaned,
                 _ => return Err(bad_value(term, "needs a value this word accepts")),

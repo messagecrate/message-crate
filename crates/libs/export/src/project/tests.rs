@@ -314,10 +314,10 @@ fn a_document_is_a_group_when_the_server_says_so() {
     let doc = build_document("imessage", &seed, vec![]);
     assert_eq!(
         doc.conversation.conversation_type,
-        ConversationType::Individual
+        ConversationType::OneToOne
     );
 
-    seed.conversation.conversation_type = "individual".into();
+    seed.conversation.conversation_type = "one-to-one".into();
     seed.conversation.is_group = true;
     let doc = build_document("imessage", &seed, vec![]);
     assert_eq!(doc.conversation.conversation_type, ConversationType::Group);
@@ -544,7 +544,7 @@ fn seed_message_with_participant(participant: Participant) -> Message {
         conversation: MessageConversation {
             id: 9,
             chat_identifier: "+1".into(),
-            conversation_type: "individual".into(),
+            conversation_type: "one-to-one".into(),
             is_group: false,
             group_title: None,
             shown_title: None,

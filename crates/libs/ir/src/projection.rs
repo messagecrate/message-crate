@@ -447,7 +447,7 @@ pub fn project_pending<H: ProjectionHooks + ?Sized>(
             conversation_type: if conversation.is_group {
                 ConversationType::Group
             } else {
-                ConversationType::Individual
+                ConversationType::OneToOne
             },
             group_title: hooks.group_title(conversation),
             participants: hooks.participants(chat_id, conversation),
@@ -499,7 +499,7 @@ pub fn display_names_for_handles(
 
 /// The default roster: `participant_e164s` (with display names gathered from
 /// the messages) plus the single-peer chat-id fallback when the roster is
-/// empty for an individual chat. The conversation that names nobody
+/// empty for a one-to-one chat. The conversation that names nobody
 /// ([`crate::NAMELESS_CHAT_ID`]) has no fallback: it is with nobody, and a
 /// participant made from its key would make it a person.
 pub fn default_participants(

@@ -47,7 +47,7 @@ pub fn build_document(
     {
         ConversationType::Orphaned
     } else {
-        ConversationType::Individual
+        ConversationType::OneToOne
     };
     let participants = participants_from_seed(seed);
     let mut attachment_count = 0u64;

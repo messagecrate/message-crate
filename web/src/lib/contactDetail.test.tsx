@@ -43,7 +43,7 @@ function contact(name: string) {
     last_modified: "2024-01-01T00:00:00Z",
     addresses: [],
     groups: ["Family"],
-    direct_conversations: 1,
+    one_to_one_conversations: 1,
     group_conversations: 0,
     orphaned_conversations: 0,
     message_count: 3,

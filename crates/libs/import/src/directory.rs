@@ -207,7 +207,7 @@ mod tests {
             },
             "conversation": {
                 "chat_identifier": "+15555550101",
-                "conversation_type": "individual",
+                "conversation_type": "one-to-one",
                 "participants": [],
                 "stats": { "message_count": 0, "attachment_count": 0 },
             },

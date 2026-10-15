@@ -332,7 +332,7 @@ async fn http_import_of_a_schema_4_file_is_a_422_naming_both_versions() {
     let path = batches_path(&state, &token, "whatsapp").await;
     let body = concat!(
         r#"{"schema_version":4,"export":{"source":"whatsapp","tool":"t","tool_version":"1","owner_handle":"+15555550106","owner_display_name":"Me"},"#,
-        r#""conversation":{"chat_identifier":"+15555550107","conversation_type":"individual","group_title":null,"participants":[{"handle":"+15555550107","display_name":"Sam","handle_type":"phone"}]}}"#,
+        r#""conversation":{"chat_identifier":"+15555550107","conversation_type":"one-to-one","group_title":null,"participants":[{"handle":"+15555550107","display_name":"Sam","handle_type":"phone"}]}}"#,
         "\n",
     );
     let (status, text) =

@@ -386,7 +386,7 @@ fn one_message_script(attachments: Vec<imessage_reader_protocol::Attachment>) ->
     let events = [
         Event::Conversation(Conversation {
             chat_identifier: "+15555550122".into(),
-            conversation_type: "individual".into(),
+            conversation_type: "one-to-one".into(),
             group_title: None,
             participants: Vec::new(),
         }),
@@ -580,7 +580,7 @@ fn a_jsonl_run_reports_its_conversations_and_messages() {
     let events = [
         Event::Conversation(Conversation {
             chat_identifier: "+15555550122".into(),
-            conversation_type: "individual".into(),
+            conversation_type: "one-to-one".into(),
             group_title: None,
             participants: Vec::new(),
         }),
@@ -639,7 +639,7 @@ fn encrypted_export_script(dir: &Path, video: &str, photo: &str) -> String {
     let events = [
         Event::Conversation(Conversation {
             chat_identifier: "+15555550122".into(),
-            conversation_type: "individual".into(),
+            conversation_type: "one-to-one".into(),
             group_title: None,
             participants: Vec::new(),
         }),

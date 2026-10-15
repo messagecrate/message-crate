@@ -34,7 +34,7 @@ function message(id: number): Message {
     conversation: {
       id: 1,
       chat_identifier: "c",
-      conversation_type: "direct",
+      conversation_type: "one-to-one",
       is_group: false,
       group_title: null,
       shown_title: null,
