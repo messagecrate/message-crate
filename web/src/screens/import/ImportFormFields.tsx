@@ -14,6 +14,7 @@ import { ownerPhonesNeedMismatchAck } from "../../lib/phoneTokens";
 import { parseSelectKey } from "../../lib/selectKey";
 import { toolUsable } from "../../lib/tauri";
 import type { AttachmentChoices, AttachmentMediaMode } from "../../lib/types";
+import { useLowDiskSpace } from "../../lib/useLowDiskSpace";
 import { useToolsStatus } from "../../lib/useToolsStatus";
 import { IMPORT_FORM_SECTIONS } from "./formSections";
 import { FieldStatus } from "./formSections/FieldStatus";
@@ -238,6 +239,9 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   const mediaRunsFfmpeg =
     source.showsAttachmentOptions && mediaJobVerb(form.attachments.attachmentMedia) !== null;
 
+  // A disk under 10 GB free is said before the run starts; it blocks nothing.
+  const lowDiskSpace = useLowDiskSpace(form.source);
+
   const canImport =
     blockedBy === null && !wtsexporterBlocked && readiness.enabled && !props.running;
 
@@ -405,6 +409,12 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
       {tools && mediaRunsFfmpeg ? (
         <MissingProgramNotice programs={["ffmpeg", "ffprobe"]} status={tools} need="media" />
       ) : null}
+
+      {lowDiskSpace.map((line) => (
+        <p key={line} role="status" className="mt-2 mb-0 text-[0.813rem] text-muted">
+          {line}
+        </p>
+      ))}
 
       <div className="mt-2 flex gap-3">
         <Button

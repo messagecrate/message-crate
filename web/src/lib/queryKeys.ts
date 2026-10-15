@@ -208,6 +208,15 @@ export const keys = {
   desktopExportDirectory: { all: ["desktop", "export-directory"] as const },
   /** The Staging Directory and its default, from the desktop process; used as it is, like `desktopToolsStatus`. */
   desktopStagingDirectory: { all: ["desktop", "staging-directory"] as const },
+  /**
+   * What the desktop process says about the free space of the Staging and
+   * Scratch Directories' disks, read again for each import source; used as
+   * it is, like `desktopToolsStatus`.
+   */
+  desktopLowDiskSpace: {
+    all: ["desktop", "low-disk-space"] as const,
+    of: (source: string) => ["desktop", "low-disk-space", source] as const,
+  },
   /** The log of the Import Run whose directory is `runDir`, as the desktop process names it. */
   desktopImportRunLog: {
     all: ["desktop", "import-run-log"] as const,

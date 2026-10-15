@@ -87,6 +87,15 @@ export async function invokeSetStagingDirectory(root: string): Promise<StagingDi
   return invoke("set_staging_root", { root });
 }
 
+/**
+ * One sentence for each disk that holds the Staging Directory or the Scratch
+ * Directory with less than 10 GB free, naming the directory and the space
+ * free. Empty when every disk has more, or cannot say how much it has.
+ */
+export async function invokeLowDiskSpace(): Promise<string[]> {
+  return invoke("low_disk_space");
+}
+
 /** Who ran an Import Run, on which Message Crate: the first line of the run's log. */
 interface RunLogAccount {
   importRunId: number;
