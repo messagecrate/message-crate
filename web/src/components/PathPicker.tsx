@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { errorText } from "../lib/apiErrorMessage";
-import { pickPath } from "../lib/tauri";
+import { pickPath } from "../lib/desktop/fs";
 import Button from "./Button";
 import { textInputClass } from "./TextField";
 

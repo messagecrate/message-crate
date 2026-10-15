@@ -2,7 +2,7 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { EXPORT_FORMATS } from "../lib/tauri";
+import { EXPORT_FORMATS } from "../lib/desktop/export";
 import { setupUser } from "../test/user";
 import ExportFormatSelect from "./ExportFormatSelect";
 

@@ -8,23 +8,21 @@ import PlainButton from "../../components/PlainButton";
 import { getBaseUrl } from "../../lib/api";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { APP_BUILD } from "../../lib/build";
+import { invokeExportDirectory } from "../../lib/desktop/export";
+import {
+  invokeOpenDataDirectory,
+  invokeSetOpenToNetwork,
+  type LocalServerStatus,
+} from "../../lib/desktop/localServer";
+import { invokeSetStagingDirectory, invokeStagingDirectory } from "../../lib/desktop/staging";
+import type { ToolStatus, ToolsStatus } from "../../lib/desktop/tools";
 import { getOpenToNetwork, isOwnAddress, setOpenToNetwork } from "../../lib/localServer";
 import { keys } from "../../lib/queryKeys";
 import { getRememberImporterPaths, setRememberImporterPaths } from "../../lib/systemSettings";
-import {
-  invokeExportDirectory,
-  invokeOpenDataDirectory,
-  invokeSetOpenToNetwork,
-  invokeSetStagingDirectory,
-  invokeStagingDirectory,
-  type LocalServerStatus,
-  type ToolName,
-  type ToolStatus,
-  type ToolsStatus,
-} from "../../lib/tauri";
 import { isTauri } from "../../lib/tauriCheck";
 import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware";
 import { toolStatusLine, troubleshootingSentence } from "../../lib/toolStatusCopy";
+import type { ToolName } from "../../lib/types";
 import { accentLinkClass } from "../../lib/uiStyles";
 import { useToolsStatus } from "../../lib/useToolsStatus";
 

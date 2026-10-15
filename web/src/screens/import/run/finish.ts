@@ -5,7 +5,7 @@ import type {
 } from "../../../components/import/ImportSummaryPanel";
 import { ApiError } from "../../../lib/api";
 import { errorLine, errorText } from "../../../lib/apiErrorMessage";
-import type { UploadFinishedReport } from "../../../lib/tauri";
+import type { UploadFinishedReport } from "../../../lib/desktop/upload";
 import { STAGING_LABEL, UPLOAD_LABEL } from "../importProgressState";
 import {
   filesSkippedOverRun,

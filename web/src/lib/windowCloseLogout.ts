@@ -2,7 +2,7 @@
  * Desktop only: closing the window logs out, then closes it.
  */
 import { useEffect, useRef } from "react";
-import { destroyWindow, onWindowCloseRequested } from "./tauri";
+import { destroyWindow, onWindowCloseRequested } from "./desktop/window";
 import { isTauri } from "./tauriCheck";
 
 /**

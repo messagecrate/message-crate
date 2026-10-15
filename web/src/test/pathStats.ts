@@ -1,5 +1,5 @@
+import type { PathStat, PathUnreadable } from "../lib/desktop/fs";
 import type { ImportPathStat } from "../lib/pathChecks";
-import type { PathStat, PathUnreadable } from "../lib/tauri";
 
 /**
  * What the desktop app's `path_stat` answers, for a file of 1000 bytes
