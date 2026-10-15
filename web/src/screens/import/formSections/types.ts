@@ -5,7 +5,7 @@ import type { AndroidSmsPathStats } from "../../../lib/importSources/androidSms"
 import type { ImportSourceDescriptor, OwnerPhoneState } from "../../../lib/importSources/types";
 import type { PhoneCountryChoice } from "../../../lib/phoneCountries";
 import type { WhatsappPathStats } from "../../../lib/whatsappImport";
-import type { ImportFormAction, ImportFormState, ImportPathField } from "../importForm";
+import type { ImportFormFieldAction, ImportFormState, ImportPathField } from "../importForm";
 
 /** The account's phones, as the owner phone fields read them. */
 export type ProfilePhones = {
@@ -24,7 +24,8 @@ export type ProfilePhones = {
  */
 export type ImportFormFieldsProps = {
   form: ImportFormState;
-  dispatch: Dispatch<ImportFormAction>;
+  /** Sets or toggles a field; picking a source and changing a path go through the callbacks below. */
+  dispatch: Dispatch<ImportFormFieldAction>;
   /** A source from the source list, or a method from Platform. */
   onSourceChange: (source: string) => void;
   /** A path field changed, which the form remembers for the source. */

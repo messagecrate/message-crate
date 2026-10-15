@@ -59,16 +59,20 @@ export type ImportFormState = {
 /** The path fields the form remembers: the backup, and the ones beside it. */
 export type ImportPathField = "backupPath" | ImporterExtraField;
 
+/** The fields that open, close, show or hide, which a `toggle` action flips. */
+type ToggleField = "showBackupPassword" | "showWhatsappKey" | "formatOpen" | "processingOpen";
+
 /**
  * The fields a `set` action changes. The source and the paths are left out,
  * because the screen does more than set them: it picks a source with its
  * remembered paths (`source`), and remembers a path the person changes
- * (`path`). The seeded marks are the reducer's own.
+ * (`path`). The flags `toggle` flips, and the reducer's own seeded marks,
+ * are left out too, so each field has one action that writes it.
  */
-type FormField = Exclude<keyof ImportFormState, "seeded" | "source" | ImportPathField>;
-
-/** The fields that open, close, show or hide, which a `toggle` action flips. */
-type ToggleField = "showBackupPassword" | "showWhatsappKey" | "formatOpen" | "processingOpen";
+type FormField = Exclude<
+  keyof ImportFormState,
+  "seeded" | "source" | ImportPathField | ToggleField
+>;
 
 /** The paths a source is picked with, as the remembered paths give them. */
 export type SourcePaths = Record<ImportPathField, string>;
@@ -91,6 +95,13 @@ export type ImportFormAction =
   | { type: "seed"; ownerPhones?: string[]; ownerEmails?: string; whatsappOwnerPhone?: string }
   /** A source without owner fields was picked: the next one that has them is seeded again. */
   | { type: "unseed" };
+
+/**
+ * The actions the form and its sections send. Every other action is the
+ * screen's: picking a source, setting a path it remembers, refilling a
+ * resumed run's form, and seeding from the profile.
+ */
+export type ImportFormFieldAction = Extract<ImportFormAction, { type: "set" | "toggle" }>;
 
 const NOT_SEEDED: Seeded = { ownerPhones: false, ownerEmails: false, whatsappOwnerPhone: false };
 
