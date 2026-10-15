@@ -6,7 +6,6 @@ import {
 } from "./nameCollection";
 import { keys } from "./queryKeys";
 import reservedNames from "./reservedNames.json";
-import { reservedError, reservedSet } from "./reservedSetNames";
 import { forTag } from "./searchQuery";
 import {
   createMessageTag,
@@ -15,17 +14,6 @@ import {
   updateMessageTag,
   updateMessageTagMembers,
 } from "./serverApi";
-
-/**
- * Names that must not be created as Message Tags. The server's test writes
- * them to `reservedNames.json`, and fails when the file differs from the
- * names the server refuses.
- */
-const RESERVED_TAG_NAMES = reservedSet(reservedNames.messageTag);
-
-export function reservedTagError(name: string): string {
-  return reservedError(reservedNames.messageTag, name);
-}
 
 export const messageTags = createNameCollection({
   routes: {
@@ -39,8 +27,7 @@ export const messageTags = createNameCollection({
   chips: [{ key: keys.conversations.lists, field: "tags", shape: "pages" }],
   label: "tag",
   forName: forTag,
-  reservedNames: RESERVED_TAG_NAMES,
-  reservedError: reservedTagError,
+  reserved: reservedNames.messageTag,
 });
 
 export function isReservedTagName(name: string): boolean {

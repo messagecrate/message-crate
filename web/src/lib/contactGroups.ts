@@ -5,7 +5,6 @@ import {
 } from "./nameCollection";
 import { keys } from "./queryKeys";
 import reservedNames from "./reservedNames.json";
-import { reservedError, reservedSet } from "./reservedSetNames";
 import { forGroup } from "./searchQuery";
 import {
   createContactGroup,
@@ -15,17 +14,6 @@ import {
   updateContactGroupMembers,
 } from "./serverApi";
 import { UNKNOWN_GROUP } from "./unknownGroup";
-
-/**
- * Names that must not be created as Contact Groups. The server's test writes
- * them to `reservedNames.json`, and fails when the file differs from the
- * names the server refuses.
- */
-const RESERVED_GROUP_NAMES = reservedSet(reservedNames.contactGroup);
-
-export function reservedGroupError(name: string): string {
-  return reservedError(reservedNames.contactGroup, name);
-}
 
 export const contactGroups = createNameCollection({
   routes: {
@@ -43,8 +31,7 @@ export const contactGroups = createNameCollection({
   ],
   label: "group",
   forName: forGroup,
-  reservedNames: RESERVED_GROUP_NAMES,
-  reservedError: reservedGroupError,
+  reserved: reservedNames.contactGroup,
 });
 
 export function isReservedGroupName(name: string): boolean {
