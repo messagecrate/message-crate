@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isReservedTagName, reservedTagError, tagListQuery, tagSlug } from "./messageTags";
+import { isReservedTagName, messageTags, tagListQuery, tagSlug } from "./messageTags";
 
 describe("tagSlug", () => {
   it("is the whole name, trimmed, with its spaces and letter case", () => {
@@ -11,7 +11,7 @@ describe("reserved tags", () => {
   it("blocks Threads and Tags", () => {
     expect(isReservedTagName("Threads")).toBe(true);
     expect(isReservedTagName("tag")).toBe(true);
-    expect(reservedTagError("Trash")).toBe('"Trash" is a reserved Message Tag');
+    expect(messageTags.reservedError("Trash")).toBe('"Trash" is a reserved Message Tag');
     expect(isReservedTagName("Holiday")).toBe(false);
   });
 });

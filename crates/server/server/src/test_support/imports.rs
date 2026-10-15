@@ -16,12 +16,12 @@ use super::{conversation_header, message_line};
 pub async fn import_for_account(
     conn: &mut sqlx::SqliteConnection,
     paths: &[std::path::PathBuf],
-    opts: &crate::imports_api::ImportOptions<'_>,
-) -> Result<crate::imports_api::ImportCounts, crate::imports_api::ImportError> {
+    opts: &crate::imports_api::pipeline::ImportOptions<'_>,
+) -> Result<crate::imports_api::pipeline::ImportCounts, crate::imports_api::ImportError> {
     crate::db::account_profile::create_account_row_if_missing(conn, opts.account_id)
         .await
         .map_err(crate::imports_api::ImportError::Internal)?;
-    crate::imports_api::import_jsonl_files_on_conn(conn, paths, opts).await
+    crate::imports_api::pipeline::import_jsonl_files_on_conn(conn, paths, opts).await
 }
 
 /// Import one JSON Lines text into `account_id` in append mode on `conn`, as
@@ -33,8 +33,9 @@ pub async fn import_jsonl_text(
     account_id: i64,
     source: &str,
     body: &str,
-) -> crate::imports_api::ImportCounts {
-    use crate::imports_api::{FixedImportArgs, ImportMode, ImportOptions};
+) -> crate::imports_api::pipeline::ImportCounts {
+    use crate::imports_api::pipeline::{FixedImportArgs, ImportOptions};
+    use message_crate_api_types::ImportMode;
     let tmp = TempDir::new().unwrap();
     let path = tmp.path().join("conversation.jsonl");
     std::fs::write(&path, body).unwrap();

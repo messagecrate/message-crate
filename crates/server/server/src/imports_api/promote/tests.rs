@@ -16,7 +16,7 @@ async fn import_one_message(conn: &mut SqliteConnection, dir: &std::path::Path, 
     let counts = crate::test_support::import_for_account(
         conn,
         &[path],
-        &super::super::ImportOptions::fixed(super::super::FixedImportArgs {
+        &super::super::pipeline::ImportOptions::fixed(super::super::pipeline::FixedImportArgs {
             assets_dir: &assets,
             asset_root: Some(dir),
             mode: ImportMode::Append,

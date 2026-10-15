@@ -59,8 +59,11 @@ function groupsOver(routes: NameCollectionRoutes) {
     ],
     label: "group",
     forName: (name) => `group:${name}`,
-    reservedNames: new Set(["trash"]),
-    reservedError: (name) => `${name} is reserved`,
+    reserved: {
+      label: "Contact Group",
+      reserved: ["trash"],
+      special: [{ name: "trash", message: "Trash is reserved" }],
+    },
   });
 }
 

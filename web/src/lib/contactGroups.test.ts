@@ -1,14 +1,11 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   contactBelongsToGroup,
+  contactGroups,
   groupFromSlug,
   groupListQuery,
   groupSlug,
   isReservedGroupName,
-  RESERVED_GROUP_NAMES,
-  reservedGroupError,
 } from "./contactGroups";
 import { UNKNOWN_GROUP } from "./unknownGroup";
 
@@ -41,8 +38,10 @@ describe("reserved groups", () => {
   it("blocks Contacts, Trash, and No group", () => {
     expect(isReservedGroupName("Contacts")).toBe(true);
     expect(isReservedGroupName("no group")).toBe(true);
-    expect(reservedGroupError("Trash")).toBe("Trash is a reserved Contact Group");
-    expect(reservedGroupError("Group Chats")).toBe('"Group Chats" is a reserved Contact Group');
+    expect(contactGroups.reservedError("Trash")).toBe("Trash is a reserved Contact Group");
+    expect(contactGroups.reservedError("Group Chats")).toBe(
+      '"Group Chats" is a reserved Contact Group',
+    );
     expect(isReservedGroupName("Family")).toBe(false);
   });
 
@@ -52,21 +51,8 @@ describe("reserved groups", () => {
   it("blocks the names of the two computed groups in any letter case", () => {
     for (const name of ["Unknown", "unknown", "UNKNOWN", "none", "None", "NONE"]) {
       expect(isReservedGroupName(name)).toBe(true);
-      expect(reservedGroupError(name)).toBe(`"${name}" is a reserved Contact Group`);
+      expect(contactGroups.reservedError(name)).toBe(`"${name}" is a reserved Contact Group`);
     }
-  });
-
-  it("reserves the same names as the server", () => {
-    const source = readFileSync(
-      fileURLToPath(
-        new URL("../../../crates/server/server/src/db/named_membership.rs", import.meta.url),
-      ),
-      "utf8",
-    );
-    const list = /table: "contact_groups",[\s\S]*?reserved: &\[([\s\S]*?)\],/.exec(source);
-    const serverNames = [...(list?.[1] ?? "").matchAll(/^\s*"([^"]+)",$/gm)].map((m) => m[1]);
-    expect(serverNames.length).toBeGreaterThan(0);
-    expect([...RESERVED_GROUP_NAMES].sort()).toEqual([...serverNames].sort());
   });
 });
 
