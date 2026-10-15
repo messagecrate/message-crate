@@ -93,9 +93,9 @@ describe("ContactDrawer", () => {
     post.mockResolvedValue(undefined);
     trash.mockReset();
     trash.mockResolvedValue(undefined);
-    client = // Seeded entries have no observer until the drawer opens that contact, so
-      // they must survive collection to stand in for an earlier open.
-      testQueryClient({ keepUnread: true, neverStale: true });
+    // Seeded entries have no observer until the drawer opens that contact, so
+    // they must survive collection to stand in for an earlier open.
+    client = testQueryClient({ keepUnread: true, neverStale: true });
   });
 
   it("keeps groups and avoids zero counts on first paint when switching to an uncached contact", async () => {

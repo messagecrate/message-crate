@@ -265,6 +265,8 @@ beforeEach(({ signal }) => {
   // A test that times out outside `act` has no race to take the rejection.
   testTimedOut.catch(() => {});
   service = createImportRunService(fakeDeps(importRunStore));
+  // `setProfile` writes the profile before the hook that reads it renders, so
+  // the entry is kept unread until then and served without asking again.
   queryClient = testQueryClient({ keepUnread: true, neverStale: true });
   setAccountId(auth.accountId);
 });
