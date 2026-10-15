@@ -590,3 +590,37 @@ fn a_part_whose_data_cannot_be_decoded_is_counted() {
     assert!(records[0].attachments.is_empty());
     assert_eq!(records[0].unreadable_parts, 1);
 }
+
+/// The error `parse_file_with` stops with for `xml`, written to a file.
+fn parse_file_error(xml: &str) -> (String, String) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("smses.xml");
+    std::fs::write(&path, xml).unwrap();
+    let mut stats = ParseStats::default();
+    let error = parse_file_with(&path, None, &mut stats, |_| Ok(())).unwrap_err();
+    (path.display().to_string(), format!("{error:#}"))
+}
+
+/// A file that ends inside an element is not valid XML, even where the cut
+/// falls between two elements and the XML parser itself reads to the end.
+#[test]
+fn a_file_that_ends_inside_an_element_is_not_valid_xml() {
+    let (path, error) = parse_file_error(
+        r#"<smses><sms address="+15555550101" date="1400773261000" type="1" body="hi"/><mms date="1400773400000" msg_box="1"><parts><part ct="text/plain" text="cut"/>"#,
+    );
+    assert!(
+        error.starts_with(&format!("{path} is not valid XML at byte ")),
+        "{error}"
+    );
+    assert!(error.ends_with("the file ends before </parts>"), "{error}");
+}
+
+/// A file cut off inside an attribute stops with the XML parser's reason.
+#[test]
+fn a_file_cut_off_inside_an_attribute_is_not_valid_xml() {
+    let (path, error) = parse_file_error(r#"<smses><sms date=""#);
+    assert!(
+        error.starts_with(&format!("{path} is not valid XML at byte 7: ")),
+        "{error}"
+    );
+}

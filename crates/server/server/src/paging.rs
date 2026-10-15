@@ -6,7 +6,7 @@
 
 use serde::Deserialize;
 
-use crate::server::ApiError;
+use crate::api_error::ApiError;
 
 /// Default page size for every list, an Export Run's messages included.
 pub const DEFAULT_LIST_LIMIT: usize = 40;

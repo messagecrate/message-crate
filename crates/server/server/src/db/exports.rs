@@ -11,12 +11,12 @@ use sqlx::{Executor, Row, SqliteConnection};
 
 use crate::db::begin_write;
 
+use crate::api_error::ApiError;
 use crate::db::conversation_messages::{
     Message, MessageSort, conversation_join_sql, load_messages_from, messages_from_sql,
 };
 use crate::db::sql::{SqlParam, bind_all};
 use crate::paging::{Direction, Page, PageParams, SortKey, page_from_rows};
-use crate::server::ApiError;
 
 /// Which of the three forms an Export Run's scope took, without what it
 /// asked for: the values `exports.scope_kind` holds.

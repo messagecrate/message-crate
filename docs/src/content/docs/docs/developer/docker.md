@@ -34,7 +34,7 @@ Do not run either Compose file at the same time as `./scripts/run-dev.sh`. That 
 Both files start the container with the same limits. So does every `docker run` command in the user guide that starts the server. It keeps no Linux capability (`cap_drop: [ALL]`), cannot gain one through a setuid program (`no-new-privileges`), and its root filesystem is read-only (`read_only: true`), with `/tmp` in memory for temporary files. The server writes only under `/app/data`, the data volume, so it runs under all three. A test in the server's crate fails when one of the user guide's `docker run` commands leaves out a limit.
 
 Both files also set `stop_grace_period: 40s`.
-A stopping server waits up to 30 seconds for the requests in flight, such as an import batch, and for its conversions to stop, before it stops without them (`STOP_DRAIN_LIMIT` in `crates/server/server/src/server.rs`).
+A stopping server waits up to 30 seconds for the requests in flight, such as an import batch, and for its conversions to stop, before it stops without them (`STOP_DRAIN_LIMIT` in `crates/server/server/src/startup.rs`).
 Docker's default of 10 seconds would kill it part-way, with no line in the log saying why.
 The 10 seconds more leave time for the server to write its log and exit after its own limit, so Docker never has to kill it.
 The documented `docker run` commands carry the same 40 seconds as `--stop-timeout 40`, and a test in the server's crate fails when a Compose file or one of those commands gives no more than the server's limit.

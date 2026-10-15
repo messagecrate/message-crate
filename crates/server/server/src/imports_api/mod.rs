@@ -26,16 +26,18 @@ use axum::http::HeaderMap;
 use message_crate_api_types::{ImportMode, MAX_IMPORT_BATCH_BYTES};
 use sqlx::SqliteConnection;
 
+use crate::api_error::{ApiError, run_blocking};
+use crate::auth::{ImportAccess, resolve_import_account};
 use crate::config::validate_source_id;
 use crate::extract::{Json, Path as AxumPath, Query};
 use crate::paging::{
     DEFAULT_LIST_LIMIT, Page, PageQuery, page_from_rows, page_params, parse_status, sorted_page,
 };
-use crate::server::{
-    ApiError, AppState, Created, ImportAccess, content_type_base, declared_over,
-    is_jsonl_content_type, resolve_import_account, run_blocking, stream_body_to_file,
+use crate::request_body::{
+    content_type_base, declared_over, is_jsonl_content_type, stream_body_to_file,
     upload_body_bounded,
 };
+use crate::server::{AppState, Created};
 use crate::text_caps::{
     MAX_DEVICE_ID_CHARS, MAX_IMPORT_TOOL_CHARS, MAX_PATH_CHARS, capped_path, capped_text,
     too_long_sentences,
@@ -302,7 +304,7 @@ pub(crate) async fn create_import(
     // The run and what started it land together, so a run never reads as
     // one the server started.
     let mut tx = crate::db::begin_write(&mut conn).await?;
-    crate::server::require_account_row(&mut tx, account).await?;
+    crate::auth::require_account_row(&mut tx, account).await?;
     let id = crate::db::imports::start_import(&mut tx, &args, chrono::Utc::now()).await?;
     crate::db::audit_trail::record_run_credential(
         &mut tx,

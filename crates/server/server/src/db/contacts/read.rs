@@ -8,6 +8,7 @@ use anyhow::{Context, Result as AnyResult};
 use serde::Serialize;
 use sqlx::SqliteConnection;
 
+use crate::api_error::ApiError;
 use crate::db::contacts::UNKNOWN_CONTACT_SQL;
 use crate::db::sql::{SqlParam, bind_args, in_placeholders};
 use crate::db::trash::{not_trashed_contact, not_trashed_conversation};
@@ -15,7 +16,6 @@ use crate::paging::{
     Direction, MAX_CONTACT_SUMMARY_IDS, Page, PageParams, SortKey, page_from_rows,
 };
 use crate::search::bridge::{TrashScope, contact_sent_messages};
-use crate::server::ApiError;
 
 /// Contact row for the list: name, addresses, groups.
 #[derive(Debug, Serialize, utoipa::ToSchema)]

@@ -180,7 +180,7 @@ from `100` up.
   (stored hashed; shown once when created). GUI sessions use a separate rotating
   token.
 - Four columns on `accounts` govern what a logged-in session may do, each
-  enforced by a guard in `server.rs` rather than left as decoration:
+  enforced by a guard in `auth.rs` rather than left as decoration:
   - `disabled` — may not log in; the owner disabling the account ends its
     session, so enabling it again needs a new login, and an existing API
     token for a disabled account stops working immediately.

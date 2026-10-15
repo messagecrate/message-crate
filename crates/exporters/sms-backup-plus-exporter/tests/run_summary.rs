@@ -113,6 +113,43 @@ fn a_call_log_mail_is_skipped_and_counted_in_the_summary() {
     );
 }
 
+/// SMS Backup+ backed up WhatsApp messages from 2013 to 2015, and Message
+/// Crate reads none of them: each is skipped and counted, never read as a
+/// text message of the number it names (#2912).
+#[test]
+fn a_whatsapp_mail_is_skipped_and_counted_in_the_summary() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("backup");
+    fs::create_dir_all(&input).unwrap();
+    fs::write(
+        input.join("1.eml"),
+        eml("1609459200000", "Hello from Alice"),
+    )
+    .unwrap();
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/whatsapp_mail.eml"),
+        input.join("2.eml"),
+    )
+    .unwrap();
+    let output = tmp.path().join("out");
+
+    let result = jsonl_test_run(&[&input], &output, source())
+        .run(crate::run)
+        .expect("run");
+
+    let written = assert_run_wrote_jsonl(&result, &output, 1);
+    assert!(written.contains("Hello from Alice"), "{written}");
+    assert!(!written.contains("WhatsApp message"), "{written}");
+    assert!(
+        result
+            .messages
+            .iter()
+            .any(|l| l == "  Skipped 1 WhatsApp message"),
+        "{:?}",
+        result.messages
+    );
+}
+
 /// A received group MMS whose `From` names nobody in the group is written
 /// with no sender, and the summary and the Import Run's issues count it once,
 /// even when the archive holds two copies of the mail.

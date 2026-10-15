@@ -542,7 +542,7 @@ the drift the one-shape rule exists to stop.
 A handler that panics answers the same `500 Internal Server Error` problem
 document, with its `request_id`, as any other internal failure: the
 innermost layer of the router catches the panic (`answer_panic` in
-`crates/server/server/src/server.rs`), so every layer outside it, CORS and
+`crates/server/server/src/middleware.rs`), so every layer outside it, CORS and
 the request's log line included, treats the answer as it treats any `500`.
 Why: an uncaught panic closed the connection with no answer, so the person
 saw a network error with no id to report
@@ -595,7 +595,7 @@ it is not a `4xx`.
 A request that reaches a busy database answers `database-busy`, with a
 `Retry-After` of 5 seconds, wherever in the request the database refused it:
 the error's chain is searched for sqlx's `PoolTimedOut` or a SQLite
-`SQLITE_BUSY` (`is_database_busy` in `crates/server/server/src/server.rs`),
+`SQLITE_BUSY` (`is_database_busy` in `crates/server/server/src/api_error.rs`),
 so no handler has to map it. The refusal leaves one `WARN` line naming the
 type and carrying the chain, and no `ERROR` line
 ([The server's log](server-log.md#a-refused-request-names-its-problem-type)).
@@ -644,7 +644,7 @@ whole batch more
 
 The stop then waits for the requests in flight, every route alike, and for
 the stop of a Demo Account build and of the Thumbnail and Preview pass, for
-up to 30 seconds (`STOP_DRAIN_LIMIT` in `crates/server/server/src/server.rs`).
+up to 30 seconds (`STOP_DRAIN_LIMIT` in `crates/server/server/src/startup.rs`).
 A request still running then is cut off, and the server exits after one
 `WARN` line naming each such request by its id, method and path
 (`crate::in_flight` tracks every request until its answer's body is sent).
@@ -690,7 +690,7 @@ longer read once the upload time limits pass. In detail:
   (`upload-stalled`). An import batch, an attachment and a part of one hold
   their bodies to the limits themselves, from when they start reading. The
   layers hold every other body from when the request arrives
-  (`limit_request_body` in `crates/server/server/src/server.rs`). Why the uploads start their own
+  (`limit_request_body` in `crates/server/server/src/middleware.rs`). Why the uploads start their own
   clock: an import batch waits for an import slot before it reads, and a
   clock started on arrival would count that wait against its body.
 
@@ -767,9 +767,10 @@ from storing an answer to a request that sent `Authorization`, and a browser
 does not cache a `POST` by default, but a browser's own cache may still write
 a `GET` answer to disk, and a proxy that does not follow the RFC may keep
 one. `no-store` says in the answer itself that nothing may keep it.
-How: one layer in `server.rs` wraps the whole router, so a route added later
-is covered without remembering to, and it sets the header only when the
-answer has none. The OpenAPI document states the rule once, in its
+How: `with_server_layers` in `server.rs` puts one layer,
+`no_store_unless_set` in `middleware.rs`, around the whole router, so a route
+added later is covered without remembering to. The layer sets the header only
+when the answer has none. The OpenAPI document states the rule once, in its
 description, as it does for `405 Method Not Allowed`, and the walk over every
 operation checks it (see [The reference](#the-reference)).
 
@@ -798,7 +799,7 @@ components set `style` attributes. `connect-src`, `img-src` and `media-src`
 allow other hosts over `http:` and `https:`, because the login card's
 **Change server address** points the website at another server, and allow
 `blob:` and `data:`, the attachment and image URLs the website makes itself.
-The policy is `CONTENT_SECURITY_POLICY` in `server.rs`, and the desktop
+The policy is `CONTENT_SECURITY_POLICY` in `middleware.rs`, and the desktop
 window's own policy in `src-tauri/tauri.conf.json` follows the same lines.
 Why: the website keeps the Session token in browser storage, and a cookie is
 not an option (see [Credentials and reach](#credentials-and-reach)), so any

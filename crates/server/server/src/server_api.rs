@@ -25,10 +25,12 @@ use serde::{Deserialize, Serialize};
 pub(crate) mod log_files;
 pub(crate) mod log_lines;
 
+use crate::api_error::{ApiError, run_blocking};
+use crate::auth::Owner;
 use crate::db::demo_account_build::DemoDataSize;
 use crate::db::{account_profile, server_settings, storage};
 use crate::extract::Json;
-use crate::server::{ApiError, AppState, Created, Owner, run_blocking};
+use crate::server::{AppState, Created};
 
 /// Run `read`, a blocking read of the server's log files, off the async
 /// threads, and answer an I/O failure as a `500 Internal Server Error` with `what` as
@@ -217,7 +219,7 @@ pub async fn claim_server(
         &mut tx,
         account_profile::OWNER_ACCOUNT_ID,
         &username,
-        crate::server::connecting_app(&headers).as_ref(),
+        crate::auth::connecting_app(&headers).as_ref(),
         now,
     )
     .await

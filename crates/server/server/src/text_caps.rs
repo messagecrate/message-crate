@@ -16,7 +16,7 @@
 //! checks it with [`required_capped_text`], so that refusal has one wording
 //! too, `"<field> required"`.
 
-use crate::server::ApiError;
+use crate::api_error::ApiError;
 
 /// Most characters in a name a person types: an account's display name and a
 /// contact's name.

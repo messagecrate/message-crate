@@ -10,13 +10,14 @@ use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 
+use crate::api_error::ApiError;
+use crate::auth::{FullAccess, refuse_for_demo_account};
 use crate::db::address_book::{self, LoadCounts, LoadError, LoadMode};
 use crate::db::audit_trail::{self, AuditAction, AuditActor, Details};
 use crate::db::contacts::read::contact_ids_matching;
 use crate::extract::{Json, Query};
-use crate::server::{
-    ApiError, AppState, FullAccess, content_type_base, read_body_limited, refuse_for_demo_account,
-};
+use crate::request_body::{content_type_base, read_body_limited};
+use crate::server::AppState;
 
 /// What an address book load changed.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -66,7 +67,7 @@ impl From<LoadCounts> for CreateContactsResponse {
 /// thousands of identities, and the whole file is read into memory before
 /// parsing. The route reads the body itself against this cap, as the asset
 /// routes do, and not through `crate::extract::Json`, whose cap is
-/// [`crate::server::MAX_JSON_BODY_BYTES`].
+/// [`crate::limits::MAX_JSON_BODY_BYTES`].
 pub(crate) const MAX_ADDRESS_BOOK_BYTES: usize = 8 * 1024 * 1024;
 
 /// The file name Export gives the address book.

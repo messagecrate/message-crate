@@ -337,7 +337,7 @@ pub(super) async fn whole_demo_account_or_none(
         Err(error) => {
             if let Err(error) = remove_failed_demo_build(cfg, db).await {
                 tracing::warn!(
-                    error = %crate::server::error_chain(&error),
+                    error = %crate::api_error::error_chain(&error),
                     "The partly built Demo Account could not be removed"
                 );
             }

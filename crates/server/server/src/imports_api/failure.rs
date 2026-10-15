@@ -4,7 +4,7 @@
 //! [`ImportError`] is what the import pipeline returns: one of those, or an
 //! internal failure (I/O or the database) the sender cannot fix by changing
 //! the file. The HTTP interface maps each kind to a status once, in
-//! `server.rs`, and no handler picks a status from an `anyhow` error.
+//! `api_error.rs`, and no handler picks a status from an `anyhow` error.
 //! Nothing here looks inside an `anyhow` error for a kind: each stage's
 //! error type keeps the two apart from the line that raises them.
 

@@ -711,7 +711,7 @@ async fn run_serve(args: ServeArgs) -> Result<()> {
     let exit_with_parent = args.exit_with_parent;
     let cfg = serve_config(args)?;
     let _ = cfg.require_server()?;
-    crate::server::run(cfg, exit_with_parent).await
+    crate::startup::run(cfg, exit_with_parent).await
 }
 
 /// The config `serve` runs on: the directory `--data-dir` names, or else the
@@ -767,7 +767,7 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
     let stopper = crate::request_id::spawn_in_current_span({
         let stop = Arc::clone(&stop);
         async move {
-            crate::server::stop_requested().await;
+            crate::startup::stop_requested().await;
             eprintln!(
                 "process-assets is stopping. The Preview or Thumbnail being made is stopped and its part-made file removed"
             );
@@ -775,7 +775,7 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
             // The handlers stay installed, so without this a second Ctrl-C
             // would do nothing. It ends the command at once, with 130, the
             // status a shell gives a command Ctrl-C ended (128 + SIGINT).
-            crate::server::stop_requested().await;
+            crate::startup::stop_requested().await;
             std::process::exit(130);
         }
     });
