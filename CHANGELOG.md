@@ -22,6 +22,11 @@ carry their date on the heading.
 
 ### Features
 
+- 2026-10-15: **A WhatsApp group event shows in the conversation.** When a
+  member joined or left a group, or someone renamed it or changed its
+  picture, the conversation now shows a line saying so, such as "Ada joined
+  the group", as it does for an Apple Messages group. An event the backup
+  does not say the kind of is imported as before, without that line (#2038).
 - 2026-10-15: **The login card says when the password would cross the
   network unencrypted.** Opened over plain HTTP from another computer, such
   as at `http://192.168.1.20:8080`, the login card and Create Owner now say

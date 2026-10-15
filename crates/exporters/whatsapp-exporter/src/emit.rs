@@ -6,15 +6,16 @@ use crate::jid::{
     phone_id_to_e164,
 };
 use crate::parse::{
-    ChatJson, MemberJson, MessageJson, ReactionJson, is_reply, key_string, load_chat_store,
-    media_path, message_text, timestamp_ms, timestamp_secs,
+    ChatJson, MemberJson, MessageJson, ReactionJson, group_action, is_reply, key_string,
+    load_chat_store, media_path, message_text, timestamp_ms, timestamp_secs,
 };
 use anyhow::{Context, Result};
 use message_crate_core::{ConvertRun, Counter, ExportReport, project_conversation};
 use message_csv::format_local_ts;
 use message_ir::{
-    ExportMeta, IdentityType, IrAttachment, IrParticipant, IrService, IrSource, PendingAttachment,
-    PendingConversation, PendingMessage, PendingReply, ProjectionHooks, Reaction, SortKeyUnit,
+    ExportMeta, IdentityType, IrAttachment, IrMessageKind, IrParticipant, IrService, IrSource,
+    PendingAttachment, PendingConversation, PendingMessage, PendingReply, ProjectionHooks,
+    Reaction, SortKeyUnit,
 };
 use message_staging::{AttachmentSource, ExportWriter};
 use serde_json::Map;
@@ -234,7 +235,10 @@ fn ingest_chat(
             (chat_id.clone(), chat_name.clone())
         };
 
-        let text = message_text(message);
+        // A group event the fork gives a text is an announcement with that
+        // text; its `data` is the backup's raw row (#2038).
+        let announcement = group_action(message);
+        let text = announcement.map_or_else(|| message_text(message), str::to_string);
         let (attachments, media_source) = match media_path(message) {
             Some(src) => queue_media(
                 src,
@@ -261,6 +265,16 @@ fn ingest_chat(
                     "full_key_id".into(),
                     key_string(message.full_key_id.as_ref()).unwrap_or_default(),
                 );
+                if announcement.is_some() {
+                    e.insert("is_announcement".into(), "true".into());
+                }
+                if let Some(named) = message
+                    .group_action_jid
+                    .as_deref()
+                    .and_then(message_ir::trimmed)
+                {
+                    e.insert("group_action_jid".into(), named.to_string());
+                }
                 if is_reply(message) {
                     e.insert("is_reply".into(), "true".into());
                 }
@@ -641,6 +655,19 @@ impl ProjectionHooks for WhatsappProjection {
         SortKeyUnit::Milliseconds
     }
 
+    /// [`IrMessageKind::Announcement`] for a group event with the fork's
+    /// text, which the server marks as an announcement; otherwise the
+    /// default.
+    fn message_kind(&self, message: &PendingMessage) -> IrMessageKind {
+        if message.extra_flag("is_announcement") {
+            IrMessageKind::Announcement
+        } else if message.attachments.is_empty() {
+            IrMessageKind::Sms
+        } else {
+            IrMessageKind::Mms
+        }
+    }
+
     /// Same-millisecond rows fall back to `key_id` so output order is stable.
     fn message_order(&self, a: &PendingMessage, b: &PendingMessage) -> std::cmp::Ordering {
         a.sort_key
@@ -718,7 +745,8 @@ impl ProjectionHooks for WhatsappProjection {
         Some("__whatsapp".into())
     }
 
-    /// The chat's `jid` and the message's `key_id`: raw values the
+    /// The chat's `jid`, the message's `key_id` and, on a group event, the
+    /// `group_action_jid` of the member its text names: raw values the
     /// conversation model has no place for. A reply is not copied here,
     /// because `reply_to` records it on the message. A reply whose quoted
     /// message is not in the export keeps no quoted id: `reply_to` names
@@ -740,6 +768,13 @@ impl ProjectionHooks for WhatsappProjection {
             fields.insert(
                 "key_id".into(),
                 serde_json::Value::String(key_id.to_string()),
+            );
+        }
+        let named = message.extra_str("group_action_jid");
+        if !named.is_empty() {
+            fields.insert(
+                "group_action_jid".into(),
+                serde_json::Value::String(named.to_string()),
             );
         }
         IrSource {
