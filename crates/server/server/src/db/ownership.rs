@@ -3,8 +3,8 @@
 //! Every route that takes a row id from the path has to decide between 404
 //! and going ahead, and the decision is the same one each time: the row
 //! exists *and* its `account_id` is the caller's. Asking it here rather than
-//! inline keeps the two cases — an id that does not exist, and another
-//! account's id — indistinguishable from outside, which is what makes them
+//! inline keeps the two cases (an id that does not exist, and another
+//! account's id) indistinguishable from outside, which is what makes them
 //! both a 404 rather than one a 404 and the other a 403.
 
 use anyhow::Context as _;

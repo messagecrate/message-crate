@@ -4,15 +4,15 @@
 //! it points at is untouched until [`delete_trashed`] or [`empty_trash`]
 //! removes it for good (or [`purge_account`] and account deletion clear the
 //! markers along with everything else). Both marker operations first check
-//! that the target row belongs to `account_id` — explicitly, through
-//! [`crate::db::ownership`], rather than inferring ownership from whether an
+//! explicitly, through [`crate::db::ownership`], that the target row belongs
+//! to `account_id`, rather than inferring ownership from whether an
 //! insert or delete affected a row. That is what lets [`restore`] tell "not
 //! this account's id" (`false`) apart from "this account's id, and it was not
 //! trashed" (`true`, a no-op): a `DELETE` that matches zero rows looks
 //! identical in both cases.
 //!
 //! Trashing something already trashed, and restoring something not trashed,
-//! both return `true` — these operations are idempotent, per the HTTP routes
+//! both return `true`. These operations are idempotent, per the HTTP routes
 //! built on top of them.
 //!
 //! A conversation and a contact are trashed the same way, so one pair of
@@ -31,7 +31,7 @@
 //! A conversation is deleted outright: the row goes and the schema's cascades
 //! take its messages, attachments, tapbacks, participants and tag memberships
 //! with it. A contact is not deleted: deleting a trashed contact does what a
-//! phone's Delete Contact does — the name and the person's edits go, the row
+//! phone's Delete Contact does. The name and the person's edits go, the row
 //! stays as an Unknown contact holding the same handles, and every
 //! conversation it was in is untouched and now shows the handle. The two are
 //! still one operation to the caller ("Delete" on a trash row), so they share
@@ -40,8 +40,8 @@
 //! An import is the other way out of the trash. When it meets a handle that
 //! belongs to a trashed contact, it makes a fresh contact from the backup, as
 //! a first import would, moves that handle to it, and
-//! [`discard_trashed_contact`] deletes the trashed contact outright — row,
-//! Contact Group memberships and marker — after taking off each handle it
+//! [`discard_trashed_contact`] deletes the trashed contact outright (row,
+//! Contact Group memberships and marker) after taking off each handle it
 //! still held, so one in a conversation goes to a new contact with no name
 //! (ADR-0013). A backup that still holds
 //! the person is the person saying they still talk to them.
@@ -286,8 +286,8 @@ pub enum DeleteOutcome {
 ///
 /// Attachments are stored by content hash under
 /// `data_dir/<account>/<assets_dir>/`, one directory for every source of the
-/// account, and several messages — in one conversation or across many, from
-/// one source or several — can point at the same file. A file is therefore
+/// account, and several messages (in one conversation or across many, from
+/// one source or several) can point at the same file. A file is therefore
 /// reported here only after the delete has run and a lookup for the same
 /// sha256 finds no attachment of the account left, from any source, in the
 /// promoted tables or in staging. An original's path is relative to the
@@ -603,8 +603,8 @@ async fn original_is_referenced(
 /// and its trash marker goes. The row keeps its origin, because `origin`
 /// records what made the row and an import names a nameless contact
 /// whatever made it. The handles stay linked, so the conversations the
-/// person was in keep showing them as one participant — by handle now, since
-/// the name is blank. Their `last_modified` is set to `now`.
+/// person was in keep showing them as one participant. They show by handle
+/// now, since the name is blank. Their `last_modified` is set to `now`.
 async fn forget_contacts(
     conn: &mut SqliteConnection,
     account_id: i64,

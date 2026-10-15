@@ -732,7 +732,7 @@ async fn not_running(
 /// Records `cancelled` at the instant `now` with `issues`, the Import Errors
 /// the run recorded before it was given up, and its `notes`, and clears
 /// `stage`, which frees the account's single active slot. Nothing reclaims a
-/// run on a timer — a run is broken by an explicit discard or not at all.
+/// run on a timer. A run is broken by an explicit discard or not at all.
 /// The caller passes the instant, so a test names it rather than reading
 /// the clock.
 ///

@@ -494,7 +494,7 @@ pub(crate) async fn get_health(
 
 /// Build the `AppState` every test in this crate drives: a real `Config`
 /// rooted at `data_dir` (with a sibling `messagecrate.db` path that nothing in the
-/// test suite reads from disk — queries go through `pool`), the given pool,
+/// test suite reads from disk, since queries go through `pool`), the given pool,
 /// and the default part size. Goes through [`AppState::new`], the same
 /// assembly `serve` uses. `#[cfg(test)]`-gated so it never ships in a release
 /// build; `pub(crate)` so `test_support` and the other test modules in this

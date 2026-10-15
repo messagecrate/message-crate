@@ -2,11 +2,10 @@
 //!
 //! Every exporter but Apple Messages builds its documents here (the
 //! [`ProjectionHooks`] documentation says why Apple Messages does not). The
-//! skeleton —
-//! participants with the single-peer fallback, owner sender handling,
-//! sent/received tallying, the dedupe step, GUID derivation, linking each
-//! reply to the message it quotes, and document assembly — lives here once;
-//! the genuine per-exporter deltas (vendor `source` fields, service
+//! skeleton lives here once: participants with the single-peer fallback,
+//! owner sender handling, sent/received tallying, the dedupe step, GUID
+//! derivation, linking each reply to the message it quotes, and document
+//! assembly. The genuine per-exporter deltas (vendor `source` fields, service
 //! selection, attachment digests and vendor keys, reply keys, reactions,
 //! attachment mapping) are supplied through [`ProjectionHooks`].
 
@@ -265,7 +264,7 @@ struct Prepared {
 /// The skeleton shared by every exporter: participants (with the single-peer
 /// chat-id fallback), the owner sender for outgoing rows, one copy kept per
 /// message ([`one_copy_per_message`]), a [`MessageGuid`] per message, and
-/// document assembly. Timestamps must already be representable — run
+/// document assembly. Timestamps must already be representable. Run
 /// [`prepare_conversation`] (or an equivalent prune) first.
 ///
 /// Returns the document and a [`ProjectionTally`] for the caller to fold into
@@ -525,8 +524,8 @@ pub fn default_participants(
     {
         if crate::name_of_chat_id(chat_id).is_some() {
             // The source named this person and recorded no address for them,
-            // so the chat id is made from the name — not something to store
-            // as an identity.
+            // so the chat id is made from the name. That chat id is not
+            // something to store as an identity.
             participants.push(Participant {
                 identity: None,
                 display_name: conversation.first_contact_name(),

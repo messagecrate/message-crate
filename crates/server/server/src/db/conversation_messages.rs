@@ -6,8 +6,8 @@
 //! reads them from the same definition rather than a hand-written mirror.
 //!
 //! `load_messages` takes an already-compiled `WHERE` fragment and its bound
-//! params, so the caller decides what selects the rows — a search query, a
-//! conversation id — while this module owns only the row shape and how it is
+//! params, so the caller decides what selects the rows (a search query, a
+//! conversation id), while this module owns only the row shape and how it is
 //! assembled. The counts and `WHERE` fragments those callers page with live
 //! here too: the count a search's matches make, a conversation's page, and
 //! the fragment an Export Run's `selection` scope adds.
@@ -969,10 +969,10 @@ fn window_sides(
 
 /// One page of a conversation's messages, in the order `order` names, at the
 /// place `window` names: `page.limit` messages, starting at `page.offset`
-/// for [`MessageWindow::Offset`]. `None` when the conversation does not exist or
-/// belongs to another account — checked before the message query runs, so an
-/// unknown id and another account's conversation id are indistinguishable
-/// from the outside, the same guarantee
+/// for [`MessageWindow::Offset`]. `None` when the conversation does not
+/// exist or belongs to another account. That is checked before the message
+/// query runs, so an unknown id and another account's conversation id are
+/// indistinguishable from the outside, the same guarantee
 /// [`get_conversation_summary`](crate::db::conversations::get_conversation_summary)
 /// gives.
 ///

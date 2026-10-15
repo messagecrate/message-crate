@@ -460,8 +460,8 @@ pub(crate) use crate::mime::Kind;
 ///
 /// Every non-temp file [`classify`] recognizes, recursively, sorted so two
 /// runs enumerate in the same order. A symlink is skipped and never followed,
-/// so nothing outside `root` is listed. Callers hand the result — or a subset of
-/// it — to [`process_attachment_files`].
+/// so nothing outside `root` is listed. Callers hand the result, or a subset of
+/// it, to [`process_attachment_files`].
 ///
 /// # Errors
 ///
@@ -500,8 +500,8 @@ fn remove_msgmedia_temps(root: &Path) -> Result<()> {
 /// `temp_sibling`), not a stem prefix, and scoped to `path`'s own kind: a
 /// given kind only ever writes one scratch extension (`jpg` for images,
 /// `mp3` for audio, `mp4` for video). Precision here matters because two
-/// source files can share a stem — an iOS Live Photo's `IMG_0001.HEIC` and
-/// `IMG_0001.MOV`, for instance — and a coarser, stem-only match would delete
+/// source files can share a stem (an iOS Live Photo's `IMG_0001.HEIC` and
+/// `IMG_0001.MOV`, for instance), and a coarser, stem-only match would delete
 /// one file's in-flight scratch while converting the other.
 ///
 /// `path` itself can never be swept: `classify` treats a `.msgmedia.tmp.`
@@ -616,7 +616,7 @@ struct Asked<'a> {
 /// Run the media step over one file, committing however `commit` says.
 ///
 /// Returns the produced path, or `None` when the media step leaves this file
-/// alone — either because the mode does not touch it, or because a same-format
+/// alone, either because the mode does not touch it, or because a same-format
 /// re-encode came out no smaller. A format change keeps the derivative even
 /// when it is larger, because the person chose the target format.
 fn run_one(
@@ -726,7 +726,7 @@ pub enum TranscodeOutcome {
 ///
 /// Stats `src` for the two size floors (compress-mode same-format JPEG/MP3).
 /// When `src` may not exist on disk, use [`derivative_name_for_missing`]
-/// instead — a stat failure here silently reads as size 0, which is under
+/// instead. A stat failure here silently reads as size 0, which is under
 /// both floors and answers `None`, the wrong answer for "is there a
 /// candidate name to look for", not "is this live file worth touching".
 #[must_use]
@@ -736,8 +736,8 @@ pub fn derivative_name(src: &Path, mode: MediaMode) -> Option<String> {
     })
 }
 
-/// Same decision tree as [`derivative_name`], but never stats `src` — for a
-/// recorded path already known to be missing from disk.
+/// Same decision tree as [`derivative_name`], but never stats `src`. It is
+/// for a recorded path already known to be missing from disk.
 ///
 /// The two size floors exist to skip a small file that is still there to
 /// measure; a missing file's size is unknowable and irrelevant to the
@@ -911,7 +911,7 @@ fn transcode_as(
 /// is the same: callers must refresh digests after an in-place rewrite.
 fn changed(output_dir: &Path, old_rel: &str, new_path: &Path) -> Result<Outcome> {
     let new_rel = rel_path(output_dir, new_path)?;
-    // Always report Changed — even when the relative path is unchanged (e.g. JPG
+    // Always report Changed, even when the relative path is unchanged (e.g. JPG
     // recompressed in place). Callers must invalidate digest_sha256 for remapped
     // paths; treating same-path rewrites as Skipped left stale fingerprints in
     // JSON Lines files and caused message-crate-import sha256 mismatches after upload.
@@ -976,8 +976,8 @@ fn commit_produced(commit: Commit<'_>, original: &Path, produced: &Path) -> Resu
                 // exists until the caller has patched whatever points at the
                 // original and renamed this derivative into place itself.
                 // A destination equal to the original would
-                // overwrite it here, before any of that has happened — for
-                // example `derivative_name` returning the source's own name
+                // overwrite it here, before any of that has happened. For
+                // example, `derivative_name` returning the source's own name
                 // (a same-format compress) joined onto the source's directory
                 // without a caller-added suffix like `.in_progress`.
                 bail!(

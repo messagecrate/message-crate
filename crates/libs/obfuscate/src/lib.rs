@@ -327,7 +327,7 @@ fn shape_preserving_filler(raw: &str, digest: &[u8; 32], digest_offset: usize) -
         } else {
             // Non-ASCII alphabetic (CJK, Cyrillic, accented Latin, Arabic,
             // etc.), emoji, symbols, combining marks, zero-width characters,
-            // and anything else — replace with a deterministic ASCII letter
+            // and anything else: replace with a deterministic ASCII letter
             // so nothing identifiable leaks through.
             let b = digest[i % digest.len()];
             i += 1;

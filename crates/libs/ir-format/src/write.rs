@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 /// Unified CSV columns for every exporter (IR v4 projection).
 ///
 /// Apple-only cells are empty for non-iMessage sources. Legacy names
-/// (`date_ms`, `contact_name`, `xml_fields_json`) are gone — use
+/// (`date_ms`, `contact_name`, `xml_fields_json`) are gone. Use
 /// `timestamp_unix_ms`, `sender_display_name`, and `source_fields_json`.
 pub const CSV_HEADERS: &[&str] = &[
     "chat_identifier",

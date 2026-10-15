@@ -812,7 +812,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * One conversation, in the same shape a list row already has — so a caller that opens a conversation from a list does not have to convert between two shapes, and paging through the whole list to find one id is never necessary.
+         * One conversation, in the same shape a list row already has, so a caller that opens a conversation from a list does not have to convert between two shapes, and paging through the whole list to find one id is never necessary.
          * @description Trash is a property the list applies, not a bar to reading: a trashed conversation still answers here.
          */
         get: operations["get_conversation"];
@@ -2474,7 +2474,7 @@ export interface components {
             id: number;
             /** @description User-chosen label. */
             label: string;
-            /** @description Plaintext secret — returned once at creation. */
+            /** @description Plaintext secret, returned once at creation. */
             token: string;
             /** @description Masked form for the Settings list (also persisted). */
             token_hint: string;
@@ -3528,7 +3528,7 @@ export interface components {
         };
         /** @description Body for `POST /v1/contacts/unmatched-identities`. */
         ListUnmatchedIdentitiesRequest: {
-            /** @description Raw identifiers — phone numbers, emails — as they appear in an export. */
+            /** @description Raw identifiers (phone numbers, emails) as they appear in an export. */
             identifiers: string[];
         };
         /**
@@ -5243,8 +5243,8 @@ export interface components {
         Participant: {
             /**
              * Format: int64
-             * @description Linked contact id: when the identity is on a Contact, or — for a
-             *     participant with no identity — the contact the server bound the name to
+             * @description Linked contact id: when the identity is on a Contact, or, for a
+             *     participant with no identity, the contact the server bound the name to
              *     directly, since that is the only place the link is recorded for
              *     them. Matches the `id` every other contact shape uses, so a caller
              *     can compare the two without converting either.
@@ -5257,7 +5257,7 @@ export interface components {
              */
             identity: string | null;
             /**
-             * @description What to show for this person. Never empty — the server falls back to
+             * @description What to show for this person. Never empty: the server falls back to
              *     the identity when nothing else names them, and to the name alone for
              *     someone a backup named without recording any address.
              */
@@ -5794,7 +5794,7 @@ export interface components {
              *     Recorded here rather than at completion so an approval survives a
              *     reload: the summary shown at a Review is recomputed from the directory, but
              *     what was approved is a different question and only the run
-             *     remembers it. Absent leaves the stored `summary_json` untouched —
+             *     remembers it. Absent leaves the stored `summary_json` untouched, because
              *     most stage changes carry nothing, and treating absent as null would
              *     throw away the plan the outcome is later judged against.
              */

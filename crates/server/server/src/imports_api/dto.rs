@@ -646,7 +646,7 @@ pub(crate) struct UpdateImportRequest {
     /// Recorded here rather than at completion so an approval survives a
     /// reload: the summary shown at a Review is recomputed from the directory, but
     /// what was approved is a different question and only the run
-    /// remembers it. Absent leaves the stored `summary_json` untouched —
+    /// remembers it. Absent leaves the stored `summary_json` untouched, because
     /// most stage changes carry nothing, and treating absent as null would
     /// throw away the plan the outcome is later judged against.
     #[serde(default)]

@@ -328,8 +328,8 @@ impl InstalledTools {
     }
 
     /// Where ffprobe is, or a named "ffprobe not found…" error when it
-    /// cannot be resolved anywhere this looks — deliberately, rather than
-    /// falling back to a bare `ffprobe` command name: a bare name that then
+    /// cannot be resolved anywhere this looks. It deliberately does not fall
+    /// back to a bare `ffprobe` command name, because a bare name that then
     /// fails to spawn surfaces as an IO error pointing at the *input file*
     /// ("No such file or directory"), which reads as a problem with the
     /// user's file rather than a missing tool.

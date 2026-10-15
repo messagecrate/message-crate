@@ -165,7 +165,7 @@ fn emit_expr(ctx: &ListCtx, out: &mut Sql, expr: &Expr) -> Result<(), QueryError
 }
 
 /// A contains-or-prefix pattern against `column`, case-insensitive. A prefix means "a word starts with this", so it matches at the
-/// start of the column or just after a space — never only at the very
+/// start of the column or just after a space, never only at the very
 /// start, which would make `avoc*` find less than `avoc`. Anything else, a
 /// phrase included, is an ordinary substring.
 ///
@@ -529,7 +529,7 @@ fn emit_text_word(
                 "NOT EXISTS (SELECT 1 FROM participants p JOIN handles h ON h.id = p.handle_id WHERE p.conversation_id = c.id AND h.handle_type <> 'other')",
             ),
             // The true complement of `none`: some participant has an
-            // address. Never `1=1` — a conversation can hold only people the
+            // address. Never `1=1`, because a conversation can hold only people the
             // source named with no address (see `named_participant` in the
             // fixture), whose identities are of type `other`, and `any` must
             // not match those.

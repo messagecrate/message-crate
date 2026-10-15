@@ -196,7 +196,7 @@ pub(crate) const MAX_MATCH_IDENTIFIERS: usize = 500;
 /// Body for `POST /v1/contacts/unmatched-identities`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct ListUnmatchedIdentitiesRequest {
-    /// Raw identifiers — phone numbers, emails — as they appear in an export.
+    /// Raw identifiers (phone numbers, emails) as they appear in an export.
     identifiers: Vec<String>,
 }
 

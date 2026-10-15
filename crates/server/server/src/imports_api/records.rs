@@ -38,7 +38,7 @@ pub struct ConversationRecord {
     pub group_title: Option<String>,
     /// Participants of the conversation.
     pub participants: Vec<ParticipantRecord>,
-    /// IR `export.source` — used as `messages.source` for directory import.
+    /// IR `export.source`, used as `messages.source` for directory import.
     pub export_source: Option<String>,
     /// When the backup the file was read from was made, in the form a
     /// message's timestamp takes; `None` when the file does not say.
