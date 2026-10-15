@@ -26,7 +26,7 @@
 
 use std::collections::HashSet;
 use std::fs;
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::Path;
 use std::time::Duration;
 
@@ -98,14 +98,13 @@ pub(crate) async fn check() -> Outcome {
 }
 
 /// Ask `/health` at each address in turn, and pass on the first that answers
-/// with a success status. `addresses` is `host:port`, with an IPv6 host in
-/// brackets.
-pub(crate) async fn probe(addresses: &[String]) -> Outcome {
+/// with a success status.
+pub(crate) async fn probe(addresses: &[SocketAddr]) -> Outcome {
     let each = PROBE_BUDGET / u32::try_from(addresses.len().max(1)).unwrap_or(u32::MAX);
     let mut failures = Vec::new();
     for address in addresses {
         let url = format!("http://{address}/health");
-        match tokio::time::timeout(each, get_health(address)).await {
+        match tokio::time::timeout(each, get_health(*address)).await {
             Ok(Ok(status)) if status.is_success() => {
                 return Outcome::healthy(format!("{url} answered {}", status.as_u16()));
             }
@@ -119,13 +118,13 @@ pub(crate) async fn probe(addresses: &[String]) -> Outcome {
 
 /// `GET /health` at `address` over one HTTP/1.1 connection, and the status
 /// it answered.
-async fn get_health(address: &str) -> anyhow::Result<hyper::StatusCode> {
-    let stream = tokio::net::TcpStream::connect(address.replace(['[', ']'], "")).await?;
+async fn get_health(address: SocketAddr) -> anyhow::Result<hyper::StatusCode> {
+    let stream = tokio::net::TcpStream::connect(address).await?;
     let (mut sender, connection) =
         hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
     let driver = crate::request_id::spawn_in_current_span(connection);
     let request = hyper::Request::get("/health")
-        .header(hyper::header::HOST, address)
+        .header(hyper::header::HOST, address.to_string())
         .body(Empty::<Bytes>::new())?;
     let response = sender.send_request(request).await;
     driver.abort();
@@ -193,7 +192,7 @@ fn socket_inodes(process: &Path) -> HashSet<String> {
 
 /// The addresses to ask for the first socket the process at `process` listens
 /// on, read from its `net/tcp` and `net/tcp6`.
-fn listen_addresses(process: &Path) -> Vec<String> {
+fn listen_addresses(process: &Path) -> Vec<SocketAddr> {
     let inodes = socket_inodes(process);
     for table in ["tcp", "tcp6"] {
         let Ok(text) = fs::read_to_string(process.join("net").join(table)) else {
@@ -208,7 +207,7 @@ fn listen_addresses(process: &Path) -> Vec<String> {
 
 /// For each row of a `/proc/net/tcp` or `tcp6` table that listens on a socket
 /// in `inodes`, the addresses to ask, in the table's order.
-fn listening_in(table: &str, inodes: &HashSet<String>) -> Vec<Vec<String>> {
+fn listening_in(table: &str, inodes: &HashSet<String>) -> Vec<Vec<SocketAddr>> {
     table
         .lines()
         .skip(1)
@@ -223,7 +222,7 @@ fn listening_in(table: &str, inodes: &HashSet<String>) -> Vec<Vec<String>> {
             Some(
                 hosts
                     .into_iter()
-                    .map(|host| format!("{host}:{port}"))
+                    .map(|host| SocketAddr::new(host, port))
                     .collect(),
             )
         })
@@ -234,7 +233,7 @@ fn listening_in(table: &str, inodes: &HashSet<String>) -> Vec<Vec<String>> {
 /// order: hex 32-bit words in the host's byte order. A dual-stack socket on
 /// the IPv6 wildcard answers on 127.0.0.1 too, and ::1 does not exist when the
 /// container has IPv6 turned off, so 127.0.0.1 is asked first.
-fn hosts_of(hex: &str) -> Option<Vec<String>> {
+fn hosts_of(hex: &str) -> Option<Vec<IpAddr>> {
     let mut bytes = Vec::with_capacity(16);
     for i in (0..hex.len()).step_by(8) {
         let word = u32::from_str_radix(hex.get(i..i + 8)?, 16).ok()?;
@@ -247,16 +246,19 @@ fn hosts_of(hex: &str) -> Option<Vec<String>> {
         } else {
             v4
         };
-        return Some(vec![v4.to_string()]);
+        return Some(vec![IpAddr::V4(v4)]);
     }
     let v6 = Ipv6Addr::from(<[u8; 16]>::try_from(bytes.as_slice()).ok()?);
     if let Some(v4) = v6.to_ipv4_mapped() {
-        return Some(vec![v4.to_string()]);
+        return Some(vec![IpAddr::V4(v4)]);
     }
     if v6.is_unspecified() {
-        return Some(vec![Ipv4Addr::LOCALHOST.to_string(), "[::1]".to_owned()]);
+        return Some(vec![
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            IpAddr::V6(Ipv6Addr::LOCALHOST),
+        ]);
     }
-    Some(vec![format!("[{v6}]")])
+    Some(vec![IpAddr::V6(v6)])
 }
 
 #[cfg(test)]

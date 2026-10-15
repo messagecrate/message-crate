@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 use std::fs;
+use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 
 use axum::Router;
@@ -20,11 +21,19 @@ fn proc_hex(bytes: &[u8]) -> String {
         .collect()
 }
 
+fn ip(text: &str) -> IpAddr {
+    text.parse().unwrap()
+}
+
+fn address(text: &str) -> SocketAddr {
+    text.parse().unwrap()
+}
+
 #[test]
 fn the_ipv4_wildcard_is_asked_on_loopback() {
     assert_eq!(
         hosts_of(&proc_hex(&[0, 0, 0, 0])),
-        Some(vec!["127.0.0.1".to_owned()])
+        Some(vec![ip("127.0.0.1")])
     );
 }
 
@@ -32,7 +41,7 @@ fn the_ipv4_wildcard_is_asked_on_loopback() {
 fn an_ipv4_address_is_asked_where_it_is() {
     assert_eq!(
         hosts_of(&proc_hex(&[172, 17, 0, 2])),
-        Some(vec!["172.17.0.2".to_owned()])
+        Some(vec![ip("172.17.0.2")])
     );
 }
 
@@ -40,7 +49,7 @@ fn an_ipv4_address_is_asked_where_it_is() {
 fn the_ipv6_wildcard_is_asked_on_ipv4_loopback_first() {
     assert_eq!(
         hosts_of(&proc_hex(&[0; 16])),
-        Some(vec!["127.0.0.1".to_owned(), "[::1]".to_owned()])
+        Some(vec![ip("127.0.0.1"), ip("::1")])
     );
 }
 
@@ -50,20 +59,14 @@ fn an_ipv4_mapped_address_is_asked_as_ipv4() {
     mapped[10] = 0xff;
     mapped[11] = 0xff;
     mapped[12..].copy_from_slice(&[10, 0, 0, 5]);
-    assert_eq!(
-        hosts_of(&proc_hex(&mapped)),
-        Some(vec!["10.0.0.5".to_owned()])
-    );
+    assert_eq!(hosts_of(&proc_hex(&mapped)), Some(vec![ip("10.0.0.5")]));
 }
 
 #[test]
 fn an_ipv6_address_is_asked_in_brackets() {
     let mut loopback = [0u8; 16];
     loopback[15] = 1;
-    assert_eq!(
-        hosts_of(&proc_hex(&loopback)),
-        Some(vec!["[::1]".to_owned()])
-    );
+    assert_eq!(hosts_of(&proc_hex(&loopback)), Some(vec![ip("::1")]));
 }
 
 #[test]
@@ -87,7 +90,7 @@ fn only_a_listening_row_on_one_of_the_process_sockets_counts() {
     let inodes: HashSet<String> = ["222", "333"].into_iter().map(str::to_owned).collect();
     assert_eq!(
         listening_in(&table, &inodes),
-        vec![vec!["127.0.0.1:8080".to_owned()]]
+        vec![vec![address("127.0.0.1:8080")]]
     );
 }
 
@@ -146,16 +149,16 @@ fn a_listening_socket_of_this_process_is_found_in_proc() {
     let table = fs::read_to_string(process.join("net/tcp")).unwrap();
 
     assert!(
-        listening_in(&table, &inodes).contains(&vec![format!("127.0.0.1:{port}")]),
+        listening_in(&table, &inodes).contains(&vec![address(&format!("127.0.0.1:{port}"))]),
         "127.0.0.1:{port} is not among this process's listeners"
     );
 }
 
 /// A server on a free loopback port whose `/health` answers `status`, and the
 /// address to ask it at.
-async fn health_server(status: StatusCode) -> String {
+async fn health_server(status: StatusCode) -> SocketAddr {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap().to_string();
+    let address = listener.local_addr().unwrap();
     let app = Router::new().route("/health", get(move || async move { (status, "answer\n") }));
     crate::request_id::spawn_in_current_span(async move { axum::serve(listener, app).await });
     address
@@ -164,7 +167,7 @@ async fn health_server(status: StatusCode) -> String {
 #[tokio::test]
 async fn a_server_that_answers_ok_is_healthy() {
     let address = health_server(StatusCode::OK).await;
-    let outcome = probe(std::slice::from_ref(&address)).await;
+    let outcome = probe(&[address]).await;
     assert_eq!(
         outcome,
         Outcome::healthy(format!("http://{address}/health answered 200"))
@@ -174,7 +177,7 @@ async fn a_server_that_answers_ok_is_healthy() {
 #[tokio::test]
 async fn a_server_that_cannot_reach_its_database_is_unhealthy() {
     let address = health_server(StatusCode::INTERNAL_SERVER_ERROR).await;
-    let outcome = probe(std::slice::from_ref(&address)).await;
+    let outcome = probe(&[address]).await;
     assert_eq!(
         outcome,
         Outcome::unhealthy(format!("http://{address}/health answered 500"))
@@ -185,7 +188,7 @@ async fn a_server_that_cannot_reach_its_database_is_unhealthy() {
 async fn the_next_address_is_asked_when_one_fails() {
     let failing = health_server(StatusCode::INTERNAL_SERVER_ERROR).await;
     let answering = health_server(StatusCode::OK).await;
-    let outcome = probe(&[failing, answering.clone()]).await;
+    let outcome = probe(&[failing, answering]).await;
     assert_eq!(
         outcome,
         Outcome::healthy(format!("http://{answering}/health answered 200"))
