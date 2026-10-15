@@ -82,7 +82,7 @@ pub struct PendingReply {
 /// Per-exporter deltas of the shared [`pending_to_document`] projection.
 ///
 /// Only [`export`](Self::export), [`service`](Self::service), and
-/// [`source`](Self::source) are required; every other method has a default
+/// [`vendor_fields`](Self::vendor_fields) are required; every other method has a default
 /// matching the common exporter behavior.
 ///
 /// Every exporter projects through these hooks except Apple Messages
@@ -91,7 +91,7 @@ pub struct PendingReply {
 /// reasons. Each message keeps `chat.db`'s own `guid` as its guid, because
 /// that is the name the database's replies (`thread_originator_guid`, read
 /// into [`Message::reply_to`]) and tapbacks (`associated_message_guid`,
-/// read into [`ImessageExtensions::associated_guid`](crate::ImessageExtensions)) give the
+/// read into [`ImessageExtensions::associated_guid`](crate::ImessageExtensions::associated_guid)) give the
 /// message they point at; a [`MessageGuid`] made here would leave every one
 /// of them pointing at nothing. And the dedupe step has nothing to do there:
 /// `chat.db` holds each message once, as one row with a `guid` no other
@@ -105,7 +105,11 @@ pub trait ProjectionHooks {
 
     /// Vendor leftovers for one message. The projection applies
     /// [`VendorFields::into_option`], so an empty bag becomes `None`.
-    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> VendorFields;
+    fn vendor_fields(
+        &self,
+        conversation: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields;
 
     /// Normalize a raw non-owner sender handle (e.g. guard phone digits).
     /// The default keeps the handle as-is.
@@ -414,7 +418,7 @@ pub fn project_pending<H: ProjectionHooks + ?Sized>(
             // Linked below, once every guid is known.
             reply_to: None,
             imessage: None,
-            source: hooks.source(conversation, message).into_option(),
+            source: hooks.vendor_fields(conversation, message).into_option(),
             sender_country: None,
         });
     }
@@ -610,7 +614,7 @@ mod tests {
             Transport::Sms
         }
 
-        fn source(
+        fn vendor_fields(
             &self,
             _conversation: &PendingConversation,
             _message: &PendingMessage,
@@ -649,7 +653,7 @@ mod tests {
             Transport::Whatsapp
         }
 
-        fn source(
+        fn vendor_fields(
             &self,
             _conversation: &PendingConversation,
             _message: &PendingMessage,
@@ -892,12 +896,12 @@ mod tests {
             TestHooks.service(message)
         }
 
-        fn source(
+        fn vendor_fields(
             &self,
             conversation: &PendingConversation,
             message: &PendingMessage,
         ) -> VendorFields {
-            TestHooks.source(conversation, message)
+            TestHooks.vendor_fields(conversation, message)
         }
 
         fn sort_key_unit(&self) -> SortKeyUnit {

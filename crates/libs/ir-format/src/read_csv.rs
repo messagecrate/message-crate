@@ -1,7 +1,7 @@
 //! Read a unified conversation CSV back into a [`ConversationDocument`].
 
 use crate::CSV_HEADERS;
-use crate::normalize::{imessage_from_parts, source_from_parts};
+use crate::normalize::{imessage_from_parts, vendor_fields_from_parts};
 use anyhow::{Context, Result, bail};
 use message_csv::{AttachmentCell, ParticipantCell, read_cell};
 use message_ir::{
@@ -127,7 +127,7 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
     let attachments = parse_attachments(get("attachments_json"))?;
     let reactions = parse_reactions(get("reactions_json"))?;
     let edits = parse_earlier_versions(get("earlier_versions_json"))?;
-    let source = source_from_parts(
+    let source = vendor_fields_from_parts(
         // Parsed as `android_fields::parse_android_type` parses a backup's
         // field (trim, then a whole number); keep the two in step.
         get("android_type").trim().parse().ok(),

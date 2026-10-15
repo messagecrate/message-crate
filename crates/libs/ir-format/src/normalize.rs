@@ -71,7 +71,7 @@ pub(crate) fn imessage_from_parts(im: ImessageExtensions) -> Option<ImessageExte
 ///
 /// Returns `None` when both pieces are empty. Invalid JSON becomes an empty
 /// field map.
-pub(crate) fn source_from_parts(
+pub(crate) fn vendor_fields_from_parts(
     android_type: Option<i32>,
     fields_json: &str,
 ) -> Option<VendorFields> {

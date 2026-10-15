@@ -4,7 +4,7 @@
 
 use crate::attachments_emit::queue_pdu_attachments;
 use crate::read::{MAX_SKIP_DETAILS, SkippedBadAddrDetail, XmlMessage, parse_xml_file};
-use android_fields::android_source;
+use android_fields::android_vendor_fields;
 use anyhow::{Context, Result, bail};
 use go_sms_mms::{ParsedPdu, PduError, parse_pdu_file};
 use message_crate_core::{
@@ -398,7 +398,11 @@ impl ProjectionHooks for GoSmsProjection {
         raw.to_string()
     }
 
-    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> VendorFields {
+    fn vendor_fields(
+        &self,
+        conversation: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields {
         let mut fields = serde_json::Map::new();
         fields.insert(
             "source_kind".into(),
@@ -425,7 +429,7 @@ impl ProjectionHooks for GoSmsProjection {
                     .or_insert_with(|| serde_json::Value::String(v.clone()));
             }
         }
-        android_source(conversation, message, fields)
+        android_vendor_fields(conversation, message, fields)
     }
 }
 

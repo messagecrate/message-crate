@@ -10,7 +10,7 @@
 //! [`unix_secs_from_date_secs`], which holds it to the same rule.
 //!
 //! GO SMS Pro and SMS Backup+ build a message's [`VendorFields`] with
-//! [`android_source`], and SMS Backup & Restore and SMS Backup+ read an
+//! [`android_vendor_fields`], and SMS Backup & Restore and SMS Backup+ read an
 //! attachment's name with [`valid_filename`].
 
 use message_ir::{PendingConversation, PendingMessage, VendorFields};
@@ -80,7 +80,7 @@ fn parse_android_type(s: &str) -> Option<i32> {
 /// with the conversation title added as `android_group_title`, and the
 /// message's `android_type` extra read with `parse_android_type`. The
 /// title is stored as data only; filenames do not use it.
-pub fn android_source(
+pub fn android_vendor_fields(
     conversation: &PendingConversation,
     msg: &PendingMessage,
     mut fields: Map<String, Value>,

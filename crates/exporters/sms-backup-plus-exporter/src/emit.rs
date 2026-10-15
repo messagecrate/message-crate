@@ -9,7 +9,7 @@ use crate::flat_eml::Owner;
 use crate::identity::{chat_id_for, timestamp_ms};
 use crate::read::{ParsedEmlKind, collect_eml_paths, parse_one_eml};
 use crate::types::ParsedMessage;
-use android_fields::android_source;
+use android_fields::android_vendor_fields;
 use anyhow::{Result, bail};
 use message_crate_core::{
     CancelFlag, Cancelled, ConvertRun, Counter, ExportReport, ItemKind, LogSink, RunIssue,
@@ -278,7 +278,11 @@ impl ProjectionHooks for SbpProjection {
             .then_with(|| a.extra_str("eml_path").cmp(b.extra_str("eml_path")))
     }
 
-    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> VendorFields {
+    fn vendor_fields(
+        &self,
+        conversation: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields {
         let mut fields = serde_json::Map::new();
         for key in ["smssync_id", "eml_path"] {
             let value = message.extra_str(key);
@@ -286,7 +290,7 @@ impl ProjectionHooks for SbpProjection {
                 fields.insert(key.into(), serde_json::Value::String(value.to_string()));
             }
         }
-        android_source(conversation, message, fields)
+        android_vendor_fields(conversation, message, fields)
     }
 }
 

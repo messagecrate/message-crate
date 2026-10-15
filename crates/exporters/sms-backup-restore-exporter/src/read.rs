@@ -527,7 +527,7 @@ impl ProjectionHooks for SbrProjection<'_> {
         Transport::Sms
     }
 
-    fn source(
+    fn vendor_fields(
         &self,
         _conversation: &PendingConversation,
         message: &PendingMessage,

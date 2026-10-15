@@ -1048,7 +1048,11 @@ impl ProjectionHooks for ImazingProjection<'_> {
         imazing_packaging_stem_suffix(pending.extra_str("source_kind"))
     }
 
-    fn source(&self, pending: &PendingConversation, message: &PendingMessage) -> VendorFields {
+    fn vendor_fields(
+        &self,
+        pending: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields {
         let mut fields = Map::new();
         // Session string is not a real group title: stored as data only
         // (the document's `group_title` stays `None`, matching the previous

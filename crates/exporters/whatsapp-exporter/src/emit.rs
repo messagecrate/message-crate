@@ -735,7 +735,11 @@ impl ProjectionHooks for WhatsappProjection {
     /// nor `reply_key_id` is stored beside it. Nor is a reaction copied
     /// here: `reactions` records each on the message, and the fork's
     /// name-to-emoji `reactions` map is not read at all.
-    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> VendorFields {
+    fn vendor_fields(
+        &self,
+        conversation: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields {
         let mut fields = Map::new();
         let whatsapp_jid = conversation.extra_str("whatsapp_jid");
         if !whatsapp_jid.is_empty() {

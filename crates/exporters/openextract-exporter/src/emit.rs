@@ -590,7 +590,11 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
         message.extra.get(VENDOR_KEY).cloned()
     }
 
-    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> VendorFields {
+    fn vendor_fields(
+        &self,
+        conversation: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields {
         let mut fields = Map::new();
         fields.insert(
             "source_kind".into(),
