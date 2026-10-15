@@ -15,8 +15,8 @@ use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use sqlx::SqliteConnection;
 use tokio::sync::Semaphore;
 
+use crate::api_error::ApiError;
 use crate::db::{account_profile, api_tokens, session_tokens};
-use crate::server::ApiError;
 use crate::text_caps::{MAX_USERNAME_CHARS, capped_text};
 
 /// Max password bytes accepted before hashing (creation, login, change).
@@ -155,7 +155,7 @@ async fn run_argon2_under<T: Send + 'static>(
         .acquire_owned()
         .await
         .map_err(|e| ApiError::Internal(anyhow::anyhow!("{task}: {e}")))?;
-    crate::server::run_blocking(task, move || {
+    crate::api_error::run_blocking(task, move || {
         let result = f();
         drop(permit);
         result

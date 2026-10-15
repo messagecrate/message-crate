@@ -15,7 +15,7 @@ use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::server::ApiError;
+use crate::api_error::ApiError;
 
 /// Axum's `Query`, rejecting as `validation-failed`: the string was read and
 /// a value in it does not fit the parameter.
@@ -73,7 +73,7 @@ fn json_rejection(rejection: JsonRejection) -> ApiError {
         rejection if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE => {
             ApiError::PayloadTooLarge
         }
-        rejection => crate::server::body_too_slow(&rejection)
+        rejection => crate::request_body::body_too_slow(&rejection)
             .unwrap_or_else(|| ApiError::MalformedBody(rejection.body_text())),
     }
 }
@@ -141,8 +141,8 @@ impl<T: Serialize> IntoResponse for Json<T> {
 #[cfg(test)]
 mod tests {
     use super::Json;
+    use crate::api_error::ApiError;
     use crate::problem::ProblemType;
-    use crate::server::ApiError;
     use crate::test_support::{
         PASSWORD, delete_raw, expect_problem, fixture_with_account, get_raw, post_raw, test_fixture,
     };
@@ -207,10 +207,10 @@ mod tests {
     /// `malformed-body`: the cap never turns a syntax error into a 413, and
     /// a 413 is never a 400.
     ///
-    /// [`MAX_JSON_BODY_BYTES`]: crate::server::MAX_JSON_BODY_BYTES
+    /// [`MAX_JSON_BODY_BYTES`]: crate::limits::MAX_JSON_BODY_BYTES
     #[tokio::test]
     async fn a_json_body_is_read_up_to_the_json_body_cap_and_a_byte_more_is_a_json_413() {
-        use crate::server::MAX_JSON_BODY_BYTES;
+        use crate::limits::MAX_JSON_BODY_BYTES;
         let (fixture, user) = fixture_with_account().await;
         let state = fixture.state.clone();
         let body_of = |bytes: usize| {

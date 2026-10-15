@@ -6,10 +6,12 @@
 use axum::extract::State;
 use serde::{Deserialize, Serialize};
 
+use crate::api_error::ApiError;
+use crate::auth::Owner;
 use crate::extract::{Json, Query};
 use crate::logging::{LogLevel, LogLine, LogLinesQuery, log_dir, read_lines};
 use crate::paging::{DEFAULT_LIST_LIMIT, page_params};
-use crate::server::{ApiError, AppState, Owner};
+use crate::server::AppState;
 
 /// Query string of `GET /v1/server/log-lines`.
 #[derive(Debug, Deserialize)]

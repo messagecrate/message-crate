@@ -201,11 +201,11 @@ fn failures(path: &str, op: &mut Operation) {
         );
     }
 
-    if crate::server::is_api_path(path) {
+    if crate::middleware::is_api_path(path) {
         // A query parameter the route does not declare.
         kinds.push(ProblemType::ValidationFailed);
         // An `Accept` that names nothing JSON, refused on every route that
-        // answers JSON (`server::require_json_acceptable`).
+        // answers JSON (`middleware::require_json_acceptable`).
         if !bytes {
             kinds.push(ProblemType::NotAcceptable);
         }
@@ -231,7 +231,7 @@ fn failures(path: &str, op: &mut Operation) {
             kinds.push(ProblemType::NotTheOwner);
         }
         // The import and delete guards refuse the Demo Account by its id
-        // (`server::require_import_access`, `server::require_delete_access`),
+        // (`auth::require_import_access`, `auth::require_delete_access`),
         // so a route every credential of which needs one of them can answer it.
         let every_needs = |scope: &str| {
             requirements

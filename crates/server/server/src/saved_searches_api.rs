@@ -11,8 +11,10 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use serde::Deserialize;
 
+use crate::api_error::ApiError;
+use crate::auth::FullAccess;
 use crate::db::saved_searches::{self, SavedSearch, SavedSearchKind};
-use crate::server::{ApiError, AppState, Created, FullAccess};
+use crate::server::{AppState, Created};
 
 /// The name and query of a new saved search.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]

@@ -10,9 +10,10 @@
 use crate::extract::{Json, Query};
 use serde::Deserialize;
 
+use crate::api_error::ApiError;
+use crate::auth::FullAccess;
 use crate::paging::{DEFAULT_LIST_LIMIT, MAX_LIST_OFFSET, Page, page_of, page_params};
 use crate::search::{FieldDoc, ListKind, describe};
-use crate::server::{ApiError, FullAccess};
 
 /// The paging a search-field list takes.
 #[derive(Debug, Deserialize, utoipa::IntoParams)]

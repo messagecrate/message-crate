@@ -58,7 +58,7 @@ async fn api_tokens_never_resolve_to_the_owner() {
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
     let mut conn = state.db.acquire().await.unwrap();
-    let auth = crate::server::resolve_auth_on_conn(
+    let auth = crate::auth::resolve_auth_on_conn(
         &mut conn,
         &owner.token,
         None,
@@ -73,13 +73,13 @@ async fn api_tokens_never_resolve_to_the_owner() {
     );
 
     // A token issued on the owner's own account still resolves to a token.
-    let token_auth = crate::server::AuthIdentity {
+    let token_auth = crate::auth::AuthIdentity {
         account_id: auth.account_id,
-        capability: crate::server::AuthCapability::ApiToken(auth.permissions()),
+        capability: crate::auth::AuthCapability::ApiToken(auth.permissions()),
         credential: crate::db::audit_trail::CredentialUsed::Session(None),
     };
     assert!(!token_auth.is_owner());
-    assert!(crate::server::require_owner(&token_auth).is_err());
+    assert!(crate::auth::require_owner(&token_auth).is_err());
 }
 
 /// The owner is refused by every guard that asks for a permission, so none of
@@ -91,7 +91,7 @@ async fn the_owner_holds_no_message_permissions() {
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
     let mut conn = state.db.acquire().await.unwrap();
-    let auth = crate::server::resolve_auth_on_conn(
+    let auth = crate::auth::resolve_auth_on_conn(
         &mut conn,
         &owner.token,
         None,
@@ -100,15 +100,15 @@ async fn the_owner_holds_no_message_permissions() {
     .await
     .unwrap();
 
-    assert!(crate::server::require_import_access(&auth).is_err());
-    assert!(crate::server::require_export_access(&auth).is_err());
-    assert!(crate::server::require_delete_access(&auth).is_err());
-    assert!(crate::server::require_import_or_export_access(&auth).is_err());
-    assert!(crate::server::require_full_delete_access(&auth).is_err());
+    assert!(crate::auth::require_import_access(&auth).is_err());
+    assert!(crate::auth::require_export_access(&auth).is_err());
+    assert!(crate::auth::require_delete_access(&auth).is_err());
+    assert!(crate::auth::require_import_or_export_access(&auth).is_err());
+    assert!(crate::auth::require_full_delete_access(&auth).is_err());
     // `FullAccess` means an ordinary account's session; the owner has none.
-    assert!(crate::server::require_full_access(&auth).is_err());
+    assert!(crate::auth::require_full_access(&auth).is_err());
     // The routes under `/v1/accounts/{id}` still admit them, for its own row.
-    assert!(crate::server::require_logged_in(&auth).is_ok());
+    assert!(crate::auth::require_logged_in(&auth).is_ok());
 }
 
 // ---------------------------------------------------------------------------
@@ -1040,7 +1040,7 @@ async fn the_owner_clears_a_permission_and_it_takes_effect() {
     assert!(!row.can_export);
 
     let mut conn = state.db.acquire().await.unwrap();
-    let auth = crate::server::resolve_auth_on_conn(
+    let auth = crate::auth::resolve_auth_on_conn(
         &mut conn,
         &bob.token,
         None,
@@ -2908,8 +2908,11 @@ async fn the_account_list_shows_the_app_each_account_connects_with() {
     let status = server
         .get("/v1/session")
         .bearer_auth(&bob.token)
-        .header(crate::server::APP_HEADER, "desktop")
-        .header(crate::server::APP_VERSION_HEADER, "0.8.0+1234abcd")
+        .header(message_crate_api_types::APP_HEADER, "desktop")
+        .header(
+            message_crate_api_types::APP_VERSION_HEADER,
+            "0.8.0+1234abcd",
+        )
         .send()
         .await
         .unwrap()

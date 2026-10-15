@@ -284,7 +284,7 @@ impl Operation {
     /// accepted. A `401` or `403` refuses the credential, so it is always
     /// `no-store`. A route outside `/v1`, such as `/health`, is left as it is.
     fn allows_cache_control(&self, status: StatusCode, cache_control: Option<&str>) -> bool {
-        if !crate::server::is_api_path(&self.path) {
+        if !crate::middleware::is_api_path(&self.path) {
             return cache_control.is_none();
         }
         let credential_accepted =

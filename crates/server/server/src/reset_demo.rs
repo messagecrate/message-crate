@@ -144,7 +144,7 @@ pub async fn seed_new_database(cfg: &Config) {
             started.elapsed().as_secs_f64()
         ),
         Err(error) => tracing::warn!(
-            error = %crate::server::error_chain(&error),
+            error = %crate::api_error::error_chain(&error),
             "The Demo Account could not be added. This Message Crate starts without it. `message-crate-server reset-demo` adds it"
         ),
     }

@@ -963,7 +963,7 @@ async fn a_batch_for_an_account_deleted_while_it_waited_brings_no_account_back()
         .parse()
         .unwrap();
     let mut conn = fixture.conn().await;
-    let account = crate::server::resolve_auth_on_conn(
+    let account = crate::auth::resolve_auth_on_conn(
         &mut conn,
         &token,
         None,
@@ -1007,7 +1007,7 @@ async fn a_batch_for_an_account_deleted_while_it_waited_brings_no_account_back()
 async fn an_import_run_for_a_deleted_account_brings_no_account_back() {
     let (state, fixture, token) = importer().await;
     let mut conn = fixture.conn().await;
-    let auth = crate::server::resolve_auth_on_conn(
+    let auth = crate::auth::resolve_auth_on_conn(
         &mut conn,
         &token,
         None,

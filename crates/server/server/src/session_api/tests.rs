@@ -57,7 +57,7 @@ async fn an_account_gone_before_its_username_is_read_answers_unauthorized() {
                     // An account id no `accounts` row holds.
                     let auth = AuthIdentity {
                         account_id: 9_999,
-                        capability: crate::server::AuthCapability::Session {
+                        capability: crate::auth::AuthCapability::Session {
                             permissions: crate::db::permissions::Permissions::all(),
                         },
                         credential: crate::db::audit_trail::CredentialUsed::Session(None),
@@ -566,7 +566,7 @@ async fn a_login_whose_session_row_appears_meanwhile_still_signs_in() {
         panic!("the second login must open a Session");
     };
 
-    let auth = crate::server::resolve_auth_on_conn(
+    let auth = crate::auth::resolve_auth_on_conn(
         &mut conn,
         &created.token,
         None,
