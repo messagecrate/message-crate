@@ -39,15 +39,16 @@ async fn distrust_schema(conn: &mut SqliteConnection) -> sqlx::Result<()> {
 ///
 /// # Errors
 ///
-/// Returns an error when the file cannot be opened, or the pragma fails.
-pub(crate) async fn connect_read_only(path: &Path) -> anyhow::Result<SqliteConnection> {
+/// Returns an error naming the step when the file cannot be opened, or the
+/// pragma fails.
+pub(crate) async fn connect_read_only(path: &Path) -> Result<SqliteConnection> {
     crate::db::sqlite_functions::register();
     let mut conn = SqliteConnectOptions::new()
         .filename(path)
         .read_only(true)
         .connect()
         .await
-        .context("open the database file read-only")?;
+        .context("connect to the file read-only")?;
     distrust_schema(&mut conn)
         .await
         .context("turn off trust in the database file's schema")?;
@@ -63,18 +64,19 @@ pub(crate) async fn connect_read_only(path: &Path) -> anyhow::Result<SqliteConne
 ///
 /// # Errors
 ///
-/// Returns an error when the file cannot be opened, or the pragma fails.
+/// Returns an error naming the step when the file cannot be opened, or the
+/// pragma fails.
 pub(crate) async fn connect_for_checkpoint(
     path: &Path,
     wait: Duration,
-) -> anyhow::Result<SqliteConnection> {
+) -> Result<SqliteConnection> {
     crate::db::sqlite_functions::register();
     let mut conn = SqliteConnectOptions::new()
         .filename(path)
         .busy_timeout(wait)
         .connect()
         .await
-        .context("open the database file for a checkpoint")?;
+        .context("connect to the file for a checkpoint")?;
     distrust_schema(&mut conn)
         .await
         .context("turn off trust in the database file's schema")?;
