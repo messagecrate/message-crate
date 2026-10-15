@@ -11,20 +11,36 @@
 //! log lines to the run's [`LogSink`] and its counts to the run's
 //! [`ProgressSink`], hands back every other event to the caller, and kills
 //! the process when dropped, so a cancelled run leaves no orphan behind.
+//!
+//! The program's stdout is read on a thread of its own, which sends each
+//! line over a channel. A wait for the next line wakes every
+//! [`CANCEL_CHECK`] to look at the run's cancel flag ([`Helper::cancel_on`]),
+//! so Cancel stops a program that sends nothing, such as one decrypting a
+//! large backup or one stuck on a disk that went away (#2085).
 
 use std::{
     env,
-    io::{BufRead, BufReader, Lines, Write},
+    io::{self, BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    process::{Child, ChildStdin, Command, Stdio},
+    sync::mpsc::{self, Receiver, RecvTimeoutError},
     thread::JoinHandle,
+    time::Duration,
 };
 
 use anyhow::{Context, Result, anyhow, bail};
 use imessage_reader_protocol::{
     AttachmentFile, Event, HELPER_NAME, PROTOCOL_VERSION, Progress, Request,
 };
-use message_crate_core::{LogSink, ProgressEvent, ProgressSink};
+use message_crate_core::{
+    CancelFlag, Cancelled, LogSink, ProgressEvent, ProgressSink, is_cancelled,
+};
+
+/// How often a wait for the program's next line looks at the cancel flag.
+/// It bounds how long Cancel takes, not how long the program may stay
+/// silent: a program that sends nothing for an hour is waited for, and one
+/// that is canceled is killed within this time.
+const CANCEL_CHECK: Duration = Duration::from_millis(100);
 
 /// Names the helper executable outright, bypassing the search.
 pub(crate) const HELPER_PATH_ENV: &str = "MESSAGE_CRATE_IMESSAGE_READER";
@@ -97,10 +113,14 @@ fn locate_in(places: &Places<'_>) -> Result<PathBuf> {
 pub struct Helper {
     child: Child,
     stdin: Option<ChildStdin>,
-    stdout: Lines<BufReader<ChildStdout>>,
+    /// Each line of the program's stdout, sent by the thread that reads it.
+    /// The channel disconnects when stdout closes.
+    stdout: Receiver<io::Result<String>>,
     stderr: Option<JoinHandle<String>>,
     log: LogSink,
     progress: ProgressSink,
+    /// The run's cancel flag; one nobody sets until [`Helper::cancel_on`].
+    cancel: CancelFlag,
     /// The request was an export or an identities read, and the program has
     /// not yet sent the [`Event::Source`] that says which protocol version it
     /// speaks.
@@ -147,6 +167,17 @@ impl Helper {
             let _ = std::io::Read::read_to_string(&mut BufReader::new(stderr), &mut text);
             text
         });
+        // Read stdout on its own thread too, so a wait for the next line can
+        // stop for Cancel. The thread ends when stdout closes, which killing
+        // the program does, or when this side stops listening.
+        let (lines, stdout_lines) = mpsc::channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                if lines.send(line).is_err() {
+                    break;
+                }
+            }
+        });
 
         let mut line = serde_json::to_string(request)?;
         line.push('\n');
@@ -158,12 +189,22 @@ impl Helper {
         Ok(Self {
             child,
             stdin: Some(stdin),
-            stdout: BufReader::new(stdout).lines(),
+            stdout: stdout_lines,
             stderr: Some(stderr),
             log,
             progress,
+            cancel: CancelFlag::default(),
             awaiting_source: !matches!(request, Request::Attachment { .. }),
         })
+    }
+
+    /// The same helper, stopped by `cancel`: once the flag is set, the next
+    /// wait for the program kills it and returns [`Cancelled`], whether or
+    /// not the program is sending anything.
+    #[must_use]
+    pub fn cancel_on(mut self, cancel: CancelFlag) -> Self {
+        self.cancel = cancel;
+        self
     }
 
     /// The next event that is not a log line or a progress count. Those two
@@ -171,11 +212,12 @@ impl Helper {
     ///
     /// # Errors
     ///
-    /// Returns an error when the program reports one, sends something that is
-    /// not an event, or exits before answering.
+    /// Returns [`Cancelled`] when the run's cancel flag is set, having killed
+    /// the program. Returns an error when the program reports one, sends
+    /// something that is not an event, or exits before answering.
     pub fn next_event(&mut self) -> Result<Event> {
         loop {
-            let Some(line) = self.stdout.next() else {
+            let Some(line) = self.next_line()? else {
                 return Err(self.exited_early());
             };
             let line = line.context("read from imessage-reader")?;
@@ -205,6 +247,28 @@ impl Helper {
                      It sent {other:?}"
                 ),
                 other => return Ok(other),
+            }
+        }
+    }
+
+    /// The program's next stdout line, or `None` once stdout has closed.
+    /// The wait wakes every [`CANCEL_CHECK`] to look at the cancel flag.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Cancelled`] once the flag is set, after killing the program
+    /// and waiting for it, so it no longer holds the backup open.
+    fn next_line(&mut self) -> Result<Option<io::Result<String>>> {
+        loop {
+            if is_cancelled(&self.cancel) {
+                let _ = self.child.kill();
+                let _ = self.child.wait();
+                return Err(Cancelled.into());
+            }
+            match self.stdout.recv_timeout(CANCEL_CHECK) {
+                Ok(line) => return Ok(Some(line)),
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => return Ok(None),
             }
         }
     }
@@ -272,7 +336,7 @@ impl Helper {
     /// what explains the failure.
     fn stopped_unread(&mut self) -> anyhow::Error {
         let mut reason = None;
-        for line in self.stdout.by_ref().map_while(Result::ok) {
+        for line in self.stdout.iter().map_while(Result::ok) {
             match serde_json::from_str::<Event>(&line) {
                 Ok(Event::Log { line }) => self.log.emit(line),
                 Ok(Event::Progress(progress)) => {

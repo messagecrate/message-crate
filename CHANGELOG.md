@@ -22,6 +22,12 @@ carry their date on the heading.
 
 ### Features
 
+- 2026-10-15: **The login card says when the password would cross the
+  network unencrypted.** Opened over plain HTTP from another computer, such
+  as at `http://192.168.1.20:8080`, the login card and Create Owner now say
+  that the connection is not encrypted, so the password crosses the network
+  as typed. An address on the same computer, and any `https` address, shows
+  nothing new (#2115).
 - 2026-10-12: **Owner Home quotes SQLite's error when write-ahead logging is
   off.** When the server could not turn write-ahead logging on as it
   started, the notice above every Owner Home section now says what SQLite
@@ -824,6 +830,12 @@ carry their date on the heading.
   "Nothing was written into output file" after an encoder that would not
   open. The reason is now the last line that names a cause, such as why the
   encoder would not open or that the disk is full (#2959).
+- 2026-10-15: **Cancel stops an Apple Messages import that has gone
+  quiet.** Cancel took effect only when the Apple Messages reader
+  (imessage-reader) next reported something, so during a long silent step,
+  such as decrypting a large encrypted backup, the import kept going, and a
+  reader stuck on a backup whose disk went away ran until the app closed.
+  Cancel now stops the reader at once, whatever it is doing (#2085).
 - 2026-10-15: **A conversation that crashes its preparation no longer hangs
   the Upload.** When preparing one conversation for an Upload crashed, the
   Upload waited for it forever and pausing it could not halt it. That
@@ -1296,6 +1308,14 @@ carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-15: **A number from an Apple Messages backup keeps the country
+  the phone read it in.** A number written without its country code, such
+  as `07700 900123`, was stored with its country unknown, though the backup
+  records that Messages read it as a UK number. An Apple Messages import now
+  reads that country from the backup, so the number is stored as
+  `+447700900123` without picking a country on the import form, and is the
+  same person as the same number written in full. A number the backup names
+  no country for is stored as before (#1994).
 - 2026-10-11: **A WhatsApp internal id can be added to a contact or to your
   account by hand.** WhatsApp names some people by an internal id such as
   `123456789012345@lid` rather than a phone number. Adding one by hand was
@@ -1637,6 +1657,9 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-15: Message files exported before they carried the country an
+  Apple Messages backup names for each number are refused when you import
+  or convert them. Export the backup again with this build.
 - 2026-10-15: A script that runs `create-owner` or
   `reset-owner-password` with `--password` must write the password to the
   command's input instead, for example

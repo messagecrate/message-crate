@@ -401,10 +401,12 @@ fn member(party: &str) -> IrParticipant {
         Some(address) => IrParticipant {
             identity: Some(address.into_key()),
             display_name: None,
+            country: None,
         },
         None => IrParticipant {
             identity: None,
             display_name: Some(party.to_string()),
+            country: None,
         },
     }
 }
@@ -617,10 +619,12 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
             Key::Keyed(ConversationKey::OneToOne(handle)) => vec![IrParticipant {
                 identity: Some(handle.clone()),
                 display_name: conversation.first_contact_name(),
+                country: None,
             }],
             Key::Keyed(ConversationKey::NameOnly(_)) => vec![IrParticipant {
                 identity: None,
                 display_name: conversation.first_contact_name(),
+                country: None,
             }],
         }
     }

@@ -9,14 +9,14 @@ use anyhow::{Context, Result, bail};
 use crate::config::validate_source_id;
 use crate::db::account_profile;
 use crate::dedupe::{self, DedupeStats};
+use crate::imports_api::pipeline::{self, ImportCounts, ImportOptions};
 use crate::imports_api::records::ExportRecord;
-use crate::imports_api::{
-    self, ImportCounts, ImportError, ImportFailure, ImportMode, ImportOptions,
-};
+use crate::imports_api::{ImportError, ImportFailure};
 use crate::jsonl;
 use crate::open_db::OpenDb;
 use crate::progress::Progress;
 use media::MediaMode;
+use message_crate_api_types::ImportMode;
 
 /// Options for a CLI directory import.
 #[derive(Debug, Clone)]
@@ -185,7 +185,7 @@ async fn import_under_session(
         .assets_dir
         .clone()
         .unwrap_or_else(|| cfg.paths.assets_dir_for_account(account_id));
-    let import_run = imports_api::OwnedImportRun::start(
+    let import_run = pipeline::OwnedImportRun::start(
         conn,
         account_id,
         source,
@@ -210,7 +210,7 @@ async fn import_under_session(
         progress: opts.progress,
         now: chrono::Utc::now(),
     };
-    let result = imports_api::import_jsonl_files_on_conn(conn, paths, &import_opts)
+    let result = pipeline::import_jsonl_files_on_conn(conn, paths, &import_opts)
         .await
         .map_err(anyhow::Error::from);
     let import_id = import_run.id;
@@ -302,7 +302,7 @@ fn files_by_source(paths: &[PathBuf]) -> Result<BTreeMap<String, Vec<PathBuf>>> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::imports_api::IMPORT_CONTACT_GROUP_NAME_SQL;
+    use crate::imports_api::pipeline::IMPORT_CONTACT_GROUP_NAME_SQL;
     use crate::open_db::fresh_config;
     use crate::test_support::{conversation_header, message_line};
     use tempfile::TempDir;

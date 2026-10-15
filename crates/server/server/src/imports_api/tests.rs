@@ -1,5 +1,19 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use std::sync::Arc;
+
+use tokio::sync::OwnedSemaphorePermit;
+
+use super::pipeline::{
+    FixedImportArgs, IMPORT_CONTACT_GROUP_NAME_SQL, ImportOptions, complete_run_at,
+    import_contact_group_name, import_jsonl_files, import_jsonl_files_on_conn,
+};
+use super::run_control::MAX_CONCURRENT_IMPORTS;
 use super::*;
 use crate::assets_api;
+use crate::db::engine;
+use crate::db::imports::CompleteImportArgs;
 use crate::progress::Progress;
 use crate::test_support::{
     ConversationHeaderLine, MessageLine, RegisteredAccount, TestFixture,
@@ -226,7 +240,7 @@ pub(super) async fn complete_run_at_fixed_instant(state: &crate::server::AppStat
         .fetch_one(&mut *conn)
         .await
         .unwrap();
-    super::complete_run_at(
+    complete_run_at(
         &mut conn,
         account,
         import_id,

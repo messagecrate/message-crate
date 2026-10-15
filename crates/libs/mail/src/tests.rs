@@ -25,6 +25,7 @@ pub(crate) fn base_sms() -> MailMessage {
             message_kind: message_ir::IrMessageKind::Sms,
             sender_identity: Some("+15555550101".into()),
             sender_display_name: Some("Sam".into()),
+            sender_country: None,
             owner_identity: None,
             subject: None,
             text: "hello from sms".into(),

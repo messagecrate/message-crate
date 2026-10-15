@@ -2268,16 +2268,18 @@ mod kind_words {
         let counts = crate::test_support::import_for_account(
             conn,
             &[path],
-            &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
-                assets_dir: &assets,
-                asset_root: Some(dir),
-                mode: crate::imports_api::ImportMode::Append,
-                source,
-                account_id: ACCOUNT,
-                import_id: None,
-                phone_country: None,
-                now: crate::test_support::fixed_instant(),
-            }),
+            &crate::imports_api::pipeline::ImportOptions::fixed(
+                crate::imports_api::pipeline::FixedImportArgs {
+                    assets_dir: &assets,
+                    asset_root: Some(dir),
+                    mode: message_crate_api_types::ImportMode::Append,
+                    source,
+                    account_id: ACCOUNT,
+                    import_id: None,
+                    phone_country: None,
+                    now: crate::test_support::fixed_instant(),
+                },
+            ),
         )
         .await
         .unwrap();

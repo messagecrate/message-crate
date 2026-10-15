@@ -11,9 +11,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::imports_api::ImportMode;
 use anyhow::{Result, bail};
 use clap::{Args, Command, CommandFactory, Parser, Subcommand};
+use message_crate_api_types::ImportMode;
 
 use crate::config::{Config, ServeFlags, validate_source_id};
 use crate::dedupe::DedupeStats;
@@ -455,7 +455,7 @@ async fn run_imports_discard(args: ImportsDiscardArgs) -> Result<()> {
     let opened = OpenDb::open(cfg).await?;
     let account = opened.account_id(&args.account).await?;
     let mut conn = opened.conn().await?;
-    let discarded = crate::imports_api::discard_running_import_and_dedupe(
+    let discarded = crate::imports_api::pipeline::discard_running_import_and_dedupe(
         &mut conn,
         account,
         chrono::Utc::now(),
@@ -497,7 +497,7 @@ fn format_discarded_import(
 }
 
 /// The counts from one import stage, one line each, ready to print.
-fn format_import_counts(import: &crate::imports_api::ImportCounts) -> String {
+fn format_import_counts(import: &crate::imports_api::pipeline::ImportCounts) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "  files:         {}", import.files);
     let _ = writeln!(out, "  conversations: {}", import.conversations);

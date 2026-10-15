@@ -119,6 +119,7 @@ fn participant_from_mail(p: &mail::Participant) -> IrParticipant {
     IrParticipant {
         identity: nonempty(&p.identity),
         display_name: p.display_name.as_deref().and_then(nonempty),
+        country: None,
     }
 }
 

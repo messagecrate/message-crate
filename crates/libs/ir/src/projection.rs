@@ -370,6 +370,7 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
             reply_to: None,
             imessage: None,
             source: hooks.source(conversation, message).into_option(),
+            sender_country: None,
         });
     }
     for (index, reply) in replies {
@@ -461,6 +462,7 @@ pub fn default_participants(
         .map(|h| IrParticipant {
             identity: Some(h.clone()),
             display_name: name_by_handle.get(h).cloned(),
+            country: None,
         })
         .collect();
     if participants.is_empty()
@@ -475,6 +477,7 @@ pub fn default_participants(
             participants.push(IrParticipant {
                 identity: None,
                 display_name: conversation.first_contact_name(),
+                country: None,
             });
         } else {
             participants.push(IrParticipant {
@@ -483,6 +486,7 @@ pub fn default_participants(
                     .get(chat_id)
                     .cloned()
                     .or_else(|| conversation.first_contact_name()),
+                country: None,
             });
         }
     }

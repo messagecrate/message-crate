@@ -428,6 +428,7 @@ impl<'a> Roster<'a> {
         self.participants.push(IrParticipant {
             identity,
             display_name: name,
+            country: None,
         });
     }
 
@@ -442,6 +443,7 @@ impl<'a> Roster<'a> {
         self.participants.push(IrParticipant {
             identity: Some(chat_id.to_string()),
             display_name: name,
+            country: None,
         });
     }
 

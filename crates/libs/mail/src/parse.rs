@@ -184,6 +184,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             reply_to,
             imessage,
             source,
+            sender_country: None,
         },
         attachments,
     })

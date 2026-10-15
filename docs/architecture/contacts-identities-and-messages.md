@@ -327,9 +327,13 @@ country: the same digits are another number there. The bare identity shows
 **A country comes from three explicit sources and nothing else.** The archive,
 when the source names the phone's country. SMS Backup+ does not. Apple's
 `chat.db` does, in the `country` column of its `handle` table (`us`, `gb`),
-but Message Crate does not read it yet: `imessage-database` 4.3.0's `Handle`
-does not load the column, so the Apple Messages Reader cannot pass it on, and
-the conversation file has no field for it
+and Message Crate reads it: `imessage-database` 4.3.0's `Handle` does not
+load the column, so the Apple Messages Reader reads it with its own query,
+and the conversation file carries it per identity, as a participant's
+`country` and a message's `sender_country`. Staging keys a number written
+without `+` in the country the file names for it, before the run's country,
+and reads a reactor and a one-to-one conversation's id in the country the
+same conversation names for the same address
 ([#1994](https://github.com/messagecrate/message-crate/issues/1994)). The
 import form's country for the run, which applies to every number written
 without `+` in that run: the Import Run records it (`imports.phone_country`,
@@ -691,19 +695,20 @@ was written, not when a part was unsent, so they cannot tell
 runs the full dedupe over the account, within one source and across sources
 (`dedupe_cross_source` in `dedupe.rs`), once for the whole run. An Upload's
 run ends at `POST /v1/imports/{id}/complete` or `/discard`, or by the server's
-`imports discard` command (`end_run` and `discard_running_import_and_dedupe`
-in `imports_api/mod.rs`). A completion runs the dedupe before it ends the run,
-so a dedupe that fails leaves the run running and the client completes it
-again. A discard ends the run first and then runs the dedupe, and a dedupe
-that fails is logged, so a dedupe that always fails never keeps the account
-from giving up its one running run; the next run's end hides those duplicates.
-The server's `import` command and the Demo Account build run it once, after
-their last run. Nothing turns it off. It computes every content key again, so
-it also puts right the flag of a stored message whose content the import
-changed: a later edit changes a message's text, and an attachment added or
-given its file changes what its content key hashes. Why: there is no reason
-ever to leave a duplicate shown, and a flag an import made wrong would hide a
-message behind a copy whose text no longer matches, where no search finds it
+`imports discard` command (`end_run` in `imports_api/run_control.rs`, and
+`discard_running_import_and_dedupe` in `imports_api/pipeline.rs`). A
+completion runs the dedupe before it ends the run, so a dedupe that fails
+leaves the run running and the client completes it again. A discard ends the
+run first and then runs the dedupe, and a dedupe that fails is logged, so a
+dedupe that always fails never keeps the account from giving up its one
+running run; the next run's end hides those duplicates. The server's `import`
+command and the Demo Account build run it once, after their last run. Nothing
+turns it off. It computes every content key again, so it also puts right the
+flag of a stored message whose content the import changed: a later edit
+changes a message's text, and an attachment added or given its file changes
+what its content key hashes. Why: there is no reason ever to leave a duplicate
+shown, and a flag an import made wrong would hide a message behind a copy
+whose text no longer matches, where no search finds it
 ([#1805](https://github.com/messagecrate/message-crate/issues/1805),
 [#1969](https://github.com/messagecrate/message-crate/issues/1969)).
 

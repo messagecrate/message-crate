@@ -291,6 +291,7 @@ fn csv_omits_trivial_parts_json_keeps_rich_parts() {
         message_kind: IrMessageKind::IMessage,
         sender_identity: Some("+15555550101".into()),
         sender_display_name: Some("Sam".into()),
+        sender_country: None,
         owner_identity: None,
         subject: None,
         text: "hello".into(),
