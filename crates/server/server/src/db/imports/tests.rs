@@ -211,18 +211,12 @@ async fn list_imports_includes_duration_ms() {
         ACCOUNT_ID,
         import_id,
         &CompleteImportArgs {
-            status: "completed".into(),
-            message_count: Some(10),
-            attachment_count: Some(2),
-            bytes_uploaded: Some(100),
-            duration_ms: Some(48_000),
             parse_ms: None,
             attachments_ms: None,
             prepare_ms: None,
             upload_ms: None,
             summary_json: None,
-            issues: vec![],
-            notes: Vec::new(),
+            ..completed_args()
         },
         fixed_instant(),
     )
