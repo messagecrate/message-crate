@@ -1,4 +1,4 @@
-import { countOf } from "../../lib/plural";
+import { countOf, joinWithAnd } from "../../lib/plural";
 import type { components } from "../../lib/serverApi.types";
 
 /** One identity as the server lists it, with its messages. */
@@ -14,10 +14,7 @@ export function messagesPhrase(identity: Identity): string | null {
   if (identity.direct_messages > 0) parts.push(count(identity.direct_messages, "one-to-one"));
   if (identity.group_messages > 0) parts.push(count(identity.group_messages, "group"));
   if (identity.orphaned_messages > 0) parts.push(count(identity.orphaned_messages, "orphaned"));
-  const last = parts.at(-1);
-  if (last === undefined) return null;
-  const rest = parts.slice(0, -1);
-  return rest.length === 0 ? last : `${rest.join(", ")} and ${last}`;
+  return joinWithAnd(parts);
 }
 
 /** What the confirm dialog says an identity is tied to. */

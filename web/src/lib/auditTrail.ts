@@ -9,7 +9,7 @@
  */
 
 import { formatBytes } from "./formatBytes";
-import { countOf } from "./plural";
+import { countOf, joinWithAnd } from "./plural";
 import type { components } from "./serverApi.types";
 
 export type AuditEntry = components["schemas"]["AuditEntry"];
@@ -42,10 +42,7 @@ function countOrZero(n: number | null | undefined, one: string, many?: string): 
 
 /** "import", "import and export", "import, export and delete". */
 function permissions(names: string[]): string {
-  const last = names.at(-1);
-  if (last === undefined) return "";
-  const rest = names.slice(0, -1);
-  return rest.length === 0 ? last : `${rest.join(", ")} and ${last}`;
+  return joinWithAnd(names) ?? "";
 }
 
 /** " from the website (0.10.0+343fe0d8)", or nothing when no app was named. */

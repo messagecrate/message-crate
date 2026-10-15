@@ -204,7 +204,7 @@ export function dropTokens(
   /** The live token at `live[at]`, when it joins nothing: an operator, or a `(` whose `)` is next. */
   const joinsNothing = (live: readonly number[], at: number): boolean => {
     const i = live[at];
-    if (i === undefined) return false;
+    if (i === undefined) throw new RangeError(`no live token ${at} of ${live.length}`);
     const before = live[at - 1] ?? null;
     const after = live[at + 1] ?? null;
     if (tokenAt(i).kind === "open") return after !== null && tokenAt(after).kind === "close";

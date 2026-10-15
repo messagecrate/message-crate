@@ -433,6 +433,8 @@ function SectionedLetterList<T>({
       let first = rows.length;
       while (lo <= hi) {
         const mid = (lo + hi) >> 1;
+        // `mid` stays inside `rows`; the check only satisfies the type, and a
+        // missing row would read as one above the viewport.
         const row = rows[mid];
         if (row && row.getBoundingClientRect().bottom > viewTop) {
           first = mid;
