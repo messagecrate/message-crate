@@ -57,6 +57,9 @@ function androidSmsReadiness(
 ): { enabled: boolean; errors: Partial<Record<"backupPath", string>> } {
   const errors: Partial<Record<"backupPath", string>> = {};
   const stat = input.androidSmsStats.backup;
+  // The backup path is required, but the check says nothing about a path
+  // that is empty or not checked yet, which is what checkOptionalPath skips.
+  // `enabled` below keeps Import off for both.
   checkOptionalPath(input.backupPath, stat, errors, "backupPath", requirement);
   const entry = input.ownerPhoneEntry;
   const hasPhones = input.ownerPhones.length > 0 || entry.draftPending;
