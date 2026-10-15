@@ -159,7 +159,7 @@ pub fn run_attachment_jobs(
         // A write the file system refuses is that attachment's problem, as
         // an unreadable source is: mark it missing and stage the rest.
         if let Err(err) = persist_clone(job, attachments_dir, &bytes) {
-            log.emit(format!(
+            log.warn(format!(
                 "  attachment {} not staged: {err}",
                 job.attachment
                     .original_name

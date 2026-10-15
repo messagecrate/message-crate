@@ -207,8 +207,9 @@ impl Helper {
         self
     }
 
-    /// The next event that is not a log line or a progress count. Those two
-    /// are relayed to the run's sinks as they arrive.
+    /// The next event that is not a log line, a warning or a progress count.
+    /// Those are relayed to the run's sinks as they arrive, a warning as a
+    /// warning.
     ///
     /// # Errors
     ///
@@ -225,6 +226,7 @@ impl Helper {
                 .with_context(|| format!("imessage-reader sent something unexpected: {line}"))?;
             match event {
                 Event::Log { line } => self.log.emit(line),
+                Event::Warning { line } => self.log.warn(line),
                 Event::Progress(progress) => {
                     self.progress.emit(progress_event(progress));
                 }
@@ -331,7 +333,7 @@ impl Helper {
     /// The error for a program that exited without reading a request. The
     /// program reports a failure as an `error` event on stdout before it
     /// exits, and nothing on stderr, so that event, still unread, is the
-    /// only place the reason is. Log and progress lines before it are
+    /// only place the reason is. Log lines, warnings and progress before it are
     /// passed on as [`Helper::next_event`] passes them, since they are often
     /// what explains the failure.
     fn stopped_unread(&mut self) -> anyhow::Error {
@@ -339,6 +341,7 @@ impl Helper {
         for line in self.stdout.iter().map_while(Result::ok) {
             match serde_json::from_str::<Event>(&line) {
                 Ok(Event::Log { line }) => self.log.emit(line),
+                Ok(Event::Warning { line }) => self.log.warn(line),
                 Ok(Event::Progress(progress)) => {
                     self.progress.emit(progress_event(progress));
                 }

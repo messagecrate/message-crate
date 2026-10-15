@@ -4,8 +4,8 @@
 //! [`run_log_lines`] (behind `testutil`).
 
 use crate::{
-    ExportReport, IssueSink, OutputConfig, ProgressEvent, ProgressSink, RunContext, RunIssue,
-    RunLogLevel, parse_run_log_line,
+    ExportReport, IssueSink, LogSink, OutputConfig, ProgressEvent, ProgressSink, RunContext,
+    RunIssue, RunLogLevel, parse_run_log_line,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -45,6 +45,47 @@ pub fn attachment_totals() -> (ProgressSink, AttachmentTotals) {
         }
     });
     (progress, totals)
+}
+
+/// Every line and warning a test's log sink received, each with the level
+/// the desktop app would write it at, in the order the run sent them.
+pub type RecordedLog = Arc<Mutex<Vec<(RunLogLevel, String)>>>;
+
+/// A log sink, and every line it receives at `INFO` and every warning at
+/// `WARN`, as the desktop app's run log sink sorts them: what a test of a
+/// line's level asserts on.
+pub fn recorded_log() -> (LogSink, RecordedLog) {
+    let recorded: RecordedLog = Arc::new(Mutex::new(Vec::new()));
+    let lines = Arc::clone(&recorded);
+    let warnings = Arc::clone(&recorded);
+    let sink = LogSink::new(move |line| {
+        lines
+            .lock()
+            .unwrap()
+            .push((RunLogLevel::Info, line.to_string()));
+    })
+    .with_warnings(move |text| {
+        warnings
+            .lock()
+            .unwrap()
+            .push((RunLogLevel::Warn, text.to_string()));
+    });
+    (sink, recorded)
+}
+
+/// The level `recorded` holds the first line starting with `start` at,
+/// `None` when no line starts with it.
+///
+/// # Panics
+///
+/// Panics when the recording's lock is poisoned.
+pub fn level_of(recorded: &RecordedLog, start: &str) -> Option<RunLogLevel> {
+    recorded
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(_, text)| text.starts_with(start))
+        .map(|(level, _)| *level)
 }
 
 /// Each line of the Import Run log at `path` as its level and text, in the

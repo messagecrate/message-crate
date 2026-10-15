@@ -12,8 +12,8 @@
 //!
 //! 1. The app sends [`Request::Export`] or [`Request::Identities`].
 //! 2. The helper answers [`Event::Source`] once, then streams [`Event::Log`],
-//!    [`Event::Progress`], [`Event::Conversation`] and [`Event::Message`]
-//!    lines in any order, then
+//!    [`Event::Warning`], [`Event::Progress`], [`Event::Conversation`] and
+//!    [`Event::Message`] lines in any order, then
 //!    [`Event::ExportDone`] (or [`Event::Identities`] for the identities
 //!    request). [`Event::Error`] ends the request instead when it fails.
 //! 3. For an encrypted backup the app may then send any number of
@@ -27,8 +27,9 @@
 //!    before it writes anything, so the app can check its disk for room.
 //! 2. The app sends [`Request::DecryptDomain`] to go ahead, or closes the
 //!    helper's stdin to stop, and the helper exits having written nothing.
-//! 3. The helper streams [`Event::Log`] and [`Event::Progress`] lines while it
-//!    decrypts, then sends [`Event::BackupDomainDone`].
+//! 3. The helper streams [`Event::Log`], [`Event::Warning`] and
+//!    [`Event::Progress`] lines while it decrypts, then sends
+//!    [`Event::BackupDomainDone`].
 //!
 //! This crate carries the type definitions, their serde shapes, and one rule:
 //! [`bare_address`], which says what an owner address looks like on the wire.
@@ -85,7 +86,9 @@ use serde_json::Value;
 /// 16: a [`Participant`] carries [`Participant::country`] and a message
 /// [`Message::sender_country`], the country `chat.db`'s `handle` row names
 /// for that identity.
-pub const PROTOCOL_VERSION: u32 = 16;
+/// 17: [`Event::Warning`] carries a line about something the run went on
+/// without, which [`Event::Log`] carried before.
+pub const PROTOCOL_VERSION: u32 = 17;
 
 /// The [`Conversation::conversation_type`] of a conversation that holds
 /// orphaned messages: messages the backup holds without recording which
@@ -258,8 +261,16 @@ pub enum Event {
         /// Whether attachment paths need [`Request::Attachment`] to read.
         encrypted: bool,
     },
-    /// A progress or warning line for the app's log.
+    /// A line for the app's log about something the helper did, such as a
+    /// step it started.
     Log {
+        /// The line, without a trailing newline.
+        line: String,
+    },
+    /// A line for the app's log about something the run went on without,
+    /// such as a contacts database it could not read or a message it left
+    /// out. The app writes it into the Import Run's log at `WARN`.
+    Warning {
         /// The line, without a trailing newline.
         line: String,
     },
@@ -303,7 +314,7 @@ pub enum Event {
         /// Files written. Zero means the backup does not hold the domain.
         files: u64,
         /// Files the manifest lists that could not be decrypted. Each one
-        /// has a line on the log.
+        /// has a warning on the log.
         failures: u64,
     },
     /// The request failed. The helper writes nothing after this line.
