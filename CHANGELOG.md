@@ -804,13 +804,14 @@ carry their date on the heading.
   attachment was recorded as one that could not be converted. Only a video
   conversion is now stopped for running past twice its length. An audio
   conversion is stopped when it makes no progress, or after twenty times
-  the file's length, at least 10 minutes and at most 6 hours (#2909).
+  the length it has reached, at least 10 minutes and at most 6 hours
+  (#2909).
 - 2026-10-15: **A file that could not be converted names the cause.** The
   short reason on an attachment ffmpeg could not convert was the last line
   ffmpeg wrote, which can follow from the cause rather than name it, such as
   "Nothing was written into output file" after an encoder that would not
-  open. The reason is now the line that names the cause, such as why the
-  encoder would not open, or ffmpeg's last line when no line does (#2959).
+  open. The reason is now the last line that names a cause, such as why the
+  encoder would not open or that the disk is full (#2959).
 - 2026-10-15: **Other users of the computer can no longer read a staged
   Import Run.** Each Import Run's directory in the Staging Directory, which
   holds the conversations and attachments it staged until the run ends, could

@@ -98,29 +98,51 @@ pub fn why_not_converted(err: &anyhow::Error, file: &Path) -> String {
         .to_string()
 }
 
+/// What ffmpeg writes after a failure that only follows from it: a task
+/// or thread ending, an encoder or a file that then would not open, and
+/// that nothing was written. Each is matched at the start of a line's text,
+/// after its `[<component> @ …]` tags.
+const CONSEQUENCES: [&str; 9] = [
+    "Nothing was written into output file",
+    "Task finished with error code",
+    "Terminating thread with return code",
+    "Could not open encoder before EOF",
+    "Error sending frames to consumers",
+    "Error while opening encoder",
+    "Error selecting an encoder",
+    "Error opening input",
+    "Error opening output",
+];
+
+/// Whether `line` of what ffmpeg wrote only follows from an earlier failure
+/// ([`CONSEQUENCES`]).
+fn is_consequence(line: &str) -> bool {
+    let mut text = line;
+    while let Some((_, rest)) = text.strip_prefix('[').and_then(|rest| rest.split_once(']')) {
+        text = rest.trim_start();
+    }
+    CONSEQUENCES.iter().any(|said| text.starts_with(said))
+}
+
 /// The line of what ffmpeg `said` that names why it failed, trimmed: the
-/// first line that starts with `Error`, or with a `[<component> @ …]` tag
-/// other than the output muxer's (`[out#…`); the last line when none does;
-/// `None` when it said nothing.
+/// last line that does not only follow from an earlier failure
+/// ([`is_consequence`]); the last line when every line does; `None` when it
+/// said nothing.
 ///
 /// ffmpeg writes the cause first and what follows from it after, such as
 /// that the encoder did not open and the output muxer's line that nothing
 /// was written, so the last line can be a consequence rather than the
-/// cause (#2959).
+/// cause (#2959). The search goes back from the end rather than forward
+/// from the start, because a damaged file makes ffmpeg write errors it
+/// carries on past, such as a frame it could not decode, before the one it
+/// stopped on, and the start of what is kept can be any of them.
 fn cause_line(said: &str) -> Option<&str> {
-    let mut lines = said.lines().map(str::trim).filter(|line| !line.is_empty());
-    let names_a_cause = |line: &&str| {
-        line.starts_with("Error")
-            || (!line.starts_with("[out#")
-                && line
-                    .strip_prefix('[')
-                    .and_then(|rest| rest.split_once(']'))
-                    .is_some_and(|(tag, _)| tag.contains(" @ ")))
-    };
+    let lines = said.lines().map(str::trim).filter(|line| !line.is_empty());
     lines
         .clone()
-        .find(names_a_cause)
-        .or_else(|| lines.next_back())
+        .rev()
+        .find(|line| !is_consequence(line))
+        .or_else(|| lines.last())
 }
 
 /// `err` on one line, with its whole chain, and each file a failed ffmpeg

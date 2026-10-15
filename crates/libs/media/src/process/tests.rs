@@ -4,9 +4,7 @@ use crate::fake_tools::{FakeTools, video_probe};
 use crate::kind_for_mime;
 use crate::testutil::PNG_1X1_RGB;
 use crate::testutil::{clock_from, progress_then_hang};
-use crate::tools::{
-    FfmpegFailed, InstalledTools, Limit, MediaTools, Reads, StallWatch, ffmpeg_command_line,
-};
+use crate::tools::{FfmpegFailed, InstalledTools, Limit, MediaTools, Reads, ffmpeg_command_line};
 
 /// The one ffmpeg run `tools` made, failing the test when there were more
 /// or none.
@@ -692,7 +690,8 @@ fn why_hevc_failed_names_no_file() {
 }
 
 /// A file the pass could not convert records the line ffmpeg wrote that
-/// names the cause, here its last, with no path in it, the same reason the desktop app's Media Stage records (#2801).
+/// names the cause, which here is its last line, with no path in it: the
+/// same reason the desktop app's Media Stage records (#2801).
 #[test]
 fn a_file_that_fails_records_ffmpegs_last_line_without_its_path() {
     let dir = tempfile::tempdir().unwrap();
@@ -786,61 +785,90 @@ fn ffmpeg_failed_saying(file: &Path, said: &str) -> anyhow::Error {
     ))
 }
 
-/// ffmpeg 8 writes why an encoder would not open first, and what followed
-/// from it after, ending with the output muxer's line that nothing was
-/// written. The reason is the line that names the cause (#2959).
+/// ffmpeg 8 writes why it failed and then what followed from it, ending
+/// with lines such as the output muxer's that nothing was written. The
+/// reason is the line that names the cause (#2959). Each stderr is what
+/// ffmpeg 8.0.1 wrote at `-loglevel error`.
 #[test]
 fn why_not_converted_names_the_cause_not_the_last_line() {
     let file = Path::new("/home/someone/attachments/clip.mov");
-    let failed = ffmpeg_failed_saying(
-        file,
-        "[libx265 @ 0x5e6836f4af00] Error setting preset/tune nonsense/(null).\n\
-         [vost#0:0/libx265 @ 0x5e6836f4a8c0] [enc:libx265 @ 0x5e6836f4ae80] Error while \
-         opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.\n\
-         [vf#0:0 @ 0x5e6836f4b500] Error sending frames to consumers: Invalid argument\n\
-         [out#0/mp4 @ 0x5e6836f4a340] Nothing was written into output file, because at least \
-         one of its streams received no packets.\n",
-    );
+    let reason = |said: &str| why_not_converted(&ffmpeg_failed_saying(file, said), file);
+
+    // An encoder that would not open.
     assert_eq!(
-        why_not_converted(&failed, file),
+        reason(
+            "[libx265 @ 0x5e6836f4af00] Error setting preset/tune nonsense/(null).\n\
+             [vost#0:0/libx265 @ 0x5e6836f4a8c0] [enc:libx265 @ 0x5e6836f4ae80] Error while \
+             opening encoder - maybe incorrect parameters such as bit_rate, rate, width or \
+             height.\n\
+             [vf#0:0 @ 0x5e6836f4b500] Error sending frames to consumers: Invalid argument\n\
+             [vf#0:0 @ 0x5e6836f4b500] Task finished with error code: -22 (Invalid argument)\n\
+             [vf#0:0 @ 0x5e6836f4b500] Terminating thread with return code -22 (Invalid \
+             argument)\n\
+             [vost#0:0/libx265 @ 0x5e6836f4a8c0] [enc:libx265 @ 0x5e6836f4ae80] Could not open \
+             encoder before EOF\n\
+             [vost#0:0/libx265 @ 0x5e6836f4a8c0] Task finished with error code: -22 (Invalid \
+             argument)\n\
+             [vost#0:0/libx265 @ 0x5e6836f4a8c0] Terminating thread with return code -22 \
+             (Invalid argument)\n\
+             [out#0/mp4 @ 0x5e6836f4a340] Nothing was written into output file, because at \
+             least one of its streams received no packets.\n"
+        ),
         "[libx265 @ 0x5e6836f4af00] Error setting preset/tune nonsense/(null)."
     );
 
     // An input it cannot read: the demuxer's line says why, and the lines
     // after it repeat that the input did not open.
-    let damaged = ffmpeg_failed_saying(
-        file,
-        "[mov,mp4,m4a,3gp,3g2,mj2 @ 0x583b3eba9f00] moov atom not found\n\
-         [in#0 @ 0x583b3eba9c40] Error opening input: Invalid data found when processing input\n\
-         Error opening input file /home/someone/attachments/clip.mov.\n\
-         Error opening input files: Invalid data found when processing input\n",
-    );
     assert_eq!(
-        why_not_converted(&damaged, file),
+        reason(
+            "[mov,mp4,m4a,3gp,3g2,mj2 @ 0x583b3eba9f00] moov atom not found\n\
+             [in#0 @ 0x583b3eba9c40] Error opening input: Invalid data found when processing \
+             input\n\
+             Error opening input file /home/someone/attachments/clip.mov.\n\
+             Error opening input files: Invalid data found when processing input\n"
+        ),
         "[mov,mp4,m4a,3gp,3g2,mj2 @ 0x583b3eba9f00] moov atom not found"
     );
 
-    // A line that starts with "Error" counts as a cause, and names the file
-    // as <input>.
-    let missing = ffmpeg_failed_saying(
-        file,
-        "Error opening input file /home/someone/attachments/clip.mov.\n\
-         Error opening input files: No such file or directory\n",
-    );
+    // An encoder ffmpeg does not have.
     assert_eq!(
-        why_not_converted(&missing, file),
-        "Error opening input file <input>."
+        reason(
+            "[vost#0:0 @ 0x57532dc21880] Unknown encoder 'nosuchcodec'\n\
+             [vost#0:0 @ 0x57532dc21880] Error selecting an encoder\n\
+             Error opening output file /tmp/out.mp4.\n\
+             Error opening output files: Encoder not found\n"
+        ),
+        "[vost#0:0 @ 0x57532dc21880] Unknown encoder 'nosuchcodec'"
     );
 
-    // With no line that names a cause, only the output muxer's and plain
-    // lines, the last line is the reason.
-    let unmarked = ffmpeg_failed_saying(
-        file,
-        "[out#0/mp4 @ 0x5e6836f4a340] Nothing was written into output file\n\
-         /home/someone/attachments/clip.mov: Invalid data found when processing input\n",
+    // A damaged frame ffmpeg carried on past is not the cause: a full disk
+    // that stopped it is.
+    assert_eq!(
+        reason(
+            "[mp3float @ 0x5cf2699f10c0] Header missing\n\
+             [aist#0:0/mp3 @ 0x5cf2699e0d80] [dec:mp3float @ 0x5cf2699f0a40] Error submitting \
+             packet to decoder: Invalid data found when processing input\n\
+             [out#0/adts @ 0x5cf2699e1a40] Error writing trailer: No space left on device\n\
+             [out#0/adts @ 0x5cf2699e1a40] Error closing file: No space left on device\n"
+        ),
+        "[out#0/adts @ 0x5cf2699e1a40] Error closing file: No space left on device"
+    );
+
+    // When every line only follows from another, the last line is the
+    // reason, with the file written as <input>.
+    assert_eq!(
+        reason(
+            "[in#0 @ 0x57c830ccfc40] Error opening input: No such file or directory\n\
+             Error opening input file /home/someone/attachments/clip.mov.\n\
+             Error opening input files: No such file or directory\n"
+        ),
+        "Error opening input files: No such file or directory"
     );
     assert_eq!(
-        why_not_converted(&unmarked, file),
+        reason(
+            "[out#0/mp4 @ 0x5e6836f4a340] Nothing was written into output file\n\
+             /home/someone/attachments/clip.mov: Invalid data found when processing input\n"
+        ),
         "<input>: Invalid data found when processing input"
     );
 }
@@ -1694,12 +1722,7 @@ impl MediaTools for ScriptedTools {
         reads: Reads<'_>,
         stop: Option<&AtomicBool>,
     ) -> Result<()> {
-        let limit = match reads {
-            Reads::OneFrame => Limit::ShortStep,
-            Reads::Video(_) | Reads::Audio(_) => {
-                Limit::Progress(StallWatch::video(WAIT, Some(SCRIPTED_LENGTH)))
-            }
-        };
+        let limit = Limit::of(reads, WAIT, |_| Some(SCRIPTED_LENGTH));
         let line = ffmpeg_command_line(args, dest);
         let started = self.dir.path().join("started");
         if self.stalls && has(args, "libx265") {

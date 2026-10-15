@@ -65,7 +65,7 @@ The command takes the database's operation lock (`<database>.operation.lock`, th
 
 A conversion that keeps moving runs as long as it needs, so a long video on a slow computer is never cut off for its length.
 One that stops moving for this many seconds is stopped, and so is a video conversion that runs past twice the file's length, as looping on a damaged file.
-An audio conversion has a time limit instead: twenty times the file's length, at least 10 minutes and at most 6 hours.
+An audio conversion has a time limit instead: twenty times the file's length, at least 10 minutes and at most 6 hours, or an hour when its length isn't known. Once the conversion has passed the length the file states, the limit follows the length it has reached.
 Reading a file's details, reading the one frame of a Thumbnail or of an image's Preview, and the check that finds ffmpeg have a fixed limit of 15 seconds that no key changes, because each takes well under a second on a working file.
 `serve`, `process-assets` and `import` read the key; a server started with `--data-dir` and the desktop app's own conversions use the default.
 Why the rules: `docs/architecture/media.md`.

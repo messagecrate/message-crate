@@ -229,10 +229,11 @@ A server started with a config file takes it from `[server] transcode_stall_secs
 A video conversion whose position passes twice the length ffprobe reads for the file is stopped too, as looping on a damaged file.
 A length ffprobe only estimated from the bitrate of the first frames doesn't count, because such an estimate can be under half the real length.
 An audio conversion is never stopped for its position, and has a time limit instead: twenty times the length ffprobe reads, at least 10 minutes and at most 6 hours, or an hour when ffprobe reads no length or only estimated one.
+Once the position passes that length, the limit is the one for a file as long as the position.
 Once the position reaches the file's length, the wait becomes at least twice the time the run took to get there.
 Why: with `-movflags +faststart`, ffmpeg rewrites the whole output after its last frame and reports no progress meanwhile, which takes minutes for a large video on a slow disk.
 A program stopped is killed and waited for.
-The conversion then fails like any other, and the reason recorded on the Asset's rows says why it was stopped: no progress for the wait, before or after converting part of the file, past twice the file's length, or a short step or an audio conversion over its time limit.
+The conversion then fails like any other, and the reason recorded on the Asset's rows says why it was stopped: no progress for the wait, before or after converting part of the file, a video past twice its length, or a short step or an audio conversion over its time limit.
 A `-version` run stopped at its 15 seconds counts as a program that does not run, so the lookup passes over it.
 
 The Media Stage compresses a video with HEVC first, and tries H.264 after a HEVC run that failed in a way H.264 may not:
@@ -252,7 +253,8 @@ Why no path: ffmpeg names the files by their full paths, and the server's log ho
 
 A file the desktop app could not convert records `convert_failed:` and a short reason on its attachment, the same on either path that converts it: the Media Stage and the convert pass of a run that converts as it stages (`media::why_not_converted`).
 The reason is why ffmpeg was stopped, or the line ffmpeg wrote that names the cause, with each file ffmpeg was given written as `<input>` or `<output>`.
-That line is the first that starts with `Error` or with a `[<component> @ …]` tag other than the output muxer's (`[out#…`), or the last line when none does.
+That line is the last one that does not only follow from an earlier failure, such as a task ending, an encoder or a file that then did not open, or that nothing was written; it is the last line when every line does (`cause_line`).
+The search goes back from the end, because a damaged file makes ffmpeg write errors it carries on past, such as a frame it could not decode, before the one it stopped on.
 Why not the last line: ffmpeg writes the cause first and what follows from it after, so its last line can be that nothing was written into the output file, which says nothing about why (#2959).
 An ffmpeg that wrote nothing gives how it exited.
 Any other failure gives the error's first line, with the file written as `<input>` and without each step that names another file in its directory, such as the temporary file a conversion writes.
@@ -266,13 +268,14 @@ The wait is 5 seconds, doubles with each failure in a row up to 5 minutes, and s
 
 Why stop a run that hangs: the pass works on one Asset at a time for every account, so an ffmpeg that never ended held it until the server stopped.
 The Asset stayed queued, so at the next start the pass took it again and hung again.
-Why watch progress rather than give a conversion time by its length: converting a two-hour video on a slow computer, such as a small NAS converting iPhone HEVC video, can take many times the video's length, and any limit by length cut such a conversion off.
+Why watch progress rather than give a video conversion time by its length: converting a two-hour video on a slow computer, such as a small NAS converting iPhone HEVC video, can take many times the video's length, and any limit by length cut such a conversion off.
 A hung 5-second clip, meanwhile, waited out the shortest limit, 10 minutes.
 Why the position and not the size of what ffmpeg writes: a hung ffmpeg can keep writing without moving forward.
 Why twice the length: a damaged or crafted file can make ffmpeg go around the same part forever while the position still moves, and no working conversion goes past the end of its file.
 Why video only: looping was seen on video, and an audio file's header can state under half its real length without ffprobe saying so.
 An MP3 joined from recordings back to back keeps the first part's header, which counts only that part's frames, and such a file was stopped as looping (#2909).
-A time limit at least 10 minutes long lets it convert, and a long audio file converts far faster than it plays.
+Why audio has a time limit at all: a damaged audio file can loop too, and its position keeps moving while it does, so the no-progress wait alone never ends it.
+The limit grows to the limit for the length the position has reached, so a file joined from hours of recordings is held to its whole length, not its first part's, and audio converts far faster than it plays, so a working conversion stays well inside it.
 Why 15 seconds for a short step: each takes well under a second on a working file, and a fixed limit is all a step that does not read the whole file needs.
 Why only local files: the files come from phone backups, and a playlist or a container inside one can name a network address that ffmpeg would otherwise open.
 Why run again on a timer rather than wait for an Import Run: only the end of an Import Run woke the pass, so on a server imported into once a busy database left the queue untouched until a restart.

@@ -426,16 +426,37 @@ fn an_audio_conversion_runs_past_twice_its_length_until_its_time_limit() {
     let length = Duration::from_secs(5);
     let limit = audio_time_limit(Some(length));
     let mut watch = StallWatch::audio(2 * MINUTE, Some(length));
-    assert_eq!(watch.observe(Some(Duration::from_secs(60)), MINUTE), None);
+    assert_eq!(watch.observe(Some(Duration::from_secs(20)), MINUTE), None);
     assert_eq!(
         watch.observe(
-            Some(Duration::from_secs(61)),
+            Some(Duration::from_secs(21)),
             limit - Duration::from_millis(1)
         ),
         None
     );
     assert_eq!(
-        watch.observe(Some(Duration::from_secs(62)), limit),
+        watch.observe(Some(Duration::from_secs(22)), limit),
+        Some(KillReason::TookTooLong { limit })
+    );
+}
+
+/// An audio file whose header states a few seconds while it plays for
+/// hours gets the time limit of the length its position has reached, so a
+/// long joined recording on a slow computer is not stopped at the limit for
+/// its first part (#2909).
+#[test]
+fn an_audio_time_limit_grows_with_the_position_past_the_stated_length() {
+    let length = Duration::from_secs(5);
+    let mut watch = StallWatch::audio(2 * MINUTE, Some(length));
+    assert_eq!(watch.observe(Some(60 * MINUTE), 10 * MINUTE), None);
+    let limit = audio_time_limit(Some(90 * MINUTE));
+    assert_eq!(limit, 360 * MINUTE);
+    assert_eq!(
+        watch.observe(Some(90 * MINUTE), limit - Duration::from_millis(1)),
+        None
+    );
+    assert_eq!(
+        watch.observe(Some(91 * MINUTE), limit),
         Some(KillReason::TookTooLong { limit })
     );
 }

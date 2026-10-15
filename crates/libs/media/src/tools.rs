@@ -398,17 +398,9 @@ impl MediaTools for InstalledTools {
         if is_set(stop) {
             return Err(Killed::stopped_before_start(Program::Ffmpeg).into());
         }
-        let limit = match reads {
-            Reads::OneFrame => Limit::ShortStep,
-            Reads::Video(src) => Limit::Progress(StallWatch::video(
-                self.stall_wait,
-                crate::probe::played_for(self, src, stop),
-            )),
-            Reads::Audio(src) => Limit::Progress(StallWatch::audio(
-                self.stall_wait,
-                crate::probe::played_for(self, src, stop),
-            )),
-        };
+        let limit = Limit::of(reads, self.stall_wait, |src| {
+            crate::probe::played_for(self, src, stop)
+        });
         let started = Instant::now();
         self.run_ffmpeg_watched(&ffmpeg_command_line(args, dest), stop, limit, &|| {
             started.elapsed()
@@ -706,7 +698,7 @@ const AUDIO_SECONDS_PER_SECOND_PLAYED: u32 = 20;
 const LONGEST_AUDIO_TIME_LIMIT: Duration = Duration::from_secs(6 * 60 * 60);
 
 /// How long an audio conversion of a file that plays for `played` may run
-/// in all: [`AUDIO_SECONDS_PER_SECOND_PLAYED`] times its length, at least
+/// in all, before ffmpeg's position passes `played` ([`StallWatch::audio`]): [`AUDIO_SECONDS_PER_SECOND_PLAYED`] times its length, at least
 /// [`SHORTEST_AUDIO_TIME_LIMIT`] and at most [`LONGEST_AUDIO_TIME_LIMIT`],
 /// rounded up to whole minutes; [`UNKNOWN_LENGTH_AUDIO_TIME_LIMIT`] when the
 /// length is not known.
@@ -732,6 +724,23 @@ pub(crate) enum Limit {
     /// A conversion that reads a whole file, killed when [`StallWatch`]
     /// says so.
     Progress(StallWatch),
+}
+
+impl Limit {
+    /// What ends a run that `reads` what it reads: a short step for one
+    /// frame, else a [`StallWatch`] for video or for audio with the
+    /// no-progress `wait`, over a source as long as `length` says.
+    pub(crate) fn of(
+        reads: Reads<'_>,
+        wait: Duration,
+        length: impl FnOnce(&Path) -> Option<Duration>,
+    ) -> Self {
+        match reads {
+            Reads::OneFrame => Self::ShortStep,
+            Reads::Video(src) => Self::Progress(StallWatch::video(wait, length(src))),
+            Reads::Audio(src) => Self::Progress(StallWatch::audio(wait, length(src))),
+        }
+    }
 }
 
 /// Whether a conversion that reads a whole file is still moving forward,
@@ -769,9 +778,11 @@ enum MovingLimit {
     /// A video: its position passing twice the source's length, as a
     /// damaged file looping, which is where looping was seen.
     TwiceTheLength,
-    /// Audio: running this long in all ([`audio_time_limit`]). A header can
-    /// state under half an audio file's real length without ffprobe saying
-    /// so (#2909).
+    /// Audio: running this long in all ([`audio_time_limit`]), or the
+    /// limit for a file as long as the furthest position, when that is
+    /// longer. A header can state under half an audio file's real length
+    /// without ffprobe saying so (#2909), and a file joined from hours of
+    /// recordings must not be held to the limit for its first part.
     RunningFor(Duration),
 }
 
@@ -827,10 +838,11 @@ impl StallWatch {
             self.furthest = position;
             self.moved_at = now;
         }
-        if let MovingLimit::RunningFor(limit) = self.moving_limit
-            && now >= limit
-        {
-            return Some(KillReason::TookTooLong { limit });
+        if let MovingLimit::RunningFor(limit) = self.moving_limit {
+            let limit = limit.max(audio_time_limit(Some(self.furthest)));
+            if now >= limit {
+                return Some(KillReason::TookTooLong { limit });
+            }
         }
         if let Some(length) = self.length {
             if self.moving_limit == MovingLimit::TwiceTheLength
