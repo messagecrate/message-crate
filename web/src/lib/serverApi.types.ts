@@ -3328,9 +3328,10 @@ export interface components {
              */
             attachments_ms: number | null;
             /**
-             * @description When the backup the run read was made, UTC: the newest date its
-             *     conversation files name (`export.backup_taken_at_unix_ms`). Null until
-             *     a file that names one is imported, and for a run whose files name none.
+             * @description When the backup the run read was made, UTC: the newest Backup Date
+             *     the messages of its conversation files carry (each message's
+             *     `backup_taken_at_unix_ms`). Null until a file that names one is
+             *     imported, and for a run whose files name none.
              */
             backup_taken_at: string | null;
             /**
@@ -4712,9 +4713,10 @@ export interface components {
                  */
                 attachments_ms: number | null;
                 /**
-                 * @description When the backup the run read was made, UTC: the newest date its
-                 *     conversation files name (`export.backup_taken_at_unix_ms`). Null until
-                 *     a file that names one is imported, and for a run whose files name none.
+                 * @description When the backup the run read was made, UTC: the newest Backup Date
+                 *     the messages of its conversation files carry (each message's
+                 *     `backup_taken_at_unix_ms`). Null until a file that names one is
+                 *     imported, and for a run whose files name none.
                  */
                 backup_taken_at: string | null;
                 /**

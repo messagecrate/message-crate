@@ -606,16 +606,20 @@ fn dated_fixture() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/dated_backup.xml")
 }
 
-/// The backup date of each conversation read from `input`, by chat id.
-fn backup_dates(input: &Path) -> Vec<(String, Option<i64>)> {
+/// The Backup Dates the messages of each conversation read from `input`
+/// carry, each date once, by chat id.
+fn backup_dates(input: &Path) -> Vec<(String, Vec<Option<i64>>)> {
     let owners = ["+15555550100".to_string()];
     let (docs, _) = read_backup(input, opts(&owners, None, None)).unwrap();
     docs.into_iter()
         .map(|document| {
-            (
-                document.conversation.chat_identifier,
-                document.export.backup_taken_at_unix_ms,
-            )
+            let mut dates: Vec<Option<i64>> = document
+                .messages
+                .iter()
+                .map(|m| m.backup_taken_at_unix_ms)
+                .collect();
+            dates.dedup();
+            (document.conversation.chat_identifier, dates)
         })
         .collect()
 }
@@ -630,8 +634,8 @@ fn the_backup_date_is_the_files_backup_date_attribute() {
     assert_eq!(
         backup_dates(&input),
         [
-            ("+15555550101".to_string(), Some(1_790_793_912_000)),
-            ("+15555550102".to_string(), Some(1_790_793_912_000)),
+            ("+15555550101".to_string(), vec![Some(1_790_793_912_000)]),
+            ("+15555550102".to_string(), vec![Some(1_790_793_912_000)]),
         ]
     );
 }
@@ -649,6 +653,6 @@ fn a_file_without_a_backup_date_is_dated_by_its_modification_time() {
     message_crate_core::testutil::set_modified_unix_ms(&input, 1_500_000_000_000);
     assert_eq!(
         backup_dates(&input),
-        [("+15555550101".to_string(), Some(1_500_000_000_000))]
+        [("+15555550101".to_string(), vec![Some(1_500_000_000_000)])]
     );
 }

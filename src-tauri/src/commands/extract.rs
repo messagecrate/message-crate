@@ -198,6 +198,9 @@ pub fn extract(
         &options,
     )?;
     config.output.resume = args.resume.unwrap_or(false);
+    // The Export Date every conversation file of the run carries: the
+    // exporters are given the instant and never read the clock.
+    config.output.exported_at_unix_ms = Some(chrono::Utc::now().timestamp_millis());
 
     let job = start_job(&state, JobName::Staging)?;
 

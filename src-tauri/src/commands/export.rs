@@ -66,6 +66,9 @@ pub fn export(
             page_limit: DEFAULT_PAGE_LIMIT,
             cancel,
             asset_fetch_workers: DEFAULT_ASSET_FETCH_WORKERS,
+            // The run is given the instant it writes as each file's Export
+            // Date, and never reads the clock itself.
+            exported_at_unix_ms: chrono::Utc::now().timestamp_millis(),
         };
 
         let mut progress = |event: ProgressEvent| match event {

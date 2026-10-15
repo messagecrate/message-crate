@@ -80,8 +80,10 @@ pub struct PendingReply {
 
 /// Per-exporter deltas of the shared [`pending_to_document`] projection.
 ///
-/// Only [`export`](Self::export), [`service`](Self::service), and
-/// [`vendor_fields`](Self::vendor_fields) are required; every other method has a default
+/// Only [`export`](Self::export), [`service`](Self::service),
+/// [`vendor_fields`](Self::vendor_fields), and
+/// [`backup_taken_at_unix_ms`](Self::backup_taken_at_unix_ms) are required;
+/// every other method has a default
 /// matching the common exporter behavior.
 ///
 /// Every exporter projects through these hooks except Apple Messages
@@ -109,6 +111,12 @@ pub trait ProjectionHooks {
         conversation: &PendingConversation,
         message: &PendingMessage,
     ) -> VendorFields;
+
+    /// The Backup Date of one message
+    /// ([`Message::backup_taken_at_unix_ms`]): when the backup it was read
+    /// from was made, or `None` when nothing says. Required, so no exporter
+    /// leaves its messages undated by omission.
+    fn backup_taken_at_unix_ms(&self, message: &PendingMessage) -> Option<i64>;
 
     /// Normalize a raw non-owner sender handle (e.g. guard phone digits).
     /// The default keeps the handle as-is.
@@ -419,6 +427,7 @@ pub fn project_pending<H: ProjectionHooks + ?Sized>(
             imessage: None,
             source: hooks.vendor_fields(conversation, message).into_option(),
             sender_country: None,
+            backup_taken_at_unix_ms: hooks.backup_taken_at_unix_ms(message),
         });
     }
     for (index, reply) in replies {
@@ -605,8 +614,12 @@ mod tests {
                 tool_version: "0".into(),
                 owner_identity: Some("+15555550100".into()),
                 owner_display_name: None,
-                backup_taken_at_unix_ms: None,
+                exported_at_unix_ms: None,
             }
+        }
+
+        fn backup_taken_at_unix_ms(&self, _message: &PendingMessage) -> Option<i64> {
+            None
         }
 
         fn service(&self, _message: &PendingMessage) -> Transport {
@@ -646,6 +659,10 @@ mod tests {
     impl ProjectionHooks for KeyedHooks {
         fn export(&self) -> ExportMeta {
             TestHooks.export()
+        }
+
+        fn backup_taken_at_unix_ms(&self, _message: &PendingMessage) -> Option<i64> {
+            None
         }
 
         fn service(&self, _message: &PendingMessage) -> Transport {
@@ -889,6 +906,10 @@ mod tests {
     impl ProjectionHooks for MillisecondHooks {
         fn export(&self) -> ExportMeta {
             TestHooks.export()
+        }
+
+        fn backup_taken_at_unix_ms(&self, _message: &PendingMessage) -> Option<i64> {
+            None
         }
 
         fn service(&self, message: &PendingMessage) -> Transport {

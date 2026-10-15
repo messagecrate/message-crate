@@ -354,6 +354,7 @@ Normal sticker sends: image MIME part + `X-ME-Attachment-Meta` (`is_sticker`, `s
 | `export_*` | `X-ME-Export-*` |
 | `owner_identity` / `owner_display_name` | `X-ME-Owner-*` |
 | `backup_taken_at_unix_ms` | `X-ME-Backup-Taken-At-Unix-Ms` |
+| `exported_at_unix_ms` | `X-ME-Exported-At-Unix-Ms` |
 | `message_owner_identity` | `X-ME-Message-Owner-Identity` |
 | `participants_json` (iMessage) | `X-ME-Participants` |
 | `reactions_json` | `X-ME-Reactions` |

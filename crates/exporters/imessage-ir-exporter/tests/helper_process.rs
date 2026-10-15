@@ -168,7 +168,7 @@ fn every_conversation_file_says_when_the_chat_db_was_last_written() {
     assert!(
         dates
             .iter()
-            .all(|d| *d == Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)),
+            .all(|d| *d == vec![Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)]),
         "{dates:?}"
     );
 }
@@ -572,14 +572,14 @@ fn a_handles_country_reaches_the_conversation_file() {
     assert_eq!(none.messages[0].sender_country, None);
 
     // The server imports this output from its own copy, and that copy must
-    // be what the exporter writes. Only the backup's date, read from the
-    // fixture file's time, may differ.
+    // be what the exporter writes. Only each message's Backup Date, read
+    // from the fixture file's time, may differ.
     let comparable = |text: &str| -> Vec<serde_json::Value> {
         text.lines()
             .map(|line| {
                 let mut value: serde_json::Value = serde_json::from_str(line).unwrap();
-                if let Some(export) = value.get_mut("export").and_then(|e| e.as_object_mut()) {
-                    export.remove("backup_taken_at_unix_ms");
+                if let Some(message) = value.as_object_mut() {
+                    message.remove("backup_taken_at_unix_ms");
                 }
                 value
             })

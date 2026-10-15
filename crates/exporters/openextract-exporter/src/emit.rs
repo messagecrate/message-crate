@@ -64,21 +64,24 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
                 message_crate_core::check_cancel(cancel)?;
                 ingest.ingest_file(path);
             }
-            // OpenExtract writes no date of its own, so the backup is as new
-            // as the newest CSV it wrote.
             let export = message_crate_core::export_meta(
                 EXPORT_SOURCE,
                 EXPORT_TOOL,
                 EXPORT_TOOL_VERSION,
                 None,
                 None,
-                message_crate_core::newest_file_modified_unix_ms(
-                    csv_files.iter().map(PathBuf::as_path),
-                ),
+            );
+            // OpenExtract writes no date of its own, so the backup is as new
+            // as the newest CSV it wrote.
+            let backup_taken_at_unix_ms = message_crate_core::newest_file_modified_unix_ms(
+                csv_files.iter().map(PathBuf::as_path),
             );
             Ok(ReadBackup {
                 conversations: ingest.conversations.into_iter().collect(),
-                project: OpenExtractDocuments { export },
+                project: OpenExtractDocuments {
+                    export,
+                    backup_taken_at_unix_ms,
+                },
                 report: ingest.report,
             })
         },
@@ -88,6 +91,8 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
 /// The projection of each conversation read, for [`convert_backup`].
 struct OpenExtractDocuments {
     export: ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
 }
 
 impl Project for OpenExtractDocuments {
@@ -100,6 +105,7 @@ impl Project for OpenExtractDocuments {
     ) -> Option<ConversationDocument> {
         let hooks = OpenExtractProjection {
             export: &self.export,
+            backup_taken_at_unix_ms: self.backup_taken_at_unix_ms,
             key: &pending.key,
         };
         let mut document =
@@ -573,6 +579,8 @@ fn parse_timestamp(raw: &str) -> Option<i64> {
 /// OpenExtract deltas of the shared [`message_ir::pending_to_document`] projection.
 struct OpenExtractProjection<'a> {
     export: &'a ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
     /// The key of the conversation being projected.
     key: &'a Key,
 }
@@ -580,6 +588,10 @@ struct OpenExtractProjection<'a> {
 impl ProjectionHooks for OpenExtractProjection<'_> {
     fn export(&self) -> ExportMeta {
         self.export.clone()
+    }
+
+    fn backup_taken_at_unix_ms(&self, _message: &PendingMessage) -> Option<i64> {
+        self.backup_taken_at_unix_ms
     }
 
     fn service(&self, _message: &PendingMessage) -> Transport {

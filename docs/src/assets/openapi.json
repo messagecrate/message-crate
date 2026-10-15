@@ -16190,7 +16190,7 @@
               "string",
               "null"
             ],
-            "description": "When the backup the run read was made, UTC: the newest date its\nconversation files name (`export.backup_taken_at_unix_ms`). Null until\na file that names one is imported, and for a run whose files name none."
+            "description": "When the backup the run read was made, UTC: the newest Backup Date\nthe messages of its conversation files carry (each message's\n`backup_taken_at_unix_ms`). Null until a file that names one is\nimported, and for a run whose files name none."
           },
           "bytes_uploaded": {
             "type": "integer",
@@ -18658,7 +18658,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "When the backup the run read was made, UTC: the newest date its\nconversation files name (`export.backup_taken_at_unix_ms`). Null until\na file that names one is imported, and for a run whose files name none."
+                  "description": "When the backup the run read was made, UTC: the newest Backup Date\nthe messages of its conversation files carry (each message's\n`backup_taken_at_unix_ms`). Null until a file that names one is\nimported, and for a run whose files name none."
                 },
                 "bytes_uploaded": {
                   "type": "integer",

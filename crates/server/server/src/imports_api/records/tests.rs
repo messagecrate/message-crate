@@ -48,7 +48,7 @@ fn message_with(subject: Option<&str>) -> MessageRecord {
     }
     let mut records = parse_ir_lines([header, message.to_string()]).unwrap();
     match records.pop() {
-        Some(ExportRecord::Message(m)) => m,
+        Some(ExportRecord::Message(m)) => *m,
         _ => panic!("expected message"),
     }
 }

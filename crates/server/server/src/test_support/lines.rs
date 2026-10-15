@@ -30,7 +30,7 @@ pub fn conversation_header(source: &str, chat_identifier: &str) -> ConversationH
             tool_version: "0".to_string(),
             owner_identity: None,
             owner_display_name: None,
-            backup_taken_at_unix_ms: None,
+            exported_at_unix_ms: None,
         },
         conversation: message_ir::ConversationMeta {
             chat_identifier: chat_identifier.to_string(),
@@ -47,13 +47,6 @@ impl ConversationHeaderLine {
     pub fn owner(mut self, identity: &str, display_name: Option<&str>) -> Self {
         self.0.export.owner_identity = Some(identity.to_string());
         self.0.export.owner_display_name = display_name.map(str::to_string);
-        self
-    }
-
-    /// When the backup the batch was read from was made, in Unix
-    /// milliseconds.
-    pub fn backup_taken_at(mut self, unix_ms: i64) -> Self {
-        self.0.export.backup_taken_at_unix_ms = Some(unix_ms);
         self
     }
 
@@ -163,6 +156,7 @@ pub fn message_line(guid: &str, text: &str) -> MessageLine {
         reply_to: None,
         imessage: None,
         source: None,
+        backup_taken_at_unix_ms: None,
     })
 }
 
@@ -170,6 +164,13 @@ impl MessageLine {
     /// Sent at `timestamp_unix_ms`, in milliseconds since 1970-01-01 UTC.
     pub fn at(mut self, timestamp_unix_ms: i64) -> Self {
         self.0.timestamp_unix_ms = timestamp_unix_ms;
+        self
+    }
+
+    /// Read from a backup made at `unix_ms`, in Unix milliseconds: the
+    /// message's Backup Date. `None` says nothing, as a file without one.
+    pub fn backup_taken_at(mut self, unix_ms: Option<i64>) -> Self {
+        self.0.backup_taken_at_unix_ms = unix_ms;
         self
     }
 

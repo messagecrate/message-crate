@@ -84,6 +84,9 @@ tokio = { version = "1.53.0", features = ["test-util"] }
 # The desktop app's import library, so a test can run an Upload as the app
 # sends one against the server binary.
 message-crate-import = { path = "../../libs/import" }
+# The desktop app's export library, so a test can run an Export Run against
+# the server binary and import what it wrote into another.
+message-crate-export = { path = "../../libs/export" }
 
 [lints]
 workspace = true

@@ -85,16 +85,16 @@ const EMOJI_ONLY: &[&str] = &["👍", "😂", "❤️", "🎉", "😊"];
 
 /// Export metadata stamped on a conversation header. `owner_identity` is the
 /// Demo Account's identity the conversation's messages are held at, and
-/// `backup_taken_at_unix_ms` when the backup was made: the settings'
-/// reference time, which every generated message is before.
-fn export_meta(source: &str, owner_identity: &str, backup_taken_at_unix_ms: i64) -> ExportMeta {
+/// `exported_at_unix_ms` when the file was written: the settings' reference
+/// time, as every message's Backup Date is ([`Seeder::emit`]).
+fn export_meta(source: &str, owner_identity: &str, exported_at_unix_ms: i64) -> ExportMeta {
     ExportMeta {
         source: source.into(),
         tool: "demo-seed".into(),
         tool_version: "0.2.0".into(),
         owner_identity: Some(owner_identity.into()),
         owner_display_name: Some("Me".into()),
-        backup_taken_at_unix_ms: Some(backup_taken_at_unix_ms),
+        exported_at_unix_ms: Some(exported_at_unix_ms),
     }
 }
 
@@ -344,6 +344,7 @@ impl SharedMessage {
             reply_to: None,
             imessage: None,
             source: None,
+            backup_taken_at_unix_ms: None,
         }
     }
 }
@@ -1213,6 +1214,7 @@ impl<R: Rng> Seeder<'_, R> {
             reply_to: None,
             imessage: None,
             source: None,
+            backup_taken_at_unix_ms: None,
         }
     }
 
@@ -1233,8 +1235,11 @@ impl<R: Rng> Seeder<'_, R> {
         }
     }
 
-    /// Write one message line and count it.
-    fn emit(&mut self, file: &mut BufWriter<File>, msg: Message) -> Result<()> {
+    /// Write one message line, dated by the backup the settings' reference
+    /// time stands for, which every generated message is before, and count
+    /// it.
+    fn emit(&mut self, file: &mut BufWriter<File>, mut msg: Message) -> Result<()> {
+        msg.backup_taken_at_unix_ms = Some(self.cfg.reference_time.timestamp_millis());
         write_message(file, msg)?;
         self.stats.messages += 1;
         Ok(())

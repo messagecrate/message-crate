@@ -408,7 +408,7 @@ fn message_to_ir(
                 owner_identity: (!record.owner_identity.is_empty())
                     .then(|| record.owner_identity.clone()),
                 owner_display_name: record.owner_display_name.clone(),
-                backup_taken_at_unix_ms: None,
+                exported_at_unix_ms: None,
             });
             (identity, name, None)
         }
@@ -451,6 +451,8 @@ fn message_to_ir(
         reply_to: record.reply_to,
         imessage: record.imessage.map(imessage_to_ir),
         source: None,
+        // Dated by the backup in `chat_to_document`.
+        backup_taken_at_unix_ms: None,
     };
     (message, loads)
 }
@@ -730,7 +732,7 @@ fn write_conversations(
     options
         .progress
         .emit(ProgressEvent::Prepare { done: 0, total });
-    let backup_taken_at_unix_ms = options.backup_taken_at_unix_ms();
+    let dates = options.file_dates();
     let mut written = 0usize;
     let mut kept = 0u64;
     for (chat_identifier, conversation) in conversations {
@@ -740,12 +742,8 @@ fn write_conversations(
             continue;
         }
         kept += 1;
-        let document = chat_to_document(
-            chat_identifier,
-            conversation,
-            options.use_caller_id,
-            backup_taken_at_unix_ms,
-        );
+        let document =
+            chat_to_document(chat_identifier, conversation, options.use_caller_id, dates);
         let document_id = document.conversation.chat_identifier.clone();
         sink.write_document(document)
             .map_err(|e| anyhow!("write {} for {}: {e:#}", format.as_str(), document_id))?;
@@ -760,16 +758,26 @@ fn write_conversations(
     Ok(kept)
 }
 
+/// The dates one run's conversation files carry
+/// ([`ExportOptions::file_dates`]).
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct FileDates {
+    /// When the backup was made: every message's Backup Date.
+    pub(crate) backup_taken_at_unix_ms: Option<i64>,
+    /// When the file was written: the file's Export Date.
+    pub(crate) exported_at_unix_ms: Option<i64>,
+}
+
 /// Project one accumulated conversation into the shared document shape,
-/// read from a backup made at `backup_taken_at_unix_ms`
-/// ([`ExportOptions::backup_taken_at_unix_ms`]).
+/// each message dated by the backup and the file by the run, as `dates`
+/// says.
 ///
 /// Not through [`message_ir::ProjectionHooks`], whose documentation says why.
 fn chat_to_document(
     chat_identifier: String,
     conversation: ChatInProgress,
     use_caller_id: bool,
-    backup_taken_at_unix_ms: Option<i64>,
+    dates: FileDates,
 ) -> ConversationDocument {
     let export = ExportMeta {
         source: EXPORT_SOURCE.into(),
@@ -780,13 +788,14 @@ fn chat_to_document(
         owner_display_name: conversation
             .owner_display_name
             .or_else(|| use_caller_id.then(|| "Me".to_string())),
-        backup_taken_at_unix_ms,
+        exported_at_unix_ms: dates.exported_at_unix_ms,
     };
     // Each message keeps the address it was sent from; the conversation's
     // owner fills in only where the database recorded none.
     let (owner_identity, owner_display_name) = owner_sender(&export);
     let mut messages = conversation.messages;
     for message in &mut messages {
+        message.backup_taken_at_unix_ms = dates.backup_taken_at_unix_ms;
         if message.direction == Direction::Outgoing && message.sender_identity.is_none() {
             message.sender_identity.clone_from(&owner_identity);
             message.sender_display_name.clone_from(&owner_display_name);
@@ -816,15 +825,10 @@ fn chat_to_unit(
     chat_identifier: String,
     mut conversation: ChatInProgress,
     use_caller_id: bool,
-    backup_taken_at_unix_ms: Option<i64>,
+    dates: FileDates,
 ) -> ConversationUnit {
     let loads = std::mem::take(&mut conversation.attachment_loads);
-    let document = chat_to_document(
-        chat_identifier,
-        conversation,
-        use_caller_id,
-        backup_taken_at_unix_ms,
-    );
+    let document = chat_to_document(chat_identifier, conversation, use_caller_id, dates);
     let mut loads = loads.into_iter();
     ConversationUnit::from_doc(document, |_, att| attachment_source(loads.next(), att))
 }
@@ -848,18 +852,13 @@ fn drain_conversations(
     not_decrypted: &mut NotDecrypted,
 ) -> Result<ExportReport> {
     let use_caller_id = options.use_caller_id;
-    let backup_taken_at_unix_ms = options.backup_taken_at_unix_ms();
+    let dates = options.file_dates();
     let units: Vec<ConversationUnit> = collected
         .conversations
         .into_iter()
         .filter(|(_, conversation)| !conversation.messages.is_empty())
         .map(|(chat_identifier, conversation)| {
-            chat_to_unit(
-                chat_identifier,
-                conversation,
-                use_caller_id,
-                backup_taken_at_unix_ms,
-            )
+            chat_to_unit(chat_identifier, conversation, use_caller_id, dates)
         })
         .collect();
 
@@ -1316,7 +1315,12 @@ mod tests {
             attachment_loads: Vec::new(),
         };
 
-        let document = chat_to_document("+15555550122".into(), conversation, false, None);
+        let document = chat_to_document(
+            "+15555550122".into(),
+            conversation,
+            false,
+            FileDates::default(),
+        );
 
         let senders: Vec<_> = document
             .messages
@@ -1417,6 +1421,7 @@ mod tests {
             reply_to: None,
             imessage: None,
             source: None,
+            backup_taken_at_unix_ms: None,
         }
     }
 
@@ -1445,7 +1450,12 @@ mod tests {
             ],
         };
 
-        let unit = chat_to_unit("+15555550101".into(), conversation, false, None);
+        let unit = chat_to_unit(
+            "+15555550101".into(),
+            conversation,
+            false,
+            FileDates::default(),
+        );
 
         assert_eq!(unit.attachments.len(), 2);
         assert_eq!(unit.attachments[0].message_index, 0);
