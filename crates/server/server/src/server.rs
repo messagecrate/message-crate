@@ -2037,9 +2037,10 @@ pub(crate) async fn stop_requested() {
 }
 
 /// How long `/health` waits for a pool connection and its `SELECT 1`. It
-/// stays under the time `docker/healthcheck.cjs` gives each address it asks,
-/// and `SELECT 1` reads no table, so it never waits on a writer's lock. Why a
-/// pool that writers fill reads as down, and why that is accepted:
+/// stays under the time `message-crate-server healthcheck` (`healthcheck.rs`)
+/// gives each address it asks, and `SELECT 1` reads no table, so it never
+/// waits on a writer's lock. Why a pool that writers fill reads as down, and
+/// why that is accepted:
 /// `docs/architecture/http-api.md`, "Failures".
 const HEALTH_DATABASE_LIMIT: std::time::Duration = std::time::Duration::from_millis(1500);
 

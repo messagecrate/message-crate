@@ -286,6 +286,24 @@ pub(super) async fn completed_run_at_fixed_instant(
     import_id
 }
 
+/// The guid of the message `guid` is hidden behind, or `None` when it is
+/// shown.
+pub(super) async fn hidden_behind(state: &crate::server::AppState, guid: &str) -> Option<String> {
+    let mut conn = state.db.acquire().await.unwrap();
+    sqlx::query_scalar(
+        r"
+        SELECT w.guid
+        FROM messages m
+        LEFT JOIN messages w ON w.id = m.duplicate_of
+        WHERE m.guid = $1
+        ",
+    )
+    .bind(guid)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap()
+}
+
 /// Each conversation of `TEST_ACCOUNT` with its number of participant rows,
 /// and the account's number of contacts.
 async fn participant_and_contact_counts(conn: &mut SqliteConnection) -> (Vec<(i64, i64)>, i64) {
@@ -328,6 +346,7 @@ mod participants;
 mod phone_country;
 mod promote;
 mod reactions;
+mod run_end_dedupe;
 mod search_index;
 mod staging;
 mod time_precision;

@@ -209,12 +209,24 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-15: **The Docker image no longer carries Node.js.** It was built
+  on Node.js 20, which no longer gets security fixes, though the server never
+  used it, so image scanners flagged every Message Crate image. The image is
+  now built on Debian alone and checks its own health with the server
+  program. It still runs as user and group 1000, so existing data and
+  Compose files work as before (#2065).
 - 2026-10-15: **The owner's password is typed, not written on the command
   line.** The server's `create-owner` and `reset-owner-password` commands
   now ask for the password and don't show it as it's typed, or read it from
   the first line of their input when it is piped in. They no longer take
   it as `--password`, because a command line is visible to everyone signed
   in to the computer while it runs and stays in the shell's history (#2094).
+- 2026-10-15: **An import hides its duplicates once, when it ends.** The
+  server used to hide the duplicates of the whole account after every part
+  of an import it received, so a large import into a large account went
+  over every message hundreds of times while other changes waited.
+  It now does that once, when the import finishes or is given up.
+  Duplicates the import brings stay shown until then (#2040).
 - 2026-10-12: **A wrong password now costs a short wait instead of counting
   toward a lockout.** A refused login, and a wrong current password when
   changing the owner's password or deleting an account, waits about a second
@@ -803,6 +815,11 @@ carry their date on the heading.
   such as decrypting a large encrypted backup, the import kept going, and a
   reader stuck on a backup whose disk went away ran until the app closed.
   Cancel now stops the reader at once, whatever it is doing (#2085).
+- 2026-10-15: **A conversation that crashes its preparation no longer hangs
+  the Upload.** When preparing one conversation for an Upload crashed, the
+  Upload waited for it forever and pausing it could not halt it. That
+  conversation is now reported as failed, with the crash's message, and the
+  Upload goes on to the rest (#2087).
 - 2026-10-15: **Other users of the computer can no longer read a staged
   Import Run.** Each Import Run's directory in the Staging Directory, which
   holds the conversations and attachments it staged until the run ends, could
