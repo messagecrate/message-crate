@@ -37,7 +37,7 @@ function consequence(
   if (blocked) {
     return need === "whatsapp"
       ? "A WhatsApp import can't start without wtsexporter."
-      : "Convert and Compress need ffmpeg and ffprobe. Copy imports attachments as they are.";
+      : "Convert media and Convert & Compress media need ffmpeg and ffprobe. Copy imports attachments as they are.";
   }
   const waits = nameList(downloading);
   return need === "whatsapp" ? `The import waits for ${waits}.` : `Media waits for ${waits}.`;
