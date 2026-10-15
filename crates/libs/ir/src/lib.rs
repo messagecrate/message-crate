@@ -154,7 +154,9 @@ impl std::error::Error for UnknownDeletion {}
 
 /// Schema version written into every [`ConversationDocument`].
 ///
-/// Version 16 names a one-to-one conversation `one-to-one` in
+/// Version 15 adds the country an identity was read in (`country`,
+/// `sender_country`); version 14 had none. Version 16 names a one-to-one
+/// conversation `one-to-one` in
 /// [`ConversationMeta::conversation_type`], where version 15 said
 /// `individual`.
 pub const SCHEMA_VERSION: u32 = 16;
@@ -1055,10 +1057,11 @@ mod storage_id_round_trip_tests {
             ConversationType::Orphaned,
         ] {
             assert_eq!(ConversationType::parse(v.as_str()), v);
+            // `as_str` takes `one-to-one` and `orphaned` from
+            // `imessage-reader-protocol`'s constants, so this also pins the
+            // serde names to them.
             assert_matches_serde(v, v.as_str());
         }
-        // The serde rename is a literal; it must be the protocol's constant.
-        assert_matches_serde(ConversationType::OneToOne, ONE_TO_ONE_CONVERSATION_TYPE);
     }
 
     #[test]

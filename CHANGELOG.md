@@ -1725,9 +1725,6 @@ carry their date on the heading.
   you import or convert them. Export the backup again with this build. An
   existing Message Crate is rebuilt empty on first start and its messages
   must be imported again (#2286).
-- 2026-10-15: Message files exported before they carried the country an
-  Apple Messages backup names for each number are refused when you import
-  or convert them. Export the backup again with this build.
 - 2026-10-15: A script that runs `create-owner` or
   `reset-owner-password` with `--password` must write the password to the
   command's input instead, for example
