@@ -16,9 +16,9 @@ use crate::db::trash;
 /// an address book the person already curated, so the name it supplies goes on
 /// the contact. It goes on at creation, or later if the contact has no
 /// name, whatever made it: an earlier backup, an address book load, or the
-/// person. A contact that already has a name is untouched, because the same number arrives
-/// spelled differently across backups and the first spelling is as good as
-/// the second, and a name the person typed or loaded is theirs.
+/// person. A contact that already has a name is untouched, because the
+/// same number arrives spelled differently across backups and the first
+/// spelling is as good as the second, and a name the person typed or loaded is theirs.
 ///
 /// A contact in the Trash is the one exception to reuse. ADR-0013: a backup
 /// that still holds someone the person set aside is the person saying they

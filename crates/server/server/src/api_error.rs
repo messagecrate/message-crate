@@ -55,7 +55,8 @@ pub enum ApiError {
     /// is not `Bearer <token>`).
     AuthenticationRequired(String),
     /// `401 Unauthorized`: a bearer token was sent and refused because it is
-    /// unknown, expired, or its account is gone. An `authentication-required` whose challenge names
+    /// unknown, expired, or its account is gone. It is sent as an
+    /// `authentication-required` whose challenge names
     /// `error="invalid_token"` (RFC 6750, section 3.1).
     TokenRefused(String),
     /// `409 Conflict`: the username already belongs to an account.

@@ -106,7 +106,8 @@ use message_ir_format::write_conversation_jsonl_to;
 /// Suffix on a derivative that is written but not yet committed.
 ///
 /// Named so it survives the media crate's ffmpeg-scratch sweep, which matches
-/// `.msgmedia.tmp.`, and deleting this file would delete the resume signal.
+/// `.msgmedia.tmp.`. The sweep must not delete this file, because it is the
+/// resume signal.
 const IN_PROGRESS_SUFFIX: &str = ".in_progress";
 
 /// Suffix on the note left beside a dropped original's name: the original
