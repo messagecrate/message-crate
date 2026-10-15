@@ -278,7 +278,9 @@ pub struct StagingTapback {
     pub is_from_me: i64,
     /// Reactor's handle id; `None` when unknown.
     pub sender_handle_id: Option<i64>,
-    /// The reactor's name when the source gave no address for them.
+    /// The reactor's name when the source gave no address for them; never
+    /// set together with `sender_handle_id` from an incoming reaction's
+    /// identity (`TapbackRecord::sender_display_name`).
     pub sender_display_name: Option<String>,
 }
 

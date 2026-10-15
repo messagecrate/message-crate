@@ -218,7 +218,8 @@ pub struct TapbackRecord {
     pub sender: Option<String>,
     /// The name the source gave the reactor of an incoming reaction when it
     /// gave no address, as an iMazing CSV does. Shown, never matched: it
-    /// makes no identity.
+    /// makes no identity. Never set together with `sender`, and never on
+    /// the account holder's own reaction ([`tapback_from_reaction`]).
     pub sender_display_name: Option<String>,
     /// The country staging reads the reactor's identity in. The file names
     /// none for a reactor, so staging takes the one its conversation names
