@@ -3,6 +3,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { auditEntry } from "../../test/apiShapes";
+import { nth } from "../../test/nth";
 import AuditTrailTable from "./AuditTrailTable";
 
 afterEach(cleanup);
@@ -48,11 +49,11 @@ describe("AuditTrailTable", () => {
       />,
     );
     const rows = screen.getAllByRole("row");
-    expect(within(rows[1]).getByText("carol")).toBeInTheDocument();
-    expect(within(rows[1]).getByText("deleted")).toBeInTheDocument();
-    expect(within(rows[2]).getByText("dave")).toBeInTheDocument();
-    expect(within(rows[2]).queryByText("deleted")).toBeNull();
-    expect(within(rows[3]).getByText("nobody")).toBeInTheDocument();
-    expect(within(rows[3]).queryByText("deleted")).toBeNull();
+    expect(within(nth(rows, 1)).getByText("carol")).toBeInTheDocument();
+    expect(within(nth(rows, 1)).getByText("deleted")).toBeInTheDocument();
+    expect(within(nth(rows, 2)).getByText("dave")).toBeInTheDocument();
+    expect(within(nth(rows, 2)).queryByText("deleted")).toBeNull();
+    expect(within(nth(rows, 3)).getByText("nobody")).toBeInTheDocument();
+    expect(within(nth(rows, 3)).queryByText("deleted")).toBeNull();
   });
 });

@@ -11,6 +11,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { nth } from "../test/nth";
 import { apiClient } from "./api";
 import {
   changePassword,
@@ -104,7 +105,8 @@ beforeEach(() => {
 
 /** The path the last call was made with, without its query string. */
 function lastPath(mock: { mock: { calls: unknown[][] } }): string {
-  return String(mock.mock.calls.at(-1)?.[0]).split("?")[0];
+  const calls = mock.mock.calls;
+  return nth(String(nth(nth(calls, calls.length - 1), 0)).split("?"), 0);
 }
 
 /** The query of the last call, as a plain object. */

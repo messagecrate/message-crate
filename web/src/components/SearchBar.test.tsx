@@ -6,6 +6,7 @@ import { MemoryRouter, useLocation, useSearchParams } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SearchList } from "../lib/searchFields";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { nth } from "../test/nth";
 import { fill, setupUser } from "../test/user";
 import SearchBar from "./SearchBar";
 
@@ -196,13 +197,13 @@ describe("SearchBar", () => {
     expect(input.getAttribute("aria-activedescendant")).toBeNull();
 
     await user.keyboard("{ArrowDown}");
-    const [first] = screen.getAllByRole("option");
+    const first = nth(screen.getAllByRole("option"), 0);
     // `aria-activedescendant` tells a screen reader which row is active. The
     // row is not selected, because every row is an action and none is the value.
     expect(input.getAttribute("aria-activedescendant")).toBe(first.id);
 
     await user.keyboard("{ArrowDown}");
-    const second = screen.getAllByRole("option")[1];
+    const second = nth(screen.getAllByRole("option"), 1);
     expect(input.getAttribute("aria-activedescendant")).toBe(second.id);
   });
 

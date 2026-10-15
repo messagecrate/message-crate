@@ -7,6 +7,7 @@ import type { Message } from "../../lib/types";
 import { message as baseMessage } from "../../test/apiShapes";
 import { deferred } from "../../test/deferred";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
+import { nth } from "../../test/nth";
 import { mockedAuth, Providers } from "../../test/providers";
 import { conversationYears, useConversationMessages } from "./useConversationMessages";
 
@@ -229,7 +230,7 @@ describe("useConversationMessages", () => {
         {
           ...message(60),
           matched_earlier_version: true,
-          earlier_versions: [{ ...versions[0], matched: true }],
+          earlier_versions: [{ ...nth(versions, 0), matched: true }],
         },
         { ...message(20), earlier_versions: versions },
       ],
@@ -316,7 +317,7 @@ describe("useConversationMessages", () => {
         {
           ...message(60),
           matched_earlier_version: true,
-          earlier_versions: [{ ...versions[0], matched: true }],
+          earlier_versions: [{ ...nth(versions, 0), matched: true }],
         },
       ],
       total: 1,

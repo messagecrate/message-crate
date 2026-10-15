@@ -413,6 +413,12 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     id INTEGER PRIMARY KEY,
     -- When it happened, RFC 3339 UTC, as `imports.started_at` is written.
     at TEXT NOT NULL,
+    -- The id of the request that wrote it, the UUID in that response's
+    -- `x-request-id` and on the request's lines in the server's log, so the
+    -- entry and the lines are found by each other. NULL for an entry written
+    -- outside a request: by a server command, or by the Demo Account build
+    -- the first start runs.
+    request_id TEXT,
     -- What happened: logged_in, session_ended, login_refused,
     -- account_created, account_disabled, account_enabled, password_set,
     -- permissions_changed, messages_deleted, conversation_deleted,
@@ -495,6 +501,7 @@ WHEN NEW.id IS NOT OLD.id
                             AND d.action = 'account_deleted'
                             AND d.account_id IS OLD.account_id)))
   OR NEW.at IS NOT OLD.at
+  OR NEW.request_id IS NOT OLD.request_id
   OR NEW.action IS NOT OLD.action
   OR NEW.actor IS NOT OLD.actor
   OR NEW.username IS NOT OLD.username

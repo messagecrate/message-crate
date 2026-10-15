@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { ImportIssue } from "../../components/import/ImportSummaryPanel";
 import type { UploadFinishedReport } from "../../lib/tauri";
+import { nth } from "../../test/nth";
 import {
   EMPTY_RUN_RECORD,
   filesSkippedOverRun,
@@ -492,9 +493,12 @@ describe("issueRequests (#2183)", () => {
   it("cuts an item or reason over the server's cap, so the completion is not refused", () => {
     // ffmpeg's error output on a damaged video runs to 8 KiB.
     const stderr = "error while decoding MB 12 34 \u{1F4F7}\n".repeat(400);
-    const [sent] = issueRequests([
-      { kind: "skip", stage: "media", item: ` ${"v".repeat(2500)} `, reason: stderr },
-    ]);
+    const sent = nth(
+      issueRequests([
+        { kind: "skip", stage: "media", item: ` ${"v".repeat(2500)} `, reason: stderr },
+      ]),
+      0,
+    );
     for (const text of [sent.item, sent.reason]) {
       expect(Array.from(text)).toHaveLength(IMPORT_ERROR_TEXT_MAX_CHARS);
       expect(text.endsWith("…")).toBe(true);
@@ -524,13 +528,16 @@ describe("issueRequests (#2183)", () => {
 
 describe("noteRequests (#2668)", () => {
   it("cuts an item or text over the server's cap, so the completion is not refused", () => {
-    const [sent] = noteRequests([
-      {
-        stage: "staging",
-        item: ` ${"\u{1F4F7}".repeat(2500)} `,
-        text: "kept with a caveat ".repeat(200),
-      },
-    ]);
+    const sent = nth(
+      noteRequests([
+        {
+          stage: "staging",
+          item: ` ${"\u{1F4F7}".repeat(2500)} `,
+          text: "kept with a caveat ".repeat(200),
+        },
+      ]),
+      0,
+    );
     for (const text of [sent.item, sent.text]) {
       expect(Array.from(text)).toHaveLength(IMPORT_NOTE_TEXT_MAX_CHARS);
       expect(text.endsWith("…")).toBe(true);

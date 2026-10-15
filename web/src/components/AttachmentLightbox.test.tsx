@@ -7,6 +7,7 @@ import { fetchAsset, fetchAssetObjectUrl } from "../lib/serverApi";
 import type { MessageAttachment } from "../lib/types";
 import { attachment } from "../test/apiShapes";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { nth } from "../test/nth";
 import { renderWithProviders } from "../test/providers";
 import { setupUser } from "../test/user";
 import AttachmentLightbox from "./AttachmentLightbox";
@@ -19,26 +20,25 @@ vi.mock("../lib/saveFile", () => ({ saveFile: vi.fn() }));
 
 const render = renderWithProviders;
 
-const items: MessageAttachment[] = [
-  attachment({
-    path: "first.png",
-    original_name: "first.png",
-    mime_type: "image/png",
-    sha256: "aaa",
-    is_sticker: false,
-    transcription: null,
-    shown_as_is: true,
-  }),
-  attachment({
-    path: "second.png",
-    original_name: "second.png",
-    mime_type: "image/png",
-    sha256: "bbb",
-    is_sticker: false,
-    transcription: null,
-    shown_as_is: true,
-  }),
-];
+const firstPhoto: MessageAttachment = attachment({
+  path: "first.png",
+  original_name: "first.png",
+  mime_type: "image/png",
+  sha256: "aaa",
+  is_sticker: false,
+  transcription: null,
+  shown_as_is: true,
+});
+const secondPhoto: MessageAttachment = attachment({
+  path: "second.png",
+  original_name: "second.png",
+  mime_type: "image/png",
+  sha256: "bbb",
+  is_sticker: false,
+  transcription: null,
+  shown_as_is: true,
+});
+const items: MessageAttachment[] = [firstPhoto, secondPhoto];
 
 beforeEach(() => {
   startFakeClock();
@@ -155,7 +155,7 @@ describe("AttachmentLightbox buttons", () => {
   });
 
   it("hides the arrows when there is only one attachment", async () => {
-    open(0, [items[0]]);
+    open(0, [firstPhoto]);
     await settle();
     expect(screen.getByRole("img", { name: "first.png" })).toBeInTheDocument();
 
@@ -225,7 +225,7 @@ describe("AttachmentLightbox and the type rule", () => {
     expect(screen.getByText(/no copy a browser can show yet/)).toBeInTheDocument();
     expect(fetchAssetObjectUrl).not.toHaveBeenCalled();
 
-    await user.click(screen.getAllByRole("button", { name: "Download IMG_0001.heic" })[0]);
+    await user.click(nth(screen.getAllByRole("button", { name: "Download IMG_0001.heic" }), 0));
     await settle();
 
     expect(saveFile).toHaveBeenCalledWith("IMG_0001.heic", original);
@@ -281,7 +281,7 @@ describe("AttachmentLightbox while it loads", () => {
             finish = resolve;
           }),
     );
-    open(0, [{ ...items[0], thumbnail_mime_type: "image/jpeg" }]);
+    open(0, [{ ...firstPhoto, thumbnail_mime_type: "image/jpeg" }]);
 
     await settle();
     expect(screen.getByRole("img", { name: "first.png" })).toHaveAttribute(
@@ -301,7 +301,7 @@ describe("AttachmentLightbox while it loads", () => {
   });
 
   it("fetches the next and the previous photo along with the one on screen", async () => {
-    const third: MessageAttachment = { ...items[0], original_name: "third.png", sha256: "ttt" };
+    const third: MessageAttachment = { ...firstPhoto, original_name: "third.png", sha256: "ttt" };
     open(1, [...items, third]);
     await settle();
     expect(screen.getByRole("img", { name: "second.png" })).toBeInTheDocument();
@@ -317,8 +317,8 @@ describe("AttachmentLightbox while it loads", () => {
   });
 
   it("finds the next photo already loaded when it steps to it", async () => {
-    const third: MessageAttachment = { ...items[0], original_name: "third.png", sha256: "ttt" };
-    const fourth: MessageAttachment = { ...items[0], original_name: "fourth.png", sha256: "fff" };
+    const third: MessageAttachment = { ...firstPhoto, original_name: "third.png", sha256: "ttt" };
+    const fourth: MessageAttachment = { ...firstPhoto, original_name: "fourth.png", sha256: "fff" };
     const all = [...items, third, fourth];
     const spies = { onClose: vi.fn(), onPrev: vi.fn(), onNext: vi.fn() };
     const { rerender } = render(<AttachmentLightbox items={all} currentIndex={0} {...spies} />);

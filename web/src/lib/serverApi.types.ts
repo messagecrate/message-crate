@@ -2067,6 +2067,14 @@ export interface components {
             /** @description `session_ended`: how the Session ended. `login_refused`: why. */
             reason: components["schemas"]["AuditReason"] | null;
             /**
+             * @description The id of the request that wrote the entry, as its response's
+             *     `x-request-id` and the request's lines in the server's log carry it.
+             *     `null` for an entry written outside a request, by a server command or
+             *     the Demo Account build of the server's first start, and for a run and
+             *     a session that expired, which no one request wrote.
+             */
+            request_id: string | null;
+            /**
              * @description An Export Run: `everything`, `query` or `selection`. Never the query
              *     or the picked ids.
              */
@@ -4257,6 +4265,14 @@ export interface components {
                 /** @description `session_ended`: how the Session ended. `login_refused`: why. */
                 reason: components["schemas"]["AuditReason"] | null;
                 /**
+                 * @description The id of the request that wrote the entry, as its response's
+                 *     `x-request-id` and the request's lines in the server's log carry it.
+                 *     `null` for an entry written outside a request, by a server command or
+                 *     the Demo Account build of the server's first start, and for a run and
+                 *     a session that expired, which no one request wrote.
+                 */
+                request_id: string | null;
+                /**
                  * @description An Export Run: `everything`, `query` or `selection`. Never the query
                  *     or the picked ids.
                  */
@@ -5631,6 +5647,13 @@ export interface components {
             part_index: number;
             /** @description The identity that reacted, for incoming reactions. */
             sender: string | null;
+            /**
+             * @description The name the source gave the reactor of an incoming reaction
+             *     when it gave no address for them, as an iMazing export does;
+             *     `null` when `sender` is set, and for the account holder's own
+             *     reactions. A name is shown, never matched to a contact.
+             */
+            sender_display_name: string | null;
         };
         /**
          * @description How finely the source recorded a message's time.

@@ -6,6 +6,7 @@ import type { AccountProfile } from "../../lib/account";
 import { ApiError } from "../../lib/api";
 import { deferred } from "../../test/deferred";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
+import { nth } from "../../test/nth";
 import { mockedAuth, renderWithProviders as render } from "../../test/providers";
 import { fill, setupUser } from "../../test/user";
 import { useNameEdit } from "./nameEdit";
@@ -87,7 +88,7 @@ describe("ProfileSettingsPanel", () => {
     // to forget (#2985).
     await fill(user, zoneField(), "dallas");
     expect(updateAccountProfile).toHaveBeenCalledWith({ preferred_name: "Typed Name" });
-    await user.click(within(screen.getByRole("listbox")).getAllByRole("option")[0]);
+    await user.click(nth(within(screen.getByRole("listbox")).getAllByRole("option"), 0));
     expect(updateAccountProfile).toHaveBeenCalledWith({ time_zone: "America/Chicago" });
     // The server's answer has reached the profile entry the panel reads.
     await settle();

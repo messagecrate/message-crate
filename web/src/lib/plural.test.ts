@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countOf } from "./plural";
+import { countOf, joinWithAnd } from "./plural";
 
 describe("countOf", () => {
   it("writes one with the noun as it is", () => {
@@ -18,5 +18,17 @@ describe("countOf", () => {
 
   it("writes the number the way the locale does", () => {
     expect(countOf(1234, "message")).toBe(`${(1234).toLocaleString()} messages`);
+  });
+});
+
+describe("joinWithAnd", () => {
+  it("joins the last item with and, the rest with commas", () => {
+    expect(joinWithAnd(["import"])).toBe("import");
+    expect(joinWithAnd(["import", "export"])).toBe("import and export");
+    expect(joinWithAnd(["import", "export", "delete"])).toBe("import, export and delete");
+  });
+
+  it("gives null for an empty list", () => {
+    expect(joinWithAnd([])).toBeNull();
   });
 });

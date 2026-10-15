@@ -894,6 +894,11 @@ api_shape! {
         pub is_from_me: bool,
         /// The identity that reacted, for incoming reactions.
         pub sender: Option<String>,
+        /// The name the source gave the reactor of an incoming reaction
+        /// when it gave no address for them, as an iMazing export does;
+        /// `null` when `sender` is set, and for the account holder's own
+        /// reactions. A name is shown, never matched to a contact.
+        pub sender_display_name: Option<String>,
     }
 }
 
@@ -971,6 +976,7 @@ mod tests {
                 emoji: None,
                 is_from_me: true,
                 sender: None,
+                sender_display_name: None,
             }],
             deletion: Some(Deletion::DeletedInSourceApp),
             earlier_versions: vec![EarlierVersion {
@@ -1034,6 +1040,7 @@ mod tests {
                 "emoji": null,
                 "is_from_me": true,
                 "sender": null,
+                "sender_display_name": null,
             }),
             "{json}"
         );

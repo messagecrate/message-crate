@@ -140,7 +140,7 @@ iMazing writes each of the four as text with no id, and the exporter reads what 
 
 ### Reactions
 
-5,253 rows. The `Reactions` cell holds one reaction per line: the reactor's display name, the emoji, and the time they reacted, and no address. Each line becomes one reaction of the common message, with part `0`, kind `emoji`, the emoji, and the name as written and no `reactor_identity`. The conversation file carries the name. The server stores a reaction by `reactor_identity` only, so it shows another person's reaction as from "Someone" until it keeps the name too ([#2044](https://github.com/messagecrate/message-crate/issues/2044)).
+5,253 rows. The `Reactions` cell holds one reaction per line: the reactor's display name, the emoji, and the time they reacted, and no address. Each line becomes one reaction of the common message, with part `0`, kind `emoji`, the emoji, and the name as written and no `reactor_identity`. The conversation file carries the name, and the server stores it on the reaction and shows the reaction under it. The name is never matched to a contact ([#2044](https://github.com/messagecrate/message-crate/issues/2044)).
 
 The name is the text before the emoji, or after it when nothing comes before, or before the time when the line has no emoji. A line naming `Me`, what iMazing calls the account holder in its own window, is the holder's own (`is_from_me`). The time is read past, because a reaction carries none in the common message. It is cut from the name whether it is written as `M/D/YYYY` or as `YYYY-MM-DD`.
 

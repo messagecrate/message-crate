@@ -242,6 +242,17 @@ messages out
 
 WhatsApp is the other way, as above: its `@` ids are `other`.
 
+**A conversation's service is the one its messages came over.** An import
+puts a conversation, its chat handle and its participants on WhatsApp when
+any of its messages came over WhatsApp, and on Text Message otherwise; a
+conversation with no messages is Text Message (`imports_api/staging.rs`,
+`conversation_service`). The source's name plays no part. Why: an Export Run
+writes the source the messages were stored under into `export.source`, so a
+WhatsApp conversation stored under any name but `whatsapp` came back, read by
+that name, as Text Message, and its `@lid` participant became an `email`
+identity there
+([#2050](https://github.com/messagecrate/message-crate/issues/2050)).
+
 **A phone number's type never depends on the message's service.** The service
 only takes away a type it cannot carry, the email address; it never makes a
 phone number anything else. A phone number is a phone number on any service,
@@ -775,6 +786,15 @@ A contact in the trash counts as no contact here: the participant takes the
 backup's name, else the identity, and carries no contact id.
 Why: the contact cannot be opened while it is in the trash, so a link to it
 would lead to `404 Not Found`.
+
+**A reactor the source names with no address is shown by that name and
+makes no identity.** A reaction keeps the name in `tapbacks.sender_display_name`
+when the source gave no address for the person who reacted, as an iMazing
+export does, and the conversation view shows the reaction under it
+(`imports_api/records.rs`, `tapback_from_reaction`). The name is shown,
+never matched to a contact. Why: the name is all the source knows of the
+reactor, and dropped, every such reaction read as from "Someone"
+([#2044](https://github.com/messagecrate/message-crate/issues/2044)).
 
 **Deleting a contact keeps its conversations.** The name and details go. The
 identities stay in their conversations and the person becomes Unknown again.

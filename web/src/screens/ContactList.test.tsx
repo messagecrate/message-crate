@@ -61,6 +61,7 @@ import {
   listContacts,
   updateContactGroupMembers,
 } from "../lib/serverApi";
+import { nth } from "../test/nth";
 import { setupUser } from "../test/user";
 
 const listContactsMock = vi.mocked(listContacts);
@@ -535,8 +536,8 @@ describe("ContactList", () => {
       await settle();
       // Every row of the first page, ticked by hand with one Shift + click.
       const rows = screen.getAllByRole("checkbox", { name: /^Select Person/ });
-      fireEvent.click(rows[0]);
-      fireEvent.click(rows[rows.length - 1], { shiftKey: true });
+      fireEvent.click(nth(rows, 0));
+      fireEvent.click(nth(rows, rows.length - 1), { shiftKey: true });
       expect(rows[rows.length - 1]).toBeChecked();
       expect(screen.getByRole("checkbox", { name: "Select all contacts" })).not.toBeChecked();
     });

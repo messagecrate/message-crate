@@ -27,6 +27,11 @@ carry their date on the heading.
   picture, the conversation now shows a line saying so, such as "Ada joined
   the group", as it does for an Apple Messages group. An event of a kind the
   backup does not state is imported as before, without that line (#2038).
+- 2026-10-15: **The Import form says when a disk it writes to is low.** When
+  the disk that holds the Staging Directory or the Scratch Directory has less
+  than 10 GB free, the form names the disk, the directory and the space free
+  above the Import button, so space can be freed before the run starts. The
+  import can still start (#2010).
 - 2026-10-15: **The login card says when the password would cross the
   network unencrypted.** Opened over plain HTTP from another computer, such
   as at `http://192.168.1.20:8080`, the login card and Create Owner now say
@@ -107,17 +112,15 @@ carry their date on the heading.
   and edits.** Each reaction in an iMazing export is kept with its emoji and
   whether the account holder gave it. The export names the person who
   reacted by display name alone, with no phone number or address, so a
-  reaction is not matched to a contact. The server does not yet keep the
-  name, so another person's reaction reads as from "Someone". A reply is linked
-  to the message it quotes when that message is in the same conversation of
-  the export, and stays a reply without a link otherwise. A message deleted
-  on the phone before the export is marked **Deleted in the source app**. An
-  edited message is marked **Edited**, and because iMazing keeps only the
-  final text, **Edited** opens one line, **Earlier version not in the
-  backup**, with the time of the edit; a search never finds the message by
-  the text it lost. The database format changed: an existing Message Crate
-  is rebuilt empty on first start and its messages must be imported again
-  (#2030).
+  reaction is not matched to a contact. A reply is linked to the message it
+  quotes when that message is in the same conversation of the export, and
+  stays a reply without a link otherwise. A message deleted on the phone
+  before the export is marked **Deleted in the source app**. An edited
+  message is marked **Edited**, and because iMazing keeps only the final
+  text, **Edited** opens one line, **Earlier version not in the backup**,
+  with the time of the edit; a search never finds the message by the text it
+  lost. The database format changed: an existing Message Crate is rebuilt
+  empty on first start and its messages must be imported again (#2030).
 - 2026-10-09: **A WhatsApp import brings each reaction in under the person
   who reacted.** A WhatsApp conversation from an Android phone or an iPhone
   now shows its reactions, each stored under the reactor's phone number, or
@@ -220,6 +223,16 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-15: **An Audit Trail entry names the request that wrote it.**
+  Each entry now keeps the id the server gave the request that made it,
+  the same id that request's lines in the server's log carry, so an entry
+  and its lines can be found by each other rather than by time. An entry
+  written by a server command, or by the Demo Account build of a new
+  Message Crate's first start, has no id, and neither has the entry for an
+  Import Run, an Export Run or a Session that ended by expiry. The server
+  hands the id out with each entry; nothing on screen shows it yet. The
+  database format changed: an existing Message Crate is rebuilt empty on
+  first start and its messages must be imported again (#2276).
 - 2026-10-15: **The Attachments choices say they convert media.** The
   Import form's **Attachments** field now reads **Copy**, **Convert media**,
   **Convert & Compress media** and **Skip**, and the Staging Review's button
@@ -826,6 +839,20 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-15: **A reaction shows the name of whoever gave it when the
+  backup has no address for them.** An iMazing export names the person who
+  reacted by display name alone. The name was dropped on import, so the
+  reaction read as from "Someone". It is now kept and shown, and still never
+  matched to a contact. The database format changed: an existing Message
+  Crate is rebuilt empty on first start and its messages must be imported
+  again (#2044).
+- 2026-10-15: **A WhatsApp conversation stays on WhatsApp when its file is
+  imported again.** A message file written by Export names the source the
+  messages were stored under, and an import put a WhatsApp conversation on
+  WhatsApp only when that source was called `whatsapp`. Under any other
+  name it became a Text Message conversation, and a WhatsApp id such as
+  `123456@lid` became an email address there. An import now takes the
+  service from the messages themselves (#2050).
 - 2026-10-15: **An SMS Backup+ import skips the WhatsApp messages in it.**
   From 2013 to 2015, SMS Backup+ also backed up WhatsApp messages. An
   import read each one as a text message to or from its number, and could

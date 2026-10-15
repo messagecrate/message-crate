@@ -42,6 +42,7 @@ import { account } from "../../test/apiShapes";
 import { deferred } from "../../test/deferred";
 import { importForm } from "../../test/importForm";
 import { seedImportRun } from "../../test/importRun";
+import { nth } from "../../test/nth";
 import { storedForm } from "../../test/storedForm";
 import { MIB } from "../../test/units";
 import { fill, setupUser } from "../../test/user";
@@ -499,8 +500,8 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.startImport(importForm()));
 
     expect(seen).toHaveLength(1);
-    expect(clearedFields(seen[0])).toEqual(CLEARED_RUN);
-    expect(seen[0].resumeError).toBeNull();
+    expect(clearedFields(nth(seen, 0))).toEqual(CLEARED_RUN);
+    expect(nth(seen, 0).resumeError).toBeNull();
   });
 
   it("reads the server's attachment size limit before Staging and leaves Upload to read it from the directory", async () => {

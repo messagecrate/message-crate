@@ -55,8 +55,10 @@ export function matchRanges(text: string, terms: readonly FreeTextTerm[]): Match
   for (const pattern of patterns) {
     for (const m of folded.matchAll(new RegExp(pattern, "gu"))) {
       if (m[0].length === 0) continue;
-      const start = m.index;
-      found.push([from[start], to[start + m[0].length - 1]]);
+      const start = from[m.index];
+      const end = to[m.index + m[0].length - 1];
+      if (start === undefined || end === undefined) continue;
+      found.push([start, end]);
     }
   }
   found.sort((a, b) => a[0] - b[0] || b[1] - a[1]);

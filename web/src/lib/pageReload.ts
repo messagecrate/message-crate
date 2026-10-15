@@ -24,7 +24,9 @@ export function reloadPage(): void {
 export async function pageAnswers(): Promise<boolean> {
   const limit = startTimeLimit(PAGE_ANSWER_TIMEOUT_MS);
   try {
-    const res = await fetch(location.href.split("#")[0], {
+    const page = new URL(location.href);
+    page.hash = "";
+    const res = await fetch(page.href, {
       cache: "no-store",
       signal: limit.signal,
     });

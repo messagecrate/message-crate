@@ -7,9 +7,14 @@
 //! write is checked against the disk that holds it, before it starts. A
 //! disk that fills part-way through fails a run with a bare write error,
 //! often after hours; this check fails it first, with the space it needs.
+//!
+//! The Import form asks earlier, before any run starts, and with no size in
+//! hand: [`low_disk_space`] names each of the two disks with less than
+//! [`LOW_DISK_SPACE_BYTES`] free, so the person can free space first. It
+//! never refuses anything.
 
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use message_crate_core::OutputFormat;
@@ -123,6 +128,167 @@ pub fn scratch_disk_full() -> anyhow::Error {
     )
 }
 
+/// Below this much free space, the Import form says how little a disk has
+/// left (#2010): 10 GB, in the decimal units [`media::format_bytes`] writes.
+pub const LOW_DISK_SPACE_BYTES: u64 = 10_000_000_000;
+
+/// One directory's free space, as [`low_disk_space`] read it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DiskReading {
+    /// Which directory this is.
+    disk: Disk,
+    /// The directory, as the person set it or the app made it.
+    dir: PathBuf,
+    /// The disk the directory is on, when that can be told.
+    on: Option<OnDisk>,
+    /// The bytes free on that disk.
+    available: u64,
+}
+
+/// The disk a directory is on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OnDisk {
+    /// What tells this disk from another, so two directories on one disk
+    /// are read as one.
+    id: String,
+    /// The directory the disk is mounted at, which names it on screen.
+    mount: PathBuf,
+}
+
+/// What the Import form says about the disks that hold the Staging
+/// Directory and the Scratch Directory: one sentence for each disk with
+/// less than [`LOW_DISK_SPACE_BYTES`] free, and nothing for one with more.
+///
+/// Two directories on one disk get one sentence naming both. A directory
+/// that does not exist yet is read on the disk of its nearest parent that
+/// does, where it will be made. A filesystem that cannot say how much is
+/// free says nothing, as [`check_headroom`] does.
+pub fn low_disk_space(staging: &Path, scratch: &Path) -> Vec<String> {
+    let readings = [(Disk::Staging, staging), (Disk::Scratch, scratch)]
+        .into_iter()
+        .filter_map(|(disk, dir)| read_disk(disk, dir))
+        .collect();
+    low_disk_space_lines(readings)
+}
+
+/// The free space of the disk that holds `dir`, or `None` when the
+/// filesystem cannot say.
+fn read_disk(disk: Disk, dir: &Path) -> Option<DiskReading> {
+    let existing = dir.ancestors().find(|ancestor| ancestor.is_dir())?;
+    let available = fs2::available_space(existing).ok()?;
+    Some(DiskReading {
+        disk,
+        dir: dir.to_path_buf(),
+        on: disk_of(existing),
+        available,
+    })
+}
+
+/// The disk `dir` is on, on Unix: its device number, mounted at the highest
+/// parent of `dir` on that device. The path is resolved first, so a
+/// directory reached through a symbolic link is named by the disk it is on,
+/// not the one the link is on.
+#[cfg(unix)]
+fn disk_of(dir: &Path) -> Option<OnDisk> {
+    use std::os::unix::fs::MetadataExt;
+    let resolved = std::fs::canonicalize(dir).ok()?;
+    let device = |path: &Path| std::fs::metadata(path).ok().map(|meta| meta.dev());
+    let dev = device(&resolved)?;
+    let mount = resolved
+        .ancestors()
+        .take_while(|ancestor| device(ancestor) == Some(dev))
+        .last()?;
+    Some(OnDisk {
+        id: dev.to_string(),
+        mount: mount.to_path_buf(),
+    })
+}
+
+/// The disk `dir` is on, on Windows: the volume's mount point, as
+/// `GetVolumePathNameW` gives it (`C:\`, or `C:\mnt\big\` for a volume
+/// mounted in a directory of `C:`), which is also its name on screen.
+#[cfg(windows)]
+fn disk_of(dir: &Path) -> Option<OnDisk> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use windows_sys::Win32::Storage::FileSystem::GetVolumePathNameW;
+
+    let wide: Vec<u16> = dir.as_os_str().encode_wide().chain(Some(0)).collect();
+    // A mount point is never longer than the path it was found from.
+    let mut buffer = vec![0u16; wide.len().max(4)];
+    let length = u32::try_from(buffer.len()).ok()?;
+    // SAFETY: `wide` is NUL-terminated, and `buffer` holds `length` UTF-16
+    // units, which is what the call is told it may write.
+    let found = unsafe { GetVolumePathNameW(wide.as_ptr(), buffer.as_mut_ptr(), length) };
+    if found == 0 {
+        return None;
+    }
+    let end = buffer.iter().position(|&unit| unit == 0)?;
+    let mount = PathBuf::from(OsString::from_wide(&buffer[..end]));
+    Some(OnDisk {
+        id: mount.to_string_lossy().to_lowercase(),
+        mount,
+    })
+}
+
+/// No disk can be told apart elsewhere, so each directory is its own.
+#[cfg(not(any(unix, windows)))]
+fn disk_of(_dir: &Path) -> Option<OnDisk> {
+    None
+}
+
+/// The sentences for `readings`: the ones on one disk joined, then each
+/// disk below [`LOW_DISK_SPACE_BYTES`] said once.
+pub(crate) fn low_disk_space_lines(readings: Vec<DiskReading>) -> Vec<String> {
+    let mut disks: Vec<Vec<DiskReading>> = Vec::new();
+    for reading in readings {
+        let shared = disks.iter_mut().find(|disk| {
+            let id = |reading: &DiskReading| reading.on.as_ref().map(|on| on.id.clone());
+            id(&reading).is_some() && disk.first().map(id) == Some(id(&reading))
+        });
+        match shared {
+            Some(disk) => disk.push(reading),
+            None => disks.push(vec![reading]),
+        }
+    }
+    disks
+        .into_iter()
+        .filter_map(|disk| {
+            let available = disk.iter().map(|reading| reading.available).min()?;
+            if available >= LOW_DISK_SPACE_BYTES {
+                return None;
+            }
+            let held = disk
+                .iter()
+                .map(|reading| {
+                    format!(
+                        "the {} ({})",
+                        directory_name(reading.disk),
+                        reading.dir.display()
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" and ");
+            let free = media::format_bytes(available);
+            let on = match disk.first().and_then(|reading| reading.on.as_ref()) {
+                Some(on) => format!("on {}, the disk that holds", on.mount.display()),
+                None => "on the disk that holds".to_string(),
+            };
+            Some(format!(
+                "{free} is free {on} {held}. A large backup can need more than that."
+            ))
+        })
+        .collect()
+}
+
+/// The directory a [`Disk`] holds, by its name on screen.
+fn directory_name(disk: Disk) -> &'static str {
+    match disk {
+        Disk::Staging => "Staging Directory",
+        Disk::Scratch => "Scratch Directory",
+    }
+}
+
 /// The opening of every sentence about a short disk, naming which one.
 fn not_enough_space(disk: Disk) -> &'static str {
     match disk {
@@ -189,6 +355,128 @@ mod tests {
         let short = headroom_shortfall(2 * 1024 * 1024 * 1024, 1024, Disk::Scratch).unwrap();
         let opening = |text: &str| text.split(':').next().unwrap().to_string();
         assert_eq!(opening(&full), opening(&short), "{full}");
+    }
+
+    /// A reading of `available` bytes free for `dir`, on the disk
+    /// `disk_id` mounted at `/home` when it has one.
+    fn reading(disk: Disk, dir: &str, disk_id: Option<&str>, available: u64) -> DiskReading {
+        DiskReading {
+            disk,
+            dir: PathBuf::from(dir),
+            on: disk_id.map(|id| OnDisk {
+                id: id.to_string(),
+                mount: PathBuf::from("/home"),
+            }),
+            available,
+        }
+    }
+
+    /// The form speaks about a disk below 10 GB free and not one at 10 GB.
+    #[test]
+    fn a_disk_below_ten_gb_free_is_named_and_one_at_ten_gb_is_not() {
+        let short = low_disk_space_lines(vec![reading(
+            Disk::Staging,
+            "/home/a/message-crate",
+            Some("1"),
+            LOW_DISK_SPACE_BYTES - 1,
+        )]);
+        assert_eq!(short.len(), 1, "{short:?}");
+        assert!(
+            short[0].contains("the Staging Directory (/home/a/message-crate)"),
+            "{short:?}"
+        );
+        let enough = low_disk_space_lines(vec![reading(
+            Disk::Staging,
+            "/home/a/message-crate",
+            Some("1"),
+            LOW_DISK_SPACE_BYTES,
+        )]);
+        assert!(enough.is_empty(), "{enough:?}");
+    }
+
+    /// The Staging and Scratch Directories on one disk get one sentence that
+    /// names both, not the same free space twice.
+    #[test]
+    fn two_directories_on_one_disk_get_one_sentence() {
+        let lines = low_disk_space_lines(vec![
+            reading(
+                Disk::Staging,
+                "/home/a/message-crate",
+                Some("1"),
+                4_200_000_000,
+            ),
+            reading(
+                Disk::Scratch,
+                "/home/a/.local/share/mc/scratch",
+                Some("1"),
+                4_200_000_000,
+            ),
+        ]);
+        assert_eq!(
+            lines,
+            vec![
+                "4.2 GB is free on /home, the disk that holds the Staging Directory \
+                 (/home/a/message-crate) and the Scratch Directory \
+                 (/home/a/.local/share/mc/scratch). A large backup can need more than that."
+                    .to_string()
+            ]
+        );
+    }
+
+    /// Directories on two disks are each read on their own: only the short
+    /// one is named. Two disks that cannot be told apart are kept apart.
+    #[test]
+    fn directories_on_two_disks_are_named_apart() {
+        let lines = low_disk_space_lines(vec![
+            reading(
+                Disk::Staging,
+                "/mnt/big/staging",
+                Some("1"),
+                500_000_000_000,
+            ),
+            reading(Disk::Scratch, "/home/a/scratch", Some("2"), 2_000_000_000),
+        ]);
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(
+            lines[0].contains("the Scratch Directory (/home/a/scratch)"),
+            "{lines:?}"
+        );
+        assert!(!lines[0].contains("Staging"), "{lines:?}");
+
+        let unknown = low_disk_space_lines(vec![
+            reading(Disk::Staging, "/a", None, 1),
+            reading(Disk::Scratch, "/b", None, 1),
+        ]);
+        assert_eq!(unknown.len(), 2, "{unknown:?}");
+        assert!(
+            unknown[0].starts_with("1 B is free on the disk that holds the Staging Directory"),
+            "a disk with no mount point is not named: {unknown:?}"
+        );
+    }
+
+    /// Two directories in one temporary directory are on one disk, and one
+    /// not made yet is read where it will be made.
+    #[test]
+    fn a_directory_not_made_yet_is_read_on_its_parent_s_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let made = dir.path().join("scratch");
+        std::fs::create_dir(&made).unwrap();
+        let not_made = dir.path().join("message-crate").join("staging");
+
+        let staging = read_disk(Disk::Staging, &not_made).unwrap();
+        let scratch = read_disk(Disk::Scratch, &made).unwrap();
+
+        assert_eq!(staging.dir, not_made);
+        let on = staging.on.unwrap();
+        // Unix names the disk from the resolved path; Windows from the path
+        // as given, whose drive prefix `canonicalize` would rewrite.
+        let base = if cfg!(windows) {
+            dir.path().to_path_buf()
+        } else {
+            std::fs::canonicalize(dir.path()).unwrap()
+        };
+        assert!(base.starts_with(&on.mount), "{on:?}");
+        assert_eq!(scratch.on, Some(on));
     }
 
     /// The check reads the disk that holds the directory it is given.

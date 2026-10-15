@@ -9,6 +9,7 @@ import { productVersionOf } from "../lib/buildFormat";
 import { ThemeProvider } from "../lib/ThemeProvider";
 import { account } from "../test/apiShapes";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { nth } from "../test/nth";
 import { Providers } from "../test/providers";
 import { MIB } from "../test/units";
 import { fill, setupUser } from "../test/user";
@@ -340,10 +341,10 @@ describe("OwnerHome", () => {
         .map((cell) => cell.textContent);
     // A heading row, one row per account in the server's order, and the totals.
     expect(rows).toHaveLength(5);
-    expect(cells(rows[1])).toEqual(["root", "0", "0 B", "0 B"]);
-    expect(cells(rows[2])).toEqual(["alice", "5,000", "6.0 MB", "300 MB"]);
-    expect(cells(rows[3])).toEqual(["bob", "678", "2.0 MB", "100 MB"]);
-    expect(cells(rows[4])).toEqual(["All accounts", "5,678", "8.0 MB", "400 MB"]);
+    expect(cells(nth(rows, 1))).toEqual(["root", "0", "0 B", "0 B"]);
+    expect(cells(nth(rows, 2))).toEqual(["alice", "5,000", "6.0 MB", "300 MB"]);
+    expect(cells(nth(rows, 3))).toEqual(["bob", "678", "2.0 MB", "100 MB"]);
+    expect(cells(nth(rows, 4))).toEqual(["All accounts", "5,678", "8.0 MB", "400 MB"]);
   });
 
   it("opens /owner/logs on the server's log, at warnings and up", async () => {
@@ -425,12 +426,12 @@ describe("OwnerHome", () => {
     const table = screen.getByRole("table");
     const rows = within(table).getAllByRole("row");
     expect(rows).toHaveLength(3);
-    expect(within(rows[1]).getByText("carol")).toBeInTheDocument();
-    expect(within(rows[1]).getByText("deleted")).toBeInTheDocument();
-    expect(within(rows[1]).getByText("Account deleted")).toBeInTheDocument();
-    expect(within(rows[1]).getByText("Owner")).toBeInTheDocument();
+    expect(within(nth(rows, 1)).getByText("carol")).toBeInTheDocument();
+    expect(within(nth(rows, 1)).getByText("deleted")).toBeInTheDocument();
+    expect(within(nth(rows, 1)).getByText("Account deleted")).toBeInTheDocument();
+    expect(within(nth(rows, 1)).getByText("Owner")).toBeInTheDocument();
     expect(
-      within(rows[2]).getByText("Logged in from the website (0.10.0+aaaa1111)"),
+      within(nth(rows, 2)).getByText("Logged in from the website (0.10.0+aaaa1111)"),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /Every account/ }));
@@ -438,7 +439,7 @@ describe("OwnerHome", () => {
     await user.click(screen.getByRole("option", { name: "bob" }));
     await settle();
     expect(listAccountAuditTrail).toHaveBeenCalled();
-    expect(listAccountAuditTrail.mock.calls[0][2]).toBe(101);
+    expect(nth(listAccountAuditTrail.mock.calls, 0)[2]).toBe(101);
     expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2);
   });
 
@@ -609,14 +610,20 @@ describe("OwnerHome", () => {
     await settle();
 
     const rows = screen.getAllByRole("row").slice(1);
-    expect(within(rows[0]).getByRole("button", { name: "Settings for root" })).toBeInTheDocument();
-    expect(within(rows[0]).getByText("Owner")).toBeInTheDocument();
+    expect(
+      within(nth(rows, 0)).getByRole("button", { name: "Settings for root" }),
+    ).toBeInTheDocument();
+    expect(within(nth(rows, 0)).getByText("Owner")).toBeInTheDocument();
     // The owner cannot be disabled and holds no messages to import, export or delete.
-    expect(within(rows[0]).queryByRole("button", { name: /Status of/ })).not.toBeInTheDocument();
-    expect(within(rows[0]).queryByRole("checkbox")).not.toBeInTheDocument();
-    expect(within(rows[1]).getByRole("button", { name: "Settings for bob" })).toBeInTheDocument();
+    expect(
+      within(nth(rows, 0)).queryByRole("button", { name: /Status of/ }),
+    ).not.toBeInTheDocument();
+    expect(within(nth(rows, 0)).queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(
+      within(nth(rows, 1)).getByRole("button", { name: "Settings for bob" }),
+    ).toBeInTheDocument();
     // The gear opens the account; the name itself is plain text.
-    expect(within(rows[1]).getByText("bob").closest("button")).toBeNull();
+    expect(within(nth(rows, 1)).getByText("bob").closest("button")).toBeNull();
   });
 
   it("shows an account's preferred name under its username, and searches it too", async () => {

@@ -306,8 +306,9 @@ fn to_ir_attachment(att: &Attachment) -> IrAttachment {
     }
 }
 
-/// One stored reaction as the conversation file's [`Reaction`]. The server
-/// keeps no reactor name, so none is written. A part index no message can
+/// One stored reaction as the conversation file's [`Reaction`], with the
+/// reactor's name when the server holds one in place of an address. A part
+/// index no message can
 /// have (below zero, or past `u32`) leaves the reaction out rather than
 /// moving it onto another part.
 fn reaction_from_row(row: &Tapback) -> Option<Reaction> {
@@ -317,7 +318,7 @@ fn reaction_from_row(row: &Tapback) -> Option<Reaction> {
         emoji: row.emoji.clone(),
         is_from_me: row.is_from_me,
         reactor_identity: row.sender.clone(),
-        reactor_display_name: None,
+        reactor_display_name: row.sender_display_name.clone(),
     })
 }
 

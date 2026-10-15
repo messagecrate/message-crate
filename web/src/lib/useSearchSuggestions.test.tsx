@@ -5,6 +5,7 @@ import { renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { advanceTimersAndSettle } from "../test/fakeTimers";
+import { nth } from "../test/nth";
 import { createQueryClient } from "./routeQuery";
 import type { SearchField } from "./searchFields";
 import { listContacts, listSearchFields } from "./serverApi";
@@ -59,40 +60,49 @@ describe("buildSearchSuggestions", () => {
       fields: [...fields],
       contacts: [{ id: "42", name: "Jane Doe" }],
     });
-    expect(out[0].insert).toBe("with:#42 ");
-    expect(out[0].label).toBe("Jane Doe");
+    expect(nth(out, 0).insert).toBe("with:#42 ");
+    expect(nth(out, 0).label).toBe("Jane Doe");
   });
 });
 
 describe("negated terms", () => {
   it("keeps the minus of a negated person term", () => {
-    const [first] = buildSearchSuggestions({
-      completingValue: true,
-      personOp: true,
-      lastToken: "-with:ann",
-      fields: [...fields],
-      contacts: [{ id: "42", name: "Ann Lee" }],
-    });
+    const first = nth(
+      buildSearchSuggestions({
+        completingValue: true,
+        personOp: true,
+        lastToken: "-with:ann",
+        fields: [...fields],
+        contacts: [{ id: "42", name: "Ann Lee" }],
+      }),
+      0,
+    );
     expect(applySuggestionToQuery("-with:ann", first)).toBe("-with:#42 ");
   });
   it("keeps the minus of a negated choice term", () => {
-    const [first] = buildSearchSuggestions({
-      completingValue: true,
-      personOp: false,
-      lastToken: "-kind:gr",
-      fields: [...fields],
-      contacts: [],
-    });
+    const first = nth(
+      buildSearchSuggestions({
+        completingValue: true,
+        personOp: false,
+        lastToken: "-kind:gr",
+        fields: [...fields],
+        contacts: [],
+      }),
+      0,
+    );
     expect(applySuggestionToQuery("-kind:gr", first)).toBe("-kind:group ");
   });
   it("keeps the minus of a negated word", () => {
-    const [first] = buildSearchSuggestions({
-      completingValue: false,
-      personOp: false,
-      lastToken: "-ta",
-      fields: [...fields],
-      contacts: [],
-    });
+    const first = nth(
+      buildSearchSuggestions({
+        completingValue: false,
+        personOp: false,
+        lastToken: "-ta",
+        fields: [...fields],
+        contacts: [],
+      }),
+      0,
+    );
     expect(applySuggestionToQuery("a -ta", first)).toBe("a -tag:");
   });
 });
@@ -160,7 +170,7 @@ describe("useSearchSuggestions", () => {
 
     await advanceTimersAndSettle(1);
     expect(contacts).toHaveBeenCalledTimes(1);
-    expect(contacts.mock.calls[0][0]).toEqual({ q: "ja", limit: 20, offset: 0 });
+    expect(nth(contacts.mock.calls, 0)[0]).toEqual({ q: "ja", limit: 20, offset: 0 });
     expect(hook.result.current.map((s) => s.label)).toEqual(["Jane Doe"]);
   });
 
