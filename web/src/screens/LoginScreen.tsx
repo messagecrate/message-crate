@@ -411,8 +411,7 @@ export default function LoginScreen() {
                 <p
                   className={`m-0 ${connection.failed ? "mb-2" : "mb-5"} text-center text-[0.813rem] text-warn-soft-text`}
                 >
-                  This connection uses plain HTTP and is not encrypted, so anyone on the network can
-                  read your password.
+                  This connection is not encrypted, so the password crosses the network as typed.
                 </p>
               ) : null}
               {connection.failed ? (

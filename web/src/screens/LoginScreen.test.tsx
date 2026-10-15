@@ -267,7 +267,7 @@ describe("LoginScreen", () => {
   // The forms send the password to the address the card is on, so over
   // plain HTTP to another computer the card says it crosses the network
   // unencrypted, on the login form and on Create Owner alike (#2115).
-  const IN_CLEAR = /not encrypted, so anyone on the network can read your password/;
+  const IN_CLEAR = /not encrypted, so the password crosses the network as typed/;
 
   it("says a plain HTTP connection to another computer is not encrypted", async () => {
     authState.serverUrl = "http://192.168.1.20:8080";
