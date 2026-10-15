@@ -20,8 +20,9 @@ use crate::models::{StoredTime, utc_timestamp_text};
 pub enum ExportRecord {
     /// A conversation header record.
     Conversation(ConversationRecord),
-    /// One message record.
-    Message(MessageRecord),
+    /// One message record, boxed: a message holds far more than a header,
+    /// and every record of a file takes the larger variant's room.
+    Message(Box<MessageRecord>),
 }
 
 /// The conversation header of one JSONL conversation.
@@ -40,9 +41,6 @@ pub struct ConversationRecord {
     pub participants: Vec<ParticipantRecord>,
     /// IR `export.source`, used as `messages.source` for directory import.
     pub export_source: Option<String>,
-    /// When the backup the file was read from was made, in the form a
-    /// message's timestamp takes; `None` when the file does not say.
-    pub backup_taken_at: Option<StoredTime>,
 }
 
 impl ConversationRecord {
@@ -167,6 +165,10 @@ pub struct MessageRecord {
     /// The earlier versions of an edited message, in the order the file
     /// lists them; `text` is the final version.
     pub earlier_versions: Vec<EarlierVersionRecord>,
+    /// The message's Backup Date: when the backup it was read from was
+    /// made, in the form a message's timestamp takes; `None` when the file
+    /// does not say.
+    pub backup_taken_at: Option<StoredTime>,
 }
 
 /// One attachment of an imported message.
@@ -310,7 +312,7 @@ pub fn parse_ir_lines(
                     detail: format!("{e:#}"),
                 }
             })?;
-            out.push(ExportRecord::Message(record));
+            out.push(ExportRecord::Message(Box::new(record)));
         }
     }
     if missing_guid_total > 0 {
@@ -337,9 +339,8 @@ fn is_ir_header(value: &Value) -> bool {
 ///
 /// # Errors
 ///
-/// Returns an error when the backup date is outside the times a timestamp
-/// can hold, or a participant's `country` is not a country Message Crate
-/// knows.
+/// Returns an error when a participant's `country` is not a country Message
+/// Crate knows.
 fn conversation_from_ir(header: &ConversationHeader, line: usize) -> Result<ConversationRecord> {
     let export_source = {
         let s = header.export.source.trim();
@@ -349,14 +350,6 @@ fn conversation_from_ir(header: &ConversationHeader, line: usize) -> Result<Conv
             Some(s.to_string())
         }
     };
-    let backup_taken_at = header
-        .export
-        .backup_taken_at_unix_ms
-        .map(|ms| {
-            format_utc_timestamp(ms)
-                .with_context(|| format!("unrepresentable backup_taken_at_unix_ms {ms}"))
-        })
-        .transpose()?;
     Ok(ConversationRecord {
         line,
         chat_identifier: header.conversation.chat_identifier.clone(),
@@ -369,7 +362,6 @@ fn conversation_from_ir(header: &ConversationHeader, line: usize) -> Result<Conv
             .filter_map(|p| participant_from_ir(p).transpose())
             .collect::<Result<_>>()?,
         export_source,
-        backup_taken_at,
     })
 }
 
@@ -386,6 +378,13 @@ fn message_from_ir(
             msg.timestamp_unix_ms
         )
     })?;
+    let backup_taken_at = msg
+        .backup_taken_at_unix_ms
+        .map(|ms| {
+            format_utc_timestamp(ms)
+                .with_context(|| format!("unrepresentable backup_taken_at_unix_ms {ms}"))
+        })
+        .transpose()?;
     let is_from_me = msg.direction == Direction::Outgoing;
     let im = msg.imessage.as_ref();
     let text = {
@@ -441,6 +440,7 @@ fn message_from_ir(
         }),
         deletion: msg.deletion,
         earlier_versions,
+        backup_taken_at,
     })
 }
 

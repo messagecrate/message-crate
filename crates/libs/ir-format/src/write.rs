@@ -51,6 +51,7 @@ pub const CSV_HEADERS: &[&str] = &[
     "owner_identity",
     "owner_display_name",
     "backup_taken_at_unix_ms",
+    "exported_at_unix_ms",
     "message_owner_identity",
     "android_type",
     "source_fields_json",
@@ -224,9 +225,9 @@ pub(crate) fn write_conversation_csv(
             })
             .collect::<Vec<_>>(),
     );
-    let backup_taken_at = doc
+    let exported_at = doc
         .export
-        .backup_taken_at_unix_ms
+        .exported_at_unix_ms
         .map(|ms| ms.to_string())
         .unwrap_or_default();
 
@@ -240,7 +241,7 @@ pub(crate) fn write_conversation_csv(
             // message that starts with `=` as text rather than running it.
             write_guarded_record(
                 &mut wtr,
-                csv_record(doc, &participants_json, &backup_taken_at, msg, &cells),
+                csv_record(doc, &participants_json, &exported_at, msg, &cells),
             )
             .with_context(|| format!("write row {}", path.display()))?;
         }
@@ -258,6 +259,8 @@ struct MessageCells {
     ts_utc: String,
     ts_display: String,
     timestamp_unix_ms: String,
+    /// The message's Backup Date, blank when it has none.
+    backup_taken_at: String,
     attachments_json: String,
     reactions_json: String,
     earlier_versions_json: String,
@@ -291,6 +294,10 @@ impl MessageCells {
             ts_utc,
             ts_display,
             timestamp_unix_ms: msg.timestamp_unix_ms.to_string(),
+            backup_taken_at: msg
+                .backup_taken_at_unix_ms
+                .map(|ms| ms.to_string())
+                .unwrap_or_default(),
             attachments_json: json_cell(&attachment_cells),
             reactions_json: if msg.reactions.is_empty() {
                 String::new()
@@ -386,10 +393,10 @@ fn bool_cell(value: bool) -> &'static str {
 fn csv_record<'a>(
     doc: &'a ConversationDocument,
     participants_json: &'a str,
-    backup_taken_at: &'a str,
+    exported_at: &'a str,
     msg: &'a Message,
     cells: &'a MessageCells,
-) -> [&'a str; 48] {
+) -> [&'a str; 49] {
     let im = &cells.imessage;
     [
         doc.conversation.chat_identifier.as_str(),
@@ -425,7 +432,8 @@ fn csv_record<'a>(
         doc.export.tool_version.as_str(),
         doc.export.owner_identity.as_deref().unwrap_or(""),
         doc.export.owner_display_name.as_deref().unwrap_or(""),
-        backup_taken_at,
+        cells.backup_taken_at.as_str(),
+        exported_at,
         msg.owner_identity.as_deref().unwrap_or(""),
         cells.android_type.as_str(),
         cells.source_fields_json.as_str(),
@@ -502,7 +510,7 @@ pub fn document_to_mail_messages(
             export_source: doc.export.source.clone(),
             export_tool: doc.export.tool.clone(),
             export_tool_version: doc.export.tool_version.clone(),
-            backup_taken_at_unix_ms: doc.export.backup_taken_at_unix_ms,
+            exported_at_unix_ms: doc.export.exported_at_unix_ms,
             message: msg.clone(),
             attachments,
         });

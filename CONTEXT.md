@@ -435,6 +435,24 @@ is still an Export Run; it is not called a backup, because a backup is the
 phone's file that Import reads.
 _Avoid_: Export Job, Backup, Download
 
+**Backup Date**:
+When the backup a message was read from was made. It belongs to each
+message, not to a conversation file: one file an Export Run writes can hold
+messages stored from several backups, each with its own date, and a message
+with none beside them. Between two copies of one message from one source,
+the copy from the later backup decides its deletion mark and its text. A
+message whose backup says nothing has none.
+_Avoid_: Backup time, Export date (that is when a file was written)
+
+**Export Date**:
+When the run that wrote a conversation file wrote it: an Import Run's
+exporter or an Export Run. A Convert keeps the date each file already
+carries, because it only changes the format. It is carried in the file for
+whoever opens it, decides nothing on import, and is not stored by the server
+or shown on any screen; the Audit Trail already records each Export Run with
+its time.
+_Avoid_: Backup Date (that is when the backup was made)
+
 **Convert**:
 Rewriting a directory of already-exported files into a different format,
 reading neither the original backup nor the database. Export uses it for any

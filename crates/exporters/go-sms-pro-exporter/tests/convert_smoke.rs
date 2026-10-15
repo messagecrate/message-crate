@@ -161,6 +161,6 @@ fn the_backup_date_is_the_newest_files_modification_time() {
     .expect("convert");
     assert_eq!(
         jsonl_backup_dates(&output),
-        vec![Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)]
+        vec![vec![Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)]]
     );
 }

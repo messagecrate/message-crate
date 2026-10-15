@@ -42,8 +42,8 @@ pub(crate) struct ConvertExportArgs<'a> {
     /// so on every message as the address it was held at. `None` records no
     /// owner, which leaves the conversations counted toward no identity.
     pub owner_identity: Option<String>,
-    /// When the backup was made, in Unix milliseconds, stamped on the export
-    /// header ([`backup_taken_at_unix_ms`](crate::run::backup_taken_at_unix_ms)).
+    /// When the backup was made, in Unix milliseconds: every message's
+    /// Backup Date ([`backup_taken_at_unix_ms`](crate::run::backup_taken_at_unix_ms)).
     pub backup_taken_at_unix_ms: Option<i64>,
     pub convert_run: ConvertRun,
 }
@@ -115,8 +115,8 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
                             EXPORT_TOOL_VERSION,
                             owner_identity,
                             None,
-                            backup_taken_at_unix_ms,
                         ),
+                        backup_taken_at_unix_ms,
                     },
                     media_sources: VecDeque::new(),
                 },
@@ -637,6 +637,8 @@ fn reaction_from_json(reaction: &ReactionJson) -> Option<Reaction> {
 /// WhatsApp deltas of the shared [`message_ir::pending_to_document`] projection.
 struct WhatsappProjection {
     export: ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
     /// Each conversation's participants, by chat id.
     rosters: BTreeMap<String, Vec<Participant>>,
 }
@@ -644,6 +646,10 @@ struct WhatsappProjection {
 impl ProjectionHooks for WhatsappProjection {
     fn export(&self) -> ExportMeta {
         self.export.clone()
+    }
+
+    fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+        self.backup_taken_at_unix_ms
     }
 
     fn service(&self, _message: &PendingMessage) -> Transport {

@@ -140,7 +140,22 @@ mod tests {
                 .to_string(),
             format!("this file is schema version 12; Message Crate reads version {SCHEMA_VERSION}")
         );
-        assert_eq!(SCHEMA_VERSION, 16);
+    }
+
+    /// Version 16 gave the whole file one backup date in
+    /// `export.backup_taken_at_unix_ms`; version 17 dates each message by
+    /// its own backup and says when the file was written. A version-16 file
+    /// is refused by its version, never read as a file whose messages have
+    /// no backup date.
+    #[test]
+    fn refuses_a_version_16_file_by_name() {
+        assert_eq!(
+            check_schema_version_in_json(r#"{"schema_version":16,"export":{}}"#)
+                .unwrap_err()
+                .to_string(),
+            format!("this file is schema version 16; Message Crate reads version {SCHEMA_VERSION}")
+        );
+        assert_eq!(SCHEMA_VERSION, 17);
     }
 
     #[test]

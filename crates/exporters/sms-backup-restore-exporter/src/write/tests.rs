@@ -606,15 +606,19 @@ fn the_archive_counts_the_characters_xml_cannot_carry() {
     assert!(text.contains(r#"body="bell and escape""#), "{text}");
 }
 
-/// The file's `backup_date` is the newest date of the conversations it
-/// writes messages for: a WhatsApp conversation, which writes none, does
-/// not move it.
+/// The file's one `backup_date` is the newest Backup Date of the messages
+/// it writes: of two SMS dated by two backups the newer stands, and a
+/// WhatsApp message, which it does not write, does not move it.
 #[test]
-fn the_backup_date_comes_from_the_conversations_written() {
+fn the_backup_date_comes_from_the_messages_written() {
     let mut sms = message_ir::testutil::sample_document("hello ir");
-    sms.export.backup_taken_at_unix_ms = Some(1_788_256_800_000);
+    let mut older = sms.messages[0].clone();
+    older.guid = "older".into();
+    older.backup_taken_at_unix_ms = Some(1_780_000_000_000);
+    sms.messages[0].backup_taken_at_unix_ms = Some(1_788_256_800_000);
+    sms.messages.push(older);
     let mut whatsapp = message_ir::testutil::sample_whatsapp_document("hello whatsapp");
-    whatsapp.export.backup_taken_at_unix_ms = Some(1_790_793_912_000);
+    whatsapp.messages[0].backup_taken_at_unix_ms = Some(1_790_793_912_000);
 
     let tmp = tempfile::tempdir().unwrap();
     let mut report = message_crate_core::ExportReport::default();

@@ -1247,6 +1247,14 @@ carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-15: **An Export keeps the date of the backup each message came
+  from.** A conversation imported from two backups of a phone was exported
+  with no backup date at all, and a message that had none left its whole
+  conversation without one, so importing the export into another Message
+  Crate treated every message as if its backup had no date. Each message
+  now carries its own backup date in the file, an import elsewhere keeps
+  it, and a message without one leaves the others dated. Every exported
+  file also says when it was written (#1967).
 - 2026-10-12: **Cancel stops an Export at once while the server is away.**
   When the server stopped answering during an Export, the Export kept trying
   each failed request up to three more times after you pressed **Cancel**,
@@ -1750,7 +1758,7 @@ carry their date on the heading.
 - 2026-10-15: Message files exported by an earlier build are refused when
   you import or convert them. Export the backup again with this build. An
   existing Message Crate is rebuilt empty on first start and its messages
-  must be imported again (#2286).
+  must be imported again (#2286, #1967).
 - 2026-10-15: A script that runs `create-owner` or
   `reset-owner-password` with `--password` must write the password to the
   command's input instead, for example

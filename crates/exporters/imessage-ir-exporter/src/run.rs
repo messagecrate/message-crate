@@ -123,6 +123,17 @@ impl ExportOptions {
     pub fn backup_taken_at_unix_ms(&self) -> Option<i64> {
         backup_taken_at_unix_ms(&self.source)
     }
+
+    /// The dates every conversation file of the run carries: each
+    /// message's Backup Date ([`Self::backup_taken_at_unix_ms`]) and the
+    /// file's Export Date, which the caller gave
+    /// ([`ConvertRun::exported_at_unix_ms`](message_crate_core::ConvertRun::exported_at_unix_ms)).
+    pub(crate) fn file_dates(&self) -> crate::emit::FileDates {
+        crate::emit::FileDates {
+            backup_taken_at_unix_ms: self.backup_taken_at_unix_ms(),
+            exported_at_unix_ms: self.convert_run.exported_at_unix_ms,
+        }
+    }
 }
 
 /// [`ExportOptions::backup_taken_at_unix_ms`] for `source`.

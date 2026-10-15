@@ -415,7 +415,7 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
             tool_version: "0.1.0".into(),
             owner_identity: Some("+15555550100".into()),
             owner_display_name: None,
-            backup_taken_at_unix_ms: None,
+            exported_at_unix_ms: None,
         },
         conversation: ConversationMeta {
             chat_identifier: "+15555550101".into(),
@@ -444,6 +444,7 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
             reply_to: None,
             imessage: None,
             source: None,
+            backup_taken_at_unix_ms: None,
         }],
         packaging_stem_suffix: None,
     }];
@@ -662,7 +663,7 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
             tool_version: "0.1.0".into(),
             owner_identity: None,
             owner_display_name: None,
-            backup_taken_at_unix_ms: None,
+            exported_at_unix_ms: None,
         },
         conversation: ConversationMeta {
             chat_identifier: "+15555550101".into(),
@@ -691,6 +692,7 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
             reply_to: None,
             imessage: None,
             source: None,
+            backup_taken_at_unix_ms: None,
         }],
         packaging_stem_suffix: None,
     }];

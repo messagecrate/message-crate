@@ -382,11 +382,17 @@ fn is_pdu_file(p: &Path) -> bool {
 /// GO SMS Pro deltas of the shared [`message_ir::pending_to_document`] projection.
 struct GoSmsProjection {
     export: ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
 }
 
 impl ProjectionHooks for GoSmsProjection {
     fn export(&self) -> ExportMeta {
         self.export.clone()
+    }
+
+    fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+        self.backup_taken_at_unix_ms
     }
 
     fn service(&self, _message: &PendingMessage) -> Transport {
@@ -515,8 +521,8 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
                             EXPORT_TOOL_VERSION,
                             Some(owner_identity),
                             None,
-                            backup_taken_at_unix_ms,
                         ),
+                        backup_taken_at_unix_ms,
                     },
                     output_dir: &output_dir,
                     skips,
@@ -828,8 +834,8 @@ mod tests {
                 EXPORT_TOOL_VERSION,
                 Some("+15555550100".into()),
                 None,
-                None,
             ),
+            backup_taken_at_unix_ms: None,
         };
         let mut conversation = PendingConversation::new("+15555550122", false, None, Vec::new());
         conversation.messages = messages;

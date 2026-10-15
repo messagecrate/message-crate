@@ -37,7 +37,7 @@ pub fn sample_document(text: &str) -> ConversationDocument {
             tool_version: "10.26.003".into(),
             owner_identity: Some("+15555550100".into()),
             owner_display_name: Some("Me".into()),
-            backup_taken_at_unix_ms: None,
+            exported_at_unix_ms: None,
         },
         conversation: ConversationMeta {
             chat_identifier: "+15555550101".into(),
@@ -77,6 +77,7 @@ pub fn sample_document(text: &str) -> ConversationDocument {
                     m
                 },
             }),
+            backup_taken_at_unix_ms: None,
         }],
         packaging_stem_suffix: None,
     };
@@ -116,7 +117,7 @@ pub fn sample_imessage_document() -> ConversationDocument {
             tool_version: "0.1.0".into(),
             owner_identity: Some("+15555550100".into()),
             owner_display_name: Some("Me".into()),
-            backup_taken_at_unix_ms: None,
+            exported_at_unix_ms: None,
         },
         conversation: ConversationMeta {
             chat_identifier: "+15555550101".into(),
@@ -175,6 +176,7 @@ pub fn sample_imessage_document() -> ConversationDocument {
                     ..ImessageExtensions::default()
                 }),
                 source: None,
+                backup_taken_at_unix_ms: None,
             },
             Message {
                 guid: "TAPBACK-GUID-0001".into(),
@@ -202,6 +204,7 @@ pub fn sample_imessage_document() -> ConversationDocument {
                     ..ImessageExtensions::default()
                 }),
                 source: None,
+                backup_taken_at_unix_ms: None,
             },
         ],
         packaging_stem_suffix: None,

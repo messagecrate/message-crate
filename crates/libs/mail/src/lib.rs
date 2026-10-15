@@ -113,9 +113,11 @@ pub struct MailMessage {
     pub export_tool: String,
     /// → `X-ME-Export-Tool-Version`.
     pub export_tool_version: String,
-    /// When the backup was made, in Unix milliseconds →
-    /// `X-ME-Backup-Taken-At-Unix-Ms`; `None` when the export does not say.
-    pub backup_taken_at_unix_ms: Option<i64>,
+    /// The Export Date, when the file was written, in Unix milliseconds →
+    /// `X-ME-Exported-At-Unix-Ms`; `None` when the export does not say. The
+    /// message's own Backup Date is
+    /// [`Message::backup_taken_at_unix_ms`] → `X-ME-Backup-Taken-At-Unix-Ms`.
+    pub exported_at_unix_ms: Option<i64>,
     /// The message itself (headers read guid, timestamp, direction, service,
     /// kind, sender, subject, text, and the iMessage / source bags from here;
     /// its `attachments` list is ignored in favour of `attachments` below).
@@ -889,7 +891,11 @@ fn conversation_headers<'m>(
             (headers::OWNER_IDENTITY, Some(msg.owner_identity.clone())),
             (
                 headers::BACKUP_TAKEN_AT_UNIX_MS,
-                msg.backup_taken_at_unix_ms.map(|ms| ms.to_string()),
+                msg.message.backup_taken_at_unix_ms.map(|ms| ms.to_string()),
+            ),
+            (
+                headers::EXPORTED_AT_UNIX_MS,
+                msg.exported_at_unix_ms.map(|ms| ms.to_string()),
             ),
             (headers::OWNER_DISPLAY_NAME, msg.owner_display_name.clone()),
             (

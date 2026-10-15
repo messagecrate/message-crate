@@ -506,6 +506,6 @@ fn the_backup_date_is_the_csv_files_modification_time() {
     .expect("convert");
     assert_eq!(
         jsonl_backup_dates(output.path()),
-        vec![Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)]
+        vec![vec![Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)]]
     );
 }

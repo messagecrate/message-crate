@@ -158,8 +158,11 @@ impl std::error::Error for UnknownDeletion {}
 /// `sender_country`); version 14 had none. Version 16 names a one-to-one
 /// conversation `one-to-one` in
 /// [`ConversationMeta::conversation_type`], where version 15 said
-/// `individual`.
-pub const SCHEMA_VERSION: u32 = 16;
+/// `individual`. Version 17 dates each message by the backup it came from
+/// ([`Message::backup_taken_at_unix_ms`]) and says when the file was written
+/// ([`ExportMeta::exported_at_unix_ms`]), where version 16 gave the whole
+/// file one backup date.
+pub const SCHEMA_VERSION: u32 = 17;
 
 /// One exported conversation: export metadata, conversation roster and
 /// stats, and messages.
@@ -194,13 +197,12 @@ pub struct ExportMeta {
     pub owner_identity: Option<String>,
     /// Outgoing display name. Set when known (iMessage caller-id or `"Me"`).
     pub owner_display_name: Option<String>,
-    /// When the backup this file was read from was made, in Unix
-    /// milliseconds: an iPhone backup's `Manifest.plist` date, an SMS Backup
-    /// & Restore file's `backup_date`, or the backup file's modification
-    /// time where the source records nothing better. `None` when nothing
-    /// says. Between two copies of one message from one source, the import
-    /// lets the copy from the later backup decide its deletion mark and text.
-    pub backup_taken_at_unix_ms: Option<i64>,
+    /// The Export Date: when the run that wrote this file wrote it, in Unix
+    /// milliseconds, as its caller gave the instant. Carried for whoever
+    /// opens the file; it decides nothing on import, and the server does not
+    /// store it. `None` when the file was read from a format that does not
+    /// say.
+    pub exported_at_unix_ms: Option<i64>,
 }
 
 /// The shape of a conversation: one-to-one, group, or orphaned.
@@ -567,6 +569,17 @@ pub struct Message {
     pub imessage: Option<ImessageExtensions>,
     /// Vendor leftovers (Android type code and raw fields).
     pub source: Option<VendorFields>,
+    /// The Backup Date: when the backup this message was read from was
+    /// made, in Unix milliseconds. An iPhone backup's `Manifest.plist` date,
+    /// an SMS Backup & Restore file's `backup_date`, or the backup file's
+    /// modification time where the source records nothing better; a file
+    /// an Export Run wrote carries each message's stored date, so one file
+    /// can hold messages from several backups. `None`, and left out of the
+    /// file, when nothing says. Between two copies of one message from one
+    /// source, the import lets the copy from the later backup decide its
+    /// deletion mark and text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup_taken_at_unix_ms: Option<i64>,
 }
 
 /// Whether the owner sent or received the message.

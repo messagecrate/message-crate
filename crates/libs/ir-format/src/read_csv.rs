@@ -67,8 +67,8 @@ pub fn read_conversation_csv(path: &Path) -> Result<ConversationDocument> {
 ///
 /// # Errors
 ///
-/// Returns an error when `backup_taken_at_unix_ms` holds anything but a
-/// whole number or a blank.
+/// Returns an error when `exported_at_unix_ms` holds anything but a whole
+/// number or a blank.
 fn header_from_row(
     cols: &HashMap<&str, usize>,
     row: &csv::StringRecord,
@@ -83,13 +83,7 @@ fn header_from_row(
             Some(t.to_string())
         }
     };
-    let backup_taken_at_unix_ms = match get("backup_taken_at_unix_ms").trim() {
-        "" => None,
-        ms => Some(
-            ms.parse::<i64>()
-                .with_context(|| format!("bad backup_taken_at_unix_ms {ms:?}"))?,
-        ),
-    };
+    let exported_at_unix_ms = unix_ms_cell(get("exported_at_unix_ms"), "exported_at_unix_ms")?;
     Ok(ConversationHeader {
         schema_version: SCHEMA_VERSION,
         export: ExportMeta {
@@ -98,7 +92,7 @@ fn header_from_row(
             tool_version: get("export_tool_version").to_string(),
             owner_identity: nonempty(get("owner_identity")),
             owner_display_name: nonempty(get("owner_display_name")),
-            backup_taken_at_unix_ms,
+            exported_at_unix_ms,
         },
         conversation: ConversationMeta {
             chat_identifier: get("chat_identifier").to_string(),
@@ -108,6 +102,23 @@ fn header_from_row(
             stats: ConversationStats::default(),
         },
     })
+}
+
+/// A time in Unix milliseconds from the cell of the column `name`: `None`
+/// when blank.
+///
+/// # Errors
+///
+/// Returns an error when the cell holds anything but a whole number or a
+/// blank.
+fn unix_ms_cell(raw: &str, name: &str) -> Result<Option<i64>> {
+    match raw.trim() {
+        "" => Ok(None),
+        ms => Ok(Some(
+            ms.parse::<i64>()
+                .with_context(|| format!("bad {name} {ms:?}"))?,
+        )),
+    }
 }
 
 /// Rebuild one message from a CSV row.
@@ -181,6 +192,10 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         reply_to,
         imessage,
         source,
+        backup_taken_at_unix_ms: unix_ms_cell(
+            get("backup_taken_at_unix_ms"),
+            "backup_taken_at_unix_ms",
+        )?,
     })
 }
 
