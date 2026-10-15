@@ -211,6 +211,53 @@ pub async fn create_account_row_if_missing(
     Ok(())
 }
 
+/// Write the Demo Account's row at `account_id`, named `username` and
+/// `preferred_name`, with no password, and take every identity off it, so
+/// the build links the seed's alone.
+///
+/// The Demo Account has no password, so anyone at the login card can enter
+/// it. The server takes its grant from its id (`DEMO_ACCOUNT_PERMISSIONS`)
+/// and does not read these flags for it. The row still says the same grant,
+/// export and neither import nor delete, so the database matches what the
+/// server applies (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`).
+///
+/// # Errors
+///
+/// Returns an error when a statement fails.
+pub async fn write_demo_account_row(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    username: &str,
+    preferred_name: &str,
+) -> Result<()> {
+    sqlx::query(
+        r"
+        INSERT INTO accounts (
+            id, username, password_hash, preferred_name, can_import, can_export, can_delete
+        )
+        VALUES ($1, $2, NULL, $3, 0, 1, 0)
+        ON CONFLICT(id) DO UPDATE SET
+            username = excluded.username,
+            preferred_name = excluded.preferred_name,
+            can_import = excluded.can_import,
+            can_export = excluded.can_export,
+            can_delete = excluded.can_delete
+        ",
+    )
+    .bind(account_id)
+    .bind(username)
+    .bind(preferred_name)
+    .execute(&mut *conn)
+    .await?;
+    // Phone and email identities that mark messages as from "you" live in
+    // `handles`, linked through `account_handles`.
+    sqlx::query("DELETE FROM account_handles WHERE account_id = $1")
+        .bind(account_id)
+        .execute(&mut *conn)
+        .await?;
+    Ok(())
+}
+
 /// Ensure a `handles` row exists and link it to the account via `account_handles`.
 /// Returns the handle id.
 pub async fn link_account_handle(

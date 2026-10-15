@@ -1,7 +1,8 @@
 //! The checks a `reset-demo` run makes before it swaps the rebuilt database
 //! in: that no row outside the Demo Account changed, that the old Demo
 //! Account's Audit Trail outlived it, and that no other account's directory
-//! changed (#1225, #1450). The reads themselves are in [`crate::db::demo`].
+//! changed (#1225, #1450). It hashes and compares what
+//! [`crate::db::demo`] reads.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -10,10 +11,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use sqlx::SqliteConnection;
 
-use crate::db::demo::{
-    DemoRows, OutlivingRows, TableDigest, last_audit_entry, non_demo_state_on_conn, outliving_rows,
-    sample_search_terms,
-};
+use crate::db::audit_trail::last_audit_entry;
+use crate::db::demo::{self, DemoRows, OutlivingRows, SEARCH_INDEXES, SearchIndex, outliving_rows};
 use crate::db::{engine, schema};
 
 /// Refuse to install the prepared database when it changed anything outside
@@ -130,6 +129,145 @@ pub(super) async fn with_check_conn<T>(
     conn.close().await?;
     pool.close().await;
     result
+}
+
+/// The rows of one table that a reset must leave as they were: how many, and
+/// a SHA-256 over all of them in a fixed order.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct TableDigest {
+    pub(super) rows: u64,
+    pub(super) sha256: String,
+}
+
+/// Tables a reset compares no rows of. `demo_account_build` is the build's
+/// own record; it is written and removed by the build itself.
+const UNCOMPARED_TABLES: [&str; 1] = ["demo_account_build"];
+
+/// A digest per table of every row that is not one of `demo`'s, as
+/// [`demo::each_row_outside`] reads them.
+///
+/// The search index is contentless, so it has no rows to read back. It is
+/// compared by which messages it holds and how many terms each has
+/// ([`search_index_digest`]), and by what `search_terms` find
+/// ([`search_sample_digest`]). Its other shadow tables are left out, because
+/// their bytes differ for the same entries.
+pub(super) async fn non_demo_state_on_conn(
+    conn: &mut SqliteConnection,
+    demo: DemoRows,
+    search_terms: &[String],
+) -> Result<BTreeMap<String, TableDigest>> {
+    let tables = demo::tables(conn).await?;
+    let virtual_tables: Vec<&str> = tables
+        .iter()
+        .filter(|table| table.is_virtual)
+        .map(|table| table.name.as_str())
+        .collect();
+    let mut state = BTreeMap::new();
+    for table in &virtual_tables {
+        let Some(index) = SEARCH_INDEXES.iter().find(|index| index.table == *table) else {
+            bail!("cannot compare the virtual table {table}");
+        };
+        state.insert(
+            (*table).to_owned(),
+            search_index_digest(conn, index, demo.account).await?,
+        );
+        state.insert(
+            format!("{table} searches"),
+            search_sample_digest(conn, index, demo.account, search_terms).await?,
+        );
+    }
+    for table in &tables {
+        let table = &table.name;
+        let is_index = virtual_tables
+            .iter()
+            .any(|vt| table == vt || table.starts_with(&format!("{vt}_")));
+        if is_index || UNCOMPARED_TABLES.contains(&table.as_str()) {
+            continue;
+        }
+        let mut digest = DigestBuilder::default();
+        demo::each_row_outside(conn, table, demo, |row| digest.add(row)).await?;
+        state.insert(table.clone(), digest.finish());
+    }
+    Ok(state)
+}
+
+/// A [`TableDigest`] being built, one row at a time.
+#[derive(Default)]
+struct DigestBuilder {
+    hasher: sha2::Sha256,
+    rows: u64,
+}
+
+impl DigestBuilder {
+    fn add(&mut self, row: &str) {
+        use sha2::Digest;
+        self.hasher.update(row.as_bytes());
+        self.hasher.update(b"\n");
+        self.rows += 1;
+    }
+
+    fn finish(self) -> TableDigest {
+        use sha2::Digest;
+        TableDigest {
+            rows: self.rows,
+            sha256: hex::encode(self.hasher.finalize()),
+        }
+    }
+}
+
+/// Which entries outside the Demo Account a search index holds, and how many
+/// terms each holds in each column ([`demo::each_index_entry_outside`]).
+async fn search_index_digest(
+    conn: &mut SqliteConnection,
+    index: &SearchIndex,
+    demo_id: i64,
+) -> Result<TableDigest> {
+    let mut digest = DigestBuilder::default();
+    demo::each_index_entry_outside(conn, index, demo_id, |row| digest.add(row)).await?;
+    Ok(digest.finish())
+}
+
+/// How many messages outside the Demo Account [`sample_search_terms`] takes
+/// its terms from, and the most terms it takes.
+const SEARCH_SAMPLE_MESSAGES: i64 = 16;
+const SEARCH_SAMPLE_TERMS: usize = 32;
+
+/// Up to [`SEARCH_SAMPLE_TERMS`] words from [`SEARCH_SAMPLE_MESSAGES`]
+/// messages outside the Demo Account, picked at random: the searches
+/// [`search_sample_digest`] runs on both databases.
+async fn sample_search_terms(conn: &mut SqliteConnection, demo_id: i64) -> Result<Vec<String>> {
+    let bodies = demo::sample_bodies_outside(conn, demo_id, SEARCH_SAMPLE_MESSAGES).await?;
+    let mut terms = BTreeSet::new();
+    for body in bodies {
+        for word in body.split(|c: char| !c.is_alphanumeric()) {
+            if terms.len() == SEARCH_SAMPLE_TERMS {
+                return Ok(terms.into_iter().collect());
+            }
+            if !word.is_empty() {
+                terms.insert(word.to_lowercase());
+            }
+        }
+    }
+    Ok(terms.into_iter().collect())
+}
+
+/// Every entry outside the Demo Account each of `terms` finds in a search
+/// index, as a search runs it ([`demo::each_match_outside`]). Two indexes
+/// that hold the same messages with the same term counts
+/// ([`search_index_digest`]) can still find different messages for a word;
+/// this catches that for a sample of words (#1450).
+async fn search_sample_digest(
+    conn: &mut SqliteConnection,
+    index: &SearchIndex,
+    demo_id: i64,
+    terms: &[String],
+) -> Result<TableDigest> {
+    let mut digest = DigestBuilder::default();
+    demo::each_match_outside(conn, index, demo_id, terms, |term, message| {
+        digest.add(&format!("{term},{message}"));
+    })
+    .await?;
+    Ok(digest.finish())
 }
 
 /// One entry under an account's directory, as [`other_account_directories`] lists

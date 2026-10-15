@@ -9,7 +9,9 @@
 //! This module sequences each caller's run. The build every caller runs is
 //! in `build`, the files a reset and a seeding move in `snapshot`, the
 //! checks before a reset's swap in `verify`, and what a build says in
-//! `console`. The SQL is in [`crate::db::demo`].
+//! `console`. Their SQL is in `db/`: each statement about one table in that
+//! table's module, and the verifier's reads across every table in
+//! [`crate::db::demo`].
 
 mod build;
 mod console;

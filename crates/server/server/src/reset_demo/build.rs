@@ -19,7 +19,6 @@ use crate::config::Config;
 use crate::db::account_profile::{self, MessageBatch, MessagesToDelete};
 use crate::db::address_book::{self, LoadCounts, LoadMode};
 use crate::db::audit_trail::AuditActor;
-use crate::db::demo;
 use crate::db::demo_account_build::{self, DemoDataSize};
 use crate::db::maintenance;
 use crate::dedupe;
@@ -722,7 +721,8 @@ pub(super) async fn seed_demo_account_on_conn(
         );
     }
 
-    demo::write_demo_account_row(conn, account_id, username, &seed.owner.display_name).await?;
+    account_profile::write_demo_account_row(conn, account_id, username, &seed.owner.display_name)
+        .await?;
     // The seed creates no API token. A token the Demo Account creates cannot
     // import either, because a token's grant is narrowed to the account's.
     for (raw, handle_type) in &seed.owner.handle_specs {

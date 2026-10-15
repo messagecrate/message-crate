@@ -13,7 +13,7 @@ use sqlx::SqlitePool;
 
 use super::console;
 use crate::config::Config;
-use crate::db::{demo, engine, schema};
+use crate::db::{engine, maintenance, schema};
 use crate::open_db::OpenDb;
 
 /// Parent directory of `path`, or `.` when the path has no parent.
@@ -171,7 +171,7 @@ pub(super) async fn prepare_database_snapshot(active: &Path, prepared: &Path) ->
             .acquire()
             .await
             .with_context(|| format!("open {} for reset snapshot", active.display()))?;
-        demo::copy_database(&mut conn, prepared)
+        schema::copy_database(&mut conn, prepared)
             .await
             .with_context(|| {
                 format!(
@@ -211,7 +211,7 @@ pub(super) async fn checkpoint_and_clean_sidecars(db: &Path, operation: &str) ->
         .acquire()
         .await
         .with_context(|| format!("open {} {operation}", db.display()))?;
-    let busy = demo::checkpoint_truncate(&mut conn)
+    let finished = maintenance::checkpoint_truncate(&mut conn)
         .await
         .with_context(|| {
             format!(
@@ -226,7 +226,7 @@ pub(super) async fn checkpoint_and_clean_sidecars(db: &Path, operation: &str) ->
     // Close the pool so no connection stays attached to the database while
     // reset-demo replaces or renames it.
     pool.close().await;
-    if busy {
+    if !finished {
         bail!(
             "cannot replace {} because its WAL could not be checkpointed; stop every process using the database and run reset-demo offline",
             db.display()
