@@ -588,13 +588,16 @@ impl FileStaging<'_> {
         let stated = StatedCountries::of(&conversation.participants, &prepared_messages);
         // One address is one identity in a conversation, so every place it
         // appears is read in the one country the conversation names for it:
-        // a sender whose own `handle` row named none, beside a participant
-        // whose row named `GB`, is the same `+44` number. A reaction names
+        // a sender record that names no country, beside a participant record
+        // that names `GB`, is the same `+44` number. A reaction names
         // its reactor by address alone, with no country of its own.
         for (msg, _) in &mut prepared_messages {
-            msg.sender_country = msg.sender.as_ref().and_then(|s| stated.of_value(s));
+            msg.sender_country = msg.sender.as_ref().and_then(|s| stated.of_handle(s));
             for tapback in &mut msg.tapbacks {
-                tapback.sender_country = stated.of_address(tapback.sender.as_deref());
+                tapback.sender_country = tapback
+                    .sender
+                    .as_deref()
+                    .and_then(|sender| stated.of_address(sender));
             }
         }
 
@@ -605,7 +608,7 @@ impl FileStaging<'_> {
         // the country their participant or sender record names, so the chat
         // handle is the same identity they are.
         let chat_country = if individual {
-            stated.of_address(Some(&conversation.chat_identifier))
+            stated.of_address(&conversation.chat_identifier)
         } else {
             None
         };
@@ -697,7 +700,7 @@ impl FileStaging<'_> {
         }
 
         for mut participant in conversation.participants {
-            participant.country = stated.of_value(&participant.handle);
+            participant.country = stated.of_handle(&participant.handle);
             insert_participant(
                 self.tx,
                 self.stmts,
@@ -782,14 +785,14 @@ impl StatedCountries {
     }
 
     /// The country named for `address`, when one is.
-    fn of_address(&self, address: Option<&str>) -> Option<&'static phone::Country> {
-        address.and_then(|address| self.0.get(address).copied())
+    fn of_address(&self, address: &str) -> Option<&'static phone::Country> {
+        self.0.get(address).copied()
     }
 
-    /// The country named for `value`'s address; a name has none.
-    fn of_value(&self, value: &HandleValue) -> Option<&'static phone::Country> {
-        match value {
-            HandleValue::Address(address) => self.of_address(Some(address)),
+    /// The country named for `handle`'s address; a name has none.
+    fn of_handle(&self, handle: &HandleValue) -> Option<&'static phone::Country> {
+        match handle {
+            HandleValue::Address(address) => self.of_address(address),
             HandleValue::Name(_) => None,
         }
     }

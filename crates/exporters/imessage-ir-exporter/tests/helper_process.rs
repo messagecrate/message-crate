@@ -570,4 +570,29 @@ fn a_handles_country_reaches_the_conversation_file() {
     let none = in_chat("07700 900456");
     assert_eq!(none.conversation.participants[0].country, None);
     assert_eq!(none.messages[0].sender_country, None);
+
+    // The server imports this output from its own copy, and that copy must
+    // be what the exporter writes. Only the backup's date, read from the
+    // fixture file's time, may differ.
+    let comparable = |text: &str| -> Vec<serde_json::Value> {
+        text.lines()
+            .map(|line| {
+                let mut value: serde_json::Value = serde_json::from_str(line).unwrap();
+                if let Some(export) = value.get_mut("export").and_then(|e| e.as_object_mut()) {
+                    export.remove("backup_taken_at_unix_ms");
+                }
+                value
+            })
+            .collect()
+    };
+    let written: String = jsonl_files(&output)
+        .iter()
+        .map(|path| fs::read_to_string(path).unwrap())
+        .collect();
+    let server_copy = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../server/server/tests/fixtures/apple-messages-handle-country.jsonl"),
+    )
+    .unwrap();
+    assert_eq!(comparable(&written), comparable(&server_copy));
 }

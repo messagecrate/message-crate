@@ -1029,8 +1029,9 @@ async fn an_address_is_one_identity_when_only_some_of_its_records_name_a_country
     );
 }
 
-/// The Apple Messages exporter's own output for its committed fixture
-/// `chat.db` (`imessage-ir-exporter/tests/fixtures/handle-country/`), whose
+/// The Apple Messages exporter's output for its committed fixture
+/// `chat.db` (`imessage-ir-exporter/tests/fixtures/handle-country/`; its
+/// `a_handles_country_reaches_the_conversation_file` checks this copy), whose
 /// handle `07700 900123` names `gb` and `07700 900456` names no country,
 /// imported with no country on the import form: the first is stored as
 /// `+447700900123`, and the second keeps its digits (#1994).
