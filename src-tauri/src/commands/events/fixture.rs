@@ -12,7 +12,9 @@
 //!
 //! Every optional field is set in at least one payload, and every value of
 //! each enum a payload carries appears in one, so the web test sees each
-//! field and each word the window can receive.
+//! field and each word the window can receive. An issue row's `step` is the
+//! exception: Rust carries it as a `String`, not an enum, so its one word
+//! here is a sample and the stages' other words are not checked.
 
 use std::path::PathBuf;
 
@@ -31,84 +33,19 @@ fn fixture_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/desktop-events/events.json")
 }
 
-/// Every step. The match stops compiling when a step is added, so the new
-/// step is added to the list beside it.
-fn every_step() -> [Step; 7] {
-    let steps = [
-        Step::Setup,
-        Step::Parse,
-        Step::Attachments,
-        Step::Prepare,
-        Step::Check,
-        Step::Media,
-        Step::Upload,
-    ];
-    for step in steps {
-        match step {
-            Step::Setup
-            | Step::Parse
-            | Step::Attachments
-            | Step::Prepare
-            | Step::Check
-            | Step::Media
-            | Step::Upload => {}
+/// `every!(Enum: A, B, C)` is `[Enum::A, Enum::B, Enum::C]`, from one list
+/// of variants. Its exhaustive match stops compiling when a variant is
+/// added, so the new variant is added to the list too.
+macro_rules! every {
+    ($ty:ident: $($variant:ident),+ $(,)?) => {{
+        let all = [$($ty::$variant),+];
+        for value in all {
+            match value {
+                $($ty::$variant)|+ => {}
+            }
         }
-    }
-    steps
-}
-
-/// Every program a run can wait for, kept complete the same way.
-fn every_program() -> [Program; 3] {
-    let programs = [Program::Ffmpeg, Program::Ffprobe, Program::Wtsexporter];
-    for program in programs {
-        match program {
-            Program::Ffmpeg | Program::Ffprobe | Program::Wtsexporter => {}
-        }
-    }
-    programs
-}
-
-/// Every kind of issue row, kept complete the same way.
-fn every_issue_kind() -> [RunIssueKind; 4] {
-    let kinds = [
-        RunIssueKind::Skip,
-        RunIssueKind::Error,
-        RunIssueKind::Note,
-        RunIssueKind::Resolved,
-    ];
-    for kind in kinds {
-        match kind {
-            RunIssueKind::Skip
-            | RunIssueKind::Error
-            | RunIssueKind::Note
-            | RunIssueKind::Resolved => {}
-        }
-    }
-    kinds
-}
-
-/// Every word the Upload sends for one conversation file, kept complete the
-/// same way.
-fn every_file_status() -> [FileStatus; 3] {
-    let statuses = [FileStatus::Ok, FileStatus::Failed, FileStatus::Skipped];
-    for status in statuses {
-        match status {
-            FileStatus::Ok | FileStatus::Failed | FileStatus::Skipped => {}
-        }
-    }
-    statuses
-}
-
-/// Every word the write queue sends for one conversation file, kept
-/// complete the same way.
-fn every_write_status() -> [WriteStatus; 2] {
-    let statuses = [WriteStatus::Written, WriteStatus::Skipped];
-    for status in statuses {
-        match status {
-            WriteStatus::Written | WriteStatus::Skipped => {}
-        }
-    }
-    statuses
+        all
+    }};
 }
 
 fn to_json(payload: impl serde::Serialize) -> Value {
@@ -119,7 +56,7 @@ fn to_json(payload: impl serde::Serialize) -> Value {
 fn payloads() -> Value {
     // One per step with every field set. The struct literal stops compiling
     // when a field is added, so the new field is set here too.
-    let progress = every_step()
+    let progress = every!(Step: Setup, Parse, Attachments, Prepare, Check, Media, Upload)
         .into_iter()
         .map(|step| ImportProgressEvent {
             step,
@@ -131,13 +68,13 @@ fn payloads() -> Value {
             waiting: Some(Program::Ffmpeg),
         })
         .chain(
-            every_program()
+            every!(Program: Ffmpeg, Ffprobe, Wtsexporter)
                 .into_iter()
                 .map(|program| ImportProgressEvent::waiting(Step::Media, program, 1, Some(2))),
         )
         .map(to_json);
 
-    let issue = every_issue_kind()
+    let issue = every!(RunIssueKind: Skip, Error, Note, Resolved)
         .into_iter()
         .map(|kind| {
             ImportIssueEvent::from(&RunIssue {
@@ -150,12 +87,12 @@ fn payloads() -> Value {
         })
         .map(to_json);
 
-    let file_done = every_file_status()
+    let file_done = every!(FileStatus: Ok, Failed, Skipped)
         .into_iter()
         .map(|status| ImportFileDoneEvent::new("c.jsonl".into(), status))
         .map(to_json);
 
-    let file_written = every_write_status()
+    let file_written = every!(WriteStatus: Written, Skipped)
         .into_iter()
         .map(|status| {
             match WindowEvent::from(ProgressEvent::FileWritten {

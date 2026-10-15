@@ -4,7 +4,9 @@
 // tests/fixtures/desktop-events/events.json from the real structs, and this
 // test checks every payload in it against its TypeScript type (#2109): a
 // field renamed or removed in Rust, a field the TypeScript type lacks, or a
-// word outside a TypeScript union fails here.
+// word outside a TypeScript union fails here. An issue row's `step` is the
+// exception: Rust carries it as a string, so the fixture holds one sample
+// word for it and the stages' other words are not checked.
 //
 // Each type's shape below is checked against the type by the compiler, so a
 // field renamed in TypeScript fails the type-check, and the payloads then

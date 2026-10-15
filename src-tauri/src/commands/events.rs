@@ -2,11 +2,8 @@
 //!
 //! The core library has a similar error type, but it cannot be sent through
 //! Tauri because it is not serializable. Each struct has the same name and
-//! fields as its TypeScript type in `web/src/lib/types.ts`. A test here
-//! writes one payload of each to `tests/fixtures/desktop-events/events.json`
-//! from these structs, and `web/src/lib/desktopEvents.test.ts` checks every
-//! payload against its TypeScript type, so a field renamed or removed on one
-//! side fails a test (#2109).
+//! fields as its TypeScript type in `web/src/lib/types.ts`, and the tests in
+//! `events/fixture.rs` check that they agree.
 //!
 //! Every desktop job (an Import Run's stages, an Export, a Convert) reports on
 //! the same `desktop-job:*` channels. The payloads only an Import Run sends are
