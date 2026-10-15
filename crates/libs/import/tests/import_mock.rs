@@ -1094,6 +1094,21 @@ fn mock_batch_accepting<'a>(server: &'a MockServer, guid: &str) -> httpmock::Moc
     })
 }
 
+/// A batch mock that refuses, with a 500, the batch holding `guid`.
+fn mock_batch_refusing<'a>(server: &'a MockServer, guid: &str) -> httpmock::Mock<'a> {
+    server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/imports/7/batches")
+            .body_includes(guid);
+        then.status(500).json_body(json!({
+            "type": "about:blank",
+            "title": "Internal server error",
+            "status": 500,
+            "detail": "intentional batch failure"
+        }));
+    })
+}
+
 /// A replace import that fails partway has already wiped the source on the
 /// server, so the next append must not skip what the journal recorded
 /// before the replace (#2054). The replace clears those rows when it starts:
@@ -1114,17 +1129,7 @@ fn an_append_after_a_failed_replace_sends_what_the_replace_did_not_import() {
     let mut second = mock_batch_accepting(&server, "guid-2");
     assert!(run(&cfg, None).unwrap().ok);
     second.delete();
-    let mut refused = server.mock(|when, then| {
-        when.method(POST)
-            .path("/v1/imports/7/batches")
-            .body_includes("guid-2");
-        then.status(500).json_body(json!({
-            "type": "about:blank",
-            "title": "Internal server error",
-            "status": 500,
-            "detail": "intentional batch failure"
-        }));
-    });
+    let mut refused = mock_batch_refusing(&server, "guid-2");
     let replace = ImportConfig {
         mode: ImportMode::Replace,
         ..cfg.clone()

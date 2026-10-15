@@ -579,10 +579,10 @@ fn start_import_run(
 }
 
 /// What this Upload does with the journal's earlier progress: a replace
-/// discards it, force ignores it, and an append resumes from it.
+/// forgets it, force ignores it, and an append resumes from it.
 fn earlier_progress(cfg: &ImportConfig) -> EarlierProgress {
     if cfg.mode == ImportMode::Replace {
-        EarlierProgress::Discard
+        EarlierProgress::Forget
     } else if cfg.force {
         EarlierProgress::Ignore
     } else {

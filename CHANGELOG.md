@@ -793,9 +793,16 @@ carry their date on the heading.
 
 - 2026-10-15: **A conversation that crashes its preparation no longer hangs
   the Upload.** When preparing one conversation for an Upload crashed, the
-  Upload waited for it forever and Cancel could not end it. That
+  Upload waited for it forever and pausing it could not end it. That
   conversation is now reported as failed, with the crash's message, and the
   Upload goes on to the rest (#2087).
+- 2026-10-15: **An Upload after a failed replace sends what the replace
+  removed.** A replace Upload deletes the source's messages on the server
+  before it sends them again. When it failed partway, the next Upload that
+  added to the source still trusted what earlier Uploads had recorded as
+  sent, skipped those conversations, and reported success while their
+  messages stayed deleted. A replace now forgets that record when it starts.
+  The desktop app does not start a replace Upload today (#2054).
 - 2026-10-15: **Other users of the computer can no longer read a staged
   Import Run.** Each Import Run's directory in the Staging Directory, which
   holds the conversations and attachments it staged until the run ends, could

@@ -218,7 +218,7 @@ pub enum EarlierProgress {
     /// mode). A replace wipes the source on the server, so the rows no longer
     /// say what the server holds, and a later append that read them after
     /// a failed replace would skip what the replace removed.
-    Discard,
+    Forget,
 }
 
 impl RunJournal {
@@ -229,7 +229,7 @@ impl RunJournal {
     /// # Errors
     ///
     /// Returns an error when an existing journal file cannot be read, or, for
-    /// [`EarlierProgress::Discard`], cannot be rewritten.
+    /// [`EarlierProgress::Forget`], cannot be rewritten.
     pub fn open(
         path: PathBuf,
         target: ServerTarget,
@@ -239,7 +239,7 @@ impl RunJournal {
         let state = match earlier {
             EarlierProgress::Resume => load(&path, &target, on_unreadable)?,
             EarlierProgress::Ignore => JournalState::default(),
-            EarlierProgress::Discard => {
+            EarlierProgress::Forget => {
                 let state = JournalState::default();
                 compact(&path, &target, &state)?;
                 state
