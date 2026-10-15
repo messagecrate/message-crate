@@ -13,7 +13,7 @@ use media::{MediaTools, NoTools};
 
 use crate::exporters::{ApplePlatform, Exporter, WhatsappPlatform};
 use crate::pipeline::IssueSink;
-use crate::process::{CancelFlag, LogSink};
+use crate::process::{CancelFlag, LogSink, Sinks};
 use crate::progress::ProgressSink;
 use crate::transforms::ExportTransforms;
 
@@ -118,6 +118,16 @@ pub struct RunContext {
 }
 
 impl RunContext {
+    /// The run's log, progress and cancel flag, for a step that takes them
+    /// together.
+    pub fn sinks(&self) -> Sinks<'_> {
+        Sinks {
+            log: &self.log,
+            progress: &self.progress,
+            cancel: &self.cancel,
+        }
+    }
+
     /// A run whose scratch data goes under `scratch_dir`, that nothing
     /// cancels, and whose sinks drop what they get. The caller sets the
     /// cancel flag and any sink it reads.

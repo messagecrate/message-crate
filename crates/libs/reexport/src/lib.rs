@@ -269,11 +269,7 @@ fn stage_again(
     let saved = counted.stage(
         &output_dir.join("attachments"),
         load_attachment_source,
-        Sinks {
-            log: &context.log,
-            progress: &context.progress,
-            cancel: &context.cancel,
-        },
+        context.sinks(),
     )?;
     report.attachments_saved += saved;
     Ok(())
@@ -405,9 +401,11 @@ impl SmsBackupRead {
             } else {
                 AttachmentFiles::Skip
             },
-            log,
-            progress,
-            cancel: &context.cancel,
+            sinks: Sinks {
+                log,
+                progress,
+                cancel: &context.cancel,
+            },
         }
     }
 

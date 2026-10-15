@@ -23,7 +23,7 @@ use imessage_reader_protocol::{
 use ios_backup::Helper;
 use message_crate_core::{
     Counter, ExportReport, ItemKind, LoadError, LogSink, OutputFormat, ProgressEvent, RunIssue,
-    RunIssueKind, Sinks, item_line, item_reason,
+    RunIssueKind, item_line, item_reason,
 };
 use message_ir::{
     ConversationDocument, ConversationMeta, ExportMeta, IrAttachment, IrConversationType,
@@ -835,11 +835,7 @@ fn drain_conversations(
         resume: options.convert_run.resume,
         writer_count: 0,
     };
-    let sinks = Sinks {
-        log: &options.log,
-        progress: &options.progress,
-        cancel: &options.convert_run.cancel,
-    };
+    let sinks = options.sinks();
 
     let queue_report = if collected.encrypted {
         // The program decrypts one file at a time over one pipe, so the
@@ -938,11 +934,7 @@ fn stage_attachments(
                 }
                 other => load_attachment_source(other),
             },
-            Sinks {
-                log: &options.log,
-                progress: &options.progress,
-                cancel: &options.convert_run.cancel,
-            },
+            options.sinks(),
         )
         .context("stage attachments")?;
     Ok(saved)

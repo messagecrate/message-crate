@@ -14,7 +14,7 @@ use imessage_reader_protocol::{ExportRequest, Platform, Request, Source};
 use ios_backup::{Helper, ios_backup_encrypted_flag};
 use message_crate_core::{
     AppleConfig, ApplePlatform, ConvertRun, IMESSAGE_READER_DIRECTORY, LogSink, OutputConfig,
-    ProgressSink, RunContext, RunResult, ScratchDir, prepare_outputs,
+    ProgressSink, RunContext, RunResult, ScratchDir, Sinks, prepare_outputs,
 };
 use message_staging::{Disk, check_headroom};
 
@@ -94,6 +94,16 @@ pub(crate) struct ExportOptions {
 }
 
 impl ExportOptions {
+    /// The run's log, progress and cancel flag, for a staging step that
+    /// takes them together.
+    pub(crate) fn sinks(&self) -> Sinks<'_> {
+        Sinks {
+            log: &self.log,
+            progress: &self.progress,
+            cancel: &self.convert_run.cancel,
+        }
+    }
+
     /// The request for the program, which decrypts into `scratch_dir`.
     pub fn export_request(&self, scratch_dir: &Path) -> Request {
         Request::Export(ExportRequest {
