@@ -1499,10 +1499,11 @@ pub(crate) async fn create_import(
 ///
 /// Before it records the outcome, the server hides the duplicates of the
 /// whole account, within one source and across sources. A batch hides
-/// none, so the duplicates a run brings stay shown until the run ends. In
-/// a large account this takes minutes. A server told to stop refuses the
-/// request with `503 Service Unavailable` (`server-stopping`), and the run
-/// stays running.
+/// none, so the duplicates a run brings stay shown until the run ends. The
+/// time this takes grows with every message the account holds, not with
+/// the run's. A dedupe that fails leaves the run running. A server told to
+/// stop refuses the request with `503 Service Unavailable`
+/// (`server-stopping`), and the run stays running.
 #[utoipa::path(
     post,
     path = "/v1/imports/{id}/complete",
@@ -1548,20 +1549,9 @@ pub(crate) async fn complete_import(
         notes,
     };
     let now = chrono::Utc::now();
-    let row = end_run_deduped(&state, account, import_id, RunEnd::Complete(args), now).await?;
+    let row = end_run(&state, account, import_id, RunEnd::Complete(args), now).await?;
     let mut conn = state.db.acquire().await?;
-    let run = import_run(&mut conn, row).await;
-    drop(conn);
-    crate::asset_store::sweep_after_run(
-        &state.db,
-        &state.cfg.paths,
-        account,
-        state.upload_time_limits.stall,
-    )
-    .await;
-    crate::media_queue::queue_import_run(&state.db, &state.media_queue, account, import_id, now)
-        .await;
-    run.map(Json)
+    import_run(&mut conn, row).await.map(Json)
 }
 
 /// How an Import Run ends: completed with its outcome, or discarded with
@@ -1574,31 +1564,39 @@ enum RunEnd {
     },
 }
 
-/// Hide the duplicates of `account`, then end its running Import Run
-/// `import_id` as `end` says at the instant `now`, and return the run's row
-/// as it now stands. Both routes that end a run come here.
+/// End `account`'s running Import Run `import_id` as `end` says at the
+/// instant `now`, hide the duplicates of the account, and return the run's
+/// row as it now stands. Both routes that end a run come here.
 ///
-/// The full dedupe runs once per Import Run, here, and not after each
+/// The full dedupe runs once per Import Run, as it ends, and not after each
 /// batch: each run of it works over the whole account, so one after every
 /// batch made an import's cost grow with the account for every batch
 /// (#2040). Duplicates may show between batches while a run is open.
 ///
-/// It runs before the run ends, so a dedupe that fails leaves the run
-/// running and the client can end it again, rather than a run that ended
-/// with its duplicates shown. It holds an import slot and the account's
-/// import lock, as a batch does, in the same order (slot, account, pool):
-/// the pass holds one pooled connection and the write lock for as long as
-/// it takes, and no batch of the run can land between the dedupe and the
-/// end. The run is checked first, so a request for a run that is not
-/// running is refused before the pass. Like a batch, it runs off the async
-/// workers, because hashing every content key again is CPU work.
+/// A completion hides the duplicates first, so a dedupe that fails leaves
+/// the run running and the client can complete it again, rather than a run
+/// that completed with its duplicates shown. A discard ends the run first
+/// and then hides them ([`dedupe_after_discard`]), so a dedupe that fails
+/// every time never keeps the account's one running run, and with it every
+/// later import, from being given up.
+///
+/// It holds an import slot and the account's import lock, as a batch does,
+/// in the same order (slot, account, pool): the pass holds one pooled
+/// connection and the write lock for as long as it takes, and no batch of
+/// the run can land while the run ends. The run is checked first, so a
+/// request for a run that is not running is refused before the pass. Like a
+/// batch, it runs off the async workers, because hashing every content key
+/// again is CPU work. The task also sweeps the account's files and queues
+/// the run's Assets once the run has ended, so both happen even when the
+/// client gave up waiting and the request is gone.
 ///
 /// # Errors
 ///
 /// [`ApiError::ServerStopping`] when the server is stopping, the
 /// [`imports::ImportLookupError`] of a run that is not the account's or not
-/// running, and the error of the dedupe or of the write that ends the run.
-async fn end_run_deduped(
+/// running, and the error of a completion's dedupe or of the write that
+/// ends the run.
+async fn end_run(
     state: &AppState,
     account: i64,
     import_id: i64,
@@ -1610,55 +1608,92 @@ async fn end_run_deduped(
     let handle = tokio::runtime::Handle::current();
     run_blocking("end import run", move || {
         handle.block_on(async move {
-            let _permit = permit;
-            let _guard = state.account_import_locks.lock(account.to_string()).await;
+            let guard = state.account_import_locks.lock(account.to_string()).await;
             let mut conn = state.db.acquire().await?;
             imports::require_running_import(&mut conn, account, import_id).await?;
-            dedupe::dedupe_cross_source(
-                &mut conn,
-                account,
-                None,
-                dedupe::NEAR_WINDOW_SECS,
-                Progress::Log,
-            )
-            .await?;
             let row: Result<imports::ImportRow, ApiError> = match end {
                 RunEnd::Complete(args) => {
+                    dedupe_account(&mut conn, account, Progress::Log).await?;
                     Ok(complete_run_at(&mut conn, account, import_id, &args, now).await?)
                 }
                 RunEnd::Discard { issues, notes } => {
                     imports::discard_import(&mut conn, account, import_id, &issues, &notes, now)
                         .await?;
+                    dedupe_after_discard(&mut conn, account, Progress::Log).await;
                     Ok(imports::get_owned_import(&mut conn, account, import_id).await?)
                 }
             };
+            drop(conn);
+            drop(guard);
+            drop(permit);
+            if row.is_ok() {
+                crate::asset_store::sweep_after_run(
+                    &state.db,
+                    &state.cfg.paths,
+                    account,
+                    state.upload_time_limits.stall,
+                )
+                .await;
+                crate::media_queue::queue_import_run(
+                    &state.db,
+                    &state.media_queue,
+                    account,
+                    import_id,
+                    now,
+                )
+                .await;
+            }
             row
         })
     })
     .await
 }
 
-/// Hide the duplicates of `account`, then discard its running Import Run,
-/// whichever it is, at the instant `now`, and return the row as it was
-/// before the discard; `None`, with no dedupe, when the account has no
+/// The full dedupe of `account`, within one source and across sources,
+/// as the end of an Import Run runs it.
+async fn dedupe_account(
+    conn: &mut SqliteConnection,
+    account: i64,
+    progress: Progress,
+) -> Result<dedupe::DedupeStats> {
+    dedupe::dedupe_cross_source(conn, account, None, dedupe::NEAR_WINDOW_SECS, progress).await
+}
+
+/// The dedupe after a discard. The run has already ended, so a dedupe that
+/// fails is a warning, never an error: the discard stands, and the next
+/// run's end hides the duplicates.
+async fn dedupe_after_discard(conn: &mut SqliteConnection, account: i64, progress: Progress) {
+    if let Err(error) = dedupe_account(conn, account, progress).await {
+        tracing::warn!(
+            account,
+            error = %error,
+            "The duplicates of a discarded Import Run could not be hidden"
+        );
+    }
+}
+
+/// Discard `account`'s running Import Run, whichever it is, at the instant
+/// `now`, then hide the duplicates of the account, and return the row as it
+/// was before the discard; `None`, with no dedupe, when the account has no
 /// running run. This is the server's `imports discard` command, the way out
 /// of a run a killed client left open: the run's batches did not hide their
 /// duplicates (#2040), so its end does, as the discard route's does.
 ///
 /// # Errors
 ///
-/// Returns the error of the dedupe or of the discard.
-pub(crate) async fn discard_running_run(
+/// Returns the error of the discard. A dedupe that fails is a warning
+/// ([`dedupe_after_discard`]).
+pub(crate) async fn discard_running_import_and_dedupe(
     conn: &mut SqliteConnection,
     account: i64,
     now: chrono::DateTime<chrono::Utc>,
     progress: Progress,
 ) -> Result<Option<imports::ImportRow>> {
-    if !imports::has_running_import(conn, account).await? {
-        return Ok(None);
+    let discarded = imports::discard_running_import(conn, account, now).await?;
+    if discarded.is_some() {
+        dedupe_after_discard(conn, account, progress).await;
     }
-    dedupe::dedupe_cross_source(conn, account, None, dedupe::NEAR_WINDOW_SECS, progress).await?;
-    imports::discard_running_import(conn, account, now).await
+    Ok(discarded)
 }
 
 /// Add the sidebar shortcut to the messages this run brought in.
@@ -1935,11 +1970,12 @@ pub(crate) async fn update_import(
 /// Discard a running Import Run, freeing the account's single slot. The
 /// answer is the run, now `cancelled`, with the issues the request carried.
 ///
-/// The messages the run's batches brought stay in the account, and before
-/// it discards the run the server hides the duplicates of the whole
-/// account, as a completion does. A server told to stop refuses the request
-/// with `503 Service Unavailable` (`server-stopping`), and the run stays
-/// running.
+/// The messages the run's batches brought stay in the account, and once it
+/// has discarded the run the server hides the duplicates of the whole
+/// account, as a completion does. A dedupe that fails does not undo the
+/// discard: the next run's end hides them. A server told to stop refuses
+/// the request with `503 Service Unavailable` (`server-stopping`), and the
+/// run stays running.
 #[utoipa::path(
     post,
     path = "/v1/imports/{id}/discard",
@@ -1962,7 +1998,7 @@ pub(crate) async fn discard_import(
     let account = resolve_import_account(&auth);
     let (issues, notes) = issues_and_notes(&body.issues, &body.notes, Vec::new())?;
     let now = chrono::Utc::now();
-    let row = end_run_deduped(
+    let row = end_run(
         &state,
         account,
         import_id,
@@ -1971,18 +2007,7 @@ pub(crate) async fn discard_import(
     )
     .await?;
     let mut conn = state.db.acquire().await?;
-    let run = import_run(&mut conn, row).await;
-    drop(conn);
-    crate::asset_store::sweep_after_run(
-        &state.db,
-        &state.cfg.paths,
-        account,
-        state.upload_time_limits.stall,
-    )
-    .await;
-    crate::media_queue::queue_import_run(&state.db, &state.media_queue, account, import_id, now)
-        .await;
-    run.map(Json)
+    import_run(&mut conn, row).await.map(Json)
 }
 
 /// Import one message-ir JSONL body.
@@ -2105,7 +2130,7 @@ pub(crate) fn import_slots() -> Arc<tokio::sync::Semaphore> {
 ///
 /// An import batch holds one pooled connection for its whole run (JSONL
 /// parse, asset IO, promote), and so does the dedupe that ends an Import Run
-/// (`end_run_deduped`), so the slots bound concurrent imports and they can
+/// (`end_run`), so the slots bound concurrent imports and they can
 /// never drain the pool. A batch takes its slot before it reads its body,
 /// so the batches waiting behind the running ones hold nothing on disk, and
 /// before the per-account lock, so lock order (slot → account → pool) is
@@ -2187,7 +2212,7 @@ async fn run_import_path(
         imports_api::import_jsonl_files_on_conn(&mut conn, &[jsonl_path], &opts).await;
     let counts = import_result?;
     // No dedupe here: the run's end hides the duplicates, once for the
-    // whole run (`end_run_deduped`, #2040).
+    // whole run (`end_run`, #2040).
 
     Ok(Json(CreateImportBatchResponse {
         source: source_id,

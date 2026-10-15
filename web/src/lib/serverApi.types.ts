@@ -1103,10 +1103,11 @@ export interface paths {
          *
          *     Before it records the outcome, the server hides the duplicates of the
          *     whole account, within one source and across sources. A batch hides
-         *     none, so the duplicates a run brings stay shown until the run ends. In
-         *     a large account this takes minutes. A server told to stop refuses the
-         *     request with `503 Service Unavailable` (`server-stopping`), and the run
-         *     stays running.
+         *     none, so the duplicates a run brings stay shown until the run ends. The
+         *     time this takes grows with every message the account holds, not with
+         *     the run's. A dedupe that fails leaves the run running. A server told to
+         *     stop refuses the request with `503 Service Unavailable`
+         *     (`server-stopping`), and the run stays running.
          */
         post: operations["complete_import"];
         delete?: never;
@@ -1152,11 +1153,12 @@ export interface paths {
          * Discard a running Import Run, freeing the account's single slot.
          * @description The answer is the run, now `cancelled`, with the issues the request carried.
          *
-         *     The messages the run's batches brought stay in the account, and before
-         *     it discards the run the server hides the duplicates of the whole
-         *     account, as a completion does. A server told to stop refuses the request
-         *     with `503 Service Unavailable` (`server-stopping`), and the run stays
-         *     running.
+         *     The messages the run's batches brought stay in the account, and once it
+         *     has discarded the run the server hides the duplicates of the whole
+         *     account, as a completion does. A dedupe that fails does not undo the
+         *     discard: the next run's end hides them. A server told to stop refuses
+         *     the request with `503 Service Unavailable` (`server-stopping`), and the
+         *     run stays running.
          */
         post: operations["discard_import"];
         delete?: never;

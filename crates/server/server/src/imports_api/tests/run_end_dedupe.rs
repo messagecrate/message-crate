@@ -90,7 +90,7 @@ async fn the_imports_discard_command_hides_the_duplicates_of_the_run_it_discards
         .await
         .unwrap();
 
-    let discarded = super::super::discard_running_run(
+    let discarded = super::super::discard_running_import_and_dedupe(
         &mut conn,
         account,
         crate::test_support::fixed_instant(),

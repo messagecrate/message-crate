@@ -302,10 +302,11 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     );
 }
 
-/// Under `serve`, an Import Run's progress, the import and promote lines of
-/// its batch and the dedupe lines of its completion, goes into the server's log, and nothing reaches standard output
-/// (#1945). The desktop app reads that output through a pipe a crashed app
-/// closes, and a print into it would panic the request part-way.
+/// Under `serve`, an Import Run's progress, the import and promote lines of its
+/// batch and the dedupe lines of its completion, goes into the server's log,
+/// and nothing reaches standard output (#1945). The desktop app reads that
+/// output through a pipe a crashed app closes, and a print into it would panic
+/// the request part-way.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_standard_output() {
     use reqwest::Method;

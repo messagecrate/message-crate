@@ -690,13 +690,16 @@ was written, not when a part was unsent, so they cannot tell
 **Every Import Run hides duplicates.** When an Import Run ends, the server
 runs the full dedupe over the account, within one source and across sources
 (`dedupe_cross_source` in `dedupe.rs`), once for the whole run. An Upload's
-run ends at `POST /v1/imports/{id}/complete` or `/discard`, or by the
-server's `imports discard` command, and each runs the dedupe before it ends
-the run (`end_run_deduped` and `discard_running_run` in
-`imports_api/mod.rs`); a dedupe that fails leaves the run running. The
-server's `import` command and the Demo Account build run it once, after their
-last run. Nothing turns it off. It computes every content key again, so it
-also puts right the flag of a stored message whose content the import
+run ends at `POST /v1/imports/{id}/complete` or `/discard`, or by the server's
+`imports discard` command (`end_run` and `discard_running_import_and_dedupe`
+in `imports_api/mod.rs`). A completion runs the dedupe before it ends the run,
+so a dedupe that fails leaves the run running and the client completes it
+again. A discard ends the run first and then runs the dedupe, and a dedupe
+that fails is logged, so a dedupe that always fails never keeps the account
+from giving up its one running run; the next run's end hides those duplicates.
+The server's `import` command and the Demo Account build run it once, after
+their last run. Nothing turns it off. It computes every content key again, so
+it also puts right the flag of a stored message whose content the import
 changed: a later edit changes a message's text, and an attachment added or
 given its file changes what its content key hashes. Why: there is no reason
 ever to leave a duplicate shown, and a flag an import made wrong would hide a
@@ -727,12 +730,11 @@ first by these, in order (`rank` in `dedupe.rs`):
 When one source holds a message more often than the others, the message
 stays shown that many times, and those places go to the copies first in this
 order. Why: the copy that carries the most is the one shown, and of two
-backups the larger import is the more complete one. A run's size is the
-count of the messages stamped with it, the ones it added. Every message
-carries that stamp, while the count a run records is written only when it
-completes. The dedupe runs as the run ends, when every message it adds is
-in. The last rank only makes the
-result the same every time
+backups the larger import is the more complete one. A run's size is the count
+of the messages stamped with it, the ones it added. Every message carries that
+stamp, while the count a run records is written only when it completes. The
+dedupe runs as the run ends, when every message it adds is in. The last rank
+only makes the result the same every time
 ([#1969](https://github.com/messagecrate/message-crate/issues/1969)).
 
 **Within one source, a whole-second message is the duplicate of its

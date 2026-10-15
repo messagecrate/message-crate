@@ -9242,7 +9242,7 @@
           "Import"
         ],
         "summary": "Record the outcome of an Import Run started with POST /v1/imports.",
-        "description": "The answer is the run as it now stands.\n\nBefore it records the outcome, the server hides the duplicates of the\nwhole account, within one source and across sources. A batch hides\nnone, so the duplicates a run brings stay shown until the run ends. In\na large account this takes minutes. A server told to stop refuses the\nrequest with `503 Service Unavailable` (`server-stopping`), and the run\nstays running.",
+        "description": "The answer is the run as it now stands.\n\nBefore it records the outcome, the server hides the duplicates of the\nwhole account, within one source and across sources. A batch hides\nnone, so the duplicates a run brings stay shown until the run ends. The\ntime this takes grows with every message the account holds, not with\nthe run's. A dedupe that fails leaves the run running. A server told to\nstop refuses the request with `503 Service Unavailable`\n(`server-stopping`), and the run stays running.",
         "operationId": "complete_import",
         "parameters": [
           {
@@ -9576,7 +9576,7 @@
           "Import"
         ],
         "summary": "Discard a running Import Run, freeing the account's single slot.",
-        "description": "The answer is the run, now `cancelled`, with the issues the request carried.\n\nThe messages the run's batches brought stay in the account, and before\nit discards the run the server hides the duplicates of the whole\naccount, as a completion does. A server told to stop refuses the request\nwith `503 Service Unavailable` (`server-stopping`), and the run stays\nrunning.",
+        "description": "The answer is the run, now `cancelled`, with the issues the request carried.\n\nThe messages the run's batches brought stay in the account, and once it\nhas discarded the run the server hides the duplicates of the whole\naccount, as a completion does. A dedupe that fails does not undo the\ndiscard: the next run's end hides them. A server told to stop refuses\nthe request with `503 Service Unavailable` (`server-stopping`), and the\nrun stays running.",
         "operationId": "discard_import",
         "parameters": [
           {
