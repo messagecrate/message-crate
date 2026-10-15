@@ -9,7 +9,7 @@ use message_ir::IdentityType;
 
 use crate::addresses::{MMS_ADDR_FROM, address_handle};
 use crate::mms_box::MmsBox;
-use crate::xml::{XmlEvents, attrs, get, name_invalid_file};
+use crate::xml::{XmlEvents, attrs, get};
 
 /// Infer owner phones from nested `<addr type="137">` elements in sent MMS.
 ///
@@ -45,7 +45,7 @@ pub fn infer_owner_phones(path: &Path) -> Result<Vec<String>> {
             }
             Ok(Event::End(e)) if e.name().as_ref().eq_ignore_ascii_case("mms") => in_sent = false,
             Ok(Event::Eof) => break,
-            Err(invalid) => return Err(name_invalid_file(invalid.into(), path)),
+            Err(invalid) => return Err(invalid.in_file(path)),
             _ => {}
         }
         buf.clear();

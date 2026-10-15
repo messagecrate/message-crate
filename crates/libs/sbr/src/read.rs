@@ -16,7 +16,7 @@ use crate::mms_box::MmsBox;
 use crate::parts::{
     AttachmentBytes, DecodedPartData, MmsPart, decode_part_data, mms_body, part, part_fields,
 };
-use crate::xml::{XmlEvents, attrs, btree, decode_body, get, name_invalid_file};
+use crate::xml::{XmlEvents, attrs, btree, decode_body, get, with_file_named};
 
 /// Serde-tagged raw source bag (`kind: sms|mms`) preserved for write-back.
 ///
@@ -302,7 +302,7 @@ where
 {
     let file = std::fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
     parse_reader_with(std::io::BufReader::new(file), owners, stats, on_record)
-        .map_err(|error| name_invalid_file(error, path))
+        .map_err(|error| with_file_named(error, path))
 }
 
 /// Stream the XML, calling `on_record` for each SMS or MMS as it completes.

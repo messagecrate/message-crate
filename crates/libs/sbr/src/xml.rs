@@ -122,12 +122,20 @@ impl std::fmt::Display for InvalidXml {
 
 impl std::error::Error for InvalidXml {}
 
-/// `error` with the file named when it says the file is not valid XML, so
-/// the person reads `<path> is not valid XML at byte <n>: <reason>`.
-pub(crate) fn name_invalid_file(error: anyhow::Error, path: &std::path::Path) -> anyhow::Error {
-    match error.downcast::<InvalidXml>() {
-        Ok(invalid) => anyhow::anyhow!("{} is {invalid}", path.display()),
-        Err(error) => error,
+impl InvalidXml {
+    /// The error naming `path` and saying why it is not valid XML:
+    /// `<path> is not valid XML at byte <n>: <reason>`.
+    pub(crate) fn in_file(&self, path: &std::path::Path) -> anyhow::Error {
+        anyhow::anyhow!("{} is {self}", path.display())
+    }
+}
+
+/// `error` as [`InvalidXml::in_file`] words it when it is an [`InvalidXml`],
+/// else `error` as it is, such as a cancel or a callback's own error.
+pub(crate) fn with_file_named(error: anyhow::Error, path: &std::path::Path) -> anyhow::Error {
+    match error.downcast_ref::<InvalidXml>() {
+        Some(invalid) => invalid.in_file(path),
+        None => error,
     }
 }
 
