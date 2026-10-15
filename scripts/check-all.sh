@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Full local check: everything CI runs except the Docker image build, in one
-# command.
+# Full local check: everything CI runs on a pull request, in one command.
 #
 #   ./scripts/check-all.sh
 #

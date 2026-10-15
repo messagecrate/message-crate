@@ -1,11 +1,10 @@
 name: Nightly
 
-# Once a night, the release Dockerfile is built from main. "Docker image
-# builds" in ci.yml runs only on a pull request that changes the Dockerfile,
-# a Cargo manifest or the lockfile, so a change anywhere else that breaks
-# the image was not built until a release tag. This run builds it, starts it
-# with docker/compose.release.yml, and never publishes it: publishing stays
-# with a v* tag in ci.yml.
+# Once a night, the release Dockerfile is built from main. No pull request
+# builds the image, so this is where a change that breaks it shows before a
+# release tag, whose docker job in ci.yml builds it again before it pushes.
+# This run builds it, starts it with docker/compose.release.yml, and never
+# publishes it: publishing stays with a v* tag in ci.yml.
 #
 # It also loads the website the image serves in a headless browser, logs in
 # to the Demo Account, searches and opens a conversation (#2217). The web
@@ -97,9 +96,6 @@ jobs:
           fi
 
   # ── The release Dockerfile builds and starts ──────────────────────────
-  # The same steps as "Docker image builds" in ci.yml; keep the two alike.
-  # The one difference is --website, which ci.yml leaves out to keep a pull
-  # request's run short.
   # push: false, and no Docker Hub login: nothing is published.
   docker-build:
     name: Nightly Docker image build
@@ -126,8 +122,8 @@ jobs:
 
       # A change to the server that makes it write outside /app/data at start
       # builds and then fails to start under the Compose files' read-only
-      # root filesystem. Pull requests that change only server code skip the
-      # step in ci.yml, so this run is where such a change shows.
+      # root filesystem. No pull request starts the image, so this run is
+      # where such a change shows.
       # --website then uses the website it serves in a headless browser: a
       # static/ bundle that fails to load, a console error, or a 5xx from the
       # server fails the step.

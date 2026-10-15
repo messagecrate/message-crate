@@ -23,9 +23,9 @@
 #
 # --website also runs scripts/check-served-website.sh against the stack: the
 # website it serves loads in a headless browser, logs in to the Demo
-# Account, searches and opens a conversation (#2217). nightly.yml passes it
-# and CI's job does not, because every run would pull the Playwright image,
-# mcr.microsoft.com/playwright, which is about 2.5 GB unpacked.
+# Account, searches and opens a conversation (#2217). nightly.yml passes it.
+# It pulls the Playwright image, mcr.microsoft.com/playwright, which is about
+# 2.5 GB unpacked.
 #
 # The stack runs under its own project name,
 # message-crate-compose-check-<host-port>, on its own volume, published on

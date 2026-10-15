@@ -5,17 +5,18 @@ A ruleset on `main` requires those checks to pass and requires a pull request to
 carry them. The two scripts under `scripts/` decide nothing: `check-pr.sh` is a
 fast pre-flight that catches the mistakes not worth a round trip, and
 `check-all.sh` runs the whole set locally for anyone who wants it before
-pushing, except the Docker image build and, off Windows, the Windows-only
-cases of the server config tests.
+pushing, except, off Windows, the Windows-only cases of the server config
+tests. No pull request builds the Docker image; `nightly.yml` builds it from
+`main`.
 
-`ci.yml` holds twelve jobs on a ready pull request. On a draft, all of them
-skip. A `changes` job diffs the branch against its base and publishes five
-booleans — `rust`, `web`, `docs`, `docker`, `server_config` — and the heavy
-jobs read them:
+`ci.yml` holds eleven jobs on a ready pull request. On a draft, all of them
+skip. A `changes` job diffs the branch against its base and publishes four
+booleans — `rust`, `web`, `docs`, `server_config` — and the heavy jobs read
+them:
 
 | Job | Runs when | What it does |
 | --- | --- | --- |
-| `changes` | always, except on a draft | Diffs against the base and outputs `rust`, `web`, `docs`, `docker`, `server_config` |
+| `changes` | always, except on a draft | Diffs against the base and outputs `rust`, `web`, `docs`, `server_config` |
 | `fmt` | `rust` | `cargo fmt --check` on the workspace and on `src-tauri` |
 | `clippy` | `rust` | `cargo clippy --workspace --all-targets -- -D warnings` |
 | `test` | `rust` | `cargo build --workspace` and `cargo test --workspace` |
@@ -24,27 +25,16 @@ jobs read them:
 | `web` | `web` | `biome ci`, `biome lint --error-on-warnings` on the timed-wait rule's canary, `check-biome-restricted-imports.mjs`, `check-generated-api-types.sh`, `npm run build`, `npm test` |
 | `docs` | `docs` | `npm ci`, `astro check`, `astro build` — the site without rustdoc or the HTTP API catalog |
 | `license` | always | `check-license.sh` |
-| `docker-context` | always | `check-docker-context.sh` |
-| `docker-build` | `docker`, pull requests only | `docker/build-push-action` with `push: false`: the release Dockerfile builds; then `check-docker-compose.sh` starts it with `docker/compose.release.yml` and logs in to the Demo Account |
+| `docker-context` ("Docker build context") | always | `check-docker-context.sh`: the Dockerfile's build context, and every `FROM` pinned by tag and digest |
 | `version` | always | `check-version-lockstep.sh`: the four product version files and their lockfiles agree, and on a `v*` tag agree with the tag; then `check-changelog.sh`: `CHANGELOG.md`'s width, tight lists and dated entries |
 
-The ruleset requires eleven of them: every job but `windows-config`. Whether
+The ruleset requires ten of them: every job but `windows-config`. Whether
 it should require that one too is open in #2788.
 
-Four classifier arms are not what the directory alone would suggest.
+Three classifier arms are not what the directory alone would suggest.
 `scripts/check-generated-api-types.sh` and the generator's own tree,
 `scripts/openapi-typescript/`, set `web`, not `rust`, because the `web` job is
-the one that runs them. `scripts/check-docker-compose.sh` sets `docker` as
-well as `rust`, because the `docker-build` job runs it. Every other path under
-`scripts/` falls to `rust`.
-`docker` is true for `docker/`, the root and per-crate Cargo manifests,
-`Cargo.lock`, `rust-toolchain.toml` and `config/config.docker.toml`: the
-files the Dockerfile copies or reads, and so the only files that can stop the
-image building while the Rust jobs stay green. Before `docker-build` existed
-the image was built for the first time on the release tag, so a pull request
-that broke `docker/Dockerfile` merged green and the failure appeared where the
-fix is a new tag. The job runs on pull requests only: the tag job builds and
-pushes the same image, and `nightly.yml` builds it from `main`.
+the one that runs them. Every other path under `scripts/` falls to `rust`.
 `crates/server/server/src/config.rs` and everything under
 `crates/server/server/src/config/` set `server_config` as well as `rust`, and
 so does any change to a workflow. The `windows-config` job reads it. The
@@ -86,18 +76,17 @@ shards because a full run takes well over a day on one machine, and a missed
 mutant never fails anything.
 
 The nightly run lives in `nightly.yml` for the same reason. It builds the
-release Dockerfile from `main` once a night and starts the image the way
-`docker-build` does. That job sees only pull requests that change the
-Dockerfile, a Cargo manifest or the lockfile. A change elsewhere can still
-break the image, or make the server write outside `/app/data` at start, so
-that it no longer starts under the Compose files' read-only root filesystem.
+release Dockerfile from `main` once a night and starts the image with
+`scripts/check-docker-compose.sh` and `docker/compose.release.yml`. It is the
+only build of the image before a release: no pull request builds it (see
+the amendment of 2026-10-14 below). A change can break the image, or make
+the server write outside `/app/data` at start, so that it no longer starts
+under the Compose files' read-only root filesystem.
 It then loads the website the image serves in a headless browser
 (`scripts/check-served-website.sh`), logs in to the Demo Account, searches
 and opens a conversation, and fails on a console error or a 5xx: the web
 app's tests mock the server and the server's tests never load the website,
-so nothing else runs the two together. That step pulls a browser image and
-takes minutes, so `docker-build` in `ci.yml` leaves it out. It gates
-nothing: it has no pull request trigger and is not in the ruleset's required
+so nothing else runs the two together. It gates nothing: it has no pull request trigger and is not in the ruleset's required
 list. A scheduled run does nothing when `main` is still at the commit the
 previous scheduled run saw. Its verdict arrives after the merge, so it reports
 by opening an issue labelled `bug`, or by commenting on that issue while it is
@@ -388,3 +377,27 @@ Every sentence in `AGENTS.md` and `CLAUDE.md` describing the old arrangement is
 now false and was rewritten — in particular the three statements that CI does
 not run Clippy, and the descriptions of `check-pr.sh` and the deleted
 `lint-all.sh`.
+
+## Amended 2026-10-14: the Docker image is checked nightly, not per pull request
+
+`ci.yml` had a `docker-build` job ("Docker image builds") that built the
+release image and started it with `check-docker-compose.sh` on every pull
+request that changed the Dockerfile, a Cargo manifest, the lockfile or the
+toolchain pin. It was added because the image used to be built for the first
+time on the release tag, so a pull request that broke `docker/Dockerfile`
+merged green and the release failed. It took 8.5 to 11 minutes a run and was
+a required check, so a dependency pull request that changed only the lockfile
+paid it too.
+
+It is gone (#2904). Two things now catch a broken image before anyone pulls
+it. `nightly.yml` builds the same image from `main` every night `main`
+changed, runs the same Compose check and the website check, and opens a
+`bug` issue when it fails. The release's `docker` job builds the image before
+it pushes it, so a broken image fails the release rather than shipping. A
+broken Dockerfile can now reach `main`, and shows within a day; the fix is a
+commit, not a new tag. The nightly run stays a report, not a gate.
+
+The `docker-context` job stays on every pull request: it takes seconds. It
+was named "Docker rust-builder context", but `check-docker-context.sh` also
+fails any `FROM` in `docker/Dockerfile` that is not pinned by tag and digest,
+so it is now named "Docker build context" (#2664).

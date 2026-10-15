@@ -67,7 +67,6 @@ jobs:
       rust: ${{ steps.classify.outputs.rust }}
       web: ${{ steps.classify.outputs.web }}
       docs: ${{ steps.classify.outputs.docs }}
-      docker: ${{ steps.classify.outputs.docker }}
       server_config: ${{ steps.classify.outputs.server_config }}
     steps:
       - uses: actions/checkout@v7
@@ -86,10 +85,10 @@ jobs:
               git fetch --quiet origin "$BASE"
               range="origin/$BASE...HEAD" ;;
             *)
-              printf 'rust=true\nweb=true\ndocs=true\ndocker=true\nserver_config=true\n' >> "$GITHUB_OUTPUT"
+              printf 'rust=true\nweb=true\ndocs=true\nserver_config=true\n' >> "$GITHUB_OUTPUT"
               exit 0 ;;
           esac
-          rust=false web=false docs=false docker=false server_config=false
+          rust=false web=false docs=false server_config=false
           while IFS= read -r f; do
             case "$f" in
               # The committed OpenAPI document feeds the web app's generated
@@ -101,15 +100,6 @@ jobs:
               docs/*) docs=true ;;
               web/*) web=true ;;
               web-next/*) ;;                # legacy tree, not the product path
-              # The image is built from the Dockerfile, the Cargo manifests
-              # and lockfile it copies, and the toolchain pin. A change to one
-              # of them is how the image stops building while the Rust jobs
-              # stay green. The job also starts the image with the script
-              # that checks it, which imports its own fixture and the
-              # server's hevc.mov. A change to the server's code alone does
-              # not run the job. nightly.yml runs the same check on main.
-              docker/*|Cargo.toml|Cargo.lock|rust-toolchain.toml|config/config.docker.toml|scripts/check-docker-compose.sh|tests/fixtures/docker-compose-check/*|crates/server/server/tests/fixtures/media/hevc.mov) rust=true; docker=true ;;
-              crates/*/Cargo.toml|vendor/*/Cargo.toml) rust=true; docker=true ;;
               # The server's config, whose website and Data Directory check
               # has Windows-only cases the windows-config job tests.
               crates/server/server/src/config.rs|crates/server/server/src/config/*) rust=true; server_config=true ;;
@@ -117,15 +107,15 @@ jobs:
               # docker-context job, which runs on every change, checks the
               # Dockerfile's frontend stage against it.
               .nvmrc) web=true; docs=true ;;
-              .github/workflows/*) rust=true; web=true; docs=true; docker=true; server_config=true ;;
+              .github/workflows/*) rust=true; web=true; docs=true; server_config=true ;;
               .github/*|.cursor/*|.gitignore|LICENSE*) ;;
               *.md) ;;
               *) rust=true ;;               # crates, src-tauri, vendor, schema,
             esac                            # scripts — Rust CI
           done < <(git diff --name-only "$range")
-          printf 'rust=%s\nweb=%s\ndocs=%s\ndocker=%s\nserver_config=%s\n' \
-            "$rust" "$web" "$docs" "$docker" "$server_config" >> "$GITHUB_OUTPUT"
-          echo "rust=$rust web=$web docs=$docs docker=$docker server_config=$server_config"
+          printf 'rust=%s\nweb=%s\ndocs=%s\nserver_config=%s\n' \
+            "$rust" "$web" "$docs" "$server_config" >> "$GITHUB_OUTPUT"
+          echo "rust=$rust web=$web docs=$docs server_config=$server_config"
 
   # ── Rust: rustfmt ─────────────────────────────────────────────────────
   fmt:
@@ -372,7 +362,7 @@ jobs:
 
   # ── Always: release Dockerfile's build context and pinned base images ──
   docker-context:
-    name: Docker rust-builder context
+    name: Docker build context
     needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -381,44 +371,6 @@ jobs:
 
       - name: Check the Dockerfile's build context and base image pins
         run: ./scripts/check-docker-context.sh
-
-  # ── docker: the release Dockerfile builds ─────────────────────────────
-  # The image used to be built for the first time on the release tag, so a
-  # pull request that broke docker/Dockerfile merged green and the tag
-  # failed. This job builds it without pushing whenever the Dockerfile, a
-  # Cargo manifest or the lockfile changes, then starts it with
-  # docker/compose.release.yml. Pull requests only: the docker
-  # job below builds and pushes the same image on a tag or a manual run with
-  # push_docker_image, and nightly.yml builds it from main.
-  docker-build:
-    name: Docker image builds
-    needs: changes
-    if: github.event_name == 'pull_request' && needs.changes.outputs.docker == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Build
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./docker/Dockerfile
-          push: false
-          load: true
-          tags: message-crate-server:check
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # The Compose files make the root filesystem read-only and drop every
-      # privilege, so an image that writes outside /app/data builds and then
-      # fails to start, or fails an import, the media pass or an export. This
-      # starts it the way Compose does and runs all three.
-      - name: Start the release Compose stack, log in to the Demo Account, import, run the media pass and export
-        run: ./scripts/check-docker-compose.sh message-crate-server:check
 
   # ── Always: product version lockstep ──────────────────────────────────
   # The four version files and their lockfiles must agree; on a v* tag they
@@ -447,6 +399,11 @@ jobs:
   # green. A manual run with push_docker_image ticked pushes sha-<commit>
   # and nothing else: the version tags and latest belong to a release, so
   # an image built from a branch can never replace the one people pull.
+  #
+  # No pull request builds the image: nightly.yml builds it from main and
+  # starts it, and this job builds it before it pushes, so a broken image
+  # fails the release rather than shipping. Why:
+  # docs/adr/0007-ci-is-the-only-gate.md.
   docker:
     name: Docker image
     if: needs.changes.outputs.release == 'true' || (github.event_name == 'workflow_dispatch' && inputs.push_docker_image)
