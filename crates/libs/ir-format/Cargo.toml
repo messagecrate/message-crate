@@ -14,7 +14,6 @@ file-io = { workspace = true }
 hex = { workspace = true }
 message-ir = { path = "../ir" }
 mail = { path = "../mail" }
-media = { path = "../media" }
 obfuscate = { path = "../obfuscate" }
 phone = { path = "../phone" }
 serde_json = { workspace = true }

@@ -166,12 +166,12 @@ fn convert_and_import_word_every_count_and_error_alike() {
             owner_phones: &owner,
             attachments_dir: None,
             spool: None,
-            media: media::MediaMode::Disabled,
-            compress: media::CompressOptions::default(),
-            tools: std::sync::Arc::new(media::InstalledTools::default()),
-            log: &LogSink::none(),
-            progress: &ProgressSink::none(),
-            cancel: &CancelFlag::default(),
+            files: message_crate_core::AttachmentFiles::Skip,
+            sinks: message_crate_core::Sinks {
+                log: &LogSink::none(),
+                progress: &ProgressSink::none(),
+                cancel: &CancelFlag::default(),
+            },
         },
     )
     .expect("read");

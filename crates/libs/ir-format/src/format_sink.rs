@@ -195,9 +195,9 @@ impl FormatSink {
     /// The staged `attachments/` directory is removed so the output directory
     /// holds only the archive.
     ///
-    /// Folds the obfuscated-document count into `report`. Convert and
-    /// compress ran in the staging step before documents reached the sink,
-    /// so finish itself does no media work and reports none.
+    /// Folds the obfuscated-document count into `report`. Finish does no
+    /// media work: an export copies the original attachment files, and
+    /// converting them is the Media Stage's work.
     ///
     /// # Errors
     ///
@@ -243,12 +243,15 @@ fn remove_staged_attachments(output_dir: &Path) -> Result<()> {
 pub fn write_documents_through_sink(
     documents: Vec<message_ir::ConversationDocument>,
     mut sink: FormatSink,
-    log: &message_crate_core::LogSink,
-    progress: &message_crate_core::ProgressSink,
-    cancel: &message_crate_core::CancelFlag,
+    sinks: message_crate_core::Sinks<'_>,
     report: &mut ExportReport,
 ) -> anyhow::Result<()> {
-    use message_crate_core::{CONVERSATION_FILES_PREPARING, ProgressEvent};
+    use message_crate_core::{CONVERSATION_FILES_PREPARING, ProgressEvent, Sinks};
+    let Sinks {
+        log,
+        progress,
+        cancel,
+    } = sinks;
     let total = documents.len();
     log.emit("");
     log.emit(CONVERSATION_FILES_PREPARING.line(total as u64));
@@ -273,13 +276,12 @@ pub fn write_documents_through_sink(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use media::MediaMode;
     use message_ir::IrAttachment;
     use std::fs;
 
     #[test]
     fn write_documents_through_sink_reports_prepare_progress() {
-        use message_crate_core::{CancelFlag, LogSink, ProgressEvent, ProgressSink};
+        use message_crate_core::{CancelFlag, LogSink, ProgressEvent, ProgressSink, Sinks};
         use std::sync::{Arc, Mutex};
 
         let tmp = crate::export_dir();
@@ -293,9 +295,11 @@ mod tests {
         write_documents_through_sink(
             vec![message_ir::testutil::sample_document("hello")],
             sink,
-            &LogSink::none(),
-            &progress,
-            &CancelFlag::default(),
+            Sinks {
+                log: &LogSink::none(),
+                progress: &progress,
+                cancel: &CancelFlag::default(),
+            },
             &mut report,
         )
         .unwrap();
@@ -431,7 +435,7 @@ mod tests {
             }];
 
             let transforms = ExportTransforms {
-                media: MediaMode::Clone,
+                files: message_crate_core::AttachmentFiles::Originals,
                 ..ExportTransforms::none()
             };
             let mut sink = FormatSink::open(tmp.path(), format, transforms).unwrap();

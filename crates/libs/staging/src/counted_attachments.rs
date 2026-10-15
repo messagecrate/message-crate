@@ -4,10 +4,9 @@
 
 use crate::headroom::bytes_to_write;
 use crate::write_queue::{AttachmentSource, counted_source, missing_if_no_file};
-use media::MediaMode;
 use message_crate_core::{
-    AttachmentJob, CancelFlag, LoadError, LogSink, MediaConfig, OutputFormat, ProgressSink,
-    attachment_jobs, stage_attachment_jobs,
+    AttachmentFiles, AttachmentJob, LoadError, LogSink, OutputFormat, Sinks, attachment_jobs,
+    stage_attachment_jobs,
 };
 use message_ir::{IrAttachment, IrMessage};
 use std::path::Path;
@@ -59,7 +58,7 @@ impl PathSources {
 pub struct CountedAttachments<'a> {
     jobs: Vec<AttachmentJob<'a>>,
     sources: Vec<AttachmentSource>,
-    media: MediaConfig,
+    files: AttachmentFiles,
 }
 
 impl<'a> CountedAttachments<'a> {
@@ -67,20 +66,21 @@ impl<'a> CountedAttachments<'a> {
     /// source and size hint `source_for` returns for it, and count each.
     ///
     /// A path checked on disk and found empty is logged as the read would
-    /// have logged it. With the media turned off nothing is read, so no path
-    /// is checked.
+    /// have logged it. With no attachment files copied nothing is read, so
+    /// no path is checked.
     pub fn new(
         messages: impl IntoIterator<Item = &'a mut IrMessage>,
-        media: MediaConfig,
+        files: AttachmentFiles,
         paths: PathSources,
         mut source_for: impl FnMut(&mut IrAttachment) -> (AttachmentSource, Option<u64>),
         log: &LogSink,
     ) -> Self {
-        // With the media turned off nothing is read, so no path is checked.
-        let paths = if media.mode == MediaMode::Disabled {
-            PathSources::ReadByLoader
-        } else {
+        // With no attachment files copied nothing is read, so no path is
+        // checked.
+        let paths = if files.copies() {
             paths
+        } else {
+            PathSources::ReadByLoader
         };
         let mut jobs = attachment_jobs(messages);
         let mut sources = Vec::with_capacity(jobs.len());
@@ -92,7 +92,7 @@ impl<'a> CountedAttachments<'a> {
         Self {
             jobs,
             sources,
-            media,
+            files,
         }
     }
 
@@ -128,26 +128,22 @@ impl<'a> CountedAttachments<'a> {
         self,
         attachments_dir: &Path,
         mut load: impl FnMut(&mut AttachmentSource) -> Result<Option<Vec<u8>>, LoadError>,
-        log: &LogSink,
-        progress: &ProgressSink,
-        cancel: &CancelFlag,
+        sinks: Sinks<'_>,
     ) -> anyhow::Result<u64> {
         let Self {
             jobs,
             mut sources,
-            media,
+            files,
         } = self;
         stage_attachment_jobs(
             jobs,
             attachments_dir,
-            &media,
+            files,
             |i| match sources.get_mut(i) {
                 Some(source) => load(source),
                 None => Ok(None),
             },
-            log,
-            progress,
-            cancel,
+            sinks,
         )
     }
 }
@@ -156,6 +152,7 @@ impl<'a> CountedAttachments<'a> {
 mod tests {
     use super::*;
     use crate::load_attachment_source;
+    use message_crate_core::CancelFlag;
 
     fn attachment(size: u64) -> IrAttachment {
         IrAttachment {
@@ -181,7 +178,7 @@ mod tests {
 
         let counted = CountedAttachments::new(
             doc.messages.iter_mut(),
-            MediaConfig::default(),
+            AttachmentFiles::Originals,
             paths,
             |att| (sources.next().unwrap(), att.size_bytes),
             &LogSink::none(),
@@ -191,9 +188,11 @@ mod tests {
             .stage(
                 &out.path().join("attachments"),
                 load_attachment_source,
-                &LogSink::none(),
-                &progress,
-                &CancelFlag::default(),
+                Sinks {
+                    log: &LogSink::none(),
+                    progress: &progress,
+                    cancel: &CancelFlag::default(),
+                },
             )
             .unwrap();
 

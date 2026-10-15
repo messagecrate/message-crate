@@ -2057,7 +2057,6 @@ dependencies = [
  "file-io",
  "hex",
  "mail",
- "media",
  "message-crate-core",
  "message-csv",
  "message-ir",
@@ -3159,7 +3158,6 @@ name = "sms-backup-restore-exporter"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "media",
  "message-crate-core",
  "message-csv",
  "message-ir",
