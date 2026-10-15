@@ -232,14 +232,14 @@ pub struct ReadOptions<'a> {
 struct MessageRow {
     /// Unix seconds, as the parser read them from the `date` attribute.
     timestamp_secs: f64,
-    /// `"sms"` or `"mms"`.
-    message_kind: &'static str,
-    /// The subject; empty when the message has none.
-    subject: String,
+    /// SMS or MMS.
+    message_kind: IrMessageKind,
+    /// The subject, when the message has one.
+    subject: Option<String>,
     /// The `contact_name` attribute as the file writes it.
     contact_name: String,
-    /// The `type` (SMS) or `msg_box` (MMS) attribute.
-    android_type: String,
+    /// The `type` (SMS) or `msg_box` (MMS) attribute, when it is a number.
+    android_type: Option<i32>,
     /// The vendor fields, written back as the message's `source`.
     source_fields: serde_json::Map<String, serde_json::Value>,
     /// What the read left out of the message.
@@ -413,10 +413,10 @@ fn add_record(
     ]);
     conversation.rows.push(MessageRow {
         timestamp_secs: record.timestamp_secs,
-        message_kind: record.message_kind,
-        subject: record.subject,
+        message_kind: IrMessageKind::parse(record.message_kind),
+        subject: (!record.subject.is_empty()).then_some(record.subject),
         contact_name: record.contact_name,
-        android_type: record.android_type,
+        android_type: record.android_type.trim().parse().ok(),
         source_fields,
         left_out: LeftOutCounts {
             unreadable_parts: record.unreadable_parts,
@@ -495,18 +495,17 @@ impl ProjectionHooks for SbrProjection<'_> {
     fn source(&self, _conversation: &PendingConversation, message: &PendingMessage) -> IrSource {
         let row = self.row(message);
         IrSource {
-            android_type: row.android_type.trim().parse().ok(),
+            android_type: row.android_type,
             fields: row.source_fields.clone(),
         }
     }
 
     fn subject(&self, message: &PendingMessage) -> Option<String> {
-        let subject = &self.row(message).subject;
-        (!subject.is_empty()).then(|| subject.clone())
+        self.row(message).subject.clone()
     }
 
     fn message_kind(&self, message: &PendingMessage) -> IrMessageKind {
-        IrMessageKind::parse(self.row(message).message_kind)
+        self.row(message).message_kind
     }
 
     fn message_order(&self, a: &PendingMessage, b: &PendingMessage) -> std::cmp::Ordering {
