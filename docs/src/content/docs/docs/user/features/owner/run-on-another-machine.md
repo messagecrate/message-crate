@@ -43,10 +43,13 @@ The server speaks plain HTTP.
 Passwords, Session tokens, and messages cross the network unencrypted, so anyone who can listen on that network can read them.
 
 That is acceptable on a home network where every device is trusted.
-Anything beyond that, such as reaching the Message Crate from the internet, needs a reverse proxy in front of the server that adds both TLS and an authentication of its own, so that a visitor signs in to the proxy before any request reaches the server.
-TLS encrypts passwords and messages on their way across the network, but it still lets anyone reach the server's login and the Demo Account.
-The account login keeps one account's messages apart from another's, and it is not built to stand alone on the internet.
-The Demo Account opens with no password, a user account can have no password at all, and a password of any length is accepted.
+Anything beyond that, such as reaching the Message Crate from the internet, needs a reverse proxy in front of the server that adds both TLS and a sign-in of its own.
+A visitor then signs in to the proxy before any request reaches the server.
+TLS encrypts passwords and messages on their way across the network.
+It still lets anyone reach the server's login and the Demo Account.
+The account login keeps one account's messages apart from another's.
+It is not built to stand alone on the internet.
+The Demo Account opens with no password, a user account can have no password at all, and a password has no minimum length.
 Setting up the proxy is outside this guide.
 
 Three things matter more once other computers can reach the server:
