@@ -963,6 +963,21 @@ fn reserved_names_json(spec: &MembershipSpec) -> serde_json::Value {
 /// the test, and the form never accepts a name the server refuses.
 #[test]
 fn the_website_reserves_the_same_names_as_the_server() {
+    // The website looks a name up by its lower-case form, as `is_reserved`
+    // does, so a name written here with a capital would never match.
+    for spec in [tag_spec(), group_spec()] {
+        let names = spec
+            .reserved
+            .iter()
+            .chain(spec.special_reserved.iter().map(|(name, _)| name));
+        for name in names {
+            assert_eq!(
+                *name,
+                name.to_ascii_lowercase(),
+                "{name:?} is not lower case"
+            );
+        }
+    }
     let want = format!(
         "{}\n",
         serde_json::to_string_pretty(&serde_json::json!({
@@ -977,8 +992,8 @@ fn the_website_reserves_the_same_names_as_the_server() {
         std::fs::write(&path, &want).unwrap();
     }
     let have = std::fs::read_to_string(&path).unwrap_or_default();
-    assert!(
-        have == want,
+    assert_eq!(
+        have, want,
         "web/src/lib/reservedNames.json is out of date with the reserved names in \
          db/named_membership.rs.\nRegenerate with: UPDATE_FIXTURES=1 cargo test -p \
          message-crate-server the_website_reserves_the_same_names_as_the_server"
