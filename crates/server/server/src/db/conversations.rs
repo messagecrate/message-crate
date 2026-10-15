@@ -10,7 +10,7 @@ use anyhow::Context;
 use serde::Serialize;
 use sqlx::{SqlSafeStr, SqliteConnection};
 
-use crate::api_error::ApiError;
+use crate::db::SearchListError;
 use crate::db::ownership::owns_conversation;
 use crate::db::participant_names::{Participant, load_for_conversations};
 use crate::db::sql::{SqlParam, bind_args, fold_in_id_chunks, in_placeholders};
@@ -124,8 +124,8 @@ type RawConversationRow = (
 ///
 /// # Errors
 ///
-/// `BadRequest` for a query the language refuses; `Internal` when a
-/// statement fails.
+/// [`SearchListError::Query`] for a query the language refuses;
+/// [`SearchListError::Internal`] when a statement fails.
 pub async fn list_conversations_sorted(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -133,7 +133,7 @@ pub async fn list_conversations_sorted(
     order: &[SortKey<ConversationSort>],
     page: PageParams,
     clock: (chrono_tz::Tz, chrono::NaiveDate),
-) -> Result<Page<ConversationSummary>, ApiError> {
+) -> Result<Page<ConversationSummary>, SearchListError> {
     let (zone, today) = clock;
     let filter = crate::search::compile(crate::search::CompileRequest {
         list: crate::search::ListKind::Conversations,
@@ -180,7 +180,7 @@ pub async fn get_conversation_summary(
     conn: &mut SqliteConnection,
     account_id: i64,
     conversation_id: i64,
-) -> Result<Option<ConversationSummary>, ApiError> {
+) -> anyhow::Result<Option<ConversationSummary>> {
     let sql = format!(
         "{} WHERE c.id = ? AND c.account_id = ?",
         conversation_row_select()
@@ -279,7 +279,7 @@ async fn load_conversation_rows(
     account_id: i64,
     sql: impl SqlSafeStr,
     params: &[SqlParam],
-) -> Result<Vec<ConversationSummary>, ApiError> {
+) -> anyhow::Result<Vec<ConversationSummary>> {
     let rows: Vec<RawConversationRow> = sqlx::query_as_with(sql, bind_args(params))
         .fetch_all(&mut *conn)
         .await
@@ -375,7 +375,7 @@ pub fn display_service_label(sources: &[String]) -> String {
 async fn load_conversation_sources(
     conn: &mut SqliteConnection,
     conversation_ids: &[i64],
-) -> Result<HashMap<i64, Vec<String>>, ApiError> {
+) -> anyhow::Result<HashMap<i64, Vec<String>>> {
     fold_in_id_chunks(conn, conversation_ids, |conn, chunk| {
         Box::pin(async move {
             let placeholders = in_placeholders(1, chunk.len());
@@ -430,7 +430,7 @@ pub async fn list_conversation_source_stats(
     conn: &mut SqliteConnection,
     account_id: i64,
     conversation_id: i64,
-) -> Result<Option<Vec<ConversationSource>>, ApiError> {
+) -> anyhow::Result<Option<Vec<ConversationSource>>> {
     if !owns_conversation(conn, account_id, conversation_id)
         .await
         .context("check that the account holds the conversation")?

@@ -1440,6 +1440,14 @@ about, and it is written for SQLite, the only database engine
 reason). Why no SQL in a handler: a query written into a handler gets written
 twice (the identity counts for contacts and for accounts were).
 
+A `db/` function never returns `ApiError`. It returns `anyhow` or `sqlx`
+errors when a statement is all that can fail, and an error type of its own
+module when the caller must tell outcomes apart (`SavedSearchError::NameTaken`,
+`MessagePageError::Invalid`); the `From` that turns each into a problem type
+is in `api_error.rs`. Why: the command line import and the Demo Account build
+call `db/` too and speak no HTTP, and the answer a route gives for an outcome
+is the handler's choice, not the storage layer's.
+
 Does the rule stop at handlers? No. An import stage (`imports_api/staging.rs`,
 `imports_api/promote.rs`) is not a handler, but it holds no SQL either: it
 sequences its statements, logs them and keeps the counts, and the statements

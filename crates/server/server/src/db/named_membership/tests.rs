@@ -132,7 +132,7 @@ async fn a_name_created_meanwhile_is_taken_in_any_letter_case() {
         .unwrap_err();
 
         assert!(
-            matches!(err, MembershipError::Conflict(_)),
+            matches!(err, MembershipError::NameTaken(_)),
             "{second}: {err:?}"
         );
         let names: Vec<String> = list_sets(tag_spec(), &mut conn, account)
@@ -404,7 +404,7 @@ async fn create_set_refuses_duplicates_and_reserved_names() {
     let err = create_set(group_spec(), &mut conn, account, "family")
         .await
         .unwrap_err();
-    assert!(matches!(err, MembershipError::Conflict(_)));
+    assert!(matches!(err, MembershipError::NameTaken(_)));
     let err = create_set(group_spec(), &mut conn, account, "Trash")
         .await
         .unwrap_err();
@@ -434,7 +434,7 @@ async fn rename_set_allows_a_case_change_and_refuses_another_sets_name() {
     let err = rename_set(group_spec(), &mut conn, account, work_id, "family")
         .await
         .unwrap_err();
-    assert!(matches!(err, MembershipError::Conflict(_)));
+    assert!(matches!(err, MembershipError::NameTaken(_)));
     let err = rename_set(group_spec(), &mut conn, account, 999_999, "Anything")
         .await
         .unwrap_err();
