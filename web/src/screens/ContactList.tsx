@@ -64,7 +64,7 @@ function filterNeedles(raw: string): FilterNeedles {
 
   let handle: string | null = null;
   const found = q.match(/(^|\s)identity:("([^"]+)"|(\S+))/i);
-  if (found) handle = found[3] ?? found[4].replace(/^"|"$/g, "");
+  if (found) handle = found[3] ?? found[4]?.replace(/^"|"$/g, "") ?? null;
 
   return { text: stripFieldTokens(q), handle };
 }

@@ -2,6 +2,7 @@
 
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { nth } from "../test/nth";
 import { inTimeZone } from "../test/timeZone";
 import { setupUser } from "../test/user";
 import IdentityTable, { type IdentityRow } from "./IdentityTable";
@@ -63,20 +64,20 @@ describe("IdentityTable", () => {
       "Group messages",
       "",
     ]);
-    const [service, identity, first, , conversations] = screen.getAllByRole("columnheader");
-    expect(service.className).toContain("text-left");
-    expect(identity.className).toContain("text-left");
-    expect(first.className).toContain("text-right");
-    expect(conversations.className).toContain("text-right");
+    const columns = screen.getAllByRole("columnheader");
+    expect(nth(columns, 0).className).toContain("text-left");
+    expect(nth(columns, 1).className).toContain("text-left");
+    expect(nth(columns, 2).className).toContain("text-right");
+    expect(nth(columns, 4).className).toContain("text-right");
 
-    const row = screen.getAllByRole("row")[1];
+    const row = nth(screen.getAllByRole("row"), 1);
     const cells = within(row).getAllByRole("gridcell");
-    expect(cells[0].className).toContain("text-left");
-    expect(cells[1].className).toContain("text-right");
-    expect(cells[3].className).toContain("text-right");
-    expect(cells[1].textContent).toBe("2020-01-01");
-    expect(cells[3].textContent).toBe("2");
-    expect(cells[5].textContent).toBe("30");
+    expect(nth(cells, 0).className).toContain("text-left");
+    expect(nth(cells, 1).className).toContain("text-right");
+    expect(nth(cells, 3).className).toContain("text-right");
+    expect(nth(cells, 1).textContent).toBe("2020-01-01");
+    expect(nth(cells, 3).textContent).toBe("2");
+    expect(nth(cells, 5).textContent).toBe("30");
   });
 
   it("shows an Orphaned messages column, summed in the Summary row, when an identity has orphaned messages", () => {
@@ -103,9 +104,9 @@ describe("IdentityTable", () => {
       .getAllByRole("row")
       .find((row) => row.textContent?.includes("2021-05-05"));
     expect(whatsapp).toBeDefined();
-    expect(within(whatsapp as HTMLElement).getAllByRole("gridcell")[6].textContent).toBe("4");
+    expect(nth(within(whatsapp as HTMLElement).getAllByRole("gridcell"), 6).textContent).toBe("4");
     const summary = screen.getAllByRole("row").at(-1) as HTMLElement;
-    expect(within(summary).getAllByRole("gridcell")[6].textContent).toBe("4");
+    expect(nth(within(summary).getAllByRole("gridcell"), 6).textContent).toBe("4");
   });
 
   it("leaves the Orphaned messages column out when no identity has orphaned messages", () => {
@@ -182,11 +183,11 @@ describe("IdentityTable", () => {
 
   it("shows a muted dash for a zero count or a missing date", () => {
     render(<IdentityTable {...dates} rows={rows} onRemove={() => {}} />);
-    const row = screen.getAllByRole("row")[2];
+    const row = nth(screen.getAllByRole("row"), 2);
     const cells = within(row).getAllByRole("gridcell");
-    expect(cells[1].textContent).toBe("—");
-    expect(cells[3].textContent).toBe("—");
-    expect(cells[5].textContent).toBe("—");
+    expect(nth(cells, 1).textContent).toBe("—");
+    expect(nth(cells, 3).textContent).toBe("—");
+    expect(nth(cells, 5).textContent).toBe("—");
   });
 
   it("ends every row with an always visible Remove named after the identity and its service", async () => {
@@ -256,7 +257,7 @@ describe("IdentityTable", () => {
 
   it("shows dashes for every count and date while loading", () => {
     render(<IdentityTable {...dates} rows={rows} loading onRemove={() => {}} />);
-    const row = screen.getAllByRole("row")[1];
+    const row = nth(screen.getAllByRole("row"), 1);
     const cells = within(row).getAllByRole("gridcell");
     expect(cells.slice(1, 6).map((c) => c.textContent)).toEqual(["—", "—", "—", "—", "—"]);
     expect(

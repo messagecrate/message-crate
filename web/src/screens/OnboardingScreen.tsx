@@ -239,19 +239,21 @@ export default function OnboardingScreen() {
   };
 
   const updateHandle = (index: number, field: "handle" | "service", value: string) => {
+    const row = handles[index];
+    if (!row) return;
     const next = [...handles];
     if (field === "service") {
       const service = parseSelectKey(value, OFFERED_SERVICES);
       if (!service) return;
-      next[index] = { ...next[index], service };
+      next[index] = { ...row, service };
     } else {
-      next[index] = { ...next[index], handle: value };
+      next[index] = { ...row, handle: value };
     }
     setHandles(next);
 
     // A row being edited stops reading as wrong straight away rather than
     // staying red under the cursor; leaving the field checks it again.
-    const remaining = invalidIds.filter((id) => id !== next[index].id);
+    const remaining = invalidIds.filter((id) => id !== row.id);
     if (remaining.length !== invalidIds.length) setInvalidIds(remaining);
     // `showValidationError` rather than the setter, so a blink waiting to put
     // the old message back does not fire over a field being corrected.

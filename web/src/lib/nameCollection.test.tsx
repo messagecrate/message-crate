@@ -93,7 +93,7 @@ function pageGroups(id: string): string[] | undefined {
   const entry = client.getQueryData<{ pages: { items: { id: string; groups: string[] }[] }[] }>(
     PAGE_KEY,
   );
-  return entry?.pages[0].items.find((row) => row.id === id)?.groups;
+  return entry?.pages[0]?.items.find((row) => row.id === id)?.groups;
 }
 
 /** Group chips on the open contact. */

@@ -614,7 +614,7 @@ describe("ImportFormFields Import button", () => {
   });
 
   it("names each Android SMS source's own backup files in the backup placeholder", () => {
-    const placeholders = [
+    const placeholders: [string, string][] = [
       ["sms-backup-restore", "Path to an sms-*.xml backup file"],
       ["go-sms-pro", "Directory containing gosms_sys*.xml backup files"],
       ["sms-backup-plus", "Directory containing .eml files"],
@@ -629,7 +629,7 @@ describe("ImportFormFields Import button", () => {
   // An Import Run reads one backup: SMS Backup & Restore writes each as one
   // file, the other Android sources as a directory.
   it("asks for one file for SMS Backup & Restore and a directory for the others", () => {
-    const labels = [
+    const labels: [string, string][] = [
       ["sms-backup-restore", "Backup File"],
       ["go-sms-pro", "Backup Directory"],
       ["sms-backup-plus", "Backup Directory"],

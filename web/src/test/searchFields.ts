@@ -30,8 +30,8 @@ export function searchFieldsFor(list: SearchList): SearchField[] {
   return readFileSync(SEARCH_PAGE, "utf8")
     .split("\n")
     .flatMap((line) => {
-      const row = ROW.exec(line);
-      return row?.[2].split(" ").includes(TILES[list]) ? [row[1]] : [];
+      const [, word, tiles] = ROW.exec(line) ?? [];
+      return word && tiles?.split(" ").includes(TILES[list]) ? [word] : [];
     })
     .map((word) => ({ word, value_type: "text", values: [], help: "", example: `${word}:x` }));
 }

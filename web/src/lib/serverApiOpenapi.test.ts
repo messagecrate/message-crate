@@ -28,6 +28,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { nth } from "../test/nth";
 import { apiClient } from "./api";
 import * as serverApi from "./serverApi";
 
@@ -99,8 +100,8 @@ function calledRoute(): { method: string; path: string; query: string[] } {
       .mock.calls.map((args) => ({ method, path: String(args[0]) })),
   );
   expect(calls).toHaveLength(1);
-  const { method, path } = calls[0];
-  const [bare, search = ""] = path.split("?");
+  const { method, path } = nth(calls, 0);
+  const [bare = path, search = ""] = path.split("?");
   return { method, path: bare, query: [...new URLSearchParams(search).keys()] };
 }
 

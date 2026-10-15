@@ -2,6 +2,7 @@
 
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { nth } from "../../test/nth";
 import { setupUser } from "../../test/user";
 import BackupIdentityList from "./BackupIdentityList";
 
@@ -33,7 +34,9 @@ describe("BackupIdentityList", () => {
       "On your profile",
       "Action",
     ]);
-    const [, phone, email] = screen.getAllByRole("row");
+    const rows = screen.getAllByRole("row");
+    const phone = nth(rows, 1);
+    const email = nth(rows, 2);
     expect(
       within(phone)
         .getAllByRole("cell")

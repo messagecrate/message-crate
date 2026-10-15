@@ -10,6 +10,7 @@ import { keys } from "../lib/queryKeys";
 import { routeQueryKey } from "../lib/routeQueryKey";
 import { focusRingClass } from "../lib/uiStyles";
 import { advanceToNextFrame, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { nth } from "../test/nth";
 import { inTimeZone } from "../test/timeZone";
 import { fill, setupUser } from "../test/user";
 import ContactDrawer from "./ContactDrawer";
@@ -702,7 +703,7 @@ describe("ContactDrawer", () => {
     expect(table.querySelectorAll(".cursor-col-resize").length).toBe(0);
 
     const headers = screen.getAllByRole("columnheader");
-    expect(headers[headers.length - 1].textContent).toBe("");
+    expect(nth(headers, headers.length - 1).textContent).toBe("");
     // Once the detail is in, the row carries its service and counts.
     await settle();
     expect(screen.getAllByText("42").length).toBeGreaterThan(0);
@@ -942,7 +943,9 @@ describe("ContactDrawer", () => {
     seed(national);
     get.mockResolvedValue(national);
     const merged = detail(5, {
-      identities: [{ ...national.identities[0], address: "+447700900123", country_unknown: false }],
+      identities: [
+        { ...nth(national.identities, 0), address: "+447700900123", country_unknown: false },
+      ],
     });
     const question = "07700900123 in GB is +447700900123, which is already an identity of Ada";
     post.mockReset();
