@@ -181,8 +181,8 @@ shows no Thumbnail. Beside each reason it records its kind
 (`attachments.preview_not_made_kind` and `thumbnail_not_made_kind`):
 `conversion_failed` when ffmpeg exited with an error, `stalled` when it made
 no progress for `[server] transcode_stall_secs`, `ran_past_length` when it ran past twice the
-file's length, `took_too_long` when a step that reads one frame passed its
-limit, `original_missing`, or `server_problem` for anything else. A kind is
+file's length, `took_too_long` when a step that reads one frame or an audio
+conversion passed its limit, `original_missing`, or `server_problem` for anything else. A kind is
 set and cleared with its reason, which a `CHECK` on the table holds. The
 owner's read of one Import Run counts the run's attachments by kind and lists
 them, each by file name, type and size with its reasons
@@ -220,17 +220,20 @@ bytes.
 No single Asset and no single error stops the pass (#2059, #2072, #2091).
 Every ffmpeg and ffprobe run is stopped when it hangs, in the pass and in the desktop app's Media Stage alike (#2898).
 A short step gets a fixed 15 seconds: ffprobe reading a file's details, an ffmpeg run that reads one frame (a Thumbnail, or the Preview of an image), and the `-version` run that finds ffmpeg and ffprobe.
-A conversion that reads the whole file has no time limit: the Preview of a video or of audio, and every video or audio conversion of the Media Stage.
+A video conversion that reads the whole file has no time limit: the Preview of a video, and every video conversion of the Media Stage.
 It is stopped when it makes no progress instead.
+An audio conversion, the Preview of audio and every audio conversion of the Media Stage, is stopped when it makes no progress too.
 ffmpeg reports its position in the file (`out_time`) on its `-progress` stream, and a position that has not moved for the no-progress wait stops the run.
 The wait is 2 minutes.
 A server started with a config file takes it from `[server] transcode_stall_secs` (`docs/src/content/docs/docs/developer/reference/config-and-accounts.md`); a server started with `--data-dir`, and the desktop app's own conversions, use the 2 minutes.
-A conversion whose position passes twice the length ffprobe reads for the file is stopped too, as looping on a damaged file.
+A video conversion whose position passes twice the length ffprobe reads for the file is stopped too, as looping on a damaged file.
 A length ffprobe only estimated from the bitrate of the first frames doesn't count, because such an estimate can be under half the real length.
+An audio conversion is never stopped for its position, and has a time limit instead: twenty times the length ffprobe reads, at least 10 minutes and at most 6 hours, or an hour when ffprobe reads no length or only estimated one.
+Once the position passes that length, the length was wrong, and the limit is at least the hour for a file of unknown length.
 Once the position reaches the file's length, the wait becomes at least twice the time the run took to get there.
 Why: with `-movflags +faststart`, ffmpeg rewrites the whole output after its last frame and reports no progress meanwhile, which takes minutes for a large video on a slow disk.
 A program stopped is killed and waited for.
-The conversion then fails like any other, and the reason recorded on the Asset's rows says why it was stopped: no progress for the wait, before or after converting part of the file, past twice the file's length, or a short step over its 15 seconds.
+The conversion then fails like any other, and the reason recorded on the Asset's rows says why it was stopped: no progress for the wait, before or after converting part of the file, a video past twice its length, or a short step or an audio conversion over its time limit.
 A `-version` run stopped at its 15 seconds counts as a program that does not run, so the lookup passes over it.
 
 The Media Stage compresses a video with HEVC first, and tries H.264 after a HEVC run that failed in a way H.264 may not:
@@ -249,7 +252,11 @@ Why all of it: ffmpeg writes why an encoder would not open first, and the lines 
 Why no path: ffmpeg names the files by their full paths, and the server's log holds only what the owner may see, which an attachment's file name is not (`docs/architecture/server-log.md`, "What a line never holds").
 
 A file the desktop app could not convert records `convert_failed:` and a short reason on its attachment, the same on either path that converts it: the Media Stage and the convert pass of a run that converts as it stages (`media::why_not_converted`).
-The reason is why ffmpeg was stopped, or the last line ffmpeg wrote, with each file ffmpeg was given written as `<input>` or `<output>`.
+The reason is why ffmpeg was stopped, or the line ffmpeg wrote that names the cause, with each file ffmpeg was given written as `<input>` or `<output>`.
+That line is the last one that does not only follow from an earlier failure, such as a task ending, an encoder or a file that then did not open, or that nothing was written, and is not libx265's own report, which it writes whatever the log level (`cause_line`).
+When every line only follows from a failure, it is the first of them, which comes nearest the cause.
+The search goes back from the end, because a damaged file makes ffmpeg write errors it carries on past, such as a frame it could not decode, before the one it stopped on.
+Why not the last line: ffmpeg writes the cause first and what follows from it after, so its last line can be that nothing was written into the output file, which says nothing about why (#2959).
 An ffmpeg that wrote nothing gives how it exited.
 Any other failure gives the error's first line, with the file written as `<input>` and without each step that names another file in its directory, such as the temporary file a conversion writes.
 The whole error goes to the Import Run's log.
@@ -262,10 +269,15 @@ The wait is 5 seconds, doubles with each failure in a row up to 5 minutes, and s
 
 Why stop a run that hangs: the pass works on one Asset at a time for every account, so an ffmpeg that never ended held it until the server stopped.
 The Asset stayed queued, so at the next start the pass took it again and hung again.
-Why watch progress rather than give a conversion time by its length: converting a two-hour video on a slow computer, such as a small NAS converting iPhone HEVC video, can take many times the video's length, and any limit by length cut such a conversion off.
+Why watch progress rather than give a video conversion time by its length: converting a two-hour video on a slow computer, such as a small NAS converting iPhone HEVC video, can take many times the video's length, and any limit by length cut such a conversion off.
 A hung 5-second clip, meanwhile, waited out the shortest limit, 10 minutes.
 Why the position and not the size of what ffmpeg writes: a hung ffmpeg can keep writing without moving forward.
 Why twice the length: a damaged or crafted file can make ffmpeg go around the same part forever while the position still moves, and no working conversion goes past the end of its file.
+Why video only: looping was seen on video, and an audio file's header can state under half its real length without ffprobe saying so.
+An MP3 joined from recordings back to back keeps the first part's header, which counts only that part's frames, and such a file was stopped as looping (#2909).
+Why audio has a time limit at all: a damaged audio file can loop too, and its position keeps moving while it does, so the no-progress wait alone never ends it.
+Why an hour once the position passes the length: a file joined from hours of recordings must not be held to its first part's limit, and the limit must not grow with the position, or a file looping would never reach it.
+Audio converts far faster than it plays, so a working conversion stays well inside an hour.
 Why 15 seconds for a short step: each takes well under a second on a working file, and a fixed limit is all a step that does not read the whole file needs.
 Why only local files: the files come from phone backups, and a playlist or a container inside one can name a network address that ffmpeg would otherwise open.
 Why run again on a timer rather than wait for an Import Run: only the end of an Import Run woke the pass, so on a server imported into once a busy database left the queue untouched until a restart.

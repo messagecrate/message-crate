@@ -860,6 +860,21 @@ carry their date on the heading.
   be read by every other user of the same computer on macOS and Linux. It is
   now made so that only you can open it. The Staging Directory itself keeps
   the permissions it has (#2969).
+- 2026-10-15: **A joined MP3 converts again.** An MP3 made by joining
+  recordings back to back keeps the first recording's header, which states
+  only that recording's length. When the whole file played more than twice
+  that, its conversion was stopped as looping on a damaged file and the
+  attachment was recorded as one that could not be converted. Only a video
+  conversion is now stopped for running past twice its length. An audio
+  conversion is stopped when it makes no progress, or after twenty times
+  the file's length, at least 10 minutes and at most 6 hours. One that runs
+  past the length its header states gets at least an hour (#2909).
+- 2026-10-15: **A file that could not be converted names the cause.** The
+  short reason on an attachment ffmpeg could not convert was the last line
+  ffmpeg wrote, which can follow from the cause rather than name it, such as
+  "Nothing was written into output file" after an encoder that would not
+  open. The reason is now the last line that names a cause, such as why the
+  encoder would not open or that the disk is full (#2959).
 - 2026-10-12: **A wrong iPhone backup password names the field to fix.** A
   password that does not open an encrypted iPhone backup is now refused with
   "The Encryption password is incorrect.", in the same words as the other

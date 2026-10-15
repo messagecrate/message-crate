@@ -1153,7 +1153,7 @@ fn not_made(err: &anyhow::Error, dirs: &[&Path]) -> (NotMadeKind, String) {
             media::KillReason::StalledBeforeOutput { .. }
             | media::KillReason::StalledPartway { .. } => NotMadeKind::Stalled,
             media::KillReason::RanPastLength { .. } => NotMadeKind::RanPastLength,
-            media::KillReason::ShortStepTooLong { .. } => NotMadeKind::TookTooLong,
+            media::KillReason::TookTooLong { .. } => NotMadeKind::TookTooLong,
             // A stop fails the conversion, not the file, and the pass records
             // nothing for it ([`AccountPass::record_not_made`]).
             media::KillReason::Stopped | media::KillReason::StoppedBeforeStart => {
