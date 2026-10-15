@@ -22,7 +22,6 @@ use sqlx::sqlite::SqliteArguments;
 use sqlx::{AssertSqlSafe, Row, SqlSafeStr, SqlStr, Sqlite, SqliteConnection};
 
 use super::sql::{SQLITE_IN_CHUNK, max_rows_for_bind_limit, values_tuples};
-use crate::imports_api::records::EarlierVersionRecord;
 use crate::models::StoredTime;
 
 // ── Staging: what one import writes before promotion ─────────────────────
@@ -282,6 +281,20 @@ pub struct StagingTapback {
     /// gave no address, so never together with a handle taken from the
     /// reactor's identity; see `TapbackRecord::sender_display_name`.
     pub sender_display_name: Option<String>,
+}
+
+/// One earlier version of one part of an edited message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EarlierVersionRecord {
+    /// The part of the message this version belongs to.
+    pub part_index: i64,
+    /// The part's text in this version; `None` when the source recorded the
+    /// edit and not the text it replaced, as iMazing does.
+    pub text: Option<String>,
+    /// When this version was written, to the millisecond in the form
+    /// `MessageRecord::timestamp` takes; `None` when the source does not
+    /// record it.
+    pub edited_at: Option<StoredTime>,
 }
 
 /// One earlier version of a staged message, as the import stages it.
