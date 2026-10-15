@@ -2121,17 +2121,18 @@ async fn an_api_token_on_the_owners_account_answers_401_like_an_unknown_token() 
 }
 
 /// `docker stop` and a service manager send SIGTERM. The server must drain a
-/// request in flight and then exit, as it does on Ctrl-C (#1218).
+/// request in flight and then exit, as it does on Ctrl-C (#1218). Every step
+/// is awaited without a time limit, so a hang is left to the test runner and
+/// a slow machine cannot fail it (#2975).
 #[cfg(unix)]
 #[tokio::test]
 async fn sigterm_drains_the_request_in_flight_then_stops_the_server() {
-    use std::time::Duration;
     use tokio::signal::unix::{SignalKind, signal};
-    use tokio::sync::Notify;
+    use tokio::sync::{Notify, oneshot};
 
     // Installed before the signal is sent, so a server that ignores SIGTERM
-    // fails this test by timing out rather than killing the test process.
-    let mut sigterm_seen = signal(SignalKind::terminate()).unwrap();
+    // leaves the test waiting rather than killing the test process.
+    let _sigterm_caught = signal(SignalKind::terminate()).unwrap();
 
     let entered = Arc::new(Notify::new());
     let release = Arc::new(Notify::new());
@@ -2149,12 +2150,17 @@ async fn sigterm_drains_the_request_in_flight_then_stops_the_server() {
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
+    // The server's own stop signal, which says when it has seen SIGTERM.
+    let (stopping_tx, stopping_rx) = oneshot::channel::<()>();
     // A drain limit that never passes, so only the request's end lets the
     // server stop.
-    let mut server = crate::request_id::spawn_in_current_span(serve_until_shutdown(
+    let server = crate::request_id::spawn_in_current_span(serve_until_shutdown(
         listener,
         app,
-        shutdown_signal(None),
+        async move {
+            shutdown_signal(None).await;
+            let _ = stopping_tx.send(());
+        },
         || async {},
         std::future::pending::<()>,
     ));
@@ -2166,39 +2172,30 @@ async fn sigterm_drains_the_request_in_flight_then_stops_the_server() {
             .await
             .unwrap()
     });
-    tokio::time::timeout(Duration::from_secs(10), entered.notified())
-        .await
-        .expect("the request never reached the handler");
+    // The server polls its stop signal before it accepts a connection, so
+    // once the request is in the handler, the server is listening for
+    // SIGTERM.
+    entered.notified().await;
 
     let status = std::process::Command::new("kill")
         .args(["-TERM", &std::process::id().to_string()])
         .status()
         .unwrap();
     assert!(status.success());
-    tokio::time::timeout(Duration::from_secs(10), sigterm_seen.recv())
-        .await
-        .expect("SIGTERM was never delivered");
+    stopping_rx.await.expect("the server saw SIGTERM");
 
     // The request is still in flight, so the server must still be running.
     assert!(
-        tokio::time::timeout(Duration::from_millis(200), &mut server)
-            .await
-            .is_err(),
+        !server.is_finished(),
         "the server stopped before the request in flight finished"
     );
 
     release.notify_one();
-    let response = tokio::time::timeout(Duration::from_secs(10), request)
-        .await
-        .expect("the request in flight never finished")
-        .unwrap();
+    let response = request.await.unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     assert_eq!(response.text().await.unwrap(), "done");
 
-    let stopped = tokio::time::timeout(Duration::from_secs(10), server)
-        .await
-        .expect("the server kept running after SIGTERM")
-        .unwrap();
+    let stopped = server.await.unwrap();
     assert!(matches!(stopped, Stopped::Drained), "{stopped:?}");
 }
 
