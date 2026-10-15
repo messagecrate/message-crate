@@ -506,39 +506,39 @@ fn is_unique_violation(err: &sqlx::Error) -> bool {
     matches!(db_err.code().as_deref(), Some("2067" | "1555"))
 }
 
-/// Column list for `imports`, in the order reads map to a row.
+/// Column list for `imports`, each read by name in [`import_from_row`].
 const IMPORT_COLUMNS: &str = "id, account_id, source, tool, mode, status, started_at, \
      finished_at, message_count, attachment_count, bytes_uploaded, duration_ms, parse_ms, \
      attachments_ms, prepare_ms, upload_ms, summary_json, stage, run_dir, device_id, \
      form_json, source_fingerprint, source_identities, backup_taken_at, phone_country";
 
-/// Map one `imports` row by column position.
+/// Map one `imports` row, reading each column by name.
 fn import_from_row(row: &SqliteRow) -> Result<ImportRow, sqlx::Error> {
     Ok(ImportRow {
-        id: row.try_get(0)?,
-        account_id: row.try_get(1)?,
-        source: row.try_get(2)?,
-        tool: row.try_get(3)?,
-        mode: row.try_get(4)?,
+        id: row.try_get("id")?,
+        account_id: row.try_get("account_id")?,
+        source: row.try_get("source")?,
+        tool: row.try_get("tool")?,
+        mode: row.try_get("mode")?,
         status: {
-            let raw: String = row.try_get(5)?;
+            let raw: String = row.try_get("status")?;
             ImportStatus::parse(&raw).ok_or_else(|| {
                 sqlx::Error::Decode(format!("imports.status holds unknown value '{raw}'").into())
             })?
         },
-        started_at: row.try_get(6)?,
-        finished_at: row.try_get(7)?,
-        message_count: row.try_get(8)?,
-        attachment_count: row.try_get(9)?,
-        bytes_uploaded: row.try_get(10)?,
-        duration_ms: row.try_get(11)?,
-        parse_ms: row.try_get(12)?,
-        attachments_ms: row.try_get(13)?,
-        prepare_ms: row.try_get(14)?,
-        upload_ms: row.try_get(15)?,
-        summary_json: row.try_get(16)?,
+        started_at: row.try_get("started_at")?,
+        finished_at: row.try_get("finished_at")?,
+        message_count: row.try_get("message_count")?,
+        attachment_count: row.try_get("attachment_count")?,
+        bytes_uploaded: row.try_get("bytes_uploaded")?,
+        duration_ms: row.try_get("duration_ms")?,
+        parse_ms: row.try_get("parse_ms")?,
+        attachments_ms: row.try_get("attachments_ms")?,
+        prepare_ms: row.try_get("prepare_ms")?,
+        upload_ms: row.try_get("upload_ms")?,
+        summary_json: row.try_get("summary_json")?,
         stage: row
-            .try_get::<Option<String>, _>(17)?
+            .try_get::<Option<String>, _>("stage")?
             .map(|stage| {
                 ImportStage::parse(&stage).ok_or_else(|| {
                     sqlx::Error::Decode(
@@ -547,13 +547,13 @@ fn import_from_row(row: &SqliteRow) -> Result<ImportRow, sqlx::Error> {
                 })
             })
             .transpose()?,
-        run_dir: row.try_get(18)?,
-        device_id: row.try_get(19)?,
-        form_json: row.try_get(20)?,
-        source_fingerprint: row.try_get(21)?,
-        source_identities: row.try_get(22)?,
-        backup_taken_at: row.try_get(23)?,
-        phone_country: row.try_get(24)?,
+        run_dir: row.try_get("run_dir")?,
+        device_id: row.try_get("device_id")?,
+        form_json: row.try_get("form_json")?,
+        source_fingerprint: row.try_get("source_fingerprint")?,
+        source_identities: row.try_get("source_identities")?,
+        backup_taken_at: row.try_get("backup_taken_at")?,
+        phone_country: row.try_get("phone_country")?,
     })
 }
 

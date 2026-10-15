@@ -17,6 +17,25 @@ fn default_start_args(account_id: i64) -> StartImportArgs<'static> {
     StartImportArgs::new(account_id, "ios", "append", Some("message-crate"))
 }
 
+/// A completed run's arguments with every count and timing filled and no
+/// issues or notes.
+fn completed_args() -> CompleteImportArgs {
+    CompleteImportArgs {
+        status: "completed".into(),
+        message_count: Some(10),
+        attachment_count: Some(2),
+        bytes_uploaded: Some(100),
+        duration_ms: Some(48_000),
+        parse_ms: Some(18_000),
+        attachments_ms: Some(22_000),
+        prepare_ms: Some(4_000),
+        upload_ms: Some(8_000),
+        summary_json: Some(r#"{"parse":{"messages":10}}"#.into()),
+        issues: Vec::new(),
+        notes: Vec::new(),
+    }
+}
+
 /// Open a run at `parse` and move it through the stages in order to
 /// `stage`, the only way a run reaches a later stage.
 async fn open_run_at(conn: &mut SqliteConnection, stage: ImportStage) -> i64 {
@@ -50,23 +69,13 @@ async fn complete_import_persists_timings_and_issues() {
         ACCOUNT_ID,
         import_id,
         &CompleteImportArgs {
-            status: "completed".into(),
-            message_count: Some(10),
-            attachment_count: Some(2),
-            bytes_uploaded: Some(100),
-            duration_ms: Some(48_000),
-            parse_ms: Some(18_000),
-            attachments_ms: Some(22_000),
-            prepare_ms: Some(4_000),
-            upload_ms: Some(8_000),
-            summary_json: Some(r#"{"parse":{"messages":10}}"#.into()),
             issues: vec![ImportIssueInput {
                 kind: ImportErrorKind::Skip,
                 stage: crate::db::imports::ImportIssueStage::Media,
                 item: "photo.heic".into(),
                 reason: "convert failed".into(),
             }],
-            notes: Vec::new(),
+            ..completed_args()
         },
         fixed_instant(),
     )
@@ -149,16 +158,6 @@ async fn list_import_issues_returns_them_oldest_first() {
         ACCOUNT_ID,
         import_id,
         &CompleteImportArgs {
-            status: "completed".into(),
-            message_count: Some(10),
-            attachment_count: Some(2),
-            bytes_uploaded: Some(100),
-            duration_ms: Some(48_000),
-            parse_ms: Some(18_000),
-            attachments_ms: Some(22_000),
-            prepare_ms: Some(4_000),
-            upload_ms: Some(8_000),
-            summary_json: Some(r#"{"parse":{"messages":10}}"#.into()),
             issues: vec![
                 ImportIssueInput {
                     kind: ImportErrorKind::Skip,
@@ -173,7 +172,7 @@ async fn list_import_issues_returns_them_oldest_first() {
                     reason: "upload failed".into(),
                 },
             ],
-            notes: Vec::new(),
+            ..completed_args()
         },
         fixed_instant(),
     )
@@ -212,18 +211,12 @@ async fn list_imports_includes_duration_ms() {
         ACCOUNT_ID,
         import_id,
         &CompleteImportArgs {
-            status: "completed".into(),
-            message_count: Some(10),
-            attachment_count: Some(2),
-            bytes_uploaded: Some(100),
-            duration_ms: Some(48_000),
             parse_ms: None,
             attachments_ms: None,
             prepare_ms: None,
             upload_ms: None,
             summary_json: None,
-            issues: vec![],
-            notes: Vec::new(),
+            ..completed_args()
         },
         fixed_instant(),
     )
@@ -899,4 +892,48 @@ fn every_import_status_serializes_as_the_word_the_database_holds() {
     }
     assert_eq!(ImportStatus::Cancelled.as_str(), "cancelled");
     assert_eq!(ImportStatus::parse("canceled"), None);
+}
+
+#[tokio::test]
+async fn an_import_row_maps_the_same_whatever_order_the_select_lists_its_columns() {
+    let (pool, _dir) = setup_accounts_only().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let import_id = start_import(
+        &mut conn,
+        &default_start_args(ACCOUNT_ID),
+        fixed_start_instant(),
+    )
+    .await
+    .unwrap();
+    complete_import(
+        &mut conn,
+        ACCOUNT_ID,
+        import_id,
+        &completed_args(),
+        fixed_instant(),
+    )
+    .await
+    .unwrap();
+
+    let reversed = IMPORT_COLUMNS
+        .split(',')
+        .map(str::trim)
+        .rev()
+        .collect::<Vec<_>>()
+        .join(", ");
+    let row = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "SELECT {reversed} FROM imports WHERE id = $1"
+    )))
+    .bind(import_id)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+
+    let in_order = get_owned_import(&mut conn, ACCOUNT_ID, import_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(import_from_row(&row).unwrap()).unwrap(),
+        serde_json::to_value(in_order).unwrap(),
+    );
 }

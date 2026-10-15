@@ -185,7 +185,7 @@ async fn load_from_chat_handle(
         conversation_ids,
         |placeholders| {
             format!(
-                "SELECT conv.id,
+                "SELECT conv.id AS conversation_id,
                         COALESCE(NULLIF(c.preferred_name, ''), h.raw) AS name,
                         h.raw AS handle,
                         COALESCE(NULLIF(trim(h.service), ''), h.handle_type) AS service,
@@ -208,16 +208,16 @@ async fn load_from_chat_handle(
     .await
 }
 
-/// One row of either query above: the conversation id, then the participant
-/// as (name, handle, service, contact id).
+/// One row of either query above, read by column name: `conversation_id`,
+/// then the participant as `name`, `handle`, `service` and `contact_id`.
 fn participant_row(row: &SqliteRow) -> Result<(i64, Participant), sqlx::Error> {
     Ok((
-        row.try_get::<i64, _>(0)?,
+        row.try_get::<i64, _>("conversation_id")?,
         Participant {
-            name: row.try_get(1)?,
-            identity: row.try_get(2)?,
-            service: row.try_get(3)?,
-            contact_id: row.try_get(4)?,
+            name: row.try_get("name")?,
+            identity: row.try_get("handle")?,
+            service: row.try_get("service")?,
+            contact_id: row.try_get("contact_id")?,
         },
     ))
 }
