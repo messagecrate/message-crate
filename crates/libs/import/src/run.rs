@@ -38,7 +38,7 @@ use message_crate_api_types::ImportMode;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
@@ -343,7 +343,10 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
     out.flush_file_counter();
 
     let (results, accounting) = pipeline.into_results();
-    let journal = shared.into_inner().expect("journal mutex poisoned").journal;
+    let journal = shared
+        .into_inner()
+        .unwrap_or_else(PoisonError::into_inner)
+        .journal;
     let counted = count_file_results(&results);
     // A pause is the one halt the caller resumes from, so the report tells
     // it apart from a failure. It halted the run only when it left a

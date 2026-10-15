@@ -144,9 +144,14 @@ impl<'a> PrepareContext<'a> {
         }
     }
 
-    /// Lock the shared journal (panics only if another thread panicked while holding it).
+    /// Lock the shared journal.
+    ///
+    /// A prepare that panicked while holding the lock leaves it poisoned. The
+    /// lock is read as it is then, so the rest of the Upload goes on: the
+    /// worker reports that conversation as failed, and the journal's sets
+    /// and rows hold only what earlier calls finished recording.
     pub(crate) fn lock_journal(&self) -> MutexGuard<'_, SharedJournal> {
-        self.journal.lock().expect("journal mutex poisoned")
+        self.journal.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// True when the journal says this conversation file already fully imported.
@@ -590,7 +595,7 @@ impl DigestResolver {
     fn cached(&self, abs: &Path) -> Option<String> {
         self.cache
             .lock()
-            .expect("digest cache mutex poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .get(abs)
             .cloned()
     }
@@ -599,7 +604,7 @@ impl DigestResolver {
     fn remember(&self, abs: &Path, digest: &str) {
         self.cache
             .lock()
-            .expect("digest cache mutex poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .insert(abs.to_path_buf(), digest.to_string());
     }
 }
@@ -767,7 +772,7 @@ fn wait_for_claims(ctx: &PrepareContext<'_>, digests: &[&String]) -> Result<()> 
         journal = ctx
             .claim_ended
             .wait_timeout(journal, CLAIM_WAIT_POLL)
-            .expect("journal mutex poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .0;
     }
     Ok(())
@@ -866,7 +871,10 @@ fn preflight_existing_asset(ctx: &PrepareContext<'_>, digest: &str) -> Result<()
     if ctx.probe_existing.load(Ordering::Relaxed) {
         return Ok(());
     }
-    let mut done = ctx.preflight_done.lock().expect("preflight mutex poisoned");
+    let mut done = ctx
+        .preflight_done
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     if ctx.probe_existing.load(Ordering::Relaxed) || *done {
         return Ok(());
     }
@@ -1289,41 +1297,51 @@ mod tests {
     /// A prepare that panics on one conversation still hands back a result
     /// for it, as a failure, so the Upload goes on. Without one, the import
     /// loop waited for that result forever while the other workers held the
-    /// channel open (#2087). Shutting the pool down collects every result
-    /// without waiting on a missing one.
+    /// channel open (#2087).
+    ///
+    /// The workers are told to exit once they finish the jobs, so a missing
+    /// result shows as `wait_one` failing on a closed channel rather than as
+    /// a hang. The results are then taken in file order through `wait_one`,
+    /// as the import loop takes them, with the panicking file first.
     #[test]
     fn a_panicking_prepare_reports_that_conversation_as_failed() {
-        let results = std::thread::scope(|scope| {
-            let mut queue = PrepareQueue::start_with(scope, 3, 4, |_path, name| {
-                assert_ne!(name, "b.jsonl", "prepare blew up");
+        let names = ["a.jsonl", "b.jsonl", "c.jsonl"];
+        let outcomes = std::thread::scope(|scope| {
+            let mut queue = PrepareQueue::start_with(scope, 3, names.len(), |_path, name| {
+                assert_ne!(name, "a.jsonl", "prepare blew up");
                 PrepareOutcome::Skipped
             });
-            for (idx, name) in ["a.jsonl", "b.jsonl", "c.jsonl"].into_iter().enumerate() {
+            for (idx, name) in names.into_iter().enumerate() {
                 queue.submit(idx, PathBuf::from(name), name.to_owned());
             }
-            queue.shutdown()
-        });
-
-        let mut outcomes: Vec<(usize, String)> = results
-            .into_iter()
-            .map(|result| {
-                let outcome = match result.outcome {
+            for _ in 0..queue.workers {
+                queue.job_tx.send(None).unwrap();
+            }
+            let mut outcomes = Vec::new();
+            for idx in 0..names.len() {
+                while !queue.is_ready(idx) {
+                    queue
+                        .wait_one()
+                        .expect("every job gets a result before the workers exit");
+                }
+                let result = queue.take(idx).unwrap();
+                outcomes.push(match result.outcome {
                     PrepareOutcome::Skipped => "skipped".to_owned(),
                     PrepareOutcome::Failed(error) => error,
                     _ => "other".to_owned(),
-                };
-                (result.idx, outcome)
-            })
-            .collect();
-        outcomes.sort();
-        assert_eq!(outcomes.len(), 3, "every conversation gets a result");
-        assert_eq!(outcomes[0], (0, "skipped".to_owned()));
+                });
+            }
+            assert!(queue.is_idle());
+            queue.shutdown();
+            outcomes
+        });
+
         assert!(
-            outcomes[1].1.starts_with("preparing b.jsonl panicked: ")
-                && outcomes[1].1.contains("prepare blew up"),
+            outcomes[0].starts_with("preparing a.jsonl panicked: ")
+                && outcomes[0].contains("prepare blew up"),
             "{:?}",
-            outcomes[1]
+            outcomes[0]
         );
-        assert_eq!(outcomes[2], (2, "skipped".to_owned()));
+        assert_eq!(outcomes[1..], ["skipped", "skipped"]);
     }
 }
