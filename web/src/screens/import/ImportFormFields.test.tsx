@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { holdDesktopJob } from "../../lib/desktopJob";
 import { EXPORT_SOURCES } from "../../lib/exportSources";
@@ -34,6 +35,7 @@ import { MIB } from "../../test/units";
 import { setupUser } from "../../test/user";
 import type { ImportFormFieldsProps } from "./formSections/types";
 import ImportFormFields from "./ImportFormFields";
+import { type ImportFormState, newImportForm } from "./importForm";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
@@ -75,68 +77,64 @@ const copyAttachments: AttachmentChoices = {
   minSizeMb: "20",
 };
 
-function renderForm(override: Partial<ImportFormFieldsProps> = {}) {
-  const props: ImportFormFieldsProps = {
-    source: "imessage-ios",
-    onSourceChange: vi.fn(),
-    backupPath: "/backups/iphone",
-    onBackupPathChange: vi.fn(),
-    backupPassword: "",
-    onBackupPasswordChange: vi.fn(),
-    showBackupPassword: false,
-    onToggleBackupPassword: vi.fn(),
-    attachmentRoot: "",
-    onAttachmentRootChange: vi.fn(),
-    appleContacts: "",
-    onAppleContactsChange: vi.fn(),
-    pathStats: {
+/**
+ * What a test sets: any of the form's fields, the form's other props, and
+ * the account's phones, all side by side.
+ */
+type FormOverride = Partial<Omit<ImportFormState, "seeded">> &
+  Partial<Omit<ImportFormFieldsProps, "form" | "profilePhones">> & {
+    profilePhones?: string[];
+    profilePhonesReady?: boolean;
+    profilePhonesError?: boolean;
+  };
+
+function renderForm(override: FormOverride = {}) {
+  const {
+    dispatch = vi.fn(),
+    onSourceChange = vi.fn(),
+    onPathChange = vi.fn(),
+    pathStats = {
       backup: DIRECTORY_STAT,
       attachmentRoot: null,
       appleContacts: null,
       backupEncrypted: false,
     },
-    whatsappKey: "",
-    onWhatsappKeyChange: vi.fn(),
-    showWhatsappKey: false,
-    onToggleWhatsappKey: vi.fn(),
-    whatsappWa: "",
-    onWhatsappWaChange: vi.fn(),
-    whatsappMedia: "",
-    onWhatsappMediaChange: vi.fn(),
-    whatsappDb: "",
-    onWhatsappDbChange: vi.fn(),
-    isBusinessApp: false,
-    whatsappOwnerPhone: "",
-    onWhatsappOwnerPhoneChange: vi.fn(),
-    onIsBusinessAppChange: vi.fn(),
-    whatsappStats: emptyWhatsappPathStats(),
-    androidSmsStats: { backup: null },
-    attachments: copyAttachments,
-    onAttachmentsChange: vi.fn(),
-    ownerPhones: [],
-    onOwnerPhonesChange: vi.fn(),
-    ownerEmails: "",
-    onOwnerEmailsChange: vi.fn(),
-    profilePhones: [],
-    profilePhonesReady: true,
-    profilePhonesError: false,
-    showMissingAccountPhoneWarning: false,
-    formatOpen: true,
-    onToggleFormat: vi.fn(),
-    processingOpen: false,
-    onToggleProcessing: vi.fn(),
-    obfuscate: false,
-    onObfuscateChange: vi.fn(),
-    timeZone: "America/New_York",
-    onTimeZoneChange: vi.fn(),
-    phoneCountry: "",
-    phoneCountries: [],
-    onPhoneCountryChange: vi.fn(),
-    running: false,
-    onImport: vi.fn(),
-    ...override,
+    whatsappStats = emptyWhatsappPathStats(),
+    androidSmsStats = { backup: null },
+    profilePhones = [],
+    profilePhonesReady = true,
+    profilePhonesError = false,
+    accountTimeZone = "America/New_York",
+    phoneCountries = [],
+    running = false,
+    onImport = vi.fn(),
+    ...fields
+  } = override;
+  const props: ImportFormFieldsProps = {
+    form: {
+      ...newImportForm("/backups/iphone"),
+      source: "imessage-ios",
+      attachments: copyAttachments,
+      ...fields,
+    },
+    dispatch,
+    onSourceChange,
+    onPathChange,
+    pathStats,
+    whatsappStats,
+    androidSmsStats,
+    profilePhones: { phones: profilePhones, ready: profilePhonesReady, error: profilePhonesError },
+    accountTimeZone,
+    phoneCountries,
+    running,
+    onImport,
   };
-  return render(<ImportFormFields {...props} />);
+  // An account with no phones shows a link to Settings, which needs a router.
+  return render(
+    <MemoryRouter>
+      <ImportFormFields {...props} />
+    </MemoryRouter>,
+  );
 }
 
 describe("ImportFormFields sources", () => {
@@ -245,23 +243,32 @@ describe("ImportFormFields iMessage methods", () => {
 
   it("hands back every attachment choice when any one of them changes", async () => {
     const user = setupUser();
-    const onAttachmentsChange = vi.fn();
+    const dispatch = vi.fn();
     const compress: AttachmentChoices = { ...copyAttachments, attachmentMedia: "compress" };
-    renderForm({ attachments: compress, onAttachmentsChange });
+    renderForm({ attachments: compress, dispatch });
+    const setAttachments = (value: AttachmentChoices) => ({
+      type: "set",
+      field: "attachments",
+      value,
+    });
 
     await user.click(screen.getByLabelText("Attachments"));
     await user.click(screen.getByRole("option", { name: "Skip" }));
-    expect(onAttachmentsChange).toHaveBeenLastCalledWith({ ...compress, attachmentMedia: "skip" });
+    expect(dispatch).toHaveBeenLastCalledWith(
+      setAttachments({ ...compress, attachmentMedia: "skip" }),
+    );
 
     await user.click(screen.getByLabelText("Target resolution"));
     await user.click(screen.getByRole("option", { name: "1080" }));
-    expect(onAttachmentsChange).toHaveBeenLastCalledWith({ ...compress, maxResolution: "1080p" });
+    expect(dispatch).toHaveBeenLastCalledWith(
+      setAttachments({ ...compress, maxResolution: "1080p" }),
+    );
 
     await user.type(screen.getByLabelText("Max FPS"), "6");
-    expect(onAttachmentsChange).toHaveBeenLastCalledWith({ ...compress, maxFps: "306" });
+    expect(dispatch).toHaveBeenLastCalledWith(setAttachments({ ...compress, maxFps: "306" }));
 
     await user.type(screen.getByLabelText("Minimum Video File Size (Megabytes)"), "5");
-    expect(onAttachmentsChange).toHaveBeenLastCalledWith({ ...compress, minSizeMb: "205" });
+    expect(dispatch).toHaveBeenLastCalledWith(setAttachments({ ...compress, minSizeMb: "205" }));
   });
 
   it("shows optional attachment directory on Mac Messages", () => {
@@ -595,7 +602,7 @@ describe("ImportFormFields Import button", () => {
 
   it("states the picked country as the phone's country", async () => {
     const user = setupUser();
-    const onPhoneCountryChange = vi.fn();
+    const dispatch = vi.fn();
     renderForm({
       source: "sms-backup-plus",
       processingOpen: true,
@@ -603,11 +610,11 @@ describe("ImportFormFields Import button", () => {
         { code: "GB", calling_code: "44", name: "United Kingdom" },
         { code: "US", calling_code: "1", name: "United States" },
       ],
-      onPhoneCountryChange,
+      dispatch,
     });
     await user.click(screen.getByRole("button", { name: /Phone's country/ }));
     await user.click(screen.getByRole("option", { name: "United Kingdom (+44)" }));
-    expect(onPhoneCountryChange).toHaveBeenCalledWith("GB");
+    expect(dispatch).toHaveBeenCalledWith({ type: "set", field: "phoneCountry", value: "GB" });
   });
 
   it("names each Android SMS source's own backup files in the backup placeholder", () => {
@@ -670,7 +677,7 @@ describe("ImportFormFields Import button", () => {
    * Import off, rather than being refused only once the run starts. A path
    * remembered from before SMS Backup & Restore took one file is a directory.
    */
-  const androidReady: Partial<ImportFormFieldsProps> = {
+  const androidReady: FormOverride = {
     ownerPhones: ["+15555550100"],
     profilePhones: ["+15555550100"],
     ownerEmails: "me@example.com",
@@ -736,8 +743,8 @@ describe("ImportFormFields Import button", () => {
  */
 type FormCase = {
   name: string;
-  props: Partial<ImportFormFieldsProps>;
-  fields: { label: string; empty: Partial<ImportFormFieldsProps> }[];
+  props: FormOverride;
+  fields: { label: string; empty: FormOverride }[];
 };
 
 const filledWhatsappStats = {
@@ -749,7 +756,7 @@ const filledWhatsappStats = {
   cryptName: null,
   backupEncrypted: null,
 };
-const whatsappAndroidProps: Partial<ImportFormFieldsProps> = {
+const whatsappAndroidProps: FormOverride = {
   source: "whatsapp-android",
   backupPath: "/backups/whatsapp",
   whatsappKey: "/backups/key",
@@ -767,7 +774,7 @@ const whatsappAndroidFields: FormCase["fields"] = [
   { label: "Media directory", empty: { whatsappMedia: "" } },
   { label: "Message database", empty: { whatsappDb: "" } },
 ];
-const whatsappIphoneProps: Partial<ImportFormFieldsProps> = {
+const whatsappIphoneProps: FormOverride = {
   source: "whatsapp-ios",
   backupPath: "/backups/iphone",
   backupPassword: "secret",
@@ -792,7 +799,7 @@ const iphoneBackupFields: FormCase["fields"] = [
   { label: "iPhone Backup Directory", empty: { backupPath: "" } },
   { label: "Encryption password", empty: { backupPassword: "" } },
 ];
-const messagesDbProps: Partial<ImportFormFieldsProps> = {
+const messagesDbProps: FormOverride = {
   backupPath: "/mnt/messages.db",
   attachmentRoot: "/mnt/attachments",
   appleContacts: "/mnt/AddressBook.sqlitedb",
@@ -808,7 +815,7 @@ const messagesDbFields: FormCase["fields"] = [
   { label: "Attachment directory", empty: { attachmentRoot: "" } },
   { label: "Apple Contacts file", empty: { appleContacts: "" } },
 ];
-const androidSmsProps: Partial<ImportFormFieldsProps> = {
+const androidSmsProps: FormOverride = {
   backupPath: "/backups/sms",
   androidSmsStats: { backup: DIRECTORY_STAT },
   ownerPhones: ["+15555550100"],
@@ -967,7 +974,7 @@ describe("ImportFormFields programs the import needs", () => {
     wtsexporter: found("/home/sam/message-crate/tools/wtsexporter"),
     ...over,
   });
-  const readyWhatsapp: Partial<ImportFormFieldsProps> = {
+  const readyWhatsapp: FormOverride = {
     source: "whatsapp-android",
     backupPath: "/tmp/wa",
     whatsappOwnerPhone: "+15555550100",

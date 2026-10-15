@@ -41,9 +41,9 @@ const WHATSAPP_OWNER_PHONE_HINT_IPHONE =
  * fallback, so it sits under Processing Options instead.
  */
 export default function WhatsappFormSection(props: ImportFormSectionProps) {
-  const method = props.source;
+  const { form, dispatch, errors } = props;
+  const method = form.source;
   if (!isWhatsappMethod(method)) return null;
-  const { errors } = props;
   const keyRequired = whatsappCryptRequired(
     props.whatsappStats.hasMsgstoreDb,
     props.whatsappStats.cryptName,
@@ -54,11 +54,13 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
         <StackedField label="Decryption key" required={keyRequired} optional={!keyRequired}>
           <PasswordField
             aria-label={keyRequired ? "Decryption key" : "Decryption key (Optional)"}
-            value={props.whatsappKey}
-            onChange={props.onWhatsappKeyChange}
+            value={form.whatsappKey}
+            onChange={(value) => dispatch({ type: "set", field: "whatsappKey", value })}
             autoComplete="new-password"
-            showPassword={props.showWhatsappKey}
-            onToggle={props.onToggleWhatsappKey}
+            showPassword={form.showWhatsappKey}
+            onToggle={() =>
+              dispatch({ type: "set", field: "showWhatsappKey", value: !form.showWhatsappKey })
+            }
           />
           <p className={hintClass}>{WHATSAPP_KEY_HINT}</p>
           <FieldStatus message={errors.key} />
@@ -77,11 +79,17 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
                 ? "Encryption password"
                 : "Encryption password (Optional)"
             }
-            value={props.backupPassword}
-            onChange={props.onBackupPasswordChange}
+            value={form.backupPassword}
+            onChange={(value) => dispatch({ type: "set", field: "backupPassword", value })}
             autoComplete="new-password"
-            showPassword={props.showBackupPassword}
-            onToggle={props.onToggleBackupPassword}
+            showPassword={form.showBackupPassword}
+            onToggle={() =>
+              dispatch({
+                type: "set",
+                field: "showBackupPassword",
+                value: !form.showBackupPassword,
+              })
+            }
           />
           <FieldStatus message={errors.backupPassword} />
         </StackedField>
@@ -93,8 +101,10 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
             type="text"
             inputMode="tel"
             aria-label={WHATSAPP_OWNER_PHONE_LABEL}
-            value={props.whatsappOwnerPhone}
-            onChange={(e) => props.onWhatsappOwnerPhoneChange(e.target.value)}
+            value={form.whatsappOwnerPhone}
+            onChange={(e) =>
+              dispatch({ type: "set", field: "whatsappOwnerPhone", value: e.target.value })
+            }
             placeholder="+1 555 555 0100"
             className={textInputClass}
           />
@@ -106,8 +116,8 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
       {whatsappShowsContactsDb(method) ? (
         <StackedField label="Contacts database" optional>
           <PathPicker
-            value={props.whatsappWa}
-            onChange={props.onWhatsappWaChange}
+            value={form.whatsappWa}
+            onChange={(path) => props.onPathChange("whatsappWa", path)}
             filters={WHATSAPP_CONTACTS_FILTERS}
           />
           <p className={hintClass}>
@@ -122,8 +132,8 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
       {whatsappShowsMedia(method) ? (
         <StackedField label="Media directory" optional>
           <PathPicker
-            value={props.whatsappMedia}
-            onChange={props.onWhatsappMediaChange}
+            value={form.whatsappMedia}
+            onChange={(path) => props.onPathChange("whatsappMedia", path)}
             directory
           />
           <p className={hintClass}>{WHATSAPP_MEDIA_HINT}</p>
@@ -134,8 +144,8 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
       {whatsappShowsDb(method) ? (
         <StackedField label="Message database" optional>
           <PathPicker
-            value={props.whatsappDb}
-            onChange={props.onWhatsappDbChange}
+            value={form.whatsappDb}
+            onChange={(path) => props.onPathChange("whatsappDb", path)}
             filters={SQLITE_DB_FILTERS}
           />
           <p className={hintClass}>{WHATSAPP_DB_HINT}</p>
@@ -146,8 +156,8 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
       {whatsappShowsBusiness(method) ? (
         <Checkbox
           labelClassName="mb-[1.1rem] flex text-[0.875rem]"
-          checked={props.isBusinessApp}
-          onChange={props.onIsBusinessAppChange}
+          checked={form.isBusinessApp}
+          onChange={(value) => dispatch({ type: "set", field: "isBusinessApp", value })}
         >
           WhatsApp Business
         </Checkbox>

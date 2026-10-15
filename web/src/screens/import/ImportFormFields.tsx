@@ -27,6 +27,7 @@ import {
   StackedField,
   sectionGapClass,
 } from "./ImportFormUi";
+import { formTimeZone } from "./importForm";
 import { MissingProgramNotice } from "./MissingProgramNotice";
 import { mediaJobVerb } from "./reviewForecast";
 
@@ -163,11 +164,12 @@ function AttachmentFields(props: {
 }
 
 export default function ImportFormFields(props: ImportFormFieldsProps) {
+  const { form, dispatch, profilePhones } = props;
   // Every per-source rule below is read from the selected source's descriptor.
-  const source = importSourceFor(props.source);
+  const source = importSourceFor(form.source);
   const asksOwnerPhones = source.asksOwnerPhones;
-  const backup = source.backupField(props.source);
-  const processingOptions = source.processingOptions(props.source);
+  const backup = source.backupField(form.source);
+  const processingOptions = source.processingOptions(form.source);
   const FormSection = IMPORT_FORM_SECTIONS[source.id];
 
   const phoneFieldRef = useRef<PhoneTokenFieldHandle>(null);
@@ -175,14 +177,14 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   const [mismatchAck, setMismatchAck] = useState(false);
   const phoneDraftPending = phoneDraft.trim().length > 0;
   const phonesForMatch = phoneDraftPending
-    ? [...props.ownerPhones, phoneDraft.trim()]
-    : props.ownerPhones;
+    ? [...form.ownerPhones, phoneDraft.trim()]
+    : form.ownerPhones;
   // True when none of `phones` is on the profile, as the form and the
   // Import button both judge it.
   const mismatchFor = (phones: string[]) =>
-    ownerPhonesNeedMismatchAck(phones, props.profilePhones, {
-      ready: props.profilePhonesReady,
-      fetchFailed: props.profilePhonesError,
+    ownerPhonesNeedMismatchAck(phones, profilePhones.phones, {
+      ready: profilePhones.ready,
+      fetchFailed: profilePhones.error,
     });
   const phonesMismatch = asksOwnerPhones && mismatchFor(phonesForMatch);
 
@@ -206,12 +208,21 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
     mismatchAck,
     onMismatchAckChange: setMismatchAck,
   };
+  // What the source's readiness reads: the form's fields, its path checks,
+  // and whether the account's phones have been read.
+  const readinessInput = {
+    ...form,
+    pathStats: props.pathStats,
+    whatsappStats: props.whatsappStats,
+    androidSmsStats: props.androidSmsStats,
+    profilePhonesReady: profilePhones.ready,
+  };
   // The asterisks and the Import button both read the source's readiness,
   // so a field cannot be needed and unmarked.
-  const readiness = source.readiness({ ...props, ownerPhoneEntry });
+  const readiness = source.readiness({ ...readinessInput, ownerPhoneEntry });
 
   const showCompress =
-    source.showsAttachmentOptions && props.attachments.attachmentMedia === "compress";
+    source.showsAttachmentOptions && form.attachments.attachmentMedia === "compress";
 
   // The desktop runs one job at a time, so an Export or a Convert that
   // is running would make it refuse the Import Run's first job.
@@ -225,7 +236,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   const wtsexporterBlocked =
     source.needsWtsexporter && tools !== null && !toolUsable(tools.wtsexporter);
   const mediaRunsFfmpeg =
-    source.showsAttachmentOptions && mediaJobVerb(props.attachments.attachmentMedia) !== null;
+    source.showsAttachmentOptions && mediaJobVerb(form.attachments.attachmentMedia) !== null;
 
   const canImport =
     blockedBy === null && !wtsexporterBlocked && readiness.enabled && !props.running;
@@ -237,21 +248,27 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
     }
     // Commit the number being typed, then ask the source again with the
     // committed list, which is what the run gets.
-    const phones = phoneFieldRef.current?.flush() ?? props.ownerPhones;
+    const phones = phoneFieldRef.current?.flush() ?? form.ownerPhones;
     const committed: OwnerPhoneEntry = {
       ...ownerPhoneEntry,
       draftPending: false,
       phonesForMatch: phones,
       mismatch: mismatchFor(phones),
     };
-    const ready = source.readiness({ ...props, ownerPhones: phones, ownerPhoneEntry: committed });
+    const ready = source.readiness({
+      ...readinessInput,
+      ownerPhones: phones,
+      ownerPhoneEntry: committed,
+    });
     if (ready.enabled) props.onImport(phones);
   }
 
   const attachmentFields = (
     <AttachmentFields
-      attachments={props.attachments}
-      onAttachmentsChange={props.onAttachmentsChange}
+      attachments={form.attachments}
+      onAttachmentsChange={(attachments) =>
+        dispatch({ type: "set", field: "attachments", value: attachments })
+      }
       showCompress={showCompress}
     />
   );
@@ -263,8 +280,8 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
 
       <CollapsibleSection
         title="Import Messages"
-        open={props.formatOpen}
-        onToggle={props.onToggleFormat}
+        open={form.formatOpen}
+        onToggle={() => dispatch({ type: "set", field: "formatOpen", value: !form.formatOpen })}
       >
         <div className={sectionGapClass}>
           <Select
@@ -287,7 +304,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
         {source.methods.length > 1 ? (
           <StackedField label="Platform">
             <Select
-              selectedKey={props.source}
+              selectedKey={form.source}
               onSelectionChange={(k) => {
                 const key = String(k);
                 if (source.methods.some((m) => m.id === key)) props.onSourceChange(key);
@@ -295,7 +312,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
               aria-label="Platform"
               triggerClassName="!bg-bg"
             >
-              {source.visibleMethods(props.source).map((m) => (
+              {source.visibleMethods(form.source).map((m) => (
                 <ListBoxItem key={m.id} id={m.id} className={selectItemClassName}>
                   {m.label}
                 </ListBoxItem>
@@ -306,8 +323,8 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
 
         <StackedField label={backup.label} required>
           <PathPicker
-            value={props.backupPath}
-            onChange={props.onBackupPathChange}
+            value={form.backupPath}
+            onChange={(path) => props.onPathChange("backupPath", path)}
             directory={backup.directory}
             filters={backup.filters}
             placeholder={backup.placeholder}
@@ -318,7 +335,14 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
 
         {FormSection ? (
           <FormSection
-            {...props}
+            form={form}
+            dispatch={dispatch}
+            onPathChange={props.onPathChange}
+            pathStats={props.pathStats}
+            whatsappStats={props.whatsappStats}
+            showMissingAccountPhoneWarning={
+              profilePhones.ready && !profilePhones.error && profilePhones.phones.length === 0
+            }
             descriptor={source}
             ownerPhoneEntry={ownerPhoneEntry}
             errors={readiness.errors}
@@ -329,15 +353,17 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
 
       <CollapsibleSection
         title="Processing Options (Advanced)"
-        open={props.processingOpen}
-        onToggle={props.onToggleProcessing}
+        open={form.processingOpen}
+        onToggle={() =>
+          dispatch({ type: "set", field: "processingOpen", value: !form.processingOpen })
+        }
       >
         <div className="mb-2 flex flex-col items-start gap-3">
           {processingOptions.includes("obfuscate") ? (
             <Checkbox
               labelClassName="text-[0.875rem]"
-              checked={props.obfuscate}
-              onChange={props.onObfuscateChange}
+              checked={form.obfuscate}
+              onChange={(value) => dispatch({ type: "set", field: "obfuscate", value })}
             >
               Obfuscate - All message data is anonymized.
             </Checkbox>
@@ -346,8 +372,8 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
             <div className="w-full max-w-[28rem]">
               <TimeZoneField
                 label="Time zone of the messages"
-                value={props.timeZone}
-                onChange={props.onTimeZoneChange}
+                value={formTimeZone(form, props.accountTimeZone)}
+                onChange={(zone) => dispatch({ type: "set", field: "timeZone", value: zone })}
               />
               <p className={hintClass}>
                 Pre-filled from your profile. iMazing writes each message time without a zone, so
@@ -357,14 +383,14 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
           ) : null}
         </div>
         <PhoneCountryField
-          value={props.phoneCountry}
+          value={form.phoneCountry}
           countries={props.phoneCountries}
-          onChange={props.onPhoneCountryChange}
+          onChange={(code) => dispatch({ type: "set", field: "phoneCountry", value: code })}
         />
         {processingOptions.includes("whatsappFallbackPhone") ? (
           <WhatsappFallbackPhoneField
-            value={props.whatsappOwnerPhone}
-            onChange={props.onWhatsappOwnerPhoneChange}
+            value={form.whatsappOwnerPhone}
+            onChange={(value) => dispatch({ type: "set", field: "whatsappOwnerPhone", value })}
           />
         ) : null}
       </CollapsibleSection>
