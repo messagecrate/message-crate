@@ -34,9 +34,8 @@ use crate::db::{WriteTx, begin_write};
 use crate::db::{account_profile, imports, server_settings, session_tokens};
 use crate::exports_api::OwnerExportRun;
 use crate::extract::{Json, Path, Query};
-use crate::imports_api::{
-    ImportRun, ImportRunSummary, OwnerImportRun, OwnerImportRunSummary, with_yourself,
-};
+use crate::imports_api::dto::{ImportRun, ImportRunSummary, OwnerImportRun, OwnerImportRunSummary};
+use crate::imports_api::with_yourself;
 use crate::paging::{DEFAULT_LIST_LIMIT, Page, PageQuery, page_from_rows, page_of, page_params};
 use crate::server::{
     ApiError, AppState, AuthIdentity, Created, LoggedIn, Owner, refuse_for_demo_account,
@@ -1472,7 +1471,7 @@ pub(crate) async fn list_account_imports(
     State(state): State<AppState>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
-    Query(query): Query<crate::imports_api::ListImportsQuery>,
+    Query(query): Query<crate::imports_api::dto::ListImportsQuery>,
 ) -> Result<Json<AccountImportRuns>, ApiError> {
     let mut conn = state.db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;

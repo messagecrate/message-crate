@@ -534,7 +534,7 @@ async fn dump_openapi_writes_the_document_to_the_output_path() {
 
 #[test]
 fn import_counts_print_one_line_for_each_count() {
-    let counts = crate::imports_api::ImportCounts {
+    let counts = crate::imports_api::pipeline::ImportCounts {
         conversations: 2,
         messages: 5,
         mode: ImportMode::Replace,
@@ -555,7 +555,7 @@ fn import_counts_print_one_line_for_each_count() {
          \x20 media files missing: 0 (attachment path not found on disk)\n"
     );
 
-    let appended = crate::imports_api::ImportCounts {
+    let appended = crate::imports_api::pipeline::ImportCounts {
         mode: ImportMode::Append,
         messages_appended: 4,
         phones_needing_review: 1,
@@ -568,7 +568,7 @@ fn import_counts_print_one_line_for_each_count() {
         "{text}"
     );
 
-    let incomplete = crate::imports_api::ImportCounts {
+    let incomplete = crate::imports_api::pipeline::ImportCounts {
         other_identities: 2,
         ..Default::default()
     };

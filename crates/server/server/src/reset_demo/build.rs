@@ -22,10 +22,11 @@ use crate::db::audit_trail::AuditActor;
 use crate::db::demo_account_build::{self, DemoDataSize};
 use crate::db::maintenance;
 use crate::dedupe;
-use crate::imports_api::{self, FixedImportArgs, ImportMode, ImportOptions};
+use crate::imports_api::pipeline::{self, FixedImportArgs, ImportOptions};
 use crate::open_db::OpenDb;
 use crate::process_assets::{self, ProcessAssetsOptions};
 use crate::progress::Progress;
+use message_crate_api_types::ImportMode;
 
 pub(super) struct PreparedBundle {
     pub(super) seed: DemoSeed,
@@ -126,7 +127,7 @@ pub(super) async fn dedupe_and_process_assets(
 }
 
 pub(super) struct ResetPreparedStats {
-    pub(super) import: imports_api::ImportCounts,
+    pub(super) import: pipeline::ImportCounts,
     pub(super) address_book: LoadCounts,
     pub(super) dedupe_keys_filled: u64,
     pub(super) process_assets: process_assets::ProcessAssetsStats,
@@ -505,7 +506,7 @@ pub(super) async fn import_demo_sources(
     prepared: &PreparedBundle,
     account_id: i64,
     progress: Progress,
-) -> Result<imports_api::ImportCounts> {
+) -> Result<pipeline::ImportCounts> {
     import_demo_sources_with(
         cfg,
         db,
@@ -534,14 +535,14 @@ pub(super) async fn import_demo_sources_with(
     batch_bytes: u64,
     progress: Progress,
     mut after_batch: impl AsyncFnMut() -> Result<()>,
-) -> Result<imports_api::ImportCounts> {
-    let mut totals = imports_api::ImportCounts::default();
+) -> Result<pipeline::ImportCounts> {
+    let mut totals = pipeline::ImportCounts::default();
     for source in &DEMO_IMPORT_SOURCES {
         let export_dir = (source.export_dir)(prepared);
         let paths = crate::import_cli::list_jsonl_files(export_dir)?;
         let assets_dir = cfg.paths.assets_dir_for_account(account_id);
         let mut conn = db.acquire().await?;
-        let import_run = imports_api::OwnedImportRun::start(
+        let import_run = pipeline::OwnedImportRun::start(
             &mut conn,
             account_id,
             source.source,
@@ -549,7 +550,7 @@ pub(super) async fn import_demo_sources_with(
             "message-crate-server",
         )
         .await?;
-        let mut run = imports_api::ImportCounts {
+        let mut run = pipeline::ImportCounts {
             mode: source.mode,
             ..Default::default()
         };
@@ -560,7 +561,7 @@ pub(super) async fn import_demo_sources_with(
             } else {
                 ImportMode::Append
             };
-            let imported = imports_api::import_jsonl_files_on_conn(
+            let imported = pipeline::import_jsonl_files_on_conn(
                 &mut conn,
                 batch,
                 &ImportOptions {

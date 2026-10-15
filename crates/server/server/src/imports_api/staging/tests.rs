@@ -5,11 +5,11 @@ use tempfile::TempDir;
 
 use super::{StagingError, prepare_attachments, store_claimed_or_path};
 use crate::assets_api::{self, AssetStats};
+use crate::imports_api::pipeline::{FixedImportArgs, ImportCounts, ImportOptions};
 use crate::imports_api::records::AttachmentRecord;
-use crate::imports_api::{
-    FixedImportArgs, ImportCounts, ImportError, ImportFailure, ImportMode, ImportOptions,
-};
+use crate::imports_api::{ImportError, ImportFailure};
 use crate::test_support::{attachment, conversation_header, import_for_account, message_line};
+use message_crate_api_types::ImportMode;
 use message_ir::{IrAttachment, IrMessageKind, IrService};
 
 const TEST_ACCOUNT: i64 = 7;

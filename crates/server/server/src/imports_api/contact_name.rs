@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use message_ir::trimmed;
 use sqlx::SqliteConnection;
 
-use super::ImportCounts;
+use super::pipeline::ImportCounts;
 use crate::db::contacts;
 use crate::db::import_contacts::{self, ContactReason};
 use crate::db::trash;

@@ -395,7 +395,7 @@ pub struct AppState {
     /// password. `serve` sleeps; the test harness swaps in one that counts
     /// each wait and returns at once.
     pub(crate) refusal_wait: crate::credentials::RefusalWait,
-    /// The slots HTTP imports take, from [`crate::imports_api::import_slots`],
+    /// The slots HTTP imports take, from [`crate::imports_api::run_control::import_slots`],
     /// so imports can never drain the connection pool. Held here, not in a
     /// static, so tests in one binary cannot wait on each other's imports.
     pub(crate) import_slots: Arc<tokio::sync::Semaphore>,
@@ -459,7 +459,7 @@ impl AppState {
             account_import_locks: KeyedLocks::default(),
             asset_complete_locks: KeyedLocks::default(),
             refusal_wait: crate::credentials::RefusalWait::default(),
-            import_slots: crate::imports_api::import_slots(),
+            import_slots: crate::imports_api::run_control::import_slots(),
             asset_part_size,
             upload_time_limits,
             stopping: tokio_util::sync::CancellationToken::new(),

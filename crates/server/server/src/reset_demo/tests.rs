@@ -15,7 +15,7 @@ use crate::db::address_book;
 use crate::db::demo::DemoRows;
 use crate::db::engine;
 use crate::dedupe;
-use crate::imports_api::IMPORT_CONTACT_GROUP_NAME_SQL;
+use crate::imports_api::pipeline::IMPORT_CONTACT_GROUP_NAME_SQL;
 use crate::progress::Progress;
 use crate::test_support::{
     ConversationRow, MessageRow, conversation_header, message_line, stored_time,
