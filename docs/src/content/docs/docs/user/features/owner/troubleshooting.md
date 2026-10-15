@@ -111,7 +111,7 @@ The password is the one chosen when the backup was made.
 The iPhone backup was made without encryption, and the Import form's **Encryption password** holds a value.
 Import continues once the field is empty.
 
-### "… is free on the disk that holds the Staging Directory"
+### "… is free on …, the disk that holds the Staging Directory"
 
 The Import form found less than 10 GB free on the disk that holds the Staging Directory, the Scratch Directory, or both.
 A run stops with an error when its disk fills part-way, so freeing space before the run starts saves running it again.

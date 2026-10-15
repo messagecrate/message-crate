@@ -102,7 +102,6 @@ pub fn run() {
             commands::exports::discard_export_dir,
             commands::staging::staging_root,
             commands::staging::set_staging_root,
-            commands::disk_space::low_disk_space,
             commands::staging::create_run_dir,
             commands::staging::import_run_log,
             commands::run_logs::start_import_run_log,
@@ -114,6 +113,7 @@ pub fn run() {
             commands::staging::delete_run_dir,
             commands::staging::read_import_run_record,
             commands::staging::save_import_run_record,
+            commands::disk_space::low_disk_space,
             commands::tools::tools_status,
             commands::tools::retry_tool_downloads,
         ]);

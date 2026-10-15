@@ -239,7 +239,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   const mediaRunsFfmpeg =
     source.showsAttachmentOptions && mediaJobVerb(form.attachments.attachmentMedia) !== null;
 
-  // A disk under 10 GB free is said before the run starts; it blocks nothing.
+  // A disk the desktop process finds low is said before the run starts; it blocks nothing.
   const lowDiskSpace = useLowDiskSpace(form.source);
 
   const canImport =

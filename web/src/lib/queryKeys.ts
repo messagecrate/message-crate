@@ -210,8 +210,9 @@ export const keys = {
   desktopStagingDirectory: { all: ["desktop", "staging-directory"] as const },
   /**
    * What the desktop process says about the free space of the Staging and
-   * Scratch Directories' disks, read again for each import source; used as
-   * it is, like `desktopToolsStatus`.
+   * Scratch Directories' disks; used as it is, like `desktopToolsStatus`.
+   * The answer does not depend on the source: `of(source)` puts it in the
+   * key only so that picking a source reads the disks again (#2010).
    */
   desktopLowDiskSpace: {
     all: ["desktop", "low-disk-space"] as const,

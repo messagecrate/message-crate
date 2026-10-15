@@ -142,6 +142,9 @@ pub(crate) struct DiskReading {
     /// The disk the directory is on, when that can be told, so two
     /// directories on one disk are read as one.
     disk_id: Option<String>,
+    /// The directory the disk is mounted at, which names it on screen:
+    /// `/mnt/data` on Unix, `C:\\` on Windows.
+    mount: Option<PathBuf>,
     /// The bytes free on that disk.
     available: u64,
 }
@@ -167,38 +170,60 @@ pub fn low_disk_space(staging: &Path, scratch: &Path) -> Vec<String> {
 fn read_disk(disk: Disk, dir: &Path) -> Option<DiskReading> {
     let existing = dir.ancestors().find(|ancestor| ancestor.is_dir())?;
     let available = fs2::available_space(existing).ok()?;
+    let (disk_id, mount) = match disk_of(existing) {
+        Some((id, mount)) => (Some(id), Some(mount)),
+        None => (None, None),
+    };
     Some(DiskReading {
         disk,
         dir: dir.to_path_buf(),
-        disk_id: disk_id(existing),
+        disk_id,
+        mount,
         available,
     })
 }
 
-/// The disk `dir` is on: its device number on Unix.
+/// The disk `dir` is on, and the directory it is mounted at: the device
+/// number on Unix, and the highest parent of `dir` on that device.
 #[cfg(unix)]
-fn disk_id(dir: &Path) -> Option<String> {
+fn disk_of(dir: &Path) -> Option<(String, PathBuf)> {
     use std::os::unix::fs::MetadataExt;
-    std::fs::metadata(dir)
-        .ok()
-        .map(|meta| meta.dev().to_string())
+    let device = |path: &Path| std::fs::metadata(path).ok().map(|meta| meta.dev());
+    let dev = device(dir)?;
+    let mount = dir
+        .ancestors()
+        .take_while(|ancestor| device(ancestor) == Some(dev))
+        .last()?;
+    Some((dev.to_string(), mount.to_path_buf()))
 }
 
-/// The disk `dir` is on: its drive letter or network share on Windows.
+/// The disk `dir` is on, and the directory it is mounted at, on Windows: the
+/// highest parent of `dir` whose disk has the same size and free space.
+/// Windows tells the volume of a path through no API the standard library
+/// has, and a volume mounted in a directory of `C:` shares its drive letter,
+/// so the drive letter alone would read two disks as one. Two volumes with
+/// the same size and the same free space to the byte are not met in
+/// practice.
 #[cfg(windows)]
-fn disk_id(dir: &Path) -> Option<String> {
+fn disk_of(dir: &Path) -> Option<(String, PathBuf)> {
     let resolved = std::fs::canonicalize(dir).ok()?;
-    match resolved.components().next()? {
-        std::path::Component::Prefix(prefix) => {
-            Some(prefix.as_os_str().to_string_lossy().to_lowercase())
-        }
-        _ => None,
-    }
+    let space = |path: &Path| {
+        Some((
+            fs2::total_space(path).ok()?,
+            fs2::available_space(path).ok()?,
+        ))
+    };
+    let own = space(&resolved)?;
+    let mount = resolved
+        .ancestors()
+        .take_while(|ancestor| space(ancestor) == Some(own))
+        .last()?;
+    Some((mount.to_string_lossy().to_lowercase(), mount.to_path_buf()))
 }
 
 /// No disk can be told apart elsewhere, so each directory is its own.
 #[cfg(not(any(unix, windows)))]
-fn disk_id(_dir: &Path) -> Option<String> {
+fn disk_of(_dir: &Path) -> Option<(String, PathBuf)> {
     None
 }
 
@@ -234,9 +259,13 @@ pub(crate) fn low_disk_space_lines(readings: Vec<DiskReading>) -> Vec<String> {
                 })
                 .collect::<Vec<_>>()
                 .join(" and ");
+            let free = media::format_bytes(available);
+            let on = match disk.first().and_then(|reading| reading.mount.as_ref()) {
+                Some(mount) => format!("on {}, the disk that holds", mount.display()),
+                None => "on the disk that holds".to_string(),
+            };
             Some(format!(
-                "{} is free on the disk that holds {held}. A large backup can need more than that.",
-                media::format_bytes(available)
+                "{free} is free {on} {held}. A large backup can need more than that."
             ))
         })
         .collect()
@@ -318,12 +347,14 @@ mod tests {
         assert_eq!(opening(&full), opening(&short), "{full}");
     }
 
-    /// The check reads the disk that holds the directory it is given.
+    /// A reading of `available` bytes free for `dir`, on the disk
+    /// `disk_id` mounted at `/home` when it has one.
     fn reading(disk: Disk, dir: &str, disk_id: Option<&str>, available: u64) -> DiskReading {
         DiskReading {
             disk,
             dir: PathBuf::from(dir),
             disk_id: disk_id.map(str::to_string),
+            mount: disk_id.map(|_| PathBuf::from("/home")),
             available,
         }
     }
@@ -372,7 +403,7 @@ mod tests {
         assert_eq!(
             lines,
             vec![
-                "4.2 GB is free on the disk that holds the Staging Directory \
+                "4.2 GB is free on /home, the disk that holds the Staging Directory \
                  (/home/a/message-crate) and the Scratch Directory \
                  (/home/a/.local/share/mc/scratch). A large backup can need more than that."
                     .to_string()
@@ -405,6 +436,10 @@ mod tests {
             reading(Disk::Scratch, "/b", None, 1),
         ]);
         assert_eq!(unknown.len(), 2, "{unknown:?}");
+        assert!(
+            unknown[0].starts_with("1 B is free on the disk that holds the Staging Directory"),
+            "a disk with no mount point is not named: {unknown:?}"
+        );
     }
 
     /// Two directories in one temporary directory are on one disk, and one
@@ -422,8 +457,12 @@ mod tests {
         assert_eq!(staging.dir, not_made);
         assert!(staging.disk_id.is_some());
         assert_eq!(staging.disk_id, scratch.disk_id);
+        let mount = staging.mount.unwrap();
+        assert!(dir.path().starts_with(&mount), "{mount:?}");
+        assert_eq!(scratch.mount, Some(mount));
     }
 
+    /// The check reads the disk that holds the directory it is given.
     #[test]
     fn check_headroom_passes_a_disk_with_room_and_refuses_one_without() {
         let dir = tempfile::tempdir().unwrap();

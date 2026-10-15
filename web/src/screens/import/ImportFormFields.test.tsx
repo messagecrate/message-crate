@@ -1288,7 +1288,7 @@ describe("ImportFormFields programs the import needs", () => {
 
 describe("ImportFormFields low disk space", () => {
   const lowStaging =
-    "4.2 GB is free on the disk that holds the Staging Directory (/home/a/message-crate). A large backup can need more than that.";
+    "4.2 GB is free on /home, the disk that holds the Staging Directory (/home/a/message-crate). A large backup can need more than that.";
 
   it("says each disk the desktop process finds low, and Import stays enabled", async () => {
     desktop.isTauri = true;

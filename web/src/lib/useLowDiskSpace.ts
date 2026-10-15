@@ -5,8 +5,8 @@ import { isTauri } from "./tauriCheck";
 
 /**
  * What the Import form says about the disks that hold the Staging Directory
- * and the Scratch Directory: one sentence for each with less than 10 GB
- * free (#2010). It is read when the form is shown, again for each `source`
+ * and the Scratch Directory: one sentence for each with less free than
+ * the desktop process's threshold (#2010). It is read when the form is shown, again for each `source`
  * picked, and again after Settings changes the Staging Directory, which
  * invalidates it. A reading that fails says nothing: the warning never stops
  * an import, so a disk that cannot be read is left to the run's own check.

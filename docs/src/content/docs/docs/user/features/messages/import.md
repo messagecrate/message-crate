@@ -56,7 +56,7 @@ The **Import** button stays disabled until every needed field is filled and ever
 A path of the wrong kind gets a message under its field, for example `Pick the backup directory.` when a file is chosen where a directory is needed.
 
 In the desktop app, the form reads how much space is free on the disk that holds the Staging Directory and the disk that holds the Scratch Directory.
-A disk with less than 10 GB free gets a line above the **Import** button that names the directory and the space free, for example `4.2 GB is free on the disk that holds the Staging Directory (/home/sam/message-crate). A large backup can need more than that.`
+A disk with less than 10 GB free gets a line above the **Import** button that names the disk, the directory and the space free, for example `4.2 GB is free on /home, the disk that holds the Staging Directory (/home/sam/message-crate). A large backup can need more than that.`
 Both directories on one disk get one line naming both.
 The line doesn't stop the import, because only Staging knows how much a backup needs (see [Staging](#staging)).
 The form reads the disks again when the source changes and when **Settings → System** changes the **Staging directory**.
