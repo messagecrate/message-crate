@@ -472,17 +472,18 @@ mod tests {
             OpenDb::create_or_open(cfg.clone()).await,
         ] {
             let err = refused.unwrap_err().to_string();
-            assert!(
-                err.contains(&cfg.paths.db.display().to_string()),
-                "{err}"
-            );
+            assert!(err.contains(&cfg.paths.db.display().to_string()), "{err}");
             assert!(err.contains("Stop that server"), "{err}");
         }
         assert_eq!(account_count(&cfg).await, 1, "the database is as it was");
 
         drop(server);
         OpenDb::open(cfg.clone()).await.unwrap().close().await;
-        assert_eq!(account_count(&cfg).await, 0, "rebuilt once no server holds it");
+        assert_eq!(
+            account_count(&cfg).await,
+            0,
+            "rebuilt once no server holds it"
+        );
     }
 
     /// `serve` holds the lock itself, so its own rebuild goes ahead under

@@ -71,37 +71,35 @@ pub enum Commands {
     ProcessAssets(ProcessAssetsArgs),
 
     /// Claim an unclaimed Message Crate by creating its owner. Refuses one
-    /// that already has an owner.
+    /// that already has an owner. The password is read from standard input:
+    /// typed without echo at a terminal, or else the first line.
     CreateOwner(CreateOwnerArgs),
 
     /// Set a new password for the owner, ending their sessions. Refuses a
-    /// Message Crate that has no owner yet.
+    /// Message Crate that has no owner yet. The password is read from
+    /// standard input: typed without echo at a terminal, or else the first
+    /// line.
     ResetOwnerPassword(ResetOwnerPasswordArgs),
 }
 
-/// Options for `create-owner`.
+/// Options for `create-owner`. The password is read from standard input:
+/// typed without echo at a terminal, or else the first line, never an
+/// argument, which `ps` would show to every local user (#2094).
 #[derive(Debug, Args)]
 pub struct CreateOwnerArgs {
     /// Login username for the owner
     #[arg(long)]
     pub username: String,
 
-    /// Password for the owner; must satisfy the server's password policy
-    #[arg(long)]
-    pub password: String,
-
     /// Path to config.toml
     #[arg(long, default_value = "config/config.toml")]
     pub config: PathBuf,
 }
 
-/// Options for `reset-owner-password`.
+/// Options for `reset-owner-password`. The new password is read from
+/// standard input, as `create-owner` reads it.
 #[derive(Debug, Args)]
 pub struct ResetOwnerPasswordArgs {
-    /// New password for the owner; must satisfy the password policy
-    #[arg(long)]
-    pub password: String,
-
     /// Path to config.toml
     #[arg(long, default_value = "config/config.toml")]
     pub config: PathBuf,
@@ -352,21 +350,33 @@ pub fn exit_code(error: &anyhow::Error) -> u8 {
     }
 }
 
-/// Claim this Message Crate and report the owner's username.
+/// Claim this Message Crate with the password from standard input.
 async fn run_create_owner(args: CreateOwnerArgs) -> Result<()> {
+    let password = crate::owner_cli::read_password("Owner password: ")?;
+    create_owner_with(args, &password).await
+}
+
+/// Claim this Message Crate and report the owner's username.
+async fn create_owner_with(args: CreateOwnerArgs, password: &str) -> Result<()> {
     let cfg = Config::load(&args.config)?;
     let opened = OpenDb::open(cfg).await?;
-    let username = crate::owner_cli::create_owner(&opened, &args.username, &args.password).await?;
+    let username = crate::owner_cli::create_owner(&opened, &args.username, password).await?;
     opened.close().await;
     println!("Message Crate claimed. Log in as {username}.");
     Ok(())
 }
 
-/// Set the owner's password and report the username to log in with.
+/// Set the owner's password from standard input.
 async fn run_reset_owner_password(args: ResetOwnerPasswordArgs) -> Result<()> {
+    let password = crate::owner_cli::read_password("New Owner password: ")?;
+    reset_owner_password_with(args, &password).await
+}
+
+/// Set the owner's password and report the username to log in with.
+async fn reset_owner_password_with(args: ResetOwnerPasswordArgs, password: &str) -> Result<()> {
     let cfg = Config::load(&args.config)?;
     let opened = OpenDb::open(cfg).await?;
-    let username = crate::owner_cli::reset_owner_password(&opened, &args.password).await?;
+    let username = crate::owner_cli::reset_owner_password(&opened, password).await?;
     opened.close().await;
     println!("Owner password set. Log in as {username}.");
     Ok(())
