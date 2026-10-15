@@ -22,7 +22,7 @@ use crate::test_support::{
     post_created_json, post_json, test_fixture,
 };
 use message_ir::{
-    Deletion, EarlierVersion, IrAttachment, IrImessage, IrMessageKind, IrService, Reaction,
+    Attachment, Deletion, EarlierVersion, Imessage, MessageKind, Reaction, Transport,
 };
 use tempfile::TempDir;
 
@@ -34,7 +34,7 @@ fn whatsapp_line(guid: &str, text: &str) -> MessageLine {
     message_line(guid, text)
         .at(1_700_000_000_000)
         .sms()
-        .service(IrService::Whatsapp)
+        .service(Transport::Whatsapp)
 }
 
 fn write_jsonl(dir: &Path, name: &str, body: &str) -> PathBuf {
@@ -63,8 +63,8 @@ fn replace_opts<'a>(assets: &'a Path, root: &'a Path, source: &'a str) -> Import
     })
 }
 
-fn missing_attachment(name: &str) -> IrAttachment {
-    IrAttachment {
+fn missing_attachment(name: &str) -> Attachment {
+    Attachment {
         size_bytes: Some(12),
         missing_reason: Some("not_found".into()),
         ..attachment(

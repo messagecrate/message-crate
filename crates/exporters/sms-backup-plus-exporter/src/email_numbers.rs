@@ -11,7 +11,7 @@
 
 use crate::flat_eml::{group_key, names_a_group};
 use crate::types::ParsedMessage;
-use message_ir::{IdentityType, IrConversationType};
+use message_ir::{ConversationType, IdentityType};
 use phone::Handle;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -129,7 +129,7 @@ pub(crate) fn key_members_by_number(
         message.group_title = Some(title);
     } else if let Some(peer) = participants.first() {
         message.chat_key = peer.key().to_string();
-        message.conversation_type = IrConversationType::Individual;
+        message.conversation_type = ConversationType::Individual;
         message.group_title = None;
     }
     message.participants = participants;

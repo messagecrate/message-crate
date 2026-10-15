@@ -9,8 +9,8 @@ use message_crate_core::{
 };
 use message_csv::format_local_ts;
 use message_ir::{
-    ConversationDocument, ExportMeta, IrMessage, IrMessageKind, IrParticipant, IrService, IrSource,
-    PendingAttachment, PendingConversation, PendingMessage, Projection, ProjectionHooks,
+    ConversationDocument, ExportMeta, Message, MessageKind, Participant, PendingAttachment,
+    PendingConversation, PendingMessage, Projection, ProjectionHooks, Source, Transport,
     prepare_conversation, project_pending,
 };
 use message_staging::{
@@ -268,7 +268,7 @@ struct MessageRow {
     /// Unix seconds, as the parser read them from the `date` attribute.
     timestamp_secs: f64,
     /// SMS or MMS.
-    message_kind: IrMessageKind,
+    message_kind: MessageKind,
     /// The subject, when the message has one.
     subject: Option<String>,
     /// The `contact_name` attribute as the file writes it.
@@ -448,7 +448,7 @@ fn add_record(
     ]);
     conversation.rows.push(MessageRow {
         timestamp_secs: record.timestamp_secs,
-        message_kind: IrMessageKind::parse(record.message_kind),
+        message_kind: MessageKind::parse(record.message_kind),
         subject: (!record.subject.is_empty()).then_some(record.subject),
         contact_name: record.contact_name,
         android_type: record.android_type.trim().parse().ok(),
@@ -523,13 +523,13 @@ impl ProjectionHooks for SbrProjection<'_> {
         self.export.clone()
     }
 
-    fn service(&self, _message: &PendingMessage) -> IrService {
-        IrService::Sms
+    fn service(&self, _message: &PendingMessage) -> Transport {
+        Transport::Sms
     }
 
-    fn source(&self, _conversation: &PendingConversation, message: &PendingMessage) -> IrSource {
+    fn source(&self, _conversation: &PendingConversation, message: &PendingMessage) -> Source {
         let row = self.row(message);
-        IrSource {
+        Source {
             android_type: row.android_type,
             fields: row.source_fields.clone(),
         }
@@ -539,7 +539,7 @@ impl ProjectionHooks for SbrProjection<'_> {
         self.row(message).subject.clone()
     }
 
-    fn message_kind(&self, message: &PendingMessage) -> IrMessageKind {
+    fn message_kind(&self, message: &PendingMessage) -> MessageKind {
         self.row(message).message_kind
     }
 
@@ -549,16 +549,12 @@ impl ProjectionHooks for SbrProjection<'_> {
             .total_cmp(&self.row(b).timestamp_secs)
     }
 
-    fn participants(
-        &self,
-        _chat_id: &str,
-        conversation: &PendingConversation,
-    ) -> Vec<IrParticipant> {
+    fn participants(&self, _chat_id: &str, conversation: &PendingConversation) -> Vec<Participant> {
         let names = self.names_by_handle(conversation);
         conversation
             .participant_e164s
             .iter()
-            .map(|handle| IrParticipant {
+            .map(|handle| Participant {
                 identity: Some(handle.clone()),
                 display_name: names.get(handle).cloned(),
                 country: None,
@@ -625,7 +621,7 @@ fn to_document(
 /// search of the file finds it. An MMS with no `address` attribute names
 /// every identity in its conversation instead.
 fn describe(
-    message: &IrMessage,
+    message: &Message,
     source_fields: &serde_json::Map<String, serde_json::Value>,
     conversation: &PendingConversation,
 ) -> String {

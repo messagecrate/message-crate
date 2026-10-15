@@ -17,7 +17,7 @@ use message_crate_import::{
     AuthError, FileStatus, ImportConfig, ImportReport, ProgressEvent, ServerAway, authenticate, run,
 };
 use message_ir::testutil::sample_document;
-use message_ir::{ConversationDocument, IrAttachment};
+use message_ir::{Attachment, ConversationDocument};
 use serde_json::json;
 use tempfile::tempdir;
 
@@ -1202,7 +1202,7 @@ fn profiles_attachment_upload_phases() {
     fs::create_dir(&attachment_dir).unwrap();
     fs::write(attachment_dir.join("fixture.txt"), ASSET_BYTES).unwrap();
     let mut doc = sample_doc();
-    doc.messages[0].attachments.push(IrAttachment {
+    doc.messages[0].attachments.push(Attachment {
         path: Some("attachments/fixture.txt".into()),
         original_name: Some("fixture.txt".into()),
         mime_type: Some("text/plain".into()),
@@ -1274,8 +1274,8 @@ fn profiles_attachment_upload_phases() {
     }
 }
 
-fn ir_attachment(rel: &str, digest: String) -> IrAttachment {
-    IrAttachment {
+fn ir_attachment(rel: &str, digest: String) -> Attachment {
+    Attachment {
         path: Some(rel.into()),
         original_name: Some(rel.rsplit('/').next().unwrap_or(rel).into()),
         mime_type: Some("text/plain".into()),
@@ -1604,7 +1604,7 @@ fn multipart_upload_when_over_proxy_threshold() {
     fs::create_dir(&attachment_dir).unwrap();
     fs::write(attachment_dir.join("large.bin"), ASSET_BYTES).unwrap();
     let mut doc = sample_doc();
-    doc.messages[0].attachments.push(IrAttachment {
+    doc.messages[0].attachments.push(Attachment {
         path: Some("attachments/large.bin".into()),
         original_name: Some("large.bin".into()),
         mime_type: Some("video/mp4".into()),
@@ -1690,7 +1690,7 @@ fn multipart_aborts_on_hash_mismatch_complete() {
     fs::create_dir(&attachment_dir).unwrap();
     fs::write(attachment_dir.join("bad.bin"), ASSET_BYTES).unwrap();
     let mut doc = sample_doc();
-    doc.messages[0].attachments.push(IrAttachment {
+    doc.messages[0].attachments.push(Attachment {
         path: Some("attachments/bad.bin".into()),
         original_name: Some("bad.bin".into()),
         mime_type: Some("application/octet-stream".into()),
@@ -1885,7 +1885,7 @@ fn shared_attachment_uploaded_once_across_conversations() {
     fs::write(attachment_dir.join("shared.txt"), ASSET_BYTES).unwrap();
 
     let mut doc_a = sample_doc_for("+15555550101", "guid-a");
-    doc_a.messages[0].attachments.push(IrAttachment {
+    doc_a.messages[0].attachments.push(Attachment {
         path: Some("attachments/shared.txt".into()),
         original_name: Some("shared.txt".into()),
         mime_type: Some("text/plain".into()),
@@ -1893,7 +1893,7 @@ fn shared_attachment_uploaded_once_across_conversations() {
         ..message_ir::testutil::sample_attachment()
     });
     let mut doc_b = sample_doc_for("+15555550102", "guid-b");
-    doc_b.messages[0].attachments.push(IrAttachment {
+    doc_b.messages[0].attachments.push(Attachment {
         path: Some("attachments/shared.txt".into()),
         original_name: Some("shared.txt".into()),
         mime_type: Some("text/plain".into()),
@@ -2228,7 +2228,7 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
 
     let mut doc = sample_doc();
     doc.messages[0].attachments = vec![
-        IrAttachment {
+        Attachment {
             path: Some("attachments/big.bin".into()),
             original_name: Some("big.bin".into()),
             mime_type: Some("application/octet-stream".into()),
@@ -2236,7 +2236,7 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
             size_bytes: Some(BIG.len() as u64),
             ..message_ir::testutil::sample_attachment()
         },
-        IrAttachment {
+        Attachment {
             path: Some("attachments/small.txt".into()),
             original_name: Some("small.txt".into()),
             mime_type: Some("text/plain".into()),
@@ -2355,14 +2355,14 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
 
     let mut doc = sample_doc();
     doc.messages[0].attachments = vec![
-        IrAttachment {
+        Attachment {
             path: Some("attachments/gone.bin".into()),
             original_name: Some("gone.bin".into()),
             mime_type: Some("application/octet-stream".into()),
             size_bytes: Some(1234),
             ..message_ir::testutil::sample_attachment()
         },
-        IrAttachment {
+        Attachment {
             path: Some("attachments/small.txt".into()),
             original_name: Some("small.txt".into()),
             mime_type: Some("text/plain".into()),
@@ -2372,7 +2372,7 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
         },
         // An Export that could not fetch this file said why, and the
         // Import keeps that reason rather than a plain missing file.
-        IrAttachment {
+        Attachment {
             path: Some("attachments/unfetched.pdf".into()),
             original_name: Some("unfetched.pdf".into()),
             mime_type: Some("application/pdf".into()),
@@ -2438,7 +2438,7 @@ fn keeps_conversation_ok_when_skipped_attachment_has_no_path() {
 
     let dir = tempdir().unwrap();
     let mut doc = sample_doc();
-    doc.messages[0].attachments = vec![IrAttachment {
+    doc.messages[0].attachments = vec![Attachment {
         original_name: Some("IMG_0421.HEIC".into()),
         mime_type: Some("image/heic".into()),
         size_bytes: Some(2048),
@@ -2502,7 +2502,7 @@ fn reports_pathless_attachment_without_reason_as_no_path() {
 
     let dir = tempdir().unwrap();
     let mut doc = sample_doc();
-    doc.messages[0].attachments = vec![IrAttachment {
+    doc.messages[0].attachments = vec![Attachment {
         original_name: Some("mystery.bin".into()),
         mime_type: Some("application/octet-stream".into()),
         ..message_ir::testutil::sample_attachment()

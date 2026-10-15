@@ -12,7 +12,7 @@ use message_crate_api_types::{MessageConversation, Participant, Tapback};
 /// compiler or the suite noticing: `handle: String` rejected `"handle": null` and aborted every
 /// Export Run of a conversation holding an address-less participant, and
 /// `conversation.service` read a field the server has never sent, so every
-/// exported message came out `IrService::Unknown`.
+/// exported message came out `Transport::Unknown`.
 const EXPORT_PAGE_JSON: &str = r#"{
       "items": [
         {
@@ -98,8 +98,8 @@ fn the_message_service_round_trips_from_a_real_export_page() {
     assert_eq!(page.items[0].service.as_deref(), Some("iMessage"));
 
     let ir = to_ir_message(&page.items[0], false).unwrap();
-    assert_eq!(ir.service, IrService::IMessage);
-    assert_eq!(ir.message_kind, IrMessageKind::IMessage);
+    assert_eq!(ir.service, Transport::IMessage);
+    assert_eq!(ir.message_kind, MessageKind::IMessage);
     // The attachment maps without a byte length: the server never sends one.
     assert_eq!(ir.attachments.len(), 1);
     assert_eq!(ir.attachments[0].size_bytes, None);
@@ -251,7 +251,7 @@ fn an_sms_with_a_file_is_an_mms_and_counts_toward_the_document() {
     let mut sms = seed_message_with_participant(sam());
     sms.service = Some("SMS".into());
     let plain = to_ir_message(&sms, false).unwrap();
-    assert_eq!(plain.message_kind, IrMessageKind::Sms);
+    assert_eq!(plain.message_kind, MessageKind::Sms);
 
     let file: Attachment = serde_json::from_value(
         json!({ "sha256": "ab", "is_sticker": false, "shown_as_is": false }),
@@ -259,7 +259,7 @@ fn an_sms_with_a_file_is_an_mms_and_counts_toward_the_document() {
     .unwrap();
     sms.attachments = vec![file.clone(), file.clone(), file];
     let with_files = to_ir_message(&sms, false).unwrap();
-    assert_eq!(with_files.message_kind, IrMessageKind::Mms);
+    assert_eq!(with_files.message_kind, MessageKind::Mms);
 
     let doc = build_document("sms", &sms, vec![with_files, plain]);
     assert_eq!(doc.conversation.stats.attachment_count, 3);
@@ -314,16 +314,13 @@ fn a_document_is_a_group_when_the_server_says_so() {
     let doc = build_document("imessage", &seed, vec![]);
     assert_eq!(
         doc.conversation.conversation_type,
-        IrConversationType::Individual
+        ConversationType::Individual
     );
 
     seed.conversation.conversation_type = "individual".into();
     seed.conversation.is_group = true;
     let doc = build_document("imessage", &seed, vec![]);
-    assert_eq!(
-        doc.conversation.conversation_type,
-        IrConversationType::Group
-    );
+    assert_eq!(doc.conversation.conversation_type, ConversationType::Group);
 }
 
 /// A conversation of orphaned messages is exported as one, so importing
@@ -341,7 +338,7 @@ fn a_document_of_orphaned_messages_stays_orphaned() {
     let doc = build_document("imessage", &seed, vec![]);
     assert_eq!(
         doc.conversation.conversation_type,
-        IrConversationType::Orphaned
+        ConversationType::Orphaned
     );
 }
 
@@ -354,7 +351,7 @@ fn an_announcement_keeps_its_text() {
 
     let ir = to_ir_message(&msg, false).unwrap();
 
-    assert_eq!(ir.message_kind, IrMessageKind::Announcement);
+    assert_eq!(ir.message_kind, MessageKind::Announcement);
     let imessage = ir
         .imessage
         .expect("an announcement makes an iMessage block");
@@ -402,7 +399,7 @@ fn maps_basic_message() {
     let ir = to_ir_message(&msg, false).unwrap();
     assert_eq!(ir.guid, "basic-guid");
     assert_eq!(ir.text, "hello");
-    assert_eq!(ir.service, IrService::IMessage);
+    assert_eq!(ir.service, Transport::IMessage);
 }
 
 /// The server's mark and the conversation file's are two types, one per

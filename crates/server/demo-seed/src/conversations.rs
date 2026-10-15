@@ -11,9 +11,9 @@ use std::sync::atomic::AtomicBool;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use message_ir::{
-    ConversationHeader, ConversationMeta, ConversationStats, Deletion, EarlierVersion, ExportMeta,
-    IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind,
-    IrParticipant, IrService, Reaction, ReplyTo, SCHEMA_VERSION, TimePrecision, orphaned_chat_id,
+    Attachment, ConversationHeader, ConversationMeta, ConversationStats, ConversationType,
+    Deletion, Direction, EarlierVersion, ExportMeta, Imessage, Message, MessageKind, Participant,
+    Reaction, ReplyTo, SCHEMA_VERSION, TimePrecision, Transport, orphaned_chat_id,
 };
 use rand::Rng;
 use rand::RngExt;
@@ -201,7 +201,7 @@ impl<R: Rng> Seeder<'_, R> {
             self.create_empty_conversation_file(
                 staging.imessage,
                 EMPTY_ONE_TO_ONE_HANDLE,
-                IrConversationType::Individual,
+                ConversationType::Individual,
                 &[],
             )?;
         }
@@ -209,7 +209,7 @@ impl<R: Rng> Seeder<'_, R> {
             self.create_empty_conversation_file(
                 staging.imessage,
                 EMPTY_GROUP_HANDLE,
-                IrConversationType::Group,
+                ConversationType::Group,
                 &EMPTY_GROUP_MEMBERS,
             )?;
         }
@@ -312,18 +312,18 @@ impl SharedMessage {
         &self,
         guid: String,
         chat_id: &str,
-        service: IrService,
-        message_kind: IrMessageKind,
-    ) -> IrMessage {
-        IrMessage {
+        service: Transport,
+        message_kind: MessageKind,
+    ) -> Message {
+        Message {
             guid,
             timestamp_unix_ms: self.timestamp,
             // Every source the demo imitates records milliseconds.
             time_precision: TimePrecision::Milliseconds,
             direction: if self.from_me {
-                IrDirection::Outgoing
+                Direction::Outgoing
             } else {
-                IrDirection::Incoming
+                Direction::Incoming
             },
             service,
             message_kind,
@@ -378,9 +378,9 @@ impl Overlap<'_> {
 /// `owner_identity` exported it from.
 struct ConversationFileHeader<'a> {
     chat_id: &'a str,
-    conversation_type: IrConversationType,
+    conversation_type: ConversationType,
     group_title: Option<String>,
-    participants: Vec<IrParticipant>,
+    participants: Vec<Participant>,
     message_count: usize,
     source: &'a str,
     owner_identity: &'a str,
@@ -390,14 +390,14 @@ impl<'a> ConversationFileHeader<'a> {
     /// The header of a one-to-one conversation, which has no group title.
     fn one_to_one(
         chat_id: &'a str,
-        participants: Vec<IrParticipant>,
+        participants: Vec<Participant>,
         message_count: usize,
         source: &'a str,
         owner_identity: &'a str,
     ) -> Self {
         Self {
             chat_id,
-            conversation_type: IrConversationType::Individual,
+            conversation_type: ConversationType::Individual,
             group_title: None,
             participants,
             message_count,
@@ -577,8 +577,8 @@ impl<R: Rng> Seeder<'_, R> {
                     let msg = shared.message(
                         format!("1to1-{chat_id}-{i}"),
                         chat_id,
-                        IrService::IMessage,
-                        IrMessageKind::IMessage,
+                        Transport::IMessage,
+                        MessageKind::IMessage,
                     );
                     seeder.emit(file, msg)?;
                 }
@@ -637,8 +637,8 @@ impl<R: Rng> Seeder<'_, R> {
                     let msg = shared.message(
                         format!("sbr-shared-{chat_id}-{i}"),
                         chat_id,
-                        IrService::Sms,
-                        IrMessageKind::Sms,
+                        Transport::Sms,
+                        MessageKind::Sms,
                     );
                     seeder.emit(file, msg)?;
                 }
@@ -664,8 +664,8 @@ impl<R: Rng> Seeder<'_, R> {
 }
 
 /// One participant for a one-to-one conversation: the other person's phone or email.
-fn individual_participants(chat_id: &str, display_name: Option<String>) -> Vec<IrParticipant> {
-    vec![IrParticipant {
+fn individual_participants(chat_id: &str, display_name: Option<String>) -> Vec<Participant> {
+    vec![Participant {
         identity: Some(chat_id.into()),
         display_name,
         country: None,
@@ -783,7 +783,7 @@ impl<R: Rng> Seeder<'_, R> {
             &staging.join(format!("group-{:03}.jsonl", group.index)),
             ConversationFileHeader {
                 chat_id: &chat_id,
-                conversation_type: IrConversationType::Group,
+                conversation_type: ConversationType::Group,
                 group_title: group.title.clone(),
                 participants,
                 message_count: header_message_count,
@@ -804,8 +804,8 @@ impl<R: Rng> Seeder<'_, R> {
                         SourceFlavor::IMessage,
                     );
                     ann.text.clear();
-                    ann.message_kind = IrMessageKind::Announcement;
-                    let im = ann.imessage.get_or_insert_with(IrImessage::default);
+                    ann.message_kind = MessageKind::Announcement;
+                    let im = ann.imessage.get_or_insert_with(Imessage::default);
                     im.announcement = Some(format!("Demo User named the conversation “{title}”."));
                     seeder.emit(file, ann)?;
                 }
@@ -865,7 +865,7 @@ impl<R: Rng> Seeder<'_, R> {
 }
 
 /// Participants for a group: roster contacts, or phone numbers no contact holds.
-fn group_participants(roster: &Roster, group: &crate::personas::GroupSpec) -> Vec<IrParticipant> {
+fn group_participants(roster: &Roster, group: &crate::personas::GroupSpec) -> Vec<Participant> {
     if group.phone_only {
         return phone_only_participants(&group.phone_only_handles);
     }
@@ -873,10 +873,10 @@ fn group_participants(roster: &Roster, group: &crate::personas::GroupSpec) -> Ve
 }
 
 /// Group members who are only phone numbers, with no display names.
-fn phone_only_participants(handles: &[String]) -> Vec<IrParticipant> {
+fn phone_only_participants(handles: &[String]) -> Vec<Participant> {
     let mut participants = Vec::with_capacity(handles.len());
     for handle in handles {
-        participants.push(IrParticipant {
+        participants.push(Participant {
             identity: Some(handle.clone()),
             display_name: None,
             country: None,
@@ -887,13 +887,13 @@ fn phone_only_participants(handles: &[String]) -> Vec<IrParticipant> {
 
 /// Group members looked up from the roster by index. The backup carries no
 /// names for them; the demo's address book supplies those after the import.
-fn named_group_participants(roster: &Roster, member_idxs: &[usize]) -> Vec<IrParticipant> {
+fn named_group_participants(roster: &Roster, member_idxs: &[usize]) -> Vec<Participant> {
     let mut participants = Vec::new();
     for &index in member_idxs {
         let Some(contact) = roster.contacts.get(index) else {
             continue;
         };
-        participants.push(IrParticipant {
+        participants.push(Participant {
             identity: Some(contact.primary_phone().into()),
             display_name: None,
             country: None,
@@ -937,7 +937,7 @@ impl<R: Rng> Seeder<'_, R> {
                 with_person.push(msg);
             }
         }
-        let sender = IrParticipant {
+        let sender = Participant {
             identity: Some(ORPHAN_SENDER.into()),
             display_name: None,
             country: None,
@@ -954,7 +954,7 @@ impl<R: Rng> Seeder<'_, R> {
                 &staging.join(file_name),
                 ConversationFileHeader {
                     chat_id: &chat_id,
-                    conversation_type: IrConversationType::Orphaned,
+                    conversation_type: ConversationType::Orphaned,
                     group_title: None,
                     participants: sender.into_iter().collect(),
                     message_count: messages.len(),
@@ -982,12 +982,12 @@ impl<R: Rng> Seeder<'_, R> {
         &mut self,
         staging: &Path,
         chat_id: &str,
-        conversation_type: IrConversationType,
+        conversation_type: ConversationType,
         member_phones: &[&str],
     ) -> Result<()> {
         let participants = member_phones
             .iter()
-            .map(|handle| IrParticipant {
+            .map(|handle| Participant {
                 identity: Some((*handle).into()),
                 display_name: None,
                 country: None,
@@ -1014,7 +1014,7 @@ impl<R: Rng> Seeder<'_, R> {
     /// call may replace it.
     fn decorate_message(
         &mut self,
-        msg: &mut IrMessage,
+        msg: &mut Message,
         i: usize,
         msg_count: usize,
         peer: &str,
@@ -1067,10 +1067,10 @@ impl<R: Rng> Seeder<'_, R> {
 /// only an iMessage can be unsent, so a message with an attachment, one sent as
 /// SMS or RCS, or a reply is left unmarked rather than made into one no backup
 /// holds.
-fn mark_deletion(msg: &mut IrMessage, i: usize, messages: &crate::config::MessagesConfig) {
+fn mark_deletion(msg: &mut Message, i: usize, messages: &crate::config::MessagesConfig) {
     let on = |stride: usize| stride > 0 && i > 0 && i.is_multiple_of(stride);
     let can_be_unsent =
-        msg.attachments.is_empty() && msg.service == IrService::IMessage && msg.reply_to.is_none();
+        msg.attachments.is_empty() && msg.service == Transport::IMessage && msg.reply_to.is_none();
     if on(messages.unsent_stride) && can_be_unsent {
         msg.deletion = Some(Deletion::Unsent);
         msg.text.clear();
@@ -1092,7 +1092,7 @@ fn mark_deletion(msg: &mut IrMessage, i: usize, messages: &crate::config::Messag
 /// each edit follows two minutes later, inside the 15 minutes Apple Messages
 /// allows.
 fn mark_edited(
-    msg: &mut IrMessage,
+    msg: &mut Message,
     i: usize,
     messages: &crate::config::MessagesConfig,
     corpus: &Corpus,
@@ -1104,7 +1104,7 @@ fn mark_edited(
     if stride == 0 || i == 0 || !i.is_multiple_of(stride) {
         return;
     }
-    if msg.service != IrService::IMessage
+    if msg.service != Transport::IMessage
         || msg.deletion == Some(Deletion::Unsent)
         || !msg.text.chars().any(char::is_alphabetic)
     {
@@ -1127,22 +1127,22 @@ fn mark_edited(
 }
 
 /// Sometimes mark an iMessage as SMS or RCS so the conversation view can show those labels.
-fn maybe_mark_as_sms_or_rcs(msg: &mut IrMessage, fraction: f64, rng: &mut impl Rng) {
+fn maybe_mark_as_sms_or_rcs(msg: &mut Message, fraction: f64, rng: &mut impl Rng) {
     if !rng.random_bool(fraction.clamp(0.0, 1.0)) {
         return;
     }
     if rng.random_bool(0.5) {
-        msg.service = IrService::Sms;
+        msg.service = Transport::Sms;
     } else {
-        msg.service = IrService::Rcs;
+        msg.service = Transport::Rcs;
     }
     if matches!(
         msg.message_kind,
-        IrMessageKind::Mms | IrMessageKind::Announcement
+        MessageKind::Mms | MessageKind::Announcement
     ) {
         return;
     }
-    msg.message_kind = IrMessageKind::Sms;
+    msg.message_kind = MessageKind::Sms;
 }
 
 /// Create a buffered writer for a new conversation file.
@@ -1160,7 +1160,7 @@ fn open_jsonl(path: &Path) -> Result<BufWriter<File>> {
 /// # Errors
 ///
 /// Returns an error if the message cannot be serialized or written.
-fn write_message(file: &mut BufWriter<File>, mut msg: IrMessage) -> Result<()> {
+fn write_message(file: &mut BufWriter<File>, mut msg: Message) -> Result<()> {
     if let Some(im) = msg.imessage.take() {
         msg.imessage = im.into_option();
     }
@@ -1177,26 +1177,26 @@ impl<R: Rng> Seeder<'_, R> {
         from_me: bool,
         peer: &str,
         flavor: SourceFlavor,
-    ) -> IrMessage {
+    ) -> Message {
         let text = if self.rng.random_bool(self.cfg.messages.emoji_probability) {
             (*EMOJI_ONLY.choose(&mut *self.rng).unwrap()).to_string()
         } else {
             self.corpus.pick_message(&mut *self.rng)
         };
         let (service, message_kind) = match flavor {
-            SourceFlavor::IMessage => (IrService::IMessage, IrMessageKind::IMessage),
-            SourceFlavor::SmsBackupRestore => (IrService::Sms, IrMessageKind::Sms),
-            SourceFlavor::Whatsapp => (IrService::Whatsapp, IrMessageKind::Sms),
+            SourceFlavor::IMessage => (Transport::IMessage, MessageKind::IMessage),
+            SourceFlavor::SmsBackupRestore => (Transport::Sms, MessageKind::Sms),
+            SourceFlavor::Whatsapp => (Transport::Whatsapp, MessageKind::Sms),
         };
-        IrMessage {
+        Message {
             guid: guid.into(),
             timestamp_unix_ms,
             // Every source the demo imitates records milliseconds.
             time_precision: TimePrecision::Milliseconds,
             direction: if from_me {
-                IrDirection::Outgoing
+                Direction::Outgoing
             } else {
-                IrDirection::Incoming
+                Direction::Incoming
             },
             service,
             message_kind,
@@ -1217,24 +1217,24 @@ impl<R: Rng> Seeder<'_, R> {
     }
 
     /// Add photos or other files to an Android message and mark it as MMS when it has an attachment.
-    fn decorate_android_message(&mut self, msg: &mut IrMessage, i: usize, msg_count: usize) {
-        msg.service = IrService::Sms;
+    fn decorate_android_message(&mut self, msg: &mut Message, i: usize, msg_count: usize) {
+        msg.service = Transport::Sms;
         if should_attach_jpg(i, msg_count, self.cfg) {
             self.add_jpg_attachment(msg, i);
             if i > 0 && i.is_multiple_of(40) {
                 msg.text = PHOTO_CAPTIONS.choose(&mut *self.rng).unwrap().to_string();
             }
-            msg.message_kind = IrMessageKind::Mms;
+            msg.message_kind = MessageKind::Mms;
         } else if should_attach_other(i, msg_count, self.cfg) {
             self.add_attachment(msg, i, OTHER_ATTACHMENTS);
-            msg.message_kind = IrMessageKind::Mms;
+            msg.message_kind = MessageKind::Mms;
         } else {
-            msg.message_kind = IrMessageKind::Sms;
+            msg.message_kind = MessageKind::Sms;
         }
     }
 
     /// Write one message line and count it.
-    fn emit(&mut self, file: &mut BufWriter<File>, msg: IrMessage) -> Result<()> {
+    fn emit(&mut self, file: &mut BufWriter<File>, msg: Message) -> Result<()> {
         write_message(file, msg)?;
         self.stats.messages += 1;
         Ok(())
@@ -1439,10 +1439,10 @@ fn should_attach_other(i: usize, total: usize, cfg: &SeedConfig) -> bool {
 
 impl<R: Rng> Seeder<'_, R> {
     /// Attach a JPEG from the demo photo list and count it.
-    fn add_jpg_attachment(&mut self, msg: &mut IrMessage, idx: usize) {
+    fn add_jpg_attachment(&mut self, msg: &mut Message, idx: usize) {
         let photo = &JPG_PHOTOS[idx % JPG_PHOTOS.len()];
         let (digest_sha256, size_bytes) = digest_fields(self.attachment_digests, photo.path);
-        msg.attachments.push(IrAttachment {
+        msg.attachments.push(Attachment {
             path: Some(photo.path.into()),
             original_name: Some(photo.original_name.into()),
             mime_type: Some("image/jpeg".into()),
@@ -1458,7 +1458,7 @@ impl<R: Rng> Seeder<'_, R> {
     }
 
     /// Attach a non-JPEG file. Audio files get a short transcription.
-    fn add_attachment(&mut self, msg: &mut IrMessage, idx: usize, files: &[(&str, &str, bool)]) {
+    fn add_attachment(&mut self, msg: &mut Message, idx: usize, files: &[(&str, &str, bool)]) {
         let (path, mime, is_sticker) = files[idx % files.len()];
         let (digest_sha256, size_bytes) = digest_fields(self.attachment_digests, path);
         let transcription = if mime.starts_with("audio/") {
@@ -1466,7 +1466,7 @@ impl<R: Rng> Seeder<'_, R> {
         } else {
             None
         };
-        msg.attachments.push(IrAttachment {
+        msg.attachments.push(Attachment {
             path: Some(path.into()),
             original_name: Some(filename_from_relative_path(path).into()),
             mime_type: Some(mime.into()),
@@ -1514,13 +1514,7 @@ fn tapback_emoji(kind: &str, rng: &mut impl Rng) -> Option<String> {
 }
 
 /// Add a reaction (heart, thumbs-up, and similar) from `sender` onto `msg`.
-fn push_tapback(
-    msg: &mut IrMessage,
-    kind: &str,
-    emoji: Option<String>,
-    sender: &str,
-    from_me: bool,
-) {
+fn push_tapback(msg: &mut Message, kind: &str, emoji: Option<String>, sender: &str, from_me: bool) {
     msg.reactions.push(Reaction {
         part_index: 0,
         kind: kind.to_string(),
@@ -1593,7 +1587,7 @@ mod tests {
         let result = seeder.create_empty_conversation_file(
             &staging,
             EMPTY_ONE_TO_ONE_HANDLE,
-            IrConversationType::Individual,
+            ConversationType::Individual,
             &[],
         );
 

@@ -8,7 +8,7 @@ use crate::process::{Cancelled, LogSink, Sinks};
 use crate::progress::{ProgressEvent, ProgressSink};
 use anyhow::Context as _;
 use file_io::sha256_hex;
-use message_ir::{ConversationDocument, IrAttachment, IrMessage};
+use message_ir::{Attachment, ConversationDocument, Message};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -33,7 +33,7 @@ pub struct AttachmentProgress {
 #[derive(Debug)]
 pub struct AttachmentJob<'a> {
     /// Conversation attachment to fill after the write.
-    pub attachment: &'a mut IrAttachment,
+    pub attachment: &'a mut Attachment,
     /// Message timestamp in milliseconds (used for the dest date prefix).
     pub timestamp_unix_ms: i64,
     /// Size from the backup, if known.
@@ -248,14 +248,14 @@ pub fn stage_attachment_jobs(
 /// documents.
 pub fn document_messages(
     documents: &mut [ConversationDocument],
-) -> impl Iterator<Item = &mut IrMessage> {
+) -> impl Iterator<Item = &mut Message> {
     documents.iter_mut().flat_map(|doc| doc.messages.iter_mut())
 }
 
 /// The size to report for an attachment before its bytes are read: the
 /// record's own size, else the length of the bytes held in memory, else
 /// unknown (the progress total grows once the file loads).
-pub fn attachment_size_hint(att: &IrAttachment) -> Option<u64> {
+pub fn attachment_size_hint(att: &Attachment) -> Option<u64> {
     att.size_bytes
         .or_else(|| att.bytes.as_ref().map(|b| b.len() as u64))
 }
@@ -264,7 +264,7 @@ pub fn attachment_size_hint(att: &IrAttachment) -> Option<u64> {
 /// position in the result is the flat attachment index a `load(i)` hook
 /// receives.
 pub fn attachment_jobs<'a>(
-    messages: impl IntoIterator<Item = &'a mut IrMessage>,
+    messages: impl IntoIterator<Item = &'a mut Message>,
 ) -> Vec<AttachmentJob<'a>> {
     let mut jobs = Vec::new();
     for msg in messages {

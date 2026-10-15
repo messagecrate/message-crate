@@ -1,6 +1,6 @@
 //! Emptiness, which decides whether a message's extensions are written at all.
 //!
-//! `IrImessage::is_empty` is thirteen clauses and `IrSource::is_empty` is
+//! `Imessage::is_empty` is thirteen clauses and `Source::is_empty` is
 //! two, and neither had a test — this crate had no test module. Every clause
 //! could be dropped on its own with the whole workspace green, and the effect
 //! of dropping one is silent: `into_option` returns `None`, the exporter writes
@@ -9,109 +9,109 @@
 
 use super::*;
 
-/// Set exactly one field on an otherwise default `IrImessage`, and name it.
-fn one_field_set() -> Vec<(&'static str, IrImessage)> {
+/// Set exactly one field on an otherwise default `Imessage`, and name it.
+fn one_field_set() -> Vec<(&'static str, Imessage)> {
     let json = || Some(serde_json::json!([{"index": 0}]));
     vec![
         (
             "send_effect",
-            IrImessage {
+            Imessage {
                 send_effect: Some("slam".into()),
-                ..IrImessage::default()
+                ..Imessage::default()
             },
         ),
         (
             "shared_location",
-            IrImessage {
+            Imessage {
                 shared_location: Some("shared".into()),
-                ..IrImessage::default()
+                ..Imessage::default()
             },
         ),
         (
             "announcement",
-            IrImessage {
+            Imessage {
                 announcement: Some("named the conversation".into()),
-                ..IrImessage::default()
+                ..Imessage::default()
             },
         ),
         (
             "read_receipt_rfc3339",
-            IrImessage {
+            Imessage {
                 read_receipt_rfc3339: Some("2015-03-12T18:04:22Z".into()),
-                ..IrImessage::default()
+                ..Imessage::default()
             },
         ),
         (
             "parts",
-            IrImessage {
+            Imessage {
                 parts: json(),
-                ..IrImessage::default()
+                ..Imessage::default()
             },
         ),
         (
             "app",
-            IrImessage {
+            Imessage {
                 app: json(),
-                ..IrImessage::default()
+                ..Imessage::default()
             },
         ),
         (
             "balloon_bundle_id",
-            IrImessage {
+            Imessage {
                 balloon_bundle_id: Some("com.apple.messages.URLBalloonProvider".into()),
-                ..IrImessage::default()
+                ..Imessage::default()
             },
         ),
         (
             "balloon_kind",
-            IrImessage {
+            Imessage {
                 balloon_kind: Some("url".into()),
-                ..IrImessage::default()
+                ..Imessage::default()
             },
         ),
         (
             "associated_guid",
-            IrImessage {
+            Imessage {
                 associated_guid: Some("assoc-guid".into()),
-                ..IrImessage::default()
+                ..Imessage::default()
             },
         ),
         (
             "associated_part",
-            IrImessage {
+            Imessage {
                 associated_part: Some(0),
-                ..IrImessage::default()
+                ..Imessage::default()
             },
         ),
         (
             "tapback_kind",
-            IrImessage {
+            Imessage {
                 tapback_kind: Some("loved".into()),
-                ..IrImessage::default()
+                ..Imessage::default()
             },
         ),
         (
             "tapback_emoji",
-            IrImessage {
+            Imessage {
                 tapback_emoji: Some("\u{2764}".into()),
-                ..IrImessage::default()
+                ..Imessage::default()
             },
         ),
         (
             "tapback_action",
-            IrImessage {
+            Imessage {
                 tapback_action: Some("added".into()),
-                ..IrImessage::default()
+                ..Imessage::default()
             },
         ),
     ]
 }
 
-/// A default `IrImessage` carries nothing, so the exporter writes no
+/// A default `Imessage` carries nothing, so the exporter writes no
 /// `imessage` object rather than an object of thirteen nulls.
 #[test]
 fn an_imessage_with_nothing_set_is_empty() {
-    let blank = IrImessage::default();
+    let blank = Imessage::default();
     assert!(blank.is_empty());
     assert!(blank.into_option().is_none());
 }
@@ -127,7 +127,7 @@ fn any_one_imessage_field_makes_it_worth_keeping() {
     assert_eq!(
         cases.len(),
         13,
-        "one case per field on IrImessage; add or remove one with the field"
+        "one case per field on Imessage; add or remove one with the field"
     );
     for (field, value) in cases {
         assert!(
@@ -141,18 +141,18 @@ fn any_one_imessage_field_makes_it_worth_keeping() {
     }
 }
 
-/// `IrSource` is the same shape with two clauses: the Android type code and
+/// `Source` is the same shape with two clauses: the Android type code and
 /// the bag of vendor fields. Losing either drops the vendor leftovers that let
 /// a reader see what the source actually said.
 #[test]
 fn a_source_is_empty_only_when_it_has_neither_a_type_nor_a_field() {
-    let blank = IrSource::default();
+    let blank = Source::default();
     assert!(blank.is_empty());
     assert!(blank.into_option().is_none());
 
-    let typed = IrSource {
+    let typed = Source {
         android_type: Some(1),
-        ..IrSource::default()
+        ..Source::default()
     };
     assert!(
         !typed.is_empty(),
@@ -162,17 +162,17 @@ fn a_source_is_empty_only_when_it_has_neither_a_type_nor_a_field() {
 
     let mut fields = serde_json::Map::new();
     fields.insert("read".into(), serde_json::json!("1"));
-    let with_fields = IrSource {
+    let with_fields = Source {
         fields,
-        ..IrSource::default()
+        ..Source::default()
     };
     assert!(!with_fields.is_empty(), "a vendor field is worth keeping");
     assert!(with_fields.into_option().is_some());
 
     // An empty map is not a field.
-    let empty_map = IrSource {
+    let empty_map = Source {
         fields: serde_json::Map::new(),
-        ..IrSource::default()
+        ..Source::default()
     };
     assert!(empty_map.is_empty());
 }

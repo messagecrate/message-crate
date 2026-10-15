@@ -5,10 +5,9 @@ use crate::normalize::{imessage_from_parts, source_from_parts};
 use anyhow::{Context, Result, bail};
 use message_csv::{AttachmentCell, ParticipantCell, read_cell};
 use message_ir::{
-    ConversationDocument, ConversationHeader, ConversationMeta, ConversationStats, EarlierVersion,
-    ExportMeta, IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage,
-    IrMessageKind, IrParticipant, IrService, Reaction, ReplyTo, SCHEMA_VERSION, TimePrecision,
-    nonempty,
+    Attachment, ConversationDocument, ConversationHeader, ConversationMeta, ConversationStats,
+    ConversationType, Direction, EarlierVersion, ExportMeta, Imessage, Message, MessageKind,
+    Participant, Reaction, ReplyTo, SCHEMA_VERSION, TimePrecision, Transport, nonempty,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -102,7 +101,7 @@ fn header_from_row(
         },
         conversation: ConversationMeta {
             chat_identifier: get("chat_identifier").to_string(),
-            conversation_type: IrConversationType::parse(get("conversation_type")),
+            conversation_type: ConversationType::parse(get("conversation_type")),
             group_title,
             participants,
             stats: ConversationStats::default(),
@@ -111,7 +110,7 @@ fn header_from_row(
 }
 
 /// Rebuild one message from a CSV row.
-fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> Result<IrMessage> {
+fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> Result<Message> {
     let get = |name: &str| cell(cols, row, name).unwrap_or("");
     let timestamp_unix_ms = get("timestamp_unix_ms")
         .parse::<i64>()
@@ -121,8 +120,8 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
     let time_precision = TimePrecision::parse(get("time_precision"))
         .with_context(|| format!("bad time_precision {:?}", get("time_precision")))?;
     let direction = match get("direction").to_ascii_lowercase().as_str() {
-        "outgoing" => IrDirection::Outgoing,
-        _ => IrDirection::Incoming,
+        "outgoing" => Direction::Outgoing,
+        _ => Direction::Incoming,
     };
     let attachments = parse_attachments(get("attachments_json"))?;
     let reactions = parse_reactions(get("reactions_json"))?;
@@ -145,7 +144,7 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         let s = get("associated_part");
         if s.is_empty() { None } else { s.parse().ok() }
     };
-    let imessage = imessage_from_parts(IrImessage {
+    let imessage = imessage_from_parts(Imessage {
         send_effect: nonempty(get("send_effect")),
         shared_location: nonempty(get("shared_location")),
         announcement: nonempty(get("announcement")),
@@ -161,13 +160,13 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         tapback_action: nonempty(get("tapback_action")),
     });
 
-    Ok(IrMessage {
+    Ok(Message {
         guid: get("guid").to_string(),
         timestamp_unix_ms,
         time_precision,
         direction,
-        service: IrService::parse(get("service")),
-        message_kind: IrMessageKind::parse(get("message_kind")),
+        service: Transport::parse(get("service")),
+        message_kind: MessageKind::parse(get("message_kind")),
         sender_identity: nonempty(get("sender_identity")),
         sender_display_name: nonempty(get("sender_display_name")),
         sender_country: None,
@@ -228,14 +227,14 @@ fn parse_json_cell(s: &str) -> Option<Value> {
 }
 
 /// Participants from the `participants_json` cell; malformed JSON yields none.
-fn parse_participants(raw: &str) -> Vec<IrParticipant> {
+fn parse_participants(raw: &str) -> Vec<Participant> {
     if raw.trim().is_empty() {
         return Vec::new();
     }
     let cells: Vec<ParticipantCell> = serde_json::from_str(raw).unwrap_or_default();
     cells
         .into_iter()
-        .map(|p| IrParticipant {
+        .map(|p| Participant {
             identity: if p.identity.is_empty() {
                 None
             } else {
@@ -269,7 +268,7 @@ fn parse_earlier_versions(raw: &str) -> Result<Vec<EarlierVersion>> {
 }
 
 /// Attachments from the `attachments_json` cell.
-fn parse_attachments(raw: &str) -> Result<Vec<IrAttachment>> {
+fn parse_attachments(raw: &str) -> Result<Vec<Attachment>> {
     let cells: Vec<AttachmentCell> =
         serde_json::from_str(raw).with_context(|| format!("parse attachments_json: {raw}"))?;
     Ok(cells.into_iter().map(Into::into).collect())

@@ -21,7 +21,7 @@ fn staged_one(name: &str, bytes: &[u8]) -> (tempfile::TempDir, PathBuf, PathBuf)
     std::fs::write(&original, bytes).unwrap();
 
     let mut doc = message_ir::testutil::sample_document("hello from the fixture");
-    doc.messages[0].attachments = vec![IrAttachment {
+    doc.messages[0].attachments = vec![Attachment {
         path: Some(rel),
         original_name: Some(name.to_string()),
         mime_type: None,
@@ -844,7 +844,7 @@ fn two_documents_sharing_one_original_both_end_pointing_at_the_committed_derivat
     let mut doc_b = message_ir::testutil::sample_document("second conversation, same photo");
     doc_b.conversation.chat_identifier = "+15555550199".into();
     doc_b.messages[0].guid = "doc-b-guid".into();
-    doc_b.messages[0].attachments = vec![IrAttachment {
+    doc_b.messages[0].attachments = vec![Attachment {
         path: Some("attachments/shared.png".into()),
         original_name: Some("shared.png".into()),
         mime_type: None,
@@ -993,7 +993,7 @@ fn two_documents_sharing_one_compressed_original_both_end_pointing_at_the_commit
     let mut doc_b = message_ir::testutil::sample_document("second conversation, same photo");
     doc_b.conversation.chat_identifier = "+15555550199".into();
     doc_b.messages[0].guid = "doc-b-guid".into();
-    doc_b.messages[0].attachments = vec![IrAttachment {
+    doc_b.messages[0].attachments = vec![Attachment {
         path: Some("attachments/shared.jpg".into()),
         original_name: Some("shared.jpg".into()),
         mime_type: None,
@@ -1084,7 +1084,7 @@ fn second_document_sharing(dir: &Path, rel: &str, size: u64) -> PathBuf {
     let mut doc_b = message_ir::testutil::sample_document("second conversation, same file");
     doc_b.conversation.chat_identifier = "+15555550199".into();
     doc_b.messages[0].guid = "doc-b-guid".into();
-    doc_b.messages[0].attachments = vec![IrAttachment {
+    doc_b.messages[0].attachments = vec![Attachment {
         path: Some(rel.into()),
         original_name: Some("shared.png".into()),
         mime_type: None,
@@ -1098,7 +1098,7 @@ fn second_document_sharing(dir: &Path, rel: &str, size: u64) -> PathBuf {
 }
 
 /// The one attachment of each conversation file, in the order given.
-fn only_attachments(jsonls: &[&Path]) -> Vec<IrAttachment> {
+fn only_attachments(jsonls: &[&Path]) -> Vec<Attachment> {
     jsonls
         .iter()
         .map(|jsonl| read_conversation_jsonl(jsonl).unwrap().messages[0].attachments[0].clone())
@@ -1257,7 +1257,7 @@ fn without_ffmpeg_the_whole_media_stage_fails_and_touches_nothing() {
     ] {
         let rel = format!("attachments/{name}");
         std::fs::write(dir.path().join(&rel), bytes).unwrap();
-        doc.messages[0].attachments.push(IrAttachment {
+        doc.messages[0].attachments.push(Attachment {
             path: Some(rel),
             original_name: Some(name.to_string()),
             size_bytes: Some(bytes.len() as u64),

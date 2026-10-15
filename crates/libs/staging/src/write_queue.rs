@@ -37,7 +37,7 @@ use message_crate_core::{
     LoadError, LogSink, OutputFormat, ProgressEvent, ProgressSink, Sinks, WriteStatus,
     attachment_size_hint, check_cancel, run_attachment_jobs,
 };
-use message_ir::{ConversationDocument, IrAttachment};
+use message_ir::{Attachment, ConversationDocument};
 use message_ir_format::{filename_stem, give_each_document_its_own_file};
 
 use crate::headroom::{Disk, bytes_to_copy, check_headroom};
@@ -62,7 +62,7 @@ impl AttachmentSource {
     /// record, with the size to report; `Missing` when the exporter held
     /// none. The `source_for` hook of every exporter whose attachments
     /// arrive as bytes rather than files.
-    pub fn take_bytes(att: &mut IrAttachment) -> (Self, Option<u64>) {
+    pub fn take_bytes(att: &mut Attachment) -> (Self, Option<u64>) {
         let hint = attachment_size_hint(att);
         match att.bytes.take() {
             Some(bytes) => (Self::Bytes(bytes), hint),
@@ -109,7 +109,7 @@ impl ConversationUnit {
         mut doc: ConversationDocument,
         mut source_for: impl FnMut(
             usize,
-            &mut message_ir::IrAttachment,
+            &mut message_ir::Attachment,
         ) -> (AttachmentSource, Option<u64>),
     ) -> Self {
         let mut attachments = Vec::new();

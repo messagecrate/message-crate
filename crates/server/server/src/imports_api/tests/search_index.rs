@@ -162,12 +162,7 @@ async fn deferred_fts_indexes_attachment_text_after_promote() {
 
 /// One `whatsapp` conversation with `chat` holding one message `guid` whose
 /// text is `text`, with `attachment` as its one attachment when there is one.
-fn one_message_batch(
-    chat: &str,
-    guid: &str,
-    text: &str,
-    attachment: Option<IrAttachment>,
-) -> String {
+fn one_message_batch(chat: &str, guid: &str, text: &str, attachment: Option<Attachment>) -> String {
     let header = conversation_header("whatsapp", chat)
         .owner("+15555550106", Some("Me"))
         .participant(chat, None);

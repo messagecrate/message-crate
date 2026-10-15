@@ -16,13 +16,13 @@ pub(crate) fn base_sms() -> MailMessage {
         export_tool: "SMS Backup & Restore".into(),
         export_tool_version: "10.26.003".into(),
         backup_taken_at_unix_ms: None,
-        message: IrMessage {
+        message: Message {
             guid: "aabbccddeeff00112233445566778899".into(),
             timestamp_unix_ms: 1_400_773_261_000,
             time_precision: message_ir::TimePrecision::Milliseconds,
-            direction: IrDirection::Incoming,
-            service: message_ir::IrService::Sms,
-            message_kind: message_ir::IrMessageKind::Sms,
+            direction: Direction::Incoming,
+            service: message_ir::Transport::Sms,
+            message_kind: message_ir::MessageKind::Sms,
             sender_identity: Some("+15555550101".into()),
             sender_display_name: Some("Sam".into()),
             sender_country: None,
@@ -35,7 +35,7 @@ pub(crate) fn base_sms() -> MailMessage {
             edits: Vec::new(),
             reply_to: None,
             imessage: None,
-            source: Some(message_ir::IrSource {
+            source: Some(message_ir::Source {
                 android_type: Some(1),
                 fields: serde_json::from_str(r#"{"address":"+15555550101"}"#).unwrap(),
             }),
@@ -45,7 +45,7 @@ pub(crate) fn base_sms() -> MailMessage {
 }
 
 /// The extension bag, creating it when the base message has none.
-fn im_mut(msg: &mut MailMessage) -> &mut message_ir::IrImessage {
+fn im_mut(msg: &mut MailMessage) -> &mut message_ir::Imessage {
     msg.message.imessage.get_or_insert_with(Default::default)
 }
 
@@ -118,7 +118,7 @@ fn writes_group_mms_with_image_part() {
     msg.chat_identifier = "chat-group1".into();
     msg.conversation_type = "group".into();
     msg.group_title = Some("Family".into());
-    msg.message.message_kind = message_ir::IrMessageKind::Mms;
+    msg.message.message_kind = message_ir::MessageKind::Mms;
     msg.participants = vec![
         Participant {
             identity: "+15555550101".into(),
@@ -201,8 +201,8 @@ fn encodes_email_handles_and_imessage_message_id() {
     }];
     msg.message.sender_identity = Some("friend@example.com".into());
     msg.owner_identity = "me@example.com".into();
-    msg.message.service = message_ir::IrService::IMessage;
-    msg.message.message_kind = message_ir::IrMessageKind::IMessage;
+    msg.message.service = message_ir::Transport::IMessage;
+    msg.message.message_kind = message_ir::MessageKind::IMessage;
     msg.message.guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into();
     msg.export_source = "imessage".into();
 
@@ -228,7 +228,7 @@ fn encodes_email_handles_and_imessage_message_id() {
 #[test]
 fn outgoing_uses_me_and_stable_subject() {
     let mut msg = base_sms();
-    msg.message.direction = IrDirection::Outgoing;
+    msg.message.direction = Direction::Outgoing;
     msg.message.sender_identity = Some("+15555550100".into());
     msg.message.sender_display_name = Some("Me".into());
     msg.message.text = "body must not become subject".into();
@@ -286,7 +286,7 @@ fn subject_and_to(msg: &MailMessage) -> (String, String) {
 fn outgoing_to_a_peer_with_no_name_is_titled_with_the_peer_identity() {
     let mut msg = base_sms();
     msg.participants[0].display_name = None;
-    msg.message.direction = IrDirection::Outgoing;
+    msg.message.direction = Direction::Outgoing;
     msg.message.sender_identity = Some("+15555550100".into());
     msg.message.sender_display_name = Some("Me".into());
 
@@ -305,7 +305,7 @@ fn a_roster_that_lists_the_owner_first_still_addresses_the_other_person() {
             display_name: Some("Owner".into()),
         },
     );
-    msg.message.direction = IrDirection::Outgoing;
+    msg.message.direction = Direction::Outgoing;
     msg.message.sender_identity = Some("+15555550100".into());
     msg.message.sender_display_name = Some("Me".into());
 
@@ -334,12 +334,12 @@ fn an_empty_roster_takes_the_peer_from_the_chat_identifier() {
 #[test]
 fn caller_id_owner_display_and_imessage_extension_headers() {
     let mut msg = base_sms();
-    msg.message.direction = IrDirection::Outgoing;
+    msg.message.direction = Direction::Outgoing;
     msg.message.sender_identity = Some("+15555550100".into());
     msg.message.sender_display_name = Some("+15555550100".into());
     msg.owner_display_name = Some("+15555550100".into());
     msg.export_source = "imessage".into();
-    msg.message.message_kind = message_ir::IrMessageKind::IMessage;
+    msg.message.message_kind = message_ir::MessageKind::IMessage;
     msg.message.reply_to = Some(message_ir::ReplyTo {
         guid: Some("parent-guid-1111".into()),
         part_index: Some(0),
@@ -393,7 +393,7 @@ fn caller_id_owner_display_and_imessage_extension_headers() {
 fn tapback_and_handwriting_svg_headers() {
     let mut msg = base_sms();
     msg.export_source = "imessage".into();
-    msg.message.message_kind = message_ir::IrMessageKind::Tapback;
+    msg.message.message_kind = message_ir::MessageKind::Tapback;
     im_mut(&mut msg).associated_guid = Some("parent-guid".into());
     im_mut(&mut msg).associated_part = Some(0);
     im_mut(&mut msg).tapback_kind = Some("loved".into());
@@ -455,7 +455,7 @@ fn each_mbox_record_starts_with_its_sender_and_utc_date() {
     let incoming = base_sms(); // 2014-05-22 15:41:01 UTC, from +15555550101
     let mut outgoing = base_sms();
     outgoing.message.guid = "bbccddeeff00112233445566778899aa".into();
-    outgoing.message.direction = IrDirection::Outgoing;
+    outgoing.message.direction = Direction::Outgoing;
     outgoing.message.timestamp_unix_ms = 1_401_700_000_000; // 2014-06-02 09:06:40 UTC
     let mut from_email = base_sms();
     from_email.message.guid = "ccddeeff00112233445566778899aabb".into();
@@ -519,7 +519,7 @@ fn writes_conversation_mboxrd() {
 #[test]
 fn a_messages_own_owner_survives_an_mbox_round_trip() {
     let mut msg = base_sms();
-    msg.message.direction = IrDirection::Outgoing;
+    msg.message.direction = Direction::Outgoing;
     msg.message.owner_identity = Some("me@example.com".into());
     let tmp = tempfile::tempdir().unwrap();
     let path = write_conversation_mbox(&tmp.path().join("c.mbox"), &[msg]).unwrap();
@@ -536,7 +536,7 @@ fn a_messages_own_owner_survives_an_mbox_round_trip() {
 fn an_mbox_keeps_the_bytes_of_a_text_attachment() {
     let card = b"BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Sam\r\nEND:VCARD\r\n".to_vec();
     let mut msg = base_sms();
-    msg.message.message_kind = message_ir::IrMessageKind::Mms;
+    msg.message.message_kind = message_ir::MessageKind::Mms;
     msg.attachments = vec![MailAttachment {
         bytes: card.clone(),
         meta: message_ir::AttachmentMeta {
@@ -848,7 +848,7 @@ fn a_mail_whose_deletion_names_no_mark_is_refused() {
 /// and the reply guid (`Message-ID`, `In-Reply-To`, `References`), the
 /// sender, owner and participant identities (`From`, `To` and the mbox
 /// `From_` line) and the attachment's type (its part's `Content-Type`).
-fn with_every_x_me_text(value: &str, direction: IrDirection) -> MailMessage {
+fn with_every_x_me_text(value: &str, direction: Direction) -> MailMessage {
     let text = || Some(value.to_string());
     let mut msg = base_sms();
     msg.message.direction = direction;
@@ -941,7 +941,7 @@ fn assert_every_value_reads_back(values: &[String]) {
     let tmp = tempfile::tempdir().unwrap();
     let mut changed = Vec::new();
     for (i, value) in values.iter().enumerate() {
-        let same = [IrDirection::Outgoing, IrDirection::Incoming]
+        let same = [Direction::Outgoing, Direction::Incoming]
             .into_iter()
             .enumerate()
             .all(|(d, direction)| {
@@ -1052,12 +1052,9 @@ fn a_typed_header_that_ends_in_a_space_reads_as_its_value() {
         msg.message.time_precision,
         message_ir::TimePrecision::Seconds
     );
-    assert_eq!(msg.message.direction, IrDirection::Outgoing);
-    assert_eq!(msg.message.service, message_ir::IrService::IMessage);
-    assert_eq!(
-        msg.message.message_kind,
-        message_ir::IrMessageKind::IMessage
-    );
+    assert_eq!(msg.message.direction, Direction::Outgoing);
+    assert_eq!(msg.message.service, message_ir::Transport::IMessage);
+    assert_eq!(msg.message.message_kind, message_ir::MessageKind::IMessage);
     assert_eq!(msg.message.source.unwrap().android_type, Some(2));
     assert_eq!(msg.message.deletion, Some(message_ir::Deletion::Unsent));
     assert_eq!(
@@ -1174,7 +1171,7 @@ fn guids_that_differ_in_unsafe_characters_keep_different_message_ids() {
 fn identities_keep_their_own_addresses() {
     let address = |identity: &str| {
         let mut msg = base_sms();
-        msg.message.direction = IrDirection::Outgoing;
+        msg.message.direction = Direction::Outgoing;
         msg.owner_identity = identity.into();
         header_address(&msg, "From")
     };
@@ -1229,7 +1226,7 @@ fn group_conversations_keep_their_own_addresses() {
 #[test]
 fn an_identity_with_a_line_break_keeps_the_address_headers_whole() {
     for conversation_type in ["group", "individual"] {
-        for direction in [IrDirection::Incoming, IrDirection::Outgoing] {
+        for direction in [Direction::Incoming, Direction::Outgoing] {
             for (sender, owner, peer) in [
                 ("a\r\n b", "c\r\n d", "e\r\n f"),
                 (

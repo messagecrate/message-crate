@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use message_crate_core::parallel_for_each;
-use message_ir::{ConversationDocument, ConversationHeader, IrAttachment, IrMessage};
+use message_ir::{Attachment, ConversationDocument, ConversationHeader, Message};
 use message_ir_format::read_conversation_jsonl_with_lines;
 
 use crate::directory::{attachment_label, resolve_attachment};
@@ -278,7 +278,7 @@ struct AttachmentScan {
 fn scan_attachments(
     ctx: &PrepareContext<'_>,
     name: &str,
-    messages: &[IrMessage],
+    messages: &[Message],
 ) -> Result<AttachmentScan> {
     let mut scan = AttachmentScan {
         projections: Vec::with_capacity(messages.len()),
@@ -308,7 +308,7 @@ fn scan_attachments(
 fn scan_one_attachment(
     ctx: &PrepareContext<'_>,
     name: &str,
-    att: &IrAttachment,
+    att: &Attachment,
     index: usize,
     scan: &mut AttachmentScan,
 ) -> Result<AttachmentProjection> {

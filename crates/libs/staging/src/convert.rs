@@ -10,7 +10,7 @@ use crate::export_writer::ExportWriter;
 use crate::write_queue::AttachmentSource;
 use anyhow::Result;
 use message_crate_core::{CancelFlag, ConvertRun, ExportReport, check_cancel};
-use message_ir::{ConversationDocument, IrAttachment};
+use message_ir::{Attachment, ConversationDocument};
 use message_ir_format::MergedArchive;
 use std::path::Path;
 
@@ -60,7 +60,7 @@ pub trait Project {
     /// ([`AttachmentSource::take_bytes`]).
     fn attachment_source(
         &mut self,
-        attachment: &mut IrAttachment,
+        attachment: &mut Attachment,
     ) -> (AttachmentSource, Option<u64>) {
         AttachmentSource::take_bytes(attachment)
     }

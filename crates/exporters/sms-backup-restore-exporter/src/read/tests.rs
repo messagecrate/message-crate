@@ -1,7 +1,7 @@
 use super::*;
 use crate::write::SbrBackupSession;
 use message_crate_core::{CancelFlag, LogSink, ProgressSink};
-use message_ir::IrDirection;
+use message_ir::Direction;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -152,7 +152,7 @@ fn group_mms_sender_direction_and_conversation() {
         ["+15555550101", "+15555550102", "+15555550103"],
         "the owner is not a participant, in any spelling"
     );
-    let seen: Vec<(&str, IrDirection, Option<&str>)> = document
+    let seen: Vec<(&str, Direction, Option<&str>)> = document
         .messages
         .iter()
         .map(|m| (m.text.as_str(), m.direction, m.sender_identity.as_deref()))
@@ -160,10 +160,10 @@ fn group_mms_sender_direction_and_conversation() {
     assert_eq!(
         seen,
         [
-            ("from lee", IrDirection::Incoming, Some("+15555550103")),
-            ("no from", IrDirection::Incoming, None),
-            ("sent by me", IrDirection::Outgoing, Some("+15555550100")),
-            ("from ana", IrDirection::Incoming, Some("+15555550102")),
+            ("from lee", Direction::Incoming, Some("+15555550103")),
+            ("no from", Direction::Incoming, None),
+            ("sent by me", Direction::Outgoing, Some("+15555550100")),
+            ("from ana", Direction::Incoming, Some("+15555550102")),
         ]
     );
 }

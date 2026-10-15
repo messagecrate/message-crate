@@ -7,7 +7,7 @@ use message_crate_core::{
     FormatConfig, LogSink, OutputConfig, OutputFormat, ProgressSink, RunContext, Sinks,
     attachment_size_hint, document_messages, prepare_outputs, require_input,
 };
-use message_ir::{ConversationDocument, IrMessage};
+use message_ir::{ConversationDocument, Message};
 use message_ir_format::{
     CSV_HEADERS, EXPORT_SENTINEL, FormatSink, MergedArchive, clean_previous_ir_output,
     read_conversation_csv, read_conversation_eml_dir, read_conversation_json,
@@ -200,7 +200,7 @@ fn convert_export(
         // so only the others are counted.
         report.conversations = documents
             .iter()
-            .filter(|doc| doc.messages.iter().any(IrMessage::is_sms_or_mms))
+            .filter(|doc| doc.messages.iter().any(Message::is_sms_or_mms))
             .count() as u64;
     }
     for document in documents {

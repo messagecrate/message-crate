@@ -1,5 +1,5 @@
 use super::*;
-use message_ir::{IrImessage, UnsupportedSchemaVersion};
+use message_ir::{Imessage, UnsupportedSchemaVersion};
 
 use crate::test_support::{MessageLine, conversation_header, message_line};
 
@@ -146,34 +146,29 @@ fn a_reaction_row_is_not_a_message() {
         .at(1_400_773_261_000)
         .outgoing()
         .to_string();
-    let row = |guid: &str, kind: IrMessageKind, text: &str, action: &str| {
+    let row = |guid: &str, kind: MessageKind, text: &str, action: &str| {
         message_line(guid, text)
             .at(1_400_773_262_000)
             .kind(kind)
             .sender("+15555550101")
             .sender_display_name("Sam")
-            .imessage(IrImessage {
+            .imessage(Imessage {
                 associated_guid: Some("g-hi".into()),
                 associated_part: Some(0),
                 tapback_kind: Some("loved".into()),
                 tapback_action: Some(action.into()),
-                ..IrImessage::default()
+                ..Imessage::default()
             })
             .to_string()
     };
     let records = parse_ir_lines([
         header,
         target,
-        row("g-love", IrMessageKind::Tapback, "Loved a message", "add"),
-        row(
-            "g-unlove",
-            IrMessageKind::Tapback,
-            "Removed Heart",
-            "remove",
-        ),
+        row("g-love", MessageKind::Tapback, "Loved a message", "add"),
+        row("g-unlove", MessageKind::Tapback, "Removed Heart", "remove"),
         row(
             "g-sticker",
-            IrMessageKind::StickerTapback,
+            MessageKind::StickerTapback,
             "Reacted with a sticker",
             "add",
         ),

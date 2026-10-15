@@ -98,7 +98,7 @@ use media::{CompressOptions, HevcFallback, MediaMode, MediaTools, TranscodeOutco
 use message_crate_core::{
     CancelFlag, IssueSink, LogSink, RunIssue, RunIssueKind, check_cancel, mime_for_rel,
 };
-use message_ir::{ConversationDocument, IrAttachment};
+use message_ir::{Attachment, ConversationDocument};
 
 use message_ir_format::read_conversation_jsonl;
 use message_ir_format::write_conversation_jsonl_to;
@@ -605,7 +605,7 @@ fn attachment_rel(path: &Path) -> Result<String> {
 fn patch_all_matching(
     doc: &mut ConversationDocument,
     recorded_rel: &str,
-    patch: impl Fn(&mut IrAttachment),
+    patch: impl Fn(&mut Attachment),
 ) {
     for msg in &mut doc.messages {
         for att in &mut msg.attachments {
@@ -849,7 +849,7 @@ fn apply_transcode(
 fn recorded_at<'a>(
     doc: &'a ConversationDocument,
     recorded_rel: &'a str,
-) -> impl Iterator<Item = &'a IrAttachment> + 'a {
+) -> impl Iterator<Item = &'a Attachment> + 'a {
     doc.messages
         .iter()
         .flat_map(|msg| &msg.attachments)

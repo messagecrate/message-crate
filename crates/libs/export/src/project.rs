@@ -7,11 +7,14 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, NaiveDateTime};
+// `message_crate_api_types` and `message_ir` both name a `Message` and an
+// `Attachment`; the conversation file's are imported here as `IrMessage` and
+// `IrAttachment`.
 use message_ir::{
-    ConversationDocument, ConversationMeta, ConversationStats, Deletion, EarlierVersion,
-    ExportMeta, IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage,
-    IrMessageKind, IrParticipant, IrService, IrSource, Reaction, ReplyTo, SCHEMA_VERSION,
-    TimePrecision,
+    Attachment as IrAttachment, ConversationDocument, ConversationMeta, ConversationStats,
+    ConversationType, Deletion, Direction, EarlierVersion, ExportMeta, Imessage,
+    Message as IrMessage, MessageKind, Participant, Reaction, ReplyTo, SCHEMA_VERSION, Source,
+    TimePrecision, Transport,
 };
 use serde_json::json;
 
@@ -38,13 +41,13 @@ pub fn build_document(
     // conversation, as the API type says: written back as one-to-one, its
     // `orphaned:` key would come back as a person (#1095).
     let conversation_type = if seed.conversation.is_group {
-        IrConversationType::Group
-    } else if IrConversationType::parse(&seed.conversation.conversation_type)
-        == IrConversationType::Orphaned
+        ConversationType::Group
+    } else if ConversationType::parse(&seed.conversation.conversation_type)
+        == ConversationType::Orphaned
     {
-        IrConversationType::Orphaned
+        ConversationType::Orphaned
     } else {
-        IrConversationType::Individual
+        ConversationType::Individual
     };
     let participants = participants_from_seed(seed);
     let mut attachment_count = 0u64;
@@ -109,11 +112,11 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
     let timestamp_unix_ms = parse_timestamp_unix_ms(msg.timestamp.as_str())
         .with_context(|| format!("message {} timestamp", msg.id))?;
 
-    let service = IrService::parse(msg.service.as_deref().unwrap_or(""));
+    let service = Transport::parse(msg.service.as_deref().unwrap_or(""));
     let direction = if msg.is_from_me {
-        IrDirection::Outgoing
+        Direction::Outgoing
     } else {
-        IrDirection::Incoming
+        Direction::Incoming
     };
     let message_kind = infer_kind(msg, service);
 
@@ -130,7 +133,7 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
         guid: reply_to.guid.clone(),
         part_index: reply_to.part_index.and_then(|n| u32::try_from(n).ok()),
     });
-    let imessage = IrImessage {
+    let imessage = Imessage {
         // An announcement with no text carries no information, so drop it.
         announcement: msg
             .is_announcement
@@ -169,7 +172,7 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
             .with_context(|| format!("message {} earlier versions", msg.id))?,
         reply_to,
         imessage: imessage.into_option(),
-        source: IrSource {
+        source: Source {
             android_type: None,
             fields: source_fields,
         }
@@ -223,10 +226,10 @@ fn shared_owner(messages: &[IrMessage]) -> Option<String> {
 }
 
 /// Copy participant handles and display names from the seed export message.
-fn participants_from_seed(seed: &Message) -> Vec<IrParticipant> {
+fn participants_from_seed(seed: &Message) -> Vec<Participant> {
     let mut participants = Vec::with_capacity(seed.conversation.participants.len());
     for p in &seed.conversation.participants {
-        participants.push(IrParticipant {
+        participants.push(Participant {
             identity: p.identity.clone(),
             // `name` falls back to the raw handle when nothing names the
             // person (ADR-0006). Carrying a bare handle through as a display
@@ -323,26 +326,26 @@ fn reaction_from_row(row: &Tapback) -> Option<Reaction> {
 }
 
 /// Choose SMS, MMS, iMessage, or announcement from service and attachments.
-fn infer_kind(msg: &Message, service: IrService) -> IrMessageKind {
+fn infer_kind(msg: &Message, service: Transport) -> MessageKind {
     if msg.is_announcement {
-        return IrMessageKind::Announcement;
+        return MessageKind::Announcement;
     }
-    if !msg.attachments.is_empty() && matches!(service, IrService::Sms | IrService::Rcs) {
-        return IrMessageKind::Mms;
+    if !msg.attachments.is_empty() && matches!(service, Transport::Sms | Transport::Rcs) {
+        return MessageKind::Mms;
     }
     match service {
-        IrService::IMessage => IrMessageKind::IMessage,
-        IrService::Sms | IrService::Rcs => IrMessageKind::Sms,
-        IrService::Whatsapp
-        | IrService::Discord
-        | IrService::Signal
-        | IrService::Telegram
-        | IrService::Slack => IrMessageKind::Unknown,
-        IrService::Unknown => {
+        Transport::IMessage => MessageKind::IMessage,
+        Transport::Sms | Transport::Rcs => MessageKind::Sms,
+        Transport::Whatsapp
+        | Transport::Discord
+        | Transport::Signal
+        | Transport::Telegram
+        | Transport::Slack => MessageKind::Unknown,
+        Transport::Unknown => {
             if msg.attachments.is_empty() {
-                IrMessageKind::Sms
+                MessageKind::Sms
             } else {
-                IrMessageKind::Mms
+                MessageKind::Mms
             }
         }
     }

@@ -7,7 +7,7 @@ use crate::test_support::{
     attachment, conversation_header, expect_problem, fixture_with_account, get_json, get_raw,
     message_line, register_via_api, seed_conversation, stored_time,
 };
-use message_ir::{IrAttachment, IrImessage, IrService, Reaction};
+use message_ir::{Attachment, Imessage, Reaction, Transport};
 
 /// Two conversations for alice (a direct thread and a group), and one for bob
 /// that must never appear in alice's results.
@@ -298,13 +298,13 @@ fn ir_message(
     text: &str,
     is_sticker: bool,
     reactions: Vec<Reaction>,
-    imessage: Option<IrImessage>,
+    imessage: Option<Imessage>,
     is_reply: bool,
 ) -> String {
     let mut message = message_line(guid, text)
         .at(ms)
         .sender("+15555550123")
-        .attachment(IrAttachment {
+        .attachment(Attachment {
             is_sticker,
             size_bytes: Some(12),
             missing_reason: Some("not_found".into()),
@@ -372,9 +372,9 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
         "an announcement",
         false,
         vec![reaction_by("loved", None, 2, "+15555550167")],
-        Some(IrImessage {
+        Some(Imessage {
             announcement: Some("named the conversation Reactions".into()),
-            ..IrImessage::default()
+            ..Imessage::default()
         }),
         false,
     );
@@ -605,7 +605,7 @@ fn lighthouse_file(deletion: Option<message_ir::Deletion>) -> String {
         .at(1_578_308_040_000)
         .outgoing()
         .subject("Weekend plans")
-        .attachment(IrAttachment {
+        .attachment(Attachment {
             missing_reason: Some("not_found".into()),
             ..attachment(
                 "attachments/harbour-map.png",
@@ -908,7 +908,7 @@ async fn importing_an_edited_message_again_keeps_one_copy_of_each_earlier_versio
 /// twice was edited a third time, from the bakery to the park, and the
 /// message never edited has been edited once, from "Nothing changed here".
 ///
-/// The message lines are read into `message_ir::IrMessage` and changed by
+/// The message lines are read into `message_ir::Message` and changed by
 /// field, so the change holds whatever order or spacing the exporter wrote
 /// the fixture's fields in (#1899). The header line is kept as it is.
 fn later_apple_messages_edits() -> String {
@@ -919,7 +919,7 @@ fn later_apple_messages_edits() -> String {
     let mut edited = Vec::new();
     let mut later = format!("{header}\n");
     for line in messages.lines() {
-        let mut message: message_ir::IrMessage =
+        let mut message: message_ir::Message =
             serde_json::from_str(line).expect("each message line is message-ir");
         let (was, now, edited_at) = match message.guid.as_str() {
             "guid-edited-twice" => ("Meet at the bakery", "Meet at the park", 1_578_309_090_000),
@@ -1569,7 +1569,7 @@ async fn the_reply_count_is_the_replies_that_link_to_the_message() {
     let line = |guid: &str, ms: i64| {
         message_line(guid, guid)
             .at(ms)
-            .service(IrService::Whatsapp)
+            .service(Transport::Whatsapp)
             .sender("+15555550123")
     };
     let lines = [
@@ -1646,7 +1646,7 @@ async fn the_reply_count_takes_the_replies_that_quote_a_hidden_copy() {
     let line = |guid: &str, text: &str, ms: i64| {
         message_line(guid, text)
             .at(ms)
-            .service(IrService::IMessage)
+            .service(Transport::IMessage)
             .sender("+15555550123")
     };
     // Two chats, so trashing the reply's conversation keeps the message's.

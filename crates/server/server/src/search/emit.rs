@@ -15,7 +15,7 @@ use super::fts;
 use super::parse::{Expr, FieldTerm, TextTerm};
 use super::value::{Cmp, DateCmp, Value, utc_instant};
 use super::{Filter, ListKind};
-use message_ir::{Deletion, IrConversationType};
+use message_ir::{ConversationType, Deletion};
 
 /// Compile a parsed query into one parenthesised WHERE fragment.
 ///
@@ -1065,9 +1065,9 @@ fn emit_kind_word(
     match (term.spec.word, v) {
         ("kind", Value::Choice(k)) => {
             let ty = match *k {
-                "direct" => IrConversationType::Individual,
-                "group" => IrConversationType::Group,
-                "orphaned" => IrConversationType::Orphaned,
+                "direct" => ConversationType::Individual,
+                "group" => ConversationType::Group,
+                "orphaned" => ConversationType::Orphaned,
                 _ => return Err(bad_value(term, "needs a value this word accepts")),
             }
             .as_str();

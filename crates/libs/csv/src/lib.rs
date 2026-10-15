@@ -22,7 +22,7 @@ pub struct AttachmentCell {
     pub sticker_effect: Option<String>,
 }
 
-impl From<AttachmentCell> for message_ir::IrAttachment {
+impl From<AttachmentCell> for message_ir::Attachment {
     fn from(cell: AttachmentCell) -> Self {
         let AttachmentCell {
             meta,

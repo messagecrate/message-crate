@@ -1,8 +1,8 @@
 //! Prepare conversation documents so round-trip tests can compare content.
 
 #[cfg(test)]
-use message_ir::{ConversationDocument, IrAttachment};
-use message_ir::{IrImessage, IrSource};
+use message_ir::{Attachment, ConversationDocument};
+use message_ir::{Imessage, Source};
 
 /// Prepare a document so two copies can be compared after a round trip.
 ///
@@ -42,7 +42,7 @@ pub(crate) fn normalize_document_for_compare(doc: &mut ConversationDocument) {
 
 /// Drop fields that exist only while packaging (bytes, empty strings).
 #[cfg(test)]
-fn clear_attachment_ephemera(att: &mut IrAttachment) {
+fn clear_attachment_ephemera(att: &mut Attachment) {
     att.bytes = None;
     empty_to_none(&mut att.path);
     empty_to_none(&mut att.original_name);
@@ -63,21 +63,21 @@ fn empty_to_none(v: &mut Option<String>) {
 }
 
 /// Return `None` when every iMessage-only field is empty.
-pub(crate) fn imessage_from_parts(im: IrImessage) -> Option<IrImessage> {
+pub(crate) fn imessage_from_parts(im: Imessage) -> Option<Imessage> {
     im.into_option()
 }
 
-/// Build [`IrSource`] from an Android type and a JSON object of extra fields.
+/// Build [`Source`] from an Android type and a JSON object of extra fields.
 ///
 /// Returns `None` when both pieces are empty. Invalid JSON becomes an empty
 /// field map.
-pub(crate) fn source_from_parts(android_type: Option<i32>, fields_json: &str) -> Option<IrSource> {
+pub(crate) fn source_from_parts(android_type: Option<i32>, fields_json: &str) -> Option<Source> {
     let fields = if fields_json.trim().is_empty() {
         Default::default()
     } else {
         serde_json::from_str(fields_json).unwrap_or_default()
     };
-    IrSource {
+    Source {
         android_type,
         fields,
     }

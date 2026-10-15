@@ -6,9 +6,9 @@ use anyhow::Result;
 use chrono::DateTime;
 use message_crate_core::{ConvertRun, ExportReport, prepare_outputs, project_conversation};
 use message_ir::{
-    ConversationDocument, ConversationKey, ExportMeta, IdentityType, IrAttachment,
-    IrConversationType, IrParticipant, IrService, IrSource, NAMELESS_CHAT_ID, PendingConversation,
-    PendingMessage, ProjectionHooks, orphaned_chat_id,
+    Attachment, ConversationDocument, ConversationKey, ConversationType, ExportMeta, IdentityType,
+    NAMELESS_CHAT_ID, Participant, PendingConversation, PendingMessage, ProjectionHooks, Source,
+    Transport, orphaned_chat_id,
 };
 use message_staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
 use phone::Handle;
@@ -105,7 +105,7 @@ impl Project for OpenExtractDocuments {
         let mut document =
             project_conversation(&chat_id, &mut pending.conversation, &hooks, report)?;
         if matches!(pending.key, Key::UnknownPerson) {
-            document.conversation.conversation_type = IrConversationType::Orphaned;
+            document.conversation.conversation_type = ConversationType::Orphaned;
         }
         Some(document)
     }
@@ -113,7 +113,7 @@ impl Project for OpenExtractDocuments {
     /// OpenExtract carries no attachments; every attachment source is Missing.
     fn attachment_source(
         &mut self,
-        attachment: &mut IrAttachment,
+        attachment: &mut Attachment,
     ) -> (AttachmentSource, Option<u64>) {
         (AttachmentSource::Missing, attachment.size_bytes)
     }
@@ -182,7 +182,7 @@ impl Conversation {
         }
     }
 
-    fn group(vendor_id: String, members: Vec<IrParticipant>, group_name: Option<String>) -> Self {
+    fn group(vendor_id: String, members: Vec<Participant>, group_name: Option<String>) -> Self {
         Self {
             key: Key::Keyed(ConversationKey::Group { vendor_id, members }),
             contact_name: String::new(),
@@ -404,14 +404,14 @@ fn address(sender: &str) -> Option<Handle> {
 }
 
 /// A group member: their address, or the name the source gives in its place.
-fn member(party: &str) -> IrParticipant {
+fn member(party: &str) -> Participant {
     match address(party) {
-        Some(address) => IrParticipant {
+        Some(address) => Participant {
             identity: Some(address.into_key()),
             display_name: None,
             country: None,
         },
-        None => IrParticipant {
+        None => Participant {
             identity: None,
             display_name: Some(party.to_string()),
             country: None,
@@ -582,15 +582,15 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
         self.export.clone()
     }
 
-    fn service(&self, _message: &PendingMessage) -> IrService {
-        IrService::Sms
+    fn service(&self, _message: &PendingMessage) -> Transport {
+        Transport::Sms
     }
 
     fn vendor_key(&self, message: &PendingMessage) -> Option<String> {
         message.extra.get(VENDOR_KEY).cloned()
     }
 
-    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> IrSource {
+    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> Source {
         let mut fields = Map::new();
         fields.insert(
             "source_kind".into(),
@@ -605,7 +605,7 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
         if let Some(name) = &conversation.display_name {
             fields.insert("conversation".into(), json!(name));
         }
-        IrSource {
+        Source {
             android_type: None,
             fields,
         }
@@ -616,20 +616,16 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
     /// conversation keyed by a name, the name and no address. The conversation
     /// that names nobody, and "Orphaned · Unknown person", have no roster at
     /// all.
-    fn participants(
-        &self,
-        _chat_id: &str,
-        conversation: &PendingConversation,
-    ) -> Vec<IrParticipant> {
+    fn participants(&self, _chat_id: &str, conversation: &PendingConversation) -> Vec<Participant> {
         match self.key {
             Key::Nameless | Key::UnknownPerson => Vec::new(),
             Key::Keyed(ConversationKey::Group { members, .. }) => members.clone(),
-            Key::Keyed(ConversationKey::OneToOne(handle)) => vec![IrParticipant {
+            Key::Keyed(ConversationKey::OneToOne(handle)) => vec![Participant {
                 identity: Some(handle.clone()),
                 display_name: conversation.first_contact_name(),
                 country: None,
             }],
-            Key::Keyed(ConversationKey::NameOnly(_)) => vec![IrParticipant {
+            Key::Keyed(ConversationKey::NameOnly(_)) => vec![Participant {
                 identity: None,
                 display_name: conversation.first_contact_name(),
                 country: None,

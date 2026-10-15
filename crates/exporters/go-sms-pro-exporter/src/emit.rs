@@ -13,8 +13,8 @@ use message_crate_core::{
 };
 use message_csv::write_guarded_record;
 use message_ir::{
-    ConversationDocument, ExportMeta, IrService, IrSource, PendingAttachment, PendingConversation,
-    PendingMessage, ProjectionHooks, ensure_conversation,
+    ConversationDocument, ExportMeta, PendingAttachment, PendingConversation, PendingMessage,
+    ProjectionHooks, Source, Transport, ensure_conversation,
 };
 use message_staging::{AttachmentSpool, Project, ReadBackup, WriterSetup, convert_backup};
 use phone::{Handle, OwnerHandleSet};
@@ -389,8 +389,8 @@ impl ProjectionHooks for GoSmsProjection {
         self.export.clone()
     }
 
-    fn service(&self, _message: &PendingMessage) -> IrService {
-        IrService::Sms
+    fn service(&self, _message: &PendingMessage) -> Transport {
+        Transport::Sms
     }
 
     /// Every handle is a [`Handle`] key already.
@@ -398,7 +398,7 @@ impl ProjectionHooks for GoSmsProjection {
         raw.to_string()
     }
 
-    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> IrSource {
+    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> Source {
         let mut fields = serde_json::Map::new();
         fields.insert(
             "source_kind".into(),
@@ -816,7 +816,7 @@ mod tests {
     }
 
     /// The messages of one conversation as the shared projection writes them.
-    fn project(messages: Vec<PendingMessage>) -> (Vec<message_ir::IrMessage>, ExportReport) {
+    fn project(messages: Vec<PendingMessage>) -> (Vec<message_ir::Message>, ExportReport) {
         let hooks = GoSmsProjection {
             export: message_crate_core::export_meta(
                 EXPORT_SOURCE,

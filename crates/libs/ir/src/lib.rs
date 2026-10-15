@@ -10,6 +10,10 @@
 //! Converters stage parsed rows in [`PendingMessage`] and
 //! [`PendingConversation`] (with per-converter metadata in their `extra`
 //! maps) before building a [`ConversationDocument`].
+//!
+//! Types are named for what they are, with no prefix: the crate path tells
+//! `message_ir::Message` from `message_crate_api_types::Message`, and a file
+//! that needs both imports one of them with `as`.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -50,7 +54,7 @@ pub use phone::IdentityType;
 /// (`docs/adr/0014-gpl-code-only-behind-a-process-boundary.md`).
 pub use imessage_reader_protocol::Reaction;
 
-/// The storage id of [`IrConversationType::Orphaned`], what every chat id of
+/// The storage id of [`ConversationType::Orphaned`], what every chat id of
 /// an orphaned conversation starts with, and that chat id. Defined in
 /// `imessage-reader-protocol` beside [`Reaction`], for the same reason: the
 /// Apple Messages Reader writes orphaned conversations in the shape the
@@ -78,7 +82,7 @@ pub use imessage_reader_protocol::TimePrecision;
 
 /// One earlier version of one part of an edited message: its part, its text
 /// when the source kept it, and when it was written. A message's `text` is
-/// its final version, so [`IrMessage::edits`] holds only the versions before
+/// its final version, so [`Message::edits`] holds only the versions before
 /// it.
 ///
 /// Defined in `imessage-reader-protocol` beside [`Reaction`], for the same
@@ -162,7 +166,7 @@ pub struct ConversationDocument {
     /// Roster and computed stats for this conversation.
     pub conversation: ConversationMeta,
     /// Messages in timestamp order.
-    pub messages: Vec<IrMessage>,
+    pub messages: Vec<Message>,
     /// On-disk stem suffix (e.g. `__whatsapp`). Never written into JSON or JSON Lines files.
     #[serde(skip)]
     pub packaging_stem_suffix: Option<String>,
@@ -193,7 +197,7 @@ pub struct ExportMeta {
 /// The shape of a conversation: one-to-one, group, or orphaned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum IrConversationType {
+pub enum ConversationType {
     /// A one-to-one conversation: one with a single other person that the
     /// source does not mark as a group.
     Individual,
@@ -213,7 +217,7 @@ pub enum IrConversationType {
     Orphaned,
 }
 
-impl IrConversationType {
+impl ConversationType {
     /// Lowercase storage id (`individual` / `group` / `orphaned`).
     pub fn as_str(self) -> &'static str {
         match self {
@@ -240,11 +244,11 @@ pub struct ConversationMeta {
     /// Stable chat id from the source (E.164, group key, or app thread id).
     pub chat_identifier: String,
     /// Individual or group.
-    pub conversation_type: IrConversationType,
+    pub conversation_type: ConversationType,
     /// Group display title; `None` for individuals and untitled groups.
     pub group_title: Option<String>,
     /// Roster of identities and display names.
-    pub participants: Vec<IrParticipant>,
+    pub participants: Vec<Participant>,
     /// Computed counts and first/last timestamps.
     pub stats: ConversationStats,
 }
@@ -271,7 +275,7 @@ pub struct ConversationStats {
 /// participant always carries a `display_name`; the server reconciles it
 /// against contacts on import rather than the exporter inventing an address.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IrParticipant {
+pub struct Participant {
     /// Phone, email, or username string; `None` when the source recorded no
     /// address for this person.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -287,10 +291,11 @@ pub struct IrParticipant {
     pub country: Option<String>,
 }
 
-/// Transport a message arrived on.
+/// The transport a message took: SMS, MMS (recorded as `sms`), RCS, iMessage,
+/// or another service's own. Written to the file under the key `service`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum IrService {
+pub enum Transport {
     /// SMS text.
     Sms,
     /// Apple iMessage (serialized as `imessage`).
@@ -308,11 +313,11 @@ pub enum IrService {
     Telegram,
     /// Slack.
     Slack,
-    /// Unrecognized or unset service.
+    /// Unrecognized or unset transport.
     Unknown,
 }
 
-impl IrService {
+impl Transport {
     /// Lowercase storage id (`sms` / `imessage` / `whatsapp` / …).
     pub fn as_str(self) -> &'static str {
         match self {
@@ -415,17 +420,17 @@ impl IdentityService {
     }
 
     /// Map a per-message transport onto a handle platform bucket.
-    pub fn from_ir_service(service: IrService) -> Self {
-        match service {
-            IrService::Whatsapp => Self::Whatsapp,
-            IrService::Sms
-            | IrService::IMessage
-            | IrService::Rcs
-            | IrService::Discord
-            | IrService::Signal
-            | IrService::Telegram
-            | IrService::Slack
-            | IrService::Unknown => Self::Phone,
+    pub fn from_transport(transport: Transport) -> Self {
+        match transport {
+            Transport::Whatsapp => Self::Whatsapp,
+            Transport::Sms
+            | Transport::IMessage
+            | Transport::Rcs
+            | Transport::Discord
+            | Transport::Signal
+            | Transport::Telegram
+            | Transport::Slack
+            | Transport::Unknown => Self::Phone,
         }
     }
 }
@@ -433,7 +438,7 @@ impl IdentityService {
 /// Shape of one message row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum IrMessageKind {
+pub enum MessageKind {
     /// Plain SMS text.
     Sms,
     /// Multimedia message.
@@ -455,7 +460,7 @@ pub enum IrMessageKind {
     Unknown,
 }
 
-impl IrMessageKind {
+impl MessageKind {
     /// Lowercase storage id (`sms` / `mms` / `imessage` / `tapback` / …).
     pub fn as_str(self) -> &'static str {
         match self {
@@ -489,7 +494,7 @@ impl IrMessageKind {
 
 /// One message in a conversation: sender, body text, and attachments.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IrMessage {
+pub struct Message {
     /// Stable message id: Apple's own for Apple Messages, otherwise a
     /// [`MessageGuid`] made from the message's identity.
     pub guid: String,
@@ -502,17 +507,17 @@ pub struct IrMessage {
     /// when its source also holds it with milliseconds in the same second.
     pub time_precision: TimePrecision,
     /// Incoming or outgoing.
-    pub direction: IrDirection,
+    pub direction: Direction,
     /// Transport the message arrived on.
-    pub service: IrService,
+    pub service: Transport,
     /// Row shape.
-    pub message_kind: IrMessageKind,
+    pub message_kind: MessageKind,
     /// Identity of the actual sender (the owner's identity for outgoing).
     pub sender_identity: Option<String>,
     /// Display name of the actual sender.
     pub sender_display_name: Option<String>,
     /// The country the source read the sender's identity in, as
-    /// [`IrParticipant::country`] says. `None`, and left out of the file,
+    /// [`Participant::country`] says. `None`, and left out of the file,
     /// when the source names none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sender_country: Option<String>,
@@ -526,7 +531,7 @@ pub struct IrMessage {
     /// Plain-text body; never includes attachment data.
     pub text: String,
     /// Attachment metadata in order; bytes live on disk or in `bytes`.
-    pub attachments: Vec<IrAttachment>,
+    pub attachments: Vec<Attachment>,
     /// The reactions that stand on this message, each naming the person who
     /// reacted. Removed reactions are already left out. Empty, and left out
     /// of the file, when the message has none or the source records none.
@@ -548,22 +553,22 @@ pub struct IrMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reply_to: Option<ReplyTo>,
     /// Apple extensions; `None` for non-iMessage messages.
-    pub imessage: Option<IrImessage>,
+    pub imessage: Option<Imessage>,
     /// Vendor leftovers (Android type code and raw fields).
-    pub source: Option<IrSource>,
+    pub source: Option<Source>,
 }
 
 /// Whether the owner sent or received the message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum IrDirection {
+pub enum Direction {
     /// Received from a peer.
     Incoming,
     /// Sent by the owner.
     Outgoing,
 }
 
-impl IrMessage {
+impl Message {
     /// Whether this is an SMS or an MMS, from any source, iMessage's SMS
     /// fallback included. An MMS carries the `Sms` service with the `Mms`
     /// kind. A message whose service is unknown (a Mac `chat.db` row with no
@@ -573,16 +578,16 @@ impl IrMessage {
     /// exports hold these and leave every other message out.
     pub fn is_sms_or_mms(&self) -> bool {
         match self.service {
-            IrService::Sms => true,
-            IrService::Unknown => {
-                matches!(self.message_kind, IrMessageKind::Sms | IrMessageKind::Mms)
+            Transport::Sms => true,
+            Transport::Unknown => {
+                matches!(self.message_kind, MessageKind::Sms | MessageKind::Mms)
             }
             _ => false,
         }
     }
 }
 
-impl IrDirection {
+impl Direction {
     /// Lowercase storage id (`incoming` / `outgoing`).
     pub fn as_str(self) -> &'static str {
         match self {
@@ -605,16 +610,16 @@ pub struct AttachmentMeta {
     /// 64-hex SHA-256 of the file contents (content addressing).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digest_sha256: Option<String>,
-    /// Stored file length in bytes, as [`IrAttachment::size_bytes`].
+    /// Stored file length in bytes, as [`Attachment::size_bytes`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size_bytes: Option<u64>,
-    /// Why the file is not there, as [`IrAttachment::missing_reason`].
+    /// Why the file is not there, as [`Attachment::missing_reason`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub missing_reason: Option<String>,
 }
 
-impl From<&IrAttachment> for AttachmentMeta {
-    fn from(a: &IrAttachment) -> Self {
+impl From<&Attachment> for AttachmentMeta {
+    fn from(a: &Attachment) -> Self {
         Self {
             path: a.path.clone(),
             original_name: a.original_name.clone(),
@@ -632,7 +637,7 @@ impl From<&IrAttachment> for AttachmentMeta {
 /// and the bytes live in a sidecar file under `attachments/` (or in `bytes`
 /// for in-memory EML/MBOX/XML embedding).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IrAttachment {
+pub struct Attachment {
     /// Relative path under `attachments/` to the staged file.
     pub path: Option<String>,
     /// Filename the sender's device had for the file.
@@ -662,13 +667,13 @@ pub struct IrAttachment {
     pub bytes: Option<Vec<u8>>,
 }
 
-/// The [`IrAttachment::missing_reason`] of an attachment an Export could not
+/// The [`Attachment::missing_reason`] of an attachment an Export could not
 /// fetch from the server, so its file is not in the Export's directory.
 pub const NOT_FETCHED: &str = "not_fetched";
 
 /// Vendor leftovers. Display names live on `sender_display_name`, not here.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct IrSource {
+pub struct Source {
     /// Android `type` attribute from the source (e.g. 1 = received, 2 = sent).
     pub android_type: Option<i32>,
     /// Raw vendor attributes; display names never live here.
@@ -676,7 +681,7 @@ pub struct IrSource {
     pub fields: Map<String, Value>,
 }
 
-impl IrSource {
+impl Source {
     /// True when no vendor leftovers were recorded.
     pub fn is_empty(&self) -> bool {
         self.android_type.is_none() && self.fields.is_empty()
@@ -690,7 +695,7 @@ impl IrSource {
 
 /// iMessage extensions. Nested Apple blobs remain JSON values (not strings).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct IrImessage {
+pub struct Imessage {
     /// iMessage send effect (e.g. `slam`).
     pub send_effect: Option<String>,
     /// Shared-location payload.
@@ -719,7 +724,7 @@ pub struct IrImessage {
     pub tapback_action: Option<String>,
 }
 
-impl IrImessage {
+impl Imessage {
     /// True when every field is unset (`None`).
     pub fn is_empty(&self) -> bool {
         self.send_effect.is_none()
@@ -751,7 +756,7 @@ impl ConversationDocument {
 }
 
 /// Count messages and attachments and find first/last timestamps.
-fn compute_stats(messages: &[IrMessage]) -> ConversationStats {
+fn compute_stats(messages: &[Message]) -> ConversationStats {
     let message_count = messages.len() as u64;
     let attachment_count = messages.iter().map(|m| m.attachments.len() as u64).sum();
     let mut first = None;
@@ -838,7 +843,7 @@ impl ConversationHeader {
     /// The document a reader builds from a header and the messages that
     /// followed it, at the current schema version, with its stats computed.
     /// It has no stem suffix: a reader recovers that from the file name.
-    pub fn into_document(self, messages: Vec<IrMessage>) -> ConversationDocument {
+    pub fn into_document(self, messages: Vec<Message>) -> ConversationDocument {
         let mut doc = ConversationDocument {
             schema_version: SCHEMA_VERSION,
             export: self.export,
@@ -851,7 +856,7 @@ impl ConversationHeader {
     }
 }
 
-/// Intermediate message before conversion to [`IrMessage`].
+/// Intermediate message before conversion to [`Message`].
 ///
 /// Exporters parse vendor formats into these, then convert to
 /// [`ConversationDocument`] through the shared [`pending_to_document`].
@@ -892,7 +897,7 @@ impl PendingMessage {
     }
 }
 
-/// Intermediate attachment reference before conversion to [`IrAttachment`].
+/// Intermediate attachment reference before conversion to [`Attachment`].
 #[derive(Debug, Clone)]
 pub struct PendingAttachment {
     /// Relative path to the staged file.
@@ -919,8 +924,8 @@ impl PendingAttachment {
     /// carrying the size when the exporter recorded one: the runner that
     /// writes the file reads the payload by its digest and fills the path
     /// in, and the size when it is still unknown.
-    pub fn to_ir(&self) -> IrAttachment {
-        IrAttachment {
+    pub fn to_ir(&self) -> Attachment {
+        Attachment {
             path: None,
             original_name: self.name_hint.clone(),
             mime_type: self.mime_type(),
@@ -946,7 +951,7 @@ pub struct PendingConversation {
     /// gives one, else the source's own handle (an email address, a short
     /// code, a name).
     pub participant_e164s: Vec<String>,
-    /// Messages awaiting conversion to [`IrMessage`].
+    /// Messages awaiting conversion to [`Message`].
     pub messages: Vec<PendingMessage>,
     /// Whether this is a group conversation.
     pub is_group: bool,
@@ -1040,11 +1045,11 @@ mod storage_id_round_trip_tests {
     #[test]
     fn conversation_type() {
         for v in [
-            IrConversationType::Individual,
-            IrConversationType::Group,
-            IrConversationType::Orphaned,
+            ConversationType::Individual,
+            ConversationType::Group,
+            ConversationType::Orphaned,
         ] {
-            assert_eq!(IrConversationType::parse(v.as_str()), v);
+            assert_eq!(ConversationType::parse(v.as_str()), v);
             assert_matches_serde(v, v.as_str());
         }
     }
@@ -1065,17 +1070,17 @@ mod storage_id_round_trip_tests {
     #[test]
     fn service() {
         for v in [
-            IrService::Sms,
-            IrService::IMessage,
-            IrService::Whatsapp,
-            IrService::Rcs,
-            IrService::Discord,
-            IrService::Signal,
-            IrService::Telegram,
-            IrService::Slack,
-            IrService::Unknown,
+            Transport::Sms,
+            Transport::IMessage,
+            Transport::Whatsapp,
+            Transport::Rcs,
+            Transport::Discord,
+            Transport::Signal,
+            Transport::Telegram,
+            Transport::Slack,
+            Transport::Unknown,
         ] {
-            assert_eq!(IrService::parse(v.as_str()), v);
+            assert_eq!(Transport::parse(v.as_str()), v);
             assert_matches_serde(v, v.as_str());
         }
     }
@@ -1091,24 +1096,24 @@ mod storage_id_round_trip_tests {
     #[test]
     fn message_kind() {
         for v in [
-            IrMessageKind::Sms,
-            IrMessageKind::Mms,
-            IrMessageKind::IMessage,
-            IrMessageKind::Tapback,
-            IrMessageKind::StickerTapback,
-            IrMessageKind::Announcement,
-            IrMessageKind::LocationShare,
-            IrMessageKind::Balloon,
-            IrMessageKind::Unknown,
+            MessageKind::Sms,
+            MessageKind::Mms,
+            MessageKind::IMessage,
+            MessageKind::Tapback,
+            MessageKind::StickerTapback,
+            MessageKind::Announcement,
+            MessageKind::LocationShare,
+            MessageKind::Balloon,
+            MessageKind::Unknown,
         ] {
-            assert_eq!(IrMessageKind::parse(v.as_str()), v);
+            assert_eq!(MessageKind::parse(v.as_str()), v);
             assert_matches_serde(v, v.as_str());
         }
     }
 
     #[test]
     fn direction() {
-        for v in [IrDirection::Incoming, IrDirection::Outgoing] {
+        for v in [Direction::Incoming, Direction::Outgoing] {
             assert_matches_serde(v, v.as_str());
         }
     }

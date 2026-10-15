@@ -1780,7 +1780,7 @@ async fn deleting_messages_keeps_a_file_a_running_import_has_uploaded() {
 
     let message = message_line("g-new", "new")
         .sender("+15555550123")
-        .attachment(message_ir::IrAttachment {
+        .attachment(message_ir::Attachment {
             digest_sha256: Some(sha.to_string()),
             ..attachment(
                 "attachments/photo.bin",
