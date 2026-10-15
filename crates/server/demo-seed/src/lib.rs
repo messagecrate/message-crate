@@ -267,9 +267,11 @@ where
     if active == prepared {
         anyhow::bail!("active and prepared demo roots must differ");
     }
-    let stats = prepare(prepared)?;
+    let mut stats = prepare(prepared)?;
     validate_generated_bundle(prepared, cancel)?;
-    replace_generated_paths(active, prepared)?;
+    stats
+        .warnings
+        .extend(replace_generated_paths(active, prepared)?);
     Ok(stats)
 }
 
@@ -350,7 +352,9 @@ fn is_jsonl_file(path: &Path) -> bool {
 ///
 /// Returns an error if a rename fails. If the previous files cannot be fully
 /// restored, they are left in the backup directory and the error says so.
-fn replace_generated_paths(active: &Path, prepared: &Path) -> Result<()> {
+/// Returns a warning, for the caller to say, when the new files are in place
+/// but the backup of the previous ones could not be removed.
+fn replace_generated_paths(active: &Path, prepared: &Path) -> Result<Option<String>> {
     replace_generated_paths_with(active, prepared, move_path, |backup| {
         fs::remove_dir_all(backup)
     })
@@ -451,7 +455,7 @@ fn replace_generated_paths_with<F, R>(
     prepared: &Path,
     mut rename: F,
     remove_backup: R,
-) -> Result<()>
+) -> Result<Option<String>>
 where
     F: FnMut(&Path, &Path) -> Result<()>,
     R: FnOnce(&Path) -> io::Result<()>,
@@ -482,16 +486,16 @@ where
             &backed_up,
             &installed,
             error,
-        );
+        )
+        .map(|()| None);
     }
 
-    if let Err(cleanup_error) = remove_backup(&backup) {
-        eprintln!(
-            "The newly generated demo files are in place, but the backup of the previous ones at {} could not be removed: {cleanup_error}",
+    Ok(remove_backup(&backup).err().map(|cleanup_error| {
+        format!(
+            "The new Demo Data files are in place, but the backup of the previous ones at {} could not be removed: {cleanup_error}",
             backup.display()
-        );
-    }
-    Ok(())
+        )
+    }))
 }
 
 /// Set aside the current `staging`, `config`, and `README.md`, then move the new copies in.

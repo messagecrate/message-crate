@@ -388,6 +388,12 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-14: **A reset by `reset-demo` is filed with the Demo Account.**
+  The `reset-demo` server command recorded its reset after deleting the old
+  Demo Account, so its entry belonged to no account and appeared only in the
+  owner's whole Audit Trail. It now records the reset first, as a reset from
+  Owner Home does, so both are read among the old Demo Account's entries
+  (#2977).
 - 2026-10-14: **A typed display name is no longer lost.** On Settings →
   Profile, and on an account's Profile in Owner Home, the display name saves
   when you leave the field, press Enter, or move to another tab, as the time
@@ -1280,6 +1286,12 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-14: **A Demo Data backup left behind is in the server's log.**
+  When the server writes new Demo Data, it removes its backup of the files
+  they replace. When that removal failed, the warning went only to the
+  terminal the server was started from, never to the server's log or the
+  **Logs** panel in Owner Home. It now goes there, and the `reset-demo`
+  command still prints it (#2903).
 - 2026-10-14: **The guide's `docker run` commands limit the container as
   the Compose files do.** A server started with the user guide's commands
   kept every special permission a container has by default. A program
