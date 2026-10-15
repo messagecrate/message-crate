@@ -20,10 +20,10 @@ import { ApiError } from "../lib/api";
 import { groupListQuery } from "../lib/contactGroups";
 import { PAGE_SIZE_FIRST } from "../lib/listPaging";
 import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { mockedAuth, Providers } from "../test/providers";
+import { Providers } from "../test/providers";
 import ContactList, { FILTER_DEBOUNCE_MS } from "./ContactList";
 
-vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", async () => (await import("../test/providers")).authModule());
 
 const tauriMock = vi.hoisted(() => ({ current: false }));
 vi.mock("../lib/tauriCheck", () => ({ isTauri: () => tauriMock.current }));
@@ -61,6 +61,7 @@ import {
   listContacts,
   updateContactGroupMembers,
 } from "../lib/serverApi";
+import { nth } from "../test/nth";
 import { setupUser } from "../test/user";
 
 const listContactsMock = vi.mocked(listContacts);
@@ -535,8 +536,8 @@ describe("ContactList", () => {
       await settle();
       // Every row of the first page, ticked by hand with one Shift + click.
       const rows = screen.getAllByRole("checkbox", { name: /^Select Person/ });
-      fireEvent.click(rows[0]);
-      fireEvent.click(rows[rows.length - 1], { shiftKey: true });
+      fireEvent.click(nth(rows, 0));
+      fireEvent.click(nth(rows, rows.length - 1), { shiftKey: true });
       expect(rows[rows.length - 1]).toBeChecked();
       expect(screen.getByRole("checkbox", { name: "Select all contacts" })).not.toBeChecked();
     });

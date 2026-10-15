@@ -34,13 +34,13 @@ type State = { failed: false } | { failed: true; error: unknown; reloading: bool
  * ones. Nothing shows while that is decided.
  */
 export default class ErrorBoundary extends Component<Props, State> {
-  state: State = { failed: false };
+  override state: State = { failed: false };
 
   static getDerivedStateFromError(error: unknown): State {
     return { failed: true, error, reloading: error instanceof ChunkLoadError };
   }
 
-  componentDidCatch(error: unknown): void {
+  override componentDidCatch(error: unknown): void {
     if (!(error instanceof ChunkLoadError)) return;
     void reloadOnceForChunk(error).then((reloaded) => {
       if (reloaded) return;
@@ -50,13 +50,13 @@ export default class ErrorBoundary extends Component<Props, State> {
     });
   }
 
-  componentDidUpdate(previous: Props): void {
+  override componentDidUpdate(previous: Props): void {
     if (this.state.failed && previous.resetKey !== this.props.resetKey) {
       this.setState({ failed: false });
     }
   }
 
-  render(): ReactNode {
+  override render(): ReactNode {
     const { state } = this;
     if (!state.failed) return this.props.children;
     // The page may be reloading, so a message would only flash.

@@ -1,5 +1,7 @@
 use super::*;
 use crate::write::SbrBackupSession;
+use message_crate_core::{CancelFlag, LogSink, ProgressSink};
+use message_ir::IrDirection;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -19,16 +21,16 @@ fn opts<'a>(
         owner_phones,
         attachments_dir,
         spool,
-        media: if spool.is_some() {
-            MediaMode::Clone
+        files: if spool.is_some() {
+            AttachmentFiles::Originals
         } else {
-            MediaMode::Disabled
+            AttachmentFiles::Skip
         },
-        compress: CompressOptions::default(),
-        tools: std::sync::Arc::new(media::InstalledTools::default()),
-        log: &NO_LOG,
-        progress: &NO_PROGRESS,
-        cancel: &NO_CANCEL,
+        sinks: Sinks {
+            log: &NO_LOG,
+            progress: &NO_PROGRESS,
+            cancel: &NO_CANCEL,
+        },
     }
 }
 
@@ -166,20 +168,6 @@ fn group_mms_sender_direction_and_conversation() {
     );
 }
 
-/// With no owner phone given, a file that cannot be read to find one stops
-/// the read and says so.
-#[test]
-fn a_file_owner_inference_cannot_read_is_refused() {
-    let dir = tempfile::tempdir().unwrap();
-    let input = dir.path().join("broken.xml");
-    fs::write(&input, "<smses><mms date=").unwrap();
-    let err = read_backup(&input, opts(&[], None, None)).unwrap_err();
-    assert!(
-        err.to_string().contains("could not infer owner phones"),
-        "{err:#}"
-    );
-}
-
 /// An Import Run reads one backup, and SMS Backup & Restore writes each
 /// backup as one file, so a directory is refused rather than walked.
 #[test]
@@ -195,13 +183,42 @@ fn a_directory_is_refused() {
     assert!(err.to_string().contains("not a directory"), "{err:#}");
 }
 
+/// A backup cut off partway through a message, as a copy that stopped early
+/// leaves it.
+fn cut_off_fixture() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cut_off_backup.xml")
+}
+
+/// A file that is not valid XML is refused whole, not read in part, whether
+/// the owner's phone is given or inferred, and both passes say why in the
+/// same words (#2028).
 #[test]
-fn truncated_xml_keeps_messages_parsed_before_the_error() {
+fn a_file_cut_off_partway_is_refused_whole() {
+    let input = cut_off_fixture();
+    let owner = ["+15555550100".to_string()];
+    for owner_phones in [&owner[..], &[]] {
+        let error = read_backup(&input, opts(owner_phones, None, None)).unwrap_err();
+        let message = format!("{error:#}");
+        assert!(
+            message.contains(&format!("{} is not valid XML", input.display())),
+            "{message}"
+        );
+        assert!(
+            message.ends_with("the file ends before </addrs>"),
+            "{message}"
+        );
+    }
+}
+
+/// A message that cannot be kept in a file that is valid XML is skipped and
+/// counted, and the read goes on to the rest of the file.
+#[test]
+fn a_message_that_cannot_be_kept_does_not_stop_the_read() {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("input.xml");
     fs::write(
         &input,
-        r#"<smses><sms protocol="0" address="+15555550101" date="1400773261000" type="1" body="kept"/><sms date=""#,
+        r#"<smses><sms protocol="0" address="+15555550101" date="not a date" type="1" body="lost"/><sms protocol="0" address="+15555550101" date="1400773261000" type="1" body="kept"/></smses>"#,
     )
     .unwrap();
     let owner = vec!["+15555550100".to_string()];
@@ -209,11 +226,8 @@ fn truncated_xml_keeps_messages_parsed_before_the_error() {
     assert_eq!(docs.len(), 1);
     assert_eq!(docs[0].messages.len(), 1);
     assert_eq!(docs[0].messages[0].text, "kept");
-    assert_eq!(
-        report.sms_seen, 1,
-        "stats from the completed message must survive the XML error"
-    );
-    assert_eq!(report.errors.len(), 1);
+    assert_eq!(report.skipped_invalid_date, 1);
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
 }
 
 /// Every payload is on disk in the spool once the read returns, and no
@@ -309,6 +323,30 @@ fn a_repeated_message_is_kept_once_and_counted() {
     assert_eq!(texts, ["hi", "hey"]);
     assert_eq!(report.sms_seen, 3);
     assert_eq!(report.duplicates_dropped, 1);
+}
+
+/// Two MMS alike in everything but the attachment are two messages: the
+/// attachment's digest is part of what the dedupe step compares.
+#[test]
+fn two_messages_that_differ_only_in_an_attachment_are_both_kept() {
+    let mms = |data: &str| {
+        format!(
+            r#"<mms date="1400773261000" msg_box="1" address="+15555550101"><parts><part ct="text/plain" text="look"/><part ct="image/jpeg" name="pic.jpg" data="{data}"/></parts><addrs><addr address="+15555550101" type="137"/><addr address="+15555550100" type="151"/></addrs></mms>"#
+        )
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("input.xml");
+    fs::write(
+        &input,
+        format!("<smses>{}{}</smses>", mms("aGVsbG8="), mms("d29ybGQ=")),
+    )
+    .unwrap();
+    let owner = vec!["+15555550100".to_string()];
+    let (docs, report) = read_backup(&input, opts(&owner, None, None)).unwrap();
+    assert_eq!(report.duplicates_dropped, 0);
+    let messages = &docs[0].messages;
+    assert_eq!(messages.len(), 2);
+    assert_ne!(messages[0].guid, messages[1].guid);
 }
 
 #[test]
@@ -492,11 +530,15 @@ fn the_byte_total_stays_the_same_when_the_spool_holds_no_file() {
     docs[0].messages[0].attachments.push(unspooled);
     let (progress, totals) = attachment_totals();
 
+    let base = opts(&[], Some(&stage), Some(&spool));
     stage_read_attachments(
         &mut docs,
         &ReadOptions {
-            progress: &progress,
-            ..opts(&[], Some(&stage), Some(&spool))
+            sinks: Sinks {
+                progress: &progress,
+                ..base.sinks
+            },
+            ..base
         },
     )
     .unwrap();
@@ -609,29 +651,4 @@ fn a_file_without_a_backup_date_is_dated_by_its_modification_time() {
         backup_dates(&input),
         [("+15555550101".to_string(), Some(1_500_000_000_000))]
     );
-}
-
-/// A parse stopped by a cancel stops the read with the typed `Cancelled`,
-/// and nothing is recorded as an error in the file.
-#[test]
-fn a_parse_stopped_by_a_cancel_returns_cancelled() {
-    let mut report = ReadReport::default();
-    let error =
-        keep_parse_error(Err(Cancelled.into()), Path::new("input.xml"), &mut report).unwrap_err();
-    assert!(error.downcast_ref::<Cancelled>().is_some(), "{error:#}");
-    assert!(report.errors.is_empty());
-}
-
-/// A parse error whose text is `canceled` is recorded as an error in the
-/// file, not taken for a cancel: a cancel is told by its type.
-#[test]
-fn a_parse_error_reading_cancelled_is_recorded_not_taken_for_a_cancel() {
-    let mut report = ReadReport::default();
-    keep_parse_error(
-        Err(anyhow::anyhow!("canceled")),
-        Path::new("input.xml"),
-        &mut report,
-    )
-    .unwrap();
-    assert_eq!(report.errors.len(), 1);
 }

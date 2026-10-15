@@ -15,7 +15,14 @@ describe("ImessageBubble tapbacks", () => {
       <ImessageBubble
         message={imessageMessage({
           tapbacks: [
-            { emoji: null, is_from_me: false, kind: "loved", part_index: 0, sender: "+1555" },
+            {
+              emoji: null,
+              is_from_me: false,
+              kind: "loved",
+              part_index: 0,
+              sender: "+1555",
+              sender_display_name: null,
+            },
           ],
         })}
       />,

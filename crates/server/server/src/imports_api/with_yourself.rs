@@ -26,8 +26,8 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use sqlx::SqliteConnection;
 
-use super::ImportCounts;
 use super::contact_name::ensure_contact_for_handle;
+use super::pipeline::ImportCounts;
 use crate::db::{contacts, conversations, handles, participants};
 
 /// What an identity change is measured against: the account's

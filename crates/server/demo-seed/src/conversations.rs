@@ -37,7 +37,10 @@ enum SourceFlavor {
     Whatsapp,
 }
 
-/// Counts of contacts, conversations, messages, and attachments written this run.
+/// What one run wrote: counts of contacts, conversations, messages, and
+/// attachments, and the warnings of anything that went wrong without stopping
+/// it. The warnings ride with the counts so every caller that reports the
+/// counts reports the warnings in the same place (#2903).
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct GenStats {
     /// Contacts invented.
@@ -54,6 +57,10 @@ pub struct GenStats {
     /// each. Every one is counted twice in `messages`, and a database that
     /// imports the bundle hides exactly this many as duplicates.
     pub shared_messages: usize,
+    /// What went wrong without stopping generation, one line each, for the
+    /// caller to say where its warnings go: the backup of the previous files
+    /// that could not be removed once the new ones were in place.
+    pub warnings: Vec<String>,
 }
 
 const TAPBACK_KINDS: &[&str] = &[
@@ -326,6 +333,7 @@ impl SharedMessage {
                 Some(chat_id.into())
             },
             sender_display_name: None,
+            sender_country: None,
             owner_identity: None,
             subject: None,
             text: self.text.clone(),
@@ -660,6 +668,7 @@ fn individual_participants(chat_id: &str, display_name: Option<String>) -> Vec<I
     vec![IrParticipant {
         identity: Some(chat_id.into()),
         display_name,
+        country: None,
     }]
 }
 
@@ -870,6 +879,7 @@ fn phone_only_participants(handles: &[String]) -> Vec<IrParticipant> {
         participants.push(IrParticipant {
             identity: Some(handle.clone()),
             display_name: None,
+            country: None,
         });
     }
     participants
@@ -886,6 +896,7 @@ fn named_group_participants(roster: &Roster, member_idxs: &[usize]) -> Vec<IrPar
         participants.push(IrParticipant {
             identity: Some(contact.primary_phone().into()),
             display_name: None,
+            country: None,
         });
     }
     participants
@@ -929,6 +940,7 @@ impl<R: Rng> Seeder<'_, R> {
         let sender = IrParticipant {
             identity: Some(ORPHAN_SENDER.into()),
             display_name: None,
+            country: None,
         };
         for (file_name, sender, messages) in [
             ("orphaned-person.jsonl", Some(sender), with_person),
@@ -978,6 +990,7 @@ impl<R: Rng> Seeder<'_, R> {
             .map(|handle| IrParticipant {
                 identity: Some((*handle).into()),
                 display_name: None,
+                country: None,
             })
             .collect();
         self.write_conversation_file(
@@ -1189,6 +1202,7 @@ impl<R: Rng> Seeder<'_, R> {
             message_kind,
             sender_identity: if from_me { None } else { Some(peer.into()) },
             sender_display_name: None,
+            sender_country: None,
             owner_identity: None,
             subject: None,
             text,

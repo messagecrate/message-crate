@@ -57,7 +57,7 @@ async fn an_account_gone_before_its_username_is_read_answers_unauthorized() {
                     // An account id no `accounts` row holds.
                     let auth = AuthIdentity {
                         account_id: 9_999,
-                        capability: crate::server::AuthCapability::Session {
+                        capability: crate::auth::AuthCapability::Session {
                             permissions: crate::db::permissions::Permissions::all(),
                         },
                         credential: crate::db::audit_trail::CredentialUsed::Session(None),
@@ -119,6 +119,7 @@ async fn logging_out_with_an_api_token_is_refused_and_leaves_the_token_working()
         "push",
         crate::db::permissions::Permissions::all(),
         None,
+        crate::test_support::routed_credential_instant(),
     )
     .await
     .unwrap()
@@ -269,9 +270,13 @@ async fn logout_on_conn_leaves_registered_account() {
     let fixture = test_fixture().await;
     let mut conn = fixture.conn().await;
     crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT, "alice").await;
-    let token = session_tokens::insert_account_session_token(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
+    let token = session_tokens::insert_account_session_token(
+        &mut conn,
+        TEST_ACCOUNT,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
     logout_on_conn(&mut conn, &token, crate::test_support::fixed_instant())
         .await
@@ -285,7 +290,7 @@ async fn logout_on_conn_leaves_registered_account() {
         Some("alice")
     );
     assert!(
-        session_tokens::lookup_session(&mut conn, &token)
+        session_tokens::lookup_session(&mut conn, &token, crate::test_support::fixed_instant())
             .await
             .unwrap()
             .is_none()
@@ -537,9 +542,13 @@ async fn a_login_whose_session_row_appears_meanwhile_still_signs_in() {
 
     let mut other_conn = fixture.conn().await;
     let mut other = crate::db::begin_write(&mut other_conn).await.unwrap();
-    crate::db::session_tokens::rotate_account_session_token(&mut other, account)
-        .await
-        .unwrap();
+    crate::db::session_tokens::rotate_account_session_token(
+        &mut other,
+        account,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     let mut conn = fixture.conn().await;
     let created = crate::db::write_tx::commit_during(
         other,
@@ -557,9 +566,14 @@ async fn a_login_whose_session_row_appears_meanwhile_still_signs_in() {
         panic!("the second login must open a Session");
     };
 
-    let auth = crate::server::resolve_auth_on_conn(&mut conn, &created.token, None)
-        .await
-        .unwrap();
+    let auth = crate::auth::resolve_auth_on_conn(
+        &mut conn,
+        &created.token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     assert_eq!(auth.account_id, account);
     assert_eq!(session_rows(&mut conn, account).await, 1);
 }

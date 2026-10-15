@@ -13,7 +13,7 @@
 // run and deletes the run directory. Every Upload assertion below goes
 // through approve first, because there is no other way to reach it.
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { render, renderHook, act as rtlAct, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -42,6 +42,8 @@ import { account } from "../../test/apiShapes";
 import { deferred } from "../../test/deferred";
 import { importForm } from "../../test/importForm";
 import { seedImportRun } from "../../test/importRun";
+import { nth } from "../../test/nth";
+import { mockedAuth, testQueryClient } from "../../test/providers";
 import { storedForm } from "../../test/storedForm";
 import { MIB } from "../../test/units";
 import { fill, setupUser } from "../../test/user";
@@ -205,7 +207,7 @@ function fakeDeps(store: ImportRunStore): ImportRunDeps {
 let service: ImportRunService;
 
 /** Where the identity check reads the account profile; each test gets an empty one. */
-let queryClient = new QueryClient();
+let queryClient = testQueryClient();
 
 /** The profile the identity check reads for the account `auth` names, with these addresses. */
 function setProfile(addresses: Pick<AccountProfile, "phones" | "emails">): void {
@@ -219,15 +221,10 @@ function setProfile(addresses: Pick<AccountProfile, "phones" | "emails">): void 
 /** The screen's tree: a query client, and the account `auth` names logged in. */
 function Providers({ children }: { children: ReactNode }) {
   const value = {
-    serverUrl: "http://127.0.0.1:8080",
+    ...mockedAuth,
     token: auth.token,
     accountId: auth.accountId,
     isAuthenticated: auth.token != null,
-    login: async () => {},
-    updateToken: () => {},
-    logout: async () => {},
-    setServer: () => {},
-    retrySavedLogin: () => {},
   };
   return (
     <QueryClientProvider client={queryClient}>
@@ -268,9 +265,10 @@ beforeEach(({ signal }) => {
   // A test that times out outside `act` has no race to take the rejection.
   testTimedOut.catch(() => {});
   service = createImportRunService(fakeDeps(importRunStore));
-  queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
-  });
+  // `setProfile` writes the profile with no observer, and the hook reads it
+  // only through `fetchQuery` when an import starts. `keepUnread` holds the
+  // entry until then, and `neverStale` serves it without asking the server.
+  queryClient = testQueryClient({ keepUnread: true, neverStale: true });
   setAccountId(auth.accountId);
 });
 
@@ -499,8 +497,8 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.startImport(importForm()));
 
     expect(seen).toHaveLength(1);
-    expect(clearedFields(seen[0])).toEqual(CLEARED_RUN);
-    expect(seen[0].resumeError).toBeNull();
+    expect(clearedFields(nth(seen, 0))).toEqual(CLEARED_RUN);
+    expect(nth(seen, 0).resumeError).toBeNull();
   });
 
   it("reads the server's attachment size limit before Staging and leaves Upload to read it from the directory", async () => {

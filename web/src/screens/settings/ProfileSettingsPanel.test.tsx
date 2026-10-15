@@ -6,14 +6,15 @@ import type { AccountProfile } from "../../lib/account";
 import { ApiError } from "../../lib/api";
 import { deferred } from "../../test/deferred";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
-import { mockedAuth, renderWithProviders as render } from "../../test/providers";
+import { nth } from "../../test/nth";
+import { authModule, renderWithProviders as render } from "../../test/providers";
 import { fill, setupUser } from "../../test/user";
 import { useNameEdit } from "./nameEdit";
 import { ProfileSettingsPanel } from "./ProfileSettingsPanel";
 
 const getAccountProfile = vi.hoisted(() => vi.fn());
 const updateAccountProfile = vi.hoisted(() => vi.fn());
-vi.mock("../../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../lib/authContext", () => authModule());
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),
   getAccountProfile: (...a: unknown[]) => getAccountProfile(...a),
@@ -87,7 +88,7 @@ describe("ProfileSettingsPanel", () => {
     // to forget (#2985).
     await fill(user, zoneField(), "dallas");
     expect(updateAccountProfile).toHaveBeenCalledWith({ preferred_name: "Typed Name" });
-    await user.click(within(screen.getByRole("listbox")).getAllByRole("option")[0]);
+    await user.click(nth(within(screen.getByRole("listbox")).getAllByRole("option"), 0));
     expect(updateAccountProfile).toHaveBeenCalledWith({ time_zone: "America/Chicago" });
     // The server's answer has reached the profile entry the panel reads.
     await settle();

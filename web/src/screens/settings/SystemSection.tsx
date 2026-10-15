@@ -448,6 +448,8 @@ export function SystemSection() {
         // Read again rather than keep this answer: answers can arrive out of
         // order, and the read after the last one is what the process holds.
         void queryClient.invalidateQueries({ queryKey: keys.desktopStagingDirectory.all });
+        // The Import form reads the free space of the new directory's disk.
+        void queryClient.invalidateQueries({ queryKey: keys.desktopLowDiskSpace.all });
         if (gen !== stagingSaveGen.current) return;
         setSaveError(null);
       },

@@ -50,8 +50,8 @@ pub struct NotConverted {
 /// any other file in its directory by its path:
 ///
 /// - why ffmpeg was stopped ([`Killed`]);
-/// - the last line ffmpeg wrote before it failed, with each file it was
-///   given written as `<input>` or `<output>`
+/// - the line ffmpeg wrote that names the cause ([`cause_line`]), with
+///   each file it was given written as `<input>` or `<output>`
 ///   ([`FfmpegFailed::without_files`]);
 /// - how ffmpeg exited, when it failed and wrote nothing;
 /// - otherwise the error's first line, with `file` written as `<input>`,
@@ -68,13 +68,8 @@ pub fn why_not_converted(err: &anyhow::Error, file: &Path) -> String {
         return killed.to_string();
     }
     if let Some(failed) = err.downcast_ref::<FfmpegFailed>() {
-        return match failed
-            .said()
-            .lines()
-            .rev()
-            .find(|line| !line.trim().is_empty())
-        {
-            Some(last) => failed.without_files(last.trim()),
+        return match cause_line(failed.said()) {
+            Some(cause) => failed.without_files(cause),
             None => failed.to_string(),
         };
     }
@@ -101,6 +96,71 @@ pub fn why_not_converted(err: &anyhow::Error, file: &Path) -> String {
         .next()
         .unwrap_or_default()
         .to_string()
+}
+
+/// What ffmpeg writes after a failure that only follows from it: a task
+/// or thread ending, an encoder or a file that then would not open, and
+/// that nothing was written. Each is matched at the start of a line's text,
+/// after its `[<component> @ …]` tags.
+const CONSEQUENCES: [&str; 9] = [
+    "Nothing was written into output file",
+    "Task finished with error code",
+    "Terminating thread with return code",
+    "Could not open encoder before EOF",
+    "Error sending frames to consumers",
+    "Error while opening encoder",
+    "Error selecting an encoder",
+    "Error opening input",
+    "Error opening output",
+];
+
+/// Whether `line` is libx265's own report, which it writes to stderr at
+/// any `-loglevel` and which ends what ffmpeg wrote even when it failed:
+/// an `x265 [info]:` line, or its summary, `encoded <n> frames …`.
+fn is_x265_report(line: &str) -> bool {
+    line.starts_with("x265 [info]:")
+        || line
+            .strip_prefix("encoded ")
+            .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
+}
+
+/// Whether `line` of what ffmpeg wrote names no cause: it only follows from
+/// an earlier failure ([`CONSEQUENCES`]), or is libx265's own report
+/// ([`is_x265_report`]).
+fn is_consequence(line: &str) -> bool {
+    if is_x265_report(line) {
+        return true;
+    }
+    let mut text = line;
+    while let Some((_, rest)) = text.strip_prefix('[').and_then(|rest| rest.split_once(']')) {
+        text = rest.trim_start();
+    }
+    CONSEQUENCES
+        .iter()
+        .any(|consequence| text.starts_with(consequence))
+}
+
+/// The line of what ffmpeg `said` that names why it failed, trimmed: the
+/// last line that names a cause ([`is_consequence`]). When every line only
+/// follows from a failure, the first line that is not libx265's report,
+/// which comes nearest the cause. The last line when every line is
+/// libx265's report, and `None` when ffmpeg said nothing.
+///
+/// ffmpeg writes the cause first and what follows from it after, such as
+/// that the encoder did not open and the output muxer's line that nothing
+/// was written, so the last line can be a consequence rather than the
+/// cause (#2959). The search goes back from the end rather than forward
+/// from the start, because a damaged file makes ffmpeg write errors it
+/// carries on past, such as a frame it could not decode, before the one it
+/// stopped on, and the start of what is kept can be any of them.
+fn cause_line(said: &str) -> Option<&str> {
+    let lines = said.lines().map(str::trim).filter(|line| !line.is_empty());
+    lines
+        .clone()
+        .rev()
+        .find(|line| !is_consequence(line))
+        .or_else(|| lines.clone().find(|line| !is_x265_report(line)))
+        .or_else(|| lines.clone().next_back())
 }
 
 /// `err` on one line, with its whole chain, and each file a failed ffmpeg
@@ -1050,7 +1110,7 @@ fn convert_audio(
     }
     with_temp_output(&tmp, || {
         tools
-            .transcode(&args, &tmp, Reads::All(path), stop)
+            .transcode(&args, &tmp, Reads::Audio(path), stop)
             .with_context(|| format!("convert audio {}", path.display()))?;
         if keep_smaller && !is_smaller(&tmp, path)? {
             let _ = fs::remove_file(&tmp);
@@ -1097,7 +1157,7 @@ fn convert_video(
             "+faststart".into(),
         ];
         tools
-            .transcode(&args, &tmp, Reads::All(path), stop)
+            .transcode(&args, &tmp, Reads::Video(path), stop)
             .with_context(|| format!("convert video {}", path.display()))?;
         commit_produced(commit, path, &tmp)
     })
@@ -1119,7 +1179,7 @@ fn remux_mp4(
         "-movflags".into(),
         "+faststart".into(),
     ];
-    tools.transcode(&args, tmp, Reads::All(path), stop)
+    tools.transcode(&args, tmp, Reads::Video(path), stop)
 }
 
 /// Leave an MP4 as it is; remux anything else into one, so every video the
@@ -1198,7 +1258,7 @@ fn compress_video(
             "-movflags".into(),
             "+faststart".into(),
         ]);
-        if let Err(hevc_err) = tools.transcode(&hevc_args, &tmp, Reads::All(path), stop) {
+        if let Err(hevc_err) = tools.transcode(&hevc_args, &tmp, Reads::Video(path), stop) {
             let _ = fs::remove_file(&tmp);
             if !h264_follows(&hevc_err) {
                 return Err(hevc_err.context(format!("compress video {}", path.display())));
@@ -1219,7 +1279,7 @@ fn compress_video(
                 "+faststart".into(),
             ]);
             tools
-                .transcode(&avc_args, &tmp, Reads::All(path), stop)
+                .transcode(&avc_args, &tmp, Reads::Video(path), stop)
                 .with_context(|| format!("HEVC failed ({hevc_err:#}), and then H.264 failed"))
                 .with_context(|| format!("compress video {}", path.display()))?;
             *hevc_failure = Some(error_line_without_files(&hevc_err));
@@ -1238,8 +1298,8 @@ fn compress_video(
 ///   damaged at that point, and H.264 would stall there too.
 /// - It ran past twice the file's length: no, because a damaged file loops.
 /// - It was stopped: no, because nothing is wrong, and the run is ending.
-/// - A short step over its limit is not a conversion, and never reaches
-///   here; it is not followed either.
+/// - A run over its time limit, a short step or an audio conversion, never
+///   reaches here; it is not followed either.
 fn h264_follows(hevc_err: &anyhow::Error) -> bool {
     match hevc_err.downcast_ref::<Killed>().map(Killed::reason) {
         None | Some(KillReason::StalledBeforeOutput { .. }) => true,
@@ -1248,7 +1308,7 @@ fn h264_follows(hevc_err: &anyhow::Error) -> bool {
             | KillReason::RanPastLength { .. }
             | KillReason::Stopped
             | KillReason::StoppedBeforeStart
-            | KillReason::ShortStepTooLong { .. },
+            | KillReason::TookTooLong { .. },
         ) => false,
     }
 }

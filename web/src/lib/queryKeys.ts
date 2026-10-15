@@ -45,6 +45,12 @@ export type WhatsappPathsKey = {
   db: string;
 };
 
+/** The Import form's Android SMS source and backup path, as one path check reads them. */
+export type AndroidSmsPathsKey = {
+  source: string;
+  backupPath: string;
+};
+
 export const keys = {
   contacts: {
     /** Every contact list page and every open contact. */
@@ -202,6 +208,16 @@ export const keys = {
   desktopExportDirectory: { all: ["desktop", "export-directory"] as const },
   /** The Staging Directory and its default, from the desktop process; used as it is, like `desktopToolsStatus`. */
   desktopStagingDirectory: { all: ["desktop", "staging-directory"] as const },
+  /**
+   * What the desktop process says about the free space of the Staging and
+   * Scratch Directories' disks; used as it is, like `desktopToolsStatus`.
+   * The answer does not depend on the source: `of(source)` puts it in the
+   * key only so that picking a source reads the disks again (#2010).
+   */
+  desktopLowDiskSpace: {
+    all: ["desktop", "low-disk-space"] as const,
+    of: (source: string) => ["desktop", "low-disk-space", source] as const,
+  },
   /** The log of the Import Run whose directory is `runDir`, as the desktop process names it. */
   desktopImportRunLog: {
     all: ["desktop", "import-run-log"] as const,
@@ -216,5 +232,10 @@ export const keys = {
   desktopWhatsappPaths: {
     all: ["desktop", "whatsapp-paths"] as const,
     of: (paths: WhatsappPathsKey) => ["desktop", "whatsapp-paths", paths] as const,
+  },
+  /** What the Android SMS backup path of the Import form points at, one entry per source and path. */
+  desktopAndroidSmsPaths: {
+    all: ["desktop", "android-sms-paths"] as const,
+    of: (paths: AndroidSmsPathsKey) => ["desktop", "android-sms-paths", paths] as const,
   },
 };

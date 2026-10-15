@@ -12,6 +12,7 @@ use serde_json::Value;
 
 use super::ImportFailure;
 use crate::config::validate_source_id;
+use crate::db::staging::EarlierVersionRecord;
 use crate::models::{StoredTime, utc_timestamp_text};
 
 /// One JSONL conversation after IR → database-row mapping.
@@ -31,8 +32,6 @@ pub struct ConversationRecord {
     pub line: usize,
     /// The conversation's identifier as the export wrote it.
     pub chat_identifier: String,
-    /// Platform service, e.g. `imessage`.
-    pub service: Option<String>,
     /// `individual` or `group`.
     pub conversation_type: String,
     /// Group label, when set.
@@ -79,6 +78,10 @@ pub struct ParticipantRecord {
     pub handle: HandleValue,
     /// Display-name alias, when the export supplied one.
     pub name_alias: Option<String>,
+    /// The country the file says the source read this identity in, when it
+    /// names one: a phone number written without its `+` code is a number
+    /// there.
+    pub country: Option<&'static phone::Country>,
 }
 
 /// What a conversation file gave for a person: an address, or a name in
@@ -136,6 +139,9 @@ pub struct MessageRecord {
     /// Sender for incoming messages: the address, or the name when the
     /// source named the sender with no address.
     pub sender: Option<HandleValue>,
+    /// The country the file says the source read the sender's identity in,
+    /// as [`ParticipantRecord::country`] says.
+    pub sender_country: Option<&'static phone::Country>,
     /// The account holder's own address on this message, sent from or
     /// received at: the message's owner handle, else the header's.
     pub owner: Option<String>,
@@ -161,20 +167,6 @@ pub struct MessageRecord {
     /// The earlier versions of an edited message, in the order the file
     /// lists them; `text` is the final version.
     pub earlier_versions: Vec<EarlierVersionRecord>,
-}
-
-/// One earlier version of one part of an edited message.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EarlierVersionRecord {
-    /// The part of the message this version belongs to.
-    pub part_index: i64,
-    /// The part's text in this version; `None` when the source recorded the
-    /// edit and not the text it replaced, as iMazing does.
-    pub text: Option<String>,
-    /// When this version was written, to the millisecond in the form
-    /// `MessageRecord::timestamp` takes; `None` when the source does not
-    /// record it.
-    pub edited_at: Option<StoredTime>,
 }
 
 /// One attachment of an imported message.
@@ -211,6 +203,15 @@ pub struct TapbackRecord {
     pub is_from_me: bool,
     /// Reactor handle for incoming reactions.
     pub sender: Option<String>,
+    /// The name the source gave the reactor of an incoming reaction when it
+    /// gave no address, as an iMazing CSV does. Shown, never matched: it
+    /// makes no identity. Never set together with `sender`, and never on
+    /// the account holder's own reaction (`tapback_from_reaction`).
+    pub sender_display_name: Option<String>,
+    /// The country staging reads the reactor's identity in. The file names
+    /// none for a reactor, so staging takes the one its conversation names
+    /// for the same identity, as a participant or a sender.
+    pub sender_country: Option<&'static phone::Country>,
 }
 
 /// Strip Apple's attachment object-replacement character (U+FFFC) from body text.
@@ -337,7 +338,8 @@ fn is_ir_header(value: &Value) -> bool {
 /// # Errors
 ///
 /// Returns an error when the backup date is outside the times a timestamp
-/// can hold.
+/// can hold, or a participant's `country` is not a country Message Crate
+/// knows.
 fn conversation_from_ir(header: &ConversationHeader, line: usize) -> Result<ConversationRecord> {
     let export_source = {
         let s = header.export.source.trim();
@@ -358,25 +360,14 @@ fn conversation_from_ir(header: &ConversationHeader, line: usize) -> Result<Conv
     Ok(ConversationRecord {
         line,
         chat_identifier: header.conversation.chat_identifier.clone(),
-        // Platform identity for handles (phone | whatsapp), not SMS/iMessage/RCS.
-        service: Some(
-            if export_source
-                .as_deref()
-                .is_some_and(|s| s.eq_ignore_ascii_case("whatsapp"))
-            {
-                IdentityService::Whatsapp.as_str().to_string()
-            } else {
-                IdentityService::Phone.as_str().to_string()
-            },
-        ),
         conversation_type: header.conversation.conversation_type.as_str().to_string(),
         group_title: header.conversation.group_title.clone(),
         participants: header
             .conversation
             .participants
             .iter()
-            .filter_map(participant_from_ir)
-            .collect(),
+            .filter_map(|p| participant_from_ir(p).transpose())
+            .collect::<Result<_>>()?,
         export_source,
         backup_taken_at,
     })
@@ -411,12 +402,15 @@ fn message_from_ir(
         .iter()
         .map(earlier_version_from_ir)
         .collect::<Result<Vec<_>>>()?;
-    let sender = if is_from_me {
-        None
+    let (sender, sender_country) = if is_from_me {
+        (None, None)
     } else {
-        handle_value(
-            msg.sender_identity.as_deref(),
-            msg.sender_display_name.as_deref(),
+        (
+            handle_value(
+                msg.sender_identity.as_deref(),
+                msg.sender_display_name.as_deref(),
+            ),
+            stated_country(msg.sender_country.as_deref())?,
         )
     };
 
@@ -427,6 +421,7 @@ fn message_from_ir(
         time_precision: msg.time_precision,
         is_from_me,
         sender,
+        sender_country,
         owner: msg
             .owner_identity
             .as_deref()
@@ -475,10 +470,37 @@ fn earlier_version_from_ir(version: &EarlierVersion) -> Result<EarlierVersionRec
 /// (`docs/architecture/contacts-identities-and-messages.md`). The file
 /// states no type: staging types an address by its service and shape
 /// (`db::handles::handle_type_on`).
-fn participant_from_ir(p: &IrParticipant) -> Option<ParticipantRecord> {
+///
+/// # Errors
+///
+/// Returns an error when the participant's `country` is not a country
+/// Message Crate knows.
+fn participant_from_ir(p: &IrParticipant) -> Result<Option<ParticipantRecord>> {
     let name_alias = p.display_name.clone();
-    let handle = handle_value(p.identity.as_deref(), p.display_name.as_deref())?;
-    Some(ParticipantRecord { handle, name_alias })
+    let Some(handle) = handle_value(p.identity.as_deref(), p.display_name.as_deref()) else {
+        return Ok(None);
+    };
+    Ok(Some(ParticipantRecord {
+        handle,
+        name_alias,
+        country: stated_country(p.country.as_deref())?,
+    }))
+}
+
+/// The country a file names for an identity, as an ISO 3166-1 alpha-2 code.
+///
+/// # Errors
+///
+/// Returns an error naming the code when it is not one of the countries
+/// `GET /v1/phone-countries` lists: a file that names a country names a
+/// real one, and a number is never read in a country nobody stated.
+fn stated_country(code: Option<&str>) -> Result<Option<&'static phone::Country>> {
+    code.map(|code| {
+        phone::country(code).with_context(|| {
+            format!("country {code:?} is not a country GET /v1/phone-countries lists")
+        })
+    })
+    .transpose()
 }
 
 /// The address, else the name the source gave with no address. `None` when
@@ -506,20 +528,29 @@ fn attachment_from_ir(a: &IrAttachment) -> AttachmentRecord {
 }
 
 /// One of a message's reactions as the row the server stores, under the
-/// person who reacted: the owner when `is_from_me`, else `reactor_identity`.
-/// A reaction is never given the author or the direction of the message it
-/// reacts to, because the reactor is rarely the author.
+/// person who reacted: the owner when `is_from_me`, else `reactor_identity`,
+/// else the name the source gave with no address (#2044). A reaction is
+/// never given the author or the direction of the message it reacts to,
+/// because the reactor is rarely the author.
 fn tapback_from_reaction(reaction: &Reaction) -> TapbackRecord {
+    let (sender, sender_display_name) = if reaction.is_from_me {
+        (None, None)
+    } else {
+        let sender = reaction.reactor_identity.as_deref().and_then(nonempty);
+        let name = match sender {
+            Some(_) => None,
+            None => reaction.reactor_display_name.as_deref().and_then(nonempty),
+        };
+        (sender, name)
+    };
     TapbackRecord {
         part_index: i64::from(reaction.part_index),
         kind: reaction.kind.clone(),
         emoji: reaction.emoji.clone(),
         is_from_me: reaction.is_from_me,
-        sender: if reaction.is_from_me {
-            None
-        } else {
-            reaction.reactor_identity.clone()
-        },
+        sender,
+        sender_display_name,
+        sender_country: None,
     }
 }
 

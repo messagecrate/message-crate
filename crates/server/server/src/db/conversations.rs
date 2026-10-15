@@ -6,14 +6,15 @@
 
 use std::collections::{HashMap, HashSet};
 
+use anyhow::Context;
 use serde::Serialize;
 use sqlx::{SqlSafeStr, SqliteConnection};
 
+use crate::db::SearchListError;
 use crate::db::ownership::owns_conversation;
 use crate::db::participant_names::{Participant, load_for_conversations};
 use crate::db::sql::{SqlParam, bind_args, fold_in_id_chunks, in_placeholders};
 use crate::paging::{Direction, Page, PageParams, SortKey, page_from_rows};
-use crate::server::ApiError;
 
 /// The keys `GET /v1/conversations` accepts in `sort=`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,17 +124,16 @@ type RawConversationRow = (
 ///
 /// # Errors
 ///
-/// `BadRequest` for a query the language refuses; `Internal` when a
-/// statement fails.
+/// [`SearchListError::Query`] for a query the language refuses;
+/// [`SearchListError::Internal`] when a statement fails.
 pub async fn list_conversations_sorted(
     conn: &mut SqliteConnection,
     account_id: i64,
     q: &str,
     order: &[SortKey<ConversationSort>],
-    limit: usize,
-    offset: usize,
+    page: PageParams,
     clock: (chrono_tz::Tz, chrono::NaiveDate),
-) -> Result<Page<ConversationSummary>, ApiError> {
+) -> Result<Page<ConversationSummary>, SearchListError> {
     let (zone, today) = clock;
     let filter = crate::search::compile(crate::search::CompileRequest {
         list: crate::search::ListKind::Conversations,
@@ -148,13 +148,14 @@ pub async fn list_conversations_sorted(
     let total: i64 =
         sqlx::query_scalar_with(sqlx::AssertSqlSafe(count_sql), bind_args(filter.params()))
             .fetch_one(&mut *conn)
-            .await?;
+            .await
+            .context("count the conversations a list query matches")?;
     let total = total.max(0) as u64;
 
     let mut params = filter.params().to_vec();
-    params.push(SqlParam::Int(limit as i64));
+    params.push(SqlParam::Int(page.limit as i64));
     params.push(SqlParam::Int(
-        i64::try_from(offset).map_err(anyhow::Error::from)?,
+        i64::try_from(page.offset).map_err(anyhow::Error::from)?,
     ));
     // The sort reads computed columns (`last_message_at`, `message_count`)
     // inside expressions. Sorting the rows as a derived table makes those
@@ -165,7 +166,7 @@ pub async fn list_conversations_sorted(
         order_by = conversation_order_by(order),
     );
     let out = load_conversation_rows(conn, account_id, sqlx::AssertSqlSafe(sql), &params).await?;
-    Ok(page_from_rows(out, total, PageParams { limit, offset }))
+    Ok(page_from_rows(out, total, page))
 }
 
 /// One conversation by id, scoped to `account_id`. `None` when the id does
@@ -179,7 +180,7 @@ pub async fn get_conversation_summary(
     conn: &mut SqliteConnection,
     account_id: i64,
     conversation_id: i64,
-) -> Result<Option<ConversationSummary>, ApiError> {
+) -> anyhow::Result<Option<ConversationSummary>> {
     let sql = format!(
         "{} WHERE c.id = ? AND c.account_id = ?",
         conversation_row_select()
@@ -278,10 +279,11 @@ async fn load_conversation_rows(
     account_id: i64,
     sql: impl SqlSafeStr,
     params: &[SqlParam],
-) -> Result<Vec<ConversationSummary>, ApiError> {
+) -> anyhow::Result<Vec<ConversationSummary>> {
     let rows: Vec<RawConversationRow> = sqlx::query_as_with(sql, bind_args(params))
         .fetch_all(&mut *conn)
-        .await?;
+        .await
+        .context("read conversation rows")?;
     let rows: Vec<RawConversation> = rows
         .into_iter()
         .map(
@@ -306,7 +308,9 @@ async fn load_conversation_rows(
         .collect();
 
     let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
-    let mut participants = load_for_conversations(conn, &ids).await?;
+    let mut participants = load_for_conversations(conn, &ids)
+        .await
+        .context("read the participants of the conversations")?;
     let source_sets = load_conversation_sources(conn, &ids).await?;
     let mut tag_sets = crate::db::named_membership::names_for_items(
         crate::db::named_membership::tag_spec(),
@@ -315,7 +319,7 @@ async fn load_conversation_rows(
         &ids,
     )
     .await
-    .map_err(ApiError::Internal)?;
+    .context("read the tags of the conversations")?;
 
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
@@ -371,7 +375,7 @@ pub fn display_service_label(sources: &[String]) -> String {
 async fn load_conversation_sources(
     conn: &mut SqliteConnection,
     conversation_ids: &[i64],
-) -> Result<HashMap<i64, Vec<String>>, ApiError> {
+) -> anyhow::Result<HashMap<i64, Vec<String>>> {
     fold_in_id_chunks(conn, conversation_ids, |conn, chunk| {
         Box::pin(async move {
             let placeholders = in_placeholders(1, chunk.len());
@@ -387,7 +391,10 @@ async fn load_conversation_sources(
             for id in chunk {
                 q = q.bind(*id);
             }
-            let rows = q.fetch_all(&mut *conn).await?;
+            let rows = q
+                .fetch_all(&mut *conn)
+                .await
+                .context("read the sources of the conversations")?;
             let mut out = Vec::new();
             for (cid, source) in rows {
                 if source.trim().is_empty() {
@@ -423,8 +430,11 @@ pub async fn list_conversation_source_stats(
     conn: &mut SqliteConnection,
     account_id: i64,
     conversation_id: i64,
-) -> Result<Option<Vec<ConversationSource>>, ApiError> {
-    if !owns_conversation(conn, account_id, conversation_id).await? {
+) -> anyhow::Result<Option<Vec<ConversationSource>>> {
+    if !owns_conversation(conn, account_id, conversation_id)
+        .await
+        .context("check that the account holds the conversation")?
+    {
         return Ok(None);
     }
 
@@ -439,7 +449,8 @@ pub async fn list_conversation_source_stats(
     )
     .bind(conversation_id)
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("count a conversation's messages by source")?;
 
     let total_unique: i64 = rows.iter().map(|(_, _, u)| *u).sum();
     let sources = rows
@@ -471,7 +482,7 @@ pub async fn with_yourself_ids(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> anyhow::Result<Vec<i64>> {
-    Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+    sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT c.id FROM conversations c
          WHERE c.account_id = $1 AND {}
          ORDER BY c.id",
@@ -479,7 +490,8 @@ pub async fn with_yourself_ids(
     )))
     .bind(account_id)
     .fetch_all(&mut *conn)
-    .await?)
+    .await
+    .context("read the account's conversations with yourself")
 }
 
 /// The chat handle of `conversation_id`, or `None` when the account has no
@@ -493,11 +505,10 @@ pub async fn chat_handle_id(
     account_id: i64,
     conversation_id: i64,
 ) -> anyhow::Result<Option<i64>> {
-    Ok(sqlx::query_scalar(
-        "SELECT chat_handle_id FROM conversations WHERE account_id = $1 AND id = $2",
-    )
-    .bind(account_id)
-    .bind(conversation_id)
-    .fetch_optional(&mut *conn)
-    .await?)
+    sqlx::query_scalar("SELECT chat_handle_id FROM conversations WHERE account_id = $1 AND id = $2")
+        .bind(account_id)
+        .bind(conversation_id)
+        .fetch_optional(&mut *conn)
+        .await
+        .context("read a conversation's chat handle")
 }

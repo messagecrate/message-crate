@@ -284,7 +284,7 @@ impl Operation {
     /// accepted. A `401` or `403` refuses the credential, so it is always
     /// `no-store`. A route outside `/v1`, such as `/health`, is left as it is.
     fn allows_cache_control(&self, status: StatusCode, cache_control: Option<&str>) -> bool {
-        if !crate::server::is_api_path(&self.path) {
+        if !crate::middleware::is_api_path(&self.path) {
             return cache_control.is_none();
         }
         let credential_accepted =
@@ -357,9 +357,13 @@ impl Shared {
         )
         .await
         .unwrap();
-        let owner_session = insert_account_session_token(&mut conn, OWNER_ACCOUNT_ID)
-            .await
-            .unwrap();
+        let owner_session = insert_account_session_token(
+            &mut conn,
+            OWNER_ACCOUNT_ID,
+            crate::test_support::routed_credential_instant(),
+        )
+        .await
+        .unwrap();
         drop(conn);
         // The Demo Account, whose row grants everything, for `document_rules`.
         fixture.demo_account().await;
@@ -444,12 +448,21 @@ impl<'a> World<'a> {
                 .unwrap();
         }
         let session = async |conn: &mut sqlx::SqliteConnection, id| {
-            insert_account_session_token(conn, id).await.unwrap()
-        };
-        let token = async |conn: &mut sqlx::SqliteConnection, label, import, export| {
-            create_api_token(conn, alice, label, Permissions::token(import, export), None)
+            insert_account_session_token(conn, id, crate::test_support::routed_credential_instant())
                 .await
                 .unwrap()
+        };
+        let token = async |conn: &mut sqlx::SqliteConnection, label, import, export| {
+            create_api_token(
+                conn,
+                alice,
+                label,
+                Permissions::token(import, export),
+                None,
+                crate::test_support::routed_credential_instant(),
+            )
+            .await
+            .unwrap()
         };
         let tokens = Tokens {
             owner: shared.owner_session.clone(),
@@ -600,9 +613,13 @@ impl<'a> World<'a> {
         .await
         .unwrap();
         tx.commit().await.unwrap();
-        insert_account_session_token(&mut conn, account_profile::DEMO_ACCOUNT_ID)
-            .await
-            .unwrap()
+        insert_account_session_token(
+            &mut conn,
+            account_profile::DEMO_ACCOUNT_ID,
+            crate::test_support::routed_credential_instant(),
+        )
+        .await
+        .unwrap()
     }
 
     pub(super) fn url(&self, path: &str) -> String {

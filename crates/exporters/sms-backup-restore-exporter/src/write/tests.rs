@@ -56,12 +56,12 @@ fn read_options<'a>(owners: &'a [String], spool: &'a AttachmentSpool) -> crate::
         owner_phones: owners,
         attachments_dir: None,
         spool: Some(spool),
-        media: media::MediaMode::Disabled,
-        compress: media::CompressOptions::default(),
-        tools: std::sync::Arc::new(media::InstalledTools::default()),
-        log: &NO_LOG,
-        progress: &NO_PROGRESS,
-        cancel: &NO_CANCEL,
+        files: message_crate_core::AttachmentFiles::Skip,
+        sinks: message_crate_core::Sinks {
+            log: &NO_LOG,
+            progress: &NO_PROGRESS,
+            cancel: &NO_CANCEL,
+        },
     }
 }
 
@@ -132,10 +132,12 @@ fn a_group_mms_keeps_its_addresses_and_attachment() {
         message_ir::IrParticipant {
             identity: Some("+15555550101".into()),
             display_name: Some("Ana".into()),
+            country: None,
         },
         message_ir::IrParticipant {
             identity: Some("+15555550102".into()),
             display_name: Some("Lee".into()),
+            country: None,
         },
     ];
     let incoming = &mut document.messages[0];
@@ -277,6 +279,7 @@ fn a_text_only_group_message_from_another_app_stays_in_its_group() {
         .push(message_ir::IrParticipant {
             identity: Some("+15555550102".into()),
             display_name: Some("Lee".into()),
+            country: None,
         });
     let incoming = &mut document.messages[0];
     incoming.source = None;
@@ -331,6 +334,7 @@ fn a_group_with_one_identified_participant_is_named_as_one_to_one() {
         .push(message_ir::IrParticipant {
             identity: None,
             display_name: Some("Lee".into()),
+            country: None,
         });
     document.messages[0].source = None;
 
@@ -361,6 +365,7 @@ fn a_group_the_reader_finds_one_peer_in_is_named_as_one_to_one() {
             .push(message_ir::IrParticipant {
                 identity: Some(handle.into()),
                 display_name: Some(name.into()),
+                country: None,
             });
         document.messages[0].source = None;
 

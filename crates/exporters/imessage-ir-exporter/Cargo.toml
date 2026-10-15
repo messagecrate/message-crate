@@ -23,6 +23,7 @@ message-crate-core = { path = "../../core/message-crate-core" }
 message-ir = { path = "../../libs/ir" }
 message-ir-format = { path = "../../libs/ir-format" }
 message-staging = { path = "../../libs/staging" }
+phone = { path = "../../libs/phone" }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 

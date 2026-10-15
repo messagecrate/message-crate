@@ -182,6 +182,17 @@ async fn migrate_schema(conn: &mut SqliteConnection) -> Result<()> {
     Ok(())
 }
 
+/// Whether [`ensure_schema`] would drop tables: the database has some, and
+/// its stamp is not [`SCHEMA_FINGERPRINT`]. A new or empty database is built
+/// without dropping anything, so it is not a rebuild here.
+///
+/// # Errors
+///
+/// Returns an error when a query fails.
+pub(crate) async fn rebuild_is_due(conn: &mut SqliteConnection) -> Result<bool> {
+    Ok(user_version(conn).await? != SCHEMA_FINGERPRINT && has_user_tables(conn).await?)
+}
+
 /// The `user_version` pragma value stamped by [`migrate_schema`].
 pub(crate) async fn user_version(conn: &mut SqliteConnection) -> Result<i64> {
     Ok(sqlx::query_scalar("PRAGMA user_version")
@@ -258,11 +269,7 @@ async fn keep_copy_before_rebuild(
     let (copy, partial) = claim_copy_name(&first).with_context(|| {
         format!("could not claim a name for a copy of the database beside {first}, so it was left as it is")
     })?;
-    if let Err(error) = sqlx::query("VACUUM INTO $1")
-        .bind(partial.to_string_lossy().as_ref())
-        .execute(&mut *conn)
-        .await
-    {
+    if let Err(error) = copy_database(conn, &partial).await {
         // This call created the `.partial` file, so it is removed with
         // whatever `VACUUM INTO` began in it.
         let _ = std::fs::remove_file(&partial);
@@ -282,6 +289,24 @@ async fn keep_copy_before_rebuild(
         );
     }
     Ok(copy)
+}
+
+/// Copy the database `conn` is open on to a new file at `copy` with
+/// `VACUUM INTO`, which reads it in one transaction, so the copy holds what
+/// the write-ahead log holds too.
+///
+/// # Errors
+///
+/// Returns an error when the copy cannot be written.
+pub async fn copy_database(
+    conn: &mut SqliteConnection,
+    copy: &std::path::Path,
+) -> sqlx::Result<()> {
+    sqlx::query("VACUUM INTO $1")
+        .bind(copy.to_string_lossy().as_ref())
+        .execute(&mut *conn)
+        .await?;
+    Ok(())
 }
 
 /// Claim the first of `first`, `first-2`, `first-3` and so on where neither

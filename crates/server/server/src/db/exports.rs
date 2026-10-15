@@ -16,7 +16,6 @@ use crate::db::conversation_messages::{
 };
 use crate::db::sql::{SqlParam, bind_all};
 use crate::paging::{Direction, Page, PageParams, SortKey, page_from_rows};
-use crate::server::ApiError;
 
 /// Which of the three forms an Export Run's scope took, without what it
 /// asked for: the values `exports.scope_kind` holds.
@@ -450,22 +449,21 @@ pub struct ExportPageOpts {
     pub export_id: i64,
     /// How many places the run listed at creation: its `message_count`.
     pub total: u64,
-    /// Places on the page. Already validated by the handler: `1..=MAX_LIST_LIMIT`.
-    pub limit: usize,
-    /// Places to skip in the run's list.
-    pub offset: usize,
+    /// Places on the page (`limit`, already validated by the handler:
+    /// `1..=MAX_LIST_LIMIT`) and places to skip in the run's list (`offset`).
+    pub page: PageParams,
     /// The parsed `sort`; [`DEFAULT_MESSAGE_SORT`](crate::db::conversation_messages::DEFAULT_MESSAGE_SORT)
     /// when the caller has none.
     pub order: Vec<SortKey<MessageSort>>,
 }
 
 /// The first and last place (exclusive, inclusive) a page covers in a run's
-/// list of `total` places, for `offset` and `limit` read in `direction`.
-/// Newest first counts places from the end of the list.
-fn page_places(total: u64, offset: usize, limit: usize, direction: Direction) -> (i64, i64) {
+/// list of `total` places, for `page` read in `direction`. Newest first
+/// counts places from the end of the list.
+fn page_places(total: u64, page: PageParams, direction: Direction) -> (i64, i64) {
     let total = i64::try_from(total).unwrap_or(i64::MAX);
-    let offset = i64::try_from(offset).unwrap_or(i64::MAX);
-    let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+    let offset = i64::try_from(page.offset).unwrap_or(i64::MAX);
+    let limit = i64::try_from(page.limit).unwrap_or(i64::MAX);
     match direction {
         Direction::Asc => (offset, offset.saturating_add(limit)),
         Direction::Desc => {
@@ -489,13 +487,13 @@ fn page_places(total: u64, offset: usize, limit: usize, direction: Direction) ->
 pub async fn export_messages(
     conn: &mut SqliteConnection,
     opts: ExportPageOpts,
-) -> Result<Page<Message>, ApiError> {
+) -> anyhow::Result<Page<Message>> {
     let direction = opts
         .order
         .iter()
         .find(|k| k.key == MessageSort::Date)
         .map_or(Direction::Asc, |k| k.direction);
-    let (after, through) = page_places(opts.total, opts.offset, opts.limit, direction);
+    let (after, through) = page_places(opts.total, opts.page, direction);
     let from_sql = format!(
         "FROM export_messages e
          JOIN messages m ON m.id = e.message_id
@@ -512,19 +510,12 @@ pub async fn export_messages(
             SqlParam::Int(through),
         ],
         &format!("e.row_order {}", direction.sql()),
-        opts.limit,
+        opts.page.limit,
         0,
     )
     .await?;
 
-    Ok(page_from_rows(
-        messages,
-        opts.total,
-        PageParams {
-            limit: opts.limit,
-            offset: opts.offset,
-        },
-    ))
+    Ok(page_from_rows(messages, opts.total, opts.page))
 }
 
 /// Ready the account's Export Runs to outlive it, just before the account is

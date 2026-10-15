@@ -30,9 +30,9 @@ pub use identity::{
     MessageCopy, MessageGuid, MessageIdentity, collapse_whitespace, one_copy_per_message,
 };
 pub use projection::{
-    PendingReply, ProjectedRole, ProjectionHooks, ProjectionTally, SortKeyUnit,
+    PendingReply, ProjectedRole, Projection, ProjectionHooks, ProjectionTally, SortKeyUnit,
     default_participants, display_names_for_handles, ensure_conversation, message_time,
-    pending_to_document, prepare_conversation,
+    pending_to_document, prepare_conversation, project_pending,
 };
 pub use schema_version::{
     UnsupportedSchemaVersion, check_schema_version, check_schema_version_in_json,
@@ -146,7 +146,7 @@ impl std::fmt::Display for UnknownDeletion {
 impl std::error::Error for UnknownDeletion {}
 
 /// Schema version written into every [`ConversationDocument`].
-pub const SCHEMA_VERSION: u32 = 14;
+pub const SCHEMA_VERSION: u32 = 15;
 
 /// One exported conversation: export metadata, conversation roster and
 /// stats, and messages.
@@ -278,6 +278,13 @@ pub struct IrParticipant {
     pub identity: Option<String>,
     /// Display name shown in UIs; `None` when the source has none.
     pub display_name: Option<String>,
+    /// The country the source read this identity in, as an upper-case ISO
+    /// 3166-1 alpha-2 code (`GB`): a phone number written without its `+`
+    /// code is a number in this country. `None`, and left out of the file,
+    /// when the source names none; Apple Messages names one from `chat.db`'s
+    /// `handle.country`, and no other source does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
 }
 
 /// Transport a message arrived on.
@@ -504,6 +511,11 @@ pub struct IrMessage {
     pub sender_identity: Option<String>,
     /// Display name of the actual sender.
     pub sender_display_name: Option<String>,
+    /// The country the source read the sender's identity in, as
+    /// [`IrParticipant::country`] says. `None`, and left out of the file,
+    /// when the source names none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sender_country: Option<String>,
     /// The owner's own address on this message: the one it was sent from
     /// (outgoing) or received at (incoming). `None` when the source knows
     /// only one owner address, which is then `export.owner_identity`.
@@ -842,7 +854,7 @@ impl ConversationHeader {
 /// Intermediate message before conversion to [`IrMessage`].
 ///
 /// Exporters parse vendor formats into these, then convert to
-/// [`ConversationDocument`] in their `pending_to_document` functions.
+/// [`ConversationDocument`] through the shared [`pending_to_document`].
 /// Exporter-specific metadata goes in [`Self::extra`].
 #[derive(Debug, Clone)]
 pub struct PendingMessage {
@@ -930,7 +942,9 @@ pub struct PendingConversation {
     pub chat_id: String,
     /// Display name for the conversation. `None` when the source has none.
     pub display_name: Option<String>,
-    /// Participant handles in E.164 form.
+    /// Participant handles: a phone number in E.164 form where the source
+    /// gives one, else the source's own handle (an email address, a short
+    /// code, a name).
     pub participant_e164s: Vec<String>,
     /// Messages awaiting conversion to [`IrMessage`].
     pub messages: Vec<PendingMessage>,

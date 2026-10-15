@@ -427,8 +427,10 @@ async fn listed_conversations(
         account_id,
         q,
         &crate::db::conversations::DEFAULT_CONVERSATION_SORT,
-        50,
-        0,
+        crate::paging::PageParams {
+            limit: 50,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await
@@ -462,16 +464,18 @@ async fn import_files(conn: &mut sqlx::SqliteConnection, files: &[(&str, String)
         })
         .collect();
     let assets = tmp.path().join("assets");
-    let opts = crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
-        assets_dir: &assets,
-        asset_root: Some(tmp.path()),
-        mode: crate::imports_api::ImportMode::Append,
-        source: "imessage",
-        account_id: TEST_ACCOUNT,
-        import_id: None,
-        phone_country: None,
-        now: crate::test_support::fixed_instant(),
-    });
+    let opts = crate::imports_api::pipeline::ImportOptions::fixed(
+        crate::imports_api::pipeline::FixedImportArgs {
+            assets_dir: &assets,
+            asset_root: Some(tmp.path()),
+            mode: message_crate_api_types::ImportMode::Append,
+            source: "imessage",
+            account_id: TEST_ACCOUNT,
+            import_id: None,
+            phone_country: None,
+            now: crate::test_support::fixed_instant(),
+        },
+    );
     crate::test_support::import_for_account(conn, &paths, &opts)
         .await
         .unwrap();

@@ -10,12 +10,14 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
 
+use crate::api_error::ApiError;
+use crate::auth::AuthIdentity;
 use crate::credentials::{MAX_PASSWORD_BYTES, normalize_username, verify_login_password};
 use crate::db::audit_trail::{self, AuditReason};
 use crate::db::session_tokens::ConnectingApp;
 use crate::db::{account_profile, api_tokens, dedupe, session_tokens};
 use crate::extract::Json;
-use crate::server::{ApiError, AppState, AuthIdentity, Created};
+use crate::server::{AppState, Created};
 
 /// Username and password, the body of `POST /v1/session`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -179,7 +181,7 @@ pub async fn create_session(
     if req.password.len() > MAX_PASSWORD_BYTES {
         return Err(ApiError::validation("password is too long"));
     }
-    let app = crate::server::connecting_app(&headers);
+    let app = crate::auth::connecting_app(&headers);
     // `log_in` has given its connection back by the time it answers, so a
     // refusal waits holding none.
     match log_in(&state, &username, &req.password, app.as_ref()).await? {
@@ -323,12 +325,13 @@ pub async fn delete_session(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<axum::http::StatusCode, ApiError> {
-    let token = crate::server::bearer_token(&headers)?;
+    let token = crate::auth::bearer_token(&headers)?;
     let mut conn = state.db.acquire().await?;
-    if logout_on_conn(&mut conn, &token, Utc::now()).await? {
+    let now = Utc::now();
+    if logout_on_conn(&mut conn, &token, now).await? {
         return Ok(axum::http::StatusCode::NO_CONTENT);
     }
-    if api_tokens::lookup_account_for_api_token(&mut conn, &token)
+    if api_tokens::lookup_account_for_api_token(&mut conn, &token, now)
         .await?
         .is_some()
     {

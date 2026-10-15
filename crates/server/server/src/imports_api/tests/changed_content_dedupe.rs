@@ -1,5 +1,6 @@
 //! An import that changes a stored message's content puts its duplicate
-//! flag right (#1805), through the dedupe every batch runs (#1969).
+//! flag right (#1805), through the dedupe every Import Run runs when it
+//! ends (#1969, #2040).
 
 use super::*;
 
@@ -28,24 +29,6 @@ fn edited(guid: &str, text: &str) -> MessageLine {
         text: Some("see you at six".into()),
         edited_at_unix_ms: Some(SECOND + 60_000),
     })
-}
-
-/// The guid of the message `guid` is hidden behind, or `None` when it is
-/// shown.
-async fn hidden_behind(state: &crate::server::AppState, guid: &str) -> Option<String> {
-    let mut conn = state.db.acquire().await.unwrap();
-    sqlx::query_scalar(
-        r"
-        SELECT w.guid
-        FROM messages m
-        LEFT JOIN messages w ON w.id = m.duplicate_of
-        WHERE m.guid = $1
-        ",
-    )
-    .bind(guid)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap()
 }
 
 /// The texts a search for `word` finds.

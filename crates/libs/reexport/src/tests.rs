@@ -1,9 +1,8 @@
 use super::*;
-use message_crate_core::testutil::TestRun;
-use message_crate_core::{LogSink, ObfuscateConfig};
+use message_crate_core::testutil::{RecordedLog, TestRun, recorded_log};
+use message_crate_core::{ObfuscateConfig, RunLogLevel};
 use message_ir::IrAttachment;
 use message_ir_format::{read_conversation_csv, read_conversation_json};
-use std::sync::{Arc, Mutex};
 
 fn write_fixture(dir: &Path, format: OutputFormat) {
     fs::create_dir_all(dir).unwrap();
@@ -17,11 +16,9 @@ fn write_fixture(dir: &Path, format: OutputFormat) {
     sink.finish(&mut ExportReport::default()).unwrap();
 }
 
-/// A conversion of `input` into `output` as `output_format`, whose media
-/// conversion runs a fake ffmpeg that writes a few bytes for every file.
+/// A conversion of `input` into `output` as `output_format`.
 fn config(input: &Path, output: &Path, output_format: OutputFormat) -> TestRun<FormatConfig> {
-    let mut output = OutputConfig::new(output, output_format);
-    output.media.tools = Arc::new(media::testutil::FakeTools::new());
+    let output = OutputConfig::new(output, output_format);
     TestRun {
         context: RunContext::new(std::env::temp_dir().join("message-crate-test-cache")),
         output,
@@ -255,29 +252,32 @@ fn snapshot(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
 
 /// Convert an SMS backup with a picture into `destination`, replace the
 /// backup with `broken`, and convert it again into the same directory with
-/// `media`. The second run must fail and leave the first run's output as it
+/// `files`. The second run must fail and leave the first run's output as it
 /// was.
-fn assert_broken_backup_keeps_previous_output(media: MediaMode, broken: impl Fn(&str) -> String) {
+fn assert_broken_backup_keeps_previous_output(
+    files: AttachmentFiles,
+    broken: impl Fn(&str) -> String,
+) {
     let source = tempfile::tempdir().unwrap();
     let backup = r#"<smses><mms date="1400773400000" msg_box="1" address="+15555550101"><parts><part ct="image/jpeg" name="a.jpg" data="aGVsbG8="/></parts><addrs><addr address="+15555550101" type="137"/><addr address="+15555550100" type="151"/></addrs></mms></smses>"#;
     fs::write(source.path().join("smses.xml"), backup).unwrap();
     let destination = tempfile::tempdir().unwrap();
     let mut config = config(source.path(), destination.path(), OutputFormat::Json);
-    config.output.media.mode = media;
+    config.output.media.files = files;
     convert(source.path(), &config).unwrap();
     let previous = snapshot(destination.path());
     assert!(
         previous
             .iter()
             .any(|(path, _)| path.extension().is_some_and(|e| e == "json")),
-        "{media:?}: the first run wrote a conversation: {previous:?}"
+        "{files:?}: the first run wrote a conversation: {previous:?}"
     );
-    if media == MediaMode::Clone {
+    if files == AttachmentFiles::Originals {
         assert!(
             previous
                 .iter()
                 .any(|(path, _)| path.starts_with("attachments")),
-            "{media:?}: the first run staged the picture: {previous:?}"
+            "{files:?}: the first run staged the picture: {previous:?}"
         );
     }
 
@@ -287,7 +287,7 @@ fn assert_broken_backup_keeps_previous_output(media: MediaMode, broken: impl Fn(
     assert_eq!(
         snapshot(destination.path()),
         previous,
-        "{media:?}: the previous output is left as it was"
+        "{files:?}: the previous output is left as it was"
     );
 }
 
@@ -296,10 +296,38 @@ fn assert_broken_backup_keeps_previous_output(media: MediaMode, broken: impl Fn(
 /// attachments (issue #1439).
 #[test]
 fn a_broken_sms_backup_leaves_the_previous_output_as_it_was() {
-    for media in [MediaMode::Clone, MediaMode::Disabled] {
-        assert_broken_backup_keeps_previous_output(media, |backup| backup[..20].to_string());
-        assert_broken_backup_keeps_previous_output(media, |_| "<smses count=\"0\"></smses>".into());
+    for files in [AttachmentFiles::Originals, AttachmentFiles::Skip] {
+        assert_broken_backup_keeps_previous_output(files, |backup| backup[..20].to_string());
+        assert_broken_backup_keeps_previous_output(files, |_| "<smses count=\"0\"></smses>".into());
     }
+}
+
+/// Convert refuses a backup cut off between two elements, naming the file
+/// and saying it is not valid XML, and writes nothing, rather than convert
+/// the messages before the cut (#2028).
+#[test]
+fn a_backup_cut_off_partway_converts_nothing() {
+    let source = tempfile::tempdir().unwrap();
+    let input = source.path().join("smses.xml");
+    fs::write(
+        &input,
+        r#"<smses><sms protocol="0" address="+15555550101" date="1400773261000" type="1" body="before the cut"/><mms date="1400773400000" msg_box="1" address="+15555550101"><parts><part ct="text/plain" text="cut"/>"#,
+    )
+    .unwrap();
+    let destination = tempfile::tempdir().unwrap();
+
+    let error = convert(
+        source.path(),
+        &config(source.path(), destination.path(), OutputFormat::Json),
+    )
+    .unwrap_err();
+
+    let message = format!("{error:#}");
+    assert!(
+        message.contains(&format!("{} is not valid XML", input.display())),
+        "{message}"
+    );
+    assert_eq!(snapshot(destination.path()), []);
 }
 
 /// An output inside the backup's directory is left out of the read, so the
@@ -411,20 +439,29 @@ fn sms_fixture(name: &str) -> PathBuf {
 }
 
 /// The config of a Convert from `input`, with every line it logs as it
-/// runs.
-fn logged_config(input: &Path, output: &Path) -> (TestRun<FormatConfig>, Arc<Mutex<Vec<String>>>) {
-    let lines = Arc::new(Mutex::new(Vec::new()));
-    let sink_lines = Arc::clone(&lines);
+/// runs, each at its level.
+fn logged_config(input: &Path, output: &Path) -> (TestRun<FormatConfig>, RecordedLog) {
+    let (log, recorded) = recorded_log();
     let mut config = config(input, output, OutputFormat::Csv);
-    config.context.log = LogSink::new(move |line: &str| {
-        sink_lines.lock().unwrap().push(line.to_string());
-    });
-    (config, lines)
+    config.context.log = log;
+    (config, recorded)
+}
+
+/// The text of every line `recorded` holds, whatever its level.
+fn texts(recorded: &RecordedLog) -> Vec<String> {
+    recorded
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(_, text)| text.clone())
+        .collect()
 }
 
 /// Convert from an SMS Backup & Restore backup says what its reader
 /// dropped and skipped, before the `Conversations:` line the desktop app
 /// shows as the run's summary (#1603). The fixture holds one of each kind.
+/// What the run went on without is at `WARN`; a repeated copy dropped
+/// leaves the message kept, so it is at `INFO` (#2047).
 #[test]
 fn run_from_an_sms_backup_logs_the_reader_counts() {
     let destination = tempfile::tempdir().unwrap();
@@ -433,19 +470,28 @@ fn run_from_an_sms_backup_logs_the_reader_counts() {
     let result = run_config(&config).unwrap();
 
     let logged = logged.lock().unwrap().clone();
-    for expected in [
-        "Dropped 1 repeated copy of a message",
-        "Skipped 1 message with an invalid date",
-        "Skipped 1 message with no usable address",
-        "Skipped 1 message of an unknown type",
-        "Skipped 1 draft or message never sent",
-        "Skipped 1 MMS with no participants",
-        "Left out 1 message part that could not be read",
-        "Left out 1 character reference that is not a character",
+    for (level, expected) in [
+        (RunLogLevel::Info, "Dropped 1 repeated copy of a message"),
+        (RunLogLevel::Warn, "Skipped 1 message with an invalid date"),
+        (
+            RunLogLevel::Warn,
+            "Skipped 1 message with no usable address",
+        ),
+        (RunLogLevel::Warn, "Skipped 1 message of an unknown type"),
+        (RunLogLevel::Warn, "Skipped 1 draft or message never sent"),
+        (RunLogLevel::Warn, "Skipped 1 MMS with no participants"),
+        (
+            RunLogLevel::Warn,
+            "Left out 1 message part that could not be read",
+        ),
+        (
+            RunLogLevel::Warn,
+            "Left out 1 character reference that is not a character",
+        ),
     ] {
         assert!(
-            logged.iter().any(|line| line == expected),
-            "{expected:?} in the log: {logged:#?}"
+            logged.contains(&(level, expected.to_string())),
+            "{expected:?} at {level:?} in the log: {logged:#?}"
         );
     }
     // The run's summary lines follow everything logged as it ran.
@@ -466,7 +512,7 @@ fn a_convert_that_keeps_no_message_still_logs_why() {
     let err = run_config(&config).unwrap_err().to_string();
 
     assert!(err.contains("no conversations loaded"), "{err}");
-    let logged = logged.lock().unwrap().clone();
+    let logged = texts(&logged);
     assert!(
         logged.contains(&"Skipped 1 message with no usable address".to_string())
             && logged.contains(&"Skipped 1 message of an unknown type".to_string()),
@@ -517,7 +563,7 @@ fn log_lines_name_the_detected_format_and_the_conversation_count() {
 }
 
 #[test]
-fn log_lines_append_the_media_lines_after_the_count() {
+fn log_lines_append_the_obfuscated_line_after_the_count() {
     let report = ReexportReport {
         detected_format: "json".to_string(),
         sms_only_format: None,
@@ -726,67 +772,6 @@ fn copy_dir_recursive_refuses_a_missing_source() {
         .to_string();
 
     assert_eq!(error, format!("read {}", missing.display()));
-}
-
-#[test]
-fn apply_reexport_convert_restages_attachments_and_marks_missing_files() {
-    let output = tempfile::tempdir().unwrap();
-    let attachments = output.path().join("attachments");
-    fs::create_dir_all(&attachments).unwrap();
-    fs::write(attachments.join("note.txt"), b"hello attachment").unwrap();
-    let mut document = message_ir::testutil::sample_document("with attachments");
-    document.messages[0].attachments = vec![
-        attachment("note.txt", Some("attachments/note.txt")),
-        attachment("gone.txt", Some("attachments/gone.txt")),
-        attachment("never-staged.txt", None),
-    ];
-    let transforms = ExportTransforms {
-        media: MediaMode::Convert,
-        tools: Arc::new(media::testutil::FakeTools::new()),
-        ..ExportTransforms::none()
-    };
-
-    let config = config(output.path(), output.path(), OutputFormat::Jsonl);
-    let mut report = ExportReport::default();
-    apply_reexport_convert(
-        std::slice::from_mut(&mut document),
-        &config.context,
-        &config.output.directory,
-        &transforms,
-        &mut report,
-    )
-    .unwrap();
-    assert_eq!(report.attachments_saved, 1, "one file was on disk to stage");
-    assert_eq!(report.extra(ATTACHMENTS_MISSING), 2);
-
-    let staged = &document.messages[0].attachments[0];
-    assert_eq!(
-        staged.digest_sha256.as_deref(),
-        Some("7fa36b95d5c98859ed72b4787f3c28b29eaa103970786755c9711cbb19be631c")
-    );
-    assert_eq!(staged.size_bytes, Some(16));
-    assert_eq!(staged.missing_reason, None);
-    let path = staged.path.as_deref().unwrap();
-    assert!(
-        path.starts_with("attachments/") && path.ends_with("-7fa36b95d5c98859.txt"),
-        "{path}"
-    );
-    assert_eq!(
-        fs::read(output.path().join(path)).unwrap(),
-        b"hello attachment"
-    );
-    assert_eq!(
-        document.messages[0].attachments[1]
-            .missing_reason
-            .as_deref(),
-        Some("file_missing")
-    );
-    assert_eq!(
-        document.messages[0].attachments[2]
-            .missing_reason
-            .as_deref(),
-        Some("file_missing")
-    );
 }
 
 /// The sniffers are what stop the converter reading somebody else's file.
@@ -1311,12 +1296,12 @@ fn read_output(dir: &Path, format: OutputFormat) -> ConversationDocument {
     }
 }
 
-/// Convert the mail export in `source` to `format` with `media` and check
+/// Convert the mail export in `source` to `format` with `files` and check
 /// that the attachment the mail carried is a file the output names.
-fn assert_mail_attachment_survives(source: &Path, format: OutputFormat, media: MediaMode) {
+fn assert_mail_attachment_survives(source: &Path, format: OutputFormat, files: AttachmentFiles) {
     let destination = tempfile::tempdir().unwrap();
     let mut config = config(source, destination.path(), format);
-    config.output.media.mode = media;
+    config.output.media.files = files;
 
     convert(source, &config).unwrap();
 
@@ -1324,20 +1309,20 @@ fn assert_mail_attachment_survives(source: &Path, format: OutputFormat, media: M
     let note = &out.messages[0].attachments[0];
     let path = note.path.as_deref().unwrap_or_else(|| {
         panic!(
-            "{format:?} {media:?}: no path, missing_reason={:?}",
+            "{format:?} {files:?}: no path, missing_reason={:?}",
             note.missing_reason
         )
     });
     assert_eq!(
         fs::read(destination.path().join(path)).unwrap(),
         b"hello attachment",
-        "{format:?} {media:?}"
+        "{format:?} {files:?}"
     );
-    assert_eq!(note.missing_reason, None, "{format:?} {media:?}");
+    assert_eq!(note.missing_reason, None, "{format:?} {files:?}");
     assert_eq!(
         note.digest_sha256.as_deref(),
         Some("7fa36b95d5c98859ed72b4787f3c28b29eaa103970786755c9711cbb19be631c"),
-        "{format:?} {media:?}"
+        "{format:?} {files:?}"
     );
 }
 
@@ -1351,21 +1336,7 @@ fn converting_a_mail_export_writes_its_attachments() {
         let source = tempfile::tempdir().unwrap();
         write_mail_fixture(source.path(), mail, false);
         for format in [OutputFormat::Json, OutputFormat::Jsonl, OutputFormat::Csv] {
-            assert_mail_attachment_survives(source.path(), format, MediaMode::Clone);
-        }
-    }
-}
-
-/// Convert and Compress stage the attachments again before media conversion.
-/// The bytes a mail export holds in memory must reach media conversion too, and
-/// not come out `file_missing` because there was no file to read (#1072).
-#[test]
-fn converting_a_mail_export_with_media_conversion_writes_its_attachments() {
-    let source = tempfile::tempdir().unwrap();
-    write_mail_fixture(source.path(), OutputFormat::Mbox, false);
-    for media in [MediaMode::Convert, MediaMode::Compress] {
-        for format in [OutputFormat::Json, OutputFormat::Jsonl, OutputFormat::Csv] {
-            assert_mail_attachment_survives(source.path(), format, media);
+            assert_mail_attachment_survives(source.path(), format, AttachmentFiles::Originals);
         }
     }
 }
@@ -1611,64 +1582,30 @@ fn the_disk_check_of_a_conversion_leaves_out_an_attachment_with_no_file() {
     }
 }
 
-/// With the media converted, a conversion stages from the sources its disk
-/// check counted: both attachments with no file come out missing, and the
-/// one the input gave a reason keeps it (#1743).
-#[test]
-fn a_converted_conversion_stages_from_the_sources_its_disk_check_counted() {
-    let source = tempfile::tempdir().unwrap();
-    write_huge_attachments_with_no_file(source.path(), "too_large");
-    let destination = tempfile::tempdir().unwrap();
-    let mut converted = config(source.path(), destination.path(), OutputFormat::Jsonl);
-    converted.output.media.mode = MediaMode::Convert;
-
-    let report = convert(source.path(), &converted).unwrap();
-
-    assert_eq!(report.report.extra(ATTACHMENTS_MISSING), 2);
-    let out = read_output(destination.path(), OutputFormat::Jsonl);
-    let reasons: Vec<_> = out.messages[0]
-        .attachments
-        .iter()
-        .map(|att| att.missing_reason.as_deref())
-        .collect();
-    assert_eq!(reasons, [Some("file_missing"), Some("too_large")]);
-}
-
 /// Convert `source`, which holds one conversation with one PNG attachment,
-/// to JSON Lines with the media cloned, converted and compressed. Each run's
-/// `attachments/` must hold exactly the one file the conversation names: a
-/// JPEG once the media is converted or compressed. A second file there is
-/// a copy the disk check did not count (#1759).
-fn assert_converted_writes_each_attachment_once(source: &Path) {
-    for mode in [MediaMode::Clone, MediaMode::Convert, MediaMode::Compress] {
-        let destination = tempfile::tempdir().unwrap();
-        let mut converted = config(source, destination.path(), OutputFormat::Jsonl);
-        converted.output.media.mode = mode;
+/// to JSON Lines. The run's `attachments/` must hold exactly the one file
+/// the conversation names. A second file there is a copy the disk check did
+/// not count (#1759).
+fn assert_writes_each_attachment_once(source: &Path) {
+    let destination = tempfile::tempdir().unwrap();
+    let converted = config(source, destination.path(), OutputFormat::Jsonl);
 
-        convert(source, &converted).unwrap();
+    convert(source, &converted).unwrap();
 
-        let out = read_output(destination.path(), OutputFormat::Jsonl);
-        let named = out.messages[0].attachments[0].path.clone().unwrap();
-        let written: Vec<_> = snapshot(&destination.path().join("attachments"))
-            .into_iter()
-            .map(|(path, _)| format!("attachments/{}", path.to_string_lossy().replace('\\', "/")))
-            .collect();
-        assert_eq!(written, std::slice::from_ref(&named), "{mode:?}");
-        let extension = if mode == MediaMode::Clone {
-            ".png"
-        } else {
-            ".jpg"
-        };
-        assert!(named.ends_with(extension), "{mode:?}: {named}");
-    }
+    let out = read_output(destination.path(), OutputFormat::Jsonl);
+    let named = out.messages[0].attachments[0].path.clone().unwrap();
+    let written: Vec<_> = snapshot(&destination.path().join("attachments"))
+        .into_iter()
+        .map(|(path, _)| format!("attachments/{}", path.to_string_lossy().replace('\\', "/")))
+        .collect();
+    assert_eq!(written, std::slice::from_ref(&named));
+    assert!(named.ends_with(".png"), "{named}");
 }
 
-/// A conversion of an export stages every attachment from the input when
-/// it converts or compresses the media, so it copies none of the input's
-/// `attachments/`. The copy stayed beside the staged files, and the convert
-/// pass converted it too (#1759).
+/// A conversion of an export writes each of the input's attachments once
+/// (#1759).
 #[test]
-fn a_converted_conversion_writes_each_attachment_once() {
+fn a_conversion_writes_each_attachment_once() {
     let source = tempfile::tempdir().unwrap();
     clean_previous_ir_output(source.path()).unwrap();
     let mut doc = message_ir::testutil::sample_document("a photo");
@@ -1686,7 +1623,7 @@ fn a_converted_conversion_writes_each_attachment_once() {
     )
     .unwrap();
 
-    assert_converted_writes_each_attachment_once(source.path());
+    assert_writes_each_attachment_once(source.path());
 }
 
 /// A conversion of an SMS Backup & Restore backup takes every attachment
@@ -1707,7 +1644,7 @@ fn a_converted_sms_backup_writes_each_attachment_once() {
     )
     .unwrap();
 
-    assert_converted_writes_each_attachment_once(source.path());
+    assert_writes_each_attachment_once(source.path());
 }
 
 /// A JSON Lines export in `dir` whose two attachments name a size no disk
@@ -1768,11 +1705,16 @@ fn the_byte_total_of_a_conversion_stays_the_same_when_a_file_is_gone() {
         sized("empty.txt", None, 30, Some(b"")),
     ];
 
-    apply_reexport_convert(
+    let counted = attachments_in(
         std::slice::from_mut(&mut document),
+        &config.output.directory,
+        AttachmentFiles::Originals,
+        &config.context.log,
+    );
+    stage_again(
+        counted,
         &config.context,
         &config.output.directory,
-        &ExportTransforms::none(),
         &mut ExportReport::default(),
     )
     .unwrap();
@@ -1835,7 +1777,7 @@ fn a_backup_s_attachments_are_staged_into_the_run_s_log_and_progress() {
     read.counted(&mut documents, context);
     read.stage(&mut documents, context).unwrap();
 
-    let logged = logged.lock().unwrap().clone();
+    let logged = texts(&logged);
     for path in &gone {
         let line = message_staging::unreadable_attachment_line(path, "no file there");
         assert_eq!(

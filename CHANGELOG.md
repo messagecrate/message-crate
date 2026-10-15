@@ -22,6 +22,17 @@ carry their date on the heading.
 
 ### Features
 
+- 2026-10-15: **The Import form says when a disk it writes to is low.** When
+  the disk that holds the Staging Directory or the Scratch Directory has less
+  than 10 GB free, the form names the disk, the directory and the space free
+  above the Import button, so space can be freed before the run starts. The
+  import can still start (#2010).
+- 2026-10-15: **The login card says when the password would cross the
+  network unencrypted.** Opened over plain HTTP from another computer, such
+  as at `http://192.168.1.20:8080`, the login card and Create Owner now say
+  that the connection is not encrypted, so the password crosses the network
+  as typed. An address on the same computer, and any `https` address, shows
+  nothing new (#2115).
 - 2026-10-12: **Owner Home quotes SQLite's error when write-ahead logging is
   off.** When the server could not turn write-ahead logging on as it
   started, the notice above every Owner Home section now says what SQLite
@@ -96,17 +107,15 @@ carry their date on the heading.
   and edits.** Each reaction in an iMazing export is kept with its emoji and
   whether the account holder gave it. The export names the person who
   reacted by display name alone, with no phone number or address, so a
-  reaction is not matched to a contact. The server does not yet keep the
-  name, so another person's reaction reads as from "Someone". A reply is linked
-  to the message it quotes when that message is in the same conversation of
-  the export, and stays a reply without a link otherwise. A message deleted
-  on the phone before the export is marked **Deleted in the source app**. An
-  edited message is marked **Edited**, and because iMazing keeps only the
-  final text, **Edited** opens one line, **Earlier version not in the
-  backup**, with the time of the edit; a search never finds the message by
-  the text it lost. The database format changed: an existing Message Crate
-  is rebuilt empty on first start and its messages must be imported again
-  (#2030).
+  reaction is not matched to a contact. A reply is linked to the message it
+  quotes when that message is in the same conversation of the export, and
+  stays a reply without a link otherwise. A message deleted on the phone
+  before the export is marked **Deleted in the source app**. An edited
+  message is marked **Edited**, and because iMazing keeps only the final
+  text, **Edited** opens one line, **Earlier version not in the backup**,
+  with the time of the edit; a search never finds the message by the text it
+  lost. The database format changed: an existing Message Crate is rebuilt
+  empty on first start and its messages must be imported again (#2030).
 - 2026-10-09: **A WhatsApp import brings each reaction in under the person
   who reacted.** A WhatsApp conversation from an Android phone or an iPhone
   now shows its reactions, each stored under the reactor's phone number, or
@@ -209,6 +218,40 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-15: **An Audit Trail entry names the request that wrote it.**
+  Each entry now keeps the id the server gave the request that made it,
+  the same id that request's lines in the server's log carry, so an entry
+  and its lines can be found by each other rather than by time. An entry
+  written by a server command, or by the Demo Account build of a new
+  Message Crate's first start, has no id, and neither has the entry for an
+  Import Run, an Export Run or a Session that ended by expiry. The server
+  hands the id out with each entry; nothing on screen shows it yet. The
+  database format changed: an existing Message Crate is rebuilt empty on
+  first start and its messages must be imported again (#2276).
+- 2026-10-15: **The Attachments choices say they convert media.** The
+  Import form's **Attachments** field now reads **Copy**, **Convert media**,
+  **Convert & Compress media** and **Skip**, and the Staging Review's button
+  reads **Convert media** or **Convert & Compress media**, where it read
+  **Compress media**. **Convert** alone stays the Settings tool that rewrites
+  an export into another format (#2023).
+- 2026-10-15: **The Docker image no longer carries Node.js.** It was built
+  on Node.js 20, which no longer gets security fixes, though the server never
+  used it, so image scanners flagged every Message Crate image. The image is
+  now built on Debian alone and checks its own health with the server
+  program. It still runs as user and group 1000, so existing data and
+  Compose files work as before (#2065).
+- 2026-10-15: **The owner's password is typed, not written on the command
+  line.** The server's `create-owner` and `reset-owner-password` commands
+  now ask for the password and don't show it as it's typed, or read it from
+  the first line of their input when it is piped in. They no longer take
+  it as `--password`, because a command line is visible to everyone signed
+  in to the computer while it runs and stays in the shell's history (#2094).
+- 2026-10-15: **An import hides its duplicates once, when it ends.** The
+  server used to hide the duplicates of the whole account after every part
+  of an import it received, so a large import into a large account went
+  over every message hundreds of times while other changes waited.
+  It now does that once, when the import finishes or is given up.
+  Duplicates the import brings stay shown until then (#2040).
 - 2026-10-12: **A wrong password now costs a short wait instead of counting
   toward a lockout.** A refused login, and a wrong current password when
   changing the owner's password or deleting an account, waits about a second
@@ -388,6 +431,12 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-14: **A reset by `reset-demo` is filed with the Demo Account.**
+  The `reset-demo` server command recorded its reset after deleting the old
+  Demo Account, so its entry belonged to no account and appeared only in the
+  owner's whole Audit Trail. It now records the reset first, as a reset from
+  Owner Home does, so both are read among the old Demo Account's entries
+  (#2977).
 - 2026-10-14: **A typed display name is no longer lost.** On Settings →
   Profile, and on an account's Profile in Owner Home, the display name saves
   when you leave the field, press Enter, or move to another tab, as the time
@@ -671,6 +720,13 @@ carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-15: **The app starts its own Message Crate again after it stops.**
+  When the Message Crate the desktop app started for itself stopped on its
+  own, as in a crash, the login card said it stopped and waited for you to
+  press Retry, and an Upload in progress lost its server until then. The app
+  now starts it again by itself. A Message Crate that stops four times
+  within ten minutes is not started a fifth time: the login card then says
+  so, and Retry tries again (#2089).
 - 2026-10-14: **A failed Staging, Media Stage, Export or Convert, or a
   paused Upload, says what went wrong in a sentence.** A full disk, a file
   Message Crate is not allowed to use, a missing file, and an ended session
@@ -778,6 +834,80 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-15: **What an import went on without is a warning in its log.**
+  An attachment that could not be read or decrypted, a contacts database
+  that could not be read, a message left out, and each record a backup's
+  reader skipped were written to the Import Run's log as ordinary lines, so
+  the level filter in the Logs panel did not find them under Warn. They are
+  now written at the warning level (#2047).
+- 2026-10-15: **A reaction shows the name of whoever gave it when the
+  backup has no address for them.** An iMazing export names the person who
+  reacted by display name alone. The name was dropped on import, so the
+  reaction read as from "Someone". It is now kept and shown, and still never
+  matched to a contact. The database format changed: an existing Message
+  Crate is rebuilt empty on first start and its messages must be imported
+  again (#2044).
+- 2026-10-15: **A WhatsApp conversation stays on WhatsApp when its file is
+  imported again.** A message file written by Export names the source the
+  messages were stored under, and an import put a WhatsApp conversation on
+  WhatsApp only when that source was called `whatsapp`. Under any other
+  name it became a Text Message conversation, and a WhatsApp id such as
+  `123456@lid` became an email address there. An import now takes the
+  service from the messages themselves (#2050).
+- 2026-10-15: **An SMS Backup+ import skips the WhatsApp messages in it.**
+  From 2013 to 2015, SMS Backup+ also backed up WhatsApp messages. An
+  import read each one as a text message to or from its number, and could
+  show a message you received as one you sent. They are now skipped and
+  counted, as call log entries already were, and the summary says how
+  many, such as "Skipped 12 WhatsApp messages" (#2912).
+- 2026-10-15: **A damaged SMS Backup & Restore file is refused whole.** A
+  backup file cut off or damaged partway was imported up to the damage, and
+  only when its owner's phone number was given; without one, it was refused
+  with a message about the phone number, so Settings → Convert could not
+  read it at all. Now an import and Convert both refuse such a file with the
+  same message: the file is not valid XML, where, and why. Nothing is
+  imported from it, so a person fetches a good copy rather than import half
+  a backup without noticing. A single message that cannot be kept in a good
+  file is still skipped and counted, and the rest comes in (#2028).
+- 2026-10-15: **The Import form checks an Android backup path's kind.**
+  SMS Backup & Restore takes one `.xml` file, and GO SMS Pro and SMS
+  Backup+ take a directory. A path of the other kind, or one that does not
+  exist, is now named under the field and keeps **Import** off, rather than
+  being refused only once the import starts. A directory remembered from an
+  import before SMS Backup & Restore took one file is the usual case
+  (#2029).
+- 2026-10-15: **Cancel stops an Apple Messages import that has gone
+  quiet.** Cancel took effect only when the Apple Messages reader
+  (imessage-reader) next reported something, so during a long silent step,
+  such as decrypting a large encrypted backup, the import kept going, and a
+  reader stuck on a backup whose disk went away ran until the app closed.
+  Cancel now stops the reader at once, whatever it is doing (#2085).
+- 2026-10-15: **A conversation that crashes its preparation no longer hangs
+  the Upload.** When preparing one conversation for an Upload crashed, the
+  Upload waited for it forever and pausing it could not halt it. That
+  conversation is now reported as failed, with the crash's message, and the
+  Upload goes on to the rest (#2087).
+- 2026-10-15: **Other users of the computer can no longer read a staged
+  Import Run.** Each Import Run's directory in the Staging Directory, which
+  holds the conversations and attachments it staged until the run ends, could
+  be read by every other user of the same computer on macOS and Linux. It is
+  now made so that only you can open it. The Staging Directory itself keeps
+  the permissions it has (#2969).
+- 2026-10-15: **A joined MP3 converts again.** An MP3 made by joining
+  recordings back to back keeps the first recording's header, which states
+  only that recording's length. When the whole file played more than twice
+  that, its conversion was stopped as looping on a damaged file and the
+  attachment was recorded as one that could not be converted. Only a video
+  conversion is now stopped for running past twice its length. An audio
+  conversion is stopped when it makes no progress, or after twenty times
+  the file's length, at least 10 minutes and at most 6 hours. One that runs
+  past the length its header states gets at least an hour (#2909).
+- 2026-10-15: **A file that could not be converted names the cause.** The
+  short reason on an attachment ffmpeg could not convert was the last line
+  ffmpeg wrote, which can follow from the cause rather than name it, such as
+  "Nothing was written into output file" after an encoder that would not
+  open. The reason is now the last line that names a cause, such as why the
+  encoder would not open or that the disk is full (#2959).
 - 2026-10-12: **A wrong iPhone backup password names the field to fix.** A
   password that does not open an encrypted iPhone backup is now refused with
   "The Encryption password is incorrect.", in the same words as the other
@@ -1239,6 +1369,14 @@ carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-15: **A number from an Apple Messages backup keeps the country
+  the phone read it in.** A number written without its country code, such
+  as `07700 900123`, was stored with its country unknown, though the backup
+  records that Messages read it as a UK number. An Apple Messages import now
+  reads that country from the backup, so the number is stored as
+  `+447700900123` without picking a country on the import form, and is the
+  same person as the same number written in full. A number the backup names
+  no country for is stored as before (#1994).
 - 2026-10-11: **A WhatsApp internal id can be added to a contact or to your
   account by hand.** WhatsApp names some people by an internal id such as
   `123456789012345@lid` rather than a phone number. Adding one by hand was
@@ -1280,6 +1418,31 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-15: **The website tells the browser to run only its own
+  scripts.** The website the server serves, and every answer from the
+  server, now carry a Content Security Policy and two related headers, as
+  the desktop app's window already did. A script slipped into a page can no
+  longer run there and read your login, and no other site can show the
+  login card inside its own page (#2073).
+- 2026-10-15: **A server command from another version no longer empties
+  the database under a running server.** A command such as `import` from a
+  build with a different database format rebuilt the database empty while
+  a server was serving it, and the server went on showing the empty
+  database until it restarted. The command now stops, names the database
+  and asks for the server to be stopped first (#2920).
+- 2026-10-14: **The Compose files publish the server to this computer
+  only.** Both Compose files published port 8080 on every network the
+  computer is on, unlike the `docker run` command in Run Message Crate
+  with Docker. Any device on that network could reach a new Message Crate
+  over plain HTTP, and claim it as owner before its installer did. Both
+  now publish it on `127.0.0.1`, and Run on another machine says how to
+  open it to the network (#2063).
+- 2026-10-14: **A Demo Data backup left behind is in the server's log.**
+  When the server writes new Demo Data, it removes its backup of the files
+  they replace. When that removal failed, the warning went only to the
+  terminal the server was started from, never to the server's log or the
+  **Logs** panel in Owner Home. It now goes there, and the `reset-demo`
+  command still prints it (#2903).
 - 2026-10-14: **The guide's `docker run` commands limit the container as
   the Compose files do.** A server started with the user guide's commands
   kept every special permission a container has by default. A program
@@ -1555,6 +1718,21 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-15: Message files exported before they carried the country an
+  Apple Messages backup names for each number are refused when you import
+  or convert them. Export the backup again with this build.
+- 2026-10-15: A script that runs `create-owner` or
+  `reset-owner-password` with `--password` must write the password to the
+  command's input instead, for example
+  `printf '%s\n' "$PASSWORD" | message-crate-server reset-owner-password`.
+  With `docker exec`, add `-it` to type it when asked (#2094).
+- 2026-10-14: A Compose file saved from the repository before this
+  release keeps publishing the server on every network the computer is
+  on, because pulling a new image does not change the file. To keep the
+  server on this computer only, change its `ports:` line to
+  `"127.0.0.1:8080:8080"` and run `docker compose up -d`. A file saved from
+  this release on publishes it on this computer only, and Run on another
+  machine says how to open it to the network (#2063).
 - 2026-10-14: A Message Crate started with `docker run` before this release
   keeps every default container permission. Stop it with
   `docker stop -t 40 message-crate`, remove it with

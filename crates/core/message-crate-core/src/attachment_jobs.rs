@@ -1,12 +1,13 @@
-//! Copy, convert, or skip attachment files after parse.
+//! Copy or skip attachment files after parse. Staging copies the originals
+//! as they are; converting and compressing them is the Media Stage's work,
+//! after the Staging Review.
 
 use crate::attachments::attachment_dest_name;
-use crate::config::MediaConfig;
-use crate::process::{CancelFlag, Cancelled, LogSink};
+use crate::config::AttachmentFiles;
+use crate::process::{Cancelled, LogSink, Sinks};
 use crate::progress::{ProgressEvent, ProgressSink};
 use anyhow::Context as _;
 use file_io::sha256_hex;
-use media::MediaMode;
 use message_ir::{ConversationDocument, IrAttachment, IrMessage};
 use std::collections::HashSet;
 use std::fs;
@@ -67,7 +68,9 @@ impl std::fmt::Display for LoadError {
 
 impl std::error::Error for LoadError {}
 
-/// Load, write, and optionally convert each attachment.
+/// Load and write each attachment's original file, or, when `files` is
+/// [`AttachmentFiles::Skip`], mark every attachment `not_copied` and load
+/// nothing.
 ///
 /// `load(i)` returns `Ok(None)` when the source is missing. `Ok(Some(bytes))`
 /// is the file to stage. [`LoadError::Unreadable`] is treated the same as a
@@ -82,12 +85,12 @@ impl std::error::Error for LoadError {}
 /// caller tells a Cancel from a failure by its type, whatever context is
 /// added on the way out (#2077). Returns the message of a
 /// [`LoadError::Fatal`] from `load(i)`, leaving that job and every later one
-/// untouched. Returns an I/O or convert error when the staging directory
-/// cannot be created or the conversion cannot run.
+/// untouched. Returns an I/O error when the staging directory cannot be
+/// created.
 pub fn run_attachment_jobs(
     jobs: &mut [AttachmentJob<'_>],
     attachments_dir: &Path,
-    media: &MediaConfig,
+    files: AttachmentFiles,
     mut load: impl FnMut(usize) -> Result<Option<Vec<u8>>, LoadError>,
     mut on_progress: impl FnMut(AttachmentProgress),
     log: &LogSink,
@@ -103,7 +106,7 @@ pub fn run_attachment_jobs(
         });
         return Ok(());
     }
-    if matches!(media.mode, MediaMode::Disabled) {
+    if files == AttachmentFiles::Skip {
         for job in jobs.iter_mut() {
             job.attachment.missing_reason = Some("not_copied".into());
         }
@@ -156,7 +159,7 @@ pub fn run_attachment_jobs(
         // A write the file system refuses is that attachment's problem, as
         // an unreadable source is: mark it missing and stage the rest.
         if let Err(err) = persist_clone(job, attachments_dir, &bytes) {
-            log.emit(format!(
+            log.warn(format!(
                 "  attachment {} not staged: {err}",
                 job.attachment
                     .original_name
@@ -176,19 +179,6 @@ pub fn run_attachment_jobs(
         bytes_done += bytes.len() as u64;
         on_progress(AttachmentProgress {
             done: i + 1,
-            total,
-            bytes_done,
-            bytes_total,
-        });
-    }
-
-    if matches!(media.mode, MediaMode::Convert | MediaMode::Compress) {
-        if cancel.load(Ordering::Relaxed) {
-            return Err(Cancelled.into());
-        }
-        apply_convert_or_compress(jobs, attachments_dir, media, log, cancel)?;
-        on_progress(AttachmentProgress {
-            done: total,
             total,
             bytes_done,
             bytes_total,
@@ -219,21 +209,24 @@ pub fn run_attachment_jobs(
 /// # Errors
 ///
 /// Returns [`Cancelled`] when the user cancels, the message of a
-/// [`LoadError::Fatal`] from `load(i)`, or an I/O / convert error when the
-/// staging directory cannot be used.
+/// [`LoadError::Fatal`] from `load(i)`, or an I/O error when the staging
+/// directory cannot be used.
 pub fn stage_attachment_jobs(
     mut jobs: Vec<AttachmentJob<'_>>,
     attachments_dir: &Path,
-    media: &MediaConfig,
+    files: AttachmentFiles,
     load: impl FnMut(usize) -> Result<Option<Vec<u8>>, LoadError>,
-    log: &LogSink,
-    progress: &ProgressSink,
-    cancel: &CancelFlag,
+    sinks: Sinks<'_>,
 ) -> anyhow::Result<u64> {
+    let Sinks {
+        log,
+        progress,
+        cancel,
+    } = sinks;
     run_attachment_jobs(
         &mut jobs,
         attachments_dir,
-        media,
+        files,
         load,
         report_attachment_progress(log, progress),
         log,
@@ -341,89 +334,6 @@ fn persist_clone(
     Ok(())
 }
 
-fn apply_convert_or_compress(
-    jobs: &mut [AttachmentJob<'_>],
-    attachments_dir: &Path,
-    media: &MediaConfig,
-    log: &LogSink,
-    cancel: &AtomicBool,
-) -> anyhow::Result<()> {
-    let Some(output_dir) = attachments_dir.parent() else {
-        anyhow::bail!("attachments directory has no parent");
-    };
-    let files = media::collect_media_files(attachments_dir)?;
-    let mut emit = |line: &str| log.emit(line);
-    let (report, remap) = media::process_attachment_files(
-        media.tools.as_ref(),
-        output_dir,
-        &files,
-        media.mode,
-        &media.compress,
-        Some(&mut emit),
-        Some(cancel),
-    )
-    .map_err(|e| {
-        // A conversion the cancel killed ends the run as canceled.
-        if cancel.load(Ordering::Relaxed) {
-            Cancelled.into()
-        } else {
-            e
-        }
-    })?;
-    if let Some(line) = report.hevc_fallback.line() {
-        log.warn(line);
-    }
-    // The attachment keeps a short reason; the whole error, with its path
-    // and everything ffmpeg wrote, goes to the log.
-    for err in &report.errors {
-        log.warn(format!("Could not convert {err}"));
-    }
-    apply_remap_to_jobs(jobs, &remap, output_dir);
-    for failed in &report.not_converted {
-        mark_convert_error(jobs, output_dir, failed);
-    }
-    Ok(())
-}
-
-fn apply_remap_to_jobs(
-    jobs: &mut [AttachmentJob<'_>],
-    remap: &std::collections::HashMap<String, String>,
-    output_dir: &Path,
-) {
-    for job in jobs.iter_mut() {
-        let Some(path) = job.attachment.path.as_mut() else {
-            continue;
-        };
-        if let Some(new_rel) = remap.get(path.as_str()) {
-            *path = new_rel.clone();
-            if let Some(mime) = mime_for_rel(new_rel) {
-                job.attachment.mime_type = Some(mime);
-            }
-            if refresh_digest_and_size(job.attachment, output_dir).is_err() {
-                job.attachment.missing_reason = Some("file_missing".into());
-            }
-        }
-    }
-}
-
-/// Record on each attachment staged at `failed.path`, under `output_dir`,
-/// that it could not be converted, with the short reason the desktop app's
-/// Media Stage records too ([`media::why_not_converted`]).
-fn mark_convert_error(
-    jobs: &mut [AttachmentJob<'_>],
-    output_dir: &Path,
-    failed: &media::NotConverted,
-) {
-    for job in jobs.iter_mut() {
-        let Some(rel) = job.attachment.path.as_deref() else {
-            continue;
-        };
-        if output_dir.join(rel) == failed.path {
-            job.attachment.missing_reason = Some(format!("convert_failed: {}", failed.reason));
-        }
-    }
-}
-
 /// MIME type inferred from a `attachments/…` relative path's extension.
 ///
 /// Thin wrapper over [`media::mime_for_ext`] — the one shared
@@ -432,17 +342,6 @@ fn mark_convert_error(
 pub fn mime_for_rel(rel: &str) -> Option<String> {
     let ext = Path::new(rel).extension().and_then(|e| e.to_str())?;
     media::mime_for_ext(ext).map(str::to_string)
-}
-
-fn refresh_digest_and_size(attachment: &mut IrAttachment, output_dir: &Path) -> Result<(), String> {
-    let Some(rel) = attachment.path.as_deref() else {
-        return Ok(());
-    };
-    let dest = output_dir.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
-    let bytes = fs::read(&dest).map_err(|e| format!("read {}: {e}", dest.display()))?;
-    attachment.digest_sha256 = Some(sha256_hex(&bytes));
-    attachment.size_bytes = Some(bytes.len() as u64);
-    Ok(())
 }
 
 /// Longest extension kept on a staged file name. `pkpasses` and `keynote`

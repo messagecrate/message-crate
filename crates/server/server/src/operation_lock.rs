@@ -2,7 +2,9 @@
 //!
 //! Serve and reset-demo must not run at the same time against the same
 //! database. This lock file sits next to the database and is taken exclusively
-//! for the life of either operation.
+//! for the life of either operation. Any other command that is about to
+//! rebuild the database for another Schema Fingerprint takes it for the
+//! rebuild, so the rebuild never runs under a server (#2920).
 
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
@@ -54,6 +56,25 @@ pub(crate) fn acquire_for_reset(db: &Path) -> Result<OperationLock> {
     acquire(db)?.with_context(|| {
         format!(
             "cannot reset demo while serve is active for {}; stop the server and run reset-demo offline",
+            db.display()
+        )
+    })
+}
+
+/// Take the lock for a command that is about to rebuild the database because
+/// its Schema Fingerprint is another build's. Fails, naming the database, when
+/// a server or reset-demo holds it: the rebuild would empty the database under
+/// that server, which would go on answering from the empty one (#2920).
+///
+/// # Errors
+///
+/// Returns an error when the lock file cannot be created or is already held.
+pub(crate) fn acquire_for_rebuild(db: &Path) -> Result<OperationLock> {
+    acquire(db)?.with_context(|| {
+        format!(
+            "the database at {} was made by another build of Message Crate, so this command would \
+             rebuild it empty, and a running Message Crate server (or reset-demo) has it open. \
+             Stop that server, then run the command again",
             db.display()
         )
     })

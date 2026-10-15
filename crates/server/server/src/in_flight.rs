@@ -47,7 +47,7 @@ pub(crate) struct RunningRequest {
     pub(crate) request_id: String,
     pub(crate) method: String,
     /// The path and query as the log writes them, values hidden
-    /// ([`crate::server::logged_uri`]).
+    /// ([`crate::middleware::logged_uri`]).
     pub(crate) uri: String,
     pub(crate) running_for: Duration,
 }
@@ -117,7 +117,7 @@ pub(crate) async fn track(
             .unwrap_or("")
             .to_owned(),
         method: request.method().to_string(),
-        uri: crate::server::logged_uri(request.uri()),
+        uri: crate::middleware::logged_uri(request.uri()),
         started: Instant::now(),
     });
     let response = next.run(request).await;

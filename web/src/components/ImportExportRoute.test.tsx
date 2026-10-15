@@ -22,9 +22,12 @@ vi.mock("../lib/tauriCheck", () => ({ isTauri: () => state.isTauri }));
 vi.mock("../lib/useAccountProfile", () => ({
   useAccountProfile: () => ({ profile: state.profile, loading: state.loading, error: "" }),
 }));
-vi.mock("../lib/authContext", () => ({
-  useAuth: () => ({ logout: state.logout, accountId: state.accountId }),
-}));
+vi.mock("../lib/authContext", async () =>
+  (await import("../test/providers")).authModule(() => ({
+    logout: state.logout,
+    accountId: state.accountId,
+  })),
+);
 
 afterEach(() => {
   cleanup();

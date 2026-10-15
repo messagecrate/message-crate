@@ -41,7 +41,7 @@ Each conversation is one text file whose name ends in `.jsonl`. JSON Lines means
 Pictures and other media sit next to those files in `attachments/`.
 
 ```jsonl title="One conversation file"
-{"schema_version":14,"export":{"source":"sms-backup-restore","tool":"SMS Backup & Restore","owner_identity":"+15555550100","owner_display_name":"Me","backup_taken_at_unix_ms":1400800000000},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","participants":[{"identity":"+15555550101","display_name":"Sam"}]}}
+{"schema_version":15,"export":{"source":"sms-backup-restore","tool":"SMS Backup & Restore","owner_identity":"+15555550100","owner_display_name":"Me","backup_taken_at_unix_ms":1400800000000},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","participants":[{"identity":"+15555550101","display_name":"Sam"}]}}
 {"guid":"msg-1","timestamp_unix_ms":1400773261000,"time_precision":"milliseconds","direction":"outgoing","service":"sms","text":"Hello"}
 ```
 
@@ -67,6 +67,16 @@ Some files come from tools that were not built for this project, or that drop me
 | iMazing | `imazing-exporter` | [Input files](/docs/developer/formats/imazing/input/) · [Design notes](/docs/developer/formats/imazing/design/) |
 | OpenExtract | `openextract-exporter` | [Converter capabilities](/docs/developer/formats/) |
 | SMS Backup+ | `sms-backup-plus-exporter` | [File layout](/docs/developer/formats/sms-backup-plus/format/) · [Field mapping](/docs/developer/formats/sms-backup-plus/mapping/) |
+
+## Inside a converter crate
+
+Every converter crate names the same steps the same way, so a step found in one is found by the same name in the next:
+
+- `src/read.rs` reads the vendor's files.
+- `src/emit.rs` turns what was read into conversations and writes the chat files. Its entry point is `convert_export`, which takes a `ConvertExportArgs`.
+- `src/run.rs` holds the crate's `run`, the one function the desktop app calls.
+
+`convert_export` hands its read step and its projection step to `message_staging::convert_backup`, which opens the writer, reads, projects each conversation, and writes the files. `imessage-ir-exporter` is the exception: the Apple Messages Reader, a separate program, reads the backup, so the crate has no `read.rs`, and its `convert_export` keeps a write step of its own instead of calling `convert_backup`, because the loader that reads an encrypted backup's attachments cannot go through the shared one.
 
 ## Libraries that talk to a running server
 

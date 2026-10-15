@@ -1,1238 +1,69 @@
-//! Import message-ir JSONL into the database.
+//! The `/v1/imports` routes: an Import Run, the batches posted into it, and
+//! its end.
 //!
-//! The pipeline runs in two stages: `staging` parses JSONL files and writes
-//! staging rows, and `promote` copies staging rows into the production tables.
-//! `staging` calls `contact_name` as it goes, to link handles to contacts and
-//! merge display names.
-//! The HTTP handlers for the `/v1/imports` routes, an Import Run and the
-//! batches posted into it, live at the end of this module.
+//! The handlers are in this module. Its submodules hold the rest of the
+//! import:
+//!
+//! - `dto` holds the routes' request and response types and the checks on
+//!   their fields.
+//! - `pipeline` imports JSONL into the database without HTTP.
+//! - `staging` parses the files into staging rows, the pipeline's first
+//!   stage.
+//! - `contact_name` links handles to contacts and merges display names,
+//!   which `staging` calls as it goes.
+//! - `promote` copies the staging rows into the production tables, the
+//!   pipeline's second stage.
+//! - `records` maps a conversation file's lines to the rows staging writes.
+//! - `with_yourself` runs the with-yourself rule again when an account's
+//!   identities change.
+//! - `failure` says what can stop an import, by kind.
+//! - `run_control` holds the import slots, and runs a batch or a run's end
+//!   in one.
+//! - `batch_bodies` says where a batch's body is written while it is read.
 
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::time::Instant;
-
-use anyhow::{Context, Result};
-pub use message_crate_api_types::ImportMode;
-use serde::{Deserialize, Serialize};
-use sqlx::SqliteConnection;
-use tempfile::TempDir;
-use tokio::sync::OwnedSemaphorePermit;
-
-use crate::extract::{Json, Path as AxumPath, Query};
 use axum::extract::{Request, State};
 use axum::http::HeaderMap;
+use message_crate_api_types::{ImportMode, MAX_IMPORT_BATCH_BYTES};
+use sqlx::SqliteConnection;
 
-use crate::assets_api::AssetStats;
+use crate::api_error::{ApiError, run_blocking};
+use crate::auth::{ImportAccess, resolve_import_account};
 use crate::config::validate_source_id;
-use crate::counts::words;
-#[cfg(test)]
-use crate::db::engine;
-use crate::db::imports::{self, CompleteImportArgs};
-use crate::db::maintenance;
-use crate::progress::Progress;
-use media::{MediaMode, MediaTools, NoTools};
-use message_crate_api_types::{MAX_IMPORT_BATCH_BYTES, RunIssueKind};
-
-pub(crate) mod batch_bodies;
-pub mod contact_name;
-pub mod failure;
-pub mod promote;
-pub mod records;
-pub mod staging;
-pub mod with_yourself;
-
-pub use failure::{ImportError, ImportFailure, MISSING_GUID_LINES_NAMED};
-
-use staging::StagingInserts;
-
-use crate::dedupe;
-use crate::imports_api::{self};
+use crate::extract::{Json, Path as AxumPath, Query};
 use crate::paging::{
     DEFAULT_LIST_LIMIT, Page, PageQuery, page_from_rows, page_params, parse_status, sorted_page,
 };
-use crate::server::{
-    ApiError, AppState, Created, ImportAccess, content_type_base, declared_over,
-    is_jsonl_content_type, resolve_import_account, run_blocking, stream_body_to_file,
+use crate::request_body::{
+    content_type_base, declared_over, is_jsonl_content_type, stream_body_to_file,
     upload_body_bounded,
 };
+use crate::server::{AppState, Created};
 use crate::text_caps::{
-    MAX_DEVICE_ID_CHARS, MAX_IMPORT_ERROR_TEXT_CHARS, MAX_IMPORT_NOTE_TEXT_CHARS,
-    MAX_IMPORT_RUN_JSON_BYTES, MAX_IMPORT_TOOL_CHARS, MAX_PATH_CHARS, capped_json, capped_path,
-    capped_text, too_long_sentences,
+    MAX_DEVICE_ID_CHARS, MAX_IMPORT_TOOL_CHARS, MAX_PATH_CHARS, capped_path, capped_text,
+    too_long_sentences,
 };
 
-/// Full import settings: paths, mode, and media handling.
-#[derive(Debug, Clone)]
-pub struct ImportOptions<'a> {
-    /// The account's content-addressed asset store, shared by every source.
-    pub assets_dir: &'a Path,
-    /// Root for resolving relative attachment paths in JSONL. `None` when
-    /// the import carries no files, as an HTTP batch does: a path is then
-    /// only a label, still checked as safe, and only a stated SHA-256 finds
-    /// an Asset (#2259).
-    pub asset_root: Option<&'a Path>,
-    /// Import mode: replace or append.
-    pub mode: ImportMode,
-    /// Fixed source id (HTTP / `--source` override). Ignored when
-    /// `source_from_jsonl`. The source is stamped on each message and does
-    /// not decide where files go: every source shares [`Self::assets_dir`].
-    pub source: &'a str,
-    /// Account the import writes into.
-    pub account_id: i64,
-    /// Optional Import Run id (messages stamped on promote).
-    pub import_id: Option<i64>,
-    /// When true, stamp `messages.source` from each conversation's IR `export.source`.
-    pub source_from_jsonl: bool,
-    /// Attachment handling mode: copy, none, convert, compress.
-    pub media: MediaMode,
-    /// The ffmpeg and ffprobe that convert and compress run.
-    pub media_tools: &'a dyn MediaTools,
-    /// When `source_from_jsonl` + Replace: wipe these sources before import.
-    pub wipe_sources: Option<Vec<String>>,
-    /// The country the run states for every phone number its files write
-    /// without a `+` code; `None` keeps such a number's digits as written
-    /// (#1676).
-    pub phone_country: Option<&'static phone::Country>,
-    /// Where the import says how far it has got: standard output for the
-    /// `import` command, the server's log for everything else.
-    pub progress: Progress,
-    /// The instant the import stamps on each contact it changes: when the
-    /// batch, or the `import` command's run, started, however long it then
-    /// takes.
-    pub now: chrono::DateTime<chrono::Utc>,
-}
+pub(crate) mod batch_bodies;
+pub mod contact_name;
+pub(crate) mod dto;
+pub mod failure;
+pub(crate) mod pipeline;
+pub mod promote;
+pub mod records;
+pub(crate) mod run_control;
+pub mod staging;
+pub mod with_yourself;
 
-/// Path/mode fields for [`ImportOptions::fixed`].
-#[derive(Debug, Clone, Copy)]
-pub struct FixedImportArgs<'a> {
-    /// Content-addressed asset store directory.
-    pub assets_dir: &'a Path,
-    /// As [`ImportOptions::asset_root`] says.
-    pub asset_root: Option<&'a Path>,
-    /// Import mode: replace or append.
-    pub mode: ImportMode,
-    /// Fixed source id applied to every conversation.
-    pub source: &'a str,
-    /// Account the import writes into.
-    pub account_id: i64,
-    /// Optional Import Run id (messages stamped on promote).
-    pub import_id: Option<i64>,
-    /// The country the run states for phone numbers written without a `+`
-    /// code, as [`ImportOptions::phone_country`] says.
-    pub phone_country: Option<&'static phone::Country>,
-    /// As [`ImportOptions::now`] says.
-    pub now: chrono::DateTime<chrono::Utc>,
-}
-
-/// The tools an import that copies its media as it is
-/// ([`ImportOptions::fixed`]) is given: none, since it runs neither program.
-static COPIED_AS_IS: NoTools = NoTools;
-
-impl<'a> ImportOptions<'a> {
-    /// HTTP / tests / reset-demo: fixed source + assets dir, copy media,
-    /// progress in the server's log.
-    pub fn fixed(args: FixedImportArgs<'a>) -> Self {
-        Self {
-            assets_dir: args.assets_dir,
-            asset_root: args.asset_root,
-            mode: args.mode,
-            source: args.source,
-            account_id: args.account_id,
-            import_id: args.import_id,
-            source_from_jsonl: false,
-            media: MediaMode::Clone,
-            media_tools: &COPIED_AS_IS,
-            wipe_sources: None,
-            phone_country: args.phone_country,
-            progress: Progress::Log,
-            now: args.now,
-        }
-    }
-}
-
-/// Counters for one import run (staging and promote results).
-#[derive(Debug, Default, Clone, Serialize, utoipa::ToSchema)]
-pub struct ImportCounts {
-    /// Conversations imported.
-    pub conversations: u64,
-    /// Participant rows imported.
-    pub participants: u64,
-    /// Messages imported.
-    pub messages: u64,
-    /// Attachment records (message–media links) imported.
-    pub attachments: u64,
-    /// Tapback reactions imported.
-    pub tapbacks: u64,
-    /// JSONL files imported.
-    pub files: u64,
-    /// Unique media files written to the asset store.
-    pub assets_copied: u64,
-    /// Media files already present under the same fingerprint, skipped.
-    pub assets_deduped: u64,
-    /// Attachment files referenced but not found on disk.
-    pub assets_missing: u64,
-    /// Contacts the import created for participants nothing else owned.
-    pub contacts_created: u64,
-    /// Messages hidden as duplicates within this import.
-    pub messages_deduped: u64,
-    /// Messages added by an append-mode import.
-    pub messages_appended: u64,
-    /// Import mode.
-    pub mode: ImportMode,
-    /// Flagged phone identities (ambiguous; review note set) inserted by this import.
-    pub phones_needing_review: u64,
-    /// Identities of type `other` this import met for people: a name the
-    /// backup gave with no address, or a sender such as `AMAZON`. Each one is
-    /// a person the exporter could not tie to an address, so a count above
-    /// zero says the import is incomplete.
-    pub other_identities: u64,
-}
-
-impl ImportCounts {
-    /// Add one staged file's counts onto the running import totals.
-    fn merge_file(&mut self, other: &ImportCounts) {
-        self.conversations += other.conversations;
-        self.participants += other.participants;
-        self.messages += other.messages;
-        self.attachments += other.attachments;
-        self.tapbacks += other.tapbacks;
-        self.contacts_created += other.contacts_created;
-        self.messages_deduped += other.messages_deduped;
-        self.phones_needing_review += other.phones_needing_review;
-        self.other_identities += other.other_identities;
-    }
-
-    /// Add a whole import run's counts onto a running total, files and assets
-    /// included; the demo reset imports three sources in turn.
-    pub fn add_run(&mut self, other: &ImportCounts) {
-        self.merge_file(other);
-        self.files += other.files;
-        self.assets_copied += other.assets_copied;
-        self.assets_deduped += other.assets_deduped;
-        self.assets_missing += other.assets_missing;
-        self.messages_appended += other.messages_appended;
-    }
-}
-
-/// An Import Run this process opened, as opposed to one a client
-/// (message-crate-import) owns and closes itself. Whoever starts one must
-/// finish it whatever the import does, so the Settings import table never
-/// shows a run stuck in progress.
-pub(crate) struct OwnedImportRun {
-    account_id: i64,
-    /// The `imports` row id; the import stamps it on every message.
-    pub id: i64,
-}
-
-impl OwnedImportRun {
-    /// Record a run at the parse stage. Nothing client-side (staging
-    /// directory, device, form) is known for a run started here.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the account already has a running Import Run or the
-    /// row cannot be inserted.
-    pub(crate) async fn start(
-        conn: &mut SqliteConnection,
-        account_id: i64,
-        source: &str,
-        mode: ImportMode,
-        tool: &str,
-    ) -> std::result::Result<Self, imports::StartImportError> {
-        let id = imports::start_import(
-            conn,
-            &imports::StartImportArgs::new(account_id, source, mode.as_str(), Some(tool)),
-            chrono::Utc::now(),
-        )
-        .await?;
-        Ok(Self { account_id, id })
-    }
-
-    /// Mark the run succeeded with its counts, or failed. Not
-    /// being able to record the outcome is a warning on stderr, never an
-    /// error: the import's own result is what the caller returns.
-    pub(crate) async fn finish(self, conn: &mut SqliteConnection, result: &Result<ImportCounts>) {
-        let outcome = match result {
-            Ok(counts) => CompleteImportArgs::succeeded(counts.messages, counts.attachments),
-            Err(_) => CompleteImportArgs::failed(),
-        };
-        // The import itself is done either way; a failure to record that is
-        // worth a log line, not an error the caller would have to unwind.
-        if let Err(error) = complete_run(conn, self.account_id, self.id, &outcome).await {
-            tracing::warn!(import_id = self.id, error = %error, "The Import Run could not be recorded as finished");
-        }
-    }
-}
-
-/// [`complete_run_at`] at the current instant, for the server's `import`
-/// command and the Demo Account build (through [`OwnedImportRun::finish`]).
-///
-/// # Errors
-///
-/// The errors of [`complete_run_at`].
-pub(crate) async fn complete_run(
-    conn: &mut SqliteConnection,
-    account_id: i64,
-    import_id: i64,
-    outcome: &CompleteImportArgs,
-) -> std::result::Result<imports::ImportRow, imports::ImportLookupError> {
-    complete_run_at(conn, account_id, import_id, outcome, chrono::Utc::now()).await
-}
-
-/// Record an Import Run's outcome at the instant `now`, then make the run's
-/// Saved Search and Contact Group, named after `now`'s day. Every path that
-/// completes a run reaches this: the HTTP `complete_import`, which queues the
-/// run's Assets at the same instant, and the server's `import` command and
-/// the Demo Account build through [`complete_run`]. So each run gets the
-/// same shortcuts however it was made.
-///
-/// # Errors
-///
-/// Returns the error of recording the outcome ([`imports::complete_import`]):
-/// a run that is not found or not running, kept apart from a database fault
-/// so the handler maps each to its status. A shortcut that cannot be made is
-/// a warning, never an error.
-async fn complete_run_at(
-    conn: &mut SqliteConnection,
-    account_id: i64,
-    import_id: i64,
-    outcome: &CompleteImportArgs,
-    now: chrono::DateTime<chrono::Utc>,
-) -> std::result::Result<imports::ImportRow, imports::ImportLookupError> {
-    let row = imports::complete_import(conn, account_id, import_id, outcome, now).await?;
-    create_import_saved_search(conn, account_id, &row).await;
-    create_import_contact_group(conn, account_id, &row, now).await;
-    Ok(row)
-}
-
-/// Test helper: open a configured database, make sure of its schema, and run
-/// one import.
-///
-/// Production paths run [`import_jsonl_files_on_conn`] on their own
-/// connection: HTTP serve, the `import` command and the Demo Account build.
-#[cfg(test)]
-pub(crate) async fn import_jsonl_files(
-    db_path: &Path,
-    paths: &[PathBuf],
-    opts: &ImportOptions<'_>,
-) -> Result<ImportCounts> {
-    if let Some(parent) = db_path.parent()
-        && !parent.as_os_str().is_empty()
-    {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create {}", parent.display()))?;
-    }
-
-    let pool = engine::open_pool_for_path(db_path)
-        .await
-        .with_context(|| format!("failed to open database {}", db_path.display()))?;
-    let mut conn = pool.acquire().await?;
-    crate::db::schema::ensure_schema(&mut conn).await?;
-    // The import itself never makes the account (#2061); a test that names
-    // one gets it here, as the `import` command makes it.
-    crate::db::account_profile::create_account_row_if_missing(&mut conn, opts.account_id).await?;
-    opts.progress
-        .say(format_args!("Opened the database at {}", db_path.display()));
-    Ok(import_jsonl_files_on_conn(&mut conn, paths, opts).await?)
-}
-
-/// Import onto an existing connection: HTTP serve, the `import` command, the
-/// Demo Account build, and tests.
-///
-/// A command line that reports the error turns it into an `anyhow::Error`
-/// and prints it with `{:#}`, which names the file a refusal was in and the
-/// whole chain of an internal failure.
-///
-/// # Errors
-///
-/// Returns [`ImportError::Rejected`] when the file breaks a rule the sender
-/// can fix, [`ImportError::AccountGone`] when the account has no row,
-/// [`ImportError::Run`] when the import run is no longer running,
-/// and [`ImportError::Internal`] when the options are invalid or
-/// staging or promote fails for any other reason.
-pub async fn import_jsonl_files_on_conn(
-    conn: &mut SqliteConnection,
-    paths: &[PathBuf],
-    opts: &ImportOptions<'_>,
-) -> Result<ImportCounts, ImportError> {
-    let wipe_sources = prepare_import(conn, opts)
-        .await
-        .map_err(ImportError::Internal)?;
-    opts.progress.say(format_args!(
-        "Importing {}",
-        crate::counts::words(paths.len() as u64, "1 JSONL file", "{n} JSONL files")
-    ));
-    if opts.mode == ImportMode::Replace && !wipe_sources.is_empty() {
-        let names = wipe_sources.join(", ");
-        opts.progress.say(crate::counts::words(
-            wipe_sources.len() as u64,
-            &format!(
-                "The account's messages from source {names} are deleted if the import succeeds"
-            ),
-            &format!(
-                "The account's messages from the {{n}} sources {names} are deleted if the import succeeds"
-            ),
-        ));
-    }
-
-    let mut counts = ImportCounts {
-        mode: opts.mode,
-        ..Default::default()
-    };
-    let started = Instant::now();
-    // Stats on already-committed rows so promote's guid join can use the
-    // indexes. Outside the transaction, because a failed ANALYZE is only a
-    // warning.
-    maintenance::analyze_import_tables(conn, opts.progress).await;
-
-    // Staging and promote share one transaction. Staging makes contacts and,
-    // by ADR-0013, discards trashed ones; none of that may outlive a promote
-    // that fails. The write lock is taken up front (IMMEDIATE) so two
-    // imports for different accounts cannot race into SQLITE_BUSY at the
-    // first INSERT. The account and the run are checked again under that
-    // lock: an account deleted, or a run discarded or completed, while the
-    // batch uploaded or waited for its turn takes no messages (#2061).
-    let mut tx = crate::db::begin_write(conn)
-        .await
-        .map_err(|err| ImportError::Internal(err.into()))?;
-    if !crate::db::account_profile::account_exists(&mut tx, opts.account_id)
-        .await
-        .map_err(|err| ImportError::Internal(err.into()))?
-    {
-        return Err(ImportError::AccountGone);
-    }
-    if let Some(import_id) = opts.import_id {
-        crate::db::imports::require_running_import(&mut tx, opts.account_id, import_id).await?;
-    }
-    let asset_stats = stage_all_files(&mut tx, paths, opts, &mut counts, started).await?;
-
-    opts.progress.say(format_args!(
-        "Writing what the files hold into the account, {:.0} s after the import started…",
-        started.elapsed().as_secs_f64()
-    ));
-    promote_step(&mut tx, opts, &wipe_sources, &mut counts).await?;
-    crate::db::staging::reset_for_account(&mut tx, opts.account_id)
-        .await
-        .map_err(ImportError::Internal)?;
-    tx.commit()
-        .await
-        .map_err(|err| ImportError::Internal(err.into()))?;
-
-    counts.assets_copied = asset_stats.copied;
-    counts.assets_deduped = asset_stats.deduped;
-    counts.assets_missing = asset_stats.missing;
-    opts.progress.say(format_args!(
-        "The import finished in {:.1} s, with {}, {}, {} and {}",
-        started.elapsed().as_secs_f64(),
-        words(counts.files, "1 file", "{n} files"),
-        words(counts.messages, "1 message", "{n} messages"),
-        words(counts.attachments, "1 attachment", "{n} attachments"),
-        words(counts.assets_copied, "1 Asset copied", "{n} Assets copied"),
-    ));
-    Ok(counts)
-}
-
-/// Everything an import does before its transaction: the asset store
-/// directory, an empty staging
-/// area, and the source ids a replace-mode import wipes, which it returns.
-/// None of it reads the files, so every error here is the server's.
-///
-/// # Errors
-///
-/// Returns an error when a directory or row cannot be written, or a source
-/// id is invalid.
-async fn prepare_import(
-    conn: &mut SqliteConnection,
-    opts: &ImportOptions<'_>,
-) -> Result<Vec<String>> {
-    fs::create_dir_all(opts.assets_dir)
-        .with_context(|| format!("failed to create {}", opts.assets_dir.display()))?;
-
-    opts.progress.say("Clearing the account's staging tables…");
-    crate::db::staging::reset_for_account(conn, opts.account_id).await?;
-    sources_to_wipe(opts)
-}
-
-/// The source ids a replace-mode import wipes once staging succeeds: the
-/// ones found in the files, or the single `--source` override. Append mode
-/// wipes nothing.
-///
-/// # Errors
-///
-/// Returns an error when a source id is invalid.
-fn sources_to_wipe(opts: &ImportOptions<'_>) -> Result<Vec<String>> {
-    let wipe_sources = match (opts.mode, opts.source_from_jsonl) {
-        (ImportMode::Replace, true) => opts.wipe_sources.clone().unwrap_or_default(),
-        (ImportMode::Replace, false) => vec![opts.source.to_string()],
-        (ImportMode::Append, _) => Vec::new(),
-    };
-    for source in &wipe_sources {
-        validate_source_id(source)?;
-    }
-    Ok(wipe_sources)
-}
-
-/// Stage every file into the staging tables inside the import's transaction
-/// `tx`, and print progress along the way.
-///
-/// # Errors
-///
-/// Returns [`ImportError::Rejected`], naming the file, when a line breaks a
-/// rule the sender can fix, and [`ImportError::Internal`] when a file cannot
-/// be read or a row cannot be written.
-async fn stage_all_files(
-    tx: &mut SqliteConnection,
-    paths: &[PathBuf],
-    opts: &ImportOptions<'_>,
-    counts: &mut ImportCounts,
-    started: Instant,
-) -> Result<AssetStats, ImportError> {
-    let total_files = paths.len();
-    let progress_every = if total_files <= 20 {
-        1usize
-    } else {
-        (total_files / 40).max(10)
-    };
-    let media_work = TempDir::new()
-        .context("temp dir for import-time media rewrite")
-        .map_err(ImportError::Internal)?;
-    let mut asset_stats = AssetStats::default();
-    let identities = crate::db::account_profile::account_identity_keys(tx, opts.account_id)
-        .await
-        .map_err(ImportError::Internal)?;
-    let mut stmts = StagingInserts::new(
-        opts.account_id,
-        opts.import_id,
-        identities,
-        opts.phone_country,
-        opts.now,
-    );
-
-    for (idx, path) in paths.iter().enumerate() {
-        let file_counts = staging::import_file_to_staging(
-            tx,
-            &mut stmts,
-            opts,
-            path,
-            &mut asset_stats,
-            media_work.path(),
-        )
-        .await
-        .map_err(|err| ImportError::staging(path, err))?;
-        counts.merge_file(&file_counts);
-        counts.files += 1;
-
-        let n = idx + 1;
-        if n == 1 || n == total_files || n % progress_every == 0 {
-            let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("?");
-            opts.progress.say(format_args!(
-                "Read {name}, file {n} of {total_files}. So far: {}, {}, {} and {}, in {:.0} s",
-                words(counts.messages, "1 message", "{n} messages"),
-                words(counts.attachments, "1 attachment", "{n} attachments"),
-                words(asset_stats.copied, "1 Asset copied", "{n} Assets copied"),
-                words(asset_stats.missing, "1 Asset missing", "{n} Assets missing"),
-                started.elapsed().as_secs_f64()
-            ));
-        }
-    }
-    if let Some(reason) = asset_stats.hevc_fallback.reason() {
-        // The reason names the files ffmpeg was given as `<input>` and
-        // `<output>`, never by their paths, so the log holds no file name
-        // (`media::HevcFallback::reason`).
-        tracing::warn!(
-            import_id = opts.import_id,
-            reason,
-            "HEVC encoding failed, so videos were compressed as H.264 instead"
-        );
-    }
-    Ok(asset_stats)
-}
-
-/// Move staged rows into production and fold the promote counts into `counts`.
-///
-/// In append mode the promote step is the only place the final row counts
-/// are known, so they replace the staging counts.
-///
-/// # Errors
-///
-/// Returns [`PromoteError`](promote::PromoteError) when a promote statement
-/// fails.
-async fn promote_step(
-    tx: &mut SqliteConnection,
-    opts: &ImportOptions<'_>,
-    wipe_sources: &[String],
-    counts: &mut ImportCounts,
-) -> Result<(), promote::PromoteError> {
-    let promote_stats =
-        promote::promote_append(tx, opts.mode, opts.account_id, wipe_sources, opts.progress)
-            .await?;
-    counts.messages_deduped += promote_stats.messages_deduped;
-    counts.messages_appended = promote_stats.messages_appended;
-    if opts.mode == ImportMode::Append {
-        counts.conversations = promote_stats.conversations;
-        counts.participants = promote_stats.participants;
-        counts.messages = promote_stats.messages;
-        counts.attachments = promote_stats.attachments;
-        counts.tapbacks = promote_stats.tapbacks;
-    }
-    Ok(())
-}
-
-/// What one batch imports under. Every field is read from the Import Run's
-/// row, never from the request: the run was created with them once, so two
-/// batches cannot disagree.
-#[derive(Debug, Clone)]
-pub(crate) struct BatchContext {
-    pub(crate) account: i64,
-    pub(crate) import_id: i64,
-    pub(crate) source: String,
-    pub(crate) mode: ImportMode,
-    pub(crate) phone_country: Option<&'static phone::Country>,
-}
-
-impl BatchContext {
-    /// The context a running row gives a batch. A mode the row spells in a
-    /// way the enum does not know is read as `append`, the mode that never
-    /// removes anything.
-    pub(crate) fn from_row(row: &crate::db::imports::ImportRow) -> Self {
-        let mode = match row.mode.as_str() {
-            "replace" => ImportMode::Replace,
-            _ => ImportMode::Append,
-        };
-        Self {
-            account: row.account_id,
-            import_id: row.id,
-            source: row.source.clone(),
-            mode,
-            // The code was checked when the run was created, so one the
-            // table no longer holds can only come from a rebuilt server:
-            // the run then states none.
-            phone_country: row.phone_country.as_deref().and_then(phone::country),
-        }
-    }
-}
-
-/// Import result: the import counts and the dedupe counts.
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub(crate) struct CreateImportBatchResponse {
-    /// Source id of the Import Run the batch belongs to, such as `imessage`.
-    source: String,
-    /// Id of the account the batch imported into.
-    account: i64,
-    #[serde(flatten)]
-    counts: ImportCounts,
-    /// What the dedupe after this batch did, counted over the whole account
-    /// rather than the batch alone. Every batch runs it.
-    dedupe: DedupeCounts,
-}
-
-/// What one dedupe did.
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub(crate) struct DedupeCounts {
-    /// Content keys the pass wrote: one for each message whose key was
-    /// missing or whose inputs changed. A content key is a fingerprint of a
-    /// message's conversation, direction, sender, time, text and attachments.
-    /// This is not a count of duplicates.
-    keys_filled: u64,
-    /// Groups of messages that share one content key and come from two or
-    /// more sources. Copies one source alone holds are not a group.
-    exact_groups: u64,
-    /// Messages hidden as exact duplicates. In each group, the source with
-    /// the most copies sets how many stay shown, and the rest are hidden.
-    exact_flagged: u64,
-    /// Messages hidden as near duplicates: a message that matches one from
-    /// another source in the same conversation, from the same sender in the
-    /// same direction, within 2 seconds, with the same text or the same
-    /// attachments.
-    near_flagged: u64,
-}
-
-/// Source, mode and tool for a new Import Run. The bearer token
-/// names the account.
-// `max_length` takes only a literal; `the_reference_states_the_import_run_text_caps`
-// holds each to its `text_caps` constant.
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub(crate) struct CreateImportRequest {
-    /// Source id the run imports, such as `imessage` or `whatsapp`, which
-    /// every message the run brings in records. It holds lowercase letters,
-    /// digits, `-` and `_`, starts with a letter or a digit, and is at most
-    /// 64 characters. Any other id, one with a space around it included, is
-    /// refused with `422 Unprocessable Entity`.
-    pub(crate) source: String,
-    /// What happens to the messages this source brought in before: `replace`
-    /// removes them on the run's first batch, and `append` keeps them and
-    /// adds only new ones. `append` when the request leaves it out.
-    #[serde(default)]
-    pub(crate) mode: ImportMode,
-    /// The country of the phone the backup came from, as an ISO 3166-1
-    /// alpha-2 code such as `GB`, which `GET /v1/phone-countries` lists.
-    /// Every phone number the run's files write without its `+` code is
-    /// read as a number in that country and stored in its `+` form. Null,
-    /// or left out, states no country: such a number is stored as the
-    /// digits typed and matches no `+` number until a country is picked for
-    /// it. A code the list does not hold is refused with
-    /// `422 Unprocessable Entity`.
-    #[serde(default)]
-    pub(crate) phone_country: Option<String>,
-    /// Name of the program that runs the import, such as
-    /// `message-crate-import`, stored on the run trimmed. Null when the
-    /// request leaves it out, or blank. Over 64 characters is refused with
-    /// `422 Unprocessable Entity`.
-    #[serde(default)]
-    #[schema(max_length = 64)]
-    pub(crate) tool: Option<String>,
-    /// Stage the run opens at, `parse` when the request leaves it out. A run
-    /// opens only at `parse`; any other stage is refused with
-    /// `422 Unprocessable Entity`.
-    #[serde(default)]
-    pub(crate) stage: Option<crate::db::imports::ImportStage>,
-    /// Absolute path to the run directory on the client that owns this
-    /// Import Run, stored as given, spaces at its ends included. Over 4,096
-    /// characters is refused with `422 Unprocessable Entity`.
-    #[serde(default)]
-    #[schema(max_length = 4096)]
-    pub(crate) run_dir: Option<String>,
-    /// Which copy of the app is creating the Import Run, stored trimmed. Null when
-    /// the request leaves it out, or blank. Over 64 characters is refused
-    /// with `422 Unprocessable Entity`.
-    #[serde(default)]
-    #[schema(max_length = 64)]
-    pub(crate) device_id: Option<String>,
-    /// Import form snapshot, stored so the screen can be restored.
-    ///
-    /// Credentials are stripped before storage: a `backupPassword` or
-    /// `whatsappKey` posted here is dropped rather than persisted. Over
-    /// 65,536 bytes of JSON is refused with `422 Unprocessable Entity`.
-    #[serde(default)]
-    pub(crate) form: Option<serde_json::Value>,
-    /// Source path, size, mtime, and message count. Over 65,536 bytes of
-    /// JSON is refused with `422 Unprocessable Entity`.
-    #[serde(default)]
-    pub(crate) source_fingerprint: Option<serde_json::Value>,
-    /// Addresses the backup's device sent from, when the client read them.
-    /// Over 65,536 bytes of JSON is refused with `422 Unprocessable Entity`.
-    #[serde(default)]
-    pub(crate) source_identities: Option<serde_json::Value>,
-}
-
-/// The new Import Run's id.
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub(crate) struct CreateImportResponse {
-    /// Id of the new Import Run, which its routes name in their path, as
-    /// `/v1/imports/{id}`.
-    pub(crate) id: i64,
-}
-
-/// Final stats and issues for a running Import Run. The outcome is stated
-/// once, as `status`. The run's message and attachment counts are not part
-/// of it: the server counts what the run holds, since a resumed Upload's
-/// client knows only what the resume sent.
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub(crate) struct CompleteImportRequest {
-    /// How the run ended: `completed`, `completed_with_issues` or `failed`.
-    pub(crate) status: String,
-    /// Bytes the Upload sent, as the client counted them. Null or left out
-    /// keeps the count the run already holds.
-    #[serde(default)]
-    pub(crate) bytes_uploaded: Option<i64>,
-    /// How long the whole run took, in milliseconds, as the client timed it.
-    /// Null or left out stores none.
-    #[serde(default)]
-    pub(crate) duration_ms: Option<i64>,
-    /// Milliseconds Staging spent reading the backup ("Parse backup"). Null
-    /// or left out stores none.
-    #[serde(default)]
-    pub(crate) parse_ms: Option<i64>,
-    /// Milliseconds Staging spent copying the attachments ("Attachments").
-    /// Null or left out stores none.
-    #[serde(default)]
-    pub(crate) attachments_ms: Option<i64>,
-    /// Milliseconds Staging spent writing the conversation files ("Preparing
-    /// messages"). Null or left out stores none.
-    #[serde(default)]
-    pub(crate) prepare_ms: Option<i64>,
-    /// Milliseconds the Upload took. Null or left out stores none.
-    #[serde(default)]
-    pub(crate) upload_ms: Option<i64>,
-    /// The run's final counts as the client made them, such as files and
-    /// messages parsed, inserted, deduplicated and failed. It becomes the
-    /// run's `summary` and replaces the plan the last Review stored there.
-    /// Null or left out leaves the run with no summary.
-    #[serde(default)]
-    pub(crate) summary: Option<serde_json::Value>,
-    /// The run's Import Errors: every item that failed or was skipped. An
-    /// empty list when the request leaves it out.
-    #[serde(default)]
-    pub(crate) issues: Vec<ImportIssueRequest>,
-    /// The run's notes, apart from its Import Errors. A note never makes a
-    /// run `completed_with_issues`.
-    #[serde(default)]
-    pub(crate) notes: Vec<ImportNoteRequest>,
-}
-
-/// The Import Errors a discarded run recorded before it was given up. A run
-/// that paused and is then discarded never posts `complete`, so its issues
-/// and notes come with the discard.
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub(crate) struct DiscardImportRequest {
-    /// The run's Import Errors so far. The list is empty when the run
-    /// recorded none.
-    pub(crate) issues: Vec<ImportIssueRequest>,
-    /// The run's notes so far. The list is empty when the run recorded none.
-    pub(crate) notes: Vec<ImportNoteRequest>,
-}
-
-/// One note a Stage of the Import Run recorded: something it did with an
-/// item that is worth knowing but did not fail, such as a message it kept
-/// with a caveat.
-// `max_length` takes only a literal; `the_reference_states_the_import_run_text_caps`
-// holds each to `MAX_IMPORT_NOTE_TEXT_CHARS`.
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub(crate) struct ImportNoteRequest {
-    /// Stage the note came from.
-    pub(crate) stage: crate::db::imports::ImportIssueStage,
-    /// The file, message or address the note is about. Stored trimmed; over
-    /// 2,000 characters is refused with `422 Unprocessable Entity`.
-    #[schema(max_length = 2000)]
-    pub(crate) item: String,
-    /// What the run did with it, in one sentence. Stored trimmed; over 2,000
-    /// characters is refused with `422 Unprocessable Entity`.
-    #[schema(max_length = 2000)]
-    pub(crate) text: String,
-}
-
-/// The requested notes as the database records them, their text trimmed.
-/// Adds to `errors` every `item` or `text` over its cap (`text_caps`).
-fn note_rows(
-    notes: &[ImportNoteRequest],
-    errors: &mut Vec<String>,
-) -> Vec<crate::db::imports::ImportNoteRow> {
-    let mut rows = Vec::with_capacity(notes.len());
-    for (at, note) in notes.iter().enumerate() {
-        let cap = |field: &str, text| {
-            capped_text(
-                &format!("notes[{at}].{field}"),
-                text,
-                MAX_IMPORT_NOTE_TEXT_CHARS,
-            )
-        };
-        let (item, text) = (cap("item", &note.item), cap("text", &note.text));
-        errors.extend(too_long_sentences([&item, &text]));
-        if let (Ok(item), Ok(text)) = (item, text) {
-            rows.push(crate::db::imports::ImportNoteRow {
-                stage: note.stage,
-                item: item.to_string(),
-                text: text.to_string(),
-            });
-        }
-    }
-    rows
-}
-
-/// `value`, or none when it is empty. A new Import Run stores an empty
-/// `tool`, `run_dir` or `device_id` as none, as it stores one left out. A
-/// blank `tool` or `device_id` is empty once trimmed. A whitespace `run_dir`
-/// is kept, because it is not trimmed and could name a directory.
-fn empty_as_none(value: Option<&str>) -> Option<&str> {
-    value.filter(|v| !v.is_empty())
-}
-
-/// The issues and notes a completion or a discard carries, as the database
-/// records them. Refuses the request naming every rule [`import_issue_inputs`]
-/// and [`note_rows`] find broken, in both lists, after `errors`, the rules
-/// the rest of the body broke. Checked before a connection is opened, so a
-/// refused request writes nothing.
-fn issues_and_notes(
-    issues: &[ImportIssueRequest],
-    notes: &[ImportNoteRequest],
-    mut errors: Vec<String>,
-) -> Result<
-    (
-        Vec<crate::db::imports::ImportIssueInput>,
-        Vec<crate::db::imports::ImportNoteRow>,
-    ),
-    ApiError,
-> {
-    let issues = import_issue_inputs(issues, &mut errors);
-    let notes = note_rows(notes, &mut errors);
-    ApiError::unless_broken(errors)?;
-    Ok((issues, notes))
-}
-
-/// One error or skip a Stage of the Import Run reported.
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub(crate) struct ImportIssueRequest {
-    /// `error` when the item failed, or `skip` when the run left it out
-    /// without importing it, such as an attachment it did not upload. Every
-    /// other kind is refused with `422 Unprocessable Entity`: a note goes in
-    /// `notes`, and the desktop app applies a `resolved` row to the record
-    /// before it sends it.
-    pub(crate) kind: RunIssueKind,
-    /// Stage the issue came from.
-    pub(crate) stage: crate::db::imports::ImportIssueStage,
-    /// What the issue is about, such as a conversation file or an
-    /// attachment's path. Stored trimmed; over 2,000 characters is refused
-    /// with `422 Unprocessable Entity`.
-    // `max_length` takes only a literal; a test holds it to
-    // `MAX_IMPORT_ERROR_TEXT_CHARS`.
-    #[schema(max_length = 2000)]
-    pub(crate) item: String,
-    /// Why the item failed or was skipped, in one sentence. Stored trimmed;
-    /// over 2,000 characters is refused with `422 Unprocessable Entity`.
-    #[schema(max_length = 2000)]
-    pub(crate) reason: String,
-}
-
-/// The requested issues as the database records them, their text trimmed.
-/// Adds to `errors` every issue that is not an Import Error, since the run
-/// stores only `error` and `skip` rows as its issues, and every `item` or
-/// `reason` over its cap (`text_caps`).
-fn import_issue_inputs(
-    issues: &[ImportIssueRequest],
-    errors: &mut Vec<String>,
-) -> Vec<crate::db::imports::ImportIssueInput> {
-    let mut inputs = Vec::with_capacity(issues.len());
-    for (at, issue) in issues.iter().enumerate() {
-        if matches!(issue.kind, RunIssueKind::Note | RunIssueKind::Resolved) {
-            errors.push(format!(
-                "issues[{at}].kind: invalid import issue kind '{}'; expected 'error' or 'skip'",
-                issue.kind
-            ));
-        }
-        let cap = |field: &str, text| {
-            capped_text(
-                &format!("issues[{at}].{field}"),
-                text,
-                MAX_IMPORT_ERROR_TEXT_CHARS,
-            )
-        };
-        let (item, reason) = (cap("item", &issue.item), cap("reason", &issue.reason));
-        errors.extend(too_long_sentences([&item, &reason]));
-        if let (Ok(item), Ok(reason)) = (item, reason) {
-            inputs.push(crate::db::imports::ImportIssueInput {
-                kind: issue.kind,
-                stage: issue.stage,
-                item: item.to_string(),
-                reason: reason.to_string(),
-            });
-        }
-    }
-    inputs
-}
-
-/// The sentence refusing `status`, or none when a completion takes it.
-fn import_status_refusal(status: &str) -> Option<String> {
-    match status {
-        "completed" | "completed_with_issues" | "failed" => None,
-        other => Some(format!(
-            "invalid import status '{other}'; expected 'completed', 'completed_with_issues', or 'failed'"
-        )),
-    }
-}
-
-/// Keys a stored form snapshot must never carry.
-///
-/// The invariant: `imports.form_json` is a durable record read back to
-/// restore the Import screen, and a secret typed once for one run must not
-/// outlive it there. The desktop client already drops these before posting,
-/// but the client is the wrong place to enforce it -- an older build, a
-/// script, or a client not written yet would break the rule silently. The
-/// snapshot is flat, so removing them at the top level is the whole job.
-const FORM_CREDENTIAL_KEYS: [&str; 2] = ["backupPassword", "whatsappKey"];
-
-/// Remove [`FORM_CREDENTIAL_KEYS`] from a form snapshot before it is stored.
-fn strip_form_credentials(form: &serde_json::Value) -> serde_json::Value {
-    let mut stripped = form.clone();
-    if let Some(fields) = stripped.as_object_mut() {
-        for key in FORM_CREDENTIAL_KEYS {
-            fields.remove(key);
-        }
-    }
-    stripped
-}
-
-/// Serialize an optional JSON body field for storage as TEXT.
-fn optional_json_string(
-    value: Option<&serde_json::Value>,
-    field: &str,
-) -> Result<Option<String>, ApiError> {
-    match value {
-        None => Ok(None),
-        Some(v) => serde_json::to_string(v)
-            .map(Some)
-            .map_err(|e| ApiError::Internal(anyhow::anyhow!("serialize {field}: {e}"))),
-    }
-}
-
-/// [`optional_json_string`] for a value an Import Run stores as it is
-/// created. Adds to `errors` the sentence refusing it when it is over
-/// [`MAX_IMPORT_RUN_JSON_BYTES`], and still returns it, so the route goes on
-/// to name every other rule the body breaks. Only a value that cannot be
-/// serialized returns early, as an internal failure.
-fn capped_json_string(
-    value: Option<&serde_json::Value>,
-    field: &str,
-    errors: &mut Vec<String>,
-) -> Result<Option<String>, ApiError> {
-    let json = optional_json_string(value, field)?;
-    if let Some(json) = &json
-        && let Err(too_long) = capped_json(field, json, MAX_IMPORT_RUN_JSON_BYTES)
-    {
-        errors.push(too_long.to_string());
-    }
-    Ok(json)
-}
-
-/// `GET /v1/imports`: a page, narrowed to one `status` when given. One of the
-/// two lists with a filter parameter, beside the Export Run list
-/// (`docs/architecture/http-api.md`): it has no search language.
-#[derive(Debug, Deserialize)]
-pub(crate) struct ListImportsQuery {
-    #[serde(default)]
-    pub(crate) status: Option<String>,
-    #[serde(default)]
-    pub(crate) limit: Option<usize>,
-    #[serde(default)]
-    pub(crate) offset: Option<usize>,
-    /// `started_at` or `-started_at`; newest first when absent.
-    #[serde(default)]
-    pub(crate) sort: Option<String>,
-}
-
-/// One stored import note: something the run did with an item that is worth
-/// knowing but did not fail.
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub(crate) struct ImportNote {
-    /// Stage the note came from.
-    pub(crate) stage: crate::db::imports::ImportIssueStage,
-    /// The file, message or address the note is about.
-    item: String,
-    /// What the run did with it.
-    text: String,
-}
-
-/// One stored import issue.
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub(crate) struct ImportIssue {
-    /// `error` when the item failed, or `skip` when the run left it out
-    /// without importing it.
-    pub(crate) kind: RunIssueKind,
-    /// Stage the issue came from.
-    pub(crate) stage: crate::db::imports::ImportIssueStage,
-    /// What the issue is about, such as a conversation file or an
-    /// attachment's path.
-    item: String,
-    /// Why the item failed or was skipped.
-    reason: String,
-}
-
-/// An Import Run: one per import, the same record wherever the interface
-/// hands one run out. It is the run as a list answers it, the
-/// `ImportRunSummary`, with the issues and the notes the run recorded.
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub(crate) struct ImportRun {
-    /// Everything a list answers for the run: the counts Settings shows,
-    /// everything the desktop app needs to resume a running run, and how
-    /// many issues it recorded.
-    #[serde(flatten)]
-    pub(crate) run: ImportRunSummary,
-    /// Issues the run recorded, oldest first.
-    pub(crate) issues: Vec<ImportIssue>,
-    /// Notes the run recorded, oldest first, apart from its issues.
-    pub(crate) notes: Vec<ImportNote>,
-}
-
-/// An Import Run as a list of runs answers it: every field of the run but
-/// its issues and notes. A run may record any number of either, so a page
-/// that carried them would have no bound on its size; `GET /v1/imports/{id}`
-/// answers them (#1559,
-/// `docs/architecture/http-api.md`, "Lists").
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub(crate) struct ImportRunSummary {
-    /// Import Run id.
-    pub(crate) id: i64,
-    /// Source id the run imports.
-    pub(crate) source: String,
-    /// Importing tool, e.g. `message-crate-import`.
-    pub(crate) tool: Option<String>,
-    /// Import mode (`replace` or `append`).
-    pub(crate) mode: String,
-    /// The country the run states for phone numbers written without their
-    /// `+` code, as an ISO 3166-1 alpha-2 code; null when it states none.
-    pub(crate) phone_country: Option<String>,
-    /// Lifecycle status.
-    pub(crate) status: crate::db::imports::ImportStatus,
-    /// UTC time the run started.
-    pub(crate) started_at: String,
-    /// UTC time the run finished, when it has.
-    pub(crate) finished_at: Option<String>,
-    /// Messages counted for the run.
-    pub(crate) message_count: i64,
-    /// Attachments counted for the run.
-    pub(crate) attachment_count: i64,
-    /// Bytes uploaded so far.
-    pub(crate) bytes_uploaded: i64,
-    /// Total wall-clock duration, when finished.
-    pub(crate) duration_ms: Option<i64>,
-    /// Time spent parsing, when finished.
-    pub(crate) parse_ms: Option<i64>,
-    /// Time spent on attachments, when finished.
-    pub(crate) attachments_ms: Option<i64>,
-    /// Time spent preparing conversation files, when finished.
-    pub(crate) prepare_ms: Option<i64>,
-    /// Time spent uploading, when finished.
-    pub(crate) upload_ms: Option<i64>,
-    /// Where a running run is; null once it is over.
-    pub(crate) stage: Option<crate::db::imports::ImportStage>,
-    /// Absolute path to the run directory on the client that owns the run.
-    pub(crate) run_dir: Option<String>,
-    /// Which install created the run.
-    pub(crate) device_id: Option<String>,
-    /// Import form snapshot, or null.
-    pub(crate) form: serde_json::Value,
-    /// Source path, size, mtime, and message count, or null.
-    pub(crate) source_fingerprint: serde_json::Value,
-    /// Addresses the backup's device sent from (JSON array), or null.
-    pub(crate) source_identities: serde_json::Value,
-    /// When the backup the run read was made, UTC: the newest date its
-    /// conversation files name (`export.backup_taken_at_unix_ms`). Null until
-    /// a file that names one is imported, and for a run whose files name none.
-    pub(crate) backup_taken_at: Option<String>,
-    /// What the person approved at the last Review they passed, which
-    /// `PATCH /v1/imports/{id}` writes with its `summary`. A cancelled run
-    /// keeps it. A run that completed or failed holds instead the final
-    /// counts its `POST /v1/imports/{id}/complete` sent, and null when that
-    /// request sent none, because completing replaces the plan. Null too
-    /// while no Review has stored one.
-    pub(crate) summary: serde_json::Value,
-    /// How many issues the run recorded.
-    pub(crate) issue_count: u64,
-    /// How many notes the run recorded.
-    pub(crate) note_count: u64,
-    /// Contacts this run created.
-    pub(crate) contacts_new: u64,
-    /// Contacts it only changed.
-    pub(crate) contacts_changed: u64,
-}
-
-impl From<crate::db::imports::ListedImport> for ImportRunSummary {
-    fn from(listed: crate::db::imports::ListedImport) -> Self {
-        let row = listed.row;
-        Self {
-            id: row.id,
-            source: row.source,
-            tool: row.tool,
-            mode: row.mode,
-            phone_country: row.phone_country,
-            status: row.status,
-            started_at: row.started_at,
-            finished_at: row.finished_at,
-            message_count: row.message_count,
-            attachment_count: row.attachment_count,
-            bytes_uploaded: row.bytes_uploaded,
-            duration_ms: row.duration_ms,
-            parse_ms: row.parse_ms,
-            attachments_ms: row.attachments_ms,
-            prepare_ms: row.prepare_ms,
-            upload_ms: row.upload_ms,
-            stage: row.stage,
-            run_dir: row.run_dir,
-            device_id: row.device_id,
-            form: crate::db::imports::json_column(row.form_json),
-            source_fingerprint: crate::db::imports::json_column(row.source_fingerprint),
-            source_identities: crate::db::imports::json_column(row.source_identities),
-            backup_taken_at: row.backup_taken_at,
-            summary: crate::db::imports::json_column(row.summary_json),
-            issue_count: listed.issue_count,
-            note_count: listed.note_count,
-            contacts_new: listed.contacts.new_count,
-            contacts_changed: listed.contacts.changed_count,
-        }
-    }
-}
-
-/// An Import Run as the owner's list of another account's runs answers it:
-/// its source, mode, times, outcome and counts, and nothing of what the
-/// backup held
-/// (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
-/// see"). The run's summary, its issues, its notes and its form say whom the
-/// account talks to, so they stay out, and a field reaches the owner only by
-/// being added here.
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub(crate) struct OwnerImportRunSummary {
-    /// Import Run id.
-    pub(crate) id: i64,
-    /// Source id the run imports.
-    source: String,
-    /// Importing tool, e.g. `message-crate-import`.
-    tool: Option<String>,
-    /// Import mode (`replace` or `append`).
-    mode: String,
-    /// Lifecycle status.
-    status: crate::db::imports::ImportStatus,
-    /// UTC time the run started.
-    started_at: String,
-    /// UTC time the run finished, when it has.
-    finished_at: Option<String>,
-    /// Messages counted for the run.
-    message_count: i64,
-    /// Attachments counted for the run.
-    attachment_count: i64,
-    /// Bytes uploaded so far.
-    bytes_uploaded: i64,
-    /// Total wall-clock duration, when finished.
-    duration_ms: Option<i64>,
-    /// Time spent parsing, when finished.
-    parse_ms: Option<i64>,
-    /// Time spent on attachments, when finished.
-    attachments_ms: Option<i64>,
-    /// Time spent preparing conversation files, when finished.
-    prepare_ms: Option<i64>,
-    /// Time spent uploading, when finished.
-    upload_ms: Option<i64>,
-    /// The whole numbers the run's summary reported, by name. The summary's
-    /// other values, among them the addresses a staging summary lists, are
-    /// the account's own.
-    counts: std::collections::BTreeMap<String, i64>,
-    /// Issues the run recorded. Each names the conversation it was about, so
-    /// the owner reads how many and not which.
-    issue_count: u64,
-    /// Notes the run recorded. Each names a file or an address, so the owner
-    /// reads how many and not which.
-    note_count: u64,
-    /// Contacts this run created.
-    contacts_new: u64,
-    /// Contacts it only changed.
-    contacts_changed: u64,
-}
-
-/// One Import Run as the owner reads it under another account: everything
-/// the list answers for it, and the attachments the run wrote whose
-/// Thumbnail or Preview the server's media pass could not make, with why. A
-/// run may write any number of them, so the list leaves them out
-/// (`docs/architecture/http-api.md`, "Lists"). Each is named by its file
-/// name, type and size, which the owner may read
-/// (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
-/// see"); never by its message, its conversation, or its bytes.
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub(crate) struct OwnerImportRun {
-    /// Everything the list answers for the run.
-    #[serde(flatten)]
-    pub(crate) run: OwnerImportRunSummary,
-    /// How many attachments the run last wrote: those of the messages it
-    /// added, and the stored ones it gave their missing file, less any a
-    /// later run wrote since. `not_made_attachments` are out of these.
-    written_attachment_count: u64,
-    /// How many of `not_made_attachments` have no Thumbnail and how many no
-    /// Preview, for each kind of failure, leaving out a kind none has. Empty
-    /// until the media pass has tried the run's attachments, which it does
-    /// after the run ends.
-    not_made_counts: Vec<crate::db::attachment_versions::NotMadeCount>,
-    /// The attachments the run wrote whose Thumbnail or Preview could not be
-    /// made, by id, each with why for each version not made.
-    not_made_attachments: Vec<crate::db::attachment_versions::NotMadeAttachment>,
-}
+use dto::{
+    CompleteImportRequest, CreateImportBatchResponse, CreateImportRequest, CreateImportResponse,
+    DiscardImportRequest, ImportIssue, ImportNote, ImportRun, ImportRunSummary, ListImportsQuery,
+    OwnerImportRun, OwnerImportRunSummary, UpdateImportRequest, capped_json_string, empty_as_none,
+    import_status_refusal, issues_and_notes, optional_json_string, strip_form_credentials,
+};
+pub use failure::{ImportError, ImportFailure, MISSING_GUID_LINES_NAMED};
+use run_control::{
+    BatchContext, RunEnd, end_run, run_import_path, server_stopping, take_import_slot,
+};
 
 /// The owner's view of one Import Run, read from the run's row, its issue
 /// count, its contact tally, and its attachments whose versions were not
@@ -1274,41 +105,6 @@ async fn listed_import(
         note_count,
         contacts,
     })
-}
-
-impl From<crate::db::imports::ListedImport> for OwnerImportRunSummary {
-    fn from(listed: crate::db::imports::ListedImport) -> Self {
-        let row = listed.row;
-        let counts = match crate::db::imports::json_column(row.summary_json) {
-            serde_json::Value::Object(summary) => summary
-                .into_iter()
-                .filter_map(|(name, value)| value.as_i64().map(|n| (name, n)))
-                .collect(),
-            _ => std::collections::BTreeMap::new(),
-        };
-        Self {
-            id: row.id,
-            source: row.source,
-            tool: row.tool,
-            mode: row.mode,
-            status: row.status,
-            started_at: row.started_at,
-            finished_at: row.finished_at,
-            message_count: row.message_count,
-            attachment_count: row.attachment_count,
-            bytes_uploaded: row.bytes_uploaded,
-            duration_ms: row.duration_ms,
-            parse_ms: row.parse_ms,
-            attachments_ms: row.attachments_ms,
-            prepare_ms: row.prepare_ms,
-            upload_ms: row.upload_ms,
-            counts,
-            issue_count: listed.issue_count,
-            note_count: listed.note_count,
-            contacts_new: listed.contacts.new_count,
-            contacts_changed: listed.contacts.changed_count,
-        }
-    }
 }
 
 /// The account's Import Runs, newest first, as a page. `status=running`
@@ -1508,7 +304,7 @@ pub(crate) async fn create_import(
     // The run and what started it land together, so a run never reads as
     // one the server started.
     let mut tx = crate::db::begin_write(&mut conn).await?;
-    crate::server::require_account_row(&mut tx, account).await?;
+    crate::auth::require_account_row(&mut tx, account).await?;
     let id = crate::db::imports::start_import(&mut tx, &args, chrono::Utc::now()).await?;
     crate::db::audit_trail::record_run_credential(
         &mut tx,
@@ -1527,6 +323,14 @@ pub(crate) async fn create_import(
 
 /// Record the outcome of an Import Run started with POST /v1/imports. The
 /// answer is the run as it now stands.
+///
+/// Before it records the outcome, the server hides the duplicates of the
+/// whole account, within one source and across sources. A batch hides
+/// none, so the duplicates a run brings stay shown until the run ends. The
+/// time this takes grows with every message the account holds, not with
+/// the run's. A dedupe that fails leaves the run running. A server told to
+/// stop refuses the request with `503 Service Unavailable`
+/// (`server-stopping`), and the run stays running.
 #[utoipa::path(
     post,
     path = "/v1/imports/{id}/complete",
@@ -1536,7 +340,8 @@ pub(crate) async fn create_import(
     request_body = CompleteImportRequest,
     responses(
         (status = 200, body = ImportRun),
-        crate::problem::openapi::StateConflict
+        crate::problem::openapi::StateConflict,
+        crate::problem::openapi::ServerStopping,
     )
 )]
 pub(crate) async fn complete_import(
@@ -1571,56 +376,9 @@ pub(crate) async fn complete_import(
         notes,
     };
     let now = chrono::Utc::now();
+    let row = end_run(&state, account, import_id, RunEnd::Complete(args), now).await?;
     let mut conn = state.db.acquire().await?;
-    let row = complete_run_at(&mut conn, account, import_id, &args, now).await?;
-    let run = import_run(&mut conn, row).await;
-    drop(conn);
-    crate::asset_store::sweep_after_run(
-        &state.db,
-        &state.cfg.paths,
-        account,
-        state.upload_time_limits.stall,
-    )
-    .await;
-    crate::media_queue::queue_import_run(&state.db, &state.media_queue, account, import_id, now)
-        .await;
-    run.map(Json)
-}
-
-/// Add the sidebar shortcut to the messages this run brought in.
-///
-/// Only runs that stored something get one: a saved search matching nothing is
-/// worse than no saved search, and a run that stored nothing is still visible
-/// in Import History either way.
-///
-/// The shortcut is a convenience, not a record, so a failure here is logged and
-/// the import still reports success. The person may delete the saved search
-/// afterwards; the `imports` row it points at is permanent.
-async fn create_import_saved_search(
-    conn: &mut sqlx::SqliteConnection,
-    account_id: i64,
-    row: &crate::db::imports::ImportRow,
-) {
-    if row.message_count <= 0 {
-        return;
-    }
-    let date_ymd = import_date_ymd(row);
-    if let Err(e) = crate::db::saved_searches::create_for_import(
-        conn,
-        account_id,
-        row.id,
-        &row.source,
-        &date_ymd,
-    )
-    .await
-    {
-        tracing::warn!(
-            import_id = row.id,
-            messages = row.message_count,
-            error = ?e,
-            "The Import Run's Saved Search could not be created"
-        );
-    }
+    import_run(&mut conn, row).await.map(Json)
 }
 
 /// List the contacts one import run created or changed, with the reason for
@@ -1663,103 +421,6 @@ pub(crate) async fn list_import_contacts(
     Ok(Json(page_from_rows(items, total, params)))
 }
 
-/// Create the Contact Group naming the contacts an import run touched.
-///
-/// The group is a shortcut pointing at the run: the person may delete it, and
-/// the `imports` row it describes is permanent either way. Membership is
-/// a snapshot, because what a run brought in is a historical fact that should
-/// not silently rewrite itself as contacts change later.
-///
-/// A failure here is reported and swallowed, the same as the saved search: the
-/// messages are already in the database, and losing a shortcut is not a reason to
-/// call the import failed. Each member's `last_modified` is set to `now`.
-async fn create_import_contact_group(
-    conn: &mut sqlx::SqliteConnection,
-    account_id: i64,
-    row: &crate::db::imports::ImportRow,
-    now: chrono::DateTime<chrono::Utc>,
-) {
-    let touched = match crate::db::import_contacts::contact_ids(conn, row.id).await {
-        Ok(ids) if ids.is_empty() => return,
-        Ok(ids) => ids,
-        Err(e) => {
-            tracing::warn!(
-                import_id = row.id,
-                error = %crate::server::error_chain(&e),
-                "The Import Run could not list the contacts it touched"
-            );
-            return;
-        }
-    };
-    let group_id = match crate::db::contacts::create_import_group(
-        conn,
-        account_id,
-        &import_contact_group_name(row),
-    )
-    .await
-    {
-        Ok((id, _)) => id,
-        Err(e) => {
-            tracing::warn!(
-                import_id = row.id,
-                error = %crate::server::error_chain(&e),
-                "The Import Run's Contact Group could not be created"
-            );
-            return;
-        }
-    };
-    if let Err(e) = crate::db::named_membership::patch_members(
-        crate::db::named_membership::group_spec(),
-        conn,
-        account_id,
-        group_id,
-        &touched,
-        &[],
-        now,
-    )
-    .await
-    {
-        tracing::warn!(
-            import_id = row.id,
-            contacts = touched.len(),
-            error = ?e,
-            "The Import Run's Contact Group was created, but its contacts could not be added"
-        );
-    }
-}
-
-/// Name an Import Run's Contact Group starts from: the source and the day
-/// the run finished. `contact_groups.name` is unique per account, and each
-/// run gets a group of its own, so `create_import_group` adds " 2", " 3", …
-/// when the name is taken.
-fn import_contact_group_name(row: &crate::db::imports::ImportRow) -> String {
-    format!("{} import {}", row.source, import_date_ymd(row))
-}
-
-/// [`import_contact_group_name`] as an SQL expression over an `imports` row
-/// aliased `i`, for a test query that finds a run's Contact Group. It falls
-/// back from `finished_at` to `started_at` as [`import_date_ymd`] does, and
-/// leaves out the fall back to today, which only a timestamp shorter than a
-/// date takes, and the " 2" a taken name gets.
-#[cfg(test)]
-pub(crate) const IMPORT_CONTACT_GROUP_NAME_SQL: &str =
-    "i.source || ' import ' || substr(coalesce(i.finished_at, i.started_at), 1, 10)";
-
-/// Calendar date to name an import's saved search after: the day the run
-/// finished, falling back to the day it started, then to today. All three are
-/// UTC, because that is what `imports` stores.
-fn import_date_ymd(row: &crate::db::imports::ImportRow) -> String {
-    row.finished_at
-        .as_deref()
-        .or(Some(row.started_at.as_str()))
-        .and_then(|rfc3339| rfc3339.get(..10))
-        .filter(|d| d.len() == 10)
-        .map_or_else(
-            || chrono::Utc::now().format("%Y-%m-%d").to_string(),
-            str::to_string,
-        )
-}
-
 /// One Import Run in full, read from its row, its issues, its notes and its
 /// contact tally. The caller has already established that the row is the account's.
 pub(crate) async fn import_run(
@@ -1791,23 +452,6 @@ pub(crate) async fn import_run(
         .await?
         .into();
     Ok(ImportRun { run, issues, notes })
-}
-
-/// New stage for a running Import Run.
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub(crate) struct UpdateImportRequest {
-    /// The stage the run moves to.
-    pub(crate) stage: crate::db::imports::ImportStage,
-    /// What the person approved at the Review they just passed, when they passed one.
-    ///
-    /// Recorded here rather than at completion so an approval survives a
-    /// reload: the summary shown at a Review is recomputed from the directory, but
-    /// what was approved is a different question and only the run
-    /// remembers it. Absent leaves the stored `summary_json` untouched —
-    /// most stage changes carry nothing, and treating absent as null would
-    /// throw away the plan the outcome is later judged against.
-    #[serde(default)]
-    pub(crate) summary: Option<serde_json::Value>,
 }
 
 /// Move a running Import Run to another stage.
@@ -1860,6 +504,13 @@ pub(crate) async fn update_import(
 
 /// Discard a running Import Run, freeing the account's single slot. The
 /// answer is the run, now `cancelled`, with the issues the request carried.
+///
+/// The messages the run's batches brought stay in the account, and once it
+/// has discarded the run the server hides the duplicates of the whole
+/// account, as a completion does. A dedupe that fails does not undo the
+/// discard: the next run's end hides them. A server told to stop refuses
+/// the request with `503 Service Unavailable` (`server-stopping`), and the
+/// run stays running.
 #[utoipa::path(
     post,
     path = "/v1/imports/{id}/discard",
@@ -1869,7 +520,8 @@ pub(crate) async fn update_import(
     request_body = DiscardImportRequest,
     responses(
         (status = 200, body = ImportRun),
-        crate::problem::openapi::StateConflict
+        crate::problem::openapi::StateConflict,
+        crate::problem::openapi::ServerStopping,
     )
 )]
 pub(crate) async fn discard_import(
@@ -1881,20 +533,16 @@ pub(crate) async fn discard_import(
     let account = resolve_import_account(&auth);
     let (issues, notes) = issues_and_notes(&body.issues, &body.notes, Vec::new())?;
     let now = chrono::Utc::now();
-    let mut conn = state.db.acquire().await?;
-    crate::db::imports::discard_import(&mut conn, account, import_id, &issues, &notes, now).await?;
-    let run = full_import_run(&mut conn, account, import_id).await;
-    drop(conn);
-    crate::asset_store::sweep_after_run(
-        &state.db,
-        &state.cfg.paths,
+    let row = end_run(
+        &state,
         account,
-        state.upload_time_limits.stall,
+        import_id,
+        RunEnd::Discard { issues, notes },
+        now,
     )
-    .await;
-    crate::media_queue::queue_import_run(&state.db, &state.media_queue, account, import_id, now)
-        .await;
-    run.map(Json)
+    .await?;
+    let mut conn = state.db.acquire().await?;
+    import_run(&mut conn, row).await.map(Json)
 }
 
 /// Import one message-ir JSONL body.
@@ -1902,7 +550,9 @@ pub(crate) async fn discard_import(
 /// Every message needs a non-empty `guid`. A batch with a message without
 /// one is refused with `422`, naming its lines, and nothing in it is stored.
 /// A message whose `guid` the source already holds is skipped, so a batch
-/// sent again after its answer was lost stores nothing twice.
+/// sent again after its answer was lost stores nothing twice. A batch hides
+/// no duplicates: the run's completion or discard hides them, once for the
+/// whole run.
 #[utoipa::path(
     post,
     path = "/v1/imports/{id}/batches",
@@ -1998,125 +648,6 @@ pub(crate) async fn create_import_batch(
     Err(ApiError::UnsupportedMediaType(
         "Content-Type must be application/x-ndjson or application/jsonl".into(),
     ))
-}
-
-/// Bound on concurrent HTTP imports: each import holds one pooled connection
-/// for its whole run, so at most this many may overlap and the remaining
-/// connections stay available for auth, search, and export.
-const MAX_CONCURRENT_IMPORTS: usize = 2;
-
-/// A new server's import slots, [`MAX_CONCURRENT_IMPORTS`] of them, which
-/// `AppState::new` holds as `import_slots`: one count per server.
-pub(crate) fn import_slots() -> Arc<tokio::sync::Semaphore> {
-    Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_IMPORTS))
-}
-
-/// Take one of the server's import slots, waiting while every one is held.
-///
-/// An import holds one pooled connection for its whole run (JSONL parse,
-/// asset IO, promote), so the slots bound concurrent imports and they can
-/// never drain the pool. A batch takes its slot before it reads its body,
-/// so the batches waiting behind the running ones hold nothing on disk, and
-/// before the per-account lock, so lock order (slot → account → pool) is
-/// consistent everywhere. The slots close when the server is told to stop
-/// (`AppState::on_stop_signal`), so a batch still waiting here is refused
-/// and the Upload retries it, rather than making the stop wait for it.
-///
-/// # Errors
-///
-/// Returns [`ApiError::ServerStopping`] when the slots closed.
-async fn take_import_slot(state: &AppState) -> Result<OwnedSemaphorePermit, ApiError> {
-    Arc::clone(&state.import_slots)
-        .acquire_owned()
-        .await
-        .map_err(|_| server_stopping())
-}
-
-/// The refusal of a batch the server did not start because it is stopping.
-fn server_stopping() -> ApiError {
-    ApiError::ServerStopping(
-        "the server is stopping, so it did not start this batch; send it again once the server is running".into(),
-    )
-}
-
-/// `create_import_batch` is the only entry point, and the run's `source`,
-/// validated when the run was created, names an on-disk directory. The
-/// batch holds `_import_permit`, its import slot, until the import ends.
-async fn run_import_path(
-    state: AppState,
-    _import_permit: OwnedSemaphorePermit,
-    context: BatchContext,
-    jsonl_path: PathBuf,
-) -> Result<Json<CreateImportBatchResponse>, ApiError> {
-    let cfg = Arc::clone(&state.cfg);
-    let BatchContext {
-        account,
-        import_id,
-        source: source_id,
-        mode: run_mode,
-        phone_country,
-    } = context;
-
-    let _guard = state.account_import_locks.lock(account.to_string()).await;
-
-    // One pooled connection held for the whole import; the batch's import
-    // slot keeps enough of the pool free for other requests.
-    let mut conn = state.db.acquire().await?;
-
-    // A `replace` run wipes the source once, on its first batch; every batch
-    // after that appends. The row's stamped messages say which this is.
-    let mode = if run_mode == ImportMode::Replace
-        && !crate::db::imports::has_messages(&mut conn, import_id).await?
-    {
-        ImportMode::Replace
-    } else {
-        ImportMode::Append
-    };
-
-    // The import body never carries files of its own: attachments are
-    // uploaded first through `/v1/assets` and found by their SHA-256. An
-    // attachment's `path` is only a label and resolves nowhere, never in the
-    // asset store, where it could name an upload in progress or a media type
-    // sidecar and store those bytes (#2259). The path check still refuses an
-    // unsafe path.
-    let assets_dir = cfg.paths.assets_dir_for_account(account);
-
-    let opts = ImportOptions::fixed(FixedImportArgs {
-        assets_dir: &assets_dir,
-        asset_root: None,
-        mode,
-        source: &source_id,
-        account_id: account,
-        import_id: Some(import_id),
-        phone_country,
-        now: chrono::Utc::now(),
-    });
-    let import_result =
-        imports_api::import_jsonl_files_on_conn(&mut conn, &[jsonl_path], &opts).await;
-    let counts = import_result?;
-    // Every batch is followed by the full dedupe, within one source and
-    // across sources: there is no reason ever to leave a duplicate shown
-    // (#1969).
-    let dedupe_stats = dedupe::dedupe_cross_source(
-        &mut conn,
-        account,
-        None,
-        dedupe::NEAR_WINDOW_SECS,
-        Progress::Log,
-    )
-    .await?;
-
-    Ok(Json(CreateImportBatchResponse {
-        source: source_id,
-        account,
-        counts,
-        dedupe: DedupeCounts {
-            keys_filled: dedupe_stats.keys_filled,
-            exact_groups: dedupe_stats.exact_groups,
-            exact_flagged: dedupe_stats.exact_flagged,
-            near_flagged: dedupe_stats.near_flagged,
-        },
-    }))
 }
 
 #[cfg(test)]

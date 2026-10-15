@@ -56,25 +56,18 @@ pub enum SavedSearchError {
     /// The query breaks a rule of the search language that every list shares.
     Query(crate::search::QueryError),
     NotFound,
-    Conflict(String),
+    /// Another saved search of the account has the name; carries the
+    /// sentence naming it.
+    NameTaken(String),
+    /// An import found no free name for its saved search on the day;
+    /// carries the sentence.
+    NoFreeName(String),
     Internal(anyhow::Error),
 }
 
 impl From<sqlx::Error> for SavedSearchError {
     fn from(e: sqlx::Error) -> Self {
         Self::Internal(e.into())
-    }
-}
-
-impl From<SavedSearchError> for crate::server::ApiError {
-    fn from(e: SavedSearchError) -> Self {
-        match e {
-            SavedSearchError::BadRequest(m) => Self::validation(m),
-            SavedSearchError::Query(e) => e.into(),
-            SavedSearchError::NotFound => Self::not_found("saved search"),
-            SavedSearchError::Conflict(m) => Self::NameTaken(m),
-            SavedSearchError::Internal(e) => Self::Internal(e),
-        }
     }
 }
 
@@ -186,7 +179,7 @@ pub async fn create(
     )
     .await?
     else {
-        return Err(SavedSearchError::Conflict(
+        return Err(SavedSearchError::NameTaken(
             "saved search already exists".into(),
         ));
     };
@@ -220,7 +213,7 @@ pub async fn update(
     if let Some(other) = find_id_by_name(&mut tx, account_id, &name).await?
         && other != id
     {
-        return Err(SavedSearchError::Conflict(
+        return Err(SavedSearchError::NameTaken(
             "saved search already exists".into(),
         ));
     }
@@ -289,7 +282,7 @@ pub async fn create_for_import(
     )
     .await?;
     let Some((id, name)) = claimed else {
-        return Err(SavedSearchError::Conflict(
+        return Err(SavedSearchError::NoFreeName(
             "too many imports named alike on one day".into(),
         ));
     };

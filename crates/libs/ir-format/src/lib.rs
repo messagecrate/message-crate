@@ -23,7 +23,7 @@ mod util;
 mod write;
 
 pub use clean::{EXPORT_SENTINEL, clean_previous_ir_output, mark_export_directory};
-pub use export_transforms::clear_attachments_when_disabled;
+pub use export_transforms::clear_attachments_when_skipped;
 pub use format_sink::{FormatSink, MergedArchive, write_documents_through_sink};
 pub use naming::{filename_stem, give_each_document_its_own_file};
 pub use read_csv::read_conversation_csv;

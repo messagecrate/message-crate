@@ -1,5 +1,19 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use std::sync::Arc;
+
+use tokio::sync::OwnedSemaphorePermit;
+
+use super::pipeline::{
+    FixedImportArgs, IMPORT_CONTACT_GROUP_NAME_SQL, ImportOptions, complete_run_at,
+    import_contact_group_name, import_jsonl_files, import_jsonl_files_on_conn,
+};
+use super::run_control::MAX_CONCURRENT_IMPORTS;
 use super::*;
 use crate::assets_api;
+use crate::db::engine;
+use crate::db::imports::CompleteImportArgs;
 use crate::progress::Progress;
 use crate::test_support::{
     ConversationHeaderLine, MessageLine, RegisteredAccount, TestFixture,
@@ -102,8 +116,8 @@ fn edit_options<'a>(assets: &'a Path, root: &'a Path) -> ImportOptions<'a> {
 }
 
 /// A registered account may import with its session token: `can_import`
-/// is on by default, which `server.rs`'s `can_import = 0` test relies on
-/// to prove the opposite case.
+/// is on by default, which `import_endpoint_honors_can_import_flag` in
+/// `server/tests.rs` relies on to prove the opposite case.
 async fn importer() -> (
     crate::server::AppState,
     crate::test_support::TestFixture,
@@ -226,7 +240,7 @@ pub(super) async fn complete_run_at_fixed_instant(state: &crate::server::AppStat
         .fetch_one(&mut *conn)
         .await
         .unwrap();
-    super::complete_run_at(
+    complete_run_at(
         &mut conn,
         account,
         import_id,
@@ -286,6 +300,24 @@ pub(super) async fn completed_run_at_fixed_instant(
     import_id
 }
 
+/// The guid of the message `guid` is hidden behind, or `None` when it is
+/// shown.
+pub(super) async fn hidden_behind(state: &crate::server::AppState, guid: &str) -> Option<String> {
+    let mut conn = state.db.acquire().await.unwrap();
+    sqlx::query_scalar(
+        r"
+        SELECT w.guid
+        FROM messages m
+        LEFT JOIN messages w ON w.id = m.duplicate_of
+        WHERE m.guid = $1
+        ",
+    )
+    .bind(guid)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap()
+}
+
 /// Each conversation of `TEST_ACCOUNT` with its number of participant rows,
 /// and the account's number of contacts.
 async fn participant_and_contact_counts(conn: &mut SqliteConnection) -> (Vec<(i64, i64)>, i64) {
@@ -328,6 +360,7 @@ mod participants;
 mod phone_country;
 mod promote;
 mod reactions;
+mod run_end_dedupe;
 mod search_index;
 mod staging;
 mod time_precision;

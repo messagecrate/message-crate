@@ -46,7 +46,7 @@ static SERVER_LOG: RwLock<Option<LogFiles>> = RwLock::new(None);
 /// process-wide subscriber.
 ///
 /// The call that installs the subscriber also installs the panic hook
-/// ([`log_panics`]), so a panic on any thread of the process reaches the
+/// (`log_panics`), so a panic on any thread of the process reaches the
 /// log as well.
 ///
 /// Neither layer reports a write it could not make. A layer that does
@@ -103,7 +103,7 @@ pub fn write_failure(error: &anyhow::Error) {
     let writes_files = SERVER_LOG.read().is_ok_and(|slot| slot.is_some());
     if writes_files && tracing::event_enabled!(tracing::Level::ERROR) {
         tracing::error!(
-            error = %crate::server::error_chain(error),
+            error = %crate::api_error::error_chain(error),
             "The server stopped with an error"
         );
     } else {

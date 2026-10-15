@@ -16,8 +16,9 @@
 //! ([`ProgressEvent::FileWritten`]): the desktop app keeps a row apart until
 //! its conversation is written (#1688).
 //!
-//! Writers never transcode. Convert and compress stage the originals here and
-//! run afterwards, on their own and resumable, through [`transcode_staged`].
+//! Writers stage the originals or nothing, and never transcode. Transcoding
+//! is the Media Stage's work, after the Staging Review, through
+//! [`transcode_staged`](crate::transcode_staged).
 //!
 //! Only non-obfuscated JSONL exports are routed here. Obfuscation is stateful
 //! across documents and the other formats merge or embed at finish, so those
@@ -27,21 +28,19 @@ use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
-use media::{CompressOptions, MediaMode, MediaTools};
 use message_crate_core::{
-    AttachmentJob, CONVERSATION_FILES_PREPARING, CONVERSATIONS_RESUMED, CancelFlag, Counter,
-    IssueSink, LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent, ProgressSink,
-    WriteStatus, attachment_size_hint, check_cancel, run_attachment_jobs,
+    AttachmentFiles, AttachmentJob, CONVERSATION_FILES_PREPARING, CONVERSATIONS_RESUMED, Counter,
+    LoadError, LogSink, OutputFormat, ProgressEvent, ProgressSink, Sinks, WriteStatus,
+    attachment_size_hint, check_cancel, run_attachment_jobs,
 };
 use message_ir::{ConversationDocument, IrAttachment};
 use message_ir_format::{filename_stem, give_each_document_its_own_file};
 
 use crate::headroom::{Disk, bytes_to_copy, check_headroom};
-use crate::transcode::{TranscodeOptions, transcode_staged};
 use message_ir_format::{is_complete_file, write_format};
 
 /// Where a unit's attachment bytes come from at write time.
@@ -136,13 +135,8 @@ impl ConversationUnit {
 /// How a drain stages files.
 #[derive(Debug, Clone)]
 pub struct WriteQueueOptions {
-    /// The mode the user asked for. Convert and compress stage originals here
-    /// and transcode afterwards — writers do not transcode.
-    pub media: MediaMode,
-    /// Compress settings, used by the convert/compress run after the write.
-    pub compress: CompressOptions,
-    /// The ffmpeg and ffprobe the convert/compress run uses.
-    pub tools: Arc<dyn MediaTools>,
+    /// Stage the original attachment files, or none.
+    pub files: AttachmentFiles,
     /// Skip units whose conversation file is already on disk.
     pub resume: bool,
     /// 0 picks a count from the machine. The sequential drain ignores it.
@@ -158,8 +152,6 @@ pub struct WriteQueueReport {
     pub conversations_skipped: usize,
     /// Attachment records staged with a path and a digest, duplicates included.
     pub attachments_saved: usize,
-    /// Filled by the convert/compress run after the write; default otherwise.
-    pub media: media::MediaReport,
 }
 
 impl WriteQueueReport {
@@ -170,7 +162,6 @@ impl WriteQueueReport {
         report.conversations += (self.conversations_written + self.conversations_skipped) as u64;
         report.conversations_skipped += self.conversations_skipped as u64;
         report.attachments_saved += self.attachments_saved as u64;
-        report.media = self.media.clone();
     }
 }
 
@@ -299,21 +290,6 @@ fn signed(bytes: u64) -> i64 {
 pub type AttachmentLoader<'a> =
     dyn FnMut(&str, &mut AttachmentSource) -> Result<Option<Vec<u8>>, LoadError> + 'a;
 
-/// Where a drain reports and what stops it: the log, the progress events,
-/// and the cancel flag. A caller with no log, no progress bar or no cancel
-/// passes [`LogSink::none`], [`ProgressSink::none`] or a
-/// `CancelFlag::default()`.
-#[derive(Clone, Copy)]
-pub struct Sinks<'a> {
-    /// Where the drain writes its log lines.
-    pub log: &'a LogSink,
-    /// Where the drain sends its progress events.
-    pub progress: &'a ProgressSink,
-    /// Set to stop the drain. The drain then fails with
-    /// [`message_crate_core::Cancelled`] in its error chain (#2077).
-    pub cancel: &'a CancelFlag,
-}
-
 /// Drain `units` with a caller-supplied loader.
 ///
 /// Exporters whose attachment loader cannot cross threads — an encrypted iOS
@@ -333,7 +309,7 @@ pub fn drain_write_queue_with_loader(
 ) -> Result<WriteQueueReport> {
     let Sinks { log, progress, .. } = sinks;
     give_each_unit_its_own_file(&mut units)?;
-    check_units_headroom(output_dir, &units, options.media)?;
+    check_units_headroom(output_dir, &units, options.files)?;
     let mut report = WriteQueueReport::default();
 
     let unit_count = units.len();
@@ -360,7 +336,6 @@ pub fn drain_write_queue_with_loader(
         });
     }
 
-    report.media = run_media_post_pass(output_dir, options, sinks)?;
     announce_finish(log, &report, options.resume);
     Ok(report)
 }
@@ -368,8 +343,8 @@ pub fn drain_write_queue_with_loader(
 /// Make every `Path` source with no file there `Missing`, with no size
 /// hint, so the byte totals and the disk check leave it out from the start
 /// rather than drop when the run reaches it (#1581). Each one is logged as
-/// the read would have logged it. With media turned off nothing is read,
-/// so the caller skips this. A unit a resumed run will skip, because its
+/// the read would have logged it. With no attachment files copied nothing
+/// is read, so the caller skips this. A unit a resumed run will skip, because its
 /// conversation file is already written to the end, reads nothing either,
 /// so its paths are not checked or logged again.
 ///
@@ -423,7 +398,7 @@ pub(crate) fn missing_if_no_file(
 ) -> (AttachmentSource, Option<u64>) {
     match source {
         AttachmentSource::Path(path) if !path.is_file() => {
-            log.emit(unreadable_attachment_line(&path, "no file there"));
+            log.warn(unreadable_attachment_line(&path, "no file there"));
             (AttachmentSource::Missing, None)
         }
         found => (found, size_hint),
@@ -432,7 +407,8 @@ pub(crate) fn missing_if_no_file(
 
 /// The log line for an attachment whose file could not be read, naming the
 /// file and why. Every exporter that reads an attachment's file itself logs
-/// with it too, so the line reads alike wherever the read fails.
+/// with it too, so the line reads alike wherever the read fails. The run
+/// goes on without the file, so the line is a warning ([`LogSink::warn`]).
 pub fn unreadable_attachment_line(path: &Path, why: impl std::fmt::Display) -> String {
     format!("Attachment {} could not be read: {why}", path.display())
 }
@@ -503,10 +479,10 @@ pub fn drain_write_queue(
 ) -> Result<WriteQueueReport> {
     let Sinks { log, progress, .. } = sinks;
     give_each_unit_its_own_file(&mut units)?;
-    if options.media != MediaMode::Disabled {
+    if options.files.copies() {
         leave_out_files_that_are_gone(output_dir, &mut units, options.resume, log);
     }
-    check_units_headroom(output_dir, &units, options.media)?;
+    check_units_headroom(output_dir, &units, options.files)?;
 
     let attachments_dir = output_dir.join("attachments");
     // Idempotent, but doing it once here keeps every worker's first write
@@ -564,7 +540,7 @@ pub fn drain_write_queue(
                         };
                         load_attachment_source(source).inspect_err(|e| {
                             if let Some(path) = named {
-                                log.emit(unreadable_attachment_line(&path, e));
+                                log.warn(unreadable_attachment_line(&path, e));
                             }
                         })
                     };
@@ -610,99 +586,29 @@ pub fn drain_write_queue(
         anyhow::bail!(msg);
     }
 
-    let mut report = WriteQueueReport {
+    let report = WriteQueueReport {
         conversations_written: written.load(Ordering::Relaxed),
         conversations_skipped: skipped.load(Ordering::Relaxed),
         attachments_saved: attachments_saved.load(Ordering::Relaxed),
-        media: media::MediaReport::default(),
     };
-    report.media = run_media_post_pass(output_dir, options, sinks)?;
     announce_finish(log, &report, options.resume);
     Ok(report)
 }
 
-/// Convert or compress the staged originals, once every writer is done.
-///
-/// Writers stage originals and nothing else, so this is where convert and
-/// compress actually happen. Running it on its own gives per-file commits,
-/// so an interruption keeps every derivative already finished, and progress
-/// worth reporting.
-fn run_media_post_pass(
-    output_dir: &Path,
-    options: &WriteQueueOptions,
-    sinks: Sinks<'_>,
-) -> Result<media::MediaReport> {
-    let Sinks {
-        log,
-        progress,
-        cancel,
-    } = sinks;
-    if !matches!(options.media, MediaMode::Convert | MediaMode::Compress) {
-        return Ok(media::MediaReport::default());
-    }
-
-    let transcode_options = TranscodeOptions {
-        mode: options.media,
-        compress: options.compress.clone(),
-        // No server limit applies to a local export, so nothing here is
-        // written off as too large. The desktop's own Media stage, which does
-        // enforce the real limit, never reaches this code: it stages with
-        // Clone and converts on its own.
-        asset_max_bytes: u64::MAX,
-    };
-    // The desktop never runs this branch (it stages with Clone and converts
-    // on its own after the Staging Review); the events are for any other consumer.
-    let report = transcode_staged(
-        output_dir,
-        &transcode_options,
-        options.tools.as_ref(),
-        cancel,
-        &IssueSink::none(),
-        log,
-        &mut |p| {
-            let due = progress.emit(ProgressEvent::Media {
-                done: p.done,
-                total: p.total,
-            });
-            if due {
-                log.emit(format!("  media {}/{}", p.done, p.total));
-            }
-        },
-    )?;
-
-    let mut media = media::MediaReport {
-        processed: report.converted,
-        skipped: report.skipped + report.repointed,
-        bytes_before: report.bytes_before,
-        bytes_after: report.bytes_after,
-        errors: Vec::new(),
-        // Left empty: `transcode_staged` already sent any HEVC fallback to
-        // `log` as a warning the moment it found one.
-        ..media::MediaReport::default()
-    };
-    if report.failed > 0 {
-        // The per-file reasons are already on the attachments themselves.
-        media.errors.push(NOT_CONVERTED.line(report.failed as u64));
-    }
-    log.emit(media::done_line(options.media, &media));
-    Ok(media)
-}
-
 /// Refuse a drain the staging disk plainly cannot hold.
 ///
-/// `needed` counts the originals the run will copy. Peak usage is those plus
-/// one in-flight derivative, since the convert/compress run commits per file, so the
-/// sum plus a fixed slack is the honest requirement.
+/// `needed` counts the originals the run will copy, and the sum plus a fixed
+/// slack is the requirement.
 ///
-/// With media turned off nothing is copied, so nothing is counted. A
+/// With no attachment files copied, nothing is counted. A
 /// `Missing` source is never copied either, and [`ConversationUnit::from_doc`]
 /// already drops its hint, so the sum leaves it out.
 fn check_units_headroom(
     output_dir: &Path,
     units: &[ConversationUnit],
-    media: MediaMode,
+    files: AttachmentFiles,
 ) -> Result<()> {
-    if media == MediaMode::Disabled {
+    if !files.copies() {
         return Ok(());
     }
     // Summed before any resume skip: over-asking on a resumed run is the
@@ -724,14 +630,6 @@ const PREPARED: Counter = Counter::new(
     "conversation_files_prepared",
     "Prepared 1 conversation file",
     "Prepared {n} conversation files",
-);
-
-/// Files Media could not convert, each of whose conversation entries says
-/// why.
-const NOT_CONVERTED: Counter = Counter::new(
-    "media_not_converted",
-    "1 file could not be converted; its conversation entry says why",
-    "{n} files could not be converted; their conversation entries say why",
 );
 
 /// Say that the write queue is starting on `units` conversations: a log
@@ -792,12 +690,6 @@ fn write_one_unit(
         });
     }
 
-    // Writers copy originals; convert and compress run later on their own.
-    let stage_mode = match options.media {
-        MediaMode::Disabled => MediaMode::Disabled,
-        _ => MediaMode::Clone,
-    };
-
     let timestamps: Vec<i64> = doc.messages.iter().map(|m| m.timestamp_unix_ms).collect();
     let mut slots: HashMap<(usize, usize), UnitAttachment> = attachments
         .into_iter()
@@ -831,11 +723,7 @@ fn write_one_unit(
         run_attachment_jobs(
             &mut jobs,
             &output_dir.join("attachments"),
-            &MediaConfig {
-                mode: stage_mode,
-                compress: options.compress.clone(),
-                tools: Arc::clone(&options.tools),
-            },
+            options.files,
             |i| match sources.get_mut(i) {
                 Some(source) => load(&file, source),
                 None => Ok(None),
@@ -864,7 +752,7 @@ fn write_one_unit(
         .count();
     drop(jobs);
 
-    message_ir_format::clear_attachments_when_disabled(&mut doc, options.media);
+    message_ir_format::clear_attachments_when_skipped(&mut doc, options.files);
     for msg in &mut doc.messages {
         for att in &mut msg.attachments {
             att.bytes = None;

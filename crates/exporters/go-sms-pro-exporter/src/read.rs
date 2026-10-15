@@ -1,6 +1,5 @@
 //! Parse GO SMS Pro `gosms_sys*.xml` SMS backups.
 
-use crate::emit::MAX_SKIP_DETAILS;
 use android_fields::unix_secs_from_date_ms;
 use anyhow::{Context, Result, bail};
 use go_sms_mms::decode_gosms_emojis;
@@ -10,6 +9,9 @@ use quick_xml::escape::resolve_predefined_entity;
 use quick_xml::events::{BytesRef, Event};
 use std::collections::BTreeMap;
 use std::path::Path;
+
+/// Cap on retained skip-detail rows; overflow is counted and reported.
+pub(crate) const MAX_SKIP_DETAILS: usize = 20;
 
 #[derive(Debug, Clone)]
 pub(crate) struct XmlMessage {

@@ -1,5 +1,7 @@
 //! Convert iMazing Messages / WhatsApp rows into the shared conversation
-//! structure, then write the chosen output format via [`ExportWriter`].
+//! structure, then write the chosen output format through [`convert_backup`].
+
+mod session;
 
 use crate::attachments::{
     DirectoryFiles, attachment_cell, file_name_second, mime_hint, row_sources,
@@ -8,11 +10,7 @@ use crate::attachments_emit::{
     attachment_content_key, attachment_digests, attachment_matches_any_file_key,
     attachment_source_key, pending_attachment_to_ir,
 };
-use crate::parse::{DiscoveredCsv, RawRow, SourceKind, discover_csv_files, parse_csv_file};
-use crate::parse_emit::{
-    Session, group_vendor_id, group_vendor_id_with_name, is_notification, is_outgoing,
-    parse_message_date, resolve_sender, session_key,
-};
+use crate::read::{DiscoveredCsv, RawRow, SourceKind, discover_csv_files, parse_csv_file};
 use crate::row_marks;
 use crate::unnamed_files::{DirectoryRows, UnnamedFile, unnamed_files};
 use crate::zone::Zone;
@@ -21,14 +19,18 @@ use message_crate_core::{
     ConvertRun, Counter, ExportReport, prepare_outputs, project_conversation,
 };
 use message_ir::{
-    ConversationKey, Deletion, EarlierVersion, ExportMeta, IrAttachment, IrParticipant, IrService,
-    IrSource, PendingAttachment, PendingConversation, PendingMessage, PendingReply, ProjectedRole,
-    ProjectionHooks, Reaction,
+    ConversationDocument, ConversationKey, Deletion, EarlierVersion, ExportMeta, IrAttachment,
+    IrParticipant, IrService, IrSource, PendingAttachment, PendingConversation, PendingMessage,
+    PendingReply, ProjectedRole, ProjectionHooks, Reaction,
 };
-use message_staging::{AttachmentSource, ExportWriter};
+use message_staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
 use serde_json::Map;
+use session::{
+    Session, group_vendor_id, group_vendor_id_with_name, is_notification, is_outgoing,
+    parse_message_date, resolve_sender, session_key,
+};
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 const EXPORT_SOURCE: &str = message_crate_core::Exporter::Imazing.source_id();
@@ -98,7 +100,7 @@ pub(crate) struct ConvertExportArgs<'a> {
 /// `timezone`: a fixed UTC offset (`UTC-05:00`) or an IANA zone name
 /// (`America/New_York`). When `None`, use the host local zone.
 /// When `transforms` copies attachments, media files are copied into `output/attachments/`.
-/// When `cancel` is set, cooperative cancellation is checked between CSV files.
+/// Cancellation is checked between CSV files and between conversations.
 ///
 /// # Errors
 ///
@@ -109,90 +111,107 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         input,
         output,
         timezone,
-        convert_run:
-            ConvertRun {
-                transforms,
-                output_format,
-                cancel,
-                resume,
-                issues,
-            },
+        convert_run,
     } = args;
     let tz = Zone::parse(timezone)?;
     let (inputs, output) = prepare_outputs(&[input.to_path_buf()], output)?;
     let input = &inputs[0];
-    let writer = ExportWriter::open(&output, output_format, transforms, resume)?;
-    let copy_attachments = writer.copies_attachments();
+    convert_backup(
+        &output,
+        convert_run,
+        WriterSetup::default(),
+        |writer, cancel, report| {
+            let copy_attachments = writer.files().copies();
+            let mut ingest = Ingest {
+                tz,
+                copy_attachments,
+                conversations: BTreeMap::new(),
+                claims: Vec::new(),
+                directory_texts: BTreeMap::new(),
+                whatsapp_directories: HashSet::new(),
+                report,
+            };
+            let discovered_files = discover_csv_files(input)?;
+            for (csv_index, discovered) in discovered_files.iter().enumerate() {
+                message_crate_core::check_cancel(cancel)?;
+                ingest.ingest_file(csv_index, discovered)?;
+            }
+            // An iMazing export records no date inside it, so the backup is as
+            // new as the newest CSV iMazing wrote: the export date.
+            let backup_taken_at_unix_ms = message_crate_core::newest_file_modified_unix_ms(
+                discovered_files
+                    .iter()
+                    .map(|discovered| discovered.path.as_path()),
+            );
+            if copy_attachments {
+                ingest.attach_unnamed_files()?;
+                ingest.tell_apart_files_of_one_name();
+            }
+            let Ingest {
+                tz,
+                mut conversations,
+                report,
+                ..
+            } = ingest;
+            separate_groups_with_one_earliest_row(&mut conversations);
 
-    let mut ingest = Ingest {
-        tz,
-        copy_attachments,
-        conversations: BTreeMap::new(),
-        claims: Vec::new(),
-        directory_texts: BTreeMap::new(),
-        whatsapp_directories: HashSet::new(),
-        report: ExportReport::with_issues(issues.clone()),
-    };
-    let discovered_files = discover_csv_files(input)?;
-    for (csv_index, discovered) in discovered_files.iter().enumerate() {
-        message_crate_core::check_cancel(&cancel)?;
-        ingest.ingest_file(csv_index, discovered)?;
-    }
-    // An iMazing export records no date inside it, so the backup is as new
-    // as the newest CSV iMazing wrote: the export date.
-    let backup_taken_at_unix_ms = message_crate_core::newest_file_modified_unix_ms(
-        discovered_files
-            .iter()
-            .map(|discovered| discovered.path.as_path()),
-    );
-    if copy_attachments {
-        ingest.attach_unnamed_files()?;
-        ingest.tell_apart_files_of_one_name();
-    }
-    let Ingest {
-        tz,
-        mut conversations,
-        mut report,
-        ..
-    } = ingest;
-    separate_groups_with_one_earliest_row(&mut conversations);
+            let export = message_crate_core::export_meta(
+                EXPORT_SOURCE,
+                EXPORT_TOOL,
+                EXPORT_TOOL_VERSION,
+                None,
+                None,
+                backup_taken_at_unix_ms,
+            );
+            Ok(ReadBackup {
+                conversations: conversations.into_values().collect(),
+                project: ImazingDocuments {
+                    export,
+                    tz,
+                    sources: VecDeque::new(),
+                },
+                report,
+            })
+        },
+    )
+}
 
-    let export = message_crate_core::export_meta(
-        EXPORT_SOURCE,
-        EXPORT_TOOL,
-        EXPORT_TOOL_VERSION,
-        None,
-        None,
-        backup_taken_at_unix_ms,
-    );
-    let mut documents = Vec::new();
-    let mut sources = Vec::new();
-    for (
-        _,
+/// The projection of each conversation read, for [`convert_backup`], and
+/// the source file of each attachment it keeps.
+struct ImazingDocuments {
+    export: ExportMeta,
+    /// The zone every date of the export is read in.
+    tz: Zone,
+    /// The source file of each attachment of the documents projected so
+    /// far, in the order the writer asks for them
+    /// ([`ImazingProjection::sources`]).
+    sources: VecDeque<Option<PathBuf>>,
+}
+
+impl Project for ImazingDocuments {
+    type Conversation = Conversation;
+
+    fn project(
+        &mut self,
         Conversation {
             key, mut pending, ..
-        },
-    ) in conversations
-    {
+        }: Conversation,
+        report: &mut ExportReport,
+    ) -> Option<ConversationDocument> {
         let hooks = ImazingProjection {
-            export: &export,
-            tz,
+            export: &self.export,
+            tz: self.tz,
             key: &key,
             sources: RefCell::new(Vec::new()),
         };
         let chat_id = pending.chat_id.clone();
-        let Some(document) = project_conversation(&chat_id, &mut pending, &hooks, &mut report)
-        else {
-            continue;
-        };
-        sources.extend(hooks.sources.into_inner());
-        documents.push(document);
+        let document = project_conversation(&chat_id, &mut pending, &hooks, report)?;
+        self.sources.extend(hooks.sources.into_inner());
+        Some(document)
     }
 
-    let mut source_iter = sources.into_iter();
-    writer.finish(
-        documents,
-        &mut |att| match source_iter.next().flatten() {
+    fn attachment_source(&mut self, att: &mut IrAttachment) -> (AttachmentSource, Option<u64>) {
+        match self.sources.pop_front().flatten() {
             Some(path) => {
                 // iMazing's rows carry no size; stat the source so the byte
                 // counters and the headroom check see it.
@@ -202,12 +221,8 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
                 (AttachmentSource::Path(path), hint)
             }
             None => (AttachmentSource::Missing, att.size_bytes),
-        },
-        &cancel,
-        &mut report,
-    )?;
-
-    Ok(report)
+        }
+    }
 }
 
 /// One conversation being read: its key, and its messages so far.
@@ -1019,10 +1034,12 @@ impl ProjectionHooks for ImazingProjection<'_> {
             ConversationKey::OneToOne(handle) => vec![IrParticipant {
                 identity: Some(handle.clone()),
                 display_name: pending.first_contact_name(),
+                country: None,
             }],
             ConversationKey::NameOnly(_) => vec![IrParticipant {
                 identity: None,
                 display_name: pending.first_contact_name(),
+                country: None,
             }],
         }
     }

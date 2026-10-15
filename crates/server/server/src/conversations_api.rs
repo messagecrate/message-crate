@@ -10,6 +10,8 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use serde::Deserialize;
 
+use crate::api_error::ApiError;
+use crate::auth::{FullAccess, FullDeleteAccess};
 use crate::db::conversation_messages::{
     DEFAULT_MESSAGE_SORT, MESSAGE_SORT_KEYS, Message, MessageWindow, get_conversation_messages,
 };
@@ -21,7 +23,7 @@ use crate::db::trash::{DeleteOutcome, Trashable, delete_trashed, move_to_trash, 
 use crate::paging::{
     DEFAULT_LIST_LIMIT, ListRequest, Page, PageQuery, page_of, page_params, parse_sort,
 };
-use crate::server::{ApiError, AppState, FullAccess, FullDeleteAccess};
+use crate::server::AppState;
 
 /// Page through conversations with participants, message counts, and tags.
 /// Newest activity first unless `sort` says otherwise.
@@ -60,8 +62,7 @@ pub(crate) async fn list_conversations(
         auth.account_id,
         &list.q,
         &list.order,
-        list.page.limit,
-        list.page.offset,
+        list.page,
         list.clock,
     )
     .await?;
@@ -165,7 +166,7 @@ impl ListConversationMessagesQuery {
             (Some(id), _, _) => MessageWindow::Around(id),
             (_, Some(id), _) => MessageWindow::Before(id),
             (_, _, Some(id)) => MessageWindow::After(id),
-            _ => MessageWindow::Offset(self.offset.unwrap_or(0)),
+            _ => MessageWindow::Offset,
         })
     }
 }
@@ -218,7 +219,7 @@ pub(crate) async fn list_conversation_messages(
         auth.account_id,
         conversation_id,
         &order,
-        page.limit,
+        page,
         window,
     )
     .await?;

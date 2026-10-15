@@ -61,7 +61,7 @@ async fn complete_import_persists_timings_and_issues() {
             upload_ms: Some(8_000),
             summary_json: Some(r#"{"parse":{"messages":10}}"#.into()),
             issues: vec![ImportIssueInput {
-                kind: RunIssueKind::Skip,
+                kind: ImportErrorKind::Skip,
                 stage: crate::db::imports::ImportIssueStage::Media,
                 item: "photo.heic".into(),
                 reason: "convert failed".into(),
@@ -161,13 +161,13 @@ async fn list_import_issues_returns_them_oldest_first() {
             summary_json: Some(r#"{"parse":{"messages":10}}"#.into()),
             issues: vec![
                 ImportIssueInput {
-                    kind: RunIssueKind::Skip,
+                    kind: ImportErrorKind::Skip,
                     stage: crate::db::imports::ImportIssueStage::Media,
                     item: "photo.heic".into(),
                     reason: "convert failed".into(),
                 },
                 ImportIssueInput {
-                    kind: RunIssueKind::Error,
+                    kind: ImportErrorKind::Error,
                     stage: crate::db::imports::ImportIssueStage::Upload,
                     item: "archive.zip".into(),
                     reason: "upload failed".into(),
@@ -187,9 +187,9 @@ async fn list_import_issues_returns_them_oldest_first() {
     assert_eq!(row.parse_ms, Some(18_000));
     let issues = list_import_issues(&mut conn, import_id).await.unwrap();
     assert_eq!(issues.len(), 2);
-    assert_eq!(issues[0].kind, RunIssueKind::Skip);
+    assert_eq!(issues[0].kind, ImportErrorKind::Skip);
     assert_eq!(issues[0].stage, crate::db::imports::ImportIssueStage::Media);
-    assert_eq!(issues[1].kind, RunIssueKind::Error);
+    assert_eq!(issues[1].kind, ImportErrorKind::Error);
     assert_eq!(
         issues[1].stage,
         crate::db::imports::ImportIssueStage::Upload
@@ -320,7 +320,7 @@ async fn the_list_sorted_by_start_ascending_puts_the_oldest_run_first() {
 
 /// The account's running Import Run through the list, as the desktop app
 /// finds it: `status=running`, and at most one.
-async fn running_import(conn: &mut SqliteConnection, account: i64) -> Option<ImportRow> {
+async fn listed_running_import(conn: &mut SqliteConnection, account: i64) -> Option<ImportRow> {
     let (items, _) = list_imports_page(conn, account, Some("running"), &DEFAULT_IMPORT_SORT, 1, 0)
         .await
         .unwrap();
@@ -334,7 +334,7 @@ async fn running_import_run_round_trips_and_blocks_a_second() {
     let account = ACCOUNT_ID;
 
     assert!(
-        running_import(&mut conn, account).await.is_none(),
+        listed_running_import(&mut conn, account).await.is_none(),
         "no run before one starts"
     );
 
@@ -349,7 +349,7 @@ async fn running_import_run_round_trips_and_blocks_a_second() {
         .await
         .unwrap();
 
-    let active = running_import(&mut conn, account)
+    let active = listed_running_import(&mut conn, account)
         .await
         .expect("the run is running");
     assert_eq!(active.id, id);
@@ -389,14 +389,14 @@ async fn stage_advances_and_discard_frees_the_slot() {
             .await
             .unwrap();
     }
-    let active = running_import(&mut conn, account).await.unwrap();
+    let active = listed_running_import(&mut conn, account).await.unwrap();
     assert_eq!(active.stage, Some(ImportStage::Upload));
 
     discard_import(&mut conn, account, id, &[], &[], fixed_instant())
         .await
         .unwrap();
     assert!(
-        running_import(&mut conn, account).await.is_none(),
+        listed_running_import(&mut conn, account).await.is_none(),
         "a discarded run is no longer running"
     );
     let row = get_owned_import(&mut conn, account, id).await.unwrap();
@@ -412,7 +412,7 @@ async fn stage_advances_and_discard_frees_the_slot() {
 /// One issue and one note, for the tests that check when they are recorded.
 fn one_issue_and_one_note() -> (Vec<ImportIssueInput>, Vec<ImportNoteRow>) {
     let issue = ImportIssueInput {
-        kind: RunIssueKind::Error,
+        kind: ImportErrorKind::Error,
         stage: ImportIssueStage::Media,
         item: "photo.heic".into(),
         reason: "convert failed".into(),
@@ -499,17 +499,14 @@ async fn complete_import_stamps_its_issues_and_notes_with_the_instant_passed() {
 }
 
 #[tokio::test]
-async fn discard_running_import_finds_the_running_import_run_by_account_and_skips_finished_ones() {
+async fn running_import_finds_the_running_import_run_by_account_and_skips_finished_ones() {
     let (pool, _dir) = setup_accounts_only().await;
     let mut conn = pool.acquire().await.unwrap();
     let account = ACCOUNT_ID;
 
     assert!(
-        discard_running_import(&mut conn, account, fixed_instant())
-            .await
-            .unwrap()
-            .is_none(),
-        "nothing to discard before an Import Run starts"
+        running_import(&mut conn, account).await.unwrap().is_none(),
+        "no running Import Run before one starts"
     );
 
     let args = StartImportArgs::new(account, "imessage", "append", None);
@@ -529,39 +526,18 @@ async fn discard_running_import_finds_the_running_import_run_by_account_and_skip
         .await
         .unwrap();
 
-    let discarded = discard_running_import(&mut conn, account, fixed_instant())
+    let running = running_import(&mut conn, account)
         .await
         .unwrap()
-        .expect("the running Import Run is the one discarded");
-    assert_eq!(discarded.id, stranded);
-    assert_eq!(
-        discarded.status.as_str(),
-        "running",
-        "the row as it was before"
-    );
-    assert_eq!(
-        get_owned_import(&mut conn, account, stranded)
-            .await
-            .unwrap()
-            .status
-            .as_str(),
-        "cancelled"
-    );
-    assert_eq!(
-        get_owned_import(&mut conn, account, finished)
-            .await
-            .unwrap()
-            .status
-            .as_str(),
-        "completed",
-        "a finished Import Run is left alone"
-    );
+        .expect("the stranded Import Run is running");
+    assert_eq!(running.id, stranded, "a finished Import Run is left out");
+
+    discard_import(&mut conn, account, stranded, &[], &[], fixed_instant())
+        .await
+        .unwrap();
     assert!(
-        discard_running_import(&mut conn, account, fixed_instant())
-            .await
-            .unwrap()
-            .is_none(),
-        "the second discard has nothing left"
+        running_import(&mut conn, account).await.unwrap().is_none(),
+        "a discarded Import Run is no longer running"
     );
 }
 
@@ -583,7 +559,7 @@ async fn completing_an_import_run_frees_the_slot_too() {
     )
     .await
     .unwrap();
-    assert!(running_import(&mut conn, account).await.is_none());
+    assert!(listed_running_import(&mut conn, account).await.is_none());
 }
 
 #[test]
@@ -751,7 +727,7 @@ async fn complete_import_refuses_a_run_that_has_finished() {
     let with_issue = || CompleteImportArgs {
         status: "completed_with_issues".into(),
         issues: vec![ImportIssueInput {
-            kind: RunIssueKind::Skip,
+            kind: ImportErrorKind::Skip,
             stage: crate::db::imports::ImportIssueStage::Media,
             item: "photo.heic".into(),
             reason: "convert failed".into(),

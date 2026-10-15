@@ -42,7 +42,8 @@ const BY_EXTENSION: Record<string, string> = {
 
 function extensionType(name: string | null | undefined): string | null {
   const match = /\.([A-Za-z0-9]+)$/.exec(name?.trim() ?? "");
-  return match ? (BY_EXTENSION[match[1].toLowerCase()] ?? null) : null;
+  const extension = match?.[1];
+  return extension ? (BY_EXTENSION[extension.toLowerCase()] ?? null) : null;
 }
 
 /**
@@ -52,7 +53,7 @@ function extensionType(name: string | null | undefined): string | null {
  * of the name the export gave the file, then of its path in the export.
  */
 function mediaType(attachment: MessageAttachment): string | null {
-  const declared = attachment.mime_type?.split(";")[0].trim().toLowerCase();
+  const declared = attachment.mime_type?.split(";")[0]?.trim().toLowerCase();
   if (declared) return declared;
   return extensionType(attachment.original_name) ?? extensionType(attachment.path);
 }

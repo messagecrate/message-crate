@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Message } from "../../lib/types";
 import { imessageMessage } from "../../test/apiShapes";
 import { BUBBLES, renderBubbleInUtc } from "../../test/bubbles";
+import { nth } from "../../test/nth";
 import { setupUser } from "../../test/user";
 
 afterEach(() => {
@@ -86,7 +87,7 @@ describe.each(BUBBLES)("$label bubble", ({ Bubble, source, service }) => {
 
     await user.click(screen.getByRole("button", { name: "Edited" }));
 
-    const [only] = versionItems();
+    const only = nth(versionItems(), 0);
     expect(only).toHaveTextContent("Aug 11, 3:06 PM · Earlier version not in the backup");
     expect(only.querySelector("div")).toBeNull();
   });

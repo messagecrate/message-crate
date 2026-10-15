@@ -27,15 +27,14 @@ const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
  * account's number too.
  */
 function deletedLabels(deleted: DeletedAccount[]) {
-  const lines = deleted.map(
-    (account) => `${account.username}, deleted ${formatDateTime(account.deleted_at)}`,
-  );
-  return deleted.map((account, i) => ({
+  const lines = deleted.map((account) => ({
+    account,
+    line: `${account.username}, deleted ${formatDateTime(account.deleted_at)}`,
+  }));
+  return lines.map(({ account, line }) => ({
     account,
     label:
-      lines.indexOf(lines[i]) === lines.lastIndexOf(lines[i])
-        ? lines[i]
-        : `${lines[i]} (#${account.id})`,
+      lines.filter((other) => other.line === line).length === 1 ? line : `${line} (#${account.id})`,
   }));
 }
 

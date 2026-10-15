@@ -23,12 +23,12 @@ use hmac::{KeyInit, Mac};
 use rand::TryRng;
 use serde::Serialize;
 
+use crate::api_error::ApiError;
 use crate::assets_api::{Sha256, lookup_for_read};
+use crate::auth::{FullAccess, bearer_token, require_asset_read_access, resolve_auth};
 use crate::db::{account_profile, session_tokens};
 use crate::extract::Path as AxumPath;
-use crate::server::{
-    ApiError, AppState, Created, FullAccess, bearer_token, require_asset_read_access, resolve_auth,
-};
+use crate::server::{AppState, Created};
 
 /// How long a media link opens its asset after it is made.
 pub(crate) const MEDIA_LINK_TTL: Duration = Duration::from_secs(60 * 60);
@@ -137,11 +137,6 @@ fn hex_decode(text: &str) -> Option<Vec<u8>> {
         .step_by(2)
         .map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok())
         .collect()
-}
-
-/// The current Unix second.
-fn now_unix() -> i64 {
-    chrono::Utc::now().timestamp()
 }
 
 /// The account whose store an asset read reaches: the one the
@@ -266,11 +261,12 @@ async fn open_media_link(state: &AppState, link: &str, sha256: &Sha256) -> Resul
     let Some(link) = ParsedLink::parse(link) else {
         return Err(invalid("the media_link is not a media link"));
     };
-    if link.expires <= now_unix() {
+    let now = chrono::Utc::now();
+    if link.expires <= now.timestamp() {
         return Err(invalid("the media link expired"));
     }
     let mut conn = state.db.acquire().await?;
-    let session_hash = session_tokens::live_session_hash(&mut conn, link.account_id).await?;
+    let session_hash = session_tokens::live_session_hash(&mut conn, link.account_id, now).await?;
     let signed = session_hash.is_some_and(|session_hash| {
         state.media_link_key.verifies(
             &MediaLinkTerms {
@@ -356,7 +352,7 @@ pub(crate) async fn create_media_link(
 
     let session_hash = session_tokens::hash_api_token(&bearer_token(&headers)?);
     let ttl = i64::try_from(MEDIA_LINK_TTL.as_secs()).unwrap_or(i64::MAX);
-    let expires = now_unix().saturating_add(ttl);
+    let expires = chrono::Utc::now().timestamp().saturating_add(ttl);
     let link = state.media_link_key.sign(&MediaLinkTerms {
         account_id: auth.account_id,
         sha256: &sha256,

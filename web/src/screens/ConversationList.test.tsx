@@ -22,11 +22,11 @@ import { ApiError } from "../lib/api";
 import { createMessageTag, listConversations, updateMessageTagMembers } from "../lib/serverApi";
 import type { Conversation } from "../lib/types";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { mockedAuth, Providers } from "../test/providers";
+import { authModule, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
 import ConversationList from "./ConversationList";
 
-vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", () => authModule());
 
 vi.mock("../lib/serverApi", () => ({
   // messageTags.ts pulls slug helpers from contactGroups.ts, whose module-level

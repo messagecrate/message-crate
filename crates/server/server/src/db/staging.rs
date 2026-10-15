@@ -22,7 +22,6 @@ use sqlx::sqlite::SqliteArguments;
 use sqlx::{AssertSqlSafe, Row, SqlSafeStr, SqlStr, Sqlite, SqliteConnection};
 
 use super::sql::{SQLITE_IN_CHUNK, max_rows_for_bind_limit, values_tuples};
-use crate::imports_api::records::EarlierVersionRecord;
 use crate::models::StoredTime;
 
 // ── Staging: what one import writes before promotion ─────────────────────
@@ -278,6 +277,25 @@ pub struct StagingTapback {
     pub is_from_me: i64,
     /// Reactor's handle id; `None` when unknown.
     pub sender_handle_id: Option<i64>,
+    /// The reactor's name, set only for an incoming reaction whose source
+    /// gave no address, so never together with a handle taken from the
+    /// reactor's identity; see `TapbackRecord::sender_display_name`.
+    pub sender_display_name: Option<String>,
+}
+
+/// One earlier version of one part of an edited message, as the import read
+/// it from the conversation file, before it has a staging message id;
+/// [`StagingEarlierVersion`] is its staging row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EarlierVersionRecord {
+    /// The part of the message this version belongs to.
+    pub part_index: i64,
+    /// The part's text in this version; `None` when the source recorded the
+    /// edit and not the text it replaced, as iMazing does.
+    pub text: Option<String>,
+    /// When this version was written, to the millisecond; `None` when the
+    /// source does not record it.
+    pub edited_at: Option<StoredTime>,
 }
 
 /// One earlier version of a staged message, as the import stages it.
@@ -346,6 +364,7 @@ const TAPBACK_COLUMNS: &[&str] = &[
     "emoji",
     "is_from_me",
     "sender_handle_id",
+    "sender_display_name",
 ];
 
 /// Bind counts, in lockstep with the `INSERT` column lists below.
@@ -487,7 +506,8 @@ fn bind_tapbacks<'q>(
             .bind(&row.kind)
             .bind(row.emoji.as_deref())
             .bind(row.is_from_me)
-            .bind(row.sender_handle_id);
+            .bind(row.sender_handle_id)
+            .bind(row.sender_display_name.as_deref());
     }
     q
 }
@@ -1939,6 +1959,7 @@ fn insert_new_tapbacks_sql(held: &str, copies: &str) -> SqlStr {
               AND t.emoji IS NOT DISTINCT FROM st.emoji
               AND t.is_from_me = st.is_from_me
               AND t.sender_handle_id IS NOT DISTINCT FROM st.sender_handle_id
+              AND t.sender_display_name IS NOT DISTINCT FROM st.sender_display_name
         )
         "
     ))

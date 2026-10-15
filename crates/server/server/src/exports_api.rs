@@ -15,6 +15,8 @@ use message_crate_api_types::{
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
+use crate::api_error::ApiError;
+use crate::auth::ExportAccess;
 use crate::db::conversation_messages::{
     DEFAULT_MESSAGE_SORT, MESSAGE_SORT_KEYS, Message, selection_where,
 };
@@ -27,7 +29,7 @@ use crate::messages_api::message_filter;
 use crate::paging::{
     DEFAULT_LIST_LIMIT, Page, page_from_rows, page_params, parse_sort, parse_status, sorted_page,
 };
-use crate::server::{ApiError, AppState, Created, ExportAccess};
+use crate::server::{AppState, Created};
 
 /// Most ids one `selection` scope may name in either list, so the `IN` list
 /// stays under SQLite's variable cap; the same figure `POST /v1/contacts/summaries`
@@ -105,7 +107,7 @@ pub async fn start_export_run(
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<ExportRun, ApiError> {
     let mut tx = crate::db::begin_write(conn).await?;
-    crate::server::require_account_row(&mut tx, account_id).await?;
+    crate::auth::require_account_row(&mut tx, account_id).await?;
     let filter = scope_filter(&mut tx, account_id, scope, clock).await?;
     let export_id = exports::start_export(
         &mut tx,
@@ -502,8 +504,7 @@ pub(crate) async fn list_export_messages(
         ExportPageOpts {
             export_id,
             total,
-            limit: page.limit,
-            offset: page.offset,
+            page,
             order,
         },
     )

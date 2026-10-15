@@ -22,8 +22,8 @@ use imessage_reader_protocol::{
 };
 use ios_backup::Helper;
 use message_crate_core::{
-    Counter, ExportReport, ItemKind, LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent,
-    RunIssue, RunIssueKind, item_line, item_reason,
+    Counter, ExportReport, ItemKind, LoadError, LogSink, OutputFormat, ProgressEvent, RunIssue,
+    RunIssueKind, item_line, item_reason,
 };
 use message_ir::{
     ConversationDocument, ConversationMeta, ExportMeta, IrAttachment, IrConversationType,
@@ -140,19 +140,30 @@ pub(crate) fn open_output(options: &ExportOptions) -> Result<ExportWriterParts> 
     .into_parts())
 }
 
+/// Inputs for [`convert_export`].
+pub(crate) struct ConvertExportArgs<'a> {
+    /// The running program, which streams the records.
+    pub helper: &'a mut Helper,
+    /// The run's options, log and cancel flag.
+    pub options: &'a ExportOptions,
+    /// The writer [`open_output`] opened.
+    pub output: ExportWriterParts,
+}
+
 /// Stream the program's records into conversations, then write the chosen
 /// output format (JSON Lines, JSON, CSV, EML, MBOX, or XML) through
-/// `output`, which [`open_output`] opened.
+/// `output`.
 ///
 /// # Errors
 ///
 /// Returns an error when the program fails, a conversation cannot be
 /// written, or the user cancels.
-pub(crate) fn export(
-    helper: &mut Helper,
-    options: &ExportOptions,
-    output: ExportWriterParts,
-) -> Result<ExportReport> {
+pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport> {
+    let ConvertExportArgs {
+        helper,
+        options,
+        output,
+    } = args;
     let format = options.convert_run.output_format;
     options.log.emit("");
     options.log.emit(format!(
@@ -285,8 +296,9 @@ fn stages_attachment_files(options: &ExportOptions) -> bool {
 }
 
 /// Read events until the program says the export is done, grouping messages
-/// by conversation. Cancel is checked on every event so a cancelled run
-/// stops within one message.
+/// by conversation. Cancel is checked on every event, and [`Helper`] kills
+/// the Apple Messages Reader on Cancel while it waits for one, so a canceled
+/// run stops even while the reader sends nothing.
 fn collect(helper: &mut Helper, options: &ExportOptions) -> Result<Collected> {
     let mut conversations: BTreeMap<String, ChatInProgress> = BTreeMap::new();
     let mut encrypted = false;
@@ -355,6 +367,7 @@ fn chat_from_record(record: ConversationRecord) -> ChatInProgress {
             .map(|p| IrParticipant {
                 identity: Some(p.identity),
                 display_name: p.display_name,
+                country: known_country(p.country),
             })
             .collect(),
         owner_identity: String::new(),
@@ -362,6 +375,16 @@ fn chat_from_record(record: ConversationRecord) -> ChatInProgress {
         messages: Vec::new(),
         attachment_loads: Vec::new(),
     }
+}
+
+/// A country the Apple Messages Reader read from `handle.country`, kept
+/// only when Message Crate knows it (`phone::country`). Messages can write a
+/// code with no calling code (`AQ`) or one that is not ISO (`UK`), and the
+/// server refuses a file that names a country it does not know, so such a
+/// code names no country here: the number keeps its digits, as it would
+/// with none, and the backup still imports.
+fn known_country(country: Option<String>) -> Option<String> {
+    country.filter(|code| phone::country(code).is_some())
 }
 
 /// One record as an [`IrMessage`] plus the load key for each attachment.
@@ -376,17 +399,24 @@ fn message_to_ir(
         IrDirection::Incoming
     };
     let owner_identity = nonempty(&record.owner_identity);
-    let (sender_identity, sender_display_name) = match direction {
-        IrDirection::Outgoing => owner_sender(&ExportMeta {
-            source: EXPORT_SOURCE.into(),
-            tool: EXPORT_TOOL.into(),
-            tool_version: env!("CARGO_PKG_VERSION").into(),
-            owner_identity: (!record.owner_identity.is_empty())
-                .then(|| record.owner_identity.clone()),
-            owner_display_name: record.owner_display_name.clone(),
-            backup_taken_at_unix_ms: None,
-        }),
-        IrDirection::Incoming => (record.sender_identity, record.sender_display_name),
+    let (sender_identity, sender_display_name, sender_country) = match direction {
+        IrDirection::Outgoing => {
+            let (identity, name) = owner_sender(&ExportMeta {
+                source: EXPORT_SOURCE.into(),
+                tool: EXPORT_TOOL.into(),
+                tool_version: env!("CARGO_PKG_VERSION").into(),
+                owner_identity: (!record.owner_identity.is_empty())
+                    .then(|| record.owner_identity.clone()),
+                owner_display_name: record.owner_display_name.clone(),
+                backup_taken_at_unix_ms: None,
+            });
+            (identity, name, None)
+        }
+        IrDirection::Incoming => (
+            record.sender_identity,
+            record.sender_display_name,
+            known_country(record.sender_country),
+        ),
     };
 
     let mut loads = Vec::with_capacity(record.attachments.len());
@@ -410,6 +440,7 @@ fn message_to_ir(
         message_kind: IrMessageKind::parse(&record.message_kind),
         sender_identity,
         sender_display_name,
+        sender_country,
         owner_identity,
         subject: record.subject,
         text: record.text,
@@ -561,7 +592,7 @@ impl NotDecrypted {
     ) {
         let item = path.display().to_string();
         let line = item_line(ItemKind::Attachment, &item, &what_happened);
-        options.log.emit(line.clone());
+        options.log.warn(line.clone());
         options.convert_run.issues.emit(RunIssue {
             kind: RunIssueKind::Error,
             step: "attachments".into(),
@@ -617,7 +648,7 @@ fn read_attachment(
         };
         let bytes = fs::read(&temp);
         if let Err(why) = fs::remove_file(&temp) {
-            options.log.emit(format!(
+            options.log.warn(format!(
                 "The decrypted copy of attachment {} at {} could not be removed: {why}",
                 path.display(),
                 temp.display()
@@ -644,7 +675,7 @@ fn read_attachment(
         Err(e) => {
             options
                 .log
-                .emit(message_staging::unreadable_attachment_line(path, e));
+                .warn(message_staging::unreadable_attachment_line(path, e));
             Ok(Vec::new())
         }
     }
@@ -732,6 +763,8 @@ fn write_conversations(
 /// Project one accumulated conversation into the shared document shape,
 /// read from a backup made at `backup_taken_at_unix_ms`
 /// ([`ExportOptions::backup_taken_at_unix_ms`]).
+///
+/// Not through [`message_ir::ProjectionHooks`], whose documentation says why.
 fn chat_to_document(
     chat_identifier: String,
     conversation: ChatInProgress,
@@ -831,17 +864,11 @@ fn drain_conversations(
         .collect();
 
     let queue = WriteQueueOptions {
-        media: options.convert_run.transforms.media,
-        compress: options.convert_run.transforms.compress.clone(),
-        tools: std::sync::Arc::clone(&options.convert_run.transforms.tools),
+        files: options.convert_run.transforms.files,
         resume: options.convert_run.resume,
         writer_count: 0,
     };
-    let sinks = message_staging::Sinks {
-        log: &options.log,
-        progress: &options.progress,
-        cancel: &options.convert_run.cancel,
-    };
+    let sinks = options.sinks();
 
     let queue_report = if collected.encrypted {
         // The program decrypts one file at a time over one pipe, so the
@@ -892,11 +919,6 @@ fn stage_attachments(
     attachments_dir: &Path,
     not_decrypted: &mut NotDecrypted,
 ) -> Result<u64> {
-    let media = MediaConfig {
-        mode: options.convert_run.transforms.media,
-        compress: options.convert_run.transforms.compress.clone(),
-        tools: std::sync::Arc::clone(&options.convert_run.transforms.tools),
-    };
     let encrypted = collected.encrypted;
     let mut loads = Vec::new();
     for conversation in collected.conversations.values_mut() {
@@ -908,7 +930,7 @@ fn stage_attachments(
             .conversations
             .values_mut()
             .flat_map(|conversation| conversation.messages.iter_mut()),
-        media,
+        options.convert_run.transforms.files,
         if encrypted {
             PathSources::ReadByLoader
         } else {
@@ -945,9 +967,7 @@ fn stage_attachments(
                 }
                 other => load_attachment_source(other),
             },
-            &options.log,
-            &options.progress,
-            &options.convert_run.cancel,
+            options.sinks(),
         )
         .context("stage attachments")?;
     Ok(saved)
@@ -989,7 +1009,6 @@ mod tests {
             contacts_path: None,
             use_caller_id: false,
             export_path: PathBuf::from("/nowhere/out"),
-            scratch_dir: PathBuf::from("/nowhere/cache"),
             attachment_embed: AttachmentEmbed::Embed,
             log: LogSink::none(),
             progress: ProgressSink::none(),
@@ -999,21 +1018,20 @@ mod tests {
                     ..message_crate_core::ExportTransforms::none()
                 },
                 output_format,
+                scratch_dir: PathBuf::from("/nowhere/cache"),
                 ..message_crate_core::ConvertRun::default()
             },
         }
     }
 
     /// An attachment the program could not decrypt is a sentence on the
-    /// log, with no `warning:` before it (#1888).
+    /// log, with no `warning:` before it (#1888), at `WARN`, since the run
+    /// goes on without it (#2047).
     #[test]
     fn an_attachment_that_could_not_be_decrypted_is_a_sentence_in_the_log() {
-        let lines = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
-        let sink_lines = std::sync::Arc::clone(&lines);
+        let (log, recorded) = message_crate_core::testutil::recorded_log();
         let mut options = options(OutputFormat::Jsonl, false);
-        options.log = LogSink::new(move |l: &str| {
-            sink_lines.lock().unwrap().push(l.to_string());
-        });
+        options.log = log;
 
         let mut not_decrypted = NotDecrypted::default();
         not_decrypted.record(
@@ -1024,8 +1042,11 @@ mod tests {
         );
 
         assert_eq!(
-            *lines.lock().unwrap(),
-            ["The attachment Library/SMS/a.jpg could not be decrypted: bad key"]
+            *recorded.lock().unwrap(),
+            [(
+                message_crate_core::RunLogLevel::Warn,
+                "The attachment Library/SMS/a.jpg could not be decrypted: bad key".to_string()
+            )]
         );
     }
 
@@ -1108,6 +1129,42 @@ mod tests {
         assert!(matches!(load, AttachmentLoad::Bytes(b) if b == b"<svg/>"));
     }
 
+    /// A `handle.country` Message Crate does not know (`UK` is not ISO,
+    /// `AQ` has no calling code) names no country in the file, so the
+    /// server, which refuses an unknown code, still imports the backup. A
+    /// known one is kept.
+    #[test]
+    fn a_country_message_crate_does_not_know_names_no_country() {
+        let mut record = message_record("07700 900123", "g-1", false);
+        record.sender_country = Some("UK".into());
+        assert_eq!(
+            message_to_ir(record, AttachmentEmbed::Disabled, false)
+                .0
+                .sender_country,
+            None
+        );
+        let mut record = message_record("07700 900123", "g-2", false);
+        record.sender_country = Some("GB".into());
+        assert_eq!(
+            message_to_ir(record, AttachmentEmbed::Disabled, false)
+                .0
+                .sender_country
+                .as_deref(),
+            Some("GB")
+        );
+        let chat = chat_from_record(ConversationRecord {
+            chat_identifier: "07700 900123".into(),
+            conversation_type: "individual".into(),
+            group_title: None,
+            participants: vec![imessage_reader_protocol::Participant {
+                identity: "07700 900123".into(),
+                display_name: None,
+                country: Some("AQ".into()),
+            }],
+        });
+        assert_eq!(chat.participants[0].country, None);
+    }
+
     fn message_record(chat: &str, guid: &str, outgoing: bool) -> MessageRecord {
         MessageRecord {
             chat_identifier: chat.into(),
@@ -1119,6 +1176,7 @@ mod tests {
             message_kind: "imessage".into(),
             sender_identity: (!outgoing).then(|| "+15555550122".to_string()),
             sender_display_name: None,
+            sender_country: None,
             subject: None,
             text: "hi".into(),
             reactions: Vec::new(),
@@ -1342,6 +1400,7 @@ mod tests {
             message_kind: IrMessageKind::IMessage,
             sender_identity: Some("+15555550101".into()),
             sender_display_name: None,
+            sender_country: None,
             owner_identity: None,
             subject: None,
             text: "hi".into(),

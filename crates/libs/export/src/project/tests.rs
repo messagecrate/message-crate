@@ -179,6 +179,7 @@ fn a_reply_with_reactions_keeps_its_reply_to_and_reactions() {
             emoji: None,
             is_from_me: true,
             sender: None,
+            sender_display_name: None,
         },
         Tapback {
             part_index: 1,
@@ -186,6 +187,15 @@ fn a_reply_with_reactions_keeps_its_reply_to_and_reactions() {
             emoji: Some("🎉".into()),
             is_from_me: false,
             sender: Some("+2".into()),
+            sender_display_name: None,
+        },
+        Tapback {
+            part_index: 0,
+            kind: "liked".into(),
+            emoji: None,
+            is_from_me: false,
+            sender: None,
+            sender_display_name: Some("Grace".into()),
         },
     ];
 
@@ -221,6 +231,14 @@ fn a_reply_with_reactions_keeps_its_reply_to_and_reactions() {
                 is_from_me: false,
                 reactor_identity: Some("+2".into()),
                 reactor_display_name: None,
+            },
+            Reaction {
+                part_index: 0,
+                kind: "liked".into(),
+                emoji: None,
+                is_from_me: false,
+                reactor_identity: None,
+                reactor_display_name: Some("Grace".into()),
             },
         ]
     );

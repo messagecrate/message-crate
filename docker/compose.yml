@@ -27,13 +27,15 @@ services:
     tmpfs:
       - /tmp
     ports:
-      - "8080:8080"
+      # This computer only. To reach the server from other computers, see
+      # https://messagecrate.app/docs/user/features/owner/run-on-another-machine/#publish-the-server-on-the-network
+      - "127.0.0.1:8080:8080"
     volumes:
       - message-crate-data:/app/data
       - ./staging:/app/staging
     restart: unless-stopped
     # A stopping server waits for the requests in flight, such as an import
-    # batch, up to STOP_DRAIN_LIMIT in crates/server/server/src/server.rs.
+    # batch, up to STOP_DRAIN_LIMIT in crates/server/server/src/startup.rs.
     # Docker's own 10 seconds would kill it part-way, so it gets 10 seconds
     # more than that limit.
     stop_grace_period: 40s

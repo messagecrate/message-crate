@@ -2,7 +2,8 @@
 //!
 //! The core library has a similar error type, but it cannot be sent through
 //! Tauri because it is not serializable. Each struct has the same name and
-//! fields as its TypeScript type in `web/src/lib/types.ts`.
+//! fields as its TypeScript type in `web/src/lib/types.ts`, and the tests in
+//! `events/fixture.rs` check that they agree.
 //!
 //! Every desktop job (an Import Run's stages, an Export, a Convert) reports on
 //! the same `desktop-job:*` channels. The payloads only an Import Run sends are
@@ -204,7 +205,6 @@ impl From<ProgressEvent> for WindowEvent {
                 ..counts(Step::Attachments, done, total)
             },
             ProgressEvent::Prepare { done, total } => counts(Step::Prepare, done, total),
-            ProgressEvent::Media { done, total } => counts(Step::Media, done, total),
             ProgressEvent::FileWritten { file, status } => {
                 return Self::FileWritten(ImportFileWrittenEvent { file, status });
             }
@@ -254,6 +254,16 @@ pub struct ImportFileDoneEvent {
     /// `ok` (sent now), `skipped` (an earlier part of the run sent it), or
     /// `failed`.
     pub status: String,
+}
+
+impl ImportFileDoneEvent {
+    /// The Upload's word for what it did with `file`.
+    pub(crate) fn new(file: String, status: message_crate_import::FileStatus) -> Self {
+        Self {
+            file,
+            status: status.as_str().into(),
+        }
+    }
 }
 
 /// Staging's write queue finished with one conversation file. The window
@@ -374,6 +384,9 @@ where
         window(text.to_string());
     })
 }
+
+#[cfg(test)]
+mod fixture;
 
 #[cfg(test)]
 mod tests {
@@ -526,10 +539,6 @@ mod tests {
         let prepare = progress(ProgressEvent::Prepare { done: 2, total: 3 });
         assert_eq!(prepare.step, Step::Prepare);
         assert_eq!((prepare.done, prepare.total), (2, 3));
-
-        let media = progress(ProgressEvent::Media { done: 1, total: 4 });
-        assert_eq!(media.step, Step::Media);
-        assert_eq!((media.done, media.total), (1, 4));
     }
 
     /// Every step is sent as the lowercase word the window's `step` union in

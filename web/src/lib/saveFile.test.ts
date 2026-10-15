@@ -16,6 +16,7 @@ vi.mock("./tauriCheck", () => ({
   isTauri: () => isTauri(),
 }));
 
+import { nth } from "../test/nth";
 import { saveFile } from "./saveFile";
 
 describe("saveFile", () => {
@@ -49,8 +50,8 @@ describe("saveFile", () => {
     );
 
     expect(clicked).toEqual([{ href: "blob:address-book", download: "address-book.csv" }]);
-    expect(created[0].type).toBe("text/csv");
-    expect(await created[0].text()).toBe("a,b\n");
+    expect(nth(created, 0).type).toBe("text/csv");
+    expect(await nth(created, 0).text()).toBe("a,b\n");
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:address-book");
     expect(invoke).not.toHaveBeenCalled();
   });
@@ -63,7 +64,7 @@ describe("saveFile", () => {
 
     expect(save).not.toHaveBeenCalled();
     expect(invoke).toHaveBeenCalledTimes(1);
-    const [command, body, options] = invoke.mock.calls[0];
+    const [command, body, options] = nth(invoke.mock.calls, 0);
     expect(command).toBe("save_file");
     // The bytes as they are, not a JSON array, and the name as a header.
     expect(body).toBeInstanceOf(Uint8Array);
@@ -77,7 +78,9 @@ describe("saveFile", () => {
 
     await saveFile("😀.png", new Blob(["x"]));
 
-    expect(invoke.mock.calls[0][2]).toEqual({ headers: { "file-name": '"\\ud83d\\ude00.png"' } });
+    expect(nth(invoke.mock.calls, 0)[2]).toEqual({
+      headers: { "file-name": '"\\ud83d\\ude00.png"' },
+    });
   });
 
   it("reports false when the desktop app's dialog is closed without a choice", async () => {

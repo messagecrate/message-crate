@@ -23,9 +23,9 @@ const APPLE_CONTACTS_HINT_JAILBREAK =
 
 /** The encryption password, attachment directory, Apple Contacts file, and attachments. */
 export default function ImessageFormSection(props: ImportFormSectionProps) {
-  const method = props.source;
+  const { form, dispatch, errors } = props;
+  const method = form.source;
   if (!isImessageMethod(method)) return null;
-  const { errors } = props;
   return (
     <>
       {imessageShowsPassword(method) ? (
@@ -40,11 +40,11 @@ export default function ImessageFormSection(props: ImportFormSectionProps) {
                 ? "Encryption password"
                 : "Encryption password (Optional)"
             }
-            value={props.backupPassword}
-            onChange={props.onBackupPasswordChange}
+            value={form.backupPassword}
+            onChange={(value) => dispatch({ type: "set", field: "backupPassword", value })}
             autoComplete="new-password"
-            showPassword={props.showBackupPassword}
-            onToggle={props.onToggleBackupPassword}
+            showPassword={form.showBackupPassword}
+            onToggle={() => dispatch({ type: "toggle", field: "showBackupPassword" })}
           />
           <FieldStatus message={errors.backupPassword} />
         </StackedField>
@@ -57,8 +57,8 @@ export default function ImessageFormSection(props: ImportFormSectionProps) {
           optional={!imessageAttachmentRootRequired(method)}
         >
           <PathPicker
-            value={props.attachmentRoot}
-            onChange={props.onAttachmentRootChange}
+            value={form.attachmentRoot}
+            onChange={(path) => props.onPathChange("attachmentRoot", path)}
             directory
           />
           <p className={hintClass}>
@@ -73,8 +73,8 @@ export default function ImessageFormSection(props: ImportFormSectionProps) {
       {imessageShowsAppleContacts(method) ? (
         <StackedField label="Apple Contacts file" optional>
           <PathPicker
-            value={props.appleContacts}
-            onChange={props.onAppleContactsChange}
+            value={form.appleContacts}
+            onChange={(path) => props.onPathChange("appleContacts", path)}
             filters={APPLE_CONTACTS_FILTERS}
           />
           <p className={hintClass}>

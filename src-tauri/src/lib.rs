@@ -113,6 +113,7 @@ pub fn run() {
             commands::staging::delete_run_dir,
             commands::staging::read_import_run_record,
             commands::staging::save_import_run_record,
+            commands::disk_space::low_disk_space,
             commands::tools::tools_status,
             commands::tools::retry_tool_downloads,
         ]);

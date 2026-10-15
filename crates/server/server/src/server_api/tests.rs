@@ -239,9 +239,14 @@ async fn claiming_an_unowned_server_creates_the_owner_and_signs_them_in() {
     // The token it hands back is the owner's session, usable at once.
     let token = body["token"].as_str().unwrap();
     let mut conn = state.db.acquire().await.unwrap();
-    let auth = crate::server::resolve_auth_on_conn(&mut conn, token, None)
-        .await
-        .unwrap();
+    let auth = crate::auth::resolve_auth_on_conn(
+        &mut conn,
+        token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     assert!(auth.is_owner());
     drop(conn);
 
@@ -463,7 +468,7 @@ async fn the_attachment_size_limit_reads_as_512_mib_until_the_owner_sets_it() {
 async fn the_server_states_its_upload_time_limits() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
-    state.upload_time_limits = crate::server::UploadTimeLimits {
+    state.upload_time_limits = crate::request_body::UploadTimeLimits {
         stall: std::time::Duration::from_secs(7),
         piece: std::time::Duration::from_secs(45),
     };
@@ -1351,7 +1356,7 @@ async fn a_demo_build_the_server_stopped_is_removed_and_failed_on_the_next_start
     fixture.demo_account().await;
     {
         let mut conn = fixture.conn().await;
-        crate::db::demo_account_build::begin(&mut conn)
+        crate::db::demo_account_build::begin(&mut conn, crate::test_support::fixed_instant())
             .await
             .unwrap();
     }

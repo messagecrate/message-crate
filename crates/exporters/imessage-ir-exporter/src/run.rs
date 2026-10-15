@@ -14,11 +14,11 @@ use imessage_reader_protocol::{ExportRequest, Platform, Request, Source};
 use ios_backup::{Helper, ios_backup_encrypted_flag};
 use message_crate_core::{
     AppleConfig, ApplePlatform, ConvertRun, IMESSAGE_READER_DIRECTORY, LogSink, OutputConfig,
-    ProgressSink, RunContext, RunResult, ScratchDir, prepare_outputs,
+    ProgressSink, RunContext, RunResult, ScratchDir, Sinks, prepare_outputs,
 };
 use message_staging::{Disk, check_headroom};
 
-use crate::convert;
+use crate::emit;
 
 /// User-facing copy when a custom attachment directory is missing.
 pub(crate) const ATTACHMENT_DIRECTORY_MISSING: &str = "Attachment directory does not exist.";
@@ -81,19 +81,28 @@ pub(crate) struct ExportOptions {
     /// [`ExportRequest::use_caller_id`].
     pub use_caller_id: bool,
     pub export_path: PathBuf,
-    /// the Scratch Directory; the program decrypts into a directory under it.
-    pub scratch_dir: PathBuf,
     pub attachment_embed: AttachmentEmbed,
     /// Human-readable mid-run notes and warnings.
     pub log: LogSink,
     /// Typed progress events for the desktop's progress bar.
     pub progress: ProgressSink,
     /// The run-wide settings ([`ConvertRun`]). This exporter checks the
-    /// cancel flag between events and before every write.
+    /// cancel flag between events and before every write, and the program
+    /// decrypts into a directory under its Scratch Directory.
     pub convert_run: ConvertRun,
 }
 
 impl ExportOptions {
+    /// The run's log, progress and cancel flag, for a staging step that
+    /// takes them together.
+    pub(crate) fn sinks(&self) -> Sinks<'_> {
+        Sinks {
+            log: &self.log,
+            progress: &self.progress,
+            cancel: &self.convert_run.cancel,
+        }
+    }
+
     /// The request for the program, which decrypts into `scratch_dir`.
     pub fn export_request(&self, scratch_dir: &Path) -> Request {
         Request::Export(ExportRequest {
@@ -163,7 +172,7 @@ fn run_with(
 ) -> Result<RunResult> {
     let options = export_options(context, output, inputs, source)?;
     message_crate_core::check_cancel(&options.convert_run.cancel)?;
-    let writer = convert::open_output(&options)?;
+    let writer = emit::open_output(&options)?;
 
     // The program writes decrypted files into a directory of this run's own
     // under the Scratch Directory, beside the identities request's: not
@@ -172,7 +181,10 @@ fn run_with(
     // output (#1402). The directory is deleted when the run ends, whichever
     // way it ends; what a killed run left is deleted by the next request
     // and by the sweep when the app starts.
-    let scratch_root = options.scratch_dir.join(IMESSAGE_READER_DIRECTORY);
+    let scratch_root = options
+        .convert_run
+        .scratch_dir
+        .join(IMESSAGE_READER_DIRECTORY);
     let report = {
         let scratch = ScratchDir::create(&scratch_root)?;
         check_headroom(
@@ -180,18 +192,24 @@ fn run_with(
             decrypted_bytes(&options.source),
             Disk::Scratch,
         )?;
+        // Cancel kills the program even while it sends nothing (#2085).
         let mut helper = spawn(
             &options.export_request(scratch.path()),
             options.log.clone(),
             options.progress.clone(),
-        )?;
-        let report = convert::export(&mut helper, &options, writer)?;
+        )?
+        .cancel_on(options.convert_run.cancel.clone());
+        let report = emit::convert_export(emit::ConvertExportArgs {
+            helper: &mut helper,
+            options: &options,
+            output: writer,
+        })?;
         helper.finish()?;
         report
     };
     message_crate_core::check_cancel(&options.convert_run.cancel)?;
 
-    message_crate_core::finish_run(output, &report, output.media.mode.needs_tools())
+    Ok(message_crate_core::finish_run(output, &report))
 }
 
 /// Check the run's Apple source and turn it into this exporter's options.
@@ -227,7 +245,7 @@ fn export_options(
 
     // Create the output directory, refused when it is or holds the database,
     // the backup or the attachment directory a Mac export reads, because
-    // `convert` cleans it through ExportWriter::open.
+    // `emit::open_output` cleans it through ExportWriter::open.
     let mut inputs = vec![db_path.clone()];
     if platform == Platform::MacOs
         && let Some(root) = &source.attachment_root
@@ -246,7 +264,6 @@ fn export_options(
         contacts_path: source.apple_contacts.clone(),
         use_caller_id: source.use_caller_id,
         export_path: output.directory.clone(),
-        scratch_dir: context.scratch_dir.clone(),
         attachment_embed,
         log: context.log.clone(),
         progress: context.progress.clone(),
@@ -308,7 +325,8 @@ fn detect_platform(db_path: &Path) -> Result<Platform> {
 }
 
 /// A path option that only a macOS export reads: refused when it points
-/// nowhere, and noted in the log as having no effect on an iOS backup.
+/// nowhere, and a warning in the log on an iOS backup, which goes on
+/// without it.
 fn check_macos_only_path(
     log: &LogSink,
     platform: Platform,
@@ -323,7 +341,7 @@ fn check_macos_only_path(
         bail!("{missing}");
     }
     if platform == Platform::Ios {
-        log.emit(ignored_on_ios);
+        log.warn(ignored_on_ios);
     }
     Ok(())
 }

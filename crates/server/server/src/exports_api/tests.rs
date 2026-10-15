@@ -1,7 +1,7 @@
 use super::*;
 use crate::db::conversation_messages::{MessageSort, messages_from_sql};
 use crate::db::exports::ExportCounts;
-use crate::paging::SortKey;
+use crate::paging::{PageParams, SortKey};
 use crate::problem::ProblemType;
 use crate::test_support::{
     ConversationRow, MessageRow, RegisteredAccount, SeedConversation, SeedMessage, TestFixture,
@@ -37,17 +37,16 @@ async fn page(
         crate::test_support::fixed_instant(),
     )
     .await?;
-    export_messages(
+    Ok(export_messages(
         conn,
         ExportPageOpts {
             export_id: run.id,
             total: u64::try_from(run.message_count).unwrap(),
-            limit,
-            offset,
+            page: PageParams { limit, offset },
             order: oldest_first(),
         },
     )
-    .await
+    .await?)
 }
 
 /// The four counts a run over `scope` records.

@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use chrono::Utc;
-use message_crate_api_types::RunIssueKind;
+use message_crate_api_types::ImportErrorKind;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Row, SqliteConnection};
@@ -292,9 +292,9 @@ impl CompleteImportArgs {
 /// One problem to record against an Import Run.
 #[derive(Debug, Clone)]
 pub struct ImportIssueInput {
-    /// Issue category: [`RunIssueKind::Error`] or [`RunIssueKind::Skip`].
-    /// The request handlers refuse every other kind.
-    pub kind: RunIssueKind,
+    /// Issue category: `error` or `skip`, the only kinds an Import Error
+    /// takes.
+    pub kind: ImportErrorKind,
     /// Stage the issue came from.
     pub stage: ImportIssueStage,
     /// The file or message the issue is about.
@@ -322,8 +322,8 @@ pub struct ImportIssueRow {
     pub id: i64,
     /// Run the issue belongs to.
     pub import_id: i64,
-    /// Issue category: [`RunIssueKind::Error`] or [`RunIssueKind::Skip`].
-    pub kind: RunIssueKind,
+    /// Issue category: `error` or `skip`.
+    pub kind: ImportErrorKind,
     /// Stage the issue came from.
     pub stage: ImportIssueStage,
     /// The file or message the issue is about.
@@ -746,23 +746,16 @@ pub async fn discard_import(
     Ok(())
 }
 
-/// Discard the account's running Import Run, whichever it is, at the instant
-/// `now`, and return the row as it was before the discard; `None` when the
-/// account has no live run.
-///
-/// This is the way out for a command-line operator: a killed
-/// `message-crate-server import` leaves its run open, and the
-/// partial unique index then refuses every later import. The operator knows
-/// the account, not the run id, so the lookup happens here rather than
-/// making them find the id first.
+/// The account's running Import Run, whichever it is; `None` when the
+/// account has no live run. The server's `imports discard` command looks
+/// it up here: the operator knows the account, not the run id.
 ///
 /// # Errors
 ///
 /// Returns the database error.
-pub async fn discard_running_import(
+pub async fn running_import(
     conn: &mut SqliteConnection,
     account_id: i64,
-    now: chrono::DateTime<Utc>,
 ) -> Result<Option<ImportRow>> {
     let row = sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT {IMPORT_COLUMNS}
@@ -772,14 +765,7 @@ pub async fn discard_running_import(
     .bind(account_id)
     .fetch_optional(&mut *conn)
     .await?;
-    let Some(row) = row else {
-        return Ok(None);
-    };
-    let running = import_from_row(&row)?;
-    discard_import(conn, account_id, running.id, &[], &[], now)
-        .await
-        .map_err(|err| anyhow::anyhow!(err))?;
-    Ok(Some(running))
+    Ok(row.as_ref().map(import_from_row).transpose()?)
 }
 
 /// Finish a running import at the instant `now`: prefer client counts, else
@@ -961,7 +947,7 @@ pub async fn list_import_issues(
     Ok(issue_rows
         .into_iter()
         .map(|(id, import_id, kind, stage, item, reason, created_at)| {
-            let kind = RunIssueKind::parse(&kind).ok_or_else(|| {
+            let kind = ImportErrorKind::parse(&kind).ok_or_else(|| {
                 sqlx::Error::Decode(
                     format!("import_issues.kind holds unknown value '{kind}'").into(),
                 )

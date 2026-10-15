@@ -1077,7 +1077,9 @@ export interface paths {
          * @description Every message needs a non-empty `guid`. A batch with a message without
          *     one is refused with `422`, naming its lines, and nothing in it is stored.
          *     A message whose `guid` the source already holds is skipped, so a batch
-         *     sent again after its answer was lost stores nothing twice.
+         *     sent again after its answer was lost stores nothing twice. A batch hides
+         *     no duplicates: the run's completion or discard hides them, once for the
+         *     whole run.
          */
         post: operations["create_import_batch"];
         delete?: never;
@@ -1098,6 +1100,14 @@ export interface paths {
         /**
          * Record the outcome of an Import Run started with POST /v1/imports.
          * @description The answer is the run as it now stands.
+         *
+         *     Before it records the outcome, the server hides the duplicates of the
+         *     whole account, within one source and across sources. A batch hides
+         *     none, so the duplicates a run brings stay shown until the run ends. The
+         *     time this takes grows with every message the account holds, not with
+         *     the run's. A dedupe that fails leaves the run running. A server told to
+         *     stop refuses the request with `503 Service Unavailable`
+         *     (`server-stopping`), and the run stays running.
          */
         post: operations["complete_import"];
         delete?: never;
@@ -1142,6 +1152,13 @@ export interface paths {
         /**
          * Discard a running Import Run, freeing the account's single slot.
          * @description The answer is the run, now `cancelled`, with the issues the request carried.
+         *
+         *     The messages the run's batches brought stay in the account, and once it
+         *     has discarded the run the server hides the duplicates of the whole
+         *     account, as a completion does. A dedupe that fails does not undo the
+         *     discard: the next run's end hides them. A server told to stop refuses
+         *     the request with `503 Service Unavailable` (`server-stopping`), and the
+         *     run stays running.
          */
         post: operations["discard_import"];
         delete?: never;
@@ -2050,6 +2067,14 @@ export interface components {
             /** @description `session_ended`: how the Session ended. `login_refused`: why. */
             reason: components["schemas"]["AuditReason"] | null;
             /**
+             * @description The id of the request that wrote the entry, as its response's
+             *     `x-request-id` and the request's lines in the server's log carry it.
+             *     `null` for an entry written outside a request, by a server command or
+             *     the Demo Account build of the server's first start, and for a run and
+             *     a session that expired, which no one request wrote.
+             */
+            request_id: string | null;
+            /**
              * @description An Export Run: `everything`, `query` or `selection`. Never the query
              *     or the picked ids.
              */
@@ -2558,18 +2583,16 @@ export interface components {
             /** @description Client/tool name recorded on the run, e.g. `message-crate-export`. */
             tool?: string | null;
         };
-        /** @description Import result: the import counts and the dedupe counts. */
+        /**
+         * @description Import result: the batch's import counts. The batch hides no
+         *     duplicates; the run's end does, once for the whole run.
+         */
         CreateImportBatchResponse: components["schemas"]["ImportCounts"] & {
             /**
              * Format: int64
              * @description Id of the account the batch imported into.
              */
             account: number;
-            /**
-             * @description What the dedupe after this batch did, counted over the whole account
-             *     rather than the batch alone. Every batch runs it.
-             */
-            dedupe: components["schemas"]["DedupeCounts"];
             /** @description Source id of the Import Run the batch belongs to, such as `imessage`. */
             source: string;
         };
@@ -2731,37 +2754,6 @@ export interface components {
              *     kept another mode without an error.
              */
             wal_error: string | null;
-        };
-        /** @description What one dedupe did. */
-        DedupeCounts: {
-            /**
-             * Format: int64
-             * @description Messages hidden as exact duplicates. In each group, the source with
-             *     the most copies sets how many stay shown, and the rest are hidden.
-             */
-            exact_flagged: number;
-            /**
-             * Format: int64
-             * @description Groups of messages that share one content key and come from two or
-             *     more sources. Copies one source alone holds are not a group.
-             */
-            exact_groups: number;
-            /**
-             * Format: int64
-             * @description Content keys the pass wrote: one for each message whose key was
-             *     missing or whose inputs changed. A content key is a fingerprint of a
-             *     message's conversation, direction, sender, time, text and attachments.
-             *     This is not a count of duplicates.
-             */
-            keys_filled: number;
-            /**
-             * Format: int64
-             * @description Messages hidden as near duplicates: a message that matches one from
-             *     another source in the same conversation, from the same sender in the
-             *     same direction, within 2 seconds, with the same text or the same
-             *     attachments.
-             */
-            near_flagged: number;
         };
         /**
          * @description Confirmation flag and the current password when one is set: the body an
@@ -3216,6 +3208,12 @@ export interface components {
              */
             tapbacks: number;
         };
+        /**
+         * @description What an Import Error is: `skip` when the run left the item out, `error`
+         *     when the item failed.
+         * @enum {string}
+         */
+        ImportErrorKind: "skip" | "error";
         /** @description One stored import issue. */
         ImportIssue: {
             /**
@@ -3227,7 +3225,7 @@ export interface components {
              * @description `error` when the item failed, or `skip` when the run left it out
              *     without importing it.
              */
-            kind: components["schemas"]["RunIssueKind"];
+            kind: components["schemas"]["ImportErrorKind"];
             /** @description Why the item failed or was skipped. */
             reason: string;
             /** @description Stage the issue came from. */
@@ -3248,7 +3246,7 @@ export interface components {
              *     `notes`, and the desktop app applies a `resolved` row to the record
              *     before it sends it.
              */
-            kind: components["schemas"]["RunIssueKind"];
+            kind: components["schemas"]["ImportErrorKind"];
             /**
              * @description Why the item failed or was skipped, in one sentence. Stored trimmed;
              *     over 2,000 characters is refused with `422 Unprocessable Entity`.
@@ -4266,6 +4264,14 @@ export interface components {
                 permissions_removed: components["schemas"]["Permission"][] | null;
                 /** @description `session_ended`: how the Session ended. `login_refused`: why. */
                 reason: components["schemas"]["AuditReason"] | null;
+                /**
+                 * @description The id of the request that wrote the entry, as its response's
+                 *     `x-request-id` and the request's lines in the server's log carry it.
+                 *     `null` for an entry written outside a request, by a server command or
+                 *     the Demo Account build of the server's first start, and for a run and
+                 *     a session that expired, which no one request wrote.
+                 */
+                request_id: string | null;
                 /**
                  * @description An Export Run: `everything`, `query` or `selection`. Never the query
                  *     or the picked ids.
@@ -5431,14 +5437,6 @@ export interface components {
          */
         RunCredential: "session" | "api_token";
         /**
-         * @description What one row a run reports for its Import Run's record is: `skip` when
-         *     the run left the item out, `error` when the item failed, `note` when the
-         *     run did something with it worth knowing that is not a failure, and
-         *     `resolved` when an earlier row about the same item no longer holds.
-         * @enum {string}
-         */
-        RunIssueKind: "skip" | "error" | "note" | "resolved";
-        /**
          * @description How a run stands, as the run's own list spells it: an Import Run's
          *     status, or an Export Run's, which never finishes with issues.
          * @enum {string}
@@ -5649,6 +5647,13 @@ export interface components {
             part_index: number;
             /** @description The identity that reacted, for incoming reactions. */
             sender: string | null;
+            /**
+             * @description The name the source gave the reactor of an incoming reaction
+             *     when it gave no address for them, as an iMazing export does;
+             *     `null` when `sender` is set, and for the account holder's own
+             *     reactions. A name is shown, never matched to a contact.
+             */
+            sender_display_name: string | null;
         };
         /**
          * @description How finely the source recorded a message's time.
@@ -12045,6 +12050,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            /** @description [`server-stopping`](https://messagecrate.app/docs/developer/reference/errors/server-stopping): The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     list_import_contacts: {
@@ -12240,6 +12254,15 @@ export interface operations {
             };
             /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`server-stopping`](https://messagecrate.app/docs/developer/reference/errors/server-stopping): The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -1,5 +1,5 @@
 use super::*;
-use media::MediaMode;
+use message_crate_core::AttachmentFiles;
 use message_crate_core::{ExportReport, OutputFormat};
 use message_ir::{
     ConversationMeta, ConversationStats, EarlierVersion, ExportMeta, IrConversationType,
@@ -83,7 +83,7 @@ fn obfuscate_skips_staged_media_and_writes_placeholders() {
 
     let mut docs = vec![doc_with_image_attachment()];
     let transforms = ExportTransforms {
-        media: MediaMode::Convert,
+        files: AttachmentFiles::Originals,
         obfuscate: true,
         obfuscate_seed: Some(
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
@@ -108,7 +108,7 @@ fn obfuscate_keeps_mime_when_media_disabled() {
     let tmp = crate::export_dir();
     let mut docs = vec![doc_with_image_attachment()];
     let transforms = ExportTransforms {
-        media: MediaMode::Disabled,
+        files: AttachmentFiles::Skip,
         obfuscate: true,
         obfuscate_seed: Some(
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
@@ -130,7 +130,7 @@ fn obfuscate_drops_the_real_files_size() {
     let mut docs = vec![doc_with_image_attachment()];
     docs[0].messages[0].attachments[0].size_bytes = Some(5);
     let transforms = ExportTransforms {
-        media: MediaMode::Disabled,
+        files: AttachmentFiles::Skip,
         obfuscate: true,
         obfuscate_seed: Some(
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
@@ -142,7 +142,7 @@ fn obfuscate_drops_the_real_files_size() {
 }
 
 #[test]
-fn convert_at_finish_leaves_cloned_file() {
+fn finish_leaves_a_copied_file_as_it_is() {
     let tmp = crate::export_dir();
     let att = tmp.path().join("attachments");
     fs::create_dir_all(&att).unwrap();
@@ -150,7 +150,7 @@ fn convert_at_finish_leaves_cloned_file() {
     let mut docs = vec![doc_with_image_attachment()];
     docs[0].messages[0].attachments[0].path = Some("attachments/keep.bin".into());
     let transforms = ExportTransforms {
-        media: MediaMode::Convert,
+        files: AttachmentFiles::Originals,
         ..ExportTransforms::none()
     };
     let outcome = apply_transforms(&mut docs, tmp.path(), &transforms).unwrap();
@@ -184,6 +184,7 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
             participants: vec![IrParticipant {
                 identity: Some("LEAK-05".into()),
                 display_name: Some("LEAK-06".into()),
+                country: None,
             }],
             stats: ConversationStats {
                 message_count: 1,
@@ -251,6 +252,7 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
                 android_type: Some(1),
                 fields: serde_json::Map::from_iter([("address".into(), json!("LEAK-26"))]),
             }),
+            sender_country: None,
         }],
         packaging_stem_suffix: None,
     }
@@ -346,7 +348,7 @@ fn obfuscated_export_keeps_no_string_from_the_source() {
 
     let tmp = crate::export_dir();
     let transforms = ExportTransforms {
-        media: MediaMode::Disabled,
+        files: AttachmentFiles::Skip,
         obfuscate: true,
         obfuscate_seed: Some(
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
@@ -415,7 +417,7 @@ fn media_disabled_clears_each_attachment_path_bytes_and_fingerprint() {
     att.bytes = Some(vec![1, 2, 3]);
     att.digest_sha256 = Some("ab".repeat(32));
     let transforms = ExportTransforms {
-        media: MediaMode::Disabled,
+        files: AttachmentFiles::Skip,
         ..ExportTransforms::none()
     };
     apply_transforms(&mut docs, tmp.path(), &transforms).unwrap();
@@ -508,7 +510,7 @@ fn two_conversations(link: impl FnOnce(&mut IrMessage, &str)) -> Vec<Conversatio
 fn obfuscate_all(docs: &mut [ConversationDocument]) {
     let tmp = crate::export_dir();
     let transforms = ExportTransforms {
-        media: MediaMode::Disabled,
+        files: AttachmentFiles::Skip,
         obfuscate: true,
         obfuscate_seed: Some(
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),

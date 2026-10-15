@@ -79,8 +79,7 @@ updates:
       # and the docs that name the major: the Node row and First time setup
       # in AGENTS.md, and contributing.md and docker.md under
       # docs/src/content/docs/docs/developer/. A tag whose Node.js has ended
-      # gets no new image, so its digest stops moving. The runtime stage's
-      # node:20 is such a tag, and #2065 replaces it.
+      # gets no new image, so its digest stops moving.
       - dependency-name: node
         update-types: ["version-update:semver-major"]
 

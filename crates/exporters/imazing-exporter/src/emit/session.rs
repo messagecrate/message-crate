@@ -1,8 +1,8 @@
 //! Conversation key, sender, date, and row-classification helpers for the
 //! emitter.
 
-use crate::emit::TransportFamily;
-use crate::parse::{RawRow, SourceKind};
+use super::TransportFamily;
+use crate::read::{RawRow, SourceKind};
 use crate::zone::Zone;
 use chrono::NaiveDateTime;
 use message_ir::{ConversationKey, IdentityType, IrParticipant};
@@ -223,6 +223,7 @@ fn group_members(
             .or_insert_with(|| IrParticipant {
                 identity: Some(handle.into_key()),
                 display_name: None,
+                country: None,
             });
         let name = name.trim();
         if member.display_name.is_none() && !name.is_empty() {
@@ -274,6 +275,7 @@ fn group_members(
                     named_only.push(IrParticipant {
                         identity: None,
                         display_name: Some(label.to_string()),
+                        country: None,
                     });
                 }
             }

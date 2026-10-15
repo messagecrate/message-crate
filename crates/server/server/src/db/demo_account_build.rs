@@ -5,10 +5,11 @@
 //! server starts belongs to a build the server stopped part-way (#1215).
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
-use crate::db::session_tokens::unix_secs_string;
+use crate::db::unix_secs;
 
 /// How much Demo Data the Demo Account holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -38,15 +39,15 @@ impl From<demo_seed::DemoSize> for DemoDataSize {
     }
 }
 
-/// Record that a Demo Account build has started. A record already there is
-/// replaced, since only one build runs at a time.
+/// Record that a Demo Account build started at `now`. A record already
+/// there is replaced, since only one build runs at a time.
 ///
 /// # Errors
 ///
 /// Returns an error when the row cannot be written.
-pub async fn begin(conn: &mut SqliteConnection) -> Result<()> {
+pub async fn begin(conn: &mut SqliteConnection, now: DateTime<Utc>) -> Result<()> {
     sqlx::query("INSERT OR REPLACE INTO demo_account_build (id, started_at) VALUES (1, $1)")
-        .bind(unix_secs_string())
+        .bind(unix_secs(now).to_string())
         .execute(&mut *conn)
         .await?;
     Ok(())

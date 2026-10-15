@@ -74,12 +74,12 @@ async fn create_owner_claims_the_server_once_and_reset_password_needs_the_claim(
     let config = server_config(dir.path());
     open(&config).await.close().await;
 
-    let unclaimed = run(Cli {
-        command: Commands::ResetOwnerPassword(ResetOwnerPasswordArgs {
-            password: "correct horse battery staple".into(),
+    let unclaimed = reset_owner_password_with(
+        ResetOwnerPasswordArgs {
             config: config.clone(),
-        }),
-    })
+        },
+        "correct horse battery staple",
+    )
     .await
     .unwrap_err();
     assert_eq!(
@@ -87,23 +87,23 @@ async fn create_owner_claims_the_server_once_and_reset_password_needs_the_claim(
         "this Message Crate has no owner yet; use `create-owner` to claim it"
     );
 
-    run(Cli {
-        command: Commands::CreateOwner(CreateOwnerArgs {
+    create_owner_with(
+        CreateOwnerArgs {
             username: "Owner".into(),
-            password: "correct horse battery staple".into(),
             config: config.clone(),
-        }),
-    })
+        },
+        "correct horse battery staple",
+    )
     .await
     .unwrap();
 
-    let twice = run(Cli {
-        command: Commands::CreateOwner(CreateOwnerArgs {
+    let twice = create_owner_with(
+        CreateOwnerArgs {
             username: "again".into(),
-            password: "correct horse battery staple".into(),
             config: config.clone(),
-        }),
-    })
+        },
+        "correct horse battery staple",
+    )
     .await
     .unwrap_err();
     assert_eq!(
@@ -111,12 +111,12 @@ async fn create_owner_claims_the_server_once_and_reset_password_needs_the_claim(
         "this Message Crate already has an owner; use `reset-owner-password` to set a new password for it"
     );
 
-    run(Cli {
-        command: Commands::ResetOwnerPassword(ResetOwnerPasswordArgs {
-            password: "a different long enough password".into(),
+    reset_owner_password_with(
+        ResetOwnerPasswordArgs {
             config: config.clone(),
-        }),
-    })
+        },
+        "a different long enough password",
+    )
     .await
     .unwrap();
 
@@ -534,7 +534,7 @@ async fn dump_openapi_writes_the_document_to_the_output_path() {
 
 #[test]
 fn import_counts_print_one_line_for_each_count() {
-    let counts = crate::imports_api::ImportCounts {
+    let counts = crate::imports_api::pipeline::ImportCounts {
         conversations: 2,
         messages: 5,
         mode: ImportMode::Replace,
@@ -555,7 +555,7 @@ fn import_counts_print_one_line_for_each_count() {
          \x20 media files missing: 0 (attachment path not found on disk)\n"
     );
 
-    let appended = crate::imports_api::ImportCounts {
+    let appended = crate::imports_api::pipeline::ImportCounts {
         mode: ImportMode::Append,
         messages_appended: 4,
         phones_needing_review: 1,
@@ -568,7 +568,7 @@ fn import_counts_print_one_line_for_each_count() {
         "{text}"
     );
 
-    let incomplete = crate::imports_api::ImportCounts {
+    let incomplete = crate::imports_api::pipeline::ImportCounts {
         other_identities: 2,
         ..Default::default()
     };
@@ -711,4 +711,30 @@ fn serve_refuses_a_config_file_together_with_a_data_dir() {
         "d",
     ];
     assert!(Cli::try_parse_from(argv).is_err());
+}
+
+/// #2094: a password given as an argument is visible to every local user
+/// through `ps` while the command runs, so neither owner command takes one.
+#[test]
+fn the_owner_commands_take_no_password_argument() {
+    for args in [
+        &[
+            "create-owner",
+            "--username",
+            "owner",
+            "--password",
+            "secret",
+        ][..],
+        &["reset-owner-password", "--password", "secret"][..],
+    ] {
+        let err = Cli::try_parse_from(
+            std::iter::once("message-crate-server").chain(args.iter().copied()),
+        )
+        .unwrap_err();
+        assert_eq!(
+            err.kind(),
+            clap::error::ErrorKind::UnknownArgument,
+            "{args:?}"
+        );
+    }
 }

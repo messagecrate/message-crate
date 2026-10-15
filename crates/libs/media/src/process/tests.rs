@@ -4,9 +4,7 @@ use crate::fake_tools::{FakeTools, video_probe};
 use crate::kind_for_mime;
 use crate::testutil::PNG_1X1_RGB;
 use crate::testutil::{clock_from, progress_then_hang};
-use crate::tools::{
-    FfmpegFailed, InstalledTools, Limit, MediaTools, Reads, StallWatch, ffmpeg_command_line,
-};
+use crate::tools::{FfmpegFailed, InstalledTools, Limit, MediaTools, Reads, ffmpeg_command_line};
 
 /// The one ffmpeg run `tools` made, failing the test when there were more
 /// or none.
@@ -691,8 +689,9 @@ fn why_hevc_failed_names_no_file() {
     );
 }
 
-/// A file the pass could not convert records ffmpeg's last line, with no
-/// path in it, the same reason the desktop app's Media Stage records (#2801).
+/// A file the pass could not convert records the line ffmpeg wrote that
+/// names the cause, which here is its last line, with no path in it: the
+/// same reason the desktop app's Media Stage records (#2801).
 #[test]
 fn a_file_that_fails_records_ffmpegs_last_line_without_its_path() {
     let dir = tempfile::tempdir().unwrap();
@@ -770,6 +769,125 @@ fn why_not_converted_names_no_path_however_the_conversion_failed() {
     assert_eq!(
         why_not_converted(&named, file),
         "compress video <input>: ffprobe reported no stream for <input>"
+    );
+}
+
+/// What ffmpeg wrote when it failed, run with `-i <file> /tmp/out.mp4`.
+fn ffmpeg_failed_saying(file: &Path, said: &str) -> anyhow::Error {
+    anyhow::Error::from(FfmpegFailed::new(
+        std::process::ExitStatus::default(),
+        said.as_bytes(),
+        &[
+            "-i".to_string(),
+            file.display().to_string(),
+            "/tmp/out.mp4".to_string(),
+        ],
+    ))
+}
+
+/// ffmpeg 8 writes why it failed and then what followed from it, ending
+/// with lines such as the output muxer's that nothing was written. The
+/// reason is the line that names the cause (#2959). Each stderr is what
+/// ffmpeg 8.0.1 wrote at `-loglevel error`.
+#[test]
+fn why_not_converted_names_the_cause_not_the_last_line() {
+    let file = Path::new("/home/someone/attachments/clip.mov");
+    let reason = |said: &str| why_not_converted(&ffmpeg_failed_saying(file, said), file);
+
+    // An encoder that would not open.
+    assert_eq!(
+        reason(
+            "[libx265 @ 0x5e6836f4af00] Error setting preset/tune nonsense/(null).\n\
+             [vost#0:0/libx265 @ 0x5e6836f4a8c0] [enc:libx265 @ 0x5e6836f4ae80] Error while \
+             opening encoder - maybe incorrect parameters such as bit_rate, rate, width or \
+             height.\n\
+             [vf#0:0 @ 0x5e6836f4b500] Error sending frames to consumers: Invalid argument\n\
+             [vf#0:0 @ 0x5e6836f4b500] Task finished with error code: -22 (Invalid argument)\n\
+             [vf#0:0 @ 0x5e6836f4b500] Terminating thread with return code -22 (Invalid \
+             argument)\n\
+             [vost#0:0/libx265 @ 0x5e6836f4a8c0] [enc:libx265 @ 0x5e6836f4ae80] Could not open \
+             encoder before EOF\n\
+             [vost#0:0/libx265 @ 0x5e6836f4a8c0] Task finished with error code: -22 (Invalid \
+             argument)\n\
+             [vost#0:0/libx265 @ 0x5e6836f4a8c0] Terminating thread with return code -22 \
+             (Invalid argument)\n\
+             [out#0/mp4 @ 0x5e6836f4a340] Nothing was written into output file, because at \
+             least one of its streams received no packets.\n"
+        ),
+        "[libx265 @ 0x5e6836f4af00] Error setting preset/tune nonsense/(null)."
+    );
+
+    // An input it cannot read: the demuxer's line says why, and the lines
+    // after it repeat that the input did not open.
+    assert_eq!(
+        reason(
+            "[mov,mp4,m4a,3gp,3g2,mj2 @ 0x583b3eba9f00] moov atom not found\n\
+             [in#0 @ 0x583b3eba9c40] Error opening input: Invalid data found when processing \
+             input\n\
+             Error opening input file /home/someone/attachments/clip.mov.\n\
+             Error opening input files: Invalid data found when processing input\n"
+        ),
+        "[mov,mp4,m4a,3gp,3g2,mj2 @ 0x583b3eba9f00] moov atom not found"
+    );
+
+    // An encoder ffmpeg does not have.
+    assert_eq!(
+        reason(
+            "[vost#0:0 @ 0x57532dc21880] Unknown encoder 'nosuchcodec'\n\
+             [vost#0:0 @ 0x57532dc21880] Error selecting an encoder\n\
+             Error opening output file /tmp/out.mp4.\n\
+             Error opening output files: Encoder not found\n"
+        ),
+        "[vost#0:0 @ 0x57532dc21880] Unknown encoder 'nosuchcodec'"
+    );
+
+    // A damaged frame ffmpeg carried on past is not the cause: a full disk
+    // that stopped it is.
+    assert_eq!(
+        reason(
+            "[mp3float @ 0x5cf2699f10c0] Header missing\n\
+             [aist#0:0/mp3 @ 0x5cf2699e0d80] [dec:mp3float @ 0x5cf2699f0a40] Error submitting \
+             packet to decoder: Invalid data found when processing input\n\
+             [out#0/adts @ 0x5cf2699e1a40] Error writing trailer: No space left on device\n\
+             [out#0/adts @ 0x5cf2699e1a40] Error closing file: No space left on device\n"
+        ),
+        "[out#0/adts @ 0x5cf2699e1a40] Error closing file: No space left on device"
+    );
+
+    // libx265's report after a full disk stopped it is not the cause.
+    assert_eq!(
+        reason(
+            "[vf#0:0 @ 0x59b3ce069500] Error sending frames to consumers: No space left on device\n\
+             [vf#0:0 @ 0x59b3ce069500] Task finished with error code: -28 (No space left on \
+             device)\n\
+             [out#0/mp4 @ 0x59b3ce068380] Nothing was written into output file, because at \
+             least one of its streams received no packets.\n\
+             x265 [info]: Weighted P-Frames: Y:0.0% UV:0.0%\n\
+             \n\
+             encoded 0 frames\n"
+        ),
+        "[vf#0:0 @ 0x59b3ce069500] Error sending frames to consumers: No space left on device"
+    );
+
+    // When every line only follows from a failure, the first is the
+    // reason, as the one nearest the cause.
+    assert_eq!(
+        reason(
+            "[in#0 @ 0x57c830ccfc40] Error opening input: No such file or directory\n\
+             Error opening input file /home/someone/attachments/clip.mov.\n\
+             Error opening input files: No such file or directory\n"
+        ),
+        "[in#0 @ 0x57c830ccfc40] Error opening input: No such file or directory"
+    );
+
+    // A line that is not a consequence is the reason, with the file
+    // written as <input>.
+    assert_eq!(
+        reason(
+            "[out#0/mp4 @ 0x5e6836f4a340] Nothing was written into output file\n\
+             /home/someone/attachments/clip.mov: Invalid data found when processing input\n"
+        ),
+        "<input>: Invalid data found when processing input"
     );
 }
 
@@ -1622,10 +1740,7 @@ impl MediaTools for ScriptedTools {
         reads: Reads<'_>,
         stop: Option<&AtomicBool>,
     ) -> Result<()> {
-        let limit = match reads {
-            Reads::OneFrame => Limit::ShortStep,
-            Reads::All(_) => Limit::Progress(StallWatch::new(WAIT, Some(SCRIPTED_LENGTH))),
-        };
+        let limit = Limit::for_reads(reads, WAIT, |_| Some(SCRIPTED_LENGTH));
         let line = ffmpeg_command_line(args, dest);
         let started = self.dir.path().join("started");
         if self.stalls && has(args, "libx265") {
@@ -1854,7 +1969,87 @@ fn h264_follows_hevc_only_after_a_failure_or_a_stall_before_output() {
     })));
     assert!(!h264_follows(&killed(KillReason::Stopped)));
     assert!(!h264_follows(&killed(KillReason::StoppedBeforeStart)));
-    assert!(!h264_follows(&killed(KillReason::ShortStepTooLong {
+    assert!(!h264_follows(&killed(KillReason::TookTooLong {
         limit: std::time::Duration::from_secs(15),
     })));
+}
+
+/// An MP3 made with the real ffmpeg by joining recordings back to back: a
+/// one-second part whose Xing header counts only its own frames, then
+/// twenty minutes more, long enough that ffmpeg reports its position before
+/// it finishes. The header's byte count is set to the whole file's
+/// size, as a joining tool that rewrites it leaves it, so ffprobe reads one
+/// second without a warning that it estimated it.
+fn joined_mp3(tools: &InstalledTools, dir: &Path) -> PathBuf {
+    let part = |name: &str, seconds: u32| {
+        let path = dir.join(name);
+        tools
+            .run_ffmpeg(&[
+                "-y".into(),
+                "-f".into(),
+                "lavfi".into(),
+                "-i".into(),
+                format!("sine=duration={seconds}"),
+                "-c:a".into(),
+                "libmp3lame".into(),
+                "-q:a".into(),
+                "4".into(),
+                path_str(&path),
+            ])
+            .unwrap();
+        fs::read(path).unwrap()
+    };
+    let mut joined = part("first.mp3", 1);
+    let rest = part("rest.mp3", 10);
+    for _ in 0..120 {
+        joined.extend_from_slice(&rest);
+    }
+    let xing = joined
+        .windows(4)
+        .position(|window| window == b"Xing")
+        .expect("the first part has a Xing header");
+    let flags = u32::from_be_bytes(joined[xing + 4..xing + 8].try_into().unwrap());
+    assert_eq!(flags & 0b11, 0b11, "the header counts frames and bytes");
+    let size = u32::try_from(joined.len()).unwrap().to_be_bytes();
+    joined[xing + 12..xing + 16].copy_from_slice(&size);
+    let path = dir.join("joined");
+    fs::write(&path, joined).unwrap();
+    path
+}
+
+/// A joined MP3 whose header states under half its real length converts:
+/// the twice-the-length stop is for video only, and an audio conversion
+/// is held to a time limit instead (#2909).
+#[test]
+fn a_joined_mp3_whose_header_states_under_half_its_length_converts() {
+    let Some(tools) = crate::testutil::real_ffmpeg() else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let src = joined_mp3(&tools, dir.path());
+    // About a second: ffmpeg versions count the encoder's padding apart.
+    let stated = crate::probe::played_for(&tools, &src, None);
+    assert!(
+        stated.is_some_and(|length| length < std::time::Duration::from_secs(2)),
+        "ffprobe trusts the first part's header: {stated:?}"
+    );
+    let dest = dir.path().join("joined.mp3.in_progress");
+
+    let outcome = transcode_file_as(
+        &tools,
+        &src,
+        Kind::Audio,
+        &dest,
+        MediaMode::Convert,
+        &CompressOptions::default(),
+        None,
+    )
+    .unwrap_or_else(|err| panic!("{err:#}"));
+
+    assert_eq!(outcome, TranscodeOutcome::Produced { hevc_failure: None });
+    assert!(
+        crate::probe::played_for(&tools, &dest, None)
+            .is_some_and(|length| length > std::time::Duration::from_secs(20 * 60)),
+        "the whole file was converted"
+    );
 }

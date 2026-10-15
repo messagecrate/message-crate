@@ -1,8 +1,10 @@
 //! Staging: the resumable path that writes a run's conversations and
 //! attachments into the Staging Directory.
 //!
-//! Parse finishes before anything is written; an exporter hands its
-//! documents to [`ExportWriter`], which either drains the bounded write
+//! Parse finishes before anything is written. Every exporter but Apple
+//! Messages runs its convert step through [`convert_backup`], which opens
+//! the writer, reads, projects, and hands the documents to
+//! [`ExportWriter`], which either drains the bounded write
 //! queue (JSON Lines, the import path: a conversation file lands only after
 //! everything it references, so an interrupted run resumes by skipping what
 //! is already there) or stages attachments and writes through
@@ -25,6 +27,7 @@
 //! `message-crate-core`. Why this is its own crate:
 //! `docs/adr/0012-four-crates-in-the-export-pipeline.md`.
 
+mod convert;
 mod counted_attachments;
 mod export_writer;
 mod headroom;
@@ -34,17 +37,19 @@ mod staging_summary;
 mod transcode;
 mod write_queue;
 
+pub use convert::{Project, ReadBackup, WriterSetup, convert_backup};
 pub use counted_attachments::{CountedAttachments, PathSources};
 pub use export_writer::{ExportWriter, ExportWriterParts};
 pub use headroom::{
-    Disk, bytes_embedded, bytes_to_copy, bytes_to_write, check_headroom, scratch_disk_full,
+    Disk, LOW_DISK_SPACE_BYTES, bytes_embedded, bytes_to_copy, bytes_to_write, check_headroom,
+    low_disk_space, scratch_disk_full,
 };
 pub use media_settings::{MEDIA_SETTINGS_FILE, read_media_settings, write_media_settings};
 pub use spool::AttachmentSpool;
 pub use staging_summary::{AttachmentForecast, StagingSummary, SummaryProgress, summarize_staging};
 pub use transcode::{TranscodeOptions, TranscodeProgress, TranscodeReport, transcode_staged};
 pub use write_queue::{
-    AttachmentSource, ConversationUnit, Sinks, UnitAttachment, WriteQueueOptions, WriteQueueReport,
+    AttachmentSource, ConversationUnit, UnitAttachment, WriteQueueOptions, WriteQueueReport,
     default_writer_count, drain_units, drain_write_queue, drain_write_queue_with_loader,
     load_attachment_source, unreadable_attachment_line,
 };

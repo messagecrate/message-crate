@@ -98,6 +98,9 @@ jobs:
               docs/src/assets/openapi.json) docs=true; web=true ;;
               scripts/check-generated-api-types.sh|scripts/check-biome-restricted-imports.mjs|scripts/openapi-typescript/*) web=true ;;
               docs/*) docs=true ;;
+              # src-tauri's tests write the desktop events fixture and the
+              # web job's tests read it, so a change to it runs both.
+              tests/fixtures/desktop-events/*) rust=true; web=true ;;
               web/*) web=true ;;
               web-next/*) ;;                # legacy tree, not the product path
               # The server's config, whose website and Data Directory check
@@ -542,7 +545,7 @@ jobs:
       # api.github.com; unauthenticated, the 60-per-hour limit is shared by
       # every runner on the same address and the lookup 403s.
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@c06f6a0003f7c6165a00c89d1697731c9e8a5c72 # v1.25.2
+        uses: cargo-bins/cargo-binstall@3be4ad2b146f3302f92e5956c54fedbb6ae8cccc # v1.25.3
 
       - name: Install Tauri CLI
         shell: bash

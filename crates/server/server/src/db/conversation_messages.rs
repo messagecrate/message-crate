@@ -26,10 +26,42 @@ use crate::db::conversations::is_group_type;
 use crate::db::ownership::owns_conversation;
 use crate::db::participant_names::load_for_conversations;
 use crate::db::sql::{SQLITE_IN_CHUNK, SqlParam, bind_all, bind_args, group_rows_by_id};
+use crate::db::trash::not_trashed_conversation_id;
 use crate::models::StoredTime;
 use crate::paging::{Direction, Page, PageParams, SortKey, page_from_rows};
 use crate::search::bridge::Sql;
-use crate::server::ApiError;
+
+/// Why a page of messages was not read.
+#[derive(Debug)]
+pub enum MessagePageError {
+    /// The request asks for a page no statement gives: a sort with no
+    /// meaning for it, or a message to read beside that the conversation
+    /// does not show. Carries the sentence naming the parameter.
+    Invalid(String),
+    /// A statement failed.
+    Internal(anyhow::Error),
+}
+
+impl std::fmt::Display for MessagePageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Invalid(sentence) => f.write_str(sentence),
+            Self::Internal(err) => write!(f, "{err:#}"),
+        }
+    }
+}
+
+impl From<anyhow::Error> for MessagePageError {
+    fn from(e: anyhow::Error) -> Self {
+        Self::Internal(e)
+    }
+}
+
+impl From<sqlx::Error> for MessagePageError {
+    fn from(e: sqlx::Error) -> Self {
+        Self::Internal(e.into())
+    }
+}
 
 /// Sorted, deduplicated ids for an `IN` list.
 fn unique_ids(ids: impl IntoIterator<Item = i64>) -> Vec<i64> {
@@ -77,7 +109,9 @@ struct RawRow {
 /// conversation, the rule `earlier_versions_holder_sql` follows: a person
 /// who trashed the conversation holding the reply does not open it from a
 /// message they kept.
-const REPLY_COUNT_SQL: &str = "WITH RECURSIVE \
+fn reply_count_sql() -> String {
+    format!(
+        "WITH RECURSIVE \
        quoted(id) AS ( \
          SELECT m.id \
          UNION SELECT q.id FROM messages q JOIN quoted ON q.duplicate_of = quoted.id), \
@@ -89,12 +123,11 @@ const REPLY_COUNT_SQL: &str = "WITH RECURSIVE \
                WHERE t.duplicate_of IS NOT NULL) \
      SELECT COUNT(*) FROM shown JOIN messages sm ON sm.id = shown.id \
      WHERE sm.duplicate_of IS NULL \
-       AND (NOT EXISTS (SELECT 1 FROM trashed_conversations rtc \
-                        WHERE rtc.account_id = sm.account_id \
-                          AND rtc.conversation_id = sm.conversation_id) \
-            OR EXISTS (SELECT 1 FROM trashed_conversations mtc \
-                       WHERE mtc.account_id = m.account_id \
-                         AND mtc.conversation_id = m.conversation_id))";
+       AND ({reply_kept} OR NOT ({quoted_kept}))",
+        reply_kept = not_trashed_conversation_id("sm.account_id", "sm.conversation_id"),
+        quoted_kept = not_trashed_conversation_id("m.account_id", "m.conversation_id"),
+    )
+}
 
 /// FROM clause for message queries. The compiled filter mentions only `m`;
 /// these joins are here for the SELECT list, which reports the conversation
@@ -161,7 +194,7 @@ pub async fn load_messages(
     order: &[SortKey<MessageSort>],
     limit: usize,
     offset: usize,
-) -> Result<Vec<Message>, ApiError> {
+) -> anyhow::Result<Vec<Message>> {
     let direction = order
         .iter()
         .find(|k| k.key == MessageSort::Date)
@@ -279,16 +312,17 @@ pub(crate) fn ranked_messages_from_sql() -> String {
 ///
 /// # Errors
 ///
-/// `validation-failed` when `order` names `relevance` and the filter has no
-/// free-text word to rank by, or names `-relevance`, which has no meaning;
-/// otherwise an error when a statement fails.
+/// [`MessagePageError::Invalid`] when `order` names `relevance` and the
+/// filter has no free-text word to rank by, or names `-relevance`, which has
+/// no meaning; otherwise [`MessagePageError::Internal`] when a statement
+/// fails.
 pub async fn load_message_list_page(
     conn: &mut SqliteConnection,
     filter: &crate::search::Filter,
     order: &[SortKey<MessageListSort>],
     limit: usize,
     offset: usize,
-) -> Result<Vec<Message>, ApiError> {
+) -> Result<Vec<Message>, MessagePageError> {
     let (sql, params) = message_list_page_sql(filter, order, limit, offset)?;
     let mut page = fetch_message_page(conn, sqlx::AssertSqlSafe(sql), &params).await?;
     mark_earlier_version_matches(conn, filter, &mut page).await?;
@@ -309,7 +343,7 @@ async fn mark_earlier_version_matches(
     conn: &mut SqliteConnection,
     filter: &crate::search::Filter,
     page: &mut [Message],
-) -> Result<(), ApiError> {
+) -> anyhow::Result<()> {
     let (Some((final_where, final_params)), Some((matching_sql, matching_params))) =
         (filter.final_text(), filter.matching_earlier_version_ids())
     else {
@@ -396,13 +430,14 @@ pub(crate) fn message_list_page_sql(
     order: &[SortKey<MessageListSort>],
     limit: usize,
     offset: usize,
-) -> Result<(String, Vec<SqlParam>), ApiError> {
+) -> Result<(String, Vec<SqlParam>), MessagePageError> {
     if order
         .iter()
         .any(|k| k.key == MessageListSort::Relevance && k.direction == Direction::Desc)
     {
-        return Err(ApiError::validation(
-            "sort: relevance has one direction, best match first; write `relevance`, not `-relevance`",
+        return Err(MessagePageError::Invalid(
+            "sort: relevance has one direction, best match first; write `relevance`, not `-relevance`"
+                .into(),
         ));
     }
 
@@ -411,8 +446,9 @@ pub(crate) fn message_list_page_sql(
     let mut params = Vec::new();
     if ranked {
         let Some(rank_query) = filter.rank_query() else {
-            return Err(ApiError::validation(
-                "sort: relevance needs a free-text word in q to rank by; sort by date instead",
+            return Err(MessagePageError::Invalid(
+                "sort: relevance needs a free-text word in q to rank by; sort by date instead"
+                    .into(),
             ));
         };
         from_sql = ranked_messages_from_sql();
@@ -468,7 +504,7 @@ pub(crate) async fn load_messages_from(
     order_by: &str,
     limit: usize,
     offset: usize,
-) -> Result<Vec<Message>, ApiError> {
+) -> anyhow::Result<Vec<Message>> {
     let (sql, params) = message_page_sql(from_sql, where_sql, params, order_by, limit, offset);
     fetch_message_page(conn, sqlx::AssertSqlSafe(sql), &params).await
 }
@@ -497,7 +533,7 @@ fn message_page_sql(
          WHERE {where_sql}
          ORDER BY {order_by} LIMIT ? OFFSET ?",
         shown_title = crate::db::conversations::shown_title_sql("c"),
-        reply_count = REPLY_COUNT_SQL,
+        reply_count = reply_count_sql(),
     );
     let mut params = params.to_vec();
     // An `offset` too large for SQLite's `i64` is past the end of any table,
@@ -512,7 +548,7 @@ async fn fetch_message_page(
     conn: &mut SqliteConnection,
     sql: impl SqlSafeStr,
     params: &[SqlParam],
-) -> Result<Vec<Message>, ApiError> {
+) -> anyhow::Result<Vec<Message>> {
     let page_rows: Vec<RawRow> = (&mut *conn)
         .fetch_all(bind_all(sql, params))
         .await
@@ -674,7 +710,7 @@ async fn load_tapbacks(
         |placeholders| {
             format!(
                 "SELECT t.message_id, t.part_index, t.kind, t.emoji, t.is_from_me,
-                    hs.raw AS sender
+                    hs.raw AS sender, t.sender_display_name
              FROM tapbacks t
              LEFT JOIN handles hs ON hs.id = t.sender_handle_id
              WHERE t.message_id IN ({placeholders})
@@ -690,6 +726,7 @@ async fn load_tapbacks(
                     emoji: row.try_get(3)?,
                     is_from_me: row.try_get::<i64, _>(4)? != 0,
                     sender: row.try_get(5)?,
+                    sender_display_name: row.try_get(6)?,
                 },
             ))
         },
@@ -735,13 +772,13 @@ pub(crate) fn earlier_versions_holder_sql(alias: &str) -> String {
                        JOIN hidden_under hu ON hn.duplicate_of = hu.id) \
                SELECT MIN(hm.id) FROM hidden_under hu JOIN messages hm ON hm.id = hu.id \
                WHERE EXISTS (SELECT 1 FROM message_versions hdv WHERE hdv.message_id = hm.id) \
-                 AND (NOT EXISTS (SELECT 1 FROM trashed_conversations htc \
-                                  WHERE htc.account_id = hm.account_id \
-                                    AND htc.conversation_id = hm.conversation_id) \
-                      OR EXISTS (SELECT 1 FROM trashed_conversations atc \
-                                 WHERE atc.account_id = {alias}.account_id \
-                                   AND atc.conversation_id = {alias}.conversation_id))) \
-         END"
+                 AND ({holder_kept} OR NOT ({alias_kept}))) \
+         END",
+        holder_kept = not_trashed_conversation_id("hm.account_id", "hm.conversation_id"),
+        alias_kept = not_trashed_conversation_id(
+            &format!("{alias}.account_id"),
+            &format!("{alias}.conversation_id"),
+        ),
     )
 }
 
@@ -814,7 +851,7 @@ async fn load_earlier_versions(
 pub(crate) async fn count_matching_messages(
     conn: &mut SqliteConnection,
     filter: &crate::search::Filter,
-) -> Result<u64, ApiError> {
+) -> anyhow::Result<u64> {
     let sql = format!(
         "SELECT COUNT(*)
          {messages_from_sql}
@@ -876,8 +913,8 @@ fn conversation_messages_where(conversation_id: i64, account_id: i64) -> (String
 /// where the page landed (`docs/architecture/http-api.md`, "Lists").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageWindow {
-    /// Starting this many messages in.
-    Offset(usize),
+    /// Starting at the page's `offset`.
+    Offset,
     /// With this message in the middle, or as near the middle as the ends
     /// of the conversation allow.
     Around(i64),
@@ -891,7 +928,7 @@ impl MessageWindow {
     /// The query parameter that names the message, and the message's id.
     const fn anchor(self) -> Option<(&'static str, i64)> {
         match self {
-            Self::Offset(_) => None,
+            Self::Offset => None,
             Self::Around(id) => Some(("around", id)),
             Self::Before(id) => Some(("before", id)),
             Self::After(id) => Some(("after", id)),
@@ -915,7 +952,7 @@ fn window_sides(
     let before_available = position;
     let after_available = total.saturating_sub(position + 1);
     match window {
-        MessageWindow::Offset(_) => (0, false, 0),
+        MessageWindow::Offset => (0, false, 0),
         MessageWindow::Before(_) => (limit.min(before_available), false, 0),
         MessageWindow::After(_) => (0, false, limit.min(after_available)),
         MessageWindow::Around(_) => {
@@ -929,7 +966,8 @@ fn window_sides(
 }
 
 /// One page of a conversation's messages, in the order `order` names, at the
-/// place `window` names. `None` when the conversation does not exist or
+/// place `window` names: `page.limit` messages, starting at `page.offset`
+/// for [`MessageWindow::Offset`]. `None` when the conversation does not exist or
 /// belongs to another account — checked before the message query runs, so an
 /// unknown id and another account's conversation id are indistinguishable
 /// from the outside, the same guarantee
@@ -938,17 +976,17 @@ fn window_sides(
 ///
 /// # Errors
 ///
-/// `validation-failed` when `window` names a message this conversation does
-/// not show: one of another conversation, a duplicate, or no message at all.
-/// `Internal` when a statement fails.
+/// [`MessagePageError::Invalid`] when `window` names a message this
+/// conversation does not show: one of another conversation, a duplicate, or
+/// no message at all. [`MessagePageError::Internal`] when a statement fails.
 pub async fn get_conversation_messages(
     conn: &mut SqliteConnection,
     account_id: i64,
     conversation_id: i64,
     order: &[SortKey<MessageSort>],
-    limit: usize,
+    page: PageParams,
     window: MessageWindow,
-) -> Result<Option<Page<Message>>, ApiError> {
+) -> Result<Option<Page<Message>>, MessagePageError> {
     if !owns_conversation(conn, account_id, conversation_id)
         .await
         .context("check that the account holds the conversation")?
@@ -966,16 +1004,9 @@ pub async fn get_conversation_messages(
     let total = total.max(0) as u64;
 
     let Some((parameter, anchor_id)) = window.anchor() else {
-        let offset = match window {
-            MessageWindow::Offset(offset) => offset,
-            _ => 0,
-        };
-        let items = load_messages(conn, &where_sql, &params, order, limit, offset).await?;
-        return Ok(Some(page_from_rows(
-            items,
-            total,
-            PageParams { limit, offset },
-        )));
+        let items =
+            load_messages(conn, &where_sql, &params, order, page.limit, page.offset).await?;
+        return Ok(Some(page_from_rows(items, total, page)));
     };
 
     // The message's place in the order: its timestamp, `sort_order` and id,
@@ -996,7 +1027,7 @@ pub async fn get_conversation_messages(
     .await
     .context("read the place of the message a page of a conversation is read beside")?;
     let Some((timestamp, sort_order)) = anchor else {
-        return Err(ApiError::validation(format!(
+        return Err(MessagePageError::Invalid(format!(
             "{parameter}: message {anchor_id} is not in this conversation"
         )));
     };
@@ -1041,7 +1072,7 @@ pub async fn get_conversation_messages(
         window,
         position,
         usize::try_from(total).unwrap_or(usize::MAX),
-        limit,
+        page.limit,
     );
 
     let from_sql = messages_from_sql();
@@ -1102,8 +1133,30 @@ pub async fn get_conversation_messages(
     Ok(Some(page_from_rows(
         items,
         total,
-        PageParams { limit, offset },
+        PageParams { offset, ..page },
     )))
+}
+
+/// Up to `limit` message bodies outside the Demo Account, picked at random.
+///
+/// # Errors
+///
+/// Returns an error when the messages cannot be read.
+pub async fn sample_bodies_outside(
+    conn: &mut SqliteConnection,
+    demo_id: i64,
+    limit: i64,
+) -> anyhow::Result<Vec<String>> {
+    sqlx::query_scalar(
+        "SELECT body FROM messages
+         WHERE account_id IS NOT $1 AND body IS NOT NULL
+         ORDER BY random() LIMIT $2",
+    )
+    .bind(demo_id)
+    .bind(limit)
+    .fetch_all(&mut *conn)
+    .await
+    .context("pick messages to search")
 }
 
 #[cfg(test)]
@@ -1164,8 +1217,11 @@ mod tests {
                 account.account_id,
                 conversation_id,
                 &DEFAULT_MESSAGE_SORT,
-                50,
-                MessageWindow::Offset(0),
+                PageParams {
+                    limit: 50,
+                    offset: 0,
+                },
+                MessageWindow::Offset,
             )
             .await
             .expect_err("the broken statement fails");

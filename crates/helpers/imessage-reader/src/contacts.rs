@@ -11,7 +11,7 @@ use imessage_database::{
 };
 use rusqlite::{Connection, Result};
 
-use crate::log::emit_log;
+use crate::log::emit_warning;
 
 /// Default contacts database path inside an iOS backup.
 pub(crate) const DEFAULT_PATH_IOS: &str = "31/31bb7ba8914766d4ba40d6dfb6113c8b614be442";
@@ -99,7 +99,7 @@ impl ContactsIndex {
 
         let (index, unreadable) = Self::build_from_macos_sources(&macos_sources_dir())?;
         for line in unreadable {
-            emit_log(format!(
+            emit_warning(format!(
                 "A contacts source could not be read, so no contact is named from it: {line}"
             ));
         }

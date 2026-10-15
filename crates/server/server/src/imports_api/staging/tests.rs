@@ -5,11 +5,11 @@ use tempfile::TempDir;
 
 use super::{StagingError, prepare_attachments, store_claimed_or_path};
 use crate::assets_api::{self, AssetStats};
+use crate::imports_api::pipeline::{FixedImportArgs, ImportCounts, ImportOptions};
 use crate::imports_api::records::AttachmentRecord;
-use crate::imports_api::{
-    FixedImportArgs, ImportCounts, ImportError, ImportFailure, ImportMode, ImportOptions,
-};
+use crate::imports_api::{ImportError, ImportFailure};
 use crate::test_support::{attachment, conversation_header, import_for_account, message_line};
+use message_crate_api_types::ImportMode;
 use message_ir::{IrAttachment, IrMessageKind, IrService};
 
 const TEST_ACCOUNT: i64 = 7;
@@ -568,6 +568,41 @@ async fn a_whatsapp_lid_chat_its_participant_and_its_sender_are_one_other_identi
     assert_eq!(contacts, 1, "the one person in the chat is one contact");
 }
 
+/// A WhatsApp conversation is on WhatsApp whatever its source is named. An
+/// Export Run writes the server's source name into `export.source`, so a
+/// WhatsApp conversation stored under `wa-2024` comes back with that name.
+/// Its service came from the source name alone, so it was read as Text
+/// Message and its `@lid` participant became an email identity there
+/// (#2050).
+#[tokio::test]
+async fn a_whatsapp_conversation_is_on_whatsapp_whatever_its_source_is_named() {
+    let (pool, _dir) = crate::test_support::schema_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let body = conversation_header("wa-2024", "123456@lid")
+        .participant("123456@lid", None)
+        .line()
+        + &incoming_whatsapp("g-renamed-1", "123456@lid");
+    import_one(&mut conn, "123456@lid.jsonl", &body)
+        .await
+        .unwrap();
+
+    let handles: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT raw, service, handle_type FROM handles WHERE account_id = $1 ORDER BY raw",
+    )
+    .bind(TEST_ACCOUNT)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(
+        handles,
+        [(
+            "123456@lid".to_string(),
+            "whatsapp".to_string(),
+            "other".to_string()
+        )]
+    );
+}
+
 /// An incoming line from `sender` on a service the model does not know, as
 /// Apple Messages writes a message sent by satellite.
 fn incoming_unknown_service(guid: &str, sender: &str) -> String {
@@ -918,5 +953,144 @@ async fn an_imessage_sender_with_an_email_address_is_email() {
     assert_eq!(
         email_identities_on(&mut conn, "phone").await,
         ["ada@example.com".to_string()]
+    );
+}
+
+/// Every `(raw, normalized)` the account's handles hold, sorted.
+async fn handle_keys(conn: &mut SqliteConnection) -> Vec<(String, String)> {
+    sqlx::query_as("SELECT raw, normalized FROM handles WHERE account_id = $1 ORDER BY raw")
+        .bind(TEST_ACCOUNT)
+        .fetch_all(&mut *conn)
+        .await
+        .unwrap()
+}
+
+/// Apple Messages names the country it read each identity in, from
+/// `chat.db`'s `handle.country`, and the file carries it. A number written
+/// without `+` in a conversation whose file names `GB` for it is a UK
+/// number, with no country on the import form: the participant, the sender,
+/// the reactor and the one-to-one chat's id are one `+44` identity. A number
+/// the file names no country for keeps its digits (#1994).
+#[tokio::test]
+async fn a_number_is_read_in_the_country_the_file_names_for_it() {
+    let (pool, _dir) = crate::test_support::schema_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let body = conversation_header("imessage", "07700 900123")
+        .participant("07700 900123", None)
+        .in_country("GB")
+        .line()
+        + &message_line("g-gb-1", "hi")
+            .sender("07700 900123")
+            .sender_country("GB")
+            .line()
+        + &message_line("g-gb-2", "liked")
+            .outgoing()
+            .reaction(message_ir::Reaction {
+                part_index: 0,
+                kind: "liked".into(),
+                emoji: None,
+                is_from_me: false,
+                reactor_identity: Some("07700 900123".into()),
+                reactor_display_name: None,
+            })
+            .line();
+    import_one(&mut conn, "gb.jsonl", &body).await.unwrap();
+    let body = conversation_header("imessage", "07700 900456")
+        .participant("07700 900456", None)
+        .line()
+        + &message_line("g-none-1", "hi").sender("07700 900456").line();
+    import_one(&mut conn, "none.jsonl", &body).await.unwrap();
+
+    assert_eq!(
+        handle_keys(&mut conn).await,
+        [
+            ("07700 900123".to_string(), "+447700900123".to_string()),
+            ("07700 900456".to_string(), "07700900456".to_string()),
+        ]
+    );
+}
+
+/// A country the file names that Message Crate does not know refuses the
+/// file, naming the code, rather than reading the number in no country.
+#[tokio::test]
+async fn a_country_nobody_knows_refuses_the_file() {
+    let (pool, _dir) = crate::test_support::schema_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let body = conversation_header("imessage", "07700 900123")
+        .participant("07700 900123", None)
+        .in_country("ZZ")
+        .line();
+    let reason = refusal(import_one(&mut conn, "zz.jsonl", &body).await);
+    assert!(
+        reason.contains(r#"country "ZZ" is not a country GET /v1/phone-countries lists"#),
+        "{reason}"
+    );
+}
+
+/// One address can have two `handle` rows in `chat.db`, one naming a
+/// country and one not, as an iMessage row and an SMS row for one number
+/// do. The participant, the senders and the chat id at that address are
+/// still one identity, read in the country the conversation names for it,
+/// whichever record names it.
+#[tokio::test]
+async fn an_address_is_one_identity_when_only_some_of_its_records_name_a_country() {
+    let (pool, _dir) = crate::test_support::schema_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    // The participant names GB; the sender does not.
+    let body = conversation_header("imessage", "07700 900123")
+        .participant("07700 900123", None)
+        .in_country("GB")
+        .line()
+        + &message_line("g-p-1", "hi").sender("07700 900123").line();
+    import_one(&mut conn, "participant.jsonl", &body)
+        .await
+        .unwrap();
+    // The sender names GB; the participant does not.
+    let body = conversation_header("imessage", "07700 900456")
+        .participant("07700 900456", None)
+        .line()
+        + &message_line("g-s-1", "hi")
+            .sender("07700 900456")
+            .sender_country("GB")
+            .line();
+    import_one(&mut conn, "sender.jsonl", &body).await.unwrap();
+
+    assert_eq!(
+        handle_keys(&mut conn).await,
+        [
+            ("07700 900123".to_string(), "+447700900123".to_string()),
+            ("07700 900456".to_string(), "+447700900456".to_string()),
+        ]
+    );
+}
+
+/// The Apple Messages exporter's output for its committed fixture
+/// `chat.db` (`imessage-ir-exporter/tests/fixtures/handle-country/`; its
+/// `a_handles_country_reaches_the_conversation_file` checks this copy), whose
+/// handle `07700 900123` names `gb` and `07700 900456` names no country,
+/// imported with no country on the import form: the first is stored as
+/// `+447700900123`, and the second keeps its digits (#1994).
+#[tokio::test]
+async fn an_apple_messages_export_of_a_gb_handle_stores_its_plus_form() {
+    let (pool, _dir) = crate::test_support::schema_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let body = crate::test_support::at_current_schema_version(include_str!(
+        "../../../tests/fixtures/apple-messages-handle-country.jsonl"
+    ));
+    import_one(&mut conn, "handle-country.jsonl", &body)
+        .await
+        .unwrap();
+
+    let keys: Vec<(String, String)> = handle_keys(&mut conn)
+        .await
+        .into_iter()
+        .filter(|(raw, _)| raw.starts_with("07700"))
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            ("07700 900123".to_string(), "+447700900123".to_string()),
+            ("07700 900456".to_string(), "07700900456".to_string()),
+        ]
     );
 }

@@ -72,12 +72,10 @@ const COUNT_FIELDS = [
   "attachmentsUploaded",
 ] as const;
 
-/** Every kind a row can have, so a stored issue's `kind` is checked against it. */
+/** Every kind an Import Error can have, so a stored issue's `kind` is checked against it. */
 const ISSUE_KINDS: Record<ImportIssue["kind"], true> = {
   skip: true,
   error: true,
-  note: true,
-  resolved: true,
 };
 
 function isIssueKind(value: unknown): value is ImportIssue["kind"] {

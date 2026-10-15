@@ -9,11 +9,11 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use media::{CompressOptions, MediaMode, MediaTools, NoTools};
+use media::{MediaTools, NoTools};
 
 use crate::exporters::{ApplePlatform, Exporter, WhatsappPlatform};
 use crate::pipeline::IssueSink;
-use crate::process::{CancelFlag, LogSink};
+use crate::process::{CancelFlag, LogSink, Sinks};
 use crate::progress::ProgressSink;
 use crate::transforms::ExportTransforms;
 
@@ -118,6 +118,16 @@ pub struct RunContext {
 }
 
 impl RunContext {
+    /// The run's log, progress and cancel flag, for a step that takes them
+    /// together.
+    pub fn sinks(&self) -> Sinks<'_> {
+        Sinks {
+            log: &self.log,
+            progress: &self.progress,
+            cancel: &self.cancel,
+        }
+    }
+
     /// A run whose scratch data goes under `scratch_dir`, that nothing
     /// cancels, and whose sinks drop what they get. The caller sets the
     /// cancel flag and any sink it reads.
@@ -145,7 +155,7 @@ pub struct OutputConfig {
     pub format: OutputFormat,
     /// Fake-name rewrite settings; `None`-equivalent when disabled.
     pub obfuscate: ObfuscateConfig,
-    /// Attachment handling for `FormatSink` (none / copy / convert / compress).
+    /// Whether the export copies the original attachment files.
     pub media: MediaConfig,
     /// Continue an interrupted export in the same output directory: previous
     /// output is kept, and conversations already written are skipped. Only
@@ -189,15 +199,17 @@ pub fn require_input(inputs: &[PathBuf]) -> Result<&Path, String> {
 /// The run-wide settings every exporter's convert step takes beside its own
 /// inputs. [`ConvertRun::new`] builds them, so a new run-wide setting is
 /// added to this struct and to [`ConvertRun::new`], not to each exporter's
-/// arguments or to each `run` that fills them. A convert step that unpacks
-/// every field still names the new one, so each exporter decides what it
-/// does with it.
+/// arguments or to each `run` that fills them. The shared convert step,
+/// `message_staging::convert_backup`, unpacks every field, so a new one is
+/// named there and the step decides what it does with it. Apple Messages,
+/// which keeps a convert step of its own, reads the fields it uses.
 ///
 /// It holds the run's cancel flag and issue sink themselves: a clone of
 /// either shares it, so a cancel set on the [`RunContext`] reaches the run.
 ///
 /// The default writes [`OutputFormat::Json`] with no transforms, cannot be
-/// cancelled, does not resume, and sends its rows nowhere.
+/// cancelled, does not resume, sends its rows nowhere, and names an empty
+/// Scratch Directory, so a test whose run spools sets `scratch_dir`.
 #[derive(Debug, Clone, Default)]
 pub struct ConvertRun {
     /// Media and obfuscation applied as conversations are written.
@@ -211,6 +223,9 @@ pub struct ConvertRun {
     pub resume: bool,
     /// Where each row for the Import Run's record goes as the run records it.
     pub issues: IssueSink,
+    /// The desktop Scratch Directory ([`RunContext::scratch_dir`]), which
+    /// the run's attachment spool goes under.
+    pub scratch_dir: PathBuf,
 }
 
 impl ConvertRun {
@@ -223,6 +238,7 @@ impl ConvertRun {
             cancel: context.cancel.clone(),
             resume: output.resume,
             issues: context.issues.clone(),
+            scratch_dir: context.scratch_dir.clone(),
         }
     }
 }
@@ -236,27 +252,42 @@ pub struct ObfuscateConfig {
     pub seed: Option<String>,
 }
 
+/// What Staging does with attachment files: copy the originals, or copy
+/// none. Staging never converts or compresses. That happens only in the
+/// Media Stage, after the Staging Review, from the staged originals.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum AttachmentFiles {
+    /// Copy each attachment's original file into `attachments/`.
+    #[default]
+    Originals,
+    /// Copy no attachment files. Each attachment keeps its record, marked
+    /// `not_copied`.
+    Skip,
+}
+
+impl AttachmentFiles {
+    /// True when attachment files are copied.
+    pub fn copies(self) -> bool {
+        self == Self::Originals
+    }
+}
+
 #[derive(Debug, Clone)]
-/// How attachments are copied, converted, or compressed when writing output.
+/// How an export handles attachment files, and where its tools are.
 pub struct MediaConfig {
-    /// Attachment handling mode (none / copy / convert / compress).
-    pub mode: MediaMode,
-    /// Compress-mode options (long-edge cap, max fps, min size).
-    pub compress: CompressOptions,
-    /// The ffmpeg and ffprobe Convert and Compress run, and the Tools
-    /// Directory the WhatsApp exporter finds `wtsexporter` in
+    /// Copy the original attachment files, or none.
+    pub files: AttachmentFiles,
+    /// The Tools Directory the WhatsApp exporter finds `wtsexporter` in
     /// ([`MediaTools::tools_dir`]). The caller builds them from where it
     /// keeps its tools ([`media::InstalledTools`]); a test passes a fake.
     pub tools: Arc<dyn MediaTools>,
 }
 
 impl Default for MediaConfig {
-    /// Clone, with no tools at all ([`NoTools`]): a run that converts or
-    /// compresses is given its tools by its caller, and fails if it is not.
+    /// Copy the originals, with no tools at all ([`NoTools`]).
     fn default() -> Self {
         Self {
-            mode: MediaMode::Clone,
-            compress: CompressOptions::default(),
+            files: AttachmentFiles::Originals,
             tools: Arc::new(NoTools),
         }
     }

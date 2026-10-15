@@ -25,9 +25,10 @@ pub use attachment_jobs::{
 };
 pub use attachments::{attachment_date_prefix, attachment_dest_name, digest_prefix};
 pub use config::{
-    AppleConfig, ConvertRun, ExporterConfig, FormatConfig, GoSmsProConfig, ImazingConfig,
-    MediaConfig, ObfuscateConfig, OpenExtractConfig, OutputConfig, OutputFormat, RunContext,
-    SmsBackupPlusConfig, SmsBackupRestoreConfig, SourceConfig, WhatsappConfig, require_input,
+    AppleConfig, AttachmentFiles, ConvertRun, ExporterConfig, FormatConfig, GoSmsProConfig,
+    ImazingConfig, MediaConfig, ObfuscateConfig, OpenExtractConfig, OutputConfig, OutputFormat,
+    RunContext, SmsBackupPlusConfig, SmsBackupRestoreConfig, SourceConfig, WhatsappConfig,
+    require_input,
 };
 pub use counter::{
     ATTACHMENTS_MISSING, ATTACHMENTS_SAVED, CONVERSATION_FILES_PREPARING, CONVERSATIONS_OBFUSCATED,
@@ -37,15 +38,16 @@ pub use counter::{
     import_error_lines, item_line, item_reason,
 };
 pub use exporters::{
-    ApplePlatform, AttachmentMedia, CONVERT_COMPRESS_FFMPEG_REQUIRED, Exporter, Form, FormContext,
-    WhatsappPlatform, ensure_output_dir,
+    ApplePlatform, Exporter, Form, FormContext, WhatsappPlatform, ensure_output_dir,
 };
 pub use pipeline::{
     CSV_NOT_READ, ExportReport, IssueSink, NAME_ONLY_CONVERSATION_NOTE, RunIssue, RunIssueKind,
     RunResult, discover_files, export_meta, file_modified_unix_ms, newest_file_modified_unix_ms,
     prepare_outputs, project_conversation, unreadable_parts_note,
 };
-pub use process::{CancelFlag, Cancelled, LogSink, check_cancel, is_cancelled, parallel_for_each};
+pub use process::{
+    CancelFlag, Cancelled, LogSink, Sinks, check_cancel, is_cancelled, parallel_for_each,
+};
 pub use progress::{ProgressEvent, ProgressSink, WriteStatus};
 pub use run::{finish_run, run_pipeline};
 pub use run_log::{RunLogAccount, RunLogLevel, RunLogLine, format_run_log, parse_run_log_line};

@@ -28,8 +28,8 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
     // Apple Messages lists nobody in the chat with the owner's own number;
     // WhatsApp lists the holder's number as the peer of "Message yourself".
     // Each source also carries one ordinary chat, which `with:me` must leave out.
-    // The two sources' notes are an hour apart, so the dedupe every batch
-    // runs keeps both.
+    // The two sources' notes are an hour apart, so the dedupe at the end of
+    // each Import Run keeps both.
     for (source, self_participant, service, sent_at) in [
         ("imessage", None, IrService::IMessage, 1_400_773_261_000),
         (

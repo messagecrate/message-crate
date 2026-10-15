@@ -24,13 +24,13 @@ fn import(input: &Path, output: &Path) -> Vec<ConversationDocument> {
     convert_export(ConvertExportArgs {
         inputs: &[input.to_path_buf()],
         output_dir: output,
-        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
         log: &LogSink::none(),
         phone_country: phone::country("US"),
         convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
             output_format: OutputFormat::Jsonl,
             ..ConvertRun::default()
         },
@@ -302,6 +302,7 @@ fn a_name_keyed_conversation_stays_one_when_its_sender_has_another_name() {
     document.conversation.participants = vec![message_ir::IrParticipant {
         identity: None,
         display_name: Some("Mom".into()),
+        country: None,
     }];
     document.messages[0].direction = IrDirection::Incoming;
     document.messages[0].sender_identity = None;
@@ -424,6 +425,7 @@ fn a_name_written_like_a_number_survives_an_export_and_a_second_import() {
             vec![message_ir::IrParticipant {
                 identity: None,
                 display_name: Some(name.into()),
+                country: None,
             }],
         );
 

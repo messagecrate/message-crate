@@ -10,9 +10,9 @@ const retrySavedLogin = vi.fn();
 
 const authState = vi.hoisted(() => ({ serverUrl: "" }));
 
-vi.mock("../lib/authContext", () => ({
-  useAuth: () => ({ login, setServer, retrySavedLogin, serverUrl: authState.serverUrl }),
-}));
+vi.mock("../lib/authContext", () =>
+  authModule(() => ({ login, setServer, retrySavedLogin, serverUrl: authState.serverUrl })),
+);
 
 const tauriState = vi.hoisted(() => ({ isTauri: false }));
 const startLocalServer = vi.hoisted(() => vi.fn());
@@ -74,7 +74,7 @@ import {
 import { STARTING_POLL_MS } from "../lib/useLocalServer";
 import type { ServerState } from "../lib/useServerState";
 import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { Providers } from "../test/providers";
+import { authModule, Providers } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 import LoginScreen from "./LoginScreen";
 
@@ -262,6 +262,44 @@ describe("LoginScreen", () => {
 
     expect(screen.getByText("Connected to 192.168.1.20:9000")).toBeInTheDocument();
     expect(screen.queryByText(/http:\/\/192\.168\.1\.20/)).not.toBeInTheDocument();
+  });
+
+  // The forms send the password to the address the card is on, so over
+  // plain HTTP to another computer the card says it crosses the network
+  // unencrypted, on the login form and on Create Owner alike (#2115).
+  const IN_CLEAR = /not encrypted, so the password crosses the network as typed/;
+
+  it("says a plain HTTP connection to another computer is not encrypted", async () => {
+    authState.serverUrl = "http://192.168.1.20:8080";
+    stubServer("closed");
+    renderScreen();
+    await settle();
+
+    expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
+    expect(screen.getByText(IN_CLEAR)).toBeInTheDocument();
+  });
+
+  it("says so above Create Owner too", async () => {
+    authState.serverUrl = "http://192.168.1.20:8080";
+    stubServer("unclaimed");
+    renderScreen();
+    await settle();
+
+    expect(screen.getByRole("heading", { name: "Create Owner" })).toBeInTheDocument();
+    expect(screen.getByText(IN_CLEAR)).toBeInTheDocument();
+  });
+
+  it("says nothing of encryption for this computer or an https address", async () => {
+    for (const address of ["", "http://127.0.0.1:8080", "https://192.168.1.20:8080"]) {
+      authState.serverUrl = address;
+      stubServer("closed");
+      renderScreen();
+      await settle();
+
+      expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
+      expect(screen.queryByText(IN_CLEAR), address).not.toBeInTheDocument();
+      cleanup();
+    }
   });
 
   it("keeps both tabs, Login first", async () => {

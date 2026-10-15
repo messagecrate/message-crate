@@ -6,7 +6,7 @@
 
 use serde::Deserialize;
 
-use crate::server::ApiError;
+use crate::api_error::ApiError;
 
 /// Default page size for every list, an Export Run's messages included.
 pub const DEFAULT_LIST_LIMIT: usize = 40;
@@ -190,6 +190,14 @@ pub struct PageParams {
     pub limit: usize,
     pub offset: usize,
 }
+
+/// The first page at the default size: what a list route answers when it is
+/// sent no `limit` and no `offset`.
+#[cfg(test)]
+pub(crate) const FIRST_PAGE: PageParams = PageParams {
+    limit: DEFAULT_LIST_LIMIT,
+    offset: 0,
+};
 
 /// Turn the raw `limit` and `offset` into a page, or a 422 that says which
 /// one is wrong. `max_offset` is `None` for a route that may walk the whole set.

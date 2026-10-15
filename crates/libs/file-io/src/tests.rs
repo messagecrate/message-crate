@@ -7,7 +7,9 @@
 //! `hashlib`). The message id's known answers are in `message-ir`'s
 //! `identity.rs`.
 
-use crate::{file_sha256, file_sha256_nofollow, open_nofollow, sha256_hex};
+#[cfg(unix)]
+use crate::open_nofollow;
+use crate::{file_sha256, file_sha256_nofollow, sha256_hex};
 
 /// A file in the temp directory, removed when dropped.
 struct TempFile(std::path::PathBuf);

@@ -6,7 +6,7 @@ import VirtualizedImportIssuesTable, {
 } from "./VirtualizedImportIssuesTable";
 
 export type ImportIssue = {
-  kind: components["schemas"]["RunIssueKind"];
+  kind: components["schemas"]["ImportErrorKind"];
   stage: ImportIssueStage;
   item: string;
   reason: string;
