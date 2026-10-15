@@ -262,8 +262,7 @@ pub(crate) async fn list_contacts(
         auth.account_id,
         &list.q,
         &list.order,
-        list.page.limit,
-        list.page.offset,
+        list.page,
         list.clock,
     )
     .await?;

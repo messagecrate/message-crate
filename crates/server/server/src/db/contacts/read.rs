@@ -169,8 +169,7 @@ pub async fn list_contacts_sorted(
     account_id: i64,
     q: &str,
     order: &[SortKey<ContactSort>],
-    limit: usize,
-    offset: usize,
+    page: PageParams,
     clock: (chrono_tz::Tz, chrono::NaiveDate),
 ) -> Result<Page<ContactSummary>, ApiError> {
     let filter = compile_contacts_query(account_id, q, clock)?;
@@ -223,9 +222,9 @@ pub async fn list_contacts_sorted(
         sent = contact_sent_messages(TrashScope::LeftOut),
     );
     let mut params = filter.params().to_vec();
-    params.push(SqlParam::Int(limit as i64));
+    params.push(SqlParam::Int(page.limit as i64));
     params.push(SqlParam::Int(
-        i64::try_from(offset).map_err(anyhow::Error::from)?,
+        i64::try_from(page.offset).map_err(anyhow::Error::from)?,
     ));
     let rows: Vec<ContactRow> = sqlx::query_as_with(sqlx::AssertSqlSafe(sql), bind_args(&params))
         .fetch_all(&mut *conn)
@@ -273,11 +272,7 @@ pub async fn list_contacts_sorted(
         )
         .collect();
 
-    Ok(page_from_rows(
-        contacts,
-        total,
-        PageParams { limit, offset },
-    ))
+    Ok(page_from_rows(contacts, total, page))
 }
 
 /// The ids of every contact `q` matches, a query in the search language,

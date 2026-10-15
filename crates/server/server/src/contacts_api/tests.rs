@@ -1,6 +1,6 @@
 use super::*;
 use crate::db::contacts::read::DEFAULT_CONTACT_SORT;
-use crate::paging::{DEFAULT_LIST_LIMIT, parse_sort};
+use crate::paging::{DEFAULT_LIST_LIMIT, PageParams, parse_sort};
 use edit::ContactEditError;
 use message_ir::IdentityType;
 
@@ -469,8 +469,10 @@ async fn list_contacts_uses_preferred_name_and_handle_ids() {
         account,
         "",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        PageParams {
+            limit: DEFAULT_LIST_LIMIT,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await
@@ -528,8 +530,10 @@ async fn list_contacts_filters_and_paginates() {
         account,
         "sam",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        PageParams {
+            limit: DEFAULT_LIST_LIMIT,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await
@@ -542,8 +546,10 @@ async fn list_contacts_filters_and_paginates() {
         account,
         "identity:5555550135",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        PageParams {
+            limit: DEFAULT_LIST_LIMIT,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await
@@ -556,8 +562,10 @@ async fn list_contacts_filters_and_paginates() {
         account,
         "",
         &DEFAULT_CONTACT_SORT,
-        2,
-        0,
+        PageParams {
+            limit: 2,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await
@@ -571,8 +579,10 @@ async fn list_contacts_filters_and_paginates() {
         account,
         "",
         &DEFAULT_CONTACT_SORT,
-        2,
-        2,
+        PageParams {
+            limit: 2,
+            offset: 2,
+        },
         crate::search::tests::clock(),
     )
     .await
@@ -2081,8 +2091,10 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
         account,
         "",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        PageParams {
+            limit: DEFAULT_LIST_LIMIT,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await
@@ -2293,8 +2305,10 @@ async fn list_contacts_filters_has_messages_and_never_messaged() {
         account,
         "messages:>0",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        PageParams {
+            limit: DEFAULT_LIST_LIMIT,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await
@@ -2307,8 +2321,10 @@ async fn list_contacts_filters_has_messages_and_never_messaged() {
         account,
         "messages:0",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        PageParams {
+            limit: DEFAULT_LIST_LIMIT,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await
@@ -2480,8 +2496,10 @@ async fn names_and_last_heard(
         account,
         "",
         &parse_sort(Some(sort), &CONTACT_SORT_KEYS, &DEFAULT_CONTACT_SORT).unwrap(),
-        DEFAULT_LIST_LIMIT,
-        0,
+        PageParams {
+            limit: DEFAULT_LIST_LIMIT,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await
@@ -2532,8 +2550,10 @@ async fn list_contacts_filters_no_handle() {
         account,
         "identity:none",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        PageParams {
+            limit: DEFAULT_LIST_LIMIT,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await
@@ -2584,8 +2604,10 @@ async fn list_contacts_filters_service_or() {
         account,
         "service:imessage,sms",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        PageParams {
+            limit: DEFAULT_LIST_LIMIT,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await
@@ -2978,8 +3000,10 @@ async fn unknown_group_collects_contacts_missing_a_name_or_an_identity() {
         account,
         "group:unknown",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        PageParams {
+            limit: DEFAULT_LIST_LIMIT,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await
@@ -3008,8 +3032,10 @@ async fn unknown_group_collects_contacts_missing_a_name_or_an_identity() {
         account,
         "group:unknown",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        PageParams {
+            limit: DEFAULT_LIST_LIMIT,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await
@@ -3042,8 +3068,10 @@ async fn list_contacts_filters_by_group_and_no_group() {
         account,
         "group:Family",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        PageParams {
+            limit: DEFAULT_LIST_LIMIT,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await
@@ -3057,8 +3085,10 @@ async fn list_contacts_filters_by_group_and_no_group() {
         account,
         r#"group:"Family""#,
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        PageParams {
+            limit: DEFAULT_LIST_LIMIT,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await
@@ -3070,8 +3100,10 @@ async fn list_contacts_filters_by_group_and_no_group() {
         account,
         "group:none",
         &DEFAULT_CONTACT_SORT,
-        DEFAULT_LIST_LIMIT,
-        0,
+        PageParams {
+            limit: DEFAULT_LIST_LIMIT,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await

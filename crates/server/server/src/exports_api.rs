@@ -502,8 +502,7 @@ pub(crate) async fn list_export_messages(
         ExportPageOpts {
             export_id,
             total,
-            limit: page.limit,
-            offset: page.offset,
+            page,
             order,
         },
     )

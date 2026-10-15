@@ -130,8 +130,7 @@ pub async fn list_conversations_sorted(
     account_id: i64,
     q: &str,
     order: &[SortKey<ConversationSort>],
-    limit: usize,
-    offset: usize,
+    page: PageParams,
     clock: (chrono_tz::Tz, chrono::NaiveDate),
 ) -> Result<Page<ConversationSummary>, ApiError> {
     let (zone, today) = clock;
@@ -152,9 +151,9 @@ pub async fn list_conversations_sorted(
     let total = total.max(0) as u64;
 
     let mut params = filter.params().to_vec();
-    params.push(SqlParam::Int(limit as i64));
+    params.push(SqlParam::Int(page.limit as i64));
     params.push(SqlParam::Int(
-        i64::try_from(offset).map_err(anyhow::Error::from)?,
+        i64::try_from(page.offset).map_err(anyhow::Error::from)?,
     ));
     // The sort reads computed columns (`last_message_at`, `message_count`)
     // inside expressions. Sorting the rows as a derived table makes those
@@ -165,7 +164,7 @@ pub async fn list_conversations_sorted(
         order_by = conversation_order_by(order),
     );
     let out = load_conversation_rows(conn, account_id, sqlx::AssertSqlSafe(sql), &params).await?;
-    Ok(page_from_rows(out, total, PageParams { limit, offset }))
+    Ok(page_from_rows(out, total, page))
 }
 
 /// One conversation by id, scoped to `account_id`. `None` when the id does

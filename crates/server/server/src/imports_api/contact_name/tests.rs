@@ -427,8 +427,10 @@ async fn listed_conversations(
         account_id,
         q,
         &crate::db::conversations::DEFAULT_CONVERSATION_SORT,
-        50,
-        0,
+        crate::paging::PageParams {
+            limit: 50,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await

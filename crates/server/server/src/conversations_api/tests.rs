@@ -25,8 +25,7 @@ async fn list_conversations(
         account_id,
         q,
         &DEFAULT_CONVERSATION_SORT,
-        limit,
-        offset,
+        crate::paging::PageParams { limit, offset },
         crate::search::tests::clock(),
     )
     .await
@@ -267,8 +266,10 @@ async fn list_conversations_sorts_by_date_or_message_count() {
             account,
             "",
             &[crate::paging::SortKey { key, direction }],
-            DEFAULT_LIST_LIMIT,
-            0,
+            crate::paging::PageParams {
+                limit: DEFAULT_LIST_LIMIT,
+                offset: 0,
+            },
             crate::search::tests::clock(),
         )
         .await
@@ -394,8 +395,10 @@ async fn list_queries_enforce_search_limits() {
             account,
             query,
             &crate::db::contacts::read::DEFAULT_CONTACT_SORT,
-            DEFAULT_LIST_LIMIT,
-            0,
+            crate::paging::PageParams {
+                limit: DEFAULT_LIST_LIMIT,
+                offset: 0,
+            },
             crate::search::tests::clock(),
         )
         .await
@@ -1024,8 +1027,10 @@ async fn duplicate_only_threads_have_no_last_message_date_and_sort_last() {
                 key: ConversationSort::Date,
                 direction,
             }],
-            DEFAULT_LIST_LIMIT,
-            0,
+            crate::paging::PageParams {
+                limit: DEFAULT_LIST_LIMIT,
+                offset: 0,
+            },
             crate::search::tests::clock(),
         )
         .await
@@ -1057,8 +1062,10 @@ async fn duplicate_only_threads_have_no_last_message_date_and_sort_last() {
         account,
         &q,
         &[],
-        DEFAULT_LIST_LIMIT,
-        0,
+        crate::paging::PageParams {
+            limit: DEFAULT_LIST_LIMIT,
+            offset: 0,
+        },
         crate::search::tests::clock(),
     )
     .await
