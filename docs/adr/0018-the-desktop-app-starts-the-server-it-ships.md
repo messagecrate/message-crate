@@ -124,3 +124,14 @@ with a long write usually answers with a problem document, which counts as
 answering. An import can still keep the server from answering in time. The
 app therefore does not kill it while a desktop job runs. Once no job runs,
 two more checks in a row that find nothing are needed to kill it.
+
+## Note, 2026-10-15: a server that exits is started again
+
+A server the app started that exits on its own once it is ready, as in a
+crash or an out-of-memory kill, is started again at once (#2089). Before,
+the login card said it stopped and waited for Retry, and an Upload in
+progress had no server until someone noticed. A server that dies at once
+must not be started forever, so the app starts it again at most three times
+within ten minutes; the fourth exit in that time fails the start as before,
+and Retry starts the count again. The app gives each exit the time it found
+it, so the rule that counts them reads no clock and is tested without one.

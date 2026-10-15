@@ -677,6 +677,13 @@ carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-15: **The app starts its own Message Crate again after it stops.**
+  When the Message Crate the desktop app started for itself stopped on its
+  own, as in a crash, the login card said it stopped and waited for you to
+  press Retry, and an Upload in progress lost its server until then. The app
+  now starts it again by itself. A Message Crate that stops four times
+  within ten minutes is not started a fifth time: the login card then says
+  so, and Retry tries again (#2089).
 - 2026-10-14: **A failed Staging, Media Stage, Export or Convert, or a
   paused Upload, says what went wrong in a sentence.** A full disk, a file
   Message Crate is not allowed to use, a missing file, and an ended session
