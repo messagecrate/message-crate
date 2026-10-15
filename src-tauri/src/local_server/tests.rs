@@ -244,9 +244,9 @@ fn own(open: bool) -> Phase {
     }
 }
 
-/// The app's own server exited, found at `found_at`, having written
+/// The app found its own server had exited at `found_at`, having written
 /// `output`.
-fn exited_at(found_at: Instant, output: &str) -> Event {
+fn exit_found_at(found_at: Instant, output: &str) -> Event {
     Event::ChildExited {
         output: output.into(),
         code: Some(1),
@@ -262,7 +262,7 @@ fn exits_at(mut state: State, times: &[Instant]) -> (State, Vec<Action>) {
         if matches!(state.phase, Phase::Starting { .. }) {
             (state, _) = step(state, Event::Listening);
         }
-        (state, actions) = step(state, exited_at(time, "crashed"));
+        (state, actions) = step(state, exit_found_at(time, "crashed"));
     }
     (state, actions)
 }
@@ -273,12 +273,12 @@ fn exits_at(mut state: State, times: &[Instant]) -> (State, Vec<Action>) {
 #[test]
 fn the_apps_own_server_is_started_again_when_it_exits() {
     let now = Instant::now();
-    let (state, actions) = step(at(own(false), false), exited_at(now, "crashed"));
+    let (state, actions) = step(at(own(false), false), exit_found_at(now, "crashed"));
     assert_eq!(actions, [Action::Spawn { open: false }]);
     assert_eq!(state.phase, Phase::Starting { open: false });
 
     // Started the way the person wants it now.
-    let (state, actions) = step(at(own(false), true), exited_at(now, "crashed"));
+    let (state, actions) = step(at(own(false), true), exit_found_at(now, "crashed"));
     assert_eq!(actions, [Action::Spawn { open: true }]);
     assert_eq!(state.phase, Phase::Starting { open: true });
 }
