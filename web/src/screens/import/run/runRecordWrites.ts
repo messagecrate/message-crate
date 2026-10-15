@@ -1,4 +1,4 @@
-import type { UploadFinishedReport } from "../../../lib/tauri";
+import type { UploadFinishedReport } from "../../../lib/desktop/upload";
 import { type RunRecord, recordToCarry } from "../runRecord";
 import type { RunContext } from "./context";
 import { currentPart } from "./scratch";

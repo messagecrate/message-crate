@@ -1,7 +1,7 @@
+import type { DesktopJobResult } from "../../../lib/desktop/job";
 import { CanceledError } from "../../../lib/desktopJobError";
 import { registerRunningUpload } from "../../../lib/runningUpload";
 import { sessionRefused } from "../../../lib/sessionRefusal";
-import type { DesktopJobResult } from "../../../lib/tauri";
 import { importOutcome } from "../importOutcome";
 import { UPLOAD_LABEL } from "../importProgressState";
 import { wholeRun } from "../runRecord";

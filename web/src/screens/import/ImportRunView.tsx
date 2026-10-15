@@ -9,21 +9,17 @@ import VirtualizedImportIssuesTable, {
 import OpenPathButton from "../../components/OpenPathButton";
 import StepProgress, { type Step } from "../../components/StepProgress";
 import { groupSlug, slugPath } from "../../lib/contactGroups";
+import { invokeImportRunLog } from "../../lib/desktop/runLog";
+import type { AttachmentForecast, StagingSummary } from "../../lib/desktop/staging";
+import { ffmpegMissing } from "../../lib/desktop/tools";
 import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
 import { formatBytes } from "../../lib/formatBytes";
 import type { ImportJobFormValues } from "../../lib/importSources/types";
 import { keys } from "../../lib/queryKeys";
 import { useRouteQuery } from "../../lib/routeQuery";
 import { getImport } from "../../lib/serverApi";
-import {
-  type AttachmentForecast,
-  ffmpegMissing,
-  invokeImportRunLog,
-  type MediaToolName,
-  type StagingSummary,
-} from "../../lib/tauri";
 import { isTauri } from "../../lib/tauriCheck";
-import type { AttachmentMediaMode } from "../../lib/types";
+import type { AttachmentMediaMode, MediaToolName } from "../../lib/types";
 import { useToolsStatus } from "../../lib/useToolsStatus";
 import ImportContactsPanel from "../settings/storage/ImportContactsPanel";
 import {

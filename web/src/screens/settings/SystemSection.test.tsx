@@ -42,9 +42,16 @@ vi.mock("../../lib/tauriCheck", () => ({
   isTauri: () => tauriState.isTauri,
 }));
 
-vi.mock("../../lib/tauri", async (importOriginal) => ({
-  toolsDownloading: (await importOriginal<typeof import("../../lib/tauri")>()).toolsDownloading,
-  invokeToolsStatus: () => toolsStatus(),
+vi.mock("../../lib/desktop/export", () => ({
+  invokeExportDirectory: async () => "/home/demo/.local/share/app.messagecrate.desktop/exports",
+}));
+
+vi.mock("../../lib/desktop/localServer", () => ({
+  invokeOpenDataDirectory: () => invokeOpenDataDirectory(),
+  invokeSetOpenToNetwork: (on: boolean) => invokeSetOpenToNetwork(on),
+}));
+
+vi.mock("../../lib/desktop/staging", () => ({
   invokeStagingDirectory: async () => {
     if (desktopStaging.readError !== null) throw desktopStaging.readError;
     return {
@@ -53,10 +60,15 @@ vi.mock("../../lib/tauri", async (importOriginal) => ({
     };
   },
   invokeSetStagingDirectory: (root: string) => setStagingDirectory(root),
-  invokeExportDirectory: async () => "/home/demo/.local/share/app.messagecrate.desktop/exports",
-  invokeOpenDataDirectory: () => invokeOpenDataDirectory(),
-  invokeSetOpenToNetwork: (on: boolean) => invokeSetOpenToNetwork(on),
 }));
+
+vi.mock("../../lib/desktop/tools", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/desktop/tools")>();
+  return {
+    toolsDownloading: actual.toolsDownloading,
+    invokeToolsStatus: () => toolsStatus(),
+  };
+});
 
 afterEach(() => {
   cleanup();

@@ -1,25 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { currentDesktopJob, holdDesktopJob } from "./desktopJob";
-import { CanceledError, DesktopJobError } from "./desktopJobError";
-import type { UploadFinishedReport } from "./tauri";
-import {
-  awaitDesktopJob,
-  invokeCreateRunDir,
-  invokeDeleteRunDir,
-  invokeReadImportRunRecord,
-  invokeSaveDownload,
-  invokeSaveImportRunRecord,
-  invokeSummarizeStaging,
-  invokeTranscodeStaging,
-  parseDesktopJobResult,
-} from "./tauri";
-import type { DesktopJobErrorEvent } from "./types";
-
-const invoke = vi.fn();
-
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (...args: unknown[]) => invoke(...args),
-}));
+import { describe, expect, it, vi } from "vitest";
+import { currentDesktopJob, holdDesktopJob } from "../desktopJob";
+import { CanceledError, DesktopJobError } from "../desktopJobError";
+import type { DesktopJobErrorEvent } from "../types";
+import { awaitDesktopJob, parseDesktopJobResult } from "./job";
+import type { UploadFinishedReport } from "./upload";
 
 const listeners = vi.hoisted(() => new Map<string, (e: { payload: unknown }) => void>());
 
@@ -166,43 +150,6 @@ describe("parseDesktopJobResult", () => {
   });
 });
 
-describe("staging command wrappers name only the directory", () => {
-  const run = "/home/sam/message-crate/staging-run";
-
-  beforeEach(() => {
-    invoke.mockReset();
-    invoke.mockResolvedValue(undefined);
-  });
-
-  // The desktop process keeps the Staging Directory and knows which directories
-  // it made. A Staging Directory path sent from the window would be checked
-  // against the Staging Directory the desktop process holds now, and a run
-  // started under an earlier one would be refused (#1154).
-  it("sends no Staging Directory with any staging command", async () => {
-    await invokeSummarizeStaging({ run_dir: run });
-    await invokeTranscodeStaging({ run_dir: run });
-    await invokeDeleteRunDir({ run_dir: run });
-    await invokeReadImportRunRecord({ run_dir: run });
-    await invokeSaveImportRunRecord({ run_dir: run, record: { issues: [] } });
-
-    expect(invoke.mock.calls).toEqual([
-      ["summarize_staging", { args: { runDir: run } }],
-      ["transcode_staging", { args: { runDir: run } }],
-      ["delete_run_dir", { args: { runDir: run } }],
-      ["read_import_run_record", { args: { runDir: run } }],
-      ["save_import_run_record", { args: { runDir: run, record: { issues: [] } } }],
-    ]);
-  });
-
-  it("asks the desktop process to make a run's directory", async () => {
-    invoke.mockResolvedValue(run);
-
-    await expect(invokeCreateRunDir("imessage-ios")).resolves.toBe(run);
-
-    expect(invoke).toHaveBeenCalledWith("create_run_dir", { label: "imessage-ios" });
-  });
-});
-
 describe("awaitDesktopJob", () => {
   it("holds the desktop job under its name until the job finishes", async () => {
     let seenWhileRunning: string | null = null;
@@ -284,25 +231,5 @@ describe("awaitDesktopJob", () => {
     expect((thrown as Error).message).toBe("Staging failed because of a bug in Message Crate.");
     expect((thrown as DesktopJobError).detail).toBe("the job panicked: index out of bounds");
     expect(log).toEqual(["the job panicked: index out of bounds"]);
-  });
-});
-
-describe("invokeSaveDownload", () => {
-  beforeEach(() => {
-    invoke.mockReset();
-  });
-
-  // Tauri matches arguments by name: a key the command does not take reaches
-  // it as missing, and the download fails before the Save dialog shows.
-  it("hands the desktop app the link and the name under the command's argument names, never the file's bytes", async () => {
-    invoke.mockResolvedValue(true);
-    const url = "http://127.0.0.1:8080/v1/assets/abc?media_link=1.2.sig";
-
-    await expect(invokeSaveDownload(url, "Café clip.mov")).resolves.toBe(true);
-
-    expect(invoke).toHaveBeenCalledExactlyOnceWith("save_download", {
-      url,
-      fileName: "Café clip.mov",
-    });
   });
 });

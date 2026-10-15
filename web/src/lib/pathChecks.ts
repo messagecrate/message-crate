@@ -3,7 +3,7 @@ import {
   invokeHomeDir,
   invokePathStat,
   type PathUnreadable,
-} from "./tauri";
+} from "./desktop/fs";
 
 /** An operating system the desktop app ships for, as the app names it. */
 export type DesktopOs = "macos" | "windows" | "linux";

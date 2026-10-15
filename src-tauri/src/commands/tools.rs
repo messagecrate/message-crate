@@ -404,7 +404,7 @@ mod tests {
 
     /// A download in progress is sent with its bytes so far and its total,
     /// and a failed one with its reason, in the shape the window reads
-    /// (`ToolStatus` in `web/src/lib/tauri.ts`).
+    /// (`ToolStatus` in `web/src/lib/desktop/tools.ts`).
     #[test]
     fn a_download_is_sent_as_its_progress_or_its_failure() {
         let downloading = ToolStatus::Missing.with_download(Some(DownloadState::Downloading {

@@ -1,6 +1,6 @@
 import type { ImportIssue, ImportNote } from "../../components/import/ImportSummaryPanel";
 import { isIssueStage } from "../../components/import/importIssueStage";
-import type { UploadFinishedReport } from "../../lib/tauri";
+import type { UploadFinishedReport } from "../../lib/desktop/upload";
 import type { ConversationStatus, StagedStatus } from "../../lib/types";
 
 /**

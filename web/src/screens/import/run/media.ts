@@ -1,11 +1,8 @@
+import type { TranscodeFinishedReport } from "../../../lib/desktop/staging";
+import { ffmpegMissing } from "../../../lib/desktop/tools";
 import { CanceledError } from "../../../lib/desktopJobError";
 import type { ImportJobFormValues } from "../../../lib/importSources/types";
-import {
-  ffmpegMissing,
-  type MediaToolName,
-  type TranscodeFinishedReport,
-} from "../../../lib/tauri";
-import type { AttachmentMediaMode } from "../../../lib/types";
+import type { AttachmentMediaMode, MediaToolName } from "../../../lib/types";
 import { MEDIA_LABEL } from "../importProgressState";
 import { mediaJobVerb } from "../reviewForecast";
 import type { OpenRun, RunContext } from "./context";

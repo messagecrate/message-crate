@@ -11,17 +11,17 @@ import { useRunDesktopJob } from "../hooks/useRunDesktopJob";
 import { getBaseUrl } from "../lib/api";
 import { errorLine, errorText } from "../lib/apiErrorMessage";
 import { useAuth } from "../lib/authContext";
-import { holdDesktopJob } from "../lib/desktopJob";
-import { writeInExportDir } from "../lib/exportDir";
-import { createRunCancel, type RunCancel } from "../lib/runCancel";
-import { parseSelectKey } from "../lib/selectKey";
 import {
   EXPORT_FORMATS,
   type ExportFormat,
   type ExportQueryList,
   invokeExport,
   invokeFormat,
-} from "../lib/tauri";
+} from "../lib/desktop/export";
+import { holdDesktopJob } from "../lib/desktopJob";
+import { writeInExportDir } from "../lib/exportDir";
+import { createRunCancel, type RunCancel } from "../lib/runCancel";
+import { parseSelectKey } from "../lib/selectKey";
 import { isTauri } from "../lib/tauriCheck";
 
 /**
