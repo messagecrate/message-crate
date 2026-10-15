@@ -52,6 +52,8 @@ Before the rebuild drops its tables, the server copies it with `VACUUM INTO` to 
 `reset-demo` refuses a database at another fingerprint before it takes a snapshot, because the snapshot would be rebuilt and its copy kept in the reset's work directory, which is deleted.
 `serve` keeps the copy beside the database and rebuilds it, and a reset can follow.
 The schema is made sure of only when the pool opens and when `reset-demo` builds a database, never by a request, so a request never rebuilds a database the server is serving.
+Every other command refuses to rebuild a database while a server or `reset-demo` has it open, naming the database and saying to stop the server, because the server would go on answering from the empty database until it restarted.
+The command takes the database's operation lock (`<database>.operation.lock`, the lock `serve` and `reset-demo` hold) for the rebuild, and a database at this build's fingerprint opens beside a running server as before.
 
 ### Video and audio conversions
 
