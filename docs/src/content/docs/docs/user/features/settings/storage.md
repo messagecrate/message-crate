@@ -151,8 +151,8 @@ A table then counts them by kind of failure, with one column for **No Thumbnail*
 |---|---|
 | **Conversion failed** | ffmpeg could not read or convert the file |
 | **Stopped making progress** | ffmpeg stopped making progress for a while, so the server stopped it |
-| **Damaged, ran past its length** | ffmpeg ran past twice the file's length, as it does looping on a damaged file, so the server stopped it |
-| **Took too long** | Reading one frame of the file did not finish in time |
+| **Damaged, ran past its length** | ffmpeg ran past twice a video's length, as it does looping on a damaged file, so the server stopped it |
+| **Took too long** | Reading one frame of the file, or converting an audio file, did not finish in time |
 | **Original file missing** | The server holds no copy of the file |
 | **Server problem** | Anything else that went wrong on the server |
 
