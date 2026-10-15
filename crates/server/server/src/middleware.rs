@@ -1,6 +1,6 @@
 //! The layers a request passes through before and after its handler: CORS,
-//! the body limits, the `Accept` check, `Cache-Control`, the protective
-//! headers, the panic catch and the request's log line, with the request
+//! the body limits, the `Accept` check, `Cache-Control`, the Content Security
+//! Policy, the panic catch and the request's log line, with the request
 //! classifiers they decide by and the URI a log line names.
 
 use axum::http::{HeaderValue, StatusCode, header};
@@ -414,6 +414,7 @@ pub(crate) const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src
      media-src 'self' blob: http: https:; connect-src 'self' http: https:; \
      font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'; \
      frame-ancestors 'none'";
+
 /// The answer to a request whose handler panicked: the `500 Internal Server
 /// Error` problem document every internal failure answers, with the
 /// request's id, so the person has an id to report. Its `ERROR` line says

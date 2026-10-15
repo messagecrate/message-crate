@@ -351,8 +351,9 @@ mod tests {
     #[tokio::test]
     async fn a_json_body_over_the_auth_router_body_limit_is_a_json_413() {
         let fixture = test_fixture().await;
-        // The auth router caps request bodies at 32 KiB (server.rs,
-        // `limited_auth_router`); pad well past it with a valid JSON string.
+        // The auth router (`limited_auth_router` in server.rs) caps request
+        // bodies at 32 KiB (`MAX_AUTH_BODY_BYTES` in limits.rs); pad well
+        // past it with a valid JSON string.
         let padding = "a".repeat(64 * 1024);
         let body = serde_json::json!({ "username": padding, "password": PASSWORD }).to_string();
         let (status, text) = post_raw(
