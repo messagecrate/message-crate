@@ -676,7 +676,7 @@ async fn load_tapbacks(
         |placeholders| {
             format!(
                 "SELECT t.message_id, t.part_index, t.kind, t.emoji, t.is_from_me,
-                    hs.raw AS sender
+                    hs.raw AS sender, t.sender_display_name
              FROM tapbacks t
              LEFT JOIN handles hs ON hs.id = t.sender_handle_id
              WHERE t.message_id IN ({placeholders})
@@ -692,6 +692,7 @@ async fn load_tapbacks(
                     emoji: row.try_get(3)?,
                     is_from_me: row.try_get::<i64, _>(4)? != 0,
                     sender: row.try_get(5)?,
+                    sender_display_name: row.try_get(6)?,
                 },
             ))
         },

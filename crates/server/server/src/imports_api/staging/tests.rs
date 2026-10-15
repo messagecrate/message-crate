@@ -568,6 +568,41 @@ async fn a_whatsapp_lid_chat_its_participant_and_its_sender_are_one_other_identi
     assert_eq!(contacts, 1, "the one person in the chat is one contact");
 }
 
+/// A WhatsApp conversation is on WhatsApp whatever its source is named. An
+/// Export Run writes the server's source name into `export.source`, so a
+/// WhatsApp conversation stored under `wa-2024` comes back with that name.
+/// Its service came from the source name alone, so it was read as Text
+/// Message and its `@lid` participant became an email identity there
+/// (#2050).
+#[tokio::test]
+async fn a_whatsapp_conversation_is_on_whatsapp_whatever_its_source_is_named() {
+    let (pool, _dir) = crate::test_support::schema_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let body = conversation_header("wa-2024", "123456@lid")
+        .participant("123456@lid", None)
+        .line()
+        + &incoming_whatsapp("g-renamed-1", "123456@lid");
+    import_one(&mut conn, "123456@lid.jsonl", &body)
+        .await
+        .unwrap();
+
+    let handles: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT raw, service, handle_type FROM handles WHERE account_id = $1 ORDER BY raw",
+    )
+    .bind(TEST_ACCOUNT)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(
+        handles,
+        [(
+            "123456@lid".to_string(),
+            "whatsapp".to_string(),
+            "other".to_string()
+        )]
+    );
+}
+
 /// An incoming line from `sender` on a service the model does not know, as
 /// Apple Messages writes a message sent by satellite.
 fn incoming_unknown_service(guid: &str, sender: &str) -> String {

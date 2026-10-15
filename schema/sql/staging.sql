@@ -151,7 +151,10 @@ CREATE TABLE IF NOT EXISTS staging_tapbacks (
     -- 1 = reaction from the account holder; 0 = from someone else.
     is_from_me INTEGER NOT NULL,
     -- Reactor identity handle id; NULL when unknown.
-    sender_handle_id INTEGER
+    sender_handle_id INTEGER,
+    -- The reactor's name when the source gave no address, as
+    -- `tapbacks.sender_display_name`.
+    sender_display_name TEXT
 );
 
 CREATE INDEX IF NOT EXISTS ix_staging_tapbacks_message_id ON staging_tapbacks (message_id);
