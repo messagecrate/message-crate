@@ -386,21 +386,23 @@ impl Verbose<'_> {
         }
     }
 
-    /// List the first twenty Import Errors from the report, and how many more there were.
+    /// List the first twenty Import Errors from the report, and how many
+    /// more there were, as warnings: each is something the run went on
+    /// without.
     fn errors(self, report: &ExportReport) {
         if !self.enabled || report.errors.is_empty() {
             return;
         }
-        self.log.emit(format!(
+        self.log.warn(format!(
             "{}:",
             count_of(report.errors.len() as u64, "Import Error", "Import Errors")
         ));
         for err in report.errors.iter().take(20) {
-            self.log.emit(format!("  {err}"));
+            self.log.warn(format!("  {err}"));
         }
         if report.errors.len() > 20 {
             self.log
-                .emit(format!("  … and {} more", report.errors.len() - 20));
+                .warn(format!("  … and {} more", report.errors.len() - 20));
         }
     }
 }
@@ -788,6 +790,37 @@ mod tests {
 
     /// An EML given as an input is recorded under its own file name. An EML
     /// found in a directory input is recorded under its path inside that directory.
+    /// The verbose list of Import Errors is what the run went on without, so
+    /// every line of it is at `WARN` (#2047).
+    #[test]
+    fn the_verbose_import_errors_are_warnings() {
+        let (log, recorded) = message_crate_core::testutil::recorded_log();
+        let report = ExportReport {
+            errors: vec!["a.eml: no Date header".to_string()],
+            ..ExportReport::default()
+        };
+
+        Verbose {
+            enabled: true,
+            log: &log,
+        }
+        .errors(&report);
+
+        assert_eq!(
+            *recorded.lock().unwrap(),
+            [
+                (
+                    message_crate_core::RunLogLevel::Warn,
+                    "1 Import Error:".to_string()
+                ),
+                (
+                    message_crate_core::RunLogLevel::Warn,
+                    "  a.eml: no Date header".to_string()
+                ),
+            ]
+        );
+    }
+
     #[test]
     fn an_eml_given_as_a_file_input_is_recorded_under_its_file_name() {
         let file = PathBuf::from("/backups/single/one.eml");

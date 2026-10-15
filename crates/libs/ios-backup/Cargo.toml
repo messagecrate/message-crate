@@ -36,6 +36,7 @@ chat-db-fixture = { path = "../../helpers/chat-db-fixture" }
 # This crate's own integration tests build the real program through
 # `reader_build`, which the feature opens.
 ios-backup = { path = ".", features = ["testutil"] }
+message-crate-core = { path = "../../core/message-crate-core", features = ["testutil"] }
 
 [lints]
 workspace = true

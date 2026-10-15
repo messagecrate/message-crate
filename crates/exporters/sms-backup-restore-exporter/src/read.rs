@@ -3,7 +3,7 @@
 use anyhow::{Result, bail};
 
 use message_crate_core::{
-    AttachmentFiles, Counter, DUPLICATES_DROPPED, ItemKind, SKIPPED_INVALID_DATE,
+    AttachmentFiles, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, SKIPPED_INVALID_DATE,
     SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART, Sinks, check_cancel,
     document_messages, import_error_lines, item_line,
 };
@@ -177,6 +177,29 @@ impl ReadReport {
             .map(|(counter, count)| counter.line(count))
             .chain(import_error_lines(&self.errors))
             .collect()
+    }
+
+    /// Write [`Self::log_lines`] to `log`, each at its level: a count of
+    /// what was read, or of repeated copies dropped, whose message is kept
+    /// once, as a line; a count of what the run went on without, and every
+    /// line under the Import Errors heading, as a warning.
+    pub fn write_log(&self, log: &LogSink) {
+        /// The counts of what the run kept.
+        const KEPT: [Counter; 3] = [SMS_SEEN, MMS_SEEN, DUPLICATES_DROPPED];
+        for (counter, count) in self.counts() {
+            if count == 0 {
+                continue;
+            }
+            let line = counter.line(count);
+            if KEPT.iter().any(|kept| kept.key() == counter.key()) {
+                log.emit(line);
+            } else {
+                log.warn(line);
+            }
+        }
+        for line in import_error_lines(&self.errors) {
+            log.warn(line);
+        }
     }
 }
 

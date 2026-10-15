@@ -340,7 +340,7 @@ fn check_macos_only_path(
         bail!("{missing}");
     }
     if platform == Platform::Ios {
-        log.emit(ignored_on_ios);
+        log.warn(ignored_on_ios);
     }
     Ok(())
 }

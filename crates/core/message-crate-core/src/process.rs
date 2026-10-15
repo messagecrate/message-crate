@@ -20,10 +20,11 @@ type LineCallback = Arc<dyn Fn(&str) + Send + Sync>;
 /// lines passes [`LogSink::none`]: a library never decides on its own to
 /// print a run's lines.
 ///
-/// A line is something the run did. A warning is the output of a step that
-/// failed. The desktop app writes a warning into the Import Run's log at
-/// warning level (`docs/architecture/import-run-logs.md`). A sink with no
-/// warning callback takes a warning as a line.
+/// A line is something the run did. A warning is something the run went on
+/// without, such as an attachment it could not read or a record it skipped
+/// (`docs/architecture/import-run-logs.md`). The desktop app writes a line
+/// into the Import Run's log at `INFO` and a warning at `WARN`. A sink with
+/// no warning callback takes a warning as a line.
 #[derive(Clone)]
 pub struct LogSink {
     line: LineCallback,

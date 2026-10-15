@@ -184,6 +184,37 @@ mod faults {
         helper.finish().unwrap();
     }
 
+    /// A warning from the program reaches the run's log as a warning, at
+    /// `WARN`, and a log line as a line, at `INFO` (#2047).
+    #[test]
+    fn a_warning_from_the_program_is_a_warning_on_the_run_s_log() {
+        use message_crate_core::RunLogLevel;
+        use message_crate_core::testutil::recorded_log;
+
+        let dir = tempfile::tempdir().unwrap();
+        let body = format!(
+            "echo '{{\"event\":\"log\",\"line\":\"opening\"}}'\n\
+             echo '{{\"event\":\"warning\",\"line\":\"Contacts could not be read\"}}'\n\
+             {}",
+            source_line(PROTOCOL_VERSION)
+        );
+        let path = fake_helper(dir.path(), &body);
+        let (log, recorded) = recorded_log();
+        let mut helper =
+            crate::Helper::spawn_at(&path, &identities_request(), log, ProgressSink::none())
+                .expect("start the fake helper");
+
+        assert!(matches!(helper.next_event().unwrap(), Event::Source { .. }));
+        helper.finish().unwrap();
+        assert_eq!(
+            *recorded.lock().unwrap(),
+            [
+                (RunLogLevel::Info, "opening".to_string()),
+                (RunLogLevel::Warn, "Contacts could not be read".to_string()),
+            ]
+        );
+    }
+
     #[test]
     fn a_line_that_is_not_json_is_named_in_the_error() {
         let dir = tempfile::tempdir().unwrap();
