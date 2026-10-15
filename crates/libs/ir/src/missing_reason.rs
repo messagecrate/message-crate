@@ -1,8 +1,9 @@
 //! The closed set of values an [`Attachment::missing_reason`] takes.
 //!
-//! Every writer and reader of the field uses these, so a misspelled reason
-//! does not compile. The strings are what the conversation file and the
-//! server store, so they never change with a rename here.
+//! Every writer and reader of the field in Rust uses these rather than
+//! writing the string again. The strings are what the conversation file and
+//! the server store, so they never change with a rename here; tests compare
+//! against the literal strings to catch a change.
 //!
 //! [`Attachment::missing_reason`]: crate::Attachment::missing_reason
 
@@ -27,11 +28,7 @@ pub const NO_PATH: &str = "no_path";
 
 /// The start of the reason for a file that could not be converted; the
 /// detail follows it ([`convert_failed`]).
-pub const CONVERT_FAILED_PREFIX: &str = "convert_failed: ";
-
-/// The start of a reason Message Crate does not recognize; the raw reason
-/// follows it.
-pub const UNKNOWN_PREFIX: &str = "unknown: ";
+const CONVERT_FAILED_PREFIX: &str = "convert_failed: ";
 
 /// The reason for a file that could not be converted, with `detail` saying
 /// why: `convert_failed: <detail>`.

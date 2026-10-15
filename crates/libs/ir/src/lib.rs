@@ -554,9 +554,9 @@ pub struct Message {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reply_to: Option<ReplyTo>,
     /// Apple extensions; `None` for non-iMessage messages.
-    pub imessage: Option<Imessage>,
+    pub imessage: Option<ImessageExtensions>,
     /// Vendor leftovers (Android type code and raw fields).
-    pub source: Option<Source>,
+    pub source: Option<VendorFields>,
 }
 
 /// Whether the owner sent or received the message.
@@ -660,7 +660,7 @@ pub struct Attachment {
     /// None when the attachment was imported; set only when bytes were
     /// skipped, to one of the closed set in [`missing_reason`]:
     /// `file_missing`, `too_large`, `not_copied`, `not_fetched`, `no_path`,
-    /// `convert_failed: <detail>`, or `unknown: <raw>`.
+    /// or `convert_failed: <detail>`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub missing_reason: Option<String>,
     /// In-memory bytes for EML embedding; never written to JSON.
@@ -670,7 +670,7 @@ pub struct Attachment {
 
 /// Vendor leftovers. Display names live on `sender_display_name`, not here.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct Source {
+pub struct VendorFields {
     /// Android `type` attribute from the source (e.g. 1 = received, 2 = sent).
     pub android_type: Option<i32>,
     /// Raw vendor attributes; display names never live here.
@@ -678,7 +678,7 @@ pub struct Source {
     pub fields: Map<String, Value>,
 }
 
-impl Source {
+impl VendorFields {
     /// True when no vendor leftovers were recorded.
     pub fn is_empty(&self) -> bool {
         self.android_type.is_none() && self.fields.is_empty()
@@ -692,7 +692,7 @@ impl Source {
 
 /// iMessage extensions. Nested Apple blobs remain JSON values (not strings).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct Imessage {
+pub struct ImessageExtensions {
     /// iMessage send effect (e.g. `slam`).
     pub send_effect: Option<String>,
     /// Shared-location payload.
@@ -721,7 +721,7 @@ pub struct Imessage {
     pub tapback_action: Option<String>,
 }
 
-impl Imessage {
+impl ImessageExtensions {
     /// True when every field is unset (`None`).
     pub fn is_empty(&self) -> bool {
         self.send_effect.is_none()
