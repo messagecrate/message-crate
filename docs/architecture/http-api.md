@@ -783,8 +783,17 @@ Every answer, the website's built files as well as `/v1`, `/health` and the
 OpenAPI UI, carries `Content-Security-Policy`, `X-Content-Type-Options:
 nosniff` and `Referrer-Policy: no-referrer`, unless the route sets the header
 itself (#2073). The policy runs only the server's own script files, never
-inline script, refuses plugins, and forbids any site to frame a page
-(`frame-ancestors 'none'`). Styles may be inline, because the website's
+inline script. It refuses plugins (`object-src 'none'`), because a plugin
+runs code the script rule does not govern. It forbids any site to frame a
+page (`frame-ancestors 'none'`), so no other site can show the login card
+inside its own page and trick a person into typing there. A `<base>` element
+may point only at the server (`base-uri 'self'`), so injected markup cannot
+send the website's relative script paths elsewhere. No form submits
+anywhere (`form-action 'none'`), because the website sends everything with
+`fetch` and an injected form could post a password to another site. Fonts
+may come only from the server or a `data:` URL (`font-src 'self' data:`), as
+in the desktop window's policy; the website loads no font from another host.
+Styles may be inline, because the website's
 components set `style` attributes. `connect-src`, `img-src` and `media-src`
 allow other hosts over `http:` and `https:`, because the login card's
 **Change server address** points the website at another server, and allow
