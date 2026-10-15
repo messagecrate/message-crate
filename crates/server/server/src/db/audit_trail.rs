@@ -16,6 +16,11 @@
 //! (`docs/adr/0008-the-owner-holds-no-messages.md`,
 //! `docs/adr/0020-the-audit-trail-outlives-the-account.md`).
 //!
+//! An entry keeps the id of the request that wrote it
+//! ([`crate::request_id::current`]), so the owner finds that request's lines
+//! in the server's log by it. An entry written outside a request, by a server
+//! command or the first start's Demo Account build, keeps none (#2276).
+//!
 //! A refused login as a username no account holds keeps the username,
 //! trimmed, only when `require_valid_username` accepts it
 //! ([`record_refused_login`]), because a person whose browser fills the
@@ -473,6 +478,12 @@ pub struct AuditEntry {
     /// or `null` when the text typed could not be a username. Kept after the
     /// account is deleted.
     pub username: Option<String>,
+    /// The id of the request that wrote the entry, as its response's
+    /// `x-request-id` and the request's lines in the server's log carry it.
+    /// `null` for an entry written outside a request, by a server command or
+    /// the Demo Account build of the server's first start, and for a run and
+    /// a session that expired, which no one request wrote.
+    pub request_id: Option<String>,
     /// `session_ended`: how the Session ended. `login_refused`: why.
     pub reason: Option<AuditReason>,
     /// The app the request named, `desktop` or `website`.
@@ -549,6 +560,7 @@ impl AuditEntry {
             account_id,
             account_deleted,
             username,
+            request_id: None,
             reason: None,
             app: None,
             app_build: None,
@@ -746,12 +758,13 @@ async fn insert(
         .transpose()?;
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO audit_entries (
-            at, action, actor, account_id, username, reason, app_kind, app_build,
-            session_entry_id, session_expires_at, details
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            at, request_id, action, actor, account_id, username, reason, app_kind,
+            app_build, session_entry_id, session_expires_at, details
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING id",
     )
     .bind(at_text(now))
+    .bind(crate::request_id::current())
     .bind(entry.action.as_str())
     .bind(entry.actor.as_str())
     .bind(entry.account_id)
@@ -1182,7 +1195,7 @@ pub async fn deleted_accounts_page(
 /// An entry of `audit_entries` as the interface hands it out.
 async fn load_entry(conn: &mut SqliteConnection, id: i64) -> Result<Option<AuditEntry>> {
     let row = sqlx::query(concat!(
-        "SELECT id, at, action, actor, account_id, ",
+        "SELECT id, at, request_id, action, actor, account_id, ",
         account_deleted_sql!("audit_entries"),
         ", username, reason, app_kind, app_build, details
          FROM audit_entries WHERE id = $1"
@@ -1222,6 +1235,7 @@ async fn load_entry(conn: &mut SqliteConnection, id: i64) -> Result<Option<Audit
         contacts_deleted: details.contacts_deleted,
         asset_max_bytes: details.asset_max_bytes,
         demo_data_size: details.demo_data_size,
+        request_id: row.try_get("request_id")?,
         ..AuditEntry::new(
             row.try_get("id")?,
             action,
