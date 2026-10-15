@@ -25,6 +25,10 @@ Without it, Docker publishes port 8080 on every network the computer is connecte
 docker run -d --name message-crate \
   --stop-timeout 40 \
   --restart unless-stopped \
+  --cap-drop ALL \
+  --security-opt no-new-privileges:true \
+  --read-only \
+  --tmpfs /tmp \
   -p 8080:8080 \
   -v message-crate-data:/app/data \
   bitrealm/message-crate:latest
@@ -39,8 +43,16 @@ The server speaks plain HTTP.
 Passwords, Session tokens, and messages cross the network unencrypted, so anyone who can listen on that network can read them.
 
 That is acceptable on a home network where every device is trusted.
-Anything beyond that, such as reaching the Message Crate from the internet, needs a reverse proxy with TLS in front of the server.
-Setting one up is outside this guide.
+Anything beyond that, such as reaching the Message Crate from the internet, needs a reverse proxy in front of the server that adds both TLS and a sign-in of its own.
+A visitor then signs in to the proxy before any request reaches the server.
+TLS encrypts passwords and messages on their way across the network.
+It still lets anyone reach the server's login and the Demo Account.
+The account login keeps one account's messages apart from another's.
+It is not built to stand alone on the internet.
+The Demo Account opens with no password.
+A user account can have no password at all.
+A password has no minimum length.
+Setting up the proxy is outside this guide.
 
 Three things matter more once other computers can reach the server:
 
