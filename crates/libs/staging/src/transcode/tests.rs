@@ -1511,10 +1511,8 @@ fn a_failed_conversion_records_why_ffmpeg_failed() {
 }
 
 /// The reason an attachment records when ffmpeg failed on it is the last
-/// line ffmpeg wrote, with no path in it: the same reason the attachment
-/// jobs record for the same failure (`message-crate-core`'s
-/// `a_failed_conversion_records_the_short_reason_the_media_stage_records`)
-/// (#2801). The whole error, path and all, goes in the row for the log.
+/// line ffmpeg wrote, with no path in it (#2801). The whole error, path and
+/// all, goes in the row for the log.
 #[test]
 fn a_failed_conversion_records_the_reason_the_attachment_jobs_record() {
     let tools = media::testutil::FakeTools::new().failing_on("-q:v");

@@ -15,7 +15,6 @@ message-ir = { path = "../../libs/ir" }
 message-ir-format = { path = "../../libs/ir-format" }
 message-staging = { path = "../../libs/staging" }
 message-csv = { path = "../../libs/csv" }
-media = { path = "../../libs/media" }
 phone = { path = "../../libs/phone" }
 mms-parts = { path = "../../libs/mms-parts" }
 sbr = { path = "../../libs/sbr" }
