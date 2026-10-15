@@ -164,8 +164,9 @@ export function useWhatsappPathStats(paths: WhatsappPathsKey): WhatsappPathStats
 
 /**
  * What the backup path of an Android SMS source points at: one `.xml` file
- * for SMS Backup & Restore, a directory for the others. Another source
- * starts empty, because each takes another kind of path.
+ * for SMS Backup & Restore, a directory for the others. Any change empties
+ * it until the new path is checked, so the old path's kind never lets Import
+ * start on the new one.
  */
 export function useAndroidSmsPathStats(paths: AndroidSmsPathsKey): AndroidSmsPathStats {
   return useSettledPathProbe<AndroidSmsPathsKey, AndroidSmsPathStats>(paths, {
@@ -173,6 +174,6 @@ export function useAndroidSmsPathStats(paths: AndroidSmsPathsKey): AndroidSmsPat
     isMethod: isAndroidSmsSource,
     probe: async (settled) => ({ backup: await probePath(settled.backupPath) }),
     empty: ANDROID_SMS_NO_STATS,
-    keepWhileTyping: true,
+    keepWhileTyping: false,
   });
 }
