@@ -124,7 +124,8 @@ number `+6555550100` is written `'+6555550100`.
 CSV quoting does not prevent this, because a spreadsheet removes the quotes
 and then reads the cell as typed.
 The code is `written_cell` and `read_cell` in `message-csv`
-(`crates/libs/csv/src/lib.rs`), which every CSV Message Crate writes uses.
+(`crates/libs/csv/src/lib.rs`). Every CSV file Message Crate writes goes
+through them.
 
 The load takes off one `'` that comes before one of those characters, in any
 column.

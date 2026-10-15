@@ -147,6 +147,16 @@ enum Target {
     New,
 }
 
+impl Target {
+    /// The id of the contact the account holds, or `None` for a new one.
+    fn known_id(self) -> Option<i64> {
+        match self {
+            Self::Known(id) => Some(id),
+            Self::New => None,
+        }
+    }
+}
+
 /// One identity a file contact lists.
 #[derive(Debug)]
 struct FileIdentity {
@@ -623,11 +633,7 @@ impl Gathering {
         errors: &mut Vec<String>,
     ) {
         let contact = &mut self.file[at];
-        let known = match contact.target {
-            Target::Known(id) => Some(id),
-            Target::New => None,
-        };
-        match row_identity(row, known, snapshot) {
+        match row_identity(row, contact.target.known_id(), snapshot) {
             Err(reason) => errors.push(reason),
             Ok(None) => {}
             Ok(Some(identity)) => match self.listed.get(&identity.key) {
@@ -750,12 +756,7 @@ fn check_identities_may_move(
 
 /// The contacts the account holds that the file speaks for.
 fn known_contacts(file: &[FileContact]) -> HashSet<i64> {
-    file.iter()
-        .filter_map(|c| match c.target {
-            Target::Known(id) => Some(id),
-            Target::New => None,
-        })
-        .collect()
+    file.iter().filter_map(|c| c.target.known_id()).collect()
 }
 
 /// Check every row and gather the rows into contacts. Every broken rule is
@@ -994,6 +995,10 @@ impl<'a> LoadState<'a> {
 
 /// Write a checked file, stamping each contact it changes `now`. Nothing
 /// here refuses: [`plan`] already has.
+///
+/// The steps run in this order, each reading what the ones before it left
+/// in [`LoadState`]: [`delete_empty_contacts`] and [`stamp_changed_contacts`]
+/// empty the sets they read, so no step that needs those sets can follow them.
 async fn apply(
     tx: &mut WriteTx<'_>,
     account_id: i64,
@@ -1004,13 +1009,11 @@ async fn apply(
 ) -> Result<LoadCounts> {
     let conn: &mut SqliteConnection = tx;
     let mut state = LoadState::new(account_id, snapshot, mode, file.len());
-    take_listed_identities(conn, &mut state, file, now).await?;
-    if mode == LoadMode::Edit {
-        release_unlisted_identities(conn, &mut state).await?;
-    }
+    place_file_contacts(conn, &mut state, file, now).await?;
+    release_unlisted_identities(conn, &mut state).await?;
     delete_empty_contacts(conn, &mut state).await?;
     stamp_changed_contacts(conn, &mut state, file, now).await?;
-    write_notes(&mut state, file);
+    state.counts.notes = notes_in_row_order(file);
     Ok(state.counts)
 }
 
@@ -1018,7 +1021,7 @@ async fn apply(
 /// and its Contact Groups. Removal of an identity waits until all of them
 /// have, so an identity that goes from one file contact to another is one
 /// move, whichever of the two comes first in the file.
-async fn take_listed_identities(
+async fn place_file_contacts(
     conn: &mut SqliteConnection,
     state: &mut LoadState<'_>,
     file: &[FileContact],
@@ -1195,6 +1198,9 @@ async fn release_unlisted_identities(
     conn: &mut SqliteConnection,
     state: &mut LoadState<'_>,
 ) -> Result<()> {
+    if state.mode != LoadMode::Edit {
+        return Ok(());
+    }
     for (contact_id, listed) in &state.placed {
         let mut unlisted: Vec<i64> = state
             .holder_of
@@ -1247,16 +1253,16 @@ async fn stamp_changed_contacts(
     Ok(())
 }
 
-/// The notes in the order of the file's rows, which a contact's rows need
-/// not be.
-fn write_notes(state: &mut LoadState<'_>, file: &[FileContact]) {
+/// The notes of the file's identities, in the order of the file's rows,
+/// which a contact's rows need not be.
+fn notes_in_row_order(file: &[FileContact]) -> Vec<String> {
     let mut notes: Vec<(usize, &String)> = file
         .iter()
         .flat_map(|contact| &contact.identities)
         .filter_map(|identity| identity.note.as_ref().map(|note| (identity.row, note)))
         .collect();
     notes.sort_by_key(|&(row, _)| row);
-    state.counts.notes = notes.into_iter().map(|(_, note)| note.clone()).collect();
+    notes.into_iter().map(|(_, note)| note.clone()).collect()
 }
 
 /// An address book [`export_csv`] wrote, with how many contacts and
