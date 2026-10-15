@@ -5,6 +5,7 @@ import {
   useSetNamedSetMembers,
 } from "./nameCollection";
 import { keys } from "./queryKeys";
+import reservedNames from "./reservedNames.json";
 import { forTag } from "./searchQuery";
 import {
   createMessageTag,
@@ -14,33 +15,15 @@ import {
   updateMessageTagMembers,
 } from "./serverApi";
 
-/** Names that must not be created as message tags. */
-const RESERVED_TAG_NAMES = new Set(
-  [
-    "home",
-    "contacts",
-    "threads",
-    "thread",
-    "all",
-    "excluded",
-    "unassigned",
-    "trash",
-    "tags",
-    "tag",
-    "no-tag",
-    "no tag",
-    "groups",
-    "group",
-    "labels",
-    "label",
-    // `tag:none` means "no tag", quoted or not, so a tag under this name
-    // would list the untagged conversations.
-    "none",
-  ].map((s) => s.toLowerCase()),
-);
+/**
+ * Names that must not be created as Message Tags. The server's test writes
+ * them to `reservedNames.json`, and fails when the file differs from the
+ * names the server refuses.
+ */
+const RESERVED_TAG_NAMES = new Set(reservedNames.messageTag.reserved);
 
 export function reservedTagError(name: string): string {
-  return `"${name.trim()}" is a reserved Message Tag`;
+  return `"${name.trim()}" is a reserved ${reservedNames.messageTag.label}`;
 }
 
 export const messageTags = createNameCollection({

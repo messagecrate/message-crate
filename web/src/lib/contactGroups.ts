@@ -4,6 +4,7 @@ import {
   useSetNamedSetMembers,
 } from "./nameCollection";
 import { keys } from "./queryKeys";
+import reservedNames from "./reservedNames.json";
 import { forGroup } from "./searchQuery";
 import {
   createContactGroup,
@@ -14,50 +15,23 @@ import {
 } from "./serverApi";
 import { UNKNOWN_GROUP } from "./unknownGroup";
 
-/** Names that must not be created as user groups. */
-export const RESERVED_GROUP_NAMES = new Set(
-  [
-    "home",
-    "contacts",
-    "all",
-    "excluded",
-    "no-messages",
-    "no messages",
-    "unassigned",
-    "trash",
-    "groups",
-    "group",
-    "group-chats",
-    "group chats",
-    "group-chats-2",
-    "group chats 2",
-    "group-messages",
-    "group messages",
-    "group-messages-2",
-    "group messages 2",
-    "no-label",
-    "no-group",
-    "no group",
-    "labels",
-    "label",
-    "no label",
-    // The two computed groups, as `group:` names them.
-    "unknown",
-    "none",
-  ].map((s) => s.toLowerCase()),
+/**
+ * Names that must not be created as Contact Groups. The server's test writes
+ * them to `reservedNames.json`, and fails when the file differs from the
+ * names the server refuses.
+ */
+const RESERVED_GROUP_NAMES = new Set(reservedNames.contactGroup.reserved);
+
+/** Reserved names the server refuses with a sentence of their own. */
+const SPECIAL_GROUP_ERRORS = new Map(
+  reservedNames.contactGroup.special.map(({ name, message }) => [name, message]),
 );
 
 export function reservedGroupError(name: string): string {
-  const key = name.trim().toLowerCase();
-  if (key === "contacts") return "Contacts is a reserved Contact Group";
-  if (key === "all") return "All is a reserved Contact Group";
-  if (key === "excluded") return "Excluded is a reserved Contact Group";
-  if (key === "unassigned") return "Unassigned is a reserved Contact Group";
-  if (key === "trash") return "Trash is a reserved Contact Group";
-  if (key === "no messages" || key === "no-messages") {
-    return "No messages is a reserved Contact Group";
-  }
-  return `"${name.trim()}" is a reserved Contact Group`;
+  return (
+    SPECIAL_GROUP_ERRORS.get(name.trim().toLowerCase()) ??
+    `"${name.trim()}" is a reserved ${reservedNames.contactGroup.label}`
+  );
 }
 
 export const contactGroups = createNameCollection({
