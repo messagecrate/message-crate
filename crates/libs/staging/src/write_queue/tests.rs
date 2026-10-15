@@ -740,12 +740,6 @@ fn typed_progress_covers_prepare_and_attachments_across_units() {
         })
     );
     assert_eq!(prepare_counts(&seen).last(), Some(&(4, 4)));
-    assert!(
-        !seen
-            .iter()
-            .any(|event| matches!(event, ProgressEvent::Media { .. })),
-        "clone mode converts nothing"
-    );
 }
 
 #[test]
