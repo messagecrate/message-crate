@@ -1,6 +1,6 @@
 //! An Upload through the import library, as the desktop app sends one, has
 //! its duplicates hidden: nothing in the library or the Import Run turns the
-//! dedupe on, because every batch runs it (#1969).
+//! dedupe on, because the end of every Import Run runs it (#1969, #2040).
 //!
 //! It runs the server binary and the library's own `run`, so the Import Run
 //! is created and filled the way the desktop app's is.
