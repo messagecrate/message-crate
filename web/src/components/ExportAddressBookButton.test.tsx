@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { saveFile } from "../lib/saveFile";
 import { exportAddressBook } from "../lib/serverApi";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { nth } from "../test/nth";
 import ExportAddressBookButton from "./ExportAddressBookButton";
 
 vi.mock("../lib/serverApi", () => ({ exportAddressBook: vi.fn() }));
@@ -36,7 +37,7 @@ describe("ExportAddressBookButton", () => {
     await settle();
     expect(saveMock).toHaveBeenCalledTimes(1);
     expect(exportMock).toHaveBeenCalledWith({ q: "group:Unknown" });
-    const [name, file] = saveMock.mock.calls[0];
+    const [name, file] = nth(saveMock.mock.calls, 0);
     expect(name).toBe("address-book.csv");
     expect(file.type).toBe("text/csv");
     expect(await file.text()).toBe(CSV);

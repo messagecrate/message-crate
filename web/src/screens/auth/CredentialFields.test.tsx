@@ -2,6 +2,7 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { nth } from "../../test/nth";
 import { setupUser } from "../../test/user";
 import CredentialFields from "./CredentialFields";
 
@@ -56,7 +57,7 @@ describe("CredentialFields", () => {
     const user = setupUser();
     renderFields("new-password", true);
 
-    const [showPassword] = screen.getAllByRole("button", { name: "Show password" });
+    const showPassword = nth(screen.getAllByRole("button", { name: "Show password" }), 0);
     await user.click(showPassword);
 
     expect(screen.getByLabelText("Password")).toHaveAttribute("type", "text");

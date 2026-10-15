@@ -5,6 +5,7 @@ import type { ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiTokenRevealProvider } from "../../components/ApiTokenRevealDialog";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
+import { nth } from "../../test/nth";
 import { mockedAuth, Providers } from "../../test/providers";
 import { fill, setupUser } from "../../test/user";
 import { ApiTokensSection } from "./ApiTokensSection";
@@ -123,7 +124,7 @@ describe("ApiTokensSection create form", () => {
 
     await settle();
     expect(apiPost).toHaveBeenCalledTimes(1);
-    expect(apiPost.mock.calls[0][0]).toEqual({
+    expect(nth(apiPost.mock.calls, 0)[0]).toEqual({
       label: "No import",
       can_import: false,
       can_export: true,

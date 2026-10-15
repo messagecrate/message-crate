@@ -113,7 +113,9 @@ function checkChannel(channel: string, shape: Record<string, FieldShape>): void 
   const payloads = fixture[channel] ?? [];
   expect(payloads.length, `the fixture has no ${channel} payload`).toBeGreaterThan(0);
   const fields = Object.keys(shape).sort();
-  const required = fields.filter((field) => !isOptional(shape[field]));
+  const required = Object.entries(shape)
+    .filter(([, entry]) => !isOptional(entry))
+    .map(([field]) => field);
   const sent = new Set<string>();
   for (const payload of payloads) {
     const at = `${channel} ${JSON.stringify(payload)}`;
@@ -124,6 +126,8 @@ function checkChannel(channel: string, shape: Record<string, FieldShape>): void 
       expect(fields, `${at} sends ${field}, which the TypeScript type lacks`).toContain(field);
       sent.add(field);
       const entry = shape[field];
+      // The `fields` check above has already failed the test for a field `shape` lacks.
+      if (entry === undefined) continue;
       const valueShape = isOptional(entry) ? entry.optional : entry;
       if (typeof valueShape === "string") {
         expect(typeof value, `${at}: ${field}`).toBe(valueShape);

@@ -42,8 +42,10 @@ function countOrZero(n: number | null | undefined, one: string, many?: string): 
 
 /** "import", "import and export", "import, export and delete". */
 function permissions(names: string[]): string {
-  if (names.length === 1) return names[0];
-  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  const last = names.at(-1);
+  if (last === undefined) return "";
+  const rest = names.slice(0, -1);
+  return rest.length === 0 ? last : `${rest.join(", ")} and ${last}`;
 }
 
 /** " from the website (0.10.0+343fe0d8)", or nothing when no app was named. */

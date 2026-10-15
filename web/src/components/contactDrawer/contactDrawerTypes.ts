@@ -61,6 +61,7 @@ export function sameContactPreviews(
   return a.every((left, i) => {
     const right = b[i];
     return (
+      right !== undefined &&
       left.id === right.id &&
       left.name === right.name &&
       left.handleCount === right.handleCount &&
@@ -91,13 +92,14 @@ export function contactPreviewFromConversationParticipants(
   const matched = participants.filter(
     (p) => p.contact_id != null && String(p.contact_id) === contactId,
   );
-  if (matched.length === 0) return null;
+  const [first] = matched;
+  if (first === undefined) return null;
   const addresses = matched.map((p) => p.identity).filter((h): h is string => !!h && h.length > 0);
   const named = matched.find((p) => Boolean(p.name.trim()));
   const uniqueCount = previewHandleStubRows(addresses, undefined).length;
   return {
     id: contactId,
-    name: conversationParticipantDisplayName(named ?? matched[0]),
+    name: conversationParticipantDisplayName(named ?? first),
     addresses,
     // At least one stub row so an empty handle list does not take the empty-table Loading path.
     handleCount: Math.max(1, uniqueCount),

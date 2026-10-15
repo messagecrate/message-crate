@@ -3,6 +3,7 @@
 import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { settle, startFakeClock, stopFakeClock } from "../../../test/fakeTimers";
+import { nth } from "../../../test/nth";
 import { renderWithProviders } from "../../../test/providers";
 import { setupUser } from "../../../test/user";
 import { StorageSection } from "../StorageSection";
@@ -145,7 +146,7 @@ describe("Import history", () => {
     const headers = within(table)
       .getAllByRole("columnheader")
       .map((cell) => cell.textContent);
-    const row = within(table).getAllByRole("row")[1];
+    const row = nth(within(table).getAllByRole("row"), 1);
     const cells = within(row)
       .getAllByRole("cell")
       .map((cell) => cell.textContent);

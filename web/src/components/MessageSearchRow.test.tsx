@@ -4,6 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Message } from "../lib/types";
 import { attachment, message as baseMessage, participant } from "../test/apiShapes";
+import { nth } from "../test/nth";
 import { inTimeZone } from "../test/timeZone";
 import MessageSearchRow from "./MessageSearchRow";
 
@@ -306,10 +307,12 @@ describe("MessageSearchRow", () => {
     const lines = screen.getAllByText(/^Earlier version:/);
     expect(lines).toHaveLength(2);
     expect(lines[0]).toHaveTextContent("Earlier version: foo again");
-    expect(lines[1].textContent).toMatch(/^Earlier version: …/);
-    expect(lines[1].textContent).not.toContain("foo");
-    expect(lines[1].textContent).toMatch(/ bar$/);
-    expect([...lines[1].querySelectorAll("strong")].map((b) => b.textContent)).toEqual(["bar"]);
+    expect(nth(lines, 1).textContent).toMatch(/^Earlier version: …/);
+    expect(nth(lines, 1).textContent).not.toContain("foo");
+    expect(nth(lines, 1).textContent).toMatch(/ bar$/);
+    expect([...nth(lines, 1).querySelectorAll("strong")].map((b) => b.textContent)).toEqual([
+      "bar",
+    ]);
   });
 
   it("quotes no older version for a searched word the final text already shows", () => {

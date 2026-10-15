@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { nth } from "../test/nth";
 import {
   advancedContacts,
   advancedMessages,
@@ -215,7 +216,7 @@ describe("searchTokens", () => {
 
   it("reads a minus before a group as part of the group's parenthesis", () => {
     expect(texts("-(a or b)")).toEqual(["-(", "a", "or", "b", ")"]);
-    expect(searchTokens("-(a)")[0].kind).toBe("open");
+    expect(nth(searchTokens("-(a)"), 0).kind).toBe("open");
     // A `-` before a space or a closing parenthesis is a word.
     expect(texts("- a")).toEqual(["-", "a"]);
     expect(texts("(a -)")).toEqual(["(", "a", "-", ")"]);
