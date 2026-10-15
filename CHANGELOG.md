@@ -218,6 +218,15 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-15: **The desktop app keeps everything in one directory.** The
+  app now makes a directory named message-crate in your home directory and
+  keeps its Message Crate's data, the Staging Directory, exports, Import Run
+  logs, scratch files and the programs it downloads in it, each in a
+  directory of its own. Only your user on the computer can read it. A copy
+  of the data directory inside it is a backup. The button in
+  Settings → System, and on the login card when the app's Message Crate
+  can't start, now reads Open Message Crate directory and opens it. The
+  Staging Directory setting still moves staging anywhere else (#1998).
 - 2026-10-15: **A one-to-one conversation has one name throughout.**
   Message files and the server now use the name one-to-one for a
   conversation with one other person; `kind:direct` still finds them (#2286).
@@ -1735,6 +1744,17 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-15: The desktop app starts a new Message Crate in message-crate
+  in your home directory, and no longer reads the data, exports and logs it
+  kept in the operating system's app-data directory. This release rebuilds
+  every Message Crate empty anyway (#2286), so the messages are imported
+  again either way. Exports and Import Run logs worth keeping can be copied
+  from exports and logs in the app-data directory into the directories of
+  the same names in message-crate. The app-data directory is
+  `~/.local/share/app.messagecrate.desktop` on Linux,
+  `~/Library/Application Support/app.messagecrate.desktop` on macOS and
+  `%APPDATA%\app.messagecrate.desktop` on Windows. Its data, data-dev,
+  exports, logs and scratch directories can then be deleted (#1998).
 - 2026-10-15: Message files exported by an earlier build are refused when
   you import or convert them. Export the backup again with this build. An
   existing Message Crate is rebuilt empty on first start and its messages

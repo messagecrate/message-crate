@@ -190,7 +190,7 @@ pub fn extract(
 
     let media_settings = media_settings_for(&options, args.asset_max_bytes)?;
     let mut config = build_exporter_config(
-        &scratch_dir(&app)?,
+        &scratch_dir(&app),
         &installed,
         &args.source,
         &args.path,
@@ -213,7 +213,7 @@ pub fn extract(
     // the prose.
     // The same lines go into the run's log in the Logs Directory, which
     // outlives the run's directory.
-    let run_log = RunLog::open(&logs_dir(&app)?, &output_dir);
+    let run_log = RunLog::open(&logs_dir(&app), &output_dir);
     config.context.log = events::run_log_sink(&app_handle, &run_log);
     config.context.progress = events::progress_sink(&app_handle);
     config.context.issues = events::run_issue_sink(&app_handle, &run_log);

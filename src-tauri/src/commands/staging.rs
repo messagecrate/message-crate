@@ -53,7 +53,7 @@ pub struct RunDirArgs {
 ///
 /// # Errors
 ///
-/// Returns an error when the operating system reports no home directory.
+/// Returns an error when the Staging Directory's record cannot be read.
 #[tauri::command]
 pub fn staging_root(directories: tauri::State<'_, RunDirectories>) -> Result<StagingRoot, String> {
     directories.describe()
@@ -79,18 +79,12 @@ pub fn set_staging_root(
 /// The log of the Import Run whose directory is `run_dir`, in the Logs
 /// Directory. The log is there once the run's Upload has started, and stays
 /// after the run's directory is deleted.
-///
-/// # Errors
-///
-/// Returns an error when the operating system names no app-data directory.
 #[tauri::command]
-pub fn import_run_log(app: tauri::AppHandle, run_dir: String) -> Result<String, String> {
-    let logs = super::paths::logs_dir(&app)?;
-    Ok(
-        crate::app_directories::import_run_log(&logs, std::path::Path::new(run_dir.trim()))
-            .display()
-            .to_string(),
-    )
+pub fn import_run_log(app: tauri::AppHandle, run_dir: String) -> String {
+    let logs = super::paths::logs_dir(&app);
+    crate::app_directories::import_run_log(&logs, std::path::Path::new(run_dir.trim()))
+        .display()
+        .to_string()
 }
 
 /// Make a new run directory under the Staging Directory and return its
@@ -244,7 +238,7 @@ pub fn transcode_staging(
     args: RunDirArgs,
 ) -> Result<(), String> {
     let (run_dir, options) = staged_directory(&directories, &args.run_dir)?;
-    let run_log = RunLog::open(&super::paths::logs_dir(&app)?, &run_dir);
+    let run_log = RunLog::open(&super::paths::logs_dir(&app), &run_dir);
     let job = start_job(&state, JobName::Media)?;
     let cancel = job.cancel_flag();
     let media_stage_converts = matches!(
