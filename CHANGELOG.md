@@ -1287,9 +1287,9 @@ carry their date on the heading.
 #### The server
 
 - 2026-10-14: **The Compose files publish the server to this computer
-  only.** `docker/compose.yml` and `docker/compose.release.yml` published
-  port 8080 on every network the computer is on, unlike the guide's
-  `docker run` command. Any device on that network could reach a new
+  only.** Both Compose files published port 8080 on every network the
+  computer is on, unlike the `docker run` command in Start a Message
+  Crate. Any device on that network could reach a new
   Message Crate over plain HTTP, and claim it as owner before its
   installer did. Both now publish it on `127.0.0.1`, and Run on another
   machine says how to open it to the network (#2063).
@@ -1574,6 +1574,11 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-14: A Message Crate started from the Compose file and reached
+  from other computers is reachable from its own computer only after the
+  update. Changing the `ports:` line to `"8080:8080"` and running
+  `docker compose up -d` again opens it to the network, as Run on another
+  machine says (#2063).
 - 2026-10-14: A Message Crate started with `docker run` before this release
   keeps every default container permission. Stop it with
   `docker stop -t 40 message-crate`, remove it with

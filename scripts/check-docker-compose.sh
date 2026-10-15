@@ -109,9 +109,9 @@ if [[ "${release_grace}" == "unset" || "${release_grace}" != "${published_grace}
 fi
 
 # Both files publish the server to the host's loopback alone, as the
-# documented `docker run` command does (#2063). A port published on every
-# interface reaches the whole network over plain HTTP before the installer
-# has claimed the Message Crate. Run on another machine says how to publish
+# `docker run` command in Start a Message Crate does (#2063). A port
+# published on every interface reaches the whole network over plain HTTP
+# before the installer has claimed the Message Crate. Run on another machine says how to publish
 # it on the network.
 for file in docker/compose.yml docker/compose.release.yml; do
   open_ports="$(docker compose -f "${file}" config --format json |
