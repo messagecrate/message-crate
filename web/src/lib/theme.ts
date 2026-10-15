@@ -260,5 +260,5 @@ export function readStoredSeeds(): ThemeSeeds {
   return parseStoredSeeds(readPref(THEME_SEEDS_KEY)) ?? DEFAULT_SEEDS;
 }
 
-// The first-paint theme script lives in web/index.html so the page is not
+// The first-paint theme script lives in web/public/theme.js so the page is not
 // the wrong colors for a frame before React starts.

@@ -3312,3 +3312,51 @@ fn the_demo_account_refusal_is_one_lowercase_sentence() {
     assert_eq!(detail, "the Demo Account's password cannot be set");
     assert!(refuse_for_demo_account(demo + 1, "password cannot be set").is_ok());
 }
+
+/// #2073: the website and every `/v1` answer carry the protective headers,
+/// so a script injected into the page cannot read the Session token out of
+/// browser storage and send it away, and no other site can frame the login
+/// card. A `/v1` refusal answered by a layer carries them as well as a
+/// handler's answer.
+#[tokio::test]
+async fn the_website_and_every_v1_answer_carry_the_protective_headers() {
+    let (fixture, _user) = crate::test_support::fixture_with_account().await;
+    let site = fixture.dir().join("site");
+    std::fs::create_dir_all(&site).unwrap();
+    std::fs::write(site.join("index.html"), "<title>the site</title>").unwrap();
+    let mut state = fixture.state.clone();
+    let mut cfg = (*state.cfg).clone();
+    cfg.server.as_mut().unwrap().static_dir = site;
+    state.cfg = std::sync::Arc::new(cfg);
+    let server = crate::test_support::serve(&state).await;
+
+    let website = server.get("/").send().await.unwrap();
+    assert_eq!(website.status(), StatusCode::OK);
+    let server_info = server.get("/v1/server").send().await.unwrap();
+    assert_eq!(server_info.status(), StatusCode::OK);
+    let logged_out = server.get("/v1/session").send().await.unwrap();
+    assert_eq!(logged_out.status(), StatusCode::UNAUTHORIZED);
+    let unknown = server.get("/v1/no-such-route").send().await.unwrap();
+    assert_eq!(unknown.status(), StatusCode::NOT_FOUND);
+    for (what, response) in [
+        ("website", &website),
+        ("server", &server_info),
+        ("logged out", &logged_out),
+        ("unknown route", &unknown),
+    ] {
+        let headers = response.headers();
+        let policy = headers
+            .get(header::CONTENT_SECURITY_POLICY)
+            .map(|v| v.to_str().unwrap());
+        assert_eq!(policy, Some(CONTENT_SECURITY_POLICY), "{what}");
+        assert_eq!(headers[header::X_CONTENT_TYPE_OPTIONS], "nosniff", "{what}");
+        assert_eq!(headers[header::REFERRER_POLICY], "no-referrer", "{what}");
+    }
+    for directive in [
+        "script-src 'self';",
+        "object-src 'none';",
+        "frame-ancestors 'none'",
+    ] {
+        assert!(CONTENT_SECURITY_POLICY.contains(directive), "{directive}");
+    }
+}
