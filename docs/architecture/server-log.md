@@ -232,6 +232,22 @@ names no request cannot be matched to the request that caused it or to the
 error its client was shown
 ([#2186](https://github.com/messagecrate/message-crate/issues/2186)).
 
+An Audit Trail entry keeps the id of the request that wrote it, in
+`audit_entries.request_id`, and the Audit Trail hands it out as the entry's
+`request_id`. The two spawn functions carry the id as well as the span, so an
+entry written by work the request started, such as the old Demo Account's
+deletion in the owner's Demo Account build, keeps the id its lines carry. An
+entry written outside a request has none: a server command (`reset-demo`,
+`create-owner` and the rest) and the Demo Account build that `serve` runs on a
+new database before it listens write theirs with a `NULL` id. Import Runs,
+Export Runs and a Session that ran out are read from rows no one request
+wrote, so their `request_id` is `null` too.
+
+Why: an entry says who did what and when, and a line says which request did
+it and how it went, and with no key shared between them the owner matched the
+two by time alone
+([#2276](https://github.com/messagecrate/message-crate/issues/2276)).
+
 ## Trimmed by size only: 5 files of 50 MB
 
 A file is closed and the next one started before a line would carry it past

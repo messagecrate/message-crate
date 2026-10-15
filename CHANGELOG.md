@@ -22,6 +22,11 @@ carry their date on the heading.
 
 ### Features
 
+- 2026-10-15: **The Import form says when a disk it writes to is low.** When
+  the disk that holds the Staging Directory or the Scratch Directory has less
+  than 10 GB free, the form names the disk, the directory and the space free
+  above the Import button, so space can be freed before the run starts. The
+  import can still start (#2010).
 - 2026-10-15: **The login card says when the password would cross the
   network unencrypted.** Opened over plain HTTP from another computer, such
   as at `http://192.168.1.20:8080`, the login card and Create Owner now say
@@ -213,6 +218,16 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-15: **An Audit Trail entry names the request that wrote it.**
+  Each entry now keeps the id the server gave the request that made it,
+  the same id that request's lines in the server's log carry, so an entry
+  and its lines can be found by each other rather than by time. An entry
+  written by a server command, or by the Demo Account build of a new
+  Message Crate's first start, has no id, and neither has the entry for an
+  Import Run, an Export Run or a Session that ended by expiry. The server
+  hands the id out with each entry; nothing on screen shows it yet. The
+  database format changed: an existing Message Crate is rebuilt empty on
+  first start and its messages must be imported again (#2276).
 - 2026-10-15: **The Attachments choices say they convert media.** The
   Import form's **Attachments** field now reads **Copy**, **Convert media**,
   **Convert & Compress media** and **Skip**, and the Staging Review's button

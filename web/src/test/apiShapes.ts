@@ -154,6 +154,7 @@ export function auditEntry(
     permissions_added: null,
     permissions_removed: null,
     reason: null,
+    request_id: null,
     scope_kind: null,
     scope_list: null,
     source: null,
