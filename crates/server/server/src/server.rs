@@ -2089,7 +2089,13 @@ pub async fn resolve_auth(headers: &HeaderMap, state: &AppState) -> Result<AuthI
     // Always look up against SQLite so rotate/delete in Settings takes effect
     // without restarting serve (no process-local token cache).
     let mut conn = state.db.acquire().await?;
-    resolve_auth_on_conn(&mut conn, &token, connecting_app(headers).as_ref()).await
+    resolve_auth_on_conn(
+        &mut conn,
+        &token,
+        connecting_app(headers).as_ref(),
+        chrono::Utc::now(),
+    )
+    .await
 }
 
 pub use message_crate_api_types::{APP_HEADER, APP_VERSION_HEADER};
@@ -2123,7 +2129,8 @@ enum Credential {
 
 use crate::db::audit_trail::CredentialUsed;
 
-/// Resolve a Bearer credential on an existing connection.
+/// Resolve a Bearer credential on an existing connection, as it stands at
+/// `now`: a Session or an API token that has expired by then is refused.
 ///
 /// `app` is the app the request named, if it named one. It is recorded on a
 /// session and ignored for an API token, which belongs to a program rather
@@ -2138,8 +2145,11 @@ pub async fn resolve_auth_on_conn(
     conn: &mut SqliteConnection,
     token: &str,
     app: Option<&session_tokens::ConnectingApp>,
+    now: chrono::DateTime<chrono::Utc>,
 ) -> Result<AuthIdentity, ApiError> {
-    let resolved = if let Some(session) = session_tokens::lookup_session(&mut *conn, token).await? {
+    let resolved = if let Some(session) =
+        session_tokens::lookup_session(&mut *conn, token, now).await?
+    {
         if let Some(app) = app {
             // A record, not a check: a failed write still serves the
             // request (#1189).
@@ -2156,7 +2166,7 @@ pub async fn resolve_auth_on_conn(
         let used = CredentialUsed::Session(app.cloned().or(session.app));
         Some((session.account_id, Credential::Session, used))
     } else {
-        api_tokens::lookup_account_for_api_token(&mut *conn, token)
+        api_tokens::lookup_account_for_api_token(&mut *conn, token, now)
             .await?
             .map(|tok| {
                 let used = CredentialUsed::ApiToken {

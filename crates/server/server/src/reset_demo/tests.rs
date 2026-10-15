@@ -2501,7 +2501,7 @@ async fn the_next_start_removes_a_demo_account_whose_build_did_not_finish() {
 
     // What a build stopped part-way leaves: its record, and what it wrote.
     let mut conn = opened.db.acquire().await.expect("acquire");
-    crate::db::demo_account_build::begin(&mut conn)
+    crate::db::demo_account_build::begin(&mut conn, crate::test_support::fixed_instant())
         .await
         .expect("write the build record");
     drop(conn);

@@ -40,3 +40,9 @@ pub mod write_guard;
 pub mod write_tx;
 
 pub use write_tx::{WriteTx, begin_write};
+
+/// `now` as a Unix second, the form the token tables and the Demo Account
+/// build record store. An instant before 1970 reads as 0.
+pub(crate) fn unix_secs(now: chrono::DateTime<chrono::Utc>) -> u64 {
+    u64::try_from(now.timestamp()).unwrap_or(0)
+}

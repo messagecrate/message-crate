@@ -139,11 +139,6 @@ fn hex_decode(text: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-/// The current Unix second.
-fn now_unix() -> i64 {
-    chrono::Utc::now().timestamp()
-}
-
 /// The account whose store an asset read reaches: the one the
 /// `Authorization` header names, or, when the request sends none, the one
 /// its `media_link` names. Taken by `GET /v1/assets/{sha256}` and
@@ -266,11 +261,12 @@ async fn open_media_link(state: &AppState, link: &str, sha256: &Sha256) -> Resul
     let Some(link) = ParsedLink::parse(link) else {
         return Err(invalid("the media_link is not a media link"));
     };
-    if link.expires <= now_unix() {
+    let now = chrono::Utc::now();
+    if link.expires <= now.timestamp() {
         return Err(invalid("the media link expired"));
     }
     let mut conn = state.db.acquire().await?;
-    let session_hash = session_tokens::live_session_hash(&mut conn, link.account_id).await?;
+    let session_hash = session_tokens::live_session_hash(&mut conn, link.account_id, now).await?;
     let signed = session_hash.is_some_and(|session_hash| {
         state.media_link_key.verifies(
             &MediaLinkTerms {
@@ -356,7 +352,7 @@ pub(crate) async fn create_media_link(
 
     let session_hash = session_tokens::hash_api_token(&bearer_token(&headers)?);
     let ttl = i64::try_from(MEDIA_LINK_TTL.as_secs()).unwrap_or(i64::MAX);
-    let expires = now_unix().saturating_add(ttl);
+    let expires = chrono::Utc::now().timestamp().saturating_add(ttl);
     let link = state.media_link_key.sign(&MediaLinkTerms {
         account_id: auth.account_id,
         sha256: &sha256,

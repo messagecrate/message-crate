@@ -141,15 +141,20 @@ async fn password_change_setup() -> (
     account_profile::insert_account_at(&mut conn, OTHER_ACCOUNT, "bob", Some(&old_hash), None)
         .await
         .unwrap();
-    let old_session = session_tokens::insert_account_session_token(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
+    let old_session = session_tokens::insert_account_session_token(
+        &mut conn,
+        TEST_ACCOUNT,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     let first_api_token = api_tokens::create_api_token(
         &mut conn,
         TEST_ACCOUNT,
         "backup client",
         Permissions::all(),
         None,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap()
@@ -164,6 +169,7 @@ async fn password_change_setup() -> (
             delete: false,
         },
         None,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap()
@@ -174,6 +180,7 @@ async fn password_change_setup() -> (
         "other account client",
         Permissions::all(),
         None,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap()
@@ -212,32 +219,48 @@ async fn change_password_transaction_updates_all_credentials() {
             .unwrap()
     );
     assert!(
-        session_tokens::lookup_session(&mut conn, &old_session)
-            .await
-            .unwrap()
-            .is_none()
+        session_tokens::lookup_session(
+            &mut conn,
+            &old_session,
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap()
+        .is_none()
     );
     assert_eq!(
-        session_tokens::lookup_session(&mut conn, &new_session)
-            .await
-            .unwrap()
-            .map(|s| s.account_id),
+        session_tokens::lookup_session(
+            &mut conn,
+            &new_session,
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap()
+        .map(|s| s.account_id),
         Some(TEST_ACCOUNT)
     );
     for api_token in api_tokens {
         assert!(
-            crate::db::api_tokens::lookup_account_for_api_token(&mut conn, &api_token)
-                .await
-                .unwrap()
-                .is_none()
+            crate::db::api_tokens::lookup_account_for_api_token(
+                &mut conn,
+                &api_token,
+                crate::test_support::fixed_instant()
+            )
+            .await
+            .unwrap()
+            .is_none()
         );
     }
     assert_eq!(
-        crate::db::api_tokens::lookup_account_for_api_token(&mut conn, &other_account_token)
-            .await
-            .unwrap()
-            .unwrap()
-            .account_id,
+        crate::db::api_tokens::lookup_account_for_api_token(
+            &mut conn,
+            &other_account_token,
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .account_id,
         OTHER_ACCOUNT
     );
 }
@@ -279,26 +302,38 @@ async fn change_password_transaction_rolls_back_every_credential() {
             .unwrap()
     );
     assert_eq!(
-        session_tokens::lookup_session(&mut conn, &old_session)
-            .await
-            .unwrap()
-            .map(|s| s.account_id),
+        session_tokens::lookup_session(
+            &mut conn,
+            &old_session,
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap()
+        .map(|s| s.account_id),
         Some(TEST_ACCOUNT)
     );
     for api_token in api_tokens {
         assert!(
-            crate::db::api_tokens::lookup_account_for_api_token(&mut conn, &api_token)
-                .await
-                .unwrap()
-                .is_some()
+            crate::db::api_tokens::lookup_account_for_api_token(
+                &mut conn,
+                &api_token,
+                crate::test_support::fixed_instant()
+            )
+            .await
+            .unwrap()
+            .is_some()
         );
     }
     assert_eq!(
-        crate::db::api_tokens::lookup_account_for_api_token(&mut conn, &other_account_token)
-            .await
-            .unwrap()
-            .unwrap()
-            .account_id,
+        crate::db::api_tokens::lookup_account_for_api_token(
+            &mut conn,
+            &other_account_token,
+            crate::test_support::fixed_instant()
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .account_id,
         OTHER_ACCOUNT
     );
 }

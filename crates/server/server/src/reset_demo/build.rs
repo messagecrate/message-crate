@@ -137,7 +137,7 @@ pub(super) struct ResetPreparedStats {
 /// what it wrote has been removed.
 async fn begin_demo_build(db: &SqlitePool) -> Result<()> {
     let mut conn = db.acquire().await?;
-    demo_account_build::begin(&mut conn)
+    demo_account_build::begin(&mut conn, chrono::Utc::now())
         .await
         .context("record that the Demo Account build has started")
 }

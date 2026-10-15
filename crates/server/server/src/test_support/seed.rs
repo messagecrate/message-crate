@@ -115,6 +115,15 @@ pub fn stored_time(rfc3339: &str) -> crate::models::StoredTime {
     crate::models::utc_timestamp_text(instant)
 }
 
+/// The instant a test makes a Session or an API token at when it sends that
+/// credential to the router. The router checks a credential's expiry
+/// against the clock as it serves the request, so a credential made at
+/// [`fixed_instant`] would be refused, or accepted only until its lifetime
+/// ran out by the clock.
+pub fn routed_credential_instant() -> chrono::DateTime<chrono::Utc> {
+    chrono::Utc::now()
+}
+
 /// Noon UTC on 14 March 2026: the instant a test passes where the code
 /// under test takes the time, so the test never reads the clock.
 pub fn fixed_instant() -> chrono::DateTime<chrono::Utc> {
