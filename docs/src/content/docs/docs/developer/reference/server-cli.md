@@ -26,6 +26,7 @@ This document contains the help content for the `message-crate-server` command-l
 * [`message-crate-server process-assets`↴](#message-crate-server-process-assets)
 * [`message-crate-server create-owner`↴](#message-crate-server-create-owner)
 * [`message-crate-server reset-owner-password`↴](#message-crate-server-reset-owner-password)
+* [`message-crate-server healthcheck`↴](#message-crate-server-healthcheck)
 
 ## `message-crate-server`
 
@@ -47,6 +48,7 @@ Import and view messages in SQLite
 * `process-assets` — Make the Thumbnails and Previews of stored attachments under `assets_converted/`, for rebuilding and repair
 * `create-owner` — Claim an unclaimed Message Crate by creating its owner. Refuses one that already has an owner
 * `reset-owner-password` — Set a new password for the owner, ending their sessions. Refuses a Message Crate that has no owner yet
+* `healthcheck` — Ask `/health` of the `serve` this container runs, at the address it listens on, and exit 0 when it answers ok, 1 when not. The release image's Docker health check. Linux only: it reads `/proc`
 
 
 
@@ -267,6 +269,14 @@ Set a new password for the owner, ending their sessions. Refuses a Message Crate
 * `--config <CONFIG>` — Path to config.toml
 
   Default value: `config/config.toml`
+
+
+
+## `message-crate-server healthcheck`
+
+Ask `/health` of the `serve` this container runs, at the address it listens on, and exit 0 when it answers ok, 1 when not. The release image's Docker health check. Linux only: it reads `/proc`
+
+**Usage:** `message-crate-server healthcheck`
 
 
 

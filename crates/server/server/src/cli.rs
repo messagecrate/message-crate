@@ -77,6 +77,11 @@ pub enum Commands {
     /// Set a new password for the owner, ending their sessions. Refuses a
     /// Message Crate that has no owner yet.
     ResetOwnerPassword(ResetOwnerPasswordArgs),
+
+    /// Ask `/health` of the `serve` this container runs, at the address it
+    /// listens on, and exit 0 when it answers ok, 1 when not. The release
+    /// image's Docker health check. Linux only: it reads `/proc`
+    Healthcheck,
 }
 
 /// Options for `create-owner`.
@@ -331,6 +336,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Commands::ProcessAssets(args) => run_process_assets(args).await,
         Commands::CreateOwner(args) => run_create_owner(args).await,
         Commands::ResetOwnerPassword(args) => run_reset_owner_password(args).await,
+        Commands::Healthcheck => run_healthcheck().await,
     }
 }
 
@@ -369,6 +375,17 @@ async fn run_reset_owner_password(args: ResetOwnerPasswordArgs) -> Result<()> {
     let username = crate::owner_cli::reset_owner_password(&opened, &args.password).await?;
     opened.close().await;
     println!("Owner password set. Log in as {username}.");
+    Ok(())
+}
+
+/// Print what the health check found, and fail with it when the server is
+/// not healthy, so the exit status is 1.
+async fn run_healthcheck() -> Result<()> {
+    let outcome = crate::healthcheck::check().await;
+    if !outcome.healthy {
+        bail!("{}", outcome.message);
+    }
+    println!("{}", outcome.message);
     Ok(())
 }
 

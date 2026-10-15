@@ -209,6 +209,12 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-15: **The Docker image no longer carries Node.js.** It was built
+  on Node.js 20, which no longer gets security fixes, though the server never
+  used it, so image scanners flagged every Message Crate image. The image is
+  now built on Debian alone and checks its own health with the server
+  program. It still runs as user and group 1000, so existing data and
+  Compose files work as before (#2065).
 - 2026-10-12: **A wrong password now costs a short wait instead of counting
   toward a lockout.** A refused login, and a wrong current password when
   changing the owner's password or deleting an account, waits about a second

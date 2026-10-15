@@ -561,7 +561,7 @@ disagreed ([#2202](https://github.com/messagecrate/message-crate/issues/2202)).
 
 Why `SELECT 1` and a short limit: `SELECT 1` reads no table, so it never
 waits on an import's write lock, and the limit stays under the time
-`docker/healthcheck.cjs` gives each address it asks (4 seconds, or 2 each
+`message-crate-server healthcheck` gives each address it asks (4 seconds, or 2 each
 when it asks both 127.0.0.1 and ::1), so a failure arrives as the server's
 answer. HTTP imports hold at most `MAX_CONCURRENT_IMPORTS`
 (`imports_api/mod.rs`) of the pool's `max_connections` (`db/engine.rs`), but
