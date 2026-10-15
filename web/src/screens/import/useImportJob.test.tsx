@@ -20,8 +20,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
 import { ApiError, setAccountId } from "../../lib/api";
 import { AuthContext } from "../../lib/authContext";
-import { CanceledError } from "../../lib/canceledError";
 import { currentDesktopJob } from "../../lib/desktopJob";
+import { CanceledError, DesktopJobError } from "../../lib/desktopJobError";
 import type { ActiveImportRun } from "../../lib/importRun";
 import { keys } from "../../lib/queryKeys";
 import { ANONYMOUS_ACCOUNT, routeQueryKey } from "../../lib/routeQueryKey";
@@ -2021,9 +2021,10 @@ describe("useImportJob wiring", () => {
     // sentence leaves out, such as a panic's text (#2071, #2112).
     runMock.mockReset();
     runMock.mockRejectedValueOnce(
-      new Error("Staging failed because of a bug in Message Crate.", {
-        cause: "the job panicked: index out of bounds",
-      }),
+      new DesktopJobError(
+        "Staging failed because of a bug in Message Crate.",
+        "the job panicked: index out of bounds",
+      ),
     );
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "copy" })));

@@ -4,7 +4,7 @@
  */
 
 import { errorLine, errorText } from "../../../lib/apiErrorMessage";
-import { CanceledError } from "../../../lib/canceledError";
+import { CanceledError } from "../../../lib/desktopJobError";
 import type { ImportStage } from "../../../lib/importRun";
 import { endsSession } from "../../../lib/routeQuery";
 import { sessionRefused } from "../../../lib/sessionRefusal";

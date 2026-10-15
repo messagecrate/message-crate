@@ -802,7 +802,7 @@ fn copy_attachments_dir(input_dir: &Path, output_dir: &Path) -> Result<()> {
 /// Recursively copy files from `source` into `destination`.
 fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<()> {
     for entry in fs::read_dir(source).with_context(|| format!("read {}", source.display()))? {
-        let entry = entry?;
+        let entry = entry.with_context(|| format!("read {}", source.display()))?;
         let from = entry.path();
         let to = destination.join(entry.file_name());
         if from.is_dir() {

@@ -1,4 +1,4 @@
-import { CanceledError } from "../../../lib/canceledError";
+import { CanceledError } from "../../../lib/desktopJobError";
 import type { ImportJobFormValues } from "../../../lib/importSources/types";
 import {
   ffmpegMissing,

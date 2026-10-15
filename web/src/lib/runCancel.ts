@@ -1,4 +1,4 @@
-import { CanceledError } from "./canceledError";
+import { CanceledError } from "./desktopJobError";
 import { invokeCancel } from "./tauri";
 
 /**

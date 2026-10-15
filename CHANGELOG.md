@@ -677,9 +677,9 @@ carry their date on the heading.
   each get a sentence of their own, and the full error goes to the log and
   to the Import Errors row. A failure caused by a bug in Message Crate now
   writes what the bug was into the Import Run's log, where before only the
-  sentence was kept. Pressing Cancel while Staging or the Media Stage runs
-  always leaves the run ready to resume, where before it could end the run
-  as failed (#2071, #2077, #2112).
+  sentence was kept. The Cancel button, pressed while Staging or the Media
+  Stage runs, now always pauses the run so it can resume, where before it
+  could end the run as failed (#2071, #2077, #2112).
 - 2026-10-12: **Try again on the Import form always checks the tools.**
   Pressing **Try again** just as the desktop app started another program
   could leave the check of ffmpeg, ffprobe and wtsexporter believing an

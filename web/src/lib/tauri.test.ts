@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CanceledError } from "./canceledError";
 import { currentDesktopJob, holdDesktopJob } from "./desktopJob";
+import { CanceledError, DesktopJobError } from "./desktopJobError";
 import type { UploadFinishedReport } from "./tauri";
 import {
   awaitDesktopJob,
@@ -280,9 +280,9 @@ describe("awaitDesktopJob", () => {
       user_message: "Staging failed because of a bug in Message Crate.",
       canceled: false,
     });
-    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown).toBeInstanceOf(DesktopJobError);
     expect((thrown as Error).message).toBe("Staging failed because of a bug in Message Crate.");
-    expect((thrown as Error).cause).toBe("the job panicked: index out of bounds");
+    expect((thrown as DesktopJobError).detail).toBe("the job panicked: index out of bounds");
     expect(log).toEqual(["the job panicked: index out of bounds"]);
   });
 });

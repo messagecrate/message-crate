@@ -1,4 +1,4 @@
-import { CanceledError } from "../../../lib/canceledError";
+import { CanceledError } from "../../../lib/desktopJobError";
 import { getDeviceId } from "../../../lib/deviceId";
 import { buildSourceFingerprint } from "../../../lib/importRun";
 import { importRunCreateBody } from "../../../lib/importSource";
