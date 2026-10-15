@@ -279,7 +279,9 @@ describe("ImportRunView", () => {
     expect(screen.queryByText("What you asked for")).not.toBeInTheDocument();
 
     const row = within(stageRow("Staging"));
-    expect(row.getByText("Convert media · up to 720p, 30 fps, files over 20 MB")).toBeInTheDocument();
+    expect(
+      row.getByText("Convert media · up to 720p, 30 fps, files over 20 MB"),
+    ).toBeInTheDocument();
     await user.click(row.getByRole("button", { name: runDir }));
     expect(openPathInExplorer).toHaveBeenCalledWith(runDir);
   });

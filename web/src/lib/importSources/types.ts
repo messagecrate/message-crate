@@ -1,9 +1,9 @@
 import type { ImportSourceId } from "../exportSources";
-import type { AndroidSmsPathStats } from "./androidSms";
 import type { ImessagePathStats } from "../imessageImport";
 import type { ImporterExtraField } from "../systemSettings";
 import type { AttachmentChoices, ExtractConfig } from "../types";
 import type { WhatsappPathStats } from "../whatsappImport";
+import type { AndroidSmsPathStats } from "./androidSms";
 
 /**
  * One way Import reads a source's backup, by the id the form and the
