@@ -2,6 +2,7 @@ import { useEffect, useReducer, useRef, useState } from "react";
 import { phoneNumbers, profileAddresses } from "../lib/account";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
 import { type IdentityType, identityOnProfile, parseSourceIdentities } from "../lib/backupIdentity";
+import { invokeHomeDir, invokePathStat } from "../lib/desktop/fs";
 import { getDeviceId } from "../lib/deviceId";
 import {
   IMESSAGE_DEFAULT_METHOD,
@@ -24,7 +25,6 @@ import {
   setImporterExtraPath,
   setImporterPath,
 } from "../lib/systemSettings";
-import { invokeHomeDir, invokePathStat } from "../lib/tauri";
 import { isTauri } from "../lib/tauriCheck";
 import { useTimeZone } from "../lib/timeZone";
 import {

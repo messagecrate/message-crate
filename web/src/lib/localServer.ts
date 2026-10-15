@@ -1,12 +1,12 @@
 import { DEFAULT_TAURI_SERVER_URL } from "./authGuards";
+import { invokeStartLocalServer, type LocalServerStatus } from "./desktop/localServer";
 import { readPref, removePref, writePref } from "./storage";
-import { invokeStartLocalServer, type LocalServerStatus } from "./tauri";
 
 /**
  * The Message Crate the desktop app starts for itself. The app ships the
  * server and runs it at its own address while the app is open; the rules are
  * in `src-tauri/src/local_server.rs`. The commands that read and change it
- * are in `tauri.ts`.
+ * are in `desktop/localServer.ts`.
  */
 
 /**
@@ -41,7 +41,7 @@ export function getOpenToNetwork(): boolean {
 
 /**
  * Save the setting for the next launch. `invokeSetOpenToNetwork` in
- * `tauri.ts` gives it to a server the app runs now.
+ * `desktop/localServer.ts` gives it to a server the app runs now.
  */
 export function setOpenToNetwork(on: boolean): void {
   if (on) writePref(OPEN_TO_NETWORK_KEY, "1");

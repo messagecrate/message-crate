@@ -4,9 +4,10 @@ import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
+import type { AttachmentForecast, StagingSummary } from "../../lib/desktop/staging";
+import type { ToolStatus, ToolsStatus } from "../../lib/desktop/tools";
 import { holdDesktopJob } from "../../lib/desktopJob";
 import type { ImportJobFormValues } from "../../lib/importSources/types";
-import type { AttachmentForecast, StagingSummary, ToolStatus, ToolsStatus } from "../../lib/tauri";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { importForm } from "../../test/importForm";
 import { authModule, Providers } from "../../test/providers";
@@ -58,9 +59,13 @@ function onDesktop() {
   } satisfies ToolsStatus);
 }
 
-vi.mock("../../lib/tauri", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../lib/tauri")>()),
+vi.mock("../../lib/desktop/runLog", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/desktop/runLog")>()),
   invokeImportRunLog: (runDir: string) => invokeImportRunLog(runDir),
+}));
+
+vi.mock("../../lib/desktop/tools", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/desktop/tools")>()),
   invokeToolsStatus: () => desktop.toolsStatus(),
   invokeRetryToolDownloads: () => desktop.retry(),
 }));

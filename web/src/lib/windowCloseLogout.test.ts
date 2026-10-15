@@ -13,7 +13,7 @@ vi.mock("./tauriCheck", () => ({
   isTauri: () => isTauri(),
 }));
 
-vi.mock("./tauri", () => ({
+vi.mock("./desktop/window", () => ({
   onWindowCloseRequested: (...args: unknown[]) => onWindowCloseRequested(...args),
   destroyWindow: () => destroyWindow(),
 }));

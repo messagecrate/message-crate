@@ -1,10 +1,10 @@
-import type { ImportJobFormValues } from "../../../lib/importSources/types";
 import type {
   AttachmentForecast,
   OwnerIdentityCount,
   SizeVerdict,
   StagingSummary,
-} from "../../../lib/tauri";
+} from "../../../lib/desktop/staging";
+import type { ImportJobFormValues } from "../../../lib/importSources/types";
 import { isAttachmentMediaMode, isStringArray } from "../formSnapshot";
 import type { RunContext } from "./context";
 

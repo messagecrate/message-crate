@@ -1,4 +1,6 @@
 import { errorText } from "./apiErrorMessage";
+import { invokePathStat, type PathStat } from "./desktop/fs";
+import { invokeDeleteRunDir } from "./desktop/runDir";
 import { type DesktopOs, describeUnreadable, desktopOs, unknownPathMessage } from "./pathChecks";
 import {
   discardImport,
@@ -7,7 +9,6 @@ import {
   setImportStage as setStage,
 } from "./serverApi";
 import type { components } from "./serverApi.types";
-import { invokeDeleteRunDir, invokePathStat, type PathStat } from "./tauri";
 
 /** Where a running Import Run is: the server's `ImportStage`. */
 export type ImportStage = components["schemas"]["ImportStage"];

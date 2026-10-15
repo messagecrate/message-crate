@@ -4,11 +4,11 @@
  */
 
 import { errorLine, errorText } from "../../../lib/apiErrorMessage";
+import type { StagingSummary } from "../../../lib/desktop/staging";
 import { CanceledError } from "../../../lib/desktopJobError";
 import type { ImportStage } from "../../../lib/importRun";
 import { endsSession } from "../../../lib/routeQuery";
 import { sessionRefused } from "../../../lib/sessionRefusal";
-import type { StagingSummary } from "../../../lib/tauri";
 import type { RunContext } from "./context";
 import { discardRunDirectory } from "./runDirectory";
 import { returnToForm } from "./screen";

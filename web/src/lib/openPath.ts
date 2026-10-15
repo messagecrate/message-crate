@@ -1,4 +1,4 @@
-import { invokeOpenPath } from "./tauri";
+import { invokeOpenPath } from "./desktop/fs";
 import { isTauri } from "./tauriCheck";
 
 /**

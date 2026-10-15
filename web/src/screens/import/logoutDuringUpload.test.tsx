@@ -14,7 +14,7 @@
 // `useImportJob.test.tsx`. The login is the app's own `AuthProvider`, and what
 // it calls itself stays faked at its module: the server's logout and account
 // profile in `lib/serverApi`, and deleting a deleted account's run directories
-// through `lib/tauri`.
+// through `lib/desktop/runDir`.
 //
 // Every test is told when what it waits for has happened: a fake settles a
 // promise the test awaits, or the test awaits the logout or the run itself.
@@ -24,8 +24,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AuthShell from "../../components/AuthShell";
 import { ApiError, getAccountId, getBaseUrl, getToken } from "../../lib/api";
 import { useAuth } from "../../lib/authContext";
+import type { DesktopJobResult } from "../../lib/desktop/job";
+import type { UploadFinishedReport } from "../../lib/desktop/upload";
 import { isUploadRunning } from "../../lib/runningUpload";
-import type { DesktopJobResult, UploadFinishedReport } from "../../lib/tauri";
 import { deferred } from "../../test/deferred";
 import { advanceTimersAndSettle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { importForm } from "../../test/importForm";
@@ -57,7 +58,7 @@ let sessionRevoked = deferred();
 
 /**
  * The one fake for deleting a run directory. `AuthProvider` reaches it
- * through `lib/tauri` when it deletes a deleted account's Import Runs, and the
+ * through `lib/desktop/runDir` when it deletes a deleted account's Import Runs, and the
  * run reaches it through its `ImportRunDeps`. It records the call in `calls`.
  */
 async function fakeDeleteRunDir({ run_dir }: { run_dir: string }): Promise<void> {
@@ -65,8 +66,8 @@ async function fakeDeleteRunDir({ run_dir }: { run_dir: string }): Promise<void>
   await deleteRunDirMock(run_dir);
 }
 
-vi.mock("../../lib/tauri", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../lib/tauri")>()),
+vi.mock("../../lib/desktop/runDir", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/desktop/runDir")>()),
   invokeDeleteRunDir: fakeDeleteRunDir,
 }));
 
