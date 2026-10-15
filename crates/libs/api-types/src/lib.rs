@@ -286,15 +286,6 @@ impl std::fmt::Display for ImportErrorKind {
     }
 }
 
-impl From<ImportErrorKind> for RunIssueKind {
-    fn from(kind: ImportErrorKind) -> Self {
-        match kind {
-            ImportErrorKind::Skip => Self::Skip,
-            ImportErrorKind::Error => Self::Error,
-        }
-    }
-}
-
 /// The [`RunIssueKind`] that is not an Import Error, refused by
 /// `TryFrom<RunIssueKind> for ImportErrorKind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -382,11 +373,8 @@ mod import_mode_tests {
                 kind
             );
             assert_eq!(ImportErrorKind::parse(kind.as_str()), Some(kind));
-            assert_eq!(RunIssueKind::from(kind).as_str(), kind.as_str());
-            assert_eq!(
-                ImportErrorKind::try_from(RunIssueKind::from(kind)),
-                Ok(kind)
-            );
+            let reported = RunIssueKind::parse(kind.as_str()).unwrap();
+            assert_eq!(ImportErrorKind::try_from(reported), Ok(kind));
         }
         for word in ["note", "resolved", "warning"] {
             assert!(
