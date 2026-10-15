@@ -224,7 +224,11 @@ fn participants_for(session: &MailSession, chatroom: &Chat) -> (Vec<Participant>
         }
         None if !group => {
             let address = chatroom.chat_identifier.as_str();
-            add(address, session.address_name(address), None);
+            add(
+                address,
+                session.address_name(address),
+                session.address_country(address),
+            );
         }
         None => {}
     }

@@ -285,9 +285,9 @@ fn stages_attachment_files(options: &ExportOptions) -> bool {
 }
 
 /// Read events until the program says the export is done, grouping messages
-/// by conversation. Cancel is checked on every event, and the helper kills
-/// the program on Cancel while it waits for one, so a cancelled run stops
-/// even while the program sends nothing.
+/// by conversation. Cancel is checked on every event, and [`Helper`] kills
+/// the Apple Messages Reader on Cancel while it waits for one, so a canceled
+/// run stops even while the reader sends nothing.
 fn collect(helper: &mut Helper, options: &ExportOptions) -> Result<Collected> {
     let mut conversations: BTreeMap<String, ChatInProgress> = BTreeMap::new();
     let mut encrypted = false;
@@ -356,7 +356,7 @@ fn chat_from_record(record: ConversationRecord) -> ChatInProgress {
             .map(|p| IrParticipant {
                 identity: Some(p.identity),
                 display_name: p.display_name,
-                country: p.country,
+                country: known_country(p.country),
             })
             .collect(),
         owner_identity: String::new(),
@@ -364,6 +364,16 @@ fn chat_from_record(record: ConversationRecord) -> ChatInProgress {
         messages: Vec::new(),
         attachment_loads: Vec::new(),
     }
+}
+
+/// A country the Apple Messages Reader read from `handle.country`, kept
+/// only when Message Crate knows it (`phone::country`). Messages can write a
+/// code with no calling code (`AQ`) or one that is not ISO (`UK`), and the
+/// server refuses a file that names a country it does not know, so such a
+/// code names no country here: the number keeps its digits, as it would
+/// with none, and the backup still imports.
+fn known_country(country: Option<String>) -> Option<String> {
+    country.filter(|code| phone::country(code).is_some())
 }
 
 /// One record as an [`IrMessage`] plus the load key for each attachment.
@@ -394,7 +404,7 @@ fn message_to_ir(
         IrDirection::Incoming => (
             record.sender_identity,
             record.sender_display_name,
-            record.sender_country,
+            known_country(record.sender_country),
         ),
     };
 
@@ -1116,6 +1126,42 @@ mod tests {
         );
         assert_eq!(ir.size_bytes, Some(6));
         assert!(matches!(load, AttachmentLoad::Bytes(b) if b == b"<svg/>"));
+    }
+
+    /// A `handle.country` Message Crate does not know (`UK` is not ISO,
+    /// `AQ` has no calling code) names no country in the file, so the
+    /// server, which refuses an unknown code, still imports the backup. A
+    /// known one is kept.
+    #[test]
+    fn a_country_message_crate_does_not_know_names_no_country() {
+        let mut record = message_record("07700 900123", "g-1", false);
+        record.sender_country = Some("UK".into());
+        assert_eq!(
+            message_to_ir(record, AttachmentEmbed::Disabled, false)
+                .0
+                .sender_country,
+            None
+        );
+        let mut record = message_record("07700 900123", "g-2", false);
+        record.sender_country = Some("GB".into());
+        assert_eq!(
+            message_to_ir(record, AttachmentEmbed::Disabled, false)
+                .0
+                .sender_country
+                .as_deref(),
+            Some("GB")
+        );
+        let chat = chat_from_record(ConversationRecord {
+            chat_identifier: "07700 900123".into(),
+            conversation_type: "individual".into(),
+            group_title: None,
+            participants: vec![imessage_reader_protocol::Participant {
+                identity: "07700 900123".into(),
+                display_name: None,
+                country: Some("AQ".into()),
+            }],
+        });
+        assert_eq!(chat.participants[0].country, None);
     }
 
     fn message_record(chat: &str, guid: &str, outgoing: bool) -> MessageRecord {

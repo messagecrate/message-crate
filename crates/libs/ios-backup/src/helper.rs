@@ -39,7 +39,7 @@ use message_crate_core::{
 /// How often a wait for the program's next line looks at the cancel flag.
 /// It bounds how long Cancel takes, not how long the program may stay
 /// silent: a program that sends nothing for an hour is waited for, and one
-/// that is cancelled is killed within this time.
+/// that is canceled is killed within this time.
 const CANCEL_CHECK: Duration = Duration::from_millis(100);
 
 /// Names the helper executable outright, bypassing the search.

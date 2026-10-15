@@ -39,6 +39,17 @@ impl HandleIdCache {
     pub fn country(&self) -> Option<&'static phone::Country> {
         self.country
     }
+
+    /// The country a phone number written without its `+` code is read in:
+    /// `stated`, the country the conversation file names for that identity,
+    /// else the run's.
+    #[must_use]
+    pub fn country_for(
+        &self,
+        stated: Option<&'static phone::Country>,
+    ) -> Option<&'static phone::Country> {
+        stated.or(self.country)
+    }
 }
 
 /// One standard form of a handle for identity matching, per type, with the
@@ -380,7 +391,7 @@ pub async fn upsert_handle_row_cached(
     service: Option<&str>,
     stated: Option<&'static phone::Country>,
 ) -> Result<(i64, bool, bool)> {
-    let country = stated.or(cache.country);
+    let country = cache.country_for(stated);
     let normalized = normalize_handle(raw, handle_type, country).key;
     let platform = IdentityService::parse(service.unwrap_or(IdentityService::Phone.as_str()));
     let key = (

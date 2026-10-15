@@ -991,3 +991,70 @@ async fn a_country_nobody_knows_refuses_the_file() {
         "{reason}"
     );
 }
+
+/// One address can have two `handle` rows in `chat.db`, one naming a
+/// country and one not, as an iMessage row and an SMS row for one number
+/// do. The participant, the senders and the chat id at that address are
+/// still one identity, read in the country the conversation names for it,
+/// whichever record names it.
+#[tokio::test]
+async fn an_address_is_one_identity_when_only_some_of_its_records_name_a_country() {
+    let (pool, _dir) = crate::test_support::schema_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    // The participant names GB; the sender does not.
+    let body = conversation_header("imessage", "07700 900123")
+        .participant("07700 900123", None)
+        .in_country("GB")
+        .line()
+        + &message_line("g-p-1", "hi").sender("07700 900123").line();
+    import_one(&mut conn, "participant.jsonl", &body)
+        .await
+        .unwrap();
+    // The sender names GB; the participant does not.
+    let body = conversation_header("imessage", "07700 900456")
+        .participant("07700 900456", None)
+        .line()
+        + &message_line("g-s-1", "hi")
+            .sender("07700 900456")
+            .sender_country("GB")
+            .line();
+    import_one(&mut conn, "sender.jsonl", &body).await.unwrap();
+
+    assert_eq!(
+        handle_keys(&mut conn).await,
+        [
+            ("07700 900123".to_string(), "+447700900123".to_string()),
+            ("07700 900456".to_string(), "+447700900456".to_string()),
+        ]
+    );
+}
+
+/// The Apple Messages exporter's own output for its committed fixture
+/// `chat.db` (`imessage-ir-exporter/tests/fixtures/handle-country/`), whose
+/// handle `07700 900123` names `gb` and `07700 900456` names no country,
+/// imported with no country on the import form: the first is stored as
+/// `+447700900123`, and the second keeps its digits (#1994).
+#[tokio::test]
+async fn an_apple_messages_export_of_a_gb_handle_stores_its_plus_form() {
+    let (pool, _dir) = crate::test_support::schema_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let body = crate::test_support::at_current_schema_version(include_str!(
+        "../../../tests/fixtures/apple-messages-handle-country.jsonl"
+    ));
+    import_one(&mut conn, "handle-country.jsonl", &body)
+        .await
+        .unwrap();
+
+    let keys: Vec<(String, String)> = handle_keys(&mut conn)
+        .await
+        .into_iter()
+        .filter(|(raw, _)| raw.starts_with("07700"))
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            ("07700 900123".to_string(), "+447700900123".to_string()),
+            ("07700 900456".to_string(), "07700900456".to_string()),
+        ]
+    );
+}

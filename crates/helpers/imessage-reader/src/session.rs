@@ -146,6 +146,18 @@ impl MailSession {
         self.handle_countries.get(&handle_id).map(String::as_str)
     }
 
+    /// The country a `handle` row with this address names, for an address
+    /// known only by a chat's identifier. Rows are tried in rowid order, so
+    /// one address gives one answer.
+    pub fn address_country(&self, address: &str) -> Option<&str> {
+        self.handles
+            .iter()
+            .filter(|(_, id)| id.as_str() == address)
+            .filter_map(|(rowid, _)| self.handle_countries.get(rowid).map(|c| (*rowid, c)))
+            .min_by_key(|(rowid, _)| *rowid)
+            .map(|(_, country)| country.as_str())
+    }
+
     /// The contact name of a handle, when the contacts know its address.
     pub fn handle_name(&self, handle_id: i32) -> Option<&str> {
         self.handle_names.get(&handle_id).map(String::as_str)

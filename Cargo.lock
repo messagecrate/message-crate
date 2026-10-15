@@ -1604,6 +1604,7 @@ dependencies = [
  "message-ir",
  "message-ir-format",
  "message-staging",
+ "phone",
  "serde_json",
  "tempfile",
 ]

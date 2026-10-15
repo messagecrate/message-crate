@@ -398,7 +398,7 @@ impl StagingInserts {
                 &self.identities,
                 address,
                 handle_type,
-                sender.country.or(self.handles.country()),
+                self.handles.country_for(sender.country),
             )
         {
             ensure_contact_for_handle(
@@ -586,9 +586,13 @@ impl FileStaging<'_> {
         });
         let service = service_for(conversation.header_service.as_deref(), &conversation.source);
         let stated = StatedCountries::of(&conversation.participants, &prepared_messages);
-        // A reaction names its reactor by address alone, with no country, so
-        // it takes the one the conversation names for the same identity.
+        // One address is one identity in a conversation, so every place it
+        // appears is read in the one country the conversation names for it:
+        // a sender whose own `handle` row named none, beside a participant
+        // whose row named `GB`, is the same `+44` number. A reaction names
+        // its reactor by address alone, with no country of its own.
         for (msg, _) in &mut prepared_messages {
+            msg.sender_country = msg.sender.as_ref().and_then(|s| stated.of_value(s));
             for tapback in &mut msg.tapbacks {
                 tapback.sender_country = stated.of_address(tapback.sender.as_deref());
             }
@@ -658,7 +662,7 @@ impl FileStaging<'_> {
                 &self.stmts.identities,
                 &conversation.chat_identifier,
                 chat_handle_type,
-                chat_country.or(self.stmts.handles.country()),
+                self.stmts.handles.country_for(chat_country),
             );
         if chat_is_an_address && !with_yourself {
             count_other_identity(chat_handle_type, chat_cached, &mut counts);
@@ -692,7 +696,8 @@ impl FileStaging<'_> {
             crate::db::imports::note_backup_taken_at(self.tx, import_id, backup_taken_at).await?;
         }
 
-        for participant in conversation.participants {
+        for mut participant in conversation.participants {
+            participant.country = stated.of_value(&participant.handle);
             insert_participant(
                 self.tx,
                 self.stmts,
@@ -751,7 +756,9 @@ impl FileStaging<'_> {
 /// The countries one conversation's file names for its identities, by
 /// address: each participant's `country` and each sender's
 /// `sender_country`. A participant's comes first, then senders' in message
-/// order, so one address takes one country across the conversation.
+/// order, so one address takes one country across the conversation, and
+/// every participant, sender, reactor and one-to-one chat id at that
+/// address is read in it.
 struct StatedCountries(HashMap<String, &'static phone::Country>);
 
 impl StatedCountries {
@@ -777,6 +784,14 @@ impl StatedCountries {
     /// The country named for `address`, when one is.
     fn of_address(&self, address: Option<&str>) -> Option<&'static phone::Country> {
         address.and_then(|address| self.0.get(address).copied())
+    }
+
+    /// The country named for `value`'s address; a name has none.
+    fn of_value(&self, value: &HandleValue) -> Option<&'static phone::Country> {
+        match value {
+            HandleValue::Address(address) => self.of_address(Some(address)),
+            HandleValue::Name(_) => None,
+        }
     }
 }
 
@@ -854,7 +869,7 @@ async fn insert_participant(
         &stmts.identities,
         handle,
         handle_type,
-        country.or(stmts.handles.country()),
+        stmts.handles.country_for(country),
     ) {
         return Ok(());
     }
