@@ -57,12 +57,6 @@ impl From<anyhow::Error> for MessagePageError {
     }
 }
 
-impl From<sqlx::Error> for MessagePageError {
-    fn from(e: sqlx::Error) -> Self {
-        Self::Internal(e.into())
-    }
-}
-
 /// Sorted, deduplicated ids for an `IN` list.
 fn unique_ids(ids: impl IntoIterator<Item = i64>) -> Vec<i64> {
     let mut ids: Vec<i64> = ids.into_iter().collect();

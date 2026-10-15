@@ -396,7 +396,7 @@ pub(crate) async fn remove_all_attachment_files(
 /// Whether files of `account_id` may be taken out of its store now: its
 /// account row exists and it has no running Import Run. Call it with the
 /// write lock held (see the module notes).
-async fn may_take_out(conn: &mut SqliteConnection, account_id: i64) -> Result<bool, sqlx::Error> {
+async fn may_take_out(conn: &mut SqliteConnection, account_id: i64) -> anyhow::Result<bool> {
     Ok(account_exists(conn, account_id).await? && !has_running_import(conn, account_id).await?)
 }
 
@@ -695,7 +695,7 @@ pub(crate) const PREVIEW_GRACE_SECS: u64 = 60 * 60;
 async fn named_fingerprints(
     conn: &mut SqliteConnection,
     account_id: i64,
-) -> Result<HashSet<String>, sqlx::Error> {
+) -> anyhow::Result<HashSet<String>> {
     Ok(
         crate::db::attachment_versions::named_files(conn, account_id)
             .await?

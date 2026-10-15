@@ -4,7 +4,7 @@
 //! first write and removes it after its last, so a row that is there when the
 //! server starts belongs to a build the server stopped part-way (#1215).
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
@@ -49,7 +49,8 @@ pub async fn begin(conn: &mut SqliteConnection, now: DateTime<Utc>) -> Result<()
     sqlx::query("INSERT OR REPLACE INTO demo_account_build (id, started_at) VALUES (1, $1)")
         .bind(unix_secs(now).to_string())
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("record that a Demo Account build started")?;
     Ok(())
 }
 
@@ -61,7 +62,8 @@ pub async fn begin(conn: &mut SqliteConnection, now: DateTime<Utc>) -> Result<()
 pub async fn end(conn: &mut SqliteConnection) -> Result<()> {
     sqlx::query("DELETE FROM demo_account_build WHERE id = 1")
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("remove the record of a Demo Account build")?;
     Ok(())
 }
 
@@ -73,6 +75,7 @@ pub async fn end(conn: &mut SqliteConnection) -> Result<()> {
 pub async fn is_unfinished(conn: &mut SqliteConnection) -> Result<bool> {
     let row: Option<i64> = sqlx::query_scalar("SELECT id FROM demo_account_build WHERE id = 1")
         .fetch_optional(&mut *conn)
-        .await?;
+        .await
+        .context("read the record of an unfinished Demo Account build")?;
     Ok(row.is_some())
 }

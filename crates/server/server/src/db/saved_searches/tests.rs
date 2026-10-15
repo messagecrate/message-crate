@@ -455,3 +455,31 @@ async fn deleting_a_saved_search_leaves_the_import_record() {
         "deleting the shortcut must not touch the import record"
     );
 }
+
+/// A failed statement's error names the step it was taking, so the one
+/// `ERROR` line of a `500` says which statement failed, not only the
+/// database's message (#2667). A temporary `saved_searches` without its
+/// columns hides the real table, so the read fails on its own.
+#[tokio::test]
+async fn a_failed_statement_names_its_step() {
+    let fixture = crate::test_support::test_fixture().await;
+    let account = fixture.account_with_id(101, "alice").await;
+    let mut conn = fixture.conn().await;
+    sqlx::query("CREATE TEMP TABLE saved_searches (id INTEGER)")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+
+    let SavedSearchError::Internal(error) =
+        list(&mut conn, account).await.expect_err("the read fails")
+    else {
+        panic!("a failed statement is an internal error");
+    };
+
+    let chain = crate::api_error::error_chain(&error);
+    assert!(
+        chain.starts_with("read the account's Saved Searches: ")
+            && chain.contains("no such column"),
+        "{chain}"
+    );
+}

@@ -210,10 +210,10 @@ that does not say which statement failed sends the owner to the code to
 guess. Why a fixed phrase: a bound value can be a search word or a message's
 text, which a line never holds (below).
 
-`db/conversation_messages.rs`, `db/conversations.rs` and
-`db/contacts/read.rs` name every statement they run; the other `db/`
-modules do not all name theirs yet
-([#2667](https://github.com/messagecrate/message-crate/issues/2667)).
+Every statement in `crates/server/server/src/db/` names its step where it
+runs. A shared helper that runs a statement for several callers, such as
+`begin_write`, `free_name` or the ownership checks, leaves the step to each
+caller, which knows what the statement is for.
 
 ## A request's lines carry its id, spawned work included
 

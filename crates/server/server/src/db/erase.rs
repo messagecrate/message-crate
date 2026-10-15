@@ -43,16 +43,24 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
 
+use anyhow::{Context as _, Result};
 use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::db::WriteTx;
 
-/// The statements that merge each full-text search index into one segment.
+/// The statements that merge each full-text search index into one segment,
+/// each with the step it names in an error.
 /// FTS5's `optimize` is the only merge that takes in every segment, so it is
 /// the only one that leaves no deleted row's words behind.
-const OPTIMIZE_SEARCH_INDEXES: [&str; 2] = [
-    "INSERT INTO messages_fts(messages_fts) VALUES('optimize')",
-    "INSERT INTO message_versions_fts(message_versions_fts) VALUES('optimize')",
+const OPTIMIZE_SEARCH_INDEXES: [(&str, &str); 2] = [
+    (
+        "INSERT INTO messages_fts(messages_fts) VALUES('optimize')",
+        "merge the message search index into one segment",
+    ),
+    (
+        "INSERT INTO message_versions_fts(message_versions_fts) VALUES('optimize')",
+        "merge the message version search index into one segment",
+    ),
 ];
 
 /// How long clearing the log waits for another connection's read to end.
@@ -107,11 +115,13 @@ fn logs_to_clear() -> std::sync::MutexGuard<'static, LogsToClear> {
 ///
 /// Returns the database error when a merge or the commit fails; the
 /// transaction then rolls back with the delete in it.
-pub(crate) async fn erase_and_commit(mut tx: WriteTx<'_>) -> sqlx::Result<()> {
-    for sql in OPTIMIZE_SEARCH_INDEXES {
-        sqlx::query(sql).execute(&mut *tx).await?;
+pub(crate) async fn erase_and_commit(mut tx: WriteTx<'_>) -> Result<()> {
+    for (sql, step) in OPTIMIZE_SEARCH_INDEXES {
+        sqlx::query(sql).execute(&mut *tx).await.context(step)?;
     }
-    tx.commit().await
+    tx.commit()
+        .await
+        .context("commit the delete for good with its erased search words")
 }
 
 /// What [`clear_write_ahead_log`] did.
@@ -166,7 +176,7 @@ async fn clear_log_of(file: PathBuf) -> LogCleared {
         Ok(true) => LogCleared::Cleared,
         Ok(false) | Err(_) => {
             let cause = match &checkpoint {
-                Err(err) => format!("the checkpoint failed: {err}"),
+                Err(err) => format!("the checkpoint failed: {err:#}"),
                 _ => "another connection was still reading".to_owned(),
             };
             tracing::warn!(
@@ -202,11 +212,15 @@ fn record(logs: &mut LogsToClear, file: PathBuf, seen: Option<u64>, cleared: Log
 
 /// Run `PRAGMA wal_checkpoint(TRUNCATE)` on a connection of its own to
 /// `file`, and answer whether it finished.
-async fn checkpoint(file: &std::path::Path) -> sqlx::Result<bool> {
+async fn checkpoint(file: &std::path::Path) -> Result<bool> {
     use sqlx::Connection as _;
-    let mut own = crate::db::engine::connect_for_checkpoint(file, CHECKPOINT_WAIT).await?;
+    let mut own = crate::db::engine::connect_for_checkpoint(file, CHECKPOINT_WAIT)
+        .await
+        .context("open a connection for the checkpoint")?;
     let finished = crate::db::maintenance::checkpoint_truncate(&mut own).await?;
-    own.close().await?;
+    own.close()
+        .await
+        .context("close the checkpoint's connection")?;
     Ok(finished)
 }
 
