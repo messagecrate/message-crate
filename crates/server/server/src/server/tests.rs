@@ -2449,6 +2449,69 @@ fn docker_stop_waits_longer_than_the_drain() {
     );
 }
 
+/// Every `docker run` command in the user guide that starts a server carries
+/// the four limits both Compose files set (#2655): no Linux capability, no
+/// privilege gain, a read-only root filesystem, and `/tmp` in memory. The
+/// three pages carry the command separately, so this keeps each copy from
+/// losing a limit. A command is found wherever it starts on a line and
+/// however it is split across lines, and only one that runs the Message
+/// Crate image counts.
+#[test]
+fn user_guide_docker_run_commands_limit_the_container() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let limits = [
+        "--cap-drop ALL",
+        "--security-opt no-new-privileges:true",
+        "--read-only",
+        "--tmpfs /tmp",
+    ];
+    let docs = "docs/src/content/docs/docs/user/features/owner";
+    let mut started = 0;
+    for page in [
+        "run-with-docker.md",
+        "run-on-another-machine.md",
+        "update.md",
+    ] {
+        let path = format!("{docs}/{page}");
+        let text = std::fs::read_to_string(root.join(&path))
+            .unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let lines: Vec<&str> = text.lines().collect();
+        for (at, line) in lines.iter().enumerate() {
+            if !line.trim_start().starts_with("docker run ") {
+                continue;
+            }
+            // The command runs on while a line ends in `\`.
+            let mut words: Vec<&str> = Vec::new();
+            for part in &lines[at..] {
+                let part = part.trim();
+                words.extend(part.trim_end_matches('\\').split_whitespace());
+                if !part.ends_with('\\') {
+                    break;
+                }
+            }
+            if !words
+                .iter()
+                .any(|word| word.starts_with("bitrealm/message-crate"))
+            {
+                continue;
+            }
+            started += 1;
+            let command = words.join(" ");
+            for limit in limits {
+                assert!(
+                    command.contains(&format!(" {limit} ")),
+                    "{path}:{} starts a server without {limit}",
+                    at + 1
+                );
+            }
+        }
+    }
+    assert_eq!(
+        started, 3,
+        "the pages that start a server in Docker moved, or one was added"
+    );
+}
+
 /// The attachment size limit holds the attachment uploads and nothing else.
 /// An owner who sets it to 20 bytes can still log in and change the Server
 /// Settings, and an account can still post an import batch of a few

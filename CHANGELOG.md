@@ -1271,6 +1271,22 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-14: **The guide's `docker run` commands limit the container as
+  the Compose files do.** A server started with the user guide's commands
+  kept every special permission a container has by default. A program
+  inside the container could gain more, and could write to the container's
+  own files. Every `docker run` command in the guide that starts the server
+  now takes those permissions away and refuses to give more. It also makes
+  the container's own files read-only, apart from a directory for temporary
+  files. That limits what a program that breaks into the container can do
+  there (#2655).
+- 2026-10-14: **The guide asks for a proxy with its own sign-in before the
+  internet.** "Run on another machine" asked only for a reverse proxy with
+  TLS in front of a server reached from the internet. TLS encrypts the
+  traffic but lets anyone reach the login and the Demo Account. The guide
+  now asks for a proxy that adds its own authentication as well, and says
+  the account login keeps accounts apart but is not built to stand alone on
+  the internet (#2104).
 - 2026-10-12: **A slow or stuck device can no longer hold the server.** A
   device that connected and sent nothing, sent its request a byte at a time,
   or stopped part-way through sending one could hold its connection for
@@ -1530,6 +1546,12 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-14: A Message Crate started with `docker run` before this release
+  keeps every default container permission. Stop it with
+  `docker stop -t 40 message-crate`, remove it with
+  `docker rm message-crate`, and start it again with the `docker run`
+  command in the user guide, which keeps the messages in the same volume
+  (#2655).
 - 2026-10-12: Text deleted for good before this release can still be in
   the database file's free space and in its search index. The first delete
   for good after the update writes the search index again without those

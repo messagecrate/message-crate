@@ -270,7 +270,7 @@ A Review that has been approved folds to one line, **Approved**.
 When a finished run reports errors, an **Errors** table sits under the list, with the count beside the heading.
 Identical errors are grouped.
 Its columns are **Parse File**, **Stage**, and **Error Message**, and a row opens to the full message and the files it names.
-A file in the backup that the importer could not read, such as a CSV that is not a chat export, is an error that names the file.
+A file in the backup that the importer could not read, such as a CSV that is not a messages export, is an error that names the file.
 
 When a finished run kept something with a caveat, a **Notes** table sits under the errors, with the count beside the heading.
 A note is not an error, and a run with notes and no errors still reads as completed.

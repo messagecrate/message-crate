@@ -18,7 +18,7 @@ What follows depends on what else there is to bring in.
 
 ## Using what is there
 
-- [Browse](/docs/user/features/messages/browse/) describes the conversation list and the thread view.
+- [Browse](/docs/user/features/messages/browse/) describes the conversation list and the open conversation.
 - [Search](/docs/user/features/messages/search/) lists every search word.
 - [Contacts](/docs/user/features/contacts/contacts/) covers naming people and grouping them.
 - [Attachments and media](/docs/user/features/messages/attachments-and-media/) covers converting photos and video so every browser shows them.
