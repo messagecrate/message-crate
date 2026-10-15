@@ -419,9 +419,7 @@ impl SmsBackupRead {
     fn read(&self, context: &RunContext) -> Result<Vec<ConversationDocument>> {
         let (documents, report) =
             read_backup(&self.input, self.options(context, Reports::Nowhere))?;
-        for line in report.log_lines() {
-            context.log.emit(line);
-        }
+        report.write_log(&context.log);
         Ok(documents)
     }
 

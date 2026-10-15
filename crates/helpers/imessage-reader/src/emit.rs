@@ -38,7 +38,7 @@ use crate::{
         balloon_kind_label, balloon_summary, build_balloon_value, build_earlier_versions,
         expressive_label, parse_thread_part, shared_location_label,
     },
-    log::{emit, emit_log},
+    log::{emit, emit_log, emit_warning},
     session::MailSession,
 };
 
@@ -98,7 +98,7 @@ pub(crate) fn stream_export(session: &MailSession) -> Result<(), RuntimeError> {
             }
             Err(why) => {
                 failures += 1;
-                emit_log(format!(
+                emit_warning(format!(
                     "Message {} (row {} of the messages database) could not be read, so it is left out: {}",
                     msg.guid, msg.rowid, why
                 ));
@@ -121,7 +121,7 @@ pub(crate) fn stream_export(session: &MailSession) -> Result<(), RuntimeError> {
         total: read,
     }));
     if failures > 0 {
-        emit_log(if failures == 1 {
+        emit_warning(if failures == 1 {
             "1 message could not be read and was left out".to_string()
         } else {
             format!("{failures} messages could not be read and were left out")

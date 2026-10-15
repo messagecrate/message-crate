@@ -592,7 +592,7 @@ impl NotDecrypted {
     ) {
         let item = path.display().to_string();
         let line = item_line(ItemKind::Attachment, &item, &what_happened);
-        options.log.emit(line.clone());
+        options.log.warn(line.clone());
         options.convert_run.issues.emit(RunIssue {
             kind: RunIssueKind::Error,
             step: "attachments".into(),
@@ -648,7 +648,7 @@ fn read_attachment(
         };
         let bytes = fs::read(&temp);
         if let Err(why) = fs::remove_file(&temp) {
-            options.log.emit(format!(
+            options.log.warn(format!(
                 "The decrypted copy of attachment {} at {} could not be removed: {why}",
                 path.display(),
                 temp.display()
@@ -675,7 +675,7 @@ fn read_attachment(
         Err(e) => {
             options
                 .log
-                .emit(message_staging::unreadable_attachment_line(path, e));
+                .warn(message_staging::unreadable_attachment_line(path, e));
             Ok(Vec::new())
         }
     }
@@ -763,6 +763,8 @@ fn write_conversations(
 /// Project one accumulated conversation into the shared document shape,
 /// read from a backup made at `backup_taken_at_unix_ms`
 /// ([`ExportOptions::backup_taken_at_unix_ms`]).
+///
+/// Not through [`message_ir::ProjectionHooks`], whose documentation says why.
 fn chat_to_document(
     chat_identifier: String,
     conversation: ChatInProgress,
@@ -1023,15 +1025,13 @@ mod tests {
     }
 
     /// An attachment the program could not decrypt is a sentence on the
-    /// log, with no `warning:` before it (#1888).
+    /// log, with no `warning:` before it (#1888), at `WARN`, since the run
+    /// goes on without it (#2047).
     #[test]
     fn an_attachment_that_could_not_be_decrypted_is_a_sentence_in_the_log() {
-        let lines = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
-        let sink_lines = std::sync::Arc::clone(&lines);
+        let (log, recorded) = message_crate_core::testutil::recorded_log();
         let mut options = options(OutputFormat::Jsonl, false);
-        options.log = LogSink::new(move |l: &str| {
-            sink_lines.lock().unwrap().push(l.to_string());
-        });
+        options.log = log;
 
         let mut not_decrypted = NotDecrypted::default();
         not_decrypted.record(
@@ -1042,8 +1042,11 @@ mod tests {
         );
 
         assert_eq!(
-            *lines.lock().unwrap(),
-            ["The attachment Library/SMS/a.jpg could not be decrypted: bad key"]
+            *recorded.lock().unwrap(),
+            [(
+                message_crate_core::RunLogLevel::Warn,
+                "The attachment Library/SMS/a.jpg could not be decrypted: bad key".to_string()
+            )]
         );
     }
 

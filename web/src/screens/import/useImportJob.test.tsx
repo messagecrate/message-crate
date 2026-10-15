@@ -20,17 +20,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
 import { ApiError, setAccountId } from "../../lib/api";
 import { AuthContext } from "../../lib/authContext";
+import type { DesktopJobResult } from "../../lib/desktop/job";
+import type { StagingSummary } from "../../lib/desktop/staging";
+import type { ToolsStatus } from "../../lib/desktop/tools";
+import type { UploadFinishedReport } from "../../lib/desktop/upload";
 import { currentDesktopJob } from "../../lib/desktopJob";
 import { CanceledError, DesktopJobError } from "../../lib/desktopJobError";
 import type { ActiveImportRun } from "../../lib/importRun";
 import { keys } from "../../lib/queryKeys";
 import { ANONYMOUS_ACCOUNT, routeQueryKey } from "../../lib/routeQueryKey";
-import type {
-  DesktopJobResult,
-  StagingSummary,
-  ToolsStatus,
-  UploadFinishedReport,
-} from "../../lib/tauri";
 import type {
   AttachmentMediaMode,
   ImportFileDoneEvent,

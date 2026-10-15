@@ -13,7 +13,7 @@ use crate::{
     backup::{decrypt_backup, get_decrypted_contacts_database, get_decrypted_message_database},
     contacts::{ContactsIndex, DEFAULT_PATH_IOS},
     error::RuntimeError,
-    log::emit_log,
+    log::{emit_log, emit_warning},
     options::ReaderOptions,
 };
 
@@ -36,7 +36,7 @@ impl TempDatabase {
 impl Drop for TempDatabase {
     fn drop(&mut self) {
         if let Err(why) = remove_file(&self.path) {
-            emit_log(format!(
+            emit_warning(format!(
                 "The temporary copy of the messages database at {} could not be removed: {why}",
                 self.path.display(),
             ));
@@ -79,7 +79,7 @@ impl DataSource {
                     let contacts_path = match get_decrypted_contacts_database(&backup, options) {
                         Ok(path) => Some(path),
                         Err(e) => {
-                            emit_log(format!(
+                            emit_warning(format!(
                                 "The contacts database in the iPhone backup could not be decrypted, \
                                  so no contact is named from it: {e:#}"
                             ));
@@ -107,7 +107,7 @@ impl DataSource {
                     if let Some(ref cp) = contacts_path
                         && let Err(e) = remove_file(cp)
                     {
-                        emit_log(format!(
+                        emit_warning(format!(
                             "The temporary copy of the contacts database at {} could not be removed: {e}",
                             cp.display()
                         ));
@@ -143,7 +143,7 @@ impl DataSource {
         match ContactsIndex::build(path) {
             Ok(index) => Some(index),
             Err(e) => {
-                emit_log(format!(
+                emit_warning(format!(
                     "Contacts could not be read, so no contact is named from them: {e}"
                 ));
                 None
@@ -206,7 +206,8 @@ mod tests {
     }
 
     /// A contacts file that cannot be read is logged and the run goes on
-    /// without names, rather than failing the whole export.
+    /// without names, rather than failing the whole export. The line is a
+    /// warning, since the run goes on without the contacts (#2047).
     #[test]
     fn an_unreadable_contacts_file_leaves_the_index_empty() {
         let fixture = FixtureDb::write();
@@ -218,8 +219,21 @@ mod tests {
         });
         let source = DataSource::from(&options).unwrap();
         assert_eq!(source.contacts_index.lookup("+15555550107"), None);
+        let mut index = None;
+        let events = crate::log::capture::events(|| {
+            index = Some(DataSource::get_contacts_index(Some(
+                &fixture.dir.path().join("missing.db"),
+            )));
+        });
+        assert!(matches!(index, Some(None)), "no index is built");
+        assert_eq!(events.len(), 1, "{events:?}");
+        assert_eq!(events[0]["event"], "warning", "{events:?}");
         assert!(
-            DataSource::get_contacts_index(Some(&fixture.dir.path().join("missing.db"))).is_none()
+            events[0]["line"]
+                .as_str()
+                .unwrap()
+                .starts_with("Contacts could not be read, so no contact is named from them: "),
+            "{events:?}"
         );
     }
 

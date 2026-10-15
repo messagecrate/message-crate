@@ -1,4 +1,4 @@
-import type { AttachmentForecast, StagingSummary } from "../../lib/tauri";
+import type { AttachmentForecast, StagingSummary } from "../../lib/desktop/staging";
 import type { AttachmentMediaMode } from "../../lib/types";
 
 /** The job the Media stage is doing, in the person's words. */

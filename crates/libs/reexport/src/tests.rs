@@ -1,9 +1,8 @@
 use super::*;
-use message_crate_core::testutil::TestRun;
-use message_crate_core::{LogSink, ObfuscateConfig};
+use message_crate_core::testutil::{RecordedLog, TestRun, recorded_log};
+use message_crate_core::{ObfuscateConfig, RunLogLevel};
 use message_ir::IrAttachment;
 use message_ir_format::{read_conversation_csv, read_conversation_json};
-use std::sync::{Arc, Mutex};
 
 fn write_fixture(dir: &Path, format: OutputFormat) {
     fs::create_dir_all(dir).unwrap();
@@ -440,20 +439,29 @@ fn sms_fixture(name: &str) -> PathBuf {
 }
 
 /// The config of a Convert from `input`, with every line it logs as it
-/// runs.
-fn logged_config(input: &Path, output: &Path) -> (TestRun<FormatConfig>, Arc<Mutex<Vec<String>>>) {
-    let lines = Arc::new(Mutex::new(Vec::new()));
-    let sink_lines = Arc::clone(&lines);
+/// runs, each at its level.
+fn logged_config(input: &Path, output: &Path) -> (TestRun<FormatConfig>, RecordedLog) {
+    let (log, recorded) = recorded_log();
     let mut config = config(input, output, OutputFormat::Csv);
-    config.context.log = LogSink::new(move |line: &str| {
-        sink_lines.lock().unwrap().push(line.to_string());
-    });
-    (config, lines)
+    config.context.log = log;
+    (config, recorded)
+}
+
+/// The text of every line `recorded` holds, whatever its level.
+fn texts(recorded: &RecordedLog) -> Vec<String> {
+    recorded
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(_, text)| text.clone())
+        .collect()
 }
 
 /// Convert from an SMS Backup & Restore backup says what its reader
 /// dropped and skipped, before the `Conversations:` line the desktop app
 /// shows as the run's summary (#1603). The fixture holds one of each kind.
+/// What the run went on without is at `WARN`; a repeated copy dropped
+/// leaves the message kept, so it is at `INFO` (#2047).
 #[test]
 fn run_from_an_sms_backup_logs_the_reader_counts() {
     let destination = tempfile::tempdir().unwrap();
@@ -462,19 +470,28 @@ fn run_from_an_sms_backup_logs_the_reader_counts() {
     let result = run_config(&config).unwrap();
 
     let logged = logged.lock().unwrap().clone();
-    for expected in [
-        "Dropped 1 repeated copy of a message",
-        "Skipped 1 message with an invalid date",
-        "Skipped 1 message with no usable address",
-        "Skipped 1 message of an unknown type",
-        "Skipped 1 draft or message never sent",
-        "Skipped 1 MMS with no participants",
-        "Left out 1 message part that could not be read",
-        "Left out 1 character reference that is not a character",
+    for (level, expected) in [
+        (RunLogLevel::Info, "Dropped 1 repeated copy of a message"),
+        (RunLogLevel::Warn, "Skipped 1 message with an invalid date"),
+        (
+            RunLogLevel::Warn,
+            "Skipped 1 message with no usable address",
+        ),
+        (RunLogLevel::Warn, "Skipped 1 message of an unknown type"),
+        (RunLogLevel::Warn, "Skipped 1 draft or message never sent"),
+        (RunLogLevel::Warn, "Skipped 1 MMS with no participants"),
+        (
+            RunLogLevel::Warn,
+            "Left out 1 message part that could not be read",
+        ),
+        (
+            RunLogLevel::Warn,
+            "Left out 1 character reference that is not a character",
+        ),
     ] {
         assert!(
-            logged.iter().any(|line| line == expected),
-            "{expected:?} in the log: {logged:#?}"
+            logged.contains(&(level, expected.to_string())),
+            "{expected:?} at {level:?} in the log: {logged:#?}"
         );
     }
     // The run's summary lines follow everything logged as it ran.
@@ -495,7 +512,7 @@ fn a_convert_that_keeps_no_message_still_logs_why() {
     let err = run_config(&config).unwrap_err().to_string();
 
     assert!(err.contains("no conversations loaded"), "{err}");
-    let logged = logged.lock().unwrap().clone();
+    let logged = texts(&logged);
     assert!(
         logged.contains(&"Skipped 1 message with no usable address".to_string())
             && logged.contains(&"Skipped 1 message of an unknown type".to_string()),
@@ -1760,7 +1777,7 @@ fn a_backup_s_attachments_are_staged_into_the_run_s_log_and_progress() {
     read.counted(&mut documents, context);
     read.stage(&mut documents, context).unwrap();
 
-    let logged = logged.lock().unwrap().clone();
+    let logged = texts(&logged);
     for path in &gone {
         let line = message_staging::unreadable_attachment_line(path, "no file there");
         assert_eq!(

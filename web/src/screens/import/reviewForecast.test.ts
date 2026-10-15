@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AttachmentForecast, StagingSummary } from "../../lib/tauri";
+import type { AttachmentForecast, StagingSummary } from "../../lib/desktop/staging";
 import { MIB } from "../../test/units";
 import { estimatePiles, estimatesHeading, filesOverLimit, mediaJobVerb } from "./reviewForecast";
 

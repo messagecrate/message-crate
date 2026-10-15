@@ -398,7 +398,7 @@ pub(crate) fn missing_if_no_file(
 ) -> (AttachmentSource, Option<u64>) {
     match source {
         AttachmentSource::Path(path) if !path.is_file() => {
-            log.emit(unreadable_attachment_line(&path, "no file there"));
+            log.warn(unreadable_attachment_line(&path, "no file there"));
             (AttachmentSource::Missing, None)
         }
         found => (found, size_hint),
@@ -407,7 +407,8 @@ pub(crate) fn missing_if_no_file(
 
 /// The log line for an attachment whose file could not be read, naming the
 /// file and why. Every exporter that reads an attachment's file itself logs
-/// with it too, so the line reads alike wherever the read fails.
+/// with it too, so the line reads alike wherever the read fails. The run
+/// goes on without the file, so the line is a warning ([`LogSink::warn`]).
 pub fn unreadable_attachment_line(path: &Path, why: impl std::fmt::Display) -> String {
     format!("Attachment {} could not be read: {why}", path.display())
 }
@@ -539,7 +540,7 @@ pub fn drain_write_queue(
                         };
                         load_attachment_source(source).inspect_err(|e| {
                             if let Some(path) = named {
-                                log.emit(unreadable_attachment_line(&path, e));
+                                log.warn(unreadable_attachment_line(&path, e));
                             }
                         })
                     };

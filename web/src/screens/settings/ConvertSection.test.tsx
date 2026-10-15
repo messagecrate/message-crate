@@ -24,20 +24,23 @@ vi.mock("../../lib/tauriCheck", () => ({
   isTauri: () => tauriState.isTauri,
 }));
 
-vi.mock("../../lib/tauri", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../lib/tauri")>();
+vi.mock("../../lib/desktop/export", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/desktop/export")>();
   return {
     EXPORT_FORMATS: actual.EXPORT_FORMATS,
     invokeFormat: (...args: unknown[]) => invokeFormat(...args),
     invokeCreateExportDir: (...args: unknown[]) => invokeCreateExportDir(...args),
     invokeFinishExportDir: (...args: unknown[]) => invokeFinishExportDir(...args),
     invokeDiscardExportDir: (...args: unknown[]) => invokeDiscardExportDir(...args),
-    invokeCancel: (...args: unknown[]) => invokeCancel(...args),
-    // The job's name comes first; the mocks below take what follows it.
-    awaitDesktopJob: (_job: string, ...args: unknown[]) => awaitDesktopJob(...args),
-    onDesktopJobEvents: vi.fn(async () => () => {}),
   };
 });
+
+vi.mock("../../lib/desktop/job", () => ({
+  invokeCancel: (...args: unknown[]) => invokeCancel(...args),
+  // The job's name comes first; the mocks below take what follows it.
+  awaitDesktopJob: (_job: string, ...args: unknown[]) => awaitDesktopJob(...args),
+  onDesktopJobEvents: vi.fn(async () => () => {}),
+}));
 
 afterEach(() => {
   cleanup();
