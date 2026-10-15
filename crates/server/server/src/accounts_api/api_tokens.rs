@@ -264,11 +264,18 @@ pub async fn create_api_token(
     let permissions =
         Permissions::token(req.can_import, req.can_export).intersect(auth.permissions());
     let expires_in_days = req.expires_in_days;
+    let now = chrono::Utc::now();
 
-    let created =
-        api_tokens::create_api_token(&mut conn, account_id, &label, permissions, expires_in_days)
-            .await
-            .map_err(map_label_error)?;
+    let created = api_tokens::create_api_token(
+        &mut conn,
+        account_id,
+        &label,
+        permissions,
+        expires_in_days,
+        now,
+    )
+    .await
+    .map_err(map_label_error)?;
     let token_hint = api_tokens::mask_api_token(&created.token);
     audit_trail::record_about(
         &mut conn,
@@ -280,7 +287,7 @@ pub async fn create_api_token(
             api_token_hint: Some(token_hint.clone()),
             ..Details::default()
         },
-        chrono::Utc::now(),
+        now,
     )
     .await?;
 

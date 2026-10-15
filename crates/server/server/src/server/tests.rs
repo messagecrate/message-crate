@@ -95,14 +95,25 @@ async fn api_token_cannot_exceed_its_owner() {
         .execute(&mut *conn)
         .await
         .unwrap();
-    let created =
-        api_tokens::create_api_token(&mut conn, TEST_ACCOUNT, "tool", Permissions::all(), None)
-            .await
-            .unwrap();
+    let created = api_tokens::create_api_token(
+        &mut conn,
+        TEST_ACCOUNT,
+        "tool",
+        Permissions::all(),
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
-    let identity = resolve_auth_on_conn(&mut conn, &created.token, None)
-        .await
-        .unwrap();
+    let identity = resolve_auth_on_conn(
+        &mut conn,
+        &created.token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
     assert!(
         !identity.permissions().import,
@@ -120,9 +131,13 @@ async fn a_request_never_rebuilds_the_database() {
     let fixture = test_fixture().await;
     fixture.account_with_id(TEST_ACCOUNT, "alice").await;
     let mut conn = fixture.conn().await;
-    let token = session_tokens::insert_account_session_token(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
+    let token = session_tokens::insert_account_session_token(
+        &mut conn,
+        TEST_ACCOUNT,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     let other = crate::db::schema::SCHEMA_FINGERPRINT ^ 1;
     sqlx::query(sqlx::AssertSqlSafe(format!(
         "PRAGMA user_version = {other}"
@@ -131,7 +146,14 @@ async fn a_request_never_rebuilds_the_database() {
     .await
     .unwrap();
 
-    resolve_auth_on_conn(&mut conn, &token, None).await.unwrap();
+    resolve_auth_on_conn(
+        &mut conn,
+        &token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
     let accounts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts")
         .fetch_one(&mut *conn)
@@ -150,12 +172,23 @@ async fn disabling_an_account_kills_its_live_session() {
     let fixture = test_fixture().await;
     fixture.account_with_id(TEST_ACCOUNT, "alice").await;
     let mut conn = fixture.conn().await;
-    let token = session_tokens::insert_account_session_token(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
+    let token = session_tokens::insert_account_session_token(
+        &mut conn,
+        TEST_ACCOUNT,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
     // The token works while the account is active.
-    resolve_auth_on_conn(&mut conn, &token, None).await.unwrap();
+    resolve_auth_on_conn(
+        &mut conn,
+        &token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
     sqlx::query("UPDATE accounts SET disabled = 1 WHERE id = $1")
         .bind(TEST_ACCOUNT)
@@ -163,9 +196,14 @@ async fn disabling_an_account_kills_its_live_session() {
         .await
         .unwrap();
 
-    let err = resolve_auth_on_conn(&mut conn, &token, None)
-        .await
-        .unwrap_err();
+    let err = resolve_auth_on_conn(
+        &mut conn,
+        &token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap_err();
     assert!(
         matches!(err, ApiError::AccountDisabled(_)),
         "a disabled account's existing token must stop working, got {err:?}"
@@ -177,14 +215,27 @@ async fn disabling_an_account_kills_its_live_api_token() {
     let fixture = test_fixture().await;
     fixture.account_with_id(TEST_ACCOUNT, "alice").await;
     let mut conn = fixture.conn().await;
-    let created =
-        api_tokens::create_api_token(&mut conn, TEST_ACCOUNT, "tool", Permissions::all(), None)
-            .await
-            .unwrap();
+    let created = api_tokens::create_api_token(
+        &mut conn,
+        TEST_ACCOUNT,
+        "tool",
+        Permissions::all(),
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     let token = created.token;
 
     // The API token works while the account is active.
-    resolve_auth_on_conn(&mut conn, &token, None).await.unwrap();
+    resolve_auth_on_conn(
+        &mut conn,
+        &token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
     sqlx::query("UPDATE accounts SET disabled = 1 WHERE id = $1")
         .bind(TEST_ACCOUNT)
@@ -192,22 +243,18 @@ async fn disabling_an_account_kills_its_live_api_token() {
         .await
         .unwrap();
 
-    let err = resolve_auth_on_conn(&mut conn, &token, None)
-        .await
-        .unwrap_err();
+    let err = resolve_auth_on_conn(
+        &mut conn,
+        &token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap_err();
     assert!(
         matches!(err, ApiError::AccountDisabled(_)),
         "a disabled account's existing API token must stop working, got {err:?}"
     );
-}
-
-fn auth_headers(token: &str) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        header::AUTHORIZATION,
-        format!("Bearer {token}").parse().unwrap(),
-    );
-    headers
 }
 
 /// The account's running Import Run through `GET /v1/imports?status=running`,
@@ -234,10 +281,14 @@ async fn running_import(
     .next()
 }
 
-/// Resolve the token the way the `ImportAccess` extractor would, for
-/// tests that call import handlers directly instead of over HTTP.
+/// Resolve the token the way the `ImportAccess` extractor would, at the
+/// test's fixed instant, for tests that call import handlers directly
+/// instead of over HTTP.
 async fn import_access(state: &AppState, token: &str) -> ImportAccess {
-    let auth = resolve_auth(&auth_headers(token), state).await.unwrap();
+    let mut conn = state.db.acquire().await.unwrap();
+    let auth = resolve_auth_on_conn(&mut conn, token, None, crate::test_support::fixed_instant())
+        .await
+        .unwrap();
     require_import_access(&auth).unwrap();
     ImportAccess(auth)
 }
@@ -1881,12 +1932,23 @@ async fn a_session_records_the_app_it_connects_with() {
     let fixture = test_fixture().await;
     fixture.account_with_id(TEST_ACCOUNT, "alice").await;
     let mut conn = fixture.conn().await;
-    let token = session_tokens::insert_account_session_token(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
+    let token = session_tokens::insert_account_session_token(
+        &mut conn,
+        TEST_ACCOUNT,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
     // A request that names no app is served and leaves the row as it was.
-    resolve_auth_on_conn(&mut conn, &token, None).await.unwrap();
+    resolve_auth_on_conn(
+        &mut conn,
+        &token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         session_tokens::connecting_app_for_account(&mut conn, TEST_ACCOUNT)
             .await
@@ -1898,9 +1960,14 @@ async fn a_session_records_the_app_it_connects_with() {
         kind: session_tokens::AppKind::Desktop,
         build: "0.9.0+343fe0d8".into(),
     };
-    resolve_auth_on_conn(&mut conn, &token, Some(&desktop))
-        .await
-        .unwrap();
+    resolve_auth_on_conn(
+        &mut conn,
+        &token,
+        Some(&desktop),
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         session_tokens::connecting_app_for_account(&mut conn, TEST_ACCOUNT)
             .await
@@ -1913,9 +1980,14 @@ async fn a_session_records_the_app_it_connects_with() {
         kind: session_tokens::AppKind::Website,
         build: "0.10.0".into(),
     };
-    resolve_auth_on_conn(&mut conn, &token, Some(&website))
-        .await
-        .unwrap();
+    resolve_auth_on_conn(
+        &mut conn,
+        &token,
+        Some(&website),
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         session_tokens::connecting_app_for_account(&mut conn, TEST_ACCOUNT)
             .await
@@ -1931,21 +2003,36 @@ async fn an_api_token_records_no_app() {
     let fixture = test_fixture().await;
     fixture.account_with_id(TEST_ACCOUNT, "alice").await;
     let mut conn = fixture.conn().await;
-    session_tokens::insert_account_session_token(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
-    let created =
-        api_tokens::create_api_token(&mut conn, TEST_ACCOUNT, "tool", Permissions::all(), None)
-            .await
-            .unwrap();
+    session_tokens::insert_account_session_token(
+        &mut conn,
+        TEST_ACCOUNT,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
+    let created = api_tokens::create_api_token(
+        &mut conn,
+        TEST_ACCOUNT,
+        "tool",
+        Permissions::all(),
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
     let desktop = session_tokens::ConnectingApp {
         kind: session_tokens::AppKind::Desktop,
         build: "0.9.0".into(),
     };
-    resolve_auth_on_conn(&mut conn, &created.token, Some(&desktop))
-        .await
-        .unwrap();
+    resolve_auth_on_conn(
+        &mut conn,
+        &created.token,
+        Some(&desktop),
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         session_tokens::connecting_app_for_account(&mut conn, TEST_ACCOUNT)
@@ -1973,15 +2060,26 @@ async fn an_api_token_works_when_its_last_used_time_cannot_be_written() {
     let fixture = test_fixture().await;
     fixture.account_with_id(TEST_ACCOUNT, "alice").await;
     let mut conn = fixture.conn().await;
-    let created =
-        api_tokens::create_api_token(&mut conn, TEST_ACCOUNT, "tool", Permissions::all(), None)
-            .await
-            .unwrap();
+    let created = api_tokens::create_api_token(
+        &mut conn,
+        TEST_ACCOUNT,
+        "tool",
+        Permissions::all(),
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     fail_updates_of(&mut conn, "account_api_tokens").await;
 
-    let identity = resolve_auth_on_conn(&mut conn, &created.token, None)
-        .await
-        .expect("the token is still accepted");
+    let identity = resolve_auth_on_conn(
+        &mut conn,
+        &created.token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .expect("the token is still accepted");
 
     assert_eq!(identity.account_id, TEST_ACCOUNT);
 }
@@ -1992,18 +2090,27 @@ async fn a_session_works_when_its_connecting_app_cannot_be_written() {
     let fixture = test_fixture().await;
     fixture.account_with_id(TEST_ACCOUNT, "alice").await;
     let mut conn = fixture.conn().await;
-    let token = session_tokens::insert_account_session_token(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
+    let token = session_tokens::insert_account_session_token(
+        &mut conn,
+        TEST_ACCOUNT,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     fail_updates_of(&mut conn, "account_session_tokens").await;
     let desktop = session_tokens::ConnectingApp {
         kind: session_tokens::AppKind::Desktop,
         build: "0.10.0".into(),
     };
 
-    let identity = resolve_auth_on_conn(&mut conn, &token, Some(&desktop))
-        .await
-        .expect("the session is still accepted");
+    let identity = resolve_auth_on_conn(
+        &mut conn,
+        &token,
+        Some(&desktop),
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .expect("the session is still accepted");
 
     assert_eq!(identity.account_id, TEST_ACCOUNT);
 }
@@ -2083,6 +2190,9 @@ async fn an_api_token_on_the_owners_account_answers_401_like_an_unknown_token() 
             "by hand",
             Permissions::all(),
             None,
+            // The routes below check the token's expiry against the clock,
+            // so only the owner rule can refuse it.
+            chrono::Utc::now(),
         )
         .await
         .unwrap()

@@ -239,9 +239,14 @@ async fn claiming_an_unowned_server_creates_the_owner_and_signs_them_in() {
     // The token it hands back is the owner's session, usable at once.
     let token = body["token"].as_str().unwrap();
     let mut conn = state.db.acquire().await.unwrap();
-    let auth = crate::server::resolve_auth_on_conn(&mut conn, token, None)
-        .await
-        .unwrap();
+    let auth = crate::server::resolve_auth_on_conn(
+        &mut conn,
+        token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     assert!(auth.is_owner());
     drop(conn);
 
@@ -1351,7 +1356,7 @@ async fn a_demo_build_the_server_stopped_is_removed_and_failed_on_the_next_start
     fixture.demo_account().await;
     {
         let mut conn = fixture.conn().await;
-        crate::db::demo_account_build::begin(&mut conn)
+        crate::db::demo_account_build::begin(&mut conn, crate::test_support::fixed_instant())
             .await
             .unwrap();
     }

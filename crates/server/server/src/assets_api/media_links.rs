@@ -266,11 +266,12 @@ async fn open_media_link(state: &AppState, link: &str, sha256: &Sha256) -> Resul
     let Some(link) = ParsedLink::parse(link) else {
         return Err(invalid("the media_link is not a media link"));
     };
-    if link.expires <= now_unix() {
+    let now = chrono::Utc::now();
+    if link.expires <= now.timestamp() {
         return Err(invalid("the media link expired"));
     }
     let mut conn = state.db.acquire().await?;
-    let session_hash = session_tokens::live_session_hash(&mut conn, link.account_id).await?;
+    let session_hash = session_tokens::live_session_hash(&mut conn, link.account_id, now).await?;
     let signed = session_hash.is_some_and(|session_hash| {
         state.media_link_key.verifies(
             &MediaLinkTerms {

@@ -142,9 +142,13 @@ impl TestFixture {
     pub async fn account_with_running_import(&self) -> ImportingAccount {
         let account_id = self.account("importer").await;
         let mut conn = self.conn().await;
-        let token = crate::db::session_tokens::insert_account_session_token(&mut conn, account_id)
-            .await
-            .unwrap();
+        let token = crate::db::session_tokens::insert_account_session_token(
+            &mut conn,
+            account_id,
+            crate::test_support::fixed_instant(),
+        )
+        .await
+        .unwrap();
         let import_id = crate::db::imports::start_import(
             &mut conn,
             &crate::db::imports::StartImportArgs::new(

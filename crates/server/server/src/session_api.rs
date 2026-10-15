@@ -325,10 +325,11 @@ pub async fn delete_session(
 ) -> Result<axum::http::StatusCode, ApiError> {
     let token = crate::server::bearer_token(&headers)?;
     let mut conn = state.db.acquire().await?;
-    if logout_on_conn(&mut conn, &token, Utc::now()).await? {
+    let now = Utc::now();
+    if logout_on_conn(&mut conn, &token, now).await? {
         return Ok(axum::http::StatusCode::NO_CONTENT);
     }
-    if api_tokens::lookup_account_for_api_token(&mut conn, &token)
+    if api_tokens::lookup_account_for_api_token(&mut conn, &token, now)
         .await?
         .is_some()
     {

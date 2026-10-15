@@ -58,9 +58,14 @@ async fn api_tokens_never_resolve_to_the_owner() {
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
     let mut conn = state.db.acquire().await.unwrap();
-    let auth = crate::server::resolve_auth_on_conn(&mut conn, &owner.token, None)
-        .await
-        .unwrap();
+    let auth = crate::server::resolve_auth_on_conn(
+        &mut conn,
+        &owner.token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     assert!(auth.is_owner(), "the owner's session is the owner");
     assert!(
         auth.permissions() == Permissions::none(),
@@ -86,9 +91,14 @@ async fn the_owner_holds_no_message_permissions() {
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
     let mut conn = state.db.acquire().await.unwrap();
-    let auth = crate::server::resolve_auth_on_conn(&mut conn, &owner.token, None)
-        .await
-        .unwrap();
+    let auth = crate::server::resolve_auth_on_conn(
+        &mut conn,
+        &owner.token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
 
     assert!(crate::server::require_import_access(&auth).is_err());
     assert!(crate::server::require_export_access(&auth).is_err());
@@ -1030,9 +1040,14 @@ async fn the_owner_clears_a_permission_and_it_takes_effect() {
     assert!(!row.can_export);
 
     let mut conn = state.db.acquire().await.unwrap();
-    let auth = crate::server::resolve_auth_on_conn(&mut conn, &bob.token, None)
-        .await
-        .unwrap();
+    let auth = crate::server::resolve_auth_on_conn(
+        &mut conn,
+        &bob.token,
+        None,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     assert!(!auth.permissions().import);
     assert!(!auth.permissions().export);
     assert!(auth.permissions().delete, "delete was left alone");
@@ -1865,6 +1880,8 @@ async fn a_token_may_not_delete_messages_or_close_the_account() {
         "tool",
         Permissions::all(),
         None,
+        // The routes below check the token's expiry against the clock.
+        chrono::Utc::now(),
     )
     .await
     .unwrap()
