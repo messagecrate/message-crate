@@ -215,6 +215,12 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-15: **The Attachments choices say they convert media.** The
+  Import form's **Attachments** field now reads **Copy**, **Convert media**,
+  **Convert & Compress media** and **Skip**, and the Staging Review's button
+  reads **Convert media** or **Convert & Compress media**, where it read
+  **Compress media**. **Convert** alone stays the Settings tool that rewrites
+  an export into another format (#2023).
 - 2026-10-15: **The Docker image no longer carries Node.js.** It was built
   on Node.js 20, which no longer gets security fixes, though the server never
   used it, so image scanners flagged every Message Crate image. The image is
@@ -815,6 +821,13 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-15: **The Import form checks an Android backup path's kind.**
+  SMS Backup & Restore takes one `.xml` file, and GO SMS Pro and SMS
+  Backup+ take a directory. A path of the other kind, or one that does not
+  exist, is now named under the field and keeps **Import** off, rather than
+  being refused only once the import starts. A directory remembered from an
+  import before SMS Backup & Restore took one file is the usual case
+  (#2029).
 - 2026-10-15: **Cancel stops an Apple Messages import that has gone
   quiet.** Cancel took effect only when the Apple Messages reader
   (imessage-reader) next reported something, so during a long silent step,

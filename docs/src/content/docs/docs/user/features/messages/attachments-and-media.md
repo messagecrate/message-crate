@@ -13,17 +13,17 @@ An Import Run from either copies every file as it is, whatever the setting held 
 | Setting | What it does | Needs ffmpeg |
 |---|---|---|
 | **Copy** | Imports every file as it is. The default. | No |
-| **Convert** | Rewrites photos, video, and audio into `.jpg`, `.mp4`, and `.mp3`. | Yes |
-| **Compress & Convert** | Converts, and also re-encodes files to make them smaller, at the cost of some quality. | Yes |
+| **Convert media** | Rewrites photos, video, and audio into `.jpg`, `.mp4`, and `.mp3`. | Yes |
+| **Convert & Compress media** | Converts, and also re-encodes files to make them smaller, at the cost of some quality. | Yes |
 | **Skip** | Copies no files. The messages are imported, and each attachment shows as `skipped`. | No |
 
-With **Convert** or **Compress & Convert**, an Import Run gains a **Media** stage and a **Media Review** between the Staging Review and Upload.
+With **Convert media** or **Convert & Compress media**, an Import Run gains a **Media** stage and a **Media Review** between the Staging Review and Upload.
 [Import](/docs/user/features/messages/import/#stages-and-approvals) describes them.
 
 A file that is not a photo, a video, or audio is never changed by either setting.
 A `.gif` is never changed either, because converting it to `.jpg` would keep one frame of the animation.
 
-## What Convert produces
+## What Convert media produces
 
 | Kind | Result |
 |---|---|
@@ -33,20 +33,20 @@ A `.gif` is never changed either, because converting it to `.jpg` would keep one
 
 A video's picture and sound are copied into the `.mp4` unchanged when ffmpeg can do that.
 Only when it can't is the video re-encoded, to H.264 at 30 frames per second with AAC sound.
-An HEVC video that is copied stays HEVC inside its `.mp4`, so Convert alone does not make it playable in a browser that can't play HEVC.
+An HEVC video that is copied stays HEVC inside its `.mp4`, so Convert media alone does not make it playable in a browser that can't play HEVC.
 
-## What Compress & Convert produces
+## What Convert & Compress media produces
 
 | Kind | Result |
 |---|---|
-| Photo | A `.jpg` at a lower quality than Convert uses. |
+| Photo | A `.jpg` at a lower quality than Convert media uses. |
 | Audio | A mono `.mp3` at 96 kbit/s. |
 | Video | An `.mp4`, re-encoded when it is large enough to be worth it. |
 
 A `.jpg` of 500 KB or less and an `.mp3` of 100 KB or less are left as they are.
 A larger `.jpg` or `.mp3` is replaced only when the new file comes out smaller.
 
-Three settings appear under **Attachments** when **Compress & Convert** is chosen.
+Three settings appear under **Attachments** when **Convert & Compress media** is chosen.
 They apply to video only.
 
 | Setting | Options | Default | What it does |
@@ -69,7 +69,7 @@ The second is a video that is already H.265, within the target resolution, at 12
 
 ## ffmpeg
 
-**Convert** and **Compress & Convert** run the programs `ffmpeg` and `ffprobe`.
+**Convert media** and **Convert & Compress media** run the programs `ffmpeg` and `ffprobe`.
 The desktop app uses both from `PATH` when they are installed there, and otherwise downloads its own into its Tools Directory when it starts.
 These commands install both on `PATH`:
 
@@ -82,8 +82,8 @@ These commands install both on `PATH`:
 The desktop app finds the programs on `PATH`, else in its Tools Directory, and takes both from the same one.
 [**Settings → System**](/docs/user/features/settings/system/#media) shows each under **Media**: `Found` with its path, its download's progress, why the download failed, `not found`, or `not used` with the reason.
 
-With **Convert** or **Compress** chosen, the Import form says when ffmpeg or ffprobe can't be used, and why, but the run still starts, because Staging copies the original files and needs neither program.
-At the Staging Review, the review names the program, such as `Media can't use ffprobe.`, and the **Convert media** or **Compress media** button is disabled.
+With **Convert media** or **Convert & Compress media** chosen, the Import form says when ffmpeg or ffprobe can't be used, and why, but the run still starts, because Staging copies the original files and needs neither program.
+At the Staging Review, the review names the program, such as `Media can't use ffprobe.`, and the **Convert media** or **Convert & Compress media** button is disabled.
 **Try again**, on the form and at the review, downloads the program into the Tools Directory at once.
 A program still downloading doesn't stop the review.
 Media waits for the download, and its progress line says so.
@@ -98,7 +98,7 @@ An Import Run reads the limit when it starts and keeps that number until it ends
 The Staging Review and the Media Review show the limit as **Size limit per file**, and list the files over it under **Files over the limit**.
 A file over the limit is not uploaded, and its message shows the attachment as `missing — too large`.
 
-**Compress & Convert** is the setting that can bring a large video under the limit.
+**Convert & Compress media** is the setting that can bring a large video under the limit.
 The Staging Review estimates which files it will.
 
 ## Copy and the browser
@@ -117,7 +117,7 @@ The server makes the thumbnails and previews after each import, in the backgroun
 The import finishes without waiting for them, so for a while after an import a photo or video shows its file name in place of its thumbnail, and a HEIC photo or an HEVC video opens to a note that it has no copy a browser can show yet, with its download.
 A server without ffmpeg keeps the list of attachments still to do, and makes their thumbnails and previews once it finds ffmpeg, when it starts again or after the next import.
 `message-crate-server process-assets` makes any thumbnail or preview that is still missing.
-Importing with **Convert** stores a `.jpg` in place of the HEIC photo, which needs no preview.
+Importing with **Convert media** stores a `.jpg` in place of the HEIC photo, which needs no preview.
 
 ## Obfuscate
 

@@ -6,6 +6,11 @@ import { holdDesktopJob } from "../../lib/desktopJob";
 import { EXPORT_SOURCES } from "../../lib/exportSources";
 import { IMESSAGE_METHODS, IMESSAGE_SOURCE_ID } from "../../lib/imessageImport";
 import { IMPORT_SOURCES } from "../../lib/importSources";
+import {
+  ANDROID_SMS_ERR_NOT_DIRECTORY,
+  SMS_BACKUP_RESTORE_ERR_NOT_FILE,
+} from "../../lib/importSources/androidSms";
+import { PATH_MISSING } from "../../lib/pathChecks";
 import type { ToolStatus, ToolsStatus } from "../../lib/tauri";
 import type { AttachmentChoices } from "../../lib/types";
 import { DOWNLOAD_POLL_MS, OTHER_CHECK_POLL_MS } from "../../lib/useToolsStatus";
@@ -23,7 +28,7 @@ import {
   startFakeClock,
   stopFakeClock,
 } from "../../test/fakeTimers";
-import { DIRECTORY_STAT, FILE_STAT } from "../../test/pathStats";
+import { DIRECTORY_STAT, FILE_STAT, MISSING_STAT } from "../../test/pathStats";
 import { renderWithProviders as render } from "../../test/providers";
 import { MIB } from "../../test/units";
 import { setupUser } from "../../test/user";
@@ -105,6 +110,7 @@ function renderForm(override: Partial<ImportFormFieldsProps> = {}) {
     onWhatsappOwnerPhoneChange: vi.fn(),
     onIsBusinessAppChange: vi.fn(),
     whatsappStats: emptyWhatsappPathStats(),
+    androidSmsStats: { backup: null },
     attachments: copyAttachments,
     onAttachmentsChange: vi.fn(),
     ownerPhones: [],
@@ -145,6 +151,22 @@ describe("ImportFormFields sources", () => {
         cleanup();
       }
     }
+  });
+});
+
+describe("ImportFormFields attachments", () => {
+  // "Convert" alone is the Settings tool that rewrites an export's format, so
+  // the choices that work on photos, video and audio say "media" (#2023).
+  it("offers Copy, Convert media, Convert & Compress media and Skip, in that order", async () => {
+    const user = setupUser();
+    renderForm({ source: "sms-backup-restore" });
+    await user.click(screen.getByLabelText("Attachments"));
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "Copy",
+      "Convert media",
+      "Convert & Compress media",
+      "Skip",
+    ]);
   });
 });
 
@@ -533,6 +555,7 @@ describe("ImportFormFields Import button", () => {
       onImport,
       source: "sms-backup-restore",
       backupPath: "/backups/sms.xml",
+      androidSmsStats: { backup: FILE_STAT },
       ownerPhones: ["+15555550100"],
       // The same number is on the account profile, so there is no mismatch to
       // acknowledge and the form is ready.
@@ -631,6 +654,7 @@ describe("ImportFormFields Import button", () => {
       onImport,
       source: "sms-backup-restore",
       backupPath: "/backups/sms.xml",
+      androidSmsStats: { backup: FILE_STAT },
       ownerPhones: [],
       profilePhones: ["+15555550100"],
       ownerEmails: "me@example.com",
@@ -639,6 +663,67 @@ describe("ImportFormFields Import button", () => {
     await user.click(screen.getByRole("button", { name: "Import" }));
 
     expect(onImport).not.toHaveBeenCalled();
+  });
+  /**
+   * SMS Backup & Restore takes one `.xml` file and the other two a directory
+   * (#2029). A path of the other kind is said under the field and keeps
+   * Import off, rather than being refused only once the run starts. A path
+   * remembered from before SMS Backup & Restore took one file is a directory.
+   */
+  const androidReady: Partial<ImportFormFieldsProps> = {
+    ownerPhones: ["+15555550100"],
+    profilePhones: ["+15555550100"],
+    ownerEmails: "me@example.com",
+  };
+
+  it("refuses a directory where SMS Backup & Restore needs its .xml file", () => {
+    renderForm({
+      ...androidReady,
+      source: "sms-backup-restore",
+      backupPath: "/backups/sms",
+      androidSmsStats: { backup: DIRECTORY_STAT },
+    });
+    expect(screen.getByText(SMS_BACKUP_RESTORE_ERR_NOT_FILE)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
+  });
+
+  it.each(["go-sms-pro", "sms-backup-plus"])(
+    "refuses a file where %s needs the backup directory",
+    (source) => {
+      renderForm({
+        ...androidReady,
+        source,
+        backupPath: "/backups/sms.xml",
+        androidSmsStats: { backup: FILE_STAT },
+      });
+      expect(screen.getByText(ANDROID_SMS_ERR_NOT_DIRECTORY)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
+    },
+  );
+
+  it("says an Android backup path that does not exist is missing", () => {
+    renderForm({
+      ...androidReady,
+      source: "sms-backup-restore",
+      backupPath: "/backups/gone.xml",
+      androidSmsStats: { backup: MISSING_STAT },
+    });
+    expect(screen.getByText(PATH_MISSING)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
+  });
+
+  // The check answers a moment after the path is typed. Until it does,
+  // nothing is known about the path, so nothing is said and Import waits.
+  it("keeps Import off with nothing said until the Android backup path is checked", () => {
+    renderForm({
+      ...androidReady,
+      source: "go-sms-pro",
+      backupPath: "/backups/sms",
+      androidSmsStats: { backup: null },
+    });
+    expect(screen.queryByText(ANDROID_SMS_ERR_NOT_DIRECTORY)).toBeNull();
+    expect(screen.queryByText(PATH_MISSING)).toBeNull();
+    expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
   });
 });
 
@@ -725,6 +810,7 @@ const messagesDbFields: FormCase["fields"] = [
 ];
 const androidSmsProps: Partial<ImportFormFieldsProps> = {
   backupPath: "/backups/sms",
+  androidSmsStats: { backup: DIRECTORY_STAT },
   ownerPhones: ["+15555550100"],
   profilePhones: ["+15555550100"],
   ownerEmails: "me@example.com",
@@ -792,6 +878,7 @@ const FORM_CASES: FormCase[] = [
       source: "sms-backup-restore",
       ...androidSmsProps,
       backupPath: "/backups/sms-20261009.xml",
+      androidSmsStats: { backup: FILE_STAT },
     },
     fields: [
       { label: "Backup File", empty: { backupPath: "" } },
@@ -1045,7 +1132,7 @@ describe("ImportFormFields programs the import needs", () => {
 
     expect(
       screen.getByText(
-        "ffmpeg not found. ffprobe not found. Convert and Compress need ffmpeg and ffprobe. Copy imports attachments as they are.",
+        "ffmpeg not found. ffprobe not found. Convert media and Convert & Compress media need ffmpeg and ffprobe. Copy imports attachments as they are.",
       ),
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: "Troubleshooting" }).getAttribute("href")).toBe(
