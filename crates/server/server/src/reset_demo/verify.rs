@@ -11,9 +11,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use sqlx::SqliteConnection;
 
-use crate::db::audit_trail::last_audit_entry;
-use crate::db::demo::{self, DemoRows, OutlivingRows, SEARCH_INDEXES, SearchIndex, outliving_rows};
-use crate::db::{engine, schema};
+use crate::db::audit_trail::last_audit_entry_id;
+use crate::db::demo::{self, DemoRows, OutlivingRows, SearchIndex, outliving_rows};
+use crate::db::{conversation_messages, engine, schema};
 
 /// Refuse to install the prepared database when it changed anything outside
 /// the Demo Account: a row of any other account in any table, or a row that
@@ -36,7 +36,7 @@ pub(super) async fn verify_non_demo_state_preserved(
         }
         let demo = DemoRows {
             account: demo_id,
-            last_entry_before_reset: last_audit_entry(conn).await?,
+            last_entry_before_reset: last_audit_entry_id(conn).await?,
         };
         let search_terms = sample_search_terms(conn, demo_id).await?;
         let state = non_demo_state_on_conn(conn, demo, &search_terms).await?;
@@ -164,7 +164,7 @@ pub(super) async fn non_demo_state_on_conn(
         .collect();
     let mut state = BTreeMap::new();
     for table in &virtual_tables {
-        let Some(index) = SEARCH_INDEXES.iter().find(|index| index.table == *table) else {
+        let Some(index) = demo::search_index(table) else {
             bail!("cannot compare the virtual table {table}");
         };
         state.insert(
@@ -236,7 +236,8 @@ const SEARCH_SAMPLE_TERMS: usize = 32;
 /// messages outside the Demo Account, picked at random: the searches
 /// [`search_sample_digest`] runs on both databases.
 async fn sample_search_terms(conn: &mut SqliteConnection, demo_id: i64) -> Result<Vec<String>> {
-    let bodies = demo::sample_bodies_outside(conn, demo_id, SEARCH_SAMPLE_MESSAGES).await?;
+    let bodies =
+        conversation_messages::sample_bodies_outside(conn, demo_id, SEARCH_SAMPLE_MESSAGES).await?;
     let mut terms = BTreeSet::new();
     for body in bodies {
         for word in body.split(|c: char| !c.is_alphanumeric()) {

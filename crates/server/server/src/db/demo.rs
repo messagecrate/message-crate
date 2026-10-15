@@ -162,8 +162,6 @@ pub async fn each_row_outside(
     demo: DemoRows,
     mut add: impl FnMut(&str),
 ) -> Result<()> {
-    use futures_util::TryStreamExt;
-
     let columns = table_columns(conn, table).await?;
     let row_text = columns
         .iter()
@@ -207,11 +205,19 @@ pub async fn each_row_outside(
         (None, _) => query,
     };
     let mut rows = query.fetch(&mut *conn);
-    while let Some(row) = rows
-        .try_next()
+    drain(&mut rows, &mut add)
         .await
-        .with_context(|| format!("read {table}"))?
-    {
+        .with_context(|| format!("read {table}"))
+}
+
+/// Pass each row of `rows` to `add`, in the order they come.
+async fn drain(
+    rows: &mut (impl futures_util::Stream<Item = Result<String, sqlx::Error>> + Unpin),
+    add: &mut impl FnMut(&str),
+) -> Result<(), sqlx::Error> {
+    use futures_util::TryStreamExt;
+
+    while let Some(row) = rows.try_next().await? {
         add(&row);
     }
     Ok(())
@@ -229,7 +235,7 @@ pub struct SearchIndex {
 
 /// The search index over messages, whose rowid is the message's id, and the
 /// one over earlier versions, whose rowid is the version's id.
-pub const SEARCH_INDEXES: [SearchIndex; 2] = [
+const SEARCH_INDEXES: [SearchIndex; 2] = [
     SearchIndex {
         table: "messages_fts",
         owner_join: "LEFT JOIN messages m ON m.id = {rowid}",
@@ -240,6 +246,12 @@ pub const SEARCH_INDEXES: [SearchIndex; 2] = [
                      LEFT JOIN messages m ON m.id = v.message_id",
     },
 ];
+
+/// The search index whose FTS5 table is `table`, or `None` when the schema
+/// has no such index.
+pub fn search_index(table: &str) -> Option<&'static SearchIndex> {
+    SEARCH_INDEXES.iter().find(|index| index.table == table)
+}
 
 impl SearchIndex {
     /// [`Self::owner_join`] for the entry whose rowid is `rowid`.
@@ -263,8 +275,6 @@ pub async fn each_index_entry_outside(
     demo_id: i64,
     mut add: impl FnMut(&str),
 ) -> Result<()> {
-    use futures_util::TryStreamExt;
-
     let table = index.table;
     let sql = format!(
         "SELECT d.id || ',' || hex(d.sz)
@@ -276,36 +286,9 @@ pub async fn each_index_entry_outside(
     let mut rows = sqlx::query_scalar::<_, String>(AssertSqlSafe(sql))
         .bind(demo_id)
         .fetch(&mut *conn);
-    while let Some(row) = rows
-        .try_next()
+    drain(&mut rows, &mut add)
         .await
-        .with_context(|| format!("read {table}"))?
-    {
-        add(&row);
-    }
-    Ok(())
-}
-
-/// Up to `limit` message bodies outside the Demo Account, picked at random.
-///
-/// # Errors
-///
-/// Returns an error when the messages cannot be read.
-pub async fn sample_bodies_outside(
-    conn: &mut SqliteConnection,
-    demo_id: i64,
-    limit: i64,
-) -> Result<Vec<String>> {
-    sqlx::query_scalar(
-        "SELECT body FROM messages
-         WHERE account_id IS NOT $1 AND body IS NOT NULL
-         ORDER BY random() LIMIT $2",
-    )
-    .bind(demo_id)
-    .bind(limit)
-    .fetch_all(&mut *conn)
-    .await
-    .context("pick messages to search")
+        .with_context(|| format!("read {table}"))
 }
 
 /// Search a search index for each of `terms` as a phrase, the way a search

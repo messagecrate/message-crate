@@ -1106,6 +1106,28 @@ pub async fn get_conversation_messages(
     )))
 }
 
+/// Up to `limit` message bodies outside the Demo Account, picked at random.
+///
+/// # Errors
+///
+/// Returns an error when the messages cannot be read.
+pub async fn sample_bodies_outside(
+    conn: &mut SqliteConnection,
+    demo_id: i64,
+    limit: i64,
+) -> anyhow::Result<Vec<String>> {
+    sqlx::query_scalar(
+        "SELECT body FROM messages
+         WHERE account_id IS NOT $1 AND body IS NOT NULL
+         ORDER BY random() LIMIT $2",
+    )
+    .bind(demo_id)
+    .bind(limit)
+    .fetch_all(&mut *conn)
+    .await
+    .context("pick messages to search")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

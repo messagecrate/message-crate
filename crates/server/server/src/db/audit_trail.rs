@@ -709,7 +709,7 @@ pub async fn record_demo_build(
 }
 
 /// The id of the last Audit Trail entry, or 0 when there is none.
-pub async fn last_audit_entry(conn: &mut SqliteConnection) -> Result<i64> {
+pub async fn last_audit_entry_id(conn: &mut SqliteConnection) -> Result<i64> {
     sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM audit_entries")
         .fetch_one(&mut *conn)
         .await
