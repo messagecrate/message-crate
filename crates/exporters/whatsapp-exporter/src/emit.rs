@@ -76,7 +76,7 @@ pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> 
     // deletes all *.json files.
     let store = load_chat_store(json_path)?;
     let writer = ExportWriter::open(output, output_format, transforms, resume)?;
-    let copy_attachments = writer.copies_attachments();
+    let copy_attachments = writer.files().copies();
     let mut report = ExportReport::with_issues(issues.clone());
     let mut conversations: BTreeMap<String, PendingConversation> = BTreeMap::new();
     let mut rosters: BTreeMap<String, Vec<IrParticipant>> = BTreeMap::new();

@@ -187,7 +187,6 @@ pub fn run(
 
     message_crate_core::check_cancel(&context.cancel)?;
     let convert_run = ConvertRun::new(context, output);
-    let needs_media_tools = convert_run.transforms.needs_media_tools();
     let report = convert_json(ConvertRequest {
         json_path: &json_path,
         output: &output.directory,
@@ -199,7 +198,7 @@ pub fn run(
     // The work directory goes once the conversion has copied the media.
     drop(work);
 
-    let mut result = message_crate_core::finish_run(output, &report, needs_media_tools)?;
+    let mut result = message_crate_core::finish_run(output, &report);
     messages.append(&mut result.messages);
     result.messages = messages;
     Ok(result)

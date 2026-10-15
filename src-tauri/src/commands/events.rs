@@ -205,7 +205,6 @@ impl From<ProgressEvent> for WindowEvent {
                 ..counts(Step::Attachments, done, total)
             },
             ProgressEvent::Prepare { done, total } => counts(Step::Prepare, done, total),
-            ProgressEvent::Media { done, total } => counts(Step::Media, done, total),
             ProgressEvent::FileWritten { file, status } => {
                 return Self::FileWritten(ImportFileWrittenEvent { file, status });
             }
@@ -540,10 +539,6 @@ mod tests {
         let prepare = progress(ProgressEvent::Prepare { done: 2, total: 3 });
         assert_eq!(prepare.step, Step::Prepare);
         assert_eq!((prepare.done, prepare.total), (2, 3));
-
-        let media = progress(ProgressEvent::Media { done: 1, total: 4 });
-        assert_eq!(media.step, Step::Media);
-        assert_eq!((media.done, media.total), (1, 4));
     }
 
     /// Every step is sent as the lowercase word the window's `step` union in
