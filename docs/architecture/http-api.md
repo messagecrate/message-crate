@@ -777,6 +777,41 @@ Rejected: `private` for every answer. It still lets the browser write message
 text and a Session token to its disk cache, and the web app fetches afresh
 through its own query cache rather than the browser's.
 
+## Protective headers
+
+Every answer, the website's built files as well as `/v1`, `/health` and the
+OpenAPI UI, carries `Content-Security-Policy`, `X-Content-Type-Options:
+nosniff` and `Referrer-Policy: no-referrer`, unless the route sets the header
+itself (#2073). The policy runs only the server's own script files, never
+inline script. It refuses plugins (`object-src 'none'`), because a plugin
+runs code the script rule does not govern. It forbids any site to frame a
+page (`frame-ancestors 'none'`), so no other site can show the login card
+inside its own page and trick a person into typing there. A `<base>` element
+may point only at the server (`base-uri 'self'`), so injected markup cannot
+send the website's relative script paths elsewhere. No form submits
+anywhere (`form-action 'none'`), because the website sends everything with
+`fetch` and an injected form could post a password to another site. Fonts
+may come only from the server or a `data:` URL (`font-src 'self' data:`), as
+in the desktop window's policy; the website loads no font from another host.
+Styles may be inline, because the website's
+components set `style` attributes. `connect-src`, `img-src` and `media-src`
+allow other hosts over `http:` and `https:`, because the login card's
+**Change server address** points the website at another server, and allow
+`blob:` and `data:`, the attachment and image URLs the website makes itself.
+The policy is `CONTENT_SECURITY_POLICY` in `server.rs`, and the desktop
+window's own policy in `src-tauri/tauri.conf.json` follows the same lines.
+Why: the website keeps the Session token in browser storage, and a cookie is
+not an option (see [Credentials and reach](#credentials-and-reach)), so any
+script that runs on the page can read the token and send it anywhere. The
+policy keeps such a script from running at all. No injection is known today.
+How: three `SetResponseHeaderLayer::if_not_present` layers in
+`with_server_layers` wrap the whole router, so a route added later is
+covered. The website's first-paint theme script is `web/public/theme.js`, a
+file of its own, because the policy refuses an inline one.
+Rejected: the policy on the website alone. A `/v1` answer a browser renders,
+such as a JSON body opened in a tab, is a page too, and the OpenAPI UI runs
+under the same policy without change.
+
 ## Credentials and reach
 
 Three credentials exist, and the OpenAPI document declares each as a
