@@ -37,7 +37,10 @@ enum SourceFlavor {
     Whatsapp,
 }
 
-/// Counts of contacts, conversations, messages, and attachments written this run.
+/// What one run wrote: counts of contacts, conversations, messages, and
+/// attachments, and the warnings of anything that went wrong without stopping
+/// it. The warnings ride with the counts so every caller that reports the
+/// counts reports the warnings in the same place (#2903).
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct GenStats {
     /// Contacts invented.
@@ -54,6 +57,10 @@ pub struct GenStats {
     /// each. Every one is counted twice in `messages`, and a database that
     /// imports the bundle hides exactly this many as duplicates.
     pub shared_messages: usize,
+    /// What went wrong without stopping generation, one line each, for the
+    /// caller to say where its warnings go: the backup of the previous files
+    /// that could not be removed once the new ones were in place.
+    pub warnings: Vec<String>,
 }
 
 const TAPBACK_KINDS: &[&str] = &[
