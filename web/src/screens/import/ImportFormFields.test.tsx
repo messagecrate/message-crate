@@ -46,6 +46,7 @@ const desktop = vi.hoisted(() => ({
   isTauri: false,
   toolsStatus: vi.fn(),
   retry: vi.fn(),
+  lowDiskSpace: vi.fn(),
 }));
 
 vi.mock("../../lib/tauriCheck", () => ({
@@ -56,10 +57,12 @@ vi.mock("../../lib/tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/tauri")>()),
   invokeToolsStatus: () => desktop.toolsStatus(),
   invokeRetryToolDownloads: () => desktop.retry(),
+  invokeLowDiskSpace: () => desktop.lowDiskSpace(),
 }));
 
 beforeEach(() => {
   startFakeClock();
+  desktop.lowDiskSpace.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -67,6 +70,7 @@ afterEach(() => {
   desktop.isTauri = false;
   desktop.toolsStatus.mockReset();
   desktop.retry.mockReset();
+  desktop.lowDiskSpace.mockReset();
   stopFakeClock();
 });
 
@@ -86,7 +90,7 @@ type FormOverride = Partial<Omit<ImportFormState, "seeded">> &
     profilePhones?: Partial<ProfilePhones>;
   };
 
-function renderForm(override: FormOverride = {}) {
+function formProps(override: FormOverride = {}): ImportFormFieldsProps {
   const {
     dispatch = vi.fn(),
     onSourceChange = vi.fn(),
@@ -106,7 +110,7 @@ function renderForm(override: FormOverride = {}) {
     onImport = vi.fn(),
     ...fields
   } = override;
-  const props: ImportFormFieldsProps = {
+  return {
     form: {
       ...newImportForm("/backups/iphone"),
       source: "imessage-ios",
@@ -125,10 +129,13 @@ function renderForm(override: FormOverride = {}) {
     running,
     onImport,
   };
+}
+
+function renderForm(override: FormOverride = {}) {
   // An account with no phones shows a link to Settings, which needs a router.
   return render(
     <MemoryRouter>
-      <ImportFormFields {...props} />
+      <ImportFormFields {...formProps(override)} />
     </MemoryRouter>,
   );
 }
@@ -960,16 +967,19 @@ describe("ImportFormFields required marks", () => {
   });
 });
 
+/** A program found at `path`. */
+const found = (path: string): ToolStatus => ({ state: "found", path });
+/** The desktop process's answer: every program found, less what `over` changes. */
+const status = (over: Partial<ToolsStatus>): ToolsStatus => ({
+  toolsDir: "/home/sam/message-crate/tools",
+  checking: false,
+  ffmpeg: found("/usr/bin/ffmpeg"),
+  ffprobe: found("/usr/bin/ffprobe"),
+  wtsexporter: found("/home/sam/message-crate/tools/wtsexporter"),
+  ...over,
+});
+
 describe("ImportFormFields programs the import needs", () => {
-  const found = (path: string): ToolStatus => ({ state: "found", path });
-  const status = (over: Partial<ToolsStatus>): ToolsStatus => ({
-    toolsDir: "/home/sam/message-crate/tools",
-    checking: false,
-    ffmpeg: found("/usr/bin/ffmpeg"),
-    ffprobe: found("/usr/bin/ffprobe"),
-    wtsexporter: found("/home/sam/message-crate/tools/wtsexporter"),
-    ...over,
-  });
   const readyWhatsapp: FormOverride = {
     source: "whatsapp-android",
     backupPath: "/tmp/wa",
@@ -1273,5 +1283,48 @@ describe("ImportFormFields programs the import needs", () => {
     expect(screen.queryByText(/Downloading wtsexporter/)).toBeNull();
     expect(desktop.toolsStatus.mock.calls.length).toBeGreaterThanOrEqual(3);
     expect(importButton()).toBeEnabled();
+  });
+});
+
+describe("ImportFormFields low disk space", () => {
+  const lowStaging =
+    "4.2 GB is free on /home, the disk that holds the Staging Directory (/home/a/message-crate). A large backup can need more than that.";
+
+  it("says each disk the desktop process finds low, and Import stays enabled", async () => {
+    desktop.isTauri = true;
+    desktop.toolsStatus.mockResolvedValue(status({}));
+    desktop.lowDiskSpace.mockResolvedValue([lowStaging]);
+    renderForm();
+    await settle();
+
+    expect(screen.getByText(lowStaging)).toBeTruthy();
+    expect(importButton()).toBeEnabled();
+  });
+
+  it("reads the disks again when the source changes", async () => {
+    desktop.isTauri = true;
+    desktop.toolsStatus.mockResolvedValue(status({}));
+    const view = renderForm();
+    await settle();
+    expect(desktop.lowDiskSpace).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(lowStaging)).toBeNull();
+
+    desktop.lowDiskSpace.mockResolvedValue([lowStaging]);
+    view.rerender(
+      <MemoryRouter>
+        <ImportFormFields {...formProps({ source: "sms-backup-restore" })} />
+      </MemoryRouter>,
+    );
+    await settle();
+
+    expect(desktop.lowDiskSpace).toHaveBeenCalledTimes(2);
+    expect(screen.getByText(lowStaging)).toBeTruthy();
+  });
+
+  it("asks nothing in the browser, which has no desktop process", async () => {
+    renderForm();
+    await settle();
+
+    expect(desktop.lowDiskSpace).not.toHaveBeenCalled();
   });
 });

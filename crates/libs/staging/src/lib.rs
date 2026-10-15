@@ -41,7 +41,8 @@ pub use convert::{Project, ReadBackup, WriterSetup, convert_backup};
 pub use counted_attachments::{CountedAttachments, PathSources};
 pub use export_writer::{ExportWriter, ExportWriterParts};
 pub use headroom::{
-    Disk, bytes_embedded, bytes_to_copy, bytes_to_write, check_headroom, scratch_disk_full,
+    Disk, LOW_DISK_SPACE_BYTES, bytes_embedded, bytes_to_copy, bytes_to_write, check_headroom,
+    low_disk_space, scratch_disk_full,
 };
 pub use media_settings::{MEDIA_SETTINGS_FILE, read_media_settings, write_media_settings};
 pub use spool::AttachmentSpool;
