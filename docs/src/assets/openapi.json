@@ -9044,7 +9044,7 @@
           "Import"
         ],
         "summary": "Import one message-ir JSONL body.",
-        "description": "Every message needs a non-empty `guid`. A batch with a message without\none is refused with `422`, naming its lines, and nothing in it is stored.\nA message whose `guid` the source already holds is skipped, so a batch\nsent again after its answer was lost stores nothing twice.",
+        "description": "Every message needs a non-empty `guid`. A batch with a message without\none is refused with `422`, naming its lines, and nothing in it is stored.\nA message whose `guid` the source already holds is skipped, so a batch\nsent again after its answer was lost stores nothing twice. A batch hides\nno duplicates: the run's completion or discard hides them, once for the\nwhole run.",
         "operationId": "create_import_batch",
         "parameters": [
           {
@@ -9242,7 +9242,7 @@
           "Import"
         ],
         "summary": "Record the outcome of an Import Run started with POST /v1/imports.",
-        "description": "The answer is the run as it now stands.",
+        "description": "The answer is the run as it now stands.\n\nBefore it records the outcome, the server hides the duplicates of the\nwhole account, within one source and across sources. A batch hides\nnone, so the duplicates a run brings stay shown until the run ends. The\ntime this takes grows with every message the account holds, not with\nthe run's. A dedupe that fails leaves the run running. A server told to\nstop refuses the request with `503 Service Unavailable`\n(`server-stopping`), and the run stays running.",
         "operationId": "complete_import",
         "parameters": [
           {
@@ -9408,6 +9408,19 @@
             "x-problem-types": [
               "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
             ]
+          },
+          "503": {
+            "description": "[`server-stopping`](https://messagecrate.app/docs/developer/reference/errors/server-stopping): The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/server-stopping"
+            ]
           }
         },
         "security": [
@@ -9563,7 +9576,7 @@
           "Import"
         ],
         "summary": "Discard a running Import Run, freeing the account's single slot.",
-        "description": "The answer is the run, now `cancelled`, with the issues the request carried.",
+        "description": "The answer is the run, now `cancelled`, with the issues the request carried.\n\nThe messages the run's batches brought stay in the account, and once it\nhas discarded the run the server hides the duplicates of the whole\naccount, as a completion does. A dedupe that fails does not undo the\ndiscard: the next run's end hides them. A server told to stop refuses\nthe request with `503 Service Unavailable` (`server-stopping`), and the\nrun stays running.",
         "operationId": "discard_import",
         "parameters": [
           {
@@ -9728,6 +9741,19 @@
             },
             "x-problem-types": [
               "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
+            ]
+          },
+          "503": {
+            "description": "[`server-stopping`](https://messagecrate.app/docs/developer/reference/errors/server-stopping): The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/server-stopping"
             ]
           }
         },
@@ -15015,18 +15041,13 @@
             "type": "object",
             "required": [
               "source",
-              "account",
-              "dedupe"
+              "account"
             ],
             "properties": {
               "account": {
                 "type": "integer",
                 "format": "int64",
                 "description": "Id of the account the batch imported into."
-              },
-              "dedupe": {
-                "$ref": "#/components/schemas/DedupeCounts",
-                "description": "What the dedupe after this batch did, counted over the whole account\nrather than the batch alone. Every batch runs it."
               },
               "source": {
                 "type": "string",
@@ -15035,7 +15056,7 @@
             }
           }
         ],
-        "description": "Import result: the import counts and the dedupe counts."
+        "description": "Import result: the batch's import counts. The batch hides no\nduplicates; the run's end does, once for the whole run."
       },
       "CreateImportRequest": {
         "type": "object",
@@ -15216,42 +15237,6 @@
               "null"
             ],
             "description": "The error SQLite gave when the server asked for write-ahead logging\nas it started, in SQLite's words, such as `database is locked`.\n`null` when SQLite gave none: it turned write-ahead logging on, or\nkept another mode without an error."
-          }
-        }
-      },
-      "DedupeCounts": {
-        "type": "object",
-        "description": "What one dedupe did.",
-        "required": [
-          "keys_filled",
-          "exact_groups",
-          "exact_flagged",
-          "near_flagged"
-        ],
-        "properties": {
-          "exact_flagged": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Messages hidden as exact duplicates. In each group, the source with\nthe most copies sets how many stay shown, and the rest are hidden.",
-            "minimum": 0
-          },
-          "exact_groups": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Groups of messages that share one content key and come from two or\nmore sources. Copies one source alone holds are not a group.",
-            "minimum": 0
-          },
-          "keys_filled": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Content keys the pass wrote: one for each message whose key was\nmissing or whose inputs changed. A content key is a fingerprint of a\nmessage's conversation, direction, sender, time, text and attachments.\nThis is not a count of duplicates.",
-            "minimum": 0
-          },
-          "near_flagged": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Messages hidden as near duplicates: a message that matches one from\nanother source in the same conversation, from the same sender in the\nsame direction, within 2 seconds, with the same text or the same\nattachments.",
-            "minimum": 0
           }
         }
       },

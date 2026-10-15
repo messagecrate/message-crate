@@ -746,23 +746,16 @@ pub async fn discard_import(
     Ok(())
 }
 
-/// Discard the account's running Import Run, whichever it is, at the instant
-/// `now`, and return the row as it was before the discard; `None` when the
-/// account has no live run.
-///
-/// This is the way out for a command-line operator: a killed
-/// `message-crate-server import` leaves its run open, and the
-/// partial unique index then refuses every later import. The operator knows
-/// the account, not the run id, so the lookup happens here rather than
-/// making them find the id first.
+/// The account's running Import Run, whichever it is; `None` when the
+/// account has no live run. The server's `imports discard` command looks
+/// it up here: the operator knows the account, not the run id.
 ///
 /// # Errors
 ///
 /// Returns the database error.
-pub async fn discard_running_import(
+pub async fn running_import(
     conn: &mut SqliteConnection,
     account_id: i64,
-    now: chrono::DateTime<Utc>,
 ) -> Result<Option<ImportRow>> {
     let row = sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT {IMPORT_COLUMNS}
@@ -772,14 +765,7 @@ pub async fn discard_running_import(
     .bind(account_id)
     .fetch_optional(&mut *conn)
     .await?;
-    let Some(row) = row else {
-        return Ok(None);
-    };
-    let running = import_from_row(&row)?;
-    discard_import(conn, account_id, running.id, &[], &[], now)
-        .await
-        .map_err(|err| anyhow::anyhow!(err))?;
-    Ok(Some(running))
+    Ok(row.as_ref().map(import_from_row).transpose()?)
 }
 
 /// Finish a running import at the instant `now`: prefer client counts, else

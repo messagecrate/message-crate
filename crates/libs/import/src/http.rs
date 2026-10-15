@@ -392,7 +392,11 @@ impl Session {
                 &format!("/v1/imports/{import_id}/complete"),
                 &self.token,
             )
-            .timeout(Duration::from_secs(60))
+            // The server hides the duplicates of the whole account before it
+            // completes the run, a pass whose time grows with every message
+            // the account holds. 600 s is the ten minutes the web app gives
+            // the same call.
+            .timeout(Duration::from_secs(600))
             .header("Content-Type", "application/json")
             .json(&body)
             .send()

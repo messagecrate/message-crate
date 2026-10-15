@@ -243,7 +243,7 @@ pub struct ChangedDedupe {
 /// message whose flag depends on theirs (#1805). A phone number given its
 /// country merges conversations and senders, which changes the content
 /// keys of the messages that moved (`crate::identity_country`); an import
-/// leaves this to the full dedupe after each batch instead.
+/// leaves this to the full dedupe at the end of its Import Run instead.
 ///
 /// This computes the changed messages' content keys again, then runs both
 /// passes of [`dedupe_cross_source`] over the messages with a content key,

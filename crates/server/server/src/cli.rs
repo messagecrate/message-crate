@@ -80,6 +80,11 @@ pub enum Commands {
     /// standard input: typed without echo at a terminal, or else the first
     /// line.
     ResetOwnerPassword(ResetOwnerPasswordArgs),
+
+    /// Ask `/health` of the `serve` this container runs, at the address it
+    /// listens on, and exit 0 when it answers ok, 1 when not. The release
+    /// image's Docker health check. Linux only: it reads `/proc`
+    Healthcheck,
 }
 
 /// Options for `create-owner`. The password is read from standard input
@@ -328,6 +333,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Commands::ProcessAssets(args) => run_process_assets(args).await,
         Commands::CreateOwner(args) => run_create_owner(args).await,
         Commands::ResetOwnerPassword(args) => run_reset_owner_password(args).await,
+        Commands::Healthcheck => run_healthcheck().await,
     }
 }
 
@@ -378,6 +384,17 @@ async fn reset_owner_password_with(args: ResetOwnerPasswordArgs, password: &str)
     let username = crate::owner_cli::reset_owner_password(&opened, password).await?;
     opened.close().await;
     println!("Owner password set. Log in as {username}.");
+    Ok(())
+}
+
+/// Print what the health check found, and fail with it when the server is
+/// not healthy, so the exit status is 1.
+async fn run_healthcheck() -> Result<()> {
+    let outcome = crate::healthcheck::check().await;
+    if !outcome.healthy {
+        bail!("{}", outcome.message);
+    }
+    println!("{}", outcome.message);
     Ok(())
 }
 
@@ -438,8 +455,13 @@ async fn run_imports_discard(args: ImportsDiscardArgs) -> Result<()> {
     let opened = OpenDb::open(cfg).await?;
     let account = opened.account_id(&args.account).await?;
     let mut conn = opened.conn().await?;
-    let discarded =
-        crate::db::imports::discard_running_import(&mut conn, account, chrono::Utc::now()).await?;
+    let discarded = crate::imports_api::discard_running_import_and_dedupe(
+        &mut conn,
+        account,
+        chrono::Utc::now(),
+        crate::progress::Progress::Print,
+    )
+    .await?;
     drop(conn);
     if discarded.is_some() {
         // Only the unreferenced files: `.incoming/` is left to `serve`,

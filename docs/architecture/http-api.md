@@ -561,9 +561,9 @@ disagreed ([#2202](https://github.com/messagecrate/message-crate/issues/2202)).
 
 Why `SELECT 1` and a short limit: `SELECT 1` reads no table, so it never
 waits on an import's write lock, and the limit stays under the time
-`docker/healthcheck.cjs` gives each address it asks (4 seconds, or 2 each
-when it asks both 127.0.0.1 and ::1), so a failure arrives as the server's
-answer. HTTP imports hold at most `MAX_CONCURRENT_IMPORTS`
+`message-crate-server healthcheck` gives each address it asks (4 seconds,
+or 2 each when it asks both 127.0.0.1 and ::1), so a failure arrives as the
+server's answer. HTTP imports hold at most `MAX_CONCURRENT_IMPORTS`
 (`imports_api/mod.rs`) of the pool's `max_connections` (`db/engine.rs`), but
 requests that write wait on SQLite's busy timeout while an import holds the
 write lock, and enough of them can take every connection for that long. The
@@ -1443,8 +1443,8 @@ Does the rule stop at handlers? No. An import stage (`imports_api/staging.rs`,
 `imports_api/promote.rs`) is not a handler, but it holds no SQL either: it
 sequences its statements, logs them and keeps the counts, and the statements
 are in `db/staging.rs`, the module for the staging tables. The dedupe every
-import batch runs (`dedupe.rs`) is a stage too: it hashes the content keys
-and picks the copy shown, and the statements that read and write
+Import Run runs as it ends (`dedupe.rs`) is a stage too: it hashes the content
+keys and picks the copy shown, and the statements that read and write
 `messages.content_key` and `messages.duplicate_of` for it are in
 `db/dedupe.rs`. Why: the point of the rule is that the SQL for a table is
 found in one place, and a stage that carried its own statements would be a
