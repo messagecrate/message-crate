@@ -225,13 +225,22 @@ pub struct ReadOptions<'a> {
     pub sinks: Sinks<'a>,
 }
 
-/// What one message carries beside its [`PendingMessage`]: the vendor
-/// fields written back as its `source`, its time as the XML gives it, and
-/// what the read left out of it. A message's `row` extra names its entry.
+/// What one message carries beside its [`PendingMessage`]: the fields
+/// only SMS Backup & Restore has, its time as the XML gives it, and what the
+/// read left out of it. A message's `row` extra names its entry.
 #[derive(Debug, Clone)]
 struct MessageRow {
     /// Unix seconds, as the parser read them from the `date` attribute.
     timestamp_secs: f64,
+    /// `"sms"` or `"mms"`.
+    message_kind: &'static str,
+    /// The subject; empty when the message has none.
+    subject: String,
+    /// The `contact_name` attribute as the file writes it.
+    contact_name: String,
+    /// The `type` (SMS) or `msg_box` (MMS) attribute.
+    android_type: String,
+    /// The vendor fields, written back as the message's `source`.
     source_fields: serde_json::Map<String, serde_json::Value>,
     /// What the read left out of the message.
     left_out: LeftOutCounts,
@@ -399,14 +408,15 @@ fn add_record(
         .unwrap_or_default();
     let extra = BTreeMap::from([
         (ROW.to_string(), conversation.rows.len().to_string()),
+        // Read by the shared `message_ir::message_time`.
         ("date_ms".to_string(), record.date_ms),
-        ("contact_name".to_string(), record.contact_name),
-        ("android_type".to_string(), record.android_type),
-        ("message_kind".to_string(), record.message_kind.to_string()),
-        ("subject".to_string(), record.subject),
     ]);
     conversation.rows.push(MessageRow {
         timestamp_secs: record.timestamp_secs,
+        message_kind: record.message_kind,
+        subject: record.subject,
+        contact_name: record.contact_name,
+        android_type: record.android_type,
         source_fields,
         left_out: LeftOutCounts {
             unreadable_parts: record.unreadable_parts,
@@ -446,6 +456,31 @@ impl SbrProjection<'_> {
             .expect("every message the read adds names its row");
         &self.rows[index]
     }
+
+    /// Display names seen per sender handle across the conversation.
+    fn names_by_handle(&self, conversation: &PendingConversation) -> HashMap<String, String> {
+        let mut names = HashMap::new();
+        for message in &conversation.messages {
+            if let Some(name) = message
+                .sender_display_name
+                .as_deref()
+                .and_then(message_ir::trimmed)
+                .filter(|_| !message.sender_identity.is_empty())
+            {
+                names
+                    .entry(message.sender_identity.clone())
+                    .or_insert_with(|| name.to_string());
+            }
+            if let Some(name) = sbr::contact_name(&self.row(message).contact_name, self.kind) {
+                for peer in &conversation.participant_e164s {
+                    names
+                        .entry(peer.clone())
+                        .or_insert_with(|| name.to_string());
+                }
+            }
+        }
+        names
+    }
 }
 
 impl ProjectionHooks for SbrProjection<'_> {
@@ -458,18 +493,20 @@ impl ProjectionHooks for SbrProjection<'_> {
     }
 
     fn source(&self, _conversation: &PendingConversation, message: &PendingMessage) -> IrSource {
+        let row = self.row(message);
         IrSource {
-            android_type: message.extra_str("android_type").trim().parse().ok(),
-            fields: self.row(message).source_fields.clone(),
+            android_type: row.android_type.trim().parse().ok(),
+            fields: row.source_fields.clone(),
         }
     }
 
     fn subject(&self, message: &PendingMessage) -> Option<String> {
-        message.extra_opt("subject")
+        let subject = &self.row(message).subject;
+        (!subject.is_empty()).then(|| subject.clone())
     }
 
     fn message_kind(&self, message: &PendingMessage) -> IrMessageKind {
-        IrMessageKind::parse(message.extra_str("message_kind"))
+        IrMessageKind::parse(self.row(message).message_kind)
     }
 
     fn message_order(&self, a: &PendingMessage, b: &PendingMessage) -> std::cmp::Ordering {
@@ -483,7 +520,7 @@ impl ProjectionHooks for SbrProjection<'_> {
         _chat_id: &str,
         conversation: &PendingConversation,
     ) -> Vec<IrParticipant> {
-        let names = names_by_handle(conversation, self.kind);
+        let names = self.names_by_handle(conversation);
         conversation
             .participant_e164s
             .iter()
@@ -498,34 +535,6 @@ impl ProjectionHooks for SbrProjection<'_> {
     fn group_title(&self, conversation: &PendingConversation) -> Option<String> {
         conversation.display_name.clone()
     }
-}
-
-/// Display names seen per sender handle across the conversation.
-fn names_by_handle(
-    conversation: &PendingConversation,
-    kind: ConversationKind,
-) -> HashMap<String, String> {
-    let mut names = HashMap::new();
-    for message in &conversation.messages {
-        if let Some(name) = message
-            .sender_display_name
-            .as_deref()
-            .and_then(message_ir::trimmed)
-            .filter(|_| !message.sender_identity.is_empty())
-        {
-            names
-                .entry(message.sender_identity.clone())
-                .or_insert_with(|| name.to_string());
-        }
-        if let Some(name) = sbr::contact_name(message.extra_str("contact_name"), kind) {
-            for peer in &conversation.participant_e164s {
-                names
-                    .entry(peer.clone())
-                    .or_insert_with(|| name.to_string());
-            }
-        }
-    }
-    names
 }
 
 /// Project one conversation in progress into a document, or `None` when no
