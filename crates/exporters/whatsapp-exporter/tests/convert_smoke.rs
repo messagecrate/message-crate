@@ -669,7 +669,7 @@ fn guid_of<'a>(document: &'a message_ir::ConversationDocument, text: &str) -> &'
 fn message_of<'a>(
     document: &'a message_ir::ConversationDocument,
     text: &str,
-) -> &'a message_ir::IrMessage {
+) -> &'a message_ir::Message {
     document
         .messages
         .iter()

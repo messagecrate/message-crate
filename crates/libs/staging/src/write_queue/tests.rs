@@ -1,7 +1,7 @@
 use super::*;
 use message_crate_core::testutil::{level_of, recorded_log};
 use message_crate_core::{AttachmentFiles, CancelFlag, LogSink, ProgressSink, RunLogLevel, Sinks};
-use message_ir::{ConversationDocument, IrAttachment};
+use message_ir::{Attachment, ConversationDocument};
 use message_ir_format::read_conversation_jsonl;
 use std::fs;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -19,8 +19,8 @@ fn no_sinks() -> Sinks<'static> {
     }
 }
 
-fn att(name: &str) -> IrAttachment {
-    IrAttachment {
+fn att(name: &str) -> Attachment {
+    Attachment {
         original_name: Some(name.into()),
         ..message_ir::testutil::sample_attachment()
     }
@@ -923,7 +923,7 @@ fn take_bytes_moves_the_bytes_out_of_the_attachment() {
 fn group(chat_id: &str, title: Option<&str>, text: &str) -> ConversationDocument {
     let mut doc = message_ir::testutil::sample_document(text);
     doc.conversation.chat_identifier = chat_id.into();
-    doc.conversation.conversation_type = message_ir::IrConversationType::Group;
+    doc.conversation.conversation_type = message_ir::ConversationType::Group;
     doc.conversation.group_title = title.map(str::to_string);
     doc
 }

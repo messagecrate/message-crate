@@ -19,7 +19,7 @@ use mail_builder::headers::content_type::ContentType;
 use mail_builder::headers::date::Date;
 use mail_builder::headers::raw::Raw;
 use mail_builder::mime::MimePart;
-use message_ir::{IrDirection, IrMessage};
+use message_ir::{Direction, Message};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
@@ -60,7 +60,7 @@ pub struct MailAttachment {
     pub sticker_effect: Option<String>,
 }
 
-impl From<&MailAttachment> for message_ir::IrAttachment {
+impl From<&MailAttachment> for message_ir::Attachment {
     fn from(a: &MailAttachment) -> Self {
         Self {
             path: None,
@@ -90,7 +90,7 @@ pub enum MailPackage {
 /// context the headers need, plus the IR message itself.
 ///
 /// The message-level fields (guid, timestamp, direction, text, the iMessage
-/// extension bag, the Android source bag) live in [`message_ir::IrMessage`];
+/// extension bag, the Android source bag) live in [`message_ir::Message`];
 /// the writer reads them straight from the IR instead of a flattened copy.
 #[derive(Debug, Clone)]
 pub struct MailMessage {
@@ -119,14 +119,14 @@ pub struct MailMessage {
     /// The message itself (headers read guid, timestamp, direction, service,
     /// kind, sender, subject, text, and the iMessage / source bags from here;
     /// its `attachments` list is ignored in favour of `attachments` below).
-    pub message: IrMessage,
+    pub message: Message,
     /// MIME parts plus the `X-ME-Attachment-Meta` JSON (bytes loaded).
     pub attachments: Vec<MailAttachment>,
 }
 
 impl MailMessage {
     /// The iMessage extension bag, when present.
-    fn im(&self) -> Option<&message_ir::IrImessage> {
+    fn im(&self) -> Option<&message_ir::ImessageExtensions> {
         self.message.imessage.as_ref()
     }
 }
@@ -193,7 +193,7 @@ fn write_message_file(conv_dir: &Path, sequence: u32, msg: &MailMessage) -> Resu
 /// # Errors
 ///
 /// Returns an error when the message's time cannot be represented.
-pub fn eml_file_name(sequence: u32, message: &IrMessage) -> Result<String> {
+pub fn eml_file_name(sequence: u32, message: &Message) -> Result<String> {
     let secs = message.timestamp_unix_ms.div_euclid(1000);
     let (date_part, time_part) = local_date_time_parts(secs)
         .with_context(|| format!("invalid timestamp_unix_ms {}", message.timestamp_unix_ms))?;
@@ -314,14 +314,14 @@ fn write_mboxrd_record(writer: &mut impl Write, msg: &MailMessage) -> Result<()>
 /// The address for the mbox `From_` line: the sender for incoming, the owner otherwise.
 fn envelope_sender(msg: &MailMessage) -> String {
     let identity = match msg.message.direction {
-        IrDirection::Incoming => msg
+        Direction::Incoming => msg
             .message
             .sender_identity
             .as_deref()
             .and_then(message_ir::trimmed)
             .or_else(|| peer_identity(msg).and_then(message_ir::trimmed))
             .unwrap_or("unknown"),
-        IrDirection::Outgoing => {
+        Direction::Outgoing => {
             let owner = msg.owner_identity.trim();
             if owner.is_empty() { "me" } else { owner }
         }
@@ -799,7 +799,7 @@ pub fn attachment_part(mime: &str, filename: String, bytes: &[u8]) -> MimePart<'
 fn envelope_addresses(msg: &MailMessage) -> (Address<'static>, Address<'static>) {
     if msg.conversation_type.eq_ignore_ascii_case("group") {
         let from = match msg.message.direction {
-            IrDirection::Incoming => {
+            Direction::Incoming => {
                 let sender = msg
                     .message
                     .sender_identity
@@ -808,7 +808,7 @@ fn envelope_addresses(msg: &MailMessage) -> (Address<'static>, Address<'static>)
                     .unwrap_or("unknown");
                 synthetic_address(sender, msg.message.sender_display_name.as_deref())
             }
-            IrDirection::Outgoing => owner_address(msg),
+            Direction::Outgoing => owner_address(msg),
         };
         return (from, conversation_address(msg));
     }
@@ -820,14 +820,14 @@ fn envelope_addresses(msg: &MailMessage) -> (Address<'static>, Address<'static>)
         });
     let peer_name = peer_display_name(msg, peer);
     match msg.message.direction {
-        IrDirection::Incoming => (
+        Direction::Incoming => (
             synthetic_address(
                 peer,
                 peer_name.or(msg.message.sender_display_name.as_deref()),
             ),
             owner_address(msg),
         ),
-        IrDirection::Outgoing => (owner_address(msg), synthetic_address(peer, peer_name)),
+        Direction::Outgoing => (owner_address(msg), synthetic_address(peer, peer_name)),
     }
 }
 

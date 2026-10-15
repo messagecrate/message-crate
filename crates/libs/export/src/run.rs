@@ -326,7 +326,7 @@ fn missing_assets_line(count: usize) -> String {
 /// conversation, the attachments they reference, and the running count.
 struct Fetched {
     /// Conversation key → (first message as the metadata seed, converted messages).
-    by_conv: BTreeMap<String, (Message, Vec<message_ir::IrMessage>)>,
+    by_conv: BTreeMap<String, (Message, Vec<message_ir::Message>)>,
     /// sha256 → relative path under the output directory.
     assets: HashMap<String, String>,
     /// sha256 → every other path a message names for the same bytes. The
@@ -712,7 +712,7 @@ impl<'a> Export<'a> {
     /// Returns an error when a file cannot be created, serialized, or renamed.
     fn write_conversations(
         &self,
-        by_conv: BTreeMap<String, (Message, Vec<message_ir::IrMessage>)>,
+        by_conv: BTreeMap<String, (Message, Vec<message_ir::Message>)>,
     ) -> Result<u64> {
         let mut docs: Vec<message_ir::ConversationDocument> = by_conv
             .into_values()
@@ -797,7 +797,7 @@ impl<'a> Export<'a> {
 /// file once the run's log is gone. The path and fingerprint stay, so a next
 /// Export into the same directory still knows what to fetch.
 fn mark_unfetched(
-    by_conv: &mut BTreeMap<String, (Message, Vec<message_ir::IrMessage>)>,
+    by_conv: &mut BTreeMap<String, (Message, Vec<message_ir::Message>)>,
     failed: &[AssetFailure],
 ) {
     if failed.is_empty() {
@@ -815,7 +815,7 @@ fn mark_unfetched(
             .and_then(asset_key)
             .is_some_and(|sha| failed.contains(sha.as_str()));
         if unfetched {
-            att.missing_reason = Some(message_ir::NOT_FETCHED.to_string());
+            att.missing_reason = Some(message_ir::missing_reason::NOT_FETCHED.to_string());
         }
     }
 }

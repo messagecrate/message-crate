@@ -375,7 +375,7 @@ fn a_run_that_copies_no_attachments_still_records_their_size() {
     })
     .unwrap();
 
-    let attachments: Vec<message_ir::IrAttachment> = fs::read_dir(output.path())
+    let attachments: Vec<message_ir::Attachment> = fs::read_dir(output.path())
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "jsonl"))

@@ -12,7 +12,7 @@ use message_crate_core::{
     AttachmentFiles, CancelFlag, ExportReport, ExportTransforms, LogSink, OutputFormat,
     ProgressSink, Sinks,
 };
-use message_ir::{ConversationDocument, IrAttachment};
+use message_ir::{Attachment, ConversationDocument};
 use message_ir_format::{FormatSink, MergedArchive, write_documents_through_sink};
 use std::path::{Path, PathBuf};
 
@@ -218,7 +218,7 @@ impl ExportWriter {
     pub fn finish(
         self,
         documents: Vec<ConversationDocument>,
-        source_for: &mut dyn FnMut(&mut IrAttachment) -> (AttachmentSource, Option<u64>),
+        source_for: &mut dyn FnMut(&mut Attachment) -> (AttachmentSource, Option<u64>),
         cancel: &CancelFlag,
         report: &mut ExportReport,
     ) -> Result<()> {
@@ -230,7 +230,7 @@ impl ExportWriter {
             cancel,
         };
         let spool = self.spool.as_ref();
-        let mut source_for = |att: &mut IrAttachment| match spool.and_then(|s| s.source(att)) {
+        let mut source_for = |att: &mut Attachment| match spool.and_then(|s| s.source(att)) {
             Some(spooled) => spooled,
             None => source_for(att),
         };
@@ -313,7 +313,7 @@ mod tests {
     /// One conversation whose only message carries one attachment's bytes.
     fn document_with_bytes() -> ConversationDocument {
         let mut doc = message_ir::testutil::sample_document("with a photo");
-        doc.messages[0].attachments = vec![IrAttachment {
+        doc.messages[0].attachments = vec![Attachment {
             bytes: Some(b"\xff\xd8\xffphoto".to_vec()),
             ..message_ir::testutil::sample_attachment()
         }];
@@ -386,7 +386,7 @@ mod tests {
         // The real attachment comes first, so the first event is sent before
         // the run reaches a missing one and could take its size off.
         doc.messages[0].attachments = [5, 700, 1_000, 30]
-            .map(|size| IrAttachment {
+            .map(|size| Attachment {
                 size_bytes: Some(size),
                 ..attachment.clone()
             })
@@ -402,7 +402,7 @@ mod tests {
         writer
             .finish(
                 vec![doc],
-                &mut |att: &mut IrAttachment| (sources.next().unwrap(), att.size_bytes),
+                &mut |att: &mut Attachment| (sources.next().unwrap(), att.size_bytes),
                 &CancelFlag::default(),
                 &mut ExportReport::default(),
             )

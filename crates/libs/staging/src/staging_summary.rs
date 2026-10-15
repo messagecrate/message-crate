@@ -30,7 +30,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use media::{MediaMode, MediaTools, SizeVerdict, classify_probed, estimate_bytes, needs_probe};
-use message_ir::{IrDirection, IrMessage};
+use message_ir::{Direction, Message};
 
 use crate::transcode::{COMMITTED_SUFFIX, TranscodeOptions, conversation_files};
 use message_ir_format::read_conversation_jsonl;
@@ -209,8 +209,8 @@ pub fn summarize_staging(
             if let Some(identity) = owner_identity_of(msg, doc.export.owner_identity.as_deref()) {
                 let (sent, received) = owner.entry(identity.to_string()).or_insert((0, 0));
                 match msg.direction {
-                    IrDirection::Outgoing => *sent += 1,
-                    IrDirection::Incoming => *received += 1,
+                    Direction::Outgoing => *sent += 1,
+                    Direction::Incoming => *received += 1,
                 }
             }
             for att in &msg.attachments {
@@ -277,10 +277,10 @@ struct AttachmentRef {
 /// The owner's address on `msg`: its own record, then the sender of an
 /// outgoing message, then the export's one owner address. `None` when all
 /// are blank.
-fn owner_identity_of<'a>(msg: &'a IrMessage, export_owner: Option<&'a str>) -> Option<&'a str> {
+fn owner_identity_of<'a>(msg: &'a Message, export_owner: Option<&'a str>) -> Option<&'a str> {
     let outgoing_sender = match msg.direction {
-        IrDirection::Outgoing => msg.sender_identity.as_deref(),
-        IrDirection::Incoming => None,
+        Direction::Outgoing => msg.sender_identity.as_deref(),
+        Direction::Incoming => None,
     };
     [msg.owner_identity.as_deref(), outgoing_sender, export_owner]
         .into_iter()

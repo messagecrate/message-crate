@@ -8,7 +8,7 @@ use message_crate_core::{
     AttachmentFiles, AttachmentJob, LoadError, LogSink, OutputFormat, Sinks, attachment_jobs,
     stage_attachment_jobs,
 };
-use message_ir::{IrAttachment, IrMessage};
+use message_ir::{Attachment, Message};
 use std::path::Path;
 
 /// Where a `Path` source's file is.
@@ -69,10 +69,10 @@ impl<'a> CountedAttachments<'a> {
     /// have logged it. With no attachment files copied nothing is read, so
     /// no path is checked.
     pub fn new(
-        messages: impl IntoIterator<Item = &'a mut IrMessage>,
+        messages: impl IntoIterator<Item = &'a mut Message>,
         files: AttachmentFiles,
         paths: PathSources,
-        mut source_for: impl FnMut(&mut IrAttachment) -> (AttachmentSource, Option<u64>),
+        mut source_for: impl FnMut(&mut Attachment) -> (AttachmentSource, Option<u64>),
         log: &LogSink,
     ) -> Self {
         // With no attachment files copied nothing is read, so no path is
@@ -154,8 +154,8 @@ mod tests {
     use crate::load_attachment_source;
     use message_crate_core::CancelFlag;
 
-    fn attachment(size: u64) -> IrAttachment {
-        IrAttachment {
+    fn attachment(size: u64) -> Attachment {
+        Attachment {
             size_bytes: Some(size),
             ..message_ir::testutil::sample_attachment()
         }

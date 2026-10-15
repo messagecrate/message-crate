@@ -4,7 +4,7 @@
 
 use crate::attachments_emit::queue_pdu_attachments;
 use crate::read::{MAX_SKIP_DETAILS, SkippedBadAddrDetail, XmlMessage, parse_xml_file};
-use android_fields::android_source;
+use android_fields::android_vendor_fields;
 use anyhow::{Context, Result, bail};
 use go_sms_mms::{ParsedPdu, PduError, parse_pdu_file};
 use message_crate_core::{
@@ -13,8 +13,8 @@ use message_crate_core::{
 };
 use message_csv::write_guarded_record;
 use message_ir::{
-    ConversationDocument, ExportMeta, IrService, IrSource, PendingAttachment, PendingConversation,
-    PendingMessage, ProjectionHooks, ensure_conversation,
+    ConversationDocument, ExportMeta, PendingAttachment, PendingConversation, PendingMessage,
+    ProjectionHooks, Transport, VendorFields, ensure_conversation,
 };
 use message_staging::{AttachmentSpool, Project, ReadBackup, WriterSetup, convert_backup};
 use phone::{Handle, OwnerHandleSet};
@@ -389,8 +389,8 @@ impl ProjectionHooks for GoSmsProjection {
         self.export.clone()
     }
 
-    fn service(&self, _message: &PendingMessage) -> IrService {
-        IrService::Sms
+    fn service(&self, _message: &PendingMessage) -> Transport {
+        Transport::Sms
     }
 
     /// Every handle is a [`Handle`] key already.
@@ -398,7 +398,11 @@ impl ProjectionHooks for GoSmsProjection {
         raw.to_string()
     }
 
-    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> IrSource {
+    fn vendor_fields(
+        &self,
+        conversation: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields {
         let mut fields = serde_json::Map::new();
         fields.insert(
             "source_kind".into(),
@@ -425,7 +429,7 @@ impl ProjectionHooks for GoSmsProjection {
                     .or_insert_with(|| serde_json::Value::String(v.clone()));
             }
         }
-        android_source(conversation, message, fields)
+        android_vendor_fields(conversation, message, fields)
     }
 }
 
@@ -816,7 +820,7 @@ mod tests {
     }
 
     /// The messages of one conversation as the shared projection writes them.
-    fn project(messages: Vec<PendingMessage>) -> (Vec<message_ir::IrMessage>, ExportReport) {
+    fn project(messages: Vec<PendingMessage>) -> (Vec<message_ir::Message>, ExportReport) {
         let hooks = GoSmsProjection {
             export: message_crate_core::export_meta(
                 EXPORT_SOURCE,

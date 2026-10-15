@@ -1,6 +1,5 @@
 use message_ir::{
-    ConversationDocument, ConversationHeader, IrConversationType, IrDirection, IrMessage,
-    SCHEMA_VERSION,
+    ConversationDocument, ConversationHeader, ConversationType, Direction, Message, SCHEMA_VERSION,
 };
 
 use super::*;
@@ -91,7 +90,7 @@ fn read_document(path: &Path) -> ConversationDocument {
     let header: ConversationHeader = serde_json::from_str(lines.next().expect("header line"))
         .unwrap_or_else(|error| panic!("parse header of {}: {error}", path.display()));
     assert_eq!(header.schema_version, SCHEMA_VERSION, "{}", path.display());
-    let messages: Vec<IrMessage> = lines
+    let messages: Vec<Message> = lines
         .map(|line| {
             serde_json::from_str(line)
                 .unwrap_or_else(|error| panic!("parse message in {}: {error}", path.display()))
@@ -224,7 +223,7 @@ fn every_conversation_file_is_a_current_schema_document_and_the_counts_match_the
         .iter()
         .filter(|(source, doc)| {
             source == IMESSAGE_SOURCE
-                && doc.conversation.conversation_type == IrConversationType::Group
+                && doc.conversation.conversation_type == ConversationType::Group
         })
         .count();
     assert_eq!(
@@ -303,7 +302,7 @@ fn a_conversation_with_an_email_address_is_held_at_the_demo_accounts_email() {
     let mut sent_from_email = 0;
     for (source, doc) in &documents {
         let chat = &doc.conversation.chat_identifier;
-        let with_email = doc.conversation.conversation_type == IrConversationType::Individual
+        let with_email = doc.conversation.conversation_type == ConversationType::Individual
             && chat.contains('@');
         let expected = if with_email {
             email_conversations += 1;
@@ -319,7 +318,7 @@ fn a_conversation_with_an_email_address_is_held_at_the_demo_accounts_email() {
         for message in &doc.messages {
             // No message names an owner of its own, so the header's holds.
             assert_eq!(message.owner_identity, None, "{source}/{chat}");
-            if with_email && message.direction == IrDirection::Outgoing {
+            if with_email && message.direction == Direction::Outgoing {
                 sent_from_email += 1;
             }
         }
@@ -1002,7 +1001,7 @@ fn every_message_of_the_medium_set_falls_between_8am_and_11pm_utc_and_not_after_
 /// message keeps nothing: no text, no attachment and no reaction.
 #[test]
 fn the_medium_set_marks_a_few_apple_messages_deleted_in_the_source_app_and_unsent() {
-    use message_ir::{Deletion, IrService};
+    use message_ir::{Deletion, Transport};
 
     let temp = tempfile::tempdir().expect("create test directory");
     let out = temp.path().join("demo");
@@ -1025,7 +1024,7 @@ fn the_medium_set_marks_a_few_apple_messages_deleted_in_the_source_app_and_unsen
                     assert!(message.reactions.is_empty(), "{}", message.guid);
                     // Only an iMessage can be unsent, and an unsent reply would be
                     // an empty message replying to another.
-                    assert_eq!(message.service, IrService::IMessage, "{}", message.guid);
+                    assert_eq!(message.service, Transport::IMessage, "{}", message.guid);
                     assert!(
                         message.reply_to.is_none(),
                         "{} is an Unsent reply",
@@ -1048,7 +1047,7 @@ fn the_medium_set_marks_a_few_apple_messages_deleted_in_the_source_app_and_unsen
 /// sending, and the original was written when the message was sent.
 #[test]
 fn the_medium_set_edits_a_few_apple_messages_and_keeps_their_earlier_versions() {
-    use message_ir::{Deletion, IrService};
+    use message_ir::{Deletion, Transport};
 
     let temp = tempfile::tempdir().expect("create test directory");
     let out = temp.path().join("demo");
@@ -1065,7 +1064,7 @@ fn the_medium_set_edits_a_few_apple_messages_and_keeps_their_earlier_versions() 
                 n => panic!("{} has {n} earlier versions", message.guid),
             }
             assert_eq!(source, IMESSAGE_SOURCE, "{}", message.guid);
-            assert_eq!(message.service, IrService::IMessage, "{}", message.guid);
+            assert_eq!(message.service, Transport::IMessage, "{}", message.guid);
             assert_ne!(message.deletion, Some(Deletion::Unsent), "{}", message.guid);
             let sent = message.timestamp_unix_ms;
             assert_eq!(

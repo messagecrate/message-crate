@@ -6,7 +6,7 @@
 //! crate is under the Fair Core License, so the reading happens in a separate
 //! program: `imessage-reader` (`crates/helpers/imessage-reader`). [`run()`]
 //! starts it, writes one request on its stdin, and turns the records it
-//! streams back into [`message_ir::IrMessage`]s, then
+//! streams back into [`message_ir::Message`]s, then
 //! [`message_ir_format::FormatSink`] writes the chosen output format (JSON
 //! Lines, JSON, CSV, EML, MBOX, or XML). The protocol is
 //! `imessage-reader-protocol`; the program is found and started by

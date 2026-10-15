@@ -4,9 +4,7 @@
 //! Each following line is one message.
 
 use anyhow::{Context, Result, bail};
-use message_ir::{
-    ConversationDocument, ConversationHeader, IrMessage, check_schema_version_in_json,
-};
+use message_ir::{ConversationDocument, ConversationHeader, Message, check_schema_version_in_json};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -30,7 +28,7 @@ pub fn read_conversation_json(path: &Path) -> Result<ConversationDocument> {
 
 /// Read a conversation JSON Lines file written by `write_conversation_jsonl`.
 ///
-/// Line 1 is a [`ConversationHeader`]. Each following line is one [`IrMessage`].
+/// Line 1 is a [`ConversationHeader`]. Each following line is one [`Message`].
 ///
 /// # Errors
 ///
@@ -74,7 +72,7 @@ pub fn read_conversation_jsonl_with_lines(
         if line.trim().is_empty() {
             continue;
         }
-        let msg: IrMessage = serde_json::from_str(&line)
+        let msg: Message = serde_json::from_str(&line)
             .with_context(|| format!("parse JSONL message line {line_no} in {}", path.display()))?;
         messages.push(msg);
         message_lines.push(line_no);

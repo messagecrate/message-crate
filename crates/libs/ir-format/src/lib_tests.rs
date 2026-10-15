@@ -3,8 +3,8 @@
 use super::*;
 use message_crate_core::OutputFormat;
 use message_ir::{
-    ConversationDocument, IrDirection, IrImessage, IrMessage, IrMessageKind, IrService,
-    TimePrecision,
+    ConversationDocument, Direction, ImessageExtensions, Message, MessageKind, TimePrecision,
+    Transport,
 };
 use serde_json::{Value, json};
 use std::fs;
@@ -282,13 +282,13 @@ fn csv_omits_trivial_parts_json_keeps_rich_parts() {
     let mut doc = message_ir::testutil::sample_imessage_document();
     // First message has a single run equal to text → omit parts_json.
     // Add a second body with multi-part parts that must be kept.
-    doc.messages.push(IrMessage {
+    doc.messages.push(Message {
         guid: "MULTI-PART-GUID".into(),
         timestamp_unix_ms: 1_400_773_263_000,
         time_precision: message_ir::TimePrecision::Milliseconds,
-        direction: IrDirection::Incoming,
-        service: IrService::IMessage,
-        message_kind: IrMessageKind::IMessage,
+        direction: Direction::Incoming,
+        service: Transport::IMessage,
+        message_kind: MessageKind::IMessage,
         sender_identity: Some("+15555550101".into()),
         sender_display_name: Some("Sam".into()),
         sender_country: None,
@@ -300,12 +300,12 @@ fn csv_omits_trivial_parts_json_keeps_rich_parts() {
         deletion: None,
         edits: Vec::new(),
         reply_to: None,
-        imessage: Some(IrImessage {
+        imessage: Some(ImessageExtensions {
             parts: Some(json!([
                 {"index": 0, "kind": "run", "text": "hello"},
                 {"index": 1, "kind": "attachment", "transfer_name": "a.jpg"}
             ])),
-            ..IrImessage::default()
+            ..ImessageExtensions::default()
         }),
         source: None,
     });
@@ -422,9 +422,9 @@ fn csv_types_an_at_sender_by_its_service() {
     let tmp = tempfile::tempdir().unwrap();
     let mut doc = message_ir::testutil::sample_document("hello ir");
     doc.messages[0].sender_identity = Some("123456@lid".into());
-    doc.messages[0].service = message_ir::IrService::Whatsapp;
+    doc.messages[0].service = message_ir::Transport::Whatsapp;
     assert_eq!(sender_identity_type_cell(tmp.path(), &doc), "other");
-    doc.messages[0].service = message_ir::IrService::Sms;
+    doc.messages[0].service = message_ir::Transport::Sms;
     assert_eq!(sender_identity_type_cell(tmp.path(), &doc), "email");
 }
 
@@ -484,7 +484,7 @@ fn roundtrip_eml_and_mbox() {
         if doc
             .messages
             .iter()
-            .any(|m| m.direction == IrDirection::Outgoing)
+            .any(|m| m.direction == Direction::Outgoing)
         {
             let outgoing_eml = fs::read_dir(&eml_dir)
                 .unwrap()
@@ -655,7 +655,7 @@ fn hard_texts_survive_every_format() {
         for format in formats {
             let mut doc = message_ir::testutil::sample_document(&case.text);
             if case.with_attachment {
-                doc.messages[0].attachments.push(message_ir::IrAttachment {
+                doc.messages[0].attachments.push(message_ir::Attachment {
                     bytes: Some(b"\xff\xd8\xfffakejpeg".to_vec()),
                     ..message_ir::testutil::sample_attachment()
                 });
@@ -710,7 +710,7 @@ fn csv_marks_only_an_announcement_row_as_an_announcement() {
     let mut doc = message_ir::testutil::sample_document("hello ir");
     let mut announcement = doc.messages[0].clone();
     announcement.guid = "ANNOUNCEMENT-GUID".into();
-    announcement.message_kind = IrMessageKind::Announcement;
+    announcement.message_kind = MessageKind::Announcement;
     doc.messages.push(announcement);
     doc.finalize_stats();
 
@@ -788,15 +788,15 @@ fn a_file_with_a_stem_suffix_keeps_its_name_when_read_and_written_again() {
 fn document_with_hard_fields() -> ConversationDocument {
     let mut doc = message_ir::testutil::sample_document("from my phone number");
     doc.export.source = "imessage".into();
-    let attachment = |name: &str, mime: &str| message_ir::IrAttachment {
+    let attachment = |name: &str, mime: &str| message_ir::Attachment {
         original_name: Some(name.into()),
         mime_type: Some(mime.into()),
         ..message_ir::testutil::sample_attachment()
     };
 
     let first = &mut doc.messages[0];
-    first.service = IrService::IMessage;
-    first.message_kind = IrMessageKind::IMessage;
+    first.service = Transport::IMessage;
+    first.message_kind = MessageKind::IMessage;
     first.owner_identity = Some("+15555550100".into());
     first.source = None;
     first.attachments = [
@@ -810,7 +810,7 @@ fn document_with_hard_fields() -> ConversationDocument {
         ),
     ]
     .into_iter()
-    .map(|(name, mime, size, reason)| message_ir::IrAttachment {
+    .map(|(name, mime, size, reason)| message_ir::Attachment {
         size_bytes: Some(size),
         missing_reason: Some(reason.into()),
         ..attachment(name, mime)
@@ -821,12 +821,12 @@ fn document_with_hard_fields() -> ConversationDocument {
     let mut second = doc.messages[0].clone();
     second.guid = "bbccddeeff0011223344556677889900".into();
     second.timestamp_unix_ms += 60_000;
-    second.direction = IrDirection::Outgoing;
+    second.direction = Direction::Outgoing;
     second.sender_identity = Some("me@example.com".into());
     second.sender_display_name = Some("Me".into());
     second.owner_identity = Some("me@example.com".into());
     second.text = "from my Apple ID".into();
-    second.attachments = vec![message_ir::IrAttachment {
+    second.attachments = vec![message_ir::Attachment {
         // The SHA-256 of `card`.
         digest_sha256: Some(
             "b0131e62957346f7cb488efd25f1fa6efc34e63dd49daa3a9b984668003e536c".into(),

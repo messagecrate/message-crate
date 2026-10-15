@@ -67,7 +67,7 @@ The rule "The address book is a file for editing contacts, not a source of them"
 | **Timezone** | XML/PDU epoch | XML epoch | EML dates | vendor `Date` | naive, zone from the Import form | epoch from wtsexporter | DB epoch + offset |
 | **Skip diagnostics** | `skipped_*.csv` (invalid address, empty PDU, no party) plus run summary counters | run summary counters | run summary counters | unresolved phone count | run summary counters | run summary counters | run summary counters |
 
-Discord, Signal, Telegram, and Slack are recognized services in the shared model (`IrService`), but no exporter parses those backup sources yet — they are future sources, listed as **no** until an exporter lands.
+Discord, Signal, Telegram, and Slack are recognized services in the shared model (each a value of `Transport`), but no exporter parses those backup sources yet — they are future sources, listed as **no** until an exporter lands.
 
 ## Technical docs
 

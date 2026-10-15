@@ -5,8 +5,8 @@ use crate::placeholders::materialize_placeholders;
 use anyhow::Result;
 use message_crate_core::{AttachmentFiles, ExportTransforms};
 use message_ir::{
-    ConversationDocument, IrAttachment, IrDirection, IrImessage, IrParticipant, MessageGuid,
-    MessageIdentity, Reaction,
+    Attachment, ConversationDocument, Direction, ImessageExtensions, MessageGuid, MessageIdentity,
+    Participant, Reaction,
 };
 use obfuscate::{
     Obfuscator, classify_attachment, placeholder_rel_path, resolve_obfuscator_with_log,
@@ -96,7 +96,7 @@ fn obfuscate_document(doc: &mut ConversationDocument, anon: &mut Obfuscator) -> 
             *h = anon.obfuscate_handle(h);
         }
         if let Some(n) = msg.sender_display_name.as_mut() {
-            if msg.direction == IrDirection::Outgoing && n == "Me" {
+            if msg.direction == Direction::Outgoing && n == "Me" {
                 // Keep the conventional outgoing label.
             } else {
                 *n = anon.obfuscate_display_name(n);
@@ -156,7 +156,7 @@ fn obfuscate_guids(doc: &mut ConversationDocument, anon: &Obfuscator) -> Renamed
             .collect();
         msg.guid = MessageGuid::new(&MessageIdentity {
             chat: &chat,
-            is_from_me: msg.direction == IrDirection::Outgoing,
+            is_from_me: msg.direction == Direction::Outgoing,
             sender: msg.sender_identity.as_deref(),
             timestamp_unix_ms: msg.timestamp_unix_ms,
             text: &msg.text,
@@ -189,7 +189,7 @@ fn reply_and_tapback_targets(doc: &mut ConversationDocument) -> impl Iterator<It
 /// `parts` repeats the body, `app` holds link previews, and
 /// `shared_location` holds a place. None of them is read on import, so
 /// obfuscated output drops them whole.
-fn obfuscate_imessage(im: &mut IrImessage, anon: &mut Obfuscator) {
+fn obfuscate_imessage(im: &mut ImessageExtensions, anon: &mut Obfuscator) {
     if let Some(a) = im.announcement.as_mut() {
         *a = anon.obfuscate_text(a);
     }
@@ -212,7 +212,7 @@ fn obfuscate_reactor(reaction: &mut Reaction, anon: &mut Obfuscator) {
 }
 
 /// Obfuscate one participant's identity and display name.
-fn obfuscate_participant(p: &mut IrParticipant, anon: &mut Obfuscator) {
+fn obfuscate_participant(p: &mut Participant, anon: &mut Obfuscator) {
     if let Some(handle) = p.identity.as_mut() {
         *handle = anon.obfuscate_handle(handle);
     }
@@ -222,7 +222,7 @@ fn obfuscate_participant(p: &mut IrParticipant, anon: &mut Obfuscator) {
 }
 
 /// Replace an attachment with the placeholder file for its media class.
-fn obfuscate_attachment(att: &mut IrAttachment) {
+fn obfuscate_attachment(att: &mut Attachment) {
     let class = classify_attachment(att.mime_type.as_deref(), att.path.as_deref());
     let rel = placeholder_rel_path(class);
     att.path = Some(rel.to_string());

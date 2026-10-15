@@ -15,12 +15,7 @@ function missingWhy(reason: string | null | undefined): string {
     const detail = reason.slice("convert_failed: ".length);
     return detail ? `could not be converted — ${detail}` : "could not be converted";
   }
-  if (reason.startsWith("unknown: ")) {
-    const detail = reason.slice("unknown: ".length);
-    return detail ? `could not be imported — ${detail}` : "could not be imported";
-  }
-  // Keep an unrecognized reason visible and reportable, never uniform,
-  // whether or not it carries the `unknown: ` prefix.
+  // Keep an unrecognized reason visible and reportable, never uniform.
   return `could not be imported — ${reason}`;
 }
 

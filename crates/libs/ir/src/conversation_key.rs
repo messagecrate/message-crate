@@ -14,7 +14,7 @@
 //! conversation that names nobody, and a person's orphaned messages never
 //! take the key of their one-to-one conversation.
 
-use crate::IrParticipant;
+use crate::Participant;
 
 /// What every group's chat id starts with, so a group's key can never equal an
 /// address.
@@ -41,7 +41,7 @@ pub enum ConversationKey {
         /// The group's id, unique within its source.
         vendor_id: String,
         /// The people in the group other than the account holder.
-        members: Vec<IrParticipant>,
+        members: Vec<Participant>,
     },
     /// A one-to-one conversation with a person the source names and records
     /// no address for, keyed by the name. The name must not be blank: a
