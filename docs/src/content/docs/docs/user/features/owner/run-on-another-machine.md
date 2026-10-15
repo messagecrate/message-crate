@@ -49,7 +49,9 @@ TLS encrypts passwords and messages on their way across the network.
 It still lets anyone reach the server's login and the Demo Account.
 The account login keeps one account's messages apart from another's.
 It is not built to stand alone on the internet.
-The Demo Account opens with no password, a user account can have no password at all, and a password has no minimum length.
+The Demo Account opens with no password.
+A user account can have no password at all.
+A password has no minimum length.
 Setting up the proxy is outside this guide.
 
 Three things matter more once other computers can reach the server:

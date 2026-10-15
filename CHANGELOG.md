@@ -1273,11 +1273,11 @@ carry their date on the heading.
 
 - 2026-10-14: **The guide's `docker run` commands limit the container as
   the Compose files do.** A server started with the user guide's commands
-  kept every special permission a container has by default, could be given
-  more by a program inside it, and could write to the container's own
-  files. Every `docker run` command in the guide that starts the server now
-  takes those permissions away, refuses to give more, and makes the
-  container's own files read-only apart from a directory for temporary
+  kept every special permission a container has by default. A program
+  inside the container could gain more, and could write to the container's
+  own files. Every `docker run` command in the guide that starts the server
+  now takes those permissions away and refuses to give more. It also makes
+  the container's own files read-only, apart from a directory for temporary
   files. That limits what a program that breaks into the container can do
   there (#2655).
 - 2026-10-14: **The guide asks for a proxy with its own sign-in before the

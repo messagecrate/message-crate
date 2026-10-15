@@ -31,7 +31,7 @@ A local checkout’s `.env.example` sets `COMPOSE_FILE=docker/compose.release.ym
 
 Do not run either Compose file at the same time as `./scripts/run-dev.sh`. That script also binds port 8080.
 
-Both files start the container with the same limits, and so does every `docker run` command in the user guide that starts the server. It keeps no Linux capability (`cap_drop: [ALL]`), cannot gain one through a setuid program (`no-new-privileges`), and its root filesystem is read-only (`read_only: true`), with `/tmp` in memory for temporary files. The server writes only under `/app/data`, the data volume, so it runs under all three. A test in the server's crate fails when one of the user guide's `docker run` commands leaves out a limit.
+Both files start the container with the same limits. So does every `docker run` command in the user guide that starts the server. It keeps no Linux capability (`cap_drop: [ALL]`), cannot gain one through a setuid program (`no-new-privileges`), and its root filesystem is read-only (`read_only: true`), with `/tmp` in memory for temporary files. The server writes only under `/app/data`, the data volume, so it runs under all three. A test in the server's crate fails when one of the user guide's `docker run` commands leaves out a limit.
 
 Both files also set `stop_grace_period: 40s`.
 A stopping server waits up to 30 seconds for the requests in flight, such as an import batch, and for its conversions to stop, before it stops without them (`STOP_DRAIN_LIMIT` in `crates/server/server/src/server.rs`).
