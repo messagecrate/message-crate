@@ -82,7 +82,7 @@ describe("MessageFindBar", () => {
   it("says it is finding while the matches are still being read", () => {
     renderBar({ matchCount: 0, searching: true });
     expect(screen.getByText("Finding…")).toBeInTheDocument();
-    expect(screen.queryByText("No matches")).toBeNull();
+    expect(screen.queryByText("No matches")).not.toBeInTheDocument();
   });
 
   it("closes on Escape", async () => {
