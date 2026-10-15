@@ -9,7 +9,7 @@
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::Instant;
 
@@ -753,9 +753,10 @@ impl<'a> ImportPipeline<'a> {
         self.session.check_stop().is_err()
     }
 
-    /// Lock the shared journal (panics only if another thread panicked while holding it).
+    /// Lock the shared journal, read as it is when a prepare that panicked
+    /// left it poisoned (see `PrepareContext::lock_journal`).
     fn lock_journal(&self) -> std::sync::MutexGuard<'a, SharedJournal> {
-        self.journal.lock().expect("journal mutex poisoned")
+        self.journal.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 

@@ -1080,6 +1080,85 @@ fn a_replace_import_ignores_the_journal_and_sends_every_message_again() {
     assert_eq!(report.messages_attempted, 2);
 }
 
+/// A batch mock that accepts the one message whose guid is `guid`.
+fn mock_batch_accepting<'a>(server: &'a MockServer, guid: &str) -> httpmock::Mock<'a> {
+    server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/imports/7/batches")
+            .body_includes(guid);
+        then.status(200).json_body(json!({
+            "messages": 1,
+            "messages_appended": 1,
+            "conversations": 1
+        }));
+    })
+}
+
+/// A batch mock that refuses, with a 500, the batch holding `guid`.
+fn mock_batch_refusing<'a>(server: &'a MockServer, guid: &str) -> httpmock::Mock<'a> {
+    server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/imports/7/batches")
+            .body_includes(guid);
+        then.status(500).json_body(json!({
+            "type": "about:blank",
+            "title": "Internal server error",
+            "status": 500,
+            "detail": "intentional batch failure"
+        }));
+    })
+}
+
+/// A replace import that fails partway has already wiped the source on the
+/// server, so the next append must not skip what the journal recorded
+/// before the replace (#2054). The replace clears those rows when it starts:
+/// the append then skips only the conversation the replace imported again,
+/// and sends the one the replace failed.
+#[test]
+fn an_append_after_a_failed_replace_sends_what_the_replace_did_not_import() {
+    let server = mock_server();
+    let _auth = mock_session(&server);
+    let _run = mock_import_start_and_complete(&server, 7);
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
+    let mut cfg = mock_server_config(dir.path(), server.base_url());
+    cfg.batch_size = 1;
+
+    let mut first = mock_batch_accepting(&server, "guid-1");
+    let mut second = mock_batch_accepting(&server, "guid-2");
+    assert!(run(&cfg, None).unwrap().ok);
+    second.delete();
+    let mut refused = mock_batch_refusing(&server, "guid-2");
+    let replace = ImportConfig {
+        mode: ImportMode::Replace,
+        ..cfg.clone()
+    };
+    let replaced = run(&replace, None).unwrap();
+    assert_eq!(replaced.conversations_ok, 1, "{:?}", replaced.results);
+    assert_eq!(replaced.conversations_failed, 1, "{:?}", replaced.results);
+    assert_eq!(refused.calls(), 1);
+
+    refused.delete();
+    first.delete();
+    first = mock_batch_accepting(&server, "guid-1");
+    second = mock_batch_accepting(&server, "guid-2");
+    let appended = run(&cfg, None).unwrap();
+
+    assert!(appended.ok, "{:?}", appended.results);
+    assert_eq!(appended.conversations_skipped, 1);
+    assert_eq!(
+        second.calls(),
+        1,
+        "the conversation the replace failed is sent"
+    );
+    assert_eq!(
+        first.calls(),
+        0,
+        "the conversation the replace imported is skipped"
+    );
+}
+
 #[test]
 fn profiles_attachment_upload_phases() {
     const ASSET_BYTES: &[u8] = b"attachment profile fixture";
@@ -2900,17 +2979,7 @@ fn a_cancel_after_the_last_request_leaves_a_completed_upload() {
 fn a_refused_session_after_a_failed_batch_still_halts_the_upload() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let failed = server.mock(|when, then| {
-        when.method(POST)
-            .path("/v1/imports/7/batches")
-            .body_includes("guid-1");
-        then.status(500).json_body(json!({
-            "type": "about:blank",
-            "title": "Internal server error",
-            "status": 500,
-            "detail": "intentional batch failure"
-        }));
-    });
+    let failed = mock_batch_refusing(&server, "guid-1");
     let refused = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -2967,17 +3036,7 @@ fn a_second_import_sends_only_the_conversation_whose_batch_failed() {
     let server = mock_server();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
-    let mut failing = server.mock(|when, then| {
-        when.method(POST)
-            .path("/v1/imports/7/batches")
-            .body_includes("guid-2");
-        then.status(500).json_body(json!({
-            "type": "about:blank",
-            "title": "Internal server error",
-            "status": 500,
-            "detail": "intentional batch failure"
-        }));
-    });
+    let mut failing = mock_batch_refusing(&server, "guid-2");
     let mut others = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
