@@ -50,7 +50,7 @@ const MEDIA_REVIEW_LABEL = "Media Review";
 /** What approving does next, in the mode's own verb. */
 const APPROVE_LABEL: Record<AttachmentMediaMode, string> = {
   convert: "Convert media",
-  compress: "Compress media",
+  compress: "Convert & Compress media",
   copy: "Upload to Message Crate",
   skip: "Upload to Message Crate",
 };
