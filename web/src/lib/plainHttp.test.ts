@@ -8,6 +8,9 @@ describe("isPlainHttpOverNetwork", () => {
       "http://127.0.0.1:8080",
       "http://127.4.5.6",
       "http://[::1]:8080",
+      "http://[::ffff:127.0.0.1]:8080",
+      "http://app.localhost:8080",
+      "http://0.0.0.0:8080",
     ]) {
       expect(isPlainHttpOverNetwork(address), address).toBe(false);
     }
