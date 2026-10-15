@@ -221,7 +221,7 @@ describe("runHeading and the operation line", () => {
 
   it("states the media settings only when they apply", () => {
     expect(attachmentsAsked(form({ attachmentMedia: "copy" }))).toBe("Copy");
-    expect(attachmentsAsked(form())).toBe("Convert · up to 720p, 30 fps, files over 20 MB");
+    expect(attachmentsAsked(form())).toBe("Convert media · up to 720p, 30 fps, files over 20 MB");
   });
 });
 
@@ -279,7 +279,7 @@ describe("ImportRunView", () => {
     expect(screen.queryByText("What you asked for")).not.toBeInTheDocument();
 
     const row = within(stageRow("Staging"));
-    expect(row.getByText("Convert · up to 720p, 30 fps, files over 20 MB")).toBeInTheDocument();
+    expect(row.getByText("Convert media · up to 720p, 30 fps, files over 20 MB")).toBeInTheDocument();
     await user.click(row.getByRole("button", { name: runDir }));
     expect(openPathInExplorer).toHaveBeenCalledWith(runDir);
   });
@@ -527,7 +527,7 @@ describe("ImportRunView", () => {
     await user.click(mayExceed);
     expect(review.getByText("212 MB → 84 MB")).toBeInTheDocument();
     expect(review.getByText("46 MB → 52 MB")).toBeInTheDocument();
-    expect(review.getByRole("button", { name: "Compress media" })).toBeEnabled();
+    expect(review.getByRole("button", { name: "Convert & Compress media" })).toBeEnabled();
   });
 
   it("blocks approving when the Media tools are missing", () => {

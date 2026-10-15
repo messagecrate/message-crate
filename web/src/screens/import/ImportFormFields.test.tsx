@@ -154,6 +154,22 @@ describe("ImportFormFields sources", () => {
   });
 });
 
+describe("ImportFormFields attachments", () => {
+  // "Convert" alone is the Settings tool that rewrites an export's format, so
+  // the choices that work on photos, video and audio say "media" (#2023).
+  it("offers Copy, Convert media, Convert & Compress media and Skip, in that order", async () => {
+    const user = setupUser();
+    renderForm({ source: "sms-backup-restore" });
+    await user.click(screen.getByLabelText("Attachments"));
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "Copy",
+      "Convert media",
+      "Convert & Compress media",
+      "Skip",
+    ]);
+  });
+});
+
 describe("ImportFormFields iMessage methods", () => {
   it("shows one iMessage source and a Platform dropdown without jailbreak", async () => {
     const user = setupUser();
@@ -1116,7 +1132,7 @@ describe("ImportFormFields programs the import needs", () => {
 
     expect(
       screen.getByText(
-        "ffmpeg not found. ffprobe not found. Convert and Compress need ffmpeg and ffprobe. Copy imports attachments as they are.",
+        "ffmpeg not found. ffprobe not found. Convert media and Convert & Compress media need ffmpeg and ffprobe. Copy imports attachments as they are.",
       ),
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: "Troubleshooting" }).getAttribute("href")).toBe(

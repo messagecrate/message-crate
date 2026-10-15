@@ -215,6 +215,12 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-15: **The Attachments choices say they convert media.** The
+  Import form's **Attachments** field now reads **Copy**, **Convert media**,
+  **Convert & Compress media** and **Skip**, and the Staging Review's button
+  reads **Convert media** or **Convert & Compress media**, where it read
+  **Compress media**. **Convert** alone stays the Settings tool that rewrites
+  an export into another format (#2023).
 - 2026-10-15: **The Docker image no longer carries Node.js.** It was built
   on Node.js 20, which no longer gets security fixes, though the server never
   used it, so image scanners flagged every Message Crate image. The image is
