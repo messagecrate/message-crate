@@ -10,7 +10,7 @@ This page covers a server on a second computer, such as a home server, reached o
 
 Three things differ from the first-time path:
 
-- The server must be published on the network. The first-time command publishes it to its own computer only.
+- The server must be published on the network. The first-time command, in [Run Message Crate with Docker](/docs/user/features/owner/run-with-docker/#start-the-server), publishes it to its own computer only.
 - The browser and the desktop app need the server's address in place of `localhost`.
 - A Message Crate that already holds messages has to be moved, by copying its Docker volume.
 

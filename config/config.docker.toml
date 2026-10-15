@@ -11,9 +11,10 @@ assets_converted_dir = "assets_converted"
 
 # Bind all interfaces inside the container so Docker port publishing works.
 # Which computers reach the server is set where the port is published: the
-# `docker run` command in Start a Message Crate and both Compose files
-# publish it on the host's 127.0.0.1 alone. Publishing it on the network is a separate step,
-# described in Run on another machine; the server speaks plain HTTP, so keep
+# `docker run` command in Run Message Crate with Docker and both Compose
+# files publish it on the host's 127.0.0.1 alone. Publishing it on the
+# network is a separate step, described in Run on another machine; the
+# server speaks plain HTTP, so keep
 # it to a trusted network and do not port-forward it on the router.
 #
 # Port 8080 is also written into docker/Dockerfile (EXPOSE) and into the
