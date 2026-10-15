@@ -1440,6 +1440,19 @@ about, and it is written for SQLite, the only database engine
 reason). Why no SQL in a handler: a query written into a handler gets written
 twice (the identity counts for contacts and for accounts were).
 
+A handler takes the part of the server's state it reads, never `AppState`
+whole. The database is `State<SqlitePool>`, the configuration is
+`State<Arc<Config>>`, and each other part is a sub-state that `server.rs`
+cuts from `AppState` with `FromRef`: `ImportState`, `AssetState`,
+`DemoState`, `RefusalWait`, `UploadTimeLimits`, `MediaLinkKey` and
+`WalError`. The import routes take `Importer`, in
+`imports_api/run_control.rs`, which holds what running and ending an Import
+Run reads. The credential extractors (`AuthIdentity`, `FullAccess`, `Owner`
+and the rest) read only the pool, so they work under any router state that
+has one. Why: a handler that reads only the database then compiles without
+the Demo Account build or the media queue, and a test that calls it directly
+builds only the pool.
+
 A `db/` function never returns `ApiError`. It returns `anyhow` or `sqlx`
 errors when a statement is all that can fail, and an error type in `db/` when
 the caller must tell outcomes apart (`SavedSearchError::NameTaken`,

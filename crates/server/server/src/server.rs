@@ -14,11 +14,12 @@
 
 use std::sync::Arc;
 
-use axum::extract::DefaultBodyLimit;
+use axum::extract::{DefaultBodyLimit, FromRef, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router};
 use serde::Serialize;
+use sqlx::SqlitePool;
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::ServeDir;
@@ -27,9 +28,12 @@ use tower_http::trace::TraceLayer;
 
 use crate::api_error::ApiError;
 use crate::asset_uploads;
+use crate::assets_api::media_links::MediaLinkKey;
 use crate::config::Config;
+use crate::credentials::RefusalWait;
 use crate::keyed_locks::KeyedLocks;
 use crate::limits::{MAX_AUTH_BODY_BYTES, MAX_JSON_BODY_BYTES};
+use crate::media_queue::MediaQueue;
 use crate::middleware::{
     CONTENT_SECURITY_POLICY, answer_panic, build_cors_layer, json_body_limit_response,
     limit_request_body, log_response, logged_uri, mark_routine, no_store_unless_set,
@@ -38,73 +42,165 @@ use crate::middleware::{
 use crate::open_db::OpenDb;
 use crate::request_body::UploadTimeLimits;
 
-/// Shared server state passed to every HTTP handler.
+/// The router's state. A handler never takes it whole: it takes
+/// `State<SqlitePool>`, `State<Arc<Config>>`, or one of the sub-states the
+/// [`FromRef`] implementations below cut from it, so a handler that reads
+/// only the database does not depend on the Demo Account build or the media
+/// queue (`docs/architecture/http-api.md`, "Code").
 #[derive(Debug, Clone)]
 pub struct AppState {
     /// Loaded configuration.
     pub cfg: Arc<Config>,
     /// Connection pool for the database file. Handlers acquire
     /// short-lived connections from here.
-    pub db: sqlx::SqlitePool,
-    /// Per-account import mutex: same-account imports stay serialized so staging
-    /// rows (the temporary import area) for that tenant are not wiped mid-run.
-    /// Different accounts may overlap at the lock layer; SQLite write-ahead
-    /// logging plus `busy_timeout` serialize writers.
-    pub(crate) account_import_locks: KeyedLocks,
-    /// Serialize multipart complete per (account, sha256) so two clients cannot
-    /// race `store_verified` on the same SHA-256 fingerprint.
-    pub(crate) asset_complete_locks: KeyedLocks,
-    /// The wait before the answer to a refused login or a wrong current
-    /// password. `serve` sleeps; the test harness swaps in one that counts
-    /// each wait and returns at once.
-    pub(crate) refusal_wait: crate::credentials::RefusalWait,
-    /// The slots HTTP imports take, from [`crate::imports_api::run_control::import_slots`],
-    /// so imports can never drain the connection pool. Held here, not in a
-    /// static, so tests in one binary cannot wait on each other's imports.
-    pub(crate) import_slots: Arc<tokio::sync::Semaphore>,
-    /// The largest multipart part, from `[server] asset_part_size`. The part
-    /// size a client is told is this or the attachment size limit, whichever
-    /// is smaller ([`AppState::upload_limits`]). The limit is not held here:
-    /// it is a Server Setting, read from the database when a request needs it
-    /// ([`AppState::asset_max_bytes`]).
-    pub(crate) asset_part_size: usize,
+    pub db: SqlitePool,
+    /// What an import holds while it runs: the per-account lock, the slots,
+    /// and the stop signal.
+    pub(crate) imports: ImportState,
+    /// What an attachment upload holds: the per-file lock and the part size.
+    pub(crate) assets: AssetState,
     /// How long an upload body may go with no byte arriving, and may take in
     /// all, from `[server] upload_stall_secs` and `upload_piece_secs`.
     /// `GET /v1/server` states them, so the Upload sizes its own wait from
     /// what the server holds.
     pub(crate) upload_time_limits: UploadTimeLimits,
+    /// The wait before the answer to a refused login or a wrong current
+    /// password. `serve` sleeps; the test harness swaps in one that counts
+    /// each wait and returns at once.
+    pub(crate) refusal_wait: RefusalWait,
+    /// The Demo Account build and the bundle it imports.
+    pub(crate) demo: DemoState,
+    /// The key media links are signed with, made when the process starts and
+    /// never written anywhere, so a restart ends every media link
+    /// (`docs/architecture/http-api.md`, "Credentials and reach").
+    pub(crate) media_link_key: MediaLinkKey,
+    /// Wakes the background pass that makes Thumbnails and Previews after
+    /// each Import Run. `serve` starts the pass; the test harness does not,
+    /// so a test sees the queue as an Import Run leaves it.
+    pub(crate) media_queue: MediaQueue,
+    /// The ffmpeg and ffprobe the server runs, from [`Config::media_tools`]:
+    /// on `PATH`, then in the Tools Directory the desktop app names, as the
+    /// app looks (#1053). A test swaps in a fake.
+    pub(crate) media_tools: Arc<dyn media::MediaTools>,
+    /// The requests being served, so a stop that gives up waiting for them
+    /// names each one in the log (`serve_until_shutdown` in
+    /// [`crate::startup`]).
+    pub(crate) in_flight: crate::in_flight::InFlight,
+    /// The error SQLite gave when the server asked for write-ahead logging
+    /// as it opened the database.
+    pub(crate) wal_error: WalError,
+}
+
+/// What an import holds while it runs.
+#[derive(Debug, Clone)]
+pub(crate) struct ImportState {
+    /// Per-account import mutex: same-account imports stay serialized so staging
+    /// rows (the temporary import area) for that tenant are not wiped mid-run.
+    /// Different accounts may overlap at the lock layer; SQLite write-ahead
+    /// logging plus `busy_timeout` serialize writers.
+    pub(crate) account_locks: KeyedLocks,
+    /// The slots HTTP imports take, from [`crate::imports_api::run_control::import_slots`],
+    /// so imports can never drain the connection pool. Held here, not in a
+    /// static, so tests in one binary cannot wait on each other's imports.
+    pub(crate) slots: Arc<tokio::sync::Semaphore>,
     /// Cancelled the moment the server is told to stop
     /// ([`AppState::on_stop_signal`]), so an import batch still reading its
     /// body stops reading and is refused with `server-stopping` at once,
     /// rather than making the stop wait for the rest of the body (#2878).
     pub(crate) stopping: tokio_util::sync::CancellationToken,
-    /// The requests being served, so a stop that gives up waiting for them
-    /// names each one in the log (`serve_until_shutdown` in
-    /// [`crate::startup`]).
-    pub(crate) in_flight: crate::in_flight::InFlight,
-    /// The Demo Account build the owner started, if one is running or the
-    /// last one failed. One per server: a second cannot start while one runs.
-    pub(crate) demo_build: crate::server_api::DemoBuild,
+}
+
+impl Default for ImportState {
+    fn default() -> Self {
+        Self {
+            account_locks: KeyedLocks::default(),
+            slots: crate::imports_api::run_control::import_slots(),
+            stopping: tokio_util::sync::CancellationToken::new(),
+        }
+    }
+}
+
+/// What an attachment upload holds.
+#[derive(Debug, Clone)]
+pub(crate) struct AssetState {
+    /// Serialize multipart complete per (account, sha256) so two clients cannot
+    /// race `store_verified` on the same SHA-256 fingerprint.
+    pub(crate) complete_locks: KeyedLocks,
+    /// The largest multipart part, from `[server] asset_part_size`. The part
+    /// size a client is told is this or the attachment size limit, whichever
+    /// is smaller ([`AssetState::upload_limits`]). The limit is not held here:
+    /// it is a Server Setting, read from the database when a request needs it
+    /// ([`asset_max_bytes`]).
+    pub(crate) part_size: usize,
+}
+
+impl AssetState {
+    /// The upload limits in force at this moment: the attachment size limit,
+    /// and the part size the server uses and tells a client, which is the
+    /// configured one or the limit, whichever is smaller. Worked out on each
+    /// call, so a changed limit moves the part size with no restart.
+    pub(crate) async fn upload_limits(
+        &self,
+        db: &SqlitePool,
+    ) -> anyhow::Result<asset_uploads::UploadLimits> {
+        Ok(asset_uploads::UploadLimits::within(
+            self.part_size,
+            asset_max_bytes(db).await?,
+        ))
+    }
+}
+
+/// The Demo Account build the owner started, and what writes its bundle.
+#[derive(Debug, Clone)]
+pub(crate) struct DemoState {
+    /// The build, if one is running or the last one failed. One per server:
+    /// a second cannot start while one runs.
+    pub(crate) build: crate::server_api::DemoBuild,
     /// Writes the demo bundle a build imports. A test swaps in one that
     /// writes a few conversations.
-    pub(crate) demo_bundle_generator: crate::reset_demo::BundleGenerator,
-    /// The key media links are signed with, made when the process starts and
-    /// never written anywhere, so a restart ends every media link
-    /// (`docs/architecture/http-api.md`, "Credentials and reach").
-    pub(crate) media_link_key: crate::assets_api::media_links::MediaLinkKey,
-    /// Wakes the background pass that makes Thumbnails and Previews after
-    /// each Import Run. `serve` starts the pass; the test harness does not,
-    /// so a test sees the queue as an Import Run leaves it.
-    pub(crate) media_queue: crate::media_queue::MediaQueue,
-    /// The ffmpeg and ffprobe the server runs, from [`Config::media_tools`]:
-    /// on `PATH`, then in the Tools Directory the desktop app names, as the
-    /// app looks (#1053). A test swaps in a fake.
-    pub(crate) media_tools: Arc<dyn media::MediaTools>,
-    /// The error SQLite gave when the server asked for write-ahead logging
-    /// as it opened the database ([`OpenDb::wal_error`]), which
-    /// `GET /v1/server/settings` reports to the owner.
-    pub(crate) wal_error: Option<Arc<str>>,
+    pub(crate) bundle_generator: crate::reset_demo::BundleGenerator,
 }
+
+impl Default for DemoState {
+    fn default() -> Self {
+        Self {
+            build: crate::server_api::DemoBuild::default(),
+            bundle_generator: crate::reset_demo::generate_bundle,
+        }
+    }
+}
+
+/// The error SQLite gave when the server asked for write-ahead logging as it
+/// opened the database ([`OpenDb::wal_error`]), which
+/// `GET /v1/server/settings` reports to the owner.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct WalError(pub(crate) Option<Arc<str>>);
+
+/// Cut one sub-state out of [`AppState`] for a handler's `State<…>`.
+macro_rules! sub_state {
+    ($($ty:ty => $field:ident),* $(,)?) => {
+        $(
+            impl FromRef<AppState> for $ty {
+                fn from_ref(state: &AppState) -> Self {
+                    state.$field.clone()
+                }
+            }
+        )*
+    };
+}
+
+sub_state!(
+    Arc<Config> => cfg,
+    SqlitePool => db,
+    ImportState => imports,
+    AssetState => assets,
+    UploadTimeLimits => upload_time_limits,
+    RefusalWait => refusal_wait,
+    DemoState => demo,
+    MediaLinkKey => media_link_key,
+    MediaQueue => media_queue,
+    WalError => wal_error,
+);
 
 impl AppState {
     /// The state every handler shares, over an opened database. `serve` and the
@@ -120,31 +216,19 @@ impl AppState {
             media_tools,
             cfg: Arc::new(opened.cfg),
             db: opened.db,
-            account_import_locks: KeyedLocks::default(),
-            asset_complete_locks: KeyedLocks::default(),
-            refusal_wait: crate::credentials::RefusalWait::default(),
-            import_slots: crate::imports_api::run_control::import_slots(),
-            asset_part_size,
+            imports: ImportState::default(),
+            assets: AssetState {
+                complete_locks: KeyedLocks::default(),
+                part_size: asset_part_size,
+            },
             upload_time_limits,
-            stopping: tokio_util::sync::CancellationToken::new(),
+            refusal_wait: RefusalWait::default(),
+            demo: DemoState::default(),
+            media_link_key: MediaLinkKey::random(),
+            media_queue: MediaQueue::default(),
             in_flight: crate::in_flight::InFlight::default(),
-            demo_build: crate::server_api::DemoBuild::default(),
-            demo_bundle_generator: crate::reset_demo::generate_bundle,
-            media_link_key: crate::assets_api::media_links::MediaLinkKey::random(),
-            media_queue: crate::media_queue::MediaQueue::default(),
-            wal_error: opened.wal_error,
+            wal_error: WalError(opened.wal_error),
         }
-    }
-
-    /// The upload limits in force at this moment: the attachment size limit,
-    /// and the part size the server uses and tells a client, which is the
-    /// configured one or the limit, whichever is smaller. Worked out on each
-    /// call, so a changed limit moves the part size with no restart.
-    pub(crate) async fn upload_limits(&self) -> anyhow::Result<asset_uploads::UploadLimits> {
-        Ok(asset_uploads::UploadLimits::within(
-            self.asset_part_size,
-            self.asset_max_bytes().await?,
-        ))
     }
 
     /// What the server does the moment it is told to stop, before it drains
@@ -165,9 +249,9 @@ impl AppState {
     /// up to [`crate::startup::STOP_DRAIN_LIMIT`] (#2122).
     pub(crate) fn on_stop_signal(&self) -> impl FnOnce() + Send + 'static {
         let media_queue = self.media_queue.clone();
-        let demo_build = self.demo_build.clone();
-        let import_slots = Arc::clone(&self.import_slots);
-        let stopping = self.stopping.clone();
+        let demo_build = self.demo.build.clone();
+        let import_slots = Arc::clone(&self.imports.slots);
+        let stopping = self.imports.stopping.clone();
         move || {
             media_queue.ask_to_stop();
             demo_build.stop_conversions();
@@ -175,16 +259,16 @@ impl AppState {
             stopping.cancel();
         }
     }
+}
 
-    /// The attachment size limit as the Server Settings hold it at this
-    /// moment, in bytes. Read on every request that needs it, so a change the
-    /// owner makes holds for the next upload with no restart.
-    pub(crate) async fn asset_max_bytes(&self) -> anyhow::Result<u64> {
-        let mut conn = self.db.acquire().await?;
-        Ok(crate::db::server_settings::load(&mut conn)
-            .await?
-            .asset_max_bytes)
-    }
+/// The attachment size limit as the Server Settings hold it at this moment,
+/// in bytes. Read on every request that needs it, so a change the owner makes
+/// holds for the next upload with no restart.
+pub(crate) async fn asset_max_bytes(db: &SqlitePool) -> anyhow::Result<u64> {
+    let mut conn = db.acquire().await?;
+    Ok(crate::db::server_settings::load(&mut conn)
+        .await?
+        .asset_max_bytes)
 }
 
 /// The answer to a request that made one new resource: `201 Created`, a
@@ -402,9 +486,9 @@ const HEALTH_DATABASE_LIMIT: std::time::Duration = std::time::Duration::from_mil
     responses((status = 200, description = "The server is up and can reach its database", body = String))
 )]
 pub(crate) async fn get_health(
-    axum::extract::State(state): axum::extract::State<AppState>,
+    State(db): State<SqlitePool>,
 ) -> Result<(StatusCode, &'static str), ApiError> {
-    let probe = sqlx::query("SELECT 1").execute(&state.db);
+    let probe = sqlx::query("SELECT 1").execute(&db);
     match tokio::time::timeout(HEALTH_DATABASE_LIMIT, probe).await {
         Ok(Ok(_)) => Ok((StatusCode::OK, "ok\n")),
         Ok(Err(e)) => Err(ApiError::Internal(
@@ -425,7 +509,7 @@ pub(crate) async fn get_health(
 /// build; `pub(crate)` so `test_support` and the other test modules in this
 /// crate can reach it.
 #[cfg(test)]
-pub(crate) fn test_app_state(pool: sqlx::SqlitePool, data_dir: &std::path::Path) -> AppState {
+pub(crate) fn test_app_state(pool: SqlitePool, data_dir: &std::path::Path) -> AppState {
     let cfg = crate::config::Config {
         paths: crate::config::PathsConfig {
             db: data_dir.join("messagecrate.db"),

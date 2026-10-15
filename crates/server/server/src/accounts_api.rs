@@ -14,16 +14,20 @@
 //! how much it holds, never what it says.
 //! See `docs/adr/0008-the-owner-holds-no-messages.md`.
 
+use std::sync::Arc;
+
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
 use message_ir::IdentityService;
 use serde::{Deserialize, Serialize};
-use sqlx::SqliteConnection;
+use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::api_error::ApiError;
 use crate::auth::{AuthIdentity, LoggedIn, Owner, refuse_for_demo_account};
+use crate::config::Config;
+use crate::credentials::RefusalWait;
 use crate::credentials::{
     change_password_on_conn, hash_owner_password, hash_user_password, passwords_match,
     require_username_free, require_valid_username,
@@ -39,7 +43,7 @@ use crate::extract::{Json, Path, Query};
 use crate::imports_api::dto::{ImportRun, ImportRunSummary, OwnerImportRun, OwnerImportRunSummary};
 use crate::imports_api::with_yourself;
 use crate::paging::{DEFAULT_LIST_LIMIT, Page, PageQuery, page_from_rows, page_of, page_params};
-use crate::server::{AppState, Created};
+use crate::server::{Created, DemoState, ImportState};
 use crate::text_caps::{MAX_IDENTITY_ADDRESS_CHARS, MAX_PERSON_NAME_CHARS, capped_text};
 
 pub(crate) mod api_tokens;
@@ -264,12 +268,12 @@ pub(crate) async fn require_account_reach(
     )
 )]
 pub async fn list_accounts(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Owner(_auth): Owner,
     Query(query): Query<PageQuery>,
 ) -> Result<Json<Page<Account>>, ApiError> {
     let page = page_params(query.limit, query.offset, DEFAULT_LIST_LIMIT, None)?;
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let total = account_profile::count_accounts(&mut conn).await?;
     let ids = account_profile::account_ids_page(&mut conn, page.limit, page.offset).await?;
 
@@ -340,7 +344,7 @@ pub struct CreateAccountResponse {
     )
 )]
 pub async fn create_account(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     auth: Option<AuthIdentity>,
     headers: axum::http::HeaderMap,
     Json(req): Json<CreateAccountRequest>,
@@ -374,13 +378,13 @@ pub async fn create_account(
     // owner may close registration before the write transaction below
     // begins: the check inside that transaction is the one that decides.
     if !by_owner {
-        require_registration_open(&mut *state.db.acquire().await?).await?;
+        require_registration_open(&mut *db.acquire().await?).await?;
     }
     // Hashed before a connection is taken for the write, so neither a pooled
     // connection nor the write lock is held for the length of an Argon2 hash.
     let password_hash = hash_user_password(req.password.as_deref().unwrap_or("")).await?;
 
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
 
     // The insert, the phone, and the profile-setup mark land together: a
     // failure between them would leave an account that owes profile setup
@@ -476,11 +480,11 @@ async fn require_registration_open(conn: &mut SqliteConnection) -> Result<(), Ap
     )
 )]
 pub async fn get_account(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
 ) -> Result<Json<Account>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
     Ok(Json(require_account(&mut conn, target).await?))
 }
@@ -866,12 +870,12 @@ async fn apply_flags(
     )
 )]
 pub async fn update_account(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
     Json(req): Json<UpdateAccountRequest>,
 ) -> Result<Json<Account>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
     req.check_caps()?;
     if req.touches_flags() {
@@ -962,16 +966,18 @@ pub struct DeleteAccountRequest {
     )
 )]
 pub async fn delete_account(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(cfg): State<Arc<Config>>,
+    State(demo): State<DemoState>,
+    State(refusal_wait): State<RefusalWait>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
     body: Option<Json<DeleteAccountRequest>>,
 ) -> Result<StatusCode, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     // Checked before the account is looked up: a build removes the account
     // row and writes it again, and a delete must not slip in between.
-    if account_profile::is_demo_account(target) && auth.is_owner() && state.demo_build.is_building()
-    {
+    if account_profile::is_demo_account(target) && auth.is_owner() && demo.build.is_building() {
         return Err(ApiError::StateConflict(
             "the Demo Account is being built; delete it when the build ends".into(),
         ));
@@ -1013,8 +1019,8 @@ pub async fn delete_account(
             };
             // No pooled connection is held for the length of the Argon2 check.
             drop(conn);
-            require_current_password(&state, password_hash.as_deref(), pw).await?;
-            conn = state.db.acquire().await?;
+            require_current_password(&refusal_wait, password_hash.as_deref(), pw).await?;
+            conn = db.acquire().await?;
         }
     }
 
@@ -1023,7 +1029,7 @@ pub async fn delete_account(
     // (a permission error, a busy file) is logged with its path rather than
     // answered as a failure. No later account takes this id, so the directory
     // stays out of every account's reach until someone removes it.
-    let paths = state.cfg.paths.clone();
+    let paths = cfg.paths.clone();
     let removed = crate::request_id::spawn_blocking_in_current_span(move || {
         crate::asset_store::remove_account_dir(&paths, target)
     })
@@ -1036,7 +1042,7 @@ pub async fn delete_account(
     if let Some(error) = failure {
         tracing::warn!(
             account_id = target,
-            path = %crate::asset_store::account_dir(&state.cfg.paths, target).display(),
+            path = %crate::asset_store::account_dir(&cfg.paths, target).display(),
             %error,
             "The account is deleted, but its data directory could not be removed"
         );
@@ -1057,15 +1063,12 @@ pub async fn delete_account(
 /// connection across this call, so neither the check nor the wait holds
 /// one.
 async fn require_current_password(
-    state: &AppState,
+    refusal_wait: &RefusalWait,
     password_hash: Option<&str>,
     current: &str,
 ) -> Result<(), ApiError> {
     if !passwords_match(password_hash, current).await? {
-        return Err(state
-            .refusal_wait
-            .refuse("current password is incorrect")
-            .await);
+        return Err(refusal_wait.refuse("current password is incorrect").await);
     }
     Ok(())
 }
@@ -1120,7 +1123,8 @@ pub struct ReplaceAccountPasswordResponse {
     )
 )]
 pub async fn replace_account_password(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(refusal_wait): State<RefusalWait>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
     Json(req): Json<ReplaceAccountPasswordRequest>,
@@ -1128,13 +1132,8 @@ pub async fn replace_account_password(
     // The reads before the Argon2 runs take a pooled connection only for the
     // statement that needs it, and the write takes one after them, so no
     // connection is held for the length of a hash or a check.
-    let reach = require_account_reach(
-        &mut *state.db.acquire().await?,
-        &auth,
-        target,
-        Admits::Owner,
-    )
-    .await?;
+    let reach =
+        require_account_reach(&mut *db.acquire().await?, &auth, target, Admits::Owner).await?;
     // The login card's button enters the Demo Account with no password, so
     // one set by anybody would shut it.
     refuse_for_demo_account(target, "password cannot be set")?;
@@ -1149,8 +1148,8 @@ pub async fn replace_account_password(
             ));
         };
         let password_hash =
-            account_profile::load_password_hash(&mut *state.db.acquire().await?, target).await?;
-        require_current_password(&state, password_hash.as_deref(), current).await?;
+            account_profile::load_password_hash(&mut *db.acquire().await?, target).await?;
+        require_current_password(&refusal_wait, password_hash.as_deref(), current).await?;
         if req.password != req.password_confirmation {
             return Err(ApiError::validation("new passwords do not match"));
         }
@@ -1169,7 +1168,7 @@ pub async fn replace_account_password(
     } else {
         hash_user_password(&req.password).await?
     };
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let new_hash = new_hash.as_deref();
     let now = Utc::now();
 
@@ -1247,12 +1246,14 @@ pub struct DeleteMessagesResponse {
     )
 )]
 pub async fn delete_account_messages(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(cfg): State<Arc<Config>>,
+    State(imports): State<ImportState>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
     body: Option<Json<DeleteMessagesRequest>>,
 ) -> Result<Json<DeleteMessagesResponse>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
     // Emptied, the Demo Account would still be offered on the login card and
     // open onto nothing. The owner removes Demo Data by deleting the account.
@@ -1268,8 +1269,8 @@ pub async fn delete_account_messages(
     // between two batches and never inside one. The lock order is account
     // lock, then pool, so the connection is given back first.
     drop(conn);
-    let _batch_lock = state.account_import_locks.lock(target.to_string()).await;
-    let mut conn = state.db.acquire().await?;
+    let _batch_lock = imports.account_locks.lock(target.to_string()).await;
+    let mut conn = db.acquire().await?;
     let stats = account_profile::delete_all_messages_for_account(
         &mut conn,
         target,
@@ -1278,12 +1279,7 @@ pub async fn delete_account_messages(
     )
     .await?;
     drop(conn);
-    crate::asset_store::remove_all_attachment_files(
-        &state.db,
-        std::sync::Arc::clone(&state.cfg),
-        target,
-    )
-    .await;
+    crate::asset_store::remove_all_attachment_files(&db, std::sync::Arc::clone(&cfg), target).await;
 
     Ok(Json(DeleteMessagesResponse {
         conversations: stats.conversations,
@@ -1332,11 +1328,11 @@ pub(crate) struct AccountStorage {
     )
 )]
 pub(crate) async fn get_account_storage(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
 ) -> Result<Json<AccountStorage>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
     let scope = Scope::Account(target);
     let total_bytes = storage::attachment_bytes(&mut conn, scope).await?;
@@ -1382,13 +1378,13 @@ pub(crate) async fn get_account_storage(
     )
 )]
 pub(crate) async fn list_account_identities(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
     Query(query): Query<PageQuery>,
 ) -> Result<Json<Page<Identity>>, ApiError> {
     let params = page_params(query.limit, query.offset, DEFAULT_LIST_LIMIT, None)?;
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
     let rows = handles::identities(&mut conn, handles::IdentitiesOf::Account(target)).await?;
     Ok(Json(page_of(rows, params)))
@@ -1468,12 +1464,12 @@ pub(crate) enum AccountExportRuns {
     )
 )]
 pub(crate) async fn list_account_imports(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
     Query(query): Query<crate::imports_api::dto::ListImportsQuery>,
 ) -> Result<Json<AccountImportRuns>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
     let rows = crate::imports_api::import_rows_page(&mut conn, target, query).await?;
     Ok(Json(if reach.is_own() {
@@ -1502,11 +1498,11 @@ pub(crate) async fn list_account_imports(
     )
 )]
 pub(crate) async fn get_account_import(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path((target, import_id)): Path<(i64, i64)>,
     LoggedIn(auth): LoggedIn,
 ) -> Result<Json<AccountImportRun>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
     if !reach.is_own() {
         let row = imports::get_owned_import(&mut conn, target, import_id)
@@ -1540,12 +1536,12 @@ pub(crate) async fn get_account_import(
     )
 )]
 pub(crate) async fn list_account_exports(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
     Query(query): Query<crate::exports_api::ListExportsQuery>,
 ) -> Result<Json<AccountExportRuns>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
     let page = crate::exports_api::exports_page(&mut conn, target, query).await?;
     if !reach.is_own() {
@@ -1576,14 +1572,14 @@ pub(crate) async fn list_account_exports(
     )
 )]
 pub(crate) async fn list_account_audit_trail(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
     Query(query): Query<crate::audit_trail_api::ListAccountAuditTrailQuery>,
 ) -> Result<Json<Page<crate::db::audit_trail::AuditEntry>>, ApiError> {
-    require_reach(&state, &auth, target).await?;
+    require_reach(&db, &auth, target).await?;
     crate::audit_trail_api::audit_trail_page(
-        &state,
+        &db,
         crate::db::audit_trail::Scope::Account(target),
         auth.account_id,
         query.limit,
@@ -1595,11 +1591,11 @@ pub(crate) async fn list_account_audit_trail(
 /// [`require_account_reach`], admitting the owner, on a connection of its
 /// own, for a handler whose work then runs on another.
 async fn require_reach(
-    state: &AppState,
+    db: &SqlitePool,
     auth: &AuthIdentity,
     target: i64,
 ) -> Result<Reach, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     require_account_reach(&mut conn, auth, target, Admits::Owner).await
 }
 

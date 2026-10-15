@@ -29,12 +29,15 @@ use crate::auth::{AuthIdentity, ImportAccess, ImportOrExportAccess, resolve_impo
 use crate::request_body::{
     content_type_base, discard_body, stream_body_to_file, upload_body_bounded, upload_content_type,
 };
-use crate::server::{AppState, Created};
+use crate::server::{AssetState, Created, asset_max_bytes};
 
 pub(crate) mod media_links;
 mod ranges;
 
+use crate::config::Config;
+use crate::request_body::UploadTimeLimits;
 use media_links::AssetReadAccess;
+use sqlx::SqlitePool;
 
 /// Read/write chunk for hashing and copying files: 1 MiB.
 pub(crate) const COPY_BUFFER_BYTES: usize = 1024 * 1024;
@@ -664,13 +667,13 @@ impl Asset {
 /// so the stored file is hashed here, and a truncated or replaced file is
 /// not found. A read looks up without hashing ([`lookup_for_read`]).
 async fn resolve_asset_lookup(
-    state: &AppState,
+    cfg: &Arc<Config>,
     auth: &AuthIdentity,
     sha256: &Sha256,
 ) -> Result<(i64, Option<StoredAsset>), ApiError> {
     let account = resolve_import_account(auth);
 
-    let cfg = Arc::clone(&state.cfg);
+    let cfg = Arc::clone(cfg);
     let sha_lookup = sha256.clone();
     let existing = run_blocking("asset lookup", move || {
         let assets_dir = cfg.paths.assets_dir_for_account(account);
@@ -696,11 +699,11 @@ async fn resolve_asset_lookup(
     )
 )]
 pub(crate) async fn head_asset(
-    State(state): State<AppState>,
+    State(cfg): State<Arc<Config>>,
     ImportOrExportAccess(auth): ImportOrExportAccess,
     AxumPath(sha256): AxumPath<Sha256>,
 ) -> Result<Json<Asset>, ApiError> {
-    let (_account, existing) = resolve_asset_lookup(&state, &auth, &sha256).await?;
+    let (_account, existing) = resolve_asset_lookup(&cfg, &auth, &sha256).await?;
     let Some(stored) = existing else {
         return Err(ApiError::not_found("asset"));
     };
@@ -751,17 +754,17 @@ pub(crate) async fn head_asset(
     )
 )]
 pub(crate) async fn get_asset(
-    State(state): State<AppState>,
+    State(cfg): State<Arc<Config>>,
     reader: AssetReadAccess,
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
 ) -> Response {
     reader
         .answer(async |account| {
-            let Some(stored) = lookup_for_read(&state, account, &sha256).await? else {
+            let Some(stored) = lookup_for_read(&cfg, account, &sha256).await? else {
                 return Err(ApiError::not_found("asset"));
             };
-            let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+            let assets_dir = cfg.paths.assets_dir_for_account(account);
             stream_file(
                 &assets_dir.join(&stored.assets_path),
                 stored.mime_type,
@@ -816,12 +819,13 @@ pub(crate) async fn get_asset(
     )
 )]
 pub(crate) async fn get_asset_preview(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(cfg): State<Arc<Config>>,
     reader: AssetReadAccess,
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
 ) -> Response {
-    stream_version(&state, reader, &headers, &sha256, Version::Preview).await
+    stream_version(&db, &cfg, reader, &headers, &sha256, Version::Preview).await
 }
 
 /// Download the thumbnail of a stored image or video: a JPEG at most 560
@@ -869,19 +873,21 @@ pub(crate) async fn get_asset_preview(
     )
 )]
 pub(crate) async fn get_asset_thumbnail(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(cfg): State<Arc<Config>>,
     reader: AssetReadAccess,
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
 ) -> Response {
-    stream_version(&state, reader, &headers, &sha256, Version::Thumbnail).await
+    stream_version(&db, &cfg, reader, &headers, &sha256, Version::Thumbnail).await
 }
 
 /// Answer the `version` of the original `sha256` in the reader's own store,
 /// so another account's fingerprint names nothing here: `404 Not Found` for
 /// an original the account does not hold, or one with no such version yet.
 async fn stream_version(
-    state: &AppState,
+    db: &SqlitePool,
+    cfg: &Arc<Config>,
     reader: AssetReadAccess,
     headers: &HeaderMap,
     sha256: &Sha256,
@@ -889,11 +895,11 @@ async fn stream_version(
 ) -> Response {
     reader
         .answer(async |account| {
-            let Some(stored) = lookup_for_read(state, account, sha256).await? else {
+            let Some(stored) = lookup_for_read(cfg, account, sha256).await? else {
                 return Err(ApiError::not_found("asset"));
             };
             let file = crate::db::attachment_versions::file_of(
-                &mut *state.db.acquire().await?,
+                &mut *db.acquire().await?,
                 version,
                 OriginalRows {
                     account_id: account,
@@ -910,7 +916,7 @@ async fn stream_version(
             let Some((path, mime_type)) = file else {
                 return Err(no_version());
             };
-            let converted_dir = state.cfg.paths.assets_converted_dir_for_account(account);
+            let converted_dir = cfg.paths.assets_converted_dir_for_account(account);
             let Some(full) = crate::asset_store::join_stored(
                 &converted_dir,
                 &path,
@@ -930,11 +936,11 @@ async fn stream_version(
 /// asset. The probe and the writes hash it ([`resolve_asset_lookup`]),
 /// because they decide whether a client may skip sending the bytes.
 pub(crate) async fn lookup_for_read(
-    state: &AppState,
+    cfg: &Arc<Config>,
     account: i64,
     sha256: &Sha256,
 ) -> Result<Option<StoredAsset>, ApiError> {
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+    let assets_dir = cfg.paths.assets_dir_for_account(account);
     let sha256 = sha256.clone();
     run_blocking("asset lookup", move || {
         Ok::<_, ApiError>(lookup_by_sha256_unverified(&assets_dir, &sha256))
@@ -1094,22 +1100,24 @@ fn require_content_type(headers: &HeaderMap) -> Result<(), ApiError> {
     )
 )]
 pub(crate) async fn replace_asset(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(cfg): State<Arc<Config>>,
+    State(upload_time_limits): State<UploadTimeLimits>,
     ImportAccess(auth): ImportAccess,
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
     request: Request,
 ) -> Result<Response, ApiError> {
     require_content_type(&headers)?;
-    let (account, existing) = resolve_asset_lookup(&state, &auth, &sha256).await?;
+    let (account, existing) = resolve_asset_lookup(&cfg, &auth, &sha256).await?;
 
     let mime = upload_content_type(&headers);
-    let max_body_bytes = usize::try_from(state.asset_max_bytes().await?).unwrap_or(usize::MAX);
+    let max_body_bytes = usize::try_from(asset_max_bytes(&db).await?).unwrap_or(usize::MAX);
 
     // The body is held to the server's upload time limits, as an import
     // batch's is: a client that stops sending part-way, or sends a byte now
     // and then, holds the connection and the temp file only so long.
-    let body = upload_body_bounded(request.into_body(), state.upload_time_limits);
+    let body = upload_body_bounded(request.into_body(), upload_time_limits);
     if let Some(stored) = existing {
         discard_body(body, max_body_bytes).await?;
         return Ok(Asset::stored(stored, true).into_response());
@@ -1117,7 +1125,7 @@ pub(crate) async fn replace_asset(
 
     // Write the upload into the account assets tree. Storing it copies it into
     // place and then removes it (`consume_source`).
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+    let assets_dir = cfg.paths.assets_dir_for_account(account);
     let incoming_dir = assets_dir.join(".incoming");
     let sha = sha256.clone();
     let tmp_path = run_blocking("asset upload temp", move || {
@@ -1269,18 +1277,21 @@ pub(crate) struct ReplaceAssetUploadPartResponse {
     )
 )]
 pub(crate) async fn create_asset_upload(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
+    State(cfg): State<Arc<Config>>,
+    State(assets): State<AssetState>,
+    State(upload_time_limits): State<UploadTimeLimits>,
     ImportAccess(auth): ImportAccess,
     AxumPath(sha256): AxumPath<Sha256>,
     Json(body): Json<CreateAssetUploadRequest>,
 ) -> Result<Response, ApiError> {
     let account = resolve_import_account(&auth);
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+    let assets_dir = cfg.paths.assets_dir_for_account(account);
     let mime = body.mime.clone();
     let bytes = body.bytes;
     let sha = sha256.clone();
-    let limits = state.upload_limits().await?;
-    let stall = state.upload_time_limits.stall;
+    let limits = assets.upload_limits(&db).await?;
+    let stall = upload_time_limits.stall;
     let result = run_blocking("upload start", move || {
         asset_uploads::start_upload(&assets_dir, &sha, bytes, mime.as_deref(), limits, stall)
     })
@@ -1333,7 +1344,8 @@ pub(crate) async fn create_asset_upload(
     )
 )]
 pub(crate) async fn replace_asset_upload_part(
-    State(state): State<AppState>,
+    State(cfg): State<Arc<Config>>,
+    State(upload_time_limits): State<UploadTimeLimits>,
     ImportAccess(auth): ImportAccess,
     headers: HeaderMap,
     AxumPath((sha256, upload_id, part)): AxumPath<(Sha256, String, u32)>,
@@ -1341,7 +1353,7 @@ pub(crate) async fn replace_asset_upload_part(
 ) -> Result<Json<ReplaceAssetUploadPartResponse>, ApiError> {
     require_content_type(&headers)?;
     let account = resolve_import_account(&auth);
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+    let assets_dir = cfg.paths.assets_dir_for_account(account);
     // The part streams into a temp file of its own, and the manifest records
     // it only once all of it is in, so the manifest can look abandoned while
     // the part arrives: the sweep of abandoned uploads must leave the upload
@@ -1365,11 +1377,8 @@ pub(crate) async fn replace_asset_upload_part(
     }
     // One read of the body is in memory at a time, never the whole part
     // (#2114).
-    temp.receive(upload_body_bounded(
-        request.into_body(),
-        state.upload_time_limits,
-    ))
-    .await?;
+    temp.receive(upload_body_bounded(request.into_body(), upload_time_limits))
+        .await?;
     let written = run_blocking("upload part", move || asset_uploads::put_part(temp)).await?;
     Ok(Json(ReplaceAssetUploadPartResponse {
         part,
@@ -1401,14 +1410,15 @@ pub(crate) async fn replace_asset_upload_part(
     )
 )]
 pub(crate) async fn complete_asset_upload(
-    State(state): State<AppState>,
+    State(cfg): State<Arc<Config>>,
+    State(assets): State<AssetState>,
     ImportAccess(auth): ImportAccess,
     AxumPath((sha256, upload_id)): AxumPath<(Sha256, String)>,
 ) -> Result<Response, ApiError> {
-    let (account, existing) = resolve_asset_lookup(&state, &auth, &sha256).await?;
+    let (account, existing) = resolve_asset_lookup(&cfg, &auth, &sha256).await?;
     if let Some(stored) = existing {
         // Drop staging if a concurrent single-PUT won the race.
-        let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+        let assets_dir = cfg.paths.assets_dir_for_account(account);
         let sha = sha256.clone();
         let uid = upload_id.clone();
         let dropped = crate::request_id::spawn_blocking_in_current_span(move || {
@@ -1427,12 +1437,12 @@ pub(crate) async fn complete_asset_upload(
         return Ok(Asset::stored(stored, true).into_response());
     }
 
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+    let assets_dir = cfg.paths.assets_dir_for_account(account);
     // Joining and storing a large upload writes nothing to its manifest, so
     // the sweep of abandoned uploads must leave it alone meanwhile (#2652).
     let _in_use = asset_uploads::hold_upload(&assets_dir, &sha256, &upload_id)?;
-    let _guard = state
-        .asset_complete_locks
+    let _guard = assets
+        .complete_locks
         .lock(format!("{account}:{sha256}"))
         .await;
 
@@ -1490,12 +1500,12 @@ pub(crate) struct AssetUpload {
     )
 )]
 pub(crate) async fn get_asset_upload(
-    State(state): State<AppState>,
+    State(cfg): State<Arc<Config>>,
     ImportAccess(auth): ImportAccess,
     AxumPath((sha256, upload_id)): AxumPath<(Sha256, String)>,
 ) -> Result<Json<AssetUpload>, ApiError> {
     let account = resolve_import_account(&auth);
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+    let assets_dir = cfg.paths.assets_dir_for_account(account);
     let sha = sha256.clone();
     let uid = upload_id.clone();
     let manifest = run_blocking("upload read", move || {
@@ -1528,12 +1538,12 @@ pub(crate) async fn get_asset_upload(
     )
 )]
 pub(crate) async fn delete_asset_upload(
-    State(state): State<AppState>,
+    State(cfg): State<Arc<Config>>,
     ImportAccess(auth): ImportAccess,
     AxumPath((sha256, upload_id)): AxumPath<(Sha256, String)>,
 ) -> Result<axum::http::StatusCode, ApiError> {
     let account = resolve_import_account(&auth);
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+    let assets_dir = cfg.paths.assets_dir_for_account(account);
     let sha = sha256.clone();
     let uid = upload_id.clone();
     run_blocking("upload abort", move || {
