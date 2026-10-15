@@ -668,7 +668,7 @@ pub enum ApiError {
     ServerStopping(String),
     /// `500` — unexpected failure. The whole context chain goes to the log;
     /// the client sees a fixed sentence and `about:blank`. One whose chain
-    /// holds a busy database ([`is_database_busy`]) is no failure of the
+    /// holds a busy database (`is_database_busy`) is no failure of the
     /// server: it answers `503 Service Unavailable` (`database-busy`) with
     /// `Retry-After`, and its chain goes on the refusal's `WARN` line.
     Internal(anyhow::Error),
