@@ -99,6 +99,9 @@ jobs:
               docs/src/assets/openapi.json) docs=true; web=true ;;
               scripts/check-generated-api-types.sh|scripts/check-biome-restricted-imports.mjs|scripts/openapi-typescript/*) web=true ;;
               docs/*) docs=true ;;
+              # src-tauri's tests write the desktop events fixture and the
+              # web job's tests read it, so a change to it runs both.
+              tests/fixtures/desktop-events/*) rust=true; web=true ;;
               web/*) web=true ;;
               web-next/*) ;;                # legacy tree, not the product path
               # The image is built from the Dockerfile, the Cargo manifests
