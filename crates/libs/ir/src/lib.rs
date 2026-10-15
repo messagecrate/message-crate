@@ -942,7 +942,9 @@ pub struct PendingConversation {
     pub chat_id: String,
     /// Display name for the conversation. `None` when the source has none.
     pub display_name: Option<String>,
-    /// Participant handles in E.164 form.
+    /// Participant handles: a phone number in E.164 form where the source
+    /// gives one, else the source's own handle (an email address, a short
+    /// code, a name).
     pub participant_e164s: Vec<String>,
     /// Messages awaiting conversion to [`IrMessage`].
     pub messages: Vec<PendingMessage>,
