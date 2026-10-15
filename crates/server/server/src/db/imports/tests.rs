@@ -17,6 +17,25 @@ fn default_start_args(account_id: i64) -> StartImportArgs<'static> {
     StartImportArgs::new(account_id, "ios", "append", Some("message-crate"))
 }
 
+/// A completed run's arguments with every count and timing filled and no
+/// issues or notes.
+fn completed_args() -> CompleteImportArgs {
+    CompleteImportArgs {
+        status: "completed".into(),
+        message_count: Some(10),
+        attachment_count: Some(2),
+        bytes_uploaded: Some(100),
+        duration_ms: Some(48_000),
+        parse_ms: Some(18_000),
+        attachments_ms: Some(22_000),
+        prepare_ms: Some(4_000),
+        upload_ms: Some(8_000),
+        summary_json: Some(r#"{"parse":{"messages":10}}"#.into()),
+        issues: Vec::new(),
+        notes: Vec::new(),
+    }
+}
+
 /// Open a run at `parse` and move it through the stages in order to
 /// `stage`, the only way a run reaches a later stage.
 async fn open_run_at(conn: &mut SqliteConnection, stage: ImportStage) -> i64 {
@@ -50,23 +69,13 @@ async fn complete_import_persists_timings_and_issues() {
         ACCOUNT_ID,
         import_id,
         &CompleteImportArgs {
-            status: "completed".into(),
-            message_count: Some(10),
-            attachment_count: Some(2),
-            bytes_uploaded: Some(100),
-            duration_ms: Some(48_000),
-            parse_ms: Some(18_000),
-            attachments_ms: Some(22_000),
-            prepare_ms: Some(4_000),
-            upload_ms: Some(8_000),
-            summary_json: Some(r#"{"parse":{"messages":10}}"#.into()),
             issues: vec![ImportIssueInput {
                 kind: ImportErrorKind::Skip,
                 stage: crate::db::imports::ImportIssueStage::Media,
                 item: "photo.heic".into(),
                 reason: "convert failed".into(),
             }],
-            notes: Vec::new(),
+            ..completed_args()
         },
         fixed_instant(),
     )
@@ -149,16 +158,6 @@ async fn list_import_issues_returns_them_oldest_first() {
         ACCOUNT_ID,
         import_id,
         &CompleteImportArgs {
-            status: "completed".into(),
-            message_count: Some(10),
-            attachment_count: Some(2),
-            bytes_uploaded: Some(100),
-            duration_ms: Some(48_000),
-            parse_ms: Some(18_000),
-            attachments_ms: Some(22_000),
-            prepare_ms: Some(4_000),
-            upload_ms: Some(8_000),
-            summary_json: Some(r#"{"parse":{"messages":10}}"#.into()),
             issues: vec![
                 ImportIssueInput {
                     kind: ImportErrorKind::Skip,
@@ -173,7 +172,7 @@ async fn list_import_issues_returns_them_oldest_first() {
                     reason: "upload failed".into(),
                 },
             ],
-            notes: Vec::new(),
+            ..completed_args()
         },
         fixed_instant(),
     )
@@ -916,20 +915,7 @@ async fn an_import_row_maps_the_same_whatever_order_the_select_lists_its_columns
         &mut conn,
         ACCOUNT_ID,
         import_id,
-        &CompleteImportArgs {
-            status: "completed".into(),
-            message_count: Some(10),
-            attachment_count: Some(2),
-            bytes_uploaded: Some(100),
-            duration_ms: Some(48_000),
-            parse_ms: Some(18_000),
-            attachments_ms: Some(22_000),
-            prepare_ms: Some(4_000),
-            upload_ms: Some(8_000),
-            summary_json: Some(r#"{"parse":{"messages":10}}"#.into()),
-            issues: Vec::new(),
-            notes: Vec::new(),
-        },
+        &completed_args(),
         fixed_instant(),
     )
     .await
