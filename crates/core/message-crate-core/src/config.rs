@@ -260,7 +260,7 @@ impl AttachmentFiles {
 /// How an export handles attachment files, and where its tools are.
 pub struct MediaConfig {
     /// Copy the original attachment files, or none.
-    pub mode: AttachmentFiles,
+    pub files: AttachmentFiles,
     /// The Tools Directory the WhatsApp exporter finds `wtsexporter` in
     /// ([`MediaTools::tools_dir`]). The caller builds them from where it
     /// keeps its tools ([`media::InstalledTools`]); a test passes a fake.
@@ -271,7 +271,7 @@ impl Default for MediaConfig {
     /// Copy the originals, with no tools at all ([`NoTools`]).
     fn default() -> Self {
         Self {
-            mode: AttachmentFiles::Originals,
+            files: AttachmentFiles::Originals,
             tools: Arc::new(NoTools),
         }
     }

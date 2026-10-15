@@ -264,7 +264,7 @@ fn assert_broken_backup_keeps_previous_output(
     fs::write(source.path().join("smses.xml"), backup).unwrap();
     let destination = tempfile::tempdir().unwrap();
     let mut config = config(source.path(), destination.path(), OutputFormat::Json);
-    config.output.media.mode = media;
+    config.output.media.files = media;
     convert(source.path(), &config).unwrap();
     let previous = snapshot(destination.path());
     assert!(
@@ -1256,7 +1256,7 @@ fn read_output(dir: &Path, format: OutputFormat) -> ConversationDocument {
 fn assert_mail_attachment_survives(source: &Path, format: OutputFormat, media: AttachmentFiles) {
     let destination = tempfile::tempdir().unwrap();
     let mut config = config(source, destination.path(), format);
-    config.output.media.mode = media;
+    config.output.media.files = media;
 
     convert(source, &config).unwrap();
 

@@ -258,7 +258,7 @@ pub(crate) fn apply_transforms(
     // Keep MIME/path for placeholder classification when obfuscating.
     if !transforms.obfuscate {
         for doc in docs.iter_mut() {
-            clear_attachments_when_disabled(doc, transforms.media);
+            clear_attachments_when_disabled(doc, transforms.files);
         }
     }
 

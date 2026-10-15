@@ -498,7 +498,7 @@ impl Form {
     /// ([`Self::exporter_config`]).
     fn media(&self) -> MediaConfig {
         MediaConfig {
-            mode: self.attachments,
+            files: self.attachments,
             ..MediaConfig::default()
         }
     }

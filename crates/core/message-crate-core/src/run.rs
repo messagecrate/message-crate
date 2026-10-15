@@ -40,14 +40,14 @@ mod tests {
     use crate::pipeline::{IssueSink, RunIssue, RunIssueKind};
     use std::sync::{Arc, Mutex};
 
-    fn output(mode: AttachmentFiles, obfuscate: bool) -> OutputConfig {
+    fn output(files: AttachmentFiles, obfuscate: bool) -> OutputConfig {
         OutputConfig {
             obfuscate: ObfuscateConfig {
                 enabled: obfuscate,
                 seed: None,
             },
             media: MediaConfig {
-                mode,
+                files,
                 ..MediaConfig::default()
             },
             ..OutputConfig::new("out", OutputFormat::Jsonl)
@@ -93,7 +93,7 @@ mod tests {
         let result = run_pipeline(&context(), &output(AttachmentFiles::Skip, true), |run| {
             let t = run.transforms;
             assert!(t.obfuscate);
-            assert_eq!(t.media, AttachmentFiles::Skip);
+            assert_eq!(t.files, AttachmentFiles::Skip);
             Ok(ExportReport {
                 conversations: 1,
                 messages: 3,

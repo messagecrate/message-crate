@@ -46,7 +46,7 @@ fn convert_and_compress_stage_originals_and_defer_the_media_stage() {
         )
         .unwrap();
         assert_eq!(
-            config.output.media.mode,
+            config.output.media.files,
             AttachmentFiles::Originals,
             "{chosen:?} must stage originals"
         );
@@ -70,7 +70,7 @@ fn copy_stages_originals_and_skip_stages_none() {
             &options,
         )
         .unwrap();
-        assert_eq!(config.output.media.mode, files, "{chosen:?}");
+        assert_eq!(config.output.media.files, files, "{chosen:?}");
     }
 }
 
@@ -92,7 +92,7 @@ fn non_imessage_sources_defer_the_media_stage_too() {
         )
         .unwrap();
         assert_eq!(
-            config.output.media.mode,
+            config.output.media.files,
             AttachmentFiles::Originals,
             "{chosen:?} must stage originals"
         );

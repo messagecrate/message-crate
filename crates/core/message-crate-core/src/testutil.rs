@@ -370,7 +370,7 @@ pub fn jsonl_test_run<S>(inputs: &[&Path], output: &Path, source: S) -> TestRun<
         context: RunContext::new(test_scratch_dir()),
         output: OutputConfig {
             media: crate::MediaConfig {
-                mode: crate::AttachmentFiles::Skip,
+                files: crate::AttachmentFiles::Skip,
                 ..crate::MediaConfig::default()
             },
             ..OutputConfig::new(output, crate::OutputFormat::Jsonl)

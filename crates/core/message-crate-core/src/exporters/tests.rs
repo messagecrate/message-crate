@@ -275,7 +275,7 @@ fn android_passes_media_mode() {
         ..Form::default()
     };
     let config = form.to_config(Exporter::GoSmsPro, context()).unwrap();
-    assert_eq!(config.output.media.mode, AttachmentFiles::Originals);
+    assert_eq!(config.output.media.files, AttachmentFiles::Originals);
 
     let form = Form {
         input: std::env::current_dir().unwrap().display().to_string(),
@@ -285,7 +285,7 @@ fn android_passes_media_mode() {
         ..Form::default()
     };
     let config = form.to_config(Exporter::GoSmsPro, context()).unwrap();
-    assert_eq!(config.output.media.mode, AttachmentFiles::Skip);
+    assert_eq!(config.output.media.files, AttachmentFiles::Skip);
 }
 
 #[test]
@@ -329,7 +329,7 @@ fn whatsapp_passes_platform_and_media() {
     };
     let config = form.to_config(Exporter::Whatsapp, context()).unwrap();
     assert!(config.inputs.is_empty());
-    assert_eq!(config.output.media.mode, AttachmentFiles::Originals);
+    assert_eq!(config.output.media.files, AttachmentFiles::Originals);
     let SourceConfig::Whatsapp(wa) = config.source else {
         panic!("expected Whatsapp");
     };
@@ -470,7 +470,7 @@ fn imessage_with_attachments_disabled_does_not_copy_them() {
         panic!("expected Apple");
     };
     assert_eq!(apple.copy_method, "disabled");
-    assert_eq!(config.output.media.mode, AttachmentFiles::Skip);
+    assert_eq!(config.output.media.files, AttachmentFiles::Skip);
 }
 
 /// Every source takes the output directory, the Scratch Directory, and the

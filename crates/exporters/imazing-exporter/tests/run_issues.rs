@@ -17,7 +17,7 @@ fn run_collecting(input: &Path, output: &Path) -> Vec<RunIssue> {
             timezone: Some("UTC".into()),
         },
     );
-    config.output.media.mode = message_crate_core::AttachmentFiles::Originals;
+    config.output.media.files = message_crate_core::AttachmentFiles::Originals;
     let issues = collect_issues(&mut config.context);
     config.run(crate::run).expect("run");
     issues.lock().unwrap().clone()

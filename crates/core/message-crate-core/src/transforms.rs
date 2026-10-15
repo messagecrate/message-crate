@@ -10,7 +10,7 @@ use crate::progress::ProgressSink;
 #[derive(Debug, Clone)]
 pub struct ExportTransforms {
     /// Whether the run copies the original attachment files.
-    pub media: AttachmentFiles,
+    pub files: AttachmentFiles,
     /// Whether to replace PII and media with obfuscated placeholders.
     pub obfuscate: bool,
     /// Seed for deterministic obfuscation; `None` generates one.
@@ -24,7 +24,7 @@ pub struct ExportTransforms {
 impl Default for ExportTransforms {
     fn default() -> Self {
         Self {
-            media: AttachmentFiles::Originals,
+            files: AttachmentFiles::Originals,
             obfuscate: false,
             obfuscate_seed: None,
             log: LogSink::none(),
@@ -40,7 +40,7 @@ impl ExportTransforms {
     /// reports through the same hooks the exporter does.
     pub fn new(context: &RunContext, output: &OutputConfig) -> Self {
         Self {
-            media: output.media.mode,
+            files: output.media.files,
             obfuscate: output.obfuscate_active(),
             obfuscate_seed: output.obfuscate.seed.clone(),
             log: context.log.clone(),
@@ -58,7 +58,7 @@ impl ExportTransforms {
     /// (false when obfuscating).
     pub fn copies_attachments(&self) -> bool {
         // Obfuscate discards real bytes; skip staging them in the first place.
-        !self.obfuscate && self.media.copies()
+        !self.obfuscate && self.files.copies()
     }
 }
 
@@ -119,7 +119,7 @@ mod tests {
         let out = output(
             ObfuscateConfig::default(),
             MediaConfig {
-                mode: AttachmentFiles::Skip,
+                files: AttachmentFiles::Skip,
                 ..MediaConfig::default()
             },
         );
@@ -136,7 +136,7 @@ mod tests {
         t.log.emit("a line");
         t.progress.emit(ProgressEvent::Parse { done: 1, total: 2 });
 
-        assert_eq!(t.media, AttachmentFiles::Skip);
+        assert_eq!(t.files, AttachmentFiles::Skip);
         assert_eq!(lines.lock().unwrap().as_slice(), ["a line"]);
         assert_eq!(events.lock().unwrap().len(), 1);
     }
@@ -144,14 +144,14 @@ mod tests {
     #[test]
     fn obfuscate_disables_copy() {
         let t = ExportTransforms {
-            media: AttachmentFiles::Originals,
+            files: AttachmentFiles::Originals,
             obfuscate: true,
             ..ExportTransforms::none()
         };
         assert!(!t.copies_attachments());
 
         let t = ExportTransforms {
-            media: AttachmentFiles::Originals,
+            files: AttachmentFiles::Originals,
             obfuscate: false,
             ..ExportTransforms::none()
         };

@@ -435,7 +435,7 @@ mod tests {
             }];
 
             let transforms = ExportTransforms {
-                media: message_crate_core::AttachmentFiles::Originals,
+                files: message_crate_core::AttachmentFiles::Originals,
                 ..ExportTransforms::none()
             };
             let mut sink = FormatSink::open(tmp.path(), format, transforms).unwrap();

@@ -306,7 +306,7 @@ fn a_run_that_copies_no_attachments_still_records_their_size() {
         owner_phones: &[OWNER.into()],
         convert_run: ConvertRun {
             transforms: ExportTransforms {
-                media: message_crate_core::AttachmentFiles::Skip,
+                files: message_crate_core::AttachmentFiles::Skip,
                 ..ExportTransforms::none()
             },
             output_format: OutputFormat::Csv,

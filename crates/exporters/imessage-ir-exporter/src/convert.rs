@@ -831,7 +831,7 @@ fn drain_conversations(
         .collect();
 
     let queue = WriteQueueOptions {
-        files: options.convert_run.transforms.media,
+        files: options.convert_run.transforms.files,
         resume: options.convert_run.resume,
         writer_count: 0,
     };
@@ -901,7 +901,7 @@ fn stage_attachments(
             .conversations
             .values_mut()
             .flat_map(|conversation| conversation.messages.iter_mut()),
-        options.convert_run.transforms.media,
+        options.convert_run.transforms.files,
         if encrypted {
             PathSources::ReadByLoader
         } else {
