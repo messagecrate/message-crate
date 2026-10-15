@@ -1,5 +1,6 @@
 import type { ImportIssue } from "../../../components/import/ImportSummaryPanel";
 import type { ImportIssueStage } from "../../../components/import/importIssueStage";
+import { errorLine } from "../../../lib/apiErrorMessage";
 import { formatAttachmentProgress } from "../../../lib/attachmentProgressCopy";
 import type { DesktopJobResult, RunDirConfig, StagingSummary } from "../../../lib/tauri";
 import { waitingLine } from "../../../lib/toolStatusCopy";
@@ -204,6 +205,18 @@ function recordFileWritten(ctx: RunContext, event: ImportFileWrittenEvent): void
   if (scratch.issues.some(about) || (scratch.carried.lastStopIssues ?? []).some(about)) {
     void saveCarriedRecord(ctx);
   }
+}
+
+/**
+ * The Import Errors row's reason for a desktop job that failed: the sentence
+ * the person reads, then the error chain the desktop app kept as the error's
+ * `cause` (`awaitDesktopJob`), so the run's record on the server still names
+ * the file or the bug a sentence leaves out (#2071, #2112).
+ */
+export function jobErrorReason(e: unknown): string {
+  const line = errorLine(e);
+  const cause = e instanceof Error && typeof e.cause === "string" ? e.cause : "";
+  return cause ? `${line} Details: ${cause}` : line;
 }
 
 export function recordError(ctx: RunContext, stage: ImportIssueStage, message: string): void {

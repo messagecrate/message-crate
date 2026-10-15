@@ -296,38 +296,40 @@ pub struct DesktopJobErrorEvent {
     pub canceled: bool,
 }
 
-/// What the person reads when a Cancel stopped the job.
-const CANCELED_TEXT: &str = "Canceled.";
 /// What the person reads when the disk is full.
 const STORAGE_FULL_TEXT: &str = "The disk is full. Free some space, then try again.";
-/// What the person reads when the operating system refused a file.
+/// What the person reads when the operating system refused a file or a
+/// directory. It promises no path, because not every error on the way out
+/// names one.
 const PERMISSION_DENIED_TEXT: &str =
-    "Message Crate is not allowed to open a file it needs. The log names the file.";
-/// What the person reads when a file is missing.
-const NOT_FOUND_TEXT: &str = "A file Message Crate needs is missing. The log names the file.";
+    "Message Crate is not allowed to use a file or directory it needs. The log has the details.";
+/// What the person reads when a file or a directory is missing.
+const NOT_FOUND_TEXT: &str =
+    "A file or directory Message Crate needs is missing. The log has the details.";
 
-/// A job's error, with its full chain as `detail`, a sentence for the person
-/// when the chain holds a failure they can act on (#2112), and whether a
-/// Cancel stopped it.
+/// A job's error, with its full chain as `detail`, whether a Cancel stopped
+/// it, and otherwise a sentence for the person when the chain holds a
+/// failure they can act on (#2112). A Cancel needs no sentence: `canceled`
+/// alone carries it, and the window says it in its own words.
 impl From<anyhow::Error> for DesktopJobErrorEvent {
     fn from(err: anyhow::Error) -> Self {
         let canceled = err.chain().any(|e| e.is::<Cancelled>());
         Self {
             detail: format!("{err:#}"),
-            user_message: user_message(&err, canceled).map(str::to_string),
+            user_message: (!canceled)
+                .then(|| user_message(&err))
+                .flatten()
+                .map(str::to_string),
             canceled,
         }
     }
 }
 
 /// The sentence for a failure the person can act on, found by its type in
-/// `err`'s chain: a Cancel, a session the server refused, or a full disk, a
-/// refused file or a missing one. `None` for anything else, so the window
-/// shows the chain when nothing better is known.
-fn user_message(err: &anyhow::Error, canceled: bool) -> Option<&'static str> {
-    if canceled {
-        return Some(CANCELED_TEXT);
-    }
+/// `err`'s chain: a session the server refused, or a full disk, a refused
+/// file or directory, or a missing one. `None` for anything else, so the
+/// window shows the chain when nothing better is known.
+fn user_message(err: &anyhow::Error) -> Option<&'static str> {
     if message_crate_http::is_session_refused(err) {
         return Some(message_crate_http::SESSION_REFUSED);
     }
@@ -386,7 +388,7 @@ mod tests {
             anyhow::Error::from(Cancelled).context("write a conversation"),
         );
         assert!(event.canceled);
-        assert_eq!(event.user_message.as_deref(), Some("Canceled."));
+        assert_eq!(event.user_message, None);
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json["canceled"], true);
     }
@@ -415,11 +417,11 @@ mod tests {
             ),
             (
                 io(ErrorKind::PermissionDenied),
-                "Message Crate is not allowed to open a file it needs. The log names the file.",
+                "Message Crate is not allowed to use a file or directory it needs. The log has the details.",
             ),
             (
                 io(ErrorKind::NotFound),
-                "A file Message Crate needs is missing. The log names the file.",
+                "A file or directory Message Crate needs is missing. The log has the details.",
             ),
             (
                 anyhow::Error::from(message_crate_http::session_refused("Upload a batch"))

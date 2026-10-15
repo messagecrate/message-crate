@@ -260,7 +260,6 @@ describe("awaitDesktopJob", () => {
   it("rejects with a CanceledError when a Cancel stopped the job, whatever its text", async () => {
     const { thrown, log } = await failedJob({
       detail: "write a conversation: canceled",
-      user_message: "Canceled.",
       canceled: true,
     });
     expect(thrown).toBeInstanceOf(CanceledError);

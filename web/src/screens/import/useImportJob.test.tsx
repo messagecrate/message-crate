@@ -2016,6 +2016,24 @@ describe("useImportJob wiring", () => {
     expect(body.status).toBe("failed");
   });
 
+  it("records a failed stage's sentence and its error chain in the Import Errors row", async () => {
+    // The person reads the sentence, and the run's record keeps what the
+    // sentence leaves out, such as a panic's text (#2071, #2112).
+    runMock.mockReset();
+    runMock.mockRejectedValueOnce(
+      new Error("Staging failed because of a bug in Message Crate.", {
+        cause: "the job panicked: index out of bounds",
+      }),
+    );
+    const { result } = renderJob();
+    await act(() => result.current.startImport(importForm({ attachmentMedia: "copy" })));
+
+    expect(result.current.summaryView?.status).toBe("failed");
+    expect(result.current.summaryView?.issues[0]?.reason).toBe(
+      "Staging failed because of a bug in Message Crate. Details: the job panicked: index out of bounds",
+    );
+  });
+
   it("does not complete the run on a cancelled extract, so the copy can be picked up", async () => {
     // A cancellation gets the same recovery as a crash at that
     // stage, and the write stage is resumable now: the conversations already

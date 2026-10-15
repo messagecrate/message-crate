@@ -794,7 +794,8 @@ fn copy_attachments_dir(input_dir: &Path, output_dir: &Path) -> Result<()> {
         return Ok(());
     }
     let destination = output_dir.join("attachments");
-    fs::create_dir_all(&destination)?;
+    fs::create_dir_all(&destination)
+        .with_context(|| format!("create {}", destination.display()))?;
     copy_dir_recursive(&source, &destination)
 }
 
@@ -805,7 +806,7 @@ fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<()> {
         let from = entry.path();
         let to = destination.join(entry.file_name());
         if from.is_dir() {
-            fs::create_dir_all(&to)?;
+            fs::create_dir_all(&to).with_context(|| format!("create {}", to.display()))?;
             copy_dir_recursive(&from, &to)?;
         } else {
             fs::copy(&from, &to)

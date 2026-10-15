@@ -1,4 +1,3 @@
-import { errorLine } from "../../../lib/apiErrorMessage";
 import { CanceledError } from "../../../lib/canceledError";
 import type { ImportJobFormValues } from "../../../lib/importSources/types";
 import {
@@ -10,7 +9,7 @@ import type { AttachmentMediaMode } from "../../../lib/types";
 import { MEDIA_LABEL } from "../importProgressState";
 import { mediaJobVerb } from "../reviewForecast";
 import type { OpenRun, RunContext } from "./context";
-import { recordError, runJob, summarizeStagingWithProgress } from "./desktopJob";
+import { jobErrorReason, recordError, runJob, summarizeStagingWithProgress } from "./desktopJob";
 import { finishImport, stopStageNotRecorded } from "./finish";
 import { saveCarriedRecord } from "./runRecordWrites";
 import {
@@ -85,7 +84,7 @@ export async function runMediaStage(
       cancelled = true;
     } else {
       threw = true;
-      recordError(ctx, ctx.scratch.activeStage, errorLine(e));
+      recordError(ctx, ctx.scratch.activeStage, jobErrorReason(e));
     }
   }
   const mediaMs = ctx.now() - mediaStartedAt;

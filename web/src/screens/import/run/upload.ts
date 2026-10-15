@@ -1,4 +1,3 @@
-import { errorLine } from "../../../lib/apiErrorMessage";
 import { CanceledError } from "../../../lib/canceledError";
 import { registerRunningUpload } from "../../../lib/runningUpload";
 import { sessionRefused } from "../../../lib/sessionRefusal";
@@ -7,7 +6,7 @@ import { importOutcome } from "../importOutcome";
 import { UPLOAD_LABEL } from "../importProgressState";
 import { wholeRun } from "../runRecord";
 import type { OpenRun, RunContext } from "./context";
-import { recordError, runJob } from "./desktopJob";
+import { jobErrorReason, recordError, runJob } from "./desktopJob";
 import { finishImport, stopStageNotRecorded } from "./finish";
 import { currentPart } from "./scratch";
 import { failActiveStep, movePhase, setRowByLabel } from "./screen";
@@ -88,7 +87,7 @@ async function uploadAndFinish(
       pausedBeforeStart = true;
     } else {
       threw = true;
-      recordError(ctx, ctx.scratch.activeStage, errorLine(e));
+      recordError(ctx, ctx.scratch.activeStage, jobErrorReason(e));
       failActiveStep(ctx);
     }
   }

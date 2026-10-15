@@ -1,4 +1,3 @@
-import { errorLine } from "../../../lib/apiErrorMessage";
 import { CanceledError } from "../../../lib/canceledError";
 import { getDeviceId } from "../../../lib/deviceId";
 import { buildSourceFingerprint } from "../../../lib/importRun";
@@ -15,7 +14,7 @@ import {
 } from "../importProgressState";
 import { CLEARED_RUN } from "../importRunStore";
 import type { OpenRun, RunContext } from "./context";
-import { recordError, runJob, summarizeStagingWithProgress } from "./desktopJob";
+import { jobErrorReason, recordError, runJob, summarizeStagingWithProgress } from "./desktopJob";
 import { finishImport } from "./finish";
 import { mediaToolsMissingFor } from "./media";
 import { saveCarriedRecord } from "./runRecordWrites";
@@ -311,7 +310,7 @@ export async function runImport(
     // completes: a broken backup must not lock the account out of importing.
     const cancelled = e instanceof CanceledError;
     const stageNotRecorded = e instanceof StageNotRecordedError;
-    if (!cancelled) recordError(ctx, ctx.scratch.activeStage, errorLine(e));
+    if (!cancelled) recordError(ctx, ctx.scratch.activeStage, jobErrorReason(e));
     failActiveStep(ctx);
     store.set({ computingSummary: false });
     await finishImport(ctx, {
