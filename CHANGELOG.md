@@ -209,6 +209,12 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-15: **The Docker image no longer carries Node.js.** It was built
+  on Node.js 20, which no longer gets security fixes, though the server never
+  used it, so image scanners flagged every Message Crate image. The image is
+  now built on Debian alone and checks its own health with the server
+  program. It still runs as user and group 1000, so existing data and
+  Compose files work as before (#2065).
 - 2026-10-15: **The owner's password is typed, not written on the command
   line.** The server's `create-owner` and `reset-owner-password` commands
   now ask for the password and don't show it as it's typed, or read it from

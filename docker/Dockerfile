@@ -72,14 +72,22 @@ RUN cargo build --release -p message-crate-server
 # -----------------------------------------------------------------------------
 # Stage 3: slim runtime
 # -----------------------------------------------------------------------------
-FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS runtime
+# Debian 12 (bookworm) alone, the release the build stages use. The running
+# container needs no Node.js: the website is built in Stage 1 and the health
+# check is a server command (#2065).
+FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS runtime
 
+# The container runs as user and group 1000, named app. Both Compose files
+# run it as 1000:1000 by default, and the files in existing data volumes
+# belong to that id.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     ca-certificates \
     ffmpeg \
     tini \
-  && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/* \
+  && groupadd --gid 1000 app \
+  && useradd --uid 1000 --gid 1000 --create-home --shell /usr/sbin/nologin app
 
 WORKDIR /app
 
@@ -95,26 +103,26 @@ COPY config/config.docker.toml ./config/config.toml
 COPY --from=frontend-builder /web/dist ./static
 
 COPY docker/entrypoint-release.sh /usr/local/bin/docker-entrypoint-release.sh
-COPY docker/healthcheck.cjs /usr/local/lib/message-crate/healthcheck.cjs
 RUN chmod +x /usr/local/bin/docker-entrypoint-release.sh \
   && mkdir -p /app/data \
-  && chown -R node:node /app
+  && chown -R app:app /app
 
-USER node
+USER app
 
 EXPOSE 8080
 VOLUME ["/app/data"]
 
 # Docker marks the container unhealthy when the server stops answering, so
 # `docker ps` and anything in front of the container can tell a server that
-# hangs from one that runs. docker/healthcheck.cjs says what it asks and
-# when it passes. The first start seeds the Demo Account before the server
+# hangs from one that runs. `message-crate-server healthcheck`
+# (crates/server/server/src/healthcheck.rs) says what it asks and when it
+# passes. The first start seeds the Demo Account before the server
 # listens. A failed probe inside --start-period does not count against
 # --retries, so a seed shorter than five minutes never marks the container
 # unhealthy. --start-interval probes every 2 seconds during the start period
 # (Docker Engine 25 and later), so a fresh container reads healthy as soon as
 # the server answers.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5m --start-interval=2s --retries=3 \
-  CMD ["node", "/usr/local/lib/message-crate/healthcheck.cjs"]
+  CMD ["message-crate-server", "healthcheck"]
 
 ENTRYPOINT ["tini", "--", "/usr/local/bin/docker-entrypoint-release.sh"]

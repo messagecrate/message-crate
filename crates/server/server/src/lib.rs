@@ -25,6 +25,7 @@ pub(crate) mod dedupe;
 pub(crate) mod exit_with_parent;
 pub(crate) mod exports_api;
 pub(crate) mod extract;
+pub(crate) mod healthcheck;
 pub(crate) mod identity_country;
 pub(crate) mod import_cli;
 pub(crate) mod import_media;
