@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Full local check: everything CI runs on a pull request, in one command.
+# Full local check: everything CI runs on a pull request, in one command,
+# except, off Windows, the Windows-only server config tests.
 #
 #   ./scripts/check-all.sh
 #

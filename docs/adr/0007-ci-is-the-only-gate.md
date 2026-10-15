@@ -86,11 +86,12 @@ It then loads the website the image serves in a headless browser
 (`scripts/check-served-website.sh`), logs in to the Demo Account, searches
 and opens a conversation, and fails on a console error or a 5xx: the web
 app's tests mock the server and the server's tests never load the website,
-so nothing else runs the two together. It gates nothing: it has no pull request trigger and is not in the ruleset's required
-list. A scheduled run does nothing when `main` is still at the commit the
-previous scheduled run saw. Its verdict arrives after the merge, so it reports
-by opening an issue labelled `bug`, or by commenting on that issue while it is
-open, rather than by a check on a pull request.
+so nothing else runs the two together. It gates nothing: it has no pull
+request trigger and is not in the ruleset's required list. A scheduled run
+does nothing when `main` is still at the commit the previous scheduled run
+saw. Its verdict arrives after the merge, so it reports by opening an issue
+labelled `bug`, or by commenting on that issue while it is open, rather than
+by a check on a pull request.
 
 The docs build on a pull request is the `docs` job in `ci.yml`, not a trigger
 on `docs.yml` — a required check that lives in a path-filtered workflow
@@ -389,13 +390,15 @@ merged green and the release failed. It took 8.5 to 11 minutes a run and was
 a required check, so a dependency pull request that changed only the lockfile
 paid it too.
 
-It is gone (#2904). Two things now catch a broken image before anyone pulls
-it. `nightly.yml` builds the same image from `main` every night `main`
-changed, runs the same Compose check and the website check, and opens a
-`bug` issue when it fails. The release's `docker` job builds the image before
-it pushes it, so a broken image fails the release rather than shipping. A
-broken Dockerfile can now reach `main`, and shows within a day; the fix is a
-commit, not a new tag. The nightly run stays a report, not a gate.
+It is gone (#2904). `nightly.yml` builds the same image from `main` every
+night `main` changed, runs the same Compose check and the website check, and
+opens a `bug` issue when it fails. The release's `docker` job builds the image
+before it pushes it, so an image that does not build fails the release rather
+than shipping. That job does not start the image, so an image that builds but
+fails the Compose check is caught only by the nightly run; a tag pushed before
+that run can ship it (#3000). A broken Dockerfile can now reach `main`, and
+shows within a day; the fix is a commit, not a new tag. The nightly run stays
+a report, not a gate.
 
 The `docker-context` job stays on every pull request: it takes seconds. It
 was named "Docker rust-builder context", but `check-docker-context.sh` also

@@ -401,8 +401,8 @@ jobs:
   # an image built from a branch can never replace the one people pull.
   #
   # No pull request builds the image: nightly.yml builds it from main and
-  # starts it, and this job builds it before it pushes, so a broken image
-  # fails the release rather than shipping. Why:
+  # starts it. This job builds it before it pushes, so an image that does
+  # not build fails the release, but it does not start it (#3000). Why:
   # docs/adr/0007-ci-is-the-only-gate.md.
   docker:
     name: Docker image
