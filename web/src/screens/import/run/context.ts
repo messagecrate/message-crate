@@ -5,9 +5,16 @@
  * never share a run.
  */
 
+import type * as desktopExtract from "../../../lib/desktop/extract";
+import type * as desktopFs from "../../../lib/desktop/fs";
+import type * as desktopJob from "../../../lib/desktop/job";
+import type * as desktopRunDir from "../../../lib/desktop/runDir";
+import type * as desktopRunLog from "../../../lib/desktop/runLog";
+import type * as desktopStaging from "../../../lib/desktop/staging";
+import type * as desktopTools from "../../../lib/desktop/tools";
+import type * as desktopUpload from "../../../lib/desktop/upload";
 import type * as importRun from "../../../lib/importRun";
 import type * as serverApi from "../../../lib/serverApi";
-import type * as tauri from "../../../lib/tauri";
 import type { ImportRunStore } from "../importRunStore";
 import type { RecordWrite } from "./runRecordWrites";
 import type { RunScratch } from "./scratch";
@@ -26,29 +33,29 @@ import type { RunScratch } from "./scratch";
 export type OpenRun = {
   runId: number;
   runDir: string;
-  approved?: tauri.StagingSummary;
+  approved?: desktopStaging.StagingSummary;
 };
 
 /** The desktop side of a run: the Tauri commands and events it uses. */
 type RunDesktop = {
   /** True inside the desktop app. A run does nothing anywhere else. */
   isTauri: () => boolean;
-  awaitDesktopJob: typeof tauri.awaitDesktopJob;
+  awaitDesktopJob: typeof desktopJob.awaitDesktopJob;
   /** Stop the desktop job that is running. */
-  invokeCancel: typeof tauri.invokeCancel;
-  onDesktopJobEvents: typeof tauri.onDesktopJobEvents;
-  invokeCreateRunDir: typeof tauri.invokeCreateRunDir;
-  invokeDeleteRunDir: typeof tauri.invokeDeleteRunDir;
-  invokeExtract: typeof tauri.invokeExtract;
-  invokeImessageBackupIdentities: typeof tauri.invokeImessageBackupIdentities;
-  invokePathStat: typeof tauri.invokePathStat;
-  invokeReadImportRunRecord: typeof tauri.invokeReadImportRunRecord;
-  invokeSaveImportRunRecord: typeof tauri.invokeSaveImportRunRecord;
-  invokeStartImportRunLog: typeof tauri.invokeStartImportRunLog;
-  invokeSummarizeStaging: typeof tauri.invokeSummarizeStaging;
-  invokeToolsStatus: typeof tauri.invokeToolsStatus;
-  invokeTranscodeStaging: typeof tauri.invokeTranscodeStaging;
-  invokeUpload: typeof tauri.invokeUpload;
+  invokeCancel: typeof desktopJob.invokeCancel;
+  onDesktopJobEvents: typeof desktopJob.onDesktopJobEvents;
+  invokeCreateRunDir: typeof desktopRunDir.invokeCreateRunDir;
+  invokeDeleteRunDir: typeof desktopRunDir.invokeDeleteRunDir;
+  invokeExtract: typeof desktopExtract.invokeExtract;
+  invokeImessageBackupIdentities: typeof desktopFs.invokeImessageBackupIdentities;
+  invokePathStat: typeof desktopFs.invokePathStat;
+  invokeReadImportRunRecord: typeof desktopRunDir.invokeReadImportRunRecord;
+  invokeSaveImportRunRecord: typeof desktopRunDir.invokeSaveImportRunRecord;
+  invokeStartImportRunLog: typeof desktopRunLog.invokeStartImportRunLog;
+  invokeSummarizeStaging: typeof desktopStaging.invokeSummarizeStaging;
+  invokeToolsStatus: typeof desktopTools.invokeToolsStatus;
+  invokeTranscodeStaging: typeof desktopStaging.invokeTranscodeStaging;
+  invokeUpload: typeof desktopUpload.invokeUpload;
 };
 
 /** The server side of a run: its routes, and the session they go with. */

@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ImportIssue } from "../../components/import/ImportSummaryPanel";
-import type {
-  AttachmentForecast,
-  SizeVerdict,
-  StagingSummary,
-  UploadFinishedReport,
-} from "../../lib/tauri";
+import type { AttachmentForecast, SizeVerdict, StagingSummary } from "../../lib/desktop/staging";
+import type { UploadFinishedReport } from "../../lib/desktop/upload";
 import { MIB } from "../../test/units";
 import { importOutcome, stableStem } from "./importOutcome";
 

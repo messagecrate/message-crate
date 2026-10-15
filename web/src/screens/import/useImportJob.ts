@@ -1,6 +1,19 @@
 import { completionTextFor } from "../../components/import/ImportSummaryPanel";
 import { getAccountId, getBaseUrl, getToken } from "../../lib/api";
 import { useAuth } from "../../lib/authContext";
+import { invokeExtract } from "../../lib/desktop/extract";
+import { invokeImessageBackupIdentities, invokePathStat } from "../../lib/desktop/fs";
+import { awaitDesktopJob, invokeCancel, onDesktopJobEvents } from "../../lib/desktop/job";
+import {
+  invokeCreateRunDir,
+  invokeDeleteRunDir,
+  invokeReadImportRunRecord,
+  invokeSaveImportRunRecord,
+} from "../../lib/desktop/runDir";
+import { invokeStartImportRunLog } from "../../lib/desktop/runLog";
+import { invokeSummarizeStaging, invokeTranscodeStaging } from "../../lib/desktop/staging";
+import { invokeToolsStatus } from "../../lib/desktop/tools";
+import { invokeUpload } from "../../lib/desktop/upload";
 import {
   type ActiveImportRun,
   discardImportRun,
@@ -9,23 +22,6 @@ import {
 } from "../../lib/importRun";
 import type { ImportJobFormValues } from "../../lib/importSources/types";
 import { completeImport, createImport, getServerState } from "../../lib/serverApi";
-import {
-  awaitDesktopJob,
-  invokeCancel,
-  invokeCreateRunDir,
-  invokeDeleteRunDir,
-  invokeExtract,
-  invokeImessageBackupIdentities,
-  invokePathStat,
-  invokeReadImportRunRecord,
-  invokeSaveImportRunRecord,
-  invokeStartImportRunLog,
-  invokeSummarizeStaging,
-  invokeToolsStatus,
-  invokeTranscodeStaging,
-  invokeUpload,
-  onDesktopJobEvents,
-} from "../../lib/tauri";
 import { isTauri } from "../../lib/tauriCheck";
 import { useFetchAccountProfile } from "../../lib/useAccountProfile";
 import { type ImportRunState, importRunStore, useImportRunState } from "./importRunStore";

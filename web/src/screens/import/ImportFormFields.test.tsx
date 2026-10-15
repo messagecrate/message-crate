@@ -3,6 +3,7 @@
 import { cleanup, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ToolStatus, ToolsStatus } from "../../lib/desktop/tools";
 import { holdDesktopJob } from "../../lib/desktopJob";
 import { EXPORT_SOURCES } from "../../lib/exportSources";
 import { IMESSAGE_METHODS, IMESSAGE_SOURCE_ID } from "../../lib/imessageImport";
@@ -12,7 +13,6 @@ import {
   SMS_BACKUP_RESTORE_ERR_NOT_FILE,
 } from "../../lib/importSources/androidSms";
 import { PATH_MISSING } from "../../lib/pathChecks";
-import type { ToolStatus, ToolsStatus } from "../../lib/tauri";
 import type { AttachmentChoices } from "../../lib/types";
 import { DOWNLOAD_POLL_MS, OTHER_CHECK_POLL_MS } from "../../lib/useToolsStatus";
 import {
@@ -53,11 +53,15 @@ vi.mock("../../lib/tauriCheck", () => ({
   isTauri: () => desktop.isTauri,
 }));
 
-vi.mock("../../lib/tauri", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../lib/tauri")>()),
+vi.mock("../../lib/desktop/staging", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/desktop/staging")>()),
+  invokeLowDiskSpace: () => desktop.lowDiskSpace(),
+}));
+
+vi.mock("../../lib/desktop/tools", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/desktop/tools")>()),
   invokeToolsStatus: () => desktop.toolsStatus(),
   invokeRetryToolDownloads: () => desktop.retry(),
-  invokeLowDiskSpace: () => desktop.lowDiskSpace(),
 }));
 
 beforeEach(() => {

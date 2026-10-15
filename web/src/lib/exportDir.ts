@@ -5,7 +5,7 @@ import {
   invokeCreateExportDir,
   invokeDiscardExportDir,
   invokeFinishExportDir,
-} from "./tauri";
+} from "./desktop/export";
 
 /**
  * Run `write` with a directory of its own in the Export Directory, for an

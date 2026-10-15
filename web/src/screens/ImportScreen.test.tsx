@@ -9,9 +9,10 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { errorText } from "../lib/apiErrorMessage";
+import type { StagingSummary } from "../lib/desktop/staging";
 import type { ActiveImportRun } from "../lib/importRun";
 import { keys } from "../lib/queryKeys";
-import type { MediaToolName, StagingSummary } from "../lib/tauri";
+import type { MediaToolName } from "../lib/types";
 import { activeImportRun } from "../test/apiShapes";
 import { deferred } from "../test/deferred";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
@@ -130,12 +131,16 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
 }));
 
 // The desktop commands this screen calls, faked by name. The rest of
-// lib/tauri stays real, since useImportJob.ts holds its imports at load.
-vi.mock("../lib/tauri", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../lib/tauri")>()),
+// lib/desktop/ stays real, since useImportJob.ts holds its imports at load.
+vi.mock("../lib/desktop/fs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/desktop/fs")>()),
   invokeHomeDir: vi.fn().mockResolvedValue({ path: "/home/u", os: "linux" }),
   invokeIosBackupEncrypted: vi.fn().mockResolvedValue(null),
   invokePathStat: (...args: unknown[]) => invokePathStatMock(...args),
+}));
+
+vi.mock("../lib/desktop/runDir", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/desktop/runDir")>()),
   invokeDeleteRunDir: (...args: unknown[]) => invokeDeleteRunDirMock(...args),
 }));
 

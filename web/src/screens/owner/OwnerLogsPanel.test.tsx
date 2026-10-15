@@ -27,8 +27,8 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
   getAccountProfile: (...a: unknown[]) => getAccountProfile(...a),
   getServerState: (...a: unknown[]) => getServerState(...a),
 }));
-vi.mock("../../lib/tauri", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../lib/tauri")>()),
+vi.mock("../../lib/desktop/runLog", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/desktop/runLog")>()),
   invokeListImportRunLogs: (...a: unknown[]) => invokeListImportRunLogs(...a),
   invokeReadImportRunLogLines: (...a: unknown[]) => invokeReadImportRunLogLines(...a),
 }));

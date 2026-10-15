@@ -2,8 +2,10 @@ import type { ImportIssue } from "../../../components/import/ImportSummaryPanel"
 import type { ImportIssueStage } from "../../../components/import/importIssueStage";
 import { errorLine } from "../../../lib/apiErrorMessage";
 import { formatAttachmentProgress } from "../../../lib/attachmentProgressCopy";
+import type { DesktopJobResult } from "../../../lib/desktop/job";
+import type { RunDirConfig } from "../../../lib/desktop/runDir";
+import type { StagingSummary } from "../../../lib/desktop/staging";
 import { DesktopJobError } from "../../../lib/desktopJobError";
-import type { DesktopJobResult, RunDirConfig, StagingSummary } from "../../../lib/tauri";
 import { waitingLine } from "../../../lib/toolStatusCopy";
 import type {
   AttachmentMediaMode,

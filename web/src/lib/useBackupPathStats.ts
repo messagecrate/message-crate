@@ -1,5 +1,6 @@
 import { type QueryKey, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { invokeIosBackupEncrypted } from "./desktop/fs";
 import { emptyImessagePathStats, type ImessagePathStats, isImessageMethod } from "./imessageImport";
 import {
   ANDROID_SMS_NO_STATS,
@@ -13,7 +14,6 @@ import {
   keys,
   type WhatsappPathsKey,
 } from "./queryKeys";
-import { invokeIosBackupEncrypted } from "./tauri";
 import { isTauri } from "./tauriCheck";
 import { useDebouncedValue } from "./useDebouncedValue";
 import {

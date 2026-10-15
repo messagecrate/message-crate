@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import { invokeLowDiskSpace } from "./desktop/staging";
 import { keys } from "./queryKeys";
-import { invokeLowDiskSpace } from "./tauri";
 import { isTauri } from "./tauriCheck";
 
 /**

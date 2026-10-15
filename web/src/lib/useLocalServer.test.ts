@@ -12,8 +12,8 @@ vi.mock("./localServer", async (importOriginal) => ({
   startLocalServer: () => startLocalServer(),
 }));
 
-vi.mock("./tauri", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./tauri")>()),
+vi.mock("./desktop/localServer", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./desktop/localServer")>()),
   invokeLocalServerStatus: () => invokeLocalServerStatus(),
 }));
 

@@ -1,5 +1,5 @@
+import type { PathStat } from "../../lib/desktop/fs";
 import type { ActiveImportRun, SourceFingerprint } from "../../lib/importRun";
-import type { PathStat } from "../../lib/tauri";
 
 /** What entering Import should do about an Import Run that already exists. */
 export type ResumeDecision = {

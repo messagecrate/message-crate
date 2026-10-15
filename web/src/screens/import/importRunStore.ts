@@ -2,10 +2,11 @@ import { useCallback } from "react";
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
 import { getAccountId, onAccountIdChange } from "../../lib/api";
 import { useAuth } from "../../lib/authContext";
+import type { StagingSummary } from "../../lib/desktop/staging";
 import { holdDesktopJob } from "../../lib/desktopJob";
 import { createExternalStore, useExternalStore } from "../../lib/externalStore";
 import type { ImportJobFormValues } from "../../lib/importSources/types";
-import type { MediaToolName, StagingSummary } from "../../lib/tauri";
+import type { MediaToolName } from "../../lib/types";
 import { type ImportPhase, type ImportStep, stepsFor } from "./importProgressState";
 
 /** A run directory Message Crate could not delete, and the reason it gave. */
