@@ -160,7 +160,7 @@ fn cause_line(said: &str) -> Option<&str> {
         .rev()
         .find(|line| !is_consequence(line))
         .or_else(|| lines.clone().find(|line| !is_x265_report(line)))
-        .or_else(|| lines.last())
+        .or_else(|| lines.clone().next_back())
 }
 
 /// `err` on one line, with its whole chain, and each file a failed ffmpeg
