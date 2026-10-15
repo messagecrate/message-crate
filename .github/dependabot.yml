@@ -84,7 +84,8 @@ updates:
       - dependency-name: node
         update-types: ["version-update:semver-major"]
 
-  # CI workflows
+  # CI workflows. Every uses: is pinned to a commit SHA with its tag in a
+  # trailing comment; Dependabot updates the SHA and the comment together.
   - package-ecosystem: github-actions
     directory: /
     schedule:
