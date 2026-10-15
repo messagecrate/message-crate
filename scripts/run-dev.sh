@@ -267,7 +267,9 @@ fi
 # unclaimed, which is the only way to reach the Create Owner screen in dev.
 if [[ "${OWNER}" -eq 1 ]]; then
   echo "Claiming the Message Crate as admin/admin…"
-  server_cli create-owner --config "${CONFIG}" --username admin --password admin \
+  # The password goes in on standard input: create-owner takes none as an
+  # argument, because `ps` would show it.
+  printf 'admin\n' | server_cli create-owner --config "${CONFIG}" --username admin \
     || echo "create-owner did not set the owner, perhaps because this Message Crate is already claimed, so it is left as it is"
 fi
 
