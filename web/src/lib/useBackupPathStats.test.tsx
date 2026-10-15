@@ -9,6 +9,7 @@ import { Providers } from "../test/providers";
 import { createQueryClient } from "./routeQuery";
 import {
   PATH_PROBE_DEBOUNCE_MS,
+  useAndroidSmsPathStats,
   useImessagePathStats,
   useWhatsappPathStats,
 } from "./useBackupPathStats";
@@ -170,5 +171,27 @@ describe("useWhatsappPathStats", () => {
     await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
     expect(desktop.encrypted).toHaveBeenCalledWith("/ios");
     expect(view.result.current.backupEncrypted).toBe(true);
+  });
+});
+
+describe("useAndroidSmsPathStats", () => {
+  type AndroidProps = { source: string; backupPath: string };
+
+  // SMS Backup & Restore takes a file and the other Android sources a
+  // directory, so the form needs to know which one the path is (#2029).
+  it("checks an Android SMS backup path, and asks nothing for another source", async () => {
+    desktop.paths.set("/sms", "directory");
+    const view = renderHook((paths: AndroidProps) => useAndroidSmsPathStats(paths), {
+      initialProps: { source: "sms-backup-restore", backupPath: "/sms" },
+      wrapper: Providers,
+    });
+    await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
+    expect(view.result.current.backup).toEqual(DIRECTORY);
+
+    desktop.pathStat.mockClear();
+    view.rerender({ source: "imessage-ios", backupPath: "/sms" });
+    await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
+    expect(desktop.pathStat).not.toHaveBeenCalled();
+    expect(view.result.current.backup).toBeNull();
   });
 });

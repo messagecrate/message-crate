@@ -37,6 +37,11 @@ export type ImessagePathsKey = {
 };
 
 /** The Import form's WhatsApp method and paths, as one path check reads them. */
+export type AndroidSmsPathsKey = {
+  source: string;
+  backupPath: string;
+};
+
 export type WhatsappPathsKey = {
   source: string;
   backupPath: string;
@@ -216,5 +221,10 @@ export const keys = {
   desktopWhatsappPaths: {
     all: ["desktop", "whatsapp-paths"] as const,
     of: (paths: WhatsappPathsKey) => ["desktop", "whatsapp-paths", paths] as const,
+  },
+  /** What the Android SMS backup path of the Import form points at, one entry per source and path. */
+  desktopAndroidSmsPaths: {
+    all: ["desktop", "android-sms-paths"] as const,
+    of: (paths: AndroidSmsPathsKey) => ["desktop", "android-sms-paths", paths] as const,
   },
 };

@@ -35,7 +35,11 @@ import {
   useFetchAccountProfile,
   useUpdateAccountProfile,
 } from "../lib/useAccountProfile";
-import { useImessagePathStats, useWhatsappPathStats } from "../lib/useBackupPathStats";
+import {
+  useAndroidSmsPathStats,
+  useImessagePathStats,
+  useWhatsappPathStats,
+} from "../lib/useBackupPathStats";
 import BackupIdentityList from "./import/BackupIdentityList";
 import BackupIdentityStopScreen from "./import/BackupIdentityStopScreen";
 import { restoreFormFromSnapshot, snapshotSecret } from "./import/formSnapshot";
@@ -196,6 +200,7 @@ export default function ImportScreen() {
     media: whatsappMedia,
     db: whatsappDb,
   });
+  const androidSmsStats = useAndroidSmsPathStats({ source, backupPath });
   const [backupPassword, setBackupPassword] = useState("");
   const [showBackupPassword, setShowBackupPassword] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentChoices>(DEFAULT_ATTACHMENT_CHOICES);
@@ -667,6 +672,7 @@ export default function ImportScreen() {
             setWhatsappOwnerPhone(value);
           }}
           whatsappStats={whatsappStats}
+          androidSmsStats={androidSmsStats}
           attachments={attachments}
           onAttachmentsChange={setAttachments}
           ownerPhones={ownerPhones}

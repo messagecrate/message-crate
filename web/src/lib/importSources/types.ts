@@ -1,4 +1,5 @@
 import type { ImportSourceId } from "../exportSources";
+import type { AndroidSmsPathStats } from "./androidSms";
 import type { ImessagePathStats } from "../imessageImport";
 import type { ImporterExtraField } from "../systemSettings";
 import type { AttachmentChoices, ExtractConfig } from "../types";
@@ -118,6 +119,8 @@ export type ReadinessInput = {
   /** The holder's WhatsApp number: required on Android, a fallback on iPhone. */
   whatsappOwnerPhone: string;
   whatsappStats: WhatsappPathStats;
+  /** What the Android SMS backup path points at. */
+  androidSmsStats: AndroidSmsPathStats;
   ownerPhones: string[];
   /** Owner email addresses as typed (SMS Backup+ only); commas separate several. */
   ownerEmails: string;
@@ -139,7 +142,7 @@ type Readiness = {
  * `screens/import/formSections/`, because it renders the source's fields.
  * The exception is the Import screen's path checks, which run as the paths
  * are typed. Each check fills its own source's stats (`pathStats`,
- * `whatsappStats`), which the source's readiness and form section read. A
+ * `whatsappStats`, `androidSmsStats`), which the source's readiness and form section read. A
  * source that checks its paths adds its check and its stats to the Import
  * screen.
  *

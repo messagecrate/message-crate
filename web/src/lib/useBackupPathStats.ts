@@ -1,8 +1,18 @@
 import { type QueryKey, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
+import {
+  ANDROID_SMS_NO_STATS,
+  type AndroidSmsPathStats,
+  isAndroidSmsSource,
+} from "./importSources/androidSms";
 import { emptyImessagePathStats, type ImessagePathStats, isImessageMethod } from "./imessageImport";
 import { probePath } from "./pathChecks";
-import { type ImessagePathsKey, keys, type WhatsappPathsKey } from "./queryKeys";
+import {
+  type AndroidSmsPathsKey,
+  type ImessagePathsKey,
+  keys,
+  type WhatsappPathsKey,
+} from "./queryKeys";
 import { invokeIosBackupEncrypted } from "./tauri";
 import { isTauri } from "./tauriCheck";
 import { useDebouncedValue } from "./useDebouncedValue";
@@ -149,5 +159,20 @@ export function useWhatsappPathStats(paths: WhatsappPathsKey): WhatsappPathStats
     },
     empty: NO_WHATSAPP_STATS,
     keepWhileTyping: false,
+  });
+}
+
+/**
+ * What the backup path of an Android SMS source points at: one `.xml` file
+ * for SMS Backup & Restore, a directory for the others. Another source
+ * starts empty, because each takes another kind of path.
+ */
+export function useAndroidSmsPathStats(paths: AndroidSmsPathsKey): AndroidSmsPathStats {
+  return useSettledPathProbe<AndroidSmsPathsKey, AndroidSmsPathStats>(paths, {
+    key: keys.desktopAndroidSmsPaths.of,
+    isMethod: isAndroidSmsSource,
+    probe: async (settled) => ({ backup: await probePath(settled.backupPath) }),
+    empty: ANDROID_SMS_NO_STATS,
+    keepWhileTyping: true,
   });
 }
