@@ -685,3 +685,24 @@ async fn count_entries(conn: &mut SqliteConnection) -> i64 {
         .await
         .unwrap()
 }
+
+/// An entry written outside a request, as a server command and the first
+/// start's Demo Account build write theirs, has no request id (#2276).
+#[tokio::test]
+async fn an_entry_written_outside_a_request_has_no_request_id() {
+    let fixture = test_fixture().await;
+    let mut conn = fixture.conn().await;
+    let now = crate::test_support::fixed_instant();
+    record_demo_build(
+        &mut conn,
+        AuditActor::CommandLine,
+        DemoDataSize::Medium,
+        now,
+    )
+    .await
+    .unwrap();
+    let (items, _) = page(&mut conn, Scope::All, 10, 0, now).await.unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].action, AuditAction::DemoAccountAdded);
+    assert_eq!(items[0].request_id, None);
+}

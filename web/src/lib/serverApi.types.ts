@@ -2067,6 +2067,14 @@ export interface components {
             /** @description `session_ended`: how the Session ended. `login_refused`: why. */
             reason: components["schemas"]["AuditReason"] | null;
             /**
+             * @description The id of the request that wrote the entry, as its response's
+             *     `x-request-id` and the request's lines in the server's log carry it.
+             *     `null` for an entry written outside a request, by a server command or
+             *     the Demo Account build of the server's first start, and for a run and
+             *     a session that expired, which no one request wrote.
+             */
+            request_id: string | null;
+            /**
              * @description An Export Run: `everything`, `query` or `selection`. Never the query
              *     or the picked ids.
              */
@@ -4256,6 +4264,14 @@ export interface components {
                 permissions_removed: components["schemas"]["Permission"][] | null;
                 /** @description `session_ended`: how the Session ended. `login_refused`: why. */
                 reason: components["schemas"]["AuditReason"] | null;
+                /**
+                 * @description The id of the request that wrote the entry, as its response's
+                 *     `x-request-id` and the request's lines in the server's log carry it.
+                 *     `null` for an entry written outside a request, by a server command or
+                 *     the Demo Account build of the server's first start, and for a run and
+                 *     a session that expired, which no one request wrote.
+                 */
+                request_id: string | null;
                 /**
                  * @description An Export Run: `everything`, `query` or `selection`. Never the query
                  *     or the picked ids.
