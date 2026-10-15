@@ -329,7 +329,7 @@ The product has two pieces:
 | Website                | Same `web/` SPA. Dev server on port 5173. Production copy in `static/`, served by the server on port 8080.                        |
 | Node                   | Node.js 24 for `web/`, `docs/`, the CI jobs that build them, and the Docker frontend build. `.nvmrc` holds the major and every workflow that installs Node.js reads it. `scripts/check-docker-context.sh` fails when the Dockerfile's frontend-builder stage is on another Node.js major. |
 | Docs site              | Astro 7 + Starlight, published to GitHub Pages at messagecrate.app on each `v*` release tag.                                            |
-| Packaging              | Docker (Node.js 24 frontend build, Rust build, Debian runtime). GitHub Actions on `v*` tags builds the image and Tauri installers. |
+| Packaging              | Docker (Node.js 24 frontend build, Rust build, Debian 12 runtime). GitHub Actions on `v*` tags builds the image and Tauri installers. |
 | Helpers                | `ffmpeg` / `ffprobe` for media, on PATH or in the Tools Directory (`~/message-crate/tools`). `wtsexporter` for WhatsApp, downloaded by the app into the Tools Directory (a `pipx` install linked there where the app has no download, such as Linux on ARM). `gh` for GitHub. `imessage-reader` and `message-crate-server` are bundled beside the app, not on PATH (`src-tauri/build.rs` builds both). |
 | Not the product path   | Restored Next.js 16 browse app (`web-next/`), an HTTP client of the server's `/v1` API for evaluating its screens. Kept on purpose; see CLAUDE.md before proposing its removal. |
 
