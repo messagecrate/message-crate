@@ -37,7 +37,10 @@ enum SourceFlavor {
     Whatsapp,
 }
 
-/// Counts of contacts, conversations, messages, and attachments written this run.
+/// What one run wrote: counts of contacts, conversations, messages, and
+/// attachments, and the warnings of anything that went wrong without stopping
+/// it. The warnings ride with the counts so every caller that reports the
+/// counts reports the warnings in the same place (#2903).
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct GenStats {
     /// Contacts invented.

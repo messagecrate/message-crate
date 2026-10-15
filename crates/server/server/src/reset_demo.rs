@@ -458,7 +458,9 @@ fn generate_demo_data(
     Ok(stats)
 }
 
-/// Say each warning in `stats` through `progress`.
+/// Say each warning in `stats` through `progress`. Kept apart from
+/// [`generate_demo_data`] so a test can hand it a warning: the generator
+/// returns one only when the file system refuses to remove a directory.
 fn say_generator_warnings(stats: &demo_seed::GenStats, progress: Progress) {
     for warning in &stats.warnings {
         progress.warn(warning);
@@ -1320,9 +1322,9 @@ async fn last_audit_entry(conn: &mut sqlx::SqliteConnection) -> Result<i64> {
 /// entries and runs keep no account id; they name the `account_deleted`
 /// entry instead (ADR 0020). An `account_deleted` entry after
 /// `last_entry_before_reset`, the last entry of the active database, is the
-/// one the reset wrote when it deleted the Demo Account; the reset's own
-/// `demo_account_reset` entry, written just before, is among the entries it
-/// unlinked. The entry of a reset that added the Demo Account names no
+/// one the reset wrote when it deleted the Demo Account. The reset's own
+/// `demo_account_reset` entry, written just before, is among the entries
+/// that deletion unlinked. The entry of a reset that added the Demo Account names no
 /// deletion ([`build_recorded_by_reset_sql`]).
 #[derive(Debug, Clone, Copy)]
 struct DemoRows {

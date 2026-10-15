@@ -3018,34 +3018,37 @@ async fn audit_entries_of(db: &Path) -> Vec<BuildEntry> {
 /// Assert that `entry` records a Demo Account build: `action` by `actor`
 /// with the `size` set, about no account.
 fn assert_build_entry(entry: &BuildEntry, action: &str, actor: &str, size: &str) {
-    assert_build_entry_about(entry, action, actor, size, (None, None, None));
+    assert_build_action(entry, action, actor, size);
+    assert_eq!(
+        (entry.account_id, &entry.username, entry.deletion_entry_id),
+        (None, &None, None),
+        "the build's entry is about no account: {entry:#?}"
+    );
 }
 
-/// Assert that `entry` records a Demo Account build: `action` by `actor`
-/// with the `size` set, with the account id, username and deletion entry
-/// `about`.
-fn assert_build_entry_about(
-    entry: &BuildEntry,
-    action: &str,
-    actor: &str,
-    size: &str,
-    about: (Option<i64>, Option<&str>, Option<i64>),
-) {
+/// Assert that `reset` records a reset of the Demo Account by `actor` with
+/// the `size` set, filed in the record of the account that `deleted`, its
+/// `account_deleted` entry, removed.
+fn assert_reset_filed_with(reset: &BuildEntry, deleted: &BuildEntry, actor: &str, size: &str) {
+    assert_build_action(reset, "demo_account_reset", actor, size);
+    assert_eq!(reset.account_id, None, "{reset:#?}");
+    assert_eq!(reset.username, deleted.username, "{reset:#?}");
+    assert_eq!(
+        reset.deletion_entry_id,
+        Some(deleted.id),
+        "the reset is filed with the account it replaced: {reset:#?}"
+    );
+}
+
+/// Assert that `entry` is `action` by `actor` with the `size` set of Demo
+/// Data.
+fn assert_build_action(entry: &BuildEntry, action: &str, actor: &str, size: &str) {
     assert_eq!(
         (entry.action.as_str(), entry.actor.as_str()),
         (action, actor),
         "{entry:#?}"
     );
     assert_eq!(entry.demo_data_size.as_deref(), Some(size), "{entry:#?}");
-    assert_eq!(
-        (
-            entry.account_id,
-            entry.username.as_deref(),
-            entry.deletion_entry_id
-        ),
-        about,
-        "{entry:#?}"
-    );
 }
 
 /// Assert that `entry` is an `account_deleted` entry written by `actor`.
@@ -3083,13 +3086,7 @@ async fn the_reset_demo_command_records_its_reset_before_the_deletion() {
         panic!("a reset and a deletion: {entries:#?}");
     };
     assert_deletion(deleted, "command_line");
-    assert_build_entry_about(
-        reset,
-        "demo_account_reset",
-        "command_line",
-        "large",
-        (None, deleted.username.as_deref(), Some(deleted.id)),
-    );
+    assert_reset_filed_with(reset, deleted, "command_line", "large");
 }
 
 /// A reset from Owner Home and a reset by `reset-demo` each leave their
@@ -3144,28 +3141,8 @@ async fn owner_home_and_reset_demo_file_their_resets_alike() {
     };
     assert_deletion(owner_deleted, "owner");
     assert_deletion(command_deleted, "command_line");
-    assert_build_entry_about(
-        owner_reset,
-        "demo_account_reset",
-        "owner",
-        "medium",
-        (
-            None,
-            owner_deleted.username.as_deref(),
-            Some(owner_deleted.id),
-        ),
-    );
-    assert_build_entry_about(
-        command_reset,
-        "demo_account_reset",
-        "command_line",
-        "large",
-        (
-            None,
-            command_deleted.username.as_deref(),
-            Some(command_deleted.id),
-        ),
-    );
+    assert_reset_filed_with(owner_reset, owner_deleted, "owner", "medium");
+    assert_reset_filed_with(command_reset, command_deleted, "command_line", "large");
 }
 
 /// `reset-demo` on a database with no Demo Account adds one, and records the

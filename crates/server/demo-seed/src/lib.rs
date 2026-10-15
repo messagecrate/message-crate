@@ -492,7 +492,7 @@ where
 
     Ok(remove_backup(&backup).err().map(|cleanup_error| {
         format!(
-            "The newly generated demo files are in place, but the backup of the previous ones at {} could not be removed: {cleanup_error}",
+            "The new Demo Data files are in place, but the backup of the previous ones at {} could not be removed: {cleanup_error}",
             backup.display()
         )
     }))
