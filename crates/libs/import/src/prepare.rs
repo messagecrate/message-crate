@@ -8,7 +8,9 @@
 //! mutable state is the journal behind a mutex.
 
 use message_crate_api_types::ImportMode;
+use std::any::Any;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
@@ -955,12 +957,36 @@ impl PrepareQueue {
         workers: usize,
         capacity: usize,
     ) -> Self {
+        Self::start_with(
+            scope,
+            workers,
+            capacity,
+            move |path, name| match prepare_file(ctx, path, name) {
+                Ok(prepared) => PrepareOutcome::Prepared(prepared),
+                Err(_) if ctx.session.check_stop().is_err() => PrepareOutcome::Stopped,
+                Err(error) => PrepareOutcome::Failed(format!("{error:#}")),
+            },
+        )
+    }
+
+    /// Spawn `workers` threads inside `scope` that run `prepare` on each job.
+    fn start_with<'scope, 'env, F>(
+        scope: &'scope Scope<'scope, 'env>,
+        workers: usize,
+        capacity: usize,
+        prepare: F,
+    ) -> Self
+    where
+        F: Fn(&Path, &str) -> PrepareOutcome + Send + Sync + 'scope,
+    {
         let (job_tx, job_rx) = mpsc::sync_channel::<Option<PrepareJob>>(capacity);
         let (result_tx, result_rx) = mpsc::channel::<PrepareResult>();
         let job_rx = Arc::new(Mutex::new(job_rx));
+        let prepare = Arc::new(prepare);
         for _ in 0..workers {
             let result_tx = result_tx.clone();
             let job_rx = Arc::clone(&job_rx);
+            let prepare = Arc::clone(&prepare);
             scope.spawn(move || {
                 loop {
                     let job = {
@@ -970,11 +996,19 @@ impl PrepareQueue {
                     let Some(job) = job else {
                         break;
                     };
-                    let outcome = match prepare_file(ctx, &job.path, &job.name) {
-                        Ok(prepared) => PrepareOutcome::Prepared(prepared),
-                        Err(_) if ctx.session.check_stop().is_err() => PrepareOutcome::Stopped,
-                        Err(error) => PrepareOutcome::Failed(format!("{error:#}")),
-                    };
+                    // A panic still answers the job, as a failed conversation:
+                    // the import loop waits for every index in order, and the
+                    // other workers keep the result channel open, so a job
+                    // without an answer would hang the Upload.
+                    let outcome =
+                        panic::catch_unwind(AssertUnwindSafe(|| prepare(&job.path, &job.name)))
+                            .unwrap_or_else(|payload| {
+                                PrepareOutcome::Failed(format!(
+                                    "preparing {} panicked: {}",
+                                    job.name,
+                                    panic_message(payload.as_ref())
+                                ))
+                            });
                     let _ = result_tx.send(PrepareResult {
                         idx: job.idx,
                         name: job.name,
@@ -1040,7 +1074,8 @@ impl PrepareQueue {
     ///
     /// # Errors
     ///
-    /// Returns an error when every worker has exited (a worker panicked).
+    /// Returns an error when every worker has exited, which a panic in a
+    /// prepare never causes: the worker answers that job as failed.
     pub(crate) fn wait_one(&mut self) -> Result<()> {
         let result = self
             .result_rx
@@ -1064,6 +1099,15 @@ impl PrepareQueue {
         }
         leftovers
     }
+}
+
+/// The text a panic was raised with, or a placeholder when it carried none.
+fn panic_message(payload: &(dyn Any + Send)) -> &str {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("no message")
 }
 
 #[cfg(test)]
@@ -1240,5 +1284,46 @@ mod tests {
             .flat_map(|c| c.messages.iter().map(|m| m.guid.as_str()))
             .collect();
         assert_eq!(guids, vec!["g0", "g1", "g2", "g3", "g4"]);
+    }
+
+    /// A prepare that panics on one conversation still hands back a result
+    /// for it, as a failure, so the Upload goes on. Without one, the import
+    /// loop waited for that result forever while the other workers held the
+    /// channel open (#2087). Shutting the pool down collects every result
+    /// without waiting on a missing one.
+    #[test]
+    fn a_panicking_prepare_reports_that_conversation_as_failed() {
+        let results = std::thread::scope(|scope| {
+            let mut queue = PrepareQueue::start_with(scope, 3, 4, |_path, name| {
+                assert_ne!(name, "b.jsonl", "prepare blew up");
+                PrepareOutcome::Skipped
+            });
+            for (idx, name) in ["a.jsonl", "b.jsonl", "c.jsonl"].into_iter().enumerate() {
+                queue.submit(idx, PathBuf::from(name), name.to_owned());
+            }
+            queue.shutdown()
+        });
+
+        let mut outcomes: Vec<(usize, String)> = results
+            .into_iter()
+            .map(|result| {
+                let outcome = match result.outcome {
+                    PrepareOutcome::Skipped => "skipped".to_owned(),
+                    PrepareOutcome::Failed(error) => error,
+                    _ => "other".to_owned(),
+                };
+                (result.idx, outcome)
+            })
+            .collect();
+        outcomes.sort();
+        assert_eq!(outcomes.len(), 3, "every conversation gets a result");
+        assert_eq!(outcomes[0], (0, "skipped".to_owned()));
+        assert!(
+            outcomes[1].1.starts_with("preparing b.jsonl panicked: ")
+                && outcomes[1].1.contains("prepare blew up"),
+            "{:?}",
+            outcomes[1]
+        );
+        assert_eq!(outcomes[2], (2, "skipped".to_owned()));
     }
 }

@@ -791,6 +791,11 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-15: **A conversation that crashes its preparation no longer hangs
+  the Upload.** When preparing one conversation for an Upload crashed, the
+  Upload waited for it forever and Cancel could not end it. That
+  conversation is now reported as failed, with the crash's message, and the
+  Upload goes on to the rest (#2087).
 - 2026-10-15: **Other users of the computer can no longer read a staged
   Import Run.** Each Import Run's directory in the Staging Directory, which
   holds the conversations and attachments it staged until the run ends, could
