@@ -667,7 +667,7 @@ Book Club,2020-01-01 12:01:00,iMessage,Incoming,+15555550122,Bob,Read,,,Hey,,,\n
         assert_eq!(documents.len(), 1, "{rows}");
         assert_eq!(
             documents[0].conversation.conversation_type,
-            message_ir::IrConversationType::Group,
+            message_ir::ConversationType::Group,
             "{rows}"
         );
     }
@@ -781,7 +781,7 @@ Alice Example & Bob Example,2020-01-01 12:01:00,iMessage,Outgoing,,,Sent,,,Hey,,
     let conversation = &documents[0].conversation;
     assert_eq!(
         conversation.conversation_type,
-        message_ir::IrConversationType::Group
+        message_ir::ConversationType::Group
     );
     assert!(
         conversation
@@ -1144,7 +1144,7 @@ Bob,2020-01-01 12:01:00,iMessage,Incoming,{second},Bob,Read,,,From the other,,,\
         let conversation = &documents[0].conversation;
         assert_eq!(
             conversation.conversation_type,
-            message_ir::IrConversationType::Individual,
+            message_ir::ConversationType::Individual,
             "{second}"
         );
         assert_eq!(conversation.chat_identifier, "+15555550122", "{second}");
@@ -1258,7 +1258,7 @@ Climbing,2020-01-01 12:01:00,,Incoming,+15555550122,Chris,Read,,Hey,\n"
     let conversation = &documents[0].conversation;
     assert_eq!(
         conversation.conversation_type,
-        message_ir::IrConversationType::Group
+        message_ir::ConversationType::Group
     );
     assert_eq!(conversation.participants.len(), 2);
 }

@@ -5,6 +5,7 @@ import { setBaseUrl } from "../lib/api";
 import { errorLine } from "../lib/apiErrorMessage";
 import { useAuth } from "../lib/authContext";
 import { DEFAULT_TAURI_SERVER_URL, initialLoginServerUrl } from "../lib/authGuards";
+import { invokeOpenDataDirectory, type LocalServerStatus } from "../lib/desktop/localServer";
 import { isOwnAddress } from "../lib/localServer";
 import { isPlainHttpOverNetwork } from "../lib/plainHttp";
 import {
@@ -12,7 +13,6 @@ import {
   checkServerHealthWithRetry,
   type ServerHealthStatus,
 } from "../lib/serverHealth";
-import { invokeOpenDataDirectory, type LocalServerStatus } from "../lib/tauri";
 import { isTauri } from "../lib/tauriCheck";
 import {
   accentLinkClass,

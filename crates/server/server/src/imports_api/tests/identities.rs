@@ -30,8 +30,8 @@ fn whatsapp_group_with_a_name_only_member() -> String {
             .participant("+15555550124", Some("Bo"))
             .participant_without_identity(Some("Sarah Vale")),
         message_line("g-hikes-1105", "hi")
-            .service(IrService::Whatsapp)
-            .kind(IrMessageKind::Unknown)
+            .service(Transport::Whatsapp)
+            .kind(MessageKind::Unknown)
             .sender_display_name("Sarah Vale")
             .line(),
     )

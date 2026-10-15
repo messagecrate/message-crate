@@ -276,7 +276,7 @@ pub fn write_documents_through_sink(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_ir::IrAttachment;
+    use message_ir::Attachment;
     use std::fs;
 
     #[test]
@@ -322,7 +322,7 @@ mod tests {
         for chat in ["chat1", "chat2"] {
             let mut doc = message_ir::testutil::sample_document(chat);
             doc.conversation.chat_identifier = chat.into();
-            doc.conversation.conversation_type = message_ir::IrConversationType::Group;
+            doc.conversation.conversation_type = message_ir::ConversationType::Group;
             doc.conversation.group_title = Some("Family".into());
             sink.write_document(doc).unwrap();
         }
@@ -429,7 +429,7 @@ mod tests {
             fs::write(tmp.path().join(rel), b"\xff\xd8\xffjpeg-bytes").unwrap();
 
             let mut doc = message_ir::testutil::sample_document("with media");
-            doc.messages[0].attachments = vec![IrAttachment {
+            doc.messages[0].attachments = vec![Attachment {
                 path: Some(rel.into()),
                 ..message_ir::testutil::sample_attachment()
             }];

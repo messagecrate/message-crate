@@ -142,11 +142,11 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
         .participant(CONTACT_EMAIL, Some(CONTACT_NAME));
     let message = message_line("g-1", MESSAGE_TEXT)
         .at(1_700_000_000_000)
-        .service(message_ir::IrService::Whatsapp)
-        .kind(message_ir::IrMessageKind::Sms)
+        .service(message_ir::Transport::Whatsapp)
+        .kind(message_ir::MessageKind::Sms)
         .sender(CONTACT_PHONE)
         .sender_display_name(CONTACT_NAME)
-        .attachment(message_ir::IrAttachment {
+        .attachment(message_ir::Attachment {
             digest_sha256: Some(sha256.clone()),
             ..attachment(
                 "attachments/photo.bin",
@@ -341,8 +341,8 @@ async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_stand
         .participant(CONTACT_PHONE, Some(CONTACT_NAME));
     let message = message_line("g-1", MESSAGE_TEXT)
         .at(1_700_000_000_000)
-        .service(message_ir::IrService::Whatsapp)
-        .kind(message_ir::IrMessageKind::Sms)
+        .service(message_ir::Transport::Whatsapp)
+        .kind(message_ir::MessageKind::Sms)
         .sender(CONTACT_PHONE);
     let batch = format!("{}{}", header.line(), message.line()).into_bytes();
     let (status, answer) = call(

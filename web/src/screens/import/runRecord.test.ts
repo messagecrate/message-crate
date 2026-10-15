@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { ImportIssue } from "../../components/import/ImportSummaryPanel";
-import type { UploadFinishedReport } from "../../lib/tauri";
+import type { UploadFinishedReport } from "../../lib/desktop/upload";
 import { nth } from "../../test/nth";
 import {
   EMPTY_RUN_RECORD,

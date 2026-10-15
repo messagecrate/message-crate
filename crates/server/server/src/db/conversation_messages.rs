@@ -366,7 +366,7 @@ async fn mark_earlier_version_matches(
         let final_hits: Vec<i64> = (&mut *conn)
             .fetch_all(bind_all(sqlx::AssertSqlSafe(sql), &params))
             .await
-            .and_then(|rows| rows.iter().map(|row| row.try_get(0)).collect())
+            .and_then(|rows| rows.iter().map(|row| row.try_get("id")).collect())
             .context(
                 "find which edited messages on a page the search matches by their final text",
             )?;
@@ -383,10 +383,13 @@ async fn mark_earlier_version_matches(
     for chunk in only_earlier.chunks(SQLITE_IN_CHUNK) {
         // Each value is bound where its `?` is written.
         let mut sql = Sql::default();
-        sql.push("SELECT s.id, v.id IN (");
+        sql.push("SELECT s.id AS message_id, v.id IN (");
         sql.push(matching_sql);
         sql.params.extend_from_slice(matching_params);
-        sql.push(&format!(") {} WHERE s.id IN (", earlier_versions_from()));
+        sql.push(&format!(
+            ") AS matched {} WHERE s.id IN (",
+            earlier_versions_from()
+        ));
         for (i, id) in chunk.iter().enumerate() {
             if i > 0 {
                 sql.push(", ");
@@ -399,7 +402,12 @@ async fn mark_earlier_version_matches(
             .await
             .and_then(|rows| {
                 rows.iter()
-                    .map(|row| Ok((row.try_get(0)?, row.try_get::<i64, _>(1)? != 0)))
+                    .map(|row| {
+                        Ok((
+                            row.try_get("message_id")?,
+                            row.try_get::<i64, _>("matched")? != 0,
+                        ))
+                    })
                     .collect()
             })
             .context("read which earlier versions of a page's messages the search matches")?;
@@ -556,36 +564,36 @@ async fn fetch_message_page(
             rows.iter()
                 .map(|row| {
                     Ok(RawRow {
-                        id: row.try_get::<i64, _>(0)?,
-                        conversation_id: row.try_get(1)?,
-                        source: row.try_get(2)?,
-                        service: row.try_get(3)?,
-                        guid: row.try_get(4)?,
-                        timestamp: row.try_get(5)?,
-                        sort_order: row.try_get(6)?,
-                        is_from_me: row.try_get::<i64, _>(7)? != 0,
-                        sender: row.try_get(8)?,
-                        subject: row.try_get(9)?,
-                        body: row.try_get(10)?,
-                        is_announcement: row.try_get::<i64, _>(11)? != 0,
-                        reply_to: if row.try_get::<i64, _>(12)? != 0 {
+                        id: row.try_get::<i64, _>("id")?,
+                        conversation_id: row.try_get("conversation_id")?,
+                        source: row.try_get("source")?,
+                        service: row.try_get("service")?,
+                        guid: row.try_get("guid")?,
+                        timestamp: row.try_get("timestamp")?,
+                        sort_order: row.try_get("sort_order")?,
+                        is_from_me: row.try_get::<i64, _>("is_from_me")? != 0,
+                        sender: row.try_get("sender")?,
+                        subject: row.try_get("subject")?,
+                        body: row.try_get("body")?,
+                        is_announcement: row.try_get::<i64, _>("is_announcement")? != 0,
+                        reply_to: if row.try_get::<i64, _>("is_reply")? != 0 {
                             Some(ReplyTo {
-                                guid: row.try_get(13)?,
-                                part_index: row.try_get(14)?,
+                                guid: row.try_get("reply_to_guid")?,
+                                part_index: row.try_get("reply_to_part")?,
                             })
                         } else {
                             None
                         },
-                        reply_count: row.try_get(15)?,
-                        chat_identifier: row.try_get(16)?,
-                        conversation_type: row.try_get(17)?,
-                        group_title: row.try_get(18)?,
-                        owner: row.try_get(19)?,
-                        shown_title: row.try_get(20)?,
-                        deletion: row.try_get(21)?,
-                        backup_taken_at: row.try_get(22)?,
+                        reply_count: row.try_get("reply_count")?,
+                        chat_identifier: row.try_get("chat_identifier")?,
+                        conversation_type: row.try_get("conversation_type")?,
+                        group_title: row.try_get("group_title")?,
+                        owner: row.try_get("owner")?,
+                        shown_title: row.try_get("shown_title")?,
+                        deletion: row.try_get("deletion")?,
+                        backup_taken_at: row.try_get("backup_taken_at")?,
                         time_precision: {
-                            let stored: String = row.try_get(23)?;
+                            let stored: String = row.try_get("time_precision")?;
                             TimePrecision::parse(&stored).ok_or_else(|| {
                                 sqlx::Error::Decode(format!("time_precision {stored:?}").into())
                             })?
@@ -675,23 +683,23 @@ async fn load_attachments(
         },
         |row| {
             Ok((
-                row.try_get::<i64, _>(0)?,
+                row.try_get::<i64, _>("message_id")?,
                 Attachment {
-                    path: row.try_get(1)?,
-                    original_name: row.try_get(2)?,
-                    mime_type: row.try_get(3)?,
-                    sha256: row.try_get(4)?,
-                    is_sticker: row.try_get::<i64, _>(5)? != 0,
-                    transcription: row.try_get(6)?,
-                    missing_reason: row.try_get(7)?,
+                    path: row.try_get("path")?,
+                    original_name: row.try_get("original_name")?,
+                    mime_type: row.try_get("mime_type")?,
+                    sha256: row.try_get("sha256")?,
+                    is_sticker: row.try_get::<i64, _>("is_sticker")? != 0,
+                    transcription: row.try_get("transcription")?,
+                    missing_reason: row.try_get("missing_reason")?,
                     // Decided by the media pass and stored, so a read never
                     // runs ffprobe. NULL until the pass has looked, which
                     // reads as not shown as it is.
-                    shown_as_is: row.try_get::<Option<i64>, _>(10)?.is_some_and(|v| v != 0),
-                    preview_mime_type: row.try_get(8)?,
-                    preview_not_made_reason: row.try_get(11)?,
-                    thumbnail_mime_type: row.try_get(9)?,
-                    thumbnail_not_made_reason: row.try_get(12)?,
+                    shown_as_is: row.try_get::<Option<i64>, _>("shown_as_is")?.is_some_and(|v| v != 0),
+                    preview_mime_type: row.try_get("preview_mime_type")?,
+                    preview_not_made_reason: row.try_get("preview_not_made_reason")?,
+                    thumbnail_mime_type: row.try_get("thumbnail_mime_type")?,
+                    thumbnail_not_made_reason: row.try_get("thumbnail_not_made_reason")?,
                 },
             ))
         },
@@ -719,14 +727,14 @@ async fn load_tapbacks(
         },
         |row| {
             Ok((
-                row.try_get::<i64, _>(0)?,
+                row.try_get::<i64, _>("message_id")?,
                 Tapback {
-                    part_index: row.try_get(1)?,
-                    kind: row.try_get(2)?,
-                    emoji: row.try_get(3)?,
-                    is_from_me: row.try_get::<i64, _>(4)? != 0,
-                    sender: row.try_get(5)?,
-                    sender_display_name: row.try_get(6)?,
+                    part_index: row.try_get("part_index")?,
+                    kind: row.try_get("kind")?,
+                    emoji: row.try_get("emoji")?,
+                    is_from_me: row.try_get::<i64, _>("is_from_me")? != 0,
+                    sender: row.try_get("sender")?,
+                    sender_display_name: row.try_get("sender_display_name")?,
                 },
             ))
         },
@@ -825,7 +833,7 @@ async fn load_earlier_versions(
         message_ids,
         |placeholders| {
             format!(
-                "SELECT s.id, v.part_index, v.text, v.edited_at
+                "SELECT s.id AS message_id, v.part_index, v.text, v.edited_at
                  {from}
                  WHERE s.id IN ({placeholders})
                  ORDER BY {EARLIER_VERSION_ORDER}",
@@ -834,11 +842,11 @@ async fn load_earlier_versions(
         },
         |row| {
             Ok((
-                row.try_get::<i64, _>(0)?,
+                row.try_get::<i64, _>("message_id")?,
                 EarlierVersion {
-                    part_index: row.try_get(1)?,
-                    text: row.try_get(2)?,
-                    edited_at: row.try_get(3)?,
+                    part_index: row.try_get("part_index")?,
+                    text: row.try_get("text")?,
+                    edited_at: row.try_get("edited_at")?,
                     matched: false,
                 },
             ))
@@ -853,7 +861,7 @@ pub(crate) async fn count_matching_messages(
     filter: &crate::search::Filter,
 ) -> anyhow::Result<u64> {
     let sql = format!(
-        "SELECT COUNT(*)
+        "SELECT COUNT(*) AS count
          {messages_from_sql}
          WHERE {where_sql}",
         messages_from_sql = messages_from_sql(),
@@ -862,7 +870,7 @@ pub(crate) async fn count_matching_messages(
     let n: i64 = (&mut *conn)
         .fetch_one(bind_all(sqlx::AssertSqlSafe(sql), filter.params()))
         .await
-        .and_then(|row| row.try_get(0))
+        .and_then(|row| row.try_get("count"))
         .context("count the messages a search matches")?;
     Ok(n.max(0) as u64)
 }

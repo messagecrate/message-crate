@@ -28,8 +28,8 @@ vi.mock("../lib/localServer", async (importOriginal) => ({
   startLocalServer: () => startLocalServer(),
 }));
 
-vi.mock("../lib/tauri", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../lib/tauri")>()),
+vi.mock("../lib/desktop/localServer", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/desktop/localServer")>()),
   invokeLocalServerStatus: () => invokeLocalServerStatus(),
   invokeOpenDataDirectory: () => invokeOpenDataDirectory(),
 }));

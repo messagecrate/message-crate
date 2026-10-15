@@ -73,7 +73,7 @@ A group event (a member joined or left, the group was renamed or its picture cha
 
 Its sender is the member who acted, by the same rules as any group message's sender. `group_action_jid`, the id of the member the text names, is kept in `source.fields`. The fork writes `group_action` only for the kinds of event the backup states, and `null` for any other kind. An event of another kind has no `group_action` text. It is written as any other message, with its text built from `data` and `caption` as for any message.
 
-Discord, Signal, Telegram, and Slack are recognized services in the shared model (`IrService`), but no exporter parses those backup sources yet — they are future sources, listed as **no** until an exporter lands.
+Discord, Signal, Telegram, and Slack are recognized services in the shared model (each a value of `Transport`), but no exporter parses those backup sources yet — they are future sources, listed as **no** until an exporter lands.
 
 ## Technical docs
 

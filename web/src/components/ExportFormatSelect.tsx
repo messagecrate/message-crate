@@ -1,6 +1,6 @@
 import { ListBoxItem } from "react-aria-components";
+import { EXPORT_FORMATS, type ExportFormat } from "../lib/desktop/export";
 import { parseSelectKey } from "../lib/selectKey";
-import { EXPORT_FORMATS, type ExportFormat } from "../lib/tauri";
 import FormRow from "./FormRow";
 import Select, { selectItemClassName } from "./Select";
 

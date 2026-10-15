@@ -669,7 +669,7 @@ fn guid_of<'a>(document: &'a message_ir::ConversationDocument, text: &str) -> &'
 fn message_of<'a>(
     document: &'a message_ir::ConversationDocument,
     text: &str,
-) -> &'a message_ir::IrMessage {
+) -> &'a message_ir::Message {
     document
         .messages
         .iter()
@@ -820,7 +820,7 @@ fn reactions_are_on_the_message_under_the_reactors_id() {
 /// `data` as its text.
 #[test]
 fn a_group_event_with_a_text_is_an_announcement() {
-    use message_ir::{IrDirection, IrMessageKind};
+    use message_ir::{Direction, MessageKind};
     let fixture =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/group-events.json");
     let json: serde_json::Value =
@@ -832,7 +832,7 @@ fn a_group_event_with_a_text_is_an_announcement() {
         .values()
         .find(|document| document.conversation.group_title.as_deref() == Some("Book club"))
         .expect("the group");
-    let named_id = |message: &message_ir::IrMessage| {
+    let named_id = |message: &message_ir::Message| {
         message
             .source
             .as_ref()
@@ -859,15 +859,15 @@ fn a_group_event_with_a_text_is_an_announcement() {
         ),
     ] {
         let message = message_of(group, text);
-        assert_eq!(message.message_kind, IrMessageKind::Announcement, "{text}");
-        assert_eq!(message.direction, IrDirection::Incoming, "{text}");
+        assert_eq!(message.message_kind, MessageKind::Announcement, "{text}");
+        assert_eq!(message.direction, Direction::Incoming, "{text}");
         assert_eq!(message.sender_identity.as_deref(), Some(sender), "{text}");
         assert_eq!(named_id(message).as_deref(), Some(named), "{text}");
     }
 
     let by_owner = message_of(group, "You changed the group name to Reading club.");
-    assert_eq!(by_owner.message_kind, IrMessageKind::Announcement);
-    assert_eq!(by_owner.direction, IrDirection::Outgoing);
+    assert_eq!(by_owner.message_kind, MessageKind::Announcement);
+    assert_eq!(by_owner.direction, Direction::Outgoing);
     assert_eq!(
         named_id(by_owner),
         None,
@@ -876,7 +876,7 @@ fn a_group_event_with_a_text_is_an_announcement() {
 
     for text in ["Welcome, Ada", "An event the backup does not state"] {
         let message = message_of(group, text);
-        assert_eq!(message.message_kind, IrMessageKind::Sms, "{text}");
+        assert_eq!(message.message_kind, MessageKind::Sms, "{text}");
         assert_eq!(named_id(message), None, "{text}");
     }
     assert_eq!(group.messages.len(), 6);

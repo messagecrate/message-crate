@@ -34,7 +34,7 @@ pub fn conversation_header(source: &str, chat_identifier: &str) -> ConversationH
         },
         conversation: message_ir::ConversationMeta {
             chat_identifier: chat_identifier.to_string(),
-            conversation_type: message_ir::IrConversationType::Individual,
+            conversation_type: message_ir::ConversationType::Individual,
             group_title: None,
             participants: Vec::new(),
             stats: message_ir::ConversationStats::default(),
@@ -59,7 +59,7 @@ impl ConversationHeaderLine {
 
     /// A group conversation.
     pub fn group(mut self) -> Self {
-        self.0.conversation.conversation_type = message_ir::IrConversationType::Group;
+        self.0.conversation.conversation_type = message_ir::ConversationType::Group;
         self
     }
 
@@ -72,7 +72,7 @@ impl ConversationHeaderLine {
     /// An orphaned conversation: messages the backup holds without
     /// recording which conversation they were said in.
     pub fn orphaned(mut self) -> Self {
-        self.0.conversation.conversation_type = message_ir::IrConversationType::Orphaned;
+        self.0.conversation.conversation_type = message_ir::ConversationType::Orphaned;
         self
     }
 
@@ -103,7 +103,7 @@ impl ConversationHeaderLine {
         self.0
             .conversation
             .participants
-            .push(message_ir::IrParticipant {
+            .push(message_ir::Participant {
                 identity: identity.map(str::to_string),
                 display_name: display_name.map(str::to_string),
                 country: None,
@@ -139,17 +139,17 @@ impl std::fmt::Display for ConversationHeaderLine {
 /// reads a malformed or unusual line, or refuses one, writes that line out,
 /// because the line is the input under test.
 #[derive(Debug, Clone)]
-pub struct MessageLine(message_ir::IrMessage);
+pub struct MessageLine(message_ir::Message);
 
 /// A message line with the guid `guid` and the body `text`.
 pub fn message_line(guid: &str, text: &str) -> MessageLine {
-    MessageLine(message_ir::IrMessage {
+    MessageLine(message_ir::Message {
         guid: guid.to_string(),
         timestamp_unix_ms: 1_426_183_462_000,
         time_precision: message_ir::TimePrecision::Milliseconds,
-        direction: message_ir::IrDirection::Incoming,
-        service: message_ir::IrService::IMessage,
-        message_kind: message_ir::IrMessageKind::IMessage,
+        direction: message_ir::Direction::Incoming,
+        service: message_ir::Transport::IMessage,
+        message_kind: message_ir::MessageKind::IMessage,
         sender_identity: None,
         sender_display_name: None,
         sender_country: None,
@@ -182,30 +182,30 @@ impl MessageLine {
 
     /// Sent by the account holder.
     pub fn outgoing(mut self) -> Self {
-        self.0.direction = message_ir::IrDirection::Outgoing;
+        self.0.direction = message_ir::Direction::Outgoing;
         self
     }
 
     /// An SMS: the `sms` service and the `sms` kind.
     pub fn sms(self) -> Self {
-        self.service(message_ir::IrService::Sms)
-            .kind(message_ir::IrMessageKind::Sms)
+        self.service(message_ir::Transport::Sms)
+            .kind(message_ir::MessageKind::Sms)
     }
 
     /// An MMS: the `sms` service and the `mms` kind.
     pub fn mms(self) -> Self {
-        self.service(message_ir::IrService::Sms)
-            .kind(message_ir::IrMessageKind::Mms)
+        self.service(message_ir::Transport::Sms)
+            .kind(message_ir::MessageKind::Mms)
     }
 
     /// Carried by `service`. The kind stays as it was.
-    pub fn service(mut self, service: message_ir::IrService) -> Self {
+    pub fn service(mut self, service: message_ir::Transport) -> Self {
         self.0.service = service;
         self
     }
 
     /// Of the kind `kind`. The service stays as it was.
-    pub fn kind(mut self, kind: message_ir::IrMessageKind) -> Self {
+    pub fn kind(mut self, kind: message_ir::MessageKind) -> Self {
         self.0.message_kind = kind;
         self
     }
@@ -243,7 +243,7 @@ impl MessageLine {
     }
 
     /// One more attachment, after the ones already set.
-    pub fn attachment(mut self, attachment: message_ir::IrAttachment) -> Self {
+    pub fn attachment(mut self, attachment: message_ir::Attachment) -> Self {
         self.0.attachments.push(attachment);
         self
     }
@@ -277,7 +277,7 @@ impl MessageLine {
     }
 
     /// The Apple extensions.
-    pub fn imessage(mut self, imessage: message_ir::IrImessage) -> Self {
+    pub fn imessage(mut self, imessage: message_ir::ImessageExtensions) -> Self {
         self.0.imessage = Some(imessage);
         self
     }
@@ -297,9 +297,9 @@ impl std::fmt::Display for MessageLine {
 /// An attachment at `path` that the sender's device named `original_name`,
 /// of the MIME type `mime_type`: not a sticker, with no fingerprint, size,
 /// transcription or reason it is missing. A test sets any of those with
-/// struct update syntax, `IrAttachment { digest_sha256: …, ..attachment(…) }`.
-pub fn attachment(path: &str, original_name: &str, mime_type: &str) -> message_ir::IrAttachment {
-    message_ir::IrAttachment {
+/// struct update syntax, `Attachment { digest_sha256: …, ..attachment(…) }`.
+pub fn attachment(path: &str, original_name: &str, mime_type: &str) -> message_ir::Attachment {
+    message_ir::Attachment {
         path: Some(path.to_string()),
         original_name: Some(original_name.to_string()),
         mime_type: Some(mime_type.to_string()),

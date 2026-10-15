@@ -11,8 +11,8 @@ vi.mock("./serverApi", async (importOriginal) => ({
   listEveryImport: (...a: unknown[]) => listEveryImport(...a),
 }));
 
-vi.mock("./tauri", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./tauri")>()),
+vi.mock("./desktop/fs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./desktop/fs")>()),
   invokePathStat: (...a: unknown[]) => invokePathStat(...a),
   invokeHomeDir: (...a: unknown[]) => invokeHomeDir(...a),
 }));

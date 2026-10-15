@@ -1,5 +1,5 @@
+import { invokeCancel } from "./desktop/job";
 import { CanceledError } from "./desktopJobError";
-import { invokeCancel } from "./tauri";
 
 /**
  * The Cancel of one run of desktop jobs: an Import Run, or an Export's export step

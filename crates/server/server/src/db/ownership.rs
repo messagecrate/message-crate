@@ -103,7 +103,7 @@ pub async fn missing_ids(
         .await?;
     let found = rows
         .iter()
-        .map(|row| row.try_get::<i64, _>(0))
+        .map(|row| row.try_get::<i64, _>("id"))
         .collect::<Result<std::collections::HashSet<_>, _>>()?;
     let mut missing: Vec<i64> = ids
         .iter()

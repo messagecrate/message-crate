@@ -6,7 +6,7 @@ use axum::Router;
 
 use crate::logging::{LogLevel, LogLine};
 use crate::problem::ProblemType;
-use crate::server::with_server_layers;
+use crate::server::{AppState, with_server_layers};
 use crate::test_support::{expect_problem, test_fixture};
 use tempfile::TempDir;
 
@@ -468,7 +468,7 @@ async fn a_small_attachment_size_limit_holds_only_the_attachment_uploads() {
         &crate::test_support::message_line("g-1", &"a".repeat(4096))
             .at(1_700_000_000_000)
             .sms()
-            .service(message_ir::IrService::Whatsapp)
+            .service(message_ir::Transport::Whatsapp)
             .sender("+15555550107")
             .line(),
     );
@@ -579,7 +579,7 @@ async fn a_chunked_attachment_upload_over_the_limit_is_413() {
 async fn a_chunked_part_over_its_upload_part_size_is_413() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let mut state = fixture.state.clone();
-    state.asset_part_size = 16;
+    state.assets.part_size = 16;
     let server = crate::test_support::serve(&state).await;
     let sha = "0".repeat(64);
     let started: serde_json::Value = server

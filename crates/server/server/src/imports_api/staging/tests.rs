@@ -10,7 +10,7 @@ use crate::imports_api::records::AttachmentRecord;
 use crate::imports_api::{ImportError, ImportFailure};
 use crate::test_support::{attachment, conversation_header, import_for_account, message_line};
 use message_crate_api_types::ImportMode;
-use message_ir::{IrAttachment, IrMessageKind, IrService};
+use message_ir::{Attachment, MessageKind, Transport};
 
 const TEST_ACCOUNT: i64 = 7;
 
@@ -395,7 +395,7 @@ async fn a_file_that_does_not_match_its_claimed_sha256_fails_the_import_and_is_n
     let header = one_to_one_header();
     let message = message_line("g-mismatch", "hi")
         .sender("+15555550154")
-        .attachment(IrAttachment {
+        .attachment(Attachment {
             digest_sha256: Some(claimed_sha.to_string()),
             ..attachment("photo.bin", "photo.bin", "application/octet-stream")
         });
@@ -498,8 +498,8 @@ async fn a_file_with_neither_header_nor_messages_is_refused() {
 /// An incoming WhatsApp line from `sender`.
 fn incoming_whatsapp(guid: &str, sender: &str) -> String {
     message_line(guid, "hi")
-        .service(IrService::Whatsapp)
-        .kind(IrMessageKind::Unknown)
+        .service(Transport::Whatsapp)
+        .kind(MessageKind::Unknown)
         .sender(sender)
         .line()
 }
@@ -607,8 +607,8 @@ async fn a_whatsapp_conversation_is_on_whatsapp_whatever_its_source_is_named() {
 /// Apple Messages writes a message sent by satellite.
 fn incoming_unknown_service(guid: &str, sender: &str) -> String {
     message_line(guid, "hi")
-        .service(IrService::Unknown)
-        .kind(IrMessageKind::Unknown)
+        .service(Transport::Unknown)
+        .kind(MessageKind::Unknown)
         .sender(sender)
         .line()
 }
@@ -752,8 +752,8 @@ async fn an_import_writes_no_email_identity_on_whatsapp() {
         .participant("111111111111111@lid", None)
         .line()
         + &message_line("g-wa-1", "hi")
-            .service(IrService::Whatsapp)
-            .kind(IrMessageKind::Unknown)
+            .service(Transport::Whatsapp)
+            .kind(MessageKind::Unknown)
             .sender("15555550160@s.whatsapp.net")
             .owner_identity("15555550100@s.whatsapp.net")
             .reaction(message_ir::Reaction {

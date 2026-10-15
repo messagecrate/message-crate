@@ -1,5 +1,4 @@
 import type { components } from "./serverApi.types";
-import type { ToolName } from "./tauri";
 
 type Schema = components["schemas"];
 
@@ -105,6 +104,12 @@ export interface DesktopJobErrorEvent {
   /** Whether a Cancel stopped the job, rather than a failure. */
   canceled: boolean;
 }
+
+/** A program the desktop app keeps in its Tools Directory, as `tools_status` names it. */
+export type ToolName = "ffmpeg" | "ffprobe" | "wtsexporter";
+
+/** The programs Convert and Compress run. */
+export type MediaToolName = "ffmpeg" | "ffprobe";
 
 /**
  * One typed progress event from the desktop backend (`desktop-job:progress`).
