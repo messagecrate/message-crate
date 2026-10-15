@@ -1,23 +1,16 @@
-//! What a run does to its documents on the way out: media mode, obfuscation,
-//! and the sinks the write tail reports through.
+//! What a run does to its documents on the way out: whether it copies the
+//! attachment files, obfuscation, and the sinks the write tail reports
+//! through.
 
-use crate::config::{OutputConfig, RunContext};
+use crate::config::{AttachmentFiles, OutputConfig, RunContext};
 use crate::process::LogSink;
 use crate::progress::ProgressSink;
-use std::sync::Arc;
-
-use media::{CompressOptions, MediaMode, MediaTools, NoTools};
 
 /// The transforms a run applies at write time, handed to the format sink.
 #[derive(Debug, Clone)]
 pub struct ExportTransforms {
-    /// Media mode applied at finish (clone/convert/compress/disabled).
-    pub media: MediaMode,
-    /// Video/audio compression options used with Compress mode.
-    pub compress: CompressOptions,
-    /// The ffmpeg and ffprobe Convert and Compress run
-    /// ([`crate::MediaConfig::tools`]).
-    pub tools: Arc<dyn MediaTools>,
+    /// Whether the run copies the original attachment files.
+    pub media: AttachmentFiles,
     /// Whether to replace PII and media with obfuscated placeholders.
     pub obfuscate: bool,
     /// Seed for deterministic obfuscation; `None` generates one.
@@ -31,9 +24,7 @@ pub struct ExportTransforms {
 impl Default for ExportTransforms {
     fn default() -> Self {
         Self {
-            media: MediaMode::Clone,
-            compress: CompressOptions::default(),
-            tools: Arc::new(NoTools),
+            media: AttachmentFiles::Originals,
             obfuscate: false,
             obfuscate_seed: None,
             log: LogSink::none(),
@@ -50,8 +41,6 @@ impl ExportTransforms {
     pub fn new(context: &RunContext, output: &OutputConfig) -> Self {
         Self {
             media: output.media.mode,
-            compress: output.media.compress.clone(),
-            tools: Arc::clone(&output.media.tools),
             obfuscate: output.obfuscate_active(),
             obfuscate_seed: output.obfuscate.seed.clone(),
             log: context.log.clone(),
@@ -59,24 +48,17 @@ impl ExportTransforms {
         }
     }
 
-    /// All-defaults transform set (clone, no obfuscation, sinks that drop
-    /// what they get).
+    /// All-defaults transform set (copy the originals, no obfuscation, sinks
+    /// that drop what they get).
     pub fn none() -> Self {
         Self::default()
-    }
-
-    /// True when ffmpeg/ffprobe will be required (false when obfuscating,
-    /// which replaces media with placeholders).
-    pub fn needs_media_tools(&self) -> bool {
-        // Obfuscate replaces all media with placeholders — no ffmpeg work.
-        !self.obfuscate && self.media.needs_tools()
     }
 
     /// True when attachment bytes should be staged under `attachments/`
     /// (false when obfuscating).
     pub fn copies_attachments(&self) -> bool {
         // Obfuscate discards real bytes; skip staging them in the first place.
-        !self.obfuscate && self.media.copies_attachments()
+        !self.obfuscate && self.media.copies()
     }
 }
 
@@ -85,7 +67,6 @@ mod tests {
     use super::*;
     use crate::config::{MediaConfig, ObfuscateConfig, OutputFormat};
     use crate::progress::ProgressEvent;
-    use media::MaxResolution;
     use std::sync::{Arc, Mutex};
 
     fn output(obfuscate: ObfuscateConfig, media: MediaConfig) -> OutputConfig {
@@ -134,18 +115,11 @@ mod tests {
     }
 
     #[test]
-    fn new_carries_the_media_mode_compress_options_and_sinks() {
-        let compress = CompressOptions {
-            max_resolution: MaxResolution::P720,
-            max_fps: 24.0,
-            min_size_bytes: 1234,
-            skip_efficient: false,
-        };
+    fn new_carries_the_attachment_choice_and_sinks() {
         let out = output(
             ObfuscateConfig::default(),
             MediaConfig {
-                mode: MediaMode::Compress,
-                compress: compress.clone(),
+                mode: AttachmentFiles::Skip,
                 ..MediaConfig::default()
             },
         );
@@ -162,29 +136,25 @@ mod tests {
         t.log.emit("a line");
         t.progress.emit(ProgressEvent::Parse { done: 1, total: 2 });
 
-        assert_eq!(t.media, MediaMode::Compress);
-        assert_eq!(t.compress, compress);
+        assert_eq!(t.media, AttachmentFiles::Skip);
         assert_eq!(lines.lock().unwrap().as_slice(), ["a line"]);
         assert_eq!(events.lock().unwrap().len(), 1);
-        assert!(t.needs_media_tools());
     }
 
     #[test]
-    fn obfuscate_disables_copy_and_media_tools() {
+    fn obfuscate_disables_copy() {
         let t = ExportTransforms {
-            media: MediaMode::Convert,
+            media: AttachmentFiles::Originals,
             obfuscate: true,
             ..ExportTransforms::none()
         };
         assert!(!t.copies_attachments());
-        assert!(!t.needs_media_tools());
 
         let t = ExportTransforms {
-            media: MediaMode::Clone,
+            media: AttachmentFiles::Originals,
             obfuscate: false,
             ..ExportTransforms::none()
         };
         assert!(t.copies_attachments());
-        assert!(!t.needs_media_tools());
     }
 }

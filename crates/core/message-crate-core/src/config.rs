@@ -9,7 +9,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use media::{CompressOptions, MediaMode, MediaTools, NoTools};
+use media::{MediaTools, NoTools};
 
 use crate::exporters::{ApplePlatform, Exporter, WhatsappPlatform};
 use crate::pipeline::IssueSink;
@@ -145,7 +145,7 @@ pub struct OutputConfig {
     pub format: OutputFormat,
     /// Fake-name rewrite settings; `None`-equivalent when disabled.
     pub obfuscate: ObfuscateConfig,
-    /// Attachment handling for `FormatSink` (none / copy / convert / compress).
+    /// Whether the export copies the original attachment files.
     pub media: MediaConfig,
     /// Continue an interrupted export in the same output directory: previous
     /// output is kept, and conversations already written are skipped. Only
@@ -236,27 +236,42 @@ pub struct ObfuscateConfig {
     pub seed: Option<String>,
 }
 
+/// What Staging does with attachment files: copy the originals, or copy
+/// none. Staging never converts or compresses. That happens only in the
+/// Media Stage, after the Staging Review, from the staged originals.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum AttachmentFiles {
+    /// Copy each attachment's original file into `attachments/`.
+    #[default]
+    Originals,
+    /// Copy no attachment files. Each attachment keeps its record, marked
+    /// `not_copied`.
+    Skip,
+}
+
+impl AttachmentFiles {
+    /// True when attachment files are copied.
+    pub fn copies(self) -> bool {
+        self == Self::Originals
+    }
+}
+
 #[derive(Debug, Clone)]
-/// How attachments are copied, converted, or compressed when writing output.
+/// How an export handles attachment files, and where its tools are.
 pub struct MediaConfig {
-    /// Attachment handling mode (none / copy / convert / compress).
-    pub mode: MediaMode,
-    /// Compress-mode options (long-edge cap, max fps, min size).
-    pub compress: CompressOptions,
-    /// The ffmpeg and ffprobe Convert and Compress run, and the Tools
-    /// Directory the WhatsApp exporter finds `wtsexporter` in
+    /// Copy the original attachment files, or none.
+    pub mode: AttachmentFiles,
+    /// The Tools Directory the WhatsApp exporter finds `wtsexporter` in
     /// ([`MediaTools::tools_dir`]). The caller builds them from where it
     /// keeps its tools ([`media::InstalledTools`]); a test passes a fake.
     pub tools: Arc<dyn MediaTools>,
 }
 
 impl Default for MediaConfig {
-    /// Clone, with no tools at all ([`NoTools`]): a run that converts or
-    /// compresses is given its tools by its caller, and fails if it is not.
+    /// Copy the originals, with no tools at all ([`NoTools`]).
     fn default() -> Self {
         Self {
-            mode: MediaMode::Clone,
-            compress: CompressOptions::default(),
+            mode: AttachmentFiles::Originals,
             tools: Arc::new(NoTools),
         }
     }

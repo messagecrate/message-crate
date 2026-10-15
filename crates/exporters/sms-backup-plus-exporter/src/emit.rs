@@ -855,7 +855,7 @@ mod tests {
         };
         report.attachments_saved += message_staging::CountedAttachments::new(
             document.messages.iter_mut(),
-            message_crate_core::MediaConfig::default(),
+            message_crate_core::AttachmentFiles::Originals,
             message_staging::PathSources::OnDisk,
             |att| {
                 spool
@@ -867,9 +867,11 @@ mod tests {
         .stage(
             &att_dir,
             message_staging::load_attachment_source,
-            &LogSink::none(),
-            &ProgressSink::none(),
-            &CancelFlag::default(),
+            message_crate_core::Sinks {
+                log: &LogSink::none(),
+                progress: &ProgressSink::none(),
+                cancel: &CancelFlag::default(),
+            },
         )
         .unwrap();
         // The missing source stays on the message; the good one is staged.

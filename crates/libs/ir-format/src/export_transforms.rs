@@ -1,10 +1,9 @@
-//! Obfuscation, and dropping attachment paths when media is disabled, applied
-//! before writing files.
+//! Obfuscation, and dropping attachment paths when no attachment files are
+//! copied, applied before writing files.
 
 use crate::placeholders::materialize_placeholders;
 use anyhow::Result;
-use media::MediaMode;
-use message_crate_core::ExportTransforms;
+use message_crate_core::{AttachmentFiles, ExportTransforms};
 use message_ir::{
     ConversationDocument, IrAttachment, IrDirection, IrImessage, IrParticipant, MessageGuid,
     MessageIdentity, Reaction,
@@ -15,9 +14,10 @@ use obfuscate::{
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Drop attachment paths and bytes when the media mode is disabled, keeping the metadata.
-pub fn clear_attachments_when_disabled(doc: &mut ConversationDocument, mode: MediaMode) {
-    if !matches!(mode, MediaMode::Disabled) {
+/// Drop attachment paths and bytes when no attachment files are copied,
+/// keeping the metadata.
+pub fn clear_attachments_when_disabled(doc: &mut ConversationDocument, files: AttachmentFiles) {
+    if files.copies() {
         return;
     }
     for msg in &mut doc.messages {
@@ -245,7 +245,7 @@ pub(crate) struct TransformOutcome {
     pub obfuscated_docs: usize,
 }
 
-/// Apply the export transforms (media mode, obfuscation) to every document.
+/// Apply the export transforms (attachment files, obfuscation) to every document.
 ///
 /// Attachment bytes are not loaded here. Every writer that embeds them reads
 /// each file through [`crate::load_attachment_bytes`] before the sink removes
@@ -262,8 +262,7 @@ pub(crate) fn apply_transforms(
         }
     }
 
-    // Convert/compress runs in `run_attachment_jobs` before documents are
-    // written. Finish only obfuscates and packages.
+    // Finish only obfuscates and packages.
     if !transforms.obfuscate {
         return Ok(TransformOutcome { obfuscated_docs: 0 });
     }

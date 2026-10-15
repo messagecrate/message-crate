@@ -191,7 +191,7 @@ fn run_with(
     };
     message_crate_core::check_cancel(&options.convert_run.cancel)?;
 
-    message_crate_core::finish_run(output, &report, output.media.mode.needs_tools())
+    Ok(message_crate_core::finish_run(output, &report))
 }
 
 /// Check the run's Apple source and turn it into this exporter's options.

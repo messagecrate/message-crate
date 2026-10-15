@@ -3,8 +3,8 @@
 //!
 //! These back the two reviews a staged import stops at:
 //! `summarize_staging` recomputes what a staged directory holds so the first
-//! review can show it, `transcode_staging` runs the Media stage the
-//! exporter deferred (see `extract::exporter_attachment_media`), and
+//! review can show it, `transcode_staging` runs the Media stage on the
+//! originals Staging copied, and
 //! `delete_run_dir` removes the run directory — when a review is closed
 //! without approving, when a paused run is discarded, and when the server
 //! records the run as finished, since nothing will read the directory again.

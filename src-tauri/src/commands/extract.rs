@@ -22,9 +22,9 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use media::{CompressOptions, InstalledTools, MaxResolution};
+use media::{CompressOptions, InstalledTools, MaxResolution, MediaMode};
 use message_crate_core::{
-    AttachmentMedia, ExporterConfig, Form, FormContext, OutputFormat, RunResult,
+    AttachmentFiles, ExporterConfig, Form, FormContext, OutputFormat, RunResult,
 };
 use message_staging::TranscodeOptions;
 
@@ -241,7 +241,7 @@ pub fn extract(
 /// Form fields from the Import screen after defaults are filled in.
 struct ExtractOptions {
     backup_password: String,
-    attachment_media: AttachmentMedia,
+    attachment_media: MediaMode,
     media_max_resolution: MaxResolution,
     media_max_fps: String,
     media_min_size: String,
@@ -259,25 +259,18 @@ struct ExtractOptions {
     is_business_app: bool,
 }
 
-/// Parse the attachment handling choice from the Import form.
-///
-/// The UI says "copy" and "skip". The exporter config uses "clone" and
-/// "disabled" for those same choices.
+/// Parse the attachment handling choice from the Import form. The UI says
+/// "copy" and "skip", which [`MediaMode::parse`] reads as Clone and
+/// Disabled.
 ///
 /// # Errors
 ///
 /// Returns an error if the string is not copy, convert, compress, or skip.
-fn parse_attachment_media(raw: Option<&str>) -> Result<AttachmentMedia, String> {
+fn parse_attachment_media(raw: Option<&str>) -> Result<MediaMode, String> {
     let Some(raw) = raw.and_then(message_ir::trimmed) else {
-        return Ok(AttachmentMedia::default());
+        return Ok(MediaMode::default());
     };
-    let lowered = raw.to_ascii_lowercase();
-    let key = match lowered.as_str() {
-        "copy" => "clone",
-        "skip" => "disabled",
-        other => other,
-    };
-    AttachmentMedia::parse(key).ok_or_else(|| {
+    MediaMode::parse(raw).ok_or_else(|| {
         format!("invalid attachment_media '{raw}' (expected copy, convert, compress, or skip)")
     })
 }
@@ -296,23 +289,6 @@ fn parse_max_resolution(raw: Option<&str>) -> Result<MaxResolution, String> {
     })
 }
 
-/// `AttachmentMedia` the exporter's `Form` is asked for.
-///
-/// Convert and Compress become Clone: the desktop stages originals, shows the
-/// Staging Review, and runs the Media stage itself, so the expensive work happens
-/// after the user has approved it rather than before. Copy and Skip give the
-/// Media stage nothing to do and reach the exporter unchanged. Kept in `AttachmentMedia`'s
-/// own domain because `Form::attachment_media` drives the exporter's media
-/// mode, the upfront ffmpeg-availability check, and Apple `copy_method` —
-/// none of which must see Convert or Compress, or the exporter would demand
-/// ffmpeg (and stage a converted file) before the user has approved anything.
-fn exporter_attachment_media(chosen: AttachmentMedia) -> AttachmentMedia {
-    match chosen {
-        AttachmentMedia::Convert | AttachmentMedia::Compress => AttachmentMedia::Clone,
-        other => other,
-    }
-}
-
 /// Build the `CompressOptions` the Media stage will use, from the
 /// max-resolution/fps/min-size fields the Import form sends.
 ///
@@ -327,12 +303,12 @@ fn exporter_attachment_media(chosen: AttachmentMedia) -> AttachmentMedia {
 /// Returns an error if `max_fps` is not a positive number or `min_size` is
 /// not a whole number of megabytes.
 fn parse_compress_options(
-    chosen: AttachmentMedia,
+    chosen: MediaMode,
     max_resolution: MaxResolution,
     max_fps: &str,
     min_size: &str,
 ) -> Result<CompressOptions, String> {
-    if !matches!(chosen, AttachmentMedia::Compress) {
+    if chosen != MediaMode::Compress {
         return Ok(CompressOptions::default());
     }
     media::compress_options_from_form(max_resolution, max_fps, min_size, true)
@@ -355,7 +331,7 @@ fn media_settings_for(
     asset_max_bytes: u64,
 ) -> Result<TranscodeOptions, String> {
     Ok(TranscodeOptions {
-        mode: options.attachment_media.media_mode(),
+        mode: options.attachment_media,
         compress: parse_compress_options(
             options.attachment_media,
             options.media_max_resolution,
@@ -401,12 +377,10 @@ fn run_staging(
 ///
 /// Returns an error if the source is unknown or `Form::to_config` rejects
 /// the form (missing input path, missing owner phones, …). Multiple
-/// validation problems are joined with `; `. The compress fields are not
-/// checked here: `Form` sees Clone for a real Compress choice, and
-/// [`media_settings_for`] checks them against the real one. For the same
-/// reason the form's ffmpeg check never refuses here: the form carries only
-/// Clone or Disabled, so `installed` is never asked whether ffmpeg runs. The
-/// Media stage checks ffmpeg against the real choice. `installed` is passed
+/// validation problems are joined with `; `. Staging stages the original
+/// attachment files or none ([`AttachmentFiles`]), so the compress fields
+/// are not checked here: [`media_settings_for`] checks them, and the Media
+/// stage checks ffmpeg against the person's choice. `installed` is passed
 /// on, so the WhatsApp exporter finds `wtsexporter` in its Tools Directory.
 fn build_exporter_config(
     scratch_dir: &Path,
@@ -418,14 +392,14 @@ fn build_exporter_config(
 ) -> Result<ExporterConfig, String> {
     let mut form = Form {
         output: output_dir.to_string(),
-        // See `exporter_attachment_media`'s docs: the exporter is asked for
-        // Clone whenever the user chose Convert or Compress, so it stages
-        // originals and the desktop runs the Media stage itself, after the
-        // Staging Review.
-        attachment_media: exporter_attachment_media(options.attachment_media),
-        media_max_resolution: options.media_max_resolution,
-        media_max_fps: options.media_max_fps.clone(),
-        media_min_size: options.media_min_size.clone(),
+        // Staging copies the originals under Copy, Convert and Compress, and
+        // the desktop runs the Media stage itself after the Staging Review,
+        // so converting waits until the person has approved it.
+        attachments: if options.attachment_media == MediaMode::Disabled {
+            AttachmentFiles::Skip
+        } else {
+            AttachmentFiles::Originals
+        },
         obfuscate: options.obfuscate,
         phone_country: options.phone_country.clone(),
         // Import and Upload read conversation files as JSON Lines (one JSON

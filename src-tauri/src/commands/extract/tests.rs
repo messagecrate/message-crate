@@ -1,5 +1,5 @@
 use super::*;
-use media::{InstalledTools, MediaMode};
+use media::InstalledTools;
 use message_crate_core::{ApplePlatform, IssueSink, SourceConfig, WhatsappPlatform};
 use std::fs;
 
@@ -9,7 +9,7 @@ const ASSET_MAX_BYTES: u64 = 512 * 1024 * 1024;
 fn test_options(owner_phones: Vec<String>) -> ExtractOptions {
     ExtractOptions {
         backup_password: String::new(),
-        attachment_media: AttachmentMedia::default(),
+        attachment_media: MediaMode::default(),
         media_max_resolution: MaxResolution::default(),
         media_max_fps: "30".into(),
         media_min_size: "20".into(),
@@ -31,11 +31,9 @@ fn test_options(owner_phones: Vec<String>) -> ExtractOptions {
 #[test]
 fn convert_and_compress_stage_originals_and_defer_the_media_stage() {
     // The desktop runs conversion as its own Media stage so a Review can sit in
-    // front of it. Asking the exporter to convert would spend the time
-    // before the user has approved anything. Checked against the
-    // iMessage source; every source routes attachment_media through
-    // `exporter_attachment_media` before `Form` sees it.
-    for chosen in [AttachmentMedia::Convert, AttachmentMedia::Compress] {
+    // front of it. Staging copies the originals, and the exporter has no way
+    // to be asked to convert. Checked against the iMessage source.
+    for chosen in [MediaMode::Convert, MediaMode::Compress] {
         let mut options = test_options(vec!["+15550100".into()]);
         options.attachment_media = chosen;
         let config = build_exporter_config(
@@ -49,15 +47,18 @@ fn convert_and_compress_stage_originals_and_defer_the_media_stage() {
         .unwrap();
         assert_eq!(
             config.output.media.mode,
-            MediaMode::Clone,
+            AttachmentFiles::Originals,
             "{chosen:?} must stage originals"
         );
     }
 }
 
 #[test]
-fn copy_and_skip_reach_the_exporter_unchanged() {
-    for chosen in [AttachmentMedia::Clone, AttachmentMedia::Disabled] {
+fn copy_stages_originals_and_skip_stages_none() {
+    for (chosen, files) in [
+        (MediaMode::Clone, AttachmentFiles::Originals),
+        (MediaMode::Disabled, AttachmentFiles::Skip),
+    ] {
         let mut options = test_options(vec!["+15550100".into()]);
         options.attachment_media = chosen;
         let config = build_exporter_config(
@@ -69,21 +70,16 @@ fn copy_and_skip_reach_the_exporter_unchanged() {
             &options,
         )
         .unwrap();
-        assert_eq!(
-            config.output.media.mode,
-            chosen.media_mode(),
-            "{chosen:?} must reach the exporter unchanged"
-        );
+        assert_eq!(config.output.media.mode, files, "{chosen:?}");
     }
 }
 
 #[test]
 fn non_imessage_sources_defer_the_media_stage_too() {
-    // `exporter_attachment_media` decides `Form.attachment_media` for every
-    // source, so a non-iMessage source (whatsapp-android here) must also
-    // reach the exporter with Clone when Convert or Compress was chosen.
+    // A non-iMessage source (whatsapp-android here) also stages the
+    // originals when Convert or Compress was chosen.
     let dump = tempfile::tempdir().unwrap();
-    for chosen in [AttachmentMedia::Convert, AttachmentMedia::Compress] {
+    for chosen in [MediaMode::Convert, MediaMode::Compress] {
         let mut options = test_options(vec!["+15555550100".into()]);
         options.attachment_media = chosen;
         let config = build_exporter_config(
@@ -97,7 +93,7 @@ fn non_imessage_sources_defer_the_media_stage_too() {
         .unwrap();
         assert_eq!(
             config.output.media.mode,
-            MediaMode::Clone,
+            AttachmentFiles::Originals,
             "{chosen:?} must stage originals"
         );
     }
@@ -105,13 +101,12 @@ fn non_imessage_sources_defer_the_media_stage_too() {
 
 #[test]
 fn compress_validates_the_minimum_size_before_staging() {
-    // `Form.attachment_media` reads Clone for a real Compress choice (so
-    // the exporter stages originals instead of converting), which means
-    // `Form`'s own compress validation never runs for it. Without
-    // `media_settings_for`, a malformed `media_min_size` would sail through
-    // and only surface hours later, at the review.
+    // The exporter's form carries no compress fields, since Staging only
+    // copies the originals. Without `media_settings_for`, a malformed
+    // `media_min_size` would sail through and only surface hours later, at
+    // the review.
     let mut options = test_options(Vec::new());
-    options.attachment_media = AttachmentMedia::Compress;
+    options.attachment_media = MediaMode::Compress;
     options.media_min_size = "banana".into();
     let err = media_settings_for(&options, ASSET_MAX_BYTES).unwrap_err();
     assert!(
@@ -125,7 +120,7 @@ fn compress_reads_the_minimum_size_as_megabytes() {
     // #1469: the field is labelled in megabytes, and the web app sends the
     // number as typed.
     let mut options = test_options(Vec::new());
-    options.attachment_media = AttachmentMedia::Compress;
+    options.attachment_media = MediaMode::Compress;
     options.media_min_size = "20".into();
     let settings = media_settings_for(&options, ASSET_MAX_BYTES).unwrap();
     assert_eq!(settings.compress.min_size_bytes, 20 * 1024 * 1024);
@@ -137,7 +132,7 @@ fn compress_refuses_a_minimum_size_with_a_unit_saying_what_to_type() {
     // not a size", naming a value the person never typed.
     for typed in ["20MB", "20M", "1.5"] {
         let mut options = test_options(Vec::new());
-        options.attachment_media = AttachmentMedia::Compress;
+        options.attachment_media = MediaMode::Compress;
         options.media_min_size = typed.into();
         let err = media_settings_for(&options, ASSET_MAX_BYTES).unwrap_err();
         assert_eq!(
@@ -153,7 +148,7 @@ fn compress_refuses_a_minimum_size_with_a_unit_saying_what_to_type() {
 fn compress_refuses_an_empty_minimum_size_in_its_own_words() {
     for typed in ["", "  "] {
         let mut options = test_options(Vec::new());
-        options.attachment_media = AttachmentMedia::Compress;
+        options.attachment_media = MediaMode::Compress;
         options.media_min_size = typed.into();
         let err = media_settings_for(&options, ASSET_MAX_BYTES).unwrap_err();
         assert_eq!(
@@ -169,7 +164,7 @@ fn compress_with_an_empty_max_fps_is_refused_naming_the_field() {
     // fail only after hours of Staging, at the summary.
     for fps in ["", "  ", "fast", "0", "-5", "NaN", "inf"] {
         let mut options = test_options(Vec::new());
-        options.attachment_media = AttachmentMedia::Compress;
+        options.attachment_media = MediaMode::Compress;
         options.media_max_fps = fps.into();
         let err = media_settings_for(&options, ASSET_MAX_BYTES).unwrap_err();
         assert!(err.contains("Max FPS"), "{fps:?}: {err}");
@@ -178,16 +173,12 @@ fn compress_with_an_empty_max_fps_is_refused_naming_the_field() {
 
 #[test]
 fn an_empty_max_fps_is_no_problem_when_nothing_is_compressed() {
-    for chosen in [
-        AttachmentMedia::Clone,
-        AttachmentMedia::Convert,
-        AttachmentMedia::Disabled,
-    ] {
+    for chosen in [MediaMode::Clone, MediaMode::Convert, MediaMode::Disabled] {
         let mut options = test_options(Vec::new());
         options.attachment_media = chosen;
         options.media_max_fps = String::new();
         let settings = media_settings_for(&options, ASSET_MAX_BYTES).unwrap();
-        assert_eq!(settings.mode, chosen.media_mode());
+        assert_eq!(settings.mode, chosen);
         assert_eq!(settings.compress, media::CompressOptions::default());
     }
 }
@@ -195,7 +186,7 @@ fn an_empty_max_fps_is_no_problem_when_nothing_is_compressed() {
 #[test]
 fn the_media_settings_carry_the_mode_the_fields_and_the_limit() {
     let mut options = test_options(Vec::new());
-    options.attachment_media = AttachmentMedia::Compress;
+    options.attachment_media = MediaMode::Compress;
     options.media_max_resolution = MaxResolution::P720;
     options.media_max_fps = "24".into();
     options.media_min_size = "5".into();
@@ -227,7 +218,7 @@ fn staging_records_the_media_settings_in_the_directory() {
     .unwrap();
     let output = tmp.path().join("out");
     let mut options = test_options(vec!["+15555550100".into()]);
-    options.attachment_media = AttachmentMedia::Convert;
+    options.attachment_media = MediaMode::Convert;
     let config = build_exporter_config(
         Path::new("/scratch"),
         &InstalledTools::default(),

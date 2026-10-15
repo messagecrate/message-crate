@@ -1,13 +1,11 @@
 //! Read SMS Backup & Restore XML into [`ConversationDocument`] values.
 
 use anyhow::{Result, bail};
-use std::sync::Arc;
 
-use media::{CompressOptions, MediaMode, MediaTools};
 use message_crate_core::{
-    CancelFlag, Cancelled, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, MediaConfig,
+    AttachmentFiles, CancelFlag, Cancelled, Counter, DUPLICATES_DROPPED, ItemKind, LogSink,
     ProgressSink, SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE,
-    SKIPPED_UNREADABLE_PART, check_cancel, document_messages, import_error_lines, item_line,
+    SKIPPED_UNREADABLE_PART, Sinks, check_cancel, document_messages, import_error_lines, item_line,
 };
 use message_csv::format_local_ts;
 use message_ir::{
@@ -221,12 +219,8 @@ pub struct ReadOptions<'a> {
     /// parsed, so no payload stays in memory; `None` when the run does not
     /// copy attachments, and then no payload is kept at all.
     pub spool: Option<&'a AttachmentSpool>,
-    /// How to write attachment files after parse.
-    pub media: MediaMode,
-    /// Image/video compress settings used when `media` converts or compresses.
-    pub compress: CompressOptions,
-    /// The ffmpeg and ffprobe used when `media` converts or compresses.
-    pub tools: Arc<dyn MediaTools>,
+    /// Whether attachment files are staged after parse.
+    pub files: AttachmentFiles,
     /// Human-readable notes and warnings while reading.
     pub log: &'a LogSink,
     /// Typed progress events while staging attachments.
@@ -339,18 +333,14 @@ pub fn spooled_attachments<'a>(
     documents: &'a mut [ConversationDocument],
     options: &ReadOptions<'_>,
 ) -> CountedAttachments<'a> {
-    let mode = if options.spool.is_some() {
-        options.media
+    let files = if options.spool.is_some() {
+        options.files
     } else {
-        MediaMode::Disabled
+        AttachmentFiles::Skip
     };
     CountedAttachments::new(
         document_messages(documents),
-        MediaConfig {
-            mode,
-            compress: options.compress.clone(),
-            tools: Arc::clone(&options.tools),
-        },
+        files,
         PathSources::OnDisk,
         |att| {
             options
@@ -396,9 +386,11 @@ pub fn stage_read_attachments(
     spooled_attachments(documents, options).stage(
         attachments_dir,
         load_attachment_source,
-        options.log,
-        options.progress,
-        options.cancel,
+        Sinks {
+            log: options.log,
+            progress: options.progress,
+            cancel: options.cancel,
+        },
     )?;
     Ok(())
 }

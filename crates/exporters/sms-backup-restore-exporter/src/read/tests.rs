@@ -19,13 +19,11 @@ fn opts<'a>(
         owner_phones,
         attachments_dir,
         spool,
-        media: if spool.is_some() {
-            MediaMode::Clone
+        files: if spool.is_some() {
+            AttachmentFiles::Originals
         } else {
-            MediaMode::Disabled
+            AttachmentFiles::Skip
         },
-        compress: CompressOptions::default(),
-        tools: std::sync::Arc::new(media::InstalledTools::default()),
         log: &NO_LOG,
         progress: &NO_PROGRESS,
         cancel: &NO_CANCEL,

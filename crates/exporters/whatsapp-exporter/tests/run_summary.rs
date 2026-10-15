@@ -138,7 +138,7 @@ fn run_sends_a_note_for_a_media_file_the_backup_does_not_hold() {
             ..WhatsappConfig::default()
         },
     );
-    config.output.media.mode = media::MediaMode::Clone;
+    config.output.media.mode = message_crate_core::AttachmentFiles::Originals;
     let issues = collect_issues(&mut config.context);
 
     let result = config.run(crate::run).expect("run");
