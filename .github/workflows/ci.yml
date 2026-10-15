@@ -588,7 +588,7 @@ jobs:
       # api.github.com; unauthenticated, the 60-per-hour limit is shared by
       # every runner on the same address and the lookup 403s.
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.25.2
+        uses: cargo-bins/cargo-binstall@v1.25.3
 
       - name: Install Tauri CLI
         shell: bash

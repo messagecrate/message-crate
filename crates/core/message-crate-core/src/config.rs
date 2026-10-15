@@ -199,15 +199,17 @@ pub fn require_input(inputs: &[PathBuf]) -> Result<&Path, String> {
 /// The run-wide settings every exporter's convert step takes beside its own
 /// inputs. [`ConvertRun::new`] builds them, so a new run-wide setting is
 /// added to this struct and to [`ConvertRun::new`], not to each exporter's
-/// arguments or to each `run` that fills them. A convert step that unpacks
-/// every field still names the new one, so each exporter decides what it
-/// does with it.
+/// arguments or to each `run` that fills them. The shared convert step,
+/// `message_staging::convert_backup`, unpacks every field, so a new one is
+/// named there and the step decides what it does with it. Apple Messages,
+/// which keeps a convert step of its own, reads the fields it uses.
 ///
 /// It holds the run's cancel flag and issue sink themselves: a clone of
 /// either shares it, so a cancel set on the [`RunContext`] reaches the run.
 ///
 /// The default writes [`OutputFormat::Json`] with no transforms, cannot be
-/// cancelled, does not resume, and sends its rows nowhere.
+/// cancelled, does not resume, sends its rows nowhere, and names an empty
+/// Scratch Directory, so a test whose run spools sets `scratch_dir`.
 #[derive(Debug, Clone, Default)]
 pub struct ConvertRun {
     /// Media and obfuscation applied as conversations are written.
@@ -221,6 +223,9 @@ pub struct ConvertRun {
     pub resume: bool,
     /// Where each row for the Import Run's record goes as the run records it.
     pub issues: IssueSink,
+    /// The desktop Scratch Directory ([`RunContext::scratch_dir`]), which
+    /// the run's attachment spool goes under.
+    pub scratch_dir: PathBuf,
 }
 
 impl ConvertRun {
@@ -233,6 +238,7 @@ impl ConvertRun {
             cancel: context.cancel.clone(),
             resume: output.resume,
             issues: context.issues.clone(),
+            scratch_dir: context.scratch_dir.clone(),
         }
     }
 }

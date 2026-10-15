@@ -1468,8 +1468,9 @@ fn a_cancel_while_ffmpeg_runs_ends_the_stage_as_canceled_not_as_a_failed_file() 
 /// The reason recorded on an attachment ffmpeg could not convert carries why
 /// ffmpeg failed or was stopped, not only which file it was working on, so
 /// a stalled or looping video says so (#2898). Of what ffmpeg wrote, only
-/// the last line is kept, so a damaged file's thousands of warnings do not
-/// ride along on the attachment.
+/// the line that names the cause, which here is its last line, is kept, so
+/// a damaged file's thousands of warnings do not ride along on the
+/// attachment.
 #[cfg(unix)]
 #[test]
 fn a_failed_conversion_records_why_ffmpeg_failed() {
@@ -1510,11 +1511,12 @@ fn a_failed_conversion_records_why_ffmpeg_failed() {
     assert_eq!(reason, "convert_failed: the encoder made no progress");
 }
 
-/// The reason an attachment records when ffmpeg failed on it is the last
-/// line ffmpeg wrote, with no path in it (#2801). The whole error, path and
-/// all, goes in the row for the log.
+/// The reason an attachment records when ffmpeg failed on it is the line
+/// ffmpeg wrote that names the cause, which here is its last line, with no
+/// path in it (#2801, #2959). The whole error, path and all, goes in the
+/// row for the log.
 #[test]
-fn a_failed_conversion_records_the_reason_the_attachment_jobs_record() {
+fn a_failed_conversion_records_the_line_that_names_the_cause() {
     let tools = media::testutil::FakeTools::new().failing_on("-q:v");
     let (dir, jsonl, original) = staged_one("photo.png", PNG_1X1_RGB);
     let (issues, rows) = collecting_sink();

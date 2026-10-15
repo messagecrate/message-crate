@@ -34,13 +34,13 @@ fn convert_in(
     convert_export(ConvertExportArgs {
         inputs: &[input],
         output_dir,
-        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
         log: &LogSink::none(),
         phone_country,
         convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
             output_format: OutputFormat::Jsonl,
             ..ConvertRun::default()
         },
@@ -565,13 +565,13 @@ Hello Dee\r\n",
     convert_export(ConvertExportArgs {
         inputs: &[input.as_path()],
         output_dir: &out,
-        scratch_dir: cache.path(),
         owner_phones: &["07700900123".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
         log: &LogSink::none(),
         phone_country: phone::country("GB"),
         convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
             output_format: OutputFormat::Jsonl,
             ..ConvertRun::default()
         },

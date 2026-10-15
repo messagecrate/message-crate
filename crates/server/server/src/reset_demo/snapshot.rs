@@ -96,7 +96,7 @@ where
         && let Err(error) = remove_any_if_exists(&seeding).and_then(|()| remove_sidecars(&seeding))
     {
         tracing::warn!(
-            error = %crate::server::error_chain(&error),
+            error = %crate::api_error::error_chain(&error),
             "The unfinished new database at {} could not be removed",
             seeding.display()
         );

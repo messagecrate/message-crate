@@ -29,9 +29,9 @@ fn real_backup_exports_clean_conversations() {
     let report = convert_export(ConvertExportArgs {
         input_dir: &input,
         output_dir: &output,
-        scratch_dir: cache.path(),
         owner_phones: &[owner],
         convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
             output_format: OutputFormat::Csv,
             ..ConvertRun::default()
         },

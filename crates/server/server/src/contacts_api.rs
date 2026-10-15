@@ -10,6 +10,8 @@ use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
+use crate::api_error::ApiError;
+use crate::auth::{FullAccess, FullDeleteAccess};
 use crate::db::contacts::read::{
     CONTACT_SORT_KEYS, ContactSelectionSummary, ContactSummary, DEFAULT_CONTACT_SORT,
     contact_name_and_modified, contact_totals, get_contact_summaries, list_contacts_sorted,
@@ -18,7 +20,7 @@ use crate::db::contacts::read::{
 use crate::db::handles::{self, ApiIdentityService, IdentitiesOf, Identity};
 use crate::db::trash::{DeleteOutcome, Trashable, delete_trashed, move_to_trash, restore};
 use crate::paging::{ListRequest, MAX_CONTACT_SUMMARY_IDS, Page, PageQuery, whole_page};
-use crate::server::{ApiError, AppState, FullAccess, FullDeleteAccess};
+use crate::server::AppState;
 
 pub(crate) mod address_book;
 mod edit;

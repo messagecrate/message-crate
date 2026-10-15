@@ -9,10 +9,12 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::http::StatusCode;
 
+use crate::api_error::ApiError;
 use crate::asset_store;
+use crate::auth::FullDeleteAccess;
 use crate::db::audit_trail::AuditActor;
 use crate::db::trash;
-use crate::server::{ApiError, AppState, FullDeleteAccess};
+use crate::server::AppState;
 
 /// Empty the trash: every trashed conversation is deleted for good, with
 /// its messages and any attachment file no other message uses, and every

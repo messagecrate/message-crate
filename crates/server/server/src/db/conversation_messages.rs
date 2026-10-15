@@ -22,6 +22,7 @@ pub use message_crate_api_types::{
     TimePrecision,
 };
 
+use crate::api_error::ApiError;
 use crate::db::conversations::is_group_type;
 use crate::db::ownership::owns_conversation;
 use crate::db::participant_names::load_for_conversations;
@@ -30,7 +31,6 @@ use crate::db::trash::not_trashed_conversation_id;
 use crate::models::StoredTime;
 use crate::paging::{Direction, Page, PageParams, SortKey, page_from_rows};
 use crate::search::bridge::Sql;
-use crate::server::ApiError;
 
 /// Sorted, deduplicated ids for an `IN` list.
 fn unique_ids(ids: impl IntoIterator<Item = i64>) -> Vec<i64> {

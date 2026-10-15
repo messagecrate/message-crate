@@ -152,10 +152,10 @@ The field is filled in with the account's Time Zone.
 
 ### Attachments
 
-**Attachments** has four choices: **Copy**, **Convert**, **Compress & Convert**, and **Skip**.
+**Attachments** has four choices: **Copy**, **Convert media**, **Convert & Compress media**, and **Skip**.
 It starts on **Copy**.
 
-**Compress & Convert** adds three fields: **Target resolution**, **Max FPS**, and **Minimum Video File Size (Megabytes)**.
+**Convert & Compress media** adds three fields: **Target resolution**, **Max FPS**, and **Minimum Video File Size (Megabytes)**.
 
 [Attachments and media](/docs/user/features/messages/attachments-and-media/) describes what each choice produces.
 
@@ -190,8 +190,8 @@ Each row fills in with what that Stage made.
 
 1. **Staging**
 2. **Staging Review**
-3. **Media**, only under **Convert** or **Compress & Convert**
-4. **Media Review**, only under **Convert** or **Compress & Convert**
+3. **Media**, only under **Convert media** or **Convert & Compress media**
+4. **Media Review**, only under **Convert media** or **Convert & Compress media**
 5. **Upload**
 
 Under **Copy** and **Skip** the run goes from the Staging Review straight to Upload.
@@ -225,14 +225,14 @@ Everything it shows is read from the staged files, not estimated, except the gro
 
 - **Contacts**: the count of contacts in the backup, split into **Existing** and **New** to the account.
 - **Attachments**: the **Size limit per file**, which is the server's attachment size limit as the run read it when it started, and **Files over the limit**, marked **Skip upload**. The row opens to each file and its size.
-- **Conversion estimates** or **Compression estimates**, under **Convert** or **Compress & Convert**. It sorts the files that matter into **Likely within limit**, **May exceed limit**, and **Not audio or video**. Each opens to its files, with the staged size and the expected size. The group is marked **Media has not run yet**, because these are estimates.
+- **Conversion estimates** or **Compression estimates**, under **Convert media** or **Convert & Compress media**. It sorts the files that matter into **Likely within limit**, **May exceed limit**, and **Not audio or video**. Each opens to its files, with the staged size and the expected size. The group is marked **Media has not run yet**, because these are estimates.
 - **Identities**, for an iMessage source: the addresses the backup's device used, how many messages each one **Sent** and **Received**, whether it is **On your profile**, and **Add to profile** for one that is not.
 
-The approve button says what happens next: **Upload to Message Crate**, **Convert media**, or **Compress media**.
+The approve button says what happens next: **Upload to Message Crate**, **Convert media**, or **Convert & Compress media**.
 It stays disabled while an export or a conversion runs, since the desktop app runs one job at a time, and names the job it waits for.
 **Cancel this import** ends the run and deletes its directory.
 
-When **Convert** or **Compress & Convert** is chosen and ffmpeg or ffprobe can't be used, the approve button is disabled and the row names the program.
+When **Convert media** or **Convert & Compress media** is chosen and ffmpeg or ffprobe can't be used, the approve button is disabled and the row names the program.
 [Attachments and media](/docs/user/features/messages/attachments-and-media/#ffmpeg) says where the app looks for it.
 
 ### Media

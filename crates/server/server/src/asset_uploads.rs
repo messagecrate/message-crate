@@ -514,14 +514,14 @@ impl PartTemp {
     pub(crate) async fn receive(
         &mut self,
         body: axum::body::Body,
-    ) -> Result<u64, crate::server::ApiError> {
+    ) -> Result<u64, crate::api_error::ApiError> {
         let Some(file) = self.file.take() else {
-            return Err(crate::server::ApiError::Internal(anyhow::anyhow!(
+            return Err(crate::api_error::ApiError::Internal(anyhow::anyhow!(
                 "the body of {} was already received",
                 self.path.display()
             )));
         };
-        crate::server::stream_body_into(
+        crate::request_body::stream_body_into(
             body,
             tokio::fs::File::from_std(file),
             &self.path,

@@ -81,10 +81,11 @@ pub enum NotMadeKind {
     /// ffmpeg made no progress for `[server] transcode_stall_secs`, so it was
     /// stopped.
     Stalled,
-    /// ffmpeg ran past twice the file's length, as it does looping on a
+    /// ffmpeg ran past twice a video's length, as it does looping on a
     /// damaged file, so it was stopped.
     RanPastLength,
-    /// A step that reads one frame did not finish within its limit.
+    /// A step that reads one frame, or an audio conversion, did not finish
+    /// within its limit.
     TookTooLong,
     /// The original file is not on disk.
     OriginalMissing,

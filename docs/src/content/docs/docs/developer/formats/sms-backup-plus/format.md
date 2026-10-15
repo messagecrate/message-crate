@@ -11,7 +11,7 @@ Typical headers:
 
 | Header | Meaning |
 |--------|---------|
-| `X-smssync-datatype` | `SMS`, `MMS` or `CALLLOG`; a `CALLLOG` mail is skipped (below) |
+| `X-smssync-datatype` | `SMS`, `MMS`, `CALLLOG` or `WHATSAPP`; a `CALLLOG` or `WHATSAPP` mail is skipped (below) |
 | `X-smssync-type` | Android SMS type; sent ≈ `{2,128,4,135,6,5}`, received ≈ `{1,132,130}` |
 | `X-smssync-address` | The other party's number. For an MMS, only the first address the phone stored for it, so a group MMS names one of its participants here. Older exports may list several, separated by `~` (or `;`, `,`, `\|`) |
 | `X-smssync-date` | The message time as Android stores it: epoch **milliseconds** for an SMS or a call, epoch **seconds** for an MMS (below) |
@@ -67,6 +67,21 @@ nothing else to read. Non-text MIME parts are exported as attachments.
 SMS Backup+ can also back up the phone's call log, one mail per call, into a label of its own ("Call log").
 Such a mail carries `X-smssync-datatype: CALLLOG`, and its `X-smssync-type` holds the call's type, not a message type.
 Message Crate has no model for a call, so the exporter skips every `CALLLOG` mail and counts it as `skipped_call_log`, which the run summary prints as `Skipped N call log entries`.
+
+## WhatsApp mails
+
+From version 1.5.0 (June 2013) to 1.5.9-BETA5 (2015), SMS Backup+ also backed up WhatsApp messages, one mail per message, into a label of its own ("WhatsApp").
+Commit [`e77c56d`](https://github.com/jberkel/sms-backup-plus/commit/e77c56d) ("Adding whatsapp support") added the feature, and commit [`24b549e`](https://github.com/jberkel/sms-backup-plus/commit/24b549e) ("Remove whatsapp for real") removed it.
+
+Such a mail carries `X-smssync-datatype: WHATSAPP`, and its `X-smssync-type` holds WhatsApp's own status number, not an Android message type.
+The exporter skips every `WHATSAPP` mail and counts it as `skipped_whatsapp`, which the run summary prints as `Skipped N WhatsApp messages`.
+
+It is not read as an SMS, because its type gives no direction.
+It is not read as WhatsApp either, for three reasons:
+
+- The feature never covered group chats.
+- SMS Backup+ removed it because it did not work for most people ([jberkel/sms-backup-plus#564](https://github.com/jberkel/sms-backup-plus/issues/564)).
+- No real backup is at hand to test a mapping against.
 
 ## Import mapping and deduplication
 

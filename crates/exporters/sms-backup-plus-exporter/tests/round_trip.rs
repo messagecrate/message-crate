@@ -24,13 +24,13 @@ fn import(input: &Path, output: &Path) -> Vec<ConversationDocument> {
     convert_export(ConvertExportArgs {
         inputs: &[input.to_path_buf()],
         output_dir: output,
-        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
         log: &LogSink::none(),
         phone_country: phone::country("US"),
         convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
             output_format: OutputFormat::Jsonl,
             ..ConvertRun::default()
         },

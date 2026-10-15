@@ -23,12 +23,12 @@ use hmac::{KeyInit, Mac};
 use rand::TryRng;
 use serde::Serialize;
 
+use crate::api_error::ApiError;
 use crate::assets_api::{Sha256, lookup_for_read};
+use crate::auth::{FullAccess, bearer_token, require_asset_read_access, resolve_auth};
 use crate::db::{account_profile, session_tokens};
 use crate::extract::Path as AxumPath;
-use crate::server::{
-    ApiError, AppState, Created, FullAccess, bearer_token, require_asset_read_access, resolve_auth,
-};
+use crate::server::{AppState, Created};
 
 /// How long a media link opens its asset after it is made.
 pub(crate) const MEDIA_LINK_TTL: Duration = Duration::from_secs(60 * 60);

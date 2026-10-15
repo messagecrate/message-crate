@@ -443,6 +443,18 @@ their own it is an advanced tool most people never need, so it lives under
 Settings rather than beside Import and Export.
 _Avoid_: Reexport, Transcode, Reformat
 
+**Convert media**:
+Rewriting the attachments of an Import Run into formats every browser shows:
+photos to JPEG, video to MP4, audio to MP3. It is the Media Stage's work, done
+only when the person chose it on the Import form's **Attachments** field, whose
+four choices are **Copy** (the originals as they are), **Convert media**,
+**Convert & Compress media** (convert, and re-encode to make files smaller, at
+some cost in quality) and **Skip** (no attachments). On its own, Convert is the
+Settings tool that rewrites an export's format; "media" is what tells the two
+apart.
+_Avoid_: Transcode (the mechanism, which a person who has not met ffmpeg will
+not know), Process attachments, Media conversion
+
 **Stage**:
 One of the three parts of an Import Run, in order: **Staging** reads the
 backup and copies its messages and original attachments into the Staging
