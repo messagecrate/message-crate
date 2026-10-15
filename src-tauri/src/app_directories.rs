@@ -127,8 +127,8 @@ impl MessageCrateDirectory {
         self.root.join(TOOLS_DIRECTORY_NAME)
     }
 
-    /// The Message Crate Directory and each directory in it that holds
-    /// messages: every directory but the Tools Directory.
+    /// The directories only the owner may read: the Message Crate Directory
+    /// and every directory in it but the Tools Directory.
     pub fn private_directories(&self) -> [PathBuf; 6] {
         [
             self.root.clone(),
@@ -318,11 +318,14 @@ mod tests {
 
         directory.make().unwrap();
 
-        for dir in directory
-            .private_directories()
-            .into_iter()
-            .chain([directory.tools()])
-        {
+        for dir in [
+            directory.data(),
+            directory.staging(),
+            directory.exports(),
+            directory.logs(),
+            directory.scratch(),
+            directory.tools(),
+        ] {
             assert!(dir.is_dir(), "{} was not made", dir.display());
         }
     }
@@ -339,7 +342,16 @@ mod tests {
         let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
         let home = tempfile::tempdir().unwrap();
         let directory = MessageCrateDirectory::in_home(home.path(), false);
-        let private = directory.private_directories();
+        // Written out, not taken from `private_directories`, so a directory
+        // dropped from that list fails here.
+        let private = [
+            directory.root().to_path_buf(),
+            directory.data(),
+            directory.staging(),
+            directory.exports(),
+            directory.logs(),
+            directory.scratch(),
+        ];
 
         directory.make().unwrap();
         for dir in &private {

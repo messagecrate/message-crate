@@ -515,10 +515,10 @@ Directory of the Message Crate the app starts (`data`), the Staging Directory
 (`staging`), the Export Directory (`exports`), the Logs Directory (`logs`),
 the Scratch Directory (`scratch`), and the Tools Directory (`tools`). It
 exists on every computer the app runs on, including one whose app connects
-to a Message Crate elsewhere. Only the user who owns it can read it. One
-file stays outside it: the record of the Staging Directory setting and of
-the run directories the app made, in the operating system's app-data
-directory, because it is the app's state, not data.
+to a Message Crate elsewhere. Only the user who owns it can read it. The
+record of the Staging Directory setting and of the run directories the app
+made (`staging.json`, with its lock file) stays outside it, in the operating
+system's app-data directory, because it is the app's state, not data.
 _Avoid_: Folder, App Data, Home Directory
 
 **Data Directory**:
