@@ -109,7 +109,8 @@ vi.mock("./import/useImportJob", async (importOriginal) => {
   };
 });
 
-vi.mock("../lib/importRun", () => ({
+vi.mock("../lib/importRun", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/importRun")>()),
   getActiveImportRun: (...args: unknown[]) => getActiveImportRunMock(...args),
   discardImportRun: (...args: unknown[]) => discardImportRunMock(...args),
 }));
@@ -128,7 +129,10 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
   getAccountProfile: (...args: unknown[]) => apiGetMock(...args),
 }));
 
-vi.mock("../lib/tauri", () => ({
+// The desktop commands this screen calls, faked by name. The rest of
+// lib/tauri stays real, since useImportJob.ts holds its imports at load.
+vi.mock("../lib/tauri", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/tauri")>()),
   invokeHomeDir: vi.fn().mockResolvedValue({ path: "/home/u", os: "linux" }),
   invokeIosBackupEncrypted: vi.fn().mockResolvedValue(null),
   invokePathStat: (...args: unknown[]) => invokePathStatMock(...args),
