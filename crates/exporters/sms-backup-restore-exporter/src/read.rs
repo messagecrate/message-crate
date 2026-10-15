@@ -5,9 +5,9 @@ use std::sync::Arc;
 
 use media::{CompressOptions, MediaMode, MediaTools};
 use message_crate_core::{
-    CancelFlag, Cancelled, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, MediaConfig,
-    ProgressSink, SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE,
-    SKIPPED_UNREADABLE_PART, check_cancel, document_messages, import_error_lines, item_line,
+    CancelFlag, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, MediaConfig, ProgressSink,
+    SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART,
+    check_cancel, document_messages, import_error_lines, item_line,
 };
 use message_csv::format_local_ts;
 use message_ir::{
@@ -362,23 +362,6 @@ pub fn spooled_attachments<'a>(
     )
 }
 
-/// Record the error that stopped the parse of `input` in `report`, so the
-/// records parsed before it are kept, unless the parse stopped for a cancel.
-///
-/// # Errors
-///
-/// Returns the error when it is [`Cancelled`]. A cancel is told from a
-/// failure by its type, so a failure whose text is `canceled` is recorded.
-fn keep_parse_error(parse_result: Result<()>, input: &Path, report: &mut ReadReport) -> Result<()> {
-    if let Err(error) = parse_result {
-        if error.is::<Cancelled>() {
-            return Err(error);
-        }
-        report.errors.push(ReadError::new(input, &error));
-    }
-    Ok(())
-}
-
 /// Stage the attachments [`read_backup`] left in `options.spool` into
 /// `options.attachments_dir`, reading one spooled file at a time. A caller
 /// stages only once the read has succeeded, so a backup the read refuses
@@ -726,8 +709,12 @@ fn ir_participants(conversation: &ConversationInProgress) -> Vec<IrParticipant> 
 ///
 /// # Errors
 ///
-/// Returns an error when `input` is not a file, owner phones cannot be
-/// inferred, or a payload cannot be written to the spool.
+/// Returns an error when `input` is not a file, is not valid XML, or a
+/// payload cannot be written to the spool, and
+/// [`Cancelled`](message_crate_core::Cancelled) when the run
+/// is canceled. A file that is not valid XML is refused whole, in the
+/// owner-phone pass and the message pass alike; a message that cannot be
+/// kept in a valid file is counted and the read goes on.
 pub fn read_backup(
     input: &Path,
     options: ReadOptions<'_>,
@@ -735,12 +722,7 @@ pub fn read_backup(
     require_backup_file(input)?;
     let mut owner_phones = options.owner_phones.to_vec();
     if owner_phones.is_empty() {
-        owner_phones = infer_owner_phones(input).map_err(|error| {
-            anyhow::anyhow!(
-                "could not infer owner phones from {} ({error:#}), and none were supplied",
-                input.display()
-            )
-        })?;
+        owner_phones = infer_owner_phones(input)?;
         owner_phones.sort();
         owner_phones.dedup();
     }
@@ -758,8 +740,7 @@ pub fn read_backup(
     let file_path = input.display().to_string();
     check_cancel(options.cancel)?;
     // Each record's attachment payloads go to the spool as the record is
-    // parsed; staging waits until every conversation is built. Messages
-    // that parse before an XML error are kept, and so are the counts.
+    // parsed; staging waits until every conversation is built.
     let mut stats = ParseStats::default();
     // A spool that cannot be written stops the read rather than counting
     // as an error in the file.
@@ -793,7 +774,9 @@ pub fn read_backup(
     if let Some(error) = spool_error {
         return Err(error);
     }
-    keep_parse_error(parse_result, input, &mut report)?;
+    // A file that is not valid XML is refused whole, and so is a parse a
+    // cancel stopped (#2028).
+    parse_result?;
     check_cancel(options.cancel)?;
     let mut documents = Vec::new();
     for (id, mut conversation) in conversations {

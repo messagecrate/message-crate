@@ -16,7 +16,7 @@ use crate::mms_box::MmsBox;
 use crate::parts::{
     AttachmentBytes, DecodedPartData, MmsPart, decode_part_data, mms_body, part, part_fields,
 };
-use crate::xml::{attrs, btree, decode_body, get};
+use crate::xml::{XmlEvents, attrs, btree, decode_body, get, name_invalid_file};
 
 /// Serde-tagged raw source bag (`kind: sms|mms`) preserved for write-back.
 ///
@@ -282,14 +282,15 @@ fn parse_mms(
 /// those bytes and dropping the record frees the payload before the next
 /// message is parsed.
 ///
-/// `stats` is updated as messages are seen, including when this function later
-/// returns an error. Callers that keep records from the callback can merge
-/// those counters even if the XML is truncated.
+/// `stats` is updated as messages are seen.
 ///
 /// # Errors
 ///
-/// Returns an error when the file cannot be opened, the XML cannot be parsed,
-/// or `on_record` returns an error.
+/// Returns an error when the file cannot be opened, is not valid XML (the
+/// error names the file and says so, with the byte and the reason), or
+/// `on_record` returns an error. A file that is not valid XML stops the
+/// read at the error, so a caller refuses the file whole rather than keep
+/// the records before it.
 pub fn parse_file_with<F>(
     path: &Path,
     owners: Option<&OwnerHandleSet>,
@@ -301,6 +302,7 @@ where
 {
     let file = std::fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
     parse_reader_with(std::io::BufReader::new(file), owners, stats, on_record)
+        .map_err(|error| name_invalid_file(error, path))
 }
 
 /// Stream the XML, calling `on_record` for each SMS or MMS as it completes.
@@ -316,6 +318,7 @@ where
 {
     let mut xml = Reader::from_reader(reader);
     xml.config_mut().trim_text(true);
+    let mut xml = XmlEvents::new(xml);
     let mut buf = Vec::new();
     let (mut sms, mut mms, mut parts, mut addrs) =
         (HashMap::new(), HashMap::new(), Vec::new(), Vec::new());
@@ -323,7 +326,7 @@ where
     // and its addresses have lost so far, so its record can say so.
     let mut dropped = 0;
     loop {
-        match xml.read_event_into(&mut buf) {
+        match xml.next(&mut buf) {
             Ok(Event::Start(e)) => match e.name().as_ref().to_ascii_lowercase().as_str() {
                 "smses" => stats.backup_date_unix_ms = backup_date(&attrs(&e, &mut 0)),
                 "sms" => {
@@ -380,7 +383,7 @@ where
                 _ => {}
             },
             Ok(Event::Eof) => break,
-            Err(error) => return Err(error).context("XML parse error"),
+            Err(invalid) => return Err(invalid.into()),
             _ => {}
         }
         buf.clear();

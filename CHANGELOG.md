@@ -809,6 +809,15 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-15: **A damaged SMS Backup & Restore file is refused whole.** A
+  backup file cut off or damaged partway was imported up to the damage, and
+  only when its owner's phone number was given; without one, it was refused
+  with a message about the phone number, so Settings → Convert could not
+  read it at all. Now an import and Convert both refuse such a file with the
+  same message: the file is not valid XML, where, and why. Nothing is
+  imported from it, so a person fetches a good copy rather than import half
+  a backup without noticing. A single message that cannot be kept in a good
+  file is still skipped and counted, and the rest comes in (#2028).
 - 2026-10-15: **Cancel stops an Apple Messages import that has gone
   quiet.** Cancel took effect only when the Apple Messages reader
   (imessage-reader) next reported something, so during a long silent step,

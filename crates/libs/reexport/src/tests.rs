@@ -302,6 +302,34 @@ fn a_broken_sms_backup_leaves_the_previous_output_as_it_was() {
     }
 }
 
+/// Convert refuses a backup cut off between two elements, naming the file
+/// and saying it is not valid XML, and writes nothing, rather than convert
+/// the messages before the cut (#2028).
+#[test]
+fn a_backup_cut_off_partway_converts_nothing() {
+    let source = tempfile::tempdir().unwrap();
+    let input = source.path().join("smses.xml");
+    fs::write(
+        &input,
+        r#"<smses><sms protocol="0" address="+15555550101" date="1400773261000" type="1" body="before the cut"/><mms date="1400773400000" msg_box="1" address="+15555550101"><parts><part ct="text/plain" text="cut"/>"#,
+    )
+    .unwrap();
+    let destination = tempfile::tempdir().unwrap();
+
+    let error = convert(
+        source.path(),
+        &config(source.path(), destination.path(), OutputFormat::Json),
+    )
+    .unwrap_err();
+
+    let message = format!("{error:#}");
+    assert!(
+        message.contains(&format!("{} is not valid XML", input.display())),
+        "{message}"
+    );
+    assert_eq!(snapshot(destination.path()), []);
+}
+
 /// An output inside the backup's directory is left out of the read, so the
 /// backup an earlier conversion wrote there is not read back in as a second
 /// copy of every conversation.
