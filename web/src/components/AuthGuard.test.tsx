@@ -3,6 +3,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { authModule } from "../test/providers";
 import { setupUser } from "../test/user";
 import { AuthGuard } from "./AuthGuard";
 
@@ -26,9 +27,7 @@ vi.mock("../lib/useAccountProfile", () => ({
   }),
 }));
 
-vi.mock("../lib/authContext", () => ({
-  useAuth: () => authState,
-}));
+vi.mock("../lib/authContext", () => authModule(() => authState));
 
 afterEach(() => {
   cleanup();

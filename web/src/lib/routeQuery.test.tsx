@@ -8,11 +8,12 @@
  * the library's flags to the shape a long list renders from.
  */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { authModule, testQueryClient } from "../test/providers";
 import { freshEntries, seedEntries } from "../test/staleEntries";
 import {
   ApiError,
@@ -32,9 +33,7 @@ import {
 } from "./routeQuery";
 
 const account = { current: 7 };
-vi.mock("./authContext", () => ({
-  useAuth: () => ({ accountId: account.current }),
-}));
+vi.mock("./authContext", () => authModule(() => ({ accountId: account.current })));
 
 let client: QueryClient;
 
@@ -45,9 +44,7 @@ function wrapper({ children }: { children: ReactNode }) {
 beforeEach(() => {
   startFakeClock();
   account.current = 7;
-  client = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
-  });
+  client = testQueryClient();
 });
 
 afterEach(() => {
@@ -69,15 +66,7 @@ describe("useRouteQuery", () => {
     // condition under which the old shape could serve the wrong account. With
     // entries collected on unmount the refetch happens anyway and the test
     // would pass whether or not the key names the account.
-    client = new QueryClient({
-      defaultOptions: {
-        queries: {
-          retry: false,
-          gcTime: Number.POSITIVE_INFINITY,
-          staleTime: Number.POSITIVE_INFINITY,
-        },
-      },
-    });
+    client = testQueryClient({ keepUnread: true, neverStale: true });
 
     const fetchGroups = vi.fn(async () => ["Family"]);
     const first = renderHook(() => useRouteQuery(["contact-groups"], fetchGroups), { wrapper });

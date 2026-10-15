@@ -15,7 +15,7 @@ import type { MediaToolName, StagingSummary } from "../lib/tauri";
 import { activeImportRun } from "../test/apiShapes";
 import { deferred } from "../test/deferred";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { mockedAuth, renderWithProviders, testQueryClient } from "../test/providers";
+import { authModule, mockedAuth, renderWithProviders, testQueryClient } from "../test/providers";
 import { freshEntries, seedEntries } from "../test/staleEntries";
 import { storedForm } from "../test/storedForm";
 import { MIB } from "../test/units";
@@ -139,7 +139,7 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   invokeDeleteRunDir: (...args: unknown[]) => invokeDeleteRunDirMock(...args),
 }));
 
-vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", () => authModule());
 
 vi.mock("../lib/tauriCheck", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/tauriCheck")>()),

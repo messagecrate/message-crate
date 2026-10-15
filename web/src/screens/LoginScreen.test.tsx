@@ -10,9 +10,9 @@ const retrySavedLogin = vi.fn();
 
 const authState = vi.hoisted(() => ({ serverUrl: "" }));
 
-vi.mock("../lib/authContext", () => ({
-  useAuth: () => ({ login, setServer, retrySavedLogin, serverUrl: authState.serverUrl }),
-}));
+vi.mock("../lib/authContext", () =>
+  authModule(() => ({ login, setServer, retrySavedLogin, serverUrl: authState.serverUrl })),
+);
 
 const tauriState = vi.hoisted(() => ({ isTauri: false }));
 const startLocalServer = vi.hoisted(() => vi.fn());
@@ -74,7 +74,7 @@ import {
 import { STARTING_POLL_MS } from "../lib/useLocalServer";
 import type { ServerState } from "../lib/useServerState";
 import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { Providers } from "../test/providers";
+import { authModule, Providers } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 import LoginScreen from "./LoginScreen";
 

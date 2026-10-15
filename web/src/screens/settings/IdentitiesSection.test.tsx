@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { nth } from "../../test/nth";
-import { mockedAuth, renderWithProviders as render } from "../../test/providers";
+import { authModule, renderWithProviders as render } from "../../test/providers";
 import { inTimeZone } from "../../test/timeZone";
 import { fill, setupUser } from "../../test/user";
 import { IdentitiesSection } from "./IdentitiesSection";
@@ -16,7 +16,7 @@ const listAccountIdentities = vi.hoisted(() => vi.fn());
 vi.mock("../../lib/useSettingsAccount", () => ({
   useUpdateSettingsProfile: () => ({ mutateAsync, isPending: false }),
 }));
-vi.mock("../../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../lib/authContext", () => authModule());
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),
   listAccountIdentities: (...a: unknown[]) => listAccountIdentities(...a),

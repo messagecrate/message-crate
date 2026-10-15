@@ -10,7 +10,7 @@ import { ThemeProvider } from "../lib/ThemeProvider";
 import { account } from "../test/apiShapes";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { nth } from "../test/nth";
-import { Providers } from "../test/providers";
+import { authModule, Providers } from "../test/providers";
 import { MIB } from "../test/units";
 import { fill, setupUser } from "../test/user";
 import OwnerHome from "./OwnerHome";
@@ -41,9 +41,9 @@ const listApiTokens = vi.hoisted(() => vi.fn());
 const listServerLogLines = vi.hoisted(() => vi.fn());
 const listServerLogFiles = vi.hoisted(() => vi.fn());
 
-vi.mock("../lib/authContext", () => ({
-  useAuth: () => ({ logout: vi.fn(), updateToken: vi.fn(), accountId: 1 }),
-}));
+vi.mock("../lib/authContext", () =>
+  authModule({ logout: vi.fn(), updateToken: vi.fn(), accountId: 1 }),
+);
 
 vi.mock("../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverApi")>()),

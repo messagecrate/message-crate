@@ -7,12 +7,12 @@ import type { ContactDetail } from "../lib/contactDetail";
 import { keys } from "../lib/queryKeys";
 import { routeQueryKey } from "../lib/routeQueryKey";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { mockedAuth, renderWithProviders as render, testQueryClient } from "../test/providers";
+import { authModule, renderWithProviders as render, testQueryClient } from "../test/providers";
 import { inTimeZone } from "../test/timeZone";
 import { setupUser } from "../test/user";
 import CheckedContactsPanel from "./CheckedContactsPanel";
 
-vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", () => authModule());
 const summaries = vi.fn();
 
 vi.mock("../lib/serverApi", async (importOriginal) => ({
