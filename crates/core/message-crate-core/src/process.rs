@@ -119,7 +119,7 @@ pub fn check_cancel(cancel: &CancelFlag) -> Result<(), Cancelled> {
 /// the write queue's drains, [`crate::stage_attachment_jobs`], and the format
 /// sink's write. A caller with no log, no progress bar or no cancel passes
 /// [`LogSink::none`], [`ProgressSink::none`] or a `CancelFlag::default()`.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Sinks<'a> {
     /// Where the step writes its log lines.
     pub log: &'a LogSink,

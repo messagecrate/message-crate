@@ -57,9 +57,11 @@ fn read_options<'a>(owners: &'a [String], spool: &'a AttachmentSpool) -> crate::
         attachments_dir: None,
         spool: Some(spool),
         files: message_crate_core::AttachmentFiles::Skip,
-        log: &NO_LOG,
-        progress: &NO_PROGRESS,
-        cancel: &NO_CANCEL,
+        sinks: message_crate_core::Sinks {
+            log: &NO_LOG,
+            progress: &NO_PROGRESS,
+            cancel: &NO_CANCEL,
+        },
     }
 }
 

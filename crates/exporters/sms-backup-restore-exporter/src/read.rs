@@ -3,9 +3,9 @@
 use anyhow::{Result, bail};
 
 use message_crate_core::{
-    AttachmentFiles, CancelFlag, Cancelled, Counter, DUPLICATES_DROPPED, ItemKind, LogSink,
-    ProgressSink, SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE,
-    SKIPPED_UNREADABLE_PART, Sinks, check_cancel, document_messages, import_error_lines, item_line,
+    AttachmentFiles, Cancelled, Counter, DUPLICATES_DROPPED, ItemKind, SKIPPED_INVALID_DATE,
+    SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART, Sinks, check_cancel,
+    document_messages, import_error_lines, item_line,
 };
 use message_csv::format_local_ts;
 use message_ir::{
@@ -221,12 +221,9 @@ pub struct ReadOptions<'a> {
     pub spool: Option<&'a AttachmentSpool>,
     /// Whether attachment files are staged after parse.
     pub files: AttachmentFiles,
-    /// Human-readable notes and warnings while reading.
-    pub log: &'a LogSink,
-    /// Typed progress events while staging attachments.
-    pub progress: &'a ProgressSink,
-    /// Cancellation flag checked between records.
-    pub cancel: &'a CancelFlag,
+    /// Where the read writes its notes and warnings and the staging sends
+    /// its progress, and the cancel flag checked between records.
+    pub sinks: Sinks<'a>,
 }
 
 /// One attachment of a [`MessageInProgress`], named by the digest its
@@ -348,7 +345,7 @@ pub fn spooled_attachments<'a>(
                 .and_then(|spool| spool.source(att))
                 .unwrap_or((AttachmentSource::Missing, None))
         },
-        options.log,
+        options.sinks.log,
     )
 }
 
@@ -386,11 +383,7 @@ pub fn stage_read_attachments(
     spooled_attachments(documents, options).stage(
         attachments_dir,
         load_attachment_source,
-        Sinks {
-            log: options.log,
-            progress: options.progress,
-            cancel: options.cancel,
-        },
+        options.sinks,
     )?;
     Ok(())
 }
@@ -746,7 +739,7 @@ pub fn read_backup(
     let mut report = ReadReport::default();
     let mut conversations = BTreeMap::new();
     let file_path = input.display().to_string();
-    check_cancel(options.cancel)?;
+    check_cancel(options.sinks.cancel)?;
     // Each record's attachment payloads go to the spool as the record is
     // parsed; staging waits until every conversation is built. Messages
     // that parse before an XML error are kept, and so are the counts.
@@ -755,7 +748,7 @@ pub fn read_backup(
     // as an error in the file.
     let mut spool_error = None;
     let parse_result = parse_file_with(input, owners.as_ref(), &mut stats, |record| {
-        check_cancel(options.cancel)?;
+        check_cancel(options.sinks.cancel)?;
         let attachments = match queue_attachments(&record.attachments, options.spool) {
             Ok(attachments) => attachments,
             Err(error) => {
@@ -784,7 +777,7 @@ pub fn read_backup(
         return Err(error);
     }
     keep_parse_error(parse_result, input, &mut report)?;
-    check_cancel(options.cancel)?;
+    check_cancel(options.sinks.cancel)?;
     let mut documents = Vec::new();
     for (id, mut conversation) in conversations {
         report.duplicates_dropped += dedupe(&mut conversation.messages);

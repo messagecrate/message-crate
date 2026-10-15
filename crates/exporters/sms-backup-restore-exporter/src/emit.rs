@@ -109,9 +109,11 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
             attachments_dir: Some(writer.attachments_dir()),
             spool: writer.spool(),
             files: writer.files(),
-            log: writer.log(),
-            progress: writer.progress(),
-            cancel: &cancel,
+            sinks: message_crate_core::Sinks {
+                log: writer.log(),
+                progress: writer.progress(),
+                cancel: &cancel,
+            },
         },
     )?;
 

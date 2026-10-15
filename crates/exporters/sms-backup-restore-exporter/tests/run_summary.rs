@@ -167,9 +167,11 @@ fn convert_and_import_word_every_count_and_error_alike() {
             attachments_dir: None,
             spool: None,
             files: message_crate_core::AttachmentFiles::Skip,
-            log: &LogSink::none(),
-            progress: &ProgressSink::none(),
-            cancel: &CancelFlag::default(),
+            sinks: message_crate_core::Sinks {
+                log: &LogSink::none(),
+                progress: &ProgressSink::none(),
+                cancel: &CancelFlag::default(),
+            },
         },
     )
     .expect("read");

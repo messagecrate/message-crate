@@ -1,5 +1,6 @@
 use super::*;
 use crate::write::SbrBackupSession;
+use message_crate_core::{CancelFlag, LogSink, ProgressSink};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -24,9 +25,11 @@ fn opts<'a>(
         } else {
             AttachmentFiles::Skip
         },
-        log: &NO_LOG,
-        progress: &NO_PROGRESS,
-        cancel: &NO_CANCEL,
+        sinks: Sinks {
+            log: &NO_LOG,
+            progress: &NO_PROGRESS,
+            cancel: &NO_CANCEL,
+        },
     }
 }
 
@@ -490,13 +493,11 @@ fn the_byte_total_stays_the_same_when_the_spool_holds_no_file() {
     docs[0].messages[0].attachments.push(unspooled);
     let (progress, totals) = attachment_totals();
 
-    stage_read_attachments(
-        &mut docs,
-        &ReadOptions {
-            progress: &progress,
-            ..opts(&[], Some(&stage), Some(&spool))
-        },
-    )
+    stage_read_attachments(&mut docs, &{
+        let mut options = opts(&[], Some(&stage), Some(&spool));
+        options.sinks.progress = &progress;
+        options
+    })
     .unwrap();
 
     let totals = totals.lock().unwrap().clone();
