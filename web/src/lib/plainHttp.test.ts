@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isPlainHttpOverNetwork } from "./plainHttp";
 
 describe("isPlainHttpOverNetwork", () => {
-  it("is false for a loopback address, which never leaves this computer", () => {
+  it("is false for an address on this computer, whose traffic never leaves it", () => {
     for (const address of [
       "http://localhost:8080",
       "http://127.0.0.1:8080",

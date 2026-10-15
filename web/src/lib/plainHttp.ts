@@ -1,8 +1,8 @@
 /**
  * True when `address` is a plain `http:` address on another computer, so a
- * password typed for it crosses the network unencrypted. A loopback host
- * (`isLoopbackHost`) never leaves this computer, which
- * also covers the desktop app's own Message Crate at `127.0.0.1:8080`. An
+ * password typed for it crosses the network unencrypted. A host that names
+ * this computer (`isThisComputer`) never puts it on the network, which also
+ * covers the desktop app's own Message Crate at `127.0.0.1:8080`. An
  * `https:` address is encrypted, and text that is not an address names no
  * network at all, so neither is one.
  */
@@ -14,7 +14,7 @@ export function isPlainHttpOverNetwork(address: string): boolean {
     return false;
   }
   if (url.protocol !== "http:" || url.hostname === "") return false;
-  return !isLoopbackHost(url.hostname);
+  return !isThisComputer(url.hostname);
 }
 
 /**
@@ -23,7 +23,7 @@ export function isPlainHttpOverNetwork(address: string): boolean {
  * `[::ffff:127.0.0.1]` as `[::ffff:7f00:1]`. Browsers send any `*.localhost`
  * name and `0.0.0.0` to this computer too.
  */
-function isLoopbackHost(hostname: string): boolean {
+function isThisComputer(hostname: string): boolean {
   return (
     hostname === "localhost" ||
     hostname.endsWith(".localhost") ||
