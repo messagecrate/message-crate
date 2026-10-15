@@ -251,7 +251,9 @@ Why all of it: ffmpeg writes why an encoder would not open first, and the lines 
 Why no path: ffmpeg names the files by their full paths, and the server's log holds only what the owner may see, which an attachment's file name is not (`docs/architecture/server-log.md`, "What a line never holds").
 
 A file the desktop app could not convert records `convert_failed:` and a short reason on its attachment, the same on either path that converts it: the Media Stage and the convert pass of a run that converts as it stages (`media::why_not_converted`).
-The reason is why ffmpeg was stopped, or the last line ffmpeg wrote, with each file ffmpeg was given written as `<input>` or `<output>`.
+The reason is why ffmpeg was stopped, or the line ffmpeg wrote that names the cause, with each file ffmpeg was given written as `<input>` or `<output>`.
+That line is the first that starts with `Error` or with a `[<component> @ …]` tag other than the output muxer's (`[out#…`), or the last line when none does.
+Why not the last line: ffmpeg writes the cause first and what follows from it after, so its last line can be that nothing was written into the output file, which says nothing about why (#2959).
 An ffmpeg that wrote nothing gives how it exited.
 Any other failure gives the error's first line, with the file written as `<input>` and without each step that names another file in its directory, such as the temporary file a conversion writes.
 The whole error goes to the Import Run's log.

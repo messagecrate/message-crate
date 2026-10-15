@@ -50,8 +50,8 @@ pub struct NotConverted {
 /// any other file in its directory by its path:
 ///
 /// - why ffmpeg was stopped ([`Killed`]);
-/// - the last line ffmpeg wrote before it failed, with each file it was
-///   given written as `<input>` or `<output>`
+/// - the line ffmpeg wrote that names the cause ([`cause_line`]), with
+///   each file it was given written as `<input>` or `<output>`
 ///   ([`FfmpegFailed::without_files`]);
 /// - how ffmpeg exited, when it failed and wrote nothing;
 /// - otherwise the error's first line, with `file` written as `<input>`,
@@ -68,13 +68,8 @@ pub fn why_not_converted(err: &anyhow::Error, file: &Path) -> String {
         return killed.to_string();
     }
     if let Some(failed) = err.downcast_ref::<FfmpegFailed>() {
-        return match failed
-            .said()
-            .lines()
-            .rev()
-            .find(|line| !line.trim().is_empty())
-        {
-            Some(last) => failed.without_files(last.trim()),
+        return match cause_line(failed.said()) {
+            Some(cause) => failed.without_files(cause),
             None => failed.to_string(),
         };
     }
@@ -101,6 +96,31 @@ pub fn why_not_converted(err: &anyhow::Error, file: &Path) -> String {
         .next()
         .unwrap_or_default()
         .to_string()
+}
+
+/// The line of what ffmpeg `said` that names why it failed, trimmed: the
+/// first line that starts with `Error`, or with a `[<component> @ …]` tag
+/// other than the output muxer's (`[out#…`); the last line when none does;
+/// `None` when it said nothing.
+///
+/// ffmpeg writes the cause first and what follows from it after, such as
+/// that the encoder did not open and the output muxer's line that nothing
+/// was written, so the last line can be a consequence rather than the
+/// cause (#2959).
+fn cause_line(said: &str) -> Option<&str> {
+    let mut lines = said.lines().map(str::trim).filter(|line| !line.is_empty());
+    let names_a_cause = |line: &&str| {
+        line.starts_with("Error")
+            || (!line.starts_with("[out#")
+                && line
+                    .strip_prefix('[')
+                    .and_then(|rest| rest.split_once(']'))
+                    .is_some_and(|(tag, _)| tag.contains(" @ ")))
+    };
+    lines
+        .clone()
+        .find(names_a_cause)
+        .or_else(|| lines.next_back())
 }
 
 /// `err` on one line, with its whole chain, and each file a failed ffmpeg

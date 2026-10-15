@@ -764,8 +764,8 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
     );
 }
 
-/// A file ffmpeg could not convert records the last line ffmpeg wrote, with
-/// no path in it: the same reason the desktop app's Media Stage records for
+/// A file ffmpeg could not convert records the line ffmpeg wrote that names
+/// the cause, here its last, with no path in it: the same reason the desktop app's Media Stage records for
 /// the same failure (`message-staging`'s
 /// `a_failed_conversion_records_the_reason_the_attachment_jobs_record`),
 /// not the whole error, which goes to the log (#2801).

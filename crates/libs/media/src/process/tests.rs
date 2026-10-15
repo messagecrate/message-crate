@@ -691,8 +691,8 @@ fn why_hevc_failed_names_no_file() {
     );
 }
 
-/// A file the pass could not convert records ffmpeg's last line, with no
-/// path in it, the same reason the desktop app's Media Stage records (#2801).
+/// A file the pass could not convert records the line ffmpeg wrote that
+/// names the cause, here its last, with no path in it, the same reason the desktop app's Media Stage records (#2801).
 #[test]
 fn a_file_that_fails_records_ffmpegs_last_line_without_its_path() {
     let dir = tempfile::tempdir().unwrap();
@@ -770,6 +770,78 @@ fn why_not_converted_names_no_path_however_the_conversion_failed() {
     assert_eq!(
         why_not_converted(&named, file),
         "compress video <input>: ffprobe reported no stream for <input>"
+    );
+}
+
+/// What ffmpeg wrote when it failed, run with `-i <file> /tmp/out.mp4`.
+fn ffmpeg_failed_saying(file: &Path, said: &str) -> anyhow::Error {
+    anyhow::Error::from(FfmpegFailed::new(
+        std::process::ExitStatus::default(),
+        said.as_bytes(),
+        &[
+            "-i".to_string(),
+            file.display().to_string(),
+            "/tmp/out.mp4".to_string(),
+        ],
+    ))
+}
+
+/// ffmpeg 8 writes why an encoder would not open first, and what followed
+/// from it after, ending with the output muxer's line that nothing was
+/// written. The reason is the line that names the cause (#2959).
+#[test]
+fn why_not_converted_names_the_cause_not_the_last_line() {
+    let file = Path::new("/home/someone/attachments/clip.mov");
+    let failed = ffmpeg_failed_saying(
+        file,
+        "[libx265 @ 0x5e6836f4af00] Error setting preset/tune nonsense/(null).\n\
+         [vost#0:0/libx265 @ 0x5e6836f4a8c0] [enc:libx265 @ 0x5e6836f4ae80] Error while \
+         opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.\n\
+         [vf#0:0 @ 0x5e6836f4b500] Error sending frames to consumers: Invalid argument\n\
+         [out#0/mp4 @ 0x5e6836f4a340] Nothing was written into output file, because at least \
+         one of its streams received no packets.\n",
+    );
+    assert_eq!(
+        why_not_converted(&failed, file),
+        "[libx265 @ 0x5e6836f4af00] Error setting preset/tune nonsense/(null)."
+    );
+
+    // An input it cannot read: the demuxer's line says why, and the lines
+    // after it repeat that the input did not open.
+    let damaged = ffmpeg_failed_saying(
+        file,
+        "[mov,mp4,m4a,3gp,3g2,mj2 @ 0x583b3eba9f00] moov atom not found\n\
+         [in#0 @ 0x583b3eba9c40] Error opening input: Invalid data found when processing input\n\
+         Error opening input file /home/someone/attachments/clip.mov.\n\
+         Error opening input files: Invalid data found when processing input\n",
+    );
+    assert_eq!(
+        why_not_converted(&damaged, file),
+        "[mov,mp4,m4a,3gp,3g2,mj2 @ 0x583b3eba9f00] moov atom not found"
+    );
+
+    // A line that starts with "Error" counts as a cause, and names the file
+    // as <input>.
+    let missing = ffmpeg_failed_saying(
+        file,
+        "Error opening input file /home/someone/attachments/clip.mov.\n\
+         Error opening input files: No such file or directory\n",
+    );
+    assert_eq!(
+        why_not_converted(&missing, file),
+        "Error opening input file <input>."
+    );
+
+    // With no line that names a cause, only the output muxer's and plain
+    // lines, the last line is the reason.
+    let unmarked = ffmpeg_failed_saying(
+        file,
+        "[out#0/mp4 @ 0x5e6836f4a340] Nothing was written into output file\n\
+         /home/someone/attachments/clip.mov: Invalid data found when processing input\n",
+    );
+    assert_eq!(
+        why_not_converted(&unmarked, file),
+        "<input>: Invalid data found when processing input"
     );
 }
 
