@@ -3,9 +3,9 @@
 use anyhow::{Result, bail};
 
 use message_crate_core::{
-    AttachmentFiles, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, SKIPPED_INVALID_DATE,
-    SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART, Sinks, check_cancel,
-    document_messages, import_error_lines, item_line,
+    AttachmentFiles, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, RunLogLevel,
+    SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART,
+    Sinks, check_cancel, document_messages, import_error_lines, item_line,
 };
 use message_csv::format_local_ts;
 use message_ir::{
@@ -171,35 +171,47 @@ impl ReadReport {
     /// line has the words an import's summary gives the same count or
     /// error.
     pub fn log_lines(&self) -> Vec<String> {
-        self.counts()
+        self.leveled_lines()
             .into_iter()
-            .filter(|(_, count)| *count > 0)
-            .map(|(counter, count)| counter.line(count))
-            .chain(import_error_lines(&self.errors))
+            .map(|(_, line)| line)
             .collect()
     }
 
-    /// Write [`Self::log_lines`] to `log`, each at its level: a count of
-    /// what was read, or of repeated copies dropped, whose message is kept
-    /// once, as a line; a count of what the run went on without, and every
-    /// line under the Import Errors heading, as a warning.
+    /// Write [`Self::log_lines`] to `log`, each at its level
+    /// ([`Self::leveled_lines`]).
     pub fn write_log(&self, log: &LogSink) {
+        for (level, line) in self.leveled_lines() {
+            match level {
+                RunLogLevel::Info => log.emit(line),
+                _ => log.warn(line),
+            }
+        }
+    }
+
+    /// [`Self::log_lines`], each with its level: a count of what was read,
+    /// or of repeated copies dropped, whose message is kept once, at `INFO`;
+    /// a count of what the run went on without, and every line under the
+    /// Import Errors heading, at `WARN`.
+    fn leveled_lines(&self) -> Vec<(RunLogLevel, String)> {
         /// The counts of what the run kept.
         const KEPT: [Counter; 3] = [SMS_SEEN, MMS_SEEN, DUPLICATES_DROPPED];
-        for (counter, count) in self.counts() {
-            if count == 0 {
-                continue;
-            }
-            let line = counter.line(count);
-            if KEPT.iter().any(|kept| kept.key() == counter.key()) {
-                log.emit(line);
-            } else {
-                log.warn(line);
-            }
-        }
-        for line in import_error_lines(&self.errors) {
-            log.warn(line);
-        }
+        self.counts()
+            .into_iter()
+            .filter(|(_, count)| *count > 0)
+            .map(|(counter, count)| {
+                let level = if KEPT.iter().any(|kept| kept.key() == counter.key()) {
+                    RunLogLevel::Info
+                } else {
+                    RunLogLevel::Warn
+                };
+                (level, counter.line(count))
+            })
+            .chain(
+                import_error_lines(&self.errors)
+                    .into_iter()
+                    .map(|line| (RunLogLevel::Warn, line)),
+            )
+            .collect()
     }
 }
 

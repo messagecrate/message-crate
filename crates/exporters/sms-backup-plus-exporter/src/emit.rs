@@ -788,8 +788,6 @@ mod tests {
     };
     use message_staging::AttachmentSource;
 
-    /// An EML given as an input is recorded under its own file name. An EML
-    /// found in a directory input is recorded under its path inside that directory.
     /// The verbose list of Import Errors is what the run went on without, so
     /// every line of it is at `WARN` (#2047).
     #[test]
@@ -821,6 +819,8 @@ mod tests {
         );
     }
 
+    /// An EML given as an input is recorded under its own file name. An EML
+    /// found in a directory input is recorded under its path inside that directory.
     #[test]
     fn an_eml_given_as_a_file_input_is_recorded_under_its_file_name() {
         let file = PathBuf::from("/backups/single/one.eml");
