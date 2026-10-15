@@ -1,3 +1,4 @@
+import type { ImportIssue } from "./ImportSummaryPanel";
 import type { ImportIssueStage } from "./importIssueStage";
 
 /**
@@ -5,14 +6,14 @@ import type { ImportIssueStage } from "./importIssueStage";
  * Import Error is, whose `kind` is `note`.
  */
 export type IssueTableRow = {
-  kind: string;
+  kind: ImportIssue["kind"] | "note";
   stage: ImportIssueStage;
   item: string;
   reason: string;
 };
 
 export type ImportIssueGroup = {
-  kind: string;
+  kind: IssueTableRow["kind"];
   stage: ImportIssueStage;
   reason: string;
   items: string[];
