@@ -216,6 +216,10 @@ pub struct TapbackRecord {
     pub is_from_me: bool,
     /// Reactor handle for incoming reactions.
     pub sender: Option<String>,
+    /// The name the source gave the reactor of an incoming reaction when it
+    /// gave no address, as an iMazing CSV does. Shown, never matched: it
+    /// makes no identity.
+    pub sender_display_name: Option<String>,
     /// The country staging reads the reactor's identity in. The file names
     /// none for a reactor, so staging takes the one its conversation names
     /// for the same identity, as a participant or a sender.
@@ -536,20 +540,28 @@ fn attachment_from_ir(a: &IrAttachment) -> AttachmentRecord {
 }
 
 /// One of a message's reactions as the row the server stores, under the
-/// person who reacted: the owner when `is_from_me`, else `reactor_identity`.
-/// A reaction is never given the author or the direction of the message it
-/// reacts to, because the reactor is rarely the author.
+/// person who reacted: the owner when `is_from_me`, else `reactor_identity`,
+/// else the name the source gave with no address (#2044). A reaction is
+/// never given the author or the direction of the message it reacts to,
+/// because the reactor is rarely the author.
 fn tapback_from_reaction(reaction: &Reaction) -> TapbackRecord {
+    let (sender, sender_display_name) = if reaction.is_from_me {
+        (None, None)
+    } else {
+        let sender = reaction.reactor_identity.as_deref().and_then(nonempty);
+        let name = match sender {
+            Some(_) => None,
+            None => reaction.reactor_display_name.as_deref().and_then(nonempty),
+        };
+        (sender, name)
+    };
     TapbackRecord {
         part_index: i64::from(reaction.part_index),
         kind: reaction.kind.clone(),
         emoji: reaction.emoji.clone(),
         is_from_me: reaction.is_from_me,
-        sender: if reaction.is_from_me {
-            None
-        } else {
-            reaction.reactor_identity.clone()
-        },
+        sender,
+        sender_display_name,
         sender_country: None,
     }
 }

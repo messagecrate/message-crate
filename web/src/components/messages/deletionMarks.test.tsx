@@ -22,7 +22,14 @@ const ATTACHMENT_LABEL = missingAttachmentChipLabel(ATTACHMENT);
 const KEPT_TEXT = "See you at noon";
 
 /** A reaction, drawn as ❤️ by the bubbles that draw reactions. The sender only names who reacted. */
-const LOVED = { emoji: null, is_from_me: false, kind: "loved", part_index: 0, sender: "+1555" };
+const LOVED = {
+  emoji: null,
+  is_from_me: false,
+  kind: "loved",
+  part_index: 0,
+  sender: "+1555",
+  sender_display_name: null,
+};
 
 /** The element drawn as the message's bubble: the one holding `text`, with a dashed outline. */
 function markedBubble(text: string): HTMLElement {

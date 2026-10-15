@@ -5631,6 +5631,13 @@ export interface components {
             part_index: number;
             /** @description The identity that reacted, for incoming reactions. */
             sender: string | null;
+            /**
+             * @description The name the source gave the reactor of an incoming reaction
+             *     when it gave no address for them, as an iMazing export does;
+             *     `null` when `sender` is set, and for the account holder's own
+             *     reactions. A name is shown, never matched to a contact.
+             */
+            sender_display_name: string | null;
         };
         /**
          * @description How finely the source recorded a message's time.

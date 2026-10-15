@@ -1283,6 +1283,7 @@ async fn tapback_row(
         emoji: tap.emoji.clone(),
         is_from_me: tap.is_from_me as i64,
         sender_handle_id,
+        sender_display_name: tap.sender_display_name.clone(),
     })
 }
 

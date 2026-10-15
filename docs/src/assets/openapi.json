@@ -20153,7 +20153,8 @@
           "kind",
           "is_from_me",
           "emoji",
-          "sender"
+          "sender",
+          "sender_display_name"
         ],
         "properties": {
           "emoji": {
@@ -20182,6 +20183,13 @@
               "null"
             ],
             "description": "The identity that reacted, for incoming reactions."
+          },
+          "sender_display_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name the source gave the reactor of an incoming reaction\nwhen it gave no address for them, as an iMazing export does;\n`null` when `sender` is set, and for the account holder's own\nreactions. A name is shown, never matched to a contact."
           }
         }
       },
