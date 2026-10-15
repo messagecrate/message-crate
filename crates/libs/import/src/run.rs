@@ -49,7 +49,7 @@ use message_crate_http::ServerAway;
 use crate::AuthInfo;
 use crate::directory::{detect_source, file_label, input_directory, list_jsonl_files};
 use crate::http::{HttpSession, ImportOutcome};
-use crate::journal::{self, RunJournal};
+use crate::journal::{self, EarlierProgress, RunJournal};
 use crate::pipeline::{ChunkStep, ImportPipeline};
 use crate::prepare::{
     PrepareContext, PrepareOutcome, PrepareQueue, PrepareResult, PreparedFile, SharedJournal,
@@ -319,7 +319,7 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
     let journal = RunJournal::open(
         paths.journal.clone(),
         ServerTarget::new(&session.url, &session.username),
-        cfg.force || cfg.mode == ImportMode::Replace,
+        earlier_progress(cfg),
         &mut |line| out.show_at(RunLogLevel::Warn, line),
     )?;
     out.expect_files(files.len());
@@ -573,6 +573,18 @@ fn start_import_run(
     )?;
     out.show(format!("Recording Import Run {id} for {source}"));
     Ok(id)
+}
+
+/// What this Upload does with the journal's earlier progress: a replace
+/// discards it, force ignores it, and an append resumes from it.
+fn earlier_progress(cfg: &ImportConfig) -> EarlierProgress {
+    if cfg.mode == ImportMode::Replace {
+        EarlierProgress::Discard
+    } else if cfg.force {
+        EarlierProgress::Ignore
+    } else {
+        EarlierProgress::Resume
+    }
 }
 
 /// Run the prepare workers and the import loop until every file is consumed
