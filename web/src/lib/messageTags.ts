@@ -6,6 +6,7 @@ import {
 } from "./nameCollection";
 import { keys } from "./queryKeys";
 import reservedNames from "./reservedNames.json";
+import { reservedError, reservedSet } from "./reservedSetNames";
 import { forTag } from "./searchQuery";
 import {
   createMessageTag,
@@ -20,10 +21,10 @@ import {
  * them to `reservedNames.json`, and fails when the file differs from the
  * names the server refuses.
  */
-const RESERVED_TAG_NAMES = new Set(reservedNames.messageTag.reserved);
+const RESERVED_TAG_NAMES = reservedSet(reservedNames.messageTag);
 
 export function reservedTagError(name: string): string {
-  return `"${name.trim()}" is a reserved ${reservedNames.messageTag.label}`;
+  return reservedError(reservedNames.messageTag, name);
 }
 
 export const messageTags = createNameCollection({

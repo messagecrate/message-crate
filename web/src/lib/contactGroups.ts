@@ -5,6 +5,7 @@ import {
 } from "./nameCollection";
 import { keys } from "./queryKeys";
 import reservedNames from "./reservedNames.json";
+import { reservedError, reservedSet } from "./reservedSetNames";
 import { forGroup } from "./searchQuery";
 import {
   createContactGroup,
@@ -20,18 +21,10 @@ import { UNKNOWN_GROUP } from "./unknownGroup";
  * them to `reservedNames.json`, and fails when the file differs from the
  * names the server refuses.
  */
-const RESERVED_GROUP_NAMES = new Set(reservedNames.contactGroup.reserved);
-
-/** Reserved names the server refuses with a sentence of their own. */
-const SPECIAL_GROUP_ERRORS = new Map(
-  reservedNames.contactGroup.special.map(({ name, message }) => [name, message]),
-);
+const RESERVED_GROUP_NAMES = reservedSet(reservedNames.contactGroup);
 
 export function reservedGroupError(name: string): string {
-  return (
-    SPECIAL_GROUP_ERRORS.get(name.trim().toLowerCase()) ??
-    `"${name.trim()}" is a reserved ${reservedNames.contactGroup.label}`
-  );
+  return reservedError(reservedNames.contactGroup, name);
 }
 
 export const contactGroups = createNameCollection({
