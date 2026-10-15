@@ -1,8 +1,8 @@
 //! Conversation key, sender, date, and row-classification helpers for the
 //! emitter.
 
-use crate::emit::TransportFamily;
-use crate::parse::{RawRow, SourceKind};
+use super::TransportFamily;
+use crate::read::{RawRow, SourceKind};
 use crate::zone::Zone;
 use chrono::NaiveDateTime;
 use message_ir::{ConversationKey, IdentityType, IrParticipant};

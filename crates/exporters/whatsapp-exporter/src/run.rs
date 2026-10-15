@@ -1,7 +1,7 @@
 //! Full export pipeline (wtsexporter, then JSON convert); the desktop app calls
 //! it in process.
 
-use crate::emit::{ConvertRequest, convert_json};
+use crate::emit::{ConvertExportArgs, convert_export};
 use crate::ios_backup::{decrypt_if_encrypted, extract_bytes};
 use crate::owner::{owner_from_backup, owner_from_form};
 use crate::wtsexporter::{
@@ -187,7 +187,7 @@ pub fn run(
 
     message_crate_core::check_cancel(&context.cancel)?;
     let convert_run = ConvertRun::new(context, output);
-    let report = convert_json(ConvertRequest {
+    let report = convert_export(ConvertExportArgs {
         json_path: &json_path,
         output: &output.directory,
         media_search_roots: &media_roots,

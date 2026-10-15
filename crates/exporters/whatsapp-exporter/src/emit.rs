@@ -1,11 +1,11 @@
 //! Convert wtsexporter JSON into the shared conversation structure, then write
-//! the chosen output format via [`ExportWriter`].
+//! the chosen output format through [`convert_backup`].
 
 use crate::jid::{
     PHONE_PUNCTUATION, chat_id_from_jid, is_channel_jid, is_group_jid, is_status_jid, jid_to_e164,
     phone_id_to_e164,
 };
-use crate::parse::{
+use crate::read::{
     ChatJson, MemberJson, MessageJson, ReactionJson, is_reply, key_string, load_chat_store,
     media_path, message_text, timestamp_ms, timestamp_secs,
 };
@@ -13,12 +13,13 @@ use anyhow::{Context, Result};
 use message_crate_core::{ConvertRun, Counter, ExportReport, project_conversation};
 use message_csv::format_local_ts;
 use message_ir::{
-    ExportMeta, IdentityType, IrAttachment, IrParticipant, IrService, IrSource, PendingAttachment,
-    PendingConversation, PendingMessage, PendingReply, ProjectionHooks, Reaction, SortKeyUnit,
+    ConversationDocument, ExportMeta, IdentityType, IrAttachment, IrParticipant, IrService,
+    IrSource, PendingAttachment, PendingConversation, PendingMessage, PendingReply,
+    ProjectionHooks, Reaction, SortKeyUnit,
 };
-use message_staging::{AttachmentSource, ExportWriter};
+use message_staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
 use serde_json::Map;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -27,9 +28,9 @@ const EXPORT_TOOL: &str = "WhatsApp Chat Exporter";
 /// Pinned documented upstream version (JSON convert path; shell-out may differ).
 pub(crate) const EXPORT_TOOL_VERSION: &str = "0.13.0";
 
-/// One conversion of a wtsexporter `result.json`: what to read, where to
-/// write it, and how.
-pub(crate) struct ConvertRequest<'a> {
+/// Inputs for [`convert_export`]: the wtsexporter `result.json` to read,
+/// where to write it, and how.
+pub(crate) struct ConvertExportArgs<'a> {
     pub json_path: &'a Path,
     pub output: &'a Path,
     /// Directories tried when resolving relative media paths. For a ready-made
@@ -50,98 +51,110 @@ pub(crate) struct ConvertRequest<'a> {
 /// Convert a wtsexporter `result.json` into the shared conversation structure,
 /// then write the chosen output format.
 ///
+/// Cancellation is checked between chats as they are read and between
+/// conversations.
+///
 /// # Errors
 ///
 /// Returns an error when the JSON cannot be read, a conversation cannot be
 /// written, or the user cancels.
-pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> {
-    let ConvertRequest {
+pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport> {
+    let ConvertExportArgs {
         json_path,
         output,
         media_search_roots,
         owner_identity,
         backup_taken_at_unix_ms,
-        convert_run:
-            ConvertRun {
-                transforms,
-                output_format,
-                cancel,
-                resume,
-                issues,
-            },
-    } = request;
+        convert_run,
+    } = args;
     fs::create_dir_all(output).with_context(|| format!("create {}", output.display()))?;
-    // Load the chat store BEFORE cleaning the output directory. The JSON may live
-    // inside the output dir (e.g. wtsexporter_result.json) and cleaning
-    // deletes all *.json files.
+    // Load the chat store BEFORE the writer cleans the output directory. The
+    // JSON may live inside the output dir (e.g. wtsexporter_result.json) and
+    // cleaning deletes all *.json files.
     let store = load_chat_store(json_path)?;
-    let writer = ExportWriter::open(output, output_format, transforms, resume)?;
-    let copy_attachments = writer.files().copies();
-    let mut report = ExportReport::with_issues(issues.clone());
-    let mut conversations: BTreeMap<String, PendingConversation> = BTreeMap::new();
-    let mut rosters: BTreeMap<String, Vec<IrParticipant>> = BTreeMap::new();
+    convert_backup(
+        output,
+        convert_run,
+        WriterSetup::default(),
+        |writer, cancel, mut report| {
+            let copy_attachments = writer.files().copies();
+            let mut conversations: BTreeMap<String, PendingConversation> = BTreeMap::new();
+            let mut rosters: BTreeMap<String, Vec<IrParticipant>> = BTreeMap::new();
 
-    for (jid, chat) in store {
-        message_crate_core::check_cancel(&cancel)?;
-        if jid.starts_with('_') {
-            // Reserved / system keys if any.
-            continue;
-        }
-        if let Some(counter) = skipped_chat_counter(&jid) {
-            report.bump(counter, chat.messages.len() as u64);
-            continue;
-        }
-        if let Some((chat_id, conversation, roster)) = ingest_chat(
-            &jid,
-            &chat,
-            owner_identity.as_deref(),
-            copy_attachments,
-            media_search_roots,
-            &mut report,
-        ) {
-            rosters.insert(chat_id.clone(), roster);
-            conversations.insert(chat_id, conversation);
-        }
-    }
-
-    let hooks = WhatsappProjection {
-        rosters,
-        export: message_crate_core::export_meta(
-            EXPORT_SOURCE,
-            EXPORT_TOOL,
-            EXPORT_TOOL_VERSION,
-            owner_identity,
-            None,
-            backup_taken_at_unix_ms,
-        ),
-    };
-    let mut documents = Vec::new();
-    let mut media_sources: Vec<Option<PathBuf>> = Vec::new();
-    for (chat_id, mut conversation) in conversations {
-        message_crate_core::check_cancel(&cancel)?;
-        let Some(document) = project_conversation(&chat_id, &mut conversation, &hooks, &mut report)
-        else {
-            continue;
-        };
-        collect_media_sources(&conversation, &mut media_sources);
-        documents.push(document);
-    }
-
-    let mut source_iter = media_sources.into_iter();
-    writer.finish(
-        documents,
-        &mut |att| {
-            let hint = att.size_bytes;
-            match source_iter.next().flatten() {
-                Some(path) => (AttachmentSource::Path(path), hint),
-                None => (AttachmentSource::Missing, hint),
+            for (jid, chat) in store {
+                message_crate_core::check_cancel(cancel)?;
+                if jid.starts_with('_') {
+                    // Reserved / system keys if any.
+                    continue;
+                }
+                if let Some(counter) = skipped_chat_counter(&jid) {
+                    report.bump(counter, chat.messages.len() as u64);
+                    continue;
+                }
+                if let Some((chat_id, conversation, roster)) = ingest_chat(
+                    &jid,
+                    &chat,
+                    owner_identity.as_deref(),
+                    copy_attachments,
+                    media_search_roots,
+                    &mut report,
+                ) {
+                    rosters.insert(chat_id.clone(), roster);
+                    conversations.insert(chat_id, conversation);
+                }
             }
-        },
-        &cancel,
-        &mut report,
-    )?;
 
-    Ok(report)
+            Ok(ReadBackup {
+                conversations: conversations.into_iter().collect(),
+                project: WhatsappDocuments {
+                    hooks: WhatsappProjection {
+                        rosters,
+                        export: message_crate_core::export_meta(
+                            EXPORT_SOURCE,
+                            EXPORT_TOOL,
+                            EXPORT_TOOL_VERSION,
+                            owner_identity,
+                            None,
+                            backup_taken_at_unix_ms,
+                        ),
+                    },
+                    media_sources: VecDeque::new(),
+                },
+                report,
+            })
+        },
+    )
+}
+
+/// The projection of each conversation read, for [`convert_backup`], and
+/// the media file of each attachment it keeps.
+struct WhatsappDocuments {
+    hooks: WhatsappProjection,
+    /// The media file of each attachment of the documents projected so
+    /// far, in the order the writer asks for them.
+    media_sources: VecDeque<Option<PathBuf>>,
+}
+
+impl Project for WhatsappDocuments {
+    type Conversation = (String, PendingConversation);
+
+    fn project(
+        &mut self,
+        (chat_id, mut conversation): (String, PendingConversation),
+        report: &mut ExportReport,
+    ) -> Option<ConversationDocument> {
+        let document = project_conversation(&chat_id, &mut conversation, &self.hooks, report)?;
+        collect_media_sources(&conversation, &mut self.media_sources);
+        Some(document)
+    }
+
+    fn attachment_source(&mut self, att: &mut IrAttachment) -> (AttachmentSource, Option<u64>) {
+        let hint = att.size_bytes;
+        match self.media_sources.pop_front().flatten() {
+            Some(path) => (AttachmentSource::Path(path), hint),
+            None => (AttachmentSource::Missing, hint),
+        }
+    }
 }
 
 /// The run-summary counter for a chat that is not a conversation, or `None`
@@ -495,14 +508,14 @@ fn queue_media(
 }
 
 /// Collect source paths in the same order attachments will appear on documents.
-fn collect_media_sources(conversation: &PendingConversation, out: &mut Vec<Option<PathBuf>>) {
+fn collect_media_sources(conversation: &PendingConversation, out: &mut VecDeque<Option<PathBuf>>) {
     for message in &conversation.messages {
         if message.attachments.is_empty() {
             continue;
         }
         let source = message.extra_str("media_source").to_string();
         for _ in &message.attachments {
-            out.push((!source.is_empty()).then(|| PathBuf::from(&source)));
+            out.push_back((!source.is_empty()).then(|| PathBuf::from(&source)));
         }
     }
 }

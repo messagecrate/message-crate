@@ -1,16 +1,16 @@
 //! Convert OpenExtract rows into the shared conversation structure, then write
-//! the chosen output format via [`ExportWriter`].
+//! the chosen output format through [`convert_backup`].
 
-use crate::parse::{RawRow, SourceKind, discover_csv_files, parse_csv_file};
+use crate::read::{RawRow, SourceKind, discover_csv_files, parse_csv_file};
 use anyhow::Result;
 use chrono::DateTime;
 use message_crate_core::{ConvertRun, ExportReport, prepare_outputs, project_conversation};
 use message_ir::{
-    ConversationKey, ExportMeta, IdentityType, IrConversationType, IrParticipant, IrService,
-    IrSource, NAMELESS_CHAT_ID, PendingConversation, PendingMessage, ProjectionHooks,
-    orphaned_chat_id,
+    ConversationDocument, ConversationKey, ExportMeta, IdentityType, IrAttachment,
+    IrConversationType, IrParticipant, IrService, IrSource, NAMELESS_CHAT_ID, PendingConversation,
+    PendingMessage, ProjectionHooks, orphaned_chat_id,
 };
-use message_staging::{AttachmentSource, ExportWriter};
+use message_staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
 use phone::Handle;
 use serde_json::{Map, json};
 use sha2::{Digest, Sha256};
@@ -34,8 +34,8 @@ pub(crate) struct ConvertExportArgs<'a> {
 
 /// Convert OpenExtract CSV(s) under `input`.
 ///
-/// When `cancel` is set, cooperative cancellation is checked between CSV files
-/// and before writing. A cancelled run returns
+/// Cancellation is checked between CSV files, between conversations, and
+/// before writing. A canceled run returns
 /// what [`message_crate_core::Sinks::cancel`] says.
 ///
 /// # Errors
@@ -46,69 +46,77 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     let ConvertExportArgs {
         input,
         output,
-        convert_run:
-            ConvertRun {
-                transforms,
-                output_format,
-                cancel,
-                resume,
-                issues,
-            },
+        convert_run,
     } = args;
     let (inputs, output) = prepare_outputs(&[input.to_path_buf()], output)?;
     let input = &inputs[0];
-    let writer = ExportWriter::open(&output, output_format, transforms, resume)?;
+    convert_backup(
+        &output,
+        convert_run,
+        WriterSetup::default(),
+        |_writer, cancel, report| {
+            let mut ingest = Ingest {
+                conversations: BTreeMap::new(),
+                report,
+            };
+            let csv_files = discover_csv_files(input)?;
+            for path in &csv_files {
+                message_crate_core::check_cancel(cancel)?;
+                ingest.ingest_file(path);
+            }
+            // OpenExtract writes no date of its own, so the backup is as new
+            // as the newest CSV it wrote.
+            let export = message_crate_core::export_meta(
+                EXPORT_SOURCE,
+                EXPORT_TOOL,
+                EXPORT_TOOL_VERSION,
+                None,
+                None,
+                message_crate_core::newest_file_modified_unix_ms(
+                    csv_files.iter().map(PathBuf::as_path),
+                ),
+            );
+            Ok(ReadBackup {
+                conversations: ingest.conversations.into_iter().collect(),
+                project: OpenExtractDocuments { export },
+                report: ingest.report,
+            })
+        },
+    )
+}
 
-    let mut ingest = Ingest {
-        conversations: BTreeMap::new(),
-        report: ExportReport::with_issues(issues.clone()),
-    };
-    let csv_files = discover_csv_files(input)?;
-    for path in &csv_files {
-        message_crate_core::check_cancel(&cancel)?;
-        ingest.ingest_file(path);
-    }
-    message_crate_core::check_cancel(&cancel)?;
-    let Ingest {
-        conversations,
-        mut report,
-    } = ingest;
+/// The projection of each conversation read, for [`convert_backup`].
+struct OpenExtractDocuments {
+    export: ExportMeta,
+}
 
-    // OpenExtract writes no date of its own, so the backup is as new as the
-    // newest CSV it wrote.
-    let export = message_crate_core::export_meta(
-        EXPORT_SOURCE,
-        EXPORT_TOOL,
-        EXPORT_TOOL_VERSION,
-        None,
-        None,
-        message_crate_core::newest_file_modified_unix_ms(csv_files.iter().map(PathBuf::as_path)),
-    );
-    let mut documents = Vec::new();
-    for (chat_id, mut pending) in conversations {
+impl Project for OpenExtractDocuments {
+    type Conversation = (String, Pending);
+
+    fn project(
+        &mut self,
+        (chat_id, mut pending): (String, Pending),
+        report: &mut ExportReport,
+    ) -> Option<ConversationDocument> {
         let hooks = OpenExtractProjection {
-            export: &export,
+            export: &self.export,
             key: &pending.key,
         };
-        if let Some(mut document) =
-            project_conversation(&chat_id, &mut pending.conversation, &hooks, &mut report)
-        {
-            if matches!(pending.key, Key::UnknownPerson) {
-                document.conversation.conversation_type = IrConversationType::Orphaned;
-            }
-            documents.push(document);
+        let mut document =
+            project_conversation(&chat_id, &mut pending.conversation, &hooks, report)?;
+        if matches!(pending.key, Key::UnknownPerson) {
+            document.conversation.conversation_type = IrConversationType::Orphaned;
         }
+        Some(document)
     }
 
-    // OpenExtract carries no attachments; every attachment source is Missing.
-    writer.finish(
-        documents,
-        &mut |att| (AttachmentSource::Missing, att.size_bytes),
-        &cancel,
-        &mut report,
-    )?;
-
-    Ok(report)
+    /// OpenExtract carries no attachments; every attachment source is Missing.
+    fn attachment_source(
+        &mut self,
+        attachment: &mut IrAttachment,
+    ) -> (AttachmentSource, Option<u64>) {
+        (AttachmentSource::Missing, attachment.size_bytes)
+    }
 }
 
 /// Parse-time state shared across every CSV file in one export.

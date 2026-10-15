@@ -140,19 +140,30 @@ pub(crate) fn open_output(options: &ExportOptions) -> Result<ExportWriterParts> 
     .into_parts())
 }
 
+/// Inputs for [`convert_export`].
+pub(crate) struct ConvertExportArgs<'a> {
+    /// The running program, which streams the records.
+    pub helper: &'a mut Helper,
+    /// The run's options, log and cancel flag.
+    pub options: &'a ExportOptions,
+    /// The writer [`open_output`] opened.
+    pub output: ExportWriterParts,
+}
+
 /// Stream the program's records into conversations, then write the chosen
 /// output format (JSON Lines, JSON, CSV, EML, MBOX, or XML) through
-/// `output`, which [`open_output`] opened.
+/// `output`.
 ///
 /// # Errors
 ///
 /// Returns an error when the program fails, a conversation cannot be
 /// written, or the user cancels.
-pub(crate) fn export(
-    helper: &mut Helper,
-    options: &ExportOptions,
-    output: ExportWriterParts,
-) -> Result<ExportReport> {
+pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport> {
+    let ConvertExportArgs {
+        helper,
+        options,
+        output,
+    } = args;
     let format = options.convert_run.output_format;
     options.log.emit("");
     options.log.emit(format!(
@@ -996,7 +1007,6 @@ mod tests {
             contacts_path: None,
             use_caller_id: false,
             export_path: PathBuf::from("/nowhere/out"),
-            scratch_dir: PathBuf::from("/nowhere/cache"),
             attachment_embed: AttachmentEmbed::Embed,
             log: LogSink::none(),
             progress: ProgressSink::none(),
@@ -1006,6 +1016,7 @@ mod tests {
                     ..message_crate_core::ExportTransforms::none()
                 },
                 output_format,
+                scratch_dir: PathBuf::from("/nowhere/cache"),
                 ..message_crate_core::ConvertRun::default()
             },
         }

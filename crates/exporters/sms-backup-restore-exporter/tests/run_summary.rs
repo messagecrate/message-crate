@@ -175,9 +175,9 @@ fn the_report_counts_conversations_and_directions() {
     let report = convert_export(ConvertExportArgs {
         input: &input,
         output_dir: &tmp.path().join("out"),
-        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         convert_run: ConvertRun {
+            scratch_dir: cache.path().to_path_buf(),
             output_format: OutputFormat::Jsonl,
             ..ConvertRun::default()
         },

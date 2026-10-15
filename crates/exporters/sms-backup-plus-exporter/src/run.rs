@@ -32,7 +32,6 @@ pub fn run(
         convert_export(ConvertExportArgs {
             inputs,
             output_dir: &output.directory,
-            scratch_dir: &context.scratch_dir,
             owner_phones: &source.owner_phones,
             owner_emails: &source.owner_emails,
             phone_country: source.phone_country,
@@ -90,13 +89,13 @@ mod tests {
         let no_input = convert_export(ConvertExportArgs {
             inputs: &[] as &[&Path],
             output_dir: input.path(),
-            scratch_dir: cache.path(),
             owner_phones: &["+15555550100".into()],
             owner_emails: &["owner@example.com".into()],
             verbose: false,
             log: &LogSink::none(),
             phone_country: phone::country("US"),
             convert_run: ConvertRun {
+                scratch_dir: cache.path().to_path_buf(),
                 output_format: OutputFormat::Jsonl,
                 ..ConvertRun::default()
             },
