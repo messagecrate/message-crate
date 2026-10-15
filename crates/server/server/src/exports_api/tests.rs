@@ -1,7 +1,7 @@
 use super::*;
 use crate::db::conversation_messages::{MessageSort, messages_from_sql};
 use crate::db::exports::ExportCounts;
-use crate::paging::SortKey;
+use crate::paging::{PageParams, SortKey};
 use crate::problem::ProblemType;
 use crate::test_support::{
     ConversationRow, MessageRow, RegisteredAccount, SeedConversation, SeedMessage, TestFixture,
@@ -42,8 +42,7 @@ async fn page(
         ExportPageOpts {
             export_id: run.id,
             total: u64::try_from(run.message_count).unwrap(),
-            limit,
-            offset,
+            page: PageParams { limit, offset },
             order: oldest_first(),
         },
     )

@@ -191,6 +191,14 @@ pub struct PageParams {
     pub offset: usize,
 }
 
+/// The first page at the default size: what a list route answers when it is
+/// sent no `limit` and no `offset`.
+#[cfg(test)]
+pub(crate) const FIRST_PAGE: PageParams = PageParams {
+    limit: DEFAULT_LIST_LIMIT,
+    offset: 0,
+};
+
 /// Turn the raw `limit` and `offset` into a page, or a 422 that says which
 /// one is wrong. `max_offset` is `None` for a route that may walk the whole set.
 /// Every `offset`, capped or not, fits in an `i64`, the type SQLite binds an

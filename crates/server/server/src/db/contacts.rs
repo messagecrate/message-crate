@@ -8,7 +8,7 @@ use chrono::{DateTime, Utc};
 use message_ir::IdentityService;
 use sqlx::SqliteConnection;
 
-use crate::search::emit::NOT_TRASHED_CONTACT;
+use crate::db::trash::{not_trashed_contact, not_trashed_contact_id};
 
 pub mod read;
 
@@ -352,7 +352,8 @@ pub async fn live_contact_exists(
         "SELECT ct.id
          FROM contacts ct
          WHERE ct.id = $1 AND ct.account_id = $2
-           AND {NOT_TRASHED_CONTACT}",
+           AND {not_trashed}",
+        not_trashed = not_trashed_contact("ct"),
     )))
     .bind(contact_id)
     .bind(account_id)
@@ -690,8 +691,7 @@ pub async fn delete_untouched_holder_contact(
            SELECT 1 FROM contacts ct
            WHERE ct.account_id = $1 AND ct.id = $2
              AND ct.origin = 'import' AND ct.preferred_name = ''
-             AND NOT EXISTS (SELECT 1 FROM trashed_contacts tc
-                             WHERE tc.account_id = $1 AND tc.contact_id = $2)
+             AND {not_trashed}
              AND NOT EXISTS (SELECT 1 FROM contact_group_members gm
                              JOIN contact_groups g ON g.id = gm.group_id
                              WHERE gm.contact_id = $2 AND g.kind = 'manual')
@@ -704,6 +704,7 @@ pub async fn delete_untouched_holder_contact(
                       OR EXISTS (SELECT 1 FROM staging_participants WHERE handle_id = h.id)
                       OR EXISTS (SELECT 1 FROM staging_conversations
                                  WHERE account_id = $1 AND chat_handle_id = h.id))))",
+        not_trashed = not_trashed_contact_id("$1", "$2"),
         holder = crate::db::account_profile::is_account_identity_sql("h", "$1"),
     )))
     .bind(account_id)
