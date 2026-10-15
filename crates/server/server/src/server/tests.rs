@@ -2449,13 +2449,15 @@ fn docker_stop_waits_longer_than_the_drain() {
     );
 }
 
-/// Every `docker run` command in the user guide that starts a server limits
-/// the container as both Compose files do (#2655): no Linux capability, no
+/// Every `docker run` command in the user guide that starts a server carries
+/// the four limits both Compose files set (#2655): no Linux capability, no
 /// privilege gain, a read-only root filesystem, and `/tmp` in memory. The
-/// three pages carry the command separately, so this keeps them from
-/// drifting apart from each other and from Compose.
+/// three pages carry the command separately, so this keeps each copy from
+/// losing a limit. A command is found wherever it starts on a line and
+/// however it is split across lines, and only one that runs the Message
+/// Crate image counts.
 #[test]
-fn the_guide_s_docker_run_commands_limit_the_container() {
+fn user_guide_docker_run_commands_limit_the_container() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let limits = [
         "--cap-drop ALL",
@@ -2475,18 +2477,29 @@ fn the_guide_s_docker_run_commands_limit_the_container() {
             .unwrap_or_else(|e| panic!("read {path}: {e}"));
         let lines: Vec<&str> = text.lines().collect();
         for (at, line) in lines.iter().enumerate() {
-            if !line.starts_with("docker run -d ") {
+            if !line.trim_start().starts_with("docker run ") {
+                continue;
+            }
+            // The command runs on while a line ends in `\`.
+            let mut words: Vec<&str> = Vec::new();
+            for part in &lines[at..] {
+                let part = part.trim();
+                words.extend(part.trim_end_matches('\\').split_whitespace());
+                if !part.ends_with('\\') {
+                    break;
+                }
+            }
+            if !words
+                .iter()
+                .any(|word| word.starts_with("bitrealm/message-crate"))
+            {
                 continue;
             }
             started += 1;
-            let flags: Vec<&str> = lines[at..]
-                .iter()
-                .take_while(|line| !line.starts_with("```"))
-                .map(|line| line.trim().trim_end_matches('\\').trim())
-                .collect();
+            let command = words.join(" ");
             for limit in limits {
                 assert!(
-                    flags.contains(&limit),
+                    command.contains(&format!(" {limit} ")),
                     "{path}:{} starts a server without {limit}",
                     at + 1
                 );
