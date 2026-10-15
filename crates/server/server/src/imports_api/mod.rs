@@ -1,14 +1,24 @@
 //! The `/v1/imports` routes: an Import Run, the batches posted into it, and
 //! its end.
 //!
-//! The handlers are here. The rest of the import lives beside them:
-//! `dto` holds the routes' request and response types; `pipeline` imports
-//! JSONL into the database without HTTP, in two stages, `staging`, which
-//! parses the files into staging rows and calls `contact_name` as it goes,
-//! then `promote`, which copies the staging rows into the production
-//! tables; and `run_control` holds the import slots and runs a batch, or a
-//! run's end, in one.
-
+//! The handlers are in this module. Its submodules hold the rest of the
+//! import:
+//!
+//! - `dto` holds the routes' request and response types.
+//! - `pipeline` imports JSONL into the database without HTTP.
+//! - `staging` parses the files into staging rows, the pipeline's first
+//!   stage.
+//! - `contact_name` links handles to contacts and merges display names,
+//!   which `staging` calls as it goes.
+//! - `promote` copies the staging rows into the production tables, the
+//!   pipeline's second stage.
+//! - `records` maps a conversation file's lines to the rows staging writes.
+//! - `with_yourself` runs the with-yourself rule again when an account's
+//!   identities change.
+//! - `failure` says what can stop an import, by kind.
+//! - `run_control` holds the import slots, and runs a batch or a run's end
+//!   in one.
+//! - `batch_bodies` says where a batch's body is written while it is read.
 use axum::extract::{Request, State};
 use axum::http::HeaderMap;
 use message_crate_api_types::{ImportMode, MAX_IMPORT_BATCH_BYTES};
@@ -36,7 +46,7 @@ pub mod failure;
 pub(crate) mod pipeline;
 pub mod promote;
 pub mod records;
-mod run_control;
+pub(crate) mod run_control;
 pub mod staging;
 pub mod with_yourself;
 
@@ -47,7 +57,6 @@ use dto::{
     import_status_refusal, issues_and_notes, optional_json_string, strip_form_credentials,
 };
 pub use failure::{ImportError, ImportFailure, MISSING_GUID_LINES_NAMED};
-pub(crate) use run_control::import_slots;
 use run_control::{
     BatchContext, RunEnd, end_run, run_import_path, server_stopping, take_import_slot,
 };

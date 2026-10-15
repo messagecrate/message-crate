@@ -1,9 +1,11 @@
-//! The import pipeline, which runs without HTTP: the import of JSONL files
-//! into an account ([`import_jsonl_files_on_conn`] and the steps it calls,
-//! `staging` then `promote`), the Import Run a process opens and finishes
-//! itself ([`OwnedImportRun`]), and the end of a run: its completion with the
-//! Saved Search and Contact Group it makes, and its discard. The HTTP routes,
-//! the server's `import` command and the Demo Account build all run it.
+//! The import pipeline, which runs without HTTP. The HTTP routes, the
+//! server's `import` command and the Demo Account build all run it.
+//!
+//! [`import_jsonl_files_on_conn`] imports JSONL files into an account in two
+//! stages: `staging`, then `promote`. [`OwnedImportRun`] is an Import Run
+//! that a process opens and finishes itself. A completed run gets a Saved
+//! Search and a Contact Group ([`complete_run`]), and a discarded run hides
+//! the account's duplicates ([`discard_running_import_and_dedupe`]).
 
 use std::fs;
 use std::path::{Path, PathBuf};

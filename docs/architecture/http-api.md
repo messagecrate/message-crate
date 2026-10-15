@@ -564,9 +564,10 @@ waits on an import's write lock, and the limit stays under the time
 `message-crate-server healthcheck` gives each address it asks (4 seconds,
 or 2 each when it asks both 127.0.0.1 and ::1), so a failure arrives as the
 server's answer. HTTP imports hold at most `MAX_CONCURRENT_IMPORTS`
-(`imports_api/run_control.rs`) of the pool's `max_connections` (`db/engine.rs`), but
-requests that write wait on SQLite's busy timeout while an import holds the
-write lock, and enough of them can take every connection for that long. The
+(`imports_api/run_control.rs`) of the pool's `max_connections`
+(`db/engine.rs`), but requests that write wait on SQLite's busy timeout
+while an import holds the write lock, and enough of them can take every
+connection for that long. The
 check fails then, though a `/v1` read would wait for a connection and get
 one. One failure does not mark the container unhealthy, because Docker needs
 three in a row 30 seconds apart. When `/health` answers with an error, the
