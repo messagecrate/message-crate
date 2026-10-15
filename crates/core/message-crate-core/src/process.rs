@@ -115,9 +115,9 @@ pub fn check_cancel(cancel: &CancelFlag) -> Result<(), Cancelled> {
 }
 
 /// Where a step of a run reports and what stops it: the log, the progress
-/// events, and the cancel flag. Every staging step takes the three together:
-/// the write queue's drains, [`crate::stage_attachment_jobs`], and the format
-/// sink's write. A caller with no log, no progress bar or no cancel passes
+/// events, and the cancel flag. Every staging step takes the three together,
+/// such as the write queue's drains, [`crate::stage_attachment_jobs`], and
+/// the format sink's write. A caller with no log, no progress bar or no cancel passes
 /// [`LogSink::none`], [`ProgressSink::none`] or a `CancelFlag::default()`.
 #[derive(Debug, Clone, Copy)]
 pub struct Sinks<'a> {

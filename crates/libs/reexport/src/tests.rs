@@ -253,10 +253,10 @@ fn snapshot(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
 
 /// Convert an SMS backup with a picture into `destination`, replace the
 /// backup with `broken`, and convert it again into the same directory with
-/// `media`. The second run must fail and leave the first run's output as it
+/// `files`. The second run must fail and leave the first run's output as it
 /// was.
 fn assert_broken_backup_keeps_previous_output(
-    media: AttachmentFiles,
+    files: AttachmentFiles,
     broken: impl Fn(&str) -> String,
 ) {
     let source = tempfile::tempdir().unwrap();
@@ -264,21 +264,21 @@ fn assert_broken_backup_keeps_previous_output(
     fs::write(source.path().join("smses.xml"), backup).unwrap();
     let destination = tempfile::tempdir().unwrap();
     let mut config = config(source.path(), destination.path(), OutputFormat::Json);
-    config.output.media.files = media;
+    config.output.media.files = files;
     convert(source.path(), &config).unwrap();
     let previous = snapshot(destination.path());
     assert!(
         previous
             .iter()
             .any(|(path, _)| path.extension().is_some_and(|e| e == "json")),
-        "{media:?}: the first run wrote a conversation: {previous:?}"
+        "{files:?}: the first run wrote a conversation: {previous:?}"
     );
-    if media == AttachmentFiles::Originals {
+    if files == AttachmentFiles::Originals {
         assert!(
             previous
                 .iter()
                 .any(|(path, _)| path.starts_with("attachments")),
-            "{media:?}: the first run staged the picture: {previous:?}"
+            "{files:?}: the first run staged the picture: {previous:?}"
         );
     }
 
@@ -288,7 +288,7 @@ fn assert_broken_backup_keeps_previous_output(
     assert_eq!(
         snapshot(destination.path()),
         previous,
-        "{media:?}: the previous output is left as it was"
+        "{files:?}: the previous output is left as it was"
     );
 }
 
@@ -297,9 +297,9 @@ fn assert_broken_backup_keeps_previous_output(
 /// attachments (issue #1439).
 #[test]
 fn a_broken_sms_backup_leaves_the_previous_output_as_it_was() {
-    for media in [AttachmentFiles::Originals, AttachmentFiles::Skip] {
-        assert_broken_backup_keeps_previous_output(media, |backup| backup[..20].to_string());
-        assert_broken_backup_keeps_previous_output(media, |_| "<smses count=\"0\"></smses>".into());
+    for files in [AttachmentFiles::Originals, AttachmentFiles::Skip] {
+        assert_broken_backup_keeps_previous_output(files, |backup| backup[..20].to_string());
+        assert_broken_backup_keeps_previous_output(files, |_| "<smses count=\"0\"></smses>".into());
     }
 }
 
@@ -1251,12 +1251,12 @@ fn read_output(dir: &Path, format: OutputFormat) -> ConversationDocument {
     }
 }
 
-/// Convert the mail export in `source` to `format` with `media` and check
+/// Convert the mail export in `source` to `format` with `files` and check
 /// that the attachment the mail carried is a file the output names.
-fn assert_mail_attachment_survives(source: &Path, format: OutputFormat, media: AttachmentFiles) {
+fn assert_mail_attachment_survives(source: &Path, format: OutputFormat, files: AttachmentFiles) {
     let destination = tempfile::tempdir().unwrap();
     let mut config = config(source, destination.path(), format);
-    config.output.media.files = media;
+    config.output.media.files = files;
 
     convert(source, &config).unwrap();
 
@@ -1264,20 +1264,20 @@ fn assert_mail_attachment_survives(source: &Path, format: OutputFormat, media: A
     let note = &out.messages[0].attachments[0];
     let path = note.path.as_deref().unwrap_or_else(|| {
         panic!(
-            "{format:?} {media:?}: no path, missing_reason={:?}",
+            "{format:?} {files:?}: no path, missing_reason={:?}",
             note.missing_reason
         )
     });
     assert_eq!(
         fs::read(destination.path().join(path)).unwrap(),
         b"hello attachment",
-        "{format:?} {media:?}"
+        "{format:?} {files:?}"
     );
-    assert_eq!(note.missing_reason, None, "{format:?} {media:?}");
+    assert_eq!(note.missing_reason, None, "{format:?} {files:?}");
     assert_eq!(
         note.digest_sha256.as_deref(),
         Some("7fa36b95d5c98859ed72b4787f3c28b29eaa103970786755c9711cbb19be631c"),
-        "{format:?} {media:?}"
+        "{format:?} {files:?}"
     );
 }
 
