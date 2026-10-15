@@ -16,9 +16,9 @@
 //! ([`ProgressEvent::FileWritten`]): the desktop app keeps a row apart until
 //! its conversation is written (#1688).
 //!
-//! Writers stage the originals or nothing, and never transcode. Converting
-//! and compressing is the Media Stage's work, after the Staging Review,
-//! through [`transcode_staged`](crate::transcode_staged).
+//! Writers stage the originals or nothing, and never transcode. Transcoding
+//! is the Media Stage's work, after the Staging Review, through
+//! [`transcode_staged`](crate::transcode_staged).
 //!
 //! Only non-obfuscated JSONL exports are routed here. Obfuscation is stateful
 //! across documents and the other formats merge or embed at finish, so those
