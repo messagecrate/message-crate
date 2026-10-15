@@ -1,6 +1,7 @@
-//! The layers a request passes through before and after its handler: CORS,
-//! the body limits, the `Accept` check, `Cache-Control`, the Content Security
-//! Policy, the panic catch and the request's log line, with the request
+//! What the layers around every handler run, which `with_server_layers` in
+//! [`crate::server`] puts in order: CORS, the body limits, the `Accept`
+//! check, `Cache-Control`, the Content Security Policy's value, the answer to
+//! a handler that panicked and the request's log line, with the request
 //! classifiers they decide by and the URI a log line names.
 
 use axum::http::{HeaderValue, StatusCode, header};

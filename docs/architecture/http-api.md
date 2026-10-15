@@ -767,9 +767,9 @@ from storing an answer to a request that sent `Authorization`, and a browser
 does not cache a `POST` by default, but a browser's own cache may still write
 a `GET` answer to disk, and a proxy that does not follow the RFC may keep
 one. `no-store` says in the answer itself that nothing may keep it.
-How: one layer, `no_store_unless_set` in `middleware.rs`, which
-`with_server_layers` in `server.rs` puts around the whole router, so a route
-added later is covered without remembering to, and it sets the header only
+How: `with_server_layers` in `server.rs` puts one layer,
+`no_store_unless_set` in `middleware.rs`, around the whole router, so a route
+added later is covered without remembering to. The layer sets the header only
 when the answer has none. The OpenAPI document states the rule once, in its
 description, as it does for `405 Method Not Allowed`, and the walk over every
 operation checks it (see [The reference](#the-reference)).
