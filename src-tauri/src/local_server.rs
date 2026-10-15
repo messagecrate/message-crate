@@ -9,12 +9,11 @@
 //! - nothing answers: the app starts the server and waits for it to listen;
 //! - something else answers: the port is taken, and the app says so.
 //!
-//! The server is given its Data Directory, `data` in the Message Crate
-//! Directory (`crate::app_directories`, `data-dev` for a dev build), its
+//! The server is given its Data Directory (`crate::app_directories`), its
 //! address and the website files on its command line, so there is no config
-//! file. A copy of that directory is the whole Message Crate. A database that does not
-//! exist yet is created with the Demo Account before the server listens,
-//! which is why a first start takes a few seconds longer.
+//! file. A database that does not exist yet is created with the Demo Account
+//! before the server listens, which is why a first start takes a few seconds
+//! longer.
 //!
 //! The server listens on this computer only, unless the person switched on
 //! the setting that opens it to the network; it then listens on every

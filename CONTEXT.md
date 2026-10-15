@@ -515,15 +515,19 @@ Directory of the Message Crate the app starts (`data`), the Staging Directory
 (`staging`), the Export Directory (`exports`), the Logs Directory (`logs`),
 the Scratch Directory (`scratch`), and the Tools Directory (`tools`). It
 exists on every computer the app runs on, including one whose app connects
-to a Message Crate elsewhere. Only the user who owns it can read it.
+to a Message Crate elsewhere. Only the user who owns it can read it. One
+file stays outside it: the record of the Staging Directory setting and of
+the run directories the app made, in the operating system's app-data
+directory, because it is the app's state, not data.
 _Avoid_: Folder, App Data, Home Directory
 
 **Data Directory**:
 The directory a Message Crate keeps everything it stores in: its database,
 each account's attachments, and the server's log, in its `logs` directory.
-One Message Crate has one Data Directory,
-and a copy of it is a complete backup. The desktop app's is `data` in the
-Message Crate Directory (`data-dev` for a dev build); a Docker Message Crate's is the volume given to it.
+One Message Crate has one Data Directory, and a copy of it is a complete
+backup. The desktop app's is `data` in the Message Crate Directory
+(`data-dev` for a dev build); a Docker Message Crate's is the volume given
+to it.
 _Avoid_: Data Folder, DB Directory, Database Directory
 
 **Staging Directory**:

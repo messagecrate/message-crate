@@ -127,6 +127,19 @@ impl MessageCrateDirectory {
         self.root.join(TOOLS_DIRECTORY_NAME)
     }
 
+    /// The Message Crate Directory and each directory in it that holds
+    /// messages: every directory but the Tools Directory.
+    pub fn private_directories(&self) -> [PathBuf; 6] {
+        [
+            self.root.clone(),
+            self.data(),
+            self.staging(),
+            self.exports(),
+            self.logs(),
+            self.scratch(),
+        ]
+    }
+
     /// Make the Message Crate Directory and every directory in it, so each
     /// is there before anything is put in it, and a program put in the Tools
     /// Directory by hand has a place to go. The Message Crate Directory and
@@ -140,15 +153,7 @@ impl MessageCrateDirectory {
     /// Everything that could be made is made.
     pub fn make(&self) -> io::Result<()> {
         let mut first_error = None;
-        let private = [
-            self.root.clone(),
-            self.data(),
-            self.staging(),
-            self.exports(),
-            self.logs(),
-            self.scratch(),
-        ];
-        for dir in &private {
+        for dir in &self.private_directories() {
             let made = file_io::create_dir_all_owner_only(dir)
                 .and_then(|()| file_io::restrict_to_owner(dir).map(|_| ()))
                 .map_err(|error| with_path(dir, error));
@@ -313,14 +318,11 @@ mod tests {
 
         directory.make().unwrap();
 
-        for dir in [
-            directory.data(),
-            directory.staging(),
-            directory.exports(),
-            directory.logs(),
-            directory.scratch(),
-            directory.tools(),
-        ] {
+        for dir in directory
+            .private_directories()
+            .into_iter()
+            .chain([directory.tools()])
+        {
             assert!(dir.is_dir(), "{} was not made", dir.display());
         }
     }
@@ -337,14 +339,7 @@ mod tests {
         let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
         let home = tempfile::tempdir().unwrap();
         let directory = MessageCrateDirectory::in_home(home.path(), false);
-        let private = [
-            directory.root().to_path_buf(),
-            directory.data(),
-            directory.staging(),
-            directory.exports(),
-            directory.logs(),
-            directory.scratch(),
-        ];
+        let private = directory.private_directories();
 
         directory.make().unwrap();
         for dir in &private {
