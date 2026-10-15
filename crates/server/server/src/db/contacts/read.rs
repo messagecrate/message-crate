@@ -10,11 +10,11 @@ use sqlx::SqliteConnection;
 
 use crate::db::contacts::UNKNOWN_CONTACT_SQL;
 use crate::db::sql::{SqlParam, bind_args, in_placeholders};
+use crate::db::trash::{not_trashed_contact, not_trashed_conversation};
 use crate::paging::{
     Direction, MAX_CONTACT_SUMMARY_IDS, Page, PageParams, SortKey, page_from_rows,
 };
 use crate::search::bridge::{TrashScope, contact_sent_messages};
-use crate::search::emit::{NOT_TRASHED_CONTACT, NOT_TRASHED_CONVERSATION};
 use crate::server::ApiError;
 
 /// Contact row for the list: name, addresses, groups.
@@ -348,8 +348,9 @@ pub async fn contact_name_and_modified(
                 ct.last_modified
          FROM contacts ct
          WHERE ct.id = $1 AND ct.account_id = $2
-           AND {NOT_TRASHED_CONTACT}",
+           AND {not_trashed}",
         unknown = UNKNOWN_CONTACT_SQL,
+        not_trashed = not_trashed_contact("ct"),
     )))
     .bind(contact_id)
     .bind(account_id)
@@ -399,7 +400,7 @@ pub async fn contact_totals(
                COALESCE((SELECT (SELECT COUNT(*) {sent})
                          FROM contacts ct WHERE ct.account_id = $1 AND ct.id = $2), 0)",
             involves_contact_sql = involves_contact_sql(),
-            not_trashed_conversation = NOT_TRASHED_CONVERSATION,
+            not_trashed_conversation = not_trashed_conversation("c"),
             sent = contact_sent_messages(TrashScope::LeftOut),
         )))
         .bind(account_id)
@@ -456,14 +457,14 @@ pub async fn get_contact_summaries(
             FROM contacts ct
             WHERE ct.account_id = $1
               AND ct.id IN ({placeholders})
-              AND {NOT_TRASHED_CONTACT}
+              AND {not_trashed_contact}
          ),
          involved AS (
             SELECT selected.id AS contact_id, c.id AS conversation_id, c.conversation_type
             FROM selected
             JOIN conversations c ON c.account_id = selected.account_id
               AND {involves}
-              AND {NOT_TRASHED_CONVERSATION}
+              AND {not_trashed_conversation}
          )
          SELECT
             ct.id,
@@ -481,6 +482,8 @@ pub async fn get_contact_summaries(
             (SELECT COUNT(*) {sent} AND c.conversation_type = 'orphaned')
          FROM selected ct",
         sent = contact_sent_messages(TrashScope::LeftOut),
+        not_trashed_contact = not_trashed_contact("ct"),
+        not_trashed_conversation = not_trashed_conversation("c"),
     );
 
     let mut q = sqlx::query_as::<_, ContactSelectionRow>(sqlx::AssertSqlSafe(sql));
@@ -595,7 +598,8 @@ pub async fn unknown_contact_identifiers(
          JOIN contacts ct ON ct.account_id = ch.account_id AND ct.id = ch.contact_id
          WHERE h.account_id = $1
            AND h.normalized IN ({placeholders})
-           AND {NOT_TRASHED_CONTACT}",
+           AND {not_trashed}",
+        not_trashed = not_trashed_contact("ct"),
     );
     let mut q = sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(sql)).bind(account_id);
     for (_, normalized) in &unique {

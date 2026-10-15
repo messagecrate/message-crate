@@ -26,6 +26,7 @@ use crate::db::conversations::is_group_type;
 use crate::db::ownership::owns_conversation;
 use crate::db::participant_names::load_for_conversations;
 use crate::db::sql::{SQLITE_IN_CHUNK, SqlParam, bind_all, bind_args, group_rows_by_id};
+use crate::db::trash::not_trashed_conversation_id;
 use crate::models::StoredTime;
 use crate::paging::{Direction, Page, PageParams, SortKey, page_from_rows};
 use crate::search::bridge::Sql;
@@ -77,7 +78,9 @@ struct RawRow {
 /// conversation, the rule `earlier_versions_holder_sql` follows: a person
 /// who trashed the conversation holding the reply does not open it from a
 /// message they kept.
-const REPLY_COUNT_SQL: &str = "WITH RECURSIVE \
+fn reply_count_sql() -> String {
+    format!(
+        "WITH RECURSIVE \
        quoted(id) AS ( \
          SELECT m.id \
          UNION SELECT q.id FROM messages q JOIN quoted ON q.duplicate_of = quoted.id), \
@@ -89,12 +92,13 @@ const REPLY_COUNT_SQL: &str = "WITH RECURSIVE \
                WHERE t.duplicate_of IS NOT NULL) \
      SELECT COUNT(*) FROM shown JOIN messages sm ON sm.id = shown.id \
      WHERE sm.duplicate_of IS NULL \
-       AND (NOT EXISTS (SELECT 1 FROM trashed_conversations rtc \
-                        WHERE rtc.account_id = sm.account_id \
-                          AND rtc.conversation_id = sm.conversation_id) \
+       AND ({reply_kept} \
             OR EXISTS (SELECT 1 FROM trashed_conversations mtc \
                        WHERE mtc.account_id = m.account_id \
-                         AND mtc.conversation_id = m.conversation_id))";
+                         AND mtc.conversation_id = m.conversation_id))",
+        reply_kept = not_trashed_conversation_id("sm.account_id", "sm.conversation_id"),
+    )
+}
 
 /// FROM clause for message queries. The compiled filter mentions only `m`;
 /// these joins are here for the SELECT list, which reports the conversation
@@ -497,7 +501,7 @@ fn message_page_sql(
          WHERE {where_sql}
          ORDER BY {order_by} LIMIT ? OFFSET ?",
         shown_title = crate::db::conversations::shown_title_sql("c"),
-        reply_count = REPLY_COUNT_SQL,
+        reply_count = reply_count_sql(),
     );
     let mut params = params.to_vec();
     // An `offset` too large for SQLite's `i64` is past the end of any table,
@@ -735,13 +739,12 @@ pub(crate) fn earlier_versions_holder_sql(alias: &str) -> String {
                        JOIN hidden_under hu ON hn.duplicate_of = hu.id) \
                SELECT MIN(hm.id) FROM hidden_under hu JOIN messages hm ON hm.id = hu.id \
                WHERE EXISTS (SELECT 1 FROM message_versions hdv WHERE hdv.message_id = hm.id) \
-                 AND (NOT EXISTS (SELECT 1 FROM trashed_conversations htc \
-                                  WHERE htc.account_id = hm.account_id \
-                                    AND htc.conversation_id = hm.conversation_id) \
+                 AND ({holder_kept} \
                       OR EXISTS (SELECT 1 FROM trashed_conversations atc \
                                  WHERE atc.account_id = {alias}.account_id \
                                    AND atc.conversation_id = {alias}.conversation_id))) \
-         END"
+         END",
+        holder_kept = not_trashed_conversation_id("hm.account_id", "hm.conversation_id"),
     )
 }
 

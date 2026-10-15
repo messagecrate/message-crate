@@ -469,7 +469,7 @@ type IdentityRow = (
 /// The identities of an account or of a contact, each with its messages,
 /// phones before emails and each in order.
 pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result<Vec<Identity>> {
-    let not_trashed = crate::search::emit::NOT_TRASHED_CONVERSATION;
+    let not_trashed = crate::db::trash::not_trashed_conversation("c");
     // `messages` is a `FROM … WHERE …` over identity `l`'s messages. It ends
     // in its WHERE clause, so a column can narrow it by conversation type.
     //
