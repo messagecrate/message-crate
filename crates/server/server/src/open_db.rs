@@ -18,6 +18,7 @@ use sqlx::{Connection, SqlitePool};
 use crate::config::Config;
 use crate::db::schema::DatabaseKind;
 use crate::db::{account_profile, engine, schema};
+use crate::operation_lock::{self, OperationLock};
 
 /// An opened database and the config it was opened from.
 #[derive(Debug, Clone)]
@@ -70,7 +71,7 @@ impl OpenDb {
     /// Also when the file cannot be opened or the schema cannot be applied.
     pub async fn open(cfg: Config) -> Result<Self> {
         match inspect(&cfg.paths.db).await? {
-            Some(DatabaseKind::MessageCrate) => Self::open_pool(cfg).await,
+            Some(DatabaseKind::MessageCrate) => Self::open_pool(cfg, None).await,
             Some(DatabaseKind::Empty | DatabaseKind::Foreign) => {
                 Err(schema::not_a_message_crate_database(&cfg.paths.db))
             }
@@ -115,6 +116,21 @@ impl OpenDb {
     /// Message Crate database; the file is left as it is. Also when the file
     /// cannot be opened or created, or the schema cannot be applied.
     pub async fn create_or_open(cfg: Config) -> Result<Self> {
+        Self::create_or_open_with(cfg, None).await
+    }
+
+    /// [`OpenDb::create_or_open`] for `serve`, which already holds the
+    /// database's operation lock, so a rebuild for another Schema Fingerprint
+    /// goes ahead under that lock instead of taking it again.
+    ///
+    /// # Errors
+    ///
+    /// Returns what [`OpenDb::create_or_open`] does.
+    pub(crate) async fn create_or_open_holding(cfg: Config, lock: &OperationLock) -> Result<Self> {
+        Self::create_or_open_with(cfg, Some(lock)).await
+    }
+
+    async fn create_or_open_with(cfg: Config, held: Option<&OperationLock>) -> Result<Self> {
         if inspect(&cfg.paths.db).await? == Some(DatabaseKind::Foreign) {
             return Err(schema::not_a_message_crate_database(&cfg.paths.db));
         }
@@ -128,13 +144,18 @@ impl OpenDb {
         // user owns is warned of once.
         file_io::create_dir_all_owner_only(&cfg.paths.data_dir)
             .with_context(|| format!("create data directory {}", cfg.paths.data_dir.display()))?;
-        Self::open_pool(cfg).await
+        Self::open_pool(cfg, held).await
     }
 
     /// Open the pool on the file `cfg` names and make sure of the schema.
     /// The Data Directory is kept readable by the server's user alone first
     /// ([`crate::owner_only`]), whichever command opens it.
-    async fn open_pool(cfg: Config) -> Result<Self> {
+    ///
+    /// A rebuild for another Schema Fingerprint runs under the database's
+    /// operation lock: `held` when the caller has it, or else taken here for
+    /// the rebuild, which refuses while a server or reset-demo holds it, so no
+    /// command empties the database under a running server (#2920).
+    async fn open_pool(cfg: Config, held: Option<&OperationLock>) -> Result<Self> {
         crate::owner_only::keep_data_dir_to_owner(&cfg.paths.data_dir);
         let engine::OpenedPool {
             pool: db,
@@ -142,6 +163,11 @@ impl OpenDb {
         } = engine::open_pool_keeping_wal_error(&cfg.paths.db).await?;
         {
             let mut conn = db.acquire().await?;
+            let _rebuild_lock = if held.is_none() && schema::rebuild_is_due(&mut conn).await? {
+                Some(operation_lock::acquire_for_rebuild(&cfg.paths.db)?)
+            } else {
+                None
+            };
             schema::ensure_schema(&mut conn).await?;
         }
         Ok(Self { cfg, db, wal_error })
@@ -397,6 +423,85 @@ mod tests {
             crate::test_support::permission_bits(&cfg.paths.data_dir),
             0o700
         );
+    }
+
+    /// A database at `cfg`'s path with one account, stamped as another
+    /// build of Message Crate would stamp it.
+    async fn database_of_another_build(cfg: &Config) {
+        let opened = OpenDb::create_or_open(cfg.clone()).await.unwrap();
+        let mut conn = opened.conn().await.unwrap();
+        account_profile::insert_account(&mut conn, "alice", None, None)
+            .await
+            .unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "PRAGMA user_version = {}",
+            schema::SCHEMA_FINGERPRINT ^ 1
+        )))
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+        drop(conn);
+        opened.close().await;
+    }
+
+    async fn account_count(cfg: &Config) -> i64 {
+        let mut conn = engine::connect_read_only(&cfg.paths.db).await.unwrap();
+        let count = sqlx::query_scalar("SELECT COUNT(*) FROM accounts")
+            .fetch_one(&mut conn)
+            .await
+            .unwrap();
+        conn.close().await.unwrap();
+        count
+    }
+
+    /// #2920: a command from another build would rebuild the database empty
+    /// under a running server, which goes on answering from the empty one.
+    /// While the server holds the operation lock, every command refuses,
+    /// names the database, says to stop the server, and leaves it as it was.
+    #[tokio::test]
+    async fn a_rebuild_is_refused_while_a_server_holds_the_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = fresh_config(dir.path());
+        database_of_another_build(&cfg).await;
+        // Taken through another file handle, which is how the lock of a
+        // server in another process looks from here.
+        let server = operation_lock::acquire_for_serve(&cfg.paths.db).unwrap();
+
+        for refused in [
+            OpenDb::open(cfg.clone()).await,
+            OpenDb::create_or_open(cfg.clone()).await,
+        ] {
+            let err = refused.unwrap_err().to_string();
+            assert!(
+                err.contains(&cfg.paths.db.display().to_string()),
+                "{err}"
+            );
+            assert!(err.contains("Stop that server"), "{err}");
+        }
+        assert_eq!(account_count(&cfg).await, 1, "the database is as it was");
+
+        drop(server);
+        OpenDb::open(cfg.clone()).await.unwrap().close().await;
+        assert_eq!(account_count(&cfg).await, 0, "rebuilt once no server holds it");
+    }
+
+    /// `serve` holds the lock itself, so its own rebuild goes ahead under
+    /// it, and a database of this build opens while a server holds it,
+    /// because nothing is rebuilt.
+    #[tokio::test]
+    async fn the_lock_holder_rebuilds_and_a_current_database_opens_beside_a_server() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = fresh_config(dir.path());
+        database_of_another_build(&cfg).await;
+        let lock = operation_lock::acquire_for_serve(&cfg.paths.db).unwrap();
+
+        OpenDb::create_or_open_holding(cfg.clone(), &lock)
+            .await
+            .unwrap()
+            .close()
+            .await;
+        assert_eq!(account_count(&cfg).await, 0);
+        OpenDb::open(cfg.clone()).await.unwrap().close().await;
     }
 
     #[tokio::test]

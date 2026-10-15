@@ -182,6 +182,17 @@ async fn migrate_schema(conn: &mut SqliteConnection) -> Result<()> {
     Ok(())
 }
 
+/// Whether [`ensure_schema`] would drop tables: the database has some, and
+/// its stamp is not [`SCHEMA_FINGERPRINT`]. A new or empty database is built
+/// without dropping anything, so it is not a rebuild here.
+///
+/// # Errors
+///
+/// Returns an error when a query fails.
+pub(crate) async fn rebuild_is_due(conn: &mut SqliteConnection) -> Result<bool> {
+    Ok(user_version(conn).await? != SCHEMA_FINGERPRINT && has_user_tables(conn).await?)
+}
+
 /// The `user_version` pragma value stamped by [`migrate_schema`].
 pub(crate) async fn user_version(conn: &mut SqliteConnection) -> Result<i64> {
     Ok(sqlx::query_scalar("PRAGMA user_version")

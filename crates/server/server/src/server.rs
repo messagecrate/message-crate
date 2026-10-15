@@ -1733,7 +1733,7 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
         ))
     })?;
     tracing::info!("The server's log is in {}", log.dir().display());
-    let _operation_lock = crate::operation_lock::acquire_for_serve(&cfg.paths.db)?;
+    let operation_lock = crate::operation_lock::acquire_for_serve(&cfg.paths.db)?;
 
     // Every new Message Crate starts with the Demo Account: seed first, then
     // listen, so the first page a person loads already offers it (#971).
@@ -1741,7 +1741,7 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
         crate::operation_lock::clear_ready(&cfg.paths.db)?;
         crate::reset_demo::seed_new_database(&cfg).await;
     }
-    let opened = OpenDb::create_or_open(cfg).await?;
+    let opened = OpenDb::create_or_open_holding(cfg, &operation_lock).await?;
     crate::operation_lock::mark_ready(&opened.cfg.paths.db)?;
     let mode = crate::db::engine::journal_mode_or_warn(&opened.db)
         .await
