@@ -1286,6 +1286,13 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-14: **The Compose files publish the server to this computer
+  only.** Both Compose files published port 8080 on every network the
+  computer is on, unlike the `docker run` command in Run Message Crate
+  with Docker. Any device on that network could reach a new Message Crate
+  over plain HTTP, and claim it as owner before its installer did. Both
+  now publish it on `127.0.0.1`, and Run on another machine says how to
+  open it to the network (#2063).
 - 2026-10-14: **A Demo Data backup left behind is in the server's log.**
   When the server writes new Demo Data, it removes its backup of the files
   they replace. When that removal failed, the warning went only to the
@@ -1567,6 +1574,13 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-14: A Compose file saved from the repository before this
+  release keeps publishing the server on every network the computer is
+  on, because pulling a new image does not change the file. To keep the
+  server on this computer only, change its `ports:` line to
+  `"127.0.0.1:8080:8080"` and run `docker compose up -d`. A file saved from
+  this release on publishes it on this computer only, and Run on another
+  machine says how to open it to the network (#2063).
 - 2026-10-14: A Message Crate started with `docker run` before this release
   keeps every default container permission. Stop it with
   `docker stop -t 40 message-crate`, remove it with

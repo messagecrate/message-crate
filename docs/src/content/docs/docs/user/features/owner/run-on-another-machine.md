@@ -10,7 +10,7 @@ This page covers a server on a second computer, such as a home server, reached o
 
 Three things differ from the first-time path:
 
-- The server must be published on the network. The first-time command publishes it to its own computer only.
+- The server must be published on the network. The first-time command, in [Run Message Crate with Docker](/docs/user/features/owner/run-with-docker/#start-the-server), publishes it to its own computer only.
 - The browser and the desktop app need the server's address in place of `localhost`.
 - A Message Crate that already holds messages has to be moved, by copying its Docker volume.
 
@@ -33,6 +33,9 @@ docker run -d --name message-crate \
   -v message-crate-data:/app/data \
   bitrealm/message-crate:latest
 ```
+
+A Message Crate started from `docker/compose.yml` publishes its port on `127.0.0.1` only, like the first-time command, as `"127.0.0.1:8080:8080"` under `ports:`.
+Changing that line to `"8080:8080"` and running `docker compose up -d` again publishes it on every network.
 
 A server that is already running with the first-time command is removed first with `docker stop -t 40 message-crate` and `docker rm message-crate`.
 Both leave the `message-crate-data` volume alone, so the messages stay.
