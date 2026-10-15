@@ -310,8 +310,7 @@ pub struct Sinks<'a> {
     /// Where the drain sends its progress events.
     pub progress: &'a ProgressSink,
     /// Set to stop the drain. The drain then fails with
-    /// [`message_crate_core::Cancelled`], or with its text when the cancel is
-    /// seen while a conversation's attachments are staged (#2077).
+    /// [`message_crate_core::Cancelled`] in its error chain (#2077).
     pub cancel: &'a CancelFlag,
 }
 
@@ -856,8 +855,7 @@ fn write_one_unit(
             },
             sinks.log,
             sinks.cancel,
-        )
-        .map_err(anyhow::Error::msg)?;
+        )?;
     }
 
     let attachments_saved = jobs

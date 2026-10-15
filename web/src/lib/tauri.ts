@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { type CloseRequestedEvent, getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { type DesktopJobName, holdDesktopJob } from "./desktopJob";
+import { CanceledError, DesktopJobError } from "./desktopJobError";
 import type { LogLinesPage } from "./serverApi";
 import type { components } from "./serverApi.types";
 import type {
@@ -803,7 +804,7 @@ export async function awaitDesktopJob(
             onFileDone,
             onFileWritten,
             onFinished: (summary) => resolve(parseDesktopJobResult(summary)),
-            onError: (err) => reject(new Error(err.user_message ?? err.detail)),
+            onError: (err) => reject(desktopJobError(err, onLog)),
           });
           await invokeFn();
         } catch (e: unknown) {
@@ -815,6 +816,20 @@ export async function awaitDesktopJob(
     unlisten?.();
     release();
   }
+}
+
+/**
+ * What `awaitDesktopJob` rejects with for a job's `desktop-job:error`: a
+ * `CanceledError` when a Cancel stopped it, a `DesktopJobError` when the
+ * desktop app sent a sentence for the person, and otherwise an `Error` with
+ * the chain. A `DesktopJobError`'s chain also goes to the job's log, so a
+ * panic's text is not lost (#2071, #2112).
+ */
+function desktopJobError(err: DesktopJobErrorEvent, onLog?: (line: string) => void): Error {
+  if (err.canceled) return new CanceledError();
+  if (err.user_message === undefined) return new Error(err.detail);
+  onLog?.(err.detail);
+  return new DesktopJobError(err.user_message, err.detail);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

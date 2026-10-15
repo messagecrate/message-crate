@@ -55,7 +55,7 @@ pub fn format(
     let cancel = job.cancel_flag();
 
     let app_handle = app.clone();
-    spawn_job(app, job, move || {
+    spawn_job(app, job, None, move || {
         let log_app = app_handle.clone();
         // Settings → Convert shows a log, not a progress bar.
         let context = RunContext {

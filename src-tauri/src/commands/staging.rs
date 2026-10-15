@@ -256,7 +256,7 @@ pub fn transcode_staging(
     let issues = events::run_issue_sink(&app, &run_log);
     let downloads = downloads.inner().clone();
     let installed = installed.inner().clone();
-    spawn_job(app, job, move || {
+    spawn_job(app, job, Some(run_log.clone()), move || {
         if media_stage_converts {
             // ffmpeg or ffprobe still downloading is waited for, and the
             // wait is the Media row's progress line (#1053).

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { currentDesktopJob, holdDesktopJob } from "./desktopJob";
+import { CanceledError, DesktopJobError } from "./desktopJobError";
 import type { UploadFinishedReport } from "./tauri";
 import {
   awaitDesktopJob,
@@ -12,6 +13,7 @@ import {
   invokeTranscodeStaging,
   parseDesktopJobResult,
 } from "./tauri";
+import type { DesktopJobErrorEvent } from "./types";
 
 const invoke = vi.fn();
 
@@ -231,11 +233,57 @@ describe("awaitDesktopJob", () => {
   it("lets the desktop job go when the job fails", async () => {
     const done = awaitDesktopJob("Convert", async () => {
       queueMicrotask(() =>
-        listeners.get("desktop-job:error")?.({ payload: { detail: "disk full" } }),
+        listeners.get("desktop-job:error")?.({ payload: { detail: "disk full", canceled: false } }),
       );
     });
     await expect(done).rejects.toThrow("disk full");
     expect(currentDesktopJob()).toBeNull();
+  });
+
+  /** A job that ends with `error` on `desktop-job:error`, and the lines it logged. */
+  async function failedJob(
+    error: DesktopJobErrorEvent,
+  ): Promise<{ thrown: unknown; log: string[] }> {
+    const log: string[] = [];
+    const thrown = await awaitDesktopJob(
+      "Import Run",
+      async () => {
+        queueMicrotask(() => listeners.get("desktop-job:error")?.({ payload: error }));
+      },
+      (line) => log.push(line),
+    ).catch((e: unknown) => e);
+    return { thrown, log };
+  }
+
+  // The desktop app decides a Cancel from the error's type, so a Cancel
+  // whose text gained context on the way out is still a Cancel (#2077).
+  it("rejects with a CanceledError when a Cancel stopped the job, whatever its text", async () => {
+    const { thrown, log } = await failedJob({
+      detail: "write a conversation: canceled",
+      canceled: true,
+    });
+    expect(thrown).toBeInstanceOf(CanceledError);
+    expect(log).toEqual([]);
+  });
+
+  it("rejects a failed job with a plain error, even when its text says canceled", async () => {
+    const { thrown } = await failedJob({ detail: "canceled", canceled: false });
+    expect(thrown).not.toBeInstanceOf(CanceledError);
+    expect(thrown).toEqual(new Error("canceled"));
+  });
+
+  // A panic's text, or the path an operating system error names, reaches the
+  // log and stays on the error, while the person reads the sentence (#2071, #2112).
+  it("shows the sentence for the person and keeps the error chain in the log and the cause", async () => {
+    const { thrown, log } = await failedJob({
+      detail: "the job panicked: index out of bounds",
+      user_message: "Staging failed because of a bug in Message Crate.",
+      canceled: false,
+    });
+    expect(thrown).toBeInstanceOf(DesktopJobError);
+    expect((thrown as Error).message).toBe("Staging failed because of a bug in Message Crate.");
+    expect((thrown as DesktopJobError).detail).toBe("the job panicked: index out of bounds");
+    expect(log).toEqual(["the job panicked: index out of bounds"]);
   });
 });
 

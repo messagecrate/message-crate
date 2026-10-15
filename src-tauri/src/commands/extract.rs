@@ -215,7 +215,7 @@ pub fn extract(
     config.context.progress = events::progress_sink(&app_handle);
     config.context.issues = events::run_issue_sink(&app_handle, &run_log);
 
-    spawn_job(app, job, move || {
+    spawn_job(app, job, Some(run_log.clone()), move || {
         // A program still downloading is waited for, and the wait is the
         // Staging row's progress line (#1053).
         super::tools::wait_for_downloads(

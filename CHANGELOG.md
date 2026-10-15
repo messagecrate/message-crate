@@ -671,6 +671,15 @@ carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-14: **A failed Staging, Media Stage, Export or Convert, or a
+  paused Upload, says what went wrong in a sentence.** A full disk, a file
+  Message Crate is not allowed to use, a missing file, and an ended session
+  each get a sentence of their own, and the full error goes to the log and
+  to the Import Errors row. A failure caused by a bug in Message Crate now
+  writes what the bug was into the Import Run's log, where before only the
+  sentence was kept. The Cancel button, pressed while Staging or the Media
+  Stage runs, now always pauses the run so it can resume, where before it
+  could end the run as failed (#2071, #2077, #2112).
 - 2026-10-12: **Try again on the Import form always checks the tools.**
   Pressing **Try again** just as the desktop app started another program
   could leave the check of ffmpeg, ffprobe and wtsexporter believing an

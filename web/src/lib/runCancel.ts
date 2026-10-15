@@ -1,11 +1,5 @@
+import { CanceledError } from "./desktopJobError";
 import { invokeCancel } from "./tauri";
-
-/**
- * The error a job refused by a Cancel throws: the same word the desktop side
- * reports for a job it canceled (`message-crate-core`'s `check_cancel`), so
- * a caller handles both alike.
- */
-export const CANCELLED_MESSAGE = "canceled";
 
 /**
  * The Cancel of one run of desktop jobs: an Import Run, or an Export's export step
@@ -24,8 +18,9 @@ export type RunCancel = {
   /** Record the Cancel for this run and stop the job that is running. */
   cancel: () => Promise<void>;
   /**
-   * Wrap the invoke of a job command. The wrapped call throws
-   * `CANCELLED_MESSAGE` without invoking when the run is cancelled.
+   * Wrap the invoke of a job command. The wrapped call throws a
+   * `CanceledError` without invoking when the run is canceled, as a job
+   * the desktop app canceled rejects.
    */
   guard: (invokeFn: () => Promise<void>) => () => Promise<void>;
 };
@@ -39,7 +34,7 @@ export function createRunCancel(stopJob: () => Promise<void> = invokeCancel): Ru
       await stopJob();
     },
     guard: (invokeFn) => async () => {
-      if (cancelled) throw new Error(CANCELLED_MESSAGE);
+      if (cancelled) throw new CanceledError();
       await invokeFn();
       if (cancelled) await stopJob();
     },
