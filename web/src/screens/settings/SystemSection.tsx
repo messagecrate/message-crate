@@ -10,7 +10,7 @@ import { errorLine } from "../../lib/apiErrorMessage";
 import { APP_BUILD } from "../../lib/build";
 import { invokeExportDirectory } from "../../lib/desktop/export";
 import {
-  invokeOpenDataDirectory,
+  invokeOpenMessageCrateDirectory,
   invokeSetOpenToNetwork,
   type LocalServerStatus,
 } from "../../lib/desktop/localServer";
@@ -48,7 +48,7 @@ function stagingHelpExample(stagingDir: string, defaultDir: string): string {
   const trimmed = stagingDir.trim().replace(/[/\\]+$/, "");
   const defaultTrimmed = defaultDir.trim().replace(/[/\\]+$/, "");
   if (!trimmed || (defaultTrimmed && trimmed === defaultTrimmed)) {
-    return `~/message-crate/${EXAMPLE_STAGING}`;
+    return `~/message-crate/staging/${EXAMPLE_STAGING}`;
   }
   return `${trimmed}/${EXAMPLE_STAGING}`;
 }
@@ -315,19 +315,20 @@ function DataDirectory() {
     <div className="mt-8">
       <h3 className={sectionHeadingClass}>Message Crate on this computer</h3>
       <p className="m-0 max-w-prose text-[0.875rem] text-text">
-        The Message Crate this app starts keeps its database and attachments in one directory. A
-        copy of that directory is a backup.
+        This app keeps everything it stores in the Message Crate directory, message-crate in the
+        home directory. The Message Crate it starts keeps its database and attachments in data
+        inside it. A copy of data is a backup.
       </p>
       <PlainButton
         className="mt-2 rounded border border-border px-3 py-1.5 text-[0.875rem] text-text hover:bg-elevated"
         onPress={() => {
           setError(null);
-          invokeOpenDataDirectory().catch((caught: unknown) => {
+          invokeOpenMessageCrateDirectory().catch((caught: unknown) => {
             setError(errorLine(caught));
           });
         }}
       >
-        Open data directory
+        Open Message Crate directory
       </PlainButton>
       {error ? (
         <p className="m-0 mt-1 text-[0.75rem] text-danger" role="alert">
@@ -369,7 +370,7 @@ function DataDirectory() {
 /**
  * Where each Export and Convert gets a directory of its own, unless the
  * person chooses another one on its screen. The desktop process keeps it in
- * the app-data directory; the button opens it.
+ * the Message Crate Directory; the button opens it.
  */
 function ExportDirectory() {
   const query = useQuery({
@@ -511,7 +512,7 @@ export function SystemSection() {
             onChange={onStagingPathChange}
             onBlur={onStagingPathBlur}
             directory
-            placeholder={defaultStagingPath || "~/message-crate"}
+            placeholder={defaultStagingPath || "~/message-crate/staging"}
           />
         </div>
         {stagingError ? (

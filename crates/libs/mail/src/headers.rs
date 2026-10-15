@@ -5,7 +5,7 @@
 
 /// Conversation id header.
 pub(crate) const CHAT_IDENTIFIER: &str = "X-ME-Chat-Identifier";
-/// `individual` or `group`.
+/// `one-to-one` or `group`.
 pub(crate) const CONVERSATION_TYPE: &str = "X-ME-Conversation-Type";
 /// `incoming` or `outgoing`.
 pub(crate) const DIRECTION: &str = "X-ME-Direction";
@@ -26,8 +26,11 @@ pub(crate) const EXPORT_SOURCE: &str = "X-ME-Export-Source";
 pub(crate) const EXPORT_TOOL: &str = "X-ME-Export-Tool";
 /// Export tool version.
 pub(crate) const EXPORT_TOOL_VERSION: &str = "X-ME-Export-Tool-Version";
-/// When the backup the export was read from was made, in Unix milliseconds.
+/// The message's Backup Date: when the backup it was read from was made,
+/// in Unix milliseconds.
 pub(crate) const BACKUP_TAKEN_AT_UNIX_MS: &str = "X-ME-Backup-Taken-At-Unix-Ms";
+/// The Export Date: when the file was written, in Unix milliseconds.
+pub(crate) const EXPORTED_AT_UNIX_MS: &str = "X-ME-Exported-At-Unix-Ms";
 /// Group conversation title.
 pub(crate) const GROUP_TITLE: &str = "X-ME-Group-Title";
 /// Conversation roster as JSON.

@@ -19,7 +19,7 @@ function row(address: string, service: string): ContactHandle {
     start_date: null,
     end_date: null,
     conversations: 0,
-    direct_messages: 0,
+    one_to_one_messages: 0,
     group_messages: 0,
     orphaned_messages: 0,
     country_unknown: false,

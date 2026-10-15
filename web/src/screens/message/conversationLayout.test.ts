@@ -19,7 +19,7 @@ function message(
     conversation: {
       id: 1,
       chat_identifier: "c",
-      conversation_type: isGroup ? "group" : "individual",
+      conversation_type: isGroup ? "group" : "one-to-one",
       is_group: isGroup,
       group_title: null,
       shown_title: null,

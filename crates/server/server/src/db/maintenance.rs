@@ -4,6 +4,7 @@
 
 use std::time::Instant;
 
+use anyhow::Context as _;
 use sqlx::SqliteConnection;
 
 use crate::progress::Progress;
@@ -59,10 +60,11 @@ pub async fn vacuum_import_tables(conn: &mut SqliteConnection, progress: Progres
 /// # Errors
 ///
 /// Returns an error when the statement fails.
-pub async fn checkpoint_truncate(conn: &mut SqliteConnection) -> sqlx::Result<bool> {
+pub async fn checkpoint_truncate(conn: &mut SqliteConnection) -> anyhow::Result<bool> {
     let (busy, _log, _checkpointed) =
         sqlx::query_as::<_, (i64, i64, i64)>("PRAGMA wal_checkpoint(TRUNCATE)")
             .fetch_one(&mut *conn)
-            .await?;
+            .await
+            .context("checkpoint the write-ahead log")?;
     Ok(busy == 0)
 }

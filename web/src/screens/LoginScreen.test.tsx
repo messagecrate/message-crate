@@ -17,7 +17,7 @@ vi.mock("../lib/authContext", () =>
 const tauriState = vi.hoisted(() => ({ isTauri: false }));
 const startLocalServer = vi.hoisted(() => vi.fn());
 const invokeLocalServerStatus = vi.hoisted(() => vi.fn());
-const invokeOpenDataDirectory = vi.hoisted(() => vi.fn());
+const invokeOpenMessageCrateDirectory = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/tauriCheck", () => ({
   isTauri: () => tauriState.isTauri,
@@ -31,7 +31,7 @@ vi.mock("../lib/localServer", async (importOriginal) => ({
 vi.mock("../lib/desktop/localServer", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/desktop/localServer")>()),
   invokeLocalServerStatus: () => invokeLocalServerStatus(),
-  invokeOpenDataDirectory: () => invokeOpenDataDirectory(),
+  invokeOpenMessageCrateDirectory: () => invokeOpenMessageCrateDirectory(),
 }));
 
 const setBaseUrlSpy = vi.hoisted(() => vi.fn());
@@ -176,8 +176,8 @@ describe("LoginScreen", () => {
     startLocalServer.mockResolvedValue({ status: "ready", started_by_app: true });
     invokeLocalServerStatus.mockReset();
     invokeLocalServerStatus.mockResolvedValue({ status: "ready", started_by_app: true });
-    invokeOpenDataDirectory.mockReset();
-    invokeOpenDataDirectory.mockResolvedValue(undefined);
+    invokeOpenMessageCrateDirectory.mockReset();
+    invokeOpenMessageCrateDirectory.mockResolvedValue(undefined);
     setBaseUrlSpy.mockReset();
     retrySavedLogin.mockReset();
     checkServerHealthMock.mockReset();
@@ -914,8 +914,8 @@ describe("LoginScreen", () => {
     // Nothing the server wrote, so nothing to disclose.
     expect(screen.queryByText("Details")).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: "Open data directory" }));
-    expect(invokeOpenDataDirectory).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Open Message Crate directory" }));
+    expect(invokeOpenMessageCrateDirectory).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: "Try again" }));
     expect(startLocalServer).toHaveBeenCalledTimes(2);

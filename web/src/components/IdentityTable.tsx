@@ -163,7 +163,7 @@ export default function IdentityTable({
         />
       </Cell>
       <Cell className={numberCellClass}>
-        <Count value={row.direct_messages} loading={loading} />
+        <Count value={row.one_to_one_messages} loading={loading} />
       </Cell>
       <Cell className={numberCellClass}>
         <Count value={row.group_messages} loading={loading} />
@@ -203,7 +203,7 @@ export default function IdentityTable({
         <Column id="conversations" allowsSorting className={`${headerClass} text-right`}>
           {({ sortDirection }) => <Heading sortDirection={sortDirection}>Conversations</Heading>}
         </Column>
-        <Column id="direct_messages" allowsSorting className={`${headerClass} text-right`}>
+        <Column id="one_to_one_messages" allowsSorting className={`${headerClass} text-right`}>
           {({ sortDirection }) => (
             <Heading sortDirection={sortDirection}>
               One-to-one <span className="block">messages</span>

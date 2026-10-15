@@ -1,4 +1,4 @@
-//! `format` command — convert an existing extract directory to another format.
+//! `format` command: convert an existing extract directory to another format.
 
 use message_crate_core::{FormatConfig, LogSink, OutputConfig, OutputFormat, RunContext};
 use std::path::PathBuf;
@@ -50,7 +50,7 @@ pub fn format(
         })
         .transpose()?;
 
-    let scratch_dir = scratch_dir(&app)?;
+    let scratch_dir = scratch_dir(&app);
     let job = start_job(&state, started_from.job_name())?;
     let cancel = job.cancel_flag();
 

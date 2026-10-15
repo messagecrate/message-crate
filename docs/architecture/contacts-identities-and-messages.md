@@ -650,8 +650,8 @@ otherwise keep an older title against a newer one. A title of only spaces counts
 as no title. The rule is the same in one batch as across several, in any order.
 Why: a group is renamed over time, so the copy whose messages run later carries
 the name the group has now. An old backup uploaded after a newer one can't bring the old
-name back, because its messages stop earlier. The backup date a conversation
-file carries (`export.backup_taken_at_unix_ms`) is missing where a source records
+name back, because its messages stop earlier. The Backup Date a conversation
+file's messages carry (`backup_taken_at_unix_ms`) is missing where a source records
 none, and for several sources is a file's modification time, which copying the
 file can change; the time an exporter ran says nothing about the backup; so
 neither decides the title
@@ -661,9 +661,10 @@ neither decides the title
 backup decides its mark and text.** One message from one source is one row
 (`UNIQUE (account_id, source, guid)` on `messages`, and the same on
 `staging_messages`), so a second backup of the same phone meets the copy
-already there, in the same import or a later one. The conversation file says
-when its backup was made (`export.backup_taken_at_unix_ms`), staging keeps
-that date on each staged row, and `messages.backup_taken_at` keeps the date of
+already there, in the same import or a later one. Each message of the
+conversation file says when the backup it was read from was made (its
+`backup_taken_at_unix_ms`, the Backup Date), staging keeps that date on its
+staged row, and `messages.backup_taken_at` keeps the date of
 the newest backup with a date that the message has met. When both copies
 have a date, the copy from the later backup gives the message its deletion
 mark, mark or no mark, and its text and earlier versions, whatever the
@@ -685,7 +686,9 @@ the same, the same mark or the same text and earlier versions, backs the
 undated part, and it is the dates' to decide from then on
 (`kept_undated_mark_sql`, `backs_undated_sql`). The message API reports no
 backup date for a message that still holds an undated part, so an Export
-Run writes none for its conversation. Why: a row that kept one date for
+Run writes none for that message, and every other message of its
+conversation keeps its own date
+([#1967](https://github.com/messagecrate/message-crate/issues/1967)). Why: a row that kept one date for
 both could hold an undated mark or edit under a dated backup's date, and a
 later import, or a re-import of an export, would then judge it by that date,
 so the order the files were read in decided the result

@@ -254,7 +254,7 @@ fn every_conversation_file_is_a_current_schema_document_and_the_counts_match_the
         .count();
     assert_eq!(
         empty_conversations, 2,
-        "one empty individual and one empty group"
+        "one empty one-to-one and one empty group"
     );
     // Replies and tapbacks are placed on a stride, so how many there are
     // says nothing a pinned number could check. What has to hold is that
@@ -302,8 +302,8 @@ fn a_conversation_with_an_email_address_is_held_at_the_demo_accounts_email() {
     let mut sent_from_email = 0;
     for (source, doc) in &documents {
         let chat = &doc.conversation.chat_identifier;
-        let with_email = doc.conversation.conversation_type == ConversationType::Individual
-            && chat.contains('@');
+        let with_email =
+            doc.conversation.conversation_type == ConversationType::OneToOne && chat.contains('@');
         let expected = if with_email {
             email_conversations += 1;
             crate::personas::OWNER_EMAIL

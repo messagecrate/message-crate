@@ -4,7 +4,7 @@ use mailparse::MailHeaderMap;
 pub(crate) fn base_sms() -> MailMessage {
     MailMessage {
         chat_identifier: "+15555550101".into(),
-        conversation_type: "individual".into(),
+        conversation_type: "one-to-one".into(),
         group_title: None,
         participants: vec![Participant {
             identity: "+15555550101".into(),
@@ -15,7 +15,7 @@ pub(crate) fn base_sms() -> MailMessage {
         export_source: "sms-backup-restore".into(),
         export_tool: "SMS Backup & Restore".into(),
         export_tool_version: "10.26.003".into(),
-        backup_taken_at_unix_ms: None,
+        exported_at_unix_ms: None,
         message: Message {
             guid: "aabbccddeeff00112233445566778899".into(),
             timestamp_unix_ms: 1_400_773_261_000,
@@ -39,6 +39,7 @@ pub(crate) fn base_sms() -> MailMessage {
                 android_type: Some(1),
                 fields: serde_json::from_str(r#"{"address":"+15555550101"}"#).unwrap(),
             }),
+            backup_taken_at_unix_ms: None,
         },
         attachments: vec![],
     }
@@ -50,7 +51,7 @@ fn im_mut(msg: &mut MailMessage) -> &mut message_ir::ImessageExtensions {
 }
 
 #[test]
-fn writes_individual_sms_text_only() {
+fn writes_one_to_one_sms_text_only() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = write_conversation(&tmp.path().join("+15555550101"), &[base_sms()]).unwrap();
 
@@ -924,7 +925,7 @@ fn x_me_values(msg: &MailMessage) -> serde_json::Value {
         "export_source": msg.export_source,
         "export_tool": msg.export_tool,
         "export_tool_version": msg.export_tool_version,
-        "backup_taken_at_unix_ms": msg.backup_taken_at_unix_ms,
+        "exported_at_unix_ms": msg.exported_at_unix_ms,
         "message": msg.message,
         "attachment_names": msg.attachments.iter().map(|a| &a.meta.original_name).collect::<Vec<_>>(),
         "attachment_types": msg.attachments.iter().map(|a| &a.meta.mime_type).collect::<Vec<_>>(),
@@ -1225,7 +1226,7 @@ fn group_conversations_keep_their_own_addresses() {
 /// conversation, in both directions.
 #[test]
 fn an_identity_with_a_line_break_keeps_the_address_headers_whole() {
-    for conversation_type in ["group", "individual"] {
+    for conversation_type in ["group", "one-to-one"] {
         for direction in [Direction::Incoming, Direction::Outgoing] {
             for (sender, owner, peer) in [
                 ("a\r\n b", "c\r\n d", "e\r\n f"),
@@ -1445,4 +1446,36 @@ fn guids_that_differ_in_unsafe_characters_keep_different_eml_file_names() {
     .collect();
     let distinct: std::collections::BTreeSet<&String> = names.iter().collect();
     assert_eq!(distinct.len(), names.len(), "names were {names:?}");
+}
+
+/// The message's Backup Date and the file's Export Date each have their own
+/// header, and each reads back as written: one is never taken for the
+/// other.
+#[test]
+fn the_backup_date_and_the_export_date_read_back_from_their_own_headers() {
+    let mut msg = base_sms();
+    msg.message.backup_taken_at_unix_ms = Some(1_700_000_000_000);
+    msg.exported_at_unix_ms = Some(1_800_000_000_000);
+    let eml = build_eml(&msg).unwrap();
+    let parsed = mailparse::parse_mail(&eml).unwrap();
+    assert_eq!(
+        parsed
+            .headers
+            .get_first_value("X-ME-Backup-Taken-At-Unix-Ms")
+            .as_deref(),
+        Some("1700000000000")
+    );
+    assert_eq!(
+        parsed
+            .headers
+            .get_first_value("X-ME-Exported-At-Unix-Ms")
+            .as_deref(),
+        Some("1800000000000")
+    );
+    let back = crate::mail_message_from_eml_bytes(&eml).unwrap();
+    assert_eq!(
+        back.message.backup_taken_at_unix_ms,
+        Some(1_700_000_000_000)
+    );
+    assert_eq!(back.exported_at_unix_ms, Some(1_800_000_000_000));
 }

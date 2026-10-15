@@ -115,7 +115,7 @@ fn parse_duration(text: &str) -> Option<Duration> {
 ///
 /// `bit_rate` is trailing and optional-in-practice: absent, ffprobe writes
 /// `N/A`, or a still simply has none. All of those default to `0` rather
-/// than erroring, same as a malformed width/height — only a genuinely
+/// than erroring, same as a malformed width/height. Only a genuinely
 /// missing codec/width/height column fails the read.
 fn parse_probe_line(line: &str) -> Result<MediaProbe> {
     let mut parts = line.split(',');

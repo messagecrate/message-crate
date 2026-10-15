@@ -31,7 +31,7 @@ Hello from Alice\r\n",
 }
 
 #[test]
-fn individual_chat_uses_first_non_owner_address() {
+fn one_to_one_chat_uses_first_non_owner_address() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("msg.eml");
     std::fs::write(
@@ -397,7 +397,7 @@ fn the_owner_in_national_form_is_not_a_peer() {
         &["+447700900123"],
     )
     .unwrap();
-    assert_eq!(message.conversation_type, ConversationType::Individual);
+    assert_eq!(message.conversation_type, ConversationType::OneToOne);
 }
 
 fn received_from(address: &str) -> ParsedMessage {
@@ -524,7 +524,7 @@ fn a_received_group_mms_that_does_not_name_the_owner_is_filed_under_its_from() {
         &["5555550100"],
     )
     .unwrap();
-    assert_eq!(message.conversation_type, ConversationType::Individual);
+    assert_eq!(message.conversation_type, ConversationType::OneToOne);
     assert_eq!(message.chat_key, "carol@example.org");
     assert_eq!(
         message.sender.map(Handle::into_key).as_deref(),
@@ -544,7 +544,7 @@ fn a_received_group_mms_naming_neither_the_owner_nor_a_sender_has_no_sender() {
         &["5555550100"],
     )
     .unwrap();
-    assert_eq!(message.conversation_type, ConversationType::Individual);
+    assert_eq!(message.conversation_type, ConversationType::OneToOne);
     assert_eq!(message.chat_key, "+14075550150");
     assert!(message.sender.is_none(), "{:?}", message.sender);
     assert_eq!(message.name_alias, None);
@@ -560,7 +560,7 @@ fn a_received_mms_from_one_person_stays_one_to_one() {
         &["5555550100"],
     )
     .unwrap();
-    assert_eq!(message.conversation_type, ConversationType::Individual);
+    assert_eq!(message.conversation_type, ConversationType::OneToOne);
     assert_eq!(message.chat_key, "+14075550150");
 }
 
@@ -574,7 +574,7 @@ fn a_sent_message_to_one_recipient_stays_one_to_one() {
         &["5555550100"],
     )
     .unwrap();
-    assert_eq!(message.conversation_type, ConversationType::Individual);
+    assert_eq!(message.conversation_type, ConversationType::OneToOne);
     assert_eq!(message.chat_key, "+14075550150");
 }
 

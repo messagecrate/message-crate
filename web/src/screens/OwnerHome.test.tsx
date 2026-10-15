@@ -151,7 +151,7 @@ beforeEach(() => {
       start_date: "2020-01-01T00:00:00Z",
       end_date: "2020-02-03T00:00:00Z",
       conversations: 2,
-      direct_messages: 12,
+      one_to_one_messages: 12,
       group_messages: 30,
     },
   ]);

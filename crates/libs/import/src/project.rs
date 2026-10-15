@@ -120,7 +120,10 @@ mod tests {
         let mut doc = sample_document("hello");
         let msg = doc.messages.remove(0);
         let header = String::from_utf8(document_header_line(&doc).unwrap()).unwrap();
-        assert!(header.contains(r#""schema_version":15"#));
+        assert!(header.contains(&format!(
+            r#""schema_version":{}"#,
+            message_ir::SCHEMA_VERSION
+        )));
         assert!(header.contains(r#""sms-backup-restore""#));
         assert!(!header.contains(r#""record":"conversation""#));
 

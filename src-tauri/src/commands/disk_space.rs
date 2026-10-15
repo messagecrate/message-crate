@@ -15,14 +15,13 @@ use crate::run_directories::RunDirectories;
 ///
 /// # Errors
 ///
-/// Returns an error when the operating system names no home directory or
-/// app-data directory, or the Staging Directory's record cannot be read.
+/// Returns an error when the Staging Directory's record cannot be read.
 #[tauri::command(async)]
 pub fn low_disk_space(
     app: tauri::AppHandle,
     directories: tauri::State<'_, RunDirectories>,
 ) -> Result<Vec<String>, String> {
     let staging = directories.root()?;
-    let scratch = super::paths::scratch_dir(&app)?;
+    let scratch = super::paths::scratch_dir(&app);
     Ok(message_staging::low_disk_space(&staging, &scratch))
 }

@@ -315,7 +315,7 @@ fn convert_export_json_and_jsonl_use_pristine_v4() {
     assert!(message["service"].as_str() == Some("sms"));
     // Outgoing rows carry owner identity. The fixture includes an SMS type=2
     // (sent) and an MMS where the owner is a recipient; both must share the same
-    // individual conversation after owner-filtered peer resolution.
+    // one-to-one conversation after owner-filtered peer resolution.
     assert_eq!(
         report.conversations, 1,
         "MMS must not fragment into a group conversation"

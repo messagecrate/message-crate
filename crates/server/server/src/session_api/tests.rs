@@ -225,7 +225,7 @@ async fn seed_source(state: &crate::server::AppState, account_id: i64, source: &
         &SeedConversation {
             account_id,
             handle: &format!("+1555{account_id}{}", source.len()),
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "seed.jsonl",
             messages: &[SeedMessage {

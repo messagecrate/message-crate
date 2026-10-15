@@ -71,12 +71,6 @@ impl From<anyhow::Error> for SearchListError {
     }
 }
 
-impl From<sqlx::Error> for SearchListError {
-    fn from(e: sqlx::Error) -> Self {
-        Self::Internal(e.into())
-    }
-}
-
 /// `now` as a Unix second, the form the token tables and the Demo Account
 /// build record store. An instant before 1970 reads as 0.
 pub(crate) fn unix_secs(now: chrono::DateTime<chrono::Utc>) -> u64 {

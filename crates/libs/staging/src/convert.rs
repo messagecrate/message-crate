@@ -86,7 +86,8 @@ pub trait Project {
 /// Convert one backup into `output_dir`: open the writer (which cleans the
 /// directory, or keeps it when the run resumes), run `read` with the writer,
 /// the cancel flag and an empty report, project each conversation it read,
-/// and write every document.
+/// stamp each document with the run's Export Date
+/// ([`ConvertRun::exported_at_unix_ms`]), and write every document.
 ///
 /// Cancellation is checked after `read` and before each conversation is
 /// projected; `read` checks it as often as its backup needs.
@@ -109,6 +110,7 @@ pub fn convert_backup<P: Project>(
         resume,
         issues,
         scratch_dir,
+        exported_at_unix_ms,
     } = run;
     let mut writer = ExportWriter::open(output_dir, output_format, transforms, resume)?;
     if setup.spool {
@@ -127,7 +129,8 @@ pub fn convert_backup<P: Project>(
     let mut documents = Vec::new();
     for conversation in conversations {
         check_cancel(&cancel)?;
-        if let Some(document) = project.project(conversation, &mut report) {
+        if let Some(mut document) = project.project(conversation, &mut report) {
+            document.export.exported_at_unix_ms = exported_at_unix_ms;
             documents.push(document);
         }
     }
@@ -141,4 +144,63 @@ pub fn convert_backup<P: Project>(
     )?;
     project.after_write(&report)?;
     Ok(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use message_crate_core::OutputFormat;
+
+    /// Projects each document it is handed as it is.
+    struct AsRead;
+
+    impl Project for AsRead {
+        type Conversation = ConversationDocument;
+
+        fn project(
+            &mut self,
+            conversation: ConversationDocument,
+            _report: &mut ExportReport,
+        ) -> Option<ConversationDocument> {
+            Some(conversation)
+        }
+    }
+
+    /// Every file a convert writes carries the Export Date its caller gave,
+    /// whatever the exporter's projection put in the header, and each
+    /// message keeps the Backup Date the exporter gave it.
+    #[test]
+    fn every_file_carries_the_export_date_the_caller_gave() {
+        let output = tempfile::tempdir().unwrap();
+        let mut document = message_ir::testutil::sample_document("hello");
+        document.messages[0].backup_taken_at_unix_ms = Some(1_790_000_000_000);
+        convert_backup(
+            output.path(),
+            ConvertRun {
+                output_format: OutputFormat::Jsonl,
+                exported_at_unix_ms: Some(1_791_000_000_000),
+                ..ConvertRun::default()
+            },
+            WriterSetup::default(),
+            |_writer, _cancel, report| {
+                Ok(ReadBackup {
+                    conversations: vec![document],
+                    project: AsRead,
+                    report,
+                })
+            },
+        )
+        .unwrap();
+        let written = std::fs::read_dir(output.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| path.extension().is_some_and(|e| e == "jsonl"))
+            .unwrap();
+        let read = message_ir_format::read_conversation_jsonl(&written).unwrap();
+        assert_eq!(read.export.exported_at_unix_ms, Some(1_791_000_000_000));
+        assert_eq!(
+            read.messages[0].backup_taken_at_unix_ms,
+            Some(1_790_000_000_000)
+        );
+    }
 }

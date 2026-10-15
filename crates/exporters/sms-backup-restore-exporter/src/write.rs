@@ -54,9 +54,10 @@ impl SbrBackupSession {
     }
 
     /// Write the SMS and MMS of one conversation as SBR `<sms>` or `<mms>`
-    /// elements, note its backup date for the file's `backup_date` when it
-    /// writes any, and count every other message as left out. A conversation
-    /// with no SMS or MMS writes nothing.
+    /// elements, note each one's Backup Date for the file's one
+    /// `backup_date` (the format dates a whole file, so the newest stands),
+    /// and count every other message as left out. A conversation with no SMS
+    /// or MMS writes nothing.
     pub fn append_document(&mut self, document: &ConversationDocument) -> Result<()> {
         self.not_sms_or_mms += document
             .messages
@@ -64,9 +65,9 @@ impl SbrBackupSession {
             .filter(|m| !m.is_sms_or_mms())
             .count() as u64;
         let messages = document_to_sbr_messages(document, &self.output_dir)?;
-        if !messages.is_empty() {
+        for message in document.messages.iter().filter(|m| m.is_sms_or_mms()) {
             self.writer
-                .note_backup_date(document.export.backup_taken_at_unix_ms);
+                .note_backup_date(message.backup_taken_at_unix_ms);
         }
         for message in messages {
             self.writer.write_message(&message)?;
@@ -175,7 +176,7 @@ fn restore_mms(
     output_dir: &Path,
 ) -> Result<Option<SbrMessage>> {
     if parts.is_empty() && addrs.is_empty() {
-        // Incomplete bag — fall back to synthesis.
+        // Incomplete bag: fall back to synthesis.
         return Ok(None);
     }
     set_attr(&mut attrs, "date", message.timestamp_unix_ms.to_string());

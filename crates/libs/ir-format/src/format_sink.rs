@@ -136,7 +136,7 @@ impl FormatSink {
     /// Unlike [`open_prepared`](Self::open_prepared), nothing is cleaned: the
     /// conversation files and staged attachments the interrupted run left
     /// behind are exactly the work a resumed run gets to skip. The directory
-    /// must already be an export directory — it carries the sentinel — because
+    /// must already be an export directory (it carries the sentinel), because
     /// resuming into anything else is a caller bug, not something to repair
     /// by cleaning.
     ///

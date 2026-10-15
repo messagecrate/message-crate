@@ -308,6 +308,7 @@ fn csv_omits_trivial_parts_json_keeps_rich_parts() {
             ..ImessageExtensions::default()
         }),
         source: None,
+        backup_taken_at_unix_ms: None,
     });
     doc.finalize_stats();
 
@@ -564,7 +565,7 @@ fn jsonl_refuses_a_version_9_file_by_name() {
         &path,
         concat!(
             r#"{"schema_version":9,"export":{"source":"imessage","tool":"t","tool_version":"1","owner_identity":"+15555550100","owner_display_name":null},"#,
-            r#""conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[],"#,
+            r#""conversation":{"chat_identifier":"+15555550101","conversation_type":"one-to-one","group_title":null,"participants":[],"#,
             r#""stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#,
             "\n",
             r#"{"guid":"g1","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hi","attachments":[],"#,
@@ -882,14 +883,30 @@ fn mbox_keeps_each_messages_owner_each_attachments_metadata_and_a_text_attachmen
     assert_hard_fields_survive(OutputFormat::Mbox);
 }
 
-/// Write a document whose backup has `backup_taken_at_unix_ms` in `format`
-/// and read it back.
-fn backup_date_after_round_trip(
+/// Write in `format` a document whose three messages carry the Backup
+/// Dates `backup_dates` and whose file carries the Export Date
+/// `exported_at_unix_ms`, and read it back: each message's date, and the
+/// file's.
+fn dates_after_round_trip(
     format: OutputFormat,
-    backup_taken_at_unix_ms: Option<i64>,
-) -> Option<i64> {
+    backup_dates: [Option<i64>; 3],
+    exported_at_unix_ms: Option<i64>,
+) -> (Vec<Option<i64>>, Option<i64>) {
     let mut doc = message_ir::testutil::sample_document("from the backup");
-    doc.export.backup_taken_at_unix_ms = backup_taken_at_unix_ms;
+    doc.export.exported_at_unix_ms = exported_at_unix_ms;
+    let first = doc.messages[0].clone();
+    doc.messages = backup_dates
+        .iter()
+        .enumerate()
+        .map(|(i, date)| {
+            let mut message = first.clone();
+            message.guid = format!("{}{i}", first.guid);
+            message.timestamp_unix_ms += i64::try_from(i).unwrap() * 1000;
+            message.backup_taken_at_unix_ms = *date;
+            message
+        })
+        .collect();
+    doc.finalize_stats();
     let tmp = tempfile::tempdir().unwrap();
     let path = write_format(tmp.path(), format, doc).unwrap();
     let back = match format {
@@ -901,13 +918,21 @@ fn backup_date_after_round_trip(
         other => panic!("no round trip for {}", other.as_str()),
     }
     .unwrap();
-    back.export.backup_taken_at_unix_ms
+    (
+        back.messages
+            .iter()
+            .map(|m| m.backup_taken_at_unix_ms)
+            .collect(),
+        back.export.exported_at_unix_ms,
+    )
 }
 
-/// Every format keeps when the backup was made, and a file that does not
-/// say reads back saying nothing, never a date of the reader's own.
+/// Every format keeps each message's own Backup Date, a message without one
+/// reads back without one beside dated ones, and the file's Export Date
+/// reads back as written; a file that says nothing reads back saying
+/// nothing, never a date of the reader's own.
 #[test]
-fn every_format_keeps_when_the_backup_was_made() {
+fn every_format_keeps_each_messages_backup_date_and_the_export_date() {
     for format in [
         OutputFormat::Json,
         OutputFormat::Jsonl,
@@ -915,15 +940,16 @@ fn every_format_keeps_when_the_backup_was_made() {
         OutputFormat::Eml,
         OutputFormat::Mbox,
     ] {
+        let dates = [Some(1_790_793_912_345), None, Some(1_760_000_000_000)];
         assert_eq!(
-            backup_date_after_round_trip(format, Some(1_790_793_912_345)),
-            Some(1_790_793_912_345),
+            dates_after_round_trip(format, dates, Some(1_791_000_000_000)),
+            (dates.to_vec(), Some(1_791_000_000_000)),
             "{}",
             format.as_str()
         );
         assert_eq!(
-            backup_date_after_round_trip(format, None),
-            None,
+            dates_after_round_trip(format, [None; 3], None),
+            (vec![None; 3], None),
             "{}",
             format.as_str()
         );

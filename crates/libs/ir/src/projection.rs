@@ -2,11 +2,10 @@
 //!
 //! Every exporter but Apple Messages builds its documents here (the
 //! [`ProjectionHooks`] documentation says why Apple Messages does not). The
-//! skeleton —
-//! participants with the single-peer fallback, owner sender handling,
-//! sent/received tallying, the dedupe step, GUID derivation, linking each
-//! reply to the message it quotes, and document assembly — lives here once;
-//! the genuine per-exporter deltas (vendor `source` fields, service
+//! skeleton lives here once: participants with the single-peer fallback,
+//! owner sender handling, sent/received tallying, the dedupe step, GUID
+//! derivation, linking each reply to the message it quotes, and document
+//! assembly. The genuine per-exporter deltas (vendor `source` fields, service
 //! selection, attachment digests and vendor keys, reply keys, reactions,
 //! attachment mapping) are supplied through [`ProjectionHooks`].
 
@@ -81,8 +80,10 @@ pub struct PendingReply {
 
 /// Per-exporter deltas of the shared [`pending_to_document`] projection.
 ///
-/// Only [`export`](Self::export), [`service`](Self::service), and
-/// [`vendor_fields`](Self::vendor_fields) are required; every other method has a default
+/// Only [`export`](Self::export), [`service`](Self::service),
+/// [`vendor_fields`](Self::vendor_fields), and
+/// [`backup_taken_at_unix_ms`](Self::backup_taken_at_unix_ms) are required;
+/// every other method has a default
 /// matching the common exporter behavior.
 ///
 /// Every exporter projects through these hooks except Apple Messages
@@ -110,6 +111,12 @@ pub trait ProjectionHooks {
         conversation: &PendingConversation,
         message: &PendingMessage,
     ) -> VendorFields;
+
+    /// The Backup Date of every message projected
+    /// ([`Message::backup_taken_at_unix_ms`]): when the one backup the
+    /// exporter read was made, or `None` when nothing says. Required, so no
+    /// exporter leaves its messages undated by omission.
+    fn backup_taken_at_unix_ms(&self) -> Option<i64>;
 
     /// Normalize a raw non-owner sender handle (e.g. guard phone digits).
     /// The default keeps the handle as-is.
@@ -270,7 +277,7 @@ struct Prepared {
 /// The skeleton shared by every exporter: participants (with the single-peer
 /// chat-id fallback), the owner sender for outgoing rows, one copy kept per
 /// message ([`one_copy_per_message`]), a [`MessageGuid`] per message, and
-/// document assembly. Timestamps must already be representable — run
+/// document assembly. Timestamps must already be representable. Run
 /// [`prepare_conversation`] (or an equivalent prune) first.
 ///
 /// Returns the document and a [`ProjectionTally`] for the caller to fold into
@@ -425,6 +432,7 @@ pub fn project_pending<H: ProjectionHooks + ?Sized>(
             imessage: None,
             source: hooks.vendor_fields(conversation, message).into_option(),
             sender_country: None,
+            backup_taken_at_unix_ms: hooks.backup_taken_at_unix_ms(),
         });
     }
     for (index, reply) in replies {
@@ -452,7 +460,7 @@ pub fn project_pending<H: ProjectionHooks + ?Sized>(
             conversation_type: if conversation.is_group {
                 ConversationType::Group
             } else {
-                ConversationType::Individual
+                ConversationType::OneToOne
             },
             group_title: hooks.group_title(conversation),
             participants: hooks.participants(chat_id, conversation),
@@ -504,7 +512,7 @@ pub fn display_names_for_handles(
 
 /// The default roster: `participant_e164s` (with display names gathered from
 /// the messages) plus the single-peer chat-id fallback when the roster is
-/// empty for an individual chat. The conversation that names nobody
+/// empty for a one-to-one chat. The conversation that names nobody
 /// ([`crate::NAMELESS_CHAT_ID`]) has no fallback: it is with nobody, and a
 /// participant made from its key would make it a person.
 pub fn default_participants(
@@ -530,8 +538,8 @@ pub fn default_participants(
     {
         if crate::name_of_chat_id(chat_id).is_some() {
             // The source named this person and recorded no address for them,
-            // so the chat id is made from the name — not something to store
-            // as an identity.
+            // so the chat id is made from the name. That chat id is not
+            // something to store as an identity.
             participants.push(Participant {
                 identity: None,
                 display_name: conversation.first_contact_name(),
@@ -611,8 +619,12 @@ mod tests {
                 tool_version: "0".into(),
                 owner_identity: Some("+15555550100".into()),
                 owner_display_name: None,
-                backup_taken_at_unix_ms: None,
+                exported_at_unix_ms: None,
             }
+        }
+
+        fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+            None
         }
 
         fn service(&self, _message: &PendingMessage) -> Transport {
@@ -652,6 +664,10 @@ mod tests {
     impl ProjectionHooks for KeyedHooks {
         fn export(&self) -> ExportMeta {
             TestHooks.export()
+        }
+
+        fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+            None
         }
 
         fn service(&self, _message: &PendingMessage) -> Transport {
@@ -895,6 +911,10 @@ mod tests {
     impl ProjectionHooks for MillisecondHooks {
         fn export(&self) -> ExportMeta {
             TestHooks.export()
+        }
+
+        fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+            None
         }
 
         fn service(&self, message: &PendingMessage) -> Transport {

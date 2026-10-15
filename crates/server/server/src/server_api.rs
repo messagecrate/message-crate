@@ -2,8 +2,8 @@
 //! act it is allowed to perform: claiming an unclaimed Message Crate.
 //!
 //! `GET /v1/server` reports this Message Crate's state as a single value rather than the
-//! two facts behind it — whether an owner exists, and whether public
-//! registration is on — so that the rule joining them is stated once, on the
+//! two facts behind it (whether an owner exists, and whether public
+//! registration is on), so that the rule joining them is stated once, on the
 //! server. A browser and a desktop app that each derived the entry screen from
 //! raw fields would be two copies of one rule, free to drift apart.
 //!

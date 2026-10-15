@@ -4,6 +4,7 @@
 //! row of the account that names the original carries the same versions.
 //! The column names live here and nowhere else.
 
+use anyhow::{Context as _, Result};
 use sqlx::SqliteConnection;
 
 use crate::db::begin_write;
@@ -199,12 +200,12 @@ pub struct Named {
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
+/// Returns an error naming the step when the query fails.
 pub async fn stored_originals(
     conn: &mut SqliteConnection,
     account_id: i64,
     only: Option<&str>,
-) -> Result<Vec<StoredOriginal>, sqlx::Error> {
+) -> Result<Vec<StoredOriginal>> {
     // Several messages, from one source or several, can share an original
     // under different names, and only one version of each kind per original
     // is ever made, so collapse those rows and keep any name that could
@@ -242,6 +243,7 @@ pub async fn stored_originals(
     .bind(only)
     .fetch_all(&mut *conn)
     .await
+    .context("read the account's stored originals")
 }
 
 /// The attachment rows of `account_id` for the original `original_sha`.
@@ -273,11 +275,8 @@ pub struct VersionWrite<'a> {
 ///
 /// # Errors
 ///
-/// Returns a database error when the statement fails.
-pub async fn record(
-    conn: &mut SqliteConnection,
-    write: VersionWrite<'_>,
-) -> Result<u64, sqlx::Error> {
+/// Returns an error naming the step when the statement fails.
+pub async fn record(conn: &mut SqliteConnection, write: VersionWrite<'_>) -> Result<u64> {
     point_rows(conn, write, false).await
 }
 
@@ -289,18 +288,20 @@ pub async fn record(
 ///
 /// # Errors
 ///
-/// Returns a database error when the statement fails.
+/// Returns an error naming the step when the statement fails.
 pub async fn record_shown_as_is(
     conn: &mut SqliteConnection,
     rows: OriginalRows<'_>,
     shown_as_is: bool,
-) -> Result<(), sqlx::Error> {
+) -> Result<()> {
     let OriginalRows {
         account_id,
         original_sha,
     } = rows;
     let [reason_column, kind_column] = Version::Preview.not_made_columns();
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE attachments
          SET shown_as_is = $1,
@@ -314,8 +315,11 @@ pub async fn record_shown_as_is(
     .bind(original_sha)
     .bind(account_id)
     .execute(&mut *tx)
-    .await?;
-    tx.commit().await
+    .await
+    .context("record whether an original is shown as it is")?;
+    tx.commit()
+        .await
+        .context("commit whether an original is shown as it is")
 }
 
 /// Why a version of an original could not be made, and which rows get it:
@@ -340,11 +344,8 @@ pub struct NotMade<'a> {
 ///
 /// # Errors
 ///
-/// Returns a database error when the statement fails.
-pub async fn record_not_made(
-    conn: &mut SqliteConnection,
-    not_made: NotMade<'_>,
-) -> Result<(), sqlx::Error> {
+/// Returns an error naming the step when the statement fails.
+pub async fn record_not_made(conn: &mut SqliteConnection, not_made: NotMade<'_>) -> Result<()> {
     let NotMade {
         rows: OriginalRows {
             account_id,
@@ -357,7 +358,9 @@ pub async fn record_not_made(
     } = not_made;
     let [_, path_column, _] = version.columns();
     let [reason_column, kind_column] = version.not_made_columns();
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE attachments
          SET {reason_column} = $1, {kind_column} = $5
@@ -372,8 +375,11 @@ pub async fn record_not_made(
     .bind(named)
     .bind(kind)
     .execute(&mut *tx)
-    .await?;
-    tx.commit().await
+    .await
+    .context("record why a version of an original was not made")?;
+    tx.commit()
+        .await
+        .context("commit why a version of an original was not made")
 }
 
 /// Point the attachment rows `write` names that name no version of its
@@ -384,11 +390,8 @@ pub async fn record_not_made(
 ///
 /// # Errors
 ///
-/// Returns a database error when the statement fails.
-pub async fn share(
-    conn: &mut SqliteConnection,
-    write: VersionWrite<'_>,
-) -> Result<u64, sqlx::Error> {
+/// Returns an error naming the step when the statement fails.
+pub async fn share(conn: &mut SqliteConnection, write: VersionWrite<'_>) -> Result<u64> {
     point_rows(conn, write, true).await
 }
 
@@ -401,7 +404,7 @@ async fn point_rows(
     conn: &mut SqliteConnection,
     write: VersionWrite<'_>,
     only_unset: bool,
-) -> Result<u64, sqlx::Error> {
+) -> Result<u64> {
     let VersionWrite {
         rows: OriginalRows {
             account_id,
@@ -417,7 +420,9 @@ async fn point_rows(
     } else {
         String::new()
     };
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     let done = sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE attachments
          SET {sha_column} = $1, {path_column} = $2, {mime_column} = $3,
@@ -432,8 +437,11 @@ async fn point_rows(
     .bind(original_sha)
     .bind(account_id)
     .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
+    .await
+    .context("point an original's attachment rows at a version")?;
+    tx.commit()
+        .await
+        .context("commit the version the attachment rows point at")?;
     Ok(done.rows_affected())
 }
 
@@ -443,15 +451,17 @@ async fn point_rows(
 ///
 /// # Errors
 ///
-/// Returns a database error when the statement fails.
+/// Returns an error naming the step when the statement fails.
 pub async fn clear(
     conn: &mut SqliteConnection,
     version: Version,
     account_id: i64,
     assets_path: &str,
-) -> Result<(), sqlx::Error> {
+) -> Result<()> {
     let [sha_column, path_column, mime_column] = version.columns();
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE attachments
          SET {sha_column} = NULL, {path_column} = NULL, {mime_column} = NULL
@@ -461,8 +471,9 @@ pub async fn clear(
     .bind(assets_path)
     .bind(account_id)
     .execute(&mut *tx)
-    .await?;
-    tx.commit().await
+    .await
+    .context("clear the attachment rows that name a version file")?;
+    tx.commit().await.context("commit the cleared version file")
 }
 
 /// Where the `version` of the original `rows` names is stored, and its
@@ -476,12 +487,12 @@ pub async fn clear(
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
+/// Returns an error naming the step when the query fails.
 pub async fn file_of(
     conn: &mut SqliteConnection,
     version: Version,
     rows: OriginalRows<'_>,
-) -> Result<Option<(String, Option<String>)>, sqlx::Error> {
+) -> Result<Option<(String, Option<String>)>> {
     let OriginalRows {
         account_id,
         original_sha,
@@ -509,7 +520,8 @@ pub async fn file_of(
         .bind(account_id)
         .bind(original_sha)
         .fetch_all(&mut *conn)
-        .await?
+        .await
+        .context("read the file an original's version is stored in")?
         .into_iter()
         .map(|(path, mime, _oldest)| (path, mime));
     let first = named.next();
@@ -532,12 +544,12 @@ pub async fn file_of(
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
+/// Returns an error naming the step when the query fails.
 pub async fn converted_file_is_named(
     conn: &mut SqliteConnection,
     account_id: i64,
     sha256: &str,
-) -> Result<bool, sqlx::Error> {
+) -> Result<bool> {
     let any_of = |table: &str, staged: bool| {
         Version::ALL
             .iter()
@@ -561,7 +573,8 @@ pub async fn converted_file_is_named(
     .bind(account_id)
     .bind(sha256)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("check whether an attachment names a converted file")?;
     Ok(found.is_some())
 }
 
@@ -571,11 +584,8 @@ pub async fn converted_file_is_named(
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
-pub async fn named_files(
-    conn: &mut SqliteConnection,
-    account_id: i64,
-) -> Result<Vec<NamedFiles>, sqlx::Error> {
+/// Returns an error naming the step when the query fails.
+pub async fn named_files(conn: &mut SqliteConnection, account_id: i64) -> Result<Vec<NamedFiles>> {
     sqlx::query_as(
         "SELECT a.sha256, a.assets_path, a.preview_sha256, a.preview_assets_path,
                 a.thumbnail_sha256, a.thumbnail_assets_path
@@ -592,6 +602,7 @@ pub async fn named_files(
     .bind(account_id)
     .fetch_all(&mut *conn)
     .await
+    .context("read the files the account's attachments name")
 }
 
 /// What one attachment row says about the files it names.
@@ -658,11 +669,11 @@ pub struct NotMadeCount {
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
+/// Returns an error naming the step when the query fails.
 pub async fn not_made_for_import(
     conn: &mut SqliteConnection,
     import_id: i64,
-) -> Result<Vec<NotMadeAttachment>, sqlx::Error> {
+) -> Result<Vec<NotMadeAttachment>> {
     let [thumbnail_reason, thumbnail_kind] = Version::Thumbnail.not_made_columns();
     let [preview_reason, preview_kind] = Version::Preview.not_made_columns();
     let rows: Vec<NotMadeRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
@@ -676,7 +687,8 @@ pub async fn not_made_for_import(
     )))
     .bind(import_id)
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("read the attachments of an Import Run with a version not made")?;
     Ok(rows.into_iter().map(NotMadeRow::into_attachment).collect())
 }
 
@@ -689,15 +701,13 @@ pub async fn not_made_for_import(
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
-pub async fn written_by_import(
-    conn: &mut SqliteConnection,
-    import_id: i64,
-) -> Result<u64, sqlx::Error> {
+/// Returns an error naming the step when the query fails.
+pub async fn written_by_import(conn: &mut SqliteConnection, import_id: i64) -> Result<u64> {
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM attachments WHERE import_id = $1")
         .bind(import_id)
         .fetch_one(&mut *conn)
-        .await?;
+        .await
+        .context("count the attachments an Import Run wrote")?;
     Ok(count.max(0) as u64)
 }
 

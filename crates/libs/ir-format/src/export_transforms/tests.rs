@@ -175,7 +175,7 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
             tool_version: "10.20".into(),
             owner_identity: Some("LEAK-01".into()),
             owner_display_name: Some("LEAK-02".into()),
-            backup_taken_at_unix_ms: Some(1_790_793_912_000),
+            exported_at_unix_ms: Some(1_791_000_000_000),
         },
         conversation: ConversationMeta {
             chat_identifier: "LEAK-03".into(),
@@ -253,6 +253,7 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
                 fields: serde_json::Map::from_iter([("address".into(), json!("LEAK-26"))]),
             }),
             sender_country: None,
+            backup_taken_at_unix_ms: Some(1_790_793_912_000),
         }],
         packaging_stem_suffix: None,
     }

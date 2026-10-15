@@ -161,12 +161,12 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
                 EXPORT_TOOL_VERSION,
                 None,
                 None,
-                backup_taken_at_unix_ms,
             );
             Ok(ReadBackup {
                 conversations: conversations.into_values().collect(),
                 project: ImazingDocuments {
                     export,
+                    backup_taken_at_unix_ms,
                     tz,
                     sources: VecDeque::new(),
                 },
@@ -180,6 +180,8 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
 /// the source file of each attachment it keeps.
 struct ImazingDocuments {
     export: ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
     /// The zone every date of the export is read in.
     tz: Zone,
     /// The source file of each attachment of the documents projected so
@@ -200,6 +202,7 @@ impl Project for ImazingDocuments {
     ) -> Option<ConversationDocument> {
         let hooks = ImazingProjection {
             export: &self.export,
+            backup_taken_at_unix_ms: self.backup_taken_at_unix_ms,
             tz: self.tz,
             key: &key,
             sources: RefCell::new(Vec::new()),
@@ -927,6 +930,8 @@ fn imazing_packaging_stem_suffix(source_kind: &str) -> Option<String> {
 /// projection, for one conversation.
 struct ImazingProjection<'a> {
     export: &'a ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
     /// The zone every date of the export is read in.
     tz: Zone,
     /// The key of the conversation being projected.
@@ -941,6 +946,10 @@ struct ImazingProjection<'a> {
 impl ProjectionHooks for ImazingProjection<'_> {
     fn export(&self) -> ExportMeta {
         self.export.clone()
+    }
+
+    fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+        self.backup_taken_at_unix_ms
     }
 
     fn service(&self, message: &PendingMessage) -> Transport {

@@ -25,15 +25,15 @@ pub fn conversation_key(msg: &Message) -> String {
     format!("{}::{}", msg.source, msg.conversation.chat_identifier)
 }
 
-/// Build one conversation document from a seed message and the mapped rows.
-///
-/// The document's backup date is the seed's `backup_taken_at`, which the
-/// Export Run keeps only while every message of the conversation has the
-/// same one ([`common_backup_taken_at`]), and none otherwise.
+/// Build one conversation document from a seed message and the mapped rows,
+/// written at `exported_at_unix_ms`, the Export Date the run's caller gave.
+/// Each message carries its own stored Backup Date ([`to_ir_message`]), so
+/// a conversation stored from several backups keeps every message's date.
 pub fn build_document(
     source: &str,
     seed: &Message,
     messages: Vec<IrMessage>,
+    exported_at_unix_ms: i64,
 ) -> ConversationDocument {
     // The server says whether the conversation is a group; the Export Run does
     // not read `conversation_type` to decide it again. It reads it only to
@@ -47,7 +47,7 @@ pub fn build_document(
     {
         ConversationType::Orphaned
     } else {
-        ConversationType::Individual
+        ConversationType::OneToOne
     };
     let participants = participants_from_seed(seed);
     let mut attachment_count = 0u64;
@@ -67,10 +67,7 @@ pub fn build_document(
             tool_version: env!("CARGO_PKG_VERSION").into(),
             owner_identity: shared_owner(&messages),
             owner_display_name: Some("Me".into()),
-            backup_taken_at_unix_ms: seed
-                .backup_taken_at
-                .as_deref()
-                .and_then(|at| parse_timestamp_unix_ms(at).ok()),
+            exported_at_unix_ms: Some(exported_at_unix_ms),
         },
         conversation: ConversationMeta {
             chat_identifier: seed.conversation.chat_identifier.clone(),
@@ -89,28 +86,22 @@ pub fn build_document(
     }
 }
 
-/// Clear `seed`'s `backup_taken_at` when `msg`'s differs from it, so the
-/// conversation file names a backup date only when every message of the
-/// conversation came from that one backup. The file carries one date for
-/// all its messages, and any one date would be wrong for some of them when
-/// they differ: the newest would make a message decided by an older backup
-/// win over a backup made between the two, and would date a message that
-/// had none. With no date, an import of the file keeps the rules for files
-/// without one.
-pub fn common_backup_taken_at(seed: &mut Message, msg: &Message) {
-    if msg.backup_taken_at != seed.backup_taken_at {
-        seed.backup_taken_at = None;
-    }
-}
-
-/// Map one exported message into the shared conversation message type.
+/// Map one exported message into the shared conversation message type,
+/// with the Backup Date the server stored for it, or none where it stored
+/// none.
 ///
 /// # Errors
 ///
-/// Returns an error when the timestamp cannot be parsed.
+/// Returns an error when the timestamp or the backup date cannot be parsed.
 pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage> {
     let timestamp_unix_ms = parse_timestamp_unix_ms(msg.timestamp.as_str())
         .with_context(|| format!("message {} timestamp", msg.id))?;
+    let backup_taken_at_unix_ms = msg
+        .backup_taken_at
+        .as_deref()
+        .map(parse_timestamp_unix_ms)
+        .transpose()
+        .with_context(|| format!("message {} backup date", msg.id))?;
 
     let service = Transport::parse(msg.service.as_deref().unwrap_or(""));
     let direction = if msg.is_from_me {
@@ -177,6 +168,7 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
             fields: source_fields,
         }
         .into_option(),
+        backup_taken_at_unix_ms,
     })
 }
 
@@ -235,7 +227,7 @@ fn participants_from_seed(seed: &Message) -> Vec<Participant> {
             // person (ADR-0006). Carrying a bare handle through as a display
             // name would let a later import write it onto a Contact as that
             // person's name, turning a correctly nameless Contact into a
-            // wrongly-named one — so only a name distinct from the handle
+            // wrongly-named one. So only a name distinct from the handle
             // counts as a display name here. A participant with no handle at
             // all has nothing to be identical to, so their name always counts.
             display_name: (p.identity.as_deref() != Some(p.name.as_str())).then(|| p.name.clone()),

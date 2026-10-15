@@ -20,7 +20,7 @@ export type IdentityRow = {
   end_date: string | null;
   /** One-to-one, group, and orphaned conversations the identity takes part in. */
   conversations: number;
-  direct_messages: number;
+  one_to_one_messages: number;
   group_messages: number;
   /** Messages in conversations of orphaned messages; the table shows the column only when some row has any. */
   orphaned_messages: number;
@@ -32,7 +32,7 @@ const SORT_COLUMNS = [
   "start_date",
   "end_date",
   "conversations",
-  "direct_messages",
+  "one_to_one_messages",
   "group_messages",
   "orphaned_messages",
 ] as const;
@@ -50,8 +50,8 @@ function sortKey(row: IdentityRow, column: SortColumn): string | number {
       return row.end_date ?? "";
     case "conversations":
       return row.conversations;
-    case "direct_messages":
-      return row.direct_messages;
+    case "one_to_one_messages":
+      return row.one_to_one_messages;
     case "group_messages":
       return row.group_messages;
     case "orphaned_messages":
@@ -85,13 +85,13 @@ export function sortIdentityRows(
 export function identityTotals(rows: readonly IdentityRow[], conversations: number): IdentityRow {
   let start: string | null = null;
   let end: string | null = null;
-  let direct = 0;
+  let oneToOne = 0;
   let group = 0;
   let orphaned = 0;
   for (const row of rows) {
     if (row.start_date && (!start || row.start_date < start)) start = row.start_date;
     if (row.end_date && (!end || row.end_date > end)) end = row.end_date;
-    direct += row.direct_messages;
+    oneToOne += row.one_to_one_messages;
     group += row.group_messages;
     orphaned += row.orphaned_messages;
   }
@@ -101,7 +101,7 @@ export function identityTotals(rows: readonly IdentityRow[], conversations: numb
     start_date: start,
     end_date: end,
     conversations,
-    direct_messages: direct,
+    one_to_one_messages: oneToOne,
     group_messages: group,
     orphaned_messages: orphaned,
   };
@@ -122,6 +122,6 @@ export function hasOrphanedMessages(
  * All of a contact's conversations: its one-to-one, group, and orphaned ones. A
  * conversation is exactly one of the three, so they add up.
  */
-export function conversationTotal(direct: number, group: number, orphaned: number): number {
-  return direct + group + orphaned;
+export function conversationTotal(oneToOne: number, group: number, orphaned: number): number {
+  return oneToOne + group + orphaned;
 }

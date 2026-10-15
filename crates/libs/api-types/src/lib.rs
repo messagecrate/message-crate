@@ -10,7 +10,7 @@
 //! `#[serde(default)]` on a field the server had removed, and read a
 //! `service` off the conversation the server has never sent there. Each of
 //! those was an Export that failed at runtime, or quietly produced worse data,
-//! with nothing in either crate's tests to catch it — `message-crate-export`'s
+//! with nothing in either crate's tests to catch it. `message-crate-export`'s
 //! "real export page" was a JSON literal it wrote itself, so it agreed with
 //! whatever the mirror said.
 //!
@@ -606,7 +606,7 @@ api_shape! {
     /// the Contact's name, else what that backup called them in that
     /// conversation, else the identity.
     pub struct Participant {
-        /// What to show for this person. Never empty — the server falls back to
+        /// What to show for this person. Never empty: the server falls back to
         /// the identity when nothing else names them, and to the name alone for
         /// someone a backup named without recording any address.
         pub name: String,
@@ -617,8 +617,8 @@ api_shape! {
         /// Platform service, e.g. `imessage`. `None` for the same reason as
         /// `identity`: with no address there is nothing to carry a service on.
         pub service: Option<String>,
-        /// Linked contact id: when the identity is on a Contact, or — for a
-        /// participant with no identity — the contact the server bound the name to
+        /// Linked contact id: when the identity is on a Contact, or, for a
+        /// participant with no identity, the contact the server bound the name to
         /// directly, since that is the only place the link is recorded for
         /// them. Matches the `id` every other contact shape uses, so a caller
         /// can compare the two without converting either.
@@ -813,7 +813,7 @@ api_shape! {
         pub id: i64,
         /// The conversation's identifier as the export wrote it.
         pub chat_identifier: String,
-        /// `individual`, `group`, or `orphaned` for a conversation of
+        /// `one-to-one`, `group`, or `orphaned` for a conversation of
         /// orphaned messages: ones the backup holds without recording which
         /// conversation they were said in.
         pub conversation_type: String,
@@ -945,7 +945,7 @@ mod tests {
             conversation: MessageConversation {
                 id: 9,
                 chat_identifier: "+15555550100".into(),
-                conversation_type: "individual".into(),
+                conversation_type: "one-to-one".into(),
                 is_group: false,
                 group_title: None,
                 shown_title: None,
@@ -1001,7 +1001,7 @@ mod tests {
             serde_json::json!({
                 "id": 9,
                 "chat_identifier": "+15555550100",
-                "conversation_type": "individual",
+                "conversation_type": "one-to-one",
                 "is_group": false,
                 "group_title": null,
                 "shown_title": null,

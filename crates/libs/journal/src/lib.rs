@@ -2,7 +2,7 @@
 //!
 //! A journal is one JSON object per line. Readers rebuild skip-sets from the
 //! events; writers append rows and periodically rewrite the file compacted.
-//! Events are opaque to this crate — callers bring their own serde type. The
+//! Events are opaque to this crate. Callers bring their own serde type. The
 //! one shape this crate names is [`ServerTarget`], the server and account an
 //! event belongs to, which the Upload's journal and the Export's both carry.
 //! An event that names it through [`TargetedEvent`] can be loaded and
@@ -241,7 +241,7 @@ pub fn asset_ok_events<'a, E>(
 }
 
 /// Read the journal, transform the surviving events with `rebuild`, and
-/// rewrite the file — all under one write-lock acquisition, so a concurrent
+/// rewrite the file, all under one write-lock acquisition, so a concurrent
 /// [`append`] either lands before the read or after the rewrite, never between
 /// them.
 ///

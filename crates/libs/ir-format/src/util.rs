@@ -52,7 +52,7 @@ pub fn load_attachment_bytes(att: &Attachment, output_dir: &Path) -> Result<Vec<
 
 /// Read attachment bytes from disk when the relative path exists.
 ///
-/// Missing paths yield `Ok(None)`. IO failures return an error (strict) — callers
+/// Missing paths yield `Ok(None)`. IO failures return an error (strict). Callers
 /// that want lenient behavior map with `.ok().flatten()`.
 ///
 /// The relative path is validated via [`message_ir::safe_attachment_path`].

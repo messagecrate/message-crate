@@ -29,7 +29,7 @@ async fn fts_hits(conn: &mut SqliteConnection, term: &str) -> i64 {
 }
 
 /// A fixture with schema applied, and two accounts (`A1`/alice, `A2`/bob)
-/// each holding one individual conversation on `+15555550100` from
+/// each holding one one-to-one conversation on `+15555550100` from
 /// `t.json`, with no messages.
 async fn seeded_schema_fixture() -> (sqlx::SqlitePool, TestFixture) {
     let fixture = test_fixture().await;
@@ -40,7 +40,7 @@ async fn seeded_schema_fixture() -> (sqlx::SqlitePool, TestFixture) {
             &SeedConversation {
                 account_id: id,
                 handle: "+15555550100",
-                conversation_type: "individual",
+                conversation_type: "one-to-one",
                 group_title: None,
                 source_file: "t.json",
                 messages: &[],

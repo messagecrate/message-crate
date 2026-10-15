@@ -193,7 +193,8 @@ pub async fn start_export(
     .bind(args.tool)
     .bind(now.to_rfc3339())
     .fetch_one(&mut *conn)
-    .await?;
+    .await
+    .context("insert an Export Run")?;
     Ok(id)
 }
 
@@ -219,7 +220,8 @@ pub async fn record_counts(
     .bind(counts.total_bytes)
     .bind(export_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("set an Export Run's counts")?;
     Ok(())
 }
 
@@ -241,7 +243,8 @@ pub async fn get_export(
     .bind(export_id)
     .bind(account_id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read an Export Run")?;
     row.as_ref().map(export_from_row).transpose()
 }
 
@@ -261,7 +264,9 @@ pub async fn finish_export(
     status: ExportStatus,
     now: DateTime<Utc>,
 ) -> Result<bool> {
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     let done = sqlx::query(
         "UPDATE exports SET status = $1, finished_at = $2
          WHERE id = $3 AND account_id = $4 AND status = 'running'",
@@ -271,15 +276,17 @@ pub async fn finish_export(
     .bind(export_id)
     .bind(account_id)
     .execute(&mut *tx)
-    .await?;
+    .await
+    .context("close a running Export Run")?;
     if done.rows_affected() != 1 {
         return Ok(false);
     }
     sqlx::query("DELETE FROM export_messages WHERE export_id = $1")
         .bind(export_id)
         .execute(&mut *tx)
-        .await?;
-    tx.commit().await?;
+        .await
+        .context("delete an Export Run's list of messages")?;
+    tx.commit().await.context("commit the closed Export Run")?;
     Ok(true)
 }
 
@@ -309,7 +316,8 @@ pub async fn record_delivered(
     .bind(export_id)
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("raise an Export Run's delivered count")?;
     Ok(updated.rows_affected() == 1)
 }
 
@@ -337,7 +345,11 @@ pub async fn list_exports_page(
     if let Some(status) = status {
         count = count.bind(status);
     }
-    let total = count.fetch_one(&mut *conn).await?.max(0) as u64;
+    let total = count
+        .fetch_one(&mut *conn)
+        .await
+        .context("count the account's Export Runs")?
+        .max(0) as u64;
 
     let direction = order
         .iter()
@@ -360,7 +372,12 @@ pub async fn list_exports_page(
     if let Some(status) = status {
         query = query.bind(status);
     }
-    let rows = query.bind(limit).bind(offset).fetch_all(&mut *conn).await?;
+    let rows = query
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&mut *conn)
+        .await
+        .context("read a page of the account's Export Runs")?;
     let items = rows
         .iter()
         .map(export_from_row)
@@ -378,7 +395,7 @@ pub async fn list_run_messages(
     conn: &mut SqliteConnection,
     export_id: i64,
     filter: &crate::search::Filter,
-) -> Result<(), sqlx::Error> {
+) -> Result<()> {
     let list_sql = format!(
         "INSERT INTO export_messages (export_id, row_order, message_id)
          SELECT ?, ROW_NUMBER() OVER (ORDER BY m.timestamp, m.sort_order, m.id), m.id
@@ -391,7 +408,8 @@ pub async fn list_run_messages(
     params.extend_from_slice(filter.params());
     (&mut *conn)
         .execute(bind_all(sqlx::AssertSqlSafe(list_sql), &params))
-        .await?;
+        .await
+        .context("list the messages an Export Run matches")?;
     Ok(())
 }
 
@@ -404,11 +422,8 @@ pub async fn list_run_messages(
 /// # Errors
 ///
 /// Returns an error when a statement fails.
-pub async fn export_counts(
-    conn: &mut SqliteConnection,
-    export_id: i64,
-) -> Result<ExportCounts, sqlx::Error> {
-    let row = sqlx::query(
+pub async fn export_counts(conn: &mut SqliteConnection, export_id: i64) -> Result<ExportCounts> {
+    let (messages, conversations): (i64, i64) = sqlx::query(
         "SELECT COUNT(*) AS messages, COUNT(DISTINCT m.conversation_id) AS conversations
          FROM export_messages e
          JOIN messages m ON m.id = e.message_id
@@ -416,11 +431,11 @@ pub async fn export_counts(
     )
     .bind(export_id)
     .fetch_one(&mut *conn)
-    .await?;
-    let (messages, conversations): (i64, i64) =
-        (row.try_get("messages")?, row.try_get("conversations")?);
+    .await
+    .and_then(|row| Ok((row.try_get("messages")?, row.try_get("conversations")?)))
+    .context("count an Export Run's messages and conversations")?;
 
-    let row = sqlx::query(
+    let (attachments, total_bytes): (i64, i64) = sqlx::query(
         "SELECT COUNT(*) AS attachments, COALESCE(SUM(sz), 0) AS total_bytes
          FROM (
            SELECT MAX(a.size_bytes) AS sz
@@ -434,9 +449,9 @@ pub async fn export_counts(
     )
     .bind(export_id)
     .fetch_one(&mut *conn)
-    .await?;
-    let (attachments, total_bytes): (i64, i64) =
-        (row.try_get("attachments")?, row.try_get("total_bytes")?);
+    .await
+    .and_then(|row| Ok((row.try_get("attachments")?, row.try_get("total_bytes")?)))
+    .context("count an Export Run's attachments and their bytes")?;
 
     Ok(ExportCounts {
         messages: messages.max(0),
@@ -545,14 +560,16 @@ pub async fn detach_from_account(
     .bind(account_id)
     .bind(now)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("cancel the account's running Export Runs")?;
     sqlx::query(
         "DELETE FROM export_messages
          WHERE export_id IN (SELECT id FROM exports WHERE account_id = $1)",
     )
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("delete the lists of messages of the account's Export Runs")?;
     sqlx::query(
         "UPDATE exports SET username = $2, deletion_entry_id = $3, scope_query = NULL,
                 scope_conversation_ids = NULL, scope_message_ids = NULL
@@ -562,6 +579,7 @@ pub async fn detach_from_account(
     .bind(username)
     .bind(deletion_entry_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("mark the account's Export Runs to outlive it")?;
     Ok(())
 }

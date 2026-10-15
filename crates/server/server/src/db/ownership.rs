@@ -3,10 +3,11 @@
 //! Every route that takes a row id from the path has to decide between 404
 //! and going ahead, and the decision is the same one each time: the row
 //! exists *and* its `account_id` is the caller's. Asking it here rather than
-//! inline keeps the two cases — an id that does not exist, and another
-//! account's id — indistinguishable from outside, which is what makes them
+//! inline keeps the two cases (an id that does not exist, and another
+//! account's id) indistinguishable from outside, which is what makes them
 //! both a 404 rather than one a 404 and the other a 403.
 
+use anyhow::Context as _;
 use sqlx::{Executor, Row, SqliteConnection};
 
 use crate::db::sql::{SqlParam, bind_all};
@@ -81,13 +82,13 @@ impl OwnedTable {
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
+/// Returns an error naming the step when the query fails.
 pub async fn missing_ids(
     conn: &mut SqliteConnection,
     table: OwnedTable,
     account_id: i64,
     ids: &[i64],
-) -> Result<Vec<i64>, sqlx::Error> {
+) -> anyhow::Result<Vec<i64>> {
     if ids.is_empty() {
         return Ok(Vec::new());
     }
@@ -98,13 +99,15 @@ pub async fn missing_ids(
     );
     let mut params = vec![SqlParam::Int(account_id)];
     params.extend(ids.iter().map(|id| SqlParam::Int(*id)));
-    let rows = (&mut *conn)
+    let found = (&mut *conn)
         .fetch_all(bind_all(sqlx::AssertSqlSafe(sql), &params))
-        .await?;
-    let found = rows
-        .iter()
-        .map(|row| row.try_get::<i64, _>("id"))
-        .collect::<Result<std::collections::HashSet<_>, _>>()?;
+        .await
+        .and_then(|rows| {
+            rows.iter()
+                .map(|row| row.try_get::<i64, _>("id"))
+                .collect::<Result<std::collections::HashSet<_>, _>>()
+        })
+        .context("find which of the selected ids the account holds")?;
     let mut missing: Vec<i64> = ids
         .iter()
         .copied()

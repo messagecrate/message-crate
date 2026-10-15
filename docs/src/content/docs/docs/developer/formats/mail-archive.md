@@ -132,7 +132,7 @@ A mail an earlier Message Crate wrote names its addresses with `X-ME-Sender-Hand
 | Header | Values | Notes |
 |--------|----------------|-------|
 | `X-ME-Chat-Identifier` | string | Same role as CSV `chat_identifier` |
-| `X-ME-Conversation-Type` | `individual` \| `group` | |
+| `X-ME-Conversation-Type` | `one-to-one` \| `group` | |
 | `X-ME-Group-Title` | string | Empty/absent for one-to-one |
 | `X-ME-Participants` | JSON `[{ "identity", "display_name" }]` | **Required for groups**; E.164 preferred for phones |
 | `X-ME-Direction` | `incoming` \| `outgoing` | |
@@ -354,6 +354,7 @@ Normal sticker sends: image MIME part + `X-ME-Attachment-Meta` (`is_sticker`, `s
 | `export_*` | `X-ME-Export-*` |
 | `owner_identity` / `owner_display_name` | `X-ME-Owner-*` |
 | `backup_taken_at_unix_ms` | `X-ME-Backup-Taken-At-Unix-Ms` |
+| `exported_at_unix_ms` | `X-ME-Exported-At-Unix-Ms` |
 | `message_owner_identity` | `X-ME-Message-Owner-Identity` |
 | `participants_json` (iMessage) | `X-ME-Participants` |
 | `reactions_json` | `X-ME-Reactions` |

@@ -106,10 +106,10 @@ fn with_suffix(stem: &str, suffix: Option<&str>) -> String {
     }
 }
 
-/// Standard per-conversation filename stem (no extension — callers append
+/// Standard per-conversation filename stem (no extension: callers append
 /// `.csv`, `.jsonl`, …).
 ///
-/// - Individual → `sanitize_stem(chat_id)` (+ optional suffix); `unknown`
+/// - One-to-one → `sanitize_stem(chat_id)` (+ optional suffix); `unknown`
 ///   when the chat id is empty, so no file is named only by its extension
 /// - Group with a real `group_title` → sanitized title
 /// - Untitled group → `group_+A_+B_…` (sorted unique E.164, max 10);
@@ -184,22 +184,22 @@ mod tests {
     use super::conversation_stem;
 
     #[test]
-    fn individual_uses_chat_id() {
+    fn one_to_one_uses_chat_id() {
         assert_eq!(
-            conversation_stem("individual", "+15550112", None, &[], None),
+            conversation_stem("one-to-one", "+15550112", None, &[], None),
             "+15550112"
         );
     }
 
     #[test]
-    fn individual_with_an_empty_chat_id_is_unknown() {
+    fn one_to_one_with_an_empty_chat_id_is_unknown() {
         assert_eq!(
-            conversation_stem("individual", "", None, &[], None),
+            conversation_stem("one-to-one", "", None, &[], None),
             "unknown"
         );
-        assert_eq!(conversation_stem("individual", "  ", None, &[], None), "__");
+        assert_eq!(conversation_stem("one-to-one", "  ", None, &[], None), "__");
         assert_eq!(
-            conversation_stem("individual", "", None, &[], Some("__whatsapp")),
+            conversation_stem("one-to-one", "", None, &[], Some("__whatsapp")),
             "unknown__whatsapp"
         );
     }

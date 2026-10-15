@@ -408,7 +408,7 @@ pub fn stage_read_attachments(
 fn chat_id(record: &Record) -> String {
     match record.conversation_kind {
         ConversationKind::Group => format!("chat-{}", record.chat_key),
-        ConversationKind::Individual => record.chat_key.clone(),
+        ConversationKind::OneToOne => record.chat_key.clone(),
     }
 }
 
@@ -478,6 +478,8 @@ fn add_record(
 /// for one conversation.
 struct SbrProjection<'a> {
     export: &'a ExportMeta,
+    /// When the file was made: every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
     kind: ConversationKind,
     rows: &'a [MessageRow],
 }
@@ -521,6 +523,10 @@ impl SbrProjection<'_> {
 impl ProjectionHooks for SbrProjection<'_> {
     fn export(&self) -> ExportMeta {
         self.export.clone()
+    }
+
+    fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+        self.backup_taken_at_unix_ms
     }
 
     fn service(&self, _message: &PendingMessage) -> Transport {
@@ -571,13 +577,15 @@ impl ProjectionHooks for SbrProjection<'_> {
     }
 }
 
-/// Project one conversation in progress into a document, or `None` when no
+/// Project one conversation in progress into a document whose messages
+/// carry the file's Backup Date `backup_taken_at_unix_ms`, or `None` when no
 /// message has a time that can be represented, and fold its counts into the
 /// report.
 fn to_document(
     file_path: &str,
     conversation: ConversationInProgress,
     export: &ExportMeta,
+    backup_taken_at_unix_ms: Option<i64>,
     report: &mut ReadReport,
 ) -> Option<ConversationDocument> {
     let ConversationInProgress {
@@ -587,6 +595,7 @@ fn to_document(
     } = conversation;
     let hooks = SbrProjection {
         export,
+        backup_taken_at_unix_ms,
         kind,
         rows: &rows,
     };
@@ -725,11 +734,17 @@ pub fn read_backup(
         tool_version: EXPORT_TOOL_VERSION.into(),
         owner_identity,
         owner_display_name: None,
-        backup_taken_at_unix_ms,
+        exported_at_unix_ms: None,
     };
     let mut documents = Vec::new();
     for conversation in conversations.into_values() {
-        if let Some(document) = to_document(&file_path, conversation, &export, &mut report) {
+        if let Some(document) = to_document(
+            &file_path,
+            conversation,
+            &export,
+            backup_taken_at_unix_ms,
+            &mut report,
+        ) {
             documents.push(document);
             report.conversations += 1;
         }

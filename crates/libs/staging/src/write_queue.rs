@@ -167,7 +167,7 @@ impl WriteQueueReport {
 
 /// Read one attachment source.
 ///
-/// `Bytes` are moved out of the source rather than copied — every source is
+/// `Bytes` are moved out of the source rather than copied. Every source is
 /// loaded at most once, so taking them is safe and spares a full copy of the
 /// payload. `Missing` reads as an absent file, which Staging turns
 /// into `file_missing`.
@@ -292,9 +292,9 @@ pub type AttachmentLoader<'a> =
 
 /// Drain `units` with a caller-supplied loader.
 ///
-/// Exporters whose attachment loader cannot cross threads — an encrypted iOS
-/// backup holds a SQLite connection that is not `Sync` — use this and get one
-/// writer. Everyone else wants `drain_write_queue`.
+/// Exporters whose attachment loader cannot cross threads use this and get
+/// one writer. An encrypted iOS backup is one: it holds a SQLite connection
+/// that is not `Sync`. Everyone else wants `drain_write_queue`.
 ///
 /// # Errors
 ///
@@ -675,9 +675,9 @@ fn write_one_unit(
     let file = conversation_file_name(&doc);
     let path = output_dir.join(&file);
     if written_by_an_earlier_run(output_dir, &doc, options.resume) {
-        // Count its attachments and their bytes as done — progress describes
-        // the whole import, not just this run's share of it — and load
-        // nothing.
+        // Count its attachments and their bytes as done, and load nothing.
+        // Progress describes the whole import, not just this run's share of
+        // it.
         on_progress(UnitProgress {
             done: attachment_count,
             bytes_done: hint_sum,

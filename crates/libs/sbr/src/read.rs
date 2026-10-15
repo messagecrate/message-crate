@@ -52,7 +52,7 @@ pub enum SourceFields {
 pub struct Record {
     /// Conversation key: the peer's handle key, or the group key.
     pub chat_key: String,
-    /// Individual or group classification.
+    /// One-to-one or group classification.
     pub conversation_kind: ConversationKind,
     /// Generated group title, if group.
     pub group_title: Option<String>,
@@ -164,10 +164,10 @@ fn parse_sms(
         }
     };
     let raw_name = raw_name(attrs);
-    let hint = contact_name(&raw_name, ConversationKind::Individual).map(String::from);
+    let hint = contact_name(&raw_name, ConversationKind::OneToOne).map(String::from);
     Some(Record {
         chat_key: address.key().to_string(),
-        conversation_kind: ConversationKind::Individual,
+        conversation_kind: ConversationKind::OneToOne,
         group_title: None,
         participants: vec![(address, hint.clone())],
         timestamp_secs,

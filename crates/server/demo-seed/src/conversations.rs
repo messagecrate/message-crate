@@ -85,16 +85,16 @@ const EMOJI_ONLY: &[&str] = &["👍", "😂", "❤️", "🎉", "😊"];
 
 /// Export metadata stamped on a conversation header. `owner_identity` is the
 /// Demo Account's identity the conversation's messages are held at, and
-/// `backup_taken_at_unix_ms` when the backup was made: the settings'
-/// reference time, which every generated message is before.
-fn export_meta(source: &str, owner_identity: &str, backup_taken_at_unix_ms: i64) -> ExportMeta {
+/// `exported_at_unix_ms` when the file was written: the settings' reference
+/// time, as every message's Backup Date is ([`Seeder::emit`]).
+fn export_meta(source: &str, owner_identity: &str, exported_at_unix_ms: i64) -> ExportMeta {
     ExportMeta {
         source: source.into(),
         tool: "demo-seed".into(),
         tool_version: "0.2.0".into(),
         owner_identity: Some(owner_identity.into()),
         owner_display_name: Some("Me".into()),
-        backup_taken_at_unix_ms: Some(backup_taken_at_unix_ms),
+        exported_at_unix_ms: Some(exported_at_unix_ms),
     }
 }
 
@@ -173,17 +173,17 @@ impl<R: Rng> Seeder<'_, R> {
 
         for contact in imessage_only {
             stop_if_cancelled(self.cancel)?;
-            let spec = Individual::for_contact(contact, SourceFlavor::IMessage);
-            self.individual(staging.imessage, &spec)?;
+            let spec = OneToOne::for_contact(contact, SourceFlavor::IMessage);
+            self.one_to_one(staging.imessage, &spec)?;
         }
         for contact in android_only {
             stop_if_cancelled(self.cancel)?;
-            let spec = Individual::for_contact(contact, SourceFlavor::SmsBackupRestore);
-            self.individual(staging.sbr, &spec)?;
+            let spec = OneToOne::for_contact(contact, SourceFlavor::SmsBackupRestore);
+            self.one_to_one(staging.sbr, &spec)?;
         }
         for contact in overlap {
             stop_if_cancelled(self.cancel)?;
-            self.overlap_individual(staging, contact)?;
+            self.overlap_one_to_one(staging, contact)?;
         }
         for ua in &roster.unassigned {
             stop_if_cancelled(self.cancel)?;
@@ -197,11 +197,11 @@ impl<R: Rng> Seeder<'_, R> {
         stop_if_cancelled(self.cancel)?;
         self.orphaned(staging.imessage)?;
 
-        if self.cfg.edge_cases.empty_individual {
+        if self.cfg.edge_cases.empty_one_to_one {
             self.create_empty_conversation_file(
                 staging.imessage,
                 EMPTY_ONE_TO_ONE_HANDLE,
-                ConversationType::Individual,
+                ConversationType::OneToOne,
                 &[],
             )?;
         }
@@ -218,8 +218,8 @@ impl<R: Rng> Seeder<'_, R> {
         // a separate platform on the same person.
         for contact in roster.contacts.iter().filter(|c| c.has_whatsapp) {
             stop_if_cancelled(self.cancel)?;
-            let spec = Individual::for_contact(contact, SourceFlavor::Whatsapp);
-            self.individual(staging.whatsapp, &spec)?;
+            let spec = OneToOne::for_contact(contact, SourceFlavor::Whatsapp);
+            self.one_to_one(staging.whatsapp, &spec)?;
         }
         Ok(())
     }
@@ -269,14 +269,14 @@ fn is_json_conversation_file(path: &Path) -> bool {
 
 /// One one-to-one conversation to write: whose, how long, how many messages,
 /// and for which backup source.
-struct Individual<'a> {
+struct OneToOne<'a> {
     chat_id: &'a str,
     span_years: f64,
     msg_count: usize,
     flavor: SourceFlavor,
 }
 
-impl<'a> Individual<'a> {
+impl<'a> OneToOne<'a> {
     /// The contact's conversation as `flavor` would hold it. WhatsApp copies
     /// are shorter and more recent than the phone's own history.
     fn for_contact(contact: &'a Contact, flavor: SourceFlavor) -> Self {
@@ -344,6 +344,7 @@ impl SharedMessage {
             reply_to: None,
             imessage: None,
             source: None,
+            backup_taken_at_unix_ms: None,
         }
     }
 }
@@ -397,7 +398,7 @@ impl<'a> ConversationFileHeader<'a> {
     ) -> Self {
         Self {
             chat_id,
-            conversation_type: ConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants,
             message_count,
@@ -459,13 +460,13 @@ impl<R: Rng> Seeder<'_, R> {
     /// # Errors
     ///
     /// Returns an error if the file cannot be created or a line cannot be written.
-    fn individual(&mut self, staging: &Path, spec: &Individual<'_>) -> Result<()> {
+    fn one_to_one(&mut self, staging: &Path, spec: &OneToOne<'_>) -> Result<()> {
         let chat_id = spec.chat_id;
         let msg_count = spec.msg_count;
         let flavor = spec.flavor;
         // A roster contact's backups carry no name for them: each arrives as
         // an Unknown, and the demo's address book names them afterwards.
-        let participants = individual_participants(chat_id, None);
+        let participants = one_to_one_participants(chat_id, None);
         let path = staging.join(conversation_file_name(chat_id));
         self.write_conversation_file(
             &path,
@@ -521,7 +522,7 @@ impl<R: Rng> Seeder<'_, R> {
     /// # Errors
     ///
     /// Returns an error if either conversation file cannot be written.
-    fn overlap_individual(&mut self, staging: &StagingDirs<'_>, contact: &Contact) -> Result<()> {
+    fn overlap_one_to_one(&mut self, staging: &StagingDirs<'_>, contact: &Contact) -> Result<()> {
         let chat_id = contact.primary_phone();
         let msg_count = contact.message_count().max(1);
         let shared_raw = (msg_count as f64) * self.cfg.sources.overlap_shared_fraction;
@@ -566,7 +567,7 @@ impl<R: Rng> Seeder<'_, R> {
             &path,
             ConversationFileHeader::one_to_one(
                 chat_id,
-                individual_participants(chat_id, overlap.display_name.clone()),
+                one_to_one_participants(chat_id, overlap.display_name.clone()),
                 overlap.msg_count,
                 IMESSAGE_SOURCE,
                 OWNER_PHONE,
@@ -627,7 +628,7 @@ impl<R: Rng> Seeder<'_, R> {
             &path,
             ConversationFileHeader::one_to_one(
                 chat_id,
-                individual_participants(chat_id, overlap.display_name.clone()),
+                one_to_one_participants(chat_id, overlap.display_name.clone()),
                 android_total,
                 SBR_SOURCE,
                 OWNER_PHONE,
@@ -664,7 +665,7 @@ impl<R: Rng> Seeder<'_, R> {
 }
 
 /// One participant for a one-to-one conversation: the other person's phone or email.
-fn individual_participants(chat_id: &str, display_name: Option<String>) -> Vec<Participant> {
+fn one_to_one_participants(chat_id: &str, display_name: Option<String>) -> Vec<Participant> {
     vec![Participant {
         identity: Some(chat_id.into()),
         display_name,
@@ -698,7 +699,7 @@ impl<R: Rng> Seeder<'_, R> {
     /// Returns an error if the file cannot be written.
     fn unassigned(&mut self, staging: &Path, ua: &Unassigned, msg_count: usize) -> Result<()> {
         let chat_id = &ua.handle;
-        let participants = individual_participants(chat_id, ua.name_alias.clone());
+        let participants = one_to_one_participants(chat_id, ua.name_alias.clone());
         let fname = if ua.email_only {
             format!("email-{}.jsonl", chat_id.replace('@', "_at_"))
         } else {
@@ -1213,6 +1214,7 @@ impl<R: Rng> Seeder<'_, R> {
             reply_to: None,
             imessage: None,
             source: None,
+            backup_taken_at_unix_ms: None,
         }
     }
 
@@ -1233,8 +1235,11 @@ impl<R: Rng> Seeder<'_, R> {
         }
     }
 
-    /// Write one message line and count it.
-    fn emit(&mut self, file: &mut BufWriter<File>, msg: Message) -> Result<()> {
+    /// Write one message line, dated by the backup the settings' reference
+    /// time stands for, which every generated message is before, and count
+    /// it.
+    fn emit(&mut self, file: &mut BufWriter<File>, mut msg: Message) -> Result<()> {
+        msg.backup_taken_at_unix_ms = Some(self.cfg.reference_time.timestamp_millis());
         write_message(file, msg)?;
         self.stats.messages += 1;
         Ok(())
@@ -1587,7 +1592,7 @@ mod tests {
         let result = seeder.create_empty_conversation_file(
             &staging,
             EMPTY_ONE_TO_ONE_HANDLE,
-            ConversationType::Individual,
+            ConversationType::OneToOne,
             &[],
         );
 

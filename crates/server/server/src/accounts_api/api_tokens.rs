@@ -117,7 +117,7 @@ pub struct CreateApiTokenResponse {
     pub created_at: String,
     /// Unix-seconds expiry; `null` means no expiry.
     pub expires_at: Option<String>,
-    /// Plaintext secret — returned once at creation.
+    /// Plaintext secret, returned once at creation.
     pub token: String,
     /// Masked form for the Settings list (also persisted).
     pub token_hint: String,

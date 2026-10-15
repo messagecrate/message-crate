@@ -24,8 +24,8 @@ server does not slow its own imports by describing them.
 
 Why the Data Directory: it is the one directory a Message Crate is sure to
 have and to be allowed to write, in Docker (the volume) and in the desktop app
-(its app-data directory) alike, and a copy of it is already the whole
-installation.
+(`data` in the Message Crate Directory) alike, and a copy of it is already
+the whole installation.
 
 Only the operating-system user the server runs as can read the files. The
 server makes the Data Directory, and the `logs` directory in it, with mode
@@ -36,7 +36,8 @@ attachments, so another user of the same computer must not read either. A
 directory with no access for anyone else keeps everything inside it from
 them, so the files in it keep the mode the umask gives them. Windows has no
 such modes; there the directories take the access of the one they are made
-in, which for the desktop app is the user's own app-data directory. Rules:
+in, which for the desktop app is the Message Crate Directory, under the
+user's own profile directory. Rules:
 `crates/server/server/src/owner_only.rs`.
 
 Rejected: stderr alone. Docker keeps it only as long as the container, and the
@@ -210,10 +211,13 @@ that does not say which statement failed sends the owner to the code to
 guess. Why a fixed phrase: a bound value can be a search word or a message's
 text, which a line never holds (below).
 
-`db/conversation_messages.rs`, `db/conversations.rs` and
-`db/contacts/read.rs` name every statement they run; the other `db/`
-modules do not all name theirs yet
-([#2667](https://github.com/messagecrate/message-crate/issues/2667)).
+Every statement in `crates/server/server/src/db/` names its step where it
+runs. A shared helper that runs a statement for several callers, such as
+`begin_write`, `free_name` or the ownership checks, leaves the step to each
+caller, which knows what the statement is for. The pragmas the pool runs on
+each new connection (`with_pragmas` in `db/engine.rs`) name none: sqlx
+requires that hook to return its own error type, which holds no step, and a
+failure there shows as the pool's failure to connect.
 
 ## A request's lines carry its id, spawned work included
 

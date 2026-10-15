@@ -223,6 +223,18 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-15: **The desktop app keeps everything in one directory.** The
+  app now makes a directory named message-crate in your home directory and
+  keeps its Message Crate's data, the Staging Directory, exports, Import Run
+  logs, scratch files and the programs it downloads in it, each in a
+  directory of its own. Only your user on the computer can read it. A copy
+  of the data directory inside it is a backup. The button in
+  Settings → System, and on the login card when the app's Message Crate
+  can't start, now reads Open Message Crate directory and opens it. The
+  Staging Directory setting still moves staging anywhere else (#1998).
+- 2026-10-15: **A one-to-one conversation has one name throughout.**
+  Message files and the server now use the name one-to-one for a
+  conversation with one other person; `kind:direct` still finds them (#2286).
 - 2026-10-15: **An Audit Trail entry names the request that wrote it.**
   Each entry now keeps the id the server gave the request that made it,
   the same id that request's lines in the server's log carry, so an entry
@@ -1240,6 +1252,14 @@ carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-15: **An Export keeps the date of the backup each message came
+  from.** A conversation imported from two backups of a phone was exported
+  with no backup date at all, and a message that had none left its whole
+  conversation without one, so importing the export into another Message
+  Crate treated every message as if its backup had no date. Each message
+  now carries its own backup date in the file, an import elsewhere keeps
+  it, and a message without one leaves the others dated. Every exported
+  file also says when it was written (#1967).
 - 2026-10-12: **Cancel stops an Export at once while the server is away.**
   When the server stopped answering during an Export, the Export kept trying
   each failed request up to three more times after you pressed **Cancel**,
@@ -1423,6 +1443,12 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-15: **A failed request's log line names the database step that
+  failed.** When a request fails because of a database problem, its line in
+  the server's log now says which database step failed, such as `read the
+  account's Saved Searches`, before the database's own message. Before, only
+  the message pages of a conversation, the conversation list and contacts
+  said so; the other requests gave the database's message alone (#2667).
 - 2026-10-15: **The website tells the browser to run only its own
   scripts.** The website the server serves, and every answer from the
   server, now carry a Content Security Policy and two related headers, as
@@ -1723,9 +1749,21 @@ carry their date on the heading.
 
 ### Upgrading
 
-- 2026-10-15: Message files exported before they carried the country an
-  Apple Messages backup names for each number are refused when you import
-  or convert them. Export the backup again with this build.
+- 2026-10-15: The desktop app starts a new Message Crate in message-crate
+  in your home directory, and no longer reads the data, exports and logs it
+  kept in the operating system's app-data directory. This release rebuilds
+  every Message Crate empty anyway (#2286), so the messages are imported
+  again either way. Exports and Import Run logs worth keeping can be copied
+  from exports and logs in the app-data directory into the directories of
+  the same names in message-crate. The app-data directory is
+  `~/.local/share/app.messagecrate.desktop` on Linux,
+  `~/Library/Application Support/app.messagecrate.desktop` on macOS and
+  `%APPDATA%\app.messagecrate.desktop` on Windows. Its data, data-dev,
+  exports, logs and scratch directories can then be deleted (#1998).
+- 2026-10-15: Message files exported by an earlier build are refused when
+  you import or convert them. Export the backup again with this build. An
+  existing Message Crate is rebuilt empty on first start and its messages
+  must be imported again (#2286, #1967).
 - 2026-10-15: A script that runs `create-owner` or
   `reset-owner-password` with `--password` must write the password to the
   command's input instead, for example

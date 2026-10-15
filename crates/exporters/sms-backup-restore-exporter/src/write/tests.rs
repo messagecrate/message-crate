@@ -245,7 +245,7 @@ fn a_one_to_one_photo_from_another_app_keeps_its_conversation_sender_subject_and
     assert_eq!(read.len(), 1);
     let conversation = &read[0].conversation;
     assert_eq!(conversation.chat_identifier, "+15555550101");
-    assert_eq!(conversation.conversation_type, ConversationType::Individual);
+    assert_eq!(conversation.conversation_type, ConversationType::OneToOne);
     assert_eq!(
         conversation.participants[0].display_name.as_deref(),
         Some("Sam")
@@ -339,7 +339,7 @@ fn a_group_with_one_identified_participant_is_named_as_one_to_one() {
     assert_eq!(read.len(), 1);
     assert_eq!(
         read[0].conversation.conversation_type,
-        ConversationType::Individual
+        ConversationType::OneToOne
     );
     let message = &read[0].messages[0];
     assert_eq!(contact_name(message), Some("Sam"));
@@ -370,7 +370,7 @@ fn a_group_the_reader_finds_one_peer_in_is_named_as_one_to_one() {
         assert_eq!(read.len(), 1, "{handle}");
         assert_eq!(
             read[0].conversation.conversation_type,
-            ConversationType::Individual,
+            ConversationType::OneToOne,
             "{handle}"
         );
         let message = &read[0].messages[0];
@@ -606,15 +606,19 @@ fn the_archive_counts_the_characters_xml_cannot_carry() {
     assert!(text.contains(r#"body="bell and escape""#), "{text}");
 }
 
-/// The file's `backup_date` is the newest date of the conversations it
-/// writes messages for: a WhatsApp conversation, which writes none, does
-/// not move it.
+/// The file's one `backup_date` is the newest Backup Date of the messages
+/// it writes: of two SMS dated by two backups the newer stands, and a
+/// WhatsApp message, which it does not write, does not move it.
 #[test]
-fn the_backup_date_comes_from_the_conversations_written() {
+fn the_backup_date_comes_from_the_messages_written() {
     let mut sms = message_ir::testutil::sample_document("hello ir");
-    sms.export.backup_taken_at_unix_ms = Some(1_788_256_800_000);
+    let mut older = sms.messages[0].clone();
+    older.guid = "older".into();
+    older.backup_taken_at_unix_ms = Some(1_780_000_000_000);
+    sms.messages[0].backup_taken_at_unix_ms = Some(1_788_256_800_000);
+    sms.messages.push(older);
     let mut whatsapp = message_ir::testutil::sample_whatsapp_document("hello whatsapp");
-    whatsapp.export.backup_taken_at_unix_ms = Some(1_790_793_912_000);
+    whatsapp.messages[0].backup_taken_at_unix_ms = Some(1_790_793_912_000);
 
     let tmp = tempfile::tempdir().unwrap();
     let mut report = message_crate_core::ExportReport::default();

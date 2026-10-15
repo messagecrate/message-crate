@@ -16,7 +16,7 @@ fn direct_mms_without_from_is_from_the_peer() {
     let owners = OwnerHandleSet::from_phones(&["5555550100".to_string()]).unwrap();
     let xml = br#"<smses><mms date="1" msg_box="1" address="+15555550101~+15555550100"><parts><part ct="text/plain" text="hi"/></parts><addrs><addr address="+15555550101" type="151"/><addr address="+15555550100" type="151"/></addrs></mms></smses>"#;
     let (records, _) = parse_reader(xml.as_slice(), Some(&owners)).unwrap();
-    assert_eq!(records[0].conversation_kind, ConversationKind::Individual);
+    assert_eq!(records[0].conversation_kind, ConversationKind::OneToOne);
     assert_eq!(
         records[0].sender.as_ref().map(Handle::key),
         Some("+15555550101")

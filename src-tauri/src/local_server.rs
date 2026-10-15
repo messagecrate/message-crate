@@ -9,10 +9,11 @@
 //! - nothing answers: the app starts the server and waits for it to listen;
 //! - something else answers: the port is taken, and the app says so.
 //!
-//! The server is given its Data Directory, its address and the website files on
-//! its command line, so there is no config file. A database that does not
-//! exist yet is created with the Demo Account before the server listens,
-//! which is why a first start takes a few seconds longer.
+//! The server is given its Data Directory (`crate::app_directories`), its
+//! address and the website files on its command line, so there is no config
+//! file. A database that does not exist yet is created with the Demo Account
+//! before the server listens, which is why a first start takes a few seconds
+//! longer.
 //!
 //! The server listens on this computer only, unless the person switched on
 //! the setting that opens it to the network; it then listens on every
@@ -70,7 +71,7 @@ use serde::Serialize;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
 use std::net::{SocketAddr, TcpStream};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -1124,18 +1125,6 @@ fn joined(output: &Output) -> String {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     lines.iter().cloned().collect::<Vec<_>>().join("\n")
-}
-
-/// The directory inside the app's own data directory that the server keeps its
-/// database and attachments in. It is the whole Message Crate: copying it is
-/// the backup.
-///
-/// A dev build (`cargo tauri dev`) uses `data-dev` beside it. Both builds
-/// share one app-data directory, because `tauri.conf.json` has one identifier,
-/// and a dev build on a branch with another Schema Fingerprint would
-/// otherwise rebuild the installed app's database empty.
-pub fn data_dir_in(app_data_dir: &Path, dev: bool) -> PathBuf {
-    app_data_dir.join(if dev { "data-dev" } else { "data" })
 }
 
 mod process_tree;

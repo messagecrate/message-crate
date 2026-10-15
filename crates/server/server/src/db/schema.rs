@@ -114,13 +114,15 @@ pub enum DatabaseKind {
 pub async fn database_kind(conn: &mut SqliteConnection) -> Result<DatabaseKind> {
     let application_id: i64 = sqlx::query_scalar("PRAGMA application_id")
         .fetch_one(&mut *conn)
-        .await?;
+        .await
+        .context("read the database's application id")?;
     if application_id == APPLICATION_ID {
         return Ok(DatabaseKind::MessageCrate);
     }
     let objects: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sqlite_master")
         .fetch_one(&mut *conn)
-        .await?;
+        .await
+        .context("count the objects in the database's catalog")?;
     if application_id == 0 && objects == 0 {
         Ok(DatabaseKind::Empty)
     } else {
@@ -177,7 +179,8 @@ async fn migrate_schema(conn: &mut SqliteConnection) -> Result<()> {
         "PRAGMA application_id = {APPLICATION_ID}"
     )))
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("stamp the database's application id")?;
     stamp_user_version(conn, SCHEMA_FINGERPRINT).await?;
     Ok(())
 }
@@ -195,9 +198,10 @@ pub(crate) async fn rebuild_is_due(conn: &mut SqliteConnection) -> Result<bool> 
 
 /// The `user_version` pragma value stamped by [`migrate_schema`].
 pub(crate) async fn user_version(conn: &mut SqliteConnection) -> Result<i64> {
-    Ok(sqlx::query_scalar("PRAGMA user_version")
+    sqlx::query_scalar("PRAGMA user_version")
         .fetch_one(&mut *conn)
-        .await?)
+        .await
+        .context("read the database's schema fingerprint")
 }
 
 /// Record the schema fingerprint in SQLite's `user_version` pragma.
@@ -206,7 +210,8 @@ async fn stamp_user_version(conn: &mut SqliteConnection, version: i64) -> Result
         "PRAGMA user_version = {version}"
     )))
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("stamp the database's schema fingerprint")?;
     Ok(())
 }
 
@@ -217,7 +222,8 @@ async fn has_user_tables(conn: &mut SqliteConnection) -> Result<bool> {
         "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
     )
     .fetch_one(&mut *conn)
-    .await?;
+    .await
+    .context("count the database's tables")?;
     Ok(tables > 0)
 }
 
@@ -233,7 +239,8 @@ pub(crate) async fn database_file(
     let file: String =
         sqlx::query_scalar("SELECT file FROM pragma_database_list WHERE name = 'main'")
             .fetch_one(&mut *conn)
-            .await?;
+            .await
+            .context("read the database's file name")?;
     Ok((!file.is_empty()).then(|| file.into()))
 }
 
@@ -275,7 +282,7 @@ async fn keep_copy_before_rebuild(
         let _ = std::fs::remove_file(&partial);
         anyhow::bail!(
             "could not keep a copy of the database at {} before rebuilding its schema, \
-             so it was left as it is: {error}",
+             so it was left as it is: {error:#}",
             copy.display()
         );
     }
@@ -298,14 +305,12 @@ async fn keep_copy_before_rebuild(
 /// # Errors
 ///
 /// Returns an error when the copy cannot be written.
-pub async fn copy_database(
-    conn: &mut SqliteConnection,
-    copy: &std::path::Path,
-) -> sqlx::Result<()> {
+pub async fn copy_database(conn: &mut SqliteConnection, copy: &std::path::Path) -> Result<()> {
     sqlx::query("VACUUM INTO $1")
         .bind(copy.to_string_lossy().as_ref())
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("copy the database into a new file")?;
     Ok(())
 }
 
@@ -352,7 +357,8 @@ fn claim_copy_name(first: &str) -> std::io::Result<(std::path::PathBuf, std::pat
 async fn rebuild_schema(conn: &mut SqliteConnection) -> Result<()> {
     sqlx::query("PRAGMA foreign_keys = OFF")
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("turn foreign keys off for the schema rebuild")?;
     // A full-text search table's shadow tables are left out: dropping the
     // table drops them, and defensive mode (`crate::db::sqlite_functions`)
     // refuses to drop one on its own. `VACUUM` lists them before their
@@ -362,18 +368,21 @@ async fn rebuild_schema(conn: &mut SqliteConnection) -> Result<()> {
          WHERE schema = 'main' AND type IN ('table', 'virtual') AND name NOT LIKE 'sqlite_%'",
     )
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("list the tables the schema rebuild drops")?;
     for table in &tables {
         sqlx::query(sqlx::AssertSqlSafe(format!(
             "DROP TABLE {}",
             quote_ident(table)
         )))
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("drop a table for the schema rebuild")?;
     }
     sqlx::query("PRAGMA foreign_keys = ON")
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("turn foreign keys back on after the schema rebuild")?;
     apply_ddl(conn).await?;
     Ok(())
 }
@@ -381,15 +390,25 @@ async fn rebuild_schema(conn: &mut SqliteConnection) -> Result<()> {
 /// Apply the current embedded DDL: accounts, contacts, messages, staging,
 /// saved searches, then the FTS index and its sync triggers.
 async fn apply_ddl(conn: &mut SqliteConnection) -> Result<()> {
-    execute_batch(conn, ACCOUNTS_DDL).await?;
+    execute_batch(conn, ACCOUNTS_DDL)
+        .await
+        .context("create the account, import and Audit Trail tables")?;
     // Contacts DDL defines `handles`, the FK target of conversations, participants,
     // messages, and tapbacks (messages.sql) plus account_handles (accounts.sql).
     // accounts.sql still goes first: SQLite checks a foreign key when a row is
     // written, not when the table is created.
-    execute_batch(conn, CONTACTS_TABLES_DDL).await?;
-    execute_batch(conn, MESSAGE_TABLES_DDL).await?;
-    execute_batch(conn, STAGING_TABLES_DDL).await?;
-    execute_batch(conn, SAVED_SEARCHES_DDL).await?;
+    execute_batch(conn, CONTACTS_TABLES_DDL)
+        .await
+        .context("create the contact and handle tables")?;
+    execute_batch(conn, MESSAGE_TABLES_DDL)
+        .await
+        .context("create the conversation and message tables")?;
+    execute_batch(conn, STAGING_TABLES_DDL)
+        .await
+        .context("create the staging tables")?;
+    execute_batch(conn, SAVED_SEARCHES_DDL)
+        .await
+        .context("create the Saved Search table")?;
     ensure_messages_fts(conn).await?;
     Ok(())
 }
@@ -424,7 +443,8 @@ pub async fn ensure_schema(conn: &mut SqliteConnection) -> Result<()> {
          VALUES (1, lower(hex(randomblob(16))))",
     )
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("give the database its Message Crate id")?;
     Ok(())
 }
 
@@ -440,11 +460,10 @@ pub async fn ensure_schema(conn: &mut SqliteConnection) -> Result<()> {
 /// Returns an error when the query fails, or the database has no id because
 /// [`ensure_schema`] has not run on it.
 pub async fn message_crate_id(conn: &mut SqliteConnection) -> Result<String> {
-    Ok(
-        sqlx::query_scalar("SELECT message_crate_id FROM message_crate WHERE id = 1")
-            .fetch_one(&mut *conn)
-            .await?,
-    )
+    sqlx::query_scalar("SELECT message_crate_id FROM message_crate WHERE id = 1")
+        .fetch_one(&mut *conn)
+        .await
+        .context("read the Message Crate's id")
 }
 
 /// Marker that current full-text search (FTS) sync trigger definitions are installed.
@@ -454,12 +473,15 @@ pub const MESSAGES_FTS_TRIGGERS_META_KEY: &str = "messages_fts_triggers_v1";
 /// and over each earlier version of an edited message: contentless FTS5
 /// virtual tables with sync triggers.
 async fn ensure_messages_fts(conn: &mut SqliteConnection) -> Result<()> {
-    execute_batch(conn, FTS_VIRTUAL_DDL).await?;
+    execute_batch(conn, FTS_VIRTUAL_DDL)
+        .await
+        .context("create the search indexes")?;
 
     let triggers_ready: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM schema_meta WHERE key = $1")
         .bind(MESSAGES_FTS_TRIGGERS_META_KEY)
         .fetch_one(&mut *conn)
-        .await?;
+        .await
+        .context("check whether the search index triggers are installed")?;
     if triggers_ready == 0 {
         install_messages_fts_triggers(conn).await?;
     }
@@ -474,11 +496,14 @@ async fn ensure_messages_fts(conn: &mut SqliteConnection) -> Result<()> {
 ///
 /// Returns an error when the drop statements fail.
 pub(crate) async fn drop_messages_fts_triggers(conn: &mut SqliteConnection) -> Result<()> {
-    execute_batch(conn, DROP_MESSAGES_FTS_TRIGGERS_SQL).await?;
+    execute_batch(conn, DROP_MESSAGES_FTS_TRIGGERS_SQL)
+        .await
+        .context("drop the search index triggers")?;
     sqlx::query("DELETE FROM schema_meta WHERE key = $1")
         .bind(MESSAGES_FTS_TRIGGERS_META_KEY)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("clear the mark that the search index triggers are installed")?;
     Ok(())
 }
 
@@ -489,15 +514,20 @@ pub(crate) async fn drop_messages_fts_triggers(conn: &mut SqliteConnection) -> R
 ///
 /// Returns an error when the trigger SQL or metadata write fails.
 pub(crate) async fn install_messages_fts_triggers(conn: &mut SqliteConnection) -> Result<()> {
-    execute_batch(conn, DROP_MESSAGES_FTS_TRIGGERS_SQL).await?;
-    execute_batch(conn, CREATE_MESSAGES_FTS_TRIGGERS_SQL).await?;
+    execute_batch(conn, DROP_MESSAGES_FTS_TRIGGERS_SQL)
+        .await
+        .context("drop the search index triggers")?;
+    execute_batch(conn, CREATE_MESSAGES_FTS_TRIGGERS_SQL)
+        .await
+        .context("create the search index triggers")?;
     sqlx::query(
         "INSERT INTO schema_meta (key, value) VALUES ($1, '1')
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
     )
     .bind(MESSAGES_FTS_TRIGGERS_META_KEY)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("mark the search index triggers installed")?;
     Ok(())
 }
 
@@ -540,7 +570,8 @@ pub(crate) async fn drop_messages_secondary_indexes(conn: &mut SqliteConnection)
     for (name, _) in MESSAGES_SECONDARY_INDEX_DDL {
         sqlx::query(sqlx::AssertSqlSafe(format!("DROP INDEX IF EXISTS {name}")))
             .execute(&mut *conn)
-            .await?;
+            .await
+            .context("drop a secondary index on messages")?;
     }
     Ok(())
 }
@@ -548,7 +579,10 @@ pub(crate) async fn drop_messages_secondary_indexes(conn: &mut SqliteConnection)
 /// Recreate secondary `messages` indexes after bulk promote inserts.
 pub(crate) async fn create_messages_secondary_indexes(conn: &mut SqliteConnection) -> Result<()> {
     for (_, ddl) in MESSAGES_SECONDARY_INDEX_DDL {
-        sqlx::query(*ddl).execute(&mut *conn).await?;
+        sqlx::query(*ddl)
+            .execute(&mut *conn)
+            .await
+            .context("create a secondary index on messages")?;
     }
     Ok(())
 }
@@ -606,7 +640,8 @@ pub(crate) async fn index_messages_fts_from_promote_map(
     .bind(min_new_message_id)
     .bind(min_new_attachment_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("remove the search entries of stored messages indexed again")?;
     let n = sqlx::query(sqlx::AssertSqlSafe(format!(
         r"
         INSERT INTO messages_fts(rowid, body, subject, attachment_text)
@@ -634,7 +669,8 @@ pub(crate) async fn index_messages_fts_from_promote_map(
     .bind(min_new_message_id)
     .bind(min_new_attachment_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("index the promoted messages for search")?;
     Ok(n.rows_affected())
 }
 
@@ -658,7 +694,8 @@ pub(crate) async fn unindex_versions_of_edited_messages(
          )",
     )
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("remove the search entries of edited messages' earlier versions")?;
     Ok(n.rows_affected())
 }
 
@@ -681,7 +718,8 @@ pub(crate) async fn index_message_versions_fts(
     )
     .bind(versions_before)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("index the promoted earlier versions for search")?;
     Ok(n.rows_affected())
 }
 
@@ -706,14 +744,16 @@ pub async fn delete_messages_for_source(
     .bind(source)
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("delete the attachments of a source's messages")?;
     sqlx::query(sqlx::AssertSqlSafe(format!(
         "DELETE FROM tapbacks WHERE message_id IN ({MESSAGE_IDS_FOR_SOURCE})"
     )))
     .bind(source)
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("delete the tapbacks of a source's messages")?;
     sqlx::query(sqlx::AssertSqlSafe(format!(
         "UPDATE messages SET duplicate_of = NULL
          WHERE duplicate_of IN ({MESSAGE_IDS_FOR_SOURCE})"
@@ -721,7 +761,8 @@ pub async fn delete_messages_for_source(
     .bind(source)
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("clear the duplicate links to a source's messages")?;
     let n = sqlx::query(
         r"
         DELETE FROM messages
@@ -734,7 +775,8 @@ pub async fn delete_messages_for_source(
     .bind(source)
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("delete a source's messages")?;
     Ok(n.rows_affected())
 }
 
@@ -745,7 +787,8 @@ pub async fn table_exists(conn: &mut SqliteConnection, name: &str) -> Result<boo
         sqlx::query_scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = $1")
             .bind(name)
             .fetch_one(&mut *conn)
-            .await?;
+            .await
+            .context("check whether a table exists")?;
     Ok(found > 0)
 }
 
@@ -818,7 +861,8 @@ pub fn split_ddl(batch: &str) -> Vec<String> {
     statements
 }
 
-/// Run every statement in a DDL batch against one connection.
+/// Run every statement in a DDL batch against one connection. Each caller
+/// names the batch in the error.
 async fn execute_batch(conn: &mut SqliteConnection, batch: &str) -> Result<()> {
     for stmt in split_ddl(batch) {
         sqlx::query(sqlx::AssertSqlSafe(stmt))

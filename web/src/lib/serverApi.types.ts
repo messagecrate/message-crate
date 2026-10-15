@@ -812,7 +812,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * One conversation, in the same shape a list row already has — so a caller that opens a conversation from a list does not have to convert between two shapes, and paging through the whole list to find one id is never necessary.
+         * One conversation, in the same shape a list row already has, so a caller that opens a conversation from a list does not have to convert between two shapes, and paging through the whole list to find one id is never necessary.
          * @description Trash is a property the list applies, not a bar to reading: a trashed conversation still answers here.
          */
         get: operations["get_conversation"];
@@ -2197,11 +2197,6 @@ export interface components {
         Contact: {
             /**
              * Format: int64
-             * @description One-to-one conversations the contact appears in.
-             */
-            direct_conversations: number;
-            /**
-             * Format: int64
              * @description Group conversations the contact appears in.
              */
             group_conversations: number;
@@ -2218,6 +2213,11 @@ export interface components {
             last_modified: string;
             /** @description The contact's preferred name; empty when it has none. */
             name: string;
+            /**
+             * Format: int64
+             * @description One-to-one conversations the contact appears in.
+             */
+            one_to_one_conversations: number;
             /**
              * Format: int64
              * @description Conversations of orphaned messages the contact appears in: the three
@@ -2275,18 +2275,18 @@ export interface components {
              * @description Contact id.
              */
             id: number;
+            /** @description The contact's preferred name; empty when it has none. */
+            name: string;
             /**
              * Format: int64
              * @description One-to-one conversations with the contact.
              */
-            individual_conversations: number;
+            one_to_one_conversations: number;
             /**
              * Format: int64
              * @description Messages the contact sent in one-to-one conversations.
              */
-            individual_message_count: number;
-            /** @description The contact's preferred name; empty when it has none. */
-            name: string;
+            one_to_one_message_count: number;
             /**
              * Format: int64
              * @description Conversations of orphaned messages the contact is in: the three
@@ -2474,7 +2474,7 @@ export interface components {
             id: number;
             /** @description User-chosen label. */
             label: string;
-            /** @description Plaintext secret — returned once at creation. */
+            /** @description Plaintext secret, returned once at creation. */
             token: string;
             /** @description Masked form for the Settings list (also persisted). */
             token_hint: string;
@@ -3045,12 +3045,6 @@ export interface components {
              *     short code, under 7 digits, has no `+` form and is never flagged.
              */
             country_unknown: boolean;
-            /**
-             * Format: int64
-             * @description The identity's messages in one-to-one conversations, trashed
-             *     conversations and duplicates excluded.
-             */
-            direct_messages: number;
             /** @description When the newest such message was sent, or null when there is none. */
             end_date: string | null;
             /**
@@ -3058,6 +3052,12 @@ export interface components {
              * @description The identity's messages in group conversations, on the same terms.
              */
             group_messages: number;
+            /**
+             * Format: int64
+             * @description The identity's messages in one-to-one conversations, trashed
+             *     conversations and duplicates excluded.
+             */
+            one_to_one_messages: number;
             /**
              * Format: int64
              * @description The identity's messages in conversations of orphaned messages, on the
@@ -3328,9 +3328,10 @@ export interface components {
              */
             attachments_ms: number | null;
             /**
-             * @description When the backup the run read was made, UTC: the newest date its
-             *     conversation files name (`export.backup_taken_at_unix_ms`). Null until
-             *     a file that names one is imported, and for a run whose files name none.
+             * @description When the backup the run read was made, UTC: the newest Backup Date
+             *     the messages of its conversation files carry (each message's
+             *     `backup_taken_at_unix_ms`). Null until a file that names one is
+             *     imported, and for a run whose files name none.
              */
             backup_taken_at: string | null;
             /**
@@ -3528,7 +3529,7 @@ export interface components {
         };
         /** @description Body for `POST /v1/contacts/unmatched-identities`. */
         ListUnmatchedIdentitiesRequest: {
-            /** @description Raw identifiers — phone numbers, emails — as they appear in an export. */
+            /** @description Raw identifiers (phone numbers, emails) as they appear in an export. */
             identifiers: string[];
         };
         /**
@@ -3715,7 +3716,7 @@ export interface components {
             /** @description The conversation's identifier as the export wrote it. */
             chat_identifier: string;
             /**
-             * @description `individual`, `group`, or `orphaned` for a conversation of
+             * @description `one-to-one`, `group`, or `orphaned` for a conversation of
              *     orphaned messages: ones the backup holds without recording which
              *     conversation they were said in.
              */
@@ -4325,18 +4326,18 @@ export interface components {
                  * @description Contact id.
                  */
                 id: number;
+                /** @description The contact's preferred name; empty when it has none. */
+                name: string;
                 /**
                  * Format: int64
                  * @description One-to-one conversations with the contact.
                  */
-                individual_conversations: number;
+                one_to_one_conversations: number;
                 /**
                  * Format: int64
                  * @description Messages the contact sent in one-to-one conversations.
                  */
-                individual_message_count: number;
-                /** @description The contact's preferred name; empty when it has none. */
-                name: string;
+                one_to_one_message_count: number;
                 /**
                  * Format: int64
                  * @description Conversations of orphaned messages the contact is in: the three
@@ -4629,12 +4630,6 @@ export interface components {
                  *     short code, under 7 digits, has no `+` form and is never flagged.
                  */
                 country_unknown: boolean;
-                /**
-                 * Format: int64
-                 * @description The identity's messages in one-to-one conversations, trashed
-                 *     conversations and duplicates excluded.
-                 */
-                direct_messages: number;
                 /** @description When the newest such message was sent, or null when there is none. */
                 end_date: string | null;
                 /**
@@ -4642,6 +4637,12 @@ export interface components {
                  * @description The identity's messages in group conversations, on the same terms.
                  */
                 group_messages: number;
+                /**
+                 * Format: int64
+                 * @description The identity's messages in one-to-one conversations, trashed
+                 *     conversations and duplicates excluded.
+                 */
+                one_to_one_messages: number;
                 /**
                  * Format: int64
                  * @description The identity's messages in conversations of orphaned messages, on the
@@ -4712,9 +4713,10 @@ export interface components {
                  */
                 attachments_ms: number | null;
                 /**
-                 * @description When the backup the run read was made, UTC: the newest date its
-                 *     conversation files name (`export.backup_taken_at_unix_ms`). Null until
-                 *     a file that names one is imported, and for a run whose files name none.
+                 * @description When the backup the run read was made, UTC: the newest Backup Date
+                 *     the messages of its conversation files carry (each message's
+                 *     `backup_taken_at_unix_ms`). Null until a file that names one is
+                 *     imported, and for a run whose files name none.
                  */
                 backup_taken_at: string | null;
                 /**
@@ -5243,8 +5245,8 @@ export interface components {
         Participant: {
             /**
              * Format: int64
-             * @description Linked contact id: when the identity is on a Contact, or — for a
-             *     participant with no identity — the contact the server bound the name to
+             * @description Linked contact id: when the identity is on a Contact, or, for a
+             *     participant with no identity, the contact the server bound the name to
              *     directly, since that is the only place the link is recorded for
              *     them. Matches the `id` every other contact shape uses, so a caller
              *     can compare the two without converting either.
@@ -5257,7 +5259,7 @@ export interface components {
              */
             identity: string | null;
             /**
-             * @description What to show for this person. Never empty — the server falls back to
+             * @description What to show for this person. Never empty: the server falls back to
              *     the identity when nothing else names them, and to the name alone for
              *     someone a backup named without recording any address.
              */
@@ -5794,7 +5796,7 @@ export interface components {
              *     Recorded here rather than at completion so an approval survives a
              *     reload: the summary shown at a Review is recomputed from the directory, but
              *     what was approved is a different question and only the run
-             *     remembers it. Absent leaves the stored `summary_json` untouched —
+             *     remembers it. Absent leaves the stored `summary_json` untouched, because
              *     most stage changes carry nothing, and treating absent as null would
              *     throw away the plan the outcome is later judged against.
              */

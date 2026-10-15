@@ -63,8 +63,8 @@ fn photo_attachment() -> Value {
     })
 }
 
-/// One exported message as `GET /v1/exports/{id}/messages` serializes it: an
-/// individual SMS conversation with Sam, `service` on the message rather than
+/// One exported message as `GET /v1/exports/{id}/messages` serializes it: a
+/// one-to-one SMS conversation with Sam, `service` on the message rather than
 /// on the conversation, received at the holder's own `+15555550100`.
 fn message(
     id: i64,
@@ -93,7 +93,7 @@ fn message(
         "conversation": {
             "id": 9,
             "chat_identifier": "+15555550101",
-            "conversation_type": "individual",
+            "conversation_type": "one-to-one",
             "is_group": false,
             "group_title": null,
             "participants": [
@@ -261,8 +261,12 @@ fn part_files_in(dir: &Path) -> Vec<String> {
         .collect()
 }
 
+/// The Export Date every test run is given.
+const EXPORTED_AT_UNIX_MS: i64 = 1_791_000_000_000;
+
 /// An Export Run of every message into `out_dir`: two messages a page, one fetch
-/// worker so the counts in the log are fixed.
+/// worker so the counts in the log are fixed, written at
+/// [`EXPORTED_AT_UNIX_MS`].
 fn config(out_dir: &Path, base_url: String) -> ExportConfig {
     ExportConfig {
         out_dir: out_dir.to_path_buf(),
@@ -274,6 +278,7 @@ fn config(out_dir: &Path, base_url: String) -> ExportConfig {
         page_limit: 2,
         cancel: CancelFlag::default(),
         asset_fetch_workers: 1,
+        exported_at_unix_ms: EXPORTED_AT_UNIX_MS,
     }
 }
 
@@ -344,6 +349,7 @@ fn an_export_records_one_run_and_writes_the_conversation_and_every_asset_once_ac
     );
     let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
     assert_eq!(doc.export.source, "sms-backup-restore");
+    assert_eq!(doc.export.exported_at_unix_ms, Some(EXPORTED_AT_UNIX_MS));
     assert_eq!(doc.conversation.chat_identifier, "+15555550101");
     assert_eq!(
         doc.conversation.participants[0].display_name.as_deref(),

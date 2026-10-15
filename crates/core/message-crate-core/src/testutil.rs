@@ -474,21 +474,28 @@ pub fn set_modified_unix_ms(path: &Path, unix_ms: i64) {
         .expect("set the file's modification time");
 }
 
-/// Every JSON Lines file's `export.backup_taken_at_unix_ms` under `dir`, in
-/// file name order.
+/// For every JSON Lines file under `dir`, in file name order, the Backup
+/// Dates its messages carry (`backup_taken_at_unix_ms`), each date once, in
+/// the order first met. A file read from one backup gives one date.
 ///
 /// # Panics
 ///
-/// Panics when a file cannot be read or its first line is not JSON.
-pub fn jsonl_backup_dates(dir: &Path) -> Vec<Option<i64>> {
+/// Panics when a file cannot be read or a line is not JSON.
+pub fn jsonl_backup_dates(dir: &Path) -> Vec<Vec<Option<i64>>> {
     jsonl_names(dir)
         .iter()
         .map(|name| {
             let text = fs::read_to_string(dir.join(name)).expect("read jsonl");
-            let header: serde_json::Value =
-                serde_json::from_str(text.lines().next().expect("a header line"))
-                    .expect("the header is JSON");
-            header["export"]["backup_taken_at_unix_ms"].as_i64()
+            let mut dates = Vec::new();
+            for line in text.lines().skip(1).filter(|l| !l.trim().is_empty()) {
+                let message: serde_json::Value =
+                    serde_json::from_str(line).expect("a message line is JSON");
+                let date = message["backup_taken_at_unix_ms"].as_i64();
+                if !dates.contains(&date) {
+                    dates.push(date);
+                }
+            }
+            dates
         })
         .collect()
 }

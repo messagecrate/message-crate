@@ -22,10 +22,7 @@ use serde::Serialize;
 use crate::http::{CloseAction, ExportMessagesArgs, HttpSession};
 use crate::journal::{self, ExportJournalEvent, ExportJournalState, ServerTarget};
 use crate::part_file::write_asset;
-use crate::project::{
-    ExportPath, build_document, common_backup_taken_at, conversation_key, export_path,
-    to_ir_message,
-};
+use crate::project::{ExportPath, build_document, conversation_key, export_path, to_ir_message};
 use message_crate_api_types::{
     CompleteExportStatus, ExportQueryList, ExportRun, ExportScope, Message,
 };
@@ -87,6 +84,10 @@ pub struct ExportConfig {
     pub cancel: CancelFlag,
     /// Number of workers that fetch Assets in parallel (default 8).
     pub asset_fetch_workers: usize,
+    /// The Export Date every conversation file carries, in Unix
+    /// milliseconds: the instant the caller gives. The run never reads the
+    /// clock for it.
+    pub exported_at_unix_ms: i64,
 }
 
 /// Final summary of an Export Run: conversations, messages, and the Assets
@@ -590,12 +591,11 @@ impl<'a> Export<'a> {
                     }
                 }
                 let ir = to_ir_message(&msg, cfg.skip_attachments)?;
-                let (seed, messages) = fetched
+                let (_, messages) = fetched
                     .by_conv
                     .entry(conversation_key(&msg))
                     // Keep first message as seed for conversation metadata.
                     .or_insert_with(|| (msg.clone(), Vec::new()));
-                common_backup_taken_at(seed, &msg);
                 messages.push(ir);
             }
             match next_offset(offset, limit, page.total) {
@@ -717,7 +717,8 @@ impl<'a> Export<'a> {
         let mut docs: Vec<message_ir::ConversationDocument> = by_conv
             .into_values()
             .map(|(seed, messages)| {
-                let mut doc = build_document(&seed.source, &seed, messages);
+                let mut doc =
+                    build_document(&seed.source, &seed, messages, self.cfg.exported_at_unix_ms);
                 // Disambiguate same chat across sources.
                 if !doc.export.source.trim().is_empty() {
                     doc.packaging_stem_suffix =
@@ -1178,7 +1179,7 @@ mod asset_ref_tests {
             "conversation": {
                 "id": 9,
                 "chat_identifier": "+15555550101",
-                "conversation_type": "individual",
+                "conversation_type": "one-to-one",
                 "is_group": false,
                 "participants": []
             },

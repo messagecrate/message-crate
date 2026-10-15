@@ -359,11 +359,11 @@ fn wtsexporter_command(
         cmd.arg("-d").arg(db);
     }
     match paths.key.as_deref() {
-        // Key file path — the path itself is not secret, forward as-is.
+        // Key file path. The path itself is not secret, so forward it as-is.
         Some(key) if looks_like_path(key) => {
             cmd.arg("-k").arg(key);
         }
-        // Hex key material — write the decoded bytes to a 0600 file in the
+        // Hex key material: write the decoded bytes to a 0600 file in the
         // scratch work directory and pass the path, so the secret never appears in
         // the process command line (/proc/<pid>/cmdline).
         Some(key) => {
@@ -380,7 +380,7 @@ fn wtsexporter_command(
     }
     // Never pass `-c` (--move-media): wtsexporter would shutil.move the user's
     // media directory into the scratch work directory, which is deleted when the run
-    // finishes — permanently destroying the original media. Always copy.
+    // finishes, permanently destroying the original media. Always copy.
     Ok(cmd)
 }
 

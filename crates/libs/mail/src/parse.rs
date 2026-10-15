@@ -79,7 +79,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
 
     let chat_identifier = required_header(headers, hn::CHAT_IDENTIFIER)?;
     let conversation_type =
-        typed_header(headers, hn::CONVERSATION_TYPE).unwrap_or_else(|| "individual".into());
+        typed_header(headers, hn::CONVERSATION_TYPE).unwrap_or_else(|| "one-to-one".into());
     let group_title = optional_header(headers, hn::GROUP_TITLE);
     let participants = parse_participants(headers)?;
     let guid = required_header(headers, hn::GUID)?;
@@ -109,7 +109,8 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     let export_source = optional_header(headers, hn::EXPORT_SOURCE).unwrap_or_default();
     let export_tool = optional_header(headers, hn::EXPORT_TOOL).unwrap_or_default();
     let export_tool_version = optional_header(headers, hn::EXPORT_TOOL_VERSION).unwrap_or_default();
-    let backup_taken_at_unix_ms = parse_backup_taken_at(headers)?;
+    let backup_taken_at_unix_ms = parse_unix_ms(headers, hn::BACKUP_TAKEN_AT_UNIX_MS)?;
+    let exported_at_unix_ms = parse_unix_ms(headers, hn::EXPORTED_AT_UNIX_MS)?;
 
     let text = extract_text_body(&mail).unwrap_or_default();
     let attachments = merge_attachments(&mail, headers)?;
@@ -162,7 +163,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
         export_source,
         export_tool,
         export_tool_version,
-        backup_taken_at_unix_ms,
+        exported_at_unix_ms,
         message: Message {
             guid,
             timestamp_unix_ms,
@@ -185,6 +186,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             imessage,
             source,
             sender_country: None,
+            backup_taken_at_unix_ms,
         },
         attachments,
     })
@@ -327,16 +329,17 @@ fn header_u32(headers: &[MailHeader<'_>], name: &str) -> Option<u32> {
     typed_header(headers, name)?.parse().ok()
 }
 
-/// When the backup was made, from `X-ME-Backup-Taken-At-Unix-Ms`, or none
+/// A time in Unix milliseconds from the header `name`
+/// (`X-ME-Backup-Taken-At-Unix-Ms`, `X-ME-Exported-At-Unix-Ms`), or none
 /// when the header is absent. A value that is not a whole number is refused
 /// rather than read as no date.
-fn parse_backup_taken_at(headers: &[MailHeader<'_>]) -> Result<Option<i64>> {
-    let Some(raw) = typed_header(headers, hn::BACKUP_TAKEN_AT_UNIX_MS) else {
+fn parse_unix_ms(headers: &[MailHeader<'_>], name: &str) -> Result<Option<i64>> {
+    let Some(raw) = typed_header(headers, name) else {
         return Ok(None);
     };
     raw.parse()
         .map(Some)
-        .with_context(|| format!("This mail's {} header {raw:?}", hn::BACKUP_TAKEN_AT_UNIX_MS))
+        .with_context(|| format!("This mail's {name} header {raw:?}"))
 }
 
 /// Whether the message's time has milliseconds, from the required

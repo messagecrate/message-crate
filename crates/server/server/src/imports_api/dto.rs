@@ -462,9 +462,10 @@ pub(crate) struct ImportRunSummary {
     pub(crate) source_fingerprint: serde_json::Value,
     /// Addresses the backup's device sent from (JSON array), or null.
     pub(crate) source_identities: serde_json::Value,
-    /// When the backup the run read was made, UTC: the newest date its
-    /// conversation files name (`export.backup_taken_at_unix_ms`). Null until
-    /// a file that names one is imported, and for a run whose files name none.
+    /// When the backup the run read was made, UTC: the newest Backup Date
+    /// the messages of its conversation files carry (each message's
+    /// `backup_taken_at_unix_ms`). Null until a file that names one is
+    /// imported, and for a run whose files name none.
     pub(crate) backup_taken_at: Option<String>,
     /// What the person approved at the last Review they passed, which
     /// `PATCH /v1/imports/{id}` writes with its `summary`. A cancelled run
@@ -646,7 +647,7 @@ pub(crate) struct UpdateImportRequest {
     /// Recorded here rather than at completion so an approval survives a
     /// reload: the summary shown at a Review is recomputed from the directory, but
     /// what was approved is a different question and only the run
-    /// remembers it. Absent leaves the stored `summary_json` untouched —
+    /// remembers it. Absent leaves the stored `summary_json` untouched, because
     /// most stage changes carry nothing, and treating absent as null would
     /// throw away the plan the outcome is later judged against.
     #[serde(default)]

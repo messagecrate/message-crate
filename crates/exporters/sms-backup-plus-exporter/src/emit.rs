@@ -248,11 +248,17 @@ fn add_message(
 /// SMS Backup+ deltas of the shared [`message_ir::pending_to_document`] projection.
 struct SbpProjection {
     export: ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
 }
 
 impl ProjectionHooks for SbpProjection {
     fn export(&self) -> ExportMeta {
         self.export.clone()
+    }
+
+    fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+        self.backup_taken_at_unix_ms
     }
 
     fn service(&self, _message: &PendingMessage) -> Transport {
@@ -517,9 +523,9 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
                     EXPORT_TOOL_VERSION,
                     Some(owner_identity),
                     None,
-                    message_crate_core::newest_file_modified_unix_ms(
-                        eml_paths.iter().map(PathBuf::as_path),
-                    ),
+                ),
+                backup_taken_at_unix_ms: message_crate_core::newest_file_modified_unix_ms(
+                    eml_paths.iter().map(PathBuf::as_path),
                 ),
             };
             Ok(ReadBackup {
@@ -880,11 +886,11 @@ mod tests {
                 tool_version: String::new(),
                 owner_identity: None,
                 owner_display_name: None,
-                backup_taken_at_unix_ms: None,
+                exported_at_unix_ms: None,
             },
             conversation: ConversationMeta {
                 chat_identifier: "test".into(),
-                conversation_type: ConversationType::Individual,
+                conversation_type: ConversationType::OneToOne,
                 group_title: None,
                 participants: Vec::new(),
                 stats: ConversationStats::default(),
@@ -909,6 +915,7 @@ mod tests {
                 reply_to: None,
                 imessage: None,
                 source: None,
+                backup_taken_at_unix_ms: None,
             }],
             packaging_stem_suffix: None,
         };
@@ -960,8 +967,8 @@ mod tests {
                 EXPORT_TOOL_VERSION,
                 Some("+15555550100".into()),
                 None,
-                None,
             ),
+            backup_taken_at_unix_ms: None,
         };
         let mut report = ingest.report;
         let caveats = ingest.caveats;
@@ -982,7 +989,7 @@ mod tests {
     fn parsed(timestamp_secs: f64, has_milliseconds: bool, eml_path: &str) -> ParsedMessage {
         ParsedMessage {
             chat_key: "+15555550101".into(),
-            conversation_type: ConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: Handle::parse("+15555550101").into_iter().collect(),
             timestamp_secs,

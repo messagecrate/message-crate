@@ -315,7 +315,7 @@ async fn failed_replace_keeps_existing_messages() {
     assert_eq!(n, 1);
 }
 
-/// One individual conversation with `handle`, holding one incoming message.
+/// One one-to-one conversation with `handle`, holding one incoming message.
 fn one_message_conversation(guid: &str, handle: &str) -> String {
     let header = conversation_header("sms-backup-restore", handle).participant(handle, None);
     let message = message_line(guid, "hi").sms().sender(handle);

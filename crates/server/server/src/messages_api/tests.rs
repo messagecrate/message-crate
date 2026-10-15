@@ -19,7 +19,7 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
         &SeedConversation {
             account_id: alice.account_id,
             handle: "+15555550100",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "t.json",
             messages: &[
@@ -79,7 +79,7 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
         &SeedConversation {
             account_id: bob.account_id,
             handle: "+15555550167",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "t.json",
             messages: &[SeedMessage {
@@ -1823,7 +1823,7 @@ async fn a_date_is_a_day_on_the_accounts_clock() {
         &SeedConversation {
             account_id: alice.account_id,
             handle: "+15555550100",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "t.json",
             messages: &[
@@ -1872,7 +1872,7 @@ async fn seeded_for_relevance() -> (TestFixture, RegisteredAccount) {
         &SeedConversation {
             account_id: alice.account_id,
             handle: "+15555550100",
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "t.json",
             messages: &[

@@ -161,12 +161,17 @@ pub struct OutputConfig {
     /// output is kept, and conversations already written are skipped. Only
     /// the desktop's import resume sets this.
     pub resume: bool,
+    /// The Export Date every conversation file of the run carries
+    /// (`export.exported_at_unix_ms`), in Unix milliseconds: the instant
+    /// the caller gives, never one the run reads from the clock. `None`
+    /// writes none.
+    pub exported_at_unix_ms: Option<i64>,
 }
 
 impl OutputConfig {
     /// An export into `directory` packaged as `format`, that copies
-    /// attachments as they are, keeps every name, and starts afresh. The
-    /// caller sets any other choice.
+    /// attachments as they are, keeps every name, starts afresh, and writes
+    /// no Export Date. The caller sets any other choice.
     pub fn new(directory: impl Into<PathBuf>, format: OutputFormat) -> Self {
         Self {
             directory: directory.into(),
@@ -174,6 +179,7 @@ impl OutputConfig {
             obfuscate: ObfuscateConfig::default(),
             media: MediaConfig::default(),
             resume: false,
+            exported_at_unix_ms: None,
         }
     }
 
@@ -208,8 +214,9 @@ pub fn require_input(inputs: &[PathBuf]) -> Result<&Path, String> {
 /// either shares it, so a cancel set on the [`RunContext`] reaches the run.
 ///
 /// The default writes [`OutputFormat::Json`] with no transforms, cannot be
-/// cancelled, does not resume, sends its rows nowhere, and names an empty
-/// Scratch Directory, so a test whose run spools sets `scratch_dir`.
+/// cancelled, does not resume, sends its rows nowhere, names an empty
+/// Scratch Directory, so a test whose run spools sets `scratch_dir`, and
+/// writes no Export Date.
 #[derive(Debug, Clone, Default)]
 pub struct ConvertRun {
     /// Media and obfuscation applied as conversations are written.
@@ -226,6 +233,9 @@ pub struct ConvertRun {
     /// The desktop Scratch Directory ([`RunContext::scratch_dir`]), which
     /// the run's attachment spool goes under.
     pub scratch_dir: PathBuf,
+    /// The Export Date every document is stamped with
+    /// ([`OutputConfig::exported_at_unix_ms`]).
+    pub exported_at_unix_ms: Option<i64>,
 }
 
 impl ConvertRun {
@@ -239,6 +249,7 @@ impl ConvertRun {
             resume: output.resume,
             issues: context.issues.clone(),
             scratch_dir: context.scratch_dir.clone(),
+            exported_at_unix_ms: output.exported_at_unix_ms,
         }
     }
 }

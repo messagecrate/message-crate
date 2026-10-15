@@ -1,8 +1,8 @@
 //! The one check that refuses a file from another schema version.
 //!
 //! Every reader of a [`ConversationDocument`](crate::ConversationDocument) or
-//! its JSON Lines header — the format reader, the import client, the server's
-//! import — refuses a version other than [`SCHEMA_VERSION`] with the same
+//! its JSON Lines header (the format reader, the import client, the server's
+//! import) refuses a version other than [`SCHEMA_VERSION`] with the same
 //! words, and refuses it before parsing the rest of the file. The refusal is
 //! the one rule for every bump, whichever way the shapes differ. A version-13
 //! file would parse under version 14's rules, because version 14 only made
@@ -131,8 +131,7 @@ mod tests {
     /// import took over the address's shape; version 13 has none, and the
     /// server types every address from its service and shape. A file at
     /// either version is refused by its version, never read by rules that
-    /// are not its own. Version 15 adds the country an identity was read in
-    /// (`country`, `sender_country`); version 14 had none.
+    /// are not its own.
     #[test]
     fn refuses_a_version_12_file_by_name() {
         assert_eq!(
@@ -141,7 +140,22 @@ mod tests {
                 .to_string(),
             format!("this file is schema version 12; Message Crate reads version {SCHEMA_VERSION}")
         );
-        assert_eq!(SCHEMA_VERSION, 15);
+    }
+
+    /// Version 16 gave the whole file one backup date in
+    /// `export.backup_taken_at_unix_ms`; version 17 dates each message by
+    /// its own backup and says when the file was written. A version-16 file
+    /// is refused by its version, never read as a file whose messages have
+    /// no backup date.
+    #[test]
+    fn refuses_a_version_16_file_by_name() {
+        assert_eq!(
+            check_schema_version_in_json(r#"{"schema_version":16,"export":{}}"#)
+                .unwrap_err()
+                .to_string(),
+            format!("this file is schema version 16; Message Crate reads version {SCHEMA_VERSION}")
+        );
+        assert_eq!(SCHEMA_VERSION, 17);
     }
 
     #[test]

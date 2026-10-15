@@ -662,7 +662,7 @@ impl FlatAddresses {
                 .as_ref()
                 .map(|p| p.key().to_string())
                 .unwrap_or_default(),
-            conversation_type: ConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: peer.iter().cloned().collect(),
             sender: peer.filter(|_| !sent && self.peer_is_sender(headers)),
