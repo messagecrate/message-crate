@@ -28,6 +28,13 @@ const EXPORT_TOOL: &str = "WhatsApp Chat Exporter";
 /// Pinned documented upstream version (JSON convert path; shell-out may differ).
 pub(crate) const EXPORT_TOOL_VERSION: &str = "0.13.0";
 
+/// The extra flag `ingest_chat` sets on a group event the fork gave a text,
+/// which [`WhatsappProjection`] writes as an announcement.
+const IS_ANNOUNCEMENT: &str = "is_announcement";
+/// The extra, and the `source.fields` key, holding the fork's
+/// `group_action_jid`: the id of the member a group event's text names.
+const GROUP_ACTION_JID: &str = "group_action_jid";
+
 /// One conversion of a wtsexporter `result.json`: what to read, where to
 /// write it, and how.
 pub(crate) struct ConvertRequest<'a> {
@@ -659,12 +666,10 @@ impl ProjectionHooks for WhatsappProjection {
     /// text, which the server marks as an announcement; otherwise the
     /// default.
     fn message_kind(&self, message: &PendingMessage) -> IrMessageKind {
-        if message.extra_flag("is_announcement") {
+        if message.extra_flag(IS_ANNOUNCEMENT) {
             IrMessageKind::Announcement
-        } else if message.attachments.is_empty() {
-            IrMessageKind::Sms
         } else {
-            IrMessageKind::Mms
+            message_ir::default_message_kind(message)
         }
     }
 
@@ -770,11 +775,11 @@ impl ProjectionHooks for WhatsappProjection {
                 serde_json::Value::String(key_id.to_string()),
             );
         }
-        let named = message.extra_str("group_action_jid");
-        if !named.is_empty() {
+        let named_member_jid = message.extra_str(GROUP_ACTION_JID);
+        if !named_member_jid.is_empty() {
             fields.insert(
-                "group_action_jid".into(),
-                serde_json::Value::String(named.to_string()),
+                GROUP_ACTION_JID.into(),
+                serde_json::Value::String(named_member_jid.to_string()),
             );
         }
         IrSource {
