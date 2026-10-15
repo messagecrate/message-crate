@@ -1576,7 +1576,7 @@ enum RunEnd {
 /// A completion hides the duplicates first, so a dedupe that fails leaves
 /// the run running and the client can complete it again, rather than a run
 /// that completed with its duplicates shown. A discard ends the run first
-/// and then hides them ([`dedupe_after_discard`]), so a dedupe that fails
+/// and then hides them ([`discard_and_dedupe`]), so a dedupe that fails
 /// every time never keeps the account's one running run, and with it every
 /// later import, from being given up.
 ///
@@ -1586,9 +1586,9 @@ enum RunEnd {
 /// the run can land while the run ends. The run is checked first, so a
 /// request for a run that is not running is refused before the pass. Like a
 /// batch, it runs off the async workers, because hashing every content key
-/// again is CPU work. The task also sweeps the account's files and queues
-/// the run's Assets once the run has ended, so both happen even when the
-/// client gave up waiting and the request is gone.
+/// again is CPU work. The task also does what follows a run's end
+/// ([`after_run_ended`]) once the end is written, so it happens even when
+/// the client gave up waiting and the request is gone.
 ///
 /// # Errors
 ///
@@ -1608,45 +1608,78 @@ async fn end_run(
     let handle = tokio::runtime::Handle::current();
     run_blocking("end import run", move || {
         handle.block_on(async move {
-            let guard = state.account_import_locks.lock(account.to_string()).await;
-            let mut conn = state.db.acquire().await?;
-            imports::require_running_import(&mut conn, account, import_id).await?;
-            let row: Result<imports::ImportRow, ApiError> = match end {
-                RunEnd::Complete(args) => {
-                    dedupe_account(&mut conn, account, Progress::Log).await?;
-                    Ok(complete_run_at(&mut conn, account, import_id, &args, now).await?)
-                }
-                RunEnd::Discard { issues, notes } => {
-                    imports::discard_import(&mut conn, account, import_id, &issues, &notes, now)
-                        .await?;
-                    dedupe_after_discard(&mut conn, account, Progress::Log).await;
-                    Ok(imports::get_owned_import(&mut conn, account, import_id).await?)
-                }
-            };
-            drop(conn);
-            drop(guard);
-            drop(permit);
-            if row.is_ok() {
-                crate::asset_store::sweep_after_run(
-                    &state.db,
-                    &state.cfg.paths,
-                    account,
-                    state.upload_time_limits.stall,
-                )
-                .await;
-                crate::media_queue::queue_import_run(
-                    &state.db,
-                    &state.media_queue,
-                    account,
-                    import_id,
-                    now,
-                )
-                .await;
+            // The slot, the lock and the connection go at the end of this
+            // block, before the work that follows a run's end.
+            {
+                let _permit = permit;
+                let _guard = state.account_import_locks.lock(account.to_string()).await;
+                let mut conn = state.db.acquire().await?;
+                end_and_dedupe(&mut conn, account, import_id, end, now).await?;
             }
-            row
+            after_run_ended(&state, account, import_id, now).await;
+            let mut conn = state.db.acquire().await?;
+            Ok::<_, ApiError>(imports::get_owned_import(&mut conn, account, import_id).await?)
         })
     })
     .await
+}
+
+/// End the running Import Run `import_id` as `end` says, with the dedupe on
+/// the side [`end_run`] gives each kind of end: before a completion, after
+/// a discard.
+///
+/// # Errors
+///
+/// The [`imports::ImportLookupError`] of a run that is not the account's or
+/// not running, and the error of a completion's dedupe or of the write that
+/// ends the run.
+async fn end_and_dedupe(
+    conn: &mut SqliteConnection,
+    account: i64,
+    import_id: i64,
+    end: RunEnd,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<(), ApiError> {
+    imports::require_running_import(conn, account, import_id).await?;
+    match end {
+        RunEnd::Complete(args) => {
+            dedupe_account(conn, account, Progress::Log).await?;
+            complete_run_at(conn, account, import_id, &args, now).await?;
+        }
+        RunEnd::Discard { issues, notes } => {
+            discard_and_dedupe(
+                conn,
+                account,
+                import_id,
+                &issues,
+                &notes,
+                now,
+                Progress::Log,
+            )
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+/// What follows the end of an Import Run, once its end is written: sweep
+/// the account's files no row names, and queue the run's Assets for their
+/// Thumbnails and Previews. Neither fails: each logs what it could not do.
+async fn after_run_ended(
+    state: &AppState,
+    account: i64,
+    import_id: i64,
+    now: chrono::DateTime<chrono::Utc>,
+) {
+    crate::asset_store::sweep_after_run(
+        &state.db,
+        &state.cfg.paths,
+        account,
+        state.upload_time_limits.stall,
+    )
+    .await;
+    crate::media_queue::queue_import_run(&state.db, &state.media_queue, account, import_id, now)
+        .await;
 }
 
 /// The full dedupe of `account`, within one source and across sources,
@@ -1659,10 +1692,26 @@ async fn dedupe_account(
     dedupe::dedupe_cross_source(conn, account, None, dedupe::NEAR_WINDOW_SECS, progress).await
 }
 
-/// The dedupe after a discard. The run has already ended, so a dedupe that
+/// Discard `account`'s running Import Run `import_id` at the instant `now`
+/// with its `issues` and `notes`, then hide the duplicates of the account.
+/// Every discard comes here: the route's and the `imports discard`
+/// command's. The run has ended before the dedupe starts, so a dedupe that
 /// fails is a warning, never an error: the discard stands, and the next
 /// run's end hides the duplicates.
-async fn dedupe_after_discard(conn: &mut SqliteConnection, account: i64, progress: Progress) {
+///
+/// # Errors
+///
+/// The errors of [`imports::discard_import`].
+async fn discard_and_dedupe(
+    conn: &mut SqliteConnection,
+    account: i64,
+    import_id: i64,
+    issues: &[imports::ImportIssueInput],
+    notes: &[imports::ImportNoteRow],
+    now: chrono::DateTime<chrono::Utc>,
+    progress: Progress,
+) -> std::result::Result<(), imports::ImportLookupError> {
+    imports::discard_import(conn, account, import_id, issues, notes, now).await?;
     if let Err(error) = dedupe_account(conn, account, progress).await {
         tracing::warn!(
             account,
@@ -1670,30 +1719,34 @@ async fn dedupe_after_discard(conn: &mut SqliteConnection, account: i64, progres
             "The duplicates of a discarded Import Run could not be hidden"
         );
     }
+    Ok(())
 }
 
 /// Discard `account`'s running Import Run, whichever it is, at the instant
-/// `now`, then hide the duplicates of the account, and return the row as it
-/// was before the discard; `None`, with no dedupe, when the account has no
-/// running run. This is the server's `imports discard` command, the way out
-/// of a run a killed client left open: the run's batches did not hide their
-/// duplicates (#2040), so its end does, as the discard route's does.
+/// `now`, then hide the duplicates of the account ([`discard_and_dedupe`]),
+/// and return the row as it was before the discard; `None`, with no
+/// dedupe, when the account has no running run. This is the server's
+/// `imports discard` command, the way out of a run a killed client left
+/// open: the operator knows the account, not the run id. The run's batches
+/// did not hide their duplicates (#2040), so its end does, as the discard
+/// route's does.
 ///
 /// # Errors
 ///
-/// Returns the error of the discard. A dedupe that fails is a warning
-/// ([`dedupe_after_discard`]).
+/// Returns the error of the lookup or of the discard.
 pub(crate) async fn discard_running_import_and_dedupe(
     conn: &mut SqliteConnection,
     account: i64,
     now: chrono::DateTime<chrono::Utc>,
     progress: Progress,
 ) -> Result<Option<imports::ImportRow>> {
-    let discarded = imports::discard_running_import(conn, account, now).await?;
-    if discarded.is_some() {
-        dedupe_after_discard(conn, account, progress).await;
-    }
-    Ok(discarded)
+    let Some(running) = imports::running_import(conn, account).await? else {
+        return Ok(None);
+    };
+    discard_and_dedupe(conn, account, running.id, &[], &[], now, progress)
+        .await
+        .map_err(|err| anyhow::anyhow!(err))?;
+    Ok(Some(running))
 }
 
 /// Add the sidebar shortcut to the messages this run brought in.
