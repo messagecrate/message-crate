@@ -206,25 +206,44 @@ pub struct RunJournal {
     target: ServerTarget,
 }
 
+/// What a new Upload does with the progress earlier Uploads recorded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EarlierProgress {
+    /// Skip what the journal says already imported.
+    Resume,
+    /// Send everything again, and leave the rows on disk (force mode). The
+    /// server still holds what they record, so a later Upload may trust them.
+    Ignore,
+    /// Send everything again, and delete this target's rows on disk (replace
+    /// mode). A replace wipes the source on the server, so the rows no longer
+    /// say what the server holds, and a later append that read them after
+    /// a failed replace would skip what the replace removed.
+    Forget,
+}
+
 impl RunJournal {
-    /// Load the journal for this server target, or start empty when `fresh` is
-    /// set (force mode and replace mode both ignore earlier progress). Each
-    /// line that could not be read goes to `on_unreadable` as a sentence for the
-    /// Upload's log.
+    /// Open the journal for this server target and deal with earlier progress
+    /// as `earlier` says. Each line that could not be read goes to
+    /// `on_unreadable` as a sentence for the Upload's log.
     ///
     /// # Errors
     ///
-    /// Returns an error when an existing journal file cannot be read.
+    /// Returns an error when an existing journal file cannot be read, or, for
+    /// [`EarlierProgress::Forget`], cannot be rewritten.
     pub fn open(
         path: PathBuf,
         target: ServerTarget,
-        fresh: bool,
+        earlier: EarlierProgress,
         on_unreadable: &mut dyn FnMut(String),
     ) -> Result<Self> {
-        let state = if fresh {
-            JournalState::default()
-        } else {
-            load(&path, &target, on_unreadable)?
+        let state = match earlier {
+            EarlierProgress::Resume => load(&path, &target, on_unreadable)?,
+            EarlierProgress::Ignore => JournalState::default(),
+            EarlierProgress::Forget => {
+                let state = JournalState::default();
+                compact(&path, &target, &state)?;
+                state
+            }
         };
         Ok(Self {
             state,
@@ -449,7 +468,8 @@ mod tests {
     fn an_event_writes_its_target_as_url_and_username_keys() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(JOURNAL_NAME);
-        let mut journal = RunJournal::open(path.clone(), alice(), false, &mut |_| {}).unwrap();
+        let mut journal =
+            RunJournal::open(path.clone(), alice(), EarlierProgress::Resume, &mut |_| {}).unwrap();
         journal.file_ok("sms", "chat.jsonl").unwrap();
 
         let line: serde_json::Value =
@@ -494,12 +514,14 @@ mod tests {
     fn a_recorded_asset_is_skipped_after_reopening_the_journal() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(JOURNAL_NAME);
-        let mut journal = RunJournal::open(path.clone(), alice(), false, &mut |_| {}).unwrap();
+        let mut journal =
+            RunJournal::open(path.clone(), alice(), EarlierProgress::Resume, &mut |_| {}).unwrap();
         assert!(!journal.has_asset("sha-1"));
         journal.asset_ok("sha-1").unwrap();
         drop(journal);
 
-        let reopened = RunJournal::open(path, alice(), false, &mut |_| {}).unwrap();
+        let reopened =
+            RunJournal::open(path, alice(), EarlierProgress::Resume, &mut |_| {}).unwrap();
         assert!(reopened.has_asset("sha-1"));
         assert!(!reopened.has_asset("sha-2"));
     }
