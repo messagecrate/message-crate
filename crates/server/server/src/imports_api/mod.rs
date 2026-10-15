@@ -32,7 +32,7 @@ use crate::db::imports::{self, CompleteImportArgs};
 use crate::db::maintenance;
 use crate::progress::Progress;
 use media::{MediaMode, MediaTools, NoTools};
-use message_crate_api_types::{MAX_IMPORT_BATCH_BYTES, RunIssueKind};
+use message_crate_api_types::{ImportErrorKind, MAX_IMPORT_BATCH_BYTES};
 
 pub(crate) mod batch_bodies;
 pub mod contact_name;
@@ -868,7 +868,7 @@ pub(crate) struct ImportIssueRequest {
     /// other kind is refused with `422 Unprocessable Entity`: a note goes in
     /// `notes`, and the desktop app applies a `resolved` row to the record
     /// before it sends it.
-    pub(crate) kind: RunIssueKind,
+    pub(crate) kind: ImportErrorKind,
     /// Stage the issue came from.
     pub(crate) stage: crate::db::imports::ImportIssueStage,
     /// What the issue is about, such as a conversation file or an
@@ -885,21 +885,13 @@ pub(crate) struct ImportIssueRequest {
 }
 
 /// The requested issues as the database records them, their text trimmed.
-/// Adds to `errors` every issue that is not an Import Error, since the run
-/// stores only `error` and `skip` rows as its issues, and every `item` or
-/// `reason` over its cap (`text_caps`).
+/// Adds to `errors` every `item` or `reason` over its cap (`text_caps`).
 fn import_issue_inputs(
     issues: &[ImportIssueRequest],
     errors: &mut Vec<String>,
 ) -> Vec<crate::db::imports::ImportIssueInput> {
     let mut inputs = Vec::with_capacity(issues.len());
     for (at, issue) in issues.iter().enumerate() {
-        if matches!(issue.kind, RunIssueKind::Note | RunIssueKind::Resolved) {
-            errors.push(format!(
-                "issues[{at}].kind: invalid import issue kind '{}'; expected 'error' or 'skip'",
-                issue.kind
-            ));
-        }
         let cap = |field: &str, text| {
             capped_text(
                 &format!("issues[{at}].{field}"),
@@ -1017,7 +1009,7 @@ pub(crate) struct ImportNote {
 pub(crate) struct ImportIssue {
     /// `error` when the item failed, or `skip` when the run left it out
     /// without importing it.
-    pub(crate) kind: RunIssueKind,
+    pub(crate) kind: ImportErrorKind,
     /// Stage the issue came from.
     pub(crate) stage: crate::db::imports::ImportIssueStage,
     /// What the issue is about, such as a conversation file or an

@@ -602,13 +602,13 @@ async fn imports_complete_and_detail_surface_timings_and_issues() {
         })),
         issues: vec![
             ImportIssueRequest {
-                kind: message_crate_api_types::RunIssueKind::Skip,
+                kind: message_crate_api_types::ImportErrorKind::Skip,
                 stage: crate::db::imports::ImportIssueStage::Media,
                 item: "photo.heic".into(),
                 reason: "convert failed".into(),
             },
             ImportIssueRequest {
-                kind: message_crate_api_types::RunIssueKind::Error,
+                kind: message_crate_api_types::ImportErrorKind::Error,
                 stage: crate::db::imports::ImportIssueStage::Upload,
                 item: "archive.zip".into(),
                 reason: "upload failed".into(),
@@ -649,7 +649,7 @@ async fn imports_complete_and_detail_surface_timings_and_issues() {
     assert_eq!(value.issues.len(), 2);
     assert_eq!(
         value.issues[0].kind,
-        message_crate_api_types::RunIssueKind::Skip
+        message_crate_api_types::ImportErrorKind::Skip
     );
     assert_eq!(
         value.issues[0].stage,
@@ -657,7 +657,7 @@ async fn imports_complete_and_detail_surface_timings_and_issues() {
     );
     assert_eq!(
         value.issues[1].kind,
-        message_crate_api_types::RunIssueKind::Error
+        message_crate_api_types::ImportErrorKind::Error
     );
     assert_eq!(
         value.issues[1].stage,
@@ -725,55 +725,6 @@ async fn imports_complete_rejects_unknown_status() {
     let status: String = sqlx::query_scalar("SELECT status FROM imports WHERE id = $1")
         .bind(import_id)
         .fetch_one(&mut *conn)
-        .await
-        .unwrap();
-    assert_eq!(status, "running");
-}
-
-/// A note belongs in the request's `notes`: sent as an issue, it is refused
-/// before the run is written.
-#[tokio::test]
-async fn imports_complete_refuses_a_note_as_an_issue_before_db_write() {
-    let fixture = test_fixture().await;
-    let state = fixture.state.clone();
-    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
-    let body = CompleteImportRequest {
-        status: "completed".into(),
-        bytes_uploaded: Some(100),
-        duration_ms: Some(48_000),
-        parse_ms: Some(18_000),
-        attachments_ms: Some(22_000),
-        prepare_ms: Some(4_000),
-        upload_ms: Some(8_000),
-        summary: None,
-        issues: vec![ImportIssueRequest {
-            kind: message_crate_api_types::RunIssueKind::Note,
-            stage: crate::db::imports::ImportIssueStage::Upload,
-            item: "archive.zip".into(),
-            reason: "not allowed".into(),
-        }],
-        notes: Vec::new(),
-    };
-
-    let err = complete_import(
-        State(state.clone()),
-        import_access(&state, &token).await,
-        AxumPath(import_id),
-        Json(body),
-    )
-    .await
-    .unwrap_err();
-
-    match err {
-        ApiError::ValidationFailed(errors) => {
-            assert!(errors[0].contains("invalid import issue kind"));
-        }
-        other => panic!("expected validation-failed, got {other:?}"),
-    }
-
-    let status: String = sqlx::query_scalar("SELECT status FROM imports WHERE id = $1")
-        .bind(import_id)
-        .fetch_one(&state.db)
         .await
         .unwrap();
     assert_eq!(status, "running");

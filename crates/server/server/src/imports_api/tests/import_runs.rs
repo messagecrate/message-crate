@@ -895,7 +895,7 @@ async fn an_import_error_over_the_text_cap_is_refused_and_the_run_stays_running(
         serde_json::json!({
             "issues": [
                 { "kind": "skip", "stage": "media", "item": "a", "reason": "r" },
-                { "kind": "note", "stage": "media", "item": long, "reason": long }
+                { "kind": "error", "stage": "media", "item": long, "reason": long }
             ],
             "notes": []
         }),
@@ -910,7 +910,6 @@ async fn an_import_error_over_the_text_cap_is_refused_and_the_run_stays_running(
     assert_eq!(
         errors["errors"],
         serde_json::json!([
-            "issues[1].kind: invalid import issue kind 'note'; expected 'error' or 'skip'",
             "issues[1].item: must be at most 2000 characters",
             "issues[1].reason: must be at most 2000 characters"
         ]),
@@ -1048,10 +1047,12 @@ async fn a_discard_records_the_notes_it_carries() {
     assert_eq!(discarded["notes"], serde_json::json!([note]), "{discarded}");
 }
 
-/// A discard's issues are checked the way a completion's are: a kind that is
-/// neither `error` nor `skip` is refused, and the run stays running.
+/// An Import Error's kind is `error` or `skip` and nothing else, on a
+/// completion and on a discard alike: `note`, which a run reports but which
+/// goes in `notes`, and a word no run reports are both refused in the
+/// problem envelope, and the run stays running.
 #[tokio::test]
-async fn a_discard_with_an_unknown_issue_kind_is_refused() {
+async fn an_issue_kind_other_than_error_or_skip_is_refused() {
     let (fixture, account) = fixture_with_account().await;
     let state = &fixture.state;
     let token = account.token.as_str();
@@ -1064,23 +1065,33 @@ async fn a_discard_with_an_unknown_issue_kind_is_refused() {
     .await;
     let id = created["id"].as_i64().unwrap();
 
-    let body = serde_json::json!({
-        "issues": [{ "kind": "warning", "stage": "staging", "item": "a.jsonl", "reason": "x" }],
-        "notes": [],
-    });
-    let (status, text) = crate::test_support::post_json_raw(
-        state,
-        &format!("/v1/imports/{id}/discard"),
-        token,
-        body,
-    )
-    .await;
-
-    crate::test_support::expect_problem(
-        status,
-        &text,
-        crate::problem::ProblemType::ValidationFailed,
-    );
+    for kind in ["note", "warning"] {
+        let issues = serde_json::json!([{ "kind": kind, "stage": "staging", "item": "a.jsonl", "reason": "x" }]);
+        for (route, body) in [
+            (
+                "complete",
+                serde_json::json!({ "status": "completed", "issues": issues }),
+            ),
+            (
+                "discard",
+                serde_json::json!({ "issues": issues, "notes": [] }),
+            ),
+        ] {
+            let (status, text) = crate::test_support::post_json_raw(
+                state,
+                &format!("/v1/imports/{id}/{route}"),
+                token,
+                body,
+            )
+            .await;
+            let problem = crate::test_support::expect_problem(
+                status,
+                &text,
+                crate::problem::ProblemType::ValidationFailed,
+            );
+            assert!(problem.sentence().contains(kind), "{route} {kind}: {text}");
+        }
+    }
     let run: serde_json::Value = get_json(state, &format!("/v1/imports/{id}"), token).await;
     assert_eq!(run["status"], "running", "{run}");
 }

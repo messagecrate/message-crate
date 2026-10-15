@@ -247,6 +247,83 @@ impl std::fmt::Display for RunIssueKind {
     }
 }
 
+/// What an Import Error is: `skip` when the run left the item out, `error`
+/// when the item failed.
+// `RunIssueKind` says what a run can report; this type says what the server
+// stores, so a note or a `resolved` row cannot be stored as an Import Error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum ImportErrorKind {
+    /// The run left the item out and went on without it.
+    Skip,
+    /// The item failed.
+    Error,
+}
+
+impl ImportErrorKind {
+    /// The wire form: `skip` or `error`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Skip => "skip",
+            Self::Error => "error",
+        }
+    }
+
+    /// Read a stored word; anything else names no kind.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "skip" => Some(Self::Skip),
+            "error" => Some(Self::Error),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for ImportErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl From<ImportErrorKind> for RunIssueKind {
+    fn from(kind: ImportErrorKind) -> Self {
+        match kind {
+            ImportErrorKind::Skip => Self::Skip,
+            ImportErrorKind::Error => Self::Error,
+        }
+    }
+}
+
+/// The [`RunIssueKind`] that is not an Import Error, refused by
+/// `TryFrom<RunIssueKind> for ImportErrorKind`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NotAnImportError(pub RunIssueKind);
+
+impl std::fmt::Display for NotAnImportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "a '{}' row is not an Import Error; expected 'error' or 'skip'",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for NotAnImportError {}
+
+impl TryFrom<RunIssueKind> for ImportErrorKind {
+    type Error = NotAnImportError;
+
+    fn try_from(kind: RunIssueKind) -> Result<Self, NotAnImportError> {
+        match kind {
+            RunIssueKind::Skip => Ok(Self::Skip),
+            RunIssueKind::Error => Ok(Self::Error),
+            other @ (RunIssueKind::Note | RunIssueKind::Resolved) => Err(NotAnImportError(other)),
+        }
+    }
+}
+
 #[cfg(test)]
 mod import_mode_tests {
     use super::*;
@@ -290,6 +367,37 @@ mod import_mode_tests {
         }
         assert!(serde_json::from_str::<RunIssueKind>("\"warning\"").is_err());
         assert_eq!(RunIssueKind::parse("warning"), None);
+    }
+
+    /// The same three forms for an Import Error's kind, which takes only
+    /// `skip` and `error` and refuses the two a run reports but never
+    /// stores as an Import Error.
+    #[test]
+    fn an_import_error_kind_is_skip_or_error_and_nothing_else() {
+        for kind in [ImportErrorKind::Skip, ImportErrorKind::Error] {
+            let json = serde_json::to_string(&kind).unwrap();
+            assert_eq!(json, format!("\"{}\"", kind.as_str()));
+            assert_eq!(
+                serde_json::from_str::<ImportErrorKind>(&json).unwrap(),
+                kind
+            );
+            assert_eq!(ImportErrorKind::parse(kind.as_str()), Some(kind));
+            assert_eq!(RunIssueKind::from(kind).as_str(), kind.as_str());
+            assert_eq!(
+                ImportErrorKind::try_from(RunIssueKind::from(kind)),
+                Ok(kind)
+            );
+        }
+        for word in ["note", "resolved", "warning"] {
+            assert!(
+                serde_json::from_str::<ImportErrorKind>(&format!("\"{word}\"")).is_err(),
+                "{word}"
+            );
+            assert_eq!(ImportErrorKind::parse(word), None, "{word}");
+        }
+        for kind in [RunIssueKind::Note, RunIssueKind::Resolved] {
+            assert_eq!(ImportErrorKind::try_from(kind), Err(NotAnImportError(kind)));
+        }
     }
 }
 

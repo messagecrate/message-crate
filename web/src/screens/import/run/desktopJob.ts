@@ -174,7 +174,7 @@ function recordIssue(ctx: RunContext, event: ImportIssueEvent): void {
     // run, and copying the list for each would cost the square of that.
     scratch.notes.push(noteFromEvent(event));
   } else {
-    scratch.issues.push(issueFromEvent(event));
+    scratch.issues.push(issueFromEvent(event, event.kind));
   }
   void saveCarriedRecord(ctx);
 }

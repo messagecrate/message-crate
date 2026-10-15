@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use chrono::Utc;
-use message_crate_api_types::RunIssueKind;
+use message_crate_api_types::ImportErrorKind;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Row, SqliteConnection};
@@ -292,9 +292,9 @@ impl CompleteImportArgs {
 /// One problem to record against an Import Run.
 #[derive(Debug, Clone)]
 pub struct ImportIssueInput {
-    /// Issue category: [`RunIssueKind::Error`] or [`RunIssueKind::Skip`].
-    /// The request handlers refuse every other kind.
-    pub kind: RunIssueKind,
+    /// Issue category: `error` or `skip`, the only kinds an Import Error
+    /// takes.
+    pub kind: ImportErrorKind,
     /// Stage the issue came from.
     pub stage: ImportIssueStage,
     /// The file or message the issue is about.
@@ -322,8 +322,8 @@ pub struct ImportIssueRow {
     pub id: i64,
     /// Run the issue belongs to.
     pub import_id: i64,
-    /// Issue category: [`RunIssueKind::Error`] or [`RunIssueKind::Skip`].
-    pub kind: RunIssueKind,
+    /// Issue category: `error` or `skip`.
+    pub kind: ImportErrorKind,
     /// Stage the issue came from.
     pub stage: ImportIssueStage,
     /// The file or message the issue is about.
@@ -961,7 +961,7 @@ pub async fn list_import_issues(
     Ok(issue_rows
         .into_iter()
         .map(|(id, import_id, kind, stage, item, reason, created_at)| {
-            let kind = RunIssueKind::parse(&kind).ok_or_else(|| {
+            let kind = ImportErrorKind::parse(&kind).ok_or_else(|| {
                 sqlx::Error::Decode(
                     format!("import_issues.kind holds unknown value '{kind}'").into(),
                 )
