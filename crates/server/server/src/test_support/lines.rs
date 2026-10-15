@@ -81,6 +81,18 @@ impl ConversationHeaderLine {
         self.with_participant(Some(identity), display_name)
     }
 
+    /// The country the source read the last participant's identity in, as
+    /// an ISO 3166-1 alpha-2 code.
+    pub fn in_country(mut self, country: &str) -> Self {
+        self.0
+            .conversation
+            .participants
+            .last_mut()
+            .expect("a participant to give a country")
+            .country = Some(country.to_string());
+        self
+    }
+
     /// One more participant the source recorded no address for, named
     /// `display_name` when it named them at all.
     pub fn participant_without_identity(self, display_name: Option<&str>) -> Self {
@@ -94,6 +106,7 @@ impl ConversationHeaderLine {
             .push(message_ir::IrParticipant {
                 identity: identity.map(str::to_string),
                 display_name: display_name.map(str::to_string),
+                country: None,
             });
         self
     }
@@ -139,6 +152,7 @@ pub fn message_line(guid: &str, text: &str) -> MessageLine {
         message_kind: message_ir::IrMessageKind::IMessage,
         sender_identity: None,
         sender_display_name: None,
+        sender_country: None,
         owner_identity: None,
         subject: None,
         text: text.to_string(),
@@ -199,6 +213,13 @@ impl MessageLine {
     /// Sent by the person reached at `identity`.
     pub fn sender(mut self, identity: &str) -> Self {
         self.0.sender_identity = Some(identity.to_string());
+        self
+    }
+
+    /// The country the source read the sender's identity in, as an ISO
+    /// 3166-1 alpha-2 code.
+    pub fn sender_country(mut self, country: &str) -> Self {
+        self.0.sender_country = Some(country.to_string());
         self
     }
 

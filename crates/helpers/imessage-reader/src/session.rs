@@ -1,10 +1,10 @@
 //! Session caches (chats, handles, contacts, tapbacks).
 //!
 //! Addresses and chat members come from the reader's own reads of
-//! `handle(ROWID, id)` and `chat_handle_join`, never from the handle cache of
-//! `imessage-database`. That cache is built for exports a person reads: it
-//! joins every address of one person into one string, maps handle 0 to "Me",
-//! and has no entry for a chat with no handle rows. The library still reads
+//! `handle(ROWID, id, country)` and `chat_handle_join`, never from the handle
+//! cache of `imessage-database`. That cache is built for exports a person
+//! reads: it joins every address of one person into one string, maps handle 0
+//! to "Me", and has no entry for a chat with no handle rows. The library still reads
 //! the chats, the message bodies and the attachments.
 
 use std::collections::{BTreeSet, HashMap};
@@ -48,6 +48,8 @@ pub(crate) struct MailSession {
     pub chat_members: HashMap<i32, BTreeSet<i32>>,
     /// One address per handle rowid: that row's `id`.
     handles: HashMap<i32, String>,
+    /// The country of each handle whose row names one, upper case.
+    handle_countries: HashMap<i32, String>,
     /// The contact name for each handle whose address the contacts know.
     handle_names: HashMap<i32, String>,
     /// The addresses the backup names as the owner's.
@@ -77,7 +79,10 @@ impl MailSession {
         let chat_members = chat_members(db)?;
 
         options.setup_step(3, CACHE_STEPS, "Caching participants");
-        let handles = handles(db)?;
+        let Handles {
+            addresses: handles,
+            countries: handle_countries,
+        } = handles(db)?;
         let handle_names = handles
             .iter()
             .filter_map(|(&rowid, address)| {
@@ -97,6 +102,7 @@ impl MailSession {
             chat_styles,
             chat_members,
             handles,
+            handle_countries,
             handle_names,
             owner,
             tapbacks,
@@ -132,6 +138,12 @@ impl MailSession {
     /// The address of a handle: its row's `id`. Handle 0 is no handle.
     pub fn handle_address(&self, handle_id: i32) -> Option<&str> {
         self.handles.get(&handle_id).map(String::as_str)
+    }
+
+    /// The country Messages read a handle in: its row's `country`, upper
+    /// case, as an ISO 3166-1 alpha-2 code. `None` when the row names none.
+    pub fn handle_country(&self, handle_id: i32) -> Option<&str> {
+        self.handle_countries.get(&handle_id).map(String::as_str)
     }
 
     /// The contact name of a handle, when the contacts know its address.
@@ -186,21 +198,60 @@ fn contact_name(data_source: &DataSource, address: &str) -> Option<String> {
         .filter(|full| !full.is_empty())
 }
 
-/// Every handle row's address, by rowid. A row with no `id` is left out.
-fn handles(db: &Connection) -> Result<HashMap<i32, String>, RuntimeError> {
-    let mut statement = db.prepare("SELECT ROWID, id FROM handle")?;
+/// The handle rows: each one's address, and the country it names.
+struct Handles {
+    /// Each handle row's address, by rowid.
+    addresses: HashMap<i32, String>,
+    /// Each handle row's country, by rowid, upper case.
+    countries: HashMap<i32, String>,
+}
+
+/// Every handle row's address and country, by rowid. A row with no `id` is
+/// left out. `imessage-database`'s `Handle` does not load `country` (#1994),
+/// so the reader reads it here. A `country` that is not two ASCII letters
+/// names no country, and a database whose `handle` table has no `country`
+/// column names none for any row.
+fn handles(db: &Connection) -> Result<Handles, RuntimeError> {
+    let has_country = db
+        .prepare("SELECT 1 FROM pragma_table_info('handle') WHERE name = 'country'")?
+        .exists([])?;
+    let query = if has_country {
+        "SELECT ROWID, id, country FROM handle"
+    } else {
+        "SELECT ROWID, id, NULL FROM handle"
+    };
+    let mut statement = db.prepare(query)?;
     let rows = statement.query_map([], |row| {
-        Ok((row.get::<_, i32>(0)?, row.get::<_, Option<String>>(1)?))
+        Ok((
+            row.get::<_, i32>(0)?,
+            row.get::<_, Option<String>>(1)?,
+            row.get::<_, Option<String>>(2)?,
+        ))
     })?;
-    let mut out = HashMap::new();
+    let mut out = Handles {
+        addresses: HashMap::new(),
+        countries: HashMap::new(),
+    };
     for row in rows {
-        if let (rowid, Some(id)) = row?
+        if let (rowid, Some(id), country) = row?
             && !id.trim().is_empty()
         {
-            out.insert(rowid, id);
+            out.addresses.insert(rowid, id);
+            if let Some(country) = country.as_deref().and_then(country_code) {
+                out.countries.insert(rowid, country);
+            }
         }
     }
     Ok(out)
+}
+
+/// A `handle.country` value as an upper-case ISO 3166-1 alpha-2 code:
+/// Messages writes `gb`, the conversation file takes `GB`. `None` for a
+/// value that is not two ASCII letters.
+fn country_code(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    (raw.len() == 2 && raw.bytes().all(|b| b.is_ascii_alphabetic()))
+        .then(|| raw.to_ascii_uppercase())
 }
 
 /// The handle rowids `chat_handle_join` lists for each chat.
@@ -266,6 +317,37 @@ mod tests {
             2,
             "the tapback and the emoji reaction on one message"
         );
+    }
+
+    /// A handle's `country` is the country Messages read it in, upper case
+    /// as the conversation file takes it (#1994). A row with no country, or
+    /// one that is not two letters, names none.
+    #[test]
+    fn a_handle_carries_the_country_its_row_names() {
+        let fixture = FixtureDb::write();
+        Connection::open(&fixture.db_path)
+            .unwrap()
+            .execute_batch(
+                "ALTER TABLE handle ADD COLUMN country TEXT;
+                 UPDATE handle SET country = 'gb' WHERE ROWID = 1;
+                 UPDATE handle SET country = 'unknown' WHERE ROWID = 3;",
+            )
+            .unwrap();
+        let session = fixture.session();
+
+        assert_eq!(session.handle_country(1), Some("GB"));
+        assert_eq!(session.handle_country(2), None, "NULL names no country");
+        assert_eq!(session.handle_country(3), None, "not a country code");
+    }
+
+    /// A `chat.db` whose `handle` table has no `country` column, as the
+    /// fixture's has not, still opens, and names no country for anyone.
+    #[test]
+    fn a_handle_table_without_a_country_column_names_no_country() {
+        let fixture = FixtureDb::write();
+        let session = fixture.session();
+        assert_eq!(session.handle_address(1), Some(FRIEND_PHONE));
+        assert_eq!(session.handle_country(1), None);
     }
 
     /// Every address the backup names as the owner's counts, from either

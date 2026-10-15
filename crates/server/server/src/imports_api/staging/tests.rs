@@ -920,3 +920,74 @@ async fn an_imessage_sender_with_an_email_address_is_email() {
         ["ada@example.com".to_string()]
     );
 }
+
+/// Every `(raw, normalized)` the account's handles hold, sorted.
+async fn handle_keys(conn: &mut SqliteConnection) -> Vec<(String, String)> {
+    sqlx::query_as("SELECT raw, normalized FROM handles WHERE account_id = $1 ORDER BY raw")
+        .bind(TEST_ACCOUNT)
+        .fetch_all(&mut *conn)
+        .await
+        .unwrap()
+}
+
+/// Apple Messages names the country it read each identity in, from
+/// `chat.db`'s `handle.country`, and the file carries it. A number written
+/// without `+` in a conversation whose file names `GB` for it is a UK
+/// number, with no country on the import form: the participant, the sender,
+/// the reactor and the one-to-one chat's id are one `+44` identity. A number
+/// the file names no country for keeps its digits (#1994).
+#[tokio::test]
+async fn a_number_is_read_in_the_country_the_file_names_for_it() {
+    let (pool, _dir) = crate::test_support::schema_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let body = conversation_header("imessage", "07700 900123")
+        .participant("07700 900123", None)
+        .in_country("GB")
+        .line()
+        + &message_line("g-gb-1", "hi")
+            .sender("07700 900123")
+            .sender_country("GB")
+            .line()
+        + &message_line("g-gb-2", "liked")
+            .outgoing()
+            .reaction(message_ir::Reaction {
+                part_index: 0,
+                kind: "liked".into(),
+                emoji: None,
+                is_from_me: false,
+                reactor_identity: Some("07700 900123".into()),
+                reactor_display_name: None,
+            })
+            .line();
+    import_one(&mut conn, "gb.jsonl", &body).await.unwrap();
+    let body = conversation_header("imessage", "07700 900456")
+        .participant("07700 900456", None)
+        .line()
+        + &message_line("g-none-1", "hi").sender("07700 900456").line();
+    import_one(&mut conn, "none.jsonl", &body).await.unwrap();
+
+    assert_eq!(
+        handle_keys(&mut conn).await,
+        [
+            ("07700 900123".to_string(), "+447700900123".to_string()),
+            ("07700 900456".to_string(), "07700900456".to_string()),
+        ]
+    );
+}
+
+/// A country the file names that Message Crate does not know refuses the
+/// file, naming the code, rather than reading the number in no country.
+#[tokio::test]
+async fn a_country_nobody_knows_refuses_the_file() {
+    let (pool, _dir) = crate::test_support::schema_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let body = conversation_header("imessage", "07700 900123")
+        .participant("07700 900123", None)
+        .in_country("ZZ")
+        .line();
+    let reason = refusal(import_one(&mut conn, "zz.jsonl", &body).await);
+    assert!(
+        reason.contains(r#"country "ZZ" is not a country GET /v1/phone-countries lists"#),
+        "{reason}"
+    );
+}

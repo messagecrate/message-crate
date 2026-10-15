@@ -327,9 +327,13 @@ country: the same digits are another number there. The bare identity shows
 **A country comes from three explicit sources and nothing else.** The archive,
 when the source names the phone's country. SMS Backup+ does not. Apple's
 `chat.db` does, in the `country` column of its `handle` table (`us`, `gb`),
-but Message Crate does not read it yet: `imessage-database` 4.3.0's `Handle`
-does not load the column, so the Apple Messages Reader cannot pass it on, and
-the conversation file has no field for it
+and Message Crate reads it: `imessage-database` 4.3.0's `Handle` does not
+load the column, so the Apple Messages Reader reads it with its own query,
+and the conversation file carries it per identity, as a participant's
+`country` and a message's `sender_country`. Staging keys a number written
+without `+` in the country the file names for it, before the run's country,
+and reads a reactor and a one-to-one conversation's id in the country the
+same conversation names for the same address
 ([#1994](https://github.com/messagecrate/message-crate/issues/1994)). The
 import form's country for the run, which applies to every number written
 without `+` in that run: the Import Run records it (`imports.phone_country`,

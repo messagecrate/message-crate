@@ -333,6 +333,7 @@ impl SharedMessage {
                 Some(chat_id.into())
             },
             sender_display_name: None,
+            sender_country: None,
             owner_identity: None,
             subject: None,
             text: self.text.clone(),
@@ -667,6 +668,7 @@ fn individual_participants(chat_id: &str, display_name: Option<String>) -> Vec<I
     vec![IrParticipant {
         identity: Some(chat_id.into()),
         display_name,
+        country: None,
     }]
 }
 
@@ -877,6 +879,7 @@ fn phone_only_participants(handles: &[String]) -> Vec<IrParticipant> {
         participants.push(IrParticipant {
             identity: Some(handle.clone()),
             display_name: None,
+            country: None,
         });
     }
     participants
@@ -893,6 +896,7 @@ fn named_group_participants(roster: &Roster, member_idxs: &[usize]) -> Vec<IrPar
         participants.push(IrParticipant {
             identity: Some(contact.primary_phone().into()),
             display_name: None,
+            country: None,
         });
     }
     participants
@@ -936,6 +940,7 @@ impl<R: Rng> Seeder<'_, R> {
         let sender = IrParticipant {
             identity: Some(ORPHAN_SENDER.into()),
             display_name: None,
+            country: None,
         };
         for (file_name, sender, messages) in [
             ("orphaned-person.jsonl", Some(sender), with_person),
@@ -985,6 +990,7 @@ impl<R: Rng> Seeder<'_, R> {
             .map(|handle| IrParticipant {
                 identity: Some((*handle).into()),
                 display_name: None,
+                country: None,
             })
             .collect();
         self.write_conversation_file(
@@ -1196,6 +1202,7 @@ impl<R: Rng> Seeder<'_, R> {
             message_kind,
             sender_identity: if from_me { None } else { Some(peer.into()) },
             sender_display_name: None,
+            sender_country: None,
             owner_identity: None,
             subject: None,
             text,

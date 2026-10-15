@@ -1264,6 +1264,14 @@ carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-15: **A number from an Apple Messages backup keeps the country
+  the phone read it in.** A number written without its country code, such
+  as `07700 900123`, was stored with its country unknown, though the backup
+  records that Messages read it as a UK number. An Apple Messages import now
+  reads that country from the backup, so the number is stored as
+  `+447700900123` without picking a country on the import form, and is the
+  same person as the same number written in full. A number the backup names
+  no country for is stored as before (#1994).
 - 2026-10-11: **A WhatsApp internal id can be added to a contact or to your
   account by hand.** WhatsApp names some people by an internal id such as
   `123456789012345@lid` rather than a phone number. Adding one by hand was
@@ -1593,6 +1601,9 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-15: Message files exported before they carried the country an
+  Apple Messages backup names for each number are refused when you import
+  or convert them. Export the backup again with this build.
 - 2026-10-14: A Compose file saved from the repository before this
   release keeps publishing the server on every network the computer is
   on, because pulling a new image does not change the file. To keep the

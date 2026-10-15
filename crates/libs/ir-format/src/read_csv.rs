@@ -170,6 +170,7 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         message_kind: IrMessageKind::parse(get("message_kind")),
         sender_identity: nonempty(get("sender_identity")),
         sender_display_name: nonempty(get("sender_display_name")),
+        sender_country: None,
         owner_identity: nonempty(get("message_owner_identity")),
         subject: nonempty(get("subject")),
         text: get("text").to_string(),
@@ -245,6 +246,7 @@ fn parse_participants(raw: &str) -> Vec<IrParticipant> {
             } else {
                 Some(p.display_name)
             },
+            country: None,
         })
         .collect()
 }

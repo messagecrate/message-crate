@@ -524,3 +524,50 @@ fn a_second_run_reuses_the_cancelled_flag_only_when_set() {
         .unwrap_err();
     assert_eq!(err.to_string(), "canceled");
 }
+
+/// `chat.db`'s `handle` table names the country Messages read each number
+/// in, and the conversation file carries it for the participant and the
+/// sender, upper case, so the server can read `07700 900123` as a UK number
+/// (#1994). A handle whose `country` is NULL names none.
+///
+/// The committed fixture `tests/fixtures/handle-country/chat.db` holds two
+/// one-to-one SMS conversations, each with one incoming message: one with
+/// handle `07700 900123`, `country` `gb`, and one with handle `07700 900456`,
+/// `country` NULL.
+#[test]
+fn a_handles_country_reaches_the_conversation_file() {
+    helper_binary();
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("chat.db");
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/handle-country/chat.db"),
+        &db_path,
+    )
+    .unwrap();
+    let output = dir.path().join("out");
+    config(&db_path, &output, CancelFlag::default())
+        .run(imessage_ir_exporter::run)
+        .unwrap();
+
+    let documents: Vec<ConversationDocument> = jsonl_files(&output)
+        .iter()
+        .map(|path| read_conversation_jsonl(path).unwrap())
+        .collect();
+    let in_chat = |chat_identifier: &str| {
+        documents
+            .iter()
+            .find(|d| d.conversation.chat_identifier == chat_identifier)
+            .unwrap_or_else(|| panic!("no conversation {chat_identifier}"))
+    };
+
+    let gb = in_chat("07700 900123");
+    assert_eq!(
+        gb.conversation.participants[0].country.as_deref(),
+        Some("GB")
+    );
+    assert_eq!(gb.messages[0].sender_country.as_deref(), Some("GB"));
+
+    let none = in_chat("07700 900456");
+    assert_eq!(none.conversation.participants[0].country, None);
+    assert_eq!(none.messages[0].sender_country, None);
+}

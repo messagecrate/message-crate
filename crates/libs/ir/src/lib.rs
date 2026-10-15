@@ -146,7 +146,7 @@ impl std::fmt::Display for UnknownDeletion {
 impl std::error::Error for UnknownDeletion {}
 
 /// Schema version written into every [`ConversationDocument`].
-pub const SCHEMA_VERSION: u32 = 14;
+pub const SCHEMA_VERSION: u32 = 15;
 
 /// One exported conversation: export metadata, conversation roster and
 /// stats, and messages.
@@ -278,6 +278,13 @@ pub struct IrParticipant {
     pub identity: Option<String>,
     /// Display name shown in UIs; `None` when the source has none.
     pub display_name: Option<String>,
+    /// The country the source read this identity in, as an upper-case ISO
+    /// 3166-1 alpha-2 code (`GB`): a phone number written without its `+`
+    /// code is a number in this country. `None`, and left out of the file,
+    /// when the source names none; Apple Messages names one from `chat.db`'s
+    /// `handle.country`, and no other source does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
 }
 
 /// Transport a message arrived on.
@@ -504,6 +511,11 @@ pub struct IrMessage {
     pub sender_identity: Option<String>,
     /// Display name of the actual sender.
     pub sender_display_name: Option<String>,
+    /// The country the source read the sender's identity in, as
+    /// [`IrParticipant::country`] says. `None`, and left out of the file,
+    /// when the source names none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sender_country: Option<String>,
     /// The owner's own address on this message: the one it was sent from
     /// (outgoing) or received at (incoming). `None` when the source knows
     /// only one owner address, which is then `export.owner_identity`.

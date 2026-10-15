@@ -356,6 +356,7 @@ fn chat_from_record(record: ConversationRecord) -> ChatInProgress {
             .map(|p| IrParticipant {
                 identity: Some(p.identity),
                 display_name: p.display_name,
+                country: p.country,
             })
             .collect(),
         owner_identity: String::new(),
@@ -377,17 +378,24 @@ fn message_to_ir(
         IrDirection::Incoming
     };
     let owner_identity = nonempty(&record.owner_identity);
-    let (sender_identity, sender_display_name) = match direction {
-        IrDirection::Outgoing => owner_sender(&ExportMeta {
-            source: EXPORT_SOURCE.into(),
-            tool: EXPORT_TOOL.into(),
-            tool_version: env!("CARGO_PKG_VERSION").into(),
-            owner_identity: (!record.owner_identity.is_empty())
-                .then(|| record.owner_identity.clone()),
-            owner_display_name: record.owner_display_name.clone(),
-            backup_taken_at_unix_ms: None,
-        }),
-        IrDirection::Incoming => (record.sender_identity, record.sender_display_name),
+    let (sender_identity, sender_display_name, sender_country) = match direction {
+        IrDirection::Outgoing => {
+            let (identity, name) = owner_sender(&ExportMeta {
+                source: EXPORT_SOURCE.into(),
+                tool: EXPORT_TOOL.into(),
+                tool_version: env!("CARGO_PKG_VERSION").into(),
+                owner_identity: (!record.owner_identity.is_empty())
+                    .then(|| record.owner_identity.clone()),
+                owner_display_name: record.owner_display_name.clone(),
+                backup_taken_at_unix_ms: None,
+            });
+            (identity, name, None)
+        }
+        IrDirection::Incoming => (
+            record.sender_identity,
+            record.sender_display_name,
+            record.sender_country,
+        ),
     };
 
     let mut loads = Vec::with_capacity(record.attachments.len());
@@ -411,6 +419,7 @@ fn message_to_ir(
         message_kind: IrMessageKind::parse(&record.message_kind),
         sender_identity,
         sender_display_name,
+        sender_country,
         owner_identity,
         subject: record.subject,
         text: record.text,
@@ -1120,6 +1129,7 @@ mod tests {
             message_kind: "imessage".into(),
             sender_identity: (!outgoing).then(|| "+15555550122".to_string()),
             sender_display_name: None,
+            sender_country: None,
             subject: None,
             text: "hi".into(),
             reactions: Vec::new(),
@@ -1343,6 +1353,7 @@ mod tests {
             message_kind: IrMessageKind::IMessage,
             sender_identity: Some("+15555550101".into()),
             sender_display_name: None,
+            sender_country: None,
             owner_identity: None,
             subject: None,
             text: "hi".into(),

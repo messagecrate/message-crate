@@ -367,6 +367,10 @@ pub async fn upsert_handle_row_in(
 /// Same as [`upsert_handle_row`], but skip the two SQL statements when this
 /// import already resolved the same identity. Third value is `true` on a
 /// cache hit so callers can skip leftover per-row work (sibling contact link).
+///
+/// A phone number written without its `+` code is read in `stated`, the
+/// country the conversation file names for this identity, else in the run's
+/// country ([`HandleIdCache::in_country`]).
 pub async fn upsert_handle_row_cached(
     conn: &mut SqliteConnection,
     cache: &mut HandleIdCache,
@@ -374,8 +378,10 @@ pub async fn upsert_handle_row_cached(
     raw: &str,
     handle_type: IdentityType,
     service: Option<&str>,
+    stated: Option<&'static phone::Country>,
 ) -> Result<(i64, bool, bool)> {
-    let normalized = normalize_handle(raw, handle_type, cache.country).key;
+    let country = stated.or(cache.country);
+    let normalized = normalize_handle(raw, handle_type, country).key;
     let platform = IdentityService::parse(service.unwrap_or(IdentityService::Phone.as_str()));
     let key = (
         account_id.to_string(),
@@ -387,7 +393,7 @@ pub async fn upsert_handle_row_cached(
         return Ok((id, false, true));
     }
     let (id, flagged) =
-        upsert_handle_row_in(conn, account_id, raw, handle_type, service, cache.country).await?;
+        upsert_handle_row_in(conn, account_id, raw, handle_type, service, country).await?;
     cache.ids.insert(key, id);
     Ok((id, flagged, false))
 }
@@ -740,6 +746,7 @@ mod tests {
             "+15555550100",
             IdentityType::Phone,
             Some("phone"),
+            None,
         )
         .await
         .unwrap();
@@ -750,6 +757,7 @@ mod tests {
             "+15555550100",
             IdentityType::Phone,
             Some("phone"),
+            None,
         )
         .await
         .unwrap();
