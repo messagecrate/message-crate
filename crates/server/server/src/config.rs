@@ -151,7 +151,7 @@ pub struct ServerConfig {
     #[serde(default = "default_server_bind")]
     pub bind: String,
     /// Largest multipart part, in bytes. Default
-    /// [`crate::asset_uploads::DEFAULT_PART_SIZE`]. The part size a client is
+    /// `asset_uploads::DEFAULT_PART_SIZE`. The part size a client is
     /// told is this or the attachment size limit, whichever is smaller. The
     /// limit is a Server Setting the owner changes in the app and has no key
     /// in this file.
@@ -162,8 +162,8 @@ pub struct ServerConfig {
     /// it; an upload (an import batch, an attachment, or a part of one) is
     /// the body large enough to meet it. An attachment upload nothing has been
     /// written to for this long, with no request to it running, is abandoned
-    /// and removed ([`crate::asset_store::sweep_incoming`]). Default 60. Must
-    /// be greater than 0.
+    /// and removed (`asset_store::sweep_incoming`). Default 60. Must be
+    /// greater than 0.
     #[serde(default = "default_upload_stall_secs")]
     pub upload_stall_secs: u64,
     /// Seconds a whole request body may take to arrive before the server
