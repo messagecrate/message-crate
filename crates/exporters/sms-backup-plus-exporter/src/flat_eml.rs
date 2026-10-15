@@ -127,6 +127,19 @@ impl MailHeaders {
     pub(crate) fn is_call_log(&self) -> bool {
         self.smssync_datatype == Datatype::CallLog
     }
+
+    /// True for a WhatsApp message SMS Backup+ backed up, which Message
+    /// Crate skips (#2912).
+    ///
+    /// Such a mail carries `X-smssync-type` too, holding WhatsApp's own
+    /// status number rather than an Android message type, so only
+    /// `X-smssync-datatype` tells it from a text message. It is not read as
+    /// WhatsApp either: SMS Backup+ removed the feature after two years
+    /// because it did not work for most people, it never covered group
+    /// chats, and its status number gives no direction.
+    pub(crate) fn is_whatsapp(&self) -> bool {
+        self.smssync_datatype == Datatype::WhatsApp
+    }
 }
 
 /// The addresses in an `X-smssync-address` header, once each by key, a
@@ -472,10 +485,10 @@ fn is_sent(headers: &MailHeaders, owner: &Owner) -> bool {
     owner.is_owner_email(addr_spec(&headers.from))
 }
 
-/// True when the EML is one SMS Backup+ message rather than unrelated mail
-/// or a call from the call log.
+/// True when the EML is one SMS Backup+ message rather than unrelated mail,
+/// a call from the call log, or a WhatsApp message.
 fn is_single_sms_eml(headers: &MailHeaders) -> bool {
-    if headers.is_call_log() {
+    if headers.is_call_log() || headers.is_whatsapp() {
         return false;
     }
     if !headers.smssync_type.is_empty() {

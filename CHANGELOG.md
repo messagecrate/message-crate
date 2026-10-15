@@ -821,6 +821,21 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-15: **An SMS Backup+ import skips the WhatsApp messages in it.**
+  From 2013 to 2015, SMS Backup+ also backed up WhatsApp messages. An
+  import read each one as a text message to or from its number, and could
+  show a message you received as one you sent. They are now skipped and
+  counted, as call log entries already were, and the summary says how
+  many, such as "Skipped 12 WhatsApp messages" (#2912).
+- 2026-10-15: **A damaged SMS Backup & Restore file is refused whole.** A
+  backup file cut off or damaged partway was imported up to the damage, and
+  only when its owner's phone number was given; without one, it was refused
+  with a message about the phone number, so Settings → Convert could not
+  read it at all. Now an import and Convert both refuse such a file with the
+  same message: the file is not valid XML, where, and why. Nothing is
+  imported from it, so a person fetches a good copy rather than import half
+  a backup without noticing. A single message that cannot be kept in a good
+  file is still skipped and counted, and the rest comes in (#2028).
 - 2026-10-15: **The Import form checks an Android backup path's kind.**
   SMS Backup & Restore takes one `.xml` file, and GO SMS Pro and SMS
   Backup+ take a directory. A path of the other kind, or one that does not

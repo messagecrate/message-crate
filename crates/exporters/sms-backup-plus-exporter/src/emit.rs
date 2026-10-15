@@ -111,6 +111,13 @@ pub(crate) const SKIPPED_CALL_LOG: Counter = Counter::new(
     "Skipped {n} call log entries",
 );
 
+/// WhatsApp messages SMS Backup+ backed up, skipped.
+pub(crate) const SKIPPED_WHATSAPP: Counter = Counter::new(
+    "skipped_whatsapp",
+    "Skipped 1 WhatsApp message",
+    "Skipped {n} WhatsApp messages",
+);
+
 /// Mails skipped because SMS Backup+ did not write them.
 pub(crate) const SKIPPED_NOT_SMS_BACKUP_PLUS: Counter = Counter::new(
     "skipped_not_sms_backup_plus",
@@ -663,6 +670,7 @@ impl<'a> EmlIngest<'a> {
             }
             ParsedEmlKind::FlatNoDate => self.report.skipped_invalid_date += 1,
             ParsedEmlKind::CallLog => self.report.bump(SKIPPED_CALL_LOG, 1),
+            ParsedEmlKind::WhatsApp => self.report.bump(SKIPPED_WHATSAPP, 1),
             ParsedEmlKind::NotSms => self.report.bump(SKIPPED_NOT_SMS_BACKUP_PLUS, 1),
             ParsedEmlKind::IoError { path, reason } => self.report.error(
                 ItemKind::File,
