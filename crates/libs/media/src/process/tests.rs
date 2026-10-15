@@ -2027,10 +2027,11 @@ fn a_joined_mp3_whose_header_states_under_half_its_length_converts() {
     };
     let dir = tempfile::tempdir().unwrap();
     let src = joined_mp3(&tools, dir.path());
-    assert_eq!(
-        crate::probe::played_for(&tools, &src, None),
-        Some(std::time::Duration::from_secs(1)),
-        "ffprobe trusts the first part's header"
+    // About a second: ffmpeg versions count the encoder's padding apart.
+    let stated = crate::probe::played_for(&tools, &src, None);
+    assert!(
+        stated.is_some_and(|length| length < std::time::Duration::from_secs(2)),
+        "ffprobe trusts the first part's header: {stated:?}"
     );
     let dest = dir.path().join("joined.mp3.in_progress");
 
