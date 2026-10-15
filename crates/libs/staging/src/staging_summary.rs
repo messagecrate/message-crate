@@ -139,8 +139,8 @@ pub struct SummaryProgress {
 /// bytes, no forecast row. Such an attachment is settled whether or not its
 /// `path` still points at a file on disk (a `convert_failed` original keeps
 /// its path so a resume can retry it, but it has already been flagged and
-/// must not be forecast again). The same is true for an attachment with no `path`, or whose
-/// recorded file is not on disk.
+/// must not be forecast again). An attachment with no `path`, or whose
+/// recorded file is not on disk, is also counted and goes no further.
 ///
 /// Everything else reads its length from disk (never the document's stale
 /// `size_bytes`). A recorded path whose stem already ends in `-mv` names a

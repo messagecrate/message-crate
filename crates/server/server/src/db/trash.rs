@@ -4,8 +4,8 @@
 //! it points at is untouched until [`delete_trashed`] or [`empty_trash`]
 //! removes it for good (or [`purge_account`] and account deletion clear the
 //! markers along with everything else). Both marker operations first check
-//! that the target row belongs to `account_id` explicitly, through
-//! [`crate::db::ownership`], rather than inferring ownership from whether an
+//! explicitly, through [`crate::db::ownership`], that the target row belongs
+//! to `account_id`, rather than inferring ownership from whether an
 //! insert or delete affected a row. That is what lets [`restore`] tell "not
 //! this account's id" (`false`) apart from "this account's id, and it was not
 //! trashed" (`true`, a no-op): a `DELETE` that matches zero rows looks

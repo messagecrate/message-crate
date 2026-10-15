@@ -163,7 +163,7 @@ pub async fn summarize_staging(
     .map_err(|join_error| format!("summarize_staging did not complete: {join_error}"))?
 }
 
-/// `count == 1` ? "" : "s": the only pluralization these summaries need.
+/// The only pluralization these summaries need: `""` for one, `"s"` otherwise.
 fn plural_s(count: usize) -> &'static str {
     if count == 1 { "" } else { "s" }
 }

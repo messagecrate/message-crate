@@ -970,8 +970,9 @@ fn window_sides(
 /// One page of a conversation's messages, in the order `order` names, at the
 /// place `window` names: `page.limit` messages, starting at `page.offset`
 /// for [`MessageWindow::Offset`]. `None` when the conversation does not exist or
-/// belongs to another account. That is checked before the message query runs, so an
-/// unknown id and another account's conversation id are indistinguishable
+/// belongs to another account. That is checked before the message query
+/// runs, so an unknown id and another account's conversation id are
+/// indistinguishable
 /// from the outside, the same guarantee
 /// [`get_conversation_summary`](crate::db::conversations::get_conversation_summary)
 /// gives.

@@ -51,11 +51,11 @@ pub enum ApiError {
     PayloadTooLarge,
     /// `401 Unauthorized`: a username, password or current-password check failed.
     InvalidCredentials(String),
-    /// `401 Unauthorized`: no usable bearer token: none sent, or a header that is not
-    /// `Bearer <token>`.
+    /// `401 Unauthorized`: no usable bearer token (none sent, or a header that
+    /// is not `Bearer <token>`).
     AuthenticationRequired(String),
-    /// `401 Unauthorized`: a bearer token was sent and refused: unknown, expired, or its
-    /// account is gone. An `authentication-required` whose challenge names
+    /// `401 Unauthorized`: a bearer token was sent and refused because it is
+    /// unknown, expired, or its account is gone. An `authentication-required` whose challenge names
     /// `error="invalid_token"` (RFC 6750, section 3.1).
     TokenRefused(String),
     /// `409 Conflict`: the username already belongs to an account.

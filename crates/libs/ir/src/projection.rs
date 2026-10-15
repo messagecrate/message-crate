@@ -524,8 +524,8 @@ pub fn default_participants(
     {
         if crate::name_of_chat_id(chat_id).is_some() {
             // The source named this person and recorded no address for them,
-            // so the chat id is made from the name. That name is not something
-            // to store as an identity.
+            // so the chat id is made from the name. That chat id is not
+            // something to store as an identity.
             participants.push(Participant {
                 identity: None,
                 display_name: conversation.first_contact_name(),
