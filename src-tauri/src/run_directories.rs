@@ -241,7 +241,10 @@ impl RunDirectories {
                 directory = root.join(format!("{base}-{n}"));
                 continue;
             }
-            match std::fs::create_dir(&directory) {
+            // Owner-only whatever the umask: the run's staged conversations
+            // go in it (#2969). The Staging Directory is the person's and
+            // keeps its mode.
+            match file_io::create_dir_owner_only(&directory) {
                 Ok(()) => break,
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                     n += 1;
@@ -570,6 +573,29 @@ mod tests {
         assert_eq!(run, root.join("staging-iphone-ios-261002-101500"));
         assert_eq!(again, root.join("staging-iphone-ios-261002-101500-2"));
         assert!(run.join(EXPORT_SENTINEL).is_file());
+    }
+
+    /// A run directory holds the conversations it staged until the run ends,
+    /// so no other user of the computer may read it, whatever the umask
+    /// (#2969). The Staging Directory itself is the person's and keeps its
+    /// mode.
+    #[cfg(unix)]
+    #[test]
+    fn a_run_directory_is_its_owner_s_alone() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let scratch = Scratch::new();
+        let root = tempfile::tempdir().unwrap();
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o755)).unwrap();
+        scratch
+            .directories
+            .set_root(root.path().to_str().unwrap())
+            .unwrap();
+
+        let run = scratch.directories.create("imessage-ios", NOW).unwrap();
+
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&run), 0o700);
+        assert_eq!(mode(root.path()), 0o755);
     }
 
     #[test]

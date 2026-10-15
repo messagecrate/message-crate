@@ -677,6 +677,13 @@ carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-15: **The app starts its own Message Crate again after it stops.**
+  When the Message Crate the desktop app started for itself stopped on its
+  own, as in a crash, the login card said it stopped and waited for you to
+  press Retry, and an Upload in progress lost its server until then. The app
+  now starts it again by itself. A Message Crate that stops four times
+  within ten minutes is not started a fifth time: the login card then says
+  so, and Retry tries again (#2089).
 - 2026-10-14: **A failed Staging, Media Stage, Export or Convert, or a
   paused Upload, says what went wrong in a sentence.** A full disk, a file
   Message Crate is not allowed to use, a missing file, and an ended session
@@ -784,6 +791,12 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-15: **Other users of the computer can no longer read a staged
+  Import Run.** Each Import Run's directory in the Staging Directory, which
+  holds the conversations and attachments it staged until the run ends, could
+  be read by every other user of the same computer on macOS and Linux. It is
+  now made so that only you can open it. The Staging Directory itself keeps
+  the permissions it has (#2969).
 - 2026-10-12: **A wrong iPhone backup password names the field to fix.** A
   password that does not open an encrypted iPhone backup is now refused with
   "The Encryption password is incorrect.", in the same words as the other

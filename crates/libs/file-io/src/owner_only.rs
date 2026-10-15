@@ -1,6 +1,8 @@
 //! Directories and files that only the user who owns them can read: the
 //! Data Directory, the database and its `-wal` and `-shm` files, and the
-//! Logs Directories, because they hold every account's messages (#2097).
+//! Logs Directories, because they hold every account's messages (#2097), and
+//! each Import Run's directory in the Staging Directory, because it holds the
+//! conversations the run staged (#2969).
 //!
 //! The rule is Unix permission bits: a directory is `0700` and a file `0600`
 //! less whatever the owner's own bits already leave out. A directory no other
@@ -37,6 +39,25 @@ pub fn create_dir_all_owner_only(dir: &Path) -> io::Result<()> {
     #[cfg(not(unix))]
     {
         std::fs::create_dir_all(dir)
+    }
+}
+
+/// Make the one directory `dir`, readable by its owner alone (`0700`). The
+/// directory above it must be there.
+///
+/// # Errors
+///
+/// Returns the error `create_dir` would, `AlreadyExists` among them when
+/// `dir` is already there.
+pub fn create_dir_owner_only(dir: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt as _;
+        std::fs::DirBuilder::new().mode(0o700).create(dir)
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::create_dir(dir)
     }
 }
 
@@ -89,7 +110,7 @@ mod tests {
     use std::os::unix::fs::PermissionsExt as _;
     use std::path::Path;
 
-    use super::{create_dir_all_owner_only, owner_only, restrict_to_owner};
+    use super::{create_dir_all_owner_only, create_dir_owner_only, owner_only, restrict_to_owner};
 
     fn mode(path: &Path) -> u32 {
         fs::metadata(path).unwrap().permissions().mode() & 0o777
@@ -102,6 +123,18 @@ mod tests {
         create_dir_all_owner_only(&inner).unwrap();
         assert_eq!(mode(&root.path().join("data")), 0o700);
         assert_eq!(mode(&inner), 0o700);
+    }
+
+    #[test]
+    fn the_one_directory_it_makes_is_its_owner_s_alone_and_must_be_new() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("staging-run");
+        create_dir_owner_only(&dir).unwrap();
+        assert_eq!(mode(&dir), 0o700);
+        assert_eq!(
+            create_dir_owner_only(&dir).unwrap_err().kind(),
+            std::io::ErrorKind::AlreadyExists
+        );
     }
 
     #[test]
