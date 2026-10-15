@@ -285,8 +285,9 @@ fn stages_attachment_files(options: &ExportOptions) -> bool {
 }
 
 /// Read events until the program says the export is done, grouping messages
-/// by conversation. Cancel is checked on every event so a cancelled run
-/// stops within one message.
+/// by conversation. Cancel is checked on every event, and the helper kills
+/// the program on Cancel while it waits for one, so a cancelled run stops
+/// even while the program sends nothing.
 fn collect(helper: &mut Helper, options: &ExportOptions) -> Result<Collected> {
     let mut conversations: BTreeMap<String, ChatInProgress> = BTreeMap::new();
     let mut encrypted = false;

@@ -791,6 +791,12 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-15: **Cancel stops an Apple Messages import that has gone
+  quiet.** Cancel took effect only when the program that reads Apple
+  Messages next reported something, so during a long silent step, such as
+  decrypting a large encrypted backup, the import kept going, and a reader
+  stuck on a backup whose disk went away ran until the app closed. Cancel
+  now stops the reader at once, whatever it is doing (#2085).
 - 2026-10-15: **Other users of the computer can no longer read a staged
   Import Run.** Each Import Run's directory in the Staging Directory, which
   holds the conversations and attachments it staged until the run ends, could

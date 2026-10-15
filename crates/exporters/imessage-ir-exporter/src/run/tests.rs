@@ -302,6 +302,47 @@ fn rows_the_program_skipped_are_counted_in_the_run_result() {
     );
 }
 
+/// Cancel stops a run while the program sends nothing, and the run
+/// returns `canceled` (#2085). The program says it is reading and then goes
+/// quiet for good; the run's log sink sets cancel when that line arrives,
+/// so cancel is set while the program is running and silent.
+#[cfg(unix)]
+#[test]
+fn cancel_stops_a_run_whose_program_has_gone_quiet() {
+    use imessage_reader_protocol::PROTOCOL_VERSION;
+    use ios_backup::testutil::{fake_helper, source_line};
+    use message_crate_core::Cancelled;
+    use std::sync::{Arc, atomic::Ordering};
+
+    let dir = tempfile::tempdir().unwrap();
+    let chat = dir.path().join("chat.db");
+    fs::write(&chat, b"sqlite").unwrap();
+    let body = format!(
+        "{}\necho '{{\"event\":\"log\",\"line\":\"reading\"}}'\nexec sleep 100000",
+        source_line(PROTOCOL_VERSION)
+    );
+    let program = fake_helper(dir.path(), &body);
+    let mut config = apple_cfg(
+        &chat,
+        AppleConfig {
+            platform: Some(ApplePlatform::MacOs),
+            ..AppleConfig::default()
+        },
+    );
+    let cancel = Arc::clone(&config.context.cancel);
+    config.context.log = LogSink::new(move |line| {
+        if line == "reading" {
+            cancel.store(true, Ordering::Relaxed);
+        }
+    });
+
+    let err = run_config(&config, |request, log, progress| {
+        Helper::spawn_at(&program, request, log, progress)
+    })
+    .unwrap_err();
+    assert!(err.downcast_ref::<Cancelled>().is_some(), "{err:#}");
+}
+
 #[cfg(unix)]
 #[test]
 fn a_run_with_no_skipped_rows_says_nothing_about_them() {
