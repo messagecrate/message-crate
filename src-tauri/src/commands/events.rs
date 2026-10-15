@@ -2,7 +2,8 @@
 //!
 //! The core library has a similar error type, but it cannot be sent through
 //! Tauri because it is not serializable. Each struct has the same name and
-//! fields as its TypeScript type in `web/src/lib/types.ts`.
+//! fields as its TypeScript type in `web/src/lib/types.ts`, and the tests in
+//! `events/fixture.rs` check that they agree.
 //!
 //! Every desktop job (an Import Run's stages, an Export, a Convert) reports on
 //! the same `desktop-job:*` channels. The payloads only an Import Run sends are
@@ -256,6 +257,16 @@ pub struct ImportFileDoneEvent {
     pub status: String,
 }
 
+impl ImportFileDoneEvent {
+    /// The Upload's word for what it did with `file`.
+    pub(crate) fn new(file: String, status: message_crate_import::FileStatus) -> Self {
+        Self {
+            file,
+            status: status.as_str().into(),
+        }
+    }
+}
+
 /// Staging's write queue finished with one conversation file. The window
 /// keeps a Staging row about a conversation apart until its file is written,
 /// and drops an earlier part's row about a file this Staging wrote again
@@ -374,6 +385,9 @@ where
         window(text.to_string());
     })
 }
+
+#[cfg(test)]
+mod fixture;
 
 #[cfg(test)]
 mod tests {
