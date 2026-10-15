@@ -33,6 +33,7 @@ libc = "0.2"
 # the Unicode lower() the server registers on every SQLite connection.
 libsqlite3-sys = { version = "0.38", default-features = false, features = ["bundled"] }
 media = { path = "../../libs/media" }
+message-csv = { path = "../../libs/csv" }
 message-ir = { workspace = true }
 phone = { workspace = true }
 rand = "0.10.2"
