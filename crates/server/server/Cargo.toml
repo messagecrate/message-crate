@@ -13,8 +13,9 @@ argon2 = "0.6.0"
 axum = "0.8.9"
 http-body = "1"
 # The HTTP/1.1 connection `axum::serve` builds, built here with a timer so
-# a connection is held to a header read limit (`connections.rs`, #2100).
-hyper = { version = "1", features = ["server", "http1"] }
+# a connection is held to a header read limit (`connections.rs`, #2100), and
+# the one `healthcheck` sends its request over (`healthcheck.rs`, #2065).
+hyper = { version = "1", features = ["server", "client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio", "service"] }
 http-body-util = "0.1"
 chrono = { workspace = true }
