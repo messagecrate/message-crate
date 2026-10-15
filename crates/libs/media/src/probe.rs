@@ -2,7 +2,8 @@
 //! Media Stage's compression, and the check whether a browser plays an MP4.
 //! [`probe_media`] is the one place that reads a file's shape, so all three
 //! judge a file the same way. [`played_for`] reads how long a file plays,
-//! so the ffmpeg run that converts it is stopped when it runs past twice that.
+//! so the ffmpeg run that converts a video is stopped when it runs past
+//! twice that, and one that converts audio gets a time limit by it.
 
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
@@ -91,8 +92,8 @@ const ESTIMATED_LENGTH: &str = "Estimating duration from bitrate";
 
 /// The length ffprobe answered on stdout, unless what it said on stderr
 /// shows it only estimated it. An estimate from the first frames can come
-/// out under half the real length, and a conversion past twice the length
-/// is stopped as looping (#2898).
+/// out under half the real length, and a video conversion past twice the
+/// length is stopped as looping (#2898).
 fn length_read(answer: &str, said: &str) -> Option<Duration> {
     if said.contains(ESTIMATED_LENGTH) {
         return None;
