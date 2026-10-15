@@ -1450,9 +1450,9 @@ cuts from `AppState` with `FromRef`: `ImportState`, `AssetState`,
 Run reads. The credential extractors (`AuthIdentity`, `FullAccess`, `Owner`
 and the rest) read only the pool, so they work under any router state that
 has one. Why: a handler's signature then names everything it reads, so a
-reader sees what it depends on without reading its body, and a change to the
-Demo Account build or the media queue leaves a handler that never names them
-alone.
+reader sees its dependencies without reading its body. A change to the Demo
+Account build or to `Importer` does not touch a handler that never takes
+them.
 
 A `db/` function never returns `ApiError`. It returns `anyhow` or `sqlx`
 errors when a statement is all that can fail, and an error type in `db/` when

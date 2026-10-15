@@ -11,6 +11,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 
 use crate::asset_store::Abandonment;
 use crate::assets_api::{self, AssetError, Sha256, StoredAsset};
@@ -77,7 +78,7 @@ impl UploadLimits {
 /// The attachment size limit as the Server Settings hold it at this moment,
 /// in bytes. Read on every request that needs it, so a change the owner makes
 /// holds for the next upload with no restart.
-pub(crate) async fn asset_max_bytes(db: &sqlx::SqlitePool) -> anyhow::Result<u64> {
+pub(crate) async fn asset_max_bytes(db: &SqlitePool) -> Result<u64> {
     let mut conn = db.acquire().await?;
     Ok(crate::db::server_settings::load(&mut conn)
         .await?
