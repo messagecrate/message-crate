@@ -559,27 +559,26 @@ alone told them it was up while every page failed. The desktop app's watch
 on its own server asks `GET /v1/server`, which reads the database, so the two
 disagreed ([#2202](https://github.com/messagecrate/message-crate/issues/2202)).
 
-Why `SELECT 1` and a short limit: `SELECT 1` reads no table, so it never
-waits on an import's write lock, and the limit stays under the time
-`message-crate-server healthcheck` gives each address it asks (4 seconds,
-or 2 each when it asks both 127.0.0.1 and ::1), so a failure arrives as the
+Why `SELECT 1` and a short limit: `SELECT 1` reads no table, so it never waits
+on an import's write lock, and the limit stays under the time
+`message-crate-server healthcheck` gives each address it asks (4 seconds, or 2
+each when it asks both 127.0.0.1 and ::1), so a failure arrives as the
 server's answer. HTTP imports hold at most `MAX_CONCURRENT_IMPORTS`
 (`imports_api/run_control.rs`) of the pool's `max_connections`
-(`db/engine.rs`), but requests that write wait on SQLite's busy timeout
-while an import holds the write lock, and enough of them can take every
-connection for that long. The
-check fails then, though a `/v1` read would wait for a connection and get
-one. One failure does not mark the container unhealthy, because Docker needs
-three in a row 30 seconds apart. When `/health` answers with an error, the
-login card asks once more three seconds later and shows Disconnected only
-when both fail, as the desktop app's watch on its own server needs two
-failed checks in a row
-(`checkServerHealthWithRetry` in `web/src/lib/serverHealth.ts`,
+(`db/engine.rs`), but requests that write wait on SQLite's busy timeout while
+an import holds the write lock, and enough of them can take every connection
+for that long. The check fails then, though a `/v1` read would wait for a
+connection and get one. One failure does not mark the container unhealthy,
+because Docker needs three in a row 30 seconds apart. When `/health` answers
+with an error, the login card asks once more three seconds later and shows
+Disconnected only when both fail, as the desktop app's watch on its own server
+needs two failed checks in a row (`checkServerHealthWithRetry` in
+`web/src/lib/serverHealth.ts`,
 [#2718](https://github.com/messagecrate/message-crate/issues/2718)). A pool
-taken for longer than that, up to the 15-second busy timeout, still fails
-both probes, and the card shows Disconnected until its next probe finds the
-server. That is accepted: while every connection is taken, the card's own
-login would wait as well.
+taken for longer than that, up to the 15-second busy timeout, still fails both
+probes, and the card shows Disconnected until its next probe finds the server.
+That is accepted: while every connection is taken, the card's own login would
+wait as well.
 
 Rejected: `503 Service Unavailable` for `/health`. A server that cannot reach
 its own database is the `500 Internal Server Error` no page could help with.

@@ -4,7 +4,8 @@
 //! The handlers are in this module. Its submodules hold the rest of the
 //! import:
 //!
-//! - `dto` holds the routes' request and response types.
+//! - `dto` holds the routes' request and response types and the checks on
+//!   their fields.
 //! - `pipeline` imports JSONL into the database without HTTP.
 //! - `staging` parses the files into staging rows, the pipeline's first
 //!   stage.
@@ -19,6 +20,7 @@
 //! - `run_control` holds the import slots, and runs a batch or a run's end
 //!   in one.
 //! - `batch_bodies` says where a batch's body is written while it is read.
+
 use axum::extract::{Request, State};
 use axum::http::HeaderMap;
 use message_crate_api_types::{ImportMode, MAX_IMPORT_BATCH_BYTES};
