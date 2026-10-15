@@ -14,7 +14,7 @@ use crate::{
     Attachment, ConversationDocument, ConversationMeta, ConversationStats, ConversationType,
     Deletion, Direction, EarlierVersion, ExportMeta, Message, MessageCopy, MessageGuid,
     MessageIdentity, MessageKind, Participant, PendingAttachment, PendingConversation,
-    PendingMessage, Reaction, ReplyTo, SCHEMA_VERSION, Source, TimePrecision, Transport,
+    PendingMessage, Reaction, ReplyTo, SCHEMA_VERSION, TimePrecision, Transport, VendorFields,
     format_local_ts, one_copy_per_message, owner_sender,
 };
 use std::collections::{BTreeMap, HashMap};
@@ -91,7 +91,7 @@ pub struct PendingReply {
 /// reasons. Each message keeps `chat.db`'s own `guid` as its guid, because
 /// that is the name the database's replies (`thread_originator_guid`, read
 /// into [`Message::reply_to`]) and tapbacks (`associated_message_guid`,
-/// read into [`Imessage::associated_guid`](crate::Imessage)) give the
+/// read into [`ImessageExtensions::associated_guid`](crate::ImessageExtensions)) give the
 /// message they point at; a [`MessageGuid`] made here would leave every one
 /// of them pointing at nothing. And the dedupe step has nothing to do there:
 /// `chat.db` holds each message once, as one row with a `guid` no other
@@ -104,8 +104,8 @@ pub trait ProjectionHooks {
     fn service(&self, message: &PendingMessage) -> Transport;
 
     /// Vendor leftovers for one message. The projection applies
-    /// [`Source::into_option`], so an empty bag becomes `None`.
-    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> Source;
+    /// [`VendorFields::into_option`], so an empty bag becomes `None`.
+    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> VendorFields;
 
     /// Normalize a raw non-owner sender handle (e.g. guard phone digits).
     /// The default keeps the handle as-is.
@@ -610,8 +610,12 @@ mod tests {
             Transport::Sms
         }
 
-        fn source(&self, _conversation: &PendingConversation, _message: &PendingMessage) -> Source {
-            Source::default()
+        fn source(
+            &self,
+            _conversation: &PendingConversation,
+            _message: &PendingMessage,
+        ) -> VendorFields {
+            VendorFields::default()
         }
     }
 
@@ -645,8 +649,12 @@ mod tests {
             Transport::Whatsapp
         }
 
-        fn source(&self, _conversation: &PendingConversation, _message: &PendingMessage) -> Source {
-            Source::default()
+        fn source(
+            &self,
+            _conversation: &PendingConversation,
+            _message: &PendingMessage,
+        ) -> VendorFields {
+            VendorFields::default()
         }
 
         fn reply_key(&self, message: &PendingMessage) -> Option<String> {
@@ -884,7 +892,11 @@ mod tests {
             TestHooks.service(message)
         }
 
-        fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> Source {
+        fn source(
+            &self,
+            conversation: &PendingConversation,
+            message: &PendingMessage,
+        ) -> VendorFields {
             TestHooks.source(conversation, message)
         }
 

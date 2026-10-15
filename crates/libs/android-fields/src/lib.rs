@@ -9,11 +9,11 @@
 //! copies it as it is, so SMS Backup+ reads an MMS's date with
 //! [`unix_secs_from_date_secs`], which holds it to the same rule.
 //!
-//! GO SMS Pro and SMS Backup+ build a message's [`Source`] with
+//! GO SMS Pro and SMS Backup+ build a message's [`VendorFields`] with
 //! [`android_source`], and SMS Backup & Restore and SMS Backup+ read an
 //! attachment's name with [`valid_filename`].
 
-use message_ir::{PendingConversation, PendingMessage, Source};
+use message_ir::{PendingConversation, PendingMessage, VendorFields};
 use serde_json::{Map, Value};
 
 /// The last millisecond of the year 9999, the latest `date` read as real.
@@ -76,7 +76,7 @@ fn parse_android_type(s: &str) -> Option<i32> {
     s.trim().parse().ok()
 }
 
-/// The [`Source`] of one message from an Android backup: `fields`
+/// The [`VendorFields`] of one message from an Android backup: `fields`
 /// with the conversation title added as `android_group_title`, and the
 /// message's `android_type` extra read with `parse_android_type`. The
 /// title is stored as data only; filenames do not use it.
@@ -84,7 +84,7 @@ pub fn android_source(
     conversation: &PendingConversation,
     msg: &PendingMessage,
     mut fields: Map<String, Value>,
-) -> Source {
+) -> VendorFields {
     if let Some(title) = conversation
         .display_name
         .as_deref()
@@ -95,7 +95,7 @@ pub fn android_source(
             Value::String(title.to_string()),
         );
     }
-    Source {
+    VendorFields {
         android_type: parse_android_type(msg.extra_str("android_type")),
         fields,
     }

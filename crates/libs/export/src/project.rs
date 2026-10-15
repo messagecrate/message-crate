@@ -12,9 +12,9 @@ use chrono::{DateTime, NaiveDateTime};
 // `IrAttachment`.
 use message_ir::{
     Attachment as IrAttachment, ConversationDocument, ConversationMeta, ConversationStats,
-    ConversationType, Deletion, Direction, EarlierVersion, ExportMeta, Imessage,
-    Message as IrMessage, MessageKind, Participant, Reaction, ReplyTo, SCHEMA_VERSION, Source,
-    TimePrecision, Transport,
+    ConversationType, Deletion, Direction, EarlierVersion, ExportMeta, ImessageExtensions,
+    Message as IrMessage, MessageKind, Participant, Reaction, ReplyTo, SCHEMA_VERSION,
+    TimePrecision, Transport, VendorFields,
 };
 use serde_json::json;
 
@@ -133,7 +133,7 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
         guid: reply_to.guid.clone(),
         part_index: reply_to.part_index.and_then(|n| u32::try_from(n).ok()),
     });
-    let imessage = Imessage {
+    let imessage = ImessageExtensions {
         // An announcement with no text carries no information, so drop it.
         announcement: msg
             .is_announcement
@@ -172,7 +172,7 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
             .with_context(|| format!("message {} earlier versions", msg.id))?,
         reply_to,
         imessage: imessage.into_option(),
-        source: Source {
+        source: VendorFields {
             android_type: None,
             fields: source_fields,
         }

@@ -2,8 +2,8 @@
 
 use crate::{
     Attachment, ConversationDocument, ConversationMeta, ConversationStats, ConversationType,
-    Deletion, Direction, EarlierVersion, ExportMeta, Imessage, Message, MessageKind, Participant,
-    Reaction, ReplyTo, SCHEMA_VERSION, Source, Transport,
+    Deletion, Direction, EarlierVersion, ExportMeta, ImessageExtensions, Message, MessageKind,
+    Participant, Reaction, ReplyTo, SCHEMA_VERSION, Transport, VendorFields,
 };
 use serde_json::json;
 
@@ -69,7 +69,7 @@ pub fn sample_document(text: &str) -> ConversationDocument {
             edits: vec![],
             reply_to: None,
             imessage: None,
-            source: Some(Source {
+            source: Some(VendorFields {
                 android_type: Some(1),
                 fields: {
                     let mut m = serde_json::Map::new();
@@ -169,10 +169,10 @@ pub fn sample_imessage_document() -> ConversationDocument {
                     guid: Some("parent-guid-1111".into()),
                     part_index: Some(0),
                 }),
-                imessage: Some(Imessage {
+                imessage: Some(ImessageExtensions {
                     send_effect: Some("Sent with Balloons".into()),
                     parts: Some(json!([{"index": 0, "kind": "run", "text": "hello imessage"}])),
-                    ..Imessage::default()
+                    ..ImessageExtensions::default()
                 }),
                 source: None,
             },
@@ -194,12 +194,12 @@ pub fn sample_imessage_document() -> ConversationDocument {
                 deletion: None,
                 edits: vec![],
                 reply_to: None,
-                imessage: Some(Imessage {
+                imessage: Some(ImessageExtensions {
                     associated_guid: Some("parent-guid-1111".into()),
                     associated_part: Some(0),
                     tapback_kind: Some("loved".into()),
                     tapback_action: Some("add".into()),
-                    ..Imessage::default()
+                    ..ImessageExtensions::default()
                 }),
                 source: None,
             },

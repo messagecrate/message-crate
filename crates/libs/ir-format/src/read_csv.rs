@@ -6,8 +6,9 @@ use anyhow::{Context, Result, bail};
 use message_csv::{AttachmentCell, ParticipantCell, read_cell};
 use message_ir::{
     Attachment, ConversationDocument, ConversationHeader, ConversationMeta, ConversationStats,
-    ConversationType, Direction, EarlierVersion, ExportMeta, Imessage, Message, MessageKind,
-    Participant, Reaction, ReplyTo, SCHEMA_VERSION, TimePrecision, Transport, nonempty,
+    ConversationType, Direction, EarlierVersion, ExportMeta, ImessageExtensions, Message,
+    MessageKind, Participant, Reaction, ReplyTo, SCHEMA_VERSION, TimePrecision, Transport,
+    nonempty,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -144,7 +145,7 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         let s = get("associated_part");
         if s.is_empty() { None } else { s.parse().ok() }
     };
-    let imessage = imessage_from_parts(Imessage {
+    let imessage = imessage_from_parts(ImessageExtensions {
         send_effect: nonempty(get("send_effect")),
         shared_location: nonempty(get("shared_location")),
         announcement: nonempty(get("announcement")),

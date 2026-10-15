@@ -27,8 +27,8 @@ use message_crate_core::{
 };
 use message_ir::{
     Attachment, ConversationDocument, ConversationMeta, ConversationType, Direction, ExportMeta,
-    Imessage, Message, MessageKind, Participant, SCHEMA_VERSION, Transport, missing_reason,
-    nonempty, owner_sender,
+    ImessageExtensions, Message, MessageKind, Participant, SCHEMA_VERSION, Transport,
+    missing_reason, nonempty, owner_sender,
 };
 use message_ir_format::FormatSink;
 use message_staging::{
@@ -459,8 +459,8 @@ fn message_to_ir(
 ///
 /// The record is destructured without `..`, so a field added to the
 /// reader's `Imessage` fails to compile here until it is carried, just as a
-/// field added to `Imessage` does.
-fn imessage_to_ir(fields: ImessageRecord) -> Imessage {
+/// field added to `ImessageExtensions` does.
+fn imessage_to_ir(fields: ImessageRecord) -> ImessageExtensions {
     let ImessageRecord {
         send_effect,
         shared_location,
@@ -476,7 +476,7 @@ fn imessage_to_ir(fields: ImessageRecord) -> Imessage {
         tapback_emoji,
         tapback_action,
     } = fields;
-    Imessage {
+    ImessageExtensions {
         send_effect,
         shared_location,
         announcement,

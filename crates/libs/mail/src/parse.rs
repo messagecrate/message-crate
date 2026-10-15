@@ -5,8 +5,8 @@ use crate::{MailAttachment, MailMessage, Participant};
 use anyhow::{Context, Result, bail};
 use mailparse::{MailHeader, MailHeaderMap, ParsedMail};
 use message_ir::{
-    Deletion, Direction, EarlierVersion, Imessage, Message, MessageKind, Reaction, ReplyTo, Source,
-    TimePrecision, Transport,
+    Deletion, Direction, EarlierVersion, ImessageExtensions, Message, MessageKind, Reaction,
+    ReplyTo, TimePrecision, Transport, VendorFields,
 };
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -122,7 +122,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
         let android_type =
             typed_header(headers, hn::ANDROID_TYPE).and_then(|s| s.parse::<i32>().ok());
         let fields = json_header(headers, hn::SOURCE_FIELDS, "source fields")?.unwrap_or_default();
-        let src = Source {
+        let src = VendorFields {
             android_type,
             fields,
         };
@@ -134,7 +134,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     };
 
     let imessage = {
-        let bag = Imessage {
+        let bag = ImessageExtensions {
             send_effect: optional_header(headers, hn::SEND_EFFECT),
             shared_location: optional_header(headers, hn::SHARED_LOCATION),
             announcement: optional_header(headers, hn::ANNOUNCEMENT),
@@ -496,7 +496,7 @@ mod tests {
                 sender_identity: Some("+15555550100".into()),
                 sender_display_name: Some("Me".into()),
                 text: "hello roundtrip".into(),
-                source: Some(Source {
+                source: Some(VendorFields {
                     android_type: Some(2),
                     fields: serde_json::from_str(r#"{"address":"+15555550101"}"#).unwrap(),
                 }),
@@ -567,7 +567,7 @@ mod tests {
             guid: Some("parent-guid-1111".into()),
             part_index: Some(1),
         };
-        let imessage = message_ir::Imessage {
+        let imessage = message_ir::ImessageExtensions {
             send_effect: Some("Sent with Balloons".into()),
             shared_location: Some("Cupertino".into()),
             announcement: Some("named the conversation".into()),
@@ -613,7 +613,7 @@ mod tests {
                 edits: edits.clone(),
                 reply_to: Some(reply_to.clone()),
                 imessage: Some(imessage.clone()),
-                source: Some(Source {
+                source: Some(VendorFields {
                     android_type: None,
                     fields: serde_json::from_str(r#"{"delivered_date":"2014-05-22 15:41:01"}"#)
                         .unwrap(),

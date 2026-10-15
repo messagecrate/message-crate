@@ -5,7 +5,7 @@ use crate::placeholders::materialize_placeholders;
 use anyhow::Result;
 use message_crate_core::{AttachmentFiles, ExportTransforms};
 use message_ir::{
-    Attachment, ConversationDocument, Direction, Imessage, MessageGuid, MessageIdentity,
+    Attachment, ConversationDocument, Direction, ImessageExtensions, MessageGuid, MessageIdentity,
     Participant, Reaction,
 };
 use obfuscate::{
@@ -189,7 +189,7 @@ fn reply_and_tapback_targets(doc: &mut ConversationDocument) -> impl Iterator<It
 /// `parts` repeats the body, `app` holds link previews, and
 /// `shared_location` holds a place. None of them is read on import, so
 /// obfuscated output drops them whole.
-fn obfuscate_imessage(im: &mut Imessage, anon: &mut Obfuscator) {
+fn obfuscate_imessage(im: &mut ImessageExtensions, anon: &mut Obfuscator) {
     if let Some(a) = im.announcement.as_mut() {
         *a = anon.obfuscate_text(a);
     }

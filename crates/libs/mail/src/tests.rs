@@ -35,7 +35,7 @@ pub(crate) fn base_sms() -> MailMessage {
             edits: Vec::new(),
             reply_to: None,
             imessage: None,
-            source: Some(message_ir::Source {
+            source: Some(message_ir::VendorFields {
                 android_type: Some(1),
                 fields: serde_json::from_str(r#"{"address":"+15555550101"}"#).unwrap(),
             }),
@@ -45,7 +45,7 @@ pub(crate) fn base_sms() -> MailMessage {
 }
 
 /// The extension bag, creating it when the base message has none.
-fn im_mut(msg: &mut MailMessage) -> &mut message_ir::Imessage {
+fn im_mut(msg: &mut MailMessage) -> &mut message_ir::ImessageExtensions {
     msg.message.imessage.get_or_insert_with(Default::default)
 }
 

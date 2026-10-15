@@ -7,8 +7,8 @@ use chrono::DateTime;
 use message_crate_core::{ConvertRun, ExportReport, prepare_outputs, project_conversation};
 use message_ir::{
     Attachment, ConversationDocument, ConversationKey, ConversationType, ExportMeta, IdentityType,
-    NAMELESS_CHAT_ID, Participant, PendingConversation, PendingMessage, ProjectionHooks, Source,
-    Transport, orphaned_chat_id,
+    NAMELESS_CHAT_ID, Participant, PendingConversation, PendingMessage, ProjectionHooks, Transport,
+    VendorFields, orphaned_chat_id,
 };
 use message_staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
 use phone::Handle;
@@ -590,7 +590,7 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
         message.extra.get(VENDOR_KEY).cloned()
     }
 
-    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> Source {
+    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> VendorFields {
         let mut fields = Map::new();
         fields.insert(
             "source_kind".into(),
@@ -605,7 +605,7 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
         if let Some(name) = &conversation.display_name {
             fields.insert("conversation".into(), json!(name));
         }
-        Source {
+        VendorFields {
             android_type: None,
             fields,
         }

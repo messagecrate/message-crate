@@ -277,7 +277,7 @@ impl MessageLine {
     }
 
     /// The Apple extensions.
-    pub fn imessage(mut self, imessage: message_ir::Imessage) -> Self {
+    pub fn imessage(mut self, imessage: message_ir::ImessageExtensions) -> Self {
         self.0.imessage = Some(imessage);
         self
     }

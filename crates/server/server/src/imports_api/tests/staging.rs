@@ -550,7 +550,7 @@ async fn append_existing_guid_adds_missing_children() {
                     )
                 })
                 .reaction(liked_by("+15555550167"))
-                .imessage(Imessage::default())
+                .imessage(ImessageExtensions::default())
         ),
     );
 

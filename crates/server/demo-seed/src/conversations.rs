@@ -12,8 +12,8 @@ use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use message_ir::{
     Attachment, ConversationHeader, ConversationMeta, ConversationStats, ConversationType,
-    Deletion, Direction, EarlierVersion, ExportMeta, Imessage, Message, MessageKind, Participant,
-    Reaction, ReplyTo, SCHEMA_VERSION, TimePrecision, Transport, orphaned_chat_id,
+    Deletion, Direction, EarlierVersion, ExportMeta, ImessageExtensions, Message, MessageKind,
+    Participant, Reaction, ReplyTo, SCHEMA_VERSION, TimePrecision, Transport, orphaned_chat_id,
 };
 use rand::Rng;
 use rand::RngExt;
@@ -805,7 +805,7 @@ impl<R: Rng> Seeder<'_, R> {
                     );
                     ann.text.clear();
                     ann.message_kind = MessageKind::Announcement;
-                    let im = ann.imessage.get_or_insert_with(Imessage::default);
+                    let im = ann.imessage.get_or_insert_with(ImessageExtensions::default);
                     im.announcement = Some(format!("Demo User named the conversation “{title}”."));
                     seeder.emit(file, ann)?;
                 }

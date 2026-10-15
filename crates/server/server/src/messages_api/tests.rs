@@ -7,7 +7,7 @@ use crate::test_support::{
     attachment, conversation_header, expect_problem, fixture_with_account, get_json, get_raw,
     message_line, register_via_api, seed_conversation, stored_time,
 };
-use message_ir::{Attachment, Imessage, Reaction, Transport};
+use message_ir::{Attachment, ImessageExtensions, Reaction, Transport};
 
 /// Two conversations for alice (a direct thread and a group), and one for bob
 /// that must never appear in alice's results.
@@ -298,7 +298,7 @@ fn ir_message(
     text: &str,
     is_sticker: bool,
     reactions: Vec<Reaction>,
-    imessage: Option<Imessage>,
+    imessage: Option<ImessageExtensions>,
     is_reply: bool,
 ) -> String {
     let mut message = message_line(guid, text)
@@ -372,9 +372,9 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
         "an announcement",
         false,
         vec![reaction_by("loved", None, 2, "+15555550167")],
-        Some(Imessage {
+        Some(ImessageExtensions {
             announcement: Some("named the conversation Reactions".into()),
-            ..Imessage::default()
+            ..ImessageExtensions::default()
         }),
         false,
     );

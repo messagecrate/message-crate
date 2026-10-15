@@ -8,8 +8,8 @@ use message_csv::{
     AttachmentCell, ParticipantCell, format_local_ts, json_cell, write_guarded_record,
 };
 use message_ir::{
-    ConversationDocument, ConversationHeader, Deletion, IdentityService, Imessage, Message,
-    MessageKind, Transport,
+    ConversationDocument, ConversationHeader, Deletion, IdentityService, ImessageExtensions,
+    Message, MessageKind, Transport,
 };
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -342,7 +342,7 @@ struct ImessageCells {
 impl ImessageCells {
     /// `text` is the message text, which decides whether the parts column
     /// repeats it and is therefore left blank.
-    fn new(text: &str, im: Option<&Imessage>) -> Self {
+    fn new(text: &str, im: Option<&ImessageExtensions>) -> Self {
         let Some(im) = im else {
             return Self {
                 parts_json: parts_cell_for_csv(text, None),

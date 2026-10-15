@@ -10,7 +10,7 @@ use message_crate_core::{
 use message_csv::format_local_ts;
 use message_ir::{
     ConversationDocument, ExportMeta, Message, MessageKind, Participant, PendingAttachment,
-    PendingConversation, PendingMessage, Projection, ProjectionHooks, Source, Transport,
+    PendingConversation, PendingMessage, Projection, ProjectionHooks, Transport, VendorFields,
     prepare_conversation, project_pending,
 };
 use message_staging::{
@@ -527,9 +527,13 @@ impl ProjectionHooks for SbrProjection<'_> {
         Transport::Sms
     }
 
-    fn source(&self, _conversation: &PendingConversation, message: &PendingMessage) -> Source {
+    fn source(
+        &self,
+        _conversation: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields {
         let row = self.row(message);
-        Source {
+        VendorFields {
             android_type: row.android_type,
             fields: row.source_fields.clone(),
         }

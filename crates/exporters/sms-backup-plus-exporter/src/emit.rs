@@ -17,7 +17,7 @@ use message_crate_core::{
 };
 use message_ir::{
     ConversationDocument, ConversationType, Direction, ExportMeta, PendingAttachment,
-    PendingConversation, PendingMessage, ProjectionHooks, Source, Transport,
+    PendingConversation, PendingMessage, ProjectionHooks, Transport, VendorFields,
 };
 use message_staging::{
     AttachmentSpool, ExportWriter, Project, ReadBackup, WriterSetup, convert_backup,
@@ -278,7 +278,7 @@ impl ProjectionHooks for SbpProjection {
             .then_with(|| a.extra_str("eml_path").cmp(b.extra_str("eml_path")))
     }
 
-    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> Source {
+    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> VendorFields {
         let mut fields = serde_json::Map::new();
         for key in ["smssync_id", "eml_path"] {
             let value = message.extra_str(key);

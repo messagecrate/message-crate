@@ -1,6 +1,6 @@
 //! Emptiness, which decides whether a message's extensions are written at all.
 //!
-//! `Imessage::is_empty` is thirteen clauses and `Source::is_empty` is
+//! `ImessageExtensions::is_empty` is thirteen clauses and `VendorFields::is_empty` is
 //! two, and neither had a test — this crate had no test module. Every clause
 //! could be dropped on its own with the whole workspace green, and the effect
 //! of dropping one is silent: `into_option` returns `None`, the exporter writes
@@ -9,109 +9,109 @@
 
 use super::*;
 
-/// Set exactly one field on an otherwise default `Imessage`, and name it.
-fn one_field_set() -> Vec<(&'static str, Imessage)> {
+/// Set exactly one field on an otherwise default `ImessageExtensions`, and name it.
+fn one_field_set() -> Vec<(&'static str, ImessageExtensions)> {
     let json = || Some(serde_json::json!([{"index": 0}]));
     vec![
         (
             "send_effect",
-            Imessage {
+            ImessageExtensions {
                 send_effect: Some("slam".into()),
-                ..Imessage::default()
+                ..ImessageExtensions::default()
             },
         ),
         (
             "shared_location",
-            Imessage {
+            ImessageExtensions {
                 shared_location: Some("shared".into()),
-                ..Imessage::default()
+                ..ImessageExtensions::default()
             },
         ),
         (
             "announcement",
-            Imessage {
+            ImessageExtensions {
                 announcement: Some("named the conversation".into()),
-                ..Imessage::default()
+                ..ImessageExtensions::default()
             },
         ),
         (
             "read_receipt_rfc3339",
-            Imessage {
+            ImessageExtensions {
                 read_receipt_rfc3339: Some("2015-03-12T18:04:22Z".into()),
-                ..Imessage::default()
+                ..ImessageExtensions::default()
             },
         ),
         (
             "parts",
-            Imessage {
+            ImessageExtensions {
                 parts: json(),
-                ..Imessage::default()
+                ..ImessageExtensions::default()
             },
         ),
         (
             "app",
-            Imessage {
+            ImessageExtensions {
                 app: json(),
-                ..Imessage::default()
+                ..ImessageExtensions::default()
             },
         ),
         (
             "balloon_bundle_id",
-            Imessage {
+            ImessageExtensions {
                 balloon_bundle_id: Some("com.apple.messages.URLBalloonProvider".into()),
-                ..Imessage::default()
+                ..ImessageExtensions::default()
             },
         ),
         (
             "balloon_kind",
-            Imessage {
+            ImessageExtensions {
                 balloon_kind: Some("url".into()),
-                ..Imessage::default()
+                ..ImessageExtensions::default()
             },
         ),
         (
             "associated_guid",
-            Imessage {
+            ImessageExtensions {
                 associated_guid: Some("assoc-guid".into()),
-                ..Imessage::default()
+                ..ImessageExtensions::default()
             },
         ),
         (
             "associated_part",
-            Imessage {
+            ImessageExtensions {
                 associated_part: Some(0),
-                ..Imessage::default()
+                ..ImessageExtensions::default()
             },
         ),
         (
             "tapback_kind",
-            Imessage {
+            ImessageExtensions {
                 tapback_kind: Some("loved".into()),
-                ..Imessage::default()
+                ..ImessageExtensions::default()
             },
         ),
         (
             "tapback_emoji",
-            Imessage {
+            ImessageExtensions {
                 tapback_emoji: Some("\u{2764}".into()),
-                ..Imessage::default()
+                ..ImessageExtensions::default()
             },
         ),
         (
             "tapback_action",
-            Imessage {
+            ImessageExtensions {
                 tapback_action: Some("added".into()),
-                ..Imessage::default()
+                ..ImessageExtensions::default()
             },
         ),
     ]
 }
 
-/// A default `Imessage` carries nothing, so the exporter writes no
+/// A default `ImessageExtensions` carries nothing, so the exporter writes no
 /// `imessage` object rather than an object of thirteen nulls.
 #[test]
 fn an_imessage_with_nothing_set_is_empty() {
-    let blank = Imessage::default();
+    let blank = ImessageExtensions::default();
     assert!(blank.is_empty());
     assert!(blank.into_option().is_none());
 }
@@ -127,7 +127,7 @@ fn any_one_imessage_field_makes_it_worth_keeping() {
     assert_eq!(
         cases.len(),
         13,
-        "one case per field on Imessage; add or remove one with the field"
+        "one case per field on ImessageExtensions; add or remove one with the field"
     );
     for (field, value) in cases {
         assert!(
@@ -141,18 +141,18 @@ fn any_one_imessage_field_makes_it_worth_keeping() {
     }
 }
 
-/// `Source` is the same shape with two clauses: the Android type code and
+/// `VendorFields` is the same shape with two clauses: the Android type code and
 /// the bag of vendor fields. Losing either drops the vendor leftovers that let
 /// a reader see what the source actually said.
 #[test]
 fn a_source_is_empty_only_when_it_has_neither_a_type_nor_a_field() {
-    let blank = Source::default();
+    let blank = VendorFields::default();
     assert!(blank.is_empty());
     assert!(blank.into_option().is_none());
 
-    let typed = Source {
+    let typed = VendorFields {
         android_type: Some(1),
-        ..Source::default()
+        ..VendorFields::default()
     };
     assert!(
         !typed.is_empty(),
@@ -162,17 +162,17 @@ fn a_source_is_empty_only_when_it_has_neither_a_type_nor_a_field() {
 
     let mut fields = serde_json::Map::new();
     fields.insert("read".into(), serde_json::json!("1"));
-    let with_fields = Source {
+    let with_fields = VendorFields {
         fields,
-        ..Source::default()
+        ..VendorFields::default()
     };
     assert!(!with_fields.is_empty(), "a vendor field is worth keeping");
     assert!(with_fields.into_option().is_some());
 
     // An empty map is not a field.
-    let empty_map = Source {
+    let empty_map = VendorFields {
         fields: serde_json::Map::new(),
-        ..Source::default()
+        ..VendorFields::default()
     };
     assert!(empty_map.is_empty());
 }

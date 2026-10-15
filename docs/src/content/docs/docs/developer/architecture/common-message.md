@@ -85,7 +85,7 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 | Tier | Contents |
 |------|----------|
 | Core | typed conversation + message fields |
-| `imessage` | typed Apple extensions (`message_ir::Imessage`); nested `parts` / `app` are JSON values |
+| `imessage` | typed Apple extensions (`message_ir::ImessageExtensions`); nested `parts` / `app` are JSON values |
 | `source` | `android_type` (`i32` or null) + vendor `fields` object |
 
 ### Identity

@@ -22,7 +22,7 @@ use crate::test_support::{
     post_created_json, post_json, test_fixture,
 };
 use message_ir::{
-    Attachment, Deletion, EarlierVersion, Imessage, MessageKind, Reaction, Transport,
+    Attachment, Deletion, EarlierVersion, ImessageExtensions, MessageKind, Reaction, Transport,
 };
 use tempfile::TempDir;
 

@@ -1,5 +1,5 @@
 use super::*;
-use message_ir::{Imessage, UnsupportedSchemaVersion};
+use message_ir::{ImessageExtensions, UnsupportedSchemaVersion};
 
 use crate::test_support::{MessageLine, conversation_header, message_line};
 
@@ -152,12 +152,12 @@ fn a_reaction_row_is_not_a_message() {
             .kind(kind)
             .sender("+15555550101")
             .sender_display_name("Sam")
-            .imessage(Imessage {
+            .imessage(ImessageExtensions {
                 associated_guid: Some("g-hi".into()),
                 associated_part: Some(0),
                 tapback_kind: Some("loved".into()),
                 tapback_action: Some(action.into()),
-                ..Imessage::default()
+                ..ImessageExtensions::default()
             })
             .to_string()
     };

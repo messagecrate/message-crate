@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 use message_ir::{Attachment, ConversationDocument};
-use message_ir::{Imessage, Source};
+use message_ir::{ImessageExtensions, VendorFields};
 
 /// Prepare a document so two copies can be compared after a round trip.
 ///
@@ -63,21 +63,24 @@ fn empty_to_none(v: &mut Option<String>) {
 }
 
 /// Return `None` when every iMessage-only field is empty.
-pub(crate) fn imessage_from_parts(im: Imessage) -> Option<Imessage> {
+pub(crate) fn imessage_from_parts(im: ImessageExtensions) -> Option<ImessageExtensions> {
     im.into_option()
 }
 
-/// Build [`Source`] from an Android type and a JSON object of extra fields.
+/// Build [`VendorFields`] from an Android type and a JSON object of extra fields.
 ///
 /// Returns `None` when both pieces are empty. Invalid JSON becomes an empty
 /// field map.
-pub(crate) fn source_from_parts(android_type: Option<i32>, fields_json: &str) -> Option<Source> {
+pub(crate) fn source_from_parts(
+    android_type: Option<i32>,
+    fields_json: &str,
+) -> Option<VendorFields> {
     let fields = if fields_json.trim().is_empty() {
         Default::default()
     } else {
         serde_json::from_str(fields_json).unwrap_or_default()
     };
-    Source {
+    VendorFields {
         android_type,
         fields,
     }

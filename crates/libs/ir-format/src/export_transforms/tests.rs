@@ -2,9 +2,9 @@ use super::*;
 use message_crate_core::AttachmentFiles;
 use message_crate_core::{ExportReport, OutputFormat};
 use message_ir::{
-    ConversationMeta, ConversationStats, ConversationType, EarlierVersion, ExportMeta, Imessage,
-    Message, MessageGuid, MessageIdentity, MessageKind, Participant, Reaction, ReplyTo,
-    SCHEMA_VERSION, Source, Transport,
+    ConversationMeta, ConversationStats, ConversationType, EarlierVersion, ExportMeta,
+    ImessageExtensions, Message, MessageGuid, MessageIdentity, MessageKind, Participant, Reaction,
+    ReplyTo, SCHEMA_VERSION, Transport, VendorFields,
 };
 use serde_json::{Value, json};
 use std::fs;
@@ -233,7 +233,7 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
                 guid: Some("LEAK-28".into()),
                 part_index: Some(0),
             }),
-            imessage: Some(Imessage {
+            imessage: Some(ImessageExtensions {
                 send_effect: Some("slam".into()),
                 shared_location: Some("LEAK-16".into()),
                 announcement: Some("LEAK-17".into()),
@@ -248,7 +248,7 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
                 tapback_emoji: Some("👍".into()),
                 tapback_action: Some("added".into()),
             }),
-            source: Some(Source {
+            source: Some(VendorFields {
                 android_type: Some(1),
                 fields: serde_json::Map::from_iter([("address".into(), json!("LEAK-26"))]),
             }),
@@ -539,9 +539,9 @@ impl Link {
                 });
             }
             Link::Tapback => {
-                msg.imessage = Some(Imessage {
+                msg.imessage = Some(ImessageExtensions {
                     associated_guid: target,
-                    ..Imessage::default()
+                    ..ImessageExtensions::default()
                 });
             }
         }
@@ -580,7 +580,8 @@ fn obfuscate_points_a_reply_or_tapback_at_its_target_in_another_conversation() {
 fn obfuscate_points_a_reply_or_tapback_at_the_copy_in_its_own_conversation() {
     for link in [Link::Reply, Link::Tapback] {
         for linking_first in [true, false] {
-            let mut docs = two_conversations(|msg, _| msg.imessage = Some(Imessage::default()));
+            let mut docs =
+                two_conversations(|msg, _| msg.imessage = Some(ImessageExtensions::default()));
             let mut copy = docs[0].messages[0].clone();
             copy.imessage = None;
             copy.reply_to = None;

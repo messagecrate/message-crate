@@ -21,7 +21,7 @@ use message_crate_core::{
 use message_ir::{
     Attachment, ConversationDocument, ConversationKey, Deletion, EarlierVersion, ExportMeta,
     Participant, PendingAttachment, PendingConversation, PendingMessage, PendingReply,
-    ProjectedRole, ProjectionHooks, Reaction, Source, Transport,
+    ProjectedRole, ProjectionHooks, Reaction, Transport, VendorFields,
 };
 use message_staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
 use serde_json::Map;
@@ -1048,7 +1048,7 @@ impl ProjectionHooks for ImazingProjection<'_> {
         imazing_packaging_stem_suffix(pending.extra_str("source_kind"))
     }
 
-    fn source(&self, pending: &PendingConversation, message: &PendingMessage) -> Source {
+    fn source(&self, pending: &PendingConversation, message: &PendingMessage) -> VendorFields {
         let mut fields = Map::new();
         // Session string is not a real group title: stored as data only
         // (the document's `group_title` stays `None`, matching the previous
@@ -1076,7 +1076,7 @@ impl ProjectionHooks for ImazingProjection<'_> {
                 fields.insert(key.into(), serde_json::Value::String(val.to_string()));
             }
         }
-        Source {
+        VendorFields {
             android_type: None,
             fields,
         }

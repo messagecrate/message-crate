@@ -126,7 +126,7 @@ pub struct MailMessage {
 
 impl MailMessage {
     /// The iMessage extension bag, when present.
-    fn im(&self) -> Option<&message_ir::Imessage> {
+    fn im(&self) -> Option<&message_ir::ImessageExtensions> {
         self.message.imessage.as_ref()
     }
 }

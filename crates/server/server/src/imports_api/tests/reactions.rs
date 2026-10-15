@@ -79,12 +79,12 @@ async fn a_removed_reaction_leaves_no_message_and_no_reaction() {
             .kind(MessageKind::Tapback)
             .sender("+15555550123")
             .sender_display_name("Bob")
-            .imessage(Imessage {
+            .imessage(ImessageExtensions {
                 associated_guid: Some("g-hi".into()),
                 associated_part: Some(0),
                 tapback_kind: Some("loved".into()),
                 tapback_action: Some(action.into()),
-                ..Imessage::default()
+                ..ImessageExtensions::default()
             })
     };
     let loved = reaction("g-love", 1_426_183_463_000, "Loved a message", "add");

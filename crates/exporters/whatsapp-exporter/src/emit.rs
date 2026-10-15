@@ -15,7 +15,7 @@ use message_csv::format_local_ts;
 use message_ir::{
     Attachment, ConversationDocument, ExportMeta, IdentityType, Participant, PendingAttachment,
     PendingConversation, PendingMessage, PendingReply, ProjectionHooks, Reaction, SortKeyUnit,
-    Source, Transport,
+    Transport, VendorFields,
 };
 use message_staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
 use serde_json::Map;
@@ -735,7 +735,7 @@ impl ProjectionHooks for WhatsappProjection {
     /// nor `reply_key_id` is stored beside it. Nor is a reaction copied
     /// here: `reactions` records each on the message, and the fork's
     /// name-to-emoji `reactions` map is not read at all.
-    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> Source {
+    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> VendorFields {
         let mut fields = Map::new();
         let whatsapp_jid = conversation.extra_str("whatsapp_jid");
         if !whatsapp_jid.is_empty() {
@@ -751,7 +751,7 @@ impl ProjectionHooks for WhatsappProjection {
                 serde_json::Value::String(key_id.to_string()),
             );
         }
-        Source {
+        VendorFields {
             android_type: None,
             fields,
         }

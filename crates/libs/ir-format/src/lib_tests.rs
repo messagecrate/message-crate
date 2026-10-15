@@ -3,7 +3,8 @@
 use super::*;
 use message_crate_core::OutputFormat;
 use message_ir::{
-    ConversationDocument, Direction, Imessage, Message, MessageKind, TimePrecision, Transport,
+    ConversationDocument, Direction, ImessageExtensions, Message, MessageKind, TimePrecision,
+    Transport,
 };
 use serde_json::{Value, json};
 use std::fs;
@@ -299,12 +300,12 @@ fn csv_omits_trivial_parts_json_keeps_rich_parts() {
         deletion: None,
         edits: Vec::new(),
         reply_to: None,
-        imessage: Some(Imessage {
+        imessage: Some(ImessageExtensions {
             parts: Some(json!([
                 {"index": 0, "kind": "run", "text": "hello"},
                 {"index": 1, "kind": "attachment", "transfer_name": "a.jpg"}
             ])),
-            ..Imessage::default()
+            ..ImessageExtensions::default()
         }),
         source: None,
     });

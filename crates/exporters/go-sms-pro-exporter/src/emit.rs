@@ -14,7 +14,7 @@ use message_crate_core::{
 use message_csv::write_guarded_record;
 use message_ir::{
     ConversationDocument, ExportMeta, PendingAttachment, PendingConversation, PendingMessage,
-    ProjectionHooks, Source, Transport, ensure_conversation,
+    ProjectionHooks, Transport, VendorFields, ensure_conversation,
 };
 use message_staging::{AttachmentSpool, Project, ReadBackup, WriterSetup, convert_backup};
 use phone::{Handle, OwnerHandleSet};
@@ -398,7 +398,7 @@ impl ProjectionHooks for GoSmsProjection {
         raw.to_string()
     }
 
-    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> Source {
+    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> VendorFields {
         let mut fields = serde_json::Map::new();
         fields.insert(
             "source_kind".into(),
