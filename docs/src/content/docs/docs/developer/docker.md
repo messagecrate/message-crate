@@ -21,7 +21,7 @@ A merge to `main` does not publish an image. CI only builds and pushes `bitrealm
 
 ## Two Compose files
 
-Docker Compose reads a YAML file and starts a container from it. This repository has two of those files. They both listen on port **8080**. They do not do the same thing.
+Docker Compose reads a YAML file and starts a container from it. This repository has two of those files. They both publish the server on port **8080** of `127.0.0.1`, so only the computer that runs Docker reaches it, as the documented `docker run` command does. [Run on another machine](/docs/user/features/owner/run-on-another-machine/#publish-the-server-on-the-network) says how to publish it on the network. They do not do the same thing.
 
 `docker/compose.yml` names an image that already exists: `bitrealm/message-crate:latest`. Compose downloads that image from Docker Hub. It does not compile this local checkout. That file is the sample for [Start a Message Crate](/docs/user/features/owner/run-with-docker/#start-the-server). Do not use that file from a local checkout if the goal is to test local code.
 

@@ -1286,6 +1286,13 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-14: **The Compose files publish the server to this computer
+  only.** `docker/compose.yml` and `docker/compose.release.yml` published
+  port 8080 on every network the computer is on, unlike the guide's
+  `docker run` command. Any device on that network could reach a new
+  Message Crate over plain HTTP, and claim it as owner before its
+  installer did. Both now publish it on `127.0.0.1`, and Run on another
+  machine says how to open it to the network (#2063).
 - 2026-10-14: **A Demo Data backup left behind is in the server's log.**
   When the server writes new Demo Data, it removes its backup of the files
   they replace. When that removal failed, the warning went only to the

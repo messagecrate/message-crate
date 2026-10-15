@@ -34,6 +34,9 @@ docker run -d --name message-crate \
   bitrealm/message-crate:latest
 ```
 
+A Message Crate started from `docker/compose.yml` publishes its port the same way, as `"127.0.0.1:8080:8080"` under `ports:`.
+Changing that line to `"8080:8080"` and running `docker compose up -d` again publishes it on every network.
+
 A server that is already running with the first-time command is removed first with `docker stop -t 40 message-crate` and `docker rm message-crate`.
 Both leave the `message-crate-data` volume alone, so the messages stay.
 

@@ -7,7 +7,8 @@
 #
 # Both Compose files drop every Linux capability, set no-new-privileges and
 # make the root filesystem read-only (#2178). This script checks that both
-# carry the same settings, that the container Compose starts has them, and
+# carry the same settings, that both publish the server on 127.0.0.1 alone
+# (#2063), that the container Compose starts has them, and
 # that the server still works under them: the health check passes, the Demo
 # Account logs in, and an account the owner creates imports a conversation
 # with a video, waits for the media pass to make its Thumbnail and Preview,
@@ -106,6 +107,20 @@ if [[ "${release_grace}" == "unset" || "${release_grace}" != "${published_grace}
   echo "docker/compose.yml and docker/compose.release.yml must set the same stop_grace_period, not ${published_grace} and ${release_grace}" >&2
   failures=$((failures + 1))
 fi
+
+# Both files publish the server to the host's loopback alone, as the
+# documented `docker run` command does (#2063). A port published on every
+# interface reaches the whole network over plain HTTP before the installer
+# has claimed the Message Crate. Run on another machine says how to publish
+# it on the network.
+for file in docker/compose.yml docker/compose.release.yml; do
+  open_ports="$(docker compose -f "${file}" config --format json |
+    jq -r '.services.server.ports // [] | .[] | select(.host_ip != "127.0.0.1") | "\(.host_ip // "every interface"):\(.published)"')"
+  if [[ -n "${open_ports}" ]]; then
+    echo "${file} publishes the server beyond 127.0.0.1: ${open_ports//$'\n'/, }" >&2
+    failures=$((failures + 1))
+  fi
+done
 
 override="$(mktemp)"
 compose() {
