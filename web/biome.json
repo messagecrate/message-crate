@@ -84,6 +84,7 @@
               "ATTACHMENT_OPTIONS",
               "ListBoxItem",
               "RESOLUTION_OPTIONS",
+              "authModule",
               "bubbleBody",
               "completionTextFor",
               "formatCompare",

@@ -8,17 +8,18 @@
  * shows the name is marked stale with the rest of the account's cache.
  */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { authModule, testQueryClient } from "../test/providers";
 import { freshEntries, seedEntries } from "../test/staleEntries";
 import { useContactDetail, useUpdateContact } from "./contactDetail";
 import { keys } from "./queryKeys";
 import { getContact, updateContact } from "./serverApi";
 
-vi.mock("./authContext", () => ({ useAuth: () => ({ accountId: 7 }) }));
+vi.mock("./authContext", () => authModule({ accountId: 7 }));
 
 vi.mock("./serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./serverApi")>()),
@@ -52,9 +53,7 @@ function contact(name: string) {
 beforeEach(() => {
   startFakeClock();
   vi.clearAllMocks();
-  client = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
-  });
+  client = testQueryClient();
 });
 
 afterEach(() => {

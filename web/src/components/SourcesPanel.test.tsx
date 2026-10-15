@@ -3,10 +3,10 @@
 import { cleanup, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { renderWithProviders } from "../test/providers";
+import { authModule, renderWithProviders } from "../test/providers";
 import SourcesPanel from "./SourcesPanel";
 
-vi.mock("../lib/authContext", () => ({ useAuth: () => ({ accountId: 7 }) }));
+vi.mock("../lib/authContext", () => authModule({ accountId: 7 }));
 
 const getSources = vi.fn();
 

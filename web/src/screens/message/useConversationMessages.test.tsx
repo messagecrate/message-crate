@@ -8,10 +8,10 @@ import { message as baseMessage } from "../../test/apiShapes";
 import { deferred } from "../../test/deferred";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { nth } from "../../test/nth";
-import { mockedAuth, Providers } from "../../test/providers";
+import { authModule, Providers } from "../../test/providers";
 import { conversationYears, useConversationMessages } from "./useConversationMessages";
 
-vi.mock("../../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../lib/authContext", () => authModule());
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),

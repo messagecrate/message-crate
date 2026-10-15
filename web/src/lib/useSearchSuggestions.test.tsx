@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { advanceTimersAndSettle } from "../test/fakeTimers";
 import { nth } from "../test/nth";
+import { authModule } from "../test/providers";
 import { createQueryClient } from "./routeQuery";
 import type { SearchField } from "./searchFields";
 import { listContacts, listSearchFields } from "./serverApi";
@@ -16,7 +17,7 @@ import {
   useSearchSuggestions,
 } from "./useSearchSuggestions";
 
-vi.mock("./authContext", () => ({ useAuth: () => ({ accountId: 7 }) }));
+vi.mock("./authContext", () => authModule({ accountId: 7 }));
 
 vi.mock("./serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./serverApi")>()),

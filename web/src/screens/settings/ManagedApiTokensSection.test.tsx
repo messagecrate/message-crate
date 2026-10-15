@@ -3,7 +3,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
-import { mockedAuth, Providers } from "../../test/providers";
+import { authModule, Providers } from "../../test/providers";
 import { setupUser } from "../../test/user";
 import { ManagedApiTokensSection } from "./ManagedApiTokensSection";
 
@@ -18,7 +18,7 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
   renameApiToken: vi.fn(),
 }));
 
-vi.mock("../../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../lib/authContext", () => authModule());
 
 afterEach(() => {
   cleanup();

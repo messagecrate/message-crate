@@ -20,10 +20,10 @@ import { ApiError } from "../lib/api";
 import { groupListQuery } from "../lib/contactGroups";
 import { PAGE_SIZE_FIRST } from "../lib/listPaging";
 import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { mockedAuth, Providers } from "../test/providers";
+import { Providers } from "../test/providers";
 import ContactList, { FILTER_DEBOUNCE_MS } from "./ContactList";
 
-vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", async () => (await import("../test/providers")).authModule());
 
 const tauriMock = vi.hoisted(() => ({ current: false }));
 vi.mock("../lib/tauriCheck", () => ({ isTauri: () => tauriMock.current }));

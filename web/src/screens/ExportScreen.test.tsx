@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { currentDesktopJob } from "../lib/desktopJob";
 import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { nth } from "../test/nth";
+import { authModule } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 import ExportScreen from "./ExportScreen";
 import { ConvertSection } from "./settings/ConvertSection";
@@ -43,9 +44,7 @@ vi.mock("../lib/api", async (importOriginal) => ({
   getBaseUrl: () => "http://127.0.0.1:8080",
 }));
 
-vi.mock("../lib/authContext", () => ({
-  useAuth: () => ({ token: "test-token" }),
-}));
+vi.mock("../lib/authContext", () => authModule({ token: "test-token" }));
 
 afterEach(() => {
   cleanup();

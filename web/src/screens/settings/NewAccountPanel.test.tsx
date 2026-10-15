@@ -6,16 +6,14 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../lib/queryKeys";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
-import { testQueryClient } from "../../test/providers";
+import { authModule, testQueryClient } from "../../test/providers";
 import { freshEntries, seedEntries } from "../../test/staleEntries";
 import { fill, setupUser } from "../../test/user";
 import { NewAccountPanel } from "./NewAccountPanel";
 
 const createAccount = vi.hoisted(() => vi.fn());
 
-vi.mock("../../lib/authContext", () => ({
-  useAuth: () => ({ accountId: 1 }),
-}));
+vi.mock("../../lib/authContext", () => authModule({ accountId: 1 }));
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),
