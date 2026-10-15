@@ -493,11 +493,17 @@ fn the_byte_total_stays_the_same_when_the_spool_holds_no_file() {
     docs[0].messages[0].attachments.push(unspooled);
     let (progress, totals) = attachment_totals();
 
-    stage_read_attachments(&mut docs, &{
-        let mut options = opts(&[], Some(&stage), Some(&spool));
-        options.sinks.progress = &progress;
-        options
-    })
+    let base = opts(&[], Some(&stage), Some(&spool));
+    stage_read_attachments(
+        &mut docs,
+        &ReadOptions {
+            sinks: Sinks {
+                progress: &progress,
+                ..base.sinks
+            },
+            ..base
+        },
+    )
     .unwrap();
 
     let totals = totals.lock().unwrap().clone();

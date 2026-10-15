@@ -171,6 +171,16 @@ impl ExportWriter {
         &self.progress
     }
 
+    /// The sinks captured from the transforms, with `cancel`, for a step
+    /// that takes them together.
+    pub fn sinks<'a>(&'a self, cancel: &'a CancelFlag) -> Sinks<'a> {
+        Sinks {
+            log: &self.log,
+            progress: &self.progress,
+            cancel,
+        }
+    }
+
     /// Give up the writer and take the opened sink plus the decisions
     /// [`open`](Self::open) made, for a custom drain (see
     /// [`ExportWriterParts`]).
@@ -212,6 +222,8 @@ impl ExportWriter {
         cancel: &CancelFlag,
         report: &mut ExportReport,
     ) -> Result<()> {
+        // Built from the fields, not with `sinks`, so the sink below can
+        // still move out of `self`.
         let sinks = Sinks {
             log: &self.log,
             progress: &self.progress,
