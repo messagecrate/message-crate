@@ -4,6 +4,7 @@ use crate::attachments::attachment_dest_name;
 use crate::config::MediaConfig;
 use crate::process::{CancelFlag, Cancelled, LogSink};
 use crate::progress::{ProgressEvent, ProgressSink};
+use anyhow::Context as _;
 use file_io::sha256_hex;
 use media::MediaMode;
 use message_ir::{ConversationDocument, IrAttachment, IrMessage};
@@ -77,10 +78,12 @@ impl std::error::Error for LoadError {}
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`]'s text when the flag is set before a job starts.
-/// Returns the message of a [`LoadError::Fatal`] from `load(i)`, leaving that
-/// job and every later one untouched. Returns an I/O or convert error string when the
-/// staging directory cannot be created or the conversion cannot run.
+/// Returns [`Cancelled`] when the flag is set before a job starts, so a
+/// caller tells a Cancel from a failure by its type, whatever context is
+/// added on the way out (#2077). Returns the message of a
+/// [`LoadError::Fatal`] from `load(i)`, leaving that job and every later one
+/// untouched. Returns an I/O or convert error when the staging directory
+/// cannot be created or the conversion cannot run.
 pub fn run_attachment_jobs(
     jobs: &mut [AttachmentJob<'_>],
     attachments_dir: &Path,
@@ -89,7 +92,7 @@ pub fn run_attachment_jobs(
     mut on_progress: impl FnMut(AttachmentProgress),
     log: &LogSink,
     cancel: &AtomicBool,
-) -> Result<(), String> {
+) -> anyhow::Result<()> {
     let total = jobs.len();
     if total == 0 {
         on_progress(AttachmentProgress {
@@ -117,16 +120,16 @@ pub fn run_attachment_jobs(
     let mut bytes_done = 0_u64;
 
     fs::create_dir_all(attachments_dir)
-        .map_err(|e| format!("create {}: {e}", attachments_dir.display()))?;
+        .with_context(|| format!("create {}", attachments_dir.display()))?;
 
     for (i, job) in jobs.iter_mut().enumerate() {
         if cancel.load(Ordering::Relaxed) {
-            return Err(Cancelled.to_string());
+            return Err(Cancelled.into());
         }
 
         let loaded = match load(i) {
             Ok(loaded) => loaded,
-            Err(LoadError::Fatal(message)) => return Err(message),
+            Err(LoadError::Fatal(message)) => return Err(anyhow::Error::msg(message)),
             // One unreadable source is that attachment's problem, not the
             // run's. Fall through to the missing-file handling below.
             Err(LoadError::Unreadable(_)) => None,
@@ -181,7 +184,7 @@ pub fn run_attachment_jobs(
 
     if matches!(media.mode, MediaMode::Convert | MediaMode::Compress) {
         if cancel.load(Ordering::Relaxed) {
-            return Err(Cancelled.to_string());
+            return Err(Cancelled.into());
         }
         apply_convert_or_compress(jobs, attachments_dir, media, log, cancel)?;
         on_progress(AttachmentProgress {
@@ -215,9 +218,9 @@ pub fn run_attachment_jobs(
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`]'s text when the user cancels, the message of a
-/// [`LoadError::Fatal`] from `load(i)`, or an I/O / convert error string when
-/// the staging directory cannot be used.
+/// Returns [`Cancelled`] when the user cancels, the message of a
+/// [`LoadError::Fatal`] from `load(i)`, or an I/O / convert error when the
+/// staging directory cannot be used.
 pub fn stage_attachment_jobs(
     mut jobs: Vec<AttachmentJob<'_>>,
     attachments_dir: &Path,
@@ -226,7 +229,7 @@ pub fn stage_attachment_jobs(
     log: &LogSink,
     progress: &ProgressSink,
     cancel: &CancelFlag,
-) -> Result<u64, String> {
+) -> anyhow::Result<u64> {
     run_attachment_jobs(
         &mut jobs,
         attachments_dir,
@@ -344,11 +347,11 @@ fn apply_convert_or_compress(
     media: &MediaConfig,
     log: &LogSink,
     cancel: &AtomicBool,
-) -> Result<(), String> {
+) -> anyhow::Result<()> {
     let Some(output_dir) = attachments_dir.parent() else {
-        return Err("attachments directory has no parent".into());
+        anyhow::bail!("attachments directory has no parent");
     };
-    let files = media::collect_media_files(attachments_dir).map_err(|e| format!("{e:#}"))?;
+    let files = media::collect_media_files(attachments_dir)?;
     let mut emit = |line: &str| log.emit(line);
     let (report, remap) = media::process_attachment_files(
         media.tools.as_ref(),
@@ -362,9 +365,9 @@ fn apply_convert_or_compress(
     .map_err(|e| {
         // A conversion the cancel killed ends the run as canceled.
         if cancel.load(Ordering::Relaxed) {
-            Cancelled.to_string()
+            Cancelled.into()
         } else {
-            format!("{e:#}")
+            e
         }
     })?;
     if let Some(line) = report.hevc_fallback.line() {

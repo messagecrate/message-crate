@@ -317,15 +317,13 @@ fn stage_again(
     output_dir: &Path,
     report: &mut ExportReport,
 ) -> Result<()> {
-    let saved = counted
-        .stage(
-            &output_dir.join("attachments"),
-            load_attachment_source,
-            &context.log,
-            &context.progress,
-            &context.cancel,
-        )
-        .map_err(anyhow::Error::msg)?;
+    let saved = counted.stage(
+        &output_dir.join("attachments"),
+        load_attachment_source,
+        &context.log,
+        &context.progress,
+        &context.cancel,
+    )?;
     report.attachments_saved += saved;
     Ok(())
 }
@@ -796,18 +794,19 @@ fn copy_attachments_dir(input_dir: &Path, output_dir: &Path) -> Result<()> {
         return Ok(());
     }
     let destination = output_dir.join("attachments");
-    fs::create_dir_all(&destination)?;
+    fs::create_dir_all(&destination)
+        .with_context(|| format!("create {}", destination.display()))?;
     copy_dir_recursive(&source, &destination)
 }
 
 /// Recursively copy files from `source` into `destination`.
 fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<()> {
     for entry in fs::read_dir(source).with_context(|| format!("read {}", source.display()))? {
-        let entry = entry?;
+        let entry = entry.with_context(|| format!("read {}", source.display()))?;
         let from = entry.path();
         let to = destination.join(entry.file_name());
         if from.is_dir() {
-            fs::create_dir_all(&to)?;
+            fs::create_dir_all(&to).with_context(|| format!("create {}", to.display()))?;
             copy_dir_recursive(&from, &to)?;
         } else {
             fs::copy(&from, &to)

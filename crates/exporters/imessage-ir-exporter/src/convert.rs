@@ -949,7 +949,6 @@ fn stage_attachments(
             &options.progress,
             &options.convert_run.cancel,
         )
-        .map_err(|e| anyhow!(e))
         .context("stage attachments")?;
     Ok(saved)
 }

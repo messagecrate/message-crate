@@ -21,6 +21,7 @@ import type { AccountProfile } from "../../lib/account";
 import { ApiError, setAccountId } from "../../lib/api";
 import { AuthContext } from "../../lib/authContext";
 import { currentDesktopJob } from "../../lib/desktopJob";
+import { CanceledError, DesktopJobError } from "../../lib/desktopJobError";
 import type { ActiveImportRun } from "../../lib/importRun";
 import { keys } from "../../lib/queryKeys";
 import { ANONYMOUS_ACCOUNT, routeQueryKey } from "../../lib/routeQueryKey";
@@ -1993,7 +1994,7 @@ describe("useImportJob wiring", () => {
     // failure, so run() rejects here exactly as it would for a real error.
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
-      throw new Error("canceled");
+      throw new CanceledError();
     });
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
@@ -2017,7 +2018,7 @@ describe("useImportJob wiring", () => {
     // "cancelled" outcome is still shown locally.
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
-      throw new Error("canceled");
+      throw new CanceledError();
     });
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
@@ -2043,6 +2044,25 @@ describe("useImportJob wiring", () => {
     expect(body.status).toBe("failed");
   });
 
+  it("records a failed stage's sentence and its error chain in the Import Errors row", async () => {
+    // The person reads the sentence, and the run's record keeps what the
+    // sentence leaves out, such as a panic's text (#2071, #2112).
+    runMock.mockReset();
+    runMock.mockRejectedValueOnce(
+      new DesktopJobError(
+        "Staging failed because of a bug in Message Crate.",
+        "the job panicked: index out of bounds",
+      ),
+    );
+    const { result } = renderJob();
+    await act(() => result.current.startImport(importForm({ attachmentMedia: "copy" })));
+
+    expect(result.current.summaryView?.status).toBe("failed");
+    expect(result.current.summaryView?.issues[0]?.reason).toBe(
+      "Staging failed because of a bug in Message Crate. Details: the job panicked: index out of bounds",
+    );
+  });
+
   it("does not complete the run on a cancelled extract, so the copy can be picked up", async () => {
     // A cancellation gets the same recovery as a crash at that
     // stage, and the write stage is resumable now: the conversations already
@@ -2051,7 +2071,7 @@ describe("useImportJob wiring", () => {
     runMock.mockReset();
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
-      throw new Error("canceled");
+      throw new CanceledError();
     });
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
@@ -2215,7 +2235,7 @@ describe("useImportJob wiring", () => {
     runMock.mockReset();
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
-      throw new Error("canceled");
+      throw new CanceledError();
     });
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "copy" })));
@@ -3852,7 +3872,7 @@ describe("one desktop app, two accounts (#1085)", () => {
       await fn();
       extractOfARunning.resolve();
       await extractOfAStopped.promise;
-      throw new Error("canceled");
+      throw new CanceledError();
     });
     runMock.mockImplementationOnce(runResult(EXTRACT_RESULT));
     cancelMock.mockImplementation(async () => extractOfAStopped.resolve());

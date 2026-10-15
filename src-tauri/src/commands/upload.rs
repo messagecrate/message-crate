@@ -97,7 +97,7 @@ pub fn upload(
     // The error that stops the Upload goes into the run's log too, as
     // Staging's and Media's do.
     let run_log = RunLog::open(&logs, Path::new(&args.input_dir));
-    spawn_job(app, job, move || {
+    spawn_job(app, job, Some(run_log.clone()), move || {
         let mut cfg = upload_config(args, &logs).inspect_err(|error| run_log.error(error))?;
         cfg.cancel = cancel;
         let mut progress = |event: ProgressEvent| forward_upload_event(&app_handle, event);

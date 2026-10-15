@@ -294,15 +294,13 @@ impl ExportWriter {
                 Disk::Staging,
             )?;
         }
-        report.attachments_saved += counted
-            .stage(
-                &self.attachments_dir,
-                load_attachment_source,
-                &self.log,
-                &self.progress,
-                cancel,
-            )
-            .map_err(anyhow::Error::msg)?;
+        report.attachments_saved += counted.stage(
+            &self.attachments_dir,
+            load_attachment_source,
+            &self.log,
+            &self.progress,
+            cancel,
+        )?;
 
         write_documents_through_sink(
             documents,

@@ -98,8 +98,12 @@ export interface ExtractConfig {
 }
 
 export interface DesktopJobErrorEvent {
+  /** The full error chain, for the log. */
   detail: string;
+  /** The sentence the person reads, when one is known; `detail` otherwise. */
   user_message?: string;
+  /** Whether a Cancel stopped the job, rather than a failure. */
+  canceled: boolean;
 }
 
 /**

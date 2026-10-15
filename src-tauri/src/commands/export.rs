@@ -55,7 +55,7 @@ pub fn export(
     let cancel = job.cancel_flag();
 
     let app_handle = app.clone();
-    spawn_job(app, job, move || {
+    spawn_job(app, job, None, move || {
         let cfg = ExportConfig {
             out_dir: PathBuf::from(&args.out_dir),
             base_url: args.base_url,

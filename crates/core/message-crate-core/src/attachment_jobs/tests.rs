@@ -252,7 +252,7 @@ fn a_fatal_load_error_stops_the_run_and_marks_nothing_missing() {
         )
         .unwrap_err()
     };
-    assert_eq!(err, "imessage-reader stopped before finishing");
+    assert_eq!(err.to_string(), "imessage-reader stopped before finishing");
     assert_eq!(asked, [0, 1], "nothing is loaded after the fatal error");
     assert!(atts[0].path.is_some(), "the job before it was staged");
     for att in &atts[1..] {
@@ -298,7 +298,9 @@ fn cancel_stops_before_next_job() {
         )
         .unwrap_err()
     };
-    assert_eq!(err, "canceled");
+    // The Cancel stays a `Cancelled` value, so the desktop app tells it from
+    // a failure by its type rather than its text (#2077).
+    assert!(err.is::<Cancelled>(), "{err:#}");
     assert!(a.path.is_some());
     assert!(b.path.is_none());
 }
