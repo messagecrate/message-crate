@@ -1,4 +1,5 @@
 use super::*;
+use crate::server::AppState;
 use crate::test_support::stored_time;
 use file_io::sha256_hex;
 use std::io::Write;
@@ -676,7 +677,7 @@ async fn an_upload_part_over_the_part_size_is_a_json_413() {
     let mut state = fixture.state.clone();
     // The part size is a field of the state, so a test can lower it without
     // rebuilding the config.
-    state.asset_part_size = 16;
+    state.assets.part_size = 16;
 
     let sha = "0".repeat(64);
     let (status, text) = crate::test_support::post_json_raw(
@@ -749,7 +750,7 @@ async fn an_upload_start_past_the_open_upload_limit_is_a_state_conflict() {
 async fn a_sweep_leaves_an_upload_whose_part_is_still_arriving() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let mut state = fixture.state.clone();
-    state.asset_part_size = 16;
+    state.assets.part_size = 16;
     let bytes: Vec<u8> = (0u8..20).collect();
     let sha = sha256_hex(&bytes);
     let (_, started): (String, serde_json::Value) = crate::test_support::post_created_json(
@@ -827,7 +828,7 @@ fn part_temps(session: &std::path::Path) -> Vec<u64> {
 async fn a_part_is_written_to_disk_as_it_arrives() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let mut state = fixture.state.clone();
-    state.asset_part_size = 16;
+    state.assets.part_size = 16;
     let bytes: Vec<u8> = (0u8..20).collect();
     let sha = sha256_hex(&bytes);
     let (_, started): (String, serde_json::Value) = crate::test_support::post_created_json(
@@ -900,7 +901,7 @@ async fn a_part_is_written_to_disk_as_it_arrives() {
 async fn an_upload_answers_its_state() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let mut state = fixture.state.clone();
-    state.asset_part_size = 16;
+    state.assets.part_size = 16;
     let bytes: Vec<u8> = (0u8..40).collect();
     let sha = sha256_hex(&bytes);
 
@@ -958,7 +959,7 @@ async fn an_upload_answers_its_state() {
 async fn the_upload_routes_read_a_stored_file_only_to_start_an_upload() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let mut state = fixture.state.clone();
-    state.asset_part_size = 16;
+    state.assets.part_size = 16;
     let bytes: Vec<u8> = (0u8..40).collect();
     let sha = sha256_hex(&bytes);
 
@@ -1039,7 +1040,7 @@ async fn the_upload_routes_read_a_stored_file_only_to_start_an_upload() {
 async fn an_upload_over_the_limit_the_owner_just_set_is_refused() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let mut state = fixture.state.clone();
-    state.asset_part_size = 16;
+    state.assets.part_size = 16;
     let owner = crate::test_support::claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let bytes: Vec<u8> = (0u8..40).collect();
     let sha = Sha256::of_bytes(&bytes);
@@ -1141,7 +1142,7 @@ async fn a_multipart_upload_works_under_a_limit_below_the_configured_part_size()
 async fn a_multipart_upload_keeps_its_part_size_when_the_limit_is_lowered() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let mut state = fixture.state.clone();
-    state.asset_part_size = 16;
+    state.assets.part_size = 16;
     let owner = crate::test_support::claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let bytes: Vec<u8> = (0u8..40).collect();
     let server = crate::test_support::serve(&state).await;
@@ -1171,7 +1172,7 @@ async fn the_limits_serve_starts_with_never_fail_on_a_limit_below_the_part_size(
     let state = fixture.state.clone();
     crate::test_support::store_asset_max_bytes(&state, 1024).await;
 
-    let limits = state.upload_limits().await.unwrap();
+    let limits = state.assets.upload_limits(&state.db).await.unwrap();
     assert_eq!(limits.max_bytes, 1024);
     assert_eq!(limits.part_size, 1024);
 }
@@ -1185,7 +1186,7 @@ async fn the_limits_serve_starts_with_never_fail_on_a_limit_below_the_part_size(
 async fn a_multipart_upload_completes_end_to_end_over_http() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let mut state = fixture.state.clone();
-    state.asset_part_size = 16;
+    state.assets.part_size = 16;
     let bytes: Vec<u8> = (0u8..40).collect();
     let sha = Sha256::of_bytes(&bytes);
     let server = crate::test_support::serve(&state).await;
@@ -1670,7 +1671,7 @@ async fn starting_an_upload_for_a_stored_asset_answers_200_already_present() {
 async fn deleting_an_upload_answers_204_and_removes_its_files() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let mut state = fixture.state.clone();
-    state.asset_part_size = 16;
+    state.assets.part_size = 16;
     let server = crate::test_support::serve(&state).await;
     let bytes: Vec<u8> = (0u8..40).collect();
     let upload = StartedUpload::start(&server, &user.token, &bytes).await;
@@ -1839,7 +1840,7 @@ async fn an_asset_put_with_an_empty_body_answers_422() {
 async fn completing_an_upload_for_an_asset_a_put_stored_first_answers_200() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let mut state = fixture.state.clone();
-    state.asset_part_size = 16;
+    state.assets.part_size = 16;
     let server = crate::test_support::serve(&state).await;
     let bytes: Vec<u8> = (0u8..40).collect();
     let upload = StartedUpload::start(&server, &user.token, &bytes).await;

@@ -2,6 +2,8 @@
 //! server's log files, listed and downloaded whole, the owner's alone
 //! (`docs/architecture/server-log.md`).
 
+use std::sync::Arc;
+
 use axum::extract::State;
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
@@ -9,10 +11,10 @@ use tokio::io::AsyncReadExt as _;
 
 use crate::api_error::ApiError;
 use crate::auth::Owner;
+use crate::config::Config;
 use crate::extract::{Json, Path, Query};
 use crate::logging::{LogFile, list_files, log_dir, log_file_path};
 use crate::paging::{DEFAULT_LIST_LIMIT, Page, page_of, page_params};
-use crate::server::AppState;
 
 /// Query string of `GET /v1/server/log-files`: a page.
 #[derive(Debug, serde::Deserialize)]
@@ -42,12 +44,12 @@ pub(crate) struct ListLogFilesQuery {
     )
 )]
 pub(crate) async fn list_log_files(
-    State(state): State<AppState>,
+    State(cfg): State<Arc<Config>>,
     Owner(_auth): Owner,
     Query(query): Query<ListLogFilesQuery>,
 ) -> Result<Json<Page<LogFile>>, ApiError> {
     let params = page_params(query.limit, query.offset, DEFAULT_LIST_LIMIT, None)?;
-    let dir = log_dir(&state.cfg.paths.data_dir);
+    let dir = log_dir(&cfg.paths.data_dir);
     let files = super::read_log("listing the server's log", move || list_files(&dir)).await?;
     Ok(Json(page_of(files, params)))
 }
@@ -74,12 +76,12 @@ pub(crate) async fn list_log_files(
     )
 )]
 pub(crate) async fn get_log_file(
-    State(state): State<AppState>,
+    State(cfg): State<Arc<Config>>,
     Owner(_auth): Owner,
     Path(id): Path<i64>,
 ) -> Result<Response, ApiError> {
     let not_found = || ApiError::NotFound(format!("the server's log has no file {id}"));
-    let path = log_file_path(&log_dir(&state.cfg.paths.data_dir), id).ok_or_else(not_found)?;
+    let path = log_file_path(&log_dir(&cfg.paths.data_dir), id).ok_or_else(not_found)?;
     let name = path
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())

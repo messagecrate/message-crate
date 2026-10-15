@@ -7,6 +7,7 @@ use crate::assets_api::tests::{
     seed_attachment_with_preview,
 };
 use crate::problem::ProblemType;
+use crate::server::AppState;
 use crate::test_support::{RegisteredAccount, expect_problem};
 
 /// `POST /v1/assets/{sha256}/media-links` as `token`: the status, the

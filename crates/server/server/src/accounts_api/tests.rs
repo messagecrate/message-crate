@@ -4,6 +4,7 @@ use super::*;
 use crate::db::api_tokens;
 use crate::db::permissions::Permissions;
 use crate::problem::ProblemType;
+use crate::server::AppState;
 use crate::test_support::{
     SeedConversation, SeedMessage, attachment, claim_as_owner, conversation_header, delete_json,
     delete_json_raw, delete_json_with_body, delete_raw, delete_status, delete_status_with_body,
@@ -1826,7 +1827,8 @@ async fn deleting_messages_waits_for_a_batch_in_progress() {
     seed_one_message(&state, alice.account_id).await;
 
     let batch = state
-        .account_import_locks
+        .imports
+        .account_locks
         .lock(alice.account_id.to_string())
         .await;
     let mut delete = crate::request_id::spawn_in_current_span({
@@ -1847,7 +1849,7 @@ async fn deleting_messages_waits_for_a_batch_in_progress() {
     // it, and waits.
     let key = alice.account_id.to_string();
     tokio::select! {
-        () = state.account_import_locks.a_task_waits(&key) => {}
+        () = state.imports.account_locks.a_task_waits(&key) => {}
         status = &mut delete => panic!(
             "the delete finished ({status:?}) while a batch held the account's import lock"
         ),

@@ -16,10 +16,38 @@ use super::pipeline::{
     import_jsonl_files_on_conn,
 };
 use crate::api_error::{ApiError, run_blocking};
+use crate::config::Config;
 use crate::db::imports::{self, CompleteImportArgs};
 use crate::extract::Json;
+use crate::media_queue::MediaQueue;
 use crate::progress::Progress;
-use crate::server::AppState;
+use crate::request_body::UploadTimeLimits;
+use crate::server::{AppState, ImportState};
+
+/// What a handler that runs or ends an Import Run reads: the database, the
+/// configuration, the import locks and slots, the upload time limits, and
+/// the queue the run's Assets go on for their Thumbnails and Previews. Cut
+/// from [`AppState`] for each request, so it never holds a copy of its own.
+#[derive(Debug, Clone)]
+pub(crate) struct Importer {
+    pub(crate) db: sqlx::SqlitePool,
+    pub(crate) cfg: Arc<Config>,
+    pub(crate) imports: ImportState,
+    pub(crate) upload_time_limits: UploadTimeLimits,
+    pub(crate) media_queue: MediaQueue,
+}
+
+impl axum::extract::FromRef<AppState> for Importer {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            db: state.db.clone(),
+            cfg: Arc::clone(&state.cfg),
+            imports: state.imports.clone(),
+            upload_time_limits: state.upload_time_limits,
+            media_queue: state.media_queue.clone(),
+        }
+    }
+}
 
 /// What one batch imports under. Every field is read from the Import Run's
 /// row, never from the request: the run was created with them once, so two
@@ -98,14 +126,14 @@ pub(super) enum RunEnd {
 /// running, and the error of a completion's dedupe or of the write that
 /// ends the run.
 pub(super) async fn end_run(
-    state: &AppState,
+    importer: &Importer,
     account: i64,
     import_id: i64,
     end: RunEnd,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<imports::ImportRow, ApiError> {
-    let permit = take_import_slot(state).await?;
-    let state = state.clone();
+    let permit = take_import_slot(&importer.imports).await?;
+    let importer = importer.clone();
     let handle = tokio::runtime::Handle::current();
     run_blocking("end import run", move || {
         handle.block_on(async move {
@@ -113,12 +141,16 @@ pub(super) async fn end_run(
             // block, before the work that follows a run's end.
             {
                 let _permit = permit;
-                let _guard = state.account_import_locks.lock(account.to_string()).await;
-                let mut conn = state.db.acquire().await?;
+                let _guard = importer
+                    .imports
+                    .account_locks
+                    .lock(account.to_string())
+                    .await;
+                let mut conn = importer.db.acquire().await?;
                 end_and_dedupe(&mut conn, account, import_id, end, now).await?;
             }
-            after_run_ended(&state, account, import_id, now).await;
-            let mut conn = state.db.acquire().await?;
+            after_run_ended(&importer, account, import_id, now).await;
+            let mut conn = importer.db.acquire().await?;
             Ok::<_, ApiError>(imports::get_owned_import(&mut conn, account, import_id).await?)
         })
     })
@@ -167,20 +199,26 @@ async fn end_and_dedupe(
 /// the account's files no row names, and queue the run's Assets for their
 /// Thumbnails and Previews. Neither fails: each logs what it could not do.
 async fn after_run_ended(
-    state: &AppState,
+    importer: &Importer,
     account: i64,
     import_id: i64,
     now: chrono::DateTime<chrono::Utc>,
 ) {
     crate::asset_store::sweep_after_run(
-        &state.db,
-        &state.cfg.paths,
+        &importer.db,
+        &importer.cfg.paths,
         account,
-        state.upload_time_limits.stall,
+        importer.upload_time_limits.stall,
     )
     .await;
-    crate::media_queue::queue_import_run(&state.db, &state.media_queue, account, import_id, now)
-        .await;
+    crate::media_queue::queue_import_run(
+        &importer.db,
+        &importer.media_queue,
+        account,
+        import_id,
+        now,
+    )
+    .await;
 }
 
 /// Bound on concurrent HTTP imports: each import holds one pooled connection
@@ -189,7 +227,7 @@ async fn after_run_ended(
 pub(super) const MAX_CONCURRENT_IMPORTS: usize = 2;
 
 /// A new server's import slots, [`MAX_CONCURRENT_IMPORTS`] of them, which
-/// `AppState::new` holds as `import_slots`: one count per server.
+/// `AppState::new` holds as `ImportState::slots`: one count per server.
 pub(crate) fn import_slots() -> Arc<tokio::sync::Semaphore> {
     Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_IMPORTS))
 }
@@ -209,8 +247,10 @@ pub(crate) fn import_slots() -> Arc<tokio::sync::Semaphore> {
 /// # Errors
 ///
 /// Returns [`ApiError::ServerStopping`] when the slots closed.
-pub(super) async fn take_import_slot(state: &AppState) -> Result<OwnedSemaphorePermit, ApiError> {
-    Arc::clone(&state.import_slots)
+pub(super) async fn take_import_slot(
+    imports: &ImportState,
+) -> Result<OwnedSemaphorePermit, ApiError> {
+    Arc::clone(&imports.slots)
         .acquire_owned()
         .await
         .map_err(|_| server_stopping())
@@ -228,12 +268,12 @@ pub(super) fn server_stopping() -> ApiError {
 /// validated when the run was created, names an on-disk directory. The
 /// batch holds `_import_permit`, its import slot, until the import ends.
 pub(super) async fn run_import_path(
-    state: AppState,
+    importer: Importer,
     _import_permit: OwnedSemaphorePermit,
     context: BatchContext,
     jsonl_path: PathBuf,
 ) -> Result<Json<CreateImportBatchResponse>, ApiError> {
-    let cfg = Arc::clone(&state.cfg);
+    let cfg = Arc::clone(&importer.cfg);
     let BatchContext {
         account,
         import_id,
@@ -242,11 +282,15 @@ pub(super) async fn run_import_path(
         phone_country,
     } = context;
 
-    let _guard = state.account_import_locks.lock(account.to_string()).await;
+    let _guard = importer
+        .imports
+        .account_locks
+        .lock(account.to_string())
+        .await;
 
     // One pooled connection held for the whole import; the batch's import
     // slot keeps enough of the pool free for other requests.
-    let mut conn = state.db.acquire().await?;
+    let mut conn = importer.db.acquire().await?;
 
     // A `replace` run wipes the source once, on its first batch; every batch
     // after that appends. The row's stamped messages say which this is.
