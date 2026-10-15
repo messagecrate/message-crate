@@ -2190,9 +2190,8 @@ async fn an_api_token_on_the_owners_account_answers_401_like_an_unknown_token() 
             "by hand",
             Permissions::all(),
             None,
-            // The routes below check the token's expiry against the clock,
-            // so only the owner rule can refuse it.
-            chrono::Utc::now(),
+            // Live by the router's clock, so only the owner rule can refuse it.
+            crate::test_support::routed_credential_instant(),
         )
         .await
         .unwrap()
@@ -2292,7 +2291,9 @@ async fn sigterm_drains_the_request_in_flight_then_stops_the_server() {
         .status()
         .unwrap();
     assert!(status.success());
-    stopping_rx.await.expect("the server saw SIGTERM");
+    stopping_rx
+        .await
+        .expect("the stop signal was dropped before the server saw SIGTERM");
 
     // The request is still in flight, so the server must still be running.
     assert!(

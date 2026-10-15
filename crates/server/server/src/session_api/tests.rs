@@ -119,8 +119,7 @@ async fn logging_out_with_an_api_token_is_refused_and_leaves_the_token_working()
         "push",
         crate::db::permissions::Permissions::all(),
         None,
-        // The routes below check the token's expiry against the clock.
-        chrono::Utc::now(),
+        crate::test_support::routed_credential_instant(),
     )
     .await
     .unwrap()

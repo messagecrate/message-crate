@@ -1880,8 +1880,7 @@ async fn a_token_may_not_delete_messages_or_close_the_account() {
         "tool",
         Permissions::all(),
         None,
-        // The routes below check the token's expiry against the clock.
-        chrono::Utc::now(),
+        crate::test_support::routed_credential_instant(),
     )
     .await
     .unwrap()

@@ -138,7 +138,11 @@ impl TestFixture {
     /// Insert an account, `importer`, under the id the database hands out,
     /// open a session on it, and start one running Import Run for it, all
     /// straight into the database, for a test that calls an import handler
-    /// function directly rather than over HTTP.
+    /// function directly rather than over HTTP. The session is made at
+    /// [`crate::test_support::fixed_instant`] and is live only at that
+    /// instant, so the router refuses it; a test that sends a token over
+    /// HTTP makes its own at
+    /// [`crate::test_support::routed_credential_instant`].
     pub async fn account_with_running_import(&self) -> ImportingAccount {
         let account_id = self.account("importer").await;
         let mut conn = self.conn().await;
@@ -165,10 +169,12 @@ impl TestFixture {
     }
 }
 
-/// An account with a live session and a running Import Run, from
+/// An account with a session live at
+/// [`crate::test_support::fixed_instant`] and a running Import Run, from
 /// [`TestFixture::account_with_running_import`].
 pub struct ImportingAccount {
-    /// A live session token for the account.
+    /// A session token for the account, live at
+    /// [`crate::test_support::fixed_instant`].
     pub token: String,
     /// The id of its running Import Run.
     pub import_id: i64,

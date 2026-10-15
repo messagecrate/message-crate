@@ -337,13 +337,6 @@ pub(super) fn operations() -> Vec<Operation> {
 /// gets fresh accounts inside this one instead of a fixture of its own.
 ///
 /// An account holds one Session at a time, so every call shares the owner's.
-/// The instant a Session or an API token the server under test is sent is
-/// made at. The server checks a credential's expiry against the clock as it
-/// serves the request, so the credential is made by that clock too.
-fn served_now() -> chrono::DateTime<chrono::Utc> {
-    chrono::Utc::now()
-}
-
 /// The one call that ends it, the owner's `DELETE /v1/session`, runs last.
 pub(super) struct Shared {
     fixture: TestFixture,
@@ -364,9 +357,13 @@ impl Shared {
         )
         .await
         .unwrap();
-        let owner_session = insert_account_session_token(&mut conn, OWNER_ACCOUNT_ID, served_now())
-            .await
-            .unwrap();
+        let owner_session = insert_account_session_token(
+            &mut conn,
+            OWNER_ACCOUNT_ID,
+            crate::test_support::routed_credential_instant(),
+        )
+        .await
+        .unwrap();
         drop(conn);
         // The Demo Account, whose row grants everything, for `document_rules`.
         fixture.demo_account().await;
@@ -451,7 +448,7 @@ impl<'a> World<'a> {
                 .unwrap();
         }
         let session = async |conn: &mut sqlx::SqliteConnection, id| {
-            insert_account_session_token(conn, id, served_now())
+            insert_account_session_token(conn, id, crate::test_support::routed_credential_instant())
                 .await
                 .unwrap()
         };
@@ -462,7 +459,7 @@ impl<'a> World<'a> {
                 label,
                 Permissions::token(import, export),
                 None,
-                served_now(),
+                crate::test_support::routed_credential_instant(),
             )
             .await
             .unwrap()
@@ -616,9 +613,13 @@ impl<'a> World<'a> {
         .await
         .unwrap();
         tx.commit().await.unwrap();
-        insert_account_session_token(&mut conn, account_profile::DEMO_ACCOUNT_ID, served_now())
-            .await
-            .unwrap()
+        insert_account_session_token(
+            &mut conn,
+            account_profile::DEMO_ACCOUNT_ID,
+            crate::test_support::routed_credential_instant(),
+        )
+        .await
+        .unwrap()
     }
 
     pub(super) fn url(&self, path: &str) -> String {

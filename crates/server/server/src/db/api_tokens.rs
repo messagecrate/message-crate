@@ -4,7 +4,8 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use sqlx::SqliteConnection;
 
-use super::session_tokens::{generate_prefixed_token, hash_api_token, unix_secs};
+use super::session_tokens::{generate_prefixed_token, hash_api_token};
+use super::unix_secs;
 use crate::db::permissions::Permissions;
 
 /// Metadata for one API token (never includes plaintext or hash).
@@ -374,16 +375,15 @@ pub async fn update_api_token_label(
 /// Expiry timestamp `expires_in_days` after `created_at`, a Unix second;
 /// `Some(0)` means the caller asked for no expiry.
 fn api_token_expiry(expires_in_days: Option<u64>, created_at: u64) -> Option<String> {
-    let now = created_at;
     match expires_in_days {
         Some(0) => None, // caller asked for no expiry
         Some(days) => Some(format!(
             "{}",
-            now.saturating_add(days.saturating_mul(86_400))
+            created_at.saturating_add(days.saturating_mul(86_400))
         )),
         None => Some(format!(
             "{}",
-            now.saturating_add(DEFAULT_API_TOKEN_TTL_SECS)
+            created_at.saturating_add(DEFAULT_API_TOKEN_TTL_SECS)
         )),
     }
 }

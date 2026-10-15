@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
-use crate::db::session_tokens::unix_secs;
+use crate::db::unix_secs;
 
 /// How much Demo Data the Demo Account holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
