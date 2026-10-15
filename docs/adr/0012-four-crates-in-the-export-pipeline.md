@@ -4,8 +4,8 @@ The code that turns a phone backup into files on disk is four crates, and each
 one holds a single job.
 
 - **`message-crate-core`** is the run model: the configuration a run is given,
-  the report it produces, the shared run skeleton (`run_pipeline`), and the one function that
-  stages a conversation's attachments. It holds `ScratchDir` too, the
+  the report it produces, the shared run skeleton (`run_pipeline`), and the
+  one function that stages a conversation's attachments. It holds `ScratchDir` too, the
   locked directory under the desktop app's Scratch Directory that a run writes its
   scratch data into (the attachment spool, the databases `imessage-reader`
   decrypts), because the staging library and the exporters both make one.

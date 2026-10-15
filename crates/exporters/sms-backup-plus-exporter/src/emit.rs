@@ -594,7 +594,7 @@ const EML_PARSE_CHUNK: usize = 256;
 ///
 /// # Errors
 ///
-/// Returns an error when the run is cancelled.
+/// Returns an error when the run is canceled.
 fn parse_all_emls(
     eml_paths: &[PathBuf],
     inputs: &ParseInputs,
@@ -620,7 +620,7 @@ fn parse_all_emls(
     Ok(())
 }
 
-/// Parse one EML on a worker thread. Checks cancel first so a cancelled run
+/// Parse one EML on a worker thread. Checks cancel first so a canceled run
 /// stops reading files promptly.
 fn parse_eml_path(eml_path: &Path, inputs: &ParseInputs, cancel: &CancelFlag) -> ParsedEmlKind {
     if message_crate_core::is_cancelled(cancel) {

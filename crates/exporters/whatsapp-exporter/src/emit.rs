@@ -51,6 +51,9 @@ pub(crate) struct ConvertExportArgs<'a> {
 /// Convert a wtsexporter `result.json` into the shared conversation structure,
 /// then write the chosen output format.
 ///
+/// Cancellation is checked between chats as they are read and between
+/// conversations.
+///
 /// # Errors
 ///
 /// Returns an error when the JSON cannot be read, a conversation cannot be

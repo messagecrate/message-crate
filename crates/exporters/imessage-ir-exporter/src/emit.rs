@@ -144,6 +144,7 @@ pub(crate) fn open_output(options: &ExportOptions) -> Result<ExportWriterParts> 
 pub(crate) struct ConvertExportArgs<'a> {
     /// The running program, which streams the records.
     pub helper: &'a mut Helper,
+    /// The run's options, log and cancel flag.
     pub options: &'a ExportOptions,
     /// The writer [`open_output`] opened.
     pub output: ExportWriterParts,
