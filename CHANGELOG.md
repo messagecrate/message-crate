@@ -1271,6 +1271,12 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-14: **A Demo Data backup left behind is in the server's log.**
+  When the server writes new Demo Data, it removes its backup of the files
+  they replace. When that removal failed, the warning went only to the
+  terminal the server was started from, never to the server's log or the
+  **Logs** panel in Owner Home. It now goes there, and the `reset-demo`
+  command still prints it (#2903).
 - 2026-10-12: **A slow or stuck device can no longer hold the server.** A
   device that connected and sent nothing, sent its request a byte at a time,
   or stopped part-way through sending one could hold its connection for

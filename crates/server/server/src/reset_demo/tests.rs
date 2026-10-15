@@ -2386,6 +2386,29 @@ async fn a_first_start_stopped_after_the_account_row_is_seeded_whole_by_the_next
     );
 }
 
+/// A warning the Demo Data generator returns, such as a backup of the
+/// previous Demo Data it could not remove, reaches the server's log under
+/// `serve`, not standard error alone (#2903).
+#[tokio::test]
+async fn a_generator_warning_under_serve_reaches_the_server_log() {
+    let stats = demo_seed::GenStats {
+        warnings: vec!["the backup at /somewhere could not be removed".into()],
+        ..demo_seed::GenStats::default()
+    };
+
+    let ((), lines) = crate::test_support::lines_written_by("warn", async {
+        say_generator_warnings(&stats, Progress::Log);
+    })
+    .await;
+
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.text.contains("the backup at /somewhere could not be removed")),
+        "{lines:#?}"
+    );
+}
+
 /// The Demo Account build `serve` runs on a new database says every step
 /// through `tracing`, so each line reaches the server's log and the owner's
 /// Logs panel, from the removal of an old Demo Account to the Previews and

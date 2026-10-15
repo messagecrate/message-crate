@@ -735,6 +735,35 @@ fn restore_attempts_all_paths_after_one_restore_fails() {
     assert!(prepared.join(".previous-active/config").exists());
 }
 
+/// When the new files are in place but the backup of the previous ones
+/// cannot be removed, the replacement succeeds and returns a warning naming
+/// the backup, for the caller to say where its warnings go (#2903).
+#[test]
+fn an_installed_replacement_returns_a_warning_when_its_backup_cannot_be_removed() {
+    let temp = tempfile::tempdir().expect("create test directory");
+    let active = temp.path().join("active");
+    let prepared = temp.path().join("prepared");
+    write_bundle_paths(&active, b"old");
+    write_bundle_paths(&prepared, b"new");
+    let backup = prepared.join(".previous-active");
+
+    let warning = replace_generated_paths_with(
+        &active,
+        &prepared,
+        |source, destination| fs::rename(source, destination).map_err(Into::into),
+        |_backup| Err(io::Error::from(io::ErrorKind::PermissionDenied)),
+    )
+    .expect("the new files are installed")
+    .expect("the failed removal is returned");
+
+    assert_bundle_paths(&active, b"new");
+    assert!(warning.contains("could not be removed"), "{warning}");
+    assert!(
+        warning.contains(&backup.display().to_string()),
+        "{warning}"
+    );
+}
+
 /// When the install fails and every previous path is moved back, but the
 /// emptied backup directory cannot be removed, the previous files are in place.
 /// The message said "Could not restore the previous demo files", because it

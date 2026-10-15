@@ -225,7 +225,7 @@ pub async fn run_reset_demo(size: DemoSize, cfg: &Config) -> Result<ResetDemoSta
     progress.heading(format_args!("Generating the {size} Demo Data set"));
     // `reset-demo` runs in the foreground and stops with its process, so
     // nothing sets the flag.
-    let seed_stats = demo_seed::generate_size_to(size, &bundle, &AtomicBool::new(false))
+    let seed_stats = generate_demo_data(size, &bundle, &AtomicBool::new(false), progress)
         .context("generate demo bundle (demo-seed)")?;
     for line in demo_seed::summary_lines(&seed_stats) {
         progress.say(line);
@@ -276,7 +276,7 @@ pub async fn seed_new_database(cfg: &Config) {
     // Seeding runs before the server listens, on this thread, so no stop
     // can arrive while it generates and nothing sets the flag.
     match seed_new_database_with(cfg, size.into(), |bundle| {
-        demo_seed::generate_size_to(size, bundle, &AtomicBool::new(false)).map(|_| ())
+        generate_demo_data(size, bundle, &AtomicBool::new(false), Progress::Log).map(|_| ())
     })
     .await
     {
@@ -440,7 +440,29 @@ pub type BundleGenerator = fn(DemoSize, &Path, &AtomicBool) -> Result<()>;
 
 /// The generator a running server uses: the built-in data set of the size.
 pub fn generate_bundle(size: DemoSize, bundle: &Path, cancel: &AtomicBool) -> Result<()> {
-    demo_seed::generate_size_to(size, bundle, cancel).map(|_| ())
+    generate_demo_data(size, bundle, cancel, Progress::Log).map(|_| ())
+}
+
+/// Generate the built-in data set of `size` into `bundle`
+/// ([`demo_seed::generate_size_to`]), and say each warning the generator
+/// returns through `progress`: on standard error for `reset-demo`, in the
+/// server's log under `serve` (#2903).
+fn generate_demo_data(
+    size: DemoSize,
+    bundle: &Path,
+    cancel: &AtomicBool,
+    progress: Progress,
+) -> Result<demo_seed::GenStats> {
+    let stats = demo_seed::generate_size_to(size, bundle, cancel)?;
+    say_generator_warnings(&stats, progress);
+    Ok(stats)
+}
+
+/// Say each warning in `stats` through `progress`.
+fn say_generator_warnings(stats: &demo_seed::GenStats, progress: Progress) {
+    for warning in &stats.warnings {
+        progress.warn(warning);
+    }
 }
 
 /// Sets the flag it holds when it is dropped. A build holds one for its

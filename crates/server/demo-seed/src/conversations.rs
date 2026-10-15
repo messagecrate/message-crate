@@ -54,6 +54,10 @@ pub struct GenStats {
     /// each. Every one is counted twice in `messages`, and a database that
     /// imports the bundle hides exactly this many as duplicates.
     pub shared_messages: usize,
+    /// What went wrong without stopping generation, one line each, for the
+    /// caller to say where its warnings go: the backup of the previous files
+    /// that could not be removed once the new ones were in place.
+    pub warnings: Vec<String>,
 }
 
 const TAPBACK_KINDS: &[&str] = &[
