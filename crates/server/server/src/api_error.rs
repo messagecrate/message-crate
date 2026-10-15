@@ -537,6 +537,51 @@ impl From<crate::imports_api::ImportError> for ApiError {
     }
 }
 
+impl From<crate::db::saved_searches::SavedSearchError> for ApiError {
+    fn from(e: crate::db::saved_searches::SavedSearchError) -> Self {
+        use crate::db::saved_searches::SavedSearchError;
+        match e {
+            SavedSearchError::BadRequest(m) => Self::validation(m),
+            SavedSearchError::Query(e) => e.into(),
+            SavedSearchError::NotFound => Self::not_found("saved search"),
+            SavedSearchError::NameTaken(m) | SavedSearchError::NoFreeName(m) => Self::NameTaken(m),
+            SavedSearchError::Internal(e) => Self::Internal(e),
+        }
+    }
+}
+
+impl From<crate::db::named_membership::MembershipError> for ApiError {
+    fn from(e: crate::db::named_membership::MembershipError) -> Self {
+        use crate::db::named_membership::MembershipError;
+        match e {
+            MembershipError::BadRequest(m) => Self::validation(m),
+            MembershipError::NotFound(m) => Self::NotFound(m),
+            MembershipError::SetNotFound(label) => Self::not_found(label),
+            MembershipError::NameTaken(m) => Self::NameTaken(m),
+            MembershipError::Internal(e) => Self::Internal(e),
+        }
+    }
+}
+
+impl From<crate::db::SearchListError> for ApiError {
+    fn from(e: crate::db::SearchListError) -> Self {
+        match e {
+            crate::db::SearchListError::Query(err) => err.into(),
+            crate::db::SearchListError::Internal(err) => Self::Internal(err),
+        }
+    }
+}
+
+impl From<crate::db::conversation_messages::MessagePageError> for ApiError {
+    fn from(e: crate::db::conversation_messages::MessagePageError) -> Self {
+        use crate::db::conversation_messages::MessagePageError;
+        match e {
+            MessagePageError::Invalid(sentence) => Self::validation(sentence),
+            MessagePageError::Internal(err) => Self::Internal(err),
+        }
+    }
+}
+
 impl From<sqlx::Error> for ApiError {
     fn from(e: sqlx::Error) -> Self {
         Self::Internal(e.into())

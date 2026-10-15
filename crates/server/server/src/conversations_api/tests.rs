@@ -19,7 +19,7 @@ async fn list_conversations(
     q: &str,
     limit: usize,
     offset: usize,
-) -> Result<Page<ConversationSummary>, ApiError> {
+) -> Result<Page<ConversationSummary>, crate::db::SearchListError> {
     list_conversations_sorted(
         conn,
         account_id,
@@ -398,7 +398,7 @@ async fn list_queries_enforce_search_limits() {
         .await
         .unwrap_err();
         assert!(
-            matches!(contact_error, ApiError::SearchQueryInvalid { .. }),
+            matches!(contact_error, crate::db::SearchListError::Query(_)),
             "contact query should be rejected: {query}"
         );
 
@@ -407,7 +407,7 @@ async fn list_queries_enforce_search_limits() {
                 .await
                 .unwrap_err();
         assert!(
-            matches!(conversation_error, ApiError::SearchQueryInvalid { .. }),
+            matches!(conversation_error, crate::db::SearchListError::Query(_)),
             "conversation query should be rejected: {query}"
         );
     }
@@ -920,7 +920,7 @@ async fn list_conversations_filters_by_import_id() {
     )
     .await
     .unwrap_err();
-    assert!(matches!(junk, ApiError::SearchQueryInvalid { .. }));
+    assert!(matches!(junk, crate::db::SearchListError::Query(_)));
 }
 
 /// `sort` reads through the shared parser: an unknown key is refused,

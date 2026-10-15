@@ -38,25 +38,15 @@ pub enum MembershipError {
     NotFound(String),
     /// The set itself is missing; carries its label (`"tag"` / `"group"`).
     SetNotFound(&'static str),
-    Conflict(String),
+    /// Another set of the account has the name; carries the sentence naming
+    /// it.
+    NameTaken(String),
     Internal(anyhow::Error),
 }
 
 impl From<sqlx::Error> for MembershipError {
     fn from(e: sqlx::Error) -> Self {
         Self::Internal(e.into())
-    }
-}
-
-impl From<MembershipError> for crate::api_error::ApiError {
-    fn from(e: MembershipError) -> Self {
-        match e {
-            MembershipError::BadRequest(m) => Self::validation(m),
-            MembershipError::NotFound(m) => Self::NotFound(m),
-            MembershipError::SetNotFound(label) => Self::not_found(label),
-            MembershipError::Conflict(m) => Self::NameTaken(m),
-            MembershipError::Internal(e) => Self::Internal(e),
-        }
     }
 }
 
@@ -489,7 +479,7 @@ pub async fn create_set(
         .await?
     {
         Some(id) => Ok(NamedSet { id, name }),
-        None => Err(MembershipError::Conflict(format!(
+        None => Err(MembershipError::NameTaken(format!(
             "{} already exists",
             spec.label
         ))),
@@ -517,7 +507,7 @@ pub async fn rename_set(
     if let Some(other) = find_id(spec, &mut tx, account_id, &new_name).await?
         && other != id
     {
-        return Err(MembershipError::Conflict(format!(
+        return Err(MembershipError::NameTaken(format!(
             "{} already exists",
             spec.label
         )));

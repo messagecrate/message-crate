@@ -36,7 +36,7 @@ async fn a_name_created_meanwhile_is_taken_in_any_letter_case() {
         .unwrap_err();
 
         assert!(
-            matches!(err, SavedSearchError::Conflict(_)),
+            matches!(err, SavedSearchError::NameTaken(_)),
             "{second}: {err:?}"
         );
         let rows = list(&mut conn, account).await.unwrap();
@@ -112,7 +112,7 @@ async fn names_collide_case_insensitively_within_an_account() {
     )
     .await
     .unwrap_err();
-    assert!(matches!(err, SavedSearchError::Conflict(_)), "got {err:?}");
+    assert!(matches!(err, SavedSearchError::NameTaken(_)), "got {err:?}");
 }
 
 #[tokio::test]
@@ -216,7 +216,7 @@ async fn update_rejects_a_name_another_row_already_uses() {
     let err = update(&mut conn, account, second.id, "family", "kind:direct")
         .await
         .unwrap_err();
-    assert!(matches!(err, SavedSearchError::Conflict(_)), "got {err:?}");
+    assert!(matches!(err, SavedSearchError::NameTaken(_)), "got {err:?}");
 }
 
 #[tokio::test]

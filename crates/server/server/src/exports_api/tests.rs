@@ -37,7 +37,7 @@ async fn page(
         crate::test_support::fixed_instant(),
     )
     .await?;
-    export_messages(
+    Ok(export_messages(
         conn,
         ExportPageOpts {
             export_id: run.id,
@@ -46,7 +46,7 @@ async fn page(
             order: oldest_first(),
         },
     )
-    .await
+    .await?)
 }
 
 /// The four counts a run over `scope` records.
