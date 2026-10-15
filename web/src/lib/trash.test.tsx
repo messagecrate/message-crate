@@ -12,7 +12,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { testQueryClient } from "../test/providers";
+import { authModule, testQueryClient } from "../test/providers";
 import { freshEntries, seedEntries } from "../test/staleEntries";
 import { keys } from "./queryKeys";
 import {
@@ -34,7 +34,7 @@ import {
   useTrashConversation,
 } from "./trash";
 
-vi.mock("./authContext", () => ({ useAuth: () => ({ accountId: 7 }) }));
+vi.mock("./authContext", () => authModule({ accountId: 7 }));
 
 vi.mock("./serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./serverApi")>()),

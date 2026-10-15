@@ -7,11 +7,11 @@ import { listMessages } from "../lib/serverApi";
 import type { MessageSearch } from "../lib/types";
 import { message } from "../test/apiShapes";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { mockedAuth, Providers } from "../test/providers";
+import { authModule, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
 import MessageSearchList from "./MessageSearchList";
 
-vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", () => authModule());
 
 vi.mock("../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverApi")>()),

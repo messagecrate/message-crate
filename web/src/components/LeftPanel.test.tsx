@@ -5,7 +5,7 @@ import { useLayoutEffect } from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { mockedAuth, Providers } from "../test/providers";
+import { authModule, Providers } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 import type { NavItem } from "./appLayoutContext";
 import LeftPanel from "./LeftPanel";
@@ -23,7 +23,7 @@ vi.mock("../lib/useAccountProfile", () => ({
   useAccountProfile: () => ({ profile: profileState.profile }),
 }));
 
-vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", () => authModule());
 
 vi.mock("../lib/useContactGroups", () => ({
   useContactGroups: () => ({ groups: [] }),

@@ -4,11 +4,11 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { advanceToNextFrame, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { mockedAuth, Providers } from "../test/providers";
+import { authModule, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
 import GroupsNav from "./GroupsNav";
 
-vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", () => authModule());
 
 beforeEach(() => {
   startFakeClock();

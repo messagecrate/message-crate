@@ -8,7 +8,7 @@
  * instead, so anything showing tokens refreshes.
  */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,11 +17,12 @@ import { createApiToken, deleteApiToken, listApiTokens, renameApiToken } from ".
 import type { components } from "../../lib/serverApi.types";
 import { deferred } from "../../test/deferred";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
+import { authModule, testQueryClient } from "../../test/providers";
 import { useApiTokens } from "./useApiTokens";
 
 type ApiToken = components["schemas"]["ApiToken"];
 
-vi.mock("../../lib/authContext", () => ({ useAuth: () => ({ accountId: 7 }) }));
+vi.mock("../../lib/authContext", () => authModule({ accountId: 7 }));
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),
@@ -62,9 +63,7 @@ beforeEach(() => {
   startFakeClock();
   vi.clearAllMocks();
   list.mockResolvedValue([token]);
-  client = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
-  });
+  client = testQueryClient();
 });
 
 afterEach(() => {

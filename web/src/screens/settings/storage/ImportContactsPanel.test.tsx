@@ -4,14 +4,14 @@ import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getImportContacts } from "../../../lib/serverApi";
 import { settle, startFakeClock, stopFakeClock } from "../../../test/fakeTimers";
-import { mockedAuth, renderWithProviders as render } from "../../../test/providers";
+import { authModule, renderWithProviders as render } from "../../../test/providers";
 import ImportContactsPanel from "./ImportContactsPanel";
 
 vi.mock("../../../lib/serverApi", () => ({
   getImportContacts: vi.fn(),
 }));
 
-vi.mock("../../../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../../lib/authContext", () => authModule());
 
 const get = vi.mocked(getImportContacts);
 

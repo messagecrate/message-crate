@@ -12,12 +12,12 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { mockedAuth, Providers } from "../test/providers";
+import { authModule, Providers } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 import GroupsNav from "./GroupsNav";
 import MessageTagsNav from "./MessageTagsNav";
 
-vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", () => authModule());
 
 const routes = vi.hoisted(() => ({
   listContactGroups: vi.fn(),

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getAccountProfile } from "../lib/serverApi";
 import { account } from "../test/apiShapes";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { mockedAuth, Providers } from "../test/providers";
+import { authModule, Providers } from "../test/providers";
 import SettingsScreen from "./SettingsScreen";
 
 /**
@@ -34,9 +34,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
 }));
 
-vi.mock("../lib/authContext", () => ({
-  useAuth: () => ({ ...mockedAuth, updateToken: vi.fn() }),
-}));
+vi.mock("../lib/authContext", () => authModule({ updateToken: vi.fn() }));
 
 afterEach(() => {
   cleanup();

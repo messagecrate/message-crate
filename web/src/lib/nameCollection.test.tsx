@@ -9,12 +9,13 @@
  * tested here at the interface with the routes faked by name.
  */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { deferred } from "../test/deferred";
 import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { authModule, testQueryClient } from "../test/providers";
 import { freshEntries, seedEntries } from "../test/staleEntries";
 import {
   type ChipTarget,
@@ -29,9 +30,7 @@ import {
 } from "./nameCollection";
 import { keys } from "./queryKeys";
 
-vi.mock("./authContext", () => ({
-  useAuth: () => ({ accountId: 7 }),
-}));
+vi.mock("./authContext", () => authModule({ accountId: 7 }));
 
 let client: QueryClient;
 
@@ -103,15 +102,13 @@ function detailGroups(): string[] | undefined {
 
 beforeEach(() => {
   startFakeClock();
-  client = new QueryClient({
-    // Not 0: the chip targets below are patched but never observed by a
+  client = // `keepUnread`: the chip targets below are patched but never observed by a
     // `useQuery` in this file, and with `gcTime: 0` the library's own
     // garbage collector removes an unobserved entry on a zero-delay timer,
     // which the `settle()` before the test reads the optimistic chip runs.
     // A hook that does observe (rendered elsewhere) is unaffected by this
     // either way.
-    defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: 0 } },
-  });
+    testQueryClient({ keepUnread: true });
 });
 
 afterEach(() => {

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render as rtlRender, screen, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,11 +11,12 @@ import { routeQueryKey } from "../lib/routeQueryKey";
 import { focusRingClass } from "../lib/uiStyles";
 import { advanceToNextFrame, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { nth } from "../test/nth";
+import { authModule, testQueryClient } from "../test/providers";
 import { inTimeZone } from "../test/timeZone";
 import { fill, setupUser } from "../test/user";
 import ContactDrawer from "./ContactDrawer";
 
-vi.mock("../lib/authContext", () => ({ useAuth: () => ({ accountId: 7 }) }));
+vi.mock("../lib/authContext", () => authModule({ accountId: 7 }));
 
 let client: QueryClient;
 
@@ -92,17 +93,9 @@ describe("ContactDrawer", () => {
     post.mockResolvedValue(undefined);
     trash.mockReset();
     trash.mockResolvedValue(undefined);
-    client = new QueryClient({
-      // Seeded entries have no observer until the drawer opens that contact, so
-      // they must survive collection to stand in for an earlier open.
-      defaultOptions: {
-        queries: {
-          retry: false,
-          gcTime: Number.POSITIVE_INFINITY,
-          staleTime: Number.POSITIVE_INFINITY,
-        },
-      },
-    });
+    // Seeded entries have no observer until the drawer opens that contact, so
+    // they must survive collection to stand in for an earlier open.
+    client = testQueryClient({ keepUnread: true, neverStale: true });
   });
 
   it("keeps groups and avoids zero counts on first paint when switching to an uncached contact", async () => {
