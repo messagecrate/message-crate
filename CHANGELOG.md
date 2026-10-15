@@ -821,21 +821,21 @@ carry their date on the heading.
 
 #### Importing
 
-- 2026-10-15: **A joined MP3 converts again.** An MP3 made by joining
-  recordings back to back keeps the first recording's header, which states
-  only that recording's length. When the whole file played more than twice
-  that, its conversion was stopped as looping on a damaged file and the
-  attachment was recorded as one that could not be converted. Only a video
-  conversion is now stopped for running past twice its length. An audio
-  conversion is stopped when it makes no progress, or after twenty times
-  the file's length, at least 10 minutes and at most 6 hours. One that runs
-  past the length its header states gets at least an hour (#2909).
-- 2026-10-15: **A file that could not be converted names the cause.** The
-  short reason on an attachment ffmpeg could not convert was the last line
-  ffmpeg wrote, which can follow from the cause rather than name it, such as
-  "Nothing was written into output file" after an encoder that would not
-  open. The reason is now the last line that names a cause, such as why the
-  encoder would not open or that the disk is full (#2959).
+- 2026-10-15: **An SMS Backup+ import skips the WhatsApp messages in it.**
+  From 2013 to 2015, SMS Backup+ also backed up WhatsApp messages. An
+  import read each one as a text message to or from its number, and could
+  show a message you received as one you sent. They are now skipped and
+  counted, as call log entries already were, and the summary says how
+  many, such as "Skipped 12 WhatsApp messages" (#2912).
+- 2026-10-15: **A damaged SMS Backup & Restore file is refused whole.** A
+  backup file cut off or damaged partway was imported up to the damage, and
+  only when its owner's phone number was given; without one, it was refused
+  with a message about the phone number, so Settings → Convert could not
+  read it at all. Now an import and Convert both refuse such a file with the
+  same message: the file is not valid XML, where, and why. Nothing is
+  imported from it, so a person fetches a good copy rather than import half
+  a backup without noticing. A single message that cannot be kept in a good
+  file is still skipped and counted, and the rest comes in (#2028).
 - 2026-10-15: **The Import form checks an Android backup path's kind.**
   SMS Backup & Restore takes one `.xml` file, and GO SMS Pro and SMS
   Backup+ take a directory. A path of the other kind, or one that does not
@@ -860,6 +860,21 @@ carry their date on the heading.
   be read by every other user of the same computer on macOS and Linux. It is
   now made so that only you can open it. The Staging Directory itself keeps
   the permissions it has (#2969).
+- 2026-10-15: **A joined MP3 converts again.** An MP3 made by joining
+  recordings back to back keeps the first recording's header, which states
+  only that recording's length. When the whole file played more than twice
+  that, its conversion was stopped as looping on a damaged file and the
+  attachment was recorded as one that could not be converted. Only a video
+  conversion is now stopped for running past twice its length. An audio
+  conversion is stopped when it makes no progress, or after twenty times
+  the file's length, at least 10 minutes and at most 6 hours. One that runs
+  past the length its header states gets at least an hour (#2909).
+- 2026-10-15: **A file that could not be converted names the cause.** The
+  short reason on an attachment ffmpeg could not convert was the last line
+  ffmpeg wrote, which can follow from the cause rather than name it, such as
+  "Nothing was written into output file" after an encoder that would not
+  open. The reason is now the last line that names a cause, such as why the
+  encoder would not open or that the disk is full (#2959).
 - 2026-10-12: **A wrong iPhone backup password names the field to fix.** A
   password that does not open an encrypted iPhone backup is now refused with
   "The Encryption password is incorrect.", in the same words as the other

@@ -32,6 +32,12 @@ This is the same family of files that [SMS Backup & Restore](https://www.synctec
 
 The exporter crate owns the format in both directions; `message-ir-format` knows only that a merged archive exists. A caller that wants `smses.xml` opens a `FormatSink` (or `ExportWriter`), calls `with_archive(Box::new(SbrArchive))`, writes each conversation with `write_document`, and calls `finish`. Asking for XML without the archive is refused at `finish`, and `write_format(..., Xml, …)` returns an error, because a single shared file cannot be rewritten per chat.
 
+A file that is not valid XML is refused whole, in the pass that infers the owner's phone and the pass that reads the messages alike.
+The run fails with an error naming the file, the byte and the parser's reason, such as `smses.xml is not valid XML at byte 511: the file ends before </addrs>`, and nothing is converted or imported.
+A file cut off between two elements is refused too, because it ends while `<smses>` is still open.
+A file damaged partway is a bad copy of the backup to fetch again, not a smaller backup, so the messages before the damage are not kept.
+A message that cannot be kept in a valid file, such as one with a date that is not a number, is skipped and counted, and the read goes on.
+
 ## Mapping rules
 
 - **SMS** in a one-to-one conversation with no attachments: `<sms>` with `type` `1`/`2`, `date` = `timestamp_unix_ms`, `body` = text.
