@@ -105,8 +105,8 @@ beforeEach(() => {
 
 /** The path the last call was made with, without its query string. */
 function lastPath(mock: { mock: { calls: unknown[][] } }): string {
-  const [path = ""] = String(nth(nth(mock.mock.calls, mock.mock.calls.length - 1), 0)).split("?");
-  return path;
+  const calls = mock.mock.calls;
+  return nth(String(nth(nth(calls, calls.length - 1), 0)).split("?"), 0);
 }
 
 /** The query of the last call, as a plain object. */

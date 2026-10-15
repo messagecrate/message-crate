@@ -40,7 +40,10 @@ function countOrZero(n: number | null | undefined, one: string, many?: string): 
   return countOf(n ?? 0, one, many);
 }
 
-/** "import", "import and export", "import, export and delete". */
+/**
+ * "import", "import and export", "import, export and delete", for a line of
+ * text: both callers pass a list they checked is not empty.
+ */
 function permissions(names: string[]): string {
   return joinWithAnd(names) ?? "";
 }
