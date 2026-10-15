@@ -61,7 +61,7 @@ async fn complete_import_persists_timings_and_issues() {
             upload_ms: Some(8_000),
             summary_json: Some(r#"{"parse":{"messages":10}}"#.into()),
             issues: vec![ImportIssueInput {
-                kind: RunIssueKind::Skip,
+                kind: ImportErrorKind::Skip,
                 stage: crate::db::imports::ImportIssueStage::Media,
                 item: "photo.heic".into(),
                 reason: "convert failed".into(),
@@ -161,13 +161,13 @@ async fn list_import_issues_returns_them_oldest_first() {
             summary_json: Some(r#"{"parse":{"messages":10}}"#.into()),
             issues: vec![
                 ImportIssueInput {
-                    kind: RunIssueKind::Skip,
+                    kind: ImportErrorKind::Skip,
                     stage: crate::db::imports::ImportIssueStage::Media,
                     item: "photo.heic".into(),
                     reason: "convert failed".into(),
                 },
                 ImportIssueInput {
-                    kind: RunIssueKind::Error,
+                    kind: ImportErrorKind::Error,
                     stage: crate::db::imports::ImportIssueStage::Upload,
                     item: "archive.zip".into(),
                     reason: "upload failed".into(),
@@ -187,9 +187,9 @@ async fn list_import_issues_returns_them_oldest_first() {
     assert_eq!(row.parse_ms, Some(18_000));
     let issues = list_import_issues(&mut conn, import_id).await.unwrap();
     assert_eq!(issues.len(), 2);
-    assert_eq!(issues[0].kind, RunIssueKind::Skip);
+    assert_eq!(issues[0].kind, ImportErrorKind::Skip);
     assert_eq!(issues[0].stage, crate::db::imports::ImportIssueStage::Media);
-    assert_eq!(issues[1].kind, RunIssueKind::Error);
+    assert_eq!(issues[1].kind, ImportErrorKind::Error);
     assert_eq!(
         issues[1].stage,
         crate::db::imports::ImportIssueStage::Upload
@@ -412,7 +412,7 @@ async fn stage_advances_and_discard_frees_the_slot() {
 /// One issue and one note, for the tests that check when they are recorded.
 fn one_issue_and_one_note() -> (Vec<ImportIssueInput>, Vec<ImportNoteRow>) {
     let issue = ImportIssueInput {
-        kind: RunIssueKind::Error,
+        kind: ImportErrorKind::Error,
         stage: ImportIssueStage::Media,
         item: "photo.heic".into(),
         reason: "convert failed".into(),
@@ -751,7 +751,7 @@ async fn complete_import_refuses_a_run_that_has_finished() {
     let with_issue = || CompleteImportArgs {
         status: "completed_with_issues".into(),
         issues: vec![ImportIssueInput {
-            kind: RunIssueKind::Skip,
+            kind: ImportErrorKind::Skip,
             stage: crate::db::imports::ImportIssueStage::Media,
             item: "photo.heic".into(),
             reason: "convert failed".into(),

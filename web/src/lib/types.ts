@@ -127,6 +127,15 @@ export interface ImportProgressEvent {
 }
 
 /**
+ * What one row a run reports is: `skip` when the run left the item out,
+ * `error` when the item failed, `note` when it did something with the item
+ * worth knowing that is not a failure, and `resolved` when an earlier row
+ * about the same item no longer holds. Rust's `RunIssueKind`; the server
+ * stores only the first two, as an Import Error's kind (`ImportErrorKind`).
+ */
+export type RunIssueKind = "skip" | "error" | "note" | "resolved";
+
+/**
  * One row for the Import Errors list, or the notes list (`desktop-job:issue`),
  * sent the moment the stage records it.
  */
@@ -139,7 +148,7 @@ export interface ImportIssueEvent {
    * with the same stage and item no longer holds, as when Media converts a
    * file on a later try.
    */
-  kind: components["schemas"]["RunIssueKind"];
+  kind: RunIssueKind;
   step: "parse" | "attachments" | "prepare" | "media" | "upload";
   item: string;
   reason: string;

@@ -3216,6 +3216,12 @@ export interface components {
              */
             tapbacks: number;
         };
+        /**
+         * @description What an Import Error is: `skip` when the run left the item out, `error`
+         *     when the item failed.
+         * @enum {string}
+         */
+        ImportErrorKind: "skip" | "error";
         /** @description One stored import issue. */
         ImportIssue: {
             /**
@@ -3227,7 +3233,7 @@ export interface components {
              * @description `error` when the item failed, or `skip` when the run left it out
              *     without importing it.
              */
-            kind: components["schemas"]["RunIssueKind"];
+            kind: components["schemas"]["ImportErrorKind"];
             /** @description Why the item failed or was skipped. */
             reason: string;
             /** @description Stage the issue came from. */
@@ -3248,7 +3254,7 @@ export interface components {
              *     `notes`, and the desktop app applies a `resolved` row to the record
              *     before it sends it.
              */
-            kind: components["schemas"]["RunIssueKind"];
+            kind: components["schemas"]["ImportErrorKind"];
             /**
              * @description Why the item failed or was skipped, in one sentence. Stored trimmed;
              *     over 2,000 characters is refused with `422 Unprocessable Entity`.
@@ -5430,14 +5436,6 @@ export interface components {
          * @enum {string}
          */
         RunCredential: "session" | "api_token";
-        /**
-         * @description What one row a run reports for its Import Run's record is: `skip` when
-         *     the run left the item out, `error` when the item failed, `note` when the
-         *     run did something with it worth knowing that is not a failure, and
-         *     `resolved` when an earlier row about the same item no longer holds.
-         * @enum {string}
-         */
-        RunIssueKind: "skip" | "error" | "note" | "resolved";
         /**
          * @description How a run stands, as the run's own list spells it: an Import Run's
          *     status, or an Export Run's, which never finishes with issues.
