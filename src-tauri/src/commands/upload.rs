@@ -199,10 +199,7 @@ fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
             events::emit(
                 app,
                 events::FILE_DONE,
-                events::ImportFileDoneEvent {
-                    file,
-                    status: status.as_str().into(),
-                },
+                events::ImportFileDoneEvent::new(file, status),
             );
         }
         ProgressEvent::Issue {
