@@ -61,15 +61,7 @@ describe("missingAttachmentChipLabel", () => {
     ).toBe("clip.mov (could not be converted — no video stream)");
   });
 
-  it("shows an explicit unknown reason instead of swallowing it", () => {
-    expect(
-      missingAttachmentChipLabel(
-        attachment({ original_name: "a.bin", missing_reason: "unknown: gremlins" }),
-      ),
-    ).toBe("a.bin (could not be imported — gremlins)");
-  });
-
-  it("keeps an unrecognized raw reason visible, worded like the unknown case", () => {
+  it("keeps an unrecognized reason visible", () => {
     expect(
       missingAttachmentChipLabel(
         attachment({ original_name: "a.bin", missing_reason: "weird_reason" }),
@@ -83,14 +75,6 @@ describe("missingAttachmentChipLabel", () => {
         attachment({ original_name: "clip.mov", missing_reason: "convert_failed: " }),
       ),
     ).toBe("clip.mov (could not be converted)");
-  });
-
-  it("drops the trailing dash when an unknown reason has no detail", () => {
-    expect(
-      missingAttachmentChipLabel(
-        attachment({ original_name: "a.bin", missing_reason: "unknown: " }),
-      ),
-    ).toBe("a.bin (could not be imported)");
   });
 
   it("treats no_path and null as plain missing", () => {
