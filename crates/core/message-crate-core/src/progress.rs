@@ -57,13 +57,6 @@ pub enum ProgressEvent {
         /// Conversation files the run will write.
         total: usize,
     },
-    /// Attachments converted or compressed so far by the Media stage.
-    Media {
-        /// Files finished.
-        done: usize,
-        /// Files the Media stage covers.
-        total: usize,
-    },
     /// The write queue finished with one conversation file: it wrote the
     /// file, or a resumed run found it already written to the end and
     /// skipped it without reading the conversation again. The desktop app
@@ -101,7 +94,6 @@ impl ProgressEvent {
             Self::Parse { .. } => Some(0),
             Self::Attachments { .. } => Some(1),
             Self::Prepare { .. } => Some(2),
-            Self::Media { .. } => Some(3),
         }
     }
 
@@ -113,8 +105,7 @@ impl ProgressEvent {
             Self::Setup { .. } | Self::FileWritten { .. } => true,
             Self::Parse { done, total }
             | Self::Attachments { done, total, .. }
-            | Self::Prepare { done, total }
-            | Self::Media { done, total } => done == 0 || (total > 0 && done >= total),
+            | Self::Prepare { done, total } => done == 0 || (total > 0 && done >= total),
         }
     }
 }
@@ -136,7 +127,7 @@ impl From<AttachmentProgress> for ProgressEvent {
 pub const PROGRESS_INTERVAL: Duration = Duration::from_secs(1);
 
 /// How many stages [`ProgressEvent::paced_stage`] names.
-const PACED_STAGES: usize = 4;
+const PACED_STAGES: usize = 3;
 
 /// Callback for typed progress events. The desktop app sets one; a run with
 /// no bar to move passes [`ProgressSink::none`].

@@ -56,12 +56,12 @@ fn read_options<'a>(owners: &'a [String], spool: &'a AttachmentSpool) -> crate::
         owner_phones: owners,
         attachments_dir: None,
         spool: Some(spool),
-        media: media::MediaMode::Disabled,
-        compress: media::CompressOptions::default(),
-        tools: std::sync::Arc::new(media::InstalledTools::default()),
-        log: &NO_LOG,
-        progress: &NO_PROGRESS,
-        cancel: &NO_CANCEL,
+        files: message_crate_core::AttachmentFiles::Skip,
+        sinks: message_crate_core::Sinks {
+            log: &NO_LOG,
+            progress: &NO_PROGRESS,
+            cancel: &NO_CANCEL,
+        },
     }
 }
 

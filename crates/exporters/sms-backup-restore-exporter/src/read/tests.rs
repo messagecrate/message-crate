@@ -1,5 +1,6 @@
 use super::*;
 use crate::write::SbrBackupSession;
+use message_crate_core::{CancelFlag, LogSink, ProgressSink};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -19,16 +20,16 @@ fn opts<'a>(
         owner_phones,
         attachments_dir,
         spool,
-        media: if spool.is_some() {
-            MediaMode::Clone
+        files: if spool.is_some() {
+            AttachmentFiles::Originals
         } else {
-            MediaMode::Disabled
+            AttachmentFiles::Skip
         },
-        compress: CompressOptions::default(),
-        tools: std::sync::Arc::new(media::InstalledTools::default()),
-        log: &NO_LOG,
-        progress: &NO_PROGRESS,
-        cancel: &NO_CANCEL,
+        sinks: Sinks {
+            log: &NO_LOG,
+            progress: &NO_PROGRESS,
+            cancel: &NO_CANCEL,
+        },
     }
 }
 
@@ -504,11 +505,15 @@ fn the_byte_total_stays_the_same_when_the_spool_holds_no_file() {
     docs[0].messages[0].attachments.push(unspooled);
     let (progress, totals) = attachment_totals();
 
+    let base = opts(&[], Some(&stage), Some(&spool));
     stage_read_attachments(
         &mut docs,
         &ReadOptions {
-            progress: &progress,
-            ..opts(&[], Some(&stage), Some(&spool))
+            sinks: Sinks {
+                progress: &progress,
+                ..base.sinks
+            },
+            ..base
         },
     )
     .unwrap();

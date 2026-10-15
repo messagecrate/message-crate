@@ -7,8 +7,8 @@
 //! patched, and an original still on disk means work remains.
 //!
 //! The desktop app runs it as an Import Run's Media stage, which is what
-//! "the Media stage" means below. A local export runs the same code through
-//! the write queue's `run_media_post_pass`, outside any Import Run.
+//! "the Media stage" means below. Staging never converts: it copies the
+//! originals this pass reads.
 //!
 //! ## Naming and resume
 //!

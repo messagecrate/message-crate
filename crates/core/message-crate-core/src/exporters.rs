@@ -9,16 +9,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use media::{MaxResolution, MediaMode, MediaTools};
+use media::MediaTools;
 
 use crate::config::{
-    AppleConfig, ExporterConfig, GoSmsProConfig, ImazingConfig, MediaConfig, ObfuscateConfig,
-    OpenExtractConfig, OutputConfig, OutputFormat, RunContext, SmsBackupPlusConfig,
-    SmsBackupRestoreConfig, SourceConfig, WhatsappConfig,
+    AppleConfig, AttachmentFiles, ExporterConfig, GoSmsProConfig, ImazingConfig, MediaConfig,
+    ObfuscateConfig, OpenExtractConfig, OutputConfig, OutputFormat, RunContext,
+    SmsBackupPlusConfig, SmsBackupRestoreConfig, SourceConfig, WhatsappConfig,
 };
-
-/// Validation message when Convert or Compress is selected and ffmpeg is missing.
-pub const CONVERT_COMPRESS_FFMPEG_REQUIRED: &str = "Convert and Compress need ffmpeg and ffprobe, both on PATH or both in the Tools Directory. Settings → System shows which can't be used and where the Tools Directory is.";
 
 /// Which backup type the user selected (iMessage, WhatsApp, SMS Backup & Restore, …).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -104,61 +101,6 @@ pub fn ensure_output_dir(path: &Path) -> Result<(), String> {
     })
 }
 
-/// How attachments are copied or converted when writing output files.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum AttachmentMedia {
-    #[default]
-    /// Copy attachments without re-encoding.
-    Clone,
-    /// Re-encode attachments to a standard format.
-    Convert,
-    /// Re-encode and compress videos (720p/1080p/4k).
-    Compress,
-    /// Do not copy attachments.
-    Disabled,
-}
-
-impl fmt::Display for AttachmentMedia {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Clone => "Copy",
-            Self::Convert => "Convert",
-            Self::Compress => "Convert & compress",
-            Self::Disabled => "Do not copy",
-        })
-    }
-}
-
-impl AttachmentMedia {
-    /// The [`MediaMode`] this export-form choice maps to.
-    pub fn media_mode(self) -> MediaMode {
-        match self {
-            Self::Clone => MediaMode::Clone,
-            Self::Convert => MediaMode::Convert,
-            Self::Compress => MediaMode::Compress,
-            Self::Disabled => MediaMode::Disabled,
-        }
-    }
-
-    /// True when Convert or Compress is selected, which need ffmpeg and
-    /// ffprobe, both on `PATH` or both in the Tools Directory
-    /// ([`media::MediaTools::available`]).
-    pub fn needs_ffmpeg(self) -> bool {
-        matches!(self, Self::Convert | Self::Compress)
-    }
-
-    /// Parse a media-mode wire string (`clone`, `convert`, `compress`,
-    /// `disabled`), or `None` if unknown.
-    pub fn parse(s: &str) -> Option<Self> {
-        MediaMode::parse(s).map(|mode| match mode {
-            MediaMode::Clone => Self::Clone,
-            MediaMode::Convert => Self::Convert,
-            MediaMode::Compress => Self::Compress,
-            MediaMode::Disabled => Self::Disabled,
-        })
-    }
-}
-
 /// iPhone vs Mac backup layout for iMessage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ApplePlatform {
@@ -182,7 +124,7 @@ impl fmt::Display for ApplePlatform {
 }
 
 /// GUI field set for one backup type, plus shared output and media options.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Form {
     /// Primary input path (source backup file or directory).
     pub input: String,
@@ -219,17 +161,8 @@ pub struct Form {
     pub backup_password: String,
     /// Packaging format projected from the common message (`json` default).
     pub output_format: OutputFormat,
-    /// Attachment handling choice for the export.
-    pub attachment_media: AttachmentMedia,
-    /// Compress-only long-edge cap (720p/1080p/4k).
-    pub media_max_resolution: MaxResolution,
-    /// Compress-only max frame rate.
-    pub media_max_fps: String,
-    /// Compress-only minimum video size, as a whole number of megabytes
-    /// (e.g. `20`).
-    pub media_min_size: String,
-    /// Compress-only: skip already-efficient HEVC videos.
-    pub media_skip_efficient: bool,
+    /// Whether the export copies the original attachment files.
+    pub attachments: AttachmentFiles,
     /// iPhone vs Mac backup layout.
     pub apple_platform: ApplePlatform,
     /// Android vs iOS WhatsApp layout.
@@ -248,39 +181,6 @@ pub struct Form {
     pub is_business_app: bool,
 }
 
-impl Default for Form {
-    fn default() -> Self {
-        Self {
-            input: String::new(),
-            output: String::new(),
-            owner_phones: String::new(),
-            owner_emails: String::new(),
-            timezone: String::new(),
-            phone_country: String::new(),
-            obfuscate: false,
-            obfuscate_seed: String::new(),
-            db_path: String::new(),
-            attachment_root: String::new(),
-            apple_contacts: String::new(),
-            backup_password: String::new(),
-            output_format: OutputFormat::default(),
-            attachment_media: AttachmentMedia::default(),
-            media_max_resolution: MaxResolution::default(),
-            media_max_fps: "30".into(),
-            media_min_size: "20".into(),
-            media_skip_efficient: true,
-            apple_platform: ApplePlatform::default(),
-            whatsapp_platform: WhatsappPlatform::default(),
-            whatsapp_key: String::new(),
-            whatsapp_backup: String::new(),
-            whatsapp_wa: String::new(),
-            whatsapp_media: String::new(),
-            whatsapp_db: String::new(),
-            is_business_app: false,
-        }
-    }
-}
-
 /// What [`Form::to_config`] needs to know beyond the form. The caller passes
 /// it in, so validating a form reads no process-wide state.
 #[derive(Debug, Clone)]
@@ -288,12 +188,8 @@ pub struct FormContext<'a> {
     /// The Scratch Directory the run's scratch data goes under
     /// ([`ExporterConfig::scratch_dir`]).
     pub scratch_dir: &'a Path,
-    /// The ffmpeg and ffprobe the run's Convert and Compress use, whose
-    /// Tools Directory is also where the WhatsApp exporter finds
-    /// `wtsexporter` ([`MediaTools::tools_dir`]). Without them the form
-    /// refuses Convert and Compress unless it obfuscates. The form asks
-    /// whether they can be used only for those two choices, so a form that
-    /// asks for neither starts no program.
+    /// The run's tools, whose Tools Directory is where the WhatsApp
+    /// exporter finds `wtsexporter` ([`MediaTools::tools_dir`]).
     pub tools: Arc<dyn MediaTools>,
 }
 
@@ -352,7 +248,7 @@ impl Form {
     /// The [`ExporterConfig`] every source builder ends in. The caller gives
     /// the source's `inputs`, `obfuscate`, `media`, and `source`, and the
     /// form's context, which names the Scratch Directory and the tools the
-    /// media and the WhatsApp exporter use. The output directory and output format come from
+    /// WhatsApp exporter uses. The output directory and output format come from
     /// the form. A run started from the form does not resume. Its sinks drop
     /// what they get until the caller sets its own, and nothing sets its
     /// cancel flag ([`RunContext::new`]).
@@ -379,7 +275,7 @@ impl Form {
         }
     }
 
-    /// Build an iMessage config, pushing path and ffmpeg problems onto `errors`.
+    /// Build an iMessage config, pushing path problems onto `errors`.
     fn to_imessage_config(
         &self,
         obfuscate: ObfuscateConfig,
@@ -387,14 +283,10 @@ impl Form {
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
         required_text(&self.output, "Output directory", errors);
-        self.require_ffmpeg_for_media(ctx.tools.as_ref(), errors);
-        let media = self.media_config_for(
-            matches!(self.attachment_media, AttachmentMedia::Compress),
-            errors,
-        );
-        let copy_method = match self.attachment_media {
-            AttachmentMedia::Disabled => "disabled".into(),
-            _ => "clone".into(),
+        let media = self.media();
+        let copy_method = match self.attachments {
+            AttachmentFiles::Skip => "disabled".into(),
+            AttachmentFiles::Originals => "clone".into(),
         };
         let platform = match self.apple_platform {
             ApplePlatform::Auto => None,
@@ -450,7 +342,7 @@ impl Form {
         if self.whatsapp_platform == WhatsappPlatform::Android && owner_phone.is_none() {
             errors.push("Owner's WhatsApp number is required.".into());
         }
-        let media = self.validate_media(ctx.tools.as_ref(), errors);
+        let media = self.media();
         self.exporter_config(
             inputs,
             obfuscate,
@@ -475,7 +367,7 @@ impl Form {
         )
     }
 
-    /// Build an iMazing config, pushing path and media problems onto `errors`.
+    /// Build an iMazing config, pushing path problems onto `errors`.
     fn to_imazing_config(
         &self,
         obfuscate: ObfuscateConfig,
@@ -484,7 +376,7 @@ impl Form {
     ) -> ExporterConfig {
         let input = require_single_existing_path(&self.input, "Input", errors);
         required_text(&self.output, "Output", errors);
-        let media = self.validate_media(ctx.tools.as_ref(), errors);
+        let media = self.media();
         self.exporter_config(
             input.into_iter().collect(),
             obfuscate,
@@ -505,7 +397,7 @@ impl Form {
     ) -> ExporterConfig {
         let input = require_single_existing_path(&self.input, "Input", errors);
         required_text(&self.output, "Output", errors);
-        let media = self.validate_media(ctx.tools.as_ref(), errors);
+        let media = self.media();
         self.exporter_config(
             input.into_iter().collect(),
             obfuscate,
@@ -522,7 +414,7 @@ impl Form {
         ctx: FormContext<'_>,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
-        let (inputs, media, owner_phones) = self.android_common(ctx.tools.as_ref(), errors);
+        let (inputs, media, owner_phones) = self.android_common(errors);
         self.exporter_config(
             inputs,
             obfuscate,
@@ -539,7 +431,7 @@ impl Form {
         ctx: FormContext<'_>,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
-        let (inputs, media, owner_phones) = self.android_common(ctx.tools.as_ref(), errors);
+        let (inputs, media, owner_phones) = self.android_common(errors);
         // SMS Backup & Restore writes each backup as one file, and an
         // Import Run reads one backup.
         if let Some(dir) = inputs.iter().find(|input| input.is_dir()) {
@@ -564,7 +456,7 @@ impl Form {
         ctx: FormContext<'_>,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
-        let (inputs, media, owner_phones) = self.android_common(ctx.tools.as_ref(), errors);
+        let (inputs, media, owner_phones) = self.android_common(errors);
         let owner_emails: Vec<String> = values(&self.owner_emails)
             .into_iter()
             .map(str::to_string)
@@ -587,11 +479,7 @@ impl Form {
     }
 
     /// Shared Android backup fields: input path, owner phones, media.
-    fn android_common(
-        &self,
-        tools: &dyn MediaTools,
-        errors: &mut Vec<String>,
-    ) -> (Vec<PathBuf>, MediaConfig, Vec<String>) {
+    fn android_common(&self, errors: &mut Vec<String>) -> (Vec<PathBuf>, MediaConfig, Vec<String>) {
         let input = require_single_existing_path(&self.input, "Input", errors);
         required_text(&self.output, "Output", errors);
         let mut owner_phones = Vec::new();
@@ -601,24 +489,17 @@ impl Form {
         if owner_phones.is_empty() {
             errors.push("At least one phone number is required.".into());
         }
-        let media = self.validate_media(tools, errors);
+        let media = self.media();
         (input.into_iter().collect(), media, owner_phones)
     }
 
-    /// Media options for every exporter except iMessage; compress settings are
-    /// validated only in Compress mode.
-    fn validate_media(&self, tools: &dyn MediaTools, errors: &mut Vec<String>) -> MediaConfig {
-        self.require_ffmpeg_for_media(tools, errors);
-        let mode = self.attachment_media.media_mode();
-        self.media_config_for(matches!(mode, MediaMode::Compress), errors)
-    }
-
-    /// Refuse Convert and Compress when ffmpeg is not available. Obfuscate
-    /// skips copy and convert, so it needs no ffmpeg.
-    fn require_ffmpeg_for_media(&self, tools: &dyn MediaTools, errors: &mut Vec<String>) {
-        let obfuscate_active = self.obfuscate || !self.obfuscate_seed.trim().is_empty();
-        if !obfuscate_active && self.attachment_media.needs_ffmpeg() && !tools.available() {
-            errors.push(CONVERT_COMPRESS_FFMPEG_REQUIRED.into());
+    /// The media options every exporter gets from the form: whether to copy
+    /// the original attachment files. The tools come from the form's context
+    /// ([`Self::exporter_config`]).
+    fn media(&self) -> MediaConfig {
+        MediaConfig {
+            files: self.attachments,
+            ..MediaConfig::default()
         }
     }
 
@@ -629,44 +510,6 @@ impl Form {
             enabled: self.obfuscate || seed.is_some(),
             seed,
         }
-    }
-
-    /// Attachment copy/convert/compress options; optionally check compress fields.
-    fn media_config_for(&self, validate_compress: bool, errors: &mut Vec<String>) -> MediaConfig {
-        let mode = self.attachment_media.media_mode();
-        let compress = if validate_compress || matches!(mode, MediaMode::Compress) {
-            match self.compress_options() {
-                Ok(options) => options,
-                Err(error) => {
-                    errors.push(error);
-                    media::CompressOptions::default()
-                }
-            }
-        } else {
-            media::CompressOptions::default()
-        };
-        MediaConfig {
-            mode,
-            compress,
-            ..MediaConfig::default()
-        }
-    }
-
-    /// Compress options parsed from the form; checked while the form becomes a config.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when Max FPS is empty or is not a number above 0, or
-    /// when Minimum Video File Size is empty or is not a whole number of
-    /// megabytes, in the words [`media::compress_options_from_form`] gives.
-    pub fn compress_options(&self) -> Result<media::CompressOptions, String> {
-        media::compress_options_from_form(
-            self.media_max_resolution,
-            &self.media_max_fps,
-            &self.media_min_size,
-            self.media_skip_efficient,
-        )
-        .map_err(|e| format!("{e:#}"))
     }
 }
 
