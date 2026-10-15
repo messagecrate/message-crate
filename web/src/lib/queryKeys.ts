@@ -37,17 +37,18 @@ export type ImessagePathsKey = {
 };
 
 /** The Import form's WhatsApp method and paths, as one path check reads them. */
-export type AndroidSmsPathsKey = {
-  source: string;
-  backupPath: string;
-};
-
 export type WhatsappPathsKey = {
   source: string;
   backupPath: string;
   contactsDb: string;
   media: string;
   db: string;
+};
+
+/** The Import form's Android SMS source and backup path, as one path check reads them. */
+export type AndroidSmsPathsKey = {
+  source: string;
+  backupPath: string;
 };
 
 export const keys = {

@@ -1,6 +1,6 @@
 import { attachmentChoicesOf } from "../attachmentChoices";
 import { type ImportSourceId, sourceLabel } from "../exportSources";
-import { checkRequiredPath, type ImportPathStat, type PathRequirement } from "../pathChecks";
+import { checkOptionalPath, type ImportPathStat, type PathRequirement } from "../pathChecks";
 import { sbrExtractFields } from "../sbrExtractFields";
 import type { BackupField, ImportSourceDescriptor, ReadinessInput } from "./types";
 
@@ -57,9 +57,7 @@ function androidSmsReadiness(
 ): { enabled: boolean; errors: Partial<Record<"backupPath", string>> } {
   const errors: Partial<Record<"backupPath", string>> = {};
   const stat = input.androidSmsStats.backup;
-  if (input.backupPath.trim() !== "" && stat !== null) {
-    checkRequiredPath(stat, errors, "backupPath", requirement);
-  }
+  checkOptionalPath(input.backupPath, stat, errors, "backupPath", requirement);
   const entry = input.ownerPhoneEntry;
   const hasPhones = input.ownerPhones.length > 0 || entry.draftPending;
   const hasEmail = !asksOwnerEmails || splitEmails(input.ownerEmails).length > 0;
