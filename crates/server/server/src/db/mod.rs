@@ -9,6 +9,7 @@ pub mod contacts;
 pub mod conversation_messages;
 pub mod conversations;
 pub mod dedupe;
+pub mod demo;
 pub mod demo_account_build;
 pub mod engine;
 pub mod erase;
