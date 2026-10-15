@@ -136,7 +136,7 @@ pub(crate) async fn limit_request_body(
         return next.run(request).await;
     }
     let limit = if is_attachment_upload(&request) {
-        match crate::server::asset_max_bytes(&db).await {
+        match crate::asset_uploads::asset_max_bytes(&db).await {
             Ok(limit) => usize::try_from(limit).unwrap_or(usize::MAX),
             Err(error) => return ApiError::Internal(error).into_response(),
         }

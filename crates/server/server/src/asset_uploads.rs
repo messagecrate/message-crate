@@ -74,6 +74,16 @@ impl UploadLimits {
     }
 }
 
+/// The attachment size limit as the Server Settings hold it at this moment,
+/// in bytes. Read on every request that needs it, so a change the owner makes
+/// holds for the next upload with no restart.
+pub(crate) async fn asset_max_bytes(db: &sqlx::SqlitePool) -> anyhow::Result<u64> {
+    let mut conn = db.acquire().await?;
+    Ok(crate::db::server_settings::load(&mut conn)
+        .await?
+        .asset_max_bytes)
+}
+
 /// `manifest.json` of an in-progress multipart upload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UploadManifest {

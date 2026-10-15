@@ -130,7 +130,7 @@ pub(crate) struct AssetState {
     /// size a client is told is this or the attachment size limit, whichever
     /// is smaller ([`AssetState::upload_limits`]). The limit is not held here:
     /// it is a Server Setting, read from the database when a request needs it
-    /// ([`asset_max_bytes`]).
+    /// ([`asset_uploads::asset_max_bytes`]).
     pub(crate) part_size: usize,
 }
 
@@ -145,7 +145,7 @@ impl AssetState {
     ) -> anyhow::Result<asset_uploads::UploadLimits> {
         Ok(asset_uploads::UploadLimits::within(
             self.part_size,
-            asset_max_bytes(db).await?,
+            asset_uploads::asset_max_bytes(db).await?,
         ))
     }
 }
@@ -170,9 +170,11 @@ impl Default for DemoState {
     }
 }
 
-/// The error SQLite gave when the server asked for write-ahead logging as it
+/// What SQLite answered when the server asked for write-ahead logging as it
 /// opened the database ([`OpenDb::wal_error`]), which
-/// `GET /v1/server/settings` reports to the owner.
+/// `GET /v1/server/settings` reports to the owner: the error SQLite gave, or
+/// `None` when it gave none, because it turned write-ahead logging on or kept
+/// another mode without an error.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct WalError(pub(crate) Option<Arc<str>>);
 
@@ -198,7 +200,6 @@ sub_state!(
     RefusalWait => refusal_wait,
     DemoState => demo,
     MediaLinkKey => media_link_key,
-    MediaQueue => media_queue,
     WalError => wal_error,
 );
 
@@ -259,16 +260,6 @@ impl AppState {
             stopping.cancel();
         }
     }
-}
-
-/// The attachment size limit as the Server Settings hold it at this moment,
-/// in bytes. Read on every request that needs it, so a change the owner makes
-/// holds for the next upload with no restart.
-pub(crate) async fn asset_max_bytes(db: &SqlitePool) -> anyhow::Result<u64> {
-    let mut conn = db.acquire().await?;
-    Ok(crate::db::server_settings::load(&mut conn)
-        .await?
-        .asset_max_bytes)
 }
 
 /// The answer to a request that made one new resource: `201 Created`, a

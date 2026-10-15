@@ -29,7 +29,7 @@ use crate::auth::{AuthIdentity, ImportAccess, ImportOrExportAccess, resolve_impo
 use crate::request_body::{
     content_type_base, discard_body, stream_body_to_file, upload_body_bounded, upload_content_type,
 };
-use crate::server::{AssetState, Created, asset_max_bytes};
+use crate::server::{AssetState, Created};
 
 pub(crate) mod media_links;
 mod ranges;
@@ -1112,7 +1112,8 @@ pub(crate) async fn replace_asset(
     let (account, existing) = resolve_asset_lookup(&cfg, &auth, &sha256).await?;
 
     let mime = upload_content_type(&headers);
-    let max_body_bytes = usize::try_from(asset_max_bytes(&db).await?).unwrap_or(usize::MAX);
+    let max_body_bytes =
+        usize::try_from(asset_uploads::asset_max_bytes(&db).await?).unwrap_or(usize::MAX);
 
     // The body is held to the server's upload time limits, as an import
     // batch's is: a client that stops sending part-way, or sends a byte now

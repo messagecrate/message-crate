@@ -1449,9 +1449,10 @@ cuts from `AppState` with `FromRef`: `ImportState`, `AssetState`,
 `imports_api/run_control.rs`, which holds what running and ending an Import
 Run reads. The credential extractors (`AuthIdentity`, `FullAccess`, `Owner`
 and the rest) read only the pool, so they work under any router state that
-has one. Why: a handler that reads only the database then compiles without
-the Demo Account build or the media queue, and a test that calls it directly
-builds only the pool.
+has one. Why: a handler's signature then names everything it reads, so a
+reader sees what it depends on without reading its body, and a change to the
+Demo Account build or the media queue leaves a handler that never names them
+alone.
 
 A `db/` function never returns `ApiError`. It returns `anyhow` or `sqlx`
 errors when a statement is all that can fail, and an error type in `db/` when
