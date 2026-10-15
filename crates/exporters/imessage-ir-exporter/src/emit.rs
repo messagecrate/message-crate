@@ -763,6 +763,12 @@ fn write_conversations(
 /// Project one accumulated conversation into the shared document shape,
 /// read from a backup made at `backup_taken_at_unix_ms`
 /// ([`ExportOptions::backup_taken_at_unix_ms`]).
+///
+/// This is the one exporter that does not project through
+/// [`message_ir::ProjectionHooks`]: each message keeps `chat.db`'s own
+/// `guid`, the name the database's replies and tapbacks give the message
+/// they point at, and `chat.db` holds no repeated copies for the shared
+/// dedupe step to drop. The trait's documentation says so in full.
 fn chat_to_document(
     chat_identifier: String,
     conversation: ChatInProgress,

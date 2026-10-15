@@ -30,9 +30,9 @@ pub use identity::{
     MessageCopy, MessageGuid, MessageIdentity, collapse_whitespace, one_copy_per_message,
 };
 pub use projection::{
-    PendingReply, ProjectedRole, ProjectionHooks, ProjectionTally, SortKeyUnit,
+    PendingReply, ProjectedRole, Projection, ProjectionHooks, ProjectionTally, SortKeyUnit,
     default_participants, display_names_for_handles, ensure_conversation, message_time,
-    pending_to_document, prepare_conversation,
+    pending_to_document, prepare_conversation, project_pending,
 };
 pub use schema_version::{
     UnsupportedSchemaVersion, check_schema_version, check_schema_version_in_json,
@@ -854,7 +854,7 @@ impl ConversationHeader {
 /// Intermediate message before conversion to [`IrMessage`].
 ///
 /// Exporters parse vendor formats into these, then convert to
-/// [`ConversationDocument`] in their `pending_to_document` functions.
+/// [`ConversationDocument`] through the shared [`pending_to_document`].
 /// Exporter-specific metadata goes in [`Self::extra`].
 #[derive(Debug, Clone)]
 pub struct PendingMessage {
