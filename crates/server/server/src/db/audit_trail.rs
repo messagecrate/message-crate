@@ -395,7 +395,7 @@ pub async fn record_run_credential(
     .bind(run_id)
     .execute(&mut *conn)
     .await
-    .with_context(|| format!("record what started run {run_id} in {table}"))?;
+    .context("record what started the run")?;
     Ok(())
 }
 
@@ -777,7 +777,7 @@ async fn insert(
     .bind(details)
     .fetch_one(&mut *conn)
     .await
-    .with_context(|| format!("record the Audit Trail entry {}", entry.action.as_str()))?;
+    .context("insert an Audit Trail entry")?;
     Ok(id)
 }
 
@@ -865,7 +865,8 @@ pub async fn record_session_end(
         sqlx::query_as("SELECT account_id, username FROM audit_entries WHERE id = $1")
             .bind(login_entry_id)
             .fetch_optional(&mut *conn)
-            .await?;
+            .await
+            .context("read the login an ending Session belongs to")?;
     let Some((account_id, username)) = login else {
         return Ok(());
     };
@@ -1115,7 +1116,10 @@ pub async fn page(
     if let Some(id) = id {
         count = count.bind(id);
     }
-    let total = count.fetch_one(&mut *conn).await?;
+    let total = count
+        .fetch_one(&mut *conn)
+        .await
+        .context("count the Audit Trail entries")?;
 
     let page_sql = format!(
         "SELECT src, id FROM ({sources}) {filter}
@@ -1125,7 +1129,10 @@ pub async fn page(
     if let Some(id) = id {
         rows = rows.bind(id);
     }
-    let rows = rows.fetch_all(&mut *conn).await?;
+    let rows = rows
+        .fetch_all(&mut *conn)
+        .await
+        .context("read a page of the Audit Trail")?;
 
     let mut items = Vec::with_capacity(rows.len());
     for (src, id) in rows {
@@ -1202,7 +1209,8 @@ async fn load_entry(conn: &mut SqliteConnection, id: i64) -> Result<Option<Audit
     ))
     .bind(id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read an Audit Trail entry")?;
     let Some(row) = row else { return Ok(None) };
     let details: Option<String> = row.try_get("details")?;
     let details: Details = match details {
@@ -1260,7 +1268,8 @@ async fn load_expiry(conn: &mut SqliteConnection, login_id: i64) -> Result<Optio
     ))
     .bind(login_id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read the login of an expired Session")?;
     let Some(row) = row else { return Ok(None) };
     Ok(Some(AuditEntry {
         reason: Some(AuditReason::Expired),
@@ -1330,7 +1339,8 @@ async fn load_import(conn: &mut SqliteConnection, id: i64) -> Result<Option<Audi
     )))
     .bind(id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read an Import Run for the Audit Trail")?;
     let Some(row) = row else { return Ok(None) };
     let status: String = row.try_get("status")?;
     let status = ImportStatus::parse(&status)
@@ -1356,7 +1366,8 @@ async fn load_export(conn: &mut SqliteConnection, id: i64) -> Result<Option<Audi
     )))
     .bind(id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read an Export Run for the Audit Trail")?;
     let Some(row) = row else { return Ok(None) };
     let status: String = row.try_get("status")?;
     let status = ExportStatus::parse(&status)

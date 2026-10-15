@@ -11,7 +11,7 @@
 //! one estimate is each account's share of message storage, which is the
 //! measured messages figure split by the account's share of text.
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use sqlx::SqliteConnection;
 
 use super::account_profile::OWNER_ACCOUNT_ID;
@@ -26,27 +26,29 @@ pub enum Scope {
 }
 
 /// Run `SELECT {select} FROM {from}` over the rows `scope` names, where
-/// `account_column` is the column that holds the owning account.
+/// `account_column` is the column that holds the owning account. `step` names
+/// the count for the error a failed statement returns.
 async fn scalar(
     conn: &mut SqliteConnection,
+    step: &'static str,
     select: &str,
     from: &str,
     account_column: &str,
     scope: Scope,
 ) -> Result<i64> {
     let n: i64 = match scope {
-        Scope::Account(account_id) => {
-            sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
-                "SELECT {select} FROM {from} WHERE {account_column} = $1"
-            )))
-            .bind(account_id)
-            .fetch_one(&mut *conn)
-            .await?
-        }
+        Scope::Account(account_id) => sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT {select} FROM {from} WHERE {account_column} = $1"
+        )))
+        .bind(account_id)
+        .fetch_one(&mut *conn)
+        .await
+        .context(step)?,
         Scope::AllAccounts => {
             sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT {select} FROM {from}")))
                 .fetch_one(&mut *conn)
-                .await?
+                .await
+                .context(step)?
         }
     };
     Ok(n)
@@ -54,24 +56,56 @@ async fn scalar(
 
 /// Messages held.
 pub async fn message_count(conn: &mut SqliteConnection, scope: Scope) -> Result<i64> {
-    scalar(conn, "COUNT(*)", "messages", "account_id", scope).await
+    scalar(
+        conn,
+        "count the messages held",
+        "COUNT(*)",
+        "messages",
+        "account_id",
+        scope,
+    )
+    .await
 }
 
 /// Conversations held.
 pub async fn conversation_count(conn: &mut SqliteConnection, scope: Scope) -> Result<i64> {
-    scalar(conn, "COUNT(*)", "conversations", "account_id", scope).await
+    scalar(
+        conn,
+        "count the conversations held",
+        "COUNT(*)",
+        "conversations",
+        "account_id",
+        scope,
+    )
+    .await
 }
 
 /// Contacts held.
 pub async fn contact_count(conn: &mut SqliteConnection, scope: Scope) -> Result<i64> {
-    scalar(conn, "COUNT(*)", "contacts", "account_id", scope).await
+    scalar(
+        conn,
+        "count the contacts held",
+        "COUNT(*)",
+        "contacts",
+        "account_id",
+        scope,
+    )
+    .await
 }
 
 const ATTACHMENTS_FROM: &str = "attachments a JOIN messages m ON m.id = a.message_id";
 
 /// Attachment rows held.
 pub async fn attachment_count(conn: &mut SqliteConnection, scope: Scope) -> Result<i64> {
-    scalar(conn, "COUNT(*)", ATTACHMENTS_FROM, "m.account_id", scope).await
+    scalar(
+        conn,
+        "count the attachments held",
+        "COUNT(*)",
+        ATTACHMENTS_FROM,
+        "m.account_id",
+        scope,
+    )
+    .await
 }
 
 /// Bytes of storage the attachments use, by their original `size_bytes`.
@@ -96,7 +130,10 @@ pub async fn attachment_bytes(conn: &mut SqliteConnection, scope: Scope) -> Resu
     if let Scope::Account(account_id) = scope {
         query = query.bind(account_id);
     }
-    let n: i64 = query.fetch_one(&mut *conn).await?;
+    let n: i64 = query
+        .fetch_one(&mut *conn)
+        .await
+        .context("add up the bytes the attachments take")?;
     Ok(n)
 }
 
@@ -120,7 +157,8 @@ pub async fn database_bytes(conn: &mut SqliteConnection) -> Result<i64> {
         "SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()",
     )
     .fetch_one(&mut *conn)
-    .await?;
+    .await
+    .context("measure the database file's pages")?;
     Ok(n)
 }
 
@@ -137,7 +175,8 @@ pub async fn fts_bytes(conn: &mut SqliteConnection) -> Result<i64> {
                         'message_versions_fts_docsize', 'message_versions_fts_config')",
     )
     .fetch_one(&mut *conn)
-    .await?;
+    .await
+    .context("measure the full-text search index")?;
     Ok(n)
 }
 
@@ -152,7 +191,8 @@ pub async fn messages_bytes(conn: &mut SqliteConnection) -> Result<i64> {
                         WHERE type = 'index' AND tbl_name = 'messages')",
     )
     .fetch_one(&mut *conn)
-    .await?;
+    .await
+    .context("measure the messages table and its indexes")?;
     Ok(n)
 }
 
@@ -173,7 +213,8 @@ pub async fn text_by_account(conn: &mut SqliteConnection) -> Result<Vec<AccountT
     )))
     .bind(OWNER_ACCOUNT_ID)
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("count each account's messages and text bytes")?;
     Ok(rows
         .into_iter()
         .map(

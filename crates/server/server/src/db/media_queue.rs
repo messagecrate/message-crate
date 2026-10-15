@@ -4,6 +4,7 @@
 //! ([`crate::media_queue`]) takes them oldest first and removes each when it
 //! is done with it.
 
+use anyhow::{Context as _, Result};
 use sqlx::SqliteConnection;
 
 /// One queued Asset: the account and the original's fingerprint, and the
@@ -26,13 +27,13 @@ pub struct QueuedAsset {
 ///
 /// # Errors
 ///
-/// Returns a database error when the statement fails.
+/// Returns an error naming the step when the statement fails.
 pub async fn queue_import_run(
     conn: &mut SqliteConnection,
     account_id: i64,
     import_id: i64,
     now: chrono::DateTime<chrono::Utc>,
-) -> Result<u64, sqlx::Error> {
+) -> Result<u64> {
     let queued = sqlx::query(
         "INSERT OR REPLACE INTO media_queue (account_id, sha256, queued_at)
          SELECT DISTINCT m.account_id, a.sha256, $3
@@ -46,7 +47,8 @@ pub async fn queue_import_run(
     .bind(import_id)
     .bind(now.timestamp())
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("queue the Assets an Import Run wrote")?;
     Ok(queued.rows_affected())
 }
 
@@ -54,8 +56,8 @@ pub async fn queue_import_run(
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
-pub async fn first(conn: &mut SqliteConnection) -> Result<Option<QueuedAsset>, sqlx::Error> {
+/// Returns an error naming the step when the query fails.
+pub async fn first(conn: &mut SqliteConnection) -> Result<Option<QueuedAsset>> {
     sqlx::query_as(
         "SELECT account_id, sha256, rowid FROM media_queue
          ORDER BY queued_at, rowid
@@ -63,6 +65,7 @@ pub async fn first(conn: &mut SqliteConnection) -> Result<Option<QueuedAsset>, s
     )
     .fetch_optional(&mut *conn)
     .await
+    .context("read the Asset queued first")
 }
 
 /// Every Asset queued in a row after `rowid`, in the order they were
@@ -71,11 +74,8 @@ pub async fn first(conn: &mut SqliteConnection) -> Result<Option<QueuedAsset>, s
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
-pub async fn queued_after(
-    conn: &mut SqliteConnection,
-    rowid: i64,
-) -> Result<Vec<QueuedAsset>, sqlx::Error> {
+/// Returns an error naming the step when the query fails.
+pub async fn queued_after(conn: &mut SqliteConnection, rowid: i64) -> Result<Vec<QueuedAsset>> {
     sqlx::query_as(
         "SELECT account_id, sha256, rowid FROM media_queue
          WHERE rowid > $1
@@ -84,6 +84,7 @@ pub async fn queued_after(
     .bind(rowid)
     .fetch_all(&mut *conn)
     .await
+    .context("read the Assets queued after a row")
 }
 
 /// Take `asset` off the queue, unless it was queued again since it was
@@ -91,14 +92,15 @@ pub async fn queued_after(
 ///
 /// # Errors
 ///
-/// Returns a database error when the statement fails.
-pub async fn remove(conn: &mut SqliteConnection, asset: &QueuedAsset) -> Result<(), sqlx::Error> {
+/// Returns an error naming the step when the statement fails.
+pub async fn remove(conn: &mut SqliteConnection, asset: &QueuedAsset) -> Result<()> {
     sqlx::query("DELETE FROM media_queue WHERE account_id = $1 AND sha256 = $2 AND rowid = $3")
         .bind(asset.account_id)
         .bind(&asset.sha256)
         .bind(asset.rowid)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("take an Asset off the media queue")?;
     Ok(())
 }
 
@@ -106,9 +108,10 @@ pub async fn remove(conn: &mut SqliteConnection, asset: &QueuedAsset) -> Result<
 ///
 /// # Errors
 ///
-/// Returns a database error when the query fails.
-pub async fn count(conn: &mut SqliteConnection) -> Result<i64, sqlx::Error> {
+/// Returns an error naming the step when the query fails.
+pub async fn count(conn: &mut SqliteConnection) -> Result<i64> {
     sqlx::query_scalar("SELECT COUNT(*) FROM media_queue")
         .fetch_one(&mut *conn)
         .await
+        .context("count the queued Assets")
 }

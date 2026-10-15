@@ -1421,6 +1421,12 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-15: **A failed request's log line names the database step that
+  failed.** When a request fails because of a database problem, its line in
+  the server's log now says which database step failed, such as `read the
+  account's Saved Searches`, before the database's own message. Before, only
+  the message pages of a conversation, the conversation list and contacts
+  said so; the other requests gave the database's message alone (#2667).
 - 2026-10-15: **The website tells the browser to run only its own
   scripts.** The website the server serves, and every answer from the
   server, now carry a Content Security Policy and two related headers, as

@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use message_ir::IdentityService;
 use sqlx::SqliteConnection;
@@ -26,7 +26,8 @@ pub async fn touch_contact(
         .bind(contact_id)
         .bind(account_id)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("stamp the contact's last change")?;
     Ok(())
 }
 
@@ -115,7 +116,8 @@ pub async fn propose_name(
         .bind(account_id)
         .bind(contact_id)
         .execute(&mut *conn)
-        .await?
+        .await
+        .context("rename the contact")?
         .rows_affected()
         > 0;
     if changed {
@@ -144,7 +146,7 @@ pub async fn create_contact(
     .bind(preferred_name.trim())
     .bind(origin.as_str())
     .fetch_one(&mut *conn)
-    .await?;
+    .await.context("insert a contact")?;
     Ok(id)
 }
 
@@ -172,7 +174,8 @@ pub async fn link_handle_to_contact(
     .bind(contact_id)
     .bind(origin.as_str())
     .execute(&mut *conn)
-    .await?
+    .await
+    .context("link an identity to a contact")?
     .rows_affected();
     Ok(inserted > 0)
 }
@@ -195,7 +198,7 @@ pub async fn siblings_on_contact(
     handle_id: i64,
     contact_id: i64,
 ) -> Result<Vec<i64>> {
-    Ok(sqlx::query_scalar(
+    sqlx::query_scalar(
         "SELECT h2.id
          FROM handles h
          JOIN handles h2
@@ -212,7 +215,8 @@ pub async fn siblings_on_contact(
     .bind(handle_id)
     .bind(contact_id)
     .fetch_all(&mut *conn)
-    .await?)
+    .await
+    .context("read an identity's siblings on a contact")
 }
 
 /// The contact a sibling of `handle_id` is on, if any: the same normalized
@@ -247,7 +251,8 @@ pub async fn contact_id_of_sibling_handle(
     .bind(handle_id)
     .bind(account_id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read the contact an identity's sibling is on")?;
     Ok(contact_id)
 }
 
@@ -276,7 +281,8 @@ pub async fn create_import_group(
         base,
         &[("kind", "import")],
     )
-    .await?;
+    .await
+    .context("insert an Import Run's Contact Group")?;
     match claimed {
         Some(claimed) => Ok(claimed),
         None => anyhow::bail!("too many Contact Groups named like {base:?}"),
@@ -314,7 +320,8 @@ pub async fn contact_id_for_handle(
     .bind(account_id)
     .bind(handle_id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read the contact an identity is on")?;
     Ok(found)
 }
 
@@ -329,13 +336,12 @@ pub async fn preferred_name(
     account_id: i64,
     contact_id: i64,
 ) -> Result<String> {
-    Ok(
-        sqlx::query_scalar("SELECT preferred_name FROM contacts WHERE account_id = $1 AND id = $2")
-            .bind(account_id)
-            .bind(contact_id)
-            .fetch_one(&mut *conn)
-            .await?,
-    )
+    sqlx::query_scalar("SELECT preferred_name FROM contacts WHERE account_id = $1 AND id = $2")
+        .bind(account_id)
+        .bind(contact_id)
+        .fetch_one(&mut *conn)
+        .await
+        .context("read a contact's name")
 }
 
 /// True when the contact belongs to this account and is not in the trash.
@@ -358,7 +364,8 @@ pub async fn live_contact_exists(
     .bind(contact_id)
     .bind(account_id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("check that the contact exists and is not in the Trash")?;
     Ok(found.is_some())
 }
 
@@ -419,7 +426,8 @@ pub async fn linked_handle_id(
     .bind(service.map(IdentityService::as_str))
     .bind(only)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read the contact's identity for an address")?;
     Ok(row.map(|(id, service)| (id, IdentityService::parse(&service))))
 }
 
@@ -490,7 +498,8 @@ pub async fn move_identity(
                     .bind(account_id)
                     .bind(handle_id)
                     .execute(&mut *conn)
-                    .await?;
+                    .await
+                    .context("unlink an identity from its contact")?;
                 Ok(IdentityMoved::Unlinked)
             }
             IdentityUse::Nothing => {
@@ -499,7 +508,8 @@ pub async fn move_identity(
                     .bind(account_id)
                     .bind(handle_id)
                     .execute(&mut *conn)
-                    .await?;
+                    .await
+                    .context("delete an identity nothing uses")?;
                 Ok(IdentityMoved::Deleted)
             }
         },
@@ -528,7 +538,8 @@ pub async fn take_identities_off(
         .bind(account_id)
         .bind(handle_id)
         .fetch_optional(&mut *conn)
-        .await?;
+        .await
+        .context("read an identity's address and type")?;
         let Some(key) = key else {
             continue;
         };
@@ -562,7 +573,8 @@ pub async fn is_nameless(
     .bind(account_id)
     .bind(contact_id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("check whether a contact has a name")?;
     Ok(nameless.unwrap_or(false))
 }
 
@@ -588,7 +600,8 @@ pub async fn delete_if_empty(
     .bind(account_id)
     .bind(contact_id)
     .fetch_one(&mut *conn)
-    .await?;
+    .await
+    .context("check whether a contact is empty")?;
     if empty {
         delete_contact(conn, account_id, contact_id).await?;
     }
@@ -611,12 +624,14 @@ pub async fn delete_contact(
         .bind(account_id)
         .bind(contact_id)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("delete a contact")?;
     sqlx::query("DELETE FROM trashed_contacts WHERE account_id = $1 AND contact_id = $2")
         .bind(account_id)
         .bind(contact_id)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("delete a contact's trash marker")?;
     Ok(())
 }
 
@@ -634,7 +649,7 @@ pub async fn holder_contacts_in_conversations(
     account_id: i64,
 ) -> Result<Vec<i64>> {
     let with_yourself = crate::db::conversations::is_with_yourself_sql("c");
-    Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+    sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT DISTINCT ch.contact_id
          FROM contact_handles ch
          JOIN handles h ON h.id = ch.handle_id
@@ -653,7 +668,8 @@ pub async fn holder_contacts_in_conversations(
     )))
     .bind(account_id)
     .fetch_all(&mut *conn)
-    .await?)
+    .await
+    .context("read the holder's contacts its conversations point to")
 }
 
 /// Delete the holder's `contact_id`, with [`delete_contact`], when an import
@@ -710,7 +726,8 @@ pub async fn delete_untouched_holder_contact(
     .bind(account_id)
     .bind(contact_id)
     .fetch_one(&mut *conn)
-    .await?;
+    .await
+    .context("check whether the holder's contact is untouched")?;
     if !deletable {
         return Ok(false);
     }
@@ -727,7 +744,8 @@ pub async fn delete_untouched_holder_contact(
     .bind(account_id)
     .bind(contact_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("set aside a holder contact's Contact Group memberships")?;
     delete_contact(conn, account_id, contact_id).await?;
     Ok(true)
 }
@@ -757,7 +775,8 @@ pub async fn take_back_set_aside(
     .bind(handle_id)
     .bind(contact_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("give back the Contact Group memberships set aside under an identity")?;
     forget_set_aside(conn, account_id, handle_id).await
 }
 
@@ -781,7 +800,8 @@ pub async fn forget_set_aside(
     .bind(account_id)
     .bind(handle_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("forget the Contact Group memberships set aside under an identity")?;
     Ok(())
 }
 
@@ -795,7 +815,7 @@ pub async fn identities_of_contact(
     account_id: i64,
     contact_id: i64,
 ) -> Result<Vec<i64>> {
-    Ok(sqlx::query_scalar(
+    sqlx::query_scalar(
         "SELECT handle_id FROM contact_handles
          WHERE account_id = $1 AND contact_id = $2
          ORDER BY rowid",
@@ -803,7 +823,8 @@ pub async fn identities_of_contact(
     .bind(account_id)
     .bind(contact_id)
     .fetch_all(&mut *conn)
-    .await?)
+    .await
+    .context("read the identities a contact holds")
 }
 
 /// Link `handle_id` to `contact_id`, moving it there when another contact
@@ -826,7 +847,8 @@ async fn put_on_contact(
     .bind(contact_id)
     .bind(origin.as_str())
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("put an identity on a contact")?;
     Ok(())
 }
 
@@ -878,7 +900,8 @@ async fn identity_use(
     .bind(account_id)
     .bind(handle_id)
     .fetch_one(&mut *conn)
-    .await?;
+    .await
+    .context("read what refers to an identity")?;
     Ok(if person {
         IdentityUse::Person
     } else if holder {

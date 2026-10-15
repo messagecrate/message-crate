@@ -75,12 +75,6 @@ pub enum ApiTokenMutationError {
     Other(#[from] anyhow::Error),
 }
 
-impl From<sqlx::Error> for ApiTokenMutationError {
-    fn from(e: sqlx::Error) -> Self {
-        Self::Other(anyhow::Error::new(e))
-    }
-}
-
 /// Generate a new API token (`mc-api-` + 32 alphanumeric characters).
 ///
 /// # Errors
@@ -115,7 +109,8 @@ pub async fn lookup_account_for_api_token(
     )
     .bind(token_hash.as_str())
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("look up the API token a Bearer value names")?;
     match row {
         Some((account_id, can_import, can_export, expires_at, disabled, label, token_hint)) => {
             // No API token acts as the owner
@@ -218,7 +213,7 @@ pub async fn create_api_token(
     .bind(expires_at.as_deref())
     .fetch_one(&mut *conn)
     .await
-    .with_context(|| format!("insert API token for {account_id}"))?;
+    .context("insert an API token")?;
     Ok(CreatedApiToken {
         id,
         label: label_owned,
@@ -287,7 +282,8 @@ pub async fn list_api_tokens(
     )
     .bind(account_id)
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("read the account's API tokens")?;
     Ok(rows.into_iter().map(ApiTokenRow::from).collect())
 }
 
@@ -310,7 +306,8 @@ pub async fn get_api_token(
     .bind(account_id)
     .bind(id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read one of the account's API tokens")?;
     Ok(row.map(ApiTokenRow::from))
 }
 
@@ -329,7 +326,7 @@ pub async fn delete_api_token(
         .bind(account_id)
         .execute(&mut *conn)
         .await
-        .with_context(|| format!("delete API token {id} for {account_id}"))?
+        .context("delete an API token")?
         .rows_affected();
     Ok(n > 0)
 }
@@ -344,7 +341,7 @@ pub async fn delete_all_api_tokens(conn: &mut SqliteConnection, account_id: i64)
         .bind(account_id)
         .execute(&mut *conn)
         .await
-        .with_context(|| format!("delete all API tokens for {account_id}"))?
+        .context("delete the account's API tokens")?
         .rows_affected();
     Ok(deleted)
 }
@@ -367,7 +364,7 @@ pub async fn update_api_token_label(
             .bind(account_id)
             .execute(&mut *conn)
             .await
-            .with_context(|| format!("rename API token {id} for {account_id}"))?
+            .context("rename an API token")?
             .rows_affected();
     Ok(n > 0)
 }

@@ -250,7 +250,7 @@ pub(crate) async fn queue_import_run(
     let queued = match pool.acquire().await {
         Ok(mut conn) => queue_without_waking(&mut conn, account_id, import_id, now).await,
         Err(error) => {
-            log_not_queued(account_id, import_id, &error);
+            log_not_queued(account_id, import_id, &error.into());
             0
         }
     };
@@ -288,11 +288,11 @@ pub(crate) async fn queue_without_waking(
     }
 }
 
-fn log_not_queued(account_id: i64, import_id: i64, error: &sqlx::Error) {
+fn log_not_queued(account_id: i64, import_id: i64, error: &anyhow::Error) {
     tracing::warn!(
         account_id,
         import_id,
-        %error,
+        error = format!("{error:#}"),
         "The Import Run's Assets could not be queued for Thumbnails and Previews"
     );
 }

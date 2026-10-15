@@ -12,7 +12,7 @@
 //! reactions, the account's own identities and the contact link) moves to
 //! the identity that holds the `+` form, and the first identity goes.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use sqlx::SqliteConnection;
 
@@ -117,7 +117,7 @@ async fn messages_keyed_by(
     account_id: i64,
     handle_id: i64,
 ) -> Result<Vec<i64>> {
-    Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+    sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT m.id FROM messages m
          WHERE m.account_id = $1 AND {HAS_CONTENT_KEY_SQL}
            AND m.conversation_id IN (
@@ -130,7 +130,8 @@ async fn messages_keyed_by(
     .bind(account_id)
     .bind(handle_id)
     .fetch_all(&mut *conn)
-    .await?)
+    .await
+    .context("read the messages whose content keys name an identity")
 }
 
 /// Give the identity its `+` form. With no identity holding that form, the
@@ -199,29 +200,52 @@ async fn merge_into(
     .bind(from)
     .bind(into)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("drop the merged identity's seat where the other already sits")?;
     // What the with-yourself rule set aside for `from` is kept for `into`,
     // so it comes back for the one identity (#1662).
-    for statement in [
-        "INSERT INTO participants_set_aside (conversation_id, handle_id, name_alias)
-         SELECT conversation_id, $2, name_alias FROM participants_set_aside WHERE handle_id = $1
-         ON CONFLICT DO NOTHING",
-        "INSERT INTO contact_group_members_set_aside (group_id, handle_id)
-         SELECT group_id, $2 FROM contact_group_members_set_aside WHERE handle_id = $1
-         ON CONFLICT DO NOTHING",
-        "INSERT INTO import_contacts_set_aside (import_id, handle_id, reason)
-         SELECT import_id, $2, reason FROM import_contacts_set_aside WHERE handle_id = $1
-         ON CONFLICT DO NOTHING",
-        "UPDATE participants SET handle_id = $2 WHERE handle_id = $1",
-        "UPDATE messages SET sender_handle_id = $2 WHERE sender_handle_id = $1",
-        "UPDATE messages SET owner_handle_id = $2 WHERE owner_handle_id = $1",
-        "UPDATE tapbacks SET sender_handle_id = $2 WHERE sender_handle_id = $1",
+    for (step, statement) in [
+        (
+            "keep the merged identity's set-aside participants",
+            "INSERT INTO participants_set_aside (conversation_id, handle_id, name_alias)
+             SELECT conversation_id, $2, name_alias FROM participants_set_aside WHERE handle_id = $1
+             ON CONFLICT DO NOTHING",
+        ),
+        (
+            "keep the merged identity's set-aside Contact Group memberships",
+            "INSERT INTO contact_group_members_set_aside (group_id, handle_id)
+             SELECT group_id, $2 FROM contact_group_members_set_aside WHERE handle_id = $1
+             ON CONFLICT DO NOTHING",
+        ),
+        (
+            "keep the merged identity's set-aside Import Run records",
+            "INSERT INTO import_contacts_set_aside (import_id, handle_id, reason)
+             SELECT import_id, $2, reason FROM import_contacts_set_aside WHERE handle_id = $1
+             ON CONFLICT DO NOTHING",
+        ),
+        (
+            "move the merged identity's participants",
+            "UPDATE participants SET handle_id = $2 WHERE handle_id = $1",
+        ),
+        (
+            "move the messages the merged identity sent",
+            "UPDATE messages SET sender_handle_id = $2 WHERE sender_handle_id = $1",
+        ),
+        (
+            "move the messages the merged identity owns",
+            "UPDATE messages SET owner_handle_id = $2 WHERE owner_handle_id = $1",
+        ),
+        (
+            "move the reactions the merged identity sent",
+            "UPDATE tapbacks SET sender_handle_id = $2 WHERE sender_handle_id = $1",
+        ),
     ] {
         sqlx::query(statement)
             .bind(from)
             .bind(into)
             .execute(&mut *conn)
-            .await?;
+            .await
+            .context(step)?;
     }
     sqlx::query(
         "INSERT INTO account_handles (account_id, handle_id)
@@ -232,7 +256,8 @@ async fn merge_into(
     .bind(from)
     .bind(into)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("give the merged-into identity the account's link")?;
 
     let from_contact = contacts::contact_id_for_handle(conn, account_id, from).await?;
     // The cascade takes `from`'s contact and account links with it.
@@ -240,7 +265,8 @@ async fn merge_into(
         .bind(account_id)
         .bind(from)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("delete the merged identity")?;
     let into_contact = contacts::contact_id_for_handle(conn, account_id, into).await?;
     let keep_on = edited_contact.or(from_contact);
     if let Some(contact_id) = keep_on {
@@ -276,34 +302,56 @@ async fn merge_conversation(
         .bind(account_id)
         .bind(handle_id)
     };
-    let Some(source) = keyed(from).fetch_optional(&mut *conn).await? else {
+    let Some(source) = keyed(from)
+        .fetch_optional(&mut *conn)
+        .await
+        .context("read the merged identity's one-to-one conversation")?
+    else {
         return Ok(());
     };
-    let Some(target) = keyed(into).fetch_optional(&mut *conn).await? else {
+    let Some(target) = keyed(into)
+        .fetch_optional(&mut *conn)
+        .await
+        .context("read the one-to-one conversation the identity merges into")?
+    else {
         sqlx::query("UPDATE conversations SET chat_handle_id = $2 WHERE id = $1")
             .bind(source)
             .bind(into)
             .execute(&mut *conn)
-            .await?;
+            .await
+            .context("move the one-to-one conversation to the merged-into identity")?;
         return Ok(());
     };
-    for statement in [
-        "UPDATE messages SET conversation_id = $2 WHERE conversation_id = $1",
-        "INSERT INTO participants (conversation_id, handle_id, name_alias)
-         SELECT $2, handle_id, name_alias FROM participants WHERE conversation_id = $1
-         ON CONFLICT DO NOTHING",
-        "INSERT INTO message_tag_members (conversation_id, tag_id)
-         SELECT $2, tag_id FROM message_tag_members WHERE conversation_id = $1
-         ON CONFLICT DO NOTHING",
-        "INSERT INTO participants_set_aside (conversation_id, handle_id, name_alias)
-         SELECT $2, handle_id, name_alias FROM participants_set_aside WHERE conversation_id = $1
-         ON CONFLICT DO NOTHING",
+    for (step, statement) in [
+        (
+            "move the joined conversation's messages",
+            "UPDATE messages SET conversation_id = $2 WHERE conversation_id = $1",
+        ),
+        (
+            "copy the joined conversation's participants",
+            "INSERT INTO participants (conversation_id, handle_id, name_alias)
+             SELECT $2, handle_id, name_alias FROM participants WHERE conversation_id = $1
+             ON CONFLICT DO NOTHING",
+        ),
+        (
+            "copy the joined conversation's Message Tags",
+            "INSERT INTO message_tag_members (conversation_id, tag_id)
+             SELECT $2, tag_id FROM message_tag_members WHERE conversation_id = $1
+             ON CONFLICT DO NOTHING",
+        ),
+        (
+            "copy the joined conversation's set-aside participants",
+            "INSERT INTO participants_set_aside (conversation_id, handle_id, name_alias)
+             SELECT $2, handle_id, name_alias FROM participants_set_aside WHERE conversation_id = $1
+             ON CONFLICT DO NOTHING",
+        ),
     ] {
         sqlx::query(statement)
             .bind(source)
             .bind(target)
             .execute(&mut *conn)
-            .await?;
+            .await
+            .context(step)?;
     }
     // The merged conversation is in the Trash only when both were: a live
     // conversation brings the other out with it, because emptying the Trash
@@ -313,21 +361,30 @@ async fn merge_conversation(
     )
     .bind(source)
     .fetch_one(&mut *conn)
-    .await?;
+    .await
+    .context("check whether the merged conversation is in the Trash")?;
     if !source_trashed {
         sqlx::query("DELETE FROM trashed_conversations WHERE conversation_id = $1")
             .bind(target)
             .execute(&mut *conn)
-            .await?;
+            .await
+            .context("take the joined conversation out of the Trash")?;
     }
-    for statement in [
-        "DELETE FROM trashed_conversations WHERE conversation_id = $1",
-        "DELETE FROM conversations WHERE id = $1",
+    for (step, statement) in [
+        (
+            "delete the joined conversation's trash marker",
+            "DELETE FROM trashed_conversations WHERE conversation_id = $1",
+        ),
+        (
+            "delete the joined conversation",
+            "DELETE FROM conversations WHERE id = $1",
+        ),
     ] {
         sqlx::query(statement)
             .bind(source)
             .execute(&mut *conn)
-            .await?;
+            .await
+            .context(step)?;
     }
     Ok(())
 }

@@ -4,7 +4,7 @@
 //! Reading a conversation's participants is in `db::participant_names`, and
 //! an import writes them through `db::staging`.
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use sqlx::SqliteConnection;
 
 use crate::db::account_profile::is_account_identity_sql;
@@ -36,13 +36,15 @@ pub async fn set_aside_identity_participants(
     )))
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("set aside the participants at the account's identities")?;
     sqlx::query(sqlx::AssertSqlSafe(format!(
         "DELETE FROM participants WHERE {at_identity}"
     )))
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("delete the participants at the account's identities")?;
     Ok(())
 }
 
@@ -73,13 +75,15 @@ pub async fn restore_set_aside_participants(
     )))
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("move back the participants set aside at former identities")?;
     sqlx::query(sqlx::AssertSqlSafe(format!(
         "DELETE FROM participants_set_aside WHERE {released}"
     )))
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("delete the set-aside rows moved back to participants")?;
     Ok(())
 }
 
@@ -111,6 +115,7 @@ pub async fn add_chat_handle_participant(
     .bind(conversation_id)
     .bind(handle_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("add a conversation's chat handle as its participant")?;
     Ok(())
 }

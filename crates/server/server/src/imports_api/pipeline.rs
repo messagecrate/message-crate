@@ -369,7 +369,7 @@ pub async fn import_jsonl_files_on_conn(
         .map_err(|err| ImportError::Internal(err.into()))?;
     if !crate::db::account_profile::account_exists(&mut tx, opts.account_id)
         .await
-        .map_err(|err| ImportError::Internal(err.into()))?
+        .map_err(ImportError::Internal)?
     {
         return Err(ImportError::AccountGone);
     }

@@ -95,12 +95,6 @@ pub enum LoadError {
     Failed(anyhow::Error),
 }
 
-impl From<sqlx::Error> for LoadError {
-    fn from(error: sqlx::Error) -> Self {
-        Self::Failed(error.into())
-    }
-}
-
 impl From<anyhow::Error> for LoadError {
     fn from(error: anyhow::Error) -> Self {
         Self::Failed(error)
@@ -229,7 +223,8 @@ impl Snapshot {
         )))
         .bind(account_id)
         .fetch_all(&mut *conn)
-        .await?;
+        .await
+        .context("read the account's contacts")?;
         for (id, name, trashed) in rows {
             if trashed != 0 {
                 snapshot.trashed.insert(id, name);
@@ -247,7 +242,8 @@ impl Snapshot {
         )
         .bind(account_id)
         .fetch_all(&mut *conn)
-        .await?;
+        .await
+        .context("read the account's identities and their contacts")?;
         for (id, service, handle_type, normalized, holder) in rows {
             let (Some(service), Some(handle_type)) =
                 (parse_service(&service), parse_handle_type(&handle_type))
@@ -268,7 +264,8 @@ impl Snapshot {
             sqlx::query_as("SELECT id, name FROM contact_groups WHERE account_id = $1")
                 .bind(account_id)
                 .fetch_all(&mut *conn)
-                .await?;
+                .await
+                .context("read the account's Contact Groups")?;
         for (id, name) in rows {
             snapshot.groups.insert(name.to_lowercase(), id);
         }
@@ -281,7 +278,8 @@ impl Snapshot {
         )
         .bind(account_id)
         .fetch_all(&mut *conn)
-        .await?;
+        .await
+        .context("read the account's Contact Group memberships")?;
         for (contact_id, group_id) in rows {
             snapshot
                 .memberships
@@ -806,11 +804,13 @@ pub async fn load(
     // A write transaction from the first read: the plan is checked against
     // the contacts the writes then change, and an import that commits
     // meanwhile waits instead of failing the load.
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     let snapshot = Snapshot::read(&mut tx, account_id).await?;
     let file = plan(&rows, &snapshot).map_err(LoadError::Refused)?;
     let counts = apply(&mut tx, account_id, &snapshot, &file, mode, now).await?;
-    tx.commit().await?;
+    tx.commit().await.context("commit the address book load")?;
     Ok(counts)
 }
 
@@ -1088,21 +1088,20 @@ async fn take_identities(
     for identity in &contact.identities {
         let handle_id = match state.snapshot.handles.get(&identity.key) {
             Some(&(handle_id, _)) => handle_id,
-            None => {
-                sqlx::query_scalar(
-                    "INSERT INTO handles
+            None => sqlx::query_scalar(
+                "INSERT INTO handles
                        (account_id, raw, normalized, handle_type, service, origin)
                      VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
-                )
-                .bind(account_id)
-                .bind(&identity.written)
-                .bind(&identity.key.normalized)
-                .bind(identity.key.handle_type)
-                .bind(identity.key.service.as_str())
-                .bind(Origin::AddressBook.as_str())
-                .fetch_one(&mut *conn)
-                .await?
-            }
+            )
+            .bind(account_id)
+            .bind(&identity.written)
+            .bind(&identity.key.normalized)
+            .bind(identity.key.handle_type)
+            .bind(identity.key.service.as_str())
+            .bind(Origin::AddressBook.as_str())
+            .fetch_one(&mut *conn)
+            .await
+            .context("insert an identity from the address book")?,
         };
         listed.insert(handle_id);
         match state.holder_of.insert(handle_id, contact_id) {
@@ -1152,7 +1151,8 @@ async fn set_groups(
                 .bind(state.account_id)
                 .bind(name)
                 .fetch_one(&mut *conn)
-                .await?;
+                .await
+                .context("insert a Contact Group from the address book")?;
                 state.groups.insert(name.to_lowercase(), id);
                 state.counts.groups_created += 1;
                 id
@@ -1172,7 +1172,8 @@ async fn set_groups(
         .bind(contact_id)
         .bind(group_id)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("add a contact to a Contact Group")?;
         state.changed.insert(contact_id);
     }
     if state.mode == LoadMode::Edit {
@@ -1186,7 +1187,8 @@ async fn set_groups(
             .bind(contact_id)
             .bind(group_id)
             .execute(&mut *conn)
-            .await?;
+            .await
+            .context("take a contact out of a Contact Group")?;
             state.changed.insert(contact_id);
         }
     }
@@ -1315,7 +1317,8 @@ pub async fn export_csv(
     )))
     .bind(account_id)
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("read the contacts and identities to export")?;
     let memberships: Vec<(i64, String)> = sqlx::query_as(
         "SELECT m.contact_id, g.name
          FROM contact_group_members m
@@ -1325,7 +1328,8 @@ pub async fn export_csv(
     )
     .bind(account_id)
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("read the Contact Group memberships to export")?;
     let mut groups: HashMap<i64, Vec<String>> = HashMap::new();
     for (contact_id, name) in memberships {
         groups.entry(contact_id).or_default().push(name);

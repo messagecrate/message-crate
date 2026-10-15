@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use sqlx::{AssertSqlSafe, SqlSafeStr, SqliteConnection};
 
 use super::schema;
@@ -73,7 +73,8 @@ pub async fn sources_in_import_order(
     )
     .bind(account_id)
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("read the account's import sources in import order")?;
     Ok(rows.into_iter().map(|(source,)| source).collect())
 }
 
@@ -155,7 +156,10 @@ pub async fn content_key_inputs(
     if let KeyScope::Changed(ids) = scope {
         query = query.bind(serde_json::to_string(ids)?);
     }
-    let rows: Vec<ContentKeyRow> = query.fetch_all(&mut *conn).await?;
+    let rows: Vec<ContentKeyRow> = query
+        .fetch_all(&mut *conn)
+        .await
+        .context("read the messages whose content keys are made")?;
     if rows.is_empty() {
         return Ok(None);
     }
@@ -179,7 +183,8 @@ pub async fn content_key_inputs(
     let participant_rows: Vec<(i64, String)> = sqlx::query_as(AssertSqlSafe(participant_sql))
         .bind(account_id)
         .fetch_all(&mut *conn)
-        .await?;
+        .await
+        .context("read the group conversations' participant handles")?;
     let mut group_handles: HashMap<i64, Vec<String>> = HashMap::new();
     for (conversation_id, handle) in participant_rows {
         group_handles
@@ -207,7 +212,8 @@ pub async fn content_key_inputs(
     .bind(min_id)
     .bind(max_id)
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("read the messages' attachment digests")?;
     let mut shas_by_msg: HashMap<i64, Vec<String>> = HashMap::new();
     for (message_id, sha) in att_rows {
         shas_by_msg.entry(message_id).or_default().push(sha);
@@ -239,7 +245,8 @@ pub async fn stored_content_keys(
     )
     .bind(account_id)
     .fetch_all(&mut *conn)
-    .await?
+    .await
+    .context("read the account's stored content keys")?
     .into_iter()
     .collect())
 }
@@ -255,7 +262,8 @@ pub async fn clear_content_keys(conn: &mut SqliteConnection, ids: &[i64]) -> Res
     )
     .bind(serde_json::to_string(ids)?)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("clear messages' content keys")?;
     Ok(())
 }
 
@@ -281,7 +289,10 @@ pub async fn write_content_keys(
         DELETE FROM _content_keys;
         ",
     ) {
-        sqlx::query(AssertSqlSafe(stmt)).execute(&mut *conn).await?;
+        sqlx::query(AssertSqlSafe(stmt))
+            .execute(&mut *conn)
+            .await
+            .context("create the content key table")?;
     }
     let mut written = 0usize;
     for chunk in keys.chunks(SQLITE_IN_CHUNK) {
@@ -298,10 +309,12 @@ pub async fn write_content_keys(
         ",
     )
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("write the content keys onto the messages")?;
     sqlx::query("DROP TABLE IF EXISTS _content_keys")
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("drop the content key table")?;
     Ok(())
 }
 
@@ -322,7 +335,9 @@ async fn insert_content_key_rows(
     for (id, key) in chunk {
         q = q.bind(*id).bind(key);
     }
-    q.execute(&mut *conn).await?;
+    q.execute(&mut *conn)
+        .await
+        .context("insert content keys into the content key table")?;
     Ok(())
 }
 
@@ -350,7 +365,7 @@ pub struct ExactRow {
 pub async fn exact_rows(conn: &mut SqliteConnection, account_id: i64) -> Result<Vec<ExactRow>> {
     // One scan of messages + one aggregated attachment pass, then group in Rust.
     // Avoids N round-trips (one SELECT + several UPDATEs per duplicate key).
-    Ok(sqlx::query_as(AssertSqlSafe(format!(
+    sqlx::query_as(AssertSqlSafe(format!(
         r"
         SELECT m.id, m.source, m.content_key, COALESCE(ac.n, 0) AS att_count,
                m.time_precision, COALESCE(rc.n, 0) AS run_messages
@@ -372,7 +387,8 @@ pub async fn exact_rows(conn: &mut SqliteConnection, account_id: i64) -> Result<
     )))
     .bind(account_id)
     .fetch_all(&mut *conn)
-    .await?)
+    .await
+    .context("read the account's messages with a content key")
 }
 
 /// Which messages the near-time pass reads.
@@ -432,10 +448,11 @@ pub async fn near_message_rows(
             NearRows::Keyed => format!("AND {HAS_CONTENT_KEY_SQL}"),
         },
     );
-    Ok(sqlx::query_as(AssertSqlSafe(sql))
+    sqlx::query_as(AssertSqlSafe(sql))
         .bind(account_id)
         .fetch_all(&mut *conn)
-        .await?)
+        .await
+        .context("read the account's messages for the near-time pass")
 }
 
 /// The attachment digests of each of the account's messages, each message's
@@ -461,7 +478,8 @@ pub async fn attachment_digests(
     )
     .bind(account_id)
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("read the account's attachment digests")?;
     let mut shas_by_msg: HashMap<i64, Vec<String>> = HashMap::new();
     for (message_id, sha) in att_rows {
         shas_by_msg.entry(message_id).or_default().push(sha);
@@ -491,7 +509,8 @@ pub async fn duplicate_flags(
     )
     .bind(account_id)
     .fetch_all(&mut *conn)
-    .await?
+    .await
+    .context("read the account's duplicate flags")?
     .into_iter()
     .collect())
 }
@@ -516,7 +535,8 @@ pub async fn clear_account_duplicate_flags(
     )
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("clear the account's duplicate flags")?;
     Ok(())
 }
 
@@ -531,7 +551,8 @@ pub async fn clear_duplicate_flags(conn: &mut SqliteConnection, ids: &[i64]) -> 
     )
     .bind(serde_json::to_string(ids)?)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("clear messages' duplicate flags")?;
     Ok(())
 }
 
@@ -555,7 +576,10 @@ pub async fn write_duplicate_flags(
         );
         DELETE FROM {table};"
     )) {
-        sqlx::query(AssertSqlSafe(stmt)).execute(&mut *conn).await?;
+        sqlx::query(AssertSqlSafe(stmt))
+            .execute(&mut *conn)
+            .await
+            .context("create a duplicate flag table")?;
     }
     {
         let insert_sql = AssertSqlSafe(format!("INSERT INTO {table} (id, winner) VALUES ($1, $2)"))
@@ -565,7 +589,8 @@ pub async fn write_duplicate_flags(
                 .bind(id)
                 .bind(winner)
                 .execute(&mut *conn)
-                .await?;
+                .await
+                .context("insert a duplicate flag into the duplicate flag table")?;
         }
     }
     sqlx::query(AssertSqlSafe(format!(
@@ -575,9 +600,13 @@ pub async fn write_duplicate_flags(
          WHERE m.id = f.id"
     )))
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("write the duplicate flags onto the messages")?;
     for stmt in schema::split_ddl(&format!("DROP TABLE IF EXISTS {table};")) {
-        sqlx::query(AssertSqlSafe(stmt)).execute(&mut *conn).await?;
+        sqlx::query(AssertSqlSafe(stmt))
+            .execute(&mut *conn)
+            .await
+            .context("drop a duplicate flag table")?;
     }
     Ok(())
 }
