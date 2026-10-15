@@ -2449,6 +2449,56 @@ fn docker_stop_waits_longer_than_the_drain() {
     );
 }
 
+/// Every `docker run` command in the user guide that starts a server limits
+/// the container as both Compose files do (#2655): no Linux capability, no
+/// privilege gain, a read-only root filesystem, and `/tmp` in memory. The
+/// three pages carry the command separately, so this keeps them from
+/// drifting apart from each other and from Compose.
+#[test]
+fn the_guide_s_docker_run_commands_limit_the_container() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let limits = [
+        "--cap-drop ALL",
+        "--security-opt no-new-privileges:true",
+        "--read-only",
+        "--tmpfs /tmp",
+    ];
+    let docs = "docs/src/content/docs/docs/user/features/owner";
+    let mut started = 0;
+    for page in [
+        "run-with-docker.md",
+        "run-on-another-machine.md",
+        "update.md",
+    ] {
+        let path = format!("{docs}/{page}");
+        let text = std::fs::read_to_string(root.join(&path))
+            .unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let lines: Vec<&str> = text.lines().collect();
+        for (at, line) in lines.iter().enumerate() {
+            if !line.starts_with("docker run -d ") {
+                continue;
+            }
+            started += 1;
+            let flags: Vec<&str> = lines[at..]
+                .iter()
+                .take_while(|line| !line.starts_with("```"))
+                .map(|line| line.trim().trim_end_matches('\\').trim())
+                .collect();
+            for limit in limits {
+                assert!(
+                    flags.contains(&limit),
+                    "{path}:{} starts a server without {limit}",
+                    at + 1
+                );
+            }
+        }
+    }
+    assert_eq!(
+        started, 3,
+        "the pages that start a server in Docker moved, or one was added"
+    );
+}
+
 /// The attachment size limit holds the attachment uploads and nothing else.
 /// An owner who sets it to 20 bytes can still log in and change the Server
 /// Settings, and an account can still post an import batch of a few
