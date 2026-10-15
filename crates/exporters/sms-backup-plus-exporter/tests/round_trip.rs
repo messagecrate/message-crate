@@ -5,7 +5,7 @@ use crate::SmsBackupPlusArchive;
 use crate::emit::{ConvertExportArgs, convert_export};
 use chrono::{TimeZone, Utc};
 use message_crate_core::{ConvertRun, ExportReport, ExportTransforms, LogSink, OutputFormat};
-use message_ir::{ConversationDocument, IrDirection};
+use message_ir::{ConversationDocument, Direction};
 use message_ir_format::{FormatSink, mark_export_directory, read_conversation_jsonl};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -84,7 +84,7 @@ type MessageShape = (
     String,
     String,
     i64,
-    IrDirection,
+    Direction,
     Option<String>,
     String,
     String,
@@ -190,18 +190,17 @@ fn a_group_keeps_who_wrote_what_and_a_text_file_stays_a_file() {
     let second = tempfile::tempdir().unwrap();
     let mut before = import(&fixture(), first.path());
     for document in &mut before {
-        let group =
-            document.conversation.conversation_type == message_ir::IrConversationType::Group;
+        let group = document.conversation.conversation_type == message_ir::ConversationType::Group;
         if group {
             document.conversation.group_title = Some("Family".into());
         }
         for message in &mut document.messages {
-            if group && message.direction == IrDirection::Incoming {
+            if group && message.direction == Direction::Incoming {
                 message.sender_identity = None;
                 message.sender_display_name = None;
             }
             if message.text.starts_with("Hello from Alice") {
-                message.attachments.push(message_ir::IrAttachment {
+                message.attachments.push(message_ir::Attachment {
                     original_name: Some("notes.txt".into()),
                     mime_type: Some("text/plain".into()),
                     bytes: Some(b"shopping list".to_vec()),
@@ -214,7 +213,7 @@ fn a_group_keeps_who_wrote_what_and_a_text_file_stays_a_file() {
     export(before, first.path(), exported.path());
     let after = import(exported.path(), second.path());
 
-    let messages: Vec<&message_ir::IrMessage> = after
+    let messages: Vec<&message_ir::Message> = after
         .iter()
         .flat_map(|document| document.messages.iter())
         .collect();
@@ -299,18 +298,18 @@ fn a_name_keyed_conversation_stays_one_when_its_sender_has_another_name() {
     let mut document = message_ir::testutil::sample_document("from Mary");
     document.conversation.chat_identifier =
         message_ir::ConversationKey::NameOnly("Mom".into()).chat_id();
-    document.conversation.participants = vec![message_ir::IrParticipant {
+    document.conversation.participants = vec![message_ir::Participant {
         identity: None,
         display_name: Some("Mom".into()),
         country: None,
     }];
-    document.messages[0].direction = IrDirection::Incoming;
+    document.messages[0].direction = Direction::Incoming;
     document.messages[0].sender_identity = None;
     document.messages[0].sender_display_name = Some("Mary".into());
     let mut sent = document.messages[0].clone();
     sent.guid = format!("{:032x}", 2);
     sent.timestamp_unix_ms += 1000;
-    sent.direction = IrDirection::Outgoing;
+    sent.direction = Direction::Outgoing;
     sent.sender_display_name = None;
     sent.text = "to Mom".into();
     document.messages.push(sent);
@@ -345,7 +344,7 @@ fn exported_mail(root: &Path) -> Vec<String> {
 /// roster is `participants`.
 fn two_way_document(
     chat_id: String,
-    participants: Vec<message_ir::IrParticipant>,
+    participants: Vec<message_ir::Participant>,
 ) -> ConversationDocument {
     let mut document = message_ir::testutil::sample_document("received");
     document.conversation.chat_identifier = chat_id;
@@ -355,7 +354,7 @@ fn two_way_document(
     let mut sent = document.messages[0].clone();
     sent.guid = format!("{:032x}", 2);
     sent.timestamp_unix_ms += 1000;
-    sent.direction = IrDirection::Outgoing;
+    sent.direction = Direction::Outgoing;
     sent.text = "sent".into();
     document.messages.push(sent);
     document
@@ -406,7 +405,7 @@ fn the_conversation_that_names_nobody_survives_an_export_and_a_second_import() {
     let received = after[0]
         .messages
         .iter()
-        .find(|m| m.direction == IrDirection::Incoming)
+        .find(|m| m.direction == Direction::Incoming)
         .expect("the received message");
     assert_eq!(received.sender_identity, None);
 }
@@ -422,7 +421,7 @@ fn a_name_written_like_a_number_survives_an_export_and_a_second_import() {
         let second = tempfile::tempdir().unwrap();
         let document = two_way_document(
             message_ir::ConversationKey::NameOnly(name.into()).chat_id(),
-            vec![message_ir::IrParticipant {
+            vec![message_ir::Participant {
                 identity: None,
                 display_name: Some(name.into()),
                 country: None,

@@ -88,14 +88,14 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     crate::db::erase::keep_retrying(state.db.clone());
     // Reported as they stand now; each upload reads them again. Any stored
     // limit starts the server: a part is never larger than the limit.
-    let upload_limits = state.upload_limits().await?;
+    let upload_limits = state.assets.upload_limits(&state.db).await?;
     tracing::info!(
         "An attachment may be up to {} MiB, and is uploaded in parts of {} MiB",
         upload_limits.max_bytes / message_ir::MIB,
         upload_limits.part_size as u64 / message_ir::MIB
     );
 
-    let demo_build = state.demo_build.clone();
+    let demo_build = state.demo.build.clone();
     let media_queue = state.media_queue.clone();
     let on_signal = state.on_stop_signal();
     let in_flight = state.in_flight.clone();

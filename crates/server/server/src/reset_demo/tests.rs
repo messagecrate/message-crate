@@ -1492,7 +1492,7 @@ fn read_generated_bundle(bundle: &Path) -> BundleContents {
             contents.files += 1;
             let text = fs::read_to_string(&path).expect("read conversation file");
             for line in text.lines().skip(1) {
-                let message: message_ir::IrMessage = serde_json::from_str(line)
+                let message: message_ir::Message = serde_json::from_str(line)
                     .unwrap_or_else(|error| panic!("parse {}: {error}", path.display()));
                 contents.messages += 1;
                 contents.tapbacks += message.reactions.len();

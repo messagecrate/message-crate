@@ -1048,7 +1048,7 @@ fn an_asset_the_server_does_not_have_is_named_in_the_report_and_every_conversati
     for menu in menus {
         assert_eq!(
             menu.missing_reason.as_deref(),
-            Some(message_ir::NOT_FETCHED),
+            Some(message_ir::missing_reason::NOT_FETCHED),
             "the conversation file says the Export could not fetch the menu"
         );
     }

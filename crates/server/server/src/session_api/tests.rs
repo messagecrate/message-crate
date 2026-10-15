@@ -62,7 +62,7 @@ async fn an_account_gone_before_its_username_is_read_answers_unauthorized() {
                         },
                         credential: crate::db::audit_trail::CredentialUsed::Session(None),
                     };
-                    get_session(State(state), auth).await
+                    get_session(State(state.db.clone()), auth).await
                 }
             }),
         )

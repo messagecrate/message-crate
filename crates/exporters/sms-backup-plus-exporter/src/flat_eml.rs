@@ -4,7 +4,7 @@ use crate::assets::extract_body;
 use crate::email_numbers::EmailNumber;
 use crate::types::ParsedMessage;
 use mailparse::{MailHeaderMap, ParsedMail};
-use message_ir::{IdentityType, IrConversationType};
+use message_ir::{ConversationType, IdentityType};
 use phone::{Country, Handle, OwnerHandleSet};
 use regex::Regex;
 use sha2::{Digest, Sha256};
@@ -581,7 +581,7 @@ struct FlatAddresses {
 /// Where a flat EML lands and who sent it.
 struct FlatConversation {
     chat_key: String,
-    conversation_type: IrConversationType,
+    conversation_type: ConversationType,
     group_title: Option<String>,
     participants: Vec<Handle>,
     sender: Option<Handle>,
@@ -644,7 +644,7 @@ impl FlatAddresses {
             let (chat_key, title) = group_key(&self.non_owner);
             return FlatConversation {
                 chat_key,
-                conversation_type: IrConversationType::Group,
+                conversation_type: ConversationType::Group,
                 group_title: Some(title),
                 participants: self.non_owner.clone(),
                 sender: if sent {
@@ -662,7 +662,7 @@ impl FlatAddresses {
                 .as_ref()
                 .map(|p| p.key().to_string())
                 .unwrap_or_default(),
-            conversation_type: IrConversationType::Individual,
+            conversation_type: ConversationType::Individual,
             group_title: None,
             participants: peer.iter().cloned().collect(),
             sender: peer.filter(|_| !sent && self.peer_is_sender(headers)),

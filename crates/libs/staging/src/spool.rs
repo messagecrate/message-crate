@@ -22,7 +22,7 @@ use std::sync::Mutex;
 
 use anyhow::{Context, Result};
 use message_crate_core::{ATTACHMENT_SPOOL_DIRECTORY, ScratchDir};
-use message_ir::IrAttachment;
+use message_ir::Attachment;
 
 use crate::headroom::{Disk, check_headroom};
 use crate::write_queue::AttachmentSource;
@@ -141,7 +141,7 @@ impl AttachmentSpool {
     /// Where `att`'s bytes come from when its digest was spooled: the
     /// spooled file, with the payload's size for the progress totals.
     /// `None` for an attachment the spool does not hold.
-    pub fn source(&self, att: &IrAttachment) -> Option<(AttachmentSource, Option<u64>)> {
+    pub fn source(&self, att: &Attachment) -> Option<(AttachmentSource, Option<u64>)> {
         let digest = att.digest_sha256.as_deref()?;
         let path = self.path(digest)?;
         let size = att.size_bytes.or_else(|| self.size(digest));
@@ -208,7 +208,7 @@ mod tests {
         let cache = tempfile::tempdir().unwrap();
         let spool = AttachmentSpool::new(cache.path());
         let digest = spool.put(b"photo").unwrap();
-        let mut att = IrAttachment {
+        let mut att = Attachment {
             digest_sha256: Some(digest.clone()),
             ..sample_attachment()
         };

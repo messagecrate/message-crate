@@ -392,7 +392,7 @@ mod tests {
     use message_crate_core::{
         AttachmentFiles, AttachmentJob, CancelFlag, LogSink, run_attachment_jobs,
     };
-    use message_ir::IrAttachment;
+    use message_ir::Attachment;
     use std::fs;
 
     /// The attachment-type column names the type when iMazing filled it in;
@@ -466,7 +466,7 @@ mod tests {
             "finding the file must not write files"
         );
         let source = source.expect("source path found");
-        let mut att = IrAttachment {
+        let mut att = Attachment {
             path: None,
             original_name: cell.meta.original_name,
             mime_type: cell.meta.mime_type,

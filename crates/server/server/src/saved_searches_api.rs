@@ -10,11 +10,12 @@ use crate::paging::{DEFAULT_LIST_LIMIT, MAX_LIST_OFFSET, Page, PageQuery, page_o
 use axum::extract::State;
 use axum::http::StatusCode;
 use serde::Deserialize;
+use sqlx::SqlitePool;
 
 use crate::api_error::ApiError;
 use crate::auth::FullAccess;
 use crate::db::saved_searches::{self, SavedSearch, SavedSearchKind};
-use crate::server::{AppState, Created};
+use crate::server::Created;
 
 /// The name and query of a new saved search.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -63,7 +64,7 @@ pub(crate) struct UpdateSavedSearchRequest {
     )
 )]
 pub(crate) async fn list_saved_searches(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Query(query): Query<PageQuery>,
 ) -> Result<Json<Page<SavedSearch>>, ApiError> {
@@ -73,7 +74,7 @@ pub(crate) async fn list_saved_searches(
         DEFAULT_LIST_LIMIT,
         Some(MAX_LIST_OFFSET),
     )?;
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let rows = saved_searches::list(&mut conn, auth.account_id).await?;
     Ok(Json(page_of(rows, params)))
 }
@@ -97,11 +98,11 @@ pub(crate) async fn list_saved_searches(
     )
 )]
 pub(crate) async fn create_saved_search(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Json(body): Json<CreateSavedSearchRequest>,
 ) -> Result<Created<SavedSearch>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let row = saved_searches::create(
         &mut conn,
         auth.account_id,
@@ -128,11 +129,11 @@ pub(crate) async fn create_saved_search(
     )
 )]
 pub(crate) async fn get_saved_search(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Path(id): Path<i64>,
 ) -> Result<Json<SavedSearch>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let row = saved_searches::get(&mut conn, auth.account_id, id)
         .await?
         .ok_or_else(|| ApiError::not_found("saved search"))?;
@@ -154,12 +155,12 @@ pub(crate) async fn get_saved_search(
     )
 )]
 pub(crate) async fn update_saved_search(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Path(id): Path<i64>,
     Json(body): Json<UpdateSavedSearchRequest>,
 ) -> Result<Json<SavedSearch>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let row =
         saved_searches::update(&mut conn, auth.account_id, id, &body.name, &body.query).await?;
     Ok(Json(row))
@@ -181,11 +182,11 @@ pub(crate) async fn update_saved_search(
     )
 )]
 pub(crate) async fn delete_saved_search(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     FullAccess(auth): FullAccess,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     saved_searches::delete(&mut conn, auth.account_id, id).await?;
     Ok(StatusCode::NO_CONTENT)
 }

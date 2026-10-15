@@ -5,12 +5,13 @@ use crate::imports_api::dto::{
     CompleteImportRequest, CreateImportRequest, DiscardImportRequest, ImportIssueRequest,
     UpdateImportRequest,
 };
+use crate::imports_api::run_control::Importer;
 use crate::imports_api::{
     complete_import, create_import, discard_import, get_import, list_imports, update_import,
 };
 use crate::problem::ProblemType;
 use crate::test_support::{ImportingAccount, expect_problem, test_fixture};
-use axum::extract::State;
+use axum::extract::{FromRef, State};
 use message_crate_api_types::ImportMode;
 
 /// The account's running Import Run through `GET /v1/imports?status=running`,
@@ -20,7 +21,7 @@ async fn running_import(
     token: &str,
 ) -> Option<crate::imports_api::dto::ImportRunSummary> {
     list_imports(
-        State(state.clone()),
+        State(state.db.clone()),
         import_access(state, token).await,
         crate::extract::Query(crate::imports_api::dto::ListImportsQuery {
             sort: None,
@@ -119,7 +120,7 @@ async fn imports_complete_and_detail_surface_timings_and_issues() {
     };
 
     let response = complete_import(
-        State(state.clone()),
+        State(Importer::from_ref(&state)),
         import_access(&state, &token).await,
         AxumPath(import_id),
         Json(body),
@@ -133,7 +134,7 @@ async fn imports_complete_and_detail_surface_timings_and_issues() {
     assert_eq!(response.0.run.bytes_uploaded, 100);
 
     let detail = get_import(
-        State(state.clone()),
+        State(state.db.clone()),
         import_access(&state, &token).await,
         AxumPath(import_id),
     )
@@ -184,7 +185,7 @@ async fn imports_complete_stores_completed_with_issues_status() {
         notes: Vec::new(),
     };
     let response = complete_import(
-        State(state.clone()),
+        State(Importer::from_ref(&state)),
         import_access(&state, &token).await,
         AxumPath(import_id),
         Json(body),
@@ -212,7 +213,7 @@ async fn imports_complete_rejects_unknown_status() {
         notes: Vec::new(),
     };
     let err = complete_import(
-        State(state.clone()),
+        State(Importer::from_ref(&state)),
         import_access(&state, &token).await,
         AxumPath(import_id),
         Json(body),
@@ -237,7 +238,7 @@ async fn imports_get_handler_returns_not_found_for_missing_import() {
     let state = fixture.state.clone();
     let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
     let err = get_import(
-        State(state.clone()),
+        State(state.db.clone()),
         import_access(&state, &token).await,
         AxumPath(import_id + 1),
     )
@@ -273,7 +274,7 @@ async fn active_import_run_is_empty_then_reports_the_live_one() {
     };
     // The fixture already started an Import Run; discard it so this one can start.
     let _ = discard_import(
-        State(state.clone()),
+        State(Importer::from_ref(&state)),
         import_access(&state, &token).await,
         AxumPath(import_id),
         Json(DiscardImportRequest {
@@ -285,7 +286,7 @@ async fn active_import_run_is_empty_then_reports_the_live_one() {
     .unwrap();
 
     let created = create_import(
-        State(state.clone()),
+        State(state.db.clone()),
         import_access(&state, &token).await,
         Json(body),
     )
@@ -313,7 +314,7 @@ async fn a_stored_form_snapshot_drops_credentials() {
     let state = fixture.state.clone();
     let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
     let _ = discard_import(
-        State(state.clone()),
+        State(Importer::from_ref(&state)),
         import_access(&state, &token).await,
         AxumPath(import_id),
         Json(DiscardImportRequest {
@@ -342,7 +343,7 @@ async fn a_stored_form_snapshot_drops_credentials() {
         phone_country: None,
     };
     let _ = create_import(
-        State(state.clone()),
+        State(state.db.clone()),
         import_access(&state, &token).await,
         Json(body),
     )
@@ -376,7 +377,7 @@ async fn imports_create_stores_source_identities() {
     let state = fixture.state.clone();
     let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
     let _ = discard_import(
-        State(state.clone()),
+        State(Importer::from_ref(&state)),
         import_access(&state, &token).await,
         AxumPath(import_id),
         Json(DiscardImportRequest {
@@ -400,7 +401,7 @@ async fn imports_create_stores_source_identities() {
         phone_country: None,
     };
     let _ = create_import(
-        State(state.clone()),
+        State(state.db.clone()),
         import_access(&state, &token).await,
         Json(body),
     )
@@ -434,7 +435,7 @@ async fn a_second_import_run_is_refused_with_conflict() {
         phone_country: None,
     };
     let err = create_import(
-        State(state.clone()),
+        State(state.db.clone()),
         import_access(&state, &token).await,
         Json(body),
     )
@@ -459,7 +460,7 @@ async fn stage_endpoint_advances() {
     let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
 
     let _ = update_import(
-        State(state.clone()),
+        State(state.db.clone()),
         import_access(&state, &token).await,
         AxumPath(import_id),
         Json(UpdateImportRequest {
@@ -481,7 +482,7 @@ async fn discard_frees_the_slot() {
     let state = fixture.state.clone();
     let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
     let _ = discard_import(
-        State(state.clone()),
+        State(Importer::from_ref(&state)),
         import_access(&state, &token).await,
         AxumPath(import_id),
         Json(DiscardImportRequest {

@@ -192,7 +192,7 @@ async fn start_run(fixture: &TestFixture, account: &RegisteredAccount) -> i64 {
 fn batch_naming(sha: &str) -> String {
     let message = message_line("g-new", "new")
         .sender("+15555550123")
-        .attachment(message_ir::IrAttachment {
+        .attachment(message_ir::Attachment {
             digest_sha256: Some(sha.to_string()),
             ..attachment(
                 "attachments/photo.bin",
@@ -422,7 +422,7 @@ fn batch_from_source(source: &str, handle: &str, sha: &str) -> String {
     let message = message_line(&format!("g-{source}"), &format!("from {source}"))
         .sms()
         .sender(handle)
-        .attachment(message_ir::IrAttachment {
+        .attachment(message_ir::Attachment {
             digest_sha256: Some(sha.to_string()),
             ..attachment("attachments/photo.jpg", "photo.jpg", "image/jpeg")
         });

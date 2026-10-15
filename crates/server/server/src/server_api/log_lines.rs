@@ -3,15 +3,17 @@
 //! a page at a time from the id of the last line the client holds
 //! (`docs/architecture/server-log.md`).
 
+use std::sync::Arc;
+
 use axum::extract::State;
 use serde::{Deserialize, Serialize};
 
 use crate::api_error::ApiError;
 use crate::auth::Owner;
+use crate::config::Config;
 use crate::extract::{Json, Query};
 use crate::logging::{LogLevel, LogLine, LogLinesQuery, log_dir, read_lines};
 use crate::paging::{DEFAULT_LIST_LIMIT, page_params};
-use crate::server::AppState;
 
 /// Query string of `GET /v1/server/log-lines`.
 #[derive(Debug, Deserialize)]
@@ -68,7 +70,7 @@ pub struct ListLogLinesResponse {
     )
 )]
 pub(crate) async fn list_log_lines(
-    State(state): State<AppState>,
+    State(cfg): State<Arc<Config>>,
     Owner(_auth): Owner,
     Query(query): Query<ListLogLinesQuery>,
 ) -> Result<Json<ListLogLinesResponse>, ApiError> {
@@ -78,7 +80,7 @@ pub(crate) async fn list_log_lines(
             "after must be the id of a line, which is never negative",
         ));
     }
-    let dir = log_dir(&state.cfg.paths.data_dir);
+    let dir = log_dir(&cfg.paths.data_dir);
     let lines_query = LogLinesQuery {
         after: query.after,
         level: query.level,

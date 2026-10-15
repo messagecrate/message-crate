@@ -1,7 +1,7 @@
 use super::*;
 use message_crate_core::testutil::{RecordedLog, TestRun, recorded_log};
 use message_crate_core::{ObfuscateConfig, RunLogLevel};
-use message_ir::IrAttachment;
+use message_ir::Attachment;
 use message_ir_format::{read_conversation_csv, read_conversation_json};
 
 fn write_fixture(dir: &Path, format: OutputFormat) {
@@ -71,8 +71,8 @@ fn find_file(dir: &Path, extension: &str) -> PathBuf {
         .unwrap_or_else(|| panic!("no .{extension} file in {}", dir.display()))
 }
 
-fn attachment(name: &str, path: Option<&str>) -> IrAttachment {
-    IrAttachment {
+fn attachment(name: &str, path: Option<&str>) -> Attachment {
+    Attachment {
         path: path.map(str::to_string),
         original_name: Some(name.to_string()),
         mime_type: Some("text/plain".to_string()),
@@ -1243,7 +1243,7 @@ fn convert_keeps_the_names_two_groups_with_one_title_were_given() {
         FormatSink::open(source.path(), OutputFormat::Json, ExportTransforms::none()).unwrap();
     for chat in ["chat-one", "chat-two"] {
         let mut doc = message_ir::testutil::sample_document("hello group");
-        doc.conversation.conversation_type = message_ir::IrConversationType::Group;
+        doc.conversation.conversation_type = message_ir::ConversationType::Group;
         doc.conversation.group_title = Some("Family".into());
         doc.conversation.chat_identifier = chat.into();
         sink.write_document(doc).unwrap();
@@ -1417,7 +1417,7 @@ fn sms_backup_plus_writes_only_sms_and_mms_and_says_what_it_left_out() {
     let mut whatsapp = message_ir::testutil::sample_document("a whatsapp message");
     whatsapp.conversation.chat_identifier = "+15555550103".into();
     whatsapp.conversation.participants[0].identity = Some("+15555550103".into());
-    whatsapp.messages[0].service = message_ir::IrService::Whatsapp;
+    whatsapp.messages[0].service = message_ir::Transport::Whatsapp;
     sink.write_document(whatsapp).unwrap();
     sink.finish(&mut ExportReport::default()).unwrap();
     let destination = tempfile::tempdir().unwrap();
@@ -1690,7 +1690,7 @@ fn the_byte_total_of_a_conversion_stays_the_same_when_a_file_is_gone() {
     let (progress, totals) = message_crate_core::testutil::attachment_totals();
     let mut config = config(output.path(), output.path(), OutputFormat::Mbox);
     config.context.progress = progress;
-    let sized = |name: &str, path: Option<&str>, size: u64, bytes: Option<&[u8]>| IrAttachment {
+    let sized = |name: &str, path: Option<&str>, size: u64, bytes: Option<&[u8]>| Attachment {
         size_bytes: Some(size),
         bytes: bytes.map(<[u8]>::to_vec),
         ..attachment(name, path)

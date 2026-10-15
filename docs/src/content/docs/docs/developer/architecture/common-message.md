@@ -19,7 +19,7 @@ The run model (`RunContext`, `OutputConfig`, `ExportReport`, `ExportTransforms`,
 On-disk forms:
 
 - **JSON** — one pretty-printed `<conversation-stem>.json` per chat
-- **JSONL** (the desktop app's default) — one `<conversation-stem>.jsonl` per chat: header line, then one `IrMessage` per line
+- **JSONL** (the desktop app's default) — one `<conversation-stem>.jsonl` per chat: header line, then one `message_ir::Message` per line
 
 Stem rules match CSV filenames. Packaging-only suffixes (e.g. `__whatsapp`) affect the on-disk stem but are **not** serialized in the JSON body. When two conversations in one run reduce to the same stem, ignoring case (two groups with one title, or two untitled groups with the same people), each gets `__` and the first 8 hex digits of the SHA-256 of its `chat_identifier` appended, so neither file replaces the other. Two conversations with the same `chat_identifier` and stem stop the run instead.
 Reading a file back gives the document whatever follows the stem it would have without a suffix, when that starts with `__`, so a converted file keeps its name. The readers know no suffix by name: the exporter that adds one owns it.
@@ -85,7 +85,7 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 | Tier | Contents |
 |------|----------|
 | Core | typed conversation + message fields |
-| `imessage` | typed Apple extensions (`IrImessage`); nested `parts` / `app` are JSON values |
+| `imessage` | typed Apple extensions (`message_ir::ImessageExtensions`); nested `parts` / `app` are JSON values |
 | `source` | `android_type` (`i32` or null) + vendor `fields` object |
 
 ### Identity
@@ -269,7 +269,7 @@ Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + 
 …
 ```
 
-Line 1 is the header (includes `conversation.stats`; no `messages` array). Each following line is one `IrMessage`.
+Line 1 is the header (includes `conversation.stats`; no `messages` array). Each following line is one `message_ir::Message`.
 
 ## Projectors
 

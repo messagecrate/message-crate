@@ -12,12 +12,13 @@
 use crate::extract::{Json, Query};
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 
 use crate::api_error::ApiError;
 use crate::auth::FullAccess;
 use crate::db::named_membership::{self, MembershipSpec, NamedSet};
 use crate::paging::{DEFAULT_LIST_LIMIT, MAX_LIST_OFFSET, Page, PageQuery, page_of, page_params};
-use crate::server::{AppState, Created};
+use crate::server::Created;
 
 /// The name of a new set.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -71,7 +72,7 @@ pub(crate) struct UpdateMembersResponse {
 /// come from the database connection (500).
 pub(crate) async fn list(
     spec: &'static MembershipSpec,
-    state: &AppState,
+    db: &SqlitePool,
     account_id: i64,
     query: PageQuery,
 ) -> Result<Json<Page<NamedSet>>, ApiError> {
@@ -81,7 +82,7 @@ pub(crate) async fn list(
         DEFAULT_LIST_LIMIT,
         Some(MAX_LIST_OFFSET),
     )?;
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let rows = named_membership::list_sets(spec, &mut conn, account_id).await?;
     Ok(Json(page_of(rows, params)))
 }
@@ -93,11 +94,11 @@ pub(crate) async fn list(
 pub(crate) async fn create(
     spec: &'static MembershipSpec,
     root_path: &str,
-    state: &AppState,
+    db: &SqlitePool,
     account_id: i64,
     body: CreateNamedSetRequest,
 ) -> Result<Created<NamedSet>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let set = named_membership::create_set(spec, &mut conn, account_id, &body.name).await?;
     Ok(Created {
         location: format!("{root_path}/{}", set.id),
@@ -109,11 +110,11 @@ pub(crate) async fn create(
 /// answers 404.
 pub(crate) async fn get(
     spec: &'static MembershipSpec,
-    state: &AppState,
+    db: &SqlitePool,
     account_id: i64,
     id: i64,
 ) -> Result<Json<NamedSet>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     Ok(Json(
         named_membership::get_set(spec, &mut conn, account_id, id).await?,
     ))
@@ -125,12 +126,12 @@ pub(crate) async fn get(
 /// name (ignoring case) answers 409.
 pub(crate) async fn update(
     spec: &'static MembershipSpec,
-    state: &AppState,
+    db: &SqlitePool,
     account_id: i64,
     id: i64,
     body: UpdateNamedSetRequest,
 ) -> Result<Json<NamedSet>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     Ok(Json(
         named_membership::rename_set(spec, &mut conn, account_id, id, &body.name).await?,
     ))
@@ -140,11 +141,11 @@ pub(crate) async fn update(
 /// another account's id answers 404.
 pub(crate) async fn delete(
     spec: &'static MembershipSpec,
-    state: &AppState,
+    db: &SqlitePool,
     account_id: i64,
     id: i64,
 ) -> Result<StatusCode, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     named_membership::delete_set(spec, &mut conn, account_id, id, chrono::Utc::now()).await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -153,7 +154,7 @@ pub(crate) async fn delete(
 /// answers 404.
 pub(crate) async fn members_list(
     spec: &'static MembershipSpec,
-    state: &AppState,
+    db: &SqlitePool,
     account_id: i64,
     id: i64,
     query: PageQuery,
@@ -164,7 +165,7 @@ pub(crate) async fn members_list(
         DEFAULT_LIST_LIMIT,
         Some(MAX_LIST_OFFSET),
     )?;
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let rows = named_membership::list_member_ids_of(spec, &mut conn, account_id, id).await?;
     Ok(Json(page_of(rows, params)))
 }
@@ -176,12 +177,12 @@ pub(crate) async fn members_list(
 /// counts only the rows that were deleted.
 pub(crate) async fn members_update(
     spec: &'static MembershipSpec,
-    state: &AppState,
+    db: &SqlitePool,
     account_id: i64,
     id: i64,
     body: UpdateMembersRequest,
 ) -> Result<Json<UpdateMembersResponse>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let (added, removed) = named_membership::patch_members(
         spec,
         &mut conn,
@@ -247,11 +248,11 @@ macro_rules! named_set_routes {
             )
         )]
         pub(crate) async fn $list_fn(
-            axum::extract::State(state): axum::extract::State<AppState>,
+            axum::extract::State(db): axum::extract::State<SqlitePool>,
             FullAccess(auth): FullAccess,
             Query(query): Query<PageQuery>,
         ) -> Result<Json<Page<NamedSet>>, ApiError> {
-            list($spec(), &state, auth.account_id, query).await
+            list($spec(), &db, auth.account_id, query).await
         }
 
         #[doc = $create_doc]
@@ -271,11 +272,11 @@ macro_rules! named_set_routes {
             )
         )]
         pub(crate) async fn $create_fn(
-            axum::extract::State(state): axum::extract::State<AppState>,
+            axum::extract::State(db): axum::extract::State<SqlitePool>,
             FullAccess(auth): FullAccess,
             Json(body): Json<CreateNamedSetRequest>,
         ) -> Result<Created<NamedSet>, ApiError> {
-            create($spec(), $root_path, &state, auth.account_id, body).await
+            create($spec(), $root_path, &db, auth.account_id, body).await
         }
 
         #[doc = $get_doc]
@@ -290,11 +291,11 @@ macro_rules! named_set_routes {
             )
         )]
         pub(crate) async fn $get_fn(
-            axum::extract::State(state): axum::extract::State<AppState>,
+            axum::extract::State(db): axum::extract::State<SqlitePool>,
             FullAccess(auth): FullAccess,
             crate::extract::Path(id): crate::extract::Path<i64>,
         ) -> Result<Json<NamedSet>, ApiError> {
-            get($spec(), &state, auth.account_id, id).await
+            get($spec(), &db, auth.account_id, id).await
         }
 
         #[doc = $update_doc]
@@ -311,12 +312,12 @@ macro_rules! named_set_routes {
             )
         )]
         pub(crate) async fn $update_fn(
-            axum::extract::State(state): axum::extract::State<AppState>,
+            axum::extract::State(db): axum::extract::State<SqlitePool>,
             FullAccess(auth): FullAccess,
             crate::extract::Path(id): crate::extract::Path<i64>,
             Json(body): Json<UpdateNamedSetRequest>,
         ) -> Result<Json<NamedSet>, ApiError> {
-            update($spec(), &state, auth.account_id, id, body).await
+            update($spec(), &db, auth.account_id, id, body).await
         }
 
         #[doc = $delete_doc]
@@ -331,11 +332,11 @@ macro_rules! named_set_routes {
             )
         )]
         pub(crate) async fn $delete_fn(
-            axum::extract::State(state): axum::extract::State<AppState>,
+            axum::extract::State(db): axum::extract::State<SqlitePool>,
             FullAccess(auth): FullAccess,
             crate::extract::Path(id): crate::extract::Path<i64>,
         ) -> Result<StatusCode, ApiError> {
-            delete($spec(), &state, auth.account_id, id).await
+            delete($spec(), &db, auth.account_id, id).await
         }
 
         #[doc = $members_list_doc]
@@ -354,12 +355,12 @@ macro_rules! named_set_routes {
             )
         )]
         pub(crate) async fn $members_list_fn(
-            axum::extract::State(state): axum::extract::State<AppState>,
+            axum::extract::State(db): axum::extract::State<SqlitePool>,
             FullAccess(auth): FullAccess,
             crate::extract::Path(id): crate::extract::Path<i64>,
             Query(query): Query<PageQuery>,
         ) -> Result<Json<Page<i64>>, ApiError> {
-            members_list($spec(), &state, auth.account_id, id, query).await
+            members_list($spec(), &db, auth.account_id, id, query).await
         }
 
         #[doc = $members_update_doc]
@@ -375,12 +376,12 @@ macro_rules! named_set_routes {
             )
         )]
         pub(crate) async fn $members_update_fn(
-            axum::extract::State(state): axum::extract::State<AppState>,
+            axum::extract::State(db): axum::extract::State<SqlitePool>,
             FullAccess(auth): FullAccess,
             crate::extract::Path(id): crate::extract::Path<i64>,
             Json(body): Json<UpdateMembersRequest>,
         ) -> Result<Json<UpdateMembersResponse>, ApiError> {
-            members_update($spec(), &state, auth.account_id, id, body).await
+            members_update($spec(), &db, auth.account_id, id, body).await
         }
     };
 }
