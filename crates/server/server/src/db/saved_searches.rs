@@ -56,8 +56,8 @@ pub enum SavedSearchError {
     /// The query breaks a rule of the search language that every list shares.
     Query(crate::search::QueryError),
     NotFound,
-    /// Another saved search of the account has the name; carries the
-    /// sentence naming it.
+    /// The name is not free: another saved search of the account has it, or
+    /// an import found no free name for the day. Carries the sentence.
     NameTaken(String),
     Internal(anyhow::Error),
 }
