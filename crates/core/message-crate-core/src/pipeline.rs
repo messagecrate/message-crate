@@ -448,7 +448,7 @@ pub fn prepare_outputs(
 /// identity. The Export Date is left for the convert step to stamp
 /// (`staging::convert_backup`), which is given it by its caller; each
 /// message's Backup Date is the exporter's
-/// [`ProjectionHooks::backup_taken_at_unix_ms`](ir::ProjectionHooks::backup_taken_at_unix_ms).
+/// [`ProjectionHooks::backup_taken_at_unix_ms`].
 pub fn export_meta(
     source: &str,
     tool: &str,

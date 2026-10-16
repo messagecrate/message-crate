@@ -18,9 +18,9 @@ and the heavy jobs read them:
 | --- | --- | --- |
 | `changes` | always, except on a draft | Diffs against the base and outputs `rust`, `web`, `docs`, `docker`, `server_config`, `local_server` |
 | `fmt` | `rust` | `cargo fmt --check` on the workspace and on `src-tauri` |
-| `clippy` | `rust` | `cargo clippy --workspace --all-targets -- -D warnings` |
+| `clippy` | `rust` | `cargo clippy --workspace --all-targets -- -D warnings`, then `cargo doc --workspace --no-deps --document-private-items` with `RUSTDOCFLAGS="-D warnings"`, so a broken intra-doc link fails (#3096) |
 | `test` | `rust` | `cargo build --workspace` and `cargo test --workspace` |
-| `check-tauri` | `rust` | `cargo check`, Clippy at `-D warnings`, and `cargo test` on `src-tauri` |
+| `check-tauri` | `rust` | `cargo check`, Clippy at `-D warnings`, rustdoc at `-D warnings` with private items, and `cargo test` on `src-tauri` |
 | `windows-config` | `server_config` | `cargo test -p message-crate-server --lib "config::tests::"` on `windows-latest` |
 | `windows-local-server` | `local_server` | `cargo test --manifest-path src-tauri/Cargo.toml --lib "local_server::"` on `windows-latest` |
 | `web` | `web` | `biome ci`, `biome lint --error-on-warnings` on the timed-wait rule's canary, `check-biome-restricted-imports.mjs`, `check-generated-api-types.sh`, `npm run build`, `npm test` |
@@ -84,9 +84,12 @@ Linux tests cover. `Cargo.lock` does not set `local_server`, so a dependency
 bump does not start a Windows build on a pull request. The push to `main`
 runs the job.
 
-`src-tauri`'s Clippy stays inside `check-tauri` rather than the `clippy` job,
-because its build needs the webkit and gtk system packages that job already
-installs; a second install would double the cost for no coverage.
+`src-tauri`'s Clippy and rustdoc stay inside `check-tauri` rather than the
+`clippy` job, because its build needs the webkit and gtk system packages that
+job already installs; a second install would double the cost for no
+coverage. The workspace's rustdoc is a step of `clippy` for the same reason:
+it needs that job's packages, and its own job would install them and fill a
+cache a second time.
 
 The dependency audits live in `audit.yml`, not `ci.yml`. That workflow runs
 `cargo deny check advisories`, `npm audit --audit-level=high` for `web/`,

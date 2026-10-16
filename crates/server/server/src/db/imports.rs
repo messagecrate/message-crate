@@ -362,7 +362,7 @@ pub enum ImportLookupError {
 }
 
 /// A database statement that failed, with the step it was taking, so the
-/// error reads "<step>: <database error>" in the server's log.
+/// error reads "`<step>: <database error>`" in the server's log.
 #[derive(Debug, thiserror::Error)]
 #[error("{step}")]
 pub struct StatementFailed {
