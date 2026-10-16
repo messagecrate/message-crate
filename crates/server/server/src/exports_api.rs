@@ -140,11 +140,7 @@ pub async fn start_export_run(
         .ok_or_else(|| ApiError::Internal(anyhow::anyhow!("export run vanished before commit")))?;
     tx.commit().await?;
     if let Some(replaced) = started.replaced {
-        exports::log_closed(
-            replaced,
-            Some(account_id),
-            crate::db::audit_trail::AuditReason::Replaced,
-        );
+        exports::RunClosure::Replaced(account_id).log(replaced, Some(account_id));
     }
     Ok(run)
 }

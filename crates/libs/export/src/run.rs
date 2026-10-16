@@ -1051,7 +1051,7 @@ struct FetchAssetsParallelArgs<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`] when the run is cancelled,
+/// Returns [`Cancelled`] when the run is canceled,
 /// [`RunCanceledOnServer`](crate::http::RunCanceledOnServer) when a
 /// keep-alive read finds the run closed on the server, and the server's
 /// refusal when it refuses the session (`401 Unauthorized`): every other

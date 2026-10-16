@@ -175,7 +175,7 @@ pub struct StartedExport {
     pub id: i64,
     /// The account's running run the start closed as `cancelled`, if it had
     /// one. The caller logs it once its transaction commits
-    /// ([`log_closed`]).
+    /// ([`RunClosure::log`]).
     pub replaced: Option<i64>,
 }
 
@@ -198,7 +198,7 @@ pub async fn start_export(
     args: &StartExportArgs<'_>,
     now: DateTime<Utc>,
 ) -> Result<StartedExport> {
-    let replaced = close_runs(conn, Closure::Replaced(args.account_id), now)
+    let replaced = close_runs(conn, RunClosure::Replaced(args.account_id), now)
         .await?
         .first()
         .map(|&(export_id, _)| export_id);
@@ -292,7 +292,7 @@ pub async fn get_export(
 
 /// Which running runs [`close_runs`] closes, and why.
 #[derive(Debug, Clone, Copy)]
-enum Closure<'a> {
+pub(crate) enum RunClosure<'a> {
     /// The account's running run, which a new Export replaces, by the person
     /// starting it.
     Replaced(i64),
@@ -305,30 +305,69 @@ enum Closure<'a> {
 /// `$1`, or none read at all and started before it.
 const IDLE_RUN_SQL: &str = "status = 'running' AND COALESCE(last_page_read_at, started_at) < $1";
 
+impl RunClosure<'_> {
+    /// The condition, over `exports`, of the runs it closes, with its value
+    /// as `$1`.
+    fn condition(self) -> &'static str {
+        match self {
+            Self::Replaced(_) => "account_id = $1 AND status = 'running'",
+            Self::Idle(_) => IDLE_RUN_SQL,
+        }
+    }
+
+    /// Why the Audit Trail says the run was closed.
+    fn reason(self) -> AuditReason {
+        match self {
+            Self::Replaced(_) => AuditReason::Replaced,
+            Self::Idle(_) => AuditReason::Idle,
+        }
+    }
+
+    /// Who closed a run of `account_id`: the person starting the new Export,
+    /// or the server.
+    fn actor(self, account_id: i64) -> AuditActor {
+        match self {
+            Self::Replaced(_) => AuditActor::logged_in_as(account_id),
+            Self::Idle(_) => AuditActor::Server,
+        }
+    }
+
+    /// Write the server's log line for the run `export_id` of `account_id`,
+    /// once its closure has committed.
+    pub(crate) fn log(self, export_id: i64, account_id: Option<i64>) {
+        match self {
+            Self::Replaced(_) => tracing::info!(
+                account_id,
+                export_id,
+                "A new Export Run replaced the account's running one, which was canceled"
+            ),
+            Self::Idle(_) => tracing::info!(
+                account_id,
+                export_id,
+                "No page of an Export Run was read for an hour, so it was canceled"
+            ),
+        }
+    }
+}
+
 /// Close the running runs `closure` names as `cancelled` at `now`, delete
 /// their lists of messages, and record each closure in the Audit Trail with
 /// its reason. Returns each closed run's id and account. Call it inside a
-/// write transaction, and [`log_closed`] once it commits.
+/// write transaction, and [`RunClosure::log`] once it commits.
 async fn close_runs(
     conn: &mut SqliteConnection,
-    closure: Closure<'_>,
+    closure: RunClosure<'_>,
     now: DateTime<Utc>,
 ) -> Result<Vec<(i64, Option<i64>)>> {
-    let (condition, reason) = match closure {
-        Closure::Replaced(_) => (
-            "account_id = $1 AND status = 'running'",
-            AuditReason::Replaced,
-        ),
-        Closure::Idle(_) => (IDLE_RUN_SQL, AuditReason::Idle),
-    };
     let query = sqlx::query_as::<_, (i64, Option<i64>)>(sqlx::AssertSqlSafe(format!(
         "UPDATE exports SET status = 'cancelled', finished_at = $2
          WHERE {condition}
-         RETURNING id, account_id"
+         RETURNING id, account_id",
+        condition = closure.condition(),
     )));
     let query = match closure {
-        Closure::Replaced(account_id) => query.bind(account_id),
-        Closure::Idle(cutoff) => query.bind(cutoff.to_owned()),
+        RunClosure::Replaced(account_id) => query.bind(account_id),
+        RunClosure::Idle(cutoff) => query.bind(cutoff.to_owned()),
     };
     let closed = query
         .bind(now.to_rfc3339())
@@ -342,32 +381,17 @@ async fn close_runs(
         let Some(account_id) = account_id else {
             continue;
         };
-        let actor = match closure {
-            Closure::Replaced(_) => AuditActor::logged_in_as(account_id),
-            Closure::Idle(_) => AuditActor::Server,
-        };
-        audit_trail::record_export_run_closed(conn, account_id, export_id, reason, actor, now)
-            .await?;
+        audit_trail::record_export_run_closed(
+            conn,
+            account_id,
+            export_id,
+            closure.reason(),
+            closure.actor(account_id),
+            now,
+        )
+        .await?;
     }
     Ok(closed)
-}
-
-/// Write the server's log line for a run the server closed as `cancelled`
-/// for `reason`, once the closure has committed.
-pub(crate) fn log_closed(export_id: i64, account_id: Option<i64>, reason: AuditReason) {
-    if reason == AuditReason::Idle {
-        tracing::info!(
-            account_id,
-            export_id,
-            "No page of an Export Run was read for an hour, so it was canceled"
-        );
-    } else {
-        tracing::info!(
-            account_id,
-            export_id,
-            "A new Export Run replaced the account's running one, which was canceled"
-        );
-    }
 }
 
 /// Delete the list of messages a run matched at creation.
@@ -403,10 +427,11 @@ pub async fn close_idle_runs(conn: &mut SqliteConnection, now: DateTime<Utc>) ->
     let mut tx = begin_write(conn)
         .await
         .context("begin a write transaction")?;
-    let closed = close_runs(&mut tx, Closure::Idle(&cutoff), now).await?;
+    let closure = RunClosure::Idle(&cutoff);
+    let closed = close_runs(&mut tx, closure, now).await?;
     tx.commit().await.context("commit the closed Export Runs")?;
     for &(export_id, account_id) in &closed {
-        log_closed(export_id, account_id, AuditReason::Idle);
+        closure.log(export_id, account_id);
     }
     Ok(closed.into_iter().map(|(export_id, _)| export_id).collect())
 }

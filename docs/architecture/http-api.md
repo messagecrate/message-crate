@@ -1318,12 +1318,11 @@ counted from its last page or, before the first, from its start; it looks
 once a minute, and when it starts. A page past the end of the list hands
 over nothing and still counts as a page read, so the desktop app reads one
 every ten minutes while it fetches the run's Assets, which read no page. A
-client still reading a run closed
-either way gets the `409 Conflict` any run that is not running answers, and
-the desktop app's Export fails with a sentence saying it was canceled. Each
-closure is an `export_run_closed` entry in the Audit Trail, with the reason
-`replaced` (by the person starting the new Export) or `idle` (by the
-server), naming the run.
+client still reading a run closed either way gets the `409 Conflict` any run
+that is not running answers, and the desktop app's Export fails with a
+sentence saying it was canceled. Each closure is an `export_run_closed` entry
+in the Audit Trail, with the reason `replaced` (by the person starting the
+new Export) or `idle` (by the server), naming the run.
 Why: every running run holds one row per message it matched, written while
 holding the database's write lock. With no limit, a program with the
 `export` scope could start runs in a loop and grow that table by the
