@@ -8,7 +8,7 @@ fast pre-flight that catches the mistakes not worth a round trip, and
 pushing, except the Docker image build and, off Windows, the Windows-only
 cases of the server config tests.
 
-`ci.yml` holds twelve jobs on a ready pull request. On a draft, all of them
+`ci.yml` holds thirteen jobs on a ready pull request. On a draft, all of them
 skip. A `changes` job diffs the branch against its base and publishes five
 booleans — `rust`, `web`, `docs`, `docker`, `server_config` — and the heavy
 jobs read them:
@@ -26,10 +26,17 @@ jobs read them:
 | `license` | always | `check-license.sh` |
 | `docker-context` | always | `check-docker-context.sh` |
 | `docker-build` | `docker`, pull requests only | `docker/build-push-action` with `push: false`: the release Dockerfile builds; then `check-docker-compose.sh` starts it with `docker/compose.release.yml` and logs in to the Demo Account |
+| `secrets` | pull requests only | `check-secrets.sh`: gitleaks reads every commit the pull request adds, with the default rules plus `.gitleaks.toml`'s rule for `mc-user-` and `mc-api-` tokens and its allowlist of test vectors |
 | `version` | always | `check-version-lockstep.sh`: the four product version files and their lockfiles agree, and on a `v*` tag agree with the tag; then `check-changelog.sh`: `CHANGELOG.md`'s width, tight lists and dated entries |
 
-The ruleset requires eleven of them: every job but `windows-config`. Whether
-it should require that one too is open in #2788.
+The ruleset requires eleven of them: every job but `windows-config` and
+`secrets`. Whether it should require `windows-config` too is open in #2788.
+`secrets` joins the required checks once it has run green (#2093). GitHub's
+own secret scanning and push protection are on for the repository as well.
+They block a provider token at `git push`, and the gitleaks job finds what
+their patterns miss, such as a pasted Session or API token. The job runs on
+pull requests only, like `docker-build`, so the release jobs do not need it:
+a tag carries commits a pull request already scanned.
 
 Four classifier arms are not what the directory alone would suggest.
 `scripts/check-generated-api-types.sh` and the generator's own tree,
