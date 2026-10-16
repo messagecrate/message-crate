@@ -473,8 +473,9 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     session_entry_id INTEGER REFERENCES audit_entries(id),
     -- logged_in: when the session expires, RFC 3339 UTC. password_set by the
     -- holder: when the renewed session expires. A session with no
-    -- session_ended entry reads as expired from the latest of these, so
-    -- expiry needs no entry and no sweeper, and no entry is ever changed.
+    -- session_ended entry reads as expired from the latest of these and of
+    -- its `session_extensions` row, so expiry needs no entry and no sweeper,
+    -- and no entry is ever changed.
     session_expires_at TEXT,
     -- JSON object of the entry's counts and names: permissions added and
     -- removed, conversations and attachments deleted, an API token's label
@@ -539,3 +540,15 @@ WHEN NOT (OLD.action = 'login_refused' AND OLD.reason IS 'unknown_username')
 BEGIN
     SELECT RAISE(ABORT, 'an Audit Trail entry is never deleted');
 END;
+
+-- When a Session that has been used expires, under the `logged_in` entry of
+-- the login that opened it. Each use moves a Session's expiry 7 days
+-- ahead, up to 30 days after the login, and an Audit Trail entry is
+-- never edited, so the latest expiry is kept here, where the Audit Trail
+-- reads it. It outlives the session row, which a new login replaces.
+CREATE TABLE IF NOT EXISTS session_extensions (
+    -- The Session's `logged_in` entry (`audit_entries.id`).
+    login_entry_id INTEGER NOT NULL PRIMARY KEY REFERENCES audit_entries(id),
+    -- When the Session expires since its last use, RFC 3339 UTC.
+    expires_at TEXT NOT NULL
+);

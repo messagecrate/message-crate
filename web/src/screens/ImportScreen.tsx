@@ -44,6 +44,7 @@ import { restoreFormFromSnapshot, snapshotSecret } from "./import/formSnapshot";
 import ImportFormFields from "./import/ImportFormFields";
 import ImportRunView from "./import/ImportRunView";
 import {
+  type ImportFormAction,
   type ImportPathField,
   importFormReducer,
   importJobValues,
@@ -109,6 +110,7 @@ export default function ImportScreen() {
     mediaToolsMissing,
     mediaPartiallyRan,
     resumeError,
+    startError,
     reviewError,
     sourceIdentities,
     computingSummary,
@@ -121,6 +123,7 @@ export default function ImportScreen() {
     returnToForm,
     continueAfterIdentityStop,
     cancelIdentityStop,
+    formEdited,
     runDirDeleteFailure,
     discardRun,
     dismissRunDirDeleteFailure,
@@ -444,7 +447,6 @@ export default function ImportScreen() {
       try {
         const profile = await fetchAccountProfile();
         if (cancelled) return;
-        if (!profile) throw new Error("profile unavailable");
         const phones = phoneNumbers(profile);
         setProfilePhones({ phones, ready: true, error: false });
         if (descriptor.asksWhatsappOwnerPhone) {
@@ -493,7 +495,7 @@ export default function ImportScreen() {
     const gen = ++sourceChangeGenRef.current;
     lastMethodRef.current[importSourceFor(resolved).id] = resolved;
     const paths = rememberedPathsFor(resolved);
-    dispatch({ type: "source", source: resolved, paths });
+    editForm({ type: "source", source: resolved, paths });
     const loadedBackup = paths.backupPath;
 
     if (resolved !== "imessage-macos" || loadedBackup.trim() !== "" || !isTauri()) {
@@ -525,9 +527,19 @@ export default function ImportScreen() {
     })();
   }
 
+  /**
+   * Apply a change the person made on the form. A change to a value drops
+   * the last start's failure, which was about the values before it. A toggle
+   * only shows or hides part of the form, so the failure stays.
+   */
+  function editForm(action: ImportFormAction): void {
+    if (action.type !== "toggle") formEdited();
+    dispatch(action);
+  }
+
   /** Set a path field, and remember it for the source when the source keeps it. */
   const changePath = (field: ImportPathField, path: string) => {
-    dispatch({ type: "path", field, value: path });
+    editForm({ type: "path", field, value: path });
     if (!getRememberImporterPaths()) return;
     if (field === "backupPath") {
       setImporterPath(source, path);
@@ -547,7 +559,7 @@ export default function ImportScreen() {
       {phase === "form" && resumeChecked && resume.kind === "none" && (
         <ImportFormFields
           form={form}
-          dispatch={dispatch}
+          dispatch={editForm}
           onSourceChange={handleSourceChange}
           onPathChange={changePath}
           pathStats={pathStats}
@@ -557,6 +569,7 @@ export default function ImportScreen() {
           accountTimeZone={accountTimeZone}
           phoneCountries={phoneCountries}
           running={running}
+          startError={startError}
           onImport={(flushedPhones) =>
             void startImport(
               importJobValues(form, accountTimeZone, flushedPhones ?? form.ownerPhones),

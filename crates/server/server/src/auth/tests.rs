@@ -505,3 +505,14 @@ fn the_demo_account_refusal_is_one_lowercase_sentence() {
     assert_eq!(detail, "the Demo Account's password cannot be set");
     assert!(refuse_for_demo_account(demo + 1, "password cannot be set").is_ok());
 }
+
+/// One move of a Session's expiry runs at a time: a second is refused while
+/// the first runs, and allowed once the first has ended however it ended.
+#[test]
+fn one_expiry_move_runs_at_a_time() {
+    let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let first = MoveRunning::claim(&running).expect("nothing runs yet");
+    assert!(MoveRunning::claim(&running).is_none(), "one is running");
+    drop(first);
+    assert!(MoveRunning::claim(&running).is_some(), "the first ended");
+}

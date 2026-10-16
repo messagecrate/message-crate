@@ -245,6 +245,13 @@ carry their date on the heading.
   files.** The server never stores an attachment as an unfinished file, so
   the line that ends processing, and the Demo Account rebuild's report, no
   longer count incomplete originals removed or left (#2568).
+- 2026-10-15: **A Session ends after 7 days unused.** A Session that is not
+  used for 7 days ends, and you log in again. Each use starts the 7 days
+  again, up to 30 days after the login, so an account in daily use is asked
+  to log in once a month, as before. A Session forgotten on a shared
+  computer now ends within a week. The database format changed: an
+  existing Message Crate is rebuilt empty on first start and its messages
+  must be imported again (#2131).
 - 2026-10-15: **The address book names services as the screen does.** Its
   columns are now contact_id, display_name, service, identity and groups.
   The service is Text Message, Email or WhatsApp, the names offered where an
@@ -256,8 +263,13 @@ carry their date on the heading.
   reworked inside, with nothing visible (#2858).
 - 2026-10-15: **The Import screen says Resume for an interrupted import.**
   When an import stopped during Staging or Media, its button now reads
-  **Resume**, where it read **Pick up** and **Carry on**. The headings read
-  "Resume your last import" and "Resume where you left off" (#2856).
+  **Resume**, where it read **Pick up** and **Carry on**. The heading for
+  an import that stopped at a Review reads "Resume where you left off"
+  (#2856).
+- 2026-10-16: For an import that stopped before Staging began copying, the
+  Import screen's heading now reads "Your last import did not finish",
+  because its only buttons are **Start over** and **Discard this import**
+  (#2856).
 - 2026-10-15: The way the desktop app sends an import's conversations to
   the server was reworked inside, with nothing visible (#2053).
 - 2026-10-15: **The desktop app keeps everything in one directory.** The
@@ -900,6 +912,13 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-15: **An Apple Messages import stops when its identity check
+  cannot run.** Before an import, Message Crate reads which addresses the
+  backup's phone sent from and compares them with your profile. When the
+  backup could not be read, such as with a wrong backup password, or your
+  account could not be read, the import went on without the check and
+  recorded the backup as one with no addresses. The import now stops on the
+  form with the reason, and no run is started (#2174).
 - 2026-10-15: **A batch the Upload stopped waiting for no longer holds up
   its next try.** When the Upload gave up on a batch, such as after its
   ten-minute wait, the server deleted the batch's file but kept the batch

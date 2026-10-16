@@ -106,6 +106,7 @@ export function useImportJob(service: ImportRunService = importRunService) {
     mediaToolsMissing: state.mediaToolsMissing,
     mediaPartiallyRan: state.mediaPartiallyRan,
     resumeError: state.resumeError,
+    startError: state.startError,
     reviewError: state.reviewError,
     computingSummary: state.computingSummary,
     completionText:
@@ -118,6 +119,7 @@ export function useImportJob(service: ImportRunService = importRunService) {
       service.startImport(account, form, resume),
     continueAfterIdentityStop: () => service.continueAfterIdentityStop(account),
     cancelIdentityStop: () => service.cancelIdentityStop(account),
+    formEdited: () => service.formEdited(account),
     approve: () => service.approve(account),
     cancelRun: () => service.cancelRun(account),
     resumeAtReview: (importRun: ActiveImportRun, resumedForm: ImportJobFormValues) =>

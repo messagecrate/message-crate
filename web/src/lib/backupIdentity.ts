@@ -46,14 +46,14 @@ export function identityMessageCounts(
 
 /**
  * Whether Import should stop before creating the Import Run: identities were
- * read and none is on the profile. Fails open — no identities read, or no
- * profile loaded (fetch failed), never blocks an import.
+ * read and none is on the profile. A backup that was read and sent from no
+ * address never blocks an import.
  */
 export function needsIdentityStop(
   identities: string[],
-  profile: { phones: string[]; emails: string[] } | null,
+  profile: { phones: string[]; emails: string[] },
 ): boolean {
-  if (identities.length === 0 || profile === null) return false;
+  if (identities.length === 0) return false;
   return !identities.some((identity) => identityOnProfile(identity, profile));
 }
 
