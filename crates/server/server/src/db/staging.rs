@@ -1157,7 +1157,17 @@ pub async fn max_earlier_version_id(conn: &mut SqliteConnection) -> Result<i64> 
 }
 
 /// The lowest and highest staged message id under a mapped conversation,
-/// or `(None, None)` when nothing is staged.
+/// each `None` when nothing is staged.
+#[derive(Debug, Clone, Copy, sqlx::FromRow)]
+pub struct StagedIdBounds {
+    /// The lowest staged message id.
+    pub low: Option<i64>,
+    /// The highest staged message id.
+    pub high: Option<i64>,
+}
+
+/// The lowest and highest staged message id under a mapped conversation,
+/// each `None` when nothing is staged.
 ///
 /// # Errors
 ///
@@ -1165,13 +1175,8 @@ pub async fn max_earlier_version_id(conn: &mut SqliteConnection) -> Result<i64> 
 pub async fn staged_message_id_bounds(
     conn: &mut SqliteConnection,
     account_id: i64,
-) -> Result<(Option<i64>, Option<i64>)> {
-    #[derive(sqlx::FromRow)]
-    struct Bounds {
-        low: Option<i64>,
-        high: Option<i64>,
-    }
-    let bounds = sqlx::query_as::<_, Bounds>(
+) -> Result<StagedIdBounds> {
+    sqlx::query_as::<_, StagedIdBounds>(
         r"
         SELECT MIN(sm.id) AS low, MAX(sm.id) AS high
         FROM staging_messages sm
@@ -1182,8 +1187,7 @@ pub async fn staged_message_id_bounds(
     .bind(account_id)
     .fetch_one(&mut *conn)
     .await
-    .context("read the range of staged message ids")?;
-    Ok((bounds.low, bounds.high))
+    .context("read the range of staged message ids")
 }
 
 /// The column list and SELECT every staged-message insert shares; the caller

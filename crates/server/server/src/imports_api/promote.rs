@@ -316,7 +316,11 @@ impl Promote<'_> {
     /// staging-to-production id map. Nothing staged means nothing inserted.
     async fn insert_messages(&mut self, total: i64) -> Result<HashMap<i64, i64>> {
         let bounds = staging::staged_message_id_bounds(self.tx, self.account_id).await?;
-        let (Some(min_id), Some(max_id)) = bounds else {
+        let staging::StagedIdBounds {
+            low: Some(min_id),
+            high: Some(max_id),
+        } = bounds
+        else {
             self.stats.messages = 0;
             self.stats.messages_appended = 0;
             self.stats.messages_deduped = 0;

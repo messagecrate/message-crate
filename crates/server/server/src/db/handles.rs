@@ -227,6 +227,16 @@ pub async fn existing_handle_id(
     Ok(id)
 }
 
+/// The address and type of one `handles` row, the pair an identity is
+/// matched by whatever its service.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct AddressAndType {
+    /// The address's key (`handles.normalized`).
+    pub normalized: String,
+    /// `phone`, `email`, `username` or `other`.
+    pub handle_type: String,
+}
+
 /// One `handles` row as a country pick reads it: the address as written,
 /// its type, its service, and its key.
 #[derive(Debug, Clone, sqlx::FromRow)]

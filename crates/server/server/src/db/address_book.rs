@@ -301,7 +301,7 @@ impl Snapshot {
             holder: Option<i64>,
         }
         #[derive(sqlx::FromRow)]
-        struct GroupRow {
+        struct ContactGroupRow {
             id: i64,
             name: String,
         }
@@ -362,14 +362,14 @@ impl Snapshot {
             );
         }
 
-        let rows = sqlx::query_as::<_, GroupRow>(
+        let rows = sqlx::query_as::<_, ContactGroupRow>(
             "SELECT id, name FROM contact_groups WHERE account_id = $1",
         )
         .bind(account_id)
         .fetch_all(&mut *conn)
         .await
         .context("read the account's Contact Groups")?;
-        for GroupRow { id, name } in rows {
+        for ContactGroupRow { id, name } in rows {
             snapshot.groups.insert(name.to_lowercase(), id);
         }
 

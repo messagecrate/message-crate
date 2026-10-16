@@ -118,12 +118,7 @@ pub async fn account_identity_keys(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<std::collections::HashSet<(String, IdentityType)>> {
-    #[derive(sqlx::FromRow)]
-    struct Row {
-        normalized: String,
-        handle_type: String,
-    }
-    let rows = sqlx::query_as::<_, Row>(
+    let rows = sqlx::query_as::<_, super::handles::AddressAndType>(
         "SELECT DISTINCT h.normalized, h.handle_type FROM handles h
          JOIN account_handles ah ON ah.handle_id = h.id
          WHERE ah.account_id = $1",

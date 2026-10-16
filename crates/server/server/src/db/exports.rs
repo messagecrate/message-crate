@@ -201,7 +201,7 @@ pub async fn start_export(
     let replaced = close_runs(conn, RunClosure::Replaced(args.account_id), now)
         .await?
         .first()
-        .map(|&(export_id, _)| export_id);
+        .map(|run| run.id);
     let (kind, list, query, conversation_ids, message_ids) = match args.scope {
         ExportScope::Everything => ("everything", None, None, None, None),
         ExportScope::Query { list, q } => {
@@ -350,6 +350,13 @@ impl RunClosure<'_> {
     }
 }
 
+/// An Export Run [`close_runs`] closed: its id and its account.
+#[derive(sqlx::FromRow)]
+struct ClosedRun {
+    id: i64,
+    account_id: Option<i64>,
+}
+
 /// Close the running runs `closure` names as `canceled` at `now`, delete
 /// their lists of messages, and record each closure in the Audit Trail with
 /// its reason. Returns each closed run's id and account. Call it inside a
@@ -358,13 +365,8 @@ async fn close_runs(
     conn: &mut SqliteConnection,
     closure: RunClosure<'_>,
     now: DateTime<Utc>,
-) -> Result<Vec<(i64, Option<i64>)>> {
-    #[derive(sqlx::FromRow)]
-    struct Closed {
-        id: i64,
-        account_id: Option<i64>,
-    }
-    let query = sqlx::query_as::<_, Closed>(sqlx::AssertSqlSafe(format!(
+) -> Result<Vec<ClosedRun>> {
+    let query = sqlx::query_as::<_, ClosedRun>(sqlx::AssertSqlSafe(format!(
         "UPDATE exports SET status = 'canceled', finished_at = $2
          WHERE {condition}
          RETURNING id, account_id",
@@ -374,15 +376,16 @@ async fn close_runs(
         RunClosure::Replaced(account_id) => query.bind(account_id),
         RunClosure::Idle(cutoff) => query.bind(cutoff.to_owned()),
     };
-    let closed: Vec<(i64, Option<i64>)> = query
+    let closed = query
         .bind(now.to_rfc3339())
         .fetch_all(&mut *conn)
         .await
-        .context("close running Export Runs")?
-        .into_iter()
-        .map(|row| (row.id, row.account_id))
-        .collect();
-    for &(export_id, account_id) in &closed {
+        .context("close running Export Runs")?;
+    for &ClosedRun {
+        id: export_id,
+        account_id,
+    } in &closed
+    {
         delete_run_messages(conn, export_id).await?;
         // A running run always has its account: deleting the account closes
         // its runs first.
@@ -438,10 +441,10 @@ pub async fn close_idle_runs(conn: &mut SqliteConnection, now: DateTime<Utc>) ->
     let closure = RunClosure::Idle(&cutoff);
     let closed = close_runs(&mut tx, closure, now).await?;
     tx.commit().await.context("commit the closed Export Runs")?;
-    for &(export_id, account_id) in &closed {
-        closure.log(export_id, account_id);
+    for run in &closed {
+        closure.log(run.id, run.account_id);
     }
-    Ok(closed.into_iter().map(|(export_id, _)| export_id).collect())
+    Ok(closed.into_iter().map(|run| run.id).collect())
 }
 
 /// Call [`close_idle_runs`] on `pool` every [`IDLE_CHECK_EVERY`] while the

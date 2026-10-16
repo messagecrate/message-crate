@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 use ir::IdentityService;
 use sqlx::SqliteConnection;
 
+use crate::db::handles::AddressAndType;
 use crate::db::trash::{not_trashed_contact, not_trashed_contact_id};
 
 pub mod read;
@@ -536,13 +537,8 @@ pub async fn take_identities_off(
 ) -> Result<Vec<IdentityMoved>> {
     let mut new_contact_of: HashMap<(String, String), i64> = HashMap::new();
     let mut out = Vec::with_capacity(handle_ids.len());
-    #[derive(sqlx::FromRow)]
-    struct Key {
-        normalized: String,
-        handle_type: String,
-    }
     for &handle_id in handle_ids {
-        let key = sqlx::query_as::<_, Key>(
+        let key = sqlx::query_as::<_, AddressAndType>(
             "SELECT normalized, handle_type FROM handles WHERE account_id = $1 AND id = $2",
         )
         .bind(account_id)
@@ -550,7 +546,7 @@ pub async fn take_identities_off(
         .fetch_optional(&mut *conn)
         .await
         .context("read an identity's address and type")?;
-        let Some(Key {
+        let Some(AddressAndType {
             normalized,
             handle_type,
         }) = key
@@ -889,11 +885,11 @@ async fn identity_use(
     handle_id: i64,
 ) -> Result<IdentityUse> {
     #[derive(sqlx::FromRow)]
-    struct Use {
+    struct Refers {
         person: bool,
         holder: bool,
     }
-    let Use { person, holder } = sqlx::query_as::<_, Use>(
+    let Refers { person, holder } = sqlx::query_as::<_, Refers>(
         "SELECT
            EXISTS (SELECT 1 FROM participants WHERE handle_id = $2)
            OR EXISTS (SELECT 1 FROM staging_participants WHERE handle_id = $2)
