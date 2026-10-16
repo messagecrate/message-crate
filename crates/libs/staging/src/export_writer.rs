@@ -407,7 +407,9 @@ mod tests {
         writer
             .finish(
                 vec![document],
-                &mut |asked: &mut Attachment| (sources.next().unwrap(), asked.size_bytes),
+                &mut |asked_about: &mut Attachment| {
+                    (sources.next().unwrap(), asked_about.size_bytes)
+                },
                 &CancelFlag::default(),
                 &mut ExportReport::default(),
             )
