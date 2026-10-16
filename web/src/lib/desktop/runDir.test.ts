@@ -46,15 +46,30 @@ describe("run directory command wrappers name only the directory", () => {
     expect(invoke).toHaveBeenCalledWith("create_run_dir", { label: "imessage-ios" });
   });
 
-  // The desktop process reads these arguments by their camelCase names; a
+  // The desktop process reads these arguments by their camelCase names. A
   // name it does not know fails the command, and Import would never clean up.
   it("names the account, the Message Crate and the run in the clean-up commands", async () => {
     await invokeListAccountRunDirs(7, "3f2a9c");
-    await invokeDeleteClosedRunDir({ runDir: run, importRunId: 42 }, "cancelled");
+    await invokeDeleteClosedRunDir(
+      { runDir: run, importRunId: 42 },
+      { accountId: 7, messageCrateId: "3f2a9c" },
+      "cancelled",
+    );
 
     expect(invoke.mock.calls).toEqual([
       ["list_account_run_dirs", { args: { accountId: 7, messageCrateId: "3f2a9c" } }],
-      ["delete_closed_run_dir", { args: { runDir: run, importRunId: 42, status: "cancelled" } }],
+      [
+        "delete_closed_run_dir",
+        {
+          args: {
+            runDir: run,
+            importRunId: 42,
+            accountId: 7,
+            messageCrateId: "3f2a9c",
+            status: "cancelled",
+          },
+        },
+      ],
     ]);
   });
 });

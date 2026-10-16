@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { components } from "../serverApi.types";
 
-type ImportStatus = components["schemas"]["ImportStatus"];
+/** How an Import Run stands, as the server reports it. */
+export type ImportStatus = components["schemas"]["ImportStatus"];
 
 /**
  * Make a new run directory under the Staging Directory and return its path.
@@ -67,14 +68,23 @@ export type ClosedImportStatus = Exclude<ImportStatus, "running">;
 
 /**
  * Delete the directory of an Import Run the server reports as closed. The
- * desktop process writes a line in the run's log naming the run and the
- * directory. Resolves to whether a directory was removed.
+ * desktop process deletes it only when the run's log names that run, by
+ * `accountId` on the Message Crate `messageCrateId`, and writes a line in the
+ * log naming the run and the directory. Resolves to whether a directory was
+ * removed.
  */
 export async function invokeDeleteClosedRunDir(
   run: RunDirOfImportRun,
+  owner: { accountId: number; messageCrateId: string },
   status: ClosedImportStatus,
 ): Promise<boolean> {
   return invoke("delete_closed_run_dir", {
-    args: { runDir: run.runDir, importRunId: run.importRunId, status },
+    args: {
+      runDir: run.runDir,
+      importRunId: run.importRunId,
+      accountId: owner.accountId,
+      messageCrateId: owner.messageCrateId,
+      status,
+    },
   });
 }

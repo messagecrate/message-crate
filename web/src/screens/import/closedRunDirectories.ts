@@ -2,16 +2,15 @@ import { useEffect } from "react";
 import { useAuth } from "../../lib/authContext";
 import {
   type ClosedImportStatus,
+  type ImportStatus,
   invokeDeleteClosedRunDir,
   invokeListAccountRunDirs,
   type RunDirOfImportRun,
 } from "../../lib/desktop/runDir";
+import { useRouteCache } from "../../lib/routeQuery";
 import { getImport } from "../../lib/serverApi";
-import type { components } from "../../lib/serverApi.types";
 import { isTauri } from "../../lib/tauriCheck";
 import { useServerInfo } from "../../lib/useServerInfo";
-
-type ImportStatus = components["schemas"]["ImportStatus"];
 
 /** What deleting the closed runs' directories reads and does. */
 export interface ClosedRunDirectories {
@@ -75,19 +74,24 @@ export async function deleteClosedRunDirectories(
 export function useDeleteClosedRunDirectories(): void {
   const { accountId } = useAuth();
   const messageCrateId = useServerInfo().data?.id;
+  const cache = useRouteCache();
   useEffect(() => {
     if (!isTauri() || accountId === null || !messageCrateId) return;
     let going = true;
+    const owner = { accountId, messageCrateId };
     void deleteClosedRunDirectories(
       {
         list: () => invokeListAccountRunDirs(accountId, messageCrateId),
-        status: async (id) => (await getImport(id)).status,
-        deleteClosed: invokeDeleteClosedRunDir,
+        // The run's entry is the one its Import Run view reads, so a refused
+        // session ends here as it does on any screen.
+        status: async (id) =>
+          (await cache.fetch(["imports", id], (signal) => getImport(id, { signal }))).status,
+        deleteClosed: (run, status) => invokeDeleteClosedRunDir(run, owner, status),
       },
       () => going,
     );
     return () => {
       going = false;
     };
-  }, [accountId, messageCrateId]);
+  }, [accountId, messageCrateId, cache]);
 }
