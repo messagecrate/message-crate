@@ -384,7 +384,7 @@ fn a_run_that_copies_no_attachments_still_records_their_size() {
         .collect();
     let picture = attachments
         .iter()
-        .find(|att| att.mime_type.as_deref() == Some("image/jpeg"))
+        .find(|attachment| attachment.mime_type.as_deref() == Some("image/jpeg"))
         .expect("the picture is an attachment");
     assert_eq!(picture.path, None, "nothing was copied");
     assert_eq!(picture.size_bytes, Some(22));

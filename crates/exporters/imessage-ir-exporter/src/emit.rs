@@ -830,16 +830,18 @@ fn chat_to_unit(
     let loads = std::mem::take(&mut conversation.attachment_loads);
     let document = chat_to_document(chat_identifier, conversation, use_caller_id, dates);
     let mut loads = loads.into_iter();
-    ConversationUnit::from_doc(document, |_, att| attachment_source(loads.next(), att))
+    ConversationUnit::from_doc(document, |_, attachment| {
+        attachment_source(loads.next(), attachment)
+    })
 }
 
 /// The source and size hint of the attachment `load` was collected for.
 fn attachment_source(
     load: Option<AttachmentLoad>,
-    att: &Attachment,
+    attachment: &Attachment,
 ) -> (AttachmentSource, Option<u64>) {
     match load {
-        Some(AttachmentLoad::Missing) | None => (AttachmentSource::Missing, att.size_bytes),
+        Some(AttachmentLoad::Missing) | None => (AttachmentSource::Missing, attachment.size_bytes),
         Some(load) => load.into_source(),
     }
 }
@@ -935,7 +937,7 @@ fn stage_attachments(
         } else {
             PathSources::OnDisk
         },
-        |att| attachment_source(loads.next(), att),
+        |attachment| attachment_source(loads.next(), attachment),
         &options.log,
     );
     if stages_attachment_files(options) {

@@ -253,12 +253,18 @@ pub(crate) fn join_under(dir: &Path, relative: &str) -> Option<PathBuf> {
     (safe && !relative.is_empty()).then(|| dir.join(rel))
 }
 
+/// The original `sha256`, as a log line names it: `Asset <sha256>`, the
+/// `describes` of [`join_stored`] for an original.
+pub(crate) fn describe_original(sha256: &str) -> String {
+    format!("Asset {sha256}")
+}
+
 /// [`join_under`] for a path read from the database, logging a path it
 /// refuses with the account and `describes`, which says as much as the
 /// caller knows of what the row stores (such as `Preview of <sha256>`), so
 /// the damaged row can be found. Serving a Preview or Thumbnail, removing
-/// a deleted attachment's files, and the media pass's check and removal of
-/// a Preview or Thumbnail go through it.
+/// a deleted attachment's files, the media pass's read of an original, and
+/// its check and removal of a Preview or Thumbnail go through it.
 pub(crate) fn join_stored(
     dir: &Path,
     assets_path: &str,
@@ -354,7 +360,7 @@ fn paths_of(paths: &PathsConfig, account_id: i64, file: &OrphanedFile) -> Vec<Pa
         } => {
             let dir = paths.assets_dir_for_account(account_id);
             let sidecar = stored_sidecar_path(&dir, sha256);
-            (dir, assets_path, sidecar, format!("Asset {sha256}"))
+            (dir, assets_path, sidecar, describe_original(sha256))
         }
         // One converted file can be the Preview and the Thumbnail of several
         // originals, and goes only once no row names it, so no single

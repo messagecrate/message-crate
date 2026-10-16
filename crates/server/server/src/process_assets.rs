@@ -78,6 +78,9 @@ pub struct ProcessAssetsStats {
     pub shared: u64,
     /// Originals whose Preview or Thumbnail could not be made.
     pub not_made: u64,
+    /// Originals not read because their stored path leaves the account's
+    /// assets directory (#2866).
+    pub not_read: u64,
     /// Damaged Previews and Thumbnails that could not be dropped.
     pub not_dropped: u64,
     /// Originals whose shown-as-is decision (`attachments.shown_as_is`)
@@ -95,6 +98,7 @@ impl ProcessAssetsStats {
         self.shared += other.shared;
         self.skipped += other.skipped;
         self.not_made += other.not_made;
+        self.not_read += other.not_read;
         self.not_dropped += other.not_dropped;
         self.not_decided += other.not_decided;
     }
@@ -112,6 +116,9 @@ impl ProcessAssetsStats {
         self.shared += outcome.shared;
         if outcome.not_made.is_some() {
             self.not_made += 1;
+        }
+        if outcome.not_read.is_some() {
+            self.not_read += 1;
         }
         if outcome.not_decided.is_some() {
             self.not_decided += 1;
@@ -140,6 +147,13 @@ impl ProcessAssetsStats {
         let mut failures = Vec::new();
         if self.not_made > 0 {
             failures.push(self.not_made_words());
+        }
+        if self.not_read > 0 {
+            failures.push(words(
+                self.not_read,
+                "1 original whose stored location leaves its directory",
+                "{n} originals whose stored locations leave their directory",
+            ));
         }
         if self.not_dropped > 0 {
             failures.push(words(
@@ -198,17 +212,16 @@ struct ReadOriginal {
     decided: Option<bool>,
 }
 
-/// Read `row`'s original, stored under `assets_dir`, for its type and
-/// whether every browser shows it as it is: the one reading both
-/// [`decide_shown_as_is`] and the pass make.
-fn read_original(tools: &dyn MediaTools, assets_dir: &Path, row: &StoredOriginal) -> ReadOriginal {
+/// Read `row`'s original, stored at `path`, for its type and whether every
+/// browser shows it as it is: the one reading both [`decide_shown_as_is`]
+/// and the pass make.
+fn read_original(tools: &dyn MediaTools, path: &Path, row: &StoredOriginal) -> ReadOriginal {
     let declared = media_type(row);
-    let path = assets_dir.join(&row.assets_path);
-    let by_bytes = media::media_type_in_file(&path, declared.as_deref());
+    let by_bytes = media::media_type_in_file(path, declared.as_deref());
     let media_type = by_bytes.map(str::to_string).or(declared);
     ReadOriginal {
         by_bytes,
-        decided: media::browser_shows(tools, &path, media_type.as_deref()),
+        decided: media::browser_shows(tools, path, media_type.as_deref()),
         media_type,
     }
 }
@@ -252,17 +265,30 @@ pub(crate) async fn decide_shown_as_is(
     let assets_dir = cfg.paths.assets_dir_for_account(account_id);
     let rows = versions_db::stored_originals(&mut *db.acquire().await?, account_id, only).await?;
     // Rows come one per original and stored path; an original stored under
-    // two paths is decided once.
+    // two paths is decided once, from the first path that stays in the
+    // assets directory.
     let mut decided = std::collections::HashSet::new();
     for row in &rows {
-        if decided.insert(row.sha256.as_str()) {
-            let original = OriginalRows {
-                account_id,
-                original_sha: &row.sha256,
-            };
-            let decided = read_original(tools, &assets_dir, row).decided;
-            record_decision_if_known(db, original, decided).await?;
+        if decided.contains(row.sha256.as_str()) {
+            continue;
         }
+        // A path that leaves the directory is logged and passed over (#2866).
+        // On a server without ffmpeg this is the only step that meets it.
+        let Some(path) = crate::asset_store::join_stored(
+            &assets_dir,
+            &row.assets_path,
+            account_id,
+            &crate::asset_store::describe_original(&row.sha256),
+        ) else {
+            continue;
+        };
+        decided.insert(row.sha256.as_str());
+        let original = OriginalRows {
+            account_id,
+            original_sha: &row.sha256,
+        };
+        let shown = read_original(tools, &path, row).decided;
+        record_decision_if_known(db, original, shown).await?;
     }
     Ok(())
 }
@@ -464,6 +490,9 @@ struct Outcome {
     /// version's reason is also recorded on the original's rows
     /// ([`AccountPass::record_not_made`]).
     not_made: Option<anyhow::Error>,
+    /// Why the original was not read: its stored path leaves the assets
+    /// directory.
+    not_read: Option<anyhow::Error>,
     /// Why each damaged version that could not be dropped stayed.
     not_dropped: Vec<anyhow::Error>,
     /// Why whether the original is shown as it is could not be recorded.
@@ -485,6 +514,7 @@ impl Outcome {
     fn failures(&self) -> impl Iterator<Item = &anyhow::Error> {
         self.not_made
             .iter()
+            .chain(&self.not_read)
             .chain(&self.not_dropped)
             .chain(&self.not_decided)
     }
@@ -656,7 +686,20 @@ impl<'a> AccountPass<'a> {
     /// does what the plan says. An existing version is hashed, so one cut
     /// short by a killed run is made again.
     async fn process(&self, db: &SqlitePool, row: &StoredOriginal) -> Outcome {
-        let source_path = self.assets_dir.join(&row.assets_path);
+        // A path that leaves the directory is said once, through `progress`
+        // as a failure, so the run does not end as though everything was
+        // done (#2866).
+        let Some(source_path) = crate::asset_store::join_under(&self.assets_dir, &row.assets_path)
+        else {
+            return Outcome {
+                not_read: Some(anyhow::anyhow!(
+                    "the stored location of {} is not a plain relative path, so the server \
+                     neither opens nor converts its file",
+                    crate::asset_store::describe_original(&row.sha256)
+                )),
+                ..Outcome::default()
+            };
+        };
         let state = |version: Version| {
             preview_file(
                 row.named(version).assets_path.as_deref(),
@@ -669,7 +712,7 @@ impl<'a> AccountPass<'a> {
             by_bytes,
             media_type,
             decided,
-        } = read_original(self.tools, &self.assets_dir, row);
+        } = read_original(self.tools, &source_path, row);
         let on_disk = OnDisk {
             original_exists: source_path.is_file(),
             preview: state(Version::Preview),
