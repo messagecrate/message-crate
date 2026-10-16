@@ -77,7 +77,7 @@ describe("deleteAllMessagesForAccount", () => {
       db.prepare(
         `INSERT INTO attachments (
            message_id, mime_type, original_name, assets_path,
-           derived_mime_type, derived_assets_path
+           preview_mime_type, preview_assets_path
          ) VALUES (?, 'image/jpeg', 'photo.jpg', 'photo.jpg',
                    'image/webp', 'photo.webp')`,
       ).run(messageId);

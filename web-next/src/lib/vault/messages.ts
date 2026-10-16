@@ -46,9 +46,9 @@ function toAttachment(a: Schemas["Attachment"], index: number): AttachmentRow {
     originalName: a.original_name ?? null,
     assetsPath: a.sha256 ?? null,
     sha256: a.sha256 ?? null,
-    derivedMimeType: null,
-    derivedAssetsPath: null,
-    derivedSha256: null,
+    previewMimeType: null,
+    previewAssetsPath: null,
+    previewSha256: null,
   };
 }
 
