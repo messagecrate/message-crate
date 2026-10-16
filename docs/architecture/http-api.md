@@ -668,13 +668,15 @@ set to.
 
 ## Connections
 
-The server holds every connection to three limits, so one slow or stuck
+The server holds every connection to four limits, so one slow or stuck
 client cannot hold it
-([#2100](https://github.com/messagecrate/message-crate/issues/2100)). A
+([#2100](https://github.com/messagecrate/message-crate/issues/2100),
+[#2984](https://github.com/messagecrate/message-crate/issues/2984)). A
 connection that sends no request, or sends one too slowly, is closed after
 30 seconds. At most 256 connections are open at once, and the next waits
 for one to close. A body that stops arriving, or arrives too slowly, is no
-longer read once the body time limits pass. In detail:
+longer read once the body time limits pass. A connection whose client reads
+none of its answer for the body stall time is closed. In detail:
 
 - A connection has 30 seconds to send a request's headers, counted from when
   it opens or from the previous answer, and is closed when it has not
@@ -699,8 +701,22 @@ longer read once the body time limits pass. In detail:
   clock: an import batch waits for an import slot before it reads, and a
   clock started on arrival would count that wait against its body.
 
-Nothing limits how long an answer takes to send: an export download or a
-large attachment takes as long as the client's link needs.
+- An answer the client takes no byte of for `[server] body_stall_secs`
+  (60) closes its connection, and the server lets go of the answer and the
+  file it reads from (`AnswerStall` in
+  `crates/server/server/src/connections.rs`). The wait counts only while a
+  write waits on the client, and starts again with every byte the client
+  takes, so a download that is still moving, however slowly, is never cut
+  off, and an answer the server is still making is not timed. Nothing limits
+  how long a whole answer takes to send: an export download or a large
+  attachment takes as long as the client's link needs.
+
+Why the answer is held to the body stall time rather than a figure of its
+own: a client that reads none of an answer is as stuck as one that sends
+none of a body, and one figure for "no byte moved" is one to explain. Why
+the limit sits on the connection rather than on the answer's body: while
+the client reads nothing, the server is waiting to write and does not ask
+the body for more, so a timer in the body would never be looked at.
 
 Why: `axum::serve` builds each connection without a timer, and hyper reads
 its own 30-second header limit only with one set, so a device that opened a

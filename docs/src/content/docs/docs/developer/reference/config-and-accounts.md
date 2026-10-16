@@ -78,7 +78,7 @@ Why the rules: `docs/architecture/media.md`.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `asset_part_size` | `16777216` (16 MiB) | Largest part of a multipart upload. Must be greater than 0. Keep under ~100 MiB for Cloudflare-proxied setups, and small enough that a whole part arrives inside `body_total_secs`: 16 MiB arrives inside the default at about 0.45 Mbit/s. The part size a client is told is this or the attachment size limit, whichever is smaller. |
-| `body_stall_secs` | `60` | Seconds a request body may go with no byte arriving before the server stops reading it. Every body is held to it. An attachment upload nothing has been written to for this long, with no request to it running, is abandoned, and the server removes it. Must be greater than 0. |
+| `body_stall_secs` | `60` | Seconds a request body may go with no byte arriving before the server stops reading it. Every body is held to it. A client that takes no byte of an answer for this long has its connection closed; a download that is still moving is never cut off. An attachment upload nothing has been written to for this long, with no request to it running, is abandoned, and the server removes it. Must be greater than 0. |
 | `body_total_secs` | `300` (5 minutes) | Seconds a whole request body may take to arrive before the server stops reading it: from the start of the read for an upload, and from when the request arrives for any other body. Every body is held to it, as to `body_stall_secs`. Must be greater than 0. A full 16 MiB import batch arrives in time at about 0.45 Mbit/s. |
 
 The server refuses a config file that sets either time to 0, naming the key.

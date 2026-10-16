@@ -3,6 +3,13 @@ use crate::logging::{LogLevel, LogLine};
 use crate::test_support::http_client;
 use tempfile::TempDir;
 
+/// The connection limits `serve` holds a default config to.
+fn server_limits() -> crate::connections::ConnectionLimits {
+    crate::connections::ConnectionLimits::server(BodyTimeLimits::of(
+        &crate::config::ServerConfig::default(),
+    ))
+}
+
 /// `docker stop` and a service manager send SIGTERM. The server must drain a
 /// request in flight and then exit, as it does on Ctrl-C (#1218). Every step
 /// is awaited without a time limit, so a hang is left to the test runner and
@@ -40,6 +47,7 @@ async fn sigterm_drains_the_request_in_flight_then_stops_the_server() {
     let server = crate::request_id::spawn_in_current_span(serve_until_shutdown(
         listener,
         app,
+        server_limits(),
         async move {
             shutdown_signal(None).await;
             let _ = stopping_tx.send(());
@@ -117,6 +125,7 @@ async fn a_stopping_server_gives_up_on_a_request_still_running_at_the_drain_limi
     let server = crate::request_id::spawn_in_current_span(serve_until_shutdown(
         listener,
         app,
+        server_limits(),
         async move {
             let _ = stop_rx.await;
         },
@@ -185,6 +194,7 @@ async fn a_stopping_server_gives_up_on_its_own_work_at_the_drain_limit() {
     let server = crate::request_id::spawn_in_current_span(serve_until_shutdown(
         listener,
         Router::new(),
+        server_limits(),
         async move {
             let _ = stop_rx.await;
         },
@@ -217,6 +227,7 @@ async fn a_stopping_server_waits_for_its_own_work() {
     let server = crate::request_id::spawn_in_current_span(serve_until_shutdown(
         listener,
         Router::new(),
+        server_limits(),
         async move {
             let _ = stop_rx.await;
         },

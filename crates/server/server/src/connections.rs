@@ -1,6 +1,7 @@
 //! The server's accept loop: how many connections it holds open at once,
-//! and how long a connection may take over a request's headers or sit idle
-//! between requests (#2100).
+//! how long a connection may take over a request's headers or sit idle
+//! between requests (#2100), and how long an answer may wait on a client
+//! that reads none of it (#2984).
 //!
 //! `axum::serve` sets neither. It builds each connection without a timer,
 //! and hyper only reads its header timeout with one set, so a device that
@@ -9,11 +10,20 @@
 //! number of them could. A body is held to time in the router instead
 //! ([`crate::server::with_server_layers`]), with the body time limits.
 //!
+//! Nothing limits how long a whole answer takes to send, so an export
+//! download or a large attachment is never cut off on a slow link. What is
+//! limited is a write the client takes nothing of: a client that stops
+//! reading part-way, such as a tab that hangs mid-download, would otherwise
+//! hold its connection, and the file its answer reads from, for as long as
+//! the operating system keeps the connection ([`AnswerStall`]).
+//!
 //! These limits keep one slow or stuck client from holding the server. They
 //! do not make it safe to reach from the internet.
 
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll, ready};
 use std::time::Duration;
 
 use axum::Router;
@@ -22,6 +32,8 @@ use hyper_util::rt::{TokioIo, TokioTimer};
 use hyper_util::service::TowerToHyperService;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
+
+use crate::request_body::BodyTimeLimits;
 
 /// How long a connection may take to send a request's headers, counted from
 /// when the connection opens or the previous answer was sent. A connection
@@ -47,14 +59,21 @@ pub(crate) struct ConnectionLimits {
     pub(crate) max_connections: u32,
     /// How long a connection may take over a request's headers, or sit idle.
     pub(crate) header_read: Duration,
+    /// How long an answer may wait on a client that reads none of it.
+    pub(crate) answer_stall: Duration,
 }
 
 impl ConnectionLimits {
-    /// The limits the server runs with.
-    pub(crate) const SERVER: Self = Self {
-        max_connections: MAX_CONNECTIONS,
-        header_read: HEADER_READ_LIMIT,
-    };
+    /// The limits the server runs with. An answer is held to the body stall
+    /// time, `[server] body_stall_secs`: a client that reads none of an
+    /// answer for that long is as stuck as one that sends none of a body.
+    pub(crate) fn server(body_time_limits: BodyTimeLimits) -> Self {
+        Self {
+            max_connections: MAX_CONNECTIONS,
+            header_read: HEADER_READ_LIMIT,
+            answer_stall: body_time_limits.stall,
+        }
+    }
 }
 
 /// Serve `app` over HTTP/1.1 on the connections `listener` accepts, holding
@@ -89,6 +108,7 @@ pub(crate) async fn serve_connections<L: Listener>(
         let service = TowerToHyperService::new(app.clone());
         let stopping = stopping.clone();
         crate::request_id::spawn_in_current_span(async move {
+            let io = AnswerStall::new(io, limits.answer_stall);
             serve_one(io, service, limits.header_read, stopping).await;
             drop(slot);
         });
@@ -130,11 +150,122 @@ async fn serve_one<I>(
     }
 }
 
+/// A connection whose writes fail once one has waited `stall` with the
+/// client taking no byte of it, which closes the connection and drops the
+/// answer. The wait restarts with every byte the client takes, so an answer
+/// that is still moving, however slowly, is never cut off, and a connection
+/// with nothing to write is never timed: an idle one is closed by the header
+/// read limit, and an answer the server is still making is not the client's
+/// to wait on.
+struct AnswerStall<I> {
+    io: I,
+    stall: Duration,
+    /// When the write waiting on the client fails; `None` while no write
+    /// waits.
+    deadline: Option<Pin<Box<tokio::time::Sleep>>>,
+}
+
+impl<I> AnswerStall<I> {
+    fn new(io: I, stall: Duration) -> Self {
+        Self {
+            io,
+            stall,
+            deadline: None,
+        }
+    }
+
+    /// Pass on what a write, flush or shutdown of `io` answered: anything
+    /// but a wait ends the wait, and a wait fails once it has lasted
+    /// `stall`. A wait polls the deadline with the same waker as the write,
+    /// so the connection is polled again when the deadline passes.
+    fn waited<T>(
+        &mut self,
+        cx: &mut Context<'_>,
+        polled: Poll<std::io::Result<T>>,
+    ) -> Poll<std::io::Result<T>> {
+        if polled.is_ready() {
+            self.deadline = None;
+            return polled;
+        }
+        let stall = self.stall;
+        let deadline = self
+            .deadline
+            .get_or_insert_with(|| Box::pin(tokio::time::sleep(stall)));
+        ready!(deadline.as_mut().poll(cx));
+        self.deadline = None;
+        // `serve_one` writes the error to the log as the connection closes.
+        Poll::Ready(Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            format!(
+                "the client read none of the answer for {} seconds",
+                stall.as_secs()
+            ),
+        )))
+    }
+}
+
+impl<I: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead for AnswerStall<I> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.io).poll_read(cx, buf)
+    }
+}
+
+impl<I: tokio::io::AsyncWrite + Unpin> tokio::io::AsyncWrite for AnswerStall<I> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        let polled = Pin::new(&mut self.io).poll_write(cx, buf);
+        self.waited(cx, polled)
+    }
+
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[std::io::IoSlice<'_>],
+    ) -> Poll<std::io::Result<usize>> {
+        let polled = Pin::new(&mut self.io).poll_write_vectored(cx, bufs);
+        self.waited(cx, polled)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.io.is_write_vectored()
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        let polled = Pin::new(&mut self.io).poll_flush(cx);
+        self.waited(cx, polled)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        let polled = Pin::new(&mut self.io).poll_shutdown(cx);
+        self.waited(cx, polled)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
-    use tokio::sync::mpsc;
+    use tokio::sync::{mpsc, oneshot};
+
+    /// The limits the tests hold the server to: the server's own, with the
+    /// default body stall time.
+    const LIMITS: ConnectionLimits = ConnectionLimits {
+        max_connections: MAX_CONNECTIONS,
+        header_read: HEADER_READ_LIMIT,
+        answer_stall: Duration::from_secs(60),
+    };
+
+    /// How large `GET /big`'s answer is: far more than a connection's
+    /// buffers hold, so the server can send it all only to a client that
+    /// reads it.
+    const BIG_ANSWER: usize = 1024 * 1024;
 
     /// Connections the test hands the server, in place of a socket, so a
     /// test controls each one and nothing depends on the network.
@@ -165,9 +296,64 @@ mod tests {
         tokio::sync::oneshot::Sender<()>,
         tokio::task::JoinHandle<()>,
     ) {
+        let app = Router::new().route("/ok", axum::routing::get(|| async { "ok" }));
+        start_app(app, limits)
+    }
+
+    /// A server on [`Duplexes`] answering `GET /big` with [`BIG_ANSWER`]
+    /// bytes, the sender that opens a connection to it, the sender that
+    /// stops it, and a receiver that resolves once the server lets go of the
+    /// answer: sent in full, or dropped with its connection.
+    fn start_big(
+        limits: ConnectionLimits,
+    ) -> (
+        mpsc::Sender<DuplexStream>,
+        oneshot::Sender<()>,
+        oneshot::Receiver<()>,
+    ) {
+        let (released_tx, released_rx) = oneshot::channel::<()>();
+        let released_tx = Arc::new(std::sync::Mutex::new(Some(released_tx)));
+        let app = Router::new().route(
+            "/big",
+            axum::routing::get(move || {
+                let released = ReleasedOnDrop(released_tx.lock().unwrap().take());
+                async move {
+                    let chunks = (0..BIG_ANSWER / 1024).map(move |_| {
+                        let _held = &released;
+                        Ok::<_, std::io::Error>(axum::body::Bytes::from(vec![b'x'; 1024]))
+                    });
+                    axum::body::Body::from_stream(futures_util::stream::iter(chunks))
+                }
+            }),
+        );
+        let (open, stop, _server) = start_app(app, limits);
+        (open, stop, released_rx)
+    }
+
+    /// Sends on its channel when dropped, which is when the server lets go
+    /// of the answer that holds it.
+    struct ReleasedOnDrop(Option<oneshot::Sender<()>>);
+
+    impl Drop for ReleasedOnDrop {
+        fn drop(&mut self) {
+            if let Some(released) = self.0.take() {
+                let _ = released.send(());
+            }
+        }
+    }
+
+    /// Serve `app` on [`Duplexes`], returning the sender that opens a
+    /// connection to it, and the sender that stops it.
+    fn start_app(
+        app: Router,
+        limits: ConnectionLimits,
+    ) -> (
+        mpsc::Sender<DuplexStream>,
+        tokio::sync::oneshot::Sender<()>,
+        tokio::task::JoinHandle<()>,
+    ) {
         let (open_tx, open_rx) = mpsc::channel(8);
         let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
-        let app = Router::new().route("/ok", axum::routing::get(|| async { "ok" }));
         let server = crate::request_id::spawn_in_current_span(serve_connections(
             Duplexes(open_rx),
             app,
@@ -221,7 +407,7 @@ mod tests {
     /// is paused, so the limit passes as soon as nothing else can run.
     #[tokio::test(start_paused = true)]
     async fn a_connection_that_sends_no_headers_is_closed_at_the_header_read_limit() {
-        let (open, _stop, _server) = start(ConnectionLimits::SERVER);
+        let (open, _stop, _server) = start(LIMITS);
         let mut client = connect(&open).await;
 
         assert_eq!(closed_after(&mut client).await, HEADER_READ_LIMIT);
@@ -231,7 +417,7 @@ mod tests {
     /// cut off at the limit, counted from the start.
     #[tokio::test(start_paused = true)]
     async fn headers_sent_slowly_are_cut_off_at_the_header_read_limit() {
-        let (open, _stop, _server) = start(ConnectionLimits::SERVER);
+        let (open, _stop, _server) = start(LIMITS);
         let mut client = connect(&open).await;
         let started = tokio::time::Instant::now();
         client.write_all(b"GET /ok HTTP/1.1\r\n").await.unwrap();
@@ -261,7 +447,7 @@ mod tests {
     /// for the header read limit.
     #[tokio::test(start_paused = true)]
     async fn an_idle_connection_is_closed_at_the_header_read_limit_after_its_answer() {
-        let (open, _stop, _server) = start(ConnectionLimits::SERVER);
+        let (open, _stop, _server) = start(LIMITS);
         let mut client = connect(&open).await;
         get_ok(&mut client).await;
 
@@ -274,7 +460,7 @@ mod tests {
     async fn a_connection_past_the_limit_waits_until_one_closes() {
         let (open, _stop, _server) = start(ConnectionLimits {
             max_connections: 2,
-            header_read: HEADER_READ_LIMIT,
+            ..LIMITS
         });
         let mut first = connect(&open).await;
         let mut second = connect(&open).await;
@@ -296,7 +482,7 @@ mod tests {
     /// waiting for the header read limit to close it.
     #[tokio::test(start_paused = true)]
     async fn a_stop_closes_idle_connections_and_returns() {
-        let (open, stop, server) = start(ConnectionLimits::SERVER);
+        let (open, stop, server) = start(LIMITS);
         let mut client = connect(&open).await;
         get_ok(&mut client).await;
         let started = tokio::time::Instant::now();
@@ -307,5 +493,68 @@ mod tests {
         assert_eq!(started.elapsed(), Duration::ZERO);
         let mut buf = [0u8; 64];
         assert_eq!(client.read(&mut buf).await.unwrap(), 0);
+    }
+
+    /// A client that asks for an answer and then reads none of it loses its
+    /// connection once the answer has waited on it for the stall time, and
+    /// the server lets go of the answer. Before #2984 the connection, and
+    /// the export file or attachment the answer read from, were held for
+    /// good. Time is paused, so the stall time passes as soon as nothing
+    /// else can run.
+    #[tokio::test(start_paused = true)]
+    async fn an_answer_the_client_reads_none_of_is_dropped_at_the_stall_time() {
+        let (open, _stop, released) = start_big(LIMITS);
+        let mut client = connect(&open).await;
+        client
+            .write_all(b"GET /big HTTP/1.1\r\nHost: test\r\n\r\n")
+            .await
+            .unwrap();
+        let started = tokio::time::Instant::now();
+
+        tokio::time::timeout(LIMITS.answer_stall * 4, released)
+            .await
+            .expect("the server held an answer nobody read past the stall time")
+            .unwrap();
+
+        // The connection's buffers fill at once, so the wait starts as the
+        // request arrives.
+        assert_eq!(started.elapsed(), LIMITS.answer_stall);
+        let mut answer = Vec::new();
+        client.read_to_end(&mut answer).await.unwrap();
+        assert!(answer.len() < BIG_ANSWER, "{} bytes", answer.len());
+    }
+
+    /// A client that reads an answer slowly, each read well inside the
+    /// stall time, gets all of it however long it takes in all: the stall
+    /// time counts from the last byte the client took.
+    #[tokio::test(start_paused = true)]
+    async fn an_answer_read_slowly_is_sent_in_full() {
+        let (open, _stop, released) = start_big(LIMITS);
+        let mut client = connect(&open).await;
+        client
+            .write_all(b"GET /big HTTP/1.1\r\nHost: test\r\n\r\n")
+            .await
+            .unwrap();
+        let started = tokio::time::Instant::now();
+
+        let mut answer = Vec::new();
+        let mut buf = vec![0u8; 64 * 1024];
+        loop {
+            tokio::time::sleep(LIMITS.answer_stall - Duration::from_secs(1)).await;
+            let n = client.read(&mut buf).await.unwrap();
+            assert_ne!(n, 0, "the connection closed part-way through the answer");
+            answer.extend_from_slice(&buf[..n]);
+            if answer.ends_with(b"0\r\n\r\n") {
+                break;
+            }
+        }
+
+        assert!(
+            answer.len() > BIG_ANSWER,
+            "the answer and its framing are {} bytes",
+            answer.len()
+        );
+        assert!(started.elapsed() > LIMITS.answer_stall * 4);
+        released.await.unwrap();
     }
 }
