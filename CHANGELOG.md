@@ -1347,9 +1347,11 @@ carry their date on the heading.
 
 - 2026-10-15: **A screen reader hears which Contact Group, Message Tag or
   Saved Search is open.** The left panel's row for the open Contact Group,
-  Message Tag, No Contact Group, No Message Tag or Saved Search is now
-  announced as the current page, as the Messages, Contacts, Trash, Import
-  and Export rows already were (#2590).
+  Unknown, No Contact Group, Message Tag, No Message Tag or Saved Search is
+  now announced as the current page, as the Messages, Contacts, Trash,
+  Import and Export rows already were. A Contact Group or Message Tag opened
+  from an address that spells its name in another case is now highlighted
+  too (#2590).
 - 2026-10-12: **A refused search is one sentence.** A search the lists
   cannot run is now refused in one sentence, such as "from: is not a
   Contacts word; it works on Messages", rather than two. The list starts it
