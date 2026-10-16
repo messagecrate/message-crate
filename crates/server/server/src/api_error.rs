@@ -110,8 +110,8 @@ pub enum ApiError {
         /// The file's length in bytes.
         length: u64,
     },
-    /// `408 Request Timeout`: an upload body stopped arriving, or took too long to arrive.
-    UploadStalled(String),
+    /// `408 Request Timeout`: a request body stopped arriving, or took too long to arrive.
+    BodyStalled(String),
     /// `503 Service Unavailable`: the server is stopping and refused work it had not started.
     ServerStopping(String),
     /// `500 Internal Server Error`: unexpected failure. The whole context chain goes to the log;
@@ -181,7 +181,7 @@ impl ApiError {
             | Self::MethodNotAllowed(m)
             | Self::NotAcceptable(m)
             | Self::MediaLinkInvalid(m)
-            | Self::UploadStalled(m)
+            | Self::BodyStalled(m)
             | Self::ServerStopping(m) => Some(m),
             Self::PayloadTooLarge => Some("the request body is too large"),
             Self::ValidationFailed(_)

@@ -166,9 +166,9 @@ problem_types! {
     /// A `Range` that selects no byte of the file.
     RangeNotSatisfiable => ("range-not-satisfiable", RANGE_NOT_SATISFIABLE, "Range not satisfiable")
         from ApiError::RangeNotSatisfiable { .. },
-    /// An upload body stopped arriving, or took too long to arrive.
-    UploadStalled => ("upload-stalled", REQUEST_TIMEOUT, "Upload stalled")
-        from ApiError::UploadStalled(_),
+    /// A request body stopped arriving, or took too long to arrive.
+    BodyStalled => ("body-stalled", REQUEST_TIMEOUT, "Body stalled")
+        from ApiError::BodyStalled(_),
     /// The server is stopping and refused work it had not started.
     ServerStopping => ("server-stopping", SERVICE_UNAVAILABLE, "Server stopping")
         from ApiError::ServerStopping(_),
@@ -247,8 +247,8 @@ Every `401 Unauthorized` answer carries `WWW-Authenticate: Bearer realm=\"messag
                 crate::assets_api::media_links::MEDIA_LINK_TTL.as_secs() / 60
             ),
             Self::RangeNotSatisfiable => "The request's `Range` selects no byte of the file: it starts at or past the end, or asks for a suffix of no bytes. The `Content-Range` header (`bytes */<length>`) says how long the file is. Ask for a range inside it, or send no `Range` to get the whole file. A `Range` the server does not serve as one range, such as several ranges or another unit, is not refused: it answers the whole file.".to_string(),
-            Self::UploadStalled => "The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. The server stopped reading it and stored none of it. `detail` says which limit it met. Every body is held to the limits, so any route that reads one can answer this. An import batch, a `PUT /v1/assets/{sha256}` body and a part of a multipart upload are the bodies large enough to meet them.\n\n\
-The connection failed, not the data: nothing in the body is wrong. The limits are 60 seconds with no byte and 300 seconds for a whole body unless the server's config file sets `[server] upload_stall_secs` and `upload_piece_secs`, and `GET /v1/server` states both, in seconds, as `upload_stall_secs` and `upload_piece_secs`. Send the same request again once the connection is better. For an upload, the desktop app does not send it again by itself: running the import again continues it from where it stopped.".to_string(),
+            Self::BodyStalled => "The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. The server stopped reading it and stored none of it. `detail` says which limit it met. Every body is held to the limits, so any route that reads one can answer this.\n\n\
+The connection failed, not the data: nothing in the body is wrong. The limits are 60 seconds with no byte and 300 seconds for a whole body unless the server's config file sets `[server] body_stall_secs` and `body_total_secs`, and `GET /v1/server` states both, in seconds, as `body_stall_secs` and `body_total_secs`. Send the same request again once the connection is better. For an upload, the desktop app does not send it again by itself: running the import again continues it from where it stopped.".to_string(),
             Self::ServerStopping => "The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for. An import batch waiting for its turn, or whose body was still arriving, answers this: nothing in it was stored. Send the same request once the server is running again.".to_string(),
             Self::DatabaseBusy => "The database was too busy to take this request in time: another request, such as an import batch, held the write lock for longer than this one could wait for it, or every database connection stayed taken while it waited for one. Wait the number of seconds in the `Retry-After` header (repeated as `retry_after` in the body) and send the same request again.\n\n\
 Any route that reads or writes the database can answer this, so no route in the OpenAPI document lists it.".to_string(),

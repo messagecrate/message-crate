@@ -312,7 +312,7 @@ mod tests {
         assert!(format!("{err:#}").contains("no media settings"), "{err:#}");
     }
 
-    /// A server that answers the session check and states its upload time
+    /// A server that answers the session check and states its body time
     /// limits, as every Upload reads them. [`take_batches`] has it take
     /// import 7's batches.
     fn upload_server() -> MockServer {
@@ -327,8 +327,8 @@ mod tests {
         server.mock(|when, then| {
             when.method(GET).path("/v1/server");
             then.status(200).json_body(json!({
-                "upload_stall_secs": 60,
-                "upload_piece_secs": 300,
+                "body_stall_secs": 60,
+                "body_total_secs": 300,
             }));
         });
         server

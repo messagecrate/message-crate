@@ -260,12 +260,10 @@ current one, because that account reaches every other.
   is still there sends the body again, as it would after any broken
   connection.
 - A body that the server stopped reading because it took too long is
-  `408 Request Timeout` (`upload-stalled`): a body that went `[server]
-  upload_stall_secs` (60) with no byte arriving, or was still arriving
-  `upload_piece_secs` (300) after the read started. It is mostly an import
-  batch, an attachment or a part of one, the bodies large enough to meet
-  the limits, but every body is held to them
-  ([Connections](#connections)). Why: the connection failed, not the data, and
+  `408 Request Timeout` (`body-stalled`): a body that went `[server]
+  body_stall_secs` (60) with no byte arriving, or was still arriving
+  `body_total_secs` (300) after the read started. Every body is held to
+  the limits ([Connections](#connections)). Why: the connection failed, not the data, and
   `malformed-body` told the person their data was bad. The client is still
   there to read the answer, so the answer says that running the import
   again continues it. The desktop app shows it and does not send the piece
@@ -676,7 +674,7 @@ client cannot hold it
 connection that sends no request, or sends one too slowly, is closed after
 30 seconds. At most 256 connections are open at once, and the next waits
 for one to close. A body that stops arriving, or arrives too slowly, is no
-longer read once the upload time limits pass. In detail:
+longer read once the body time limits pass. In detail:
 
 - A connection has 30 seconds to send a request's headers, counted from when
   it opens or from the previous answer, and is closed when it has not
@@ -691,10 +689,10 @@ longer read once the upload time limits pass. In detail:
   desktop app's Upload open together, and under the 1024 open files a Linux
   process gets by default, which the connections share with the database and
   the upload files.
-- Every request body is held to the upload time limits, `[server]
-  upload_stall_secs` (60) with no byte arriving and `upload_piece_secs` (300)
+- Every request body is held to the body time limits, `[server]
+  body_stall_secs` (60) with no byte arriving and `body_total_secs` (300)
   for the whole body, and one that meets either answers `408 Request Timeout`
-  (`upload-stalled`). An import batch, an attachment and a part of one hold
+  (`body-stalled`). An import batch, an attachment and a part of one hold
   their bodies to the limits themselves, from when they start reading. The
   layers hold every other body from when the request arrives
   (`limit_request_body` in `crates/server/server/src/middleware.rs`). Why the uploads start their own
@@ -1073,9 +1071,9 @@ What each reaches:
   A batch takes its import slot before it reads its
   body, and writes the body under the Data Directory
   (`data_dir/.import-batches/`), which `serve` empties as it starts. A body
-  that goes `[server] upload_stall_secs` (60) with no byte arriving, or is
-  still arriving `upload_piece_secs` (300) after the read started, ends the
-  read with `408 Request Timeout` (`upload-stalled`), which frees the slot.
+  that goes `[server] body_stall_secs` (60) with no byte arriving, or is
+  still arriving `body_total_secs` (300) after the read started, ends the
+  read with `408 Request Timeout` (`body-stalled`), which frees the slot.
   An attachment body and a part of one are held to the same two limits,
   though they take no slot, because each holds a connection and a file
   while it reads, and so is every other body
@@ -1093,10 +1091,10 @@ What each reaches:
   now and then, would stop every import on the server. A 10-minute limit for
   a whole body held a slot that long
   ([#2897](https://github.com/messagecrate/message-crate/issues/2897)).
-- `GET /v1/server` states the two upload time limits, in seconds, as
-  `upload_stall_secs` and `upload_piece_secs`, to any client. The desktop
+- `GET /v1/server` states the two body time limits, in seconds, as
+  `body_stall_secs` and `body_total_secs`, to any client. The desktop
   app's Upload reads them once it has logged in, and waits for the answer to
-  each batch, attachment or part for `upload_piece_secs` plus 5 minutes for
+  each batch, attachment or part for `body_total_secs` plus 5 minutes for
   the server's wait for a slot and its save. Why: the limits are config
   keys, and an Upload that kept its own copy, as it once kept a 10-minute
   timeout written beside the server's, drifts from them. They are stated
@@ -1166,7 +1164,7 @@ What each reaches:
   number is twice the uploads the desktop app runs at once, 16 attachments in
   each of 4 conversations, so an import goes as fast as the app can send it.
 - An upload, multipart or a single-request body, is abandoned once nothing
-  has been written to it for `[server] upload_stall_secs` (60) and no request
+  has been written to it for `[server] body_stall_secs` (60) and no request
   to it is running. A start that finds the account at the limit removes the
   account's abandoned uploads first and counts again, and `serve` removes
   every account's as it starts and each account's when its Import Run ends.
@@ -1360,7 +1358,7 @@ when the two differ, and CI checks the web app's generated types against it.
 An operation's error responses are built from shared parts, never written out
 by hand. The credential a route accepts brings its `401 Unauthorized` and
 `403 Forbidden`, and a Media Link brings `media-link-invalid`; a request
-body brings `400 Bad Request`, `408 Request Timeout` (`upload-stalled`),
+body brings `400 Bad Request`, `408 Request Timeout` (`body-stalled`),
 `413 Payload Too Large`, `415 Unsupported Media Type` and
 `422 Unprocessable Entity`; an id in the path
 brings `404 Not Found` and `422 Unprocessable Entity`; every `/v1` route brings
@@ -1487,7 +1485,7 @@ A handler takes the part of the server's state it reads, never `AppState`
 whole. The database is `State<SqlitePool>`, the configuration is
 `State<Arc<Config>>`, and each other part is a sub-state that `server.rs`
 cuts from `AppState` with `FromRef`: `ImportState`, `AssetState`,
-`DemoState`, `RefusalWait`, `UploadTimeLimits`, `MediaLinkKey` and
+`DemoState`, `RefusalWait`, `BodyTimeLimits`, `MediaLinkKey` and
 `WalError`. The import routes take `Importer`, in
 `imports_api/run_control.rs`, which holds what running and ending an Import
 Run reads. The credential extractors (`AuthIdentity`, `FullAccess`, `Owner`

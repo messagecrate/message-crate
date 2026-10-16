@@ -9,7 +9,7 @@ use axum::Router;
 use crate::config::Config;
 use crate::exit_with_parent::ParentWatch;
 use crate::open_db::OpenDb;
-use crate::request_body::UploadTimeLimits;
+use crate::request_body::BodyTimeLimits;
 use crate::server::{AppState, http_app};
 
 /// Start the HTTP server. It runs until Ctrl-C or SIGTERM, or, when
@@ -57,11 +57,7 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
         "The database at {} is open, in journal mode {mode}",
         opened.cfg.paths.db.display()
     );
-    let state = AppState::new(
-        opened,
-        server.asset_part_size,
-        UploadTimeLimits::of(&server),
-    );
+    let state = AppState::new(opened, server.asset_part_size, BodyTimeLimits::of(&server));
     if crate::server_api::recover_stopped_demo_build(&state).await? {
         tracing::warn!(
             "The server stopped during a Demo Account build, so the part-built Demo Account was removed"
@@ -71,7 +67,7 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     crate::asset_store::sweep_incoming_at_start(
         &state.db,
         &state.cfg.paths,
-        state.upload_time_limits.stall,
+        state.body_time_limits.stall,
     )
     .await;
     // Import batch bodies a stopped server left, before any batch can start.
