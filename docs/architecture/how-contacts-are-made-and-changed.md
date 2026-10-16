@@ -109,9 +109,14 @@ from the Trash. The membership is a snapshot and does not change later.
 The code is `plan` and `apply` in
 `crates/server/server/src/db/address_book.rs`.
 
-The file has one row per identity and six columns: `contact_id`,
-`display_name`, `groups`, `service`, `identity_type`, `identity`. A load runs
+The file has one row per identity and five columns: `contact_id`,
+`display_name`, `service`, `identity`, `groups`. `service` is `Text Message`,
+`Email` or `WhatsApp`, and no column states a type. A load runs
 in Append mode, the default, or in Edit mode.
+
+A vCard file becomes such a file through `from_vcard` in the same module,
+which writes one row per number and email address on each card under
+`card1`, `card2`, … and loads nothing.
 
 ### A cell a spreadsheet would run
 
@@ -215,11 +220,18 @@ The code is `create_contact` and `propose_name` in
 
 ### 4. Each identity: is the row valid?
 
-A row that leaves `service`, `identity_type` and `identity` all blank lists no
+A row that leaves `service` and `identity` both blank lists no
 identity. That is how a contact with no identity is written.
 
-An identity written exactly as Message Crate already keys it is accepted as
-it stands, so an exported file always loads back.
+`service` names the service: `Text Message` and `Email` are the `phone`
+service, and `WhatsApp` is `whatsapp`.
+An identity written exactly as Message Crate already keys it on that service
+is accepted as it stands, with the type it was stored with, so an exported
+file always loads back.
+Any other is typed by its shape among the types the service carries: a
+number is `phone`, an `@` address is `email`, and anything else is `other`.
+`Email` takes an email address only, and an `@` address on `WhatsApp` is
+refused, because WhatsApp carries no email address.
 
 A phone number written without `+` that matches no key as written may be one
 whose `+` a spreadsheet dropped.
@@ -244,16 +256,16 @@ Its `notes` name each row it read with the `+` back, and each value without
 
 ```mermaid
 flowchart TD
-  A{"service, identity_type and identity all blank?"} -- yes --> A1["Row lists no identity"]
-  A -- no --> B{"service is phone or whatsapp?"}
+  A{"service and identity both blank?"} -- yes --> A1["Row lists no identity"]
+  A -- no --> B{"service is Text Message, Email or WhatsApp?"}
   B -- no --> R1{{"Refused: unknown service"}}
-  B -- yes --> C{"identity_type is phone, email, username or other?"}
-  C -- no --> R2{{"Refused: unknown identity_type"}}
-  C -- yes --> D{"identity blank?"}
+  B -- yes --> D{"identity blank?"}
   D -- yes --> R3{{"Refused: identity is blank"}}
-  D -- no --> E{"Written exactly as an identity Message Crate already holds?"}
-  E -- yes --> K["Key is the text as written"]
-  E -- no --> F{"identity_type"}
+  D -- no --> E{"Written exactly as an identity Message Crate already holds on that service?"}
+  E -- yes --> K["Key is the text as written, with the stored type"]
+  E -- no --> C{"Does the service carry the shape's type? Email takes only an email address"}
+  C -- no --> R2{{"Refused: names the service and the address"}}
+  C -- yes --> F{"The shape's type"}
   F -- phone --> G{"4 to 15 digits, and only digits, spaces and + - ( ) . ?"}
   G -- no --> R4{{"Refused: not a phone number"}}
   G -- yes --> P{"Written with + ?"}
@@ -266,7 +278,7 @@ flowchart TD
   F -- email --> H{"One @ with text on both sides, no spaces?"}
   H -- no --> R5{{"Refused: not an email address"}}
   H -- yes --> H1["Key is the address in lower case"]
-  F -- "username or other" --> I1["Key is the text as written"]
+  F -- other --> I1["Key is the text as written"]
 ```
 
 ### 5. Each identity: who gets it?

@@ -167,13 +167,18 @@ tables and reads back into them, one row per `contact_handles` link:
 |---|---|
 | `contact_id` | `contacts.id` |
 | `display_name` | `contacts.preferred_name`, trimmed |
-| `groups` | the names of the contact's `contact_groups`, joined with `;` |
-| `service` | `handles.service` |
-| `identity_type` | `handles.handle_type` |
+| `service` | `Email` for a `handles.handle_type` of `email`, otherwise `Text Message` for a `handles.service` of `phone` and `WhatsApp` for `whatsapp` |
 | `identity` | `handles.normalized` |
+| `groups` | the names of the contact's `contact_groups`, joined with `;` |
+
+No column holds `handles.handle_type`: a load types each row by its service
+and its shape, and keeps the stored type of an identity written exactly as
+`handles.normalized` holds it on that service.
 
 `POST /v1/contacts/address-book` writes it and `POST /v1/contacts` loads it;
-`crates/server/server/src/db/address_book.rs` holds both directions. The
+`POST /v1/contacts/vcard-address-book` writes one from a vCard file and
+stores nothing. `crates/server/server/src/db/address_book.rs` holds every
+direction. The
 rules of a load are in
 [`docs/architecture/contacts-identities-and-messages.md`](https://github.com/messagecrate/message-crate/blob/main/docs/architecture/contacts-identities-and-messages.md).
 

@@ -1,8 +1,4 @@
-//! VCF 3.0 parser: names, phones, email and categories.
-
-use anyhow::{Context, Result};
-use std::fs;
-use std::path::Path;
+//! vCard 3.0 reader: each card's name, phone numbers and email addresses.
 
 /// One parsed vCard.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -15,32 +11,43 @@ pub struct VcfCard {
     pub n_given: String,
     /// `N` middle name component.
     pub n_middle: String,
-    /// Deduplicated raw `TEL` values.
+    /// `TEL` values in the order the card lists them, each once.
     pub phones: Vec<String>,
-    /// First `EMAIL` value, if any.
-    pub email: Option<String>,
-    /// Values from `CATEGORIES` (and repeated CATEGORIES lines), already unescaped.
-    pub categories: Vec<String>,
+    /// `EMAIL` values in the order the card lists them, each once.
+    pub emails: Vec<String>,
 }
 
-/// Parse a VCF file into cards (unfolded lines).
-///
-/// # Errors
-///
-/// Returns an error when the file cannot be read.
-pub fn parse_vcf(path: &Path) -> Result<Vec<VcfCard>> {
-    let text = fs::read_to_string(path)
-        .with_context(|| format!("failed to read VCF {}", path.display()))?;
-    Ok(parse_vcf_str(&text))
+impl VcfCard {
+    /// The name the card gives its person: `FN`, or the given, middle and
+    /// family names of `N` joined by spaces when `FN` is blank. Empty when
+    /// the card has neither.
+    #[must_use]
+    pub fn display_name(&self) -> String {
+        if !self.fn_raw.is_empty() {
+            return self.fn_raw.clone();
+        }
+        [&self.n_given, &self.n_middle, &self.n_family]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
 }
 
-/// Parse VCF text into cards (unfolded lines).
-fn parse_vcf_str(text: &str) -> Vec<VcfCard> {
+/// Parse vCard text into its cards, in the order the text holds them.
+///
+/// Continuation lines are joined first. A property may carry a group prefix
+/// (`item1.TEL`) and parameters (`TEL;TYPE=CELL`); only the property's name
+/// is read. Properties other than `FN`, `N`, `TEL` and `EMAIL` are skipped.
+#[must_use]
+pub fn parse_vcf(text: &str) -> Vec<VcfCard> {
     let lines = unfold_lines(text);
     let mut cards = Vec::new();
     let mut current: Option<VcfCard> = None;
 
     for line in lines {
+        let line = line.trim_end();
         if line.eq_ignore_ascii_case("BEGIN:VCARD") {
             current = Some(VcfCard::default());
             continue;
@@ -54,7 +61,7 @@ fn parse_vcf_str(text: &str) -> Vec<VcfCard> {
         let Some(card) = current.as_mut() else {
             continue;
         };
-        apply_line(card, &line);
+        apply_line(card, line);
     }
 
     cards
@@ -90,79 +97,69 @@ fn apply_line(card: &mut VcfCard, line: &str) {
     match base.as_str() {
         "FN" => card.fn_raw = unescape(value),
         "N" => {
-            let parts: Vec<&str> = value.split(';').collect();
-            card.n_family = unescape(parts.first().copied().unwrap_or(""));
-            card.n_given = unescape(parts.get(1).copied().unwrap_or(""));
-            card.n_middle = unescape(parts.get(2).copied().unwrap_or(""));
+            let parts = split_components(value);
+            let part = |at: usize| parts.get(at).cloned().unwrap_or_default();
+            card.n_family = part(0);
+            card.n_given = part(1);
+            card.n_middle = part(2);
         }
-        "TEL" => {
-            let phone = value.trim();
-            if !phone.is_empty() && !card.phones.iter().any(|p| p == phone) {
-                card.phones.push(phone.to_string());
-            }
-        }
-        "EMAIL" => {
-            if card.email.is_none() {
-                let email = value.trim();
-                if !email.is_empty() {
-                    card.email = Some(email.to_string());
-                }
-            }
-        }
-        "CATEGORIES" => {
-            for category in split_categories(value) {
-                if !card
-                    .categories
-                    .iter()
-                    .any(|c| c.eq_ignore_ascii_case(&category))
-                {
-                    card.categories.push(category);
-                }
-            }
-        }
+        "TEL" => push_once(&mut card.phones, unescape(value)),
+        "EMAIL" => push_once(&mut card.emails, unescape(value)),
         _ => {}
     }
 }
 
-/// Undo vCard escaping of newlines, commas, semicolons, and backslashes.
-fn unescape(s: &str) -> String {
-    s.replace("\\n", "\n")
-        .replace("\\,", ",")
-        .replace("\\;", ";")
-        .replace("\\\\", "\\")
-        .trim()
-        .to_string()
+/// Add `value` to `list` unless it is blank or already there.
+fn push_once(list: &mut Vec<String>, value: String) {
+    if !value.is_empty() && !list.contains(&value) {
+        list.push(value);
+    }
 }
 
-/// Split a CATEGORIES value on unescaped commas, then unescape each token.
-fn split_categories(raw: &str) -> Vec<String> {
+/// Undo vCard escaping, reading the value once from left to right: a
+/// backslash and the character after it become one character. `\n` and `\N`
+/// are a newline, and any other escaped character is itself, which covers
+/// `\,`, `\;`, `\\`, and the `\:` and `\"` Google Contacts writes. A
+/// backslash at the very end is kept. The result is trimmed.
+fn unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+        match chars.next() {
+            Some('n' | 'N') => out.push('\n'),
+            Some(next) => out.push(next),
+            None => out.push('\\'),
+        }
+    }
+    out.trim().to_string()
+}
+
+/// Split a structured value such as `N` on its unescaped `;`, then unescape
+/// each component.
+fn split_components(raw: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur = String::new();
-    let mut chars = raw.chars().peekable();
+    let mut chars = raw.chars();
     while let Some(ch) = chars.next() {
         if ch == '\\' {
+            cur.push('\\');
             if let Some(next) = chars.next() {
-                cur.push('\\');
                 cur.push(next);
-            } else {
-                cur.push('\\');
             }
             continue;
         }
-        if ch == ',' {
-            let token = unescape(&cur);
-            if !token.is_empty() {
-                out.push(token);
-            }
+        if ch == ';' {
+            out.push(unescape(&cur));
             cur.clear();
             continue;
         }
         cur.push(ch);
     }
-    let token = unescape(&cur);
-    if !token.is_empty() {
-        out.push(token);
-    }
+    out.push(unescape(&cur));
     out
 }
 
@@ -171,25 +168,42 @@ mod tests {
     use super::*;
 
     #[test]
-    fn split_categories_handles_escaped_commas() {
-        assert_eq!(
-            split_categories(r"Family,Work\,Inc,Friends"),
-            vec!["Family", "Work,Inc", "Friends"]
-        );
-        assert_eq!(split_categories("  Family  ,  "), vec!["Family"]);
-        assert!(split_categories("").is_empty());
+    fn unescape_keeps_the_character_after_an_escaped_backslash() {
+        // `C:\\new` is `C:\new`: the escaped backslash is read before the
+        // `n` after it, so the `n` is never part of a newline.
+        let cards = parse_vcf("BEGIN:VCARD\nFN:C:\\\\new\nEND:VCARD\n");
+        assert_eq!(cards[0].fn_raw, r"C:\new");
     }
 
     #[test]
-    fn parse_vcf_collects_repeated_categories_email_middle() {
+    fn unescape_reads_each_escape_as_one_character() {
+        assert_eq!(unescape(r"a\nb\Nc"), "a\nb\nc");
+        assert_eq!(unescape(r"Smith\, Jr\; II"), "Smith, Jr; II");
+        assert_eq!(
+            unescape(r#"https\://example.com/\"x\""#),
+            "https://example.com/\"x\""
+        );
+        assert_eq!(unescape(r"end\"), r"end\");
+    }
+
+    #[test]
+    fn parse_vcf_reads_every_phone_and_email_in_order() {
         let text = "BEGIN:VCARD\nVERSION:3.0\nFN:Ada Lovelace\nN:Lovelace;Ada;Augusta;;\n\
-             TEL:+15555550119\nEMAIL:ada@example.com\nCATEGORIES:Family,Friends\nCATEGORIES:Work\n\
-             CATEGORIES:family\nEND:VCARD\n";
-        let cards = parse_vcf_str(text);
+             TEL;TYPE=CELL:+15555550119\nitem1.TEL:(555) 555-0120\n\
+             EMAIL;TYPE=INTERNET:ada@example.com\nitem1.EMAIL;TYPE=INTERNET:ada@example.org\n\
+             CATEGORIES:myContacts\nEND:VCARD\n";
+        let cards = parse_vcf(text);
         assert_eq!(cards.len(), 1);
         assert_eq!(cards[0].n_middle, "Augusta");
-        assert_eq!(cards[0].email.as_deref(), Some("ada@example.com"));
-        assert_eq!(cards[0].categories, vec!["Family", "Friends", "Work"]);
+        assert_eq!(cards[0].phones, vec!["+15555550119", "(555) 555-0120"]);
+        assert_eq!(cards[0].emails, vec!["ada@example.com", "ada@example.org"]);
+    }
+
+    #[test]
+    fn parse_vcf_splits_n_on_unescaped_semicolons_only() {
+        let cards = parse_vcf("BEGIN:VCARD\nN:Smith\\;Jones;Ada;;;\nEND:VCARD\n");
+        assert_eq!(cards[0].n_family, "Smith;Jones");
+        assert_eq!(cards[0].n_given, "Ada");
     }
 
     #[test]
@@ -198,7 +212,7 @@ mod tests {
         // the line before it.
         let text = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Ada Augusta King, Coun\r\n \
              tess of Lovelace\r\nTEL:+1555\r\n\t5550119\r\nEND:VCARD\r\n";
-        let cards = parse_vcf_str(text);
+        let cards = parse_vcf(text);
         assert_eq!(cards.len(), 1);
         assert_eq!(cards[0].fn_raw, "Ada Augusta King, Countess of Lovelace");
         assert_eq!(cards[0].phones, vec!["+15555550119"]);
@@ -208,7 +222,21 @@ mod tests {
     fn parse_vcf_keeps_one_phone_for_a_repeated_or_empty_tel() {
         let text = "BEGIN:VCARD\nFN:Ada\nTEL;TYPE=CELL:+15555550119\n\
              TEL;TYPE=HOME:+15555550119\nTEL:\nEND:VCARD\n";
-        let cards = parse_vcf_str(text);
+        let cards = parse_vcf(text);
         assert_eq!(cards[0].phones, vec!["+15555550119"]);
+    }
+
+    #[test]
+    fn display_name_is_fn_else_n_assembled_else_empty() {
+        let card = |fn_raw: &str, given: &str, family: &str| VcfCard {
+            fn_raw: fn_raw.into(),
+            n_given: given.into(),
+            n_family: family.into(),
+            ..VcfCard::default()
+        };
+        assert_eq!(card("Ada L", "Ada", "Lovelace").display_name(), "Ada L");
+        assert_eq!(card("", "Ada", "Lovelace").display_name(), "Ada Lovelace");
+        assert_eq!(card("", "", "Lovelace").display_name(), "Lovelace");
+        assert_eq!(card("", "", "").display_name(), "");
     }
 }

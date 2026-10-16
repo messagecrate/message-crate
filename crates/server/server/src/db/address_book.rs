@@ -1,7 +1,8 @@
 //! The address book: Message Crate's own CSV of contacts and their
 //! identities, one row per identity.
 //!
-//! [`export_csv`] writes it and [`load`] reads it back. The rules are in
+//! [`export_csv`] writes it and [`load`] reads it back, and [`from_vcard`]
+//! writes one from a vCard file for a person to edit. The rules are in
 //! `docs/architecture/contacts-identities-and-messages.md`, the five starting
 //! at "The address book is a file for editing contacts, not a source of
 //! them": a load is Append or Edit, touches only the contacts in the file, is
@@ -27,14 +28,85 @@ use crate::db::{WriteTx, begin_write};
 use crate::db::{handles, named_membership};
 
 /// The columns of the file, in the order Export writes them.
-pub const COLUMNS: [&str; 6] = [
+pub const COLUMNS: [&str; 5] = [
     "contact_id",
     "display_name",
-    "groups",
     "service",
-    "identity_type",
     "identity",
+    "groups",
 ];
+
+/// What a `service` cell says: the service an identity is on, in the words
+/// the screen where an identity is added offers (`OFFERED_SERVICE_OPTIONS`
+/// in `web/src/lib/offeredService.ts`). The file states no type: the service
+/// decides which types are valid and the address's shape picks among them
+/// (`docs/architecture/contacts-identities-and-messages.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FileService {
+    /// `Text Message`: a phone number, an email address, or any other name,
+    /// on the Text Message service.
+    TextMessage,
+    /// `Email`: an email address on the Text Message service, where
+    /// iMessage reaches it.
+    Email,
+    /// `WhatsApp`: a phone number or one of WhatsApp's own ids.
+    Whatsapp,
+}
+
+impl FileService {
+    /// Every word, in the order a refusal lists them.
+    const ALL: [Self; 3] = [Self::TextMessage, Self::Email, Self::Whatsapp];
+
+    /// The word the file writes.
+    fn word(self) -> &'static str {
+        match self {
+            Self::TextMessage => "Text Message",
+            Self::Email => "Email",
+            Self::Whatsapp => "WhatsApp",
+        }
+    }
+
+    /// The word `text` names, ignoring case, or `None` for any other text.
+    fn parse(text: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|word| word.word().eq_ignore_ascii_case(text))
+    }
+
+    /// The service the identity is stored on.
+    fn service(self) -> IdentityService {
+        match self {
+            Self::TextMessage | Self::Email => IdentityService::Phone,
+            Self::Whatsapp => IdentityService::Whatsapp,
+        }
+    }
+
+    /// The word Export writes for an identity stored with `service` and
+    /// `handle_type`: `Email` for an email address, which can only be on
+    /// Text Message, and the service's own word for anything else.
+    fn of(service: IdentityService, handle_type: IdentityType) -> Self {
+        match (service, handle_type) {
+            (IdentityService::Whatsapp, _) => Self::Whatsapp,
+            (IdentityService::Phone, IdentityType::Email) => Self::Email,
+            (IdentityService::Phone, _) => Self::TextMessage,
+        }
+    }
+
+    /// The types an identity the account already holds may have when a row
+    /// writes it exactly as the database keys it. An `Email` row names an
+    /// email address only.
+    fn held_types(self) -> &'static [IdentityType] {
+        match self {
+            Self::Email => &[IdentityType::Email],
+            Self::TextMessage => &[
+                IdentityType::Phone,
+                IdentityType::Email,
+                IdentityType::Other,
+            ],
+            Self::Whatsapp => &[IdentityType::Phone, IdentityType::Other],
+        }
+    }
+}
 
 /// What separates Contact Group names in the `groups` column. A Contact
 /// Group's name may not hold it (`named_membership::group_spec`), so the cell
@@ -127,10 +199,9 @@ struct FileRow {
     number: usize,
     contact_id: String,
     display_name: String,
-    groups: String,
     service: String,
-    identity_type: String,
     identity: String,
+    groups: String,
 }
 
 /// Which contact a group of rows speaks for.
@@ -323,7 +394,7 @@ impl Snapshot {
 
 /// The `service` value the `handles` table stores, or `None` for any other
 /// text. Unlike [`IdentityService::parse`], which reads every unknown word as
-/// the phone platform, an unknown word here is an error.
+/// the phone platform, a row holding any other word is skipped.
 fn parse_service(text: &str) -> Option<IdentityService> {
     [IdentityService::Phone, IdentityService::Whatsapp]
         .into_iter()
@@ -359,7 +430,7 @@ fn read_rows(csv_text: &str) -> Result<Vec<FileRow>, Vec<String>> {
         .headers()
         .map_err(|e| vec![format!("the file is not CSV: {e}")])?
         .clone();
-    let mut index = [0usize; 6];
+    let mut index = [0usize; 5];
     let mut missing = Vec::new();
     for (slot, column) in COLUMNS.iter().enumerate() {
         match headers.iter().position(|h| h.eq_ignore_ascii_case(column)) {
@@ -401,17 +472,15 @@ fn read_rows(csv_text: &str) -> Result<Vec<FileRow>, Vec<String>> {
             number,
             contact_id: field(0),
             display_name: field(1),
-            groups: field(2),
-            service: field(3),
-            identity_type: field(4),
-            identity: field(5),
+            service: field(2),
+            identity: field(3),
+            groups: field(4),
         };
         let blank = row.contact_id.is_empty()
             && row.display_name.is_empty()
-            && row.groups.is_empty()
             && row.service.is_empty()
-            && row.identity_type.is_empty()
-            && row.identity.is_empty();
+            && row.identity.is_empty()
+            && row.groups.is_empty();
         if !blank {
             rows.push(row);
         }
@@ -424,9 +493,16 @@ fn read_rows(csv_text: &str) -> Result<Vec<FileRow>, Vec<String>> {
 }
 
 /// The identity a row lists, keyed the way the `handles` table keys it.
-/// `Ok(None)` for a row that lists no identity: one that leaves `service`,
-/// `identity_type` and `identity` all blank, which is how a contact with no
-/// identity is written.
+/// `Ok(None)` for a row that lists no identity: one that leaves `service`
+/// and `identity` both blank, which is how a contact with no identity is
+/// written.
+///
+/// The row states no type. An identity written exactly as the database
+/// keys it on the row's service is that identity, whatever its type, so a
+/// file Export wrote loads back as it was. Any other is typed by its shape
+/// ([`handles::handle_type_of`]) among the types its service carries, as an
+/// identity added on the screen is, and a shape the service cannot carry,
+/// such as an email address on WhatsApp, is refused.
 ///
 /// `contact` is the contact the row names, when the account holds it. A
 /// phone number written without `+` that no key matches as written is read
@@ -440,38 +516,55 @@ fn row_identity(
     snapshot: &Snapshot,
 ) -> Result<Option<FileIdentity>, String> {
     let n = row.number;
-    if row.service.is_empty() && row.identity_type.is_empty() && row.identity.is_empty() {
+    if row.service.is_empty() && row.identity.is_empty() {
         return Ok(None);
     }
-    let Some(service) = parse_service(&row.service) else {
+    let Some(file_service) = FileService::parse(&row.service) else {
+        let words: Vec<&str> = FileService::ALL.iter().map(|w| w.word()).collect();
         return Err(format!(
-            "row {n}: service \"{}\" is not one Message Crate stores; use phone or whatsapp",
-            row.service
-        ));
-    };
-    let Some(handle_type) = parse_handle_type(&row.identity_type) else {
-        return Err(format!(
-            "row {n}: identity_type \"{}\" is not one Message Crate stores; use phone, email or other",
-            row.identity_type
+            "row {n}: service \"{}\" is not one Message Crate offers; use {}",
+            row.service,
+            words.join(", ")
         ));
     };
     if row.identity.is_empty() {
         return Err(format!("row {n}: identity is blank"));
     }
-    if let Err(refusal) = handles::check_service_carries(&row.identity, service, handle_type) {
-        return Err(format!("row {n}: {refusal}"));
-    }
-    let key = |normalized: String| IdentityKey {
+    let service = file_service.service();
+    let keyed_as = |handle_type: IdentityType, normalized: String| IdentityKey {
         service,
         handle_type: handle_type.as_str(),
         normalized,
     };
     // An identity written exactly as the database keys it is one Export
-    // wrote, so it is accepted as it stands: a file loaded straight back must
-    // never be refused over a key an import stored.
-    let verbatim = key(row.identity.clone());
+    // wrote, so it is accepted as it stands, with the type it was stored
+    // with: a file loaded straight back must never be refused over a key an
+    // import stored. The shape's own type is tried first.
+    let shape = handles::handle_type_of(&row.identity);
+    let held = std::iter::once(shape)
+        .chain(file_service.held_types().iter().copied())
+        .filter(|t| file_service.held_types().contains(t))
+        .find(|&t| {
+            snapshot
+                .handles
+                .contains_key(&keyed_as(t, row.identity.clone()))
+        });
+    let handle_type = match (held, file_service) {
+        (Some(held), _) => held,
+        (None, FileService::Email) if shape != IdentityType::Email => {
+            return Err(format!(
+                "row {n}: \"{}\" is not an email address: it needs one @ with text on both sides",
+                row.identity
+            ));
+        }
+        (None, _) => shape,
+    };
+    if let Err(refusal) = handles::check_service_carries(&row.identity, service, handle_type) {
+        return Err(format!("row {n}: {refusal}"));
+    }
+    let key = |normalized: String| keyed_as(handle_type, normalized);
     let mut note = None;
-    let normalized = if snapshot.handles.contains_key(&verbatim) {
+    let normalized = if held.is_some() {
         row.identity.clone()
     } else {
         match handle_type {
@@ -914,10 +1007,9 @@ pub(crate) async fn rewrite_ids_to_nameless(
                 .get(row.contact_id.as_str())
                 .map_or_else(|| row.contact_id.clone(), i64::to_string),
             row.display_name.clone(),
-            row.groups.clone(),
             row.service.clone(),
-            row.identity_type.clone(),
             row.identity.clone(),
+            row.groups.clone(),
         ]
     });
     write_book(book)
@@ -942,7 +1034,7 @@ pub(crate) fn contact_ids_of(text: &str) -> Vec<String> {
 /// The address book file of `rows`, each in the order of [`COLUMNS`], under
 /// the header, with every cell written as [`message_csv::written_cell`]
 /// writes it.
-fn write_book(rows: impl IntoIterator<Item = [String; 6]>) -> Result<String> {
+fn write_book(rows: impl IntoIterator<Item = [String; 5]>) -> Result<String> {
     let mut writer = csv::Writer::from_writer(Vec::new());
     writer.write_record(COLUMNS)?;
     for row in rows {
@@ -1289,7 +1381,7 @@ type ExportRow = (i64, String, Option<String>, Option<String>, Option<String>);
 
 /// Write the address book for the account's contacts, or for the ones in
 /// `only` when it is given. One row per identity; a contact with no identity
-/// is one row with the last three columns blank. Contacts in the trash are
+/// is one row with `service` and `identity` blank. Contacts in the trash are
 /// left out, as they are from Contacts.
 ///
 /// Rows are ordered by name, a contact with no name first, so the Unknowns
@@ -1351,13 +1443,17 @@ pub async fn export_csv(
                 .get(&id)
                 .map(|names| names.join(&GROUP_SEPARATOR.to_string()))
                 .unwrap_or_default();
+            let word = service
+                .as_deref()
+                .and_then(parse_service)
+                .zip(handle_type.as_deref().and_then(parse_handle_type))
+                .map(|(service, handle_type)| FileService::of(service, handle_type).word());
             [
                 id.to_string(),
                 name,
-                group_names,
-                service.unwrap_or_default(),
-                handle_type.unwrap_or_default(),
+                word.unwrap_or_default().to_string(),
                 normalized.unwrap_or_default(),
+                group_names,
             ]
         });
     Ok(WrittenAddressBook {
@@ -1365,6 +1461,70 @@ pub async fn export_csv(
         contacts: u64::try_from(contacts.len()).unwrap_or(u64::MAX),
         identities: u64::try_from(identities).unwrap_or(u64::MAX),
     })
+}
+
+/// One row per `TEL` and `EMAIL` on each card of the vCard file `text`, as
+/// the address book a person edits before a load: `contact_id` is `card1`,
+/// `card2`, … by the card's position in the file, so a card's rows load as one
+/// new contact; `display_name` is the card's name ([`::contacts::VcfCard::display_name`]);
+/// `service` is `Text Message` for a number and `Email` for an email
+/// address, never `WhatsApp`, because a card cannot say a number is on
+/// WhatsApp; and `groups` is blank, because `CATEGORIES` is not carried over.
+///
+/// A number written without `+` is written in its `+` form in `country`
+/// when it is a valid number there. A number written with `+`, one that is
+/// not valid in `country`, and every number when `country` is `None` is
+/// written exactly as the card has it, for the load to key. Nothing is
+/// checked beyond that: the load refuses what it cannot store and names the
+/// rows. A card with no number and no email address gives no rows.
+///
+/// `Ok(None)` when `text` holds no card at all.
+///
+/// # Errors
+///
+/// Returns an error when the CSV cannot be written.
+pub fn from_vcard(text: &str, country: Option<&'static phone::Country>) -> Result<Option<String>> {
+    let cards = ::contacts::parse_vcf(text);
+    if cards.is_empty() {
+        return Ok(None);
+    }
+    let mut rows = Vec::new();
+    for (at, card) in cards.iter().enumerate() {
+        let contact_id = format!("card{}", at + 1);
+        let name = card.display_name();
+        let row = |service: FileService, identity: String| {
+            [
+                contact_id.clone(),
+                name.clone(),
+                service.word().to_string(),
+                identity,
+                String::new(),
+            ]
+        };
+        for number in &card.phones {
+            rows.push(row(FileService::TextMessage, number_in(number, country)));
+        }
+        for email in &card.emails {
+            rows.push(row(FileService::Email, email.clone()));
+        }
+    }
+    write_book(rows).map(Some)
+}
+
+/// The number `written` as the address book writes it: its `+` form in
+/// `country` when it is written without `+` and is a valid number there,
+/// and as written otherwise.
+fn number_in(written: &str, country: Option<&'static phone::Country>) -> String {
+    let Some(country) = country else {
+        return written.to_string();
+    };
+    let is_a_number =
+        phone::Handle::parse(written).is_some_and(|handle| handle.kind() == IdentityType::Phone);
+    if !is_a_number || written.contains('+') {
+        return written.to_string();
+    }
+    phone::normalize_checked(written, phone::PhoneRegion::Country(country))
+        .unwrap_or_else(|_| written.to_string())
 }
 
 #[cfg(test)]

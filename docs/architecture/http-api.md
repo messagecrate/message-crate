@@ -167,6 +167,10 @@ format, and anything about how to apply it is a declared query parameter.
 The file the server writes is answered by a `POST` named for it,
 `POST /v1/contacts/address-book`, whose body `{q, ids}` selects the contacts
 and whose answer is `text/csv` with a `Content-Disposition` filename.
+A route that reads one file and writes another does both:
+`POST /v1/contacts/vcard-address-book` takes a vCard file as a `text/vcard`
+body and `country=` as a declared query parameter, and answers the address
+book written from it, named for what it returns.
 Why: a body that is the file cannot carry a mode field, and a JSON envelope
 around a file base64-encodes it for nothing. Rejected: `?format=csv` on
 `GET /v1/contacts`, which cannot carry the checked ids and is the `fields=`
@@ -730,12 +734,12 @@ member of it matches `application/json`, `application/problem+json`,
 `application/*`, or `*/*`. `application/*` is a media range that matches
 `application/json` (RFC 9110), so refusing it would refuse a client that asks
 for JSON. A missing `Accept` is a request for JSON. The check runs on every `/v1` route
-but the five that answer bytes: `GET /v1/assets/{sha256}`, which streams the
+but the six that answer bytes: `GET /v1/assets/{sha256}`, which streams the
 asset's own contents, `GET` and `HEAD /v1/assets/{sha256}/preview` and
 `GET` and `HEAD /v1/assets/{sha256}/thumbnail`, which stream its Preview and
 its Thumbnail or answer the headers that stream would carry,
-`POST /v1/contacts/address-book`, which answers the address book as
-`text/csv`, and `GET /v1/server/log-files/{id}`, which answers a file of the
+`POST /v1/contacts/address-book` and `POST /v1/contacts/vcard-address-book`,
+which answer the address book as `text/csv`, and `GET /v1/server/log-files/{id}`, which answers a file of the
 server's log as `text/plain`. A media element probes a file with `HEAD` and an
 `Accept` such as `image/*`, so refusing that `HEAD` would refuse the probe.
 `HEAD /v1/assets/{sha256}` is checked, because it is the probe for whether an
