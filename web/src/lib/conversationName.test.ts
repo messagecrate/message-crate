@@ -23,6 +23,14 @@ describe("conversationName", () => {
     );
   });
 
+  it("names a conversation with yourself by the title the server gives it", () => {
+    // The server titles it with the account's display name, or the address;
+    // it has no participants to fall back on.
+    expect(conversationName({ shown_title: "Sam Holder", is_group: false, participants: [] })).toBe(
+      "Sam Holder",
+    );
+  });
+
   it("says (unknown) when there is nobody to name", () => {
     expect(conversationName({ shown_title: null, is_group: false, participants: [] })).toBe(
       "(unknown)",

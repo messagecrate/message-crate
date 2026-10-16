@@ -64,6 +64,8 @@ describe("ConversationRow", () => {
       />,
     );
     expect(screen.getByRole("checkbox", { name: "Select Ann, Bob, Cy" })).toBeTruthy();
+    // The title a person reads, which the row draws name by name.
+    expect(screen.getByRole("button").textContent).toContain("Ann, Bob, Cy");
   });
 
   it("names a group with nobody in it as the Messages list does", () => {

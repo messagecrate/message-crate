@@ -299,15 +299,14 @@ export default function TrashScreen() {
                 <SelectedConversation
                   key={selectedId}
                   conversation={selected}
-                  name={conversationName(selected)}
                   canDelete={canDelete}
                   dialogBusy={dialogBusy}
                   onRestored={clearSelection}
-                  onDelete={() =>
+                  onDelete={(name) =>
                     setPending({
                       kind: "conversation",
                       id: selectedId,
-                      name: conversationName(selected),
+                      name,
                       messageCount: selected.message_count,
                     })
                   }
@@ -477,23 +476,26 @@ export default function TrashScreen() {
 /** The trashed conversation selected in the list column, with Restore and Delete. */
 function SelectedConversation({
   conversation,
-  name,
   canDelete,
   dialogBusy,
   onRestored,
   onDelete,
 }: {
   conversation: Conversation;
-  name: string;
   canDelete: boolean;
   dialogBusy: boolean;
   onRestored: () => void;
-  onDelete: () => void;
+  /** Ask to delete the conversation for good, named as this panel names it. */
+  onDelete: (name: string) => void;
 }) {
   const restoreConversation = useRestoreConversation();
+  const name = conversationName(conversation);
   return (
     <div className="rounded border border-border bg-elevated p-4">
-      <div className="mb-1 text-[0.938rem] font-semibold text-text">{name}</div>
+      {/* Clamped as the conversation list clamps a group's names, since an untitled group is named after everyone in it. */}
+      <div className="mb-1 line-clamp-2 break-words text-[0.938rem] font-semibold text-text">
+        {name}
+      </div>
       <div className="mb-3 text-[0.75rem] text-muted">
         {countOf(conversation.message_count, "message")}
       </div>
@@ -514,7 +516,7 @@ function SelectedConversation({
           variant="danger"
           disabled={!canDelete || restoreConversation.isPending || dialogBusy}
           title={canDelete ? undefined : CANNOT_DELETE}
-          onClick={onDelete}
+          onClick={() => onDelete(name)}
         >
           Delete
         </Button>

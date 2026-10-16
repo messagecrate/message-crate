@@ -1,4 +1,4 @@
-import type { Message, MessageConversation } from "./types";
+import type { Message } from "./types";
 
 /**
  * Who sent a message: "You" for one the account sent, else the participant

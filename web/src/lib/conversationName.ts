@@ -10,8 +10,8 @@ type ConversationNameParts = {
 /**
  * A conversation's name, wherever it is shown: its title, else the one other
  * person in a one-to-one conversation, else every participant, else
- * "(unknown)". Both lists, the conversation header and Trash name a
- * conversation with this, so no two screens name one conversation two ways.
+ * "(unknown)". Every screen names a conversation with this, so no two screens
+ * name one conversation two ways.
  */
 export function conversationName({
   shown_title,
