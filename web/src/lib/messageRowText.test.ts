@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { attachment, message as baseMessage, participant } from "../test/apiShapes";
-import { messageConversationName, messageRowText, messageSenderName } from "./messageRowText";
+import { conversationName } from "./conversationName";
+import { messageRowText, messageSenderName } from "./messageRowText";
 import type { Message, MessageConversation } from "./types";
 
 function conversation(over: Partial<MessageConversation> = {}): MessageConversation {
@@ -28,16 +29,16 @@ function message(over: Partial<Message> = {}): Message {
   });
 }
 
-describe("messageConversationName", () => {
+describe("conversationName of a message's conversation", () => {
   it("names a one-to-one conversation after the other person", () => {
-    expect(messageConversationName(conversation())).toBe("Alice");
+    expect(conversationName(conversation())).toBe("Alice");
   });
 
   it("names a conversation with yourself by the title the server gives it", () => {
     // The server titles it with the account's display name, or the address;
     // it has no participants to fall back on.
     expect(
-      messageConversationName(
+      conversationName(
         conversation({
           chat_identifier: "+15555550199",
           participants: [],
@@ -53,7 +54,7 @@ describe("messageConversationName", () => {
       participant({ name: "Bob", identity: "+2" }),
     ];
     expect(
-      messageConversationName(
+      conversationName(
         conversation({
           conversation_type: "group",
           is_group: true,
@@ -63,7 +64,7 @@ describe("messageConversationName", () => {
       ),
     ).toBe("Family");
     expect(
-      messageConversationName(
+      conversationName(
         conversation({ conversation_type: "group", is_group: true, participants: people }),
       ),
     ).toBe("Alice, Bob");
@@ -77,7 +78,7 @@ describe("messageConversationName", () => {
       participant({ name: "Bob", identity: "+2" }),
     ];
     expect(
-      messageConversationName(
+      conversationName(
         conversation({ conversation_type: "chat", is_group: true, participants: people }),
       ),
     ).toBe("Alice, Bob");

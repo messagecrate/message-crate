@@ -426,6 +426,30 @@ describe("TrashScreen", () => {
       expect(screen.queryByText("Ada Lovelace")).toBeNull();
     });
 
+    it("names an untitled group in the dialog after everyone in it, as the conversation list does", async () => {
+      getConversationMock.mockResolvedValue(
+        conversation({
+          is_group: true,
+          participants: [
+            participant({ name: "Ann", identity: "+15550101" }),
+            participant({ name: "Bob", identity: "+15550102" }),
+            participant({ name: "Cy", identity: "+15550103" }),
+          ],
+        }),
+      );
+      const user = setupUser();
+      renderAt("/trash?tsel=42");
+      await settle();
+
+      await user.click(screen.getByRole("button", { name: "Delete" }));
+      await settle();
+
+      const dialog = screen.getByRole("dialog", { name: "Delete this conversation?" });
+      expect(
+        within(dialog).getByText(/Deletes Ann, Bob, Cy and its 5 messages from your Message Crate/),
+      ).toBeTruthy();
+    });
+
     it("keeps the dialog open and shows why when deleting a conversation fails", async () => {
       deleteConversationMock.mockRejectedValue(new Error("Could not delete this conversation."));
       const user = setupUser();

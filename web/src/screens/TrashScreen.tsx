@@ -5,6 +5,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import ContactLabel from "../components/ContactLabel";
 import { errorLine } from "../lib/apiErrorMessage";
 import { contactLabelText } from "../lib/contactLabel";
+import { conversationName } from "../lib/conversationName";
 import { isNearEnd } from "../lib/listPaging";
 import { countOf } from "../lib/plural";
 import { keys } from "../lib/queryKeys";
@@ -219,13 +220,6 @@ export default function TrashScreen() {
   // rest of it.
   const offerEmptyTrash = !nothingInTrash || searching;
 
-  const selectedName =
-    selected?.shown_title ||
-    (selected?.is_group
-      ? countOf(selected.participants.length, "participant")
-      : selected?.participants[0]?.name) ||
-    "this conversation";
-
   const confirmDelete = () => {
     if (pending === null) return;
     switch (pending.kind) {
@@ -305,7 +299,7 @@ export default function TrashScreen() {
                 <SelectedConversation
                   key={selectedId}
                   conversation={selected}
-                  name={selectedName}
+                  name={conversationName(selected)}
                   canDelete={canDelete}
                   dialogBusy={dialogBusy}
                   onRestored={clearSelection}
@@ -313,7 +307,7 @@ export default function TrashScreen() {
                     setPending({
                       kind: "conversation",
                       id: selectedId,
-                      name: selectedName,
+                      name: conversationName(selected),
                       messageCount: selected.message_count,
                     })
                   }

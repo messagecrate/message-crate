@@ -481,6 +481,11 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-16: **A group with no name reads the same everywhere.** A
+  group conversation without a title was named after everyone in it in the
+  conversation list, such as "Ann, Bob, Cy", but as "3 participants" in its
+  header and in Trash's delete dialog. The header and Trash now name it
+  after everyone in it too (#2517).
 - 2026-10-15: **Adding or removing an identity that is neither a number
   nor an email address is now checked.** Settings confirmed an identity
   removed by looking for it among the account's numbers and email addresses,
