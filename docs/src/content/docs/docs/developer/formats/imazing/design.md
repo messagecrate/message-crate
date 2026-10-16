@@ -147,7 +147,7 @@ iMazing writes each of the four as text with no id, and the exporter keeps only 
 
 The same export's 66 WhatsApp CSVs write all 3,683 lines of their `Reactions` cells in the first shape.
 
-Only the emoji is kept. Each `reacted with` line becomes one reaction of the common message, with part `0`, kind `emoji`, and the emoji: the text between ` reacted with ` and the last ` on `, whole with its variation selector, joiners and skin tone. The reaction carries no reactor (`reactor_identity` and `reactor_display_name` are absent, and `is_from_me` is false, on a `You` line too), and no time, which the common message has no field for. One line of the 5,855 reads `reacted with a sticker`: it becomes kind `sticker` with no emoji, as Apple Messages writes a sticker reaction.
+Only the emoji is kept. Each `reacted with` line becomes one reaction of the common message, with part `0`, kind `emoji`, and the emoji: the text between ` reacted with ` and the last ` on `, whole with its variation selector, joiners and skin tone. The reaction carries no reactor (`reactor_identity` and `reactor_display_name` are absent, and `is_from_me` is false, on a `You` line too), and no time, which the common message has no field for. One of the 5,855 `reacted with` lines reads `reacted with a sticker`: it becomes kind `sticker` with no emoji, as Apple Messages writes a sticker reaction.
 
 A `removed the reaction` line, and a line in neither shape, gives no reaction.
 
