@@ -632,7 +632,7 @@ Leave most other `Cargo.toml` files at `0.1.0`. Do not bump `web-next/` (`0.3.0`
 3. Set the four product version files to the new number (for example `0.8.0`).
 4. Push a git tag `v0.8.0` on that commit. Pushing the tag is what ships. Push/PR to `main` does not. The `version` job fails the tag run if the four files, their lockfiles, or the changelog heading disagree with the tag, and nothing is built or published.
 
-`.github/workflows/ci.yml` then: runs fmt/test, pushes `bitrealm/message-crate`, builds Tauri installers (Linux `.deb` + AppImage, Windows `.msi`, macOS `.dmg`), and creates a GitHub Release named `Message Crate v0.8.0`. `.github/workflows/docs.yml` publishes the documentation site to messagecrate.app on the same tag; a merge to `main` does not publish it.
+`.github/workflows/ci.yml` then: runs fmt/test, pushes `bitrealm/message-crate`, builds Tauri installers (Linux `.deb` + AppImage, Windows `.msi`, macOS `.dmg`), and creates a GitHub Release named `Message Crate v0.8.0`. The release carries `SHA256SUMS` beside the installers, and a build provenance attestation (`actions/attest-build-provenance`) for each installer and for the pushed image, which `gh attestation verify` checks. `.github/workflows/docs.yml` publishes the documentation site to messagecrate.app on the same tag; a merge to `main` does not publish it.
 
 The docs deploy runs in the `github-pages` environment, whose deployment branch policy in the repository settings must allow the `v*` tag rule as well as `main` (for `workflow_dispatch`). The workflow trigger and that policy have to agree: a tag push against an environment that only allows `main` builds the site and then refuses the deploy, which is what happened to `v0.9.0` (#654). Check and set it with:
 
