@@ -10,9 +10,9 @@ use std::path::Path;
 
 use anyhow::{Result, bail};
 use imessage_reader_protocol::{BackupDomainRequest, Event, Request};
-use message_crate_core::{LogSink, ProgressSink};
+use message_crate_core::Sinks;
 
-use crate::helper::Helper;
+use crate::helper::{Helper, locate};
 
 /// What [`decrypt_ios_backup_domain`] wrote.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,7 +26,8 @@ pub struct DecryptedDomain {
 
 /// Decrypt every file of `domain` in the encrypted iPhone backup at
 /// `backup_root` into `<out_dir>/<domain>/`, keeping each file's path inside
-/// the domain. Log lines and progress counts go to the given sinks.
+/// the domain. Log lines and progress counts go to `sinks`, and its cancel
+/// flag stops the program, even while it sends nothing (#3034).
 ///
 /// Before anything is written, `check` gets the bytes the domain's files
 /// hold, as the backup's manifest records them, so the caller can refuse a
@@ -37,15 +38,15 @@ pub struct DecryptedDomain {
 ///
 /// Returns an error when the directory is not an encrypted iPhone backup, the
 /// password is wrong, there is no `imessage-reader` program to run, or
-/// `check` refuses.
+/// `check` refuses. Returns [`Canceled`](message_crate_core::Canceled) when
+/// the cancel flag is set, having killed the program.
 pub fn decrypt_ios_backup_domain(
     backup_root: &Path,
     backup_password: &str,
     domain: &str,
     out_dir: &Path,
     check: impl FnOnce(u64) -> Result<()>,
-    log: LogSink,
-    progress: ProgressSink,
+    sinks: Sinks<'_>,
 ) -> Result<DecryptedDomain> {
     let request = Request::BackupDomain(BackupDomainRequest {
         backup_path: backup_root.to_path_buf(),
@@ -53,7 +54,20 @@ pub fn decrypt_ios_backup_domain(
         domain: domain.to_string(),
         out_dir: out_dir.to_path_buf(),
     });
-    read_answer(Helper::spawn(&request, log, progress)?, check)
+    decrypt_with(&locate()?, &request, check, sinks)
+}
+
+/// [`decrypt_ios_backup_domain`] with the program at `program`.
+fn decrypt_with(
+    program: &Path,
+    request: &Request,
+    check: impl FnOnce(u64) -> Result<()>,
+    sinks: Sinks<'_>,
+) -> Result<DecryptedDomain> {
+    // Cancel kills the program even while it decrypts and sends nothing.
+    let helper = Helper::spawn_at(program, request, sinks.log.clone(), sinks.progress.clone())?
+        .cancel_on(sinks.cancel.clone());
+    read_answer(helper, check)
 }
 
 /// The counts a started program answers the request with, once `check` has
@@ -95,7 +109,12 @@ fn read_answer(
 mod tests {
     use imessage_reader_protocol::{BackupDomainRequest, PROTOCOL_VERSION, Request};
 
-    use super::{DecryptedDomain, read_answer};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use message_crate_core::{CancelFlag, Canceled, LogSink, ProgressSink, Sinks};
+
+    use super::{DecryptedDomain, decrypt_with, read_answer};
     use crate::testutil::{fake_helper, source_line, spawn_fake};
 
     fn request() -> Request {
@@ -160,5 +179,41 @@ mod tests {
         let err = read_answer(helper, |_| anyhow::bail!("no room")).unwrap_err();
         assert_eq!(err.to_string(), "no room");
         assert!(!dir.path().join("went").exists());
+    }
+
+    /// Cancel is set when the program logs that it is decrypting, and the
+    /// program then sends nothing more, as a long decrypt of a large domain
+    /// does. The decrypt must return [`Canceled`] rather than wait for a
+    /// line that never comes (#3034).
+    #[test]
+    fn cancel_stops_a_decrypt_the_program_never_answers() {
+        let dir = tempfile::tempdir().unwrap();
+        // `exec` puts `sleep` in the shell's place, so the process the
+        // helper started is the one that goes quiet.
+        let body = format!(
+            "{}\n\
+             echo '{{\"event\":\"backup_domain_size\",\"files\":2,\"bytes\":300}}'\n\
+             read -r go\n\
+             echo '{{\"event\":\"log\",\"line\":\"decrypting\"}}'\n\
+             exec sleep 100000",
+            source_line(PROTOCOL_VERSION)
+        );
+        let program = fake_helper(dir.path(), &body);
+        let cancel: CancelFlag = Arc::new(AtomicBool::new(false));
+        let log = {
+            let cancel = Arc::clone(&cancel);
+            LogSink::new(move |line| {
+                if line == "decrypting" {
+                    cancel.store(true, Ordering::Relaxed);
+                }
+            })
+        };
+        let sinks = Sinks {
+            log: &log,
+            progress: &ProgressSink::none(),
+            cancel: &cancel,
+        };
+        let err = decrypt_with(&program, &request(), |_| Ok(()), sinks).unwrap_err();
+        assert!(err.downcast_ref::<Canceled>().is_some(), "{err:#}");
     }
 }
