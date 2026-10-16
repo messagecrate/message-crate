@@ -3,6 +3,7 @@ import {
   type MessageBubbleProps,
   ServiceBubbleShell,
   ServiceMessageText,
+  TapbackChips,
 } from "./chatBubbleShared";
 
 /**
@@ -28,6 +29,11 @@ export default function BrandedBubble({
       />
 
       <MessageAttachments message={message} onAttachmentClick={onAttachmentClick} />
+
+      <TapbackChips
+        message={message}
+        className={`mt-1 ${message.is_from_me ? "justify-end" : "justify-start"}`}
+      />
     </ServiceBubbleShell>
   );
 }
