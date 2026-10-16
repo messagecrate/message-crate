@@ -7,7 +7,6 @@ import { useIdentityCountryPick } from "../../components/useIdentityCountryPick"
 import { type AccountProfile, fixedSettings } from "../../lib/account";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { listedServerService, type OfferedService, serverService } from "../../lib/offeredService";
-import { phonesMatch } from "../../lib/phoneTokens";
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
 import { listAccountIdentities } from "../../lib/serverApi";
@@ -22,13 +21,17 @@ function listHolds(list: readonly Identity[], { address, service }: ListedIdenti
 
 /**
  * Whether `stored`, an address as the server lists it, is `typed` as the
- * person typed it. The server stores an address in lower case and a number
- * in E.164 when its country is known, so a number is matched by its digits.
+ * person typed it. The server stores an address in lower case, and a number
+ * with its country code when the country is known, so a number matches when
+ * the stored digits end with the typed ones, less any leading trunk `0`
+ * (`07700 900123` is `+447700900123`, `(555) 555-0100` is `+15555550100`).
  */
-function storedAs(typed: string, stored: string): boolean {
+function matchesStored(typed: string, stored: string): boolean {
   const trimmed = typed.trim();
   if (stored === trimmed.toLowerCase()) return true;
-  return !trimmed.includes("@") && phonesMatch(trimmed, stored);
+  if (trimmed.includes("@")) return false;
+  const digits = trimmed.replace(/\D/g, "").replace(/^0+/, "");
+  return digits.length > 0 && stored.replace(/\D/g, "").endsWith(digits);
 }
 
 /** An identity as the identities list names it: its stored address and listed service. */
@@ -119,6 +122,7 @@ export function IdentitiesSection({
     } catch (e) {
       throw new Error(
         `The change was sent, but the identities list could not be read to confirm it. ${errorLine(e)}`,
+        { cause: e },
       );
     }
     if (!changed(list)) {
@@ -140,7 +144,7 @@ export function IdentitiesSection({
           list.some(
             (row) =>
               row.service === service &&
-              (storedAs(address, row.address) || !listHolds(before, row)),
+              (matchesStored(address, row.address) || !listHolds(before, row)),
           ),
         "The server did not add that identity.",
       );

@@ -246,6 +246,23 @@ describe("IdentitiesSection", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("closes the dialog when a number the account holds is typed in its national form", async () => {
+    const user = setupUser();
+    const london = listedWithNoMessages("+447700900123", "phone");
+    // The server stores `07700 900123` as the `+447700900123` it holds.
+    serverLists([...identities, london], (rows) => rows);
+    render(<IdentitiesSection profile={profile} />);
+    await settle();
+
+    await user.click(screen.getByRole("button", { name: "Add identity" }));
+    const dialog = screen.getByRole("dialog", { name: "Add identity" });
+    await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "07700 900123");
+    await user.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    await settle();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("says the change was sent when the identities list cannot be read after it", async () => {
     const user = setupUser();
     serverLists(identities, (rows) => rows.filter((row) => row.address !== "archer@example.com"));
