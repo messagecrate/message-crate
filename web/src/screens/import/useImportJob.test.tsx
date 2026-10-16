@@ -2010,8 +2010,8 @@ describe("useImportJob wiring", () => {
     // crash at that stage, and only an explicit discard ends a waiting run.
     // Posting /complete would free the one-running-run slot and drop the
     // run out of GET /v1/imports?status=running, stranding the staged
-    // directory with no run left to resume it through — even though the
-    // "canceled" outcome is still shown locally.
+    // directory with no run left to resume it through — even though
+    // the canceled outcome is still shown locally.
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
       throw new CanceledError();

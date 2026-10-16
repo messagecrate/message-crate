@@ -193,7 +193,7 @@ CREATE TABLE IF NOT EXISTS imports (
     -- import form named none: such a number keeps its digits and no + form
     -- (#1676). Stated once, when the run is created.
     phone_country TEXT,
-    -- Run status (for example running, completed, failed, canceled).
+    -- Run status (for example running, completed, failed, cancelled).
     status TEXT NOT NULL,
     -- When the import started.
     started_at TEXT NOT NULL,
@@ -302,7 +302,7 @@ CREATE TABLE IF NOT EXISTS exports (
     scope_message_ids TEXT,
     -- Client/tool name that ran the export (optional).
     tool TEXT,
-    -- Run status: running, completed, failed, or canceled.
+    -- Run status: running, completed, failed, or cancelled.
     status TEXT NOT NULL,
     -- When the export started.
     started_at TEXT NOT NULL,

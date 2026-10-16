@@ -372,7 +372,7 @@ describe("ImportRunView", () => {
     expect(screen.getByText("Obfuscate")).toBeInTheDocument();
   });
 
-  it("offers Cancel inside the running stage, disabled while a not-cancellable step runs", () => {
+  it("offers Cancel inside the running stage, disabled while a not-cancelable step runs", () => {
     renderView({ cancelDisabled: true });
     expect(within(stageRow("Staging")).getByRole("button", { name: "Cancel" })).toBeDisabled();
   });

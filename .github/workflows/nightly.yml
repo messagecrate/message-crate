@@ -137,8 +137,8 @@ jobs:
   # ── A failed night opens an issue ─────────────────────────────────────
   # One open issue holds every failed night: the first failure opens it and
   # each later one adds a comment, until somebody closes it. A job that
-  # timed out ends as canceled, so that counts as failed too; a run that a
-  # person canceled does not.
+  # timed out ends with GitHub's result `cancelled`, so that counts as failed
+  # too; a run that a person canceled does not.
   report:
     name: Report a failed night
     needs: [changed, docker-build]

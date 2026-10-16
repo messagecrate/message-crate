@@ -252,9 +252,9 @@ carry their date on the heading.
 ### Design
 
 - 2026-10-16: **Message Crate spells American.** Screens and the user guide
-  now say "canceled", "color" and "behavior": a stopped import reads
-  "Import canceled", and a stopped run in the import and export history
-  reads "Canceled" (#2279).
+  now say "canceled", "grayed out", "recognized" and "labeled": a stopped
+  import reads "Import canceled", and a stopped run in the import and
+  export history reads "Canceled" (#2279).
 - 2026-10-15: **Processing attachments no longer looks for unfinished
   files.** The server never stores an attachment as an unfinished file, so
   the line that ends processing, and the Demo Account rebuild's report, no
@@ -3581,7 +3581,7 @@ carry their date on the heading.
   stopped with an error, and Copy buttons did nothing.
 - **Settings → Storage shows every run as it is.** Import and
   Export history page through every run, not only the newest 40. A canceled
-  run reads as canceled, not failed, and "Canceled" is spelled one way on
+  run reads as canceled, not failed, and "Cancelled" is spelled one way on
   every screen and in the user guide. A run that has not finished no longer
   shows its start time as its finish. The Import badge goes as soon as a
   waiting run is discarded.

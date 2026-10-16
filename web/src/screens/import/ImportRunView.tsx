@@ -314,7 +314,7 @@ export default function ImportRunView({
   /** Leave a finished run for the import form. */
   onBack: () => void;
   /**
-   * True while a not-cancellable step (recomputing the staging summary) is
+   * True while a not-cancelable step (recomputing the staging summary) is
    * running: Cancel stays visible, since a running job is still shown, but
    * disabled rather than offered as a control with nothing to stop.
    */
