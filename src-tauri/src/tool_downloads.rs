@@ -749,22 +749,23 @@ fn classify_adopted(made_executable: io::Result<()>, runs: bool) -> Adopted {
     }
 }
 
-/// Write the record in `dir`. A failure goes to the process log and fails
-/// nothing: `program` is in place either way, and without its entry the
-/// next start reads the file again and adopts it.
+/// Write the record in `dir`. A failure goes to the desktop app's log
+/// ([`crate::app_log`]) and fails nothing: `program` is in place either
+/// way, and without its entry the next start reads the file again and
+/// adopts it.
 fn write_manifest_or_log(dir: &Path, manifest: &Manifest, program: Program) {
     if let Err(err) = write_manifest(dir, manifest) {
-        eprintln!(
+        crate::app_log::warn(&format!(
             "{} is in place in the Tools Directory, and {MANIFEST_FILE} could not be written: {err}",
             program.name()
-        );
+        ));
     }
 }
 
 /// Record `pin`'s program, adopted at `path` in `dir`, with the stamp of
-/// `path`, and write the record in `dir`. A failure goes to the process log
-/// and fails nothing: the program is in place either way, and without its
-/// entry the next start reads the file again.
+/// `path`, and write the record in `dir`. A failure goes to the desktop app's
+/// log and fails nothing: the program is in place either way, and without
+/// its entry the next start reads the file again.
 fn record_adopted_or_log(dir: &Path, path: &Path, manifest: &mut Manifest, pin: &Pinned) {
     let program = pin.program;
     match Stamp::at(path) {
@@ -774,10 +775,10 @@ fn record_adopted_or_log(dir: &Path, path: &Path, manifest: &mut Manifest, pin: 
         }
         Err(err) => {
             let name = program.name();
-            eprintln!(
+            crate::app_log::warn(&format!(
                 "{name} is in place in the Tools Directory, and was not recorded in {MANIFEST_FILE} \
                  because {name}'s size and modified time could not be read: {err}"
-            );
+            ));
         }
     }
 }
@@ -997,10 +998,10 @@ fn check(
                 match classify_adopted(made_executable, runs(program, dir)) {
                     Adopted::Runs(None) => downloads.clear(program),
                     Adopted::Runs(Some(err)) => {
-                        eprintln!(
+                        crate::app_log::warn(&format!(
                             "{} in the Tools Directory runs, and its executable bits could not be set: {err}",
                             program.name()
-                        );
+                        ));
                         downloads.clear(program);
                     }
                     Adopted::DoesNotRun => downloads.set(program, does_not_run(program)),

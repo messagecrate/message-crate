@@ -590,8 +590,10 @@ computer that ran the import and is never deleted, so it outlives the run's
 directory in the Staging Directory. Its first line names the run, the
 account that ran it, the server's address and the Message Crate's id. The
 owner reads every log in it, and an account the logs of its own runs, in
-the desktop app on that computer. It is `logs` in the Message Crate
-Directory. The server's own log is in the Data Directory.
+the desktop app on that computer. It also holds the desktop app's own log,
+`desktop-app.log`, what the app did and failed at outside an Import Run,
+which the owner reads. It is `logs` in the Message Crate Directory. The
+server's own log is in the Data Directory.
 _Avoid_: Log Folder, Run Log Directory
 
 **Scratch Directory**:

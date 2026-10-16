@@ -2,12 +2,12 @@ import { useState } from "react";
 import { Header, ListBoxSection } from "react-aria-components";
 import LogViewer from "../../components/logs/LogViewer";
 import {
-  runLogDownload,
-  runLogSource,
+  desktopLogDownload,
+  desktopLogSource,
   SERVER_LOG,
   UNREADABLE_RUN_LOG,
-  useRunLogReader,
-  useRunLogs,
+  useDesktopLogs,
+  useLogReader,
   useServerLogDownloads,
 } from "../../components/logs/logSource";
 import Select, {
@@ -16,7 +16,7 @@ import Select, {
   selectSectionHeaderClass,
 } from "../../components/Select";
 import { errorLine } from "../../lib/apiErrorMessage";
-import type { RunLogEntry } from "../../lib/desktop/runLog";
+import type { LogEntry } from "../../lib/desktop/runLog";
 import { formatDateTime } from "../../lib/formatDate";
 import { sectionHintClass } from "../settings/storage/storageUtils";
 import { useOwnerAccounts } from "./useOwnerAccounts";
@@ -27,9 +27,20 @@ const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
 /** The picker's key for the server's log. */
 const SERVER_KEY = "server";
 
-/** The picker's key for an Import Run log. */
-function runKey(name: string): string {
-  return `run:${name}`;
+/** What the hint under the picker says of the server's log. */
+const SERVER_LOG_HINT =
+  "What the server did, every account's requests in one place. A log names counts, routes and what went wrong, never what a message says.";
+
+/** What the hint under the picker says of each kind of log on this computer, after its name. */
+const LOG_HINTS: Record<LogEntry["kind"], string> = {
+  importRun: "A log names counts, files and what went wrong, never what a message says.",
+  desktopApp:
+    "What the desktop app went on without outside an Import Run, such as a download it could not record.",
+};
+
+/** The picker's key for a log on this computer. */
+function logKey(name: string): string {
+  return `log:${name}`;
 }
 
 /**
@@ -38,7 +49,7 @@ function runKey(name: string): string {
  * username; one of another Message Crate by its number and that server's
  * address.
  */
-function runLogLabel(log: RunLogEntry, usernames: ReadonlyMap<number, string>): string {
+function runLogLabel(log: LogEntry, usernames: ReadonlyMap<number, string>): string {
   const when = formatDateTime(log.modifiedAt);
   const account = log.account;
   if (!account) return `${log.name}, ${when}`;
@@ -49,21 +60,25 @@ function runLogLabel(log: RunLogEntry, usernames: ReadonlyMap<number, string>): 
 }
 
 /**
- * Owner Home's Logs: the server's log, and in the desktop app every Import
- * Run log on this computer, whoever ran the import (#1665). A run log stays
- * on the computer that ran the import, so in a browser the picker offers the
- * server's log alone. Each log reads in the same viewer.
+ * Owner Home's Logs: the server's log, and in the desktop app the desktop
+ * app's own log (#2185) and every Import Run log on this computer, whoever
+ * ran the import (#1665). Both stay on this computer, so in a browser the
+ * picker offers the server's log alone. Each log reads in the same viewer.
  */
 export function OwnerLogsPanel() {
   const [picked, setPicked] = useState(SERVER_KEY);
-  const reader = useRunLogReader();
-  const runs = useRunLogs(reader);
+  const reader = useLogReader();
+  const onComputer = useDesktopLogs(reader);
   const { accounts } = useOwnerAccounts();
   const usernames = new Map(accounts.map((account) => [account.account_id, account.username]));
   const serverDownloads = useServerLogDownloads();
 
-  const pickedRun =
-    reader && picked !== SERVER_KEY ? runs.logs.find((log) => runKey(log.name) === picked) : null;
+  const pickedLog =
+    reader && picked !== SERVER_KEY
+      ? onComputer.logs.find((log) => logKey(log.name) === picked)
+      : null;
+  const desktopApp = onComputer.logs.find((log) => log.kind === "desktopApp");
+  const importRuns = onComputer.logs.filter((log) => log.kind === "importRun");
 
   return (
     <section>
@@ -75,7 +90,7 @@ export function OwnerLogsPanel() {
             aria-label="Log"
             size="sm"
             className="w-[22rem] max-w-full"
-            selectedKey={pickedRun ? picked : SERVER_KEY}
+            selectedKey={pickedLog ? picked : SERVER_KEY}
             onSelectionChange={(key) => {
               if (key != null) setPicked(String(key));
             }}
@@ -83,15 +98,20 @@ export function OwnerLogsPanel() {
             <ListBoxItem id={SERVER_KEY} className={itemClassName}>
               The server's log
             </ListBoxItem>
-            {reader && runs.logs.length > 0 ? (
+            {reader && desktopApp ? (
+              <ListBoxItem id={logKey(desktopApp.name)} className={itemClassName}>
+                Desktop app
+              </ListBoxItem>
+            ) : null}
+            {reader && importRuns.length > 0 ? (
               <ListBoxSection>
                 <Header className={selectSectionHeaderClass}>Import Runs on this computer</Header>
-                {runs.logs.map((log) => {
+                {importRuns.map((log) => {
                   const label = runLogLabel(log, usernames);
                   return (
                     <ListBoxItem
                       key={log.name}
-                      id={runKey(log.name)}
+                      id={logKey(log.name)}
                       textValue={label}
                       className={itemClassName}
                     >
@@ -105,22 +125,22 @@ export function OwnerLogsPanel() {
         </div>
       </div>
       <p className={sectionHintClass}>
-        {pickedRun
-          ? `${pickedRun.name}, kept in the Logs Directory on this computer. A log names counts, files and what went wrong, never what a message says.`
-          : "What the server did, every account's requests in one place. A log names counts, routes and what went wrong, never what a message says."}
+        {pickedLog
+          ? `${pickedLog.name}, kept in the Logs Directory on this computer. ${LOG_HINTS[pickedLog.kind]}`
+          : SERVER_LOG_HINT}
       </p>
-      {runs.error ? (
+      {onComputer.error ? (
         <p role="alert" className="mt-2 text-[0.813rem] text-danger">
-          {errorLine(runs.error, "Could not list the Import Run logs on this computer.")}
+          {errorLine(onComputer.error, "Could not list the logs on this computer.")}
         </p>
       ) : null}
       <div className="mt-3">
-        {pickedRun && reader ? (
+        {pickedLog && reader ? (
           <LogViewer
-            key={pickedRun.name}
-            source={runLogSource(reader, pickedRun.name)}
-            downloads={[runLogDownload(reader, pickedRun.name)]}
-            unreadable={pickedRun.hasLines ? undefined : UNREADABLE_RUN_LOG}
+            key={pickedLog.name}
+            source={desktopLogSource(reader, pickedLog.name)}
+            downloads={[desktopLogDownload(reader, pickedLog.name)]}
+            unreadable={pickedLog.hasLines ? undefined : UNREADABLE_RUN_LOG}
           />
         ) : (
           <LogViewer key={SERVER_KEY} source={SERVER_LOG} downloads={serverDownloads.downloads} />

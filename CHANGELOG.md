@@ -22,6 +22,11 @@ carry their date on the heading.
 
 ### Features
 
+- 2026-10-16: **The desktop app keeps a log of its own.** What the desktop
+  app went on without outside an import, such as a program it downloaded
+  whose record it could not write, was written where nobody could see it.
+  It now goes to a log in the Logs Directory, which the owner reads under
+  **Logs** on Owner Home as **Desktop app** (#2185).
 - 2026-10-16: **See how much space your Import Runs take on this
   computer.** In the desktop app, **Settings → System** says how much disk
   space your own Import Runs take in the Staging Directory, where staged

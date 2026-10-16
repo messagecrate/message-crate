@@ -48,7 +48,9 @@ impl ServerProcess {
         let job = match windows_job::kill_on_close_job(&child) {
             Ok(job) => Some(job),
             Err(error) => {
-                eprintln!("The server's processes will not end with it: {error}");
+                crate::app_log::warn(&format!(
+                    "The server's processes will not end with it: {error}"
+                ));
                 None
             }
         };
