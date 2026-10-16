@@ -62,16 +62,6 @@ impl ImportStage {
         Self::ALL.into_iter().find(|stage| stage.as_str() == s)
     }
 
-    /// Whether a new run may open at `self`: only [`Self::Parse`].
-    ///
-    /// The desktop app opens every run at `parse`, before Staging reads the
-    /// backup, and resumes an interrupted run by moving the run it already
-    /// has; the importer library sends no stage and so opens at `parse` too.
-    /// A run opened at any later stage would be resumed at work nobody did.
-    pub fn opens_a_run(self) -> bool {
-        self == Self::Parse
-    }
-
     /// Whether a running run at `self` may be moved to `next`: the moves the
     /// desktop app makes, and no other.
     ///
@@ -402,8 +392,6 @@ pub struct StartImportArgs<'a> {
     pub phone_country: Option<&'a str>,
     /// Client/tool name, when the caller names one.
     pub tool: Option<&'a str>,
-    /// Stage the run opens at.
-    pub stage: ImportStage,
     /// Absolute path to the run directory on the client.
     pub run_dir: Option<&'a str>,
     /// Which install is creating this run.
@@ -417,11 +405,11 @@ pub struct StartImportArgs<'a> {
 }
 
 impl<'a> StartImportArgs<'a> {
-    /// A run opening at [`ImportStage::Parse`] with nothing recorded
-    /// about the client: no run directory, device, form snapshot,
-    /// fingerprint, or identities. The CLI importer and most tests start
-    /// here; a caller with more to record uses struct update syntax on
-    /// top of it.
+    /// Arguments for a run with nothing recorded about the client: no run
+    /// directory, device, form snapshot, fingerprint, or identities. The
+    /// server's `import` and `reset-demo` commands and most tests start
+    /// here; a caller with more to record uses struct update syntax on top
+    /// of it.
     pub fn new(account_id: i64, source: &'a str, mode: &'a str, tool: Option<&'a str>) -> Self {
         Self {
             account_id,
@@ -429,7 +417,6 @@ impl<'a> StartImportArgs<'a> {
             mode,
             phone_country: None,
             tool,
-            stage: ImportStage::Parse,
             run_dir: None,
             device_id: None,
             form_json: None,
@@ -453,34 +440,27 @@ pub enum StartImportError {
         "this account already has a running Import Run; open Import in the desktop app to resume or discard it, or run `message-crate-server imports discard --account <account>`"
     )]
     AlreadyActive,
-    /// The run asked to open at a stage that does not open a run
-    /// ([`ImportStage::opens_a_run`]).
-    #[error("an Import Run opens at stage parse, not at stage {}", stage.as_str())]
-    OpeningStage {
-        /// The stage the request asked for.
-        stage: ImportStage,
-    },
     /// Anything else.
     #[error(transparent)]
     Db(anyhow::Error),
 }
 
-/// Open a new Import Run, started at `now`.
+/// Open a new Import Run at [`ImportStage::Parse`], started at `now`.
+///
+/// Every run opens at `parse`: the desktop app opens it before Staging
+/// reads the backup, and resumes an interrupted run by moving the run it
+/// already has. A run opened at a later stage would be resumed at work
+/// nobody did.
 ///
 /// # Errors
 ///
-/// [`StartImportError::OpeningStage`] when `args.stage` is not one a run
-/// may open at, [`StartImportError::AlreadyActive`] when a running Import Run
-/// already exists for this account; [`StartImportError::Db`] for any other
-/// failure.
+/// [`StartImportError::AlreadyActive`] when a running Import Run already
+/// exists for this account; [`StartImportError::Db`] for any other failure.
 pub async fn start_import(
     conn: &mut SqliteConnection,
     args: &StartImportArgs<'_>,
     now: chrono::DateTime<Utc>,
 ) -> std::result::Result<i64, StartImportError> {
-    if !args.stage.opens_a_run() {
-        return Err(StartImportError::OpeningStage { stage: args.stage });
-    }
     let started_at = now.to_rfc3339();
     let inserted: std::result::Result<i64, sqlx::Error> = sqlx::query_scalar(
         r"
@@ -498,7 +478,7 @@ pub async fn start_import(
     .bind(args.tool)
     .bind(args.mode)
     .bind(started_at)
-    .bind(args.stage.as_str())
+    .bind(ImportStage::Parse.as_str())
     .bind(args.run_dir)
     .bind(args.device_id)
     .bind(args.form_json)

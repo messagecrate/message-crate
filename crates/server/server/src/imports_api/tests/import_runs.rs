@@ -211,34 +211,27 @@ async fn a_stage_answers_by_the_words_of_context_md_only() {
     assert_eq!(run["id"], created["id"]);
 }
 
-/// A run opened at a later stage would be resumed at work nobody did: the
-/// opening stage is a body field that broke a rule, and no run is opened
-/// (#2638).
+/// `POST /v1/imports` takes no stage: every run opens at `parse`, and a
+/// `stage` in the body is ignored like any other field the request does not
+/// name (#2858).
 #[tokio::test]
-async fn a_run_opened_past_parse_is_refused() {
+async fn a_run_opens_at_parse_whatever_stage_the_body_names() {
     let (fixture, account) = fixture_with_account().await;
-
-    let (status, text) = crate::test_support::post_json_raw(
+    let (_, created): (String, serde_json::Value) = post_created_json(
         &fixture.state,
         "/v1/imports",
         &account.token,
         serde_json::json!({ "source": "imessage", "stage": "upload" }),
     )
     .await;
-    let sentence = crate::test_support::expect_problem(
-        status,
-        &text,
-        crate::problem::ProblemType::ValidationFailed,
-    )
-    .sentence();
-    assert!(
-        sentence.contains("parse") && sentence.contains("upload"),
-        "the refusal names the stage asked for and the one allowed: {sentence}"
-    );
 
-    let page: serde_json::Value =
-        get_json(&fixture.state, "/v1/imports?status=running", &account.token).await;
-    assert_eq!(page["items"], serde_json::json!([]), "no run was opened");
+    let run: serde_json::Value = get_json(
+        &fixture.state,
+        &format!("/v1/imports/{}", created["id"]),
+        &account.token,
+    )
+    .await;
+    assert_eq!(run["stage"], "parse", "{run}");
 }
 
 #[tokio::test]

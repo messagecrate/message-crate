@@ -212,7 +212,6 @@ export async function runImport(
         ctx.server.createImport({
           ...importRunCreateBody(form.source),
           phone_country: form.phoneCountry || null,
-          stage: "parse",
           run_dir: runDir,
           device_id: getDeviceId(),
           form: formSnapshot(form),
