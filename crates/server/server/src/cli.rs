@@ -667,6 +667,11 @@ async fn run_reset_demo(args: ResetDemoArgs) -> Result<()> {
             stats.process_assets.not_dropped,
             "damaged Previews and Thumbnails that could not be dropped",
         ),
+        (
+            "not decided",
+            stats.process_assets.not_decided,
+            "originals whose shown-as-is decision could not be recorded",
+        ),
     ];
     for (label, count, what) in rows {
         let label = format!("{label}:");
@@ -744,8 +749,8 @@ fn serve_config(args: ServeArgs) -> Result<Config> {
 ///
 /// Returns an error after the summary line when the Preview or Thumbnail of
 /// any original could not be made, a damaged version could not be dropped,
-/// or whether an original is shown as it is could not be recorded, so a
-/// cron job or script that runs the command sees a non-zero exit status.
+/// or an original's shown-as-is decision could not be recorded, so a cron
+/// job or script that runs the command sees a non-zero exit status.
 /// Returns an error too when Ctrl-C or SIGTERM stops it, after killing the
 /// ffmpeg that runs and removing what it wrote (#1729). A second Ctrl-C or
 /// SIGTERM ends it at once.
