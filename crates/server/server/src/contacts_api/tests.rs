@@ -8,8 +8,8 @@ use crate::db::account_profile;
 use crate::problem::ProblemType;
 use crate::test_support::{
     ConversationRow, MessageRow, RegisteredAccount, TestFixture, expect_problem,
-    expect_problem_response, fixture_with_account, post_json, post_json_raw, register_via_api,
-    stored_time, test_fixture,
+    expect_problem_response, fixture_with_account, get_raw, get_status, post_json, post_json_raw,
+    post_status, register_via_api, stored_time, test_fixture,
 };
 use axum::http::StatusCode;
 
@@ -3940,4 +3940,40 @@ async fn a_vcard_conversion_refuses_an_unknown_country_and_a_file_with_no_card()
         problem.errors.unwrap(),
         ["the file holds no vCard: it has no BEGIN:VCARD line"]
     );
+}
+
+/// `/v1/contacts/{id}` takes an `i64`, and three literal routes sit beside
+/// it: `summaries`, `unmatched-identities`, and `address-book`. This test
+/// covers the first two. Each is a `POST`, and editing a contact is a
+/// `PATCH`, so if the `{id}` route ever swallowed one of them the request
+/// would come back 405 (no `POST` on `/v1/contacts/{id}`) instead of
+/// reaching its own handler. Each assertion below distinguishes
+/// "matched my route and rejected my body" from "matched the wrong route".
+#[tokio::test]
+async fn literal_contact_routes_are_not_captured_by_the_id_route() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let user = register_via_api(&state, "contact-routes", "hunter2hunter2").await;
+
+    assert_eq!(
+        get_status(&state, "/v1/contacts", &user.token).await,
+        StatusCode::OK
+    );
+
+    // A real id still reaches the detail handler: an unknown contact is its
+    // 404, not a 400 from a failed `i64` path parse.
+    let (status, text) = get_raw(&state, "/v1/contacts/999999", &user.token).await;
+    expect_problem(status, &text, ProblemType::NotFound);
+
+    for path in [
+        "/v1/contacts/summaries",
+        "/v1/contacts/unmatched-identities",
+    ] {
+        let status = post_status(&state, path, &user.token, serde_json::json!({})).await;
+        assert_ne!(
+            status,
+            StatusCode::METHOD_NOT_ALLOWED,
+            "{path} was captured by /v1/contacts/{{id}}"
+        );
+    }
 }

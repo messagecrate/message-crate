@@ -1,4 +1,4 @@
-use axum::http::StatusCode;
+use axum::http::{StatusCode, header};
 
 use super::*;
 use crate::problem::ProblemType;
@@ -6,7 +6,7 @@ use crate::test_support::{
     RegisteredAccount, SeedConversation, SeedMessage, claim_as_owner, delete_status,
     expect_problem, expect_problem_for, fixture_with_account, get_json, get_raw, get_status,
     log_in, log_in_raw, post_created_json, post_json_raw, put_status, register_via_api,
-    seed_conversation, stored_time, test_fixture,
+    seed_conversation, serve, stored_time, test_fixture,
 };
 
 const TEST_ACCOUNT: i64 = 7;
@@ -704,5 +704,29 @@ async fn the_right_password_never_waits_however_many_wrong_ones_came_first() {
         state.refusal_wait.waits(),
         wrong,
         "only the refusals waited"
+    );
+}
+
+/// A wrong password is `invalid-credentials` at `401 Unauthorized`, with no
+/// `Retry-After`: the server waited before answering, so there is nothing to
+/// wait for.
+#[tokio::test]
+async fn a_wrong_password_is_401_invalid_credentials() {
+    let (fixture, _) = fixture_with_account().await;
+    let state = fixture.state.clone();
+    let server = serve(&state).await;
+    let wrong = server
+        .post("/v1/session")
+        .json(&serde_json::json!({ "username": "alice", "password": "not-it-at-all" }))
+        .send()
+        .await
+        .unwrap();
+    assert!(!wrong.headers().contains_key(header::RETRY_AFTER));
+    let status = wrong.status();
+    let text = wrong.text().await.unwrap();
+    let problem = expect_problem(status, &text, ProblemType::InvalidCredentials);
+    assert_eq!(
+        problem.detail.as_deref(),
+        Some("invalid username or password")
     );
 }

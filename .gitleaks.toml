@@ -62,7 +62,7 @@ description = "Made-up WhatsApp keys in tests"
 condition = "AND"
 paths = [
   '''(?:^|/)web/src/screens/import/useImportJob\.test\.tsx$''',
-  '''(?:^|/)crates/server/server/src/server/tests\.rs$''',
+  '''(?:^|/)crates/server/server/src/imports_api/tests/[a-z_]+\.rs$''',
 ]
 regexTarget = "line"
 regexes = [
