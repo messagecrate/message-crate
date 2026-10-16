@@ -131,7 +131,7 @@ describe("resumeDecisionFor", () => {
       }).kind,
     ).toBe("resume_upload");
   });
-  it("offers to pick up a copy that was interrupted", () => {
+  it("offers to resume a copy that was interrupted", () => {
     const decision = resumeDecisionFor({
       run: activeImportRun({ stage: "write" }),
       deviceId: "this-device",
@@ -141,7 +141,7 @@ describe("resumeDecisionFor", () => {
     expect(decision.kind).toBe("resume_write");
   });
 
-  it("still offers to pick up when the backup cannot be checked", () => {
+  it("still offers to resume when the backup cannot be checked", () => {
     expect(
       resumeDecisionFor({
         run: activeImportRun({ stage: "write" }),
