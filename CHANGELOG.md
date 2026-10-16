@@ -526,6 +526,10 @@ carry their date on the heading.
   typed with `İ` or a capital `Σ` now finds the Contact Group or Message Tag
   the server holds under that name, such as `istanbul` for `İstanbul`,
   where the website used to say it was not found (#3037).
+- 2026-10-16: **The website has an icon.** The website named no icon, so
+  the browser asked for one on every page, logged an error in its console,
+  and showed a blank tab icon. The browser tab now shows the website's icon
+  (#3014).
 - 2026-10-16: **A display name the server refuses after you leave Settings
   says so.** A display name typed on Settings → Profile, or on an account's
   Profile in Owner Home, saves when you leave Settings for another screen.
@@ -840,6 +844,9 @@ carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-16: **The desktop app has the website's icon.** The desktop app
+  showed a plain blue square as its icon. It now shows the same icon as the
+  website (#3014).
 - 2026-10-15: **The app starts its own Message Crate again after it stops.**
   When the Message Crate the desktop app started for itself stopped on its
   own, as in a crash, the login card said it stopped and waited for you to
@@ -1582,6 +1589,14 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-16: **A download nobody reads no longer holds the server.** A
+  client that stopped reading an answer part-way, such as a browser tab that
+  hung mid-download, kept its connection, and the export file or attachment
+  it was reading, for as long as the operating system kept the connection.
+  The server now closes the connection once the client has taken none of the
+  answer for `body_stall_secs` (60 seconds unless the config file sets
+  another). A download that is still moving, however slowly, is never cut
+  off (#2984).
 - 2026-10-16: **Making Previews and Thumbnails reads only an account's own
   attachments.** When the server makes Previews and Thumbnails, it passes
   over an Asset whose stored location points outside the account's
