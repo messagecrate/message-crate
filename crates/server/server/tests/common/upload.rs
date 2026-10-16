@@ -35,7 +35,6 @@ pub async fn upload(base: &str, token: &str, source: &str, input: PathBuf) {
         input,
         base_url: base.to_string(),
         token: token.to_string(),
-        mode: import::ImportMode::Append,
         force: false,
         max_retries: 0,
         batch_size: import::NO_MESSAGE_COUNT_LIMIT,

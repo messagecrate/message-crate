@@ -71,7 +71,9 @@ fn write_jsonl(dir: &Path, document: &ConversationDocument) {
 const TOTAL_SECS: u64 = 300;
 
 /// A mock Message Crate that answers `GET /v1/server` with its body time
-/// limits, as every Upload reads them once it has logged in.
+/// limits, and `GET /v1/imports/{id}` with the mode of the Import Run
+/// [`RUN_ID`] (append) and [`REPLACE_RUN_ID`] (replace), as every Upload
+/// reads both once it has logged in.
 fn mock_server() -> MockServer {
     let server = MockServer::start();
     server.mock(|when, then| {
@@ -81,6 +83,13 @@ fn mock_server() -> MockServer {
             "body_total_secs": TOTAL_SECS,
         }));
     });
+    for (id, mode) in [(RUN_ID, "append"), (REPLACE_RUN_ID, "replace")] {
+        server.mock(|when, then| {
+            when.method(GET).path(format!("/v1/imports/{id}"));
+            then.status(200)
+                .json_body(json!({ "id": id, "mode": mode }));
+        });
+    }
     server
 }
 
@@ -101,6 +110,11 @@ fn wait_for_first_call(mock: &httpmock::Mock<'_>) {
 /// run before the Upload and completes it after, so no test mocks either.
 const RUN_ID: i64 = 7;
 
+/// An Import Run in replace mode, which [`mock_server`] answers for. An
+/// Upload takes its mode from the run it posts into, so a test uploads into
+/// this one to replace.
+const REPLACE_RUN_ID: i64 = 8;
+
 /// Import config with no retries, pointed at a mock server URL, posting into
 /// [`RUN_ID`].
 fn mock_server_config(dir: &Path, base_url: String) -> ImportConfig {
@@ -108,7 +122,6 @@ fn mock_server_config(dir: &Path, base_url: String) -> ImportConfig {
         input: dir.to_path_buf(),
         base_url,
         token: "mc_test".into(),
-        mode: ImportMode::Append,
         force: false,
         max_retries: 0,
         batch_size: 50,
@@ -288,6 +301,11 @@ fn posts_into_the_callers_import_run_without_starting_or_completing_one() {
             "bytes_uploaded": 0
         }));
     });
+    server.mock(|when, then| {
+        when.method(GET).path("/v1/imports/99");
+        then.status(200)
+            .json_body(json!({ "id": 99, "mode": "append" }));
+    });
     let import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/99/batches");
         then.status(200).json_body(json!({
@@ -417,7 +435,7 @@ fn flushes_at_message_limit_across_two_batches_of_one_run() {
     });
     let replace = server.mock(|when, then| {
         when.method(POST)
-            .path("/v1/imports/7/batches")
+            .path("/v1/imports/8/batches")
             .body_includes("+15555550101")
             .body_includes("+15555550102");
         then.status(200).json_body(json!({
@@ -428,7 +446,7 @@ fn flushes_at_message_limit_across_two_batches_of_one_run() {
     });
     let append = server.mock(|when, then| {
         when.method(POST)
-            .path("/v1/imports/7/batches")
+            .path("/v1/imports/8/batches")
             .body_includes("+15555550103");
         then.status(200).json_body(json!({
             "messages": 1,
@@ -442,7 +460,7 @@ fn flushes_at_message_limit_across_two_batches_of_one_run() {
     write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
     write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
     let mut cfg = mock_server_config(dir.path(), server.base_url());
-    cfg.mode = ImportMode::Replace;
+    cfg.import_id = REPLACE_RUN_ID;
     cfg.batch_size = 2;
 
     let report = run(&cfg, None).unwrap();
@@ -704,7 +722,8 @@ fn a_replace_import_ignores_the_journal_and_sends_every_message_again() {
     });
     let import = server.mock(|when, then| {
         when.method(POST)
-            .path("/v1/imports/7/batches")
+            .path_prefix("/v1/imports/")
+            .path_suffix("/batches")
             .body_includes("guid-1")
             .body_includes("guid-2");
         then.status(200).json_body(json!({
@@ -722,7 +741,7 @@ fn a_replace_import_ignores_the_journal_and_sends_every_message_again() {
     assert_eq!(import.calls(), 1);
 
     let replace = ImportConfig {
-        mode: ImportMode::Replace,
+        import_id: REPLACE_RUN_ID,
         force: false,
         ..cfg
     };
@@ -734,11 +753,13 @@ fn a_replace_import_ignores_the_journal_and_sends_every_message_again() {
     assert_eq!(report.messages_attempted, 2);
 }
 
-/// A batch mock that accepts the one message whose guid is `guid`.
+/// A batch mock, for any Import Run, that accepts the one message whose
+/// guid is `guid`.
 fn mock_batch_accepting<'a>(server: &'a MockServer, guid: &str) -> httpmock::Mock<'a> {
     server.mock(|when, then| {
         when.method(POST)
-            .path("/v1/imports/7/batches")
+            .path_prefix("/v1/imports/")
+            .path_suffix("/batches")
             .body_includes(guid);
         then.status(200).json_body(json!({
             "messages": 1,
@@ -748,11 +769,13 @@ fn mock_batch_accepting<'a>(server: &'a MockServer, guid: &str) -> httpmock::Moc
     })
 }
 
-/// A batch mock that refuses, with a 500, the batch holding `guid`.
+/// A batch mock, for any Import Run, that refuses, with a 500, the batch
+/// holding `guid`.
 fn mock_batch_refusing<'a>(server: &'a MockServer, guid: &str) -> httpmock::Mock<'a> {
     server.mock(|when, then| {
         when.method(POST)
-            .path("/v1/imports/7/batches")
+            .path_prefix("/v1/imports/")
+            .path_suffix("/batches")
             .body_includes(guid);
         then.status(500).json_body(json!({
             "type": "about:blank",
@@ -784,7 +807,7 @@ fn an_append_after_a_failed_replace_sends_what_the_replace_did_not_import() {
     second.delete();
     let mut refused = mock_batch_refusing(&server, "guid-2");
     let replace = ImportConfig {
-        mode: ImportMode::Replace,
+        import_id: REPLACE_RUN_ID,
         ..cfg.clone()
     };
     let replaced = run(&replace, None).unwrap();
@@ -810,6 +833,39 @@ fn an_append_after_a_failed_replace_sends_what_the_replace_did_not_import() {
         0,
         "the conversation the replace imported is skipped"
     );
+}
+
+/// An Upload takes its mode from the Import Run it posts into, not from
+/// its caller (#3144). The server wipes the source with a replace run's
+/// first batch, so an Upload into a replace run that skipped what the
+/// journal records from an earlier Upload would lose it for good. Here the
+/// journal records the conversation an append run sent, and the Upload
+/// into a replace run sends it again.
+#[test]
+fn an_upload_into_a_replace_run_sends_what_the_journal_records() {
+    let server = mock_server();
+    let _auth = mock_session(&server);
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_import_document());
+    let cfg = mock_server_config(dir.path(), server.base_url());
+    let batches = mock_batch_accepting(&server, "guid-1");
+    assert!(run(&cfg, None).unwrap().ok);
+    assert_eq!(journaled_guids(dir.path()), vec!["guid-1".to_string()]);
+
+    let into_replace = ImportConfig {
+        import_id: REPLACE_RUN_ID,
+        ..cfg
+    };
+    let report = run(&into_replace, None).unwrap();
+
+    assert!(report.ok, "{:?}", report.results);
+    assert_eq!(report.conversations_skipped, 0);
+    assert_eq!(
+        batches.calls(),
+        2,
+        "the replace run is sent the conversation"
+    );
+    assert_eq!(report.mode, ImportMode::Replace);
 }
 
 /// A replace Upload that stops before it sends its first batch has wiped
@@ -847,7 +903,7 @@ fn a_replace_that_sends_no_batch_keeps_the_journal() {
         then.status(502);
     });
     let replace = ImportConfig {
-        mode: ImportMode::Replace,
+        import_id: REPLACE_RUN_ID,
         ..cfg
     };
     let replaced = run(&replace, None).unwrap();
@@ -918,7 +974,6 @@ fn profiles_attachment_upload_phases() {
         input: dir.path().to_path_buf(),
         base_url: server.base_url(),
         token: "mc_test".into(),
-        mode: ImportMode::Append,
         force: false,
         max_retries: 0,
         batch_size: 50,
@@ -1710,6 +1765,8 @@ fn serve_a_held_first_upload(first_put: &'static str) -> (String, Arc<Mutex<Vec<
                     answer("200 OK", r#"{"account_id":1,"username":"alice"}"#)
                 } else if request_line.starts_with("GET /v1/server ") {
                     answer("200 OK", r#"{"body_stall_secs":60,"body_total_secs":300}"#)
+                } else if request_line.starts_with("GET /v1/imports/7 ") {
+                    answer("200 OK", r#"{"id":7,"mode":"append"}"#)
                 } else if request_line.starts_with("POST /v1/imports/7/batches ") {
                     let body = String::from_utf8_lossy(&body);
                     let guids: Vec<&str> = ["guid-a", "guid-b"]
@@ -2863,6 +2920,8 @@ fn serve_answering_batches_with(
                 answer("200 OK", r#"{"account_id":1,"username":"alice"}"#)
             } else if request_line.starts_with("GET /v1/server ") {
                 answer("200 OK", r#"{"body_stall_secs":60,"body_total_secs":300}"#)
+            } else if request_line.starts_with("GET /v1/imports/7 ") {
+                answer("200 OK", r#"{"id":7,"mode":"append"}"#)
             } else if request_line.starts_with("POST /v1/imports/7/batches ") {
                 counted.fetch_add(1, Ordering::SeqCst);
                 on_batch();

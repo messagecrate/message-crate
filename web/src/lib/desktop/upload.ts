@@ -4,8 +4,10 @@ interface UploadConfig {
   base_url: string;
   token: string;
   input_dir: string;
-  mode: string;
-  /** The Import Run the Upload posts into; the web app starts and completes it. */
+  /**
+   * The Import Run the Upload posts into; the web app starts and completes
+   * it, and the Upload goes by the mode the run was started with.
+   */
   import_id: number;
 }
 
@@ -46,7 +48,6 @@ export async function invokeUpload(config: UploadConfig): Promise<void> {
       baseUrl: config.base_url,
       token: config.token,
       inputDir: config.input_dir,
-      mode: config.mode,
       importId: config.import_id,
     },
   });

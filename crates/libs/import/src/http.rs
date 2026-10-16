@@ -11,6 +11,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
+use api_types::ImportMode;
 use message_crate_http::{
     HttpError, error_sentence, looks_like_html, ok_json, read_body, session_refused, trim_base_url,
 };
@@ -87,6 +88,40 @@ pub(crate) fn piece_wait(http: &HttpSession, url: &str, token: &str) -> Result<D
     let (status, text) = read_body(what, response)?;
     let stated: ServerBodyTimes = ok_json(what, status, &text)?;
     Ok(Duration::from_secs(stated.body_total_secs) + ANSWER_WAIT)
+}
+
+/// The part of the server's answer to `GET /v1/imports/{id}` the Upload
+/// reads.
+#[derive(Debug, Deserialize)]
+struct ImportRunMode {
+    mode: ImportMode,
+}
+
+/// The mode of the Import Run `import_id`, read from the server at `url`
+/// (`GET /v1/imports/{id}`). The Upload takes its mode from the run it
+/// posts into, because the server wipes the source by the run's mode
+/// (#3144).
+///
+/// # Errors
+///
+/// Returns an error when the server cannot be reached, refuses the session
+/// token, or does not answer the run.
+pub(crate) fn run_mode(
+    http: &HttpSession,
+    url: &str,
+    token: &str,
+    import_id: i64,
+) -> Result<ImportMode> {
+    let what = format!("Reading Import Run {import_id}");
+    let path = format!("/v1/imports/{import_id}");
+    let response = http
+        .server_request(Method::GET, url, &path, token)
+        .timeout(Duration::from_secs(15))
+        .send()
+        .with_context(|| format!("{what} failed"))?;
+    let (status, text) = read_body(&what, response)?;
+    let run: ImportRunMode = ok_json(&what, status, &text)?;
+    Ok(run.mode)
 }
 
 /// The answer to `POST /v1/assets/{sha256}/uploads`.

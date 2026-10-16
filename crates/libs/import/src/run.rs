@@ -98,8 +98,6 @@ pub struct ImportConfig {
     /// The logged-in Session's token. The desktop app never passes an API
     /// Token.
     pub token: String,
-    /// `Append` adds to existing data; `Replace` clears then imports (with force).
-    pub mode: ImportMode,
     /// If true, ignore the journal and upload/import everything again.
     pub force: bool,
     /// Extra tries per HTTP request after a transient failure.
@@ -125,7 +123,10 @@ pub struct ImportConfig {
     pub cancel: CancelFlag,
     /// The Import Run every batch is posted into. The caller starts it
     /// before the Upload and completes it after, so the run's source, mode
-    /// and phone country are the ones the caller stated on it.
+    /// and phone country are the ones the caller stated on it. The Upload
+    /// reads the run's mode from the server and goes by it, as the server
+    /// does: a replace run forgets the journal, an append run resumes from
+    /// it (#3144).
     pub import_id: i64,
 }
 
@@ -299,12 +300,12 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
             paths.input.display()
         );
     }
-    let session = match login(cfg, &mut out) {
-        Ok(session) => session,
+    let (session, mode) = match login(cfg, &mut out) {
+        Ok(logged_in) => logged_in,
         // A session that has already ended is refused at the first request,
         // and stops the run the same way as one refused later.
         Err(error) if message_crate_http::is_session_refused(&error) => {
-            let report = refused_at_login(cfg, &files, started_at, run_started);
+            let report = refused_at_login(&files, started_at, run_started);
             return finish_refused_at_login(&paths, report, &mut out);
         }
         Err(error) => return Err(error),
@@ -312,7 +313,7 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
     let journal = RunJournal::open(
         paths.journal.clone(),
         ServerTarget::new(&session.url, &session.username),
-        earlier_progress(cfg),
+        earlier_progress(mode, cfg.force),
         &mut |line| out.show_at(RunLogLevel::Warn, line),
     )?;
     out.expect_files(files.len());
@@ -361,7 +362,7 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
         server_away: away,
         account: session.auth.account_id,
         username: session.username.clone(),
-        mode: cfg.mode,
+        mode,
         started_at,
         finished_at: now_stamp(),
         elapsed_ms: elapsed_ms(run_started),
@@ -409,15 +410,17 @@ fn halt_line(session_refused: bool, away: Option<ServerAway>) -> Option<String> 
     })
 }
 
-/// Check the session token and pick the account name the rest of the run uses.
+/// Check the session token, pick the account name the rest of the run uses,
+/// and read the mode of the Import Run the Upload posts into.
 ///
 /// The session token decides which account this run uses, and the run names
 /// it by the username the server returns.
 ///
 /// # Errors
 ///
-/// Returns an error when the HTTP client cannot be built or the session token is rejected.
-fn login(cfg: &ImportConfig, out: &mut Reporter<'_, '_>) -> Result<Session> {
+/// Returns an error when the HTTP client cannot be built, the session token
+/// is rejected, or the server does not answer the Import Run.
+fn login(cfg: &ImportConfig, out: &mut Reporter<'_, '_>) -> Result<(Session, ImportMode)> {
     let url = cfg.base_url.trim_end_matches('/').to_string();
     let http = HttpSession::new()?;
     let auth = http.auth_check(&url, &cfg.token)?;
@@ -428,7 +431,8 @@ fn login(cfg: &ImportConfig, out: &mut Reporter<'_, '_>) -> Result<Session> {
     });
     out.show(format!("Authenticated as {username} ({})", auth.account_id));
     let piece_wait = crate::http::piece_wait(&http, &url, &cfg.token)?;
-    Ok(Session {
+    let mode = crate::http::run_mode(&http, &url, &cfg.token, cfg.import_id)?;
+    let session = Session {
         http,
         url,
         token: cfg.token.clone(),
@@ -438,22 +442,17 @@ fn login(cfg: &ImportConfig, out: &mut Reporter<'_, '_>) -> Result<Session> {
         refused: Arc::new(AtomicBool::new(false)),
         away: Arc::new(OnceLock::new()),
         piece_wait,
-    })
+    };
+    Ok((session, mode))
 }
 
 /// The report of a run whose session the server refused at login: nothing
 /// was sent, and every conversation is left for the next Upload. No account
 /// answered, so `account` is 0 and `username` is empty.
-fn refused_at_login(
-    cfg: &ImportConfig,
-    files: &[PathBuf],
-    started_at: String,
-    run_started: Instant,
-) -> ImportReport {
+fn refused_at_login(files: &[PathBuf], started_at: String, run_started: Instant) -> ImportReport {
     ImportReport {
         canceled: true,
         session_refused: true,
-        mode: cfg.mode,
         started_at,
         finished_at: now_stamp(),
         elapsed_ms: elapsed_ms(run_started),
@@ -464,7 +463,8 @@ fn refused_at_login(
             .map(|path| crate::report::FileResult::canceled(&file_label(path)))
             .collect(),
         // Nothing was sent, and no account answered: every count is 0, the
-        // account 0 and the username empty.
+        // account 0 and the username empty. No Import Run was read, so the
+        // mode is the default, `append`.
         ..ImportReport::default()
     }
 }
@@ -490,12 +490,13 @@ fn finish_refused_at_login(
     Ok(report)
 }
 
-/// What this Upload does with the journal's earlier progress: a replace
-/// forgets it, force ignores it, and an append resumes from it.
-fn earlier_progress(cfg: &ImportConfig) -> EarlierProgress {
-    if cfg.mode == ImportMode::Replace {
+/// What this Upload does with the journal's earlier progress, by the mode
+/// of the Import Run it posts into: a replace forgets it, force ignores it,
+/// and an append resumes from it.
+fn earlier_progress(mode: ImportMode, force: bool) -> EarlierProgress {
+    if mode == ImportMode::Replace {
         EarlierProgress::Forget
-    } else if cfg.force {
+    } else if force {
         EarlierProgress::Ignore
     } else {
         EarlierProgress::Resume

@@ -77,7 +77,6 @@ async function uploadAndFinish(
         base_url: baseUrl,
         token,
         input_dir: runDir,
-        mode: "append",
         import_id: runId,
       }),
     );

@@ -1,6 +1,5 @@
 //! `upload` command: the Upload of an Import Run, which sends a run directory to a Message Crate server.
 
-use import::ImportMode;
 use message_crate_core::{CancelFlag, RunIssueStep};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -66,11 +65,9 @@ pub struct UploadArgs {
     pub token: String,
     /// Directory of conversation files to upload.
     pub input_dir: String,
-    /// Import mode. `append` adds to existing data (safe to re-run);
-    /// `replace` deletes existing messages for this source, then imports.
-    pub mode: ImportMode,
     /// The Import Run the Upload posts into. The web app starts it before
-    /// the Upload and completes it after.
+    /// the Upload and completes it after, and the Upload goes by the mode
+    /// the run was started with.
     pub import_id: i64,
 }
 
@@ -134,7 +131,6 @@ fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<ImportConf
         input,
         base_url: args.base_url,
         token: args.token,
-        mode: args.mode,
         // A resumed Upload skips what the journal in the run directory
         // already recorded as sent.
         force: false,
@@ -230,7 +226,7 @@ fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
 mod tests {
     use super::*;
     use httpmock::prelude::*;
-    use import::{FileResult, ImportReport};
+    use import::{FileResult, ImportMode, ImportReport};
     use ir::testutil::sample_document;
     use serde_json::json;
 
@@ -281,7 +277,6 @@ mod tests {
             "baseUrl": "http://127.0.0.1:8080",
             "token": "token",
             "inputDir": run_dir.path(),
-            "mode": "append",
             "importId": 7,
         }))
         .unwrap();
@@ -303,7 +298,6 @@ mod tests {
             "baseUrl": "http://127.0.0.1:8080",
             "token": "token",
             "inputDir": run_dir.path(),
-            "mode": "append",
             "importId": 7,
         }))
         .unwrap();
@@ -311,8 +305,9 @@ mod tests {
         assert!(format!("{err:#}").contains("no media settings"), "{err:#}");
     }
 
-    /// A server that answers the session check and states its body time
-    /// limits, as every Upload reads them. [`take_batches`] has it take
+    /// A server that answers the session check, states its body time
+    /// limits, and answers import 7 as an append run, as every Upload reads
+    /// them. [`take_batches`] has it take
     /// import 7's batches.
     fn upload_server() -> MockServer {
         let server = MockServer::start();
@@ -329,6 +324,11 @@ mod tests {
                 "body_stall_secs": 60,
                 "body_total_secs": 300,
             }));
+        });
+        server.mock(|when, then| {
+            when.method(GET).path("/v1/imports/7");
+            then.status(200)
+                .json_body(json!({ "id": 7, "mode": "append" }));
         });
         server
     }
@@ -371,7 +371,6 @@ mod tests {
             "baseUrl": server.base_url(),
             "token": "mc_test",
             "inputDir": run_dir,
-            "mode": "append",
             "importId": 7,
         }))
         .unwrap();
