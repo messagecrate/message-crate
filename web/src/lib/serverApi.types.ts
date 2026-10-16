@@ -5712,7 +5712,7 @@ export interface components {
             sender: string | null;
             /**
              * @description The name the source gave the reactor of an incoming reaction
-             *     when it gave no address for them, as an iMazing export does;
+             *     when it gave no address for them; no source gives one yet.
              *     `null` when `sender` is set, and for the account holder's own
              *     reactions. A name is shown, never matched to a contact.
              */

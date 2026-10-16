@@ -206,7 +206,7 @@ pub struct TapbackRecord {
     /// Reactor handle for incoming reactions.
     pub sender: Option<String>,
     /// The name the source gave the reactor of an incoming reaction when it
-    /// gave no address, as an iMazing CSV does. Shown, never matched: it
+    /// gave no address. No source gives one yet. Shown, never matched: it
     /// makes no identity. Never set together with `sender`, and never on
     /// the account holder's own reaction (`tapback_from_reaction`).
     pub sender_display_name: Option<String>,

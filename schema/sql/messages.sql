@@ -298,8 +298,8 @@ CREATE TABLE IF NOT EXISTS tapbacks (
     is_from_me INTEGER NOT NULL,
     -- Reactor identity (`handles.id`); NULL when unknown.
     sender_handle_id INTEGER REFERENCES handles(id) ON DELETE SET NULL,
-    -- The name the source gave the reactor when it gave no address for them,
-    -- as an iMazing CSV does; NULL otherwise. Shown, never matched: it makes
+    -- The name the source gave the reactor when it gave no address for them;
+    -- NULL otherwise, and no source gives one yet. Shown, never matched: it makes
     -- no identity and no contact.
     sender_display_name TEXT
 );
