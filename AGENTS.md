@@ -503,7 +503,7 @@ Optional: `./scripts/build-static.sh` copies `web/dist` to `static/` so the serv
 
 Run these from the repository root unless a `cd` is shown.
 
-Rust formatter is `rustfmt`. CI gates Clippy at `-D warnings` on the workspace and on `src-tauri`. `src-tauri/` is not a workspace member, so format it with `--manifest-path`. `rust-toolchain.toml` pins the toolchain for every checkout, for CI, and for the release image (`docker/Dockerfile` copies the file and installs that toolchain; `scripts/check-docker-context.sh` fails when its base image drifts to another minor); bump it deliberately, in its own pull request, fixing any new Clippy lints there — a floating stable can redden `main` with no code change.
+Rust formatter is `rustfmt`. CI gates Clippy and rustdoc at `-D warnings` on the workspace and on `src-tauri`; rustdoc runs with `--document-private-items`, so a broken intra-doc link anywhere fails. `src-tauri/` is not a workspace member, so format it with `--manifest-path`. `rust-toolchain.toml` pins the toolchain for every checkout, for CI, and for the release image (`docker/Dockerfile` copies the file and installs that toolchain; `scripts/check-docker-context.sh` fails when its base image drifts to another minor); bump it deliberately, in its own pull request, fixing any new Clippy lints there — a floating stable can redden `main` with no code change.
 
 ```bash
 # Check format (what CI runs)
@@ -514,7 +514,7 @@ cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 ./scripts/format-all.sh
 
 # Fast pre-flight: CHANGELOG.md format, fmt --check, Clippy -D warnings,
-# Biome ci, tsc.
+# rustdoc -D warnings, Biome ci, tsc.
 ./scripts/check-pr.sh
 
 # Everything CI runs, serially (build, tests, audits, docs, the lot).
@@ -576,7 +576,7 @@ npm run build             # tsc && vite build
 npm run dev               # Vite on http://localhost:5173 (proxies /v1 to :8080)
 ```
 
-From the repository root, `./scripts/format-all.sh` rewrites Rust and web sources to the formatters. `./scripts/check-pr.sh` is the fast pre-flight — the `CHANGELOG.md` formatting check, `cargo fmt --check` and Clippy at `-D warnings` on both manifests, `biome ci`, the timed-wait rule's canary, the restricted-import list check, and the web type-check; it checks and never rewrites. `./scripts/check-all.sh` runs CI's checks serially on the machine it is started on, starting with `check-pr.sh`, except the Docker image build. It skips the secret scan (`scripts/check-secrets.sh`) when gitleaks is not installed ("First time setup", step 4). On Linux or macOS it skips the Windows-only cases of the server config tests, which CI's `windows-config` job runs, and the desktop app's Job Object tests, which CI's `windows-local-server` job runs. Why the split: `docs/adr/0007-ci-is-the-only-gate.md`.
+From the repository root, `./scripts/format-all.sh` rewrites Rust and web sources to the formatters. `./scripts/check-pr.sh` is the fast pre-flight — the `CHANGELOG.md` formatting check, `cargo fmt --check`, Clippy at `-D warnings`, and rustdoc at `-D warnings` with private items on both manifests, `biome ci`, the timed-wait rule's canary, the restricted-import list check, and the web type-check; it checks and never rewrites. `./scripts/check-all.sh` runs CI's checks serially on the machine it is started on, starting with `check-pr.sh`, except the Docker image build. It skips the secret scan (`scripts/check-secrets.sh`) when gitleaks is not installed ("First time setup", step 4). On Linux or macOS it skips the Windows-only cases of the server config tests, which CI's `windows-config` job runs, and the desktop app's Job Object tests, which CI's `windows-local-server` job runs. Why the split: `docs/adr/0007-ci-is-the-only-gate.md`.
 
 Do not start a separate `npm run dev` while `cargo tauri dev` is running. Tauri starts Vite itself.
 
@@ -592,7 +592,7 @@ cd docs && npm ci && npm run check && npm run build
 
 Not gated by CI `web-next/` (`npm run lint` / `npm test` there if that tree is edited).
 
-Clippy is a CI job (`-D warnings`, workspace and `src-tauri`). `./scripts/check-pr.sh` runs it locally (`rust-analyzer.check.command` is `clippy` in `.vscode/settings.json`).
+Clippy is a CI job (`-D warnings`, workspace and `src-tauri`), and so is rustdoc (`RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items`, workspace and `src-tauri`). `./scripts/check-pr.sh` runs both locally (`rust-analyzer.check.command` is `clippy` in `.vscode/settings.json`).
 
 ### Releases and versions
 

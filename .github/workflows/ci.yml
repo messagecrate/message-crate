@@ -181,6 +181,38 @@ jobs:
       - name: Clippy workspace
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+  # ── Rust: rustdoc on the workspace ────────────────────────────────────
+  # Fails on any rustdoc warning, so a broken intra-doc link, or one to an
+  # item that no longer exists, never merges (#3096). Private items are
+  # documented too, so their links are checked as well. src-tauri's rustdoc
+  # runs in check-tauri, which already installs the packages its build needs.
+  rustdoc:
+    name: Rustdoc (workspace)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install system dependencies
+        run: ./scripts/ci-apt-install.sh libfontconfig1-dev libxkbcommon-dev
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-rustdoc-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-rustdoc-
+
+      - name: Rustdoc workspace
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --document-private-items
+
   # ── Rust: build + test ────────────────────────────────────────────────
   # ffmpeg is installed because the transcode, media, reexport and demo-seed
   # tests need it. With CI set they fail without it (media::testutil), so a
@@ -256,6 +288,11 @@ jobs:
 
       - name: Clippy src-tauri
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Rustdoc src-tauri
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --manifest-path src-tauri/Cargo.toml --no-deps --document-private-items
 
       - name: Test src-tauri
         run: cargo test --manifest-path src-tauri/Cargo.toml
@@ -372,9 +409,9 @@ jobs:
   # ── Docs: Astro check + build ─────────────────────────────────────────
   # The site build without rustdoc or the HTTP API catalog: both are copied
   # into public/, which `astro check` never reads and the link checker
-  # excludes, so neither can change whether the site builds. cargo doc
-  # failures are compile failures the test job already catches. The full
-  # build with both, and the deploy, stay in docs.yml on the release tag.
+  # excludes, so neither can change whether the site builds. A rustdoc
+  # warning fails the rustdoc job and check-tauri. The full build with both,
+  # and the deploy, stay in docs.yml on the release tag.
   docs:
     name: Check and build (docs)
     needs: changes
@@ -535,7 +572,7 @@ jobs:
   docker:
     name: Docker image
     if: needs.changes.outputs.release == 'true' || (github.event_name == 'workflow_dispatch' && inputs.push_docker_image)
-    needs: [changes, fmt, clippy, test, check-tauri, windows-config, windows-local-server, web, docs, license, docker-context, version]
+    needs: [changes, fmt, clippy, rustdoc, test, check-tauri, windows-config, windows-local-server, web, docs, license, docker-context, version]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     # id-token signs the image's build provenance attestation with the
@@ -633,7 +670,7 @@ jobs:
   release:
     name: Desktop App (${{ matrix.label }})
     if: needs.changes.outputs.release == 'true'
-    needs: [changes, fmt, clippy, test, check-tauri, windows-config, windows-local-server, web, docs, license, docker-context, version]
+    needs: [changes, fmt, clippy, rustdoc, test, check-tauri, windows-config, windows-local-server, web, docs, license, docker-context, version]
     timeout-minutes: 90
     strategy:
       fail-fast: false

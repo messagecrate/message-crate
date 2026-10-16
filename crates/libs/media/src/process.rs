@@ -50,7 +50,7 @@ pub struct NotConverted {
 /// any other file in its directory by its path:
 ///
 /// - why ffmpeg was stopped ([`Killed`]);
-/// - the line ffmpeg wrote that names the cause ([`cause_line`]), with
+/// - the line ffmpeg wrote that names the cause (`cause_line`), with
 ///   each file it was given written as `<input>` or `<output>`
 ///   ([`FfmpegFailed::without_files`]);
 /// - how ffmpeg exited, when it failed and wrote nothing;

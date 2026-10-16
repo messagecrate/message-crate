@@ -5,6 +5,15 @@ description: How to write rustdoc comments and HTTP API descriptions that develo
 
 This page is the standard for `///` and `//!` comments and utoipa annotations in the Rust crates. Workspace rustdoc publishes at [/docs/developer/rustdoc/](/docs/developer/rustdoc/); the HTTP catalog at [/docs/developer/rustdoc/http/](/docs/developer/rustdoc/http/). Utoipa annotations on HTTP handlers become the summaries and descriptions shown in that catalog.
 
+CI fails on any rustdoc warning, on the workspace (the `rustdoc` job in `ci.yml`) and on `src-tauri` (a step of `check-tauri`), and `./scripts/check-pr.sh` runs the same check locally:
+
+```bash
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
+RUSTDOCFLAGS="-D warnings" cargo doc --manifest-path src-tauri/Cargo.toml --no-deps --document-private-items
+```
+
+So a link to an item that does not exist, or no longer does, fails the pull request. Private items are documented too, so their links are checked. A public item's docs that link to a private item fail as well, because the published rustdoc leaves private items out and the link would lead nowhere: name the private item in backticks without the link brackets.
+
 Each example below names a file and the item inside it, never a line number, because line numbers move with every edit and a stale one is worse than none. When an example stops showing what the page says it shows, replace it with one that does.
 
 ## First sentence states what the item is

@@ -164,7 +164,7 @@ impl ReadReport {
         ]
     }
 
-    /// [`Self::leveled_lines`] without their levels: what Convert's log
+    /// `Self::leveled_lines` without their levels: what Convert's log
     /// gives, and an import's summary gives in the same words.
     pub fn log_lines(&self) -> Vec<String> {
         self.leveled_lines()
@@ -173,7 +173,7 @@ impl ReadReport {
             .collect()
     }
 
-    /// Write [`Self::leveled_lines`] to `log`, each at its level.
+    /// Write `Self::leveled_lines` to `log`, each at its level.
     pub fn write_log(&self, log: &LogSink) {
         for (level, line) in self.leveled_lines() {
             match level {

@@ -9,7 +9,7 @@ pushing, except the Docker image build, off Windows the Windows-only cases
 of the server config tests and the desktop app's local-server tests, and the
 secret scan when gitleaks is not installed.
 
-`ci.yml` holds fourteen jobs on a ready pull request. On a draft, all of them
+`ci.yml` holds fifteen jobs on a ready pull request. On a draft, all of them
 skip. A `changes` job diffs the branch against its base and publishes six
 booleans — `rust`, `web`, `docs`, `docker`, `server_config`, `local_server` —
 and the heavy jobs read them:
@@ -19,8 +19,9 @@ and the heavy jobs read them:
 | `changes` | always, except on a draft | Diffs against the base and outputs `rust`, `web`, `docs`, `docker`, `server_config`, `local_server` |
 | `fmt` | `rust` | `cargo fmt --check` on the workspace and on `src-tauri` |
 | `clippy` | `rust` | `cargo clippy --workspace --all-targets -- -D warnings` |
+| `rustdoc` | `rust` | `cargo doc --workspace --no-deps --document-private-items` with `RUSTDOCFLAGS="-D warnings"`, so a broken intra-doc link fails (#3096) |
 | `test` | `rust` | `cargo build --workspace` and `cargo test --workspace` |
-| `check-tauri` | `rust` | `cargo check`, Clippy at `-D warnings`, and `cargo test` on `src-tauri` |
+| `check-tauri` | `rust` | `cargo check`, Clippy at `-D warnings`, rustdoc at `-D warnings` with private items, and `cargo test` on `src-tauri` |
 | `windows-config` | `server_config` | `cargo test -p message-crate-server --lib "config::tests::"` on `windows-latest` |
 | `windows-local-server` | `local_server` | `cargo test --manifest-path src-tauri/Cargo.toml --lib "local_server::"` on `windows-latest` |
 | `web` | `web` | `biome ci`, `biome lint --error-on-warnings` on the timed-wait rule's canary, `check-biome-restricted-imports.mjs`, `check-generated-api-types.sh`, `npm run build`, `npm test` |
@@ -31,10 +32,11 @@ and the heavy jobs read them:
 | `secrets` | pull requests only | `check-secrets.sh`: gitleaks reads every commit the pull request adds, with the default rules plus `.gitleaks.toml`'s rule for `mc-user-` and `mc-api-` tokens and its allowlist of test vectors |
 | `version` | always | `check-version-lockstep.sh`: the four product version files and their lockfiles agree, and on a `v*` tag agree with the tag; then `check-changelog.sh`: `CHANGELOG.md`'s width, tight lists and dated entries |
 
-The ruleset requires twelve of them: every job but `secrets` and
-`windows-local-server`. The maintainer adds `secrets` to the required checks
-once it has run green (#3093), and `windows-local-server` once it has run
-green, for the reason the ruleset requires `windows-config` (#2788).
+The ruleset requires twelve of them: every job but `secrets`,
+`windows-local-server` and `rustdoc`. The maintainer adds `secrets` to the
+required checks once it has run green (#3093), `windows-local-server` once it
+has run green, for the reason the ruleset requires `windows-config` (#2788),
+and `rustdoc` once it has run green (#3096).
 GitHub's own secret scanning and push protection are on for the repository
 as well. They block a provider token at `git push`, and the gitleaks job finds what
 their patterns miss, such as a pasted Session or API token. The job runs on
@@ -84,9 +86,10 @@ Linux tests cover. `Cargo.lock` does not set `local_server`, so a dependency
 bump does not start a Windows build on a pull request. The push to `main`
 runs the job.
 
-`src-tauri`'s Clippy stays inside `check-tauri` rather than the `clippy` job,
-because its build needs the webkit and gtk system packages that job already
-installs; a second install would double the cost for no coverage.
+`src-tauri`'s Clippy and rustdoc stay inside `check-tauri` rather than the
+`clippy` and `rustdoc` jobs, because its build needs the webkit and gtk
+system packages that job already installs; a second install would double the
+cost for no coverage.
 
 The dependency audits live in `audit.yml`, not `ci.yml`. That workflow runs
 `cargo deny check advisories`, `npm audit --audit-level=high` for `web/`,
