@@ -29,16 +29,19 @@ describe("destroyWindow", () => {
     destroy.mockReset();
   });
 
-  it("destroys the current window and waits for it", async () => {
-    let destroyed = false;
-    destroy.mockImplementation(async () => {
-      await Promise.resolve();
-      destroyed = true;
-    });
+  it("destroys the current window", async () => {
+    destroy.mockResolvedValue(undefined);
 
     await destroyWindow();
 
     expect(destroy).toHaveBeenCalledTimes(1);
-    expect(destroyed).toBe(true);
+  });
+
+  // A failure that reaches the caller shows the wrapper waits for destroy():
+  // without the wait the rejection would be lost.
+  it("passes on the window's refusal to close", async () => {
+    destroy.mockRejectedValue(new Error("window already gone"));
+
+    await expect(destroyWindow()).rejects.toThrow("window already gone");
   });
 });

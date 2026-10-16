@@ -70,7 +70,7 @@ describe("invokeSaveFile", () => {
     expect(body).toBeInstanceOf(Uint8Array);
     expect([...(body as Uint8Array)]).toEqual([1, 2, 255]);
     expect(options).toEqual({ headers: { "file-name": '"Caf\\u00e9 photo.jpg"' } });
-    // The desktop app shows the Save dialog itself; the window opens none.
+    // The desktop app shows the Save dialog itself. The window opens none.
     expect(saveDialog).not.toHaveBeenCalled();
   });
 

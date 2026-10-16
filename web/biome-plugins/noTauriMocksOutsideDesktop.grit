@@ -15,8 +15,8 @@
 language js
 
 or {
-  `$vi.$fn($module)`,
-  `$vi.$fn($module, $rest)`
+  `$receiver.$fn($module)`,
+  `$receiver.$fn($module, $rest)`
 } where {
   $fn <: r"^(?:mock|doMock|unmock|doUnmock|importActual|importMock)$",
   $module <: r"^[\"'`]@tauri-apps/.*",

@@ -4,9 +4,10 @@
 // suppression unused, which Biome reports as a warning; check-pr.sh and CI's
 // web job lint this file with --error-on-warnings, so that warning fails them.
 // Biome reports a plugin that fails to run only as an info, which is why this
-// file exists. It holds every form but a module name held in a variable,
-// which the plugin's comment says it passes. Nothing imports it and Vitest
-// doesn't run it: it is only linted.
+// file exists. It holds every form but the two the plugin's comment names: a
+// dynamic import(), which noRestrictedImports refuses, and a module name held
+// in a variable, which passes. Nothing imports it and Vitest doesn't run it:
+// it is only linted.
 import * as vitest from "vitest";
 import { vi as v, vi } from "vitest";
 
