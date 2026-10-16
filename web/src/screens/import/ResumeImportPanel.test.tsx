@@ -53,7 +53,7 @@ describe("ResumeImportPanel", () => {
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
-    expect(screen.getByText("Pick up your last import")).toBeInTheDocument();
+    expect(screen.getByText("Resume your last import")).toBeInTheDocument();
     expect(
       screen.getByText(
         "The extract did not finish. Starting again reuses your settings and reads the backup from the beginning.",
@@ -77,7 +77,7 @@ describe("ResumeImportPanel", () => {
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
-    expect(screen.getByText("Pick up where you left off")).toBeInTheDocument();
+    expect(screen.getByText("Resume where you left off")).toBeInTheDocument();
     expect(
       screen.getByText(
         "Your messages are staged. Opening the import again shows you the same summary, read fresh from the directory.",
@@ -91,7 +91,7 @@ describe("ResumeImportPanel", () => {
     expect(onDiscard).toHaveBeenCalledTimes(1);
   });
 
-  it("offers to carry on for a run that died mid Media stage", async () => {
+  it("offers to resume a run that died mid Media stage", async () => {
     const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
@@ -104,11 +104,11 @@ describe("ResumeImportPanel", () => {
     expect(screen.getByText("Finish preparing your media")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "The Media stage did not finish. Carrying on picks up the files it had not reached yet.",
+        "The Media stage did not finish. Resuming it processes the files it had not reached yet.",
       ),
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Carry on" }));
+    await user.click(screen.getByRole("button", { name: "Resume" }));
     expect(onResume).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: "Discard this import" }));
@@ -151,10 +151,10 @@ describe("ResumeImportPanel", () => {
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
-    expect(screen.getByText("There is nothing staged to pick up")).toBeInTheDocument();
+    expect(screen.getByText("There is nothing staged to resume")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "This import did not record a staged directory, so there is nothing here to carry on from. Discarding it lets you start a new one.",
+        "This import did not record a staged directory, so there is nothing here to resume. Discarding it lets you start a new one.",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/no longer at/)).not.toBeInTheDocument();
@@ -261,12 +261,12 @@ describe("ResumeImportPanel", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("disk unavailable");
     // The panel's own copy for the decision still renders underneath.
-    expect(screen.getByText("Pick up where you left off")).toBeInTheDocument();
+    expect(screen.getByText("Resume where you left off")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Show me the summary" }));
     expect(onResume).toHaveBeenCalledTimes(1);
   });
-  it("offers to pick up a copy that did not finish", async () => {
+  it("offers to resume a copy that did not finish", async () => {
     const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
@@ -279,11 +279,11 @@ describe("ResumeImportPanel", () => {
     expect(screen.getByText("Finish copying your backup")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "The copy did not finish. Picking up where you left off reads the backup again and skips the conversations already copied.",
+        "The copy did not finish. Resuming it reads the backup again and skips the conversations already copied.",
       ),
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Pick up" }));
+    await user.click(screen.getByRole("button", { name: "Resume" }));
     expect(onResume).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: "Discard this import" }));
@@ -332,7 +332,7 @@ describe("ResumeImportPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("asks for the backup password and holds Pick up until it is filled", async () => {
+  it("asks for the backup password and holds Resume until it is filled", async () => {
     const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
@@ -350,7 +350,7 @@ describe("ResumeImportPanel", () => {
     );
 
     const field = screen.getByLabelText("Encryption password");
-    const resume = screen.getByRole("button", { name: "Pick up" });
+    const resume = screen.getByRole("button", { name: "Resume" });
     expect(resume).toBeDisabled();
     expect(screen.getByRole("button", { name: "Discard this import" })).toBeEnabled();
 
@@ -386,7 +386,7 @@ describe("ResumeImportPanel", () => {
   });
 
   it.each([
-    ["resume_write", "write", "Pick up"],
+    ["resume_write", "write", "Resume"],
     ["restart", "parse", "Start over"],
   ] as const)(
     "asks for the WhatsApp key on %s and holds the button until it is filled",
@@ -425,7 +425,7 @@ describe("ResumeImportPanel", () => {
 
     expect(screen.queryByLabelText("Encryption password")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Decryption key")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Pick up" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Resume" })).toBeEnabled();
   });
   // Resuming starts a Stage, which the desktop refuses while another job
   // runs, so the button waits for it and says which job it waits for, as
