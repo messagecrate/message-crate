@@ -178,8 +178,12 @@ pub trait ProjectionHooks {
     /// Map one queued attachment onto the shared [`Attachment`] shape.
     /// The default is [`PendingAttachment::to_ir`]: metadata only (no path,
     /// no bytes), with the size when the exporter recorded one.
-    fn attachment_to_ir(&self, att: &PendingAttachment, _message: &PendingMessage) -> Attachment {
-        att.to_ir()
+    fn attachment_to_ir(
+        &self,
+        attachment: &PendingAttachment,
+        _message: &PendingMessage,
+    ) -> Attachment {
+        attachment.to_ir()
     }
 
     /// Classify one message. The default maps `is_from_me` to

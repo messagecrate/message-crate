@@ -8,8 +8,8 @@ import { startFailure, startLocalServer } from "../lib/localServer";
 import { isTauri } from "../lib/tauriCheck";
 
 /**
- * A notice the bar shows: one the desktop app sent, other than `answering`,
- * or `starting` while a Try again from the bar waits for the app's word.
+ * A notice the page shows: one the desktop app sent, other than `answering`,
+ * or `starting` while its Try again waits for the app's word.
  */
 export type ShownLocalServerNotice =
   | Exclude<LocalServerNotice, { state: "answering" }>
@@ -22,7 +22,7 @@ function failedNotice(status: { message: string; details: string }): ShownLocalS
 
 /**
  * What the desktop app last said about its own Message Crate while it starts
- * it again after it stopped (#2695), for the notice bar. Null in the browser,
+ * it again after it stopped (#2695), for `LocalServerNotice`. Null in the browser,
  * before anything was said, and once a Message Crate answers again.
  *
  * The app tells the window; nothing here polls. A window opened or reloaded

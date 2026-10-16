@@ -57,7 +57,11 @@ afterEach(() => {
 
 // The Settings screen holds the typed name; here the panel holds its own.
 function Panel() {
-  return <ProfileSettingsPanel nameEdit={useNameEdit()} />;
+  return (
+    <ProfileSettingsPanel
+      nameEdit={useNameEdit({ profilePath: "/settings?tab=profile", username: null })}
+    />
+  );
 }
 
 function nameField() {

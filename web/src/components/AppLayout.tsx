@@ -67,7 +67,7 @@ export default function AppLayout() {
 
   return (
     <RightToolbarProvider>
-      <div className="flex h-full flex-col bg-bg font-sans text-text">
+      <div className="flex h-screen flex-col bg-bg font-sans text-text">
         <AppHeader
           search={shown?.search ?? null}
           onSearchChange={section.onSearchChange}

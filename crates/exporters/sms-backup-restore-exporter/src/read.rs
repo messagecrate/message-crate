@@ -372,10 +372,10 @@ pub fn spooled_attachments<'a>(
         document_messages(documents),
         files,
         PathSources::OnDisk,
-        |att| {
+        |attachment| {
             options
                 .spool
-                .and_then(|spool| spool.source(att))
+                .and_then(|spool| spool.source(attachment))
                 .unwrap_or((AttachmentSource::Missing, None))
         },
         options.sinks.log,

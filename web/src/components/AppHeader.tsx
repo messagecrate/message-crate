@@ -7,6 +7,7 @@ import { Z_APP_HEADER } from "../lib/zLayers";
 import type { AdvancedSearchMode } from "./AdvancedSearchForm";
 import AppAccountMenu from "./AppAccountMenu";
 import { loadWidth } from "./columnResize";
+import LocalServerNotice from "./LocalServerNotice";
 import {
   LEFT_PANEL_DEFAULT_WIDTH,
   LEFT_PANEL_MAX_WIDTH,
@@ -15,6 +16,7 @@ import {
   LEFT_PANEL_WIDTH_VAR,
   leftPanelWindowMaxWidth,
 } from "./leftPanelWidth";
+import NameRefusalNotice from "./NameRefusalNotice";
 import SearchBar from "./SearchBar";
 import VersionNotice from "./VersionNotice";
 
@@ -153,6 +155,12 @@ export default function AppHeader({
         </div>
       </header>
       <VersionNotice />
+      {/* Here, in the frame of the message shell and of Owner Home alike, so
+          it outlives the Settings screen a refused name was typed on. */}
+      <NameRefusalNotice />
+      {/* Here too, so whatever screen is open says that the desktop app's
+          own server stopped, rather than failing with network errors. */}
+      <LocalServerNotice />
     </>
   );
 }

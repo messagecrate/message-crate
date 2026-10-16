@@ -162,10 +162,12 @@ answering is started again like one that exits, and counts against the same
 limit of three restarts in ten minutes. The app tells the window when it
 starts the server again and why. For that start, a restart for the network
 setting, and a Retry after any failure, it tells the window when a Message
-Crate answers and when the start fails. The web app shows it in a notice bar across the top of
-every screen but the login card, which shows the state itself: "The server
-stopped answering. Restarting it…" ("The server stopped." for one that
-exited), which clears itself once the server answers, or why it could not be
-started, with Try again. The window listens for the app's word rather than
+Crate answers and when the start fails. The web app shows it across the top
+of the page, under the header of the message shell and of Owner Home, where a
+refused display name shows too (#2991). The login card has no header and
+shows the state itself. It reads
+"The server stopped answering. Restarting it…" ("The server stopped." for
+one that exited), clears itself once the server answers, and after a failure
+shows why, with Try again. The window listens for the app's word rather than
 asking, so no screen polls. It reads the state once when it opens, so a
 window reloaded after a failed restart still shows the failure.

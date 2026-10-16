@@ -516,11 +516,19 @@ carry their date on the heading.
   while the login card was open, so a server that hung while you browsed
   left every screen failing with network errors. The app now checks on its
   own every few seconds, starts a server that stopped answering again, and
-  says so in a bar across the top of the page: **The server stopped
+  says so in a line across the top of the page: **The server stopped
   answering. Restarting it…** clears itself once the server answers. A
-  server that crashed gets the bar too, saying **The server stopped.
-  Restarting it…**. If it cannot be started, the bar says why and offers
+  server that crashed gets the line too, saying **The server stopped.
+  Restarting it…**. If it cannot be started, the line says why and offers
   **Try again** (#2695).
+- 2026-10-16: **A display name the server refuses after you leave Settings
+  says so.** A display name typed on Settings → Profile, or on an account's
+  Profile in Owner Home, saves when you leave Settings for another screen.
+  When the server refused that save, the name was dropped without a word.
+  Now a line across the top of the page says "Your display name wasn't
+  saved", with the name you typed and why, and a link back to the Profile
+  it came from. It stays until you dismiss it or save a name from that
+  Profile (#2991).
 - 2026-10-16: **A group with no name reads the same everywhere.** A
   group conversation without a title was named after everyone in it in the
   conversation list, such as "Ann, Bob, Cy", but as "3 participants" in its

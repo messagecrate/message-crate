@@ -1,19 +1,18 @@
 /** @vitest-environment jsdom */
 
 import { act, cleanup, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setBaseUrl } from "../lib/api";
 import { DEFAULT_TAURI_SERVER_URL } from "../lib/authGuards";
-import type { LocalServerNotice, LocalServerStatus } from "../lib/desktop/localServer";
+import type { LocalServerStatus, LocalServerNotice as Notice } from "../lib/desktop/localServer";
 import { deferred } from "../test/deferred";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { setupUser } from "../test/user";
-import NoticeBar from "./NoticeBar";
+import LocalServerNotice from "./LocalServerNotice";
 
 const desktop = vi.hoisted(() => ({
   isTauri: true,
-  handler: null as ((notice: LocalServerNotice) => void) | null,
+  handler: null as ((notice: Notice) => void) | null,
   unlisten: vi.fn(),
   status: vi.fn(),
   startLocalServer: vi.fn(),
@@ -22,7 +21,7 @@ const desktop = vi.hoisted(() => ({
 vi.mock("../lib/tauriCheck", () => ({ isTauri: () => desktop.isTauri }));
 
 vi.mock("../lib/desktop/localServer", () => ({
-  onLocalServerNotice: async (handler: (notice: LocalServerNotice) => void) => {
+  onLocalServerNotice: async (handler: (notice: Notice) => void) => {
     desktop.handler = handler;
     return desktop.unlisten;
   },
@@ -38,19 +37,15 @@ const READY: LocalServerStatus = { status: "ready", started_by_app: true };
 const FOUR_TIMES = "Message Crate stopped 4 times within 10 minutes.";
 
 /** The desktop app sends `notice` to the window. */
-function tell(notice: LocalServerNotice) {
+function tell(notice: Notice) {
   const handler = desktop.handler;
   if (handler === null) throw new Error("the bar is not listening");
   act(() => handler(notice));
 }
 
-/** Render the bar on `path`, and let it start listening. */
-async function renderBar(path = "/") {
-  const view = render(
-    <MemoryRouter initialEntries={[path]}>
-      <NoticeBar />
-    </MemoryRouter>,
-  );
+/** Render the notice, and let it start listening. */
+async function renderBar() {
+  const view = render(<LocalServerNotice />);
   await settle();
   return view;
 }
@@ -72,7 +67,7 @@ afterEach(() => {
   setBaseUrl("");
 });
 
-describe("NoticeBar", () => {
+describe("LocalServerNotice", () => {
   it("says the server stopped answering and is restarting, and clears itself once it answers", async () => {
     const { container } = await renderBar();
     expect(container).toBeEmptyDOMElement();
@@ -141,12 +136,6 @@ describe("NoticeBar", () => {
     tell({ state: "answering" });
     status.resolve({ status: "failed", reason: "start_failed", message: FOUR_TIMES, details: "" });
     await settle();
-    expect(container).toBeEmptyDOMElement();
-  });
-
-  it("says nothing on the login card, which shows the server's state itself", async () => {
-    const { container } = await renderBar("/login");
-    tell({ state: "failed", message: FOUR_TIMES, details: "" });
     expect(container).toBeEmptyDOMElement();
   });
 

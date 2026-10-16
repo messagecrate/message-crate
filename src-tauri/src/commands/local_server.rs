@@ -8,7 +8,7 @@ use tauri::{AppHandle, Manager, State};
 
 /// How the app's own server is getting on while it is started again after
 /// it stopped. Payload: [`local_server::Notice`]. The window shows it across
-/// the top of the page (`web/src/components/NoticeBar.tsx`).
+/// the top of the page (`web/src/components/LocalServerNotice.tsx`).
 pub const NOTICE: &str = "local-server:notice";
 
 /// Send each [`local_server::Notice`] to the window as [`NOTICE`].
