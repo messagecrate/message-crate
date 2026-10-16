@@ -138,20 +138,6 @@ fn imazing_export_with_thumbs(dir: &Path, name: &str, thumbs: usize) -> PathBuf 
     write_jsonl(dir, name, &format!("{header}\n{message}\n"))
 }
 
-/// Append-mode options for an iMazing import.
-fn imazing_append<'a>(assets: &'a Path, root: &'a Path) -> ImportOptions<'a> {
-    ImportOptions::fixed(FixedImportArgs {
-        assets_dir: assets,
-        asset_root: Some(root),
-        mode: ImportMode::Append,
-        source: "imazing",
-        account_id: TEST_ACCOUNT,
-        import_id: None,
-        phone_country: None,
-        now: crate::test_support::fixed_instant(),
-    })
-}
-
 /// How many 👍 reactions the database `db` holds.
 async fn stored_thumbs(db: &Path) -> i64 {
     let (_pool, mut conn) = open_verify(db).await;
@@ -171,7 +157,7 @@ async fn stored_thumbs(db: &Path) -> i64 {
 async fn a_later_imazing_copy_adds_a_second_reaction_with_the_same_emoji() {
     let tmp = TempDir::new().unwrap();
     let assets = tmp.path().join("assets");
-    let options = imazing_append(&assets, tmp.path());
+    let options = append_opts(&assets, tmp.path(), "imazing");
     let a = imazing_export_with_thumbs(tmp.path(), "a.jsonl", 1);
     let b = imazing_export_with_thumbs(tmp.path(), "b.jsonl", 2);
 
@@ -198,7 +184,7 @@ async fn a_later_imazing_copy_adds_a_second_reaction_with_the_same_emoji() {
 async fn a_copy_with_fewer_reactions_with_no_reactor_removes_none() {
     let tmp = TempDir::new().unwrap();
     let assets = tmp.path().join("assets");
-    let options = imazing_append(&assets, tmp.path());
+    let options = append_opts(&assets, tmp.path(), "imazing");
     let a = imazing_export_with_thumbs(tmp.path(), "a.jsonl", 1);
     let b = imazing_export_with_thumbs(tmp.path(), "b.jsonl", 2);
 
