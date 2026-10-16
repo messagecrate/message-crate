@@ -23,46 +23,46 @@ use tempfile::tempdir;
 
 /// One SMS conversation used by most mock-server tests: `ir`'s sample
 /// conversation, with the message guid the mock server matches on.
-fn sample_doc() -> ConversationDocument {
-    let mut doc = sample_document("hello there");
-    doc.messages[0].guid = "guid-1".into();
-    doc
+fn sample_import_document() -> ConversationDocument {
+    let mut document = sample_document("hello there");
+    document.messages[0].guid = "guid-1".into();
+    document
 }
 
-/// Same fixture as [`sample_doc`], with a different chat handle and message
+/// Same fixture as [`sample_import_document`], with a different chat handle and message
 /// guid. The handle replaces the first one everywhere, the source bag's
 /// address included, so a batch holds the first handle only when it holds
 /// the first conversation.
-fn sample_doc_for(handle: &str, guid: &str) -> ConversationDocument {
-    let mut doc = sample_doc();
-    doc.conversation.chat_identifier = handle.into();
-    doc.conversation.participants[0].identity = Some(handle.into());
-    doc.messages[0].guid = guid.into();
-    doc.messages[0].sender_identity = Some(handle.into());
-    if let Some(source) = &mut doc.messages[0].source {
+fn sample_document_for(handle: &str, guid: &str) -> ConversationDocument {
+    let mut document = sample_import_document();
+    document.conversation.chat_identifier = handle.into();
+    document.conversation.participants[0].identity = Some(handle.into());
+    document.messages[0].guid = guid.into();
+    document.messages[0].sender_identity = Some(handle.into());
+    if let Some(source) = &mut document.messages[0].source {
         source.fields.insert("address".into(), json!(handle));
     }
-    let first = sample_doc().conversation.chat_identifier;
+    let first = sample_import_document().conversation.chat_identifier;
     assert!(
-        handle == first || !serde_json::to_string(&doc).unwrap().contains(&first),
-        "the sample conversation writes {first} somewhere sample_doc_for does not replace"
+        handle == first || !serde_json::to_string(&document).unwrap().contains(&first),
+        "the sample conversation writes {first} somewhere sample_document_for does not replace"
     );
-    doc
+    document
 }
 
-/// Write `doc` as a JSON Lines file under `dir`.
-fn write_jsonl(dir: &Path, doc: &ConversationDocument) {
-    let stem = ir_format::filename_stem(doc);
+/// Write `document` as a JSON Lines file under `dir`.
+fn write_jsonl(dir: &Path, document: &ConversationDocument) {
+    let stem = ir_format::filename_stem(document);
     let path = dir.join(format!("{stem}.jsonl"));
     let mut f = fs::File::create(&path).unwrap();
     let header = json!({
-        "schema_version": doc.schema_version,
-        "export": doc.export,
-        "conversation": doc.conversation,
+        "schema_version": document.schema_version,
+        "export": document.export,
+        "conversation": document.conversation,
     });
     writeln!(f, "{}", serde_json::to_string(&header).unwrap()).unwrap();
-    for msg in &doc.messages {
-        writeln!(f, "{}", serde_json::to_string(msg).unwrap()).unwrap();
+    for message in &document.messages {
+        writeln!(f, "{}", serde_json::to_string(message).unwrap()).unwrap();
     }
 }
 
@@ -180,7 +180,7 @@ fn authenticate_and_import_text_only_conversation() {
     assert_eq!(info.account_id, 1);
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
 
     let cfg = mock_server_config(dir.path(), server.base_url());
     let (report, shown) = run_showing(&cfg);
@@ -231,7 +231,7 @@ fn an_unreadable_journal_line_is_a_sentence_in_the_uploads_log() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     let journal = dir.path().join(".import-state.jsonl");
     fs::write(&journal, "{not json\n").unwrap();
 
@@ -303,7 +303,7 @@ fn posts_into_the_callers_import_run_without_starting_or_completing_one() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
 
     let cfg = ImportConfig {
         import_id: 99,
@@ -345,7 +345,7 @@ fn an_import_where_nothing_lands_ends_with_errors() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     let report = run(&mock_server_config(dir.path(), server.base_url()), None).unwrap();
 
     assert!(!report.ok);
@@ -382,8 +382,8 @@ fn aggregates_multiple_conversations_into_one_import_request() {
     });
 
     let dir = tempdir().unwrap();
-    let first = sample_doc();
-    let second = sample_doc_for("+15555550102", "guid-2");
+    let first = sample_import_document();
+    let second = sample_document_for("+15555550102", "guid-2");
     write_jsonl(dir.path(), &first);
     write_jsonl(dir.path(), &second);
 
@@ -437,9 +437,9 @@ fn flushes_at_message_limit_across_two_batches_of_one_run() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.mode = ImportMode::Replace;
     cfg.batch_size = 2;
@@ -486,9 +486,9 @@ fn failed_combined_request_only_fails_its_files() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.batch_size = 2;
 
@@ -541,10 +541,10 @@ fn a_refused_line_of_a_batch_is_reported_as_the_line_of_its_staged_file() {
 
     let dir = tempdir().unwrap();
     // Batch lines 1 and 2: the first file's header and its one message.
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     // Batch lines 3 to 5: the second file's header and its two messages,
     // which are lines 3 and 4 of the file because line 2 is blank.
-    let mut second = sample_doc_for("+15555550102", "guid-2");
+    let mut second = sample_document_for("+15555550102", "guid-2");
     let mut later = second.messages[0].clone();
     later.guid = "guid-3".into();
     second.messages.push(later);
@@ -582,14 +582,14 @@ fn a_refused_line_of_a_batch_is_reported_as_the_line_of_its_staged_file() {
 
 /// Three conversations, the middle one unreadable, in name order.
 fn directory_with_a_bad_middle_file(dir: &Path) {
-    write_jsonl(dir, &sample_doc());
-    let bad = sample_doc_for("+15555550102", "guid-2");
+    write_jsonl(dir, &sample_import_document());
+    let bad = sample_document_for("+15555550102", "guid-2");
     fs::write(
         dir.join(format!("{}.jsonl", ir_format::filename_stem(&bad))),
         "not a conversation\n",
     )
     .unwrap();
-    write_jsonl(dir, &sample_doc_for("+15555550103", "guid-3"));
+    write_jsonl(dir, &sample_document_for("+15555550103", "guid-3"));
 }
 
 /// A file that fails to prepare is reported and the import goes on: the good
@@ -641,7 +641,7 @@ fn resumes_message_batches_from_compacted_journal() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     let cfg = mock_server_config(dir.path(), server.base_url());
     run(&cfg, None).unwrap();
     assert_eq!(import.calls(), 1);
@@ -674,7 +674,7 @@ fn a_message_with_a_blank_guid_is_sent_again_on_resume() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc_for("+15555550101", " "));
+    write_jsonl(dir.path(), &sample_document_for("+15555550101", " "));
     let cfg = mock_server_config(dir.path(), server.base_url());
     run(&cfg, None).unwrap();
     assert_eq!(import.calls(), 1);
@@ -714,8 +714,8 @@ fn a_replace_import_ignores_the_journal_and_sends_every_message_again() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
     let cfg = mock_server_config(dir.path(), server.base_url());
     assert!(run(&cfg, None).unwrap().ok);
     assert_eq!(import.calls(), 1);
@@ -772,8 +772,8 @@ fn an_append_after_a_failed_replace_sends_what_the_replace_did_not_import() {
     let server = mock_server();
     let _auth = mock_session(&server);
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.batch_size = 1;
 
@@ -852,14 +852,14 @@ fn profiles_attachment_upload_phases() {
     let attachment_dir = dir.path().join("attachments");
     fs::create_dir(&attachment_dir).unwrap();
     fs::write(attachment_dir.join("fixture.txt"), ASSET_BYTES).unwrap();
-    let mut doc = sample_doc();
-    doc.messages[0].attachments.push(Attachment {
+    let mut document = sample_import_document();
+    document.messages[0].attachments.push(Attachment {
         path: Some("attachments/fixture.txt".into()),
         original_name: Some("fixture.txt".into()),
         mime_type: Some("text/plain".into()),
         ..ir::testutil::sample_attachment()
     });
-    write_jsonl(dir.path(), &doc);
+    write_jsonl(dir.path(), &document);
 
     let report_path = dir.path().join("message-crate-import-report.json");
     let log_path = dir.path().join("message-crate-import.log");
@@ -935,7 +935,7 @@ fn ir_attachment(rel: &str, digest: String) -> Attachment {
 }
 
 /// Two unique files in one conversation; one worker so upload order is stable.
-fn two_attachment_docs(
+fn two_attachment_documents(
     dir: &Path,
     a_name: &str,
     a_bytes: &[u8],
@@ -948,12 +948,12 @@ fn two_attachment_docs(
     fs::write(attachment_dir.join(b_name), b_bytes).unwrap();
     let digest_a = file_io::sha256_hex(a_bytes);
     let digest_b = file_io::sha256_hex(b_bytes);
-    let mut doc = sample_doc();
-    doc.messages[0].attachments = vec![
+    let mut document = sample_import_document();
+    document.messages[0].attachments = vec![
         ir_attachment(&format!("attachments/{a_name}"), digest_a.clone()),
         ir_attachment(&format!("attachments/{b_name}"), digest_b.clone()),
     ];
-    write_jsonl(dir, &doc);
+    write_jsonl(dir, &document);
     (digest_a, digest_b)
 }
 
@@ -972,7 +972,7 @@ fn puts_two_new_assets_after_one_preflight_head() {
         }));
     });
     let dir = tempdir().unwrap();
-    let (digest_a, digest_b) = two_attachment_docs(dir.path(), "a.txt", A, "b.txt", B);
+    let (digest_a, digest_b) = two_attachment_documents(dir.path(), "a.txt", A, "b.txt", B);
     let head_a = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest_a}"));
         then.status(404);
@@ -1052,7 +1052,7 @@ fn heads_later_assets_after_put_reports_already_present() {
     });
     let dir = tempdir().unwrap();
     let (digest_a, digest_b) =
-        two_attachment_docs(dir.path(), "first.txt", FIRST, "second.txt", SECOND);
+        two_attachment_documents(dir.path(), "first.txt", FIRST, "second.txt", SECOND);
     // Jobs run in sha256 order. The lexicographically first digest PUTs;
     // after already_present, the second digest HEADs and skips PUT.
     let (first_digest, second_digest) = if digest_a < digest_b {
@@ -1128,7 +1128,7 @@ fn preflight_head_skips_puts_when_first_asset_already_present() {
         }));
     });
     let dir = tempdir().unwrap();
-    let (digest_a, digest_b) = two_attachment_docs(dir.path(), "a.txt", A, "b.txt", B);
+    let (digest_a, digest_b) = two_attachment_documents(dir.path(), "a.txt", A, "b.txt", B);
     let head_a = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest_a}"));
         then.status(200).json_body(json!({
@@ -1249,15 +1249,15 @@ fn multipart_upload_when_over_proxy_threshold() {
     let attachment_dir = dir.path().join("attachments");
     fs::create_dir(&attachment_dir).unwrap();
     fs::write(attachment_dir.join("large.bin"), ASSET_BYTES).unwrap();
-    let mut doc = sample_doc();
-    doc.messages[0].attachments.push(Attachment {
+    let mut document = sample_import_document();
+    document.messages[0].attachments.push(Attachment {
         path: Some("attachments/large.bin".into()),
         original_name: Some("large.bin".into()),
         mime_type: Some("video/mp4".into()),
         digest_sha256: Some(digest.clone()),
         ..ir::testutil::sample_attachment()
     });
-    write_jsonl(dir.path(), &doc);
+    write_jsonl(dir.path(), &document);
 
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
@@ -1334,15 +1334,15 @@ fn multipart_aborts_on_hash_mismatch_complete() {
     let attachment_dir = dir.path().join("attachments");
     fs::create_dir(&attachment_dir).unwrap();
     fs::write(attachment_dir.join("bad.bin"), ASSET_BYTES).unwrap();
-    let mut doc = sample_doc();
-    doc.messages[0].attachments.push(Attachment {
+    let mut document = sample_import_document();
+    document.messages[0].attachments.push(Attachment {
         path: Some("attachments/bad.bin".into()),
         original_name: Some("bad.bin".into()),
         mime_type: Some("application/octet-stream".into()),
         digest_sha256: Some(digest),
         ..ir::testutil::sample_attachment()
     });
-    write_jsonl(dir.path(), &doc);
+    write_jsonl(dir.path(), &document);
 
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
@@ -1436,15 +1436,15 @@ fn a_digest_that_does_not_match_its_file_is_a_sentence_in_the_log() {
     fs::create_dir(&attachment_dir).unwrap();
     fs::write(attachment_dir.join("mismatch.txt"), ASSET_BYTES).unwrap();
     fs::write(attachment_dir.join("malformed.txt"), OTHER_BYTES).unwrap();
-    let mut doc = sample_doc();
+    let mut document = sample_import_document();
     let mut mismatch = ir_attachment("attachments/mismatch.txt", wrong_digest.clone());
     mismatch.size_bytes = Some(4);
-    doc.messages[0].attachments.push(mismatch);
-    doc.messages[0].attachments.push(ir_attachment(
+    document.messages[0].attachments.push(mismatch);
+    document.messages[0].attachments.push(ir_attachment(
         "attachments/malformed.txt",
         "not-a-digest".into(),
     ));
-    write_jsonl(dir.path(), &doc);
+    write_jsonl(dir.path(), &document);
 
     let cfg = mock_server_config(dir.path(), server.base_url());
     let report = run(&cfg, None).unwrap();
@@ -1452,7 +1452,7 @@ fn a_digest_that_does_not_match_its_file_is_a_sentence_in_the_log() {
     assert_eq!(put.calls(), 2);
 
     let log = read_log(dir.path());
-    let name = format!("{}.jsonl", ir_format::filename_stem(&doc));
+    let name = format!("{}.jsonl", ir_format::filename_stem(&document));
     assert!(
         log.contains(&format!(
             "{name}: attachment attachments/mismatch.txt hashes to {disk_digest}, \
@@ -1527,24 +1527,24 @@ fn shared_attachment_uploaded_once_across_conversations() {
     fs::create_dir(&attachment_dir).unwrap();
     fs::write(attachment_dir.join("shared.txt"), ASSET_BYTES).unwrap();
 
-    let mut doc_a = sample_doc_for("+15555550101", "guid-a");
-    doc_a.messages[0].attachments.push(Attachment {
+    let mut document_a = sample_document_for("+15555550101", "guid-a");
+    document_a.messages[0].attachments.push(Attachment {
         path: Some("attachments/shared.txt".into()),
         original_name: Some("shared.txt".into()),
         mime_type: Some("text/plain".into()),
         digest_sha256: Some(digest.clone()),
         ..ir::testutil::sample_attachment()
     });
-    let mut doc_b = sample_doc_for("+15555550102", "guid-b");
-    doc_b.messages[0].attachments.push(Attachment {
+    let mut document_b = sample_document_for("+15555550102", "guid-b");
+    document_b.messages[0].attachments.push(Attachment {
         path: Some("attachments/shared.txt".into()),
         original_name: Some("shared.txt".into()),
         mime_type: Some("text/plain".into()),
         digest_sha256: Some(digest),
         ..ir::testutil::sample_attachment()
     });
-    write_jsonl(dir.path(), &doc_a);
-    write_jsonl(dir.path(), &doc_b);
+    write_jsonl(dir.path(), &document_a);
+    write_jsonl(dir.path(), &document_b);
 
     let cfg = mock_server_config(dir.path(), server.base_url());
     let report = run(&cfg, None).unwrap();
@@ -1576,9 +1576,10 @@ fn a_failed_upload_frees_a_shared_file_for_the_next_conversation() {
     fs::create_dir(dir.path().join("attachments")).unwrap();
     fs::write(dir.path().join("attachments/shared.txt"), ASSET_BYTES).unwrap();
     for (handle, guid) in [("+15555550101", "guid-a"), ("+15555550102", "guid-b")] {
-        let mut doc = sample_doc_for(handle, guid);
-        doc.messages[0].attachments = vec![ir_attachment("attachments/shared.txt", digest.clone())];
-        write_jsonl(dir.path(), &doc);
+        let mut document = sample_document_for(handle, guid);
+        document.messages[0].attachments =
+            vec![ir_attachment("attachments/shared.txt", digest.clone())];
+        write_jsonl(dir.path(), &document);
     }
     let cfg = ImportConfig {
         prepare_workers: 1,
@@ -1714,7 +1715,7 @@ fn two_conversations_sharing_a_file(dir: &Path) {
     fs::create_dir(dir.join("attachments")).unwrap();
     fs::write(dir.join("attachments/shared.txt"), ASSET_BYTES).unwrap();
 
-    let mut first = sample_doc_for("+15555550101", "guid-a");
+    let mut first = sample_document_for("+15555550101", "guid-a");
     first.messages[0].attachments = vec![ir_attachment("attachments/shared.txt", digest.clone())];
     let filler = first.messages[0].clone();
     for n in 0..20_000 {
@@ -1724,7 +1725,7 @@ fn two_conversations_sharing_a_file(dir: &Path) {
         first.messages.push(message);
     }
     write_jsonl(dir, &first);
-    let mut second = sample_doc_for("+15555550102", "guid-b");
+    let mut second = sample_document_for("+15555550102", "guid-b");
     second.messages[0].attachments = vec![ir_attachment("attachments/shared.txt", digest)];
     write_jsonl(dir, &second);
 }
@@ -1864,8 +1865,8 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
     fs::write(attachment_dir.join("small.txt"), SMALL).unwrap();
     fs::write(attachment_dir.join("big.bin"), BIG).unwrap();
 
-    let mut doc = sample_doc();
-    doc.messages[0].attachments = vec![
+    let mut document = sample_import_document();
+    document.messages[0].attachments = vec![
         Attachment {
             path: Some("attachments/big.bin".into()),
             original_name: Some("big.bin".into()),
@@ -1883,7 +1884,7 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
             ..ir::testutil::sample_attachment()
         },
     ];
-    write_jsonl(dir.path(), &doc);
+    write_jsonl(dir.path(), &document);
 
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
@@ -1990,8 +1991,8 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
     fs::write(attachment_dir.join("small.txt"), SMALL).unwrap();
     // Intentionally do not write gone.bin
 
-    let mut doc = sample_doc();
-    doc.messages[0].attachments = vec![
+    let mut document = sample_import_document();
+    document.messages[0].attachments = vec![
         Attachment {
             path: Some("attachments/gone.bin".into()),
             original_name: Some("gone.bin".into()),
@@ -2017,7 +2018,7 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
             ..ir::testutil::sample_attachment()
         },
     ];
-    write_jsonl(dir.path(), &doc);
+    write_jsonl(dir.path(), &document);
 
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
@@ -2073,15 +2074,15 @@ fn keeps_conversation_ok_when_skipped_attachment_has_no_path() {
     });
 
     let dir = tempdir().unwrap();
-    let mut doc = sample_doc();
-    doc.messages[0].attachments = vec![Attachment {
+    let mut document = sample_import_document();
+    document.messages[0].attachments = vec![Attachment {
         original_name: Some("IMG_0421.HEIC".into()),
         mime_type: Some("image/heic".into()),
         size_bytes: Some(2048),
         missing_reason: Some("not_copied".into()),
         ..ir::testutil::sample_attachment()
     }];
-    write_jsonl(dir.path(), &doc);
+    write_jsonl(dir.path(), &document);
 
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
@@ -2136,13 +2137,13 @@ fn reports_pathless_attachment_without_reason_as_no_path() {
     });
 
     let dir = tempdir().unwrap();
-    let mut doc = sample_doc();
-    doc.messages[0].attachments = vec![Attachment {
+    let mut document = sample_import_document();
+    document.messages[0].attachments = vec![Attachment {
         original_name: Some("mystery.bin".into()),
         mime_type: Some("application/octet-stream".into()),
         ..ir::testutil::sample_attachment()
     }];
-    write_jsonl(dir.path(), &doc);
+    write_jsonl(dir.path(), &document);
 
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
@@ -2204,8 +2205,8 @@ fn conversations_from_two_sources_go_out_in_separate_requests() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    let mut other = sample_doc_for("+15555550102", "guid-2");
+    write_jsonl(dir.path(), &sample_import_document());
+    let mut other = sample_document_for("+15555550102", "guid-2");
     other.export.source = "whatsapp".into();
     write_jsonl(dir.path(), &other);
 
@@ -2289,7 +2290,7 @@ fn a_batch_retried_after_a_503_is_counted_and_journaled_once() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     let cfg = ImportConfig {
         max_retries: 2,
         ..mock_server_config(dir.path(), server.base_url())
@@ -2347,9 +2348,9 @@ fn a_canceled_import_sends_no_further_batch_and_resumes_later() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
     let cancel = Arc::new(AtomicBool::new(false));
     let cfg = ImportConfig {
         batch_size: 1,
@@ -2420,10 +2421,10 @@ fn a_canceled_import_reports_every_conversation_in_one_category() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550104", "guid-4"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550104", "guid-4"));
     let cancel = Arc::new(AtomicBool::new(false));
     let cfg = ImportConfig {
         batch_size: 1,
@@ -2494,13 +2495,13 @@ fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_canceled() {
     });
 
     let dir = tempdir().unwrap();
-    let mut doc = sample_doc();
-    let mut second = doc.messages[0].clone();
+    let mut document = sample_import_document();
+    let mut second = document.messages[0].clone();
     second.guid = "guid-1b".into();
-    let mut third = doc.messages[0].clone();
+    let mut third = document.messages[0].clone();
     third.guid = "guid-1c".into();
-    doc.messages.extend([second, third]);
-    write_jsonl(dir.path(), &doc);
+    document.messages.extend([second, third]);
+    write_jsonl(dir.path(), &document);
     let cancel = Arc::new(AtomicBool::new(false));
     let cfg = ImportConfig {
         batch_size: 1,
@@ -2558,7 +2559,7 @@ fn a_cancel_after_the_last_request_leaves_a_completed_upload() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     let cancel = Arc::new(AtomicBool::new(false));
     let cfg = ImportConfig {
         batch_size: 1,
@@ -2609,11 +2610,11 @@ fn a_refused_session_after_a_failed_batch_still_halts_the_upload() {
     });
 
     let dir = tempdir().unwrap();
-    let mut doc = sample_doc();
-    let mut second = doc.messages[0].clone();
+    let mut document = sample_import_document();
+    let mut second = document.messages[0].clone();
     second.guid = "second-message".into();
-    doc.messages.push(second);
-    write_jsonl(dir.path(), &doc);
+    document.messages.push(second);
+    write_jsonl(dir.path(), &document);
     let cfg = ImportConfig {
         batch_size: 1,
         prepare_ahead: 1,
@@ -2664,9 +2665,9 @@ fn a_second_import_sends_only_the_conversation_whose_batch_failed() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.batch_size = 1;
 
@@ -2735,7 +2736,7 @@ fn an_unreadable_2xx_answer_is_not_retried() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     let cfg = ImportConfig {
         max_retries: 2,
         ..mock_server_config(dir.path(), server.base_url())
@@ -2869,9 +2870,9 @@ fn a_server_told_to_stop_pauses_the_upload_and_fails_no_conversation() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
     let cfg = ImportConfig {
         batch_size: 1,
         prepare_ahead: 1,
@@ -2933,9 +2934,9 @@ fn a_server_that_cannot_be_reached_pauses_the_upload_and_fails_no_conversation()
     let (base_url, batches) = serve_answering_batches_with("", || {});
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
     let cfg = ImportConfig {
         batch_size: 1,
         prepare_ahead: 1,
@@ -2984,7 +2985,7 @@ fn a_pause_while_a_batch_fails_makes_no_further_retry() {
     );
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     let cfg = ImportConfig {
         max_retries: 3,
         cancel,
@@ -3026,7 +3027,7 @@ fn an_attachment_upload_to_an_unavailable_server_pauses_the_upload() {
     });
 
     let dir = tempdir().unwrap();
-    two_attachment_docs(dir.path(), "a.txt", b"first file", "b.txt", b"second file");
+    two_attachment_documents(dir.path(), "a.txt", b"first file", "b.txt", b"second file");
     let cfg = mock_server_config(dir.path(), server.base_url());
 
     let report = run(&cfg, None).unwrap();
@@ -3048,7 +3049,7 @@ fn a_2xx_answer_whose_body_is_cut_off_is_not_retried() {
     let (base_url, batches) = serve_a_200_that_drops_the_batch_body();
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     let cfg = ImportConfig {
         max_retries: 2,
         ..mock_server_config(dir.path(), base_url)
@@ -3108,8 +3109,8 @@ fn a_chunk_that_overflows_the_pending_batch_is_sent_in_the_next_one() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc_for("+15555550101", "guid-a1"));
-    let mut two_messages = sample_doc_for("+15555550102", "guid-b1");
+    write_jsonl(dir.path(), &sample_document_for("+15555550101", "guid-a1"));
+    let mut two_messages = sample_document_for("+15555550102", "guid-b1");
     let mut reply = two_messages.messages[0].clone();
     reply.guid = "guid-b2".into();
     reply.timestamp_unix_ms += 1_000;
@@ -3149,7 +3150,7 @@ fn an_import_keeps_its_journal_in_the_export_directory() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     let cfg = mock_server_config(dir.path(), server.base_url());
 
     assert!(run(&cfg, None).unwrap().ok);
@@ -3180,19 +3181,19 @@ fn an_import_goes_on_after_sending_a_large_batch_early() {
     // The first file in name order holds 120 messages. One conversation is
     // prepared at a time, so the loop comes round with that batch pending
     // while two conversations are still to come.
-    let mut large = sample_doc();
+    let mut large = sample_import_document();
     let first = large.messages[0].clone();
     large.messages = (0..120)
         .map(|i| {
-            let mut msg = first.clone();
-            msg.guid = format!("large-{i}");
-            msg.timestamp_unix_ms += i;
-            msg
+            let mut message = first.clone();
+            message.guid = format!("large-{i}");
+            message.timestamp_unix_ms += i;
+            message
         })
         .collect();
     write_jsonl(dir.path(), &large);
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.batch_size = import::DEFAULT_BATCH_SIZE;
     cfg.prepare_ahead = 1;
@@ -3235,9 +3236,9 @@ fn an_import_with_the_default_size_limit_uploads_a_photo_of_two_mebibytes() {
     let attachment_dir = dir.path().join("attachments");
     fs::create_dir(&attachment_dir).unwrap();
     fs::write(attachment_dir.join("photo.jpg"), &photo).unwrap();
-    let mut doc = sample_doc();
-    doc.messages[0].attachments = vec![ir_attachment("attachments/photo.jpg", digest)];
-    write_jsonl(dir.path(), &doc);
+    let mut document = sample_import_document();
+    document.messages[0].attachments = vec![ir_attachment("attachments/photo.jpg", digest)];
+    write_jsonl(dir.path(), &document);
 
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.asset_max_bytes = import::DEFAULT_ASSET_MAX_BYTES;
@@ -3282,9 +3283,9 @@ fn a_refused_session_stops_the_import_as_a_pause_and_fails_no_conversation() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
     let cfg = ImportConfig {
         batch_size: 1,
         prepare_ahead: 1,
@@ -3363,7 +3364,7 @@ fn a_refused_attachment_upload_stops_the_import_and_fails_no_conversation() {
     });
 
     let dir = tempdir().unwrap();
-    two_attachment_docs(dir.path(), "a.txt", b"first file", "b.txt", b"second file");
+    two_attachment_documents(dir.path(), "a.txt", b"first file", "b.txt", b"second file");
     let cfg = mock_server_config(dir.path(), server.base_url());
 
     let report = run(&cfg, None).unwrap();
@@ -3395,8 +3396,8 @@ fn a_session_refused_at_login_stops_the_import_as_a_pause() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
     let cfg = mock_server_config(dir.path(), server.base_url());
 
     let (report, shown) = run_showing(&cfg);

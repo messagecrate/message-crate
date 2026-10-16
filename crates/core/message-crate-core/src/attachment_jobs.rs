@@ -250,7 +250,9 @@ pub fn stage_attachment_jobs(
 pub fn document_messages(
     documents: &mut [ConversationDocument],
 ) -> impl Iterator<Item = &mut Message> {
-    documents.iter_mut().flat_map(|doc| doc.messages.iter_mut())
+    documents
+        .iter_mut()
+        .flat_map(|document| document.messages.iter_mut())
 }
 
 /// The size to report for an attachment before its bytes are read: the
@@ -268,9 +270,9 @@ pub fn attachment_jobs<'a>(
     messages: impl IntoIterator<Item = &'a mut Message>,
 ) -> Vec<AttachmentJob<'a>> {
     let mut jobs = Vec::new();
-    for msg in messages {
-        let timestamp_unix_ms = msg.timestamp_unix_ms;
-        for att in &mut msg.attachments {
+    for message in messages {
+        let timestamp_unix_ms = message.timestamp_unix_ms;
+        for att in &mut message.attachments {
             let hint = attachment_size_hint(att);
             jobs.push(AttachmentJob {
                 attachment: att,

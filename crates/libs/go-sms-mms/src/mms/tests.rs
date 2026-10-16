@@ -12,35 +12,35 @@ fn a_received_message_decodes_its_headers_and_parts() {
         .text("hello")
         .part(BuildPart::jpeg("pic.jpg", 64))
         .build();
-    let msg = decode(&bytes).unwrap();
-    assert_eq!(msg.message_type, Some(MessageType::RetrieveConf));
-    assert_eq!(msg.from.as_deref(), Some("+14075550107/TYPE=PLMN"));
-    assert_eq!(msg.to, ["+15555550100/TYPE=PLMN"]);
-    assert_eq!(msg.cc, ["+14075550109/TYPE=PLMN"]);
-    assert_eq!(msg.date, Some(1_609_459_200));
-    assert_eq!(msg.subject.as_deref(), Some("Hi there"));
-    assert_eq!(msg.headers["transaction-id"], "T1");
-    assert_eq!(msg.headers["mms-version"], "1.0");
-    assert_eq!(msg.headers["message-class"], "Personal");
-    assert_eq!(msg.headers["message-id"], "MSG-1");
-    assert_eq!(msg.headers["priority"], "Normal");
-    assert_eq!(msg.headers["delivery-report"], "no");
-    let ct = msg.content_type.unwrap();
+    let message = decode(&bytes).unwrap();
+    assert_eq!(message.message_type, Some(MessageType::RetrieveConf));
+    assert_eq!(message.from.as_deref(), Some("+14075550107/TYPE=PLMN"));
+    assert_eq!(message.to, ["+15555550100/TYPE=PLMN"]);
+    assert_eq!(message.cc, ["+14075550109/TYPE=PLMN"]);
+    assert_eq!(message.date, Some(1_609_459_200));
+    assert_eq!(message.subject.as_deref(), Some("Hi there"));
+    assert_eq!(message.headers["transaction-id"], "T1");
+    assert_eq!(message.headers["mms-version"], "1.0");
+    assert_eq!(message.headers["message-class"], "Personal");
+    assert_eq!(message.headers["message-id"], "MSG-1");
+    assert_eq!(message.headers["priority"], "Normal");
+    assert_eq!(message.headers["delivery-report"], "no");
+    let ct = message.content_type.unwrap();
     assert_eq!(ct.media, "application/vnd.wap.multipart.related");
     assert_eq!(ct.params["Start"], "<smil.xml>");
-    let names: Vec<_> = msg.parts.iter().map(|p| p.name().unwrap()).collect();
+    let names: Vec<_> = message.parts.iter().map(|p| p.name().unwrap()).collect();
     assert_eq!(names, ["smil.xml", "text_0.txt", "pic.jpg"]);
-    assert_eq!(msg.parts[1].data, b"hello");
-    assert_eq!(msg.parts[2].data.len(), 64);
+    assert_eq!(message.parts[1].data, b"hello");
+    assert_eq!(message.parts[2].data.len(), 64);
 }
 
 #[test]
 fn a_sent_message_has_the_insert_address_token_and_no_from() {
     let bytes = PduBuilder::sent().to("+14075550107").text("x").build();
-    let msg = decode(&bytes).unwrap();
-    assert_eq!(msg.message_type, Some(MessageType::SendReq));
-    assert_eq!(msg.from, None);
-    assert_eq!(msg.to, ["+14075550107/TYPE=PLMN"]);
+    let message = decode(&bytes).unwrap();
+    assert_eq!(message.message_type, Some(MessageType::SendReq));
+    assert_eq!(message.from, None);
+    assert_eq!(message.to, ["+14075550107/TYPE=PLMN"]);
 }
 
 #[test]
@@ -58,10 +58,10 @@ fn nothing_after_content_type_is_read_as_a_header() {
             data: picture.clone(),
         })
         .build();
-    let msg = decode(&bytes).unwrap();
-    assert_eq!(msg.to, ["+15555550100/TYPE=PLMN"]);
-    assert_eq!(msg.from.as_deref(), Some("+14075550107/TYPE=PLMN"));
-    assert_eq!(msg.parts[1].data, picture);
+    let message = decode(&bytes).unwrap();
+    assert_eq!(message.to, ["+15555550100/TYPE=PLMN"]);
+    assert_eq!(message.from.as_deref(), Some("+14075550107/TYPE=PLMN"));
+    assert_eq!(message.parts[1].data, picture);
 }
 
 #[test]
@@ -74,9 +74,9 @@ fn the_first_header_must_be_the_message_type() {
     assert_eq!(err.what, "X-Mms-Message-Type header");
     // Every other transaction type is named, not refused, so the caller can
     // say what the file was.
-    let msg = decode(&[0x8c, 0x86, 0x84, 0x83]).unwrap();
-    assert_eq!(msg.message_type, Some(MessageType::Other(0x86)));
-    assert_eq!(msg.message_type.unwrap().name(), "m-delivery-ind");
+    let message = decode(&[0x8c, 0x86, 0x84, 0x83]).unwrap();
+    assert_eq!(message.message_type, Some(MessageType::Other(0x86)));
+    assert_eq!(message.message_type.unwrap().name(), "m-delivery-ind");
     assert_eq!(MessageType::Other(0x90).name(), "0x90");
 }
 
@@ -132,10 +132,10 @@ fn from_takes_only_its_two_token_forms_and_its_declared_length() {
 fn a_non_multipart_body_is_one_part_of_the_declared_type() {
     // Content-Type text/plain (constrained), then the body bytes.
     let bytes = [0x8c, 0x84, 0x84, 0x83, b'h', b'i'];
-    let msg = decode(&bytes).unwrap();
-    assert_eq!(msg.parts.len(), 1);
-    assert_eq!(msg.parts[0].content_type.media, "text/plain");
-    assert_eq!(msg.parts[0].data, b"hi");
+    let message = decode(&bytes).unwrap();
+    assert_eq!(message.parts.len(), 1);
+    assert_eq!(message.parts[0].content_type.media, "text/plain");
+    assert_eq!(message.parts[0].data, b"hi");
 }
 
 #[test]
@@ -153,16 +153,16 @@ fn timed_and_token_headers_decode_to_their_names() {
         // Message-Class as text. Response-Text. Read-Status.
         .raw_header(b"\x8aBulk\0\x93ok\0\x9b\x81")
         .build();
-    let msg = decode(&bytes).unwrap();
-    assert_eq!(msg.headers["expiry"], "relative:604800");
-    assert_eq!(msg.headers["read-report"], "yes");
-    assert_eq!(msg.headers["sender-visibility"], "Show");
-    assert_eq!(msg.headers["delivery-time"], "absolute:1609459200");
-    assert_eq!(msg.headers["status"], "Retrieved");
-    assert_eq!(msg.headers["message-size"], "1234");
-    assert_eq!(msg.headers["message-class"], "Bulk");
-    assert_eq!(msg.headers["response-text"], "ok");
-    assert_eq!(msg.headers["read-status"], "Deleted without being read");
+    let message = decode(&bytes).unwrap();
+    assert_eq!(message.headers["expiry"], "relative:604800");
+    assert_eq!(message.headers["read-report"], "yes");
+    assert_eq!(message.headers["sender-visibility"], "Show");
+    assert_eq!(message.headers["delivery-time"], "absolute:1609459200");
+    assert_eq!(message.headers["status"], "Retrieved");
+    assert_eq!(message.headers["message-size"], "1234");
+    assert_eq!(message.headers["message-class"], "Bulk");
+    assert_eq!(message.headers["response-text"], "ok");
+    assert_eq!(message.headers["read-status"], "Deleted without being read");
     // A token outside the list is kept as its number.
     let bytes = PduBuilder::sent().raw_header(&[0x8f, 0x87]).build();
     assert_eq!(decode(&bytes).unwrap().headers["priority"], "0x07");
@@ -247,9 +247,9 @@ fn every_other_header_code_decodes_under_its_name() {
     ];
     for (raw, name, value) in cases {
         let bytes = PduBuilder::sent().raw_header(raw).build();
-        let msg = decode(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let message = decode(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
         assert_eq!(
-            msg.headers.get(*name).map(String::as_str),
+            message.headers.get(*name).map(String::as_str),
             Some(*value),
             "{name}"
         );
@@ -276,10 +276,10 @@ fn an_mms_1_3_content_class_header_does_not_drop_the_message() {
         .raw_header(&[0xba, 0x80])
         .text("hello")
         .build();
-    let msg = decode(&bytes).expect("a 1.3 header is known");
-    assert_eq!(msg.from.as_deref(), Some("+14075550107/TYPE=PLMN"));
-    assert_eq!(msg.headers["content-class"], "text");
-    assert_eq!(msg.parts[1].data, b"hello");
+    let message = decode(&bytes).expect("a 1.3 header is known");
+    assert_eq!(message.from.as_deref(), Some("+14075550107/TYPE=PLMN"));
+    assert_eq!(message.headers["content-class"], "text");
+    assert_eq!(message.parts[1].data, b"hello");
 }
 
 #[test]

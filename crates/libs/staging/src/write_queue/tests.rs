@@ -28,12 +28,12 @@ fn att(name: &str) -> Attachment {
 
 /// A one-message document with `count` attachments, keyed by `who` so
 /// each unit lands on its own conversation file.
-fn doc_with(who: &str, count: usize) -> ConversationDocument {
-    let mut doc = ir::testutil::sample_document("hello");
-    doc.conversation.chat_identifier = who.into();
-    doc.conversation.participants[0].identity = Some(who.into());
-    doc.messages[0].attachments = (0..count).map(|i| att(&format!("f{i}.jpg"))).collect();
-    doc
+fn document_with(who: &str, count: usize) -> ConversationDocument {
+    let mut document = ir::testutil::sample_document("hello");
+    document.conversation.chat_identifier = who.into();
+    document.conversation.participants[0].identity = Some(who.into());
+    document.messages[0].attachments = (0..count).map(|i| att(&format!("f{i}.jpg"))).collect();
+    document
 }
 
 /// The reserved test number `+1 555-555-01nn` for unit `n`, so a generator
@@ -42,9 +42,9 @@ fn test_number(n: u32) -> String {
     format!("+155555501{n:02}")
 }
 
-fn unit_from(doc: ConversationDocument, sources: Vec<AttachmentSource>) -> ConversationUnit {
+fn unit_from(document: ConversationDocument, sources: Vec<AttachmentSource>) -> ConversationUnit {
     let mut it = sources.into_iter();
-    ConversationUnit::from_doc(doc, |_, _att| {
+    ConversationUnit::from_document(document, |_, _att| {
         let source = it.next().unwrap_or(AttachmentSource::Missing);
         let hint = match &source {
             AttachmentSource::Bytes(b) => Some(b.len() as u64),
@@ -87,11 +87,11 @@ fn drains_units_and_writes_conversation_files_last() {
 
     let units = vec![
         unit_from(
-            doc_with(&test_number(6), 1),
+            document_with(&test_number(6), 1),
             vec![AttachmentSource::Bytes(b"inline-bytes".to_vec())],
         ),
         unit_from(
-            doc_with(&test_number(7), 1),
+            document_with(&test_number(7), 1),
             vec![AttachmentSource::Path(src)],
         ),
     ];
@@ -110,8 +110,8 @@ fn drains_units_and_writes_conversation_files_last() {
     assert_eq!(files.len(), 2, "one conversation file per unit");
 
     for name in files {
-        let doc = read_conversation_jsonl(&out.join(&name)).unwrap();
-        let a = &doc.messages[0].attachments[0];
+        let document = read_conversation_jsonl(&out.join(&name)).unwrap();
+        let a = &document.messages[0].attachments[0];
         assert!(a.path.as_deref().unwrap().starts_with("attachments/"));
         assert_eq!(a.digest_sha256.as_ref().unwrap().len(), 64);
         assert!(a.size_bytes.unwrap() > 0);
@@ -131,11 +131,11 @@ fn resume_skips_a_unit_whose_conversation_file_exists() {
     let build = || {
         vec![
             unit_from(
-                doc_with(&test_number(6), 1),
+                document_with(&test_number(6), 1),
                 vec![AttachmentSource::Bytes(b"a".to_vec())],
             ),
             unit_from(
-                doc_with(&test_number(7), 1),
+                document_with(&test_number(7), 1),
                 vec![AttachmentSource::Bytes(b"b".to_vec())],
             ),
         ]
@@ -166,18 +166,18 @@ fn resume_rewrites_a_unit_whose_conversation_file_is_missing() {
     let build = || {
         vec![
             unit_from(
-                doc_with(&test_number(6), 1),
+                document_with(&test_number(6), 1),
                 vec![AttachmentSource::Bytes(b"a".to_vec())],
             ),
             unit_from(
-                doc_with(&test_number(7), 1),
+                document_with(&test_number(7), 1),
                 vec![AttachmentSource::Bytes(b"b".to_vec())],
             ),
         ]
     };
     drain(&out, build(), &options(AttachmentFiles::Originals, false)).unwrap();
 
-    let doomed = conversation_file(&out, &doc_with(&test_number(7), 0));
+    let doomed = conversation_file(&out, &document_with(&test_number(7), 0));
     assert!(doomed.is_file());
     fs::remove_file(&doomed).unwrap();
 
@@ -195,22 +195,22 @@ fn resume_rewrites_a_conversation_file_that_is_empty_or_cut_off() {
     let build = || {
         vec![
             unit_from(
-                doc_with(&test_number(6), 1),
+                document_with(&test_number(6), 1),
                 vec![AttachmentSource::Bytes(b"a".to_vec())],
             ),
             unit_from(
-                doc_with(&test_number(7), 1),
+                document_with(&test_number(7), 1),
                 vec![AttachmentSource::Bytes(b"b".to_vec())],
             ),
             unit_from(
-                doc_with(&test_number(8), 1),
+                document_with(&test_number(8), 1),
                 vec![AttachmentSource::Bytes(b"c".to_vec())],
             ),
         ]
     };
     drain(&out, build(), &options(AttachmentFiles::Originals, false)).unwrap();
 
-    let file_for = |who: &str| conversation_file(&out, &doc_with(who, 0));
+    let file_for = |who: &str| conversation_file(&out, &document_with(who, 0));
     let intact = file_for(&test_number(6));
     let cut_off = file_for(&test_number(7));
     let empty = file_for(&test_number(8));
@@ -235,8 +235,12 @@ fn resume_rewrites_a_conversation_file_that_is_empty_or_cut_off() {
         full,
         "the cut-off file is whole again"
     );
-    let doc = read_conversation_jsonl(&empty).unwrap();
-    assert_eq!(doc.messages.len(), 1, "the empty file is written in full");
+    let document = read_conversation_jsonl(&empty).unwrap();
+    assert_eq!(
+        document.messages.len(),
+        1,
+        "the empty file is written in full"
+    );
 }
 
 #[test]
@@ -245,14 +249,15 @@ fn disabled_mode_marks_not_copied_and_clears_paths() {
     let out = tmp.path().join("out");
     fs::create_dir_all(&out).unwrap();
     let units = vec![unit_from(
-        doc_with(&test_number(6), 1),
+        document_with(&test_number(6), 1),
         vec![AttachmentSource::Bytes(b"ignored".to_vec())],
     )];
     drain(&out, units, &options(AttachmentFiles::Skip, false)).unwrap();
 
-    let doc =
-        read_conversation_jsonl(&conversation_file(&out, &doc_with(&test_number(6), 0))).unwrap();
-    let a = &doc.messages[0].attachments[0];
+    let document =
+        read_conversation_jsonl(&conversation_file(&out, &document_with(&test_number(6), 0)))
+            .unwrap();
+    let a = &document.messages[0].attachments[0];
     assert_eq!(a.missing_reason.as_deref(), Some("not_copied"));
     assert!(a.path.is_none());
     assert!(a.digest_sha256.is_none());
@@ -267,7 +272,7 @@ fn missing_source_becomes_file_missing_and_the_drain_continues() {
     let out = tmp.path().join("out");
     fs::create_dir_all(&out).unwrap();
     let units = vec![unit_from(
-        doc_with(&test_number(6), 2),
+        document_with(&test_number(6), 2),
         vec![
             AttachmentSource::Missing,
             AttachmentSource::Bytes(b"present".to_vec()),
@@ -276,9 +281,10 @@ fn missing_source_becomes_file_missing_and_the_drain_continues() {
     let report = drain(&out, units, &options(AttachmentFiles::Originals, false)).unwrap();
     assert_eq!(report.conversations_written, 1);
 
-    let doc =
-        read_conversation_jsonl(&conversation_file(&out, &doc_with(&test_number(6), 0))).unwrap();
-    let atts = &doc.messages[0].attachments;
+    let document =
+        read_conversation_jsonl(&conversation_file(&out, &document_with(&test_number(6), 0)))
+            .unwrap();
+    let atts = &document.messages[0].attachments;
     assert_eq!(atts[0].missing_reason.as_deref(), Some("file_missing"));
     assert!(atts[1].path.is_some(), "the readable one still landed");
 }
@@ -293,9 +299,9 @@ fn an_attachment_the_drain_cannot_stage_is_named_in_its_log() {
     let tmp = tempfile::tempdir().unwrap();
     let out = tmp.path().join("out");
     let bytes = b"blocked".to_vec();
-    let doc = doc_with(&test_number(8), 1);
+    let document = document_with(&test_number(8), 1);
     let staged = message_crate_core::attachment_dest_name(
-        doc.messages[0].timestamp_unix_ms.div_euclid(1000),
+        document.messages[0].timestamp_unix_ms.div_euclid(1000),
         &file_io::sha256_hex(&bytes),
         ".jpg",
     );
@@ -304,7 +310,7 @@ fn an_attachment_the_drain_cannot_stage_is_named_in_its_log() {
 
     drain_write_queue_with_loader(
         &out,
-        vec![unit_from(doc, vec![AttachmentSource::Bytes(bytes)])],
+        vec![unit_from(document, vec![AttachmentSource::Bytes(bytes)])],
         &options(AttachmentFiles::Originals, false),
         &mut |_: &str, source: &mut AttachmentSource| load_attachment_source(source),
         Sinks {
@@ -332,11 +338,11 @@ fn progress_lines_cover_all_units_with_global_counts() {
 
     let units = vec![
         unit_from(
-            doc_with(&test_number(6), 1),
+            document_with(&test_number(6), 1),
             vec![AttachmentSource::Bytes(b"a".to_vec())],
         ),
         unit_from(
-            doc_with(&test_number(7), 1),
+            document_with(&test_number(7), 1),
             vec![AttachmentSource::Bytes(b"b".to_vec())],
         ),
     ];
@@ -381,7 +387,7 @@ fn parallel_drain_writes_every_unit() {
     let units: Vec<_> = (0..12)
         .map(|i| {
             unit_from(
-                doc_with(&test_number(i), 1),
+                document_with(&test_number(i), 1),
                 vec![AttachmentSource::Bytes(format!("payload-{i}").into_bytes())],
             )
         })
@@ -409,14 +415,14 @@ fn parallel_drain_stops_on_the_first_error() {
     // A directory sitting where a conversation file must go: the write
     // fails for that unit, and the drain reports it rather than
     // finishing quietly.
-    let blocked_doc = doc_with(&test_number(3), 0);
-    let blocked = filename_stem(&blocked_doc);
-    fs::create_dir_all(conversation_file(&out, &blocked_doc)).unwrap();
+    let blocked_document = document_with(&test_number(3), 0);
+    let blocked = filename_stem(&blocked_document);
+    fs::create_dir_all(conversation_file(&out, &blocked_document)).unwrap();
 
     let units: Vec<_> = (1..=4)
         .map(|i| {
             unit_from(
-                doc_with(&test_number(i), 1),
+                document_with(&test_number(i), 1),
                 vec![AttachmentSource::Bytes(b"x".to_vec())],
             )
         })
@@ -516,7 +522,7 @@ fn last_attachment_bytes(writer_count: usize) -> (u64, u64) {
     // Each source claims 100 bytes for a 5-byte file.
     let units: Vec<_> = (1..=3)
         .map(|i| {
-            ConversationUnit::from_doc(doc_with(&test_number(i), 1), |_, _| {
+            ConversationUnit::from_document(document_with(&test_number(i), 1), |_, _| {
                 (AttachmentSource::Bytes(b"xxxxx".to_vec()), Some(100))
             })
         })
@@ -551,7 +557,7 @@ fn the_byte_total_leaves_out_an_attachment_with_no_file_from_the_start() {
             (AttachmentSource::Missing, Some(1_000)),
         ]
         .into_iter();
-        let unit = ConversationUnit::from_doc(doc_with(&test_number(7), 2), |_, _| {
+        let unit = ConversationUnit::from_document(document_with(&test_number(7), 2), |_, _| {
             sources.next().unwrap()
         });
 
@@ -596,9 +602,10 @@ fn the_byte_total_stays_the_same_when_a_file_is_gone_or_a_source_is_empty() {
         }
         let count = sources.len();
         let mut sources = sources.into_iter();
-        let unit = ConversationUnit::from_doc(doc_with(&test_number(8), count), |_, _| {
-            sources.next().unwrap()
-        });
+        let unit =
+            ConversationUnit::from_document(document_with(&test_number(8), count), |_, _| {
+                sources.next().unwrap()
+            });
 
         let bytes = attachment_bytes(vec![unit], writer_count);
 
@@ -626,7 +633,7 @@ fn parallel_progress_counts_are_snapshots_that_never_go_back() {
     const PER_UNIT: usize = 3;
     let units: Vec<_> = (1..=UNITS as u32)
         .map(|i| {
-            ConversationUnit::from_doc(doc_with(&test_number(i), PER_UNIT), |_, _| {
+            ConversationUnit::from_document(document_with(&test_number(i), PER_UNIT), |_, _| {
                 (AttachmentSource::Bytes(b"xxxxx".to_vec()), Some(100))
             })
         })
@@ -696,7 +703,7 @@ fn typed_progress_covers_prepare_and_attachments_across_units() {
     let units: Vec<_> = (1..=4)
         .map(|i| {
             unit_from(
-                doc_with(&test_number(i), 1),
+                document_with(&test_number(i), 1),
                 vec![AttachmentSource::Bytes(b"x".to_vec())],
             )
         })
@@ -747,11 +754,11 @@ fn sequential_drain_reports_prepare_in_order_and_counts_resumed_units() {
     let build = || {
         vec![
             unit_from(
-                doc_with(&test_number(6), 1),
+                document_with(&test_number(6), 1),
                 vec![AttachmentSource::Bytes(b"a".to_vec())],
             ),
             unit_from(
-                doc_with(&test_number(7), 1),
+                document_with(&test_number(7), 1),
                 vec![AttachmentSource::Bytes(b"b".to_vec())],
             ),
         ]
@@ -791,7 +798,7 @@ fn an_unreadable_attachment_is_logged_before_it_becomes_a_chip() {
     let (sink, recorded) = recorded_log();
 
     let units = vec![unit_from(
-        doc_with(&test_number(6), 1),
+        document_with(&test_number(6), 1),
         vec![AttachmentSource::Path(missing.clone())],
     )];
     let report = drain_write_queue(
@@ -819,10 +826,13 @@ fn an_unreadable_attachment_is_logged_before_it_becomes_a_chip() {
          without it, before it turns into a chip: {recorded:?}"
     );
 
-    let doc =
-        read_conversation_jsonl(&conversation_file(&out, &doc_with(&test_number(6), 0))).unwrap();
+    let document =
+        read_conversation_jsonl(&conversation_file(&out, &document_with(&test_number(6), 0)))
+            .unwrap();
     assert_eq!(
-        doc.messages[0].attachments[0].missing_reason.as_deref(),
+        document.messages[0].attachments[0]
+            .missing_reason
+            .as_deref(),
         Some("file_missing")
     );
 }
@@ -837,7 +847,7 @@ fn a_resumed_run_does_not_report_a_gone_file_of_a_written_conversation_again() {
     let gone = tmp.path().join("gone.jpg");
     let build = || {
         vec![unit_from(
-            doc_with(&test_number(6), 1),
+            document_with(&test_number(6), 1),
             vec![AttachmentSource::Path(gone.clone())],
         )]
     };
@@ -877,7 +887,7 @@ fn a_resumed_run_does_not_report_a_gone_file_of_a_written_conversation_again() {
 fn a_drain_the_disk_cannot_hold_is_refused_before_anything_is_written() {
     let hinted = || {
         let mut unit = unit_from(
-            doc_with(&test_number(6), 1),
+            document_with(&test_number(6), 1),
             vec![AttachmentSource::Bytes(b"small".to_vec())],
         );
         unit.attachments[0].size_hint = Some(u64::MAX / 2);
@@ -921,11 +931,11 @@ fn take_bytes_moves_the_bytes_out_of_the_attachment() {
 /// A group conversation with its own chat identifier, titled or not, whose
 /// only message says `text`.
 fn group(chat_id: &str, title: Option<&str>, text: &str) -> ConversationDocument {
-    let mut doc = ir::testutil::sample_document(text);
-    doc.conversation.chat_identifier = chat_id.into();
-    doc.conversation.conversation_type = ir::ConversationType::Group;
-    doc.conversation.group_title = title.map(str::to_string);
-    doc
+    let mut document = ir::testutil::sample_document(text);
+    document.conversation.chat_identifier = chat_id.into();
+    document.conversation.conversation_type = ir::ConversationType::Group;
+    document.conversation.group_title = title.map(str::to_string);
+    document
 }
 
 /// Each staged file's chat identifier and first message text, sorted.
@@ -935,10 +945,10 @@ fn staged_texts(out: &Path) -> Vec<(String, String)> {
         .filter_map(|e| e.ok())
         .filter(|e| e.file_name().to_string_lossy().ends_with(".jsonl"))
         .map(|e| {
-            let doc = read_conversation_jsonl(&e.path()).unwrap();
+            let document = read_conversation_jsonl(&e.path()).unwrap();
             (
-                doc.conversation.chat_identifier,
-                doc.messages[0].text.clone(),
+                document.conversation.chat_identifier,
+                document.messages[0].text.clone(),
             )
         })
         .collect();
@@ -1022,7 +1032,7 @@ fn the_same_chat_twice_is_refused_rather_than_overwritten() {
 fn skipped_attachments_are_not_refused_for_files_it_will_not_write() {
     let hinted = || {
         let mut unit = unit_from(
-            doc_with(&test_number(6), 1),
+            document_with(&test_number(6), 1),
             vec![AttachmentSource::Bytes(b"small".to_vec())],
         );
         unit.attachments[0].size_hint = Some(u64::MAX / 2);
@@ -1053,9 +1063,10 @@ fn skipped_attachments_are_not_refused_for_files_it_will_not_write() {
 #[test]
 fn a_missing_attachment_is_not_counted_against_the_disk() {
     let tmp = tempfile::tempdir().unwrap();
-    let mut doc = doc_with(&test_number(6), 1);
-    doc.messages[0].attachments[0].size_bytes = Some(u64::MAX / 2);
-    let unit = ConversationUnit::from_doc(doc, |_, att| AttachmentSource::take_bytes(att));
+    let mut document = document_with(&test_number(6), 1);
+    document.messages[0].attachments[0].size_bytes = Some(u64::MAX / 2);
+    let unit =
+        ConversationUnit::from_document(document, |_, att| AttachmentSource::take_bytes(att));
     assert!(matches!(
         unit.attachments[0].source,
         AttachmentSource::Missing
@@ -1108,7 +1119,7 @@ fn a_resumed_drain_names_each_conversation_file_it_writes_or_skips() {
     let out = tmp.path().join("out");
     let unit = |n: u32, bytes: &[u8]| {
         unit_from(
-            doc_with(&test_number(n), 1),
+            document_with(&test_number(n), 1),
             vec![AttachmentSource::Bytes(bytes.to_vec())],
         )
     };
@@ -1164,7 +1175,7 @@ fn a_parallel_drain_names_each_conversation_file_it_writes() {
     let units: Vec<_> = (1..=3)
         .map(|i| {
             unit_from(
-                doc_with(&test_number(i), 1),
+                document_with(&test_number(i), 1),
                 vec![AttachmentSource::Bytes(b"x".to_vec())],
             )
         })
@@ -1206,7 +1217,7 @@ fn a_cancel_while_attachments_are_staged_stays_a_cancel() {
     fs::create_dir_all(&out).unwrap();
     let cancel = CancelFlag::default();
     let units = vec![unit_from(
-        doc_with(&test_number(8), 2),
+        document_with(&test_number(8), 2),
         vec![
             AttachmentSource::Bytes(b"first".to_vec()),
             AttachmentSource::Bytes(b"second".to_vec()),

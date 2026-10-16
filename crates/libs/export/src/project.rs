@@ -21,8 +21,11 @@ use serde_json::json;
 use api_types::{Attachment, Message, Tapback};
 
 /// Grouping key so messages from the same chat and backup source stay together.
-pub fn conversation_key(msg: &Message) -> String {
-    format!("{}::{}", msg.source, msg.conversation.chat_identifier)
+pub fn conversation_key(message: &Message) -> String {
+    format!(
+        "{}::{}",
+        message.source, message.conversation.chat_identifier
+    )
 }
 
 /// Build one conversation document from a seed message and the mapped rows,
@@ -93,42 +96,43 @@ pub fn build_document(
 /// # Errors
 ///
 /// Returns an error when the timestamp or the backup date cannot be parsed.
-pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage> {
-    let timestamp_unix_ms = parse_timestamp_unix_ms(msg.timestamp.as_str())
-        .with_context(|| format!("message {} timestamp", msg.id))?;
-    let backup_taken_at_unix_ms = msg
+pub fn to_ir_message(message: &Message, skip_attachments: bool) -> Result<IrMessage> {
+    let timestamp_unix_ms = parse_timestamp_unix_ms(message.timestamp.as_str())
+        .with_context(|| format!("message {} timestamp", message.id))?;
+    let backup_taken_at_unix_ms = message
         .backup_taken_at
         .as_deref()
         .map(parse_timestamp_unix_ms)
         .transpose()
-        .with_context(|| format!("message {} backup date", msg.id))?;
+        .with_context(|| format!("message {} backup date", message.id))?;
 
-    let service = Transport::parse(msg.service.as_deref().unwrap_or(""));
-    let direction = if msg.is_from_me {
+    let service = Transport::parse(message.service.as_deref().unwrap_or(""));
+    let direction = if message.is_from_me {
         Direction::Outgoing
     } else {
         Direction::Incoming
     };
-    let message_kind = infer_kind(msg, service);
+    let message_kind = infer_kind(message, service);
 
     let attachments = if skip_attachments {
         Vec::new()
     } else {
-        msg.attachments
+        message
+            .attachments
             .iter()
             .map(to_ir_attachment)
             .collect::<Vec<_>>()
     };
 
-    let reply_to = msg.reply_to.as_ref().map(|reply_to| ReplyTo {
+    let reply_to = message.reply_to.as_ref().map(|reply_to| ReplyTo {
         guid: reply_to.guid.clone(),
         part_index: reply_to.part_index.and_then(|n| u32::try_from(n).ok()),
     });
     let imessage = ImessageExtensions {
         // An announcement with no text carries no information, so drop it.
-        announcement: msg
+        announcement: message
             .is_announcement
-            .then(|| msg.text.clone().unwrap_or_default())
+            .then(|| message.text.clone().unwrap_or_default())
             .filter(|text| !text.is_empty()),
         ..Default::default()
     };
@@ -136,31 +140,35 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
     // Keep the server's row id and source name so a later import can trace
     // each message back to the server it came from.
     let mut source_fields = serde_json::Map::new();
-    source_fields.insert("server_message_id".into(), json!(msg.id));
-    source_fields.insert("server_source".into(), json!(msg.source));
+    source_fields.insert("server_message_id".into(), json!(message.id));
+    source_fields.insert("server_source".into(), json!(message.source));
 
     Ok(IrMessage {
-        guid: msg.guid.clone(),
+        guid: message.guid.clone(),
         timestamp_unix_ms,
-        time_precision: time_precision_from_api(msg.time_precision),
+        time_precision: time_precision_from_api(message.time_precision),
         direction,
         service,
         message_kind,
-        sender_identity: msg.sender.clone(),
+        sender_identity: message.sender.clone(),
         sender_display_name: None,
         sender_country: None,
-        owner_identity: msg.owner.clone().filter(|o| !o.trim().is_empty()),
-        subject: msg.subject.clone(),
-        text: msg.text.clone().unwrap_or_default(),
+        owner_identity: message.owner.clone().filter(|o| !o.trim().is_empty()),
+        subject: message.subject.clone(),
+        text: message.text.clone().unwrap_or_default(),
         attachments,
-        reactions: msg.tapbacks.iter().filter_map(reaction_from_row).collect(),
-        deletion: msg.deletion.map(deletion_from_api),
-        edits: msg
+        reactions: message
+            .tapbacks
+            .iter()
+            .filter_map(reaction_from_row)
+            .collect(),
+        deletion: message.deletion.map(deletion_from_api),
+        edits: message
             .earlier_versions
             .iter()
             .map(earlier_version_from_api)
             .collect::<Result<_>>()
-            .with_context(|| format!("message {} earlier versions", msg.id))?,
+            .with_context(|| format!("message {} earlier versions", message.id))?,
         reply_to,
         imessage: imessage.into_option(),
         source: VendorFields {
@@ -316,11 +324,11 @@ fn reaction_from_row(row: &Tapback) -> Option<Reaction> {
 }
 
 /// Choose SMS, MMS, iMessage, or announcement from service and attachments.
-fn infer_kind(msg: &Message, service: Transport) -> MessageKind {
-    if msg.is_announcement {
+fn infer_kind(message: &Message, service: Transport) -> MessageKind {
+    if message.is_announcement {
         return MessageKind::Announcement;
     }
-    if !msg.attachments.is_empty() && matches!(service, Transport::Sms | Transport::Rcs) {
+    if !message.attachments.is_empty() && matches!(service, Transport::Sms | Transport::Rcs) {
         return MessageKind::Mms;
     }
     match service {
@@ -332,7 +340,7 @@ fn infer_kind(msg: &Message, service: Transport) -> MessageKind {
         | Transport::Telegram
         | Transport::Slack => MessageKind::Unknown,
         Transport::Unknown => {
-            if msg.attachments.is_empty() {
+            if message.attachments.is_empty() {
                 MessageKind::Sms
             } else {
                 MessageKind::Mms

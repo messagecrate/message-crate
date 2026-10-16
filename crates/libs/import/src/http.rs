@@ -566,10 +566,10 @@ mod tests {
 
     #[test]
     fn payload_too_large_names_the_import_chunk_size() {
-        let msg = payload_too_large_message("Import Run 42 batch", Some(10));
+        let message = payload_too_large_message("Import Run 42 batch", Some(10));
         assert!(
-            msg.contains("imports under 16 MiB"),
-            "413 help must name the import chunk size, got {msg}"
+            message.contains("imports under 16 MiB"),
+            "413 help must name the import chunk size, got {message}"
         );
     }
 
