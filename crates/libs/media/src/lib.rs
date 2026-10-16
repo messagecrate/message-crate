@@ -1,4 +1,6 @@
-//! Convert or compress attachment media under a converter export directory.
+//! Convert or compress one attachment file at a time ([`transcode_file`],
+//! [`transcode_file_as`]). The desktop app's Media Stage, which walks a run's
+//! conversations and their attachments, is `message_staging::transcode_staged`.
 //!
 //! Modes:
 //! - **Disabled**: do not copy or write attachment files (the Import form's

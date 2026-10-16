@@ -69,11 +69,11 @@
 //!
 //! ffmpeg/ffprobe are probed once, before any document is touched. A
 //! missing pair fails the whole Media Stage; it must never brand every
-//! attachment `convert_failed: ffmpeg not found`. An attachment ffmpeg genuinely fails on, by contrast, is an
-//! item-level issue: `missing_reason` gets `convert_failed: <detail>` and the
-//! original, still on disk and untouched, keeps its `path` and
-//! `digest_sha256` so a resume retries it rather than treating a transient
-//! failure as permanent loss.
+//! attachment `convert_failed: ffmpeg not found`. An attachment ffmpeg
+//! genuinely fails on, by contrast, is an item-level issue:
+//! `missing_reason` gets `convert_failed: <detail>` and the original, still
+//! on disk and untouched, keeps its `path` and `digest_sha256` so a resume
+//! retries it rather than treating a transient failure as permanent loss.
 //!
 //! ## Issues
 //!
