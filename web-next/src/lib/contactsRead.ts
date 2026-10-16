@@ -106,7 +106,7 @@ function contactHasMessagesSql(): string {
           SELECT 1
           FROM conversations cv
           JOIN messages m ON m.conversation_id = cv.id
-          WHERE cv.conversation_type = 'individual'
+          WHERE cv.conversation_type = 'one-to-one'
             AND cv.chat_handle_id = cp.handle_id
             AND cv.account_id = cp.account_id
             ${trashOnHandle}
@@ -394,7 +394,7 @@ function contactDateRange(
       `SELECT MIN(substr(m.timestamp, 1, 10)) AS start, MAX(substr(m.timestamp, 1, 10)) AS end
        FROM messages m
        JOIN conversations c ON c.id = m.conversation_id
-       WHERE c.conversation_type = 'individual'
+       WHERE c.conversation_type = 'one-to-one'
          AND c.account_id = ?
          AND c.chat_handle_id IN (${placeholders})${trashFilter}${hideDupes}`,
     )
@@ -434,7 +434,7 @@ function contactIndividualConversationIds(
       .prepare(
         `SELECT cv.id FROM conversations cv
          WHERE cv.account_id = ?
-           AND cv.conversation_type = 'individual' AND cv.chat_handle_id IN (${placeholders})
+           AND cv.conversation_type = 'one-to-one' AND cv.chat_handle_id IN (${placeholders})
            ${trashFilter}`,
       )
       .all(accountId, ...handleIds) as Array<{ id: number }>
@@ -524,7 +524,7 @@ function contactMessageCountsById(
        FROM contact_handles cp
        JOIN conversations c
          ON c.chat_handle_id = cp.handle_id
-        AND c.conversation_type = 'individual'
+        AND c.conversation_type = 'one-to-one'
         AND c.account_id = cp.account_id
        JOIN messages m ON m.conversation_id = c.id
        WHERE cp.account_id = ? AND cp.contact_id IN (${placeholders})${hideDupes}
@@ -590,7 +590,7 @@ function contactDateRangesById(
        FROM contact_handles cp
        JOIN conversations c
          ON c.chat_handle_id = cp.handle_id
-        AND c.conversation_type = 'individual'
+        AND c.conversation_type = 'one-to-one'
         AND c.account_id = cp.account_id
        JOIN messages m ON m.conversation_id = c.id
        WHERE cp.account_id = ? AND cp.contact_id IN (${placeholders})${hideDupes}
@@ -780,7 +780,7 @@ export function contactYearlyThreadsForPhones(
        JOIN messages m ON m.conversation_id = c.id
        LEFT JOIN attachments a ON a.message_id = m.id
        WHERE c.account_id = ?
-         AND c.conversation_type = 'individual'
+         AND c.conversation_type = 'one-to-one'
          AND c.chat_handle_id IN (${placeholders})${sourceSql}${combinedDedupeSql(source, "m")}
          ${trashFilter}
        GROUP BY year
@@ -841,7 +841,7 @@ export function listTrashedContacts(): TrashedContactItem[] {
                 FROM contact_handles cp
                 JOIN conversations cv
                   ON cv.chat_handle_id = cp.handle_id
-                 AND cv.conversation_type = 'individual'
+                 AND cv.conversation_type = 'one-to-one'
                  AND cv.account_id = cp.account_id
                 JOIN messages m ON m.conversation_id = cv.id
                 WHERE cp.contact_id = c.id AND cp.account_id = c.account_id${hideDupes}
@@ -917,7 +917,7 @@ export function listTrashedContactMessages(): TrashedContactMessagesItem[] {
        FROM trashed_conversations th
        JOIN conversations cv
          ON cv.id = th.conversation_id
-        AND cv.conversation_type = 'individual'
+        AND cv.conversation_type = 'one-to-one'
         AND cv.account_id = th.account_id
        JOIN handles thh ON thh.id = cv.chat_handle_id
        JOIN contact_handles cp ON cp.handle_id = cv.chat_handle_id AND cp.account_id = th.account_id

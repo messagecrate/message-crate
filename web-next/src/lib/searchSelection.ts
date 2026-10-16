@@ -3,7 +3,7 @@ import type { SearchConversationHit } from "@/lib/search";
 export type SearchResultKey = `direct:${string}` | `group:${number}`;
 export type SelectedSearchResultGroup = {
   key: SearchResultKey;
-  conversationType: "group" | "individual";
+  conversationType: "group" | "one-to-one";
   chatIdentifier: string;
   title: string;
   conversationIds: number[];
@@ -84,7 +84,7 @@ export function orderedSearchContactIds(
   const seen = new Set<number>();
   const out: number[] = [];
   for (const hit of hits) {
-    if (hit.conversationType !== "individual") continue;
+    if (hit.conversationType !== "one-to-one") continue;
     if (hit.contactId == null) continue;
     if (seen.has(hit.contactId)) continue;
     seen.add(hit.contactId);

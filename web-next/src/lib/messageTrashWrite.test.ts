@@ -24,7 +24,7 @@ function testDb(): Database.Database {
     INSERT INTO conversations (id, account_id, chat_handle_id, conversation_type, source_file)
       VALUES
         (20, 101, 2, 'group', 't.json'),
-        (21, 101, 1, 'individual', 't.json'),
+        (21, 101, 1, 'one-to-one', 't.json'),
         (30, 102, 3, 'group', 't.json');
   `);
   return db;

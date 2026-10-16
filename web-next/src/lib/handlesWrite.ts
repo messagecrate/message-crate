@@ -72,7 +72,7 @@ export function handleIdForRaw(
  * 1:1 conversation (`trashed_conversations`), as on the server.
  */
 const INDIVIDUAL_CONVERSATIONS_OF_HANDLE = `SELECT id FROM conversations
-   WHERE account_id = ? AND conversation_type = 'individual' AND chat_handle_id = ?`;
+   WHERE account_id = ? AND conversation_type = 'one-to-one' AND chat_handle_id = ?`;
 
 /** Take one handle's 1:1 conversation out of the trash. */
 export function untrashHandleConversations(

@@ -59,7 +59,7 @@ describe("deleteAllMessagesForAccount", () => {
             `INSERT INTO conversations (
                account_id, chat_handle_id, conversation_type,
                group_title, source_file
-             ) VALUES (?, ?, 'individual', NULL, 'test.json')`,
+             ) VALUES (?, ?, 'one-to-one', NULL, 'test.json')`,
           )
           .run(accountId, handleId).lastInsertRowid,
       );

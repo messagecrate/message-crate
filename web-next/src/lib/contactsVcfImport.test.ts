@@ -74,7 +74,7 @@ describe("contactsVcfImport preview/commit", () => {
           `INSERT INTO conversations (
              account_id, chat_handle_id, conversation_type,
              group_title, source_file
-           ) VALUES (?, ?, 'individual', NULL, 't.json')`,
+           ) VALUES (?, ?, 'one-to-one', NULL, 't.json')`,
         )
         .run(acct, handleId);
       const cid = Number(result.lastInsertRowid);
@@ -248,7 +248,7 @@ END:VCARD
           `INSERT INTO conversations (
              account_id, chat_handle_id, conversation_type,
              group_title, source_file
-           ) VALUES (?, ?, 'individual', NULL, 't.json')`,
+           ) VALUES (?, ?, 'one-to-one', NULL, 't.json')`,
         )
         .run(accountId, handleId);
       const cid = Number(result.lastInsertRowid);

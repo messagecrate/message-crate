@@ -137,7 +137,7 @@ describe("fresh vault schema", () => {
     db.prepare(
       `INSERT INTO conversations (
          account_id, chat_handle_id, conversation_type, source_file
-       ) VALUES (?, ?, 'individual', 'test.json')`,
+       ) VALUES (?, ?, 'one-to-one', 'test.json')`,
     ).run(ACCOUNT_ID, handleId);
     const conversationId = Number(
       db.prepare(`SELECT id FROM conversations`).pluck().get(),

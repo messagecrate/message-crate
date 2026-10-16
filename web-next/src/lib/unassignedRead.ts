@@ -127,7 +127,7 @@ function listHandleSection(section: "unassigned" | "trash"): UnassignedHandle[] 
        LEFT JOIN participants p
          ON p.conversation_id = c.id AND p.handle_id = c.chat_handle_id
        WHERE c.account_id = ?
-         AND c.conversation_type = 'individual'
+         AND c.conversation_type = 'one-to-one'
          AND NOT EXISTS (
            SELECT 1 FROM contact_handles cp
            WHERE cp.handle_id = c.chat_handle_id AND cp.account_id = c.account_id
@@ -205,7 +205,7 @@ export function unassignedThreadsBundle(
       `SELECT c.id AS id, h.handle_type AS handle_type
        FROM conversations c
        JOIN handles h ON h.id = c.chat_handle_id
-       WHERE c.account_id = ? AND c.conversation_type = 'individual' AND h.raw = ?${typeFilter}`,
+       WHERE c.account_id = ? AND c.conversation_type = 'one-to-one' AND h.raw = ?${typeFilter}`,
     )
     .get(...params) as { id: number; handle_type: string } | undefined;
   if (!conv) return null;

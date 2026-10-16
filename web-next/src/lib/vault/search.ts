@@ -106,7 +106,7 @@ export function vaultQuery(parsed: ParsedSearchQuery, list: List): string {
       words.push(`source:${parsed.source.toLowerCase()}`);
     }
     if (parsed.conversationType === "group") words.push("kind:group");
-    if (parsed.conversationType === "individual") words.push("kind:direct");
+    if (parsed.conversationType === "one-to-one") words.push("kind:direct");
     const date = dateWord("date", { from: parsed.after, to: parsed.before });
     if (date) words.push(date);
     if (parsed.inConversation) {
@@ -163,7 +163,7 @@ function conversationHit(
   const first = c.participants[0];
   return {
     conversationId: c.id,
-    conversationType: c.is_group ? "group" : "individual",
+    conversationType: c.is_group ? "group" : "one-to-one",
     contactId: c.is_group ? null : (first?.contact_id ?? null),
     title: c.is_group ? title : (first?.name ?? title),
     chatIdentifier: first?.handle ?? String(c.id),
@@ -185,7 +185,7 @@ function messageHit(m: Message, owner: string): SearchMessageHit {
   return {
     messageId: m.id,
     conversationId: conv.id,
-    conversationType: isGroup ? "group" : "individual",
+    conversationType: isGroup ? "group" : "one-to-one",
     contactId: isGroup ? null : (first?.contact_id ?? null),
     title,
     chatIdentifier: conv.chat_identifier,

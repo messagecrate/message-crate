@@ -85,7 +85,7 @@ describe("unknown contact backfill", () => {
             `INSERT INTO conversations (
                account_id, chat_handle_id, conversation_type,
                group_title, source_file
-             ) VALUES (?, ?, 'individual', NULL, 't.json')`,
+             ) VALUES (?, ?, 'one-to-one', NULL, 't.json')`,
           )
           .run(accountId, resolveHandle(DIRECT_PHONE)).lastInsertRowid,
       );

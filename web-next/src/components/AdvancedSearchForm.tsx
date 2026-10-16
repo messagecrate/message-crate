@@ -118,7 +118,7 @@ export function AdvancedSearchForm({
     return m.comparator === "any" ? { comparator: "any", value: "" } : m;
   });
   const [conversationType, setConversationType] = useState<
-    "any" | "group" | "individual"
+    "any" | "group" | "one-to-one"
   >(seed.conversationType ?? "any");
   const [source, setSource] = useState(seed.source ?? "");
 
@@ -409,12 +409,12 @@ export function AdvancedSearchForm({
                 value={conversationType}
                 onChange={(e) =>
                   setConversationType(
-                    e.target.value as "any" | "group" | "individual",
+                    e.target.value as "any" | "group" | "one-to-one",
                   )
                 }
               >
                 <option value="any">All conversations</option>
-                <option value="individual">Direct only</option>
+                <option value="one-to-one">Direct only</option>
                 <option value="group">Group only</option>
               </select>
             </Field>

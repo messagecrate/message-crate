@@ -257,7 +257,7 @@ describe("formFromSearchQuery", () => {
     const form = formFromSearchQuery('hello is:direct -"bad word"');
     assert.equal(form.hasWords, 'hello -"bad word"');
     assert.equal(form.doesntHave, undefined);
-    assert.equal(form.conversationType, "individual");
+    assert.equal(form.conversationType, "one-to-one");
   });
 
   it("hydrates contact form mode and count fields", () => {
