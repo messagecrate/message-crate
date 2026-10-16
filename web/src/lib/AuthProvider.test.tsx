@@ -59,14 +59,6 @@ vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => getCurrentWindow(),
 }));
 
-vi.mock("./contactGroups", () => ({
-  invalidateContactGroups: vi.fn(),
-}));
-
-vi.mock("./messageTags", () => ({
-  invalidateMessageTags: vi.fn(),
-}));
-
 beforeEach(() => {
   startFakeClock();
 });
