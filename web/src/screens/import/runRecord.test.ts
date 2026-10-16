@@ -24,7 +24,7 @@ import {
 function report(overrides: Partial<UploadFinishedReport> = {}): UploadFinishedReport {
   return {
     ok: true,
-    cancelled: false,
+    canceled: false,
     session_refused: false,
     messages_attempted: 10,
     messages_inserted: 10,
@@ -36,7 +36,7 @@ function report(overrides: Partial<UploadFinishedReport> = {}): UploadFinishedRe
     conversations_total: 1,
     conversations_failed: 0,
     conversations_skipped: 0,
-    conversations_cancelled: 0,
+    conversations_canceled: 0,
     results: [],
     ...overrides,
   };
@@ -175,7 +175,7 @@ describe("recordToCarry", () => {
           results: [
             { file: "a.jsonl", status: "ok", messages: 1, attachments: 1 },
             { file: "b.jsonl", status: "failed", messages: 0, attachments: 0 },
-            { file: "c.jsonl", status: "cancelled", messages: 0, attachments: 0 },
+            { file: "c.jsonl", status: "canceled", messages: 0, attachments: 0 },
           ],
         }),
       }),

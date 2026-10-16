@@ -251,6 +251,10 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-16: **A stopped run is "canceled" to programs too.** A program
+  that reads Import Runs, Export Runs or the Audit Trail from your Message
+  Crate now gets the status "canceled", spelled as on screen, and must be
+  updated if it looked for "cancelled" (#2279).
 - 2026-10-16: **Message Crate spells American.** Screens and the user guide
   now say "canceled", "grayed out", "recognized" and "labeled": a stopped
   import reads "Import canceled", and a stopped run in the import and

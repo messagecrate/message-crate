@@ -319,15 +319,15 @@ fn tied_messages(
     stored: &HashMap<i64, i64>,
     now: &HashMap<i64, i64>,
 ) -> BTreeSet<i64> {
-    let mut neighbours: HashMap<i64, Vec<i64>> = HashMap::new();
+    let mut neighbors: HashMap<i64, Vec<i64>> = HashMap::new();
     for (&loser, &winner) in stored.iter().chain(now.iter()) {
-        neighbours.entry(loser).or_default().push(winner);
-        neighbours.entry(winner).or_default().push(loser);
+        neighbors.entry(loser).or_default().push(winner);
+        neighbors.entry(winner).or_default().push(loser);
     }
     let mut tied: BTreeSet<i64> = changed.iter().copied().collect();
     let mut queue: Vec<i64> = changed.to_vec();
     while let Some(id) = queue.pop() {
-        for &next in neighbours.get(&id).into_iter().flatten() {
+        for &next in neighbors.get(&id).into_iter().flatten() {
             if tied.insert(next) {
                 queue.push(next);
             }

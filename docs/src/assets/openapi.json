@@ -7864,7 +7864,7 @@
           "Export"
         ],
         "summary": "Start an Export Run: compile the scope, list and count the messages it matches now, and record the run as `running`.",
-        "description": "Read that list at `GET /v1/exports/{id}/messages`, then close the run with `complete` or `cancel`. An account has one running run: starting one closes the one already running as `cancelled`, and a run with no page read for an hour is closed the same way. Either way its pages then answer `409 Conflict`.",
+        "description": "Read that list at `GET /v1/exports/{id}/messages`, then close the run with `complete` or `cancel`. An account has one running run: starting one closes the one already running as `canceled`, and a run with no page read for an hour is closed the same way. Either way its pages then answer `409 Conflict`.",
         "operationId": "create_export",
         "requestBody": {
           "content": {
@@ -9725,7 +9725,7 @@
           "Import"
         ],
         "summary": "Discard a running Import Run, freeing the account's single slot.",
-        "description": "The answer is the run, now `cancelled`, with the issues the request carried.\n\nThe messages the run's batches brought stay in the account, and once it\nhas discarded the run the server hides the duplicates of the whole\naccount, as a completion does. A dedupe that fails does not undo the\ndiscard: the next run's end hides them. A server told to stop refuses\nthe request with `503 Service Unavailable` (`server-stopping`), and the\nrun stays running.",
+        "description": "The answer is the run, now `canceled`, with the issues the request carried.\n\nThe messages the run's batches brought stay in the account, and once it\nhas discarded the run the server hides the duplicates of the whole\naccount, as a completion does. A dedupe that fails does not undo the\ndiscard: the next run's end hides them. A server told to stop refuses\nthe request with `503 Service Unavailable` (`server-stopping`), and the\nrun stays running.",
         "operationId": "discard_import",
         "parameters": [
           {
@@ -15772,7 +15772,7 @@
           "running",
           "completed",
           "failed",
-          "cancelled"
+          "canceled"
         ]
       },
       "FieldDoc": {
@@ -16508,7 +16508,7 @@
           "completed",
           "completed_with_issues",
           "failed",
-          "cancelled"
+          "canceled"
         ]
       },
       "JournalMode": {
@@ -20062,7 +20062,7 @@
           "completed",
           "completed_with_issues",
           "failed",
-          "cancelled"
+          "canceled"
         ]
       },
       "SavedSearch": {

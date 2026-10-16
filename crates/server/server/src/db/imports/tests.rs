@@ -393,7 +393,7 @@ async fn stage_advances_and_discard_frees_the_slot() {
         "a discarded run is no longer running"
     );
     let row = get_owned_import(&mut conn, account, id).await.unwrap();
-    assert_eq!(row.status.as_str(), "cancelled");
+    assert_eq!(row.status.as_str(), "canceled");
     assert!(row.finished_at.is_some(), "a discard closes the run");
 
     // The slot is genuinely free.
@@ -729,7 +729,7 @@ async fn complete_import_refuses_a_run_that_has_finished() {
     let row = get_owned_import(&mut conn, ACCOUNT_ID, discarded)
         .await
         .unwrap();
-    assert_eq!(row.status.as_str(), "cancelled");
+    assert_eq!(row.status.as_str(), "canceled");
     assert_eq!(issue_count(&mut conn, discarded).await, 0);
 
     let completed = start_import(
@@ -767,7 +767,7 @@ async fn complete_import_refuses_a_run_that_has_finished() {
 
 /// The desktop app posts `complete` while the person clicks Discard. The
 /// discard read the run as running, the completion committed, and the discard
-/// then rewrote the completed run as `cancelled` with a new `finished_at`.
+/// then rewrote the completed run as `canceled` with a new `finished_at`.
 #[tokio::test]
 async fn a_discard_that_lands_after_the_run_completed_is_refused() {
     let (pool, _dir) = setup_accounts_only().await;
@@ -861,8 +861,8 @@ fn every_import_status_serializes_as_the_word_the_database_holds() {
         );
         assert_eq!(ImportStatus::parse(status.as_str()), Some(status));
     }
-    assert_eq!(ImportStatus::Cancelled.as_str(), "cancelled");
-    assert_eq!(ImportStatus::parse("canceled"), None);
+    assert_eq!(ImportStatus::Canceled.as_str(), "canceled");
+    assert_eq!(ImportStatus::parse("cancelled"), None);
 }
 
 #[tokio::test]

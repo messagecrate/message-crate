@@ -37,7 +37,7 @@ fn finished_upload_events(
             report.assets_uploaded
         ),
         "ok": report.ok,
-        "cancelled": report.cancelled,
+        "canceled": report.canceled,
         "session_refused": report.session_refused,
         "messages_attempted": report.messages_attempted,
         "messages_inserted": report.messages_inserted,
@@ -49,7 +49,7 @@ fn finished_upload_events(
         "conversations_total": report.conversations_total,
         "conversations_failed": report.conversations_failed,
         "conversations_skipped": report.conversations_skipped,
-        "conversations_cancelled": report.conversations_cancelled,
+        "conversations_canceled": report.conversations_canceled,
         "results": report.results,
     });
     (progress, summary)
@@ -429,7 +429,7 @@ mod tests {
     fn finished_upload_event_reports_complete_upload_and_totals() {
         let report = ImportReport {
             ok: true,
-            cancelled: false,
+            canceled: false,
             session_refused: false,
             server_away: None,
             account: 1,
@@ -442,7 +442,7 @@ mod tests {
             conversations_ok: 2,
             conversations_failed: 0,
             conversations_skipped: 1,
-            conversations_cancelled: 0,
+            conversations_canceled: 0,
             messages_attempted: 45,
             messages_inserted: 42,
             messages_deduped: 2,
@@ -472,7 +472,7 @@ mod tests {
         assert_eq!(summary["messages_failed"], 1);
         assert_eq!(summary["conversations_failed"], 0);
         assert_eq!(summary["conversations_skipped"], 1);
-        assert_eq!(summary["conversations_cancelled"], 0);
+        assert_eq!(summary["conversations_canceled"], 0);
         assert_eq!(summary["results"][0]["error"], "attachment exceeds limit");
         assert_eq!(
             summary["summary"],
@@ -481,7 +481,7 @@ mod tests {
         assert_eq!(summary["assets_bytes"], 12_345);
         assert_eq!(summary["conversations_ok"], 2);
         assert_eq!(summary["conversations_total"], 3);
-        assert_eq!(summary["cancelled"], false);
+        assert_eq!(summary["canceled"], false);
         // The window ends the Session when the Upload says the server refused it.
         assert_eq!(summary["session_refused"], false);
     }

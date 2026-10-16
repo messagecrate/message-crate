@@ -284,7 +284,7 @@ async fn a_bad_sort_is_reported_before_a_bad_query() {
     let (fixture, alice) = fixture_with_account().await;
     let (status, text) = get_raw(
         &fixture.state,
-        "/v1/messages?q=conversations%3A0&sort=colour",
+        "/v1/messages?q=conversations%3A0&sort=color",
         &alice.token,
     )
     .await;
@@ -2173,7 +2173,7 @@ async fn a_relevance_search_reads_the_index_once() {
 #[tokio::test]
 async fn an_unknown_sort_names_date_and_relevance() {
     let (fixture, alice) = fixture_with_account().await;
-    let (status, text) = get_raw(&fixture.state, "/v1/messages?sort=colour", &alice.token).await;
+    let (status, text) = get_raw(&fixture.state, "/v1/messages?sort=color", &alice.token).await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
     assert!(text.contains("date, relevance"), "{text}");
 }

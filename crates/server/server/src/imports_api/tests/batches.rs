@@ -642,7 +642,7 @@ async fn a_batch_into_a_run_that_is_not_running_is_a_state_conflict() {
     );
     assert_eq!(
         problem.detail.as_deref(),
-        Some(format!("import {id} is not running (status=cancelled)").as_str())
+        Some(format!("import {id} is not running (status=canceled)").as_str())
     );
 }
 
@@ -658,7 +658,7 @@ async fn a_batch_into_a_run_discarded_while_it_uploads_is_a_state_conflict() {
 
     let mut other_conn = fixture.conn().await;
     let mut other = crate::db::begin_write(&mut other_conn).await.unwrap();
-    sqlx::query("UPDATE imports SET status = 'cancelled', stage = NULL WHERE id = $1")
+    sqlx::query("UPDATE imports SET status = 'canceled', stage = NULL WHERE id = $1")
         .bind(id)
         .execute(&mut *other)
         .await
@@ -682,7 +682,7 @@ async fn a_batch_into_a_run_discarded_while_it_uploads_is_a_state_conflict() {
     );
     assert_eq!(
         problem.detail.as_deref(),
-        Some(format!("import {id} is not running (status=cancelled)").as_str())
+        Some(format!("import {id} is not running (status=canceled)").as_str())
     );
     let mut conn = fixture.conn().await;
     let stored: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE import_id = $1")

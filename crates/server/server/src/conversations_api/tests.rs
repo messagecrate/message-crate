@@ -930,7 +930,7 @@ async fn sort_is_parsed_against_the_lists_keys() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
     let (status, text) =
-        crate::test_support::get_raw(&state, "/v1/conversations?sort=colour", &user.token).await;
+        crate::test_support::get_raw(&state, "/v1/conversations?sort=color", &user.token).await;
     let problem = crate::test_support::expect_problem(
         status,
         &text,
@@ -938,7 +938,7 @@ async fn sort_is_parsed_against_the_lists_keys() {
     );
     assert_eq!(
         problem.errors.as_deref(),
-        Some(&["sort: unknown key 'colour'; accepted keys are date, messages".to_string()][..])
+        Some(&["sort: unknown key 'color'; accepted keys are date, messages".to_string()][..])
     );
     assert_eq!(
         crate::test_support::get_status(

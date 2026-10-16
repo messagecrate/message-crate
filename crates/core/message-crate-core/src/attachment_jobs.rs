@@ -4,7 +4,7 @@
 
 use crate::attachments::attachment_dest_name;
 use crate::config::AttachmentFiles;
-use crate::process::{Cancelled, LogSink, Sinks};
+use crate::process::{Canceled, LogSink, Sinks};
 use crate::progress::{ProgressEvent, ProgressSink};
 use anyhow::Context as _;
 use file_io::sha256_hex;
@@ -82,7 +82,7 @@ impl std::error::Error for LoadError {}
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`] when the flag is set before a job starts, so a
+/// Returns [`Canceled`] when the flag is set before a job starts, so a
 /// caller tells a Cancel from a failure by its type, whatever context is
 /// added on the way out (#2077). Returns the message of a
 /// [`LoadError::Fatal`] from `load(i)`, leaving that job and every later one
@@ -128,7 +128,7 @@ pub fn run_attachment_jobs(
 
     for (i, job) in jobs.iter_mut().enumerate() {
         if cancel.load(Ordering::Relaxed) {
-            return Err(Cancelled.into());
+            return Err(Canceled.into());
         }
 
         let loaded = match load(i) {
@@ -209,7 +209,7 @@ pub fn run_attachment_jobs(
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`] when the user cancels, the message of a
+/// Returns [`Canceled`] when the user cancels, the message of a
 /// [`LoadError::Fatal`] from `load(i)`, or an I/O error when the staging
 /// directory cannot be used.
 pub fn stage_attachment_jobs(

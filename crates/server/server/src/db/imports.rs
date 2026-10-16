@@ -100,7 +100,7 @@ pub enum ImportStatus {
     /// Ended without finishing.
     Failed,
     /// Discarded by the person, or by the server on their behalf.
-    Cancelled,
+    Canceled,
 }
 
 impl ImportStatus {
@@ -110,7 +110,7 @@ impl ImportStatus {
         Self::Completed,
         Self::CompletedWithIssues,
         Self::Failed,
-        Self::Cancelled,
+        Self::Canceled,
     ];
 
     /// The value as the wire and the database spell it.
@@ -121,7 +121,7 @@ impl ImportStatus {
             Self::Completed => "completed",
             Self::CompletedWithIssues => "completed_with_issues",
             Self::Failed => "failed",
-            Self::Cancelled => "cancelled",
+            Self::Canceled => "canceled",
         }
     }
 
@@ -709,7 +709,7 @@ async fn not_running(
 
 /// Close a running Import Run the user gave up on.
 ///
-/// Records `cancelled` at the instant `now` with `issues`, the Import Errors
+/// Records `canceled` at the instant `now` with `issues`, the Import Errors
 /// the run recorded before it was given up, and its `notes`, and clears
 /// `stage`, which frees the account's single active slot. Nothing reclaims a
 /// run on a timer. A run is broken by an explicit discard or not at all.
@@ -738,7 +738,7 @@ pub async fn discard_import(
     // caller read it keeps its record instead of being rewritten as canceled.
     let updated = sqlx::query(
         "UPDATE imports
-         SET status = 'cancelled', stage = NULL, finished_at = $1
+         SET status = 'canceled', stage = NULL, finished_at = $1
          WHERE id = $2 AND account_id = $3 AND status = 'running'",
     )
     .bind(now.to_rfc3339())
@@ -1299,7 +1299,7 @@ pub async fn top_attachments_by_size(
 /// Ready the account's Import Runs to outlive it, just before the account is
 /// deleted: each keeps `username` and its counts, and is marked with
 /// `deletion_entry_id`, the account's `account_deleted` entry. A run still
-/// open is closed as `cancelled` at `now`, and what describes the person's
+/// open is closed as `canceled` at `now`, and what describes the person's
 /// messages goes: its issues and notes, form, run directory, source details and the
 /// addresses the backup sent from (ADR 0020).
 ///
@@ -1314,7 +1314,7 @@ pub async fn detach_from_account(
     now: &str,
 ) -> Result<()> {
     sqlx::query(
-        "UPDATE imports SET status = 'cancelled', finished_at = $2, stage = NULL
+        "UPDATE imports SET status = 'canceled', finished_at = $2, stage = NULL
          WHERE account_id = $1 AND status = 'running'",
     )
     .bind(account_id)

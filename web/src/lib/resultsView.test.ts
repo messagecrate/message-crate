@@ -22,7 +22,7 @@ describe("pickedMessageSort", () => {
     expect(pickedMessageSort(params("sort=relevance"))).toBeNull();
     expect(pickedMessageSort(params("sort=date"))).toEqual({ sort: "date", order: "asc" });
     expect(pickedMessageSort(params("sort=-date"))).toEqual({ sort: "date", order: "desc" });
-    expect(pickedMessageSort(params("sort=colour"))).toBeNull();
+    expect(pickedMessageSort(params("sort=color"))).toBeNull();
   });
 });
 

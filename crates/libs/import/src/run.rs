@@ -43,7 +43,7 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use jsonl_journal::ServerTarget;
-use message_crate_core::{CancelFlag, Cancelled, RunLogLevel, check_cancel};
+use message_crate_core::{CancelFlag, Canceled, RunLogLevel, check_cancel};
 use message_crate_http::ServerAway;
 
 use crate::AuthInfo;
@@ -227,10 +227,10 @@ impl Session {
     ///
     /// # Errors
     ///
-    /// Returns [`Cancelled`] when the run must stop.
-    pub(crate) fn check_stop(&self) -> std::result::Result<(), Cancelled> {
+    /// Returns [`Canceled`] when the run must stop.
+    pub(crate) fn check_stop(&self) -> std::result::Result<(), Canceled> {
         if self.is_refused() || self.away().is_some() {
-            return Err(Cancelled);
+            return Err(Canceled);
         }
         check_cancel(&self.cancel)
     }
@@ -333,7 +333,7 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
     if let Some(line) = halt_line(session_refused, away) {
         out.show_at(RunLogLevel::Warn, line);
     }
-    pipeline.record_cancelled(&files, &mut out);
+    pipeline.record_canceled(&files, &mut out);
     out.flush_file_counter();
 
     let (results, accounting) = pipeline.into_results();
@@ -349,14 +349,14 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
     // refused session always halts the run, even when the batch it refused
     // carried only a conversation that had already failed, and so does a
     // server that was not there to take a request.
-    let cancelled = counted.cancelled > 0 || session_refused || away.is_some();
+    let canceled = counted.canceled > 0 || session_refused || away.is_some();
     // Only shrink/rewrite the journal after a clean run so a failed run can retry.
-    if counted.failed == 0 && !cancelled {
+    if counted.failed == 0 && !canceled {
         let _ = journal.compact();
     }
     let report = ImportReport {
-        ok: counted.failed == 0 && !cancelled,
-        cancelled,
+        ok: counted.failed == 0 && !canceled,
+        canceled,
         session_refused,
         server_away: away,
         account: session.auth.account_id,
@@ -369,7 +369,7 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
         conversations_ok: counted.ok,
         conversations_failed: counted.failed,
         conversations_skipped: counted.skipped,
-        conversations_cancelled: counted.cancelled,
+        conversations_canceled: counted.canceled,
         messages_attempted: accounting.attempted,
         messages_inserted: accounting.inserted,
         messages_deduped: accounting.deduped,
@@ -451,17 +451,17 @@ fn refused_at_login(
     run_started: Instant,
 ) -> ImportReport {
     ImportReport {
-        cancelled: true,
+        canceled: true,
         session_refused: true,
         mode: cfg.mode,
         started_at,
         finished_at: now_stamp(),
         elapsed_ms: elapsed_ms(run_started),
         conversations_total: files.len() as u64,
-        conversations_cancelled: files.len() as u64,
+        conversations_canceled: files.len() as u64,
         results: files
             .iter()
-            .map(|path| crate::report::FileResult::cancelled(&file_label(path)))
+            .map(|path| crate::report::FileResult::canceled(&file_label(path)))
             .collect(),
         // Nothing was sent, and no account answered: every count is 0, the
         // account 0 and the username empty.

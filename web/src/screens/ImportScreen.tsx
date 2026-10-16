@@ -246,7 +246,7 @@ export default function ImportScreen() {
    */
   useEffect(() => {
     if (phase !== "form") return;
-    let cancelled = false;
+    let canceled = false;
     void (async () => {
       try {
         const run = await cache.fetch(keys.imports.running, (signal) => getActiveImportRun(signal));
@@ -266,7 +266,7 @@ export default function ImportScreen() {
           : checkSourceFingerprint(stored, null);
         // A resume or discard that started while this was in flight owns
         // the decision -- a stale answer must not put the panel back.
-        if (!cancelled && !resumingRef.current && !discardingRef.current) {
+        if (!canceled && !resumingRef.current && !discardingRef.current) {
           setResume(
             resumeDecisionFor({
               run,
@@ -278,15 +278,15 @@ export default function ImportScreen() {
         }
       } catch {
         // A server that cannot answer is not a reason to block the form.
-        if (!cancelled && !resumingRef.current && !discardingRef.current) setResume(NO_RESUME);
+        if (!canceled && !resumingRef.current && !discardingRef.current) setResume(NO_RESUME);
       } finally {
         // Only the first check decides what renders; a later one must not
         // blank the form while it runs.
-        if (!cancelled) setResumeChecked(true);
+        if (!canceled) setResumeChecked(true);
       }
     })();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [phase, cache]);
 
@@ -443,12 +443,12 @@ export default function ImportScreen() {
       return;
     }
     const wantsEmails = descriptor.asksOwnerEmails;
-    let cancelled = false;
+    let canceled = false;
     setProfilePhones((current) => ({ ...current, ready: false, error: false }));
     void (async () => {
       try {
         const profile = await fetchAccountProfile();
-        if (cancelled) return;
+        if (canceled) return;
         const phones = phoneNumbers(profile);
         setProfilePhones({ phones, ready: true, error: false });
         if (descriptor.asksWhatsappOwnerPhone) {
@@ -461,11 +461,11 @@ export default function ImportScreen() {
           ownerEmails: wantsEmails ? profile.emails.join(", ") : undefined,
         });
       } catch {
-        if (!cancelled) setProfilePhones({ phones: [], ready: true, error: true });
+        if (!canceled) setProfilePhones({ phones: [], ready: true, error: true });
       }
     })();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [source, fetchAccountProfile]);
 

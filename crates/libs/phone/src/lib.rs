@@ -247,7 +247,7 @@ pub fn normalize_checked(raw: &str, region: PhoneRegion) -> Result<String, Strin
         PhoneRegion::Unknown => Err("written without its country code, in no known country".into()),
         PhoneRegion::Country(country) if country.calling_code == "1" => {
             if let Some(international) = after_international_prefix(&digits, country) {
-                dialled_abroad(international, country)
+                dialed_abroad(international, country)
             } else if digits.len() == 10 {
                 Ok(format!("+1{digits}"))
             } else if digits.len() == 11 && digits.starts_with('1') {
@@ -274,7 +274,7 @@ pub fn normalize_checked(raw: &str, region: PhoneRegion) -> Result<String, Strin
 /// (not a `+1` country, which [`normalize_checked`] writes by its own rule).
 ///
 /// The country's own international prefix before the digits means what
-/// follows is a calling code and number ([`dialled_abroad`]): `00 44 7700
+/// follows is a calling code and number ([`dialed_abroad`]): `00 44 7700
 /// 900123` in the United Kingdom, `0011 44 …` in Australia, `8 10 44 …` in
 /// Russia. Otherwise the country's trunk prefix is dropped (`07700 900123` in
 /// the United Kingdom).
@@ -290,7 +290,7 @@ pub fn normalize_checked(raw: &str, region: PhoneRegion) -> Result<String, Strin
 /// 55. Anything else is the national number.
 fn in_country(digits: &str, country: &Country) -> Result<String, String> {
     if let Some(international) = after_international_prefix(digits, country) {
-        return dialled_abroad(international, country);
+        return dialed_abroad(international, country);
     }
     let trunk = country.trunk_prefix;
     let national = if !trunk.is_empty() && digits.starts_with(trunk) {
@@ -353,7 +353,7 @@ fn after_international_prefix<'a>(digits: &'a str, country: &Country) -> Option<
 /// prefix. Digits that start with no calling code are refused, because the
 /// prefix was then most likely not one: a wrong guess would give a key that
 /// names nobody.
-fn dialled_abroad(digits: &str, country: &Country) -> Result<String, String> {
+fn dialed_abroad(digits: &str, country: &Country) -> Result<String, String> {
     if !COUNTRIES.iter().any(|c| digits.starts_with(c.calling_code)) {
         return Err(format!(
             "not a number {} can read: what follows its international prefix starts \

@@ -70,7 +70,7 @@ async fn a_discarded_run_hides_the_duplicates_its_batches_brought() {
     )
     .await;
 
-    assert_eq!(discarded["status"], "cancelled", "{discarded}");
+    assert_eq!(discarded["status"], "canceled", "{discarded}");
     assert_eq!(
         hidden_behind(&state, "m-six").await.as_deref(),
         Some("n-six")

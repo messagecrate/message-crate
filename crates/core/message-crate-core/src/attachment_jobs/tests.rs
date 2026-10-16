@@ -290,9 +290,9 @@ fn cancel_stops_before_next_job() {
         )
         .unwrap_err()
     };
-    // The Cancel stays a `Cancelled` value, so the desktop app tells it from
+    // The Cancel stays a `Canceled` value, so the desktop app tells it from
     // a failure by its type rather than its text (#2077).
-    assert!(err.is::<Cancelled>(), "{err:#}");
+    assert!(err.is::<Canceled>(), "{err:#}");
     assert!(a.path.is_some());
     assert!(b.path.is_none());
 }

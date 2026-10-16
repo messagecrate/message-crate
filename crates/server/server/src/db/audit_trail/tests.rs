@@ -114,7 +114,7 @@ async fn deleting_an_account_keeps_an_import_runs_counts_and_drops_its_details()
         (
             None,
             Some("alice".into()),
-            "cancelled".into(),
+            "canceled".into(),
             12,
             None,
             None

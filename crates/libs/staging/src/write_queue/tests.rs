@@ -1196,7 +1196,7 @@ fn a_parallel_drain_names_each_conversation_file_it_writes() {
 }
 
 /// A Cancel seen while a conversation's attachments are staged ends the
-/// drain with [`message_crate_core::Cancelled`] in its error chain, not with
+/// drain with [`message_crate_core::Canceled`] in its error chain, not with
 /// its text, so the desktop app tells it from a failure whatever context is
 /// added on the way out (#2077).
 #[test]
@@ -1233,7 +1233,7 @@ fn a_cancel_while_attachments_are_staged_stays_a_cancel() {
     assert!(
         error
             .chain()
-            .any(|e| e.is::<message_crate_core::Cancelled>()),
+            .any(|e| e.is::<message_crate_core::Canceled>()),
         "{error:#}"
     );
 }

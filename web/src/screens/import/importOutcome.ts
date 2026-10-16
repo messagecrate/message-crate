@@ -104,9 +104,9 @@ export function importOutcome(args: {
   const { report, threw, issues, approved } = args;
   if (threw || !report) return "paused";
   const everyConversationSent =
-    !report.cancelled &&
+    !report.canceled &&
     report.conversations_failed === 0 &&
-    report.conversations_cancelled === 0 &&
+    report.conversations_canceled === 0 &&
     report.conversations_ok + report.conversations_skipped === report.conversations_total;
   if (!everyConversationSent) return "paused";
   const unexplained = issues.filter((issue) => !isApprovedOmission(issue, approved));

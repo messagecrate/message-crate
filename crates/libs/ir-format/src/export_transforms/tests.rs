@@ -57,12 +57,12 @@ fn obfuscate_replaces_the_owner_address_on_each_message() {
 #[test]
 fn obfuscate_keeps_me_on_a_sent_message_and_replaces_a_real_name() {
     let mut doc = doc_with_image_attachment();
-    let mut labelled = doc.messages[0].clone();
-    labelled.direction = Direction::Outgoing;
-    labelled.sender_display_name = Some("Me".into());
-    let mut named = labelled.clone();
+    let mut labeled = doc.messages[0].clone();
+    labeled.direction = Direction::Outgoing;
+    labeled.sender_display_name = Some("Me".into());
+    let mut named = labeled.clone();
     named.sender_display_name = Some("Alex Rivera".into());
-    doc.messages = vec![labelled, named];
+    doc.messages = vec![labeled, named];
 
     let mut anon = Obfuscator::new([7u8; 32]);
     obfuscate_one(&mut doc, &mut anon);

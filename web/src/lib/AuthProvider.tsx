@@ -86,16 +86,16 @@ function SessionProvider({ children }: { children: ReactNode }) {
     if (!state.isAuthenticated || restored || token === null || accountId === null) return;
     const login = { serverUrl, token, accountId };
 
-    let cancelled = false;
+    let canceled = false;
     const validate = async () => {
       const check = await checkSavedLogin(login);
-      if (cancelled) return;
+      if (canceled) return;
       if (check === "valid") {
         // Warm the profile before the app renders. Whether this account still
         // owes profile setup is read from it, so fetching it here keeps the
         // guards from deciding against an empty cache.
         await warmAccountProfile(queryClient, login.accountId);
-        if (!cancelled) setRestored(true);
+        if (!canceled) setRestored(true);
         return;
       }
       // A login the server gave no answer about stays saved for
@@ -113,7 +113,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
     };
     validate();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [state, restored, queryClient]);
 
