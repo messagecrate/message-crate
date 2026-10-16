@@ -173,7 +173,7 @@ fn a_file_the_media_step_cannot_touch_says_so() {
 
 #[test]
 fn gif_is_never_processed_so_it_is_judged_on_its_own_size() {
-    // process_one skips GIF in both modes. Its size will not change.
+    // run_one skips GIF in both modes. Its size will not change.
     assert_eq!(
         classify_probed(
             80 * 1024 * 1024,

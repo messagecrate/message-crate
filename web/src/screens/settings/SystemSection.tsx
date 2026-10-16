@@ -60,26 +60,19 @@ const DOWNLOAD_RETRIED =
 
 /**
  * Where to put a program that is missing, as the words before the Tools
- * Directory's path (`dir`), or the whole sentence when `dir` is null.
- * ffmpeg and ffprobe are used only from one place, so a missing one goes
- * beside the one that was found, or both go in the Tools Directory.
- * wtsexporter is looked for in the Tools Directory only.
+ * Directory's path. ffmpeg and ffprobe are used only from one place, so a
+ * missing one goes beside the one that was found, or both go in the Tools
+ * Directory. wtsexporter is looked for in the Tools Directory only.
  */
-function missingFix(
-  name: ToolName,
-  partner: ToolStatus | null,
-  toolsDir: string | null,
-): { text: string; dir: string | null } | null {
+function missingFix(name: ToolName, partner: ToolStatus | null): string {
   if (partner == null) {
-    return toolsDir ? { text: "Put it in the Tools Directory", dir: toolsDir } : null;
+    return "Put it in the Tools Directory";
   }
   const other = name === "ffmpeg" ? "ffprobe" : "ffmpeg";
   if (partner.state === "found") {
-    return toolsDir
-      ? { text: `Put it beside ${other}, or put both in the Tools Directory`, dir: toolsDir }
-      : { text: `Put it beside ${other}`, dir: null };
+    return `Put it beside ${other}, or put both in the Tools Directory`;
   }
-  return toolsDir ? { text: `Put it and ${other} in the Tools Directory`, dir: toolsDir } : null;
+  return `Put it and ${other} in the Tools Directory`;
 }
 
 /**
@@ -91,36 +84,25 @@ function statusExtra(
   name: ToolName,
   status: ToolStatus,
   partner: ToolStatus | null,
-  toolsDir: string | null,
+  toolsDir: string,
 ): { label: string; node: ReactNode } | null {
-  const fixWithDir = (fix: { text: string; dir: string | null } | null) =>
-    fix == null
-      ? null
-      : {
-          label: fix.dir ? `${fix.text}, ${fix.dir}.` : `${fix.text}.`,
-          node: (
-            <>
-              {fix.text}
-              {fix.dir ? (
-                <>
-                  , <code className="break-all font-mono text-[0.7rem]">{fix.dir}</code>
-                </>
-              ) : null}
-              .
-            </>
-          ),
-        };
+  const fixWithDir = (text: string) => ({
+    label: `${text}, ${toolsDir}.`,
+    node: (
+      <>
+        {text}, <code className="break-all font-mono text-[0.7rem]">{toolsDir}</code>.
+      </>
+    ),
+  });
   switch (status.state) {
     // An app opened from the Dock on macOS doesn't see the PATH a shell
     // sets, so a program installed with Homebrew is missing here until it
     // is linked into the Tools Directory.
     case "missing":
-      return fixWithDir(missingFix(name, partner, toolsDir));
+      return fixWithDir(missingFix(name, partner));
     // No download for this computer: only a copy put there by hand is used.
     case "unavailable":
-      return fixWithDir(
-        toolsDir ? { text: "Put a copy in the Tools Directory", dir: toolsDir } : null,
-      );
+      return fixWithDir("Put a copy in the Tools Directory");
     case "downloadFailed": {
       const { before, section, after } = troubleshootingSentence(name);
       return {
@@ -155,7 +137,7 @@ function ToolStatusRow({
   status: ToolStatus;
   /** For ffmpeg the status of ffprobe, and the reverse; null for wtsexporter. */
   partner: ToolStatus | null;
-  toolsDir: string | null;
+  toolsDir: string;
 }) {
   if (status.state === "found") {
     return (
@@ -205,7 +187,7 @@ function MediaTools({ tools, error }: { tools: ToolsStatus | null; error: string
         ffmpeg and ffprobe are looked for on PATH, then in the Tools Directory, and both must come
         from one of them. wtsexporter is looked for in the Tools Directory only.
       </p>
-      {tools?.toolsDir ? (
+      {tools ? (
         <div className={`${settingsGridClass} mt-2`}>
           <span className={settingsLabelClass}>Tools directory</span>
           <span className="break-all pl-2 font-mono text-[0.813rem] text-text">

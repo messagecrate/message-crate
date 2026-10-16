@@ -537,9 +537,9 @@ fn canceling_stops_the_media_stage_without_corrupting_the_directory() {
 
 #[test]
 fn progress_counts_the_work_it_actually_has() {
-    // Convert mode still probes for ffmpeg up front (parity with
-    // process_attachment_files) even though a PDF alone needs no
-    // transcode, so this needs the tools present to reach that far.
+    // Convert mode still probes for ffmpeg up front even though a PDF
+    // alone needs no transcode, so this needs the tools present to reach
+    // that far.
     let Some(tools) = media::testutil::real_ffmpeg() else {
         return;
     };

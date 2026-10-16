@@ -3,7 +3,6 @@
 
 use crate::app_directories::MessageCrateDirectory;
 use crate::local_server::{self, Launch, LocalServer, Status};
-use std::path::Path;
 use tauri::{AppHandle, Manager, State};
 
 /// How the app's own server is getting on while it is started again after
@@ -54,8 +53,7 @@ fn launch(app: &AppHandle, open_to_network: bool) -> Result<Launch, String> {
             .map_err(|e| format!("{}: {e}", local_server::OWN_ADDRESS))?,
         open_to_network,
         cors_origins: dev_origins(app),
-        tools_dir: media::MediaTools::tools_dir(app.state::<media::InstalledTools>().inner())
-            .map(Path::to_path_buf),
+        tools_dir: app.state::<MessageCrateDirectory>().tools(),
     })
 }
 

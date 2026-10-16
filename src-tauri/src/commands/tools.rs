@@ -15,6 +15,7 @@ use message_crate_core::{CancelFlag, Canceled};
 use tauri::AppHandle;
 
 use super::events::{self, ImportProgressEvent, Step};
+use crate::app_directories::MessageCrateDirectory;
 use crate::tool_downloads::{self, DownloadState, Pinned, Program, ToolDownloads, WaitError};
 
 /// Where one program is, as Settings shows it.
@@ -99,8 +100,8 @@ impl ToolStatus {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolsStatus {
-    /// The Tools Directory, `None` when the app has none (no home directory).
-    pub tools_dir: Option<String>,
+    /// The Tools Directory.
+    pub tools_dir: String,
     /// Whether a check of the Tools Directory runs in this process now, the
     /// start-up check or Try again. A program it has not looked at yet shows
     /// as missing, so the window keeps asking while this is true. Another
@@ -121,8 +122,9 @@ pub struct ToolsStatus {
 pub fn tools_status(
     downloads: tauri::State<'_, ToolDownloads>,
     installed: tauri::State<'_, InstalledTools>,
+    directory: tauri::State<'_, MessageCrateDirectory>,
 ) -> ToolsStatus {
-    tools_status_with(&downloads, &installed, &pinned_here())
+    tools_status_with(&downloads, &installed, &directory.tools(), &pinned_here())
 }
 
 /// The downloads the app has for this computer.
@@ -141,9 +143,6 @@ pub enum RetryResult {
     /// `checking` is true only when that check runs in this process, so the
     /// window can't tell from the status when another app's check ends.
     AlreadyRunning,
-    /// The app has no Tools Directory (no home directory), which the status
-    /// shows as `toolsDir: null`.
-    NoToolsDirectory,
     /// The check's thread could not be started, and each program it would
     /// have downloaded shows as a failed download with that reason.
     CouldNotStart,
@@ -157,12 +156,11 @@ pub enum RetryResult {
 pub fn retry_tool_downloads(
     downloads: tauri::State<'_, ToolDownloads>,
     installed: tauri::State<'_, InstalledTools>,
+    directory: tauri::State<'_, MessageCrateDirectory>,
 ) -> RetryResult {
-    let Some(dir) = installed.tools_dir().map(Path::to_path_buf) else {
-        return RetryResult::NoToolsDirectory;
-    };
+    let dir = directory.tools();
     let pinned = pinned_here();
-    let status = tools_status_with(&downloads, &installed, &pinned);
+    let status = tools_status_with(&downloads, &installed, &dir, &pinned);
     let not_found: Vec<Program> = [
         (Program::Ffmpeg, &status.ffmpeg),
         (Program::Ffprobe, &status.ffprobe),
@@ -246,12 +244,14 @@ fn worth_sending(
 }
 
 /// [`tools_status`], with the downloads in `downloads`, the programs where
-/// `installed` looks, and `pinned` as the downloads for this computer. A
+/// `installed` looks, `tools_dir` as the Tools Directory, and `pinned` as
+/// the downloads for this computer. A
 /// wtsexporter counts only when it is the pinned one, where there is one
 /// (#2692).
 fn tools_status_with(
     downloads: &ToolDownloads,
     installed: &InstalledTools,
+    tools_dir: &Path,
     pinned: &[Pinned],
 ) -> ToolsStatus {
     let pin = |program: Program| pinned.iter().find(|pin| pin.program == program);
@@ -271,7 +271,7 @@ fn tools_status_with(
         }
     };
     let wtsexporter = match whatsapp_exporter::wtsexporter_in_dir(
-        installed.tools_dir(),
+        Some(tools_dir),
         pin(Program::Wtsexporter).map(|pin| pin.program_sha256),
     ) {
         Ok(path) => ToolStatus::of(path),
@@ -280,7 +280,7 @@ fn tools_status_with(
         },
     };
     ToolsStatus {
-        tools_dir: installed.tools_dir().map(|dir| dir.display().to_string()),
+        tools_dir: tools_dir.display().to_string(),
         checking: downloads.checking(),
         ffmpeg: status(Program::Ffmpeg, ffmpeg),
         ffprobe: status(Program::Ffprobe, ffprobe),
@@ -318,7 +318,7 @@ mod tests {
     #[test]
     fn a_status_is_sent_as_its_state_and_path() {
         let status = ToolsStatus {
-            tools_dir: Some("/home/sam/message-crate/tools".into()),
+            tools_dir: "/home/sam/message-crate/tools".into(),
             checking: true,
             ffmpeg: ToolStatus::of(Some(PathBuf::from("/usr/bin/ffmpeg"))),
             ffprobe: ToolStatus::of(Some(PathBuf::from("/usr/bin/ffprobe"))),
@@ -377,14 +377,16 @@ mod tests {
         let installed = InstalledTools::new(Some(tools.path().to_path_buf()));
         let downloads = ToolDownloads::default();
         let pinned = [wtsexporter_pinned_to(b"the pinned file")];
-        let missing = tools_status_with(&downloads, &installed, &pinned).wtsexporter;
-        let unavailable = tools_status_with(&downloads, &installed, &[]).wtsexporter;
+        let missing = tools_status_with(&downloads, &installed, tools.path(), &pinned).wtsexporter;
+        let unavailable = tools_status_with(&downloads, &installed, tools.path(), &[]).wtsexporter;
         media::testutil::write_with_mode(&program, 0o755);
         std::fs::write(&program, b"the pinned").unwrap();
-        let truncated = tools_status_with(&downloads, &installed, &pinned).wtsexporter;
-        let found_by_hand = tools_status_with(&downloads, &installed, &[]).wtsexporter;
+        let truncated =
+            tools_status_with(&downloads, &installed, tools.path(), &pinned).wtsexporter;
+        let found_by_hand =
+            tools_status_with(&downloads, &installed, tools.path(), &[]).wtsexporter;
         std::fs::write(&program, b"the pinned file").unwrap();
-        let found = tools_status_with(&downloads, &installed, &pinned).wtsexporter;
+        let found = tools_status_with(&downloads, &installed, tools.path(), &pinned).wtsexporter;
 
         assert_eq!(missing, ToolStatus::Missing);
         // No download for this computer: told apart, so the form offers no
