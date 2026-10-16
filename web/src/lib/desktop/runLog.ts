@@ -26,19 +26,27 @@ export async function invokeStartImportRunLog(
   return invoke("start_import_run_log", { args: { runDir, account } });
 }
 
-/** Who is asking for the Import Run logs on this computer. */
-export interface RunLogReader {
+/** Who is asking for the logs on this computer. */
+export interface LogReader {
   /** The id of the Message Crate the window is signed in to. */
   messageCrateId: string;
   accountId: number;
-  /** The owner reads every run log; an account only those of its own runs. */
+  /**
+   * The owner reads every log, the desktop app's own included; an account
+   * only those of its own Import Runs.
+   */
   owner: boolean;
 }
 
-/** One Import Run log on this computer. */
-export interface RunLogEntry {
+/** One log on this computer: an Import Run's, or the desktop app's own. */
+export interface LogEntry {
   /** The file's name in the Logs Directory, which a download keeps. */
   name: string;
+  /**
+   * An Import Run's log, or the desktop app's own: what it did outside an
+   * Import Run, which names no account and so is listed for the owner alone.
+   */
+  kind: "importRun" | "desktopApp";
   /** Who ran the run, or null when the log does not say. */
   account: RunLogAccount | null;
   /** Whether the run imported into the Message Crate the reader is signed in to. */
@@ -53,9 +61,12 @@ export interface RunLogEntry {
   modifiedAt: string;
 }
 
-/** The Import Run logs on this computer that `reader` may read, newest first. */
-export async function invokeListImportRunLogs(reader: RunLogReader): Promise<RunLogEntry[]> {
-  return invoke("list_import_run_logs", { reader });
+/**
+ * The logs on this computer that `reader` may read, newest first: its Import
+ * Run logs, and for the owner every one and the desktop app's own.
+ */
+export async function invokeListLogs(reader: LogReader): Promise<LogEntry[]> {
+  return invoke("list_logs", { reader });
 }
 
 /**
@@ -65,12 +76,12 @@ export async function invokeListImportRunLogs(reader: RunLogReader): Promise<Run
 type RunLogLevel = "error" | "warn" | "info";
 
 /**
- * A page of one Import Run log's lines, newest first: those at `level` and
+ * A page of one log's lines, newest first: those at `level` and
  * more severe (every line when absent), holding `text`, older than the line
  * whose id is `after`. The page has the shape the server's log answers.
  */
-export async function invokeReadImportRunLogLines(
-  reader: RunLogReader,
+export async function invokeReadLogLines(
+  reader: LogReader,
   name: string,
   query: {
     level?: RunLogLevel;
@@ -79,15 +90,12 @@ export async function invokeReadImportRunLogLines(
     limit: number;
   },
 ): Promise<LogLinesPage> {
-  return invoke("read_import_run_log_lines", { args: { reader, name, query } });
+  return invoke("read_log_lines", { args: { reader, name, query } });
 }
 
-/** One Import Run log whole, byte for byte as it is on disk, for a download. */
-export async function invokeReadImportRunLog(
-  reader: RunLogReader,
-  name: string,
-): Promise<ArrayBuffer> {
-  return invoke("read_import_run_log", { args: { reader, name } });
+/** One log whole, byte for byte as it is on disk, for a download. */
+export async function invokeReadLog(reader: LogReader, name: string): Promise<ArrayBuffer> {
+  return invoke("read_log", { args: { reader, name } });
 }
 
 /**

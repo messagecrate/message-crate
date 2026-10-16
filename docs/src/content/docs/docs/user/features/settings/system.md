@@ -121,7 +121,7 @@ Only the user who runs the app can read it, because it holds every account's mes
 | Data Directory | `data` | The database, each account's attachments and the server's log, of the Message Crate this app starts. A copy of it is a backup |
 | Staging Directory | `staging` | One directory per Import Run, unless [Staging directory](#staging-directory) names another place |
 | Export Directory | `exports` | One directory per Export, and per Convert with no output directory chosen. See [Exports](#exports) |
-| Logs Directory | `logs` | Each Import Run's log, named for the run, such as `import-iphone-ios-261004-143000.log`. Never deleted. The run's account reads it from **Settings → Storage**, and the Owner from **Logs** on Owner Home |
+| Logs Directory | `logs` | Each Import Run's log, named for the run, such as `import-iphone-ios-261004-143000.log`, and the desktop app's own log, `desktop-app.log`. Never deleted. The run's account reads a run's log from **Settings → Storage**, and the Owner every log from **Logs** on Owner Home |
 | Scratch Directory | `scratch` | Decrypted iPhone backup databases, the WhatsApp database decrypted from an Android backup, WhatsApp's files read out of a phone backup, and the attachments read out of SMS backups, while a run needs them. What a stopped run left is deleted the next time the app starts |
 | Tools Directory | `tools` | ffmpeg, ffprobe and wtsexporter, when the app downloaded them or they were put there by hand. See [Media](#media) |
 

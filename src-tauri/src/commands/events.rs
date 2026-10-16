@@ -37,15 +37,15 @@ pub const FINISHED: &str = "desktop-job:finished";
 pub const ERROR: &str = "desktop-job:error";
 
 /// Send one event to the UI. An emit fails only when no window is left to
-/// receive it; the job carries on, and the miss goes to the process log so it
-/// is not silent.
+/// receive it; the job carries on, and the miss goes to the desktop app's log
+/// ([`crate::app_log`]) so it is not silent.
 pub fn emit(app: &AppHandle, event: &str, payload: impl Serialize + Clone) {
     if let Err(error) = app.emit(event, payload) {
-        eprintln!("{}", undelivered_line(event, &error));
+        crate::app_log::warn(&undelivered_line(event, &error));
     }
 }
 
-/// The process log's line for an event no window received.
+/// The desktop app's log's line for an event no window received.
 fn undelivered_line(event: &str, error: &dyn std::fmt::Display) -> String {
     format!("The desktop app could not send the {event} event to its window: {error}")
 }
