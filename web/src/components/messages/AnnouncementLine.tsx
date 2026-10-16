@@ -6,7 +6,7 @@ import {
   DeletionNote,
   type MessageBubbleProps,
   messageRowFrame,
-  tapbackGroups,
+  TapbackChips,
 } from "./chatBubbleShared";
 
 /**
@@ -26,7 +26,6 @@ export default function AnnouncementLine({
 }: Omit<MessageBubbleProps, "showSender">) {
   const time = formatClockTime(message.timestamp, useTimeZone());
   const body = (message.text || "").trim();
-  const tapbacks = tapbackGroups(message);
   const frame = messageRowFrame(message.id, isActive);
 
   return (
@@ -43,19 +42,7 @@ export default function AnnouncementLine({
         <span>{time}</span> <DeletionNote deletion={message.deletion} source={message.source} />
       </div>
       <MessageAttachments message={message} onAttachmentClick={onAttachmentClick} />
-      {tapbacks.length > 0 ? (
-        <div className="mt-1 flex flex-wrap justify-center gap-1">
-          {tapbacks.map((t) => (
-            <span
-              key={t.emoji}
-              title={t.senderNames.join(", ")}
-              className="rounded-full border border-border bg-elevated px-[0.35rem] py-[0.1rem] text-[0.75rem] text-text"
-            >
-              {t.emoji} {t.count}
-            </span>
-          ))}
-        </div>
-      ) : null}
+      <TapbackChips message={message} className="mt-1 justify-center" />
     </div>
   );
 }

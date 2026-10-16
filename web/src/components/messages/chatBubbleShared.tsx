@@ -128,6 +128,28 @@ export function tapbackGroups(m: Message): TapbackGroup[] {
 }
 
 /**
+ * A message's reactions as rounded chips, one per emoji with its count, each
+ * naming who left it on hover. `className` lays out the row they sit in.
+ */
+export function TapbackChips({ message, className }: { message: Message; className: string }) {
+  const tapbacks = tapbackGroups(message);
+  if (tapbacks.length === 0) return null;
+  return (
+    <div className={`flex flex-wrap gap-1 ${className}`}>
+      {tapbacks.map((t) => (
+        <span
+          key={t.emoji}
+          title={t.senderNames.join(", ")}
+          className="rounded-full border border-border bg-elevated px-[0.35rem] py-[0.1rem] text-[0.75rem] text-text"
+        >
+          {t.emoji} {t.count}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
  * The frame every message row shares, a bubble's, a flat row's or an
  * announcement's: the `msg-<id>` anchor a jump to the message lands on, and
  * the background of the active Find match.
