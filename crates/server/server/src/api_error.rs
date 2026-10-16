@@ -578,6 +578,72 @@ impl From<crate::db::conversation_messages::MessagePageError> for ApiError {
     }
 }
 
+impl From<crate::db::address_book::LoadError> for ApiError {
+    fn from(e: crate::db::address_book::LoadError) -> Self {
+        use crate::db::address_book::LoadError;
+        match e {
+            LoadError::Refused(reasons) => Self::ValidationFailed(reasons),
+            LoadError::Failed(cause) => Self::Internal(cause.context("load address book")),
+        }
+    }
+}
+
+impl From<crate::accounts_api::ProfileUpdateError> for ApiError {
+    fn from(e: crate::accounts_api::ProfileUpdateError) -> Self {
+        use crate::accounts_api::ProfileUpdateError;
+        match e {
+            err @ ProfileUpdateError::UnknownTimeZone(_) => Self::validation(err.to_string()),
+            ProfileUpdateError::Country(error) => error.into(),
+            ProfileUpdateError::Db(err) => Self::Internal(err),
+        }
+    }
+}
+
+impl From<crate::contacts_api::edit::ContactEditError> for ApiError {
+    fn from(e: crate::contacts_api::edit::ContactEditError) -> Self {
+        use crate::contacts_api::edit::ContactEditError;
+        match e {
+            ContactEditError::Refused(message) => Self::validation(message),
+            ContactEditError::Country(error) => error.into(),
+            ContactEditError::Failed(cause) => Self::Internal(cause),
+        }
+    }
+}
+
+impl From<crate::identity_country::CountryError> for ApiError {
+    fn from(e: crate::identity_country::CountryError) -> Self {
+        use crate::identity_country::CountryError;
+        match e {
+            CountryError::Refused(message) => Self::validation(message),
+            CountryError::Exists { detail, holder } => Self::IdentityExists { detail, holder },
+            CountryError::Conflict(message) => Self::StateConflict(message),
+            CountryError::Failed(cause) => Self::Internal(cause),
+        }
+    }
+}
+
+impl From<crate::search::QueryError> for ApiError {
+    fn from(e: crate::search::QueryError) -> Self {
+        Self::SearchQueryInvalid {
+            detail: e.message,
+            word: e.field,
+            did_you_mean: e.did_you_mean,
+        }
+    }
+}
+
+impl From<crate::text_caps::TooLong> for ApiError {
+    fn from(e: crate::text_caps::TooLong) -> Self {
+        Self::validation(e.to_string())
+    }
+}
+
+impl From<crate::text_caps::RequiredTextError> for ApiError {
+    fn from(e: crate::text_caps::RequiredTextError) -> Self {
+        Self::validation(e.to_string())
+    }
+}
+
 impl From<sqlx::Error> for ApiError {
     fn from(e: sqlx::Error) -> Self {
         Self::Internal(e.into())

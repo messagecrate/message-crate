@@ -22,7 +22,7 @@ use crate::db::trash::{DeleteOutcome, Trashable, delete_trashed, move_to_trash, 
 use crate::paging::{ListRequest, MAX_CONTACT_SUMMARY_IDS, Page, PageQuery, whole_page};
 
 pub(crate) mod address_book;
-mod edit;
+pub(crate) mod edit;
 
 use edit::mutate_contact;
 

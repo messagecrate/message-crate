@@ -18,8 +18,17 @@ use super::{Pinned, Program};
 /// The project the ffmpeg and ffprobe files come from.
 const FFMPEG_STATIC: &str = "eugeneware/ffmpeg-static";
 
-/// The `ffmpeg-static` release pinned: its files report ffmpeg 7.0.2, a GPL
-/// build with `libx264` and `libx265`.
+/// The `ffmpeg-static` release pinned. Its files are GPL builds with
+/// `libx264` and `libx265`, but not of one ffmpeg version: each platform's
+/// ffmpeg and ffprobe report the version below, as `-version` prints it on
+/// Linux x64 and as the version string built into the other files reads
+/// (checked 2026-10-16):
+///
+/// - Linux x64 and arm64: `7.0.2-static https://johnvansickle.com/ffmpeg/`.
+/// - macOS x64: `6.1.1-tessus`.
+/// - macOS arm64: `6.0`.
+/// - Windows x64, which Windows on ARM gets too:
+///   `6.1.1-essentials_build-www.gyan.dev`.
 const FFMPEG_RELEASE: &str = "b6.1.1";
 
 /// The `.gz` file of ffmpeg and of ffprobe for one platform, with the
