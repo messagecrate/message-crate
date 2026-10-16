@@ -56,7 +56,10 @@ export type ContactDetail = ContactListItem & {
 export type YearThread = {
   year: number;
   messageCount: number;
-  /** Attachments on messages in this year thread. */
+  /**
+   * Attachments in this year thread. Read through `/v1`, it counts the
+   * messages that carry one, because the vault counts no attachments by year.
+   */
   attachmentCount: number;
   dateStart: string;
   dateEnd: string;

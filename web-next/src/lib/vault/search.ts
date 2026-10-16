@@ -3,7 +3,7 @@
  * parser (`searchQuery.ts`) for the presentation words it understands
  * (`group:none`, `sort:`, `context:`, `search:contacts`); the filters it
  * parsed are re-spelled in the vault's words and sent to
- * `GET /v1/conversations`, `GET /v1/export/messages`, or `GET /v1/contacts`.
+ * `GET /v1/conversations`, `GET /v1/messages`, or `GET /v1/contacts`.
  *
  * Replaces the reads in `search.ts`. The result types are re-exported from
  * there unchanged so the components keep compiling.
@@ -56,8 +56,19 @@ const TOP_MATCH_POOL = 6;
 
 type List = "contacts" | "conversations" | "messages";
 
-/** The vault's `source:` word takes a backup family, not an import source id. */
-const SOURCE_FAMILIES = new Set(["imessage", "whatsapp", "sms"]);
+/**
+ * The import source ids the vault's `source:` word accepts (`SOURCE_IDS` in
+ * `crates/libs/api-types`); it refuses any other value.
+ */
+const SOURCE_IDS = new Set([
+  "imessage",
+  "whatsapp",
+  "sms-backup-restore",
+  "imazing",
+  "openextract",
+  "go-sms-pro",
+  "sms-backup-plus",
+]);
 
 function quote(value: string): string {
   const trimmed = value.trim();
@@ -102,7 +113,7 @@ export function vaultQuery(parsed: ParsedSearchQuery, list: List): string {
     if (parsed.filename) words.push(`filename:${quote(parsed.filename)}`);
     if (parsed.largerBytes != null) words.push(`size:>${parsed.largerBytes}`);
     if (parsed.smallerBytes != null) words.push(`size:<${parsed.smallerBytes}`);
-    if (parsed.source && SOURCE_FAMILIES.has(parsed.source.toLowerCase())) {
+    if (parsed.source && SOURCE_IDS.has(parsed.source.toLowerCase())) {
       words.push(`source:${parsed.source.toLowerCase()}`);
     }
     if (parsed.conversationType === "group") words.push("kind:group");
@@ -124,8 +135,8 @@ export function vaultQuery(parsed: ParsedSearchQuery, list: List): string {
   if (list === "contacts") {
     const name = [parsed.firstName, parsed.lastName].filter(Boolean).join(" ");
     if (name) words.push(`name:${quote(name)}`);
-    if (parsed.handle) words.push(`handle:${quote(parsed.handle)}`);
-    if (parsed.phone) words.push(`handle:${quote(parsed.phone)}`);
+    if (parsed.handle) words.push(`identity:${quote(parsed.handle)}`);
+    if (parsed.phone) words.push(`identity:${quote(parsed.phone)}`);
     if (text.length) words.push(`name:${quote(text.join(" "))}`);
     const groups = countWord("groups", parsed.groupCount);
     if (groups) words.push(groups);
@@ -166,17 +177,17 @@ function conversationHit(
     conversationType: c.is_group ? "group" : "one-to-one",
     contactId: c.is_group ? null : (first?.contact_id ?? null),
     title: c.is_group ? title : (first?.name ?? title),
-    chatIdentifier: first?.handle ?? String(c.id),
+    chatIdentifier: first?.identity ?? String(c.id),
     matchCount: c.message_count,
-    dateStart: c.date_range_start ?? null,
-    dateEnd: c.date_range_end ?? c.last_message_at,
+    dateStart: c.first_message_at ?? null,
+    dateEnd: c.last_message_at,
     topMatch,
   };
 }
 
 function messageHit(m: Message, owner: string): SearchMessageHit {
   const conv = m.conversation;
-  const isGroup = conv.conversation_type === "group";
+  const isGroup = conv.is_group;
   const first = conv.participants[0];
   const people = formatPeopleTitle(conv.participants.map((p) => p.name));
   const title = isGroup
@@ -215,12 +226,23 @@ async function topMatchFor(
   q: string,
   conversationId: number,
 ): Promise<SearchHitMessage | null> {
-  const page = await vaultPage<Message>("/v1/export/messages", {
+  const page = await vaultPage<Message>("/v1/messages", {
     q: `${q} in:#${conversationId}`.trim(),
     limit: 1,
   });
   const m = page.items[0];
   return m ? hitMessage(m) : null;
+}
+
+/**
+ * `sort` for `GET /v1/messages` and `GET /v1/conversations`. `relevance` is
+ * left to the server: the Messages list applies it when `q` has a free-text
+ * word and `-date` when it has none, and the conversation list sorts by its
+ * default.
+ */
+function dateSort(parsed: ParsedSearchQuery): "date" | "-date" | undefined {
+  if (parsed.sort === "relevance") return undefined;
+  return parsed.sort === "date-asc" ? "date" : "-date";
 }
 
 async function searchMessages(
@@ -230,8 +252,9 @@ async function searchMessages(
 ): Promise<SearchResult> {
   const { limit, offset } = pageBounds(opts);
   const owner = ownerDisplayName(await loadProfile());
-  const page = await vaultPage<Message>("/v1/export/messages", {
+  const page = await vaultPage<Message>("/v1/messages", {
     q: vaultQuery(parsed, "messages"),
+    sort: dateSort(parsed),
     limit,
     offset,
   });
@@ -285,8 +308,9 @@ async function searchConversationsByMessages(
 ): Promise<SearchResult> {
   const { limit, offset } = pageBounds(opts);
   const owner = ownerDisplayName(await loadProfile());
-  const page = await vaultPage<Message>("/v1/export/messages", {
+  const page = await vaultPage<Message>("/v1/messages", {
     q: vaultQuery(parsed, "messages"),
+    sort: dateSort(parsed),
     limit: MAX_PAGE_MESSAGES,
     offset: 0,
   });
@@ -364,8 +388,7 @@ export async function searchVault(
     q,
     limit,
     offset,
-    sort: parsed.sort === "relevance" ? undefined : "date",
-    order: parsed.sort === "date-asc" ? "asc" : undefined,
+    sort: dateSort(parsed),
   });
   const messageQuery = vaultQuery(parsed, "messages");
   const topMatches = await mapPool(page.items, TOP_MATCH_POOL, (c) =>
@@ -437,7 +460,10 @@ export async function searchConversationMatches(
   }
   const q = vaultQuery(parsed, "messages");
   const pages = await mapPool(ids, TOP_MATCH_POOL, (id) =>
-    vaultAll<Message>("/v1/export/messages", { q: `${q} in:#${id}`.trim() }),
+    vaultAll<Message>("/v1/messages", {
+      q: `${q} in:#${id}`.trim(),
+      sort: "date",
+    }),
   );
   const matches = pages
     .flat()

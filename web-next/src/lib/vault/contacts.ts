@@ -42,7 +42,7 @@ import {
 } from "./names";
 
 type ContactSummary = Schemas["ContactSummary"];
-type ContactDetailV1 = Schemas["ContactDetail"];
+type Contact = Schemas["Contact"];
 
 const LIST_TTL_MS = 5_000;
 const COUNT_POOL = 8;
@@ -65,7 +65,7 @@ async function allContacts(section: "active" | "trash" = "active"): Promise<Cont
 
 function toListItem(row: ContactSummary, stats: ContactStats): ContactListItem {
   const preferredName = preferredNameOf(row.name);
-  const preferredHandle = row.handles?.[0] ?? null;
+  const preferredHandle = row.addresses[0] ?? null;
   const { firstName, lastName } = nameParts(preferredName);
   return {
     id: row.id,
@@ -129,11 +129,11 @@ export async function listContactsByIds(contactIds: number[]): Promise<ContactLi
   return out;
 }
 
-function detailHandles(detail: ContactDetailV1): ContactHandle[] {
-  return detail.handles
+function detailHandles(detail: Contact): ContactHandle[] {
+  return detail.identities
     .map((h) => ({
-      raw: h.handle,
-      handle_type: handleTypeOf(h.handle) ?? "username",
+      raw: h.address,
+      handle_type: handleTypeOf(h.address) ?? "username",
       service: h.service ?? null,
       normalizedNote: null,
     }))
@@ -148,7 +148,7 @@ function detailHandles(detail: ContactDetailV1): ContactHandle[] {
     );
 }
 
-function toDetail(detail: ContactDetailV1): ContactDetail {
+function toDetail(detail: Contact): ContactDetail {
   const preferredName = preferredNameOf(detail.name);
   const handles = detailHandles(detail);
   const preferredHandle = handles[0]?.raw ?? null;
@@ -156,8 +156,8 @@ function toDetail(detail: ContactDetailV1): ContactDetail {
   let dateStart: string | null = null;
   let dateEnd: string | null = null;
   let messageCount = 0;
-  for (const h of detail.handles) {
-    messageCount += h.individual_message_count;
+  for (const h of detail.identities) {
+    messageCount += h.one_to_one_messages;
     const start = dayOf(h.start_date);
     const end = dayOf(h.end_date);
     if (start && (!dateStart || start < dateStart)) dateStart = start;
@@ -184,7 +184,7 @@ function toDetail(detail: ContactDetailV1): ContactDetail {
 }
 
 export async function getContact(id: number): Promise<ContactDetail | null> {
-  const detail = await vaultJsonOrNull<ContactDetailV1>(`/v1/contacts/${id}`);
+  const detail = await vaultJsonOrNull<Contact>(`/v1/contacts/${id}`);
   return detail ? toDetail(detail) : null;
 }
 
@@ -202,21 +202,21 @@ export type ContactSourceCounts = {
 async function yearThreads(directs: Conversation[]): Promise<YearThread[]> {
   const perConversation = await mapPool(directs, COUNT_POOL, async (c) => {
     const years = conversationYears(c);
-    if (years.length <= 1) {
-      const year = years[0];
-      if (year == null) return [];
-      return [{ c, year, messages: c.message_count, attachments: 0 }];
-    }
-    const counts = await mapPool(years, COUNT_POOL, (year) =>
-      countConversationYear(c.id, year),
-    );
-    return years.map((year, i) => ({ c, year, ...counts[i]! }));
+    return mapPool(years, COUNT_POOL, async (year) => {
+      const [messages, attachments] = await Promise.all([
+        years.length === 1
+          ? c.message_count
+          : countConversationYear(c.id, year),
+        countConversationYear(c.id, year, "attachment:any"),
+      ]);
+      return { c, year, messages, attachments };
+    });
   });
   const byYear = new Map<number, YearThread>();
   for (const row of perConversation.flat()) {
     if (row.messages === 0) continue;
-    const start = dayOf(row.c.date_range_start) || dayOf(row.c.last_message_at);
-    const end = dayOf(row.c.date_range_end) || dayOf(row.c.last_message_at);
+    const start = dayOf(row.c.first_message_at) || dayOf(row.c.last_message_at);
+    const end = dayOf(row.c.last_message_at);
     const first = `${row.year}-01-01`;
     const last = `${row.year}-12-31`;
     const dateStart = start > first ? start : first;
@@ -243,7 +243,7 @@ async function yearThreads(directs: Conversation[]): Promise<YearThread[]> {
  * Contact detail plus thread metadata in one pass: yearly 1:1 buckets, the
  * group chats the contact is in, and the backup sources behind them.
  *
- * `source` is an import source id (`GET /v1/auth/check`); the vault's list
+ * `source` is an import source id (`GET /v1/session`); the vault's list
  * routes cannot filter by it, so the threads are the same for every source
  * and only the per-source counts change.
  */
@@ -331,7 +331,7 @@ export async function listTrashedContacts(): Promise<TrashedContactItem[]> {
   return rows
     .map((row) => {
       const preferredName = preferredNameOf(row.name);
-      const preferredHandle = row.handles?.[0] ?? null;
+      const preferredHandle = row.addresses[0] ?? null;
       const { firstName, lastName } = nameParts(preferredName);
       const sort = sortFields(preferredName, preferredHandle);
       return {
@@ -339,7 +339,7 @@ export async function listTrashedContacts(): Promise<TrashedContactItem[]> {
         contactId: row.id,
         displayName: displayName(preferredName, preferredHandle),
         preferredHandle,
-        handleCount: row.handle_count,
+        handleCount: row.identity_count,
         messageCount: 0,
         sortKey: `${sort.sortLast}\0${sort.sortFirst}`.toLowerCase(),
         letter: sort.letter,

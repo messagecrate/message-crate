@@ -12,9 +12,8 @@ import {
   dayOf,
   mapPool,
   memo,
-  qs,
   vaultAll,
-  vaultJson,
+  vaultCount,
   vaultJsonOrNull,
   yearOf,
   type Schemas,
@@ -28,7 +27,7 @@ import {
 
 export type Conversation = Schemas["ConversationSummary"];
 export type Participant = Schemas["Participant"];
-export type ConversationSourceInfo = Schemas["ConversationSourceInfo"];
+export type ConversationSource = Schemas["ConversationSource"];
 
 const LIST_TTL_MS = 5_000;
 /** Concurrent per-year count calls when splitting a conversation by year. */
@@ -53,11 +52,8 @@ export async function getConversation(id: number): Promise<Conversation | null> 
 
 export async function conversationSources(
   id: number,
-): Promise<ConversationSourceInfo[]> {
-  const page = await vaultJson<Schemas["ConversationSourcesPage"]>(
-    `/v1/conversations/${id}/sources`,
-  );
-  return page.items;
+): Promise<ConversationSource[]> {
+  return vaultAll<ConversationSource>(`/v1/conversations/${id}/sources`);
 }
 
 /** Contact ids of every participant that has one. */
@@ -76,7 +72,7 @@ export function directContactId(c: Conversation): number | null {
 }
 
 export function toGroupParticipant(p: Participant): GroupParticipant {
-  const handle = p.handle ?? "";
+  const handle = p.identity ?? "";
   return {
     name: p.name,
     handle,
@@ -91,7 +87,7 @@ export function groupTitle(c: Conversation): {
   titleFull: string;
   namedTitle: string | null;
 } {
-  const label = c.label?.trim() || null;
+  const label = c.shown_title?.trim() || null;
   const people = formatPeopleTitle(c.participants.map((p) => p.name));
   if (label && !isGenericGroupTitle(label)) {
     return { title: label, titleFull: people.full || label, namedTitle: label };
@@ -102,8 +98,8 @@ export function groupTitle(c: Conversation): {
 
 /** Calendar years a conversation's messages span, oldest first. */
 export function conversationYears(c: Conversation): number[] {
-  const start = yearOf(c.date_range_start) ?? yearOf(c.last_message_at);
-  const end = yearOf(c.date_range_end) ?? yearOf(c.last_message_at);
+  const start = yearOf(c.first_message_at) ?? yearOf(c.last_message_at);
+  const end = yearOf(c.last_message_at);
   if (start == null || end == null) return [];
   const years: number[] = [];
   for (let y = Math.min(start, end); y <= Math.max(start, end); y += 1) {
@@ -112,20 +108,20 @@ export function conversationYears(c: Conversation): number[] {
   return years;
 }
 
-export type YearCount = { messages: number; attachments: number };
+export type YearCount = { messages: number };
 
 /**
- * Messages and attachments of one conversation in one year, from
- * `GET /v1/export/messages/count?q=in:#id date:YYYY`.
+ * Messages of one conversation in one year that also match `extra`, the
+ * `total` of `GET /v1/messages?q=in:#id date:YYYY …`.
  */
 export async function countConversationYear(
   conversationId: number,
   year: number,
-): Promise<YearCount> {
-  const count = await vaultJson<Schemas["ExportCountResponse"]>(
-    `/v1/export/messages/count${qs({ q: `in:#${conversationId} date:${year}` })}`,
-  );
-  return { messages: count.messages, attachments: count.attachments };
+  extra = "",
+): Promise<number> {
+  return vaultCount("/v1/messages", {
+    q: `in:#${conversationId} date:${year} ${extra}`.trim(),
+  });
 }
 
 /**
@@ -139,13 +135,13 @@ export async function yearCounts(
   const years = conversationYears(c);
   if (years.length === 0) return [];
   if (years.length === 1) {
-    return [{ year: years[0]!, messages: c.message_count, attachments: 0 }];
+    return [{ year: years[0]!, messages: c.message_count }];
   }
   const counts = await mapPool(years, COUNT_POOL, (year) =>
     countConversationYear(c.id, year),
   );
   return years
-    .map((year, i) => ({ year, ...counts[i]! }))
+    .map((year, i) => ({ year, messages: counts[i]! }))
     .filter((row) => row.messages > 0);
 }
 
@@ -154,8 +150,8 @@ function yearRange(
   c: Conversation,
   year: number,
 ): { dateStart: string; dateEnd: string } {
-  const start = dayOf(c.date_range_start) || dayOf(c.last_message_at);
-  const end = dayOf(c.date_range_end) || dayOf(c.last_message_at);
+  const start = dayOf(c.first_message_at) || dayOf(c.last_message_at);
+  const end = dayOf(c.last_message_at);
   const first = `${year}-01-01`;
   const last = `${year}-12-31`;
   return {
@@ -186,8 +182,8 @@ function groupYearRow(
     messageCount: count.messages,
     dateStart,
     dateEnd,
-    conversationDateStart: dayOf(c.date_range_start) || dateStart,
-    conversationDateEnd: dayOf(c.date_range_end) || dateEnd,
+    conversationDateStart: dayOf(c.first_message_at) || dateStart,
+    conversationDateEnd: dayOf(c.last_message_at) || dateEnd,
     spansMultipleYears: years.length > 1,
   };
 }
@@ -226,8 +222,8 @@ export function groupChatThread(c: Conversation): GroupChatThread {
     participants,
     year,
     messageCount: c.message_count,
-    dateStart: dayOf(c.date_range_start) || dayOf(c.last_message_at),
-    dateEnd: dayOf(c.date_range_end) || dayOf(c.last_message_at),
+    dateStart: dayOf(c.first_message_at) || dayOf(c.last_message_at),
+    dateEnd: dayOf(c.last_message_at),
   };
 }
 
@@ -285,8 +281,8 @@ export async function contactStats(): Promise<Map<number, ContactStats>> {
       const s = entry(id);
       s.messageCount += c.message_count;
       s.directConversationIds.push(c.id);
-      const start = dayOf(c.date_range_start);
-      const end = dayOf(c.date_range_end) || dayOf(c.last_message_at);
+      const start = dayOf(c.first_message_at);
+      const end = dayOf(c.last_message_at);
       if (start && (!s.dateStart || start < s.dateStart)) s.dateStart = start;
       if (end && (!s.dateEnd || end > s.dateEnd)) s.dateEnd = end;
     }

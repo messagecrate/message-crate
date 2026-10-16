@@ -59,7 +59,7 @@ function senderName(
 ): string {
   if (m.is_from_me) return owner;
   const sender = m.sender ?? null;
-  const participant = participants.find((p) => p.handle === sender);
+  const participant = participants.find((p) => p.identity === sender);
   if (participant) {
     return displayName(preferredNameOf(participant.name), sender) === "Unknown"
       ? participant.name
@@ -96,7 +96,11 @@ function keepSource(rows: MessageRow[], source?: string | null): MessageRow[] {
   return source ? rows.filter((r) => r.source === source) : rows;
 }
 
-/** Every message of the conversations in one calendar year, oldest first. */
+/**
+ * Every message of the conversations in one calendar year, oldest first. A
+ * conversation's message list takes no filter, so a year inside one is the
+ * search `in:#id date:YYYY` on `GET /v1/messages`.
+ */
 export async function messagesForConversationYear(
   conversationIds: number | number[],
   year: number,
@@ -105,7 +109,10 @@ export async function messagesForConversationYear(
   const owner = ownerDisplayName(await loadProfile());
   const ids = idList(conversationIds);
   const pages = await mapPool(ids, POOL, (id) =>
-    vaultAll<Message>(`/v1/conversations/${id}/messages`, { year }),
+    vaultAll<Message>("/v1/messages", {
+      q: `in:#${id} date:${year}`,
+      sort: "date",
+    }),
   );
   const rows = pages.flat().map((m) => toMessageRow(m, owner));
   return keepSource(rows, source).sort(byTimeAsc);
