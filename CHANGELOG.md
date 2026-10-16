@@ -26,8 +26,8 @@ carry their date on the heading.
   Each entry on Owner Home's **Audit Trail** that a request made has a
   **View in log** link. It opens **Logs** on the server's log at every level
   with the request's id in **Search the log**, so only that request's lines
-  show, in place of matching the entry to its lines by time. When the log no
-  longer holds them, **Logs** says so. The holder's own Audit Trail in
+  show, in place of matching the entry to its lines by time. When the log
+  holds none of them, **Logs** says so. The holder's own Audit Trail in
   Settings has no link, because a holder cannot read the server's log
   (#3060).
 - 2026-10-16: **The desktop app keeps a log of its own.** What the desktop
@@ -526,14 +526,6 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
-- 2026-10-16: **Add a WhatsApp internal id or a sender name as an
-  identity.** **Add identity**, in Settings and on a contact, and **Your
-  Accounts** at setup refused anything but a phone number on **Text
-  Message** and **WhatsApp**, so a WhatsApp internal id such as
-  `123456789012345@lid` or a sender name such as `AMAZON`, which an import
-  adds and Settings can remove, could not be added by hand. Both services now
-  take any value, as the server does. **Email** still asks for an email
-  address (#3090).
 - 2026-10-16: **The desktop app notices its own server stop answering on
   any screen.** The app checked whether its own server still answered only
   while the login card was open, so a server that hung while you browsed
@@ -1574,6 +1566,14 @@ carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-16: **Add a WhatsApp internal id or a sender name as an
+  identity.** **Add identity**, in Settings and on a contact, and **Your
+  Accounts** at setup refused anything but a phone number on **Text
+  Message** and **WhatsApp**, so a WhatsApp internal id such as
+  `123456789012345@lid` or a sender name such as `AMAZON`, which an import
+  adds and Settings can remove, could not be added by hand. Both services now
+  take any value, as the server does. **Email** still asks for an email
+  address (#3090).
 - 2026-10-16: **An Edit address book load erases what it removed from the
   database's files.** An **Edit** load deletes for good the identities its
   file no longer lists that nothing else uses, but left them readable in the

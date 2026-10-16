@@ -67,19 +67,31 @@ export function identityPlaceholder(service: OfferedService): string {
 }
 
 /**
+ * The most characters an identity holds, counted as Unicode characters after
+ * trimming: the server refuses a longer one (`MAX_IDENTITY_ADDRESS_CHARS` in
+ * `crates/server/server/src/text_caps.rs`).
+ */
+export const MAX_IDENTITY_CHARS = 320;
+
+/**
  * Why a handle cannot be used, or null when it can. An empty value is not an
  * error here: a blank row is one the person has not filled in yet, and the
  * screens that collect handles decide separately how many they need.
  *
- * Only a value offered as Email is checked, because the person said it is an
- * email address. Text Message and WhatsApp take any value, as the server does:
- * it types a value that is not a number, such as the WhatsApp internal id
- * `123456789012345@lid` or the sender name `AMAZON`, as an identity of type
+ * A value longer than the server keeps is refused on every service. Beyond
+ * that, only a value offered as Email is checked, because the person said it
+ * is an email address. Text Message and WhatsApp take any value, as the server
+ * does: it types a value that is not a number, such as the WhatsApp internal
+ * id `123456789012345@lid` or the sender name `AMAZON`, as an identity of type
  * other (#2709, #3090). A mistyped number is then stored as other.
  */
 export function identityValidationError(service: OfferedService, value: string): string | null {
   const trimmed = value.trim();
-  if (!trimmed || service !== "email") return null;
+  if (!trimmed) return null;
+  if ([...trimmed].length > MAX_IDENTITY_CHARS) {
+    return `An identity can be at most ${MAX_IDENTITY_CHARS} characters.`;
+  }
+  if (service !== "email") return null;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)
     ? null
     : "Enter an email address like you@example.com.";
@@ -95,7 +107,7 @@ export const DUPLICATE_IDENTITY_MESSAGE = "This account is already in the list."
  * The service is part of the key because the same number on Text Message and
  * on WhatsApp is two accounts, not one, and listing both is the right thing to
  * do. Within a service the comparison ignores how the value was typed: an
- * value written as a number compares by its digits, so `+1 (555) 555-0119`
+ * value written as a number, with at least one digit, compares by its digits, so `+1 (555) 555-0119`
  * and `+15555550119` land on the same key, and any other value folds to lower
  * case, so a WhatsApp internal id is never taken for the number its digits
  * spell.
@@ -109,9 +121,9 @@ export const DUPLICATE_IDENTITY_MESSAGE = "This account is already in the list."
 export function identityDuplicateKey(service: OfferedService, value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
-  const writtenAsNumber = /^\+?[\d\s().-]+$/.test(trimmed);
-  const normalized =
-    service !== "email" && writtenAsNumber ? trimmed.replace(/\D/g, "") : trimmed.toLowerCase();
+  const digits = trimmed.replace(/\D/g, "");
+  const writtenAsNumber = digits !== "" && /^\+?[\d\s().-]+$/.test(trimmed);
+  const normalized = service !== "email" && writtenAsNumber ? digits : trimmed.toLowerCase();
   return `${service}:${normalized}`;
 }
 

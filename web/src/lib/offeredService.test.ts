@@ -96,6 +96,20 @@ describe("identityValidationError", () => {
     expect(identityValidationError("phone", "72975")).toBeNull();
   });
 
+  it("refuses a value longer than the server keeps, on every service", () => {
+    // The server refuses an address over 320 characters, counted as Unicode
+    // characters after trimming (MAX_IDENTITY_ADDRESS_CHARS).
+    const longest = `${"a".repeat(308)}@example.com`;
+    expect(longest).toHaveLength(320);
+    expect(identityValidationError("email", longest)).toBeNull();
+    expect(identityValidationError("whatsapp", "😀".repeat(320))).toBeNull();
+    for (const service of ["phone", "whatsapp", "email"] as const) {
+      expect(identityValidationError(service, `${longest}x`)).toBe(
+        "An identity can be at most 320 characters.",
+      );
+    }
+  });
+
   it("accepts an address and rejects what is not one", () => {
     expect(identityValidationError("email", "you@example.com")).toBeNull();
     expect(identityValidationError("email", "you@example")).toMatch(/email address/);
@@ -139,6 +153,10 @@ describe("identityDuplicateKey", () => {
     expect(identityDuplicateKey("whatsapp", "123456789012345@lid")).not.toBe(
       identityDuplicateKey("whatsapp", "+123456789012345"),
     );
+  });
+
+  it("keeps two values with no digit apart, though both are made of number characters", () => {
+    expect(identityDuplicateKey("whatsapp", "-")).not.toBe(identityDuplicateKey("whatsapp", "()"));
   });
 
   it("matches a sender name regardless of case", () => {

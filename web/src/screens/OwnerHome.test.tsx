@@ -400,7 +400,7 @@ describe("OwnerHome", () => {
       limit: 50,
       offset: 0,
     });
-    // The log was rotated since, so it no longer holds the request's lines.
+    // The log was rotated since, so it holds none of the request's lines.
     listServerLogLines.mockResolvedValue({ items: [], limit: 200, has_more: false });
     renderHome(["/owner/audit-trail"]);
     await settle();
@@ -417,7 +417,7 @@ describe("OwnerHome", () => {
     );
     expect(
       screen.getByText(
-        "The server's log no longer holds this request's lines: the oldest log files are deleted as the log grows.",
+        "The server's log holds no line of this request. Either its oldest files were deleted as the log grew, or the log's level left the request's lines out.",
       ),
     ).toBeInTheDocument();
   });

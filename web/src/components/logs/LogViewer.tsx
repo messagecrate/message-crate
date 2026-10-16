@@ -39,8 +39,8 @@ const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
   selectItemClassName(state, "sm");
 
 /** Said when the search for a request's id finds no line. */
-export const REQUEST_ROTATED_AWAY =
-  "The server's log no longer holds this request's lines: the oldest log files are deleted as the log grows.";
+export const REQUEST_NOT_IN_LOG =
+  "The server's log holds no line of this request. Either its oldest files were deleted as the log grew, or the log's level left the request's lines out.";
 
 /**
  * One log, read: a level filter (opens at warnings and up), a search that
@@ -53,9 +53,10 @@ export const REQUEST_ROTATED_AWAY =
  * shows that run's log, so every log reads the same way.
  *
  * Given `request`, it opens at every level with the request's id in the
- * search, so only that request's lines show. Every request leaves a line in
- * the server's log, so finding none there means the log was rotated past it,
- * and the viewer says so rather than that no line matches.
+ * search, so only that request's lines show. Every request leaves a line at
+ * `INFO`, so finding none means the log was rotated past it or its level
+ * (`RUST_LOG`) is set above `INFO`, and the viewer says so rather than that
+ * no line matches.
  */
 export default function LogViewer({
   source,
@@ -157,7 +158,7 @@ export default function LogViewer({
       ) : items.length === 0 ? (
         <p className="m-0 text-[0.813rem] text-muted">
           {request && text === request && level === "all"
-            ? REQUEST_ROTATED_AWAY
+            ? REQUEST_NOT_IN_LOG
             : text
               ? "No line matches the search"
               : "No line at this level"}
