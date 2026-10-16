@@ -429,6 +429,10 @@ mkdir -p ~/message-crate/tools && ln -sf "$(pipx environment --value PIPX_BIN_DI
 pipx install sqlite-web                                          # --sqlweb on port 8081
 cargo install cargo-llvm-cov --locked                             # ./scripts/coverage.sh
 cargo install cargo-mutants cargo-nextest --locked                # ./scripts/mutants.sh
+# gitleaks, for ./scripts/check-secrets.sh: the version and the archive SHA-256 the secrets job in ci.yml pins
+curl -sSfLO https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks_8.30.1_linux_x64.tar.gz" | sha256sum -c -
+mkdir -p ~/.local/bin && tar -xzf gitleaks_8.30.1_linux_x64.tar.gz -C ~/.local/bin gitleaks
 ```
 
 **5. Clone and install the frontend**
@@ -571,7 +575,7 @@ npm run build             # tsc && vite build
 npm run dev               # Vite on http://localhost:5173 (proxies /v1 to :8080)
 ```
 
-From the repository root, `./scripts/format-all.sh` rewrites Rust and web sources to the formatters. `./scripts/check-pr.sh` is the fast pre-flight — the `CHANGELOG.md` formatting check, `cargo fmt --check` and Clippy at `-D warnings` on both manifests, `biome ci`, the timed-wait rule's canary, the restricted-import list check, and the web type-check; it checks and never rewrites. `./scripts/check-all.sh` runs CI's checks serially on the machine it is started on, starting with `check-pr.sh`, except the Docker image build. On Linux or macOS it skips the Windows-only cases of the server config tests, which CI's `windows-config` job runs. Why the split: `docs/adr/0007-ci-is-the-only-gate.md`.
+From the repository root, `./scripts/format-all.sh` rewrites Rust and web sources to the formatters. `./scripts/check-pr.sh` is the fast pre-flight — the `CHANGELOG.md` formatting check, `cargo fmt --check` and Clippy at `-D warnings` on both manifests, `biome ci`, the timed-wait rule's canary, the restricted-import list check, and the web type-check; it checks and never rewrites. `./scripts/check-all.sh` runs CI's checks serially on the machine it is started on, starting with `check-pr.sh`, except the Docker image build. It skips the secret scan (`scripts/check-secrets.sh`) when gitleaks is not installed ("First time setup", step 4). On Linux or macOS it skips the Windows-only cases of the server config tests, which CI's `windows-config` job runs. Why the split: `docs/adr/0007-ci-is-the-only-gate.md`.
 
 Do not start a separate `npm run dev` while `cargo tauri dev` is running. Tauri starts Vite itself.
 

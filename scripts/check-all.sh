@@ -7,9 +7,8 @@
 # Stops on the first failure. Starts with ./scripts/check-pr.sh (format and
 # lint), then builds and tests the workspace and src-tauri, and runs the
 # license, Docker-context, secret-scan, version-lockstep and generated-API-type
-# checks, cargo-deny
-# (advisories, licences and bans on the workspace, licences and bans on src-tauri), and
-# the web and docs test/build/audit steps. CI runs the same set in
+# checks, cargo-deny (advisories, licences and bans on the workspace, licences
+# and bans on src-tauri), and the web and docs test/build/audit steps. CI runs the same set in
 # parallel; this exists so nobody types nine commands by hand. Why the
 # split from check-pr.sh: docs/adr/0007-ci-is-the-only-gate.md.
 # Runs npm ci in web/ and docs/ only when that tree has no node_modules yet.

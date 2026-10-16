@@ -5,8 +5,9 @@ A ruleset on `main` requires those checks to pass and requires a pull request to
 carry them. The two scripts under `scripts/` decide nothing: `check-pr.sh` is a
 fast pre-flight that catches the mistakes not worth a round trip, and
 `check-all.sh` runs the whole set locally for anyone who wants it before
-pushing, except the Docker image build and, off Windows, the Windows-only
-cases of the server config tests.
+pushing, except the Docker image build, off Windows the Windows-only cases
+of the server config tests, and the secret scan when gitleaks is not
+installed.
 
 `ci.yml` holds thirteen jobs on a ready pull request. On a draft, all of them
 skip. A `changes` job diffs the branch against its base and publishes five
@@ -31,7 +32,7 @@ jobs read them:
 
 The ruleset requires eleven of them: every job but `windows-config` and
 `secrets`. Whether it should require `windows-config` too is open in #2788.
-`secrets` joins the required checks once it has run green (#2093). GitHub's
+`secrets` joins the required checks once it has run green (#3093). GitHub's
 own secret scanning and push protection are on for the repository as well.
 They block a provider token at `git push`, and the gitleaks job finds what
 their patterns miss, such as a pasted Session or API token. The job runs on
