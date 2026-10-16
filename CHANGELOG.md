@@ -3580,8 +3580,8 @@ carry their date on the heading.
   reaching a Message Crate on another machine without HTTPS, Profile Setup
   stopped with an error, and Copy buttons did nothing.
 - **Settings → Storage shows every run as it is.** Import and
-  Export history page through every run, not only the newest 40. A canceled
-  run reads as canceled, not failed, and "Cancelled" is spelled one way on
+  Export history page through every run, not only the newest 40. A cancelled
+  run reads as cancelled, not failed, and "Cancelled" is spelt one way on
   every screen and in the user guide. A run that has not finished no longer
   shows its start time as its finish. The Import badge goes as soon as a
   waiting run is discarded.
