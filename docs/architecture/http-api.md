@@ -700,7 +700,6 @@ none of its answer for the body stall time is closed. In detail:
   (`limit_request_body` in `crates/server/server/src/middleware.rs`). Why the uploads start their own
   clock: an import batch waits for an import slot before it reads, and a
   clock started on arrival would count that wait against its body.
-
 - An answer the client takes no byte of for `[server] body_stall_secs`
   (60) closes its connection, and the server lets go of the answer and the
   file it reads from (`AnswerStall` in
@@ -723,9 +722,9 @@ its own 30-second header limit only with one set, so a device that opened a
 connection and sent nothing, or sent its headers or a JSON body a byte at a
 time, held a task and a file handle for as long as it liked, and any number
 of devices could. On a home network one misbehaving device could starve a
-server that has one database file and two import slots. The limits are
-fixed in the code, not config keys, because no setup needs others: a
-working client sends its headers at once. Why the body limits are the
+server that has one database file and two import slots. The header read
+limit and the connection cap are fixed in the code, not config keys,
+because no setup needs others: a working client sends its headers at once. Why the body limits are the
 upload ones rather than figures of their own: every other body is smaller
 than an import batch, so the limits a batch arrives inside hold it too, and
 one pair of figures is one to explain.

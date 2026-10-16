@@ -5,9 +5,7 @@ use tempfile::TempDir;
 
 /// The connection limits `serve` holds a default config to.
 fn server_limits() -> crate::connections::ConnectionLimits {
-    crate::connections::ConnectionLimits::server(BodyTimeLimits::of(
-        &crate::config::ServerConfig::default(),
-    ))
+    crate::connections::ConnectionLimits::of_default_config()
 }
 
 /// `docker stop` and a service manager send SIGTERM. The server must drain a
