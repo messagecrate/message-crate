@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import PlainButton from "../../components/PlainButton";
 import PopupMenu, { type PopupMenuItem } from "../../components/PopupMenu";
 import { errorLine } from "../../lib/apiErrorMessage";
+import { conversationName } from "../../lib/conversationName";
 import { formatMonthYear } from "../../lib/formatDate";
 import { conversationServiceLabel } from "../../lib/serviceLabel";
 import { useTimeZone } from "../../lib/timeZone";
@@ -86,11 +87,7 @@ export default function ConversationHeader({
     trashConversation.mutate(conversation.id, { onSuccess: () => navigate("/") });
   };
 
-  const title =
-    conversation.shown_title ||
-    (conversation.is_group
-      ? `${conversation.participants.length} participants`
-      : conversation.participants[0]?.name);
+  const title = conversationName(conversation);
   const service = conversationServiceLabel(conversation);
 
   const jumpItems: PopupMenuItem[] = [

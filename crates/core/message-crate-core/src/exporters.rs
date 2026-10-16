@@ -52,10 +52,10 @@ impl Exporter {
     /// The id this backup type's exporter writes into a conversation file's
     /// `export.source`, which the import stamps on every message it writes
     /// and search's `source:` field matches. Each exporter writes the value
-    /// this returns, and `message_crate_api_types::SOURCE_IDS`, the list
+    /// this returns, and `api_types::SOURCE_IDS`, the list
     /// search accepts, holds every one (a test here checks it).
     pub const fn source_id(self) -> &'static str {
-        use message_crate_api_types::source_id;
+        use api_types::source_id;
         match self {
             Self::GoSmsPro => source_id::GO_SMS_PRO,
             Self::Imazing => source_id::IMAZING,
@@ -186,7 +186,7 @@ pub struct Form {
 #[derive(Debug, Clone)]
 pub struct FormContext<'a> {
     /// The Scratch Directory the run's scratch data goes under
-    /// ([`ExporterConfig::scratch_dir`]).
+    /// ([`RunContext::scratch_dir`]).
     pub scratch_dir: &'a Path,
     /// The run's tools, whose Tools Directory is where the WhatsApp
     /// exporter finds `wtsexporter` ([`MediaTools::tools_dir`]).
@@ -292,7 +292,7 @@ impl Form {
             ApplePlatform::Auto => None,
             other => Some(other),
         };
-        let inputs = message_ir::trimmed(&self.db_path)
+        let inputs = ir::trimmed(&self.db_path)
             .map(|p| vec![PathBuf::from(p)])
             .unwrap_or_default();
         self.exporter_config(
@@ -302,10 +302,10 @@ impl Form {
             media,
             SourceConfig::Apple(AppleConfig {
                 platform,
-                attachment_root: message_ir::nonempty(&self.attachment_root),
+                attachment_root: ir::nonempty(&self.attachment_root),
                 copy_method,
                 apple_contacts: non_empty_path(&self.apple_contacts),
-                backup_password: message_ir::nonempty(&self.backup_password),
+                backup_password: ir::nonempty(&self.backup_password),
                 use_caller_id: true,
             }),
         )
@@ -351,10 +351,10 @@ impl Form {
             SourceConfig::Whatsapp(WhatsappConfig {
                 platform: Some(self.whatsapp_platform),
                 json: None,
-                key: message_ir::nonempty(&self.whatsapp_key),
+                key: ir::nonempty(&self.whatsapp_key),
                 backup: non_empty_path(&self.whatsapp_backup),
                 backup_password: if self.whatsapp_platform == WhatsappPlatform::Ios {
-                    message_ir::nonempty(&self.backup_password)
+                    ir::nonempty(&self.backup_password)
                 } else {
                     None
                 },
@@ -383,7 +383,7 @@ impl Form {
             ctx,
             media,
             SourceConfig::Imazing(ImazingConfig {
-                timezone: message_ir::nonempty(&self.timezone),
+                timezone: ir::nonempty(&self.timezone),
             }),
         )
     }
@@ -559,7 +559,7 @@ fn validate_obfuscate_seed(seed: &str, errors: &mut Vec<String>) -> Option<Strin
 
 /// Non-empty trimmed lines from a multiline text field.
 fn lines(value: &str) -> Vec<&str> {
-    value.lines().filter_map(message_ir::trimmed).collect()
+    value.lines().filter_map(ir::trimmed).collect()
 }
 
 /// Non-empty trimmed values split on newlines, commas or semicolons.
@@ -569,13 +569,13 @@ fn lines(value: &str) -> Vec<&str> {
 fn values(value: &str) -> Vec<&str> {
     value
         .split(['\n', ',', ';'])
-        .filter_map(message_ir::trimmed)
+        .filter_map(ir::trimmed)
         .collect()
 }
 
 /// `Some(path)` when the string is not blank.
 fn non_empty_path(value: &str) -> Option<PathBuf> {
-    message_ir::trimmed(value).map(PathBuf::from)
+    ir::trimmed(value).map(PathBuf::from)
 }
 
 #[cfg(test)]

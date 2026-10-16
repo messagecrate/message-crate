@@ -64,6 +64,7 @@ The export then holds every message of the conversations the list showed.
 Opened from any other screen, or with no search running, it starts in **Everything**, and choosing **Search** there starts in **Messages**.
 
 An Export Run hands over the messages that matched when it started.
+An account has one Export Run open at a time. Starting an Export cancels the account's Export Run that is still open, from this desktop app, another one or a program, and the server cancels an Export Run nobody has read from for an hour. An Export whose run was canceled this way stops and says so.
 A message imported or trashed while the run is being read does not change what the run writes.
 
 An attachment that can't be fetched, such as one whose file is gone from the server, doesn't stop the export.
@@ -103,7 +104,7 @@ The desktop app keeps the Export Directory in the Message Crate Directory, `mess
 
 An export in any format other than JSON Lines first fetches the messages as JSON Lines into its directory, then converts them.
 When it finishes, the JSON Lines copy is deleted and the directory holds only the result, with the hidden `.message-crate-export` file that marks it as an export, so a later export or conversion into it replaces what it holds.
-A failed or cancelled export deletes its directory, so no copy of the messages is left behind.
+A failed or canceled export deletes its directory, so no copy of the messages is left behind.
 An export the app did not see to its end, because the app was closed or stopped, is deleted the next time the app starts.
 The disk that holds the Export Directory needs room for a second copy of the exported messages and attachments while such an export runs.
 

@@ -62,7 +62,7 @@ These drive a `color-mix` derivation tree in `theme.css`. Three `data-theme` mod
 - **Hover:** `hover:bg-hover` or `hover:brightness-*`
 - **Focus:** `focusRingClass` from `src/lib/uiStyles.ts`: `outline-none` (custom) + `focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-accent`, the theme's own `:focus-visible` outline.
   The 1px gap between the element and the ring shows the surface behind it, in every theme.
-  A ring with `ring-offset-*` does not, because the offset is a colour of its own, white unless a class sets it, so it drew a white line in the dark theme.
+  A ring with `ring-offset-*` does not, because the offset is a color of its own, white unless a class sets it, so it drew a white line in the dark theme.
   An element that draws its ring inside itself (a table row, a resize grip) uses `ring-2 ring-inset ring-accent`, which has no offset.
   No other focus ring exists: a `ring-2 ring-accent` without `ring-inset` sits flush against the element, where `focusRingClass` leaves the 1px gap.
   `src/styleTokens.test.ts` fails on a `ring-offset-` class anywhere in `src/`; on an outline class other than `outline-none` outside `src/lib/uiStyles.ts`, so every focus outline comes from there; and on a focus ring outside `src/lib/uiStyles.ts` that is not the inset ring: a ring under a focus variant, or with no variant, needs `ring-inset` beside it and `ring-2` as its only width. The test reads one line at a time, so an inset ring's classes go on one line. `StepProgress`'s halo on the current step is a ring that is not a focus ring, and the test names it.

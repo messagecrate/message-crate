@@ -46,7 +46,7 @@ A row shows four things:
 
 - The title. A Conversation without a title shows the other person's name, or every participant's name for a group Conversation.
 - The number of participants, for a group Conversation.
-- How the messages travelled. iMessage, SMS, and MMS all read **Text Message**, and WhatsApp keeps its own name.
+- How the messages traveled. iMessage, SMS, and MMS all read **Text Message**, and WhatsApp keeps its own name.
 - The days of the first and the last message.
 
 The list opens with the most recent Conversation first.

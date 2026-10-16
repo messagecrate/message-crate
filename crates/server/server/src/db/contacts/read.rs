@@ -248,14 +248,14 @@ pub async fn list_contacts_sorted(
                 let addresses = addresses_blob
                     .map(|s| {
                         s.split('\u{1f}')
-                            .filter_map(message_ir::nonempty)
+                            .filter_map(ir::nonempty)
                             .collect::<Vec<_>>()
                     })
                     .unwrap_or_default();
                 let mut groups = groups_blob
                     .map(|s| {
                         s.split('\u{1f}')
-                            .filter_map(message_ir::nonempty)
+                            .filter_map(ir::nonempty)
                             .collect::<Vec<_>>()
                     })
                     .unwrap_or_default();

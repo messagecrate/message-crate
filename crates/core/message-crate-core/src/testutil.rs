@@ -137,14 +137,14 @@ pub fn csv_files(root: &Path) -> Vec<PathBuf> {
 
 /// Every data row of `path`, keyed by lower-cased column name.
 ///
-/// This reads the export with `message_csv::open_csv_lowercase`, the CSV reader
+/// This reads the export with `message_crate_csv::open_csv_lowercase`, the CSV reader
 /// the iMazing and OpenExtract exporters parse with, so a test asserts the
 /// value in a named column rather than a substring of the file. The
 /// distinction matters: a substring search over the
 /// whole file is satisfied by the header line, so `contains("direction")`
 /// passes whether or not a single message was written.
 ///
-/// Each cell is the value as `message_csv::read_cell` reads it, without the
+/// Each cell is the value as `message_crate_csv::read_cell` reads it, without the
 /// `'` the writer puts in front of a cell a spreadsheet would run as a
 /// formula, so a test compares a phone number such as `+15555550100` as it
 /// is.
@@ -155,7 +155,7 @@ pub fn csv_files(root: &Path) -> Vec<PathBuf> {
 /// missing export has already failed.
 pub fn csv_rows(path: &Path) -> Vec<BTreeMap<String, String>> {
     let (mut rdr, headers) =
-        message_csv::open_csv_lowercase(path).expect("the export must be readable CSV");
+        message_crate_csv::open_csv_lowercase(path).expect("the export must be readable CSV");
     rdr.records()
         .map(|rec| {
             let rec = rec.expect("a readable CSV row");
@@ -163,8 +163,8 @@ pub fn csv_rows(path: &Path) -> Vec<BTreeMap<String, String>> {
                 .iter()
                 .enumerate()
                 .map(|(i, h)| {
-                    let cell = message_csv::field(&rec, i);
-                    (h.clone(), message_csv::read_cell(&cell).to_string())
+                    let cell = message_crate_csv::field(&rec, i);
+                    (h.clone(), message_crate_csv::read_cell(&cell).to_string())
                 })
                 .collect()
         })

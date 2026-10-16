@@ -66,7 +66,7 @@ pub(crate) struct XmlParseStats {
 pub(crate) fn parse_xml_file(path: &Path) -> Result<(Vec<XmlMessage>, XmlParseStats)> {
     let text = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read {}", path.display()))?;
-    let (msgs, mut stats) = parse_xml_str(&text)?;
+    let (messages, mut stats) = parse_xml_str(&text)?;
     let xml_file = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -75,7 +75,7 @@ pub(crate) fn parse_xml_file(path: &Path) -> Result<(Vec<XmlMessage>, XmlParseSt
     for d in &mut stats.skipped_unknown_address_details {
         d.xml_file.clone_from(&xml_file);
     }
-    Ok((msgs, stats))
+    Ok((messages, stats))
 }
 
 /// Parse GO SMS Pro XML from a string.
@@ -116,7 +116,7 @@ pub(crate) fn parse_xml_str(text: &str) -> Result<(Vec<XmlMessage>, XmlParseStat
                 stats.sent += 1;
                 XmlMessage {
                     other,
-                    name_alias: message_ir::nonempty(&contact),
+                    name_alias: ir::nonempty(&contact),
                     timestamp_secs,
                     is_from_me: true,
                     text: body,
@@ -296,7 +296,7 @@ fn push_bad_addr(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_ir::IdentityType;
+    use ir::IdentityType;
 
     #[test]
     fn parses_sent_and_received() {
@@ -318,15 +318,15 @@ mod tests {
     <body>hi back</body>
   </SMS>
 </GoSms>"#;
-        let (msgs, stats) = parse_xml_str(xml).unwrap();
+        let (messages, stats) = parse_xml_str(xml).unwrap();
         assert_eq!(stats.messages, 2);
         assert_eq!(stats.received, 1);
         assert_eq!(stats.sent, 1);
-        assert_eq!(msgs.len(), 2);
-        assert!(!msgs[0].is_from_me);
-        assert_eq!(msgs[0].text, "hello 😂");
-        assert_eq!(msgs[0].other.key(), "+14075550107");
-        assert!(msgs[1].is_from_me);
+        assert_eq!(messages.len(), 2);
+        assert!(!messages[0].is_from_me);
+        assert_eq!(messages[0].text, "hello 😂");
+        assert_eq!(messages[0].other.key(), "+14075550107");
+        assert!(messages[1].is_from_me);
     }
 
     #[test]
@@ -347,12 +347,12 @@ mod tests {
     <body>dated</body>
   </SMS>
 </GoSms>"#;
-        let (msgs, stats) = parse_xml_str(xml).unwrap();
+        let (messages, stats) = parse_xml_str(xml).unwrap();
         assert_eq!(stats.messages, 2);
         assert_eq!(stats.skipped_invalid_date, 1);
-        assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0].text, "dated");
-        assert!(msgs[0].date_ms.starts_with("1400773261"));
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].text, "dated");
+        assert!(messages[0].date_ms.starts_with("1400773261"));
     }
 
     #[test]
@@ -369,19 +369,19 @@ mod tests {
     <status>-1</status>
   </SMS>
 </GoSms>"#;
-        let (msgs, _) = parse_xml_str(xml).unwrap();
-        assert_eq!(msgs.len(), 1);
+        let (messages, _) = parse_xml_str(xml).unwrap();
+        assert_eq!(messages.len(), 1);
         assert_eq!(
-            msgs[0].xml_fields.get("read").map(String::as_str),
+            messages[0].xml_fields.get("read").map(String::as_str),
             Some("1")
         );
         assert_eq!(
-            msgs[0].xml_fields.get("status").map(String::as_str),
+            messages[0].xml_fields.get("status").map(String::as_str),
             Some("-1")
         );
-        assert_eq!(msgs[0].android_type, "1");
-        assert_eq!(msgs[0].date_ms, "1400773261000");
-        assert_eq!(msgs[0].contact_name, "Alice");
+        assert_eq!(messages[0].android_type, "1");
+        assert_eq!(messages[0].date_ms, "1400773261000");
+        assert_eq!(messages[0].contact_name, "Alice");
     }
 
     fn received_from(address: &str) -> (Vec<XmlMessage>, XmlParseStats) {
@@ -395,21 +395,21 @@ mod tests {
     fn a_number_with_its_country_keeps_it() {
         // +65 5555 0100 is no one's number. The note on the `phone` crate's
         // `mod tests` says why.
-        let (msgs, _) = received_from("+6555550100");
-        assert_eq!(msgs[0].other.key(), "+6555550100");
+        let (messages, _) = received_from("+6555550100");
+        assert_eq!(messages[0].other.key(), "+6555550100");
     }
 
     #[test]
     fn an_email_address_and_a_sender_name_are_not_numbers() {
-        let (msgs, stats) = received_from("ann2020@example.com");
+        let (messages, stats) = received_from("ann2020@example.com");
         assert_eq!(
-            (msgs[0].other.kind(), msgs[0].other.key()),
+            (messages[0].other.kind(), messages[0].other.key()),
             (IdentityType::Email, "ann2020@example.com")
         );
         assert_eq!(stats.skipped_unknown_address, 0);
-        let (msgs, stats) = received_from("AMAZON");
+        let (messages, stats) = received_from("AMAZON");
         assert_eq!(
-            (msgs[0].other.kind(), msgs[0].other.key()),
+            (messages[0].other.kind(), messages[0].other.key()),
             (IdentityType::Other, "AMAZON")
         );
         assert_eq!(stats.skipped_unknown_address, 0);
@@ -424,8 +424,8 @@ mod tests {
 
     #[test]
     fn an_unreadable_date_is_counted_and_skipped() {
-        let (msgs, stats) = sms_with_date("NaN");
-        assert!(msgs.is_empty());
+        let (messages, stats) = sms_with_date("NaN");
+        assert!(messages.is_empty());
         assert_eq!(stats.skipped_invalid_date, 1);
     }
 
@@ -435,10 +435,10 @@ mod tests {
             <SMS><address>+14075550101</address><date>1400773261000</date><type>1</type><body>On my way &#55357;&#56832;</body></SMS>\
             <SMS><address>+14075550101</address><date>1400773321000</date><type>2</type><body>a &amp; b &lt;c&gt;</body></SMS>\
             </GoSms>";
-        let (msgs, stats) = parse_xml_str(xml).unwrap();
+        let (messages, stats) = parse_xml_str(xml).unwrap();
         assert_eq!(stats.messages, 2);
         assert_eq!(stats.skipped_unreadable_text, 1);
-        assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0].text, "a & b <c>");
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].text, "a & b <c>");
     }
 }

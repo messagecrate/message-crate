@@ -26,7 +26,7 @@ use crate::report::{
     FileResult, MessageAccounting, UploadProfile, elapsed_ms, format_profile_line,
 };
 use crate::run::{ImportConfig, Session};
-use message_crate_api_types::MAX_IMPORT_BATCH_BYTES;
+use api_types::MAX_IMPORT_BATCH_BYTES;
 
 /// If the pending message batch is at least this many messages, start its HTTP
 /// import now instead of waiting until the next chat is prepared.
@@ -45,7 +45,7 @@ pub(crate) enum ChunkStep {
     Continue,
     /// A flush failed for this conversation; drop its remaining chunks but keep the run going.
     FileFailed,
-    /// The run must stop: the caller cancelled it, the server refused the
+    /// The run must stop: the caller canceled it, the server refused the
     /// session, or the server was not there to take a request.
     Abort,
 }
@@ -207,7 +207,7 @@ struct BatchError {
 }
 
 impl BatchError {
-    /// The failure `error`, from a run that `stopped` (cancelled, refused,
+    /// The failure `error`, from a run that `stopped` (canceled, refused,
     /// or with the server away) by the time the request gave up.
     fn new(error: &anyhow::Error, stopped: bool) -> Self {
         // A stop ends the retries of a failure that might have passed on a
@@ -246,7 +246,7 @@ pub(crate) struct ImportPipeline<'a> {
     /// One slot per conversation file, filled once its chunks are queued.
     trackers: Vec<Option<FileTracker>>,
     /// One slot per conversation file, filled as each one finishes, is
-    /// skipped, or is left unsent by a stop ([`Self::record_cancelled`]).
+    /// skipped, or is left unsent by a stop ([`Self::record_canceled`]).
     results: Vec<Option<FileResult>>,
     accounting: MessageAccounting,
 }
@@ -275,14 +275,14 @@ impl<'a> ImportPipeline<'a> {
         }
     }
 
-    /// Give every file still without a result a `cancelled` one.
+    /// Give every file still without a result a `canceled` one.
     ///
     /// Only a stopped run leaves such files: the ones it never took up, and
     /// the one whose messages were partly queued when the stop came. A
-    /// cancelled file is not journalled as done, so a later run sends it
+    /// canceled file is not journalled as done, so a later run sends it
     /// again; any of its messages that did reach the server are already in
     /// the journal and are not sent twice.
-    pub(crate) fn record_cancelled(&mut self, files: &[PathBuf], out: &mut Reporter<'_, '_>) {
+    pub(crate) fn record_canceled(&mut self, files: &[PathBuf], out: &mut Reporter<'_, '_>) {
         for (idx, path) in files.iter().enumerate() {
             if self.results[idx].is_some() {
                 continue;
@@ -292,17 +292,17 @@ impl<'a> ImportPipeline<'a> {
                     tracker.profile.total_ms = elapsed_ms(tracker.total_started);
                     FileResult {
                         file: tracker.name.clone(),
-                        status: "cancelled".into(),
+                        status: "canceled".into(),
                         error: None,
                         messages: tracker.successful_messages,
                         attachments: tracker.attachments,
                         profile: Some(tracker.profile.clone()),
                     }
                 }
-                None => FileResult::cancelled(&file_label(path)),
+                None => FileResult::canceled(&file_label(path)),
             };
             out.log(&format!(
-                "Cancelled {} with {} uploaded",
+                "Canceled {} with {} uploaded",
                 result.file,
                 count_of(result.messages, "message", "messages")
             ));
@@ -430,7 +430,7 @@ impl<'a> ImportPipeline<'a> {
 
     /// Flush, then say whether the run may keep going.
     ///
-    /// A failed request stops the run only when the caller cancelled it, the
+    /// A failed request stops the run only when the caller canceled it, the
     /// server refused the session, or the server was not there to take a
     /// request. Otherwise the failure is
     /// recorded against the conversations in that batch and the run moves on.
@@ -474,6 +474,9 @@ impl<'a> ImportPipeline<'a> {
         if self.must_stop() {
             return Ok(false);
         }
+        // A replace's first batch wipes the source on the server, so the
+        // journal's earlier rows stop being true once that batch goes out.
+        self.lock_journal().journal.forget_before_first_batch()?;
         self.inflight = Some(self.spawn_import(batch));
         if wait {
             ok = self.join_inflight(out)?;
@@ -505,7 +508,7 @@ impl<'a> ImportPipeline<'a> {
                 batch,
                 request_ms,
                 messages_per_second: message_count as f64 / seconds,
-                mebibytes_per_second: body_bytes as f64 / message_ir::MIB as f64 / seconds,
+                mebibytes_per_second: body_bytes as f64 / ir::MIB as f64 / seconds,
                 body_bytes,
                 message_count,
                 response,
@@ -747,7 +750,7 @@ impl<'a> ImportPipeline<'a> {
         Ok(())
     }
 
-    /// True once the run must stop: the caller cancelled it, the server
+    /// True once the run must stop: the caller canceled it, the server
     /// refused the session, or the server was not there to take a request.
     fn must_stop(&self) -> bool {
         self.session.check_stop().is_err()

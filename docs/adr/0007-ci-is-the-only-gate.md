@@ -6,30 +6,40 @@ carry them. The two scripts under `scripts/` decide nothing: `check-pr.sh` is a
 fast pre-flight that catches the mistakes not worth a round trip, and
 `check-all.sh` runs the whole set locally for anyone who wants it before
 pushing, except, off Windows, the Windows-only cases of the server config
-tests. No pull request builds the Docker image; `nightly.yml` builds it from
-`main`.
+tests and the desktop app's local-server tests, and the secret scan when
+gitleaks is not installed. No pull request builds the Docker image;
+`nightly.yml` builds it from `main`.
 
-`ci.yml` holds eleven jobs on a ready pull request. On a draft, all of them
-skip. A `changes` job diffs the branch against its base and publishes four
-booleans — `rust`, `web`, `docs`, `server_config` — and the heavy jobs read
-them:
+`ci.yml` holds thirteen jobs on a ready pull request. On a draft, all of them
+skip. A `changes` job diffs the branch against its base and publishes five
+booleans — `rust`, `web`, `docs`, `server_config`, `local_server` — and the
+heavy jobs read them:
 
 | Job | Runs when | What it does |
 | --- | --- | --- |
-| `changes` | always, except on a draft | Diffs against the base and outputs `rust`, `web`, `docs`, `server_config` |
+| `changes` | always, except on a draft | Diffs against the base and outputs `rust`, `web`, `docs`, `server_config`, `local_server` |
 | `fmt` | `rust` | `cargo fmt --check` on the workspace and on `src-tauri` |
-| `clippy` | `rust` | `cargo clippy --workspace --all-targets -- -D warnings` |
+| `clippy` | `rust` | `cargo clippy --workspace --all-targets -- -D warnings`, then `cargo doc --workspace --no-deps --document-private-items` with `RUSTDOCFLAGS="-D warnings"`, so a broken intra-doc link fails (#3096) |
 | `test` | `rust` | `cargo build --workspace` and `cargo test --workspace` |
-| `check-tauri` | `rust` | `cargo check`, Clippy at `-D warnings`, and `cargo test` on `src-tauri` |
+| `check-tauri` | `rust` | `cargo check`, Clippy at `-D warnings`, rustdoc at `-D warnings` with private items, and `cargo test` on `src-tauri` |
 | `windows-config` | `server_config` | `cargo test -p message-crate-server --lib "config::tests::"` on `windows-latest` |
+| `windows-local-server` | `local_server` | `cargo test --manifest-path src-tauri/Cargo.toml --lib "local_server::"` on `windows-latest` |
 | `web` | `web` | `biome ci`, `biome lint --error-on-warnings` on the timed-wait rule's canary, `check-biome-restricted-imports.mjs`, `check-generated-api-types.sh`, `npm run build`, `npm test` |
 | `docs` | `docs` | `npm ci`, `astro check`, `astro build` — the site without rustdoc or the HTTP API catalog |
 | `license` | always | `check-license.sh` |
 | `docker-context` ("Docker build context") | always | `check-docker-context.sh`: the Dockerfile's build context, and every `FROM` pinned by tag and digest |
+| `secrets` | pull requests only | `check-secrets.sh`: gitleaks reads every commit the pull request adds, with the default rules plus `.gitleaks.toml`'s rule for `mc-user-` and `mc-api-` tokens and its allowlist of test vectors |
 | `version` | always | `check-version-lockstep.sh`: the four product version files and their lockfiles agree, and on a `v*` tag agree with the tag; then `check-changelog.sh`: `CHANGELOG.md`'s width, tight lists and dated entries |
 
-The ruleset requires ten of them: every job but `windows-config`. Whether
-it should require that one too is open in #2788.
+The ruleset requires eleven of them: every job but `secrets` and
+`windows-local-server`. The maintainer adds `secrets` to the required checks
+once it has run green (#3093), and `windows-local-server` once it has run
+green, for the reason the ruleset requires `windows-config` (#2788).
+GitHub's own secret scanning and push protection are on for the repository
+as well. They block a provider token at `git push`, and the gitleaks job finds what
+their patterns miss, such as a pasted Session or API token. The job runs on
+pull requests only, so the release jobs do not need it:
+a tag carries commits a pull request already scanned.
 
 Three classifier arms are not what the directory alone would suggest.
 `scripts/check-generated-api-types.sh` and the generator's own tree,
@@ -43,13 +53,33 @@ check that keeps the website directory and the Data Directory apart
 target that comes back verbatim (`\\?\C:\...`), and a short name
 (`WEBSIT~1`) that stands for a long one. Every other job that runs on a pull
 request runs on Linux. A Windows build is not worth its time on a pull request
-that cannot change these paths. On a push, a tag or a manual run it runs like
-every other job, and the `docker` and `release` jobs need it, so a release
-waits for it (#2683).
+that cannot change these paths. The ruleset requires the job all the same
+(#2788). When the job's `if:` skips it, GitHub counts the required check as
+passed. So the job holds back only a pull request that changes the config
+paths or a workflow. Any other pull request merges without a Windows build.
+On a push, a tag or a manual run it runs like every other job, and the `docker` and
+`release` jobs need it, so a release waits for it (#2683).
+`src-tauri/src/local_server.rs` and everything under
+`src-tauri/src/local_server/` set `local_server` as well as `rust`, and so
+does any change to a workflow. The `windows-local-server` job reads it, and
+skips and runs as `windows-config` does, but the ruleset does not require it
+yet (above). Closing the desktop app ends the server it started and every
+process that server started, such as ffmpeg converting a video. On Windows a
+Job Object does that (`src-tauri/src/local_server/process_tree.rs`), and the
+`check-tauri` job runs on Linux, where the process-group code runs instead.
+The job's tests start a stand-in server in the Job Object with a child of
+its own, then kill the server, or end it alone and close the job's handle,
+and see both processes end (#1962). macOS runs the process-group code the
+Linux tests cover. `Cargo.lock` does not set `local_server`, so a dependency
+bump does not start a Windows build on a pull request. The push to `main`
+runs the job.
 
-`src-tauri`'s Clippy stays inside `check-tauri` rather than the `clippy` job,
-because its build needs the webkit and gtk system packages that job already
-installs; a second install would double the cost for no coverage.
+`src-tauri`'s Clippy and rustdoc stay inside `check-tauri` rather than the
+`clippy` job, because its build needs the webkit and gtk system packages that
+job already installs; a second install would double the cost for no
+coverage. The workspace's rustdoc is a step of `clippy` for the same reason:
+it needs that job's packages, and its own job would install them and fill a
+cache a second time.
 
 The dependency audits live in `audit.yml`, not `ci.yml`. That workflow runs
 `cargo deny check advisories`, `npm audit --audit-level=high` for `web/`,
@@ -87,12 +117,20 @@ It then loads the website the image serves in a headless browser
 (`scripts/check-served-website.sh`), logs in to the Demo Account, searches
 and opens a conversation, and fails on a console error or a 5xx: the web
 app's tests mock the server and the server's tests never load the website,
-so nothing else runs the two together. It gates nothing: it has no pull
-request trigger and is not in the ruleset's required list. A scheduled run
-does nothing when `main` is still at the commit the previous scheduled run
-saw. Its verdict arrives after the merge, so it reports by opening an issue
-labelled `bug`, or by commenting on that issue while it is open, rather than
-by a check on a pull request.
+so nothing else runs the two together.
+A second job runs on GitHub's Windows on ARM runner (`windows-11-arm`). The
+desktop app gives Windows on ARM the Windows x64 ffmpeg and ffprobe, which
+Windows runs under emulation, and nothing else runs them there.
+`scripts/check-windows-arm-ffmpeg.sh` downloads exactly the files
+`src-tauri/src/tool_downloads/pins.rs` pins for that platform, checks their
+pinned SHA-256 as the app does, asks ffprobe about a committed video and
+converts it with ffmpeg the way the Media Stage does, to H.264 for Convert
+media and to HEVC for Convert & Compress media (#2370). The workflow gates
+nothing: it has no pull request trigger and is not in the ruleset's required
+list. A scheduled run does nothing when `main` is still at the commit the
+previous scheduled run saw. Its verdict arrives after the merge, so it reports
+by opening an issue labeled `bug`, or by commenting on that issue while it is
+open, rather than by a check on a pull request.
 
 The docs build on a pull request is the `docs` job in `ci.yml`, not a trigger
 on `docs.yml` — a required check that lives in a path-filtered workflow
@@ -105,7 +143,7 @@ product people can install, and between releases that is the tagged version,
 not the tip of `main`; a page that documents a screen nobody can download yet
 is wrong for every reader who arrives from the download link. Publishing on
 merge also did real work for nothing: a burst of twelve squash merges on
-2026-09-05 produced twelve Pages runs, eleven of them cancelled by the next,
+2026-09-05 produced twelve Pages runs, eleven of them canceled by the next,
 each after a full `cargo doc`. `workflow_dispatch` stays for a docs-only
 correction that should not wait for the next tag.
 
@@ -304,8 +342,8 @@ request whose review finds `main` red on the same job stops and says so
 
 `ci.yml` cancels an in-progress run only for a `pull_request` event, never for
 a push to `main` or a tag, so a run on `main` that has started keeps its
-verdict. Before this, a burst of squash merges cancelled every `main` run but
-the last. Twelve merges on 2026-09-05 left eleven cancelled runs and one
+verdict. Before this, a burst of squash merges canceled every `main` run but
+the last. Twelve merges on 2026-09-05 left eleven canceled runs and one
 result.
 
 GitHub still keeps only one waiting run per concurrency group, so a merge that
@@ -330,7 +368,7 @@ conversations do not already make.
 The `pr-review` skill (`.claude/skills/pr-review/`) is that review. Three
 sub-agents read the diff with fresh context, one each for the repo's
 standards, the issue it implements, and correctness, so one axis cannot mask
-another. Every finding is posted, judgement calls included, and closes as
+another. Every finding is posted, judgment calls included, and closes as
 fixed, declined with evidence, or deferred to a filed issue, so nothing the
 review raised is dropped without a record. The fix commits get one more
 Standards and Correctness pass. Its comments carry a `<!-- pr-review -->`
@@ -359,7 +397,9 @@ is `true`.
 `github-release` writes anything with the GitHub token, and the Docker image
 goes to Docker Hub under its own secret rather than to GitHub Packages. The
 workflow now grants `contents: read`, and `github-release` alone asks for
-`contents: write`.
+`contents: write`. `docker` and `github-release` also ask for
+`id-token: write` and `attestations: write`, and nothing more, because each
+writes a build provenance attestation for what it publishes (#2096).
 
 `docs.yml` took two corrections while the pull-request docs build moved into
 `ci.yml`. Its concurrency group was a bare `pages` with

@@ -10,7 +10,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use message_crate_serve_protocol::LISTENING_LINE;
+use serve_protocol::LISTENING_LINE;
 
 // The unit tests' own builders, compiled into each test binary, because a
 // test under `tests/` cannot reach the library's `cfg(test)` `test_support`
@@ -28,6 +28,10 @@ pub mod lines;
 // binary.
 #[allow(dead_code)]
 pub mod claim;
+
+// Only the tests that upload through the import library use it.
+#[allow(dead_code)]
+pub mod upload;
 
 // Only the tests that read the server's log use it, and those use only some
 // of it, so the rest would warn as dead code in each test binary.

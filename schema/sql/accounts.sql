@@ -193,7 +193,7 @@ CREATE TABLE IF NOT EXISTS imports (
     -- import form named none: such a number keeps its digits and no + form
     -- (#1676). Stated once, when the run is created.
     phone_country TEXT,
-    -- Run status (for example running, completed, failed, cancelled).
+    -- Run status (for example running, completed, failed, canceled).
     status TEXT NOT NULL,
     -- When the import started.
     started_at TEXT NOT NULL,
@@ -254,7 +254,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_imports_active_account
 
 -- One row per Export Run: what was asked for and how much matched, never
 -- message content. Recorded permanently whether the run completed, failed
--- or was cancelled, so every read of message data by a program leaves a
+-- or was canceled, so every read of message data by a program leaves a
 -- record.
 CREATE TABLE IF NOT EXISTS exports (
     -- Surrogate primary key for this export run.
@@ -302,7 +302,7 @@ CREATE TABLE IF NOT EXISTS exports (
     scope_message_ids TEXT,
     -- Client/tool name that ran the export (optional).
     tool TEXT,
-    -- Run status: running, completed, failed, or cancelled.
+    -- Run status: running, completed, failed, or canceled.
     status TEXT NOT NULL,
     -- When the export started.
     started_at TEXT NOT NULL,
@@ -318,11 +318,22 @@ CREATE TABLE IF NOT EXISTS exports (
     total_bytes INTEGER NOT NULL,
     -- How far the run's message pages have read into its list, in places,
     -- so an abandoned run shows how far it got.
-    messages_delivered INTEGER NOT NULL DEFAULT 0
+    messages_delivered INTEGER NOT NULL DEFAULT 0,
+    -- When a page of the run's messages was last read; NULL until the first.
+    -- A running run with no page read for an hour, counted from this or
+    -- from `started_at` before the first, is closed as `canceled`.
+    last_page_read_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS ix_exports_account_started
     ON exports(account_id, started_at DESC);
+
+-- At most one running Export Run per account. Starting an Export closes the
+-- account's running run as `canceled` in the same transaction, so the index
+-- never refuses a start; it holds the rule against a racing client, as
+-- `ux_imports_active_account` does for imports.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_exports_active_account
+    ON exports(account_id) WHERE status = 'running';
 
 -- Per-item error or skip recorded during an import run.
 CREATE TABLE IF NOT EXISTS import_issues (
@@ -425,7 +436,7 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     -- trash_emptied, account_deleted, registration_opened,
     -- registration_closed, asset_limit_changed, demo_account_added,
     -- demo_account_reset, api_token_created, api_token_deleted,
-    -- address_book_loaded or address_book_exported.
+    -- address_book_loaded, address_book_exported or export_run_closed.
     action TEXT NOT NULL,
     -- Who acted: owner, holder (the account's own holder), command_line
     -- (a server command), start_up (the server's first start, which adds
@@ -447,7 +458,9 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     -- its username may pass to a later account.
     deletion_entry_id INTEGER REFERENCES audit_entries(id),
     -- session_ended: logged_out, replaced or revoked. login_refused:
-    -- unknown_username, wrong_password or account_disabled. NULL otherwise.
+    -- unknown_username, wrong_password or account_disabled.
+    -- export_run_closed: replaced (a new Export started) or idle (no page
+    -- read for an hour). NULL otherwise.
     reason TEXT,
     -- logged_in and login_refused: the app the request named, 'desktop' or
     -- 'website'; NULL when the request named none.
@@ -460,13 +473,15 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     session_entry_id INTEGER REFERENCES audit_entries(id),
     -- logged_in: when the session expires, RFC 3339 UTC. password_set by the
     -- holder: when the renewed session expires. A session with no
-    -- session_ended entry reads as expired from the latest of these, so
-    -- expiry needs no entry and no sweeper, and no entry is ever changed.
+    -- session_ended entry reads as expired from the latest of these and of
+    -- its `session_extensions` row, so expiry needs no entry and no sweeper,
+    -- and no entry is ever changed.
     session_expires_at TEXT,
     -- JSON object of the entry's counts and names: permissions added and
     -- removed, conversations and attachments deleted, an API token's label
     -- and hint, an address book's mode and contact counts, the new
-    -- attachment size limit, the size of Demo Data a build was asked for.
+    -- attachment size limit, the size of Demo Data a build was asked for,
+    -- the id of the Export Run the server closed.
     details TEXT
 );
 
@@ -525,3 +540,15 @@ WHEN NOT (OLD.action = 'login_refused' AND OLD.reason IS 'unknown_username')
 BEGIN
     SELECT RAISE(ABORT, 'an Audit Trail entry is never deleted');
 END;
+
+-- When a Session that has been used expires, under the `logged_in` entry of
+-- the login that opened it. Each use moves a Session's expiry 7 days
+-- ahead, up to 30 days after the login, and an Audit Trail entry is
+-- never edited, so the latest expiry is kept here, where the Audit Trail
+-- reads it. It outlives the session row, which a new login replaces.
+CREATE TABLE IF NOT EXISTS session_extensions (
+    -- The Session's `logged_in` entry (`audit_entries.id`).
+    login_entry_id INTEGER NOT NULL PRIMARY KEY REFERENCES audit_entries(id),
+    -- When the Session expires since its last use, RFC 3339 UTC.
+    expires_at TEXT NOT NULL
+);

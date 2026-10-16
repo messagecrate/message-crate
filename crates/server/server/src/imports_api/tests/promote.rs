@@ -279,7 +279,7 @@ async fn failed_replace_keeps_existing_messages() {
             conversation_header("sms-backup-restore", "+14075550107")
                 .participant("+14075550107", None),
             // The path is the input under test, so the line stays written out.
-            r#"{"guid":"g-bad","timestamp_unix_ms":1426183462000,"time_precision":"milliseconds","direction":"incoming","service":"sms","message_kind":"mms","sender_identity":"+14075550107","sender_display_name":null,"subject":null,"text":"nope","attachments":[{"path":"../secret.txt","original_name":"secret.txt","mime_type":"text/plain","digest_sha256":null,"is_sticker":false,"transcription":null,"sticker_effect":null,"size_bytes":1,"missing_reason":null}],"imessage":null,"source":null}
+            r#"{"guid":"g-bad","timestamp_unix_ms":1426183462000,"time_precision":"milliseconds","direction":"incoming","service":"sms","message_kind":"mms","sender":{"identity":"+14075550107","display_name":null},"subject":null,"text":"nope","attachments":[{"path":"../secret.txt","original_name":"secret.txt","mime_type":"text/plain","digest_sha256":null,"is_sticker":false,"transcription":null,"sticker_effect":null,"size_bytes":1,"missing_reason":null}],"imessage":null,"source":null}
 "#
         ),
     );
@@ -299,7 +299,7 @@ async fn failed_replace_keeps_existing_messages() {
     )
     .await
     .unwrap_err();
-    assert!(err.to_string().contains(message_ir::UNSAFE_ATTACHMENT_PATH));
+    assert!(err.to_string().contains(ir::UNSAFE_ATTACHMENT_PATH));
 
     let (_pool, mut conn) = open_verify(&db).await;
     let body: String =

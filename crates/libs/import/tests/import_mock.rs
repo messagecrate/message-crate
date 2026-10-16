@@ -4,8 +4,8 @@
 //! `.import-state.jsonl`, a local log of which conversations and files
 //! were already uploaded.
 
+use import::ImportMode;
 use message_crate_core::{CancelFlag, RunIssueKind};
-use message_crate_import::ImportMode;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -13,98 +13,84 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use httpmock::prelude::*;
-use message_crate_import::{
+use import::{
     AuthError, FileStatus, ImportConfig, ImportReport, ProgressEvent, ServerAway, authenticate, run,
 };
-use message_ir::testutil::sample_document;
-use message_ir::{Attachment, ConversationDocument};
+use ir::testutil::sample_document;
+use ir::{Attachment, ConversationDocument};
 use serde_json::json;
 use tempfile::tempdir;
 
-/// One SMS conversation used by most mock-server tests: message_ir's sample
+/// One SMS conversation used by most mock-server tests: `ir`'s sample
 /// conversation, with the message guid the mock server matches on.
-fn sample_doc() -> ConversationDocument {
-    let mut doc = sample_document("hello there");
-    doc.messages[0].guid = "guid-1".into();
-    doc
+fn sample_import_document() -> ConversationDocument {
+    let mut document = sample_document("hello there");
+    document.messages[0].guid = "guid-1".into();
+    document
 }
 
-/// Same fixture as [`sample_doc`], with a different chat handle and message
+/// Same fixture as [`sample_import_document`], with a different chat handle and message
 /// guid. The handle replaces the first one everywhere, the source bag's
 /// address included, so a batch holds the first handle only when it holds
 /// the first conversation.
-fn sample_doc_for(handle: &str, guid: &str) -> ConversationDocument {
-    let mut doc = sample_doc();
-    doc.conversation.chat_identifier = handle.into();
-    doc.conversation.participants[0].identity = Some(handle.into());
-    doc.messages[0].guid = guid.into();
-    doc.messages[0].sender_identity = Some(handle.into());
-    if let Some(source) = &mut doc.messages[0].source {
+fn sample_document_for(handle: &str, guid: &str) -> ConversationDocument {
+    let mut document = sample_import_document();
+    document.conversation.chat_identifier = handle.into();
+    document.conversation.participants[0].identity = Some(handle.into());
+    document.messages[0].guid = guid.into();
+    document.messages[0].sender.identity = Some(handle.into());
+    if let Some(source) = &mut document.messages[0].source {
         source.fields.insert("address".into(), json!(handle));
     }
-    let first = sample_doc().conversation.chat_identifier;
+    let first = sample_import_document().conversation.chat_identifier;
     assert!(
-        handle == first || !serde_json::to_string(&doc).unwrap().contains(&first),
-        "the sample conversation writes {first} somewhere sample_doc_for does not replace"
+        handle == first || !serde_json::to_string(&document).unwrap().contains(&first),
+        "the sample conversation writes {first} somewhere sample_document_for does not replace"
     );
-    doc
+    document
 }
 
-/// Write `doc` as a JSON Lines file under `dir`.
-fn write_jsonl(dir: &Path, doc: &ConversationDocument) {
-    let stem = message_ir_format::filename_stem(doc);
+/// Write `document` as a JSON Lines file under `dir`.
+fn write_jsonl(dir: &Path, document: &ConversationDocument) {
+    let stem = ir_format::filename_stem(document);
     let path = dir.join(format!("{stem}.jsonl"));
     let mut f = fs::File::create(&path).unwrap();
     let header = json!({
-        "schema_version": doc.schema_version,
-        "export": doc.export,
-        "conversation": doc.conversation,
+        "schema_version": document.schema_version,
+        "export": document.export,
+        "conversation": document.conversation,
     });
     writeln!(f, "{}", serde_json::to_string(&header).unwrap()).unwrap();
-    for msg in &doc.messages {
-        writeln!(f, "{}", serde_json::to_string(msg).unwrap()).unwrap();
+    for message in &document.messages {
+        writeln!(f, "{}", serde_json::to_string(message).unwrap()).unwrap();
     }
 }
 
-/// The limit the mock server states for a whole piece to arrive.
-const PIECE_SECS: u64 = 300;
+/// The limit the mock server states for a whole body to arrive
+/// (`body_total_secs`).
+const TOTAL_SECS: u64 = 300;
 
-/// A mock Message Crate that answers `GET /v1/server` with its upload time
-/// limits, as every Upload reads them once it has logged in.
+/// A mock Message Crate that answers `GET /v1/server` with its body time
+/// limits, and `GET /v1/imports/{id}` with the mode of the Import Run
+/// [`RUN_ID`] (append) and [`REPLACE_RUN_ID`] (replace), as every Upload
+/// reads both once it has logged in.
 fn mock_server() -> MockServer {
     let server = MockServer::start();
     server.mock(|when, then| {
         when.method(GET).path("/v1/server");
         then.status(200).json_body(json!({
-            "upload_stall_secs": 60,
-            "upload_piece_secs": PIECE_SECS,
+            "body_stall_secs": 60,
+            "body_total_secs": TOTAL_SECS,
         }));
     });
+    for (id, mode) in [(RUN_ID, "append"), (REPLACE_RUN_ID, "replace")] {
+        server.mock(|when, then| {
+            when.method(GET).path(format!("/v1/imports/{id}"));
+            then.status(200)
+                .json_body(json!({ "id": id, "mode": mode }));
+        });
+    }
     server
-}
-
-/// The server's answer to `POST /v1/imports`: an Import Run with `id`. Every
-/// import starts one, so every test mocks it; the batches then go to
-/// `/v1/imports/{id}/batches`. A test that checks how the import completes the
-/// run mocks `/v1/imports/{id}/complete` itself.
-fn mock_import_start(server: &MockServer, id: i64) -> httpmock::Mock<'_> {
-    server.mock(|when, then| {
-        when.method(POST).path("/v1/imports");
-        then.status(201)
-            .header("Location", format!("/v1/imports/{id}"))
-            .json_body(json!({ "id": id }));
-    })
-}
-
-/// An Import Run with `id` that the server starts and, at the end of the
-/// import, completes. An import that started its own run fails when the server
-/// refuses to complete it, so every such test needs the completion too.
-fn mock_import_start_and_complete(server: &MockServer, id: i64) -> httpmock::Mock<'_> {
-    server.mock(|when, then| {
-        when.method(POST).path(format!("/v1/imports/{id}/complete"));
-        then.status(200).json_body(json!({ "id": id }));
-    });
-    mock_import_start(server, id)
 }
 
 /// Wait, for at most ten seconds, until the server has received a request
@@ -120,25 +106,33 @@ fn wait_for_first_call(mock: &httpmock::Mock<'_>) {
     }
 }
 
-/// Import config with no retries, pointed at a mock server URL.
+/// The Import Run every test's Upload posts into. The desktop app starts the
+/// run before the Upload and completes it after, so no test mocks either.
+const RUN_ID: i64 = 7;
+
+/// An Import Run in replace mode, which [`mock_server`] answers for. An
+/// Upload takes its mode from the run it posts into, so a test uploads into
+/// this one to replace.
+const REPLACE_RUN_ID: i64 = 8;
+
+/// Import config with no retries, pointed at a mock server URL, posting into
+/// [`RUN_ID`].
 fn mock_server_config(dir: &Path, base_url: String) -> ImportConfig {
     ImportConfig {
         input: dir.to_path_buf(),
         base_url,
         token: "mc_test".into(),
-        mode: ImportMode::Append,
         force: false,
         max_retries: 0,
         batch_size: 50,
         asset_upload_workers: 1,
-        prepare_ahead: message_crate_import::DEFAULT_PREPARE_AHEAD,
-        prepare_workers: message_crate_import::DEFAULT_PREPARE_WORKERS,
-        asset_multipart_threshold: message_crate_import::MAX_PROXY_BODY_BYTES,
-        asset_max_bytes: message_crate_import::DEFAULT_ASSET_MAX_BYTES,
+        prepare_ahead: import::DEFAULT_PREPARE_AHEAD,
+        prepare_workers: import::DEFAULT_PREPARE_WORKERS,
+        asset_multipart_threshold: import::MAX_PROXY_BODY_BYTES,
+        asset_max_bytes: import::DEFAULT_ASSET_MAX_BYTES,
         log_path: Some(dir.join("message-crate-import.log")),
         cancel: CancelFlag::default(),
-        import_id: None,
-        phone_country: None,
+        import_id: RUN_ID,
     }
 }
 
@@ -181,24 +175,8 @@ fn authenticate_and_import_text_only_conversation() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _start_import = server.mock(|when, then| {
-        when.method(POST).path("/v1/imports");
-        then.status(201)
-            .header("Location", "/v1/imports/42")
-            .json_body(json!({ "id": 42 }));
-    });
-    let _complete_import = server.mock(|when, then| {
-        when.method(POST).path("/v1/imports/42/complete");
-        then.status(200).json_body(json!({
-            "id": 42,
-            "status": "completed",
-            "message_count": 1,
-            "attachment_count": 0,
-            "bytes_uploaded": 0
-        }));
-    });
     let import = server.mock(|when, then| {
-        when.method(POST).path("/v1/imports/42/batches");
+        when.method(POST).path("/v1/imports/7/batches");
         then.status(200).json_body(json!({
             "source": "sms-backup-restore",
             "account": 1,
@@ -216,7 +194,7 @@ fn authenticate_and_import_text_only_conversation() {
     assert_eq!(info.account_id, 1);
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
 
     let cfg = mock_server_config(dir.path(), server.base_url());
     let (report, shown) = run_showing(&cfg);
@@ -233,14 +211,10 @@ fn authenticate_and_import_text_only_conversation() {
     // The log and the desktop app's lines name the account and the Import
     // Run in the same sentences, not as `name=value` (#1842).
     let log = read_log(dir.path());
-    for line in [
-        "Authenticated as alice (1)",
-        "Recording Import Run 42 for sms-backup-restore",
-    ] {
+    for line in ["Authenticated as alice (1)", "Uploading into Import Run 7"] {
         assert!(log.contains(line), "{log}");
         assert!(shown.iter().any(|shown| shown == line), "{shown:?}");
     }
-    assert!(log.contains("Import Run 42 completed"), "{log}");
 
     // Second run should skip via journal.
     let report2 = run(&cfg, None).unwrap();
@@ -255,9 +229,8 @@ fn authenticate_and_import_text_only_conversation() {
 fn an_unreadable_journal_line_is_a_sentence_in_the_uploads_log() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let _run = mock_import_start_and_complete(&server, 42);
     let import = server.mock(|when, then| {
-        when.method(POST).path("/v1/imports/42/batches");
+        when.method(POST).path("/v1/imports/7/batches");
         then.status(200).json_body(json!({
             "source": "sms-backup-restore",
             "account": 1,
@@ -272,7 +245,7 @@ fn an_unreadable_journal_line_is_a_sentence_in_the_uploads_log() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     let journal = dir.path().join(".import-state.jsonl");
     fs::write(&journal, "{not json\n").unwrap();
 
@@ -298,8 +271,10 @@ fn an_unreadable_journal_line_is_a_sentence_in_the_uploads_log() {
     assert!(!log.contains("warning:"), "{log}");
 }
 
+/// The Upload posts into the Import Run the caller hands it, and neither
+/// starts nor completes a run: the caller does both (#2053).
 #[test]
-fn reuses_supplied_import_run_without_starting_or_completing_one() {
+fn posts_into_the_callers_import_run_without_starting_or_completing_one() {
     let server = mock_server();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
@@ -311,7 +286,7 @@ fn reuses_supplied_import_run_without_starting_or_completing_one() {
     let start = server.mock(|when, then| {
         when.method(POST).path("/v1/imports");
         then.status(201)
-            .header("Location", "/v1/imports/99")
+            .header("Location", "/v1/imports/42")
             .json_body(json!({
                 "id": 42
             }));
@@ -325,6 +300,11 @@ fn reuses_supplied_import_run_without_starting_or_completing_one() {
             "attachment_count": 0,
             "bytes_uploaded": 0
         }));
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/v1/imports/99");
+        then.status(200)
+            .json_body(json!({ "id": 99, "mode": "append" }));
     });
     let import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/99/batches");
@@ -342,10 +322,10 @@ fn reuses_supplied_import_run_without_starting_or_completing_one() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
 
     let cfg = ImportConfig {
-        import_id: Some(99),
+        import_id: 99,
         ..mock_server_config(dir.path(), server.base_url())
     };
     let report = run(&cfg, None).unwrap();
@@ -364,71 +344,17 @@ fn reuses_supplied_import_run_without_starting_or_completing_one() {
     );
     import.assert();
     let log = read_log(dir.path());
-    assert!(
-        log.contains("Reusing Import Run 99 for sms-backup-restore"),
-        "{log}"
-    );
+    assert!(log.contains("Uploading into Import Run 99"), "{log}");
 }
 
-/// An import that started its own Import Run completes it once, with the
-/// bytes the import sent. The server counts the run's messages and
-/// attachments itself.
+/// An import whose only batch fails names the failed file in its log and
+/// ends with errors.
 #[test]
-fn an_import_completes_its_import_run_with_the_bytes_it_sent() {
-    const PHOTO: &[u8] = b"photo bytes";
+fn an_import_where_nothing_lands_ends_with_errors() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let _run = mock_import_start(&server, 42);
-    let digest = file_io::sha256_hex(PHOTO);
-    let _head = server.mock(|when, then| {
-        when.method("HEAD").path(format!("/v1/assets/{digest}"));
-        then.status(404);
-    });
-    let _put = server.mock(|when, then| {
-        when.method(PUT).path(format!("/v1/assets/{digest}"));
-        then.status(200)
-            .json_body(json!({ "already_present": false }));
-    });
     let _import = server.mock(|when, then| {
-        when.method(POST).path("/v1/imports/42/batches");
-        then.status(200).json_body(json!({
-            "messages": 1,
-            "messages_appended": 1,
-            "conversations": 1
-        }));
-    });
-    let complete = server.mock(|when, then| {
-        when.method(POST)
-            .path("/v1/imports/42/complete")
-            .json_body(json!({
-                "status": "completed",
-                "bytes_uploaded": PHOTO.len(),
-            }));
-        then.status(200).json_body(json!({ "id": 42 }));
-    });
-
-    let dir = tempdir().unwrap();
-    fs::create_dir(dir.path().join("attachments")).unwrap();
-    fs::write(dir.path().join("attachments/photo.txt"), PHOTO).unwrap();
-    let mut doc = sample_doc();
-    doc.messages[0].attachments = vec![ir_attachment("attachments/photo.txt", digest.clone())];
-    write_jsonl(dir.path(), &doc);
-
-    let report = run(&mock_server_config(dir.path(), server.base_url()), None).unwrap();
-
-    assert!(report.ok, "{:?}", report.results);
-    assert_eq!(complete.calls(), 1, "the Import Run is completed once");
-}
-
-/// An import whose only batch fails still completes its Import Run, as failed,
-/// so the server does not show it as running.
-#[test]
-fn an_import_where_nothing_lands_completes_its_import_run_as_failed() {
-    let server = mock_server();
-    let _auth = mock_session(&server);
-    let _run = mock_import_start(&server, 42);
-    let _import = server.mock(|when, then| {
-        when.method(POST).path("/v1/imports/42/batches");
+        when.method(POST).path("/v1/imports/7/batches");
         then.status(500).json_body(json!({
             "type": "about:blank",
             "title": "Internal server error",
@@ -436,19 +362,12 @@ fn an_import_where_nothing_lands_completes_its_import_run_as_failed() {
             "detail": "intentional batch failure"
         }));
     });
-    let complete = server.mock(|when, then| {
-        when.method(POST)
-            .path("/v1/imports/42/complete")
-            .json_body_includes(r#"{ "status": "failed" }"#);
-        then.status(200).json_body(json!({ "id": 42 }));
-    });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     let report = run(&mock_server_config(dir.path(), server.base_url()), None).unwrap();
 
     assert!(!report.ok);
-    assert_eq!(complete.calls(), 1, "the Import Run is completed as failed");
     let log = read_log(dir.path());
     assert!(log.contains(".jsonl failed: "), "{log}");
     assert!(!log.lines().any(|line| line.starts_with("fail ")), "{log}");
@@ -456,245 +375,6 @@ fn an_import_where_nothing_lands_completes_its_import_run_as_failed() {
         log.contains("\nThe Upload completed in ") && log.contains(", with errors.\n"),
         "{log}"
     );
-}
-
-/// An Upload that started its own Import Run and did not pause returns an
-/// error when the server refuses to complete the run, and the report it
-/// leaves on disk is not `ok`: the server still holds the run as running, so
-/// nothing may report the Upload as a success.
-#[test]
-fn a_refused_completion_is_an_error_the_upload_returns() {
-    let server = mock_server();
-    let _auth = mock_session(&server);
-    let _run = mock_import_start(&server, 42);
-    let _import = server.mock(|when, then| {
-        when.method(POST).path("/v1/imports/42/batches");
-        then.status(200).json_body(json!({
-            "messages": 1,
-            "messages_appended": 1,
-            "conversations": 1
-        }));
-    });
-    let complete = server.mock(|when, then| {
-        when.method(POST).path("/v1/imports/42/complete");
-        then.status(500).json_body(json!({
-            "type": "about:blank",
-            "title": "Internal server error",
-            "status": 500,
-            "detail": "intentional completion failure"
-        }));
-    });
-
-    let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    let mut finished = false;
-    let mut on_progress = |event: ProgressEvent| {
-        if let ProgressEvent::Finished(_) = event {
-            finished = true;
-        }
-    };
-    let error = run(
-        &mock_server_config(dir.path(), server.base_url()),
-        Some(&mut on_progress),
-    )
-    .expect_err("a refused completion fails the Upload");
-
-    assert_eq!(
-        complete.calls(),
-        1,
-        "the Upload asks to complete the run once"
-    );
-    assert_eq!(
-        format!("{error:#}"),
-        "Import Run 42 completion failed (HTTP 500 Internal Server Error): \
-         intentional completion failure",
-        "one sentence that names the run once"
-    );
-    let written: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(dir.path().join("message-crate-import-report.json")).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(
-        written["ok"], false,
-        "the report on disk does not call the import a success"
-    );
-    assert_eq!(
-        written["completion_refused"], true,
-        "the report on disk says the server refused the completion"
-    );
-    assert!(!finished, "an Upload that fails does not say it finished");
-}
-
-/// Run an Upload of three conversations into Import Run 42 that the Upload
-/// starts itself, and pause it as soon as the first conversation is on the
-/// server. The test mocks `/v1/imports/42/complete`. Returns what `run`
-/// returned and the report `ProgressEvent::Finished` carried, if it fired.
-fn run_paused_upload(
-    server: &MockServer,
-    dir: &Path,
-) -> (anyhow::Result<ImportReport>, Option<ImportReport>) {
-    let _import = server.mock(|when, then| {
-        when.method(POST).path("/v1/imports/42/batches");
-        then.status(200).json_body(json!({
-            "messages": 1,
-            "messages_appended": 1,
-            "conversations": 1
-        }));
-    });
-    write_jsonl(dir, &sample_doc());
-    write_jsonl(dir, &sample_doc_for("+15555550102", "guid-2"));
-    write_jsonl(dir, &sample_doc_for("+15555550103", "guid-3"));
-    let cancel = Arc::new(AtomicBool::new(false));
-    let cfg = ImportConfig {
-        batch_size: 1,
-        prepare_ahead: 1,
-        prepare_workers: 1,
-        cancel: cancel.clone(),
-        ..mock_server_config(dir, server.base_url())
-    };
-    let mut finished = None;
-    let mut on_progress = |event: ProgressEvent| match event {
-        ProgressEvent::FileDone {
-            status: FileStatus::Ok,
-            ..
-        } => cancel.store(true, Ordering::SeqCst),
-        ProgressEvent::Finished(report) => finished = Some(report),
-        _ => {}
-    };
-    let result = run(&cfg, Some(&mut on_progress));
-    (result, finished)
-}
-
-/// A paused Upload that started its own Import Run returns its report when
-/// the server refuses to complete the run, rather than the refusal. The
-/// caller tells a pause from a failure by `cancelled`, so the pause must
-/// reach it. The report says the completion was refused, and the Upload says
-/// it finished (#1635).
-#[test]
-fn a_paused_upload_whose_completion_is_refused_returns_its_report() {
-    let server = mock_server();
-    let _auth = mock_session(&server);
-    let _run = mock_import_start(&server, 42);
-    let complete = server.mock(|when, then| {
-        when.method(POST).path("/v1/imports/42/complete");
-        then.status(500).json_body(json!({
-            "type": "about:blank",
-            "title": "Internal server error",
-            "status": 500,
-            "detail": "intentional completion failure"
-        }));
-    });
-
-    let dir = tempdir().unwrap();
-    let (result, finished) = run_paused_upload(&server, dir.path());
-    let report = result.expect("a paused Upload returns its report when the completion is refused");
-
-    assert_eq!(
-        complete.calls(),
-        1,
-        "the Upload asks to complete the run once"
-    );
-    assert!(report.cancelled, "the report says the Upload paused");
-    assert!(
-        report.completion_refused,
-        "the report says the completion was refused"
-    );
-    assert!(!report.ok, "a refused completion is not ok");
-    assert!(!report.session_refused, "the session was not refused");
-    let finished = finished.expect("the Upload says it finished");
-    assert!(finished.cancelled && finished.completion_refused);
-    let written: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(dir.path().join("message-crate-import-report.json")).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(written["cancelled"], true);
-    assert_eq!(written["completion_refused"], true);
-    assert_eq!(written["ok"], false);
-    let log = read_log(dir.path());
-    assert!(
-        log.contains(
-            "The Upload could not complete its Import Run, so the server may still hold it \
-             as running: Import Run 42 completion failed (HTTP 500 Internal Server Error): \
-             intentional completion failure"
-        ),
-        "{log}"
-    );
-}
-
-/// A paused Upload whose completion the server refuses because the session
-/// ended returns a report that says the session was refused, so the caller
-/// still ends the session on its side.
-#[test]
-fn a_paused_upload_whose_completion_refuses_the_session_says_so() {
-    let server = mock_server();
-    let _auth = mock_session(&server);
-    let _run = mock_import_start(&server, 42);
-    let _complete = server.mock(|when, then| {
-        when.method(POST).path("/v1/imports/42/complete");
-        then.status(401).json_body(json!({
-            "type": "about:blank",
-            "title": "Unauthorized",
-            "status": 401
-        }));
-    });
-
-    let dir = tempdir().unwrap();
-    let (result, finished) = run_paused_upload(&server, dir.path());
-    let report = result.expect("a paused Upload returns its report");
-
-    assert!(report.cancelled && report.completion_refused && !report.ok);
-    assert!(
-        report.session_refused,
-        "the report says the server refused the session"
-    );
-    assert!(
-        finished
-            .expect("the Upload says it finished")
-            .session_refused
-    );
-}
-
-/// When the completion is refused and the report cannot be written either,
-/// the Upload returns the refusal: the run the server still holds is what
-/// the caller must hear about.
-#[test]
-fn a_refused_completion_outranks_a_report_that_cannot_be_written() {
-    let server = mock_server();
-    let _auth = mock_session(&server);
-    let _run = mock_import_start(&server, 42);
-    let _import = server.mock(|when, then| {
-        when.method(POST).path("/v1/imports/42/batches");
-        then.status(200).json_body(json!({
-            "messages": 1,
-            "messages_appended": 1,
-            "conversations": 1
-        }));
-    });
-    let _complete = server.mock(|when, then| {
-        when.method(POST).path("/v1/imports/42/complete");
-        then.status(500).json_body(json!({
-            "type": "about:blank",
-            "title": "Internal server error",
-            "status": 500,
-            "detail": "intentional completion failure"
-        }));
-    });
-
-    let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    // A directory where the report file goes makes the write fail.
-    fs::create_dir(dir.path().join(message_crate_import::REPORT_NAME)).unwrap();
-    let cfg = mock_server_config(dir.path(), server.base_url());
-    let error = run(&cfg, None).expect_err("a refused completion fails the Upload");
-
-    let message = format!("{error:#}");
-    assert!(message.contains("Import Run 42"), "{message}");
-    let log = read_log(dir.path());
-    assert!(
-        log.contains("The Upload's report could not be written: write report "),
-        "{log}"
-    );
-    assert!(!log.contains("warning:"), "{log}");
 }
 
 #[test]
@@ -707,7 +387,6 @@ fn aggregates_multiple_conversations_into_one_import_request() {
             "username": "alice",
         }));
     });
-    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -722,8 +401,8 @@ fn aggregates_multiple_conversations_into_one_import_request() {
     });
 
     let dir = tempdir().unwrap();
-    let first = sample_doc();
-    let second = sample_doc_for("+15555550102", "guid-2");
+    let first = sample_import_document();
+    let second = sample_document_for("+15555550102", "guid-2");
     write_jsonl(dir.path(), &first);
     write_jsonl(dir.path(), &second);
 
@@ -754,10 +433,9 @@ fn flushes_at_message_limit_across_two_batches_of_one_run() {
             "username": "alice",
         }));
     });
-    let _run = mock_import_start_and_complete(&server, 7);
     let replace = server.mock(|when, then| {
         when.method(POST)
-            .path("/v1/imports/7/batches")
+            .path("/v1/imports/8/batches")
             .body_includes("+15555550101")
             .body_includes("+15555550102");
         then.status(200).json_body(json!({
@@ -768,7 +446,7 @@ fn flushes_at_message_limit_across_two_batches_of_one_run() {
     });
     let append = server.mock(|when, then| {
         when.method(POST)
-            .path("/v1/imports/7/batches")
+            .path("/v1/imports/8/batches")
             .body_includes("+15555550103");
         then.status(200).json_body(json!({
             "messages": 1,
@@ -778,11 +456,11 @@ fn flushes_at_message_limit_across_two_batches_of_one_run() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
     let mut cfg = mock_server_config(dir.path(), server.base_url());
-    cfg.mode = ImportMode::Replace;
+    cfg.import_id = REPLACE_RUN_ID;
     cfg.batch_size = 2;
 
     let report = run(&cfg, None).unwrap();
@@ -803,7 +481,6 @@ fn failed_combined_request_only_fails_its_files() {
             "username": "alice",
         }));
     });
-    let _run = mock_import_start_and_complete(&server, 7);
     let failed = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -828,9 +505,9 @@ fn failed_combined_request_only_fails_its_files() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.batch_size = 2;
 
@@ -867,7 +544,6 @@ fn failed_combined_request_only_fails_its_files() {
 fn a_refused_line_of_a_batch_is_reported_as_the_line_of_its_staged_file() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let _run = mock_import_start_and_complete(&server, 7);
     let refused = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
         then.status(400)
@@ -884,14 +560,14 @@ fn a_refused_line_of_a_batch_is_reported_as_the_line_of_its_staged_file() {
 
     let dir = tempdir().unwrap();
     // Batch lines 1 and 2: the first file's header and its one message.
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     // Batch lines 3 to 5: the second file's header and its two messages,
     // which are lines 3 and 4 of the file because line 2 is blank.
-    let mut second = sample_doc_for("+15555550102", "guid-2");
+    let mut second = sample_document_for("+15555550102", "guid-2");
     let mut later = second.messages[0].clone();
     later.guid = "guid-3".into();
     second.messages.push(later);
-    let second_name = format!("{}.jsonl", message_ir_format::filename_stem(&second));
+    let second_name = format!("{}.jsonl", ir_format::filename_stem(&second));
     let header = json!({
         "schema_version": second.schema_version,
         "export": second.export,
@@ -925,14 +601,14 @@ fn a_refused_line_of_a_batch_is_reported_as_the_line_of_its_staged_file() {
 
 /// Three conversations, the middle one unreadable, in name order.
 fn directory_with_a_bad_middle_file(dir: &Path) {
-    write_jsonl(dir, &sample_doc());
-    let bad = sample_doc_for("+15555550102", "guid-2");
+    write_jsonl(dir, &sample_import_document());
+    let bad = sample_document_for("+15555550102", "guid-2");
     fs::write(
-        dir.join(format!("{}.jsonl", message_ir_format::filename_stem(&bad))),
+        dir.join(format!("{}.jsonl", ir_format::filename_stem(&bad))),
         "not a conversation\n",
     )
     .unwrap();
-    write_jsonl(dir, &sample_doc_for("+15555550103", "guid-3"));
+    write_jsonl(dir, &sample_document_for("+15555550103", "guid-3"));
 }
 
 /// A file that fails to prepare is reported and the import goes on: the good
@@ -941,7 +617,6 @@ fn directory_with_a_bad_middle_file(dir: &Path) {
 fn an_import_imports_the_files_after_a_bad_one() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -975,7 +650,6 @@ fn resumes_message_batches_from_compacted_journal() {
             "username": "alice",
         }));
     });
-    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
         then.status(200).json_body(json!({
@@ -986,7 +660,7 @@ fn resumes_message_batches_from_compacted_journal() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     let cfg = mock_server_config(dir.path(), server.base_url());
     run(&cfg, None).unwrap();
     assert_eq!(import.calls(), 1);
@@ -1009,7 +683,6 @@ fn resumes_message_batches_from_compacted_journal() {
 fn a_message_with_a_blank_guid_is_sent_again_on_resume() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
         then.status(200).json_body(json!({
@@ -1020,7 +693,7 @@ fn a_message_with_a_blank_guid_is_sent_again_on_resume() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc_for("+15555550101", " "));
+    write_jsonl(dir.path(), &sample_document_for("+15555550101", " "));
     let cfg = mock_server_config(dir.path(), server.base_url());
     run(&cfg, None).unwrap();
     assert_eq!(import.calls(), 1);
@@ -1047,10 +720,10 @@ fn a_replace_import_ignores_the_journal_and_sends_every_message_again() {
             "username": "alice",
         }));
     });
-    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST)
-            .path("/v1/imports/7/batches")
+            .path_prefix("/v1/imports/")
+            .path_suffix("/batches")
             .body_includes("guid-1")
             .body_includes("guid-2");
         then.status(200).json_body(json!({
@@ -1061,14 +734,14 @@ fn a_replace_import_ignores_the_journal_and_sends_every_message_again() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
     let cfg = mock_server_config(dir.path(), server.base_url());
     assert!(run(&cfg, None).unwrap().ok);
     assert_eq!(import.calls(), 1);
 
     let replace = ImportConfig {
-        mode: ImportMode::Replace,
+        import_id: REPLACE_RUN_ID,
         force: false,
         ..cfg
     };
@@ -1080,11 +753,13 @@ fn a_replace_import_ignores_the_journal_and_sends_every_message_again() {
     assert_eq!(report.messages_attempted, 2);
 }
 
-/// A batch mock that accepts the one message whose guid is `guid`.
+/// A batch mock, for any Import Run, that accepts the one message whose
+/// guid is `guid`.
 fn mock_batch_accepting<'a>(server: &'a MockServer, guid: &str) -> httpmock::Mock<'a> {
     server.mock(|when, then| {
         when.method(POST)
-            .path("/v1/imports/7/batches")
+            .path_prefix("/v1/imports/")
+            .path_suffix("/batches")
             .body_includes(guid);
         then.status(200).json_body(json!({
             "messages": 1,
@@ -1094,11 +769,13 @@ fn mock_batch_accepting<'a>(server: &'a MockServer, guid: &str) -> httpmock::Moc
     })
 }
 
-/// A batch mock that refuses, with a 500, the batch holding `guid`.
+/// A batch mock, for any Import Run, that refuses, with a 500, the batch
+/// holding `guid`.
 fn mock_batch_refusing<'a>(server: &'a MockServer, guid: &str) -> httpmock::Mock<'a> {
     server.mock(|when, then| {
         when.method(POST)
-            .path("/v1/imports/7/batches")
+            .path_prefix("/v1/imports/")
+            .path_suffix("/batches")
             .body_includes(guid);
         then.status(500).json_body(json!({
             "type": "about:blank",
@@ -1118,10 +795,9 @@ fn mock_batch_refusing<'a>(server: &'a MockServer, guid: &str) -> httpmock::Mock
 fn an_append_after_a_failed_replace_sends_what_the_replace_did_not_import() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let _run = mock_import_start_and_complete(&server, 7);
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.batch_size = 1;
 
@@ -1131,7 +807,7 @@ fn an_append_after_a_failed_replace_sends_what_the_replace_did_not_import() {
     second.delete();
     let mut refused = mock_batch_refusing(&server, "guid-2");
     let replace = ImportConfig {
-        mode: ImportMode::Replace,
+        import_id: REPLACE_RUN_ID,
         ..cfg.clone()
     };
     let replaced = run(&replace, None).unwrap();
@@ -1159,6 +835,115 @@ fn an_append_after_a_failed_replace_sends_what_the_replace_did_not_import() {
     );
 }
 
+/// An Upload takes its mode from the Import Run it posts into, not from
+/// its caller (#3144). The server wipes the source with a replace run's
+/// first batch, so an Upload into a replace run that skipped what the
+/// journal records from an earlier Upload would lose it for good. Here the
+/// journal records the conversation an append run sent, and the Upload
+/// into a replace run sends it again.
+#[test]
+fn an_upload_into_a_replace_run_sends_what_the_journal_records() {
+    let server = mock_server();
+    let _auth = mock_session(&server);
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_import_document());
+    let cfg = mock_server_config(dir.path(), server.base_url());
+    let batches = mock_batch_accepting(&server, "guid-1");
+    assert!(run(&cfg, None).unwrap().ok);
+    assert_eq!(journaled_guids(dir.path()), vec!["guid-1".to_string()]);
+
+    let into_replace = ImportConfig {
+        import_id: REPLACE_RUN_ID,
+        ..cfg
+    };
+    let report = run(&into_replace, None).unwrap();
+
+    assert!(report.ok, "{:?}", report.results);
+    assert_eq!(report.conversations_skipped, 0);
+    assert_eq!(
+        batches.calls(),
+        2,
+        "the replace run is sent the conversation"
+    );
+    assert_eq!(report.mode, Some(ImportMode::Replace));
+}
+
+/// A forced Upload skips nothing an earlier Upload sent: it opens the
+/// journal without its earlier progress, so the conversation the journal
+/// records goes out again.
+#[test]
+fn a_forced_upload_sends_what_the_journal_records() {
+    let server = mock_server();
+    let _auth = mock_session(&server);
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_import_document());
+    let cfg = mock_server_config(dir.path(), server.base_url());
+    let batches = mock_batch_accepting(&server, "guid-1");
+    assert!(run(&cfg, None).unwrap().ok);
+    assert_eq!(journaled_guids(dir.path()), vec!["guid-1".to_string()]);
+
+    let forced = ImportConfig { force: true, ..cfg };
+    let report = run(&forced, None).unwrap();
+
+    assert!(report.ok, "{:?}", report.results);
+    assert_eq!(report.conversations_skipped, 0);
+    assert_eq!(
+        batches.calls(),
+        2,
+        "the forced Upload sends the conversation"
+    );
+}
+
+/// A replace Upload that stops before it sends its first batch has wiped
+/// nothing on the server, because the server wipes the source with that
+/// batch. So the journal keeps the rows of the Uploads before it, and the
+/// next append skips what they sent rather than send it all again (#3017).
+/// Here the server is away when the replace asks about the conversation's
+/// attachments, which it does before the batch.
+#[test]
+fn a_replace_that_sends_no_batch_keeps_the_journal() {
+    let server = mock_server();
+    let _auth = mock_session(&server);
+    let mut head = server.mock(|when, then| {
+        when.method("HEAD").path_includes("/v1/assets/");
+        then.status(200)
+            .json_body(json!({ "already_present": true }));
+    });
+    let batches = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/7/batches");
+        then.status(200).json_body(json!({
+            "messages": 1,
+            "messages_appended": 1,
+            "conversations": 1
+        }));
+    });
+    let dir = tempdir().unwrap();
+    two_attachment_documents(dir.path(), "a.txt", b"first file", "b.txt", b"second file");
+    let cfg = mock_server_config(dir.path(), server.base_url());
+    assert!(run(&cfg, None).unwrap().ok);
+    assert_eq!(journal_events(dir.path(), "file_ok").len(), 1);
+
+    head.delete();
+    let _away = server.mock(|when, then| {
+        when.method("HEAD").path_includes("/v1/assets/");
+        then.status(502);
+    });
+    let replace = ImportConfig {
+        import_id: REPLACE_RUN_ID,
+        ..cfg
+    };
+    let replaced = run(&replace, None).unwrap();
+
+    assert_eq!(replaced.server_away, Some(ServerAway::Unavailable));
+    assert_eq!(batches.calls(), 1, "the replace sent no batch");
+    assert_eq!(
+        journal_events(dir.path(), "file_ok").len(),
+        1,
+        "the append's rows are kept"
+    );
+    assert_eq!(journaled_guids(dir.path()), vec!["guid-1".to_string()]);
+}
+
 #[test]
 fn profiles_attachment_upload_phases() {
     const ASSET_BYTES: &[u8] = b"attachment profile fixture";
@@ -1172,7 +957,6 @@ fn profiles_attachment_upload_phases() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_start_and_complete(&server, 7);
     let digest = file_io::sha256_hex(ASSET_BYTES);
     let head = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest}"));
@@ -1201,14 +985,14 @@ fn profiles_attachment_upload_phases() {
     let attachment_dir = dir.path().join("attachments");
     fs::create_dir(&attachment_dir).unwrap();
     fs::write(attachment_dir.join("fixture.txt"), ASSET_BYTES).unwrap();
-    let mut doc = sample_doc();
-    doc.messages[0].attachments.push(Attachment {
+    let mut document = sample_import_document();
+    document.messages[0].attachments.push(Attachment {
         path: Some("attachments/fixture.txt".into()),
         original_name: Some("fixture.txt".into()),
         mime_type: Some("text/plain".into()),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     });
-    write_jsonl(dir.path(), &doc);
+    write_jsonl(dir.path(), &document);
 
     let report_path = dir.path().join("message-crate-import-report.json");
     let log_path = dir.path().join("message-crate-import.log");
@@ -1216,19 +1000,17 @@ fn profiles_attachment_upload_phases() {
         input: dir.path().to_path_buf(),
         base_url: server.base_url(),
         token: "mc_test".into(),
-        mode: ImportMode::Append,
         force: false,
         max_retries: 0,
         batch_size: 50,
         asset_upload_workers: 2,
-        prepare_ahead: message_crate_import::DEFAULT_PREPARE_AHEAD,
-        prepare_workers: message_crate_import::DEFAULT_PREPARE_WORKERS,
-        asset_multipart_threshold: message_crate_import::MAX_PROXY_BODY_BYTES,
-        asset_max_bytes: message_crate_import::DEFAULT_ASSET_MAX_BYTES,
+        prepare_ahead: import::DEFAULT_PREPARE_AHEAD,
+        prepare_workers: import::DEFAULT_PREPARE_WORKERS,
+        asset_multipart_threshold: import::MAX_PROXY_BODY_BYTES,
+        asset_max_bytes: import::DEFAULT_ASSET_MAX_BYTES,
         log_path: Some(log_path.clone()),
         cancel: CancelFlag::default(),
-        import_id: None,
-        phone_country: None,
+        import_id: RUN_ID,
     };
     let (report, progress_lines) = run_showing(&cfg);
 
@@ -1280,12 +1062,12 @@ fn ir_attachment(rel: &str, digest: String) -> Attachment {
         original_name: Some(rel.rsplit('/').next().unwrap_or(rel).into()),
         mime_type: Some("text/plain".into()),
         digest_sha256: Some(digest),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     }
 }
 
 /// Two unique files in one conversation; one worker so upload order is stable.
-fn two_attachment_docs(
+fn two_attachment_documents(
     dir: &Path,
     a_name: &str,
     a_bytes: &[u8],
@@ -1298,12 +1080,12 @@ fn two_attachment_docs(
     fs::write(attachment_dir.join(b_name), b_bytes).unwrap();
     let digest_a = file_io::sha256_hex(a_bytes);
     let digest_b = file_io::sha256_hex(b_bytes);
-    let mut doc = sample_doc();
-    doc.messages[0].attachments = vec![
+    let mut document = sample_import_document();
+    document.messages[0].attachments = vec![
         ir_attachment(&format!("attachments/{a_name}"), digest_a.clone()),
         ir_attachment(&format!("attachments/{b_name}"), digest_b.clone()),
     ];
-    write_jsonl(dir, &doc);
+    write_jsonl(dir, &document);
     (digest_a, digest_b)
 }
 
@@ -1321,9 +1103,8 @@ fn puts_two_new_assets_after_one_preflight_head() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_start_and_complete(&server, 7);
     let dir = tempdir().unwrap();
-    let (digest_a, digest_b) = two_attachment_docs(dir.path(), "a.txt", A, "b.txt", B);
+    let (digest_a, digest_b) = two_attachment_documents(dir.path(), "a.txt", A, "b.txt", B);
     let head_a = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest_a}"));
         then.status(404);
@@ -1401,10 +1182,9 @@ fn heads_later_assets_after_put_reports_already_present() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_start_and_complete(&server, 7);
     let dir = tempdir().unwrap();
     let (digest_a, digest_b) =
-        two_attachment_docs(dir.path(), "first.txt", FIRST, "second.txt", SECOND);
+        two_attachment_documents(dir.path(), "first.txt", FIRST, "second.txt", SECOND);
     // Jobs run in sha256 order. The lexicographically first digest PUTs;
     // after already_present, the second digest HEADs and skips PUT.
     let (first_digest, second_digest) = if digest_a < digest_b {
@@ -1479,9 +1259,8 @@ fn preflight_head_skips_puts_when_first_asset_already_present() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_start_and_complete(&server, 7);
     let dir = tempdir().unwrap();
-    let (digest_a, digest_b) = two_attachment_docs(dir.path(), "a.txt", A, "b.txt", B);
+    let (digest_a, digest_b) = two_attachment_documents(dir.path(), "a.txt", A, "b.txt", B);
     let head_a = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest_a}"));
         then.status(200).json_body(json!({
@@ -1538,7 +1317,6 @@ fn multipart_upload_when_over_proxy_threshold() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_start_and_complete(&server, 7);
     let digest = file_io::sha256_hex(ASSET_BYTES);
     let head = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest}"));
@@ -1603,15 +1381,15 @@ fn multipart_upload_when_over_proxy_threshold() {
     let attachment_dir = dir.path().join("attachments");
     fs::create_dir(&attachment_dir).unwrap();
     fs::write(attachment_dir.join("large.bin"), ASSET_BYTES).unwrap();
-    let mut doc = sample_doc();
-    doc.messages[0].attachments.push(Attachment {
+    let mut document = sample_import_document();
+    document.messages[0].attachments.push(Attachment {
         path: Some("attachments/large.bin".into()),
         original_name: Some("large.bin".into()),
         mime_type: Some("video/mp4".into()),
         digest_sha256: Some(digest.clone()),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     });
-    write_jsonl(dir.path(), &doc);
+    write_jsonl(dir.path(), &document);
 
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
@@ -1649,7 +1427,6 @@ fn multipart_aborts_on_hash_mismatch_complete() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_start_and_complete(&server, 7);
     let digest = file_io::sha256_hex(ASSET_BYTES);
     let _head = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest}"));
@@ -1689,15 +1466,15 @@ fn multipart_aborts_on_hash_mismatch_complete() {
     let attachment_dir = dir.path().join("attachments");
     fs::create_dir(&attachment_dir).unwrap();
     fs::write(attachment_dir.join("bad.bin"), ASSET_BYTES).unwrap();
-    let mut doc = sample_doc();
-    doc.messages[0].attachments.push(Attachment {
+    let mut document = sample_import_document();
+    document.messages[0].attachments.push(Attachment {
         path: Some("attachments/bad.bin".into()),
         original_name: Some("bad.bin".into()),
         mime_type: Some("application/octet-stream".into()),
         digest_sha256: Some(digest),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     });
-    write_jsonl(dir.path(), &doc);
+    write_jsonl(dir.path(), &document);
 
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
@@ -1768,7 +1545,6 @@ fn a_digest_that_does_not_match_its_file_is_a_sentence_in_the_log() {
 
     let server = mock_server();
     let _auth = mock_session(&server);
-    let _run = mock_import_start_and_complete(&server, 7);
     let _import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
         then.status(200).json_body(json!({
@@ -1792,15 +1568,15 @@ fn a_digest_that_does_not_match_its_file_is_a_sentence_in_the_log() {
     fs::create_dir(&attachment_dir).unwrap();
     fs::write(attachment_dir.join("mismatch.txt"), ASSET_BYTES).unwrap();
     fs::write(attachment_dir.join("malformed.txt"), OTHER_BYTES).unwrap();
-    let mut doc = sample_doc();
+    let mut document = sample_import_document();
     let mut mismatch = ir_attachment("attachments/mismatch.txt", wrong_digest.clone());
     mismatch.size_bytes = Some(4);
-    doc.messages[0].attachments.push(mismatch);
-    doc.messages[0].attachments.push(ir_attachment(
+    document.messages[0].attachments.push(mismatch);
+    document.messages[0].attachments.push(ir_attachment(
         "attachments/malformed.txt",
         "not-a-digest".into(),
     ));
-    write_jsonl(dir.path(), &doc);
+    write_jsonl(dir.path(), &document);
 
     let cfg = mock_server_config(dir.path(), server.base_url());
     let report = run(&cfg, None).unwrap();
@@ -1808,7 +1584,7 @@ fn a_digest_that_does_not_match_its_file_is_a_sentence_in_the_log() {
     assert_eq!(put.calls(), 2);
 
     let log = read_log(dir.path());
-    let name = format!("{}.jsonl", message_ir_format::filename_stem(&doc));
+    let name = format!("{}.jsonl", ir_format::filename_stem(&document));
     assert!(
         log.contains(&format!(
             "{name}: attachment attachments/mismatch.txt hashes to {disk_digest}, \
@@ -1856,7 +1632,6 @@ fn shared_attachment_uploaded_once_across_conversations() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_start_and_complete(&server, 7);
     let head = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest}"));
         then.status(404).json_body(json!({
@@ -1884,24 +1659,24 @@ fn shared_attachment_uploaded_once_across_conversations() {
     fs::create_dir(&attachment_dir).unwrap();
     fs::write(attachment_dir.join("shared.txt"), ASSET_BYTES).unwrap();
 
-    let mut doc_a = sample_doc_for("+15555550101", "guid-a");
-    doc_a.messages[0].attachments.push(Attachment {
+    let mut document_a = sample_document_for("+15555550101", "guid-a");
+    document_a.messages[0].attachments.push(Attachment {
         path: Some("attachments/shared.txt".into()),
         original_name: Some("shared.txt".into()),
         mime_type: Some("text/plain".into()),
         digest_sha256: Some(digest.clone()),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     });
-    let mut doc_b = sample_doc_for("+15555550102", "guid-b");
-    doc_b.messages[0].attachments.push(Attachment {
+    let mut document_b = sample_document_for("+15555550102", "guid-b");
+    document_b.messages[0].attachments.push(Attachment {
         path: Some("attachments/shared.txt".into()),
         original_name: Some("shared.txt".into()),
         mime_type: Some("text/plain".into()),
         digest_sha256: Some(digest),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     });
-    write_jsonl(dir.path(), &doc_a);
-    write_jsonl(dir.path(), &doc_b);
+    write_jsonl(dir.path(), &document_a);
+    write_jsonl(dir.path(), &document_b);
 
     let cfg = mock_server_config(dir.path(), server.base_url());
     let report = run(&cfg, None).unwrap();
@@ -1933,9 +1708,10 @@ fn a_failed_upload_frees_a_shared_file_for_the_next_conversation() {
     fs::create_dir(dir.path().join("attachments")).unwrap();
     fs::write(dir.path().join("attachments/shared.txt"), ASSET_BYTES).unwrap();
     for (handle, guid) in [("+15555550101", "guid-a"), ("+15555550102", "guid-b")] {
-        let mut doc = sample_doc_for(handle, guid);
-        doc.messages[0].attachments = vec![ir_attachment("attachments/shared.txt", digest.clone())];
-        write_jsonl(dir.path(), &doc);
+        let mut document = sample_document_for(handle, guid);
+        document.messages[0].attachments =
+            vec![ir_attachment("attachments/shared.txt", digest.clone())];
+        write_jsonl(dir.path(), &document);
     }
     let cfg = ImportConfig {
         prepare_workers: 1,
@@ -2014,12 +1790,9 @@ fn serve_a_held_first_upload(first_put: &'static str) -> (String, Arc<Mutex<Vec<
                 let response = if request_line.starts_with("GET /v1/session ") {
                     answer("200 OK", r#"{"account_id":1,"username":"alice"}"#)
                 } else if request_line.starts_with("GET /v1/server ") {
-                    answer(
-                        "200 OK",
-                        r#"{"upload_stall_secs":60,"upload_piece_secs":300}"#,
-                    )
-                } else if request_line.starts_with("POST /v1/imports ") {
-                    answer("201 Created", r#"{"id":7}"#)
+                    answer("200 OK", r#"{"body_stall_secs":60,"body_total_secs":300}"#)
+                } else if request_line.starts_with("GET /v1/imports/7 ") {
+                    answer("200 OK", r#"{"id":7,"mode":"append"}"#)
                 } else if request_line.starts_with("POST /v1/imports/7/batches ") {
                     let body = String::from_utf8_lossy(&body);
                     let guids: Vec<&str> = ["guid-a", "guid-b"]
@@ -2032,8 +1805,6 @@ fn serve_a_held_first_upload(first_put: &'static str) -> (String, Arc<Mutex<Vec<
                         "200 OK",
                         &format!(r#"{{"messages":{count},"messages_appended":{count}}}"#),
                     )
-                } else if request_line.starts_with("POST /v1/imports/7/complete ") {
-                    answer("200 OK", r#"{"id":7}"#)
                 } else if request_line.starts_with("HEAD /v1/assets/") {
                     "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
                         .to_string()
@@ -2075,7 +1846,7 @@ fn two_conversations_sharing_a_file(dir: &Path) {
     fs::create_dir(dir.join("attachments")).unwrap();
     fs::write(dir.join("attachments/shared.txt"), ASSET_BYTES).unwrap();
 
-    let mut first = sample_doc_for("+15555550101", "guid-a");
+    let mut first = sample_document_for("+15555550101", "guid-a");
     first.messages[0].attachments = vec![ir_attachment("attachments/shared.txt", digest.clone())];
     let filler = first.messages[0].clone();
     for n in 0..20_000 {
@@ -2085,7 +1856,7 @@ fn two_conversations_sharing_a_file(dir: &Path) {
         first.messages.push(message);
     }
     write_jsonl(dir, &first);
-    let mut second = sample_doc_for("+15555550102", "guid-b");
+    let mut second = sample_document_for("+15555550102", "guid-b");
     second.messages[0].attachments = vec![ir_attachment("attachments/shared.txt", digest)];
     write_jsonl(dir, &second);
 }
@@ -2188,7 +1959,6 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_start_and_complete(&server, 7);
     let small_digest = file_io::sha256_hex(SMALL);
     let big_digest = file_io::sha256_hex(BIG);
     let _small_head = server.mock(|when, then| {
@@ -2226,15 +1996,15 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
     fs::write(attachment_dir.join("small.txt"), SMALL).unwrap();
     fs::write(attachment_dir.join("big.bin"), BIG).unwrap();
 
-    let mut doc = sample_doc();
-    doc.messages[0].attachments = vec![
+    let mut document = sample_import_document();
+    document.messages[0].attachments = vec![
         Attachment {
             path: Some("attachments/big.bin".into()),
             original_name: Some("big.bin".into()),
             mime_type: Some("application/octet-stream".into()),
             digest_sha256: Some(big_digest),
             size_bytes: Some(BIG.len() as u64),
-            ..message_ir::testutil::sample_attachment()
+            ..ir::testutil::sample_attachment()
         },
         Attachment {
             path: Some("attachments/small.txt".into()),
@@ -2242,10 +2012,10 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
             mime_type: Some("text/plain".into()),
             digest_sha256: Some(small_digest),
             size_bytes: Some(SMALL.len() as u64),
-            ..message_ir::testutil::sample_attachment()
+            ..ir::testutil::sample_attachment()
         },
     ];
-    write_jsonl(dir.path(), &doc);
+    write_jsonl(dir.path(), &document);
 
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
@@ -2320,7 +2090,6 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_start_and_complete(&server, 7);
     let small_digest = file_io::sha256_hex(SMALL);
     let _small_head = server.mock(|when, then| {
         when.method("HEAD")
@@ -2353,14 +2122,14 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
     fs::write(attachment_dir.join("small.txt"), SMALL).unwrap();
     // Intentionally do not write gone.bin
 
-    let mut doc = sample_doc();
-    doc.messages[0].attachments = vec![
+    let mut document = sample_import_document();
+    document.messages[0].attachments = vec![
         Attachment {
             path: Some("attachments/gone.bin".into()),
             original_name: Some("gone.bin".into()),
             mime_type: Some("application/octet-stream".into()),
             size_bytes: Some(1234),
-            ..message_ir::testutil::sample_attachment()
+            ..ir::testutil::sample_attachment()
         },
         Attachment {
             path: Some("attachments/small.txt".into()),
@@ -2368,7 +2137,7 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
             mime_type: Some("text/plain".into()),
             digest_sha256: Some(small_digest),
             size_bytes: Some(SMALL.len() as u64),
-            ..message_ir::testutil::sample_attachment()
+            ..ir::testutil::sample_attachment()
         },
         // An Export that could not fetch this file said why, and the
         // Import keeps that reason rather than a plain missing file.
@@ -2376,11 +2145,11 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
             path: Some("attachments/unfetched.pdf".into()),
             original_name: Some("unfetched.pdf".into()),
             mime_type: Some("application/pdf".into()),
-            missing_reason: Some(message_ir::missing_reason::NOT_FETCHED.into()),
-            ..message_ir::testutil::sample_attachment()
+            missing_reason: Some(ir::missing_reason::NOT_FETCHED.into()),
+            ..ir::testutil::sample_attachment()
         },
     ];
-    write_jsonl(dir.path(), &doc);
+    write_jsonl(dir.path(), &document);
 
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
@@ -2410,7 +2179,7 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
     );
 }
 
-/// "Do not copy" leaves attachments with no path but a reason. Importing must
+/// Skip leaves attachments with no path but a reason. Importing must
 /// keep the metadata rather than failing the whole conversation.
 #[test]
 fn keeps_conversation_ok_when_skipped_attachment_has_no_path() {
@@ -2423,7 +2192,6 @@ fn keeps_conversation_ok_when_skipped_attachment_has_no_path() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -2437,15 +2205,15 @@ fn keeps_conversation_ok_when_skipped_attachment_has_no_path() {
     });
 
     let dir = tempdir().unwrap();
-    let mut doc = sample_doc();
-    doc.messages[0].attachments = vec![Attachment {
+    let mut document = sample_import_document();
+    document.messages[0].attachments = vec![Attachment {
         original_name: Some("IMG_0421.HEIC".into()),
         mime_type: Some("image/heic".into()),
         size_bytes: Some(2048),
         missing_reason: Some("not_copied".into()),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     }];
-    write_jsonl(dir.path(), &doc);
+    write_jsonl(dir.path(), &document);
 
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
@@ -2488,7 +2256,6 @@ fn reports_pathless_attachment_without_reason_as_no_path() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -2501,13 +2268,13 @@ fn reports_pathless_attachment_without_reason_as_no_path() {
     });
 
     let dir = tempdir().unwrap();
-    let mut doc = sample_doc();
-    doc.messages[0].attachments = vec![Attachment {
+    let mut document = sample_import_document();
+    document.messages[0].attachments = vec![Attachment {
         original_name: Some("mystery.bin".into()),
         mime_type: Some("application/octet-stream".into()),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     }];
-    write_jsonl(dir.path(), &doc);
+    write_jsonl(dir.path(), &document);
 
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
@@ -2545,7 +2312,6 @@ fn reports_pathless_attachment_without_reason_as_no_path() {
 fn conversations_from_two_sources_go_out_in_separate_requests() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let _run = mock_import_start_and_complete(&server, 7);
     let sms = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -2570,8 +2336,8 @@ fn conversations_from_two_sources_go_out_in_separate_requests() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    let mut other = sample_doc_for("+15555550102", "guid-2");
+    write_jsonl(dir.path(), &sample_import_document());
+    let mut other = sample_document_for("+15555550102", "guid-2");
     other.export.source = "whatsapp".into();
     write_jsonl(dir.path(), &other);
 
@@ -2644,7 +2410,6 @@ fn mock_session(server: &MockServer) -> httpmock::Mock<'_> {
 fn a_batch_retried_after_a_503_is_counted_and_journaled_once() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let _run = mock_import_start_and_complete(&server, 7);
     let mut busy = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
         then.status(503).json_body(json!({
@@ -2656,7 +2421,7 @@ fn a_batch_retried_after_a_503_is_counted_and_journaled_once() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     let cfg = ImportConfig {
         max_retries: 2,
         ..mock_server_config(dir.path(), server.base_url())
@@ -2701,10 +2466,9 @@ fn a_batch_retried_after_a_503_is_counted_and_journaled_once() {
 /// Guards the cancel check before each batch POST. Without it, the batch
 /// already packed when the cancel arrived still goes out.
 #[test]
-fn a_cancelled_import_sends_no_further_batch_and_resumes_later() {
+fn a_canceled_import_sends_no_further_batch_and_resumes_later() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let _run = mock_import_start_and_complete(&server, 7);
     let mut import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
         then.status(200).json_body(json!({
@@ -2715,9 +2479,9 @@ fn a_cancelled_import_sends_no_further_batch_and_resumes_later() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
     let cancel = Arc::new(AtomicBool::new(false));
     let cfg = ImportConfig {
         batch_size: 1,
@@ -2738,9 +2502,9 @@ fn a_cancelled_import_sends_no_further_batch_and_resumes_later() {
     };
     let report = run(&cfg, Some(&mut on_progress)).unwrap();
 
-    assert!(!report.ok, "a cancelled import is not ok");
+    assert!(!report.ok, "a canceled import is not ok");
     assert!(
-        report.cancelled,
+        report.canceled,
         "the report says the cancel flag stopped it"
     );
     assert_eq!(import.calls(), 1, "no batch is sent after the cancel");
@@ -2768,17 +2532,16 @@ fn a_cancelled_import_sends_no_further_batch_and_resumes_later() {
     assert_eq!(resumed_import.calls(), 2);
 }
 
-/// Every conversation of a cancelled import is in one category of the report:
-/// `ok + failed + skipped + cancelled = total`, with one result row per file.
+/// Every conversation of a canceled import is in one category of the report:
+/// `ok + failed + skipped + canceled = total`, with one result row per file.
 ///
 /// Guards the report of a paused Upload. Without a result for each file the
 /// pause left unsent, the counts add up to less than the total and nothing in
 /// the report names those files.
 #[test]
-fn a_cancelled_import_reports_every_conversation_in_one_category() {
+fn a_canceled_import_reports_every_conversation_in_one_category() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let _run = mock_import_start_and_complete(&server, 7);
     let _import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
         then.status(200).json_body(json!({
@@ -2789,10 +2552,10 @@ fn a_cancelled_import_reports_every_conversation_in_one_category() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550104", "guid-4"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550104", "guid-4"));
     let cancel = Arc::new(AtomicBool::new(false));
     let cfg = ImportConfig {
         batch_size: 1,
@@ -2814,42 +2577,41 @@ fn a_cancelled_import_reports_every_conversation_in_one_category() {
 
     assert_eq!(report.conversations_total, 4);
     assert_eq!(report.conversations_ok, 1);
-    assert_eq!(report.conversations_cancelled, 3);
-    assert!(report.cancelled, "the cancel flag stopped the run");
+    assert_eq!(report.conversations_canceled, 3);
+    assert!(report.canceled, "the cancel flag stopped the run");
     assert_eq!(
         report.conversations_ok
             + report.conversations_failed
             + report.conversations_skipped
-            + report.conversations_cancelled,
+            + report.conversations_canceled,
         report.conversations_total
     );
     assert_eq!(report.results.len(), 4, "{:?}", report.results);
-    let cancelled: Vec<&str> = report
+    let canceled: Vec<&str> = report
         .results
         .iter()
-        .filter(|row| row.status == "cancelled")
+        .filter(|row| row.status == "canceled")
         .map(|row| row.file.as_str())
         .collect();
-    assert_eq!(cancelled.len(), 3, "{:?}", report.results);
+    assert_eq!(canceled.len(), 3, "{:?}", report.results);
     assert!(
-        cancelled.iter().all(|file| file.ends_with(".jsonl")),
-        "each cancelled row names its file: {cancelled:?}"
+        canceled.iter().all(|file| file.ends_with(".jsonl")),
+        "each canceled row names its file: {canceled:?}"
     );
     assert_eq!(journal_events(dir.path(), "file_ok").len(), 1);
 }
 
 /// A conversation whose messages were partly queued when the stop came is
-/// counted as cancelled, and the journal does not mark it done, so a resumed
+/// counted as canceled, and the journal does not mark it done, so a resumed
 /// import sends the rest of it.
 ///
 /// Guards the `Abort` path in `consume_result`, which returns before the
 /// file's result is written: without a result the file falls out of every
 /// count, and journalling it as done would lose its unsent messages.
 #[test]
-fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_cancelled() {
+fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_canceled() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let _run = mock_import_start_and_complete(&server, 7);
     // The delay keeps the first batch in flight long enough to cancel while
     // the second message of the same conversation waits to be sent.
     let first_batch = server.mock(|when, then| {
@@ -2864,13 +2626,13 @@ fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_cancelled() {
     });
 
     let dir = tempdir().unwrap();
-    let mut doc = sample_doc();
-    let mut second = doc.messages[0].clone();
+    let mut document = sample_import_document();
+    let mut second = document.messages[0].clone();
     second.guid = "guid-1b".into();
-    let mut third = doc.messages[0].clone();
+    let mut third = document.messages[0].clone();
     third.guid = "guid-1c".into();
-    doc.messages.extend([second, third]);
-    write_jsonl(dir.path(), &doc);
+    document.messages.extend([second, third]);
+    write_jsonl(dir.path(), &document);
     let cancel = Arc::new(AtomicBool::new(false));
     let cfg = ImportConfig {
         batch_size: 1,
@@ -2889,10 +2651,10 @@ fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_cancelled() {
 
     assert_eq!(first_batch.calls(), 1, "no batch is sent after the cancel");
     assert_eq!(report.conversations_total, 1);
-    assert_eq!(report.conversations_cancelled, 1, "{:?}", report.results);
-    assert!(report.cancelled, "the cancel flag stopped the run");
+    assert_eq!(report.conversations_canceled, 1, "{:?}", report.results);
+    assert!(report.canceled, "the cancel flag stopped the run");
     assert_eq!(report.results.len(), 1);
-    assert_eq!(report.results[0].status, "cancelled");
+    assert_eq!(report.results[0].status, "canceled");
     assert_eq!(
         report.results[0].messages, 1,
         "the row counts the message that reached the server"
@@ -2905,17 +2667,15 @@ fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_cancelled() {
 }
 
 /// A cancel that arrives while the last request is in flight stops nothing:
-/// every conversation still lands, so the Upload completed and the server
-/// records its Import Run as completed.
+/// every conversation still lands, so the Upload completed.
 ///
 /// Guards #1903: the run took the cancel flag alone as a stop, so it reported
-/// the Upload as cancelled and not `ok`, and completed its Import Run as
-/// `failed`, although no conversation was left for the next Upload.
+/// the Upload as canceled and not `ok`, although no conversation was left
+/// for the next Upload.
 #[test]
 fn a_cancel_after_the_last_request_leaves_a_completed_upload() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let _run = mock_import_start(&server, 7);
     // The delay keeps the only batch in flight long enough to cancel while
     // nothing is left to send.
     let batch = server.mock(|when, then| {
@@ -2928,15 +2688,9 @@ fn a_cancel_after_the_last_request_leaves_a_completed_upload() {
                 "conversations": 1
             }));
     });
-    let complete = server.mock(|when, then| {
-        when.method(POST)
-            .path("/v1/imports/7/complete")
-            .json_body_includes(r#"{ "status": "completed" }"#);
-        then.status(200).json_body(json!({ "id": 7 }));
-    });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     let cancel = Arc::new(AtomicBool::new(false));
     let cfg = ImportConfig {
         batch_size: 1,
@@ -2953,14 +2707,9 @@ fn a_cancel_after_the_last_request_leaves_a_completed_upload() {
 
     assert_eq!(batch.calls(), 1);
     assert_eq!(report.conversations_ok, 1, "{:?}", report.results);
-    assert_eq!(report.conversations_cancelled, 0, "{:?}", report.results);
+    assert_eq!(report.conversations_canceled, 0, "{:?}", report.results);
     assert!(report.ok, "every conversation landed: {report:?}");
-    assert!(!report.cancelled, "the cancel stopped nothing: {report:?}");
-    assert_eq!(
-        complete.calls(),
-        1,
-        "the Import Run is completed with the status completed"
-    );
+    assert!(!report.canceled, "the cancel stopped nothing: {report:?}");
     assert!(
         read_log(dir.path()).contains("\nThe Upload completed in "),
         "{}",
@@ -2992,16 +2741,15 @@ fn a_refused_session_after_a_failed_batch_still_halts_the_upload() {
     });
 
     let dir = tempdir().unwrap();
-    let mut doc = sample_doc();
-    let mut second = doc.messages[0].clone();
+    let mut document = sample_import_document();
+    let mut second = document.messages[0].clone();
     second.guid = "second-message".into();
-    doc.messages.push(second);
-    write_jsonl(dir.path(), &doc);
+    document.messages.push(second);
+    write_jsonl(dir.path(), &document);
     let cfg = ImportConfig {
         batch_size: 1,
         prepare_ahead: 1,
         prepare_workers: 1,
-        import_id: Some(7),
         ..mock_server_config(dir.path(), server.base_url())
     };
 
@@ -3010,10 +2758,10 @@ fn a_refused_session_after_a_failed_batch_still_halts_the_upload() {
     assert_eq!(failed.calls(), 1);
     assert_eq!(refused.calls(), 1);
     assert_eq!(report.conversations_failed, 1, "{:?}", report.results);
-    assert_eq!(report.conversations_cancelled, 0, "{:?}", report.results);
+    assert_eq!(report.conversations_canceled, 0, "{:?}", report.results);
     assert!(report.session_refused);
     assert!(
-        report.cancelled,
+        report.canceled,
         "a refused session halts the Upload: {report:?}"
     );
     assert!(!report.ok);
@@ -3035,7 +2783,6 @@ fn a_refused_session_after_a_failed_batch_still_halts_the_upload() {
 fn a_second_import_sends_only_the_conversation_whose_batch_failed() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let _run = mock_import_start_and_complete(&server, 7);
     let mut failing = mock_batch_refusing(&server, "guid-2");
     let mut others = server.mock(|when, then| {
         when.method(POST)
@@ -3049,15 +2796,15 @@ fn a_second_import_sends_only_the_conversation_whose_batch_failed() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.batch_size = 1;
 
     let first = run(&cfg, None).unwrap();
     assert!(!first.ok);
-    assert!(!first.cancelled, "a failed batch is not a cancel");
+    assert!(!first.canceled, "a failed batch is not a cancel");
     assert_eq!(first.conversations_ok, 2);
     assert_eq!(first.conversations_failed, 1);
     assert_eq!(failing.calls(), 1);
@@ -3114,14 +2861,13 @@ fn a_second_import_sends_only_the_conversation_whose_batch_failed() {
 fn an_unreadable_2xx_answer_is_not_retried() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
         then.status(200).body("<html>not the server</html>");
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     let cfg = ImportConfig {
         max_retries: 2,
         ..mock_server_config(dir.path(), server.base_url())
@@ -3199,18 +2945,13 @@ fn serve_answering_batches_with(
             let response = if request_line.starts_with("GET /v1/session ") {
                 answer("200 OK", r#"{"account_id":1,"username":"alice"}"#)
             } else if request_line.starts_with("GET /v1/server ") {
-                answer(
-                    "200 OK",
-                    r#"{"upload_stall_secs":60,"upload_piece_secs":300}"#,
-                )
-            } else if request_line.starts_with("POST /v1/imports ") {
-                answer("201 Created", r#"{"id":7}"#)
+                answer("200 OK", r#"{"body_stall_secs":60,"body_total_secs":300}"#)
+            } else if request_line.starts_with("GET /v1/imports/7 ") {
+                answer("200 OK", r#"{"id":7,"mode":"append"}"#)
             } else if request_line.starts_with("POST /v1/imports/7/batches ") {
                 counted.fetch_add(1, Ordering::SeqCst);
                 on_batch();
                 batch_answer.to_string()
-            } else if request_line.starts_with("POST /v1/imports/7/complete ") {
-                answer("200 OK", r#"{"id":7}"#)
             } else {
                 answer("404 Not Found", "{}")
             };
@@ -3259,27 +3000,26 @@ fn a_server_told_to_stop_pauses_the_upload_and_fails_no_conversation() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
     let cfg = ImportConfig {
         batch_size: 1,
         prepare_ahead: 1,
         prepare_workers: 1,
-        import_id: Some(7),
         ..mock_server_config(dir.path(), server.base_url())
     };
 
     let (report, shown) = run_showing(&cfg);
 
     assert_eq!(report.server_away, Some(ServerAway::Stopping));
-    assert!(report.cancelled, "a stopping server pauses the Upload");
+    assert!(report.canceled, "a stopping server pauses the Upload");
     assert!(!report.session_refused, "the session is still good");
     assert!(!report.ok);
     assert_eq!(report.conversations_failed, 0, "{:?}", report.results);
     assert_eq!(report.messages_failed, 0);
     assert_eq!(report.conversations_ok, 1);
-    assert_eq!(report.conversations_cancelled, 2, "{:?}", report.results);
+    assert_eq!(report.conversations_canceled, 2, "{:?}", report.results);
     assert_eq!(accepted.calls(), 1);
     assert_eq!(stopping.calls(), 1, "nothing is sent after the refusal");
     assert!(journal_events(dir.path(), "fail").is_empty());
@@ -3324,9 +3064,9 @@ fn a_server_that_cannot_be_reached_pauses_the_upload_and_fails_no_conversation()
     let (base_url, batches) = serve_answering_batches_with("", || {});
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
     let cfg = ImportConfig {
         batch_size: 1,
         prepare_ahead: 1,
@@ -3342,12 +3082,12 @@ fn a_server_that_cannot_be_reached_pauses_the_upload_and_fails_no_conversation()
         "the run stops at the first"
     );
     assert_eq!(report.server_away, Some(ServerAway::Unavailable));
-    assert!(report.cancelled, "an unreachable server pauses the Upload");
+    assert!(report.canceled, "an unreachable server pauses the Upload");
     assert!(!report.session_refused);
     assert!(!report.ok);
     assert_eq!(report.conversations_failed, 0, "{:?}", report.results);
     assert_eq!(report.messages_failed, 0);
-    assert_eq!(report.conversations_cancelled, 3, "{:?}", report.results);
+    assert_eq!(report.conversations_canceled, 3, "{:?}", report.results);
     assert!(journal_events(dir.path(), "fail").is_empty());
     assert!(journal_events(dir.path(), "file_ok").is_empty());
     let stopped = "The server could not be reached, so the Upload paused. \
@@ -3375,7 +3115,7 @@ fn a_pause_while_a_batch_fails_makes_no_further_retry() {
     );
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     let cfg = ImportConfig {
         max_retries: 3,
         cancel,
@@ -3389,10 +3129,10 @@ fn a_pause_while_a_batch_fails_makes_no_further_retry() {
         1,
         "no retry after the pause"
     );
-    assert!(report.cancelled, "the Upload paused");
+    assert!(report.canceled, "the Upload paused");
     assert_eq!(report.server_away, None);
     assert_eq!(report.conversations_failed, 0, "{:?}", report.results);
-    assert_eq!(report.conversations_cancelled, 1, "{:?}", report.results);
+    assert_eq!(report.conversations_canceled, 1, "{:?}", report.results);
     assert!(journal_events(dir.path(), "fail").is_empty());
 }
 
@@ -3417,19 +3157,16 @@ fn an_attachment_upload_to_an_unavailable_server_pauses_the_upload() {
     });
 
     let dir = tempdir().unwrap();
-    two_attachment_docs(dir.path(), "a.txt", b"first file", "b.txt", b"second file");
-    let cfg = ImportConfig {
-        import_id: Some(7),
-        ..mock_server_config(dir.path(), server.base_url())
-    };
+    two_attachment_documents(dir.path(), "a.txt", b"first file", "b.txt", b"second file");
+    let cfg = mock_server_config(dir.path(), server.base_url());
 
     let report = run(&cfg, None).unwrap();
 
     assert_eq!(report.server_away, Some(ServerAway::Unavailable));
-    assert!(report.cancelled);
+    assert!(report.canceled);
     assert!(!report.session_refused);
     assert_eq!(report.conversations_failed, 0, "{:?}", report.results);
-    assert_eq!(report.conversations_cancelled, 1, "{:?}", report.results);
+    assert_eq!(report.conversations_canceled, 1, "{:?}", report.results);
     assert_eq!(batches.calls(), 0);
     assert!(journal_events(dir.path(), "fail").is_empty());
 }
@@ -3442,7 +3179,7 @@ fn a_2xx_answer_whose_body_is_cut_off_is_not_retried() {
     let (base_url, batches) = serve_a_200_that_drops_the_batch_body();
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     let cfg = ImportConfig {
         max_retries: 2,
         ..mock_server_config(dir.path(), base_url)
@@ -3476,7 +3213,6 @@ fn a_2xx_answer_whose_body_is_cut_off_is_not_retried() {
 fn a_chunk_that_overflows_the_pending_batch_is_sent_in_the_next_one() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let _run = mock_import_start_and_complete(&server, 7);
     let first = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -3503,8 +3239,8 @@ fn a_chunk_that_overflows_the_pending_batch_is_sent_in_the_next_one() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc_for("+15555550101", "guid-a1"));
-    let mut two_messages = sample_doc_for("+15555550102", "guid-b1");
+    write_jsonl(dir.path(), &sample_document_for("+15555550101", "guid-a1"));
+    let mut two_messages = sample_document_for("+15555550102", "guid-b1");
     let mut reply = two_messages.messages[0].clone();
     reply.guid = "guid-b2".into();
     reply.timestamp_unix_ms += 1_000;
@@ -3534,7 +3270,6 @@ fn a_chunk_that_overflows_the_pending_batch_is_sent_in_the_next_one() {
 fn an_import_keeps_its_journal_in_the_export_directory() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
         then.status(200).json_body(json!({
@@ -3545,7 +3280,7 @@ fn an_import_keeps_its_journal_in_the_export_directory() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_import_document());
     let cfg = mock_server_config(dir.path(), server.base_url());
 
     assert!(run(&cfg, None).unwrap().ok);
@@ -3563,7 +3298,6 @@ fn an_import_keeps_its_journal_in_the_export_directory() {
 fn an_import_goes_on_after_sending_a_large_batch_early() {
     let server = mock_server();
     let _auth = mock_session(&server);
-    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
         then.status(200).json_body(json!({
@@ -3577,21 +3311,21 @@ fn an_import_goes_on_after_sending_a_large_batch_early() {
     // The first file in name order holds 120 messages. One conversation is
     // prepared at a time, so the loop comes round with that batch pending
     // while two conversations are still to come.
-    let mut large = sample_doc();
+    let mut large = sample_import_document();
     let first = large.messages[0].clone();
     large.messages = (0..120)
         .map(|i| {
-            let mut msg = first.clone();
-            msg.guid = format!("large-{i}");
-            msg.timestamp_unix_ms += i;
-            msg
+            let mut message = first.clone();
+            message.guid = format!("large-{i}");
+            message.timestamp_unix_ms += i;
+            message
         })
         .collect();
     write_jsonl(dir.path(), &large);
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
     let mut cfg = mock_server_config(dir.path(), server.base_url());
-    cfg.batch_size = message_crate_import::DEFAULT_BATCH_SIZE;
+    cfg.batch_size = import::DEFAULT_BATCH_SIZE;
     cfg.prepare_ahead = 1;
 
     let report = run(&cfg, None).unwrap();
@@ -3611,7 +3345,6 @@ fn an_import_with_the_default_size_limit_uploads_a_photo_of_two_mebibytes() {
 
     let server = mock_server();
     let _auth = mock_session(&server);
-    let _run = mock_import_start_and_complete(&server, 7);
     let _head = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest}"));
         then.status(404);
@@ -3633,12 +3366,12 @@ fn an_import_with_the_default_size_limit_uploads_a_photo_of_two_mebibytes() {
     let attachment_dir = dir.path().join("attachments");
     fs::create_dir(&attachment_dir).unwrap();
     fs::write(attachment_dir.join("photo.jpg"), &photo).unwrap();
-    let mut doc = sample_doc();
-    doc.messages[0].attachments = vec![ir_attachment("attachments/photo.jpg", digest)];
-    write_jsonl(dir.path(), &doc);
+    let mut document = sample_import_document();
+    document.messages[0].attachments = vec![ir_attachment("attachments/photo.jpg", digest)];
+    write_jsonl(dir.path(), &document);
 
     let mut cfg = mock_server_config(dir.path(), server.base_url());
-    cfg.asset_max_bytes = message_crate_import::DEFAULT_ASSET_MAX_BYTES;
+    cfg.asset_max_bytes = import::DEFAULT_ASSET_MAX_BYTES;
     let report = run(&cfg, None).unwrap();
 
     assert!(report.ok, "{:?}", report.results);
@@ -3680,14 +3413,13 @@ fn a_refused_session_stops_the_import_as_a_pause_and_fails_no_conversation() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
     let cfg = ImportConfig {
         batch_size: 1,
         prepare_ahead: 1,
         prepare_workers: 1,
-        import_id: Some(7),
         ..mock_server_config(dir.path(), server.base_url())
     };
 
@@ -3703,14 +3435,14 @@ fn a_refused_session_stops_the_import_as_a_pause_and_fails_no_conversation() {
     assert!(read_log(dir.path()).contains(stopped));
     assert!(shown.iter().any(|line| line == stopped), "{shown:?}");
     assert!(
-        report.cancelled,
+        report.canceled,
         "a refused session stops the import as a pause"
     );
     assert!(!report.ok);
     assert_eq!(report.conversations_failed, 0, "{:?}", report.results);
     assert_eq!(report.messages_failed, 0);
     assert_eq!(report.conversations_ok, 1);
-    assert_eq!(report.conversations_cancelled, 2, "{:?}", report.results);
+    assert_eq!(report.conversations_canceled, 2, "{:?}", report.results);
     assert_eq!(accepted.calls(), 1);
     assert_eq!(refused.calls(), 1, "nothing is sent after the refusal");
     assert!(journal_events(dir.path(), "fail").is_empty());
@@ -3762,18 +3494,15 @@ fn a_refused_attachment_upload_stops_the_import_and_fails_no_conversation() {
     });
 
     let dir = tempdir().unwrap();
-    two_attachment_docs(dir.path(), "a.txt", b"first file", "b.txt", b"second file");
-    let cfg = ImportConfig {
-        import_id: Some(7),
-        ..mock_server_config(dir.path(), server.base_url())
-    };
+    two_attachment_documents(dir.path(), "a.txt", b"first file", "b.txt", b"second file");
+    let cfg = mock_server_config(dir.path(), server.base_url());
 
     let report = run(&cfg, None).unwrap();
 
     assert!(report.session_refused);
-    assert!(report.cancelled);
+    assert!(report.canceled);
     assert_eq!(report.conversations_failed, 0, "{:?}", report.results);
-    assert_eq!(report.conversations_cancelled, 1, "{:?}", report.results);
+    assert_eq!(report.conversations_canceled, 1, "{:?}", report.results);
     assert_eq!(batches.calls(), 0);
 }
 
@@ -3797,73 +3526,25 @@ fn a_session_refused_at_login_stops_the_import_as_a_pause() {
     });
 
     let dir = tempdir().unwrap();
-    write_jsonl(dir.path(), &sample_doc());
-    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    let cfg = ImportConfig {
-        import_id: Some(7),
-        ..mock_server_config(dir.path(), server.base_url())
-    };
+    write_jsonl(dir.path(), &sample_import_document());
+    write_jsonl(dir.path(), &sample_document_for("+15555550102", "guid-2"));
+    let cfg = mock_server_config(dir.path(), server.base_url());
 
     let (report, shown) = run_showing(&cfg);
 
     assert!(report.session_refused);
-    assert!(report.cancelled);
+    assert!(report.canceled);
+    assert_eq!(report.mode, None, "no Import Run was read");
     let not_started = "The server no longer accepts this session, so the Upload did not start. \
                        The next Upload sends every conversation.";
     assert!(read_log(dir.path()).contains(not_started));
     assert!(shown.iter().any(|line| line == not_started), "{shown:?}");
     assert_eq!(report.conversations_failed, 0);
-    assert_eq!(report.conversations_cancelled, 2);
+    assert_eq!(report.conversations_canceled, 2);
     assert_eq!(report.conversations_total, 2);
     assert_eq!(batches.calls(), 0);
     assert!(
         !cfg.cancel.load(Ordering::SeqCst),
         "a session refused at login leaves the caller's cancel flag alone"
     );
-}
-
-/// The phone country the Upload is given reaches the Import Run it starts,
-/// where the server reads every number written without its `+` code in it
-/// (#1676).
-#[test]
-fn the_phone_country_is_stated_on_the_import_run() {
-    let server = mock_server();
-    server.mock(|when, then| {
-        when.method(GET).path("/v1/session");
-        then.status(200).json_body(json!({
-            "account_id": 1,
-            "username": "alice",
-            "sources": ["sms-backup-restore"]
-        }));
-    });
-    let start = server.mock(|when, then| {
-        when.method(POST)
-            .path("/v1/imports")
-            .json_body_includes(r#"{"phone_country": "GB"}"#);
-        then.status(201)
-            .header("Location", "/v1/imports/42")
-            .json_body(json!({ "id": 42 }));
-    });
-    server.mock(|when, then| {
-        when.method(POST).path("/v1/imports/42/complete");
-        then.status(200).json_body(json!({ "id": 42 }));
-    });
-    server.mock(|when, then| {
-        when.method(POST).path("/v1/imports/42/batches");
-        then.status(200).json_body(json!({
-            "source": "sms-backup-restore",
-            "messages_inserted": 1,
-            "messages_deduped": 0,
-            "messages_failed": 0,
-            "conversations": 1,
-        }));
-    });
-    let tmp = tempfile::tempdir().unwrap();
-    write_jsonl(tmp.path(), &sample_doc());
-    let cfg = ImportConfig {
-        phone_country: Some("GB".into()),
-        ..mock_server_config(tmp.path(), server.base_url())
-    };
-    run(&cfg, None).unwrap();
-    start.assert();
 }

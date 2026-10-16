@@ -25,8 +25,8 @@ function statusLabel(status: ListedExportRun["status"]): string {
       return "Completed";
     case "failed":
       return "Failed";
-    case "cancelled":
-      return "Cancelled";
+    case "canceled":
+      return "Canceled";
     default:
       status satisfies never;
       return status;

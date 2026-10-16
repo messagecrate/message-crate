@@ -21,10 +21,11 @@
 //!   in one.
 //! - `batch_bodies` says where a batch's body is written while it is read.
 
+use api_types::{ImportMode, MAX_IMPORT_BATCH_BYTES};
 use axum::extract::{Request, State};
 use axum::http::HeaderMap;
-use message_crate_api_types::{ImportMode, MAX_IMPORT_BATCH_BYTES};
 use sqlx::{SqliteConnection, SqlitePool};
+use tokio_util::sync::CancellationToken;
 
 use crate::api_error::{ApiError, run_blocking};
 use crate::auth::{ImportAccess, resolve_import_account};
@@ -34,12 +35,11 @@ use crate::paging::{
     DEFAULT_LIST_LIMIT, Page, PageQuery, page_from_rows, page_params, parse_status, sorted_page,
 };
 use crate::request_body::{
-    content_type_base, declared_over, is_jsonl_content_type, stream_body_to_file,
-    upload_body_bounded,
+    body_time_bounded, content_type_base, declared_over, is_jsonl_content_type, stream_body_to_file,
 };
 use crate::server::Created;
 use crate::text_caps::{
-    MAX_DEVICE_ID_CHARS, MAX_IMPORT_TOOL_CHARS, MAX_PATH_CHARS, capped_path, capped_text,
+    MAX_DEVICE_ID_CHARS, MAX_IMPORT_TOOL_CHARS, MAX_PATH_CHARS, capped_text, capped_untrimmed,
     too_long_sentences,
 };
 
@@ -255,7 +255,7 @@ pub(crate) async fn create_import(
     let run_dir = body
         .run_dir
         .as_deref()
-        .map(|dir| capped_path("run_dir", dir, MAX_PATH_CHARS))
+        .map(|dir| capped_untrimmed("run_dir", dir, MAX_PATH_CHARS))
         .transpose();
     let device_id = body
         .device_id
@@ -264,7 +264,6 @@ pub(crate) async fn create_import(
         .transpose();
     errors.extend(too_long_sentences([&tool, &run_dir, &device_id]));
     let account = resolve_import_account(&auth);
-    let stage = body.stage.unwrap_or(crate::db::imports::ImportStage::Parse);
     // Credentials never reach the row, whoever the client is.
     let form = body.form.as_ref().map(strip_form_credentials);
     let form_json = capped_json_string(form.as_ref(), "form", &mut errors)?;
@@ -295,7 +294,6 @@ pub(crate) async fn create_import(
         mode: body.mode.as_str(),
         phone_country: phone_country.map(|country| country.code),
         tool,
-        stage,
         run_dir,
         device_id,
         form_json: form_json.as_deref(),
@@ -504,7 +502,7 @@ pub(crate) async fn update_import(
 }
 
 /// Discard a running Import Run, freeing the account's single slot. The
-/// answer is the run, now `cancelled`, with the issues the request carried.
+/// answer is the run, now `canceled`, with the issues the request carried.
 ///
 /// The messages the run's batches brought stay in the account, and once it
 /// has discarded the run the server hides the duplicates of the whole
@@ -546,7 +544,7 @@ pub(crate) async fn discard_import(
     import_run(&mut conn, row).await.map(Json)
 }
 
-/// Import one message-ir JSONL body.
+/// Import one JSONL conversation file body.
 ///
 /// Every message needs a non-empty `guid`. A batch with a message without
 /// one is refused with `422`, naming its lines, and nothing in it is stored.
@@ -565,7 +563,7 @@ pub(crate) async fn discard_import(
             ("application/x-ndjson"),
             ("application/jsonl")
         ),
-        description = "message-ir JSONL as application/x-ndjson or application/jsonl. Attachments are uploaded first by SHA-256 through /v1/assets."
+        description = "A JSONL conversation file as application/x-ndjson or application/jsonl. Attachments are uploaded first by SHA-256 through /v1/assets."
     ),
     responses(
         (status = 200, body = CreateImportBatchResponse),
@@ -604,14 +602,14 @@ pub(crate) async fn create_import_batch(
         }
         // The slot comes before the body, so a batch waiting behind the
         // running imports holds no disk (#2095). The read gives up once the
-        // body stops arriving or takes too long (`upload-stalled`), so a
+        // body stops arriving or takes too long (`body-stalled`), so a
         // client gone part-way, or one that sends a byte now and then, never
         // holds the slot for good.
         let permit = take_import_slot(&importer.imports).await?;
         let temp = batch_bodies::new_dir(&importer.cfg.paths.data_dir)
             .map_err(|e| ApiError::Internal(anyhow::anyhow!("import batch directory: {e}")))?;
         let jsonl_path = temp.path().join("_import.jsonl");
-        let body = upload_body_bounded(request.into_body(), importer.upload_time_limits);
+        let body = body_time_bounded(request.into_body(), importer.body_time_limits);
         // A server told to stop while the body arrives stops reading it at
         // once and refuses the batch, as it refuses one waiting for a slot,
         // so the stop never waits for the rest of a body (#2878). Dropping
@@ -634,13 +632,35 @@ pub(crate) async fn create_import_batch(
         // The import pipeline does blocking file IO (JSONL parse, asset
         // hashing and copies). Run it off the async workers so a large
         // import cannot stall unrelated requests.
+        //
+        // The server drops this handler when its client stops waiting (the
+        // Upload's request timeout, a closed connection), but a blocking
+        // task cannot be canceled, so the batch follows one rule from here
+        // (#2090):
+        //
+        // 1. The batch file lives as long as the work that reads it: `temp`
+        //    moves into the task, so a dropped handler never deletes a file
+        //    a waiting or running import still needs.
+        // 2. A batch nobody waits for is dropped before it starts: dropping
+        //    the handler cancels `client_gone`, and an import that has not
+        //    yet taken the account's import lock gives up its slot and
+        //    writes nothing ([`run_import_path`]).
+        // 3. A batch already importing finishes: once the import holds the
+        //    account's lock it runs to the end, client or not, so no import
+        //    stops part-way.
+        //
+        // The task holds the slot until the batch file is gone (locals drop
+        // in reverse order), so no more batch files are on disk than there
+        // are slots.
+        let client_gone = CancellationToken::new();
+        let _cancel_when_dropped = client_gone.clone().drop_guard();
         let handle = tokio::runtime::Handle::current();
-        let response = run_blocking("import", move || {
-            handle.block_on(run_import_path(importer, permit, context, jsonl_path))
+        return run_blocking("import", move || {
+            let _slot = permit;
+            let _batch_file = temp;
+            handle.block_on(run_import_path(importer, context, jsonl_path, client_gone))
         })
         .await;
-        drop(temp);
-        return response;
     }
 
     // Only JSON Lines is an import body. Attachments never travel with it:

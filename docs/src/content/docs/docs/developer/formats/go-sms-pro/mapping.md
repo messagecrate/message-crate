@@ -5,7 +5,7 @@ description: "How GO SMS Pro XML and PDU fields become the shared conversation s
 
 How `gosms_sys*.xml` `<SMS>` elements and `I_*.pdu` / `S_*.pdu` MMS files become shared `ConversationDocument` values, including validation, skipped records, and retained source data.
 
-Shared model: [message-ir](/docs/developer/architecture/common-message/). CSV projection: [CSV columns](/docs/developer/reference/csv-columns/) and [`message_ir_format::CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs).
+Shared model: [the common message](/docs/developer/architecture/common-message/). CSV projection: [CSV columns](/docs/developer/reference/csv-columns/) and [`ir_format::CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs).
 
 ## Goal / non-goal
 
@@ -14,7 +14,7 @@ Shared model: [message-ir](/docs/developer/architecture/common-message/). CSV pr
 
 ## Pipeline / output
 
-Source XML/PDU → `ConversationDocument` → [`message_ir_format::FormatSink`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/format_sink.rs).
+Source XML/PDU → `ConversationDocument` → [`ir_format::FormatSink`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/format_sink.rs).
 
 The desktop app's Import screen runs this exporter and always writes JSON Lines, one file per conversation, because Import reads conversation files in that form (`src-tauri/src/commands/extract.rs`).
 Every other format (JSON, CSV, EML, MBOX, SMS Backup & Restore XML) is a rewrite of that output through [Convert](/docs/developer/formats/convert/), which Export and **Settings → Convert** run.
@@ -45,8 +45,8 @@ Each `<SMS>` becomes one message in a shared conversation. `chat_identifier` hol
 
 | XML child | Shared field(s) | Notes |
 |-----------|------------------|--------|
-| `<address>` | `chat_identifier`, `sender_identity` | Classified once by `phone::Handle::parse`: a number keeps the country its `+` names and otherwise keeps its digits, until the Import Run or a person states its country (#1676), an address with `@` is an email address, and anything else (such as `AMAZON`) is a sender name, an identity of type `other`. For sent (`type=2`), address is the peer (not the sender). For received (`type=1`), address is also `sender_identity`. A voicemail notice from Google Voice is an SMS from the Google Voice number like any other; Message Crate does not read who called out of its body. |
-| `<contactName>` | `sender_display_name` | Display name filled for incoming when present. |
+| `<address>` | `chat_identifier`, `sender.identity` | Classified once by `phone::Handle::parse`: a number keeps the country its `+` names and otherwise keeps its digits, until the Import Run or a person states its country (#1676), an address with `@` is an email address, and anything else (such as `AMAZON`) is a sender name, an identity of type `other`. For sent (`type=2`), address is the peer (not the sender). For received (`type=1`), address is also `sender.identity`. A voicemail notice from Google Voice is an SMS from the Google Voice number like any other; Message Crate does not read who called out of its body. |
+| `<contactName>` | `sender.display_name` | Display name filled for incoming when present. |
 | `<date>` | `timestamp_unix_ms`, `timestamp`, `timestamp_utc`, `timestamp_display` | Raw ms in `timestamp_unix_ms`. Converted to local/UTC RFC3339 and a human display string. |
 | `<type>` | `android_type`, `direction` | `1` → `incoming`, `2` → `outgoing`. Other values are skipped. |
 | `<body>` | `text` | GO SMS emoji codes (e.g. `+g1f602`) decoded to Unicode. |
@@ -61,7 +61,7 @@ Each `<SMS>` becomes one message in a shared conversation. `chat_identifier` hol
 | `participants_json` | Peer identities for the conversation |
 | `guid` | SHA-256 of the message identity (`MessageGuid`): chat id, direction, sender, UTC milliseconds, collapsed text, sorted attachment digests. A PDU file records whole seconds, so its milliseconds are zero unless its XML row supplied them |
 | `service` | Always `sms` |
-| `sender_identity` / `sender_display_name` | Outgoing uses export owner; incoming from address / contactName |
+| `sender.identity` / `sender.display_name` | Outgoing uses export owner; incoming from address / contactName |
 | `attachments_json` | `[]` for XML; media paths for PDU |
 | `message_kind` | `sms` or `mms` (PDU with attachments → `mms`) |
 | `export_source` / `export_tool` / `export_tool_version` | `go-sms-pro` / `GO SMS Pro` / the `go-sms-pro-exporter` crate version |
@@ -114,7 +114,7 @@ MMS from `I_<unix>_*.pdu` (received) and `S_<unix>_*.pdu` (sent) files use the s
 | Shared field | PDU behavior |
 |---------------|--------------|
 | `direction` | `m-send-req` is outgoing, `m-retrieve-conf` is incoming. The file name prefix says the same thing and is not consulted. |
-| `sender_identity` | The From header's address on a received message, classified like an XML `<address>`. A sent message carries the Insert-address-token instead of a number, so the export owner is the sender. |
+| `sender.identity` | The From header's address on a received message, classified like an XML `<address>`. A sent message carries the Insert-address-token instead of a number, so the export owner is the sender. |
 | `chat_identifier` / `conversation_type` / `group_title` | From the From, To, Cc and Bcc addresses that are not the owner's: one is a one-to-one conversation, two or more a group with a `chat-group-…` id. |
 | `timestamp*` / `timestamp_unix_ms` | The MMS `Date` header; the file name's seconds when the header is absent. |
 | `text` | Every `text/plain` part joined with a newline, with GO SMS Pro emoji codes decoded: the parts the SMIL names in its order, then the rest in wire order. When there is no text part, the Subject. |

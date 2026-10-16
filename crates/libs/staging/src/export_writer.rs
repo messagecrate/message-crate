@@ -8,12 +8,12 @@ use crate::write_queue::{
     AttachmentSource, ConversationUnit, WriteQueueOptions, drain_units, load_attachment_source,
 };
 use anyhow::Result;
+use ir::{Attachment, ConversationDocument};
+use ir_format::{FormatSink, MergedArchive, write_documents_through_sink};
 use message_crate_core::{
     AttachmentFiles, CancelFlag, ExportReport, ExportTransforms, LogSink, OutputFormat,
     ProgressSink, Sinks,
 };
-use message_ir::{Attachment, ConversationDocument};
-use message_ir_format::{FormatSink, MergedArchive, write_documents_through_sink};
 use std::path::{Path, PathBuf};
 
 /// Owns the write tail of an exporter run: output preparation, the
@@ -237,7 +237,7 @@ impl ExportWriter {
         if self.use_queue {
             let units: Vec<ConversationUnit> = documents
                 .into_iter()
-                .map(|doc| ConversationUnit::from_doc(doc, |_, att| source_for(att)))
+                .map(|document| ConversationUnit::from_document(document, |_, att| source_for(att)))
                 .collect();
             let options = WriteQueueOptions {
                 files: self.files,
@@ -312,12 +312,12 @@ mod tests {
 
     /// One conversation whose only message carries one attachment's bytes.
     fn document_with_bytes() -> ConversationDocument {
-        let mut doc = message_ir::testutil::sample_document("with a photo");
-        doc.messages[0].attachments = vec![Attachment {
+        let mut document = ir::testutil::sample_document("with a photo");
+        document.messages[0].attachments = vec![Attachment {
             bytes: Some(b"\xff\xd8\xffphoto".to_vec()),
-            ..message_ir::testutil::sample_attachment()
+            ..ir::testutil::sample_attachment()
         }];
-        doc
+        document
     }
 
     /// Both paths stage the attachment's bytes, write the conversation, and
@@ -381,11 +381,11 @@ mod tests {
             false,
         )
         .unwrap();
-        let mut doc = document_with_bytes();
-        let attachment = doc.messages[0].attachments[0].clone();
+        let mut document = document_with_bytes();
+        let attachment = document.messages[0].attachments[0].clone();
         // The real attachment comes first, so the first event is sent before
         // the run reaches a missing one and could take its size off.
-        doc.messages[0].attachments = [5, 700, 1_000, 30]
+        document.messages[0].attachments = [5, 700, 1_000, 30]
             .map(|size| Attachment {
                 size_bytes: Some(size),
                 ..attachment.clone()
@@ -401,7 +401,7 @@ mod tests {
 
         writer
             .finish(
-                vec![doc],
+                vec![document],
                 &mut |att: &mut Attachment| (sources.next().unwrap(), att.size_bytes),
                 &CancelFlag::default(),
                 &mut ExportReport::default(),
@@ -449,12 +449,12 @@ mod tests {
         ] {
             let tmp = tempfile::tempdir().unwrap();
             let writer = ExportWriter::open(tmp.path(), format, transforms(false), false).unwrap();
-            let mut doc = document_with_bytes();
-            doc.messages[0].attachments[0].size_bytes = Some(u64::MAX / 2);
+            let mut document = document_with_bytes();
+            document.messages[0].attachments[0].size_bytes = Some(u64::MAX / 2);
 
             let err = writer
                 .finish(
-                    vec![doc],
+                    vec![document],
                     &mut AttachmentSource::take_bytes,
                     &CancelFlag::default(),
                     &mut ExportReport::default(),
@@ -501,14 +501,14 @@ mod tests {
         );
         assert_eq!(names_in(&out), [".message-crate-export", "attachments"]);
 
-        let mut doc = document_with_bytes();
-        let att = &mut doc.messages[0].attachments[0];
+        let mut document = document_with_bytes();
+        let att = &mut document.messages[0].attachments[0];
         att.bytes = None;
         att.digest_sha256 = Some(digest);
         let mut report = ExportReport::default();
         writer
             .finish(
-                vec![doc],
+                vec![document],
                 &mut AttachmentSource::take_bytes,
                 &CancelFlag::default(),
                 &mut report,

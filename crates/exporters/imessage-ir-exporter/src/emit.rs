@@ -21,17 +21,17 @@ use imessage_reader_protocol::{
     Message as MessageRecord,
 };
 use ios_backup::Helper;
-use message_crate_core::{
-    Counter, ExportReport, ItemKind, LoadError, LogSink, OutputFormat, ProgressEvent, RunIssue,
-    RunIssueKind, item_line, item_reason,
-};
-use message_ir::{
+use ir::{
     Attachment, ConversationDocument, ConversationMeta, ConversationType, Direction, ExportMeta,
     ImessageExtensions, Message, MessageKind, Participant, SCHEMA_VERSION, Transport,
     missing_reason, nonempty, owner_sender,
 };
-use message_ir_format::FormatSink;
-use message_staging::{
+use ir_format::FormatSink;
+use message_crate_core::{
+    Counter, ExportReport, ItemKind, LoadError, LogSink, OutputFormat, ProgressEvent, RunIssue,
+    RunIssueKind, RunIssueStep, item_line, item_reason,
+};
+use staging::{
     AttachmentSource, ConversationUnit, CountedAttachments, Disk, ExportWriter, ExportWriterParts,
     PathSources, WriteQueueOptions, bytes_embedded, check_headroom, load_attachment_source,
 };
@@ -399,24 +399,25 @@ fn message_to_ir(
         Direction::Incoming
     };
     let owner_identity = nonempty(&record.owner_identity);
-    let (sender_identity, sender_display_name, sender_country) = match direction {
-        Direction::Outgoing => {
-            let (identity, name) = owner_sender(&ExportMeta {
-                source: EXPORT_SOURCE.into(),
-                tool: EXPORT_TOOL.into(),
-                tool_version: env!("CARGO_PKG_VERSION").into(),
-                owner_identity: (!record.owner_identity.is_empty())
-                    .then(|| record.owner_identity.clone()),
-                owner_display_name: record.owner_display_name.clone(),
-                exported_at_unix_ms: None,
-            });
-            (identity, name, None)
+    let sender = match direction {
+        Direction::Outgoing => owner_sender(&ExportMeta {
+            source: EXPORT_SOURCE.into(),
+            tool: EXPORT_TOOL.into(),
+            tool_version: env!("CARGO_PKG_VERSION").into(),
+            owner_identity: (!record.owner_identity.is_empty())
+                .then(|| record.owner_identity.clone()),
+            owner_display_name: record.owner_display_name.clone(),
+            exported_at_unix_ms: None,
+        }),
+        Direction::Incoming => {
+            record
+                .sender
+                .map_or_else(ir::Sender::default, |sender| ir::Sender {
+                    identity: Some(sender.identity),
+                    display_name: Some(sender.display_name),
+                    country: known_country(sender.country),
+                })
         }
-        Direction::Incoming => (
-            record.sender_identity,
-            record.sender_display_name,
-            known_country(record.sender_country),
-        ),
     };
 
     let mut loads = Vec::with_capacity(record.attachments.len());
@@ -438,9 +439,7 @@ fn message_to_ir(
         direction,
         service: Transport::parse(&record.service),
         message_kind: MessageKind::parse(&record.message_kind),
-        sender_identity,
-        sender_display_name,
-        sender_country,
+        sender,
         owner_identity,
         subject: record.subject,
         text: record.text,
@@ -597,7 +596,7 @@ impl NotDecrypted {
         options.log.warn(line.clone());
         options.convert_run.issues.emit(RunIssue {
             kind: RunIssueKind::Error,
-            step: "attachments".into(),
+            step: RunIssueStep::Attachments,
             item,
             reason: item_reason(ItemKind::Attachment, &what_happened),
             conversation: conversation.map(str::to_string),
@@ -677,7 +676,7 @@ fn read_attachment(
         Err(e) => {
             options
                 .log
-                .warn(message_staging::unreadable_attachment_line(path, e));
+                .warn(staging::unreadable_attachment_line(path, e));
             Ok(Vec::new())
         }
     }
@@ -772,7 +771,7 @@ pub(crate) struct FileDates {
 /// each message dated by the backup and the file by the run, as `dates`
 /// says.
 ///
-/// Not through [`message_ir::ProjectionHooks`], whose documentation says why.
+/// Not through [`ir::ProjectionHooks`], whose documentation says why.
 fn chat_to_document(
     chat_identifier: String,
     conversation: ChatInProgress,
@@ -792,13 +791,12 @@ fn chat_to_document(
     };
     // Each message keeps the address it was sent from; the conversation's
     // owner fills in only where the database recorded none.
-    let (owner_identity, owner_display_name) = owner_sender(&export);
+    let owner = owner_sender(&export);
     let mut messages = conversation.messages;
     for message in &mut messages {
         message.backup_taken_at_unix_ms = dates.backup_taken_at_unix_ms;
-        if message.direction == Direction::Outgoing && message.sender_identity.is_none() {
-            message.sender_identity.clone_from(&owner_identity);
-            message.sender_display_name.clone_from(&owner_display_name);
+        if message.direction == Direction::Outgoing && message.sender.identity.is_none() {
+            message.sender.clone_from(&owner);
         }
     }
     ConversationDocument {
@@ -830,16 +828,18 @@ fn chat_to_unit(
     let loads = std::mem::take(&mut conversation.attachment_loads);
     let document = chat_to_document(chat_identifier, conversation, use_caller_id, dates);
     let mut loads = loads.into_iter();
-    ConversationUnit::from_doc(document, |_, att| attachment_source(loads.next(), att))
+    ConversationUnit::from_document(document, |_, attachment| {
+        attachment_source(loads.next(), attachment)
+    })
 }
 
 /// The source and size hint of the attachment `load` was collected for.
 fn attachment_source(
     load: Option<AttachmentLoad>,
-    att: &Attachment,
+    attachment: &Attachment,
 ) -> (AttachmentSource, Option<u64>) {
     match load {
-        Some(AttachmentLoad::Missing) | None => (AttachmentSource::Missing, att.size_bytes),
+        Some(AttachmentLoad::Missing) | None => (AttachmentSource::Missing, attachment.size_bytes),
         Some(load) => load.into_source(),
     }
 }
@@ -885,9 +885,9 @@ fn drain_conversations(
                 )?;
                 Ok((!bytes.is_empty()).then_some(bytes))
             }
-            other => message_staging::load_attachment_source(other),
+            other => staging::load_attachment_source(other),
         };
-        message_staging::drain_write_queue_with_loader(
+        staging::drain_write_queue_with_loader(
             &options.export_path,
             units,
             &queue,
@@ -895,7 +895,7 @@ fn drain_conversations(
             sinks,
         )
     } else {
-        message_staging::drain_write_queue(&options.export_path, units, &queue, sinks)
+        staging::drain_write_queue(&options.export_path, units, &queue, sinks)
     }
     .map_err(|e| anyhow!("write conversations: {e:#}"))?;
 
@@ -935,7 +935,7 @@ fn stage_attachments(
         } else {
             PathSources::OnDisk
         },
-        |att| attachment_source(loads.next(), att),
+        |attachment| attachment_source(loads.next(), attachment),
         &options.log,
     );
     if stages_attachment_files(options) {
@@ -975,9 +975,10 @@ fn stage_attachments(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use imessage_reader_protocol::Sender;
+    use ir::TimePrecision;
+    use ir::testutil::sample_attachment;
     use message_crate_core::ProgressSink;
-    use message_ir::TimePrecision;
-    use message_ir::testutil::sample_attachment;
 
     fn record_with_attachment(source: SourceRecord) -> AttachmentRecord {
         AttachmentRecord {
@@ -1134,23 +1135,20 @@ mod tests {
     /// known one is kept.
     #[test]
     fn a_country_message_crate_does_not_know_names_no_country() {
-        let mut record = message_record("07700 900123", "g-1", false);
-        record.sender_country = Some("UK".into());
-        assert_eq!(
+        let country_in_file = |country: &str| {
+            let mut record = message_record("07700 900123", "g-1", false);
+            record
+                .sender
+                .as_mut()
+                .expect("an incoming record has a sender")
+                .country = Some(country.into());
             message_to_ir(record, AttachmentEmbed::Disabled, false)
                 .0
-                .sender_country,
-            None
-        );
-        let mut record = message_record("07700 900123", "g-2", false);
-        record.sender_country = Some("GB".into());
-        assert_eq!(
-            message_to_ir(record, AttachmentEmbed::Disabled, false)
-                .0
-                .sender_country
-                .as_deref(),
-            Some("GB")
-        );
+                .sender
+                .country
+        };
+        assert_eq!(country_in_file("UK"), None);
+        assert_eq!(country_in_file("GB").as_deref(), Some("GB"));
         let chat = chat_from_record(ConversationRecord {
             chat_identifier: "07700 900123".into(),
             conversation_type: "one-to-one".into(),
@@ -1173,9 +1171,11 @@ mod tests {
             outgoing,
             service: "iMessage".into(),
             message_kind: "imessage".into(),
-            sender_identity: (!outgoing).then(|| "+15555550122".to_string()),
-            sender_display_name: None,
-            sender_country: None,
+            sender: (!outgoing).then(|| Sender {
+                identity: "+15555550122".into(),
+                display_name: "+15555550122".into(),
+                country: None,
+            }),
             subject: None,
             text: "hi".into(),
             reactions: Vec::new(),
@@ -1221,12 +1221,12 @@ mod tests {
             send_effect: text("Slam"),
             ..ImessageRecord::default()
         });
-        let reply_to = message_ir::ReplyTo {
+        let reply_to = ir::ReplyTo {
             guid: text("parent"),
             part_index: Some(1),
         };
         with_fields.reply_to = Some(reply_to.clone());
-        let reaction = message_ir::Reaction {
+        let reaction = ir::Reaction {
             part_index: 1,
             kind: "emoji".into(),
             emoji: Some("🔥".into()),
@@ -1235,7 +1235,7 @@ mod tests {
             reactor_display_name: Some("Ray".into()),
         };
         with_fields.reactions = vec![reaction.clone()];
-        let earlier = message_ir::EarlierVersion {
+        let earlier = ir::EarlierVersion {
             part_index: 0,
             text: Some("hu".into()),
             edited_at_unix_ms: Some(1_609_459_200_000),
@@ -1272,7 +1272,7 @@ mod tests {
             true,
         );
         assert_eq!(incoming.direction, Direction::Incoming);
-        assert_eq!(incoming.sender_identity.as_deref(), Some("+15555550122"));
+        assert_eq!(incoming.sender.identity.as_deref(), Some("+15555550122"));
         assert_eq!(incoming.service, Transport::IMessage);
         assert_eq!(incoming.message_kind, MessageKind::IMessage);
         assert_eq!(incoming.owner_identity.as_deref(), Some("+15555550100"));
@@ -1283,8 +1283,8 @@ mod tests {
             true,
         );
         assert_eq!(outgoing.direction, Direction::Outgoing);
-        assert_eq!(outgoing.sender_identity.as_deref(), Some("+15555550100"));
-        assert_eq!(outgoing.sender_display_name.as_deref(), Some("Me"));
+        assert_eq!(outgoing.sender.identity.as_deref(), Some("+15555550100"));
+        assert_eq!(outgoing.sender.display_name.as_deref(), Some("Me"));
     }
 
     #[test]
@@ -1325,7 +1325,7 @@ mod tests {
         let senders: Vec<_> = document
             .messages
             .iter()
-            .map(|m| m.sender_identity.as_deref())
+            .map(|m| m.sender.identity.as_deref())
             .collect();
         assert_eq!(
             senders,
@@ -1402,9 +1402,11 @@ mod tests {
             direction: Direction::Incoming,
             service: Transport::IMessage,
             message_kind: MessageKind::IMessage,
-            sender_identity: Some("+15555550101".into()),
-            sender_display_name: None,
-            sender_country: None,
+            sender: ir::Sender {
+                identity: Some("+15555550101".into()),
+                display_name: None,
+                country: None,
+            },
             owner_identity: None,
             subject: None,
             text: "hi".into(),

@@ -1,7 +1,7 @@
 //! What a conversation is keyed by.
 //!
 //! A conversation's chat id is its key: it is part of every message's
-//! `guid`, and the server recognises the conversation on the next import by
+//! `guid`, and the server recognizes the conversation on the next import by
 //! it. [`ConversationKey`] says what kind of key a conversation has, so that
 //! a group's key is never a person's address and a group's members are never
 //! read back out of its id.
@@ -65,7 +65,7 @@ impl ConversationKey {
     /// The name is kept whole rather than made filename-safe, because a
     /// filename-safe stem gives "张伟" and "李娜" one key, and "Ana Lee" and
     /// "Ana.Lee" another. The file name is made from the chat id later, by
-    /// `message_ir_format::filename_stem`.
+    /// `ir_format::filename_stem`.
     pub fn chat_id(&self) -> String {
         match self {
             Self::OneToOne(handle) => handle.clone(),

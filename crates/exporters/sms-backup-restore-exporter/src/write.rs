@@ -1,12 +1,12 @@
 //! Write [`ConversationDocument`] messages as SMS Backup & Restore XML.
 
 use anyhow::{Context, Result};
-use message_crate_core::{Counter, ExportReport, NOT_SMS_OR_MMS_LEFT_OUT};
-use message_ir::{
+use ir::{
     Attachment, ConversationDocument, ConversationType, Direction, Message, MessageKind,
     Participant, nonempty, trimmed,
 };
-use message_ir_format::{MergedArchive, load_attachment_bytes};
+use ir_format::{MergedArchive, load_attachment_bytes};
+use message_crate_core::{Counter, ExportReport, NOT_SMS_OR_MMS_LEFT_OUT};
 use phone::OwnerHandleSet;
 use sbr::{
     SbrBackupWriter, SbrMessage, SourceFields, default_backup_path, encode_part_data, ensure_attr,
@@ -287,14 +287,14 @@ fn synthesize_mms(
         parts.push(part);
         seq += 1;
     }
-    for att in &message.attachments {
-        let bytes = load_attachment_bytes(att, output_dir)?;
-        let mime = att
+    for attachment in &message.attachments {
+        let bytes = load_attachment_bytes(attachment, output_dir)?;
+        let mime = attachment
             .mime_type
             .as_deref()
             .filter(|s| !s.is_empty())
             .unwrap_or("application/octet-stream");
-        let name = att
+        let name = attachment
             .original_name
             .as_deref()
             .filter(|s| !s.is_empty())
@@ -374,7 +374,8 @@ fn addr_entry(address: &str, addr_type: &str) -> BTreeMap<String, String> {
 /// The other party's address: the sender for incoming messages, else the chat identifier.
 fn peer_address(document: &ConversationDocument, message: &Message) -> String {
     if let Some(h) = message
-        .sender_identity
+        .sender
+        .identity
         .as_deref()
         .filter(|s| !s.is_empty())
         .filter(|_| message.direction == Direction::Incoming)
@@ -437,7 +438,7 @@ fn contact_name_alias(
         }
     }
     if message.direction == Direction::Incoming
-        && let Some(n) = message.sender_display_name.as_deref().and_then(trimmed)
+        && let Some(n) = message.sender.display_name.as_deref().and_then(trimmed)
     {
         return Some(n.to_string());
     }
@@ -497,8 +498,12 @@ fn inject_attachment_data(
     // which is exactly when the fallback below takes over.
     let mut by_digest: HashMap<&str, Vec<usize>> = HashMap::new();
     let mut consumed = vec![false; attachments.len()];
-    for (index, att) in attachments.iter().enumerate() {
-        if let Some(digest) = att.digest_sha256.as_deref().filter(|d| !d.is_empty()) {
+    for (index, attachment) in attachments.iter().enumerate() {
+        if let Some(digest) = attachment
+            .digest_sha256
+            .as_deref()
+            .filter(|d| !d.is_empty())
+        {
             by_digest.entry(digest).or_default().push(index);
         }
     }

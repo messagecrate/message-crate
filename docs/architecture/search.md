@@ -216,7 +216,7 @@ Case and accents:
   `LIKE` and `NOCASE` collation fold no more, so the server replaces
   `lower()` on every connection with one that folds Unicode
   (`db/sqlite_functions.rs`, registered through `sqlite3_auto_extension`).
-  It lowers each letter on its own, never by its neighbours, so a word's
+  It lowers each letter on its own, never by its neighbors, so a word's
   start lowers the same as the word: `name:ΚΩΣ*` finds "ΚΩΣΤΑΣ", and `İ`
   lowers to a plain `i`, so `name:istanbul` finds "İstanbul".
   Message text, which goes through the full-text index, folds case too.
@@ -476,9 +476,9 @@ Choice: `direct`, `group`, `orphaned`.
 
 Choice: `imessage`, `sms`, `mms`, `rcs`, `whatsapp`.
 
-- **Contacts**: one of the messages of the contact's conversations travelled this way.
-- **Conversations**: one of the conversation's messages travelled this way.
-- **Messages**: the message travelled this way.
+- **Contacts**: one of the messages of the contact's conversations traveled this way.
+- **Conversations**: one of the conversation's messages traveled this way.
+- **Messages**: the message traveled this way.
 
 ### `source:`
 
@@ -486,7 +486,7 @@ Choice: `imessage`, `whatsapp`, `sms-backup-restore`, `imazing`,
 `openextract`, `go-sms-pro`, `sms-backup-plus`. Each value is the id an
 exporter writes into `export.source`, which the import stamps on every message
 it writes, so the word compares the stored id with no mapping. A backup type's
-id is a constant in `message_crate_api_types::source_id`, which
+id is a constant in `api_types::source_id`, which
 `Exporter::source_id` in `message-crate-core` returns and its exporter writes.
 Search reads `SOURCE_IDS`, and a test in `message-crate-core` fails when
 `SOURCE_IDS` and the backup types' ids differ. Why: a person whose messages came

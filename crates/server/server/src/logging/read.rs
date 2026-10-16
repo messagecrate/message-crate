@@ -12,8 +12,8 @@ use std::io;
 use std::ops::ControlFlow;
 use std::path::Path;
 
-pub use message_crate_log_lines::LogLevel;
-use message_crate_log_lines::{LineFilter, ParsedLine, lines_backward, parse_line};
+pub use log_lines::LogLevel;
+use log_lines::{LineFilter, ParsedLine, lines_backward, parse_line};
 use serde::{Deserialize, Serialize};
 
 use super::files::{file_numbers, file_path};

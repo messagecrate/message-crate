@@ -3,6 +3,7 @@
 import { cleanup, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DOWNLOAD_POLL_MS, OTHER_CHECK_POLL_MS } from "../../hooks/useToolsStatus";
 import type { ToolStatus, ToolsStatus } from "../../lib/desktop/tools";
 import { holdDesktopJob } from "../../lib/desktopJob";
 import { EXPORT_SOURCES } from "../../lib/exportSources";
@@ -14,7 +15,6 @@ import {
 } from "../../lib/importSources/androidSms";
 import { PATH_MISSING } from "../../lib/pathChecks";
 import type { AttachmentChoices } from "../../lib/types";
-import { DOWNLOAD_POLL_MS, OTHER_CHECK_POLL_MS } from "../../lib/useToolsStatus";
 import {
   emptyWhatsappPathStats,
   WHATSAPP_ERR_BACKUP_NOT_DIRECTORY,
@@ -111,6 +111,7 @@ function formProps(override: FormOverride = {}): ImportFormFieldsProps {
     accountTimeZone = "America/New_York",
     phoneCountries = [],
     running = false,
+    startError = null,
     onImport = vi.fn(),
     ...fields
   } = override;
@@ -131,6 +132,7 @@ function formProps(override: FormOverride = {}): ImportFormFieldsProps {
     accountTimeZone,
     phoneCountries,
     running,
+    startError,
     onImport,
   };
 }
@@ -544,6 +546,12 @@ describe("ImportFormFields Import button", () => {
     await user.click(button);
 
     expect(onImport).not.toHaveBeenCalled();
+  });
+
+  it("says why the last Import could not start", () => {
+    renderForm({ startError: "Could not read your account: offline" });
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not read your account: offline");
   });
 
   it("is refused with no backup chosen, which is the one thing an import needs", async () => {

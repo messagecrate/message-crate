@@ -3,7 +3,7 @@ import { type PhoneCountryChoice, phoneCountryLabel } from "../lib/phoneCountrie
 import { ListBoxItem, selectItemClassName } from "./Select";
 
 /**
- * One `Select` item per country, labelled with its name and calling code:
+ * One `Select` item per country, labeled with its name and calling code:
  * the list the import form's Phone's country and the Pick country dialog
  * both offer.
  */

@@ -176,7 +176,7 @@ describe("ConversationHeader", () => {
     });
 
     it("creates the group and adds everyone but the owner and the contact-less", async () => {
-      // The server, modelled: once created, the group is in the list the
+      // The server, modeled: once created, the group is in the list the
       // members call looks the id up in.
       let groups: { id: number; name: string }[] = [];
       listContactGroupsMock.mockImplementation(async () => groups);
@@ -235,6 +235,21 @@ describe("ConversationHeader", () => {
     // `sms` reads "Text Message", the conversation list's word, not the raw service.
     expect(screen.getByText("Text Message")).toBeInTheDocument();
     expect(screen.getByText("3 messages")).toBeInTheDocument();
+  });
+
+  it("names an untitled group after everyone in it, as the conversation list does", () => {
+    renderHeader(
+      conversation({
+        is_group: true,
+        shown_title: null,
+        participants: [
+          participant({ name: "Ann", identity: "+15550101" }),
+          participant({ name: "Bob", identity: "+15550102" }),
+          participant({ name: "Cy", identity: "+15550103" }),
+        ],
+      }),
+    );
+    expect(screen.getByRole("heading", { name: "Ann, Bob, Cy" })).toBeInTheDocument();
   });
 
   it("offers Newest and every year, newest first, under Jump to", async () => {

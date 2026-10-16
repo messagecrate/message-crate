@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 /** Why the app's own Message Crate is not running. */
 type LocalServerFailure = "port_taken" | "start_failed";
@@ -36,4 +37,28 @@ export async function invokeLocalServerStatus(): Promise<LocalServerStatus> {
 /** Open the Message Crate Directory, `~/message-crate`, which holds the app's own database. */
 export async function invokeOpenMessageCrateDirectory(): Promise<void> {
   await invoke("open_message_crate_directory");
+}
+
+/**
+ * What the desktop app tells the window while it starts its own Message
+ * Crate again after it stopped answering or exited (`Notice` in
+ * `src-tauri/src/local_server.rs`): that it is restarting it and why, that a
+ * Message Crate answers again, or that it could not start it.
+ */
+export type LocalServerNotice =
+  | { state: "restarting"; cause: "unanswered" | "exited" }
+  | { state: "answering" }
+  | { state: "failed"; message: string; details: string };
+
+/** The channel of `LocalServerNotice`: `NOTICE` in `src-tauri/src/commands/local_server.rs`. */
+export const LOCAL_SERVER_NOTICE = "local-server:notice";
+
+/**
+ * Call `handler` with each notice the desktop app sends about its own
+ * Message Crate. Resolves to a function that stops listening.
+ */
+export async function onLocalServerNotice(
+  handler: (notice: LocalServerNotice) => void,
+): Promise<UnlistenFn> {
+  return listen<LocalServerNotice>(LOCAL_SERVER_NOTICE, (event) => handler(event.payload));
 }

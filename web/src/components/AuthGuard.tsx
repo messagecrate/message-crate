@@ -1,9 +1,10 @@
 import { Navigate, Outlet } from "react-router-dom";
+import { useAccountProfile } from "../hooks/useAccountProfile";
+import { useIsOwner } from "../hooks/useIsOwner";
+import { useNeedsProfileSetup } from "../hooks/useNeedsProfileSetup";
 import { useAuth } from "../lib/authContext";
-import { useAccountProfile } from "../lib/useAccountProfile";
-import { useIsOwner } from "../lib/useIsOwner";
-import { useNeedsProfileSetup } from "../lib/useNeedsProfileSetup";
 import Button from "./Button";
+import LocalServerNotice from "./LocalServerNotice";
 
 /**
  * Layout route: renders child routes via <Outlet /> when the account may use
@@ -50,14 +51,20 @@ export function AuthGuard() {
 function ProfileLoadFailed({ error }: { error: string }) {
   const { retry } = useAccountProfile();
   return (
-    <div className="flex h-screen flex-col items-center justify-center gap-4 bg-bg p-6 font-sans text-text">
-      <div className="max-w-md text-center" role="alert">
-        <p className="m-0 font-semibold text-[0.938rem]">Your profile could not be loaded.</p>
-        <p className="m-0 mt-1 text-[0.813rem] text-muted">{error}</p>
+    <div className="flex h-screen flex-col bg-bg font-sans text-text">
+      {/* The likeliest reason a profile cannot be loaded in the desktop app
+          is that its own server stopped, so the notice that says so, and
+          starts it again, shows here too. */}
+      <LocalServerNotice />
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-6">
+        <div className="max-w-md text-center" role="alert">
+          <p className="m-0 font-semibold text-[0.938rem]">Your profile could not be loaded.</p>
+          <p className="m-0 mt-1 text-[0.813rem] text-muted">{error}</p>
+        </div>
+        <Button variant="primary" onPress={retry}>
+          Try again
+        </Button>
       </div>
-      <Button variant="primary" onPress={retry}>
-        Try again
-      </Button>
     </div>
   );
 }

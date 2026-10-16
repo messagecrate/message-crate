@@ -1,7 +1,7 @@
 //! Recompute what a staged directory holds, for the reviews.
 //!
 //! Everything here is measured from the directory. The one estimate is what the
-//! Media stage will do to a file's size, and it is labelled as an estimate all
+//! Media Stage will do to a file's size, and it is labeled as an estimate all
 //! the way to the screen.
 //!
 //! This is always recomputed from the directory, never read back
@@ -29,17 +29,13 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
 
 use anyhow::Result;
+use ir::{Direction, Message};
 use media::{MediaMode, MediaTools, SizeVerdict, classify_probed, estimate_bytes, needs_probe};
-use message_ir::{Direction, Message};
 
 use crate::transcode::{COMMITTED_SUFFIX, TranscodeOptions, conversation_files};
-use message_ir_format::read_conversation_jsonl;
+use ir_format::read_conversation_jsonl;
 
 /// How often [`summarize_staging`] reports progress, over attachments.
-///
-/// Matches the media crate's own cadence (its private `MEDIA_PROGRESS_EVERY`
-/// is 100 too) so a summary and the Media stage over the same directory feel
-/// the same to whatever is watching progress.
 const SUMMARY_PROGRESS_EVERY: usize = 100;
 
 /// One attachment the user should see before approving.
@@ -55,8 +51,8 @@ pub struct AttachmentForecast {
     pub name: String,
     /// Bytes on disk now.
     pub size_bytes: u64,
-    /// Bytes expected after the Media stage. Equal to `size_bytes` when there
-    /// is nothing for the Media stage to do.
+    /// Bytes expected after the Media Stage. Equal to `size_bytes` when there
+    /// is nothing for the Media Stage to do.
     pub estimate_bytes: u64,
     /// How it is expected to land against the limit.
     pub verdict: SizeVerdict,
@@ -105,7 +101,7 @@ pub struct StagingSummary {
     /// the same number the verdicts used.
     pub asset_max_bytes: u64,
     /// The attachment mode Staging recorded for the run. The screen decides
-    /// from it whether the run has a Media stage, so after Staging that
+    /// from it whether the run has a Media Stage, so after Staging that
     /// choice comes from the directory and not from the form the run started
     /// with. Sent under the form's name for it ([`MediaMode::form_name`]),
     /// because that is the screen's vocabulary.
@@ -134,7 +130,7 @@ pub struct SummaryProgress {
 /// Recompute a staged directory's summary: exact conversation/message/attachment
 /// counts plus a per-attachment size forecast, for the reviews.
 ///
-/// Walks the same `*.jsonl` list the Media stage walks. For each attachment
+/// Walks the same `*.jsonl` list the Media Stage walks. For each attachment
 /// already carrying a `missing_reason`, this counts it and stops there: no
 /// bytes, no forecast row. Such an attachment is settled whether or not its
 /// `path` still points at a file on disk (a `convert_failed` original keeps
@@ -144,7 +140,7 @@ pub struct SummaryProgress {
 ///
 /// Everything else reads its length from disk (never the document's stale
 /// `size_bytes`). A recorded path whose stem already ends in `-mv` names a
-/// derivative the Media stage has committed and will never touch again
+/// derivative the Media Stage has committed and will never touch again
 /// (`pending_in`'s own exclusion rule, in `transcode.rs`); it is classified
 /// on that size alone, with no probe and `estimate_bytes` equal to
 /// `size_bytes`. Applying a mode's growth or shrink factor to it would
@@ -152,7 +148,7 @@ pub struct SummaryProgress {
 /// when [`media::needs_probe`] says it is close enough to the limit to
 /// matter and `options.mode` converts or compresses, then classified with
 /// [`media::classify_probed`]. Under [`MediaMode::Clone`] and
-/// [`MediaMode::Disabled`] the Media stage does nothing, so probing is skipped
+/// [`MediaMode::Disabled`] the Media Stage does nothing, so probing is skipped
 /// entirely, `estimate_bytes` equals `size_bytes`, and the file is
 /// classified on its current size alone. Skipping the probe is not an
 /// optimization: probing would forecast work that will never run.
@@ -167,8 +163,8 @@ pub struct SummaryProgress {
 /// every reference, but a shared file's bytes, verdict, and forecast row are
 /// each counted exactly once, on the first reference to its recorded path.
 ///
-/// `on_progress` reports [`SummaryProgress`] over attachments at the same
-/// cadence the media crate uses (every 100) plus a final call. It counts
+/// `on_progress` reports [`SummaryProgress`] over attachments every
+/// `SUMMARY_PROGRESS_EVERY` plus a final call. It counts
 /// every reference, aliased or not, since that is the count the caller sees
 /// growing.
 ///
@@ -197,23 +193,25 @@ pub fn summarize_staging(
     let mut attachments: Vec<AttachmentRef> = Vec::new();
 
     for jsonl in &files {
-        let doc = read_conversation_jsonl(jsonl)?;
+        let document = read_conversation_jsonl(jsonl)?;
         summary.conversations += 1;
-        summary.messages += doc.messages.len() as u64;
-        for participant in &doc.conversation.participants {
+        summary.messages += document.messages.len() as u64;
+        for participant in &document.conversation.participants {
             if let Some(identity) = participant.identity.clone() {
                 contacts.insert(identity);
             }
         }
-        for msg in &doc.messages {
-            if let Some(identity) = owner_identity_of(msg, doc.export.owner_identity.as_deref()) {
+        for message in &document.messages {
+            if let Some(identity) =
+                owner_identity_of(message, document.export.owner_identity.as_deref())
+            {
                 let (sent, received) = owner.entry(identity.to_string()).or_insert((0, 0));
-                match msg.direction {
+                match message.direction {
                     Direction::Outgoing => *sent += 1,
                     Direction::Incoming => *received += 1,
                 }
             }
-            for att in &msg.attachments {
+            for att in &message.attachments {
                 attachments.push(AttachmentRef {
                     path: att.path.clone(),
                     missing_reason: att.missing_reason.clone(),
@@ -274,19 +272,23 @@ struct AttachmentRef {
     original_name: Option<String>,
 }
 
-/// The owner's address on `msg`: its own record, then the sender of an
+/// The owner's address on `message`: its own record, then the sender of an
 /// outgoing message, then the export's one owner address. `None` when all
 /// are blank.
-fn owner_identity_of<'a>(msg: &'a Message, export_owner: Option<&'a str>) -> Option<&'a str> {
-    let outgoing_sender = match msg.direction {
-        Direction::Outgoing => msg.sender_identity.as_deref(),
+fn owner_identity_of<'a>(message: &'a Message, export_owner: Option<&'a str>) -> Option<&'a str> {
+    let outgoing_sender = match message.direction {
+        Direction::Outgoing => message.sender.identity.as_deref(),
         Direction::Incoming => None,
     };
-    [msg.owner_identity.as_deref(), outgoing_sender, export_owner]
-        .into_iter()
-        .flatten()
-        .map(str::trim)
-        .find(|identity| !identity.is_empty())
+    [
+        message.owner_identity.as_deref(),
+        outgoing_sender,
+        export_owner,
+    ]
+    .into_iter()
+    .flatten()
+    .map(str::trim)
+    .find(|identity| !identity.is_empty())
 }
 
 /// Measure and classify one physical file, folding its bytes and verdict
@@ -307,7 +309,7 @@ fn classify_one(
     has_media_step: bool,
     summary: &mut StagingSummary,
 ) {
-    let Ok(abs) = message_ir::safe_attachment_path(run_dir, rel) else {
+    let Ok(abs) = ir::safe_attachment_path(run_dir, rel) else {
         return;
     };
     let Ok(meta) = std::fs::metadata(&abs) else {

@@ -51,7 +51,7 @@ describe("importStatusLabel", () => {
     expect(importStatusLabel("completed")).toBe("Completed");
     expect(importStatusLabel("completed_with_issues")).toBe("Completed with issues");
     expect(importStatusLabel("failed")).toBe("Failed");
-    expect(importStatusLabel("cancelled")).toBe("Cancelled");
+    expect(importStatusLabel("canceled")).toBe("Canceled");
   });
 
   it("shows the raw word when a server newer than this build sends one", () => {
@@ -100,8 +100,8 @@ describe("toImportSummaryView", () => {
     );
   });
 
-  it("reads a cancelled Import Run as cancelled, not failed", () => {
-    expect(toImportSummaryView(accountImportRun({ status: "cancelled" })).status).toBe("cancelled");
+  it("reads a canceled Import Run as canceled, not failed", () => {
+    expect(toImportSummaryView(accountImportRun({ status: "canceled" })).status).toBe("canceled");
   });
 
   it("passes completed_with_issues through", () => {

@@ -22,7 +22,7 @@ export type ToolStatus =
  * wtsexporter only from the Tools Directory.
  */
 export interface ToolsStatus {
-  toolsDir: string | null;
+  toolsDir: string;
   /**
    * A check of the Tools Directory runs in this process now, the start-up
    * check or Try again. A program it has not looked at yet shows as missing
@@ -44,12 +44,11 @@ export async function invokeToolsStatus(): Promise<ToolsStatus> {
  * What Try again did. `started`: a check started in this process.
  * `alreadyRunning`: another check holds the lock on the Tools Directory (the
  * start-up check, an earlier Try again, or another app's check), and nothing
- * started. `noToolsDirectory`: the app has none (`toolsDir` is null).
- * `couldNotStart`: the check's thread could not be started, which each
- * program it would have downloaded shows as a failed download with that
- * reason.
+ * started. `couldNotStart`: the check's thread could not be started, which
+ * each program it would have downloaded shows as a failed download with
+ * that reason.
  */
-type RetryResult = "started" | "alreadyRunning" | "noToolsDirectory" | "couldNotStart";
+type RetryResult = "started" | "alreadyRunning" | "couldNotStart";
 
 /**
  * Check the Tools Directory again and download what is missing, as Try again
@@ -67,8 +66,9 @@ export function toolsDownloading(status: ToolsStatus): boolean {
 }
 
 /**
- * Which of ffmpeg and ffprobe, which Convert and Compress run, cannot be used.
- * One still downloading can: the Media stage waits for it.
+ * Which of ffmpeg and ffprobe, which Convert media and Convert & Compress
+ * media run, cannot be used. One still downloading can: the Media Stage waits
+ * for it.
  */
 export function ffmpegMissing(status: ToolsStatus): MediaToolName[] {
   return (["ffmpeg", "ffprobe"] as const).filter((name) => !toolUsable(status[name]));

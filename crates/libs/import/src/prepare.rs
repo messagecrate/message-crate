@@ -7,7 +7,6 @@
 //! worker needs is read-only and lives in [`PrepareContext`]; the only shared
 //! mutable state is the journal behind a mutex.
 
-use message_crate_api_types::ImportMode;
 use std::any::Any;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::panic::{self, AssertUnwindSafe};
@@ -19,9 +18,9 @@ use std::thread::Scope;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+use ir::{Attachment, ConversationDocument, ConversationHeader, Message, missing_reason};
+use ir_format::read_conversation_jsonl_with_lines;
 use message_crate_core::parallel_for_each;
-use message_ir::{Attachment, ConversationDocument, ConversationHeader, Message, missing_reason};
-use message_ir_format::read_conversation_jsonl_with_lines;
 
 use crate::directory::{attachment_label, resolve_attachment};
 use crate::http::{Asset, AssetUpload};
@@ -30,7 +29,7 @@ use crate::progress::AttachmentSkip;
 use crate::project::{self, AttachmentProjection};
 use crate::report::{AssetTotals, UploadProfile, elapsed_ms};
 use crate::run::{ImportConfig, Session};
-use message_crate_api_types::MAX_IMPORT_BATCH_BYTES;
+use api_types::MAX_IMPORT_BATCH_BYTES;
 
 /// Journal state shared by every prepare worker and the import pipeline.
 ///
@@ -153,11 +152,12 @@ impl<'a> PrepareContext<'a> {
         self.journal.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// True when the journal says this conversation file already fully imported.
+    /// True when the journal says this conversation file already fully
+    /// imported. A replace or forced Upload opens the journal without its
+    /// earlier progress ([`crate::journal::EarlierProgress`]), so it skips
+    /// nothing an earlier Upload sent.
     pub(crate) fn already_imported(&self, name: &str) -> bool {
-        self.cfg.mode == ImportMode::Append
-            && !self.cfg.force
-            && self.lock_journal().journal.has_file(name)
+        self.lock_journal().journal.has_file(name)
     }
 }
 
@@ -210,16 +210,16 @@ pub(crate) fn prepare_file(
 ) -> Result<PreparedFile> {
     let total_started = Instant::now();
     let read_started = Instant::now();
-    let (doc, message_lines) = read_conversation_jsonl_with_lines(path)?;
+    let (document, message_lines) = read_conversation_jsonl_with_lines(path)?;
     let mut profile = UploadProfile {
         read_ms: elapsed_ms(read_started),
         ..UploadProfile::default()
     };
-    let header = ConversationHeader::from_document(&doc);
+    let header = ConversationHeader::from_document(&document);
     let source = project::validate_header(&header)?;
 
     let scan_started = Instant::now();
-    let scan = scan_attachments(ctx, name, &doc.messages)?;
+    let scan = scan_attachments(ctx, name, &document.messages)?;
     profile.attachment_scan_hash_ms = elapsed_ms(scan_started);
     profile.unique_assets = u64::try_from(scan.unique.len()).unwrap_or(u64::MAX);
 
@@ -240,7 +240,7 @@ pub(crate) fn prepare_file(
     });
     log_lines.extend(uploaded.log_lines);
 
-    let chunks = build_import_chunks(ctx, name, &doc, &message_lines, &scan.projections)?;
+    let chunks = build_import_chunks(ctx, name, &document, &message_lines, &scan.projections)?;
     Ok(PreparedFile {
         source,
         chunks,
@@ -288,9 +288,9 @@ fn scan_attachments(
         skips: Vec::new(),
         warnings: Vec::new(),
     };
-    for msg in messages {
-        let mut projections = Vec::with_capacity(msg.attachments.len());
-        for (index, att) in msg.attachments.iter().enumerate() {
+    for message in messages {
+        let mut projections = Vec::with_capacity(message.attachments.len());
+        for (index, att) in message.attachments.iter().enumerate() {
             scan.count += 1;
             projections.push(scan_one_attachment(ctx, name, att, index, &mut scan)?);
         }
@@ -312,8 +312,8 @@ fn scan_one_attachment(
     index: usize,
     scan: &mut AttachmentScan,
 ) -> Result<AttachmentProjection> {
-    let Some(rel) = att.path.as_deref().and_then(message_ir::trimmed) else {
-        // No path means the bytes were never staged. "Do not copy" exports
+    let Some(rel) = att.path.as_deref().and_then(ir::trimmed) else {
+        // No path means the bytes were never staged. Exports made with Skip
         // look like this, and the reason the exporter set (`not_copied`)
         // explains why.
         // Keep the metadata so the thread still shows the file was there.
@@ -369,8 +369,8 @@ fn scan_one_attachment(
             reason: format!(
                 "attachment is {} bytes ({} MiB), over the configured asset max of {} MiB",
                 file_len,
-                file_len / message_ir::MIB,
-                ctx.cfg.asset_max_bytes / message_ir::MIB
+                file_len / ir::MIB,
+                ctx.cfg.asset_max_bytes / ir::MIB
             ),
         });
         return Ok(AttachmentProjection::Missing {
@@ -379,7 +379,7 @@ fn scan_one_attachment(
             size: Some(file_len),
         });
     }
-    let claimed = att.digest_sha256.as_deref().and_then(message_ir::trimmed);
+    let claimed = att.digest_sha256.as_deref().and_then(ir::trimmed);
     let digest = ctx
         .digests
         .resolve(&abs, claimed, att.size_bytes, name, rel, &mut |warning| {
@@ -404,23 +404,23 @@ fn scan_one_attachment(
 /// # Errors
 ///
 /// Returns an error when a message cannot be encoded, a single message with
-/// the conversation header exceeds the chunk limit, or the run is cancelled.
+/// the conversation header exceeds the chunk limit, or the run is canceled.
 fn build_import_chunks(
     ctx: &PrepareContext<'_>,
     name: &str,
-    doc: &ConversationDocument,
+    document: &ConversationDocument,
     message_lines: &[usize],
     projections: &[Vec<AttachmentProjection>],
 ) -> Result<Vec<ImportChunk>> {
     let mut builder = ChunkBuilder::new(
-        project::document_header_line(doc)?,
+        project::document_header_line(document)?,
         ctx.batch_size,
         MAX_IMPORT_BATCH_BYTES,
     );
-    for (i, msg) in doc.messages.iter().enumerate() {
+    for (i, message) in document.messages.iter().enumerate() {
         ctx.session.check_stop()?;
         // Rewrite attachment fields to uploaded digests or missing placeholders.
-        let (line, guid) = project::message_line(msg, &projections[i])?;
+        let (line, guid) = project::message_line(message, &projections[i])?;
         if !ctx.cfg.force && ctx.lock_journal().journal.has_message(name, &guid) {
             // Already imported this message id on a previous successful Upload.
             continue;
@@ -432,7 +432,7 @@ fn build_import_chunks(
                 "{name}: message {guid} encodes to {} bytes, which with its conversation \
                  header exceeds the {} MiB import batch limit",
                 line.len(),
-                MAX_IMPORT_BATCH_BYTES as u64 / message_ir::MIB
+                MAX_IMPORT_BATCH_BYTES as u64 / ir::MIB
             );
         }
         builder.push(
@@ -577,18 +577,20 @@ impl DigestResolver {
         if let Some(claimed_digest) = claimed.as_deref()
             && claimed_digest != disk_digest
         {
-            let mut msg = format!(
+            let mut message = format!(
                 "{name}: attachment {rel} hashes to {disk_digest}, \
                  not the {claimed_digest} its conversation file records"
             );
             if let Some(cs) = claimed_size
                 && cs != disk_size
             {
-                msg.push_str(&format!(
+                message.push_str(&format!(
                     ". Its size changed from {cs} to {disk_size} bytes"
                 ));
             }
-            warn(format!("{msg}. The Upload names it Asset {disk_digest}"));
+            warn(format!(
+                "{message}. The Upload names it Asset {disk_digest}"
+            ));
         }
         self.remember(abs, &disk_digest);
         Ok(disk_digest)
@@ -651,7 +653,7 @@ struct AssetUploadStats {
 /// # Errors
 ///
 /// Returns an error when a file is missing, when HEAD/PUT fails after
-/// retries, when a worker panics, or when the run is cancelled.
+/// retries, when a worker panics, or when the run is canceled.
 fn upload_assets(
     ctx: &PrepareContext<'_>,
     name: &str,
@@ -725,7 +727,7 @@ fn upload_claimed(
 /// # Errors
 ///
 /// Returns an error when a claimed file is missing or unreadable, or when
-/// the run is cancelled. Dropping `claims` gives up what was claimed.
+/// the run is canceled. Dropping `claims` gives up what was claimed.
 fn claim_upload_jobs<'u>(
     ctx: &PrepareContext<'_>,
     name: &str,
@@ -767,7 +769,7 @@ fn claim_upload_jobs<'u>(
 ///
 /// # Errors
 ///
-/// Returns an error when the run is cancelled while waiting.
+/// Returns an error when the run is canceled while waiting.
 fn wait_for_claims(ctx: &PrepareContext<'_>, digests: &[&String]) -> Result<()> {
     let mut journal = ctx.lock_journal();
     while digests.iter().any(|digest| journal.asset_in_flight(digest)) {
@@ -784,7 +786,7 @@ fn wait_for_claims(ctx: &PrepareContext<'_>, digests: &[&String]) -> Result<()> 
 /// The sha256 claims one conversation holds and has not yet settled.
 ///
 /// Dropping it gives up every claim still held and wakes the workers waiting
-/// on them, so a conversation that fails or is cancelled never leaves
+/// on them, so a conversation that fails or is canceled never leaves
 /// another one waiting on a file nobody is uploading.
 struct AssetClaims<'c, 'a> {
     ctx: &'c PrepareContext<'a>,

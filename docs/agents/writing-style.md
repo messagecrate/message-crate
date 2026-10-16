@@ -81,11 +81,13 @@ released Oct 24, 2017`, not "a recent version". "Three tests fail: `test_auth`,
 ## American spelling
 
 Message Crate spells American: canceled, labeled, behavior, recognize, honor,
-color, favorite. The rule holds in prose, product copy, comments, and new
-identifiers. A name that belongs to a library or a standard keeps its own
-spelling, whichever it is. Much of the existing text still spells British;
-that text changes in its own pull request (#2279), not alongside unrelated
-work, and new text does not copy it.
+color, favorite. The rule holds in prose, product copy, comments,
+identifiers, and the values the server stores and sends, such as the
+`canceled` run status. A name that belongs to a library or a standard keeps
+its own spelling, whichever it is: tokio's `cancelled()`, GitHub's
+`cancelled` run conclusion. Text that Message Crate did not write keeps
+its spelling too, because changing it would misquote it: vendored code and
+skills, test fixtures taken from real exports, and quoted books.
 
 ## HTTP status codes carry their name
 
@@ -120,7 +122,7 @@ A glossary at the bottom arrives too late to prevent the misreading.
 
 ## Uncertainty is stated once
 
-An unknown is named plainly and then set aside. Neighbouring sentences are not
+An unknown is named plainly and then set aside. Neighboring sentences are not
 hedged to cover it:
 
 > How the sections are delimited is not yet established. What matters here is

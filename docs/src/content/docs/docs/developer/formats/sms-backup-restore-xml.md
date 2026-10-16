@@ -27,10 +27,10 @@ This is the same family of files that [SMS Backup & Restore](https://www.synctec
 |-------|-------------|
 | XML codec (streaming read/write, SMIL, MMS media) | [`sbr`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/sbr/) |
 | SBR → common message | [`sms_backup_restore_exporter::read_backup`](https://github.com/messagecrate/message-crate/blob/main/crates/exporters/sms-backup-restore-exporter/src/read.rs) |
-| Common message → SBR | [`sms_backup_restore_exporter::SbrArchive`](https://github.com/messagecrate/message-crate/blob/main/crates/exporters/sms-backup-restore-exporter/src/write.rs), a `MergedArchive` the caller hands to [`message_ir_format::FormatSink::with_archive`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir-format) |
+| Common message → SBR | [`sms_backup_restore_exporter::SbrArchive`](https://github.com/messagecrate/message-crate/blob/main/crates/exporters/sms-backup-restore-exporter/src/write.rs), a `MergedArchive` the caller hands to [`ir_format::FormatSink::with_archive`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir-format) |
 | Desktop | `OutputFormat::Xml` |
 
-The exporter crate owns the format in both directions; `message-ir-format` knows only that a merged archive exists. A caller that wants `smses.xml` opens a `FormatSink` (or `ExportWriter`), calls `with_archive(Box::new(SbrArchive))`, writes each conversation with `write_document`, and calls `finish`. Asking for XML without the archive is refused at `finish`, and `write_format(..., Xml, …)` returns an error, because a single shared file cannot be rewritten per chat.
+The exporter crate owns the format in both directions; `ir-format` knows only that a merged archive exists. A caller that wants `smses.xml` opens a `FormatSink` (or `ExportWriter`), calls `with_archive(Box::new(SbrArchive))`, writes each conversation with `write_document`, and calls `finish`. Asking for XML without the archive is refused at `finish`, and `write_format(..., Xml, …)` returns an error, because a single shared file cannot be rewritten per chat.
 
 A file that is not valid XML is refused whole, in the pass that infers the owner's phone and the pass that reads the messages alike.
 The run fails with an error naming the file, the byte and the parser's reason, such as `smses.xml is not valid XML at byte 511: the file ends before </addrs>`, and nothing is converted or imported.

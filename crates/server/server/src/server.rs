@@ -35,12 +35,12 @@ use crate::keyed_locks::KeyedLocks;
 use crate::limits::{MAX_AUTH_BODY_BYTES, MAX_JSON_BODY_BYTES};
 use crate::media_queue::MediaQueue;
 use crate::middleware::{
-    CONTENT_SECURITY_POLICY, answer_panic, build_cors_layer, json_body_limit_response,
-    limit_request_body, log_response, logged_uri, mark_routine, no_store_unless_set,
-    require_json_acceptable,
+    BodyFailures, CONTENT_SECURITY_POLICY, answer_panic, build_cors_layer,
+    json_body_limit_response, limit_request_body, log_body_failure, log_response, logged_uri,
+    mark_routine, no_store_unless_set, require_json_acceptable,
 };
 use crate::open_db::OpenDb;
-use crate::request_body::UploadTimeLimits;
+use crate::request_body::BodyTimeLimits;
 
 /// The router's state. A handler never takes it whole: it takes
 /// `State<SqlitePool>`, `State<Arc<Config>>`, or one of the sub-states the
@@ -59,11 +59,11 @@ pub struct AppState {
     pub(crate) imports: ImportState,
     /// What an attachment upload holds: the per-file lock and the part size.
     pub(crate) assets: AssetState,
-    /// How long an upload body may go with no byte arriving, and may take in
-    /// all, from `[server] upload_stall_secs` and `upload_piece_secs`.
+    /// How long a request body may go with no byte arriving, and may take in
+    /// all, from `[server] body_stall_secs` and `body_total_secs`.
     /// `GET /v1/server` states them, so the Upload sizes its own wait from
     /// what the server holds.
-    pub(crate) upload_time_limits: UploadTimeLimits,
+    pub(crate) body_time_limits: BodyTimeLimits,
     /// The wait before the answer to a refused login or a wrong current
     /// password. `serve` sleeps; the test harness swaps in one that counts
     /// each wait and returns at once.
@@ -86,6 +86,9 @@ pub struct AppState {
     /// names each one in the log (`serve_until_shutdown` in
     /// [`crate::startup`]).
     pub(crate) in_flight: crate::in_flight::InFlight,
+    /// The move of a Session's expiry running in the background, if any
+    /// ([`crate::auth::ExpiryMoves`]).
+    pub(crate) expiry_moves: crate::auth::ExpiryMoves,
     /// The error SQLite gave when the server asked for write-ahead logging
     /// as it opened the database.
     pub(crate) wal_error: WalError,
@@ -103,11 +106,16 @@ pub(crate) struct ImportState {
     /// so imports can never drain the connection pool. Held here, not in a
     /// static, so tests in one binary cannot wait on each other's imports.
     pub(crate) slots: Arc<tokio::sync::Semaphore>,
-    /// Cancelled the moment the server is told to stop
+    /// Canceled the moment the server is told to stop
     /// ([`AppState::on_stop_signal`]), so an import batch still reading its
     /// body stops reading and is refused with `server-stopping` at once,
     /// rather than making the stop wait for the rest of the body (#2878).
     pub(crate) stopping: tokio_util::sync::CancellationToken,
+    /// Read by each batch once it holds its account's import lock and before
+    /// it reads its file, so a test that holds it for writing pauses a batch
+    /// at that point rather than racing it.
+    #[cfg(test)]
+    pub(crate) after_account_lock: Arc<tokio::sync::RwLock<()>>,
 }
 
 impl Default for ImportState {
@@ -116,6 +124,8 @@ impl Default for ImportState {
             account_locks: KeyedLocks::default(),
             slots: crate::imports_api::run_control::import_slots(),
             stopping: tokio_util::sync::CancellationToken::new(),
+            #[cfg(test)]
+            after_account_lock: Arc::default(),
         }
     }
 }
@@ -196,22 +206,19 @@ sub_state!(
     SqlitePool => db,
     ImportState => imports,
     AssetState => assets,
-    UploadTimeLimits => upload_time_limits,
+    BodyTimeLimits => body_time_limits,
     RefusalWait => refusal_wait,
     DemoState => demo,
     MediaLinkKey => media_link_key,
     WalError => wal_error,
+    crate::auth::ExpiryMoves => expiry_moves,
 );
 
 impl AppState {
     /// The state every handler shares, over an opened database. `serve` and the
     /// test harness both come through here, so the locks and the slots are
     /// assembled in one place.
-    pub fn new(
-        opened: OpenDb,
-        asset_part_size: usize,
-        upload_time_limits: UploadTimeLimits,
-    ) -> Self {
+    pub fn new(opened: OpenDb, asset_part_size: usize, body_time_limits: BodyTimeLimits) -> Self {
         let media_tools: Arc<dyn media::MediaTools> = Arc::new(opened.cfg.media_tools());
         Self {
             media_tools,
@@ -222,12 +229,13 @@ impl AppState {
                 complete_locks: KeyedLocks::default(),
                 part_size: asset_part_size,
             },
-            upload_time_limits,
+            body_time_limits,
             refusal_wait: RefusalWait::default(),
             demo: DemoState::default(),
             media_link_key: MediaLinkKey::random(),
             media_queue: MediaQueue::default(),
             in_flight: crate::in_flight::InFlight::default(),
+            expiry_moves: crate::auth::ExpiryMoves::default(),
             wal_error: WalError(opened.wal_error),
         }
     }
@@ -427,13 +435,14 @@ pub(crate) fn with_server_layers(routes: Router<AppState>, state: AppState) -> R
         // for a successful `Routine` answer and at `info` for every other
         // (`log_response`). Nothing more for a 5xx, because
         // `ApiError::to_problem` writes its one `error` line with the
-        // error's chain. A refused request's problem type is
-        // logged where the problem is built (`log_refusal`). Runs outside
-        // CORS so the status it logs is the one the client receives. The span
-        // carries method and path; its level must match the line's or the
-        // default `info` filter drops it.
+        // error's chain. A body that fails after its status was sent writes
+        // an `error` line of its own (`BodyFailures`, `log_body_failure`).
+        // A refused request's problem type is logged where the problem is
+        // built (`log_refusal`). Runs outside CORS so the status it logs is
+        // the one the client receives. The span carries method and path; its
+        // level must match the line's or the default `info` filter drops it.
         .layer(
-            TraceLayer::new_for_http()
+            TraceLayer::new(tower_http::classify::SharedClassifier::new(BodyFailures))
                 .make_span_with(|request: &axum::extract::Request| {
                     tracing::info_span!(
                         "request",
@@ -447,7 +456,7 @@ pub(crate) fn with_server_layers(routes: Router<AppState>, state: AppState) -> R
                     )
                 })
                 .on_response(log_response)
-                .on_failure(()),
+                .on_failure(log_body_failure),
         )
         // Outermost of all: the request id is made before the trace span
         // reads it and stays in scope while every problem body is built.
@@ -524,7 +533,7 @@ pub(crate) fn test_app_state(pool: SqlitePool, data_dir: &std::path::Path) -> Ap
             wal_error: None,
         },
         asset_uploads::DEFAULT_PART_SIZE,
-        UploadTimeLimits::of(&crate::config::ServerConfig::default()),
+        BodyTimeLimits::of(&crate::config::ServerConfig::default()),
     );
     // A refused login counts its wait rather than sleeping it, so no test
     // sleeps and a test can read how many refusals waited.

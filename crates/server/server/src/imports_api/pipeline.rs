@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, Result};
-use message_crate_api_types::ImportMode;
+use api_types::ImportMode;
 use serde::Serialize;
 use sqlx::SqliteConnection;
 use tempfile::TempDir;
@@ -187,7 +187,7 @@ impl ImportCounts {
 }
 
 /// An Import Run this process opened, as opposed to one a client
-/// (message-crate-import) owns and closes itself. Whoever starts one must
+/// (the `import` crate) owns and closes itself. Whoever starts one must
 /// finish it whatever the import does, so the Settings import table never
 /// shows a run stuck in progress.
 pub(crate) struct OwnedImportRun {

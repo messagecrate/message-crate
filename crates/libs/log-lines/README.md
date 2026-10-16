@@ -1,4 +1,4 @@
-# message-crate-log-lines
+# log-lines
 
 The line format of Message Crate's logs, defined once for the server, which
 reads its own log back, and the desktop app, which writes each Import Run's
@@ -28,7 +28,7 @@ crates leave it off and never build utoipa.
 ## Build and test
 
 ```bash
-cargo test -p message-crate-log-lines
+cargo test -p log-lines
 ```
 
 Workspace setup: [CONTRIBUTING.md](../../../CONTRIBUTING.md).
@@ -37,7 +37,7 @@ Workspace setup: [CONTRIBUTING.md](../../../CONTRIBUTING.md).
 
 The rules: `docs/architecture/server-log.md` and
 `docs/architecture/import-run-logs.md`. This crate is a library shared by the
-server, `message-crate-core` (and through it `message-crate-import`) and the
+server, `message-crate-core` (and through it `import`) and the
 desktop app. It builds no binary.
 
 ## License

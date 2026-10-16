@@ -1,5 +1,6 @@
 import type { AccountProfile } from "../../../lib/account";
 import { profileAddresses } from "../../../lib/account";
+import { errorLine, errorText } from "../../../lib/apiErrorMessage";
 import { needsIdentityStop, parseSourceIdentities } from "../../../lib/backupIdentity";
 import type { ActiveImportRun } from "../../../lib/importRun";
 import { importSourceFor } from "../../../lib/importSources";
@@ -30,8 +31,8 @@ import { runUpload } from "./upload";
 export type RunAccount = {
   token: string | null;
   accountId: number | null;
-  /** Read the account's profile, for the identity check before a new iMessage run. */
-  fetchProfile: () => Promise<AccountProfile | null>;
+  /** Read the account's profile, for the identity check before a new iMessage run. Rejects when it cannot. */
+  fetchProfile: () => Promise<AccountProfile>;
 };
 
 /**
@@ -54,6 +55,8 @@ export function createImportRunService(deps: ImportRunDeps) {
     work: null,
   };
   const { store } = ctx;
+  /** How many times the person changed a value on the form; `formEdited` counts them. */
+  let formEdits = 0;
 
   /** Put the store and the scratch back to a fresh form, started by no account. */
   function reset(): void {
@@ -81,7 +84,7 @@ export function createImportRunService(deps: ImportRunDeps) {
    *
    * A store already the account's is left as it is. A run another account
    * started is stopped and let settle first, so nothing it does afterwards
-   * lands in the new run: its stage is cancelled, which leaves the run open on
+   * lands in the new run: its stage is canceled, which leaves the run open on
    * the server for that account to resume from its run directory. Then the
    * store goes back to a fresh form, named with `accountId` (#1085).
    */
@@ -104,8 +107,10 @@ export function createImportRunService(deps: ImportRunDeps) {
    * addresses the backup's device sent from and compares them to the
    * profile; when nothing matches, it parks the form and stops at
    * `identity_stop`, before any run exists, so Cancel has nothing to clean
-   * up. The probe fails open: a source it cannot read will fail in the
-   * extractor moments later with the proper error.
+   * up. When the backup or the profile cannot be read, the attempt ends there
+   * too, with the reason on `startError` and no identities stored, because a
+   * check that did not run must not read as a backup with no addresses
+   * (#2174).
    */
   async function startImport(
     account: RunAccount,
@@ -133,6 +138,8 @@ export function createImportRunService(deps: ImportRunDeps) {
     form: ImportJobFormValues,
     resume?: Resume,
   ): Promise<void> {
+    store.set({ startError: null });
+    const editsAtStart = formEdits;
     let identities: string[] | null = null;
     const identityRead = resume
       ? null
@@ -141,21 +148,22 @@ export function createImportRunService(deps: ImportRunDeps) {
       // The probe reads the backup (and, for an encrypted one, decrypts
       // it) before any run exists, which can take seconds: mark the run
       // busy for that stretch so the Import button reflects it.
-      store.set({ running: true });
+      store.set({ running: true, sourceIdentities: null });
       try {
-        identities = await ctx.desktop
-          .invokeImessageBackupIdentities({
-            path: form.backupPath,
-            ios: identityRead.ios,
-            backupPassword: form.backupPassword,
-          })
-          .catch(() => []);
-        store.set({ sourceIdentities: identities });
-        const profile = await account.fetchProfile();
-        // The account logged out during the probe: the profile just read
+        const read = await readIdentityCheck(account, form, identityRead.ios);
+        // The account logged out during the probe: what was just read
         // is another account's, and no run exists yet to resume.
         if (accountLeft(ctx)) return;
-        if (needsIdentityStop(identities, profile && profileAddresses(profile))) {
+        if (read.kind === "failed") {
+          // A form edited while the probe ran no longer holds the values
+          // the failure is about, so the failure is not shown.
+          if (formEdits === editsAtStart) store.set({ startError: read.message });
+          return;
+        }
+        const { profile } = read;
+        identities = read.identities;
+        store.set({ sourceIdentities: identities });
+        if (needsIdentityStop(identities, profileAddresses(profile))) {
           ctx.scratch.pendingIdentityForm = form;
           movePhase(ctx, "identity_stop");
           return;
@@ -171,6 +179,38 @@ export function createImportRunService(deps: ImportRunDeps) {
     await runImport(ctx, account.token, form, identities, resume);
   }
 
+  /**
+   * What the identity check compares: the addresses the backup's device sent
+   * from, and the account's profile. Either read failing ends the attempt
+   * with a message for the form: the probe's own (a wrong backup password,
+   * an unreadable backup, the reader stopping), or the profile's reason
+   * after "Could not read your account".
+   */
+  async function readIdentityCheck(
+    account: RunAccount,
+    form: ImportJobFormValues,
+    ios: boolean,
+  ): Promise<
+    | { kind: "read"; identities: string[]; profile: AccountProfile }
+    | { kind: "failed"; message: string }
+  > {
+    let identities: string[];
+    try {
+      identities = await ctx.desktop.invokeImessageBackupIdentities({
+        path: form.backupPath,
+        ios,
+        backupPassword: form.backupPassword,
+      });
+    } catch (e: unknown) {
+      return { kind: "failed", message: errorLine(e) };
+    }
+    try {
+      return { kind: "read", identities, profile: await account.fetchProfile() };
+    } catch (e: unknown) {
+      return { kind: "failed", message: `Could not read your account: ${errorText(e)}` };
+    }
+  }
+
   /** Continue past the identity stop with the parked form. */
   async function continueAfterIdentityStop(account: RunAccount): Promise<void> {
     if (!ownsRun(account)) return;
@@ -178,6 +218,17 @@ export function createImportRunService(deps: ImportRunDeps) {
     if (!form) return;
     ctx.scratch.pendingIdentityForm = null;
     await asWork(() => runImport(ctx, account.token, form, store.get().sourceIdentities));
+  }
+
+  /**
+   * The person changed a value on the form. A start failure already shown,
+   * or one still to come from a probe under way, is about the values before
+   * the change, so it is dropped.
+   */
+  function formEdited(account: RunAccount): void {
+    if (!ownsRun(account)) return;
+    formEdits += 1;
+    if (store.get().startError !== null) store.set({ startError: null });
   }
 
   /** Leave the identity stop; nothing was created, so only the phase moves. */
@@ -250,7 +301,7 @@ export function createImportRunService(deps: ImportRunDeps) {
    * The directory is the truth. Every landing recomputes the summary fresh
    * from the run directory; the run's stored `summary` is read only as the
    * approved plan, for the Staging row on the Media Review and the Media
-   * stage's own bookkeeping.
+   * Stage's own bookkeeping.
    *
    * A recompute failing here is a transient read of the run directory, not
    * a run that failed: only an explicit cancel ends a waiting run, so this
@@ -298,6 +349,7 @@ export function createImportRunService(deps: ImportRunDeps) {
     store.set({
       ...CLEARED_RUN,
       resumeError: null,
+      startError: null,
       form: known,
       runDir,
       importRunId: runId,
@@ -390,6 +442,7 @@ export function createImportRunService(deps: ImportRunDeps) {
     startImport,
     continueAfterIdentityStop,
     cancelIdentityStop,
+    formEdited,
     approve,
     resumeAtReview,
     // Another account's run is that account's to cancel, stop or leave.

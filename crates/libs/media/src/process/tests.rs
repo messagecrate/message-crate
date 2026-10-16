@@ -1,4 +1,6 @@
 use super::*;
+use std::sync::atomic::Ordering;
+
 use crate::MediaProbe;
 use crate::fake_tools::{FakeTools, video_probe};
 use crate::kind_for_mime;
@@ -31,25 +33,19 @@ fn filter(args: &[String]) -> &str {
 #[test]
 fn compress_keeps_the_original_jpeg_when_the_re_encode_is_not_smaller() {
     let dir = tempfile::tempdir().unwrap();
-    let attachments = dir.path().join("attachments");
-    fs::create_dir_all(&attachments).unwrap();
     // Over the floor, so the size gate does not skip it before ffmpeg runs.
-    let jpeg = attachments.join("already-tight.jpg");
+    let jpeg = dir.path().join("already-tight.jpg");
     let before = vec![0xa5; JPEG_COMPRESS_FLOOR as usize + 1];
     fs::write(&jpeg, &before).unwrap();
     // The re-encode comes out the same size: not smaller, so not kept.
     let tools = FakeTools::new().writing(vec![0; before.len()]);
 
-    let (report, remap) = process_attachment_files(
+    let produced = transcode_single(
         &tools,
-        dir.path(),
-        std::slice::from_ref(&jpeg),
+        &jpeg,
         MediaMode::Compress,
         &CompressOptions::default(),
-        None,
-        None,
-    )
-    .unwrap();
+    );
 
     assert_eq!(
         tools.runs().len(),
@@ -57,17 +53,13 @@ fn compress_keeps_the_original_jpeg_when_the_re_encode_is_not_smaller() {
         "the JPEG must reach ffmpeg: otherwise every assertion below holds \
          whether or not the keep-smaller guard exists"
     );
+    assert_eq!(
+        produced, None,
+        "a re-encode that is not smaller is not kept"
+    );
     assert_eq!(fs::read(&jpeg).unwrap(), before, "original bytes replaced");
     assert!(
-        !remap.contains_key("attachments/already-tight.jpg"),
-        "a kept file must not be remapped: a remap entry tells the caller to \
-         recompute a digest that did not change"
-    );
-    assert_eq!(report.processed, 0);
-    assert_eq!(report.skipped, 1);
-    assert_eq!(
-        collect_media_files(&attachments).unwrap(),
-        vec![jpeg],
+        !dir.path().join("already-tight.msgmedia.tmp.jpg").exists(),
         "the discarded re-encode was left behind"
     );
 }
@@ -127,9 +119,9 @@ fn derivative_name_is_none_for_a_file_the_mode_leaves_alone() {
     fs::write(&jpeg, b"not really a jpeg").unwrap();
     assert_eq!(derivative_name(&jpeg, MediaMode::Convert), None);
 
-    let doc = dir.path().join("notes.pdf");
-    fs::write(&doc, b"%PDF").unwrap();
-    assert_eq!(derivative_name(&doc, MediaMode::Convert), None);
+    let document = dir.path().join("notes.pdf");
+    fs::write(&document, b"%PDF").unwrap();
+    assert_eq!(derivative_name(&document, MediaMode::Convert), None);
 }
 
 #[test]
@@ -227,7 +219,7 @@ fn commit_produced_refuses_a_destination_equal_to_the_original() {
     // directory without adding a distinct temp suffix (e.g. forgot
     // `.in_progress`) would ask to overwrite the original before any
     // commit has happened. That must be refused, not silently done.
-    let err = commit_produced(Commit::To(&original), &original, &produced).unwrap_err();
+    let err = commit_produced(&original, &original, &produced).unwrap_err();
     assert!(
         err.to_string().contains("original file"),
         "error should explain why: {err}"
@@ -258,51 +250,17 @@ fn detects_msgmedia_temp_names() {
 }
 
 #[test]
-fn sweeps_leftover_msgmedia_temps() {
-    let dir = tempfile::tempdir().unwrap();
-    let att = dir.path().join("attachments");
-    fs::create_dir_all(&att).unwrap();
-    let junk = att.join("photo.msgmedia.tmp.jpg");
-    fs::write(&junk, b"partial").unwrap();
-    fs::write(att.join("keep.jpg"), b"ok").unwrap();
-
-    remove_msgmedia_temps(&att).unwrap();
-    assert!(!junk.exists());
-    assert!(att.join("keep.jpg").exists());
-}
-
-#[test]
 fn clone_is_noop() {
     let dir = tempfile::tempdir().unwrap();
-    let (report, remap) = process_attachment_files(
-        &FakeTools::new(),
-        dir.path(),
-        &[],
-        MediaMode::Clone,
-        &CompressOptions::default(),
-        None,
-        None,
-    )
-    .unwrap();
-    assert_eq!(report.processed, 0);
-    assert!(remap.is_empty());
-}
+    let src = dir.path().join("photo.png");
+    fs::write(&src, PNG_1X1_RGB).unwrap();
+    let tools = FakeTools::new();
 
-#[test]
-fn same_path_rewrite_reports_changed() {
-    let dir = tempfile::tempdir().unwrap();
-    let att = dir.path().join("attachments");
-    fs::create_dir_all(&att).unwrap();
-    let file = att.join("photo.jpg");
-    fs::write(&file, b"jpeg-bytes").unwrap();
-    let outcome = changed(dir.path(), "attachments/photo.jpg", &file).unwrap();
-    match outcome {
-        Outcome::Changed { old_rel, new_rel } => {
-            assert_eq!(old_rel, "attachments/photo.jpg");
-            assert_eq!(new_rel, "attachments/photo.jpg");
-        }
-        Outcome::Skipped => panic!("in-place rewrite must not look like Skipped"),
-    }
+    assert_eq!(
+        transcode_single(&tools, &src, MediaMode::Clone, &CompressOptions::default()),
+        None
+    );
+    assert_eq!(tools.runs(), Vec::<Vec<String>>::new());
 }
 
 #[test]
@@ -311,35 +269,6 @@ fn format_bytes_scales() {
     assert_eq!(format_bytes(12_500), "12.5 KB");
     assert_eq!(format_bytes(1_500_000), "1.5 MB");
     assert_eq!(format_bytes(2_500_000_000), "2.5 GB");
-}
-
-#[test]
-fn attachments_dir_bytes_sums_non_temp_files() {
-    let dir = tempfile::tempdir().unwrap();
-    let att = dir.path().join("attachments");
-    fs::create_dir_all(&att).unwrap();
-    fs::write(att.join("a.jpg"), vec![0u8; 1000]).unwrap();
-    fs::write(att.join("b.mp4"), vec![0u8; 2500]).unwrap();
-    fs::write(att.join("orphan.msgmedia.tmp.jpg"), vec![0u8; 9999]).unwrap();
-    assert_eq!(attachments_dir_bytes(&att).unwrap(), 3500);
-}
-
-#[test]
-fn clone_with_log_emits_nothing() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut lines = Vec::new();
-    let mut log = |line: &str| lines.push(line.to_string());
-    let _ = process_attachment_files(
-        &FakeTools::new(),
-        dir.path(),
-        &[],
-        MediaMode::Clone,
-        &CompressOptions::default(),
-        Some(&mut log),
-        None,
-    )
-    .unwrap();
-    assert!(lines.is_empty());
 }
 
 #[test]
@@ -394,59 +323,54 @@ fn write_test_video_at(path: &Path, codec: &[&str], rate: u32) {
         .expect("generate test video");
 }
 
-/// One file through media conversion with `tools`: its remap target, or
-/// `None` when skipped.
-fn process_single(
+/// One file through [`transcode_file`] with `tools`, written beside it as
+/// `<stem>.in_progress`: the derivative's path, or `None` when skipped.
+fn transcode_single(
     tools: &dyn MediaTools,
-    dir: &Path,
     file: &Path,
     mode: MediaMode,
     opts: &CompressOptions,
-) -> Option<String> {
-    let (report, mut remap) =
-        process_attachment_files(tools, dir, &[file.to_path_buf()], mode, opts, None, None)
-            .unwrap();
-    assert_eq!(report.errors, Vec::<String>::new());
-    let old_rel = rel_path(dir, file).unwrap();
-    let new_rel = remap.remove(&old_rel);
-    assert_eq!(report.processed, usize::from(new_rel.is_some()));
-    assert_eq!(report.skipped, usize::from(new_rel.is_none()));
-    new_rel
+) -> Option<PathBuf> {
+    let dest = file.with_extension("in_progress");
+    match transcode_file(tools, file, &dest, mode, opts, None).unwrap() {
+        TranscodeOutcome::Produced { .. } => {
+            assert!(dest.is_file(), "a produced derivative is at {dest:?}");
+            Some(dest)
+        }
+        TranscodeOutcome::Skipped => {
+            assert!(!dest.exists(), "a skipped file wrote {dest:?}");
+            None
+        }
+    }
 }
 
 #[test]
-fn convert_turns_a_mov_into_an_mp4_and_removes_the_original() {
+fn convert_remuxes_a_mov_into_an_mp4() {
     let Some(tools) = crate::testutil::real_ffmpeg() else {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
-    let attachments = dir.path().join("attachments");
-    fs::create_dir_all(&attachments).unwrap();
-    let mov = attachments.join("clip.mov");
+    let mov = dir.path().join("clip.mov");
     write_test_video(&mov, &["-c:v", "libx264"]);
 
-    let new_rel = process_single(
+    let produced = transcode_single(
         &tools,
-        dir.path(),
         &mov,
         MediaMode::Convert,
         &CompressOptions::default(),
-    );
+    )
+    .expect("a mov is converted");
 
-    assert_eq!(new_rel.as_deref(), Some("attachments/clip.mp4"));
-    assert!(!mov.exists(), "the .mov was left behind");
-    let probe = tools.probe(&attachments.join("clip.mp4")).unwrap();
+    let probe = tools.probe(&produced).unwrap();
     assert_eq!(probe.codec, "h264", "a remux keeps the stream");
 }
 
 #[test]
 fn compress_only_remuxes_a_video_under_the_minimum_size() {
     let dir = tempfile::tempdir().unwrap();
-    let attachments = dir.path().join("attachments");
-    fs::create_dir_all(&attachments).unwrap();
-    let mov = attachments.join("small.mov");
+    let mov = dir.path().join("small.mov");
     fs::write(&mov, b"a small mov").unwrap();
-    let mp4 = attachments.join("other.mp4");
+    let mp4 = dir.path().join("other.mp4");
     fs::write(&mp4, b"a small mp4").unwrap();
     let opts = CompressOptions {
         min_size_bytes: 100 * 1024 * 1024,
@@ -454,13 +378,9 @@ fn compress_only_remuxes_a_video_under_the_minimum_size() {
     };
     let tools = FakeTools::new().writing("the remuxed mp4");
 
-    let new_rel = process_single(&tools, dir.path(), &mov, MediaMode::Compress, &opts);
-    assert_eq!(new_rel.as_deref(), Some("attachments/small.mp4"));
-    assert!(!mov.exists());
-    assert_eq!(
-        fs::read(attachments.join("small.mp4")).unwrap(),
-        b"the remuxed mp4"
-    );
+    let produced =
+        transcode_single(&tools, &mov, MediaMode::Compress, &opts).expect("a small mov is remuxed");
+    assert_eq!(fs::read(&produced).unwrap(), b"the remuxed mp4");
     let remux = only_run(&tools);
     assert!(
         has(&remux, "copy") && !has(&remux, "libx265") && !has(&remux, "libx264"),
@@ -469,7 +389,7 @@ fn compress_only_remuxes_a_video_under_the_minimum_size() {
 
     // A small MP4 is already in the target container: nothing to do.
     assert_eq!(
-        process_single(&tools, dir.path(), &mp4, MediaMode::Compress, &opts),
+        transcode_single(&tools, &mp4, MediaMode::Compress, &opts),
         None
     );
     assert_eq!(tools.runs().len(), 1, "ffmpeg ran for the small mp4");
@@ -482,9 +402,7 @@ fn compress_re_encodes_a_large_h264_video_to_hevc_at_the_capped_frame_rate() {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
-    let attachments = dir.path().join("attachments");
-    fs::create_dir_all(&attachments).unwrap();
-    let avc = attachments.join("avc.mp4");
+    let avc = dir.path().join("avc.mp4");
     write_test_video(&avc, &["-c:v", "libx264"]);
     let opts = CompressOptions {
         min_size_bytes: 0,
@@ -492,10 +410,10 @@ fn compress_re_encodes_a_large_h264_video_to_hevc_at_the_capped_frame_rate() {
         ..CompressOptions::default()
     };
 
-    let new_rel = process_single(&tools, dir.path(), &avc, MediaMode::Compress, &opts);
+    let produced = transcode_single(&tools, &avc, MediaMode::Compress, &opts)
+        .expect("a large H.264 video is re-encoded");
 
-    assert_eq!(new_rel.as_deref(), Some("attachments/avc.mp4"));
-    let probe = tools.probe(&avc).unwrap();
+    let probe = tools.probe(&produced).unwrap();
     assert_eq!(probe.codec, "hevc", "a large H.264 video is re-encoded");
     assert_eq!(probe.fps, Some(5.0), "the frame rate is capped at max_fps");
 }
@@ -506,9 +424,7 @@ fn compress_re_encodes_a_large_h264_video_to_hevc_at_the_capped_frame_rate() {
 #[test]
 fn compress_skips_an_efficient_video_unless_told_not_to() {
     let dir = tempfile::tempdir().unwrap();
-    let attachments = dir.path().join("attachments");
-    fs::create_dir_all(&attachments).unwrap();
-    let hevc = attachments.join("hevc.mp4");
+    let hevc = dir.path().join("hevc.mp4");
     fs::write(&hevc, b"a small, low-bitrate hevc video").unwrap();
     let efficient = video_probe("hevc", 10.0);
     let opts = CompressOptions {
@@ -521,7 +437,7 @@ fn compress_skips_an_efficient_video_unless_told_not_to() {
 
     // Already HEVC, small and low bitrate: re-encoding would buy nothing.
     assert_eq!(
-        process_single(&tools, dir.path(), &hevc, MediaMode::Compress, &opts),
+        transcode_single(&tools, &hevc, MediaMode::Compress, &opts),
         None
     );
     assert_eq!(tools.runs(), Vec::<Vec<String>>::new());
@@ -534,11 +450,9 @@ fn compress_skips_an_efficient_video_unless_told_not_to() {
             ..efficient.clone()
         })
         .writing("the re-encode");
-    assert_eq!(
-        process_single(&tools, dir.path(), &hevc, MediaMode::Compress, &opts).as_deref(),
-        Some("attachments/hevc.mp4")
-    );
-    fs::write(&hevc, b"a small, low-bitrate hevc video").unwrap();
+    let produced = transcode_single(&tools, &hevc, MediaMode::Compress, &opts)
+        .expect("a video over the resolution cap is re-encoded");
+    fs::remove_file(produced).unwrap();
 
     // With the skip turned off, the efficient file is re-encoded too. A max
     // fps of zero means no cap was given, and the pass uses 30, which this
@@ -549,11 +463,9 @@ fn compress_skips_an_efficient_video_unless_told_not_to() {
         max_fps: 0.0,
         ..opts
     };
-    assert_eq!(
-        process_single(&tools, dir.path(), &hevc, MediaMode::Compress, &opts).as_deref(),
-        Some("attachments/hevc.mp4")
-    );
-    assert_eq!(fs::read(&hevc).unwrap(), b"the re-encode");
+    let produced = transcode_single(&tools, &hevc, MediaMode::Compress, &opts)
+        .expect("with the skip off, an efficient video is re-encoded");
+    assert_eq!(fs::read(&produced).unwrap(), b"the re-encode");
     let run = only_run(&tools);
     assert!(has(&run, "libx265"), "{run:?}");
     assert!(!filter(&run).contains("fps="), "{run:?}");
@@ -564,9 +476,7 @@ fn compress_skips_an_efficient_video_unless_told_not_to() {
 #[test]
 fn compress_caps_the_frame_rate_and_falls_back_to_h264() {
     let dir = tempfile::tempdir().unwrap();
-    let attachments = dir.path().join("attachments");
-    fs::create_dir_all(&attachments).unwrap();
-    let clip = attachments.join("clip.mov");
+    let clip = dir.path().join("clip.mov");
     fs::write(&clip, b"a 60 fps h264 video").unwrap();
     let tools = FakeTools::new()
         .probing(video_probe("h264", 60.0))
@@ -578,14 +488,10 @@ fn compress_caps_the_frame_rate_and_falls_back_to_h264() {
         ..CompressOptions::default()
     };
 
-    let new_rel = process_single(&tools, dir.path(), &clip, MediaMode::Compress, &opts);
+    let produced = transcode_single(&tools, &clip, MediaMode::Compress, &opts)
+        .expect("H.264 stands in for HEVC");
 
-    assert_eq!(new_rel.as_deref(), Some("attachments/clip.mp4"));
-    assert!(!clip.exists());
-    assert_eq!(
-        fs::read(attachments.join("clip.mp4")).unwrap(),
-        b"the h264 re-encode"
-    );
+    assert_eq!(fs::read(&produced).unwrap(), b"the h264 re-encode");
     let runs = tools.runs();
     assert_eq!(runs.len(), 2, "{runs:?}");
     assert!(
@@ -617,35 +523,6 @@ fn two_large_videos(dir: &Path) -> (Vec<PathBuf>, CompressOptions) {
     (files, opts)
 }
 
-/// When H.264 stands in for a failed HEVC run, the report says why HEVC
-/// failed, for its caller to log as a warning (#2256).
-#[test]
-fn compress_reports_why_hevc_failed_when_h264_stands_in() {
-    let dir = tempfile::tempdir().unwrap();
-    let (files, opts) = two_large_videos(dir.path());
-    let tools = FakeTools::new()
-        .probing(video_probe("h264", 30.0))
-        .failing_on("libx265");
-
-    let (report, _) = process_attachment_files(
-        &tools,
-        dir.path(),
-        &files,
-        MediaMode::Compress,
-        &opts,
-        None,
-        None,
-    )
-    .unwrap();
-
-    assert_eq!(report.processed, 2, "{:?}", report.errors);
-    let line = report.hevc_fallback.line().expect("a fallback reason");
-    assert!(
-        line.ends_with("libx265: fake failure on '<input>'"),
-        "the line carries ffmpeg's HEVC error: {line}"
-    );
-}
-
 /// Why HEVC failed names no file: ffmpeg's error names the video it read
 /// and the file it wrote by their full paths, and the server logs the
 /// reason, which may hold no file name (#2802).
@@ -653,22 +530,20 @@ fn compress_reports_why_hevc_failed_when_h264_stands_in() {
 fn why_hevc_failed_names_no_file() {
     let dir = tempfile::tempdir().unwrap();
     let (files, opts) = two_large_videos(dir.path());
+    let dest = dir.path().join("out.mp4");
     let tools = FakeTools::new()
         .probing(video_probe("h264", 30.0))
         .failing_on("libx265");
 
-    let (report, _) = process_attachment_files(
-        &tools,
-        dir.path(),
-        &files[..1],
-        MediaMode::Compress,
-        &opts,
-        None,
-        None,
-    )
-    .unwrap();
+    let outcome =
+        transcode_file(&tools, &files[0], &dest, MediaMode::Compress, &opts, None).unwrap();
 
-    let reason = report.hevc_fallback.reason().expect("a fallback reason");
+    let TranscodeOutcome::Produced {
+        hevc_failure: Some(reason),
+    } = outcome
+    else {
+        panic!("expected a produced file with HEVC's reason, got {outcome:?}");
+    };
     let hevc_run = &tools.runs()[0];
     assert!(
         hevc_run.iter().any(|arg| arg.ends_with("one.mov")),
@@ -689,37 +564,27 @@ fn why_hevc_failed_names_no_file() {
     );
 }
 
-/// A file the pass could not convert records the line ffmpeg wrote that
-/// names the cause, which here is its last line, with no path in it: the
-/// same reason the desktop app's Media Stage records (#2801).
+/// A file ffmpeg could not convert is recorded with the line ffmpeg wrote
+/// that names the cause, which here is its last line, with no path in it,
+/// while the whole error keeps both failures for the log (#2801).
 #[test]
 fn a_file_that_fails_records_ffmpegs_last_line_without_its_path() {
     let dir = tempfile::tempdir().unwrap();
     let (files, opts) = two_large_videos(dir.path());
+    let dest = dir.path().join("out.mp4");
     let tools = FakeTools::new()
         .probing(video_probe("h264", 30.0))
         .failing_on("libx265")
         .failing_on("libx264");
 
-    let (report, _) = process_attachment_files(
-        &tools,
-        dir.path(),
-        &files[..1],
-        MediaMode::Compress,
-        &opts,
-        None,
-        None,
-    )
-    .unwrap();
+    let err = transcode_file(&tools, &files[0], &dest, MediaMode::Compress, &opts, None)
+        .expect_err("both encoders fail");
 
     assert_eq!(
-        report.not_converted,
-        vec![NotConverted {
-            path: files[0].clone(),
-            reason: "libx264: fake failure on '<input>'".into(),
-        }]
+        why_not_converted(&err, &files[0]),
+        "libx264: fake failure on '<input>'"
     );
-    let logged = &report.errors[0];
+    let logged = format!("{err:#}");
     assert!(
         logged.contains(&files[0].display().to_string()) && logged.contains("HEVC failed"),
         "the log keeps the whole error: {logged}"
@@ -814,7 +679,7 @@ fn why_not_converted_names_the_cause_not_the_last_line() {
              [out#0/mp4 @ 0x5e6836f4a340] Nothing was written into output file, because at \
              least one of its streams received no packets.\n"
         ),
-        "[libx265 @ 0x5e6836f4af00] Error setting preset/tune nonsense/(null)."
+        "[libx265] Error setting preset/tune nonsense/(null)."
     );
 
     // An input it cannot read: the demuxer's line says why, and the lines
@@ -827,7 +692,7 @@ fn why_not_converted_names_the_cause_not_the_last_line() {
              Error opening input file /home/someone/attachments/clip.mov.\n\
              Error opening input files: Invalid data found when processing input\n"
         ),
-        "[mov,mp4,m4a,3gp,3g2,mj2 @ 0x583b3eba9f00] moov atom not found"
+        "[mov,mp4,m4a,3gp,3g2,mj2] moov atom not found"
     );
 
     // An encoder ffmpeg does not have.
@@ -838,7 +703,7 @@ fn why_not_converted_names_the_cause_not_the_last_line() {
              Error opening output file /tmp/out.mp4.\n\
              Error opening output files: Encoder not found\n"
         ),
-        "[vost#0:0 @ 0x57532dc21880] Unknown encoder 'nosuchcodec'"
+        "[vost#0:0] Unknown encoder 'nosuchcodec'"
     );
 
     // A damaged frame ffmpeg carried on past is not the cause: a full disk
@@ -851,7 +716,7 @@ fn why_not_converted_names_the_cause_not_the_last_line() {
              [out#0/adts @ 0x5cf2699e1a40] Error writing trailer: No space left on device\n\
              [out#0/adts @ 0x5cf2699e1a40] Error closing file: No space left on device\n"
         ),
-        "[out#0/adts @ 0x5cf2699e1a40] Error closing file: No space left on device"
+        "[out#0/adts] Error closing file: No space left on device"
     );
 
     // libx265's report after a full disk stopped it is not the cause.
@@ -866,7 +731,7 @@ fn why_not_converted_names_the_cause_not_the_last_line() {
              \n\
              encoded 0 frames\n"
         ),
-        "[vf#0:0 @ 0x59b3ce069500] Error sending frames to consumers: No space left on device"
+        "[vf#0:0] Error sending frames to consumers: No space left on device"
     );
 
     // When every line only follows from a failure, the first is the
@@ -877,7 +742,7 @@ fn why_not_converted_names_the_cause_not_the_last_line() {
              Error opening input file /home/someone/attachments/clip.mov.\n\
              Error opening input files: No such file or directory\n"
         ),
-        "[in#0 @ 0x57c830ccfc40] Error opening input: No such file or directory"
+        "[in#0] Error opening input: No such file or directory"
     );
 
     // A line that is not a consequence is the reason, with the file
@@ -888,6 +753,29 @@ fn why_not_converted_names_the_cause_not_the_last_line() {
              /home/someone/attachments/clip.mov: Invalid data found when processing input\n"
         ),
         "<input>: Invalid data found when processing input"
+    );
+
+    // A C runtime that prints a pointer without `0x`, as one on Windows
+    // can, gets the same reason.
+    assert_eq!(
+        reason("[libx265 @ 000001C8A4F2E0C0] Error setting preset/tune nonsense/(null).\n"),
+        "[libx265] Error setting preset/tune nonsense/(null)."
+    );
+
+    // A tag whose text after ` @ ` is not an address keeps it.
+    assert_eq!(
+        reason("[filter @ graph 0] Invalid argument\n"),
+        "[filter @ graph 0] Invalid argument"
+    );
+
+    // Each tag on the line loses its address and keeps its component.
+    assert_eq!(
+        reason(
+            "[aist#0:0/mp3 @ 0x5cf2699e0d80] [dec:mp3float @ 0x5cf2699f0a40] Error submitting \
+             packet to decoder: Invalid data found when processing input\n"
+        ),
+        "[aist#0:0/mp3] [dec:mp3float] Error submitting packet to decoder: Invalid data found \
+         when processing input"
     );
 }
 
@@ -906,55 +794,38 @@ fn without_files_replaces_the_longest_path_first() {
     assert_eq!(failed.without_files(failed.said()), "<output> and <input>");
 }
 
-/// A pass where HEVC works reports no fallback.
+/// A compression where HEVC works reports no fallback.
 #[test]
 fn compress_reports_no_fallback_when_hevc_works() {
     let dir = tempfile::tempdir().unwrap();
     let (files, opts) = two_large_videos(dir.path());
+    let dest = dir.path().join("out.mp4");
     let tools = FakeTools::new().probing(video_probe("h264", 30.0));
 
-    let (report, _) = process_attachment_files(
-        &tools,
-        dir.path(),
-        &files,
-        MediaMode::Compress,
-        &opts,
-        None,
-        None,
-    )
-    .unwrap();
+    let outcome =
+        transcode_file(&tools, &files[0], &dest, MediaMode::Compress, &opts, None).unwrap();
 
-    assert_eq!(report.hevc_fallback.line(), None);
+    assert_eq!(outcome, TranscodeOutcome::Produced { hevc_failure: None });
 }
 
-/// When H.264 fails after HEVC, the error names both failures, and no
-/// fallback is reported, since no video was compressed as H.264.
+/// When H.264 fails after HEVC, the error names both failures.
 #[test]
 fn compress_reports_both_errors_when_h264_fails_after_hevc() {
     let dir = tempfile::tempdir().unwrap();
     let (files, opts) = two_large_videos(dir.path());
+    let dest = dir.path().join("out.mp4");
     let tools = FakeTools::new()
         .probing(video_probe("h264", 30.0))
         .failing_on("libx265")
         .failing_on("libx264");
 
-    let (report, _) = process_attachment_files(
-        &tools,
-        dir.path(),
-        &files[..1],
-        MediaMode::Compress,
-        &opts,
-        None,
-        None,
-    )
-    .unwrap();
+    let err = transcode_file(&tools, &files[0], &dest, MediaMode::Compress, &opts, None)
+        .expect_err("both encoders fail");
 
-    assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
-    let error = &report.errors[0];
+    let error = format!("{err:#}");
     assert!(error.contains("HEVC failed"), "{error}");
     assert!(error.contains("libx265"), "HEVC's reason is kept: {error}");
     assert!(error.contains("libx264"), "H.264's reason is kept: {error}");
-    assert_eq!(report.hevc_fallback.line(), None);
 }
 
 /// A run's [`HevcFallback`] hands back a warning for its first reason only,
@@ -1004,27 +875,25 @@ fn compress_keeps_a_frame_rate_under_the_maximum_and_lowers_one_over_it() {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
-    let attachments = dir.path().join("attachments");
-    fs::create_dir_all(&attachments).unwrap();
     let opts = CompressOptions {
         min_size_bytes: 0,
         max_fps: 30.0,
         ..CompressOptions::default()
     };
 
-    let slow = attachments.join("slow.mp4");
+    let slow = dir.path().join("slow.mp4");
     write_test_video_at(&slow, &["-c:v", "libx264"], 24);
-    let new_rel = process_single(&tools, dir.path(), &slow, MediaMode::Compress, &opts);
-    assert_eq!(new_rel.as_deref(), Some("attachments/slow.mp4"));
-    let probe = tools.probe(&slow).unwrap();
+    let produced =
+        transcode_single(&tools, &slow, MediaMode::Compress, &opts).expect("slow is re-encoded");
+    let probe = tools.probe(&produced).unwrap();
     assert_eq!(probe.codec, "hevc", "the video was re-encoded");
     assert_eq!(probe.fps, Some(24.0), "a 24 fps video stays at 24");
 
-    let fast = attachments.join("fast.mp4");
+    let fast = dir.path().join("fast.mp4");
     write_test_video_at(&fast, &["-c:v", "libx264"], 60);
-    let new_rel = process_single(&tools, dir.path(), &fast, MediaMode::Compress, &opts);
-    assert_eq!(new_rel.as_deref(), Some("attachments/fast.mp4"));
-    let probe = tools.probe(&fast).unwrap();
+    let produced =
+        transcode_single(&tools, &fast, MediaMode::Compress, &opts).expect("fast is re-encoded");
+    let probe = tools.probe(&produced).unwrap();
     assert_eq!(probe.codec, "hevc", "the video was re-encoded");
     assert_eq!(probe.fps, Some(30.0), "a 60 fps video comes down to 30");
 }
@@ -1035,9 +904,7 @@ fn compress_re_encodes_a_large_mp3_when_the_result_is_smaller() {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
-    let attachments = dir.path().join("attachments");
-    fs::create_dir_all(&attachments).unwrap();
-    let mp3 = attachments.join("song.mp3");
+    let mp3 = dir.path().join("song.mp3");
     tools
         .run_ffmpeg(&[
             "-y".into(),
@@ -1055,73 +922,26 @@ fn compress_re_encodes_a_large_mp3_when_the_result_is_smaller() {
     let before = fs::metadata(&mp3).unwrap().len();
     assert!(before > MP3_COMPRESS_FLOOR, "fixture must clear the floor");
 
-    let new_rel = process_single(
+    let produced = transcode_single(
         &tools,
-        dir.path(),
         &mp3,
         MediaMode::Compress,
         &CompressOptions::default(),
-    );
+    )
+    .expect("a large mp3 is re-encoded");
 
-    assert_eq!(new_rel.as_deref(), Some("attachments/song.mp3"));
-    assert!(fs::metadata(&mp3).unwrap().len() < before);
+    assert!(fs::metadata(&produced).unwrap().len() < before);
+    fs::remove_file(produced).unwrap();
 
     // Convert leaves an MP3 alone, whatever its size.
-    let bytes = fs::read(&mp3).unwrap();
     assert_eq!(
-        process_single(
+        transcode_single(
             &tools,
-            dir.path(),
             &mp3,
             MediaMode::Convert,
             &CompressOptions::default()
         ),
         None
-    );
-    assert_eq!(fs::read(&mp3).unwrap(), bytes);
-}
-
-#[test]
-fn process_attachment_files_touches_only_the_listed_files() {
-    let dir = tempfile::tempdir().unwrap();
-    let attachments = dir.path().join("attachments");
-    fs::create_dir_all(&attachments).unwrap();
-    let listed = attachments.join("a.png");
-    let unlisted = attachments.join("b.png");
-    fs::write(&listed, PNG_1X1_RGB).unwrap();
-    fs::write(&unlisted, PNG_1X1_RGB).unwrap();
-    let unlisted_before = fs::read(&unlisted).unwrap();
-    let tools = FakeTools::new();
-
-    let (_report, remap) = process_attachment_files(
-        &tools,
-        dir.path(),
-        std::slice::from_ref(&listed),
-        MediaMode::Convert,
-        &CompressOptions::default(),
-        None,
-        None,
-    )
-    .unwrap();
-
-    assert!(
-        remap.contains_key("attachments/a.png"),
-        "the listed file must be converted"
-    );
-    assert!(
-        !remap.contains_key("attachments/b.png"),
-        "a file the caller did not list must be left alone: scoping the pass \
-         to an explicit list is the whole point of taking one"
-    );
-    assert!(
-        !only_run(&tools).contains(&path_str(&unlisted)),
-        "ffmpeg read the unlisted file"
-    );
-    assert!(unlisted.is_file(), "unlisted file must survive the pass");
-    assert_eq!(
-        fs::read(&unlisted).unwrap(),
-        unlisted_before,
-        "unlisted file was rewritten"
     );
 }
 
@@ -1260,66 +1080,6 @@ fn kind_of_never_lets_a_name_hint_override_the_declared_media_type() {
     );
 }
 
-#[test]
-fn convert_never_overwrites_a_file_that_already_has_the_target_name() {
-    let dir = tempfile::tempdir().unwrap();
-    let attachments = dir.path().join("attachments");
-    fs::create_dir_all(&attachments).unwrap();
-    // a.png beside a.jpg, c.png beside c.jpg and c_1.jpg, and a plain b.png.
-    for name in ["a.png", "b.png", "c.png"] {
-        fs::write(attachments.join(name), PNG_1X1_RGB).unwrap();
-    }
-    for name in ["a.jpg", "c.jpg", "c_1.jpg"] {
-        fs::write(attachments.join(name), format!("the user's own {name}")).unwrap();
-    }
-    let files: Vec<PathBuf> = ["a.png", "b.png", "c.png"]
-        .iter()
-        .map(|name| attachments.join(name))
-        .collect();
-    let tools = FakeTools::new().writing("a converted jpeg");
-
-    let (report, remap) = process_attachment_files(
-        &tools,
-        dir.path(),
-        &files,
-        MediaMode::Convert,
-        &CompressOptions::default(),
-        None,
-        None,
-    )
-    .unwrap();
-
-    assert_eq!(report.errors, Vec::<String>::new());
-    assert_eq!(report.processed, 3);
-    assert_eq!(report.skipped, 0);
-    let expected: HashMap<String, String> = [
-        ("attachments/a.png", "attachments/a_1.jpg"),
-        ("attachments/b.png", "attachments/b.jpg"),
-        ("attachments/c.png", "attachments/c_2.jpg"),
-    ]
-    .into_iter()
-    .map(|(from, to)| (from.to_string(), to.to_string()))
-    .collect();
-    assert_eq!(remap, expected);
-    for name in ["a.jpg", "c.jpg", "c_1.jpg"] {
-        assert_eq!(
-            fs::read_to_string(attachments.join(name)).unwrap(),
-            format!("the user's own {name}"),
-            "{name} was overwritten"
-        );
-    }
-    for name in ["a_1.jpg", "b.jpg", "c_2.jpg"] {
-        assert_eq!(
-            fs::read_to_string(attachments.join(name)).unwrap(),
-            "a converted jpeg",
-            "{name} is not the conversion"
-        );
-    }
-    for name in ["a.png", "b.png", "c.png"] {
-        assert!(!attachments.join(name).exists(), "{name} was left behind");
-    }
-}
-
 /// The fake accepts any arguments, so this runs the image compress
 /// arguments through the real ffmpeg to show it accepts them.
 #[test]
@@ -1352,54 +1112,39 @@ fn compress_turns_a_png_into_a_jpeg_with_the_real_ffmpeg() {
 #[test]
 fn compress_shrinks_large_jpegs_converts_pngs_and_leaves_gifs_and_small_jpegs() {
     let dir = tempfile::tempdir().unwrap();
-    let attachments = dir.path().join("attachments");
-    fs::create_dir_all(&attachments).unwrap();
-    let large = attachments.join("large.jpg");
+    let large = dir.path().join("large.jpg");
     fs::write(&large, vec![0xa5; JPEG_COMPRESS_FLOOR as usize + 1]).unwrap();
-    let png = attachments.join("still.png");
+    let png = dir.path().join("still.png");
     fs::write(&png, PNG_1X1_RGB).unwrap();
     // Neither of these reaches ffmpeg.
-    let gif = attachments.join("loop.gif");
+    let gif = dir.path().join("loop.gif");
     fs::write(&gif, b"GIF89a animated").unwrap();
-    let small = attachments.join("small.jpg");
+    let small = dir.path().join("small.jpg");
     fs::write(&small, b"\xff\xd8\xff small jpeg").unwrap();
-    let files = vec![large.clone(), png, gif.clone(), small.clone()];
     let tools = FakeTools::new().writing("a smaller jpeg");
+    let compress = |file: &Path| {
+        transcode_single(
+            &tools,
+            file,
+            MediaMode::Compress,
+            &CompressOptions::default(),
+        )
+    };
 
-    let (report, remap) = process_attachment_files(
-        &tools,
-        dir.path(),
-        &files,
-        MediaMode::Compress,
-        &CompressOptions::default(),
-        None,
-        None,
-    )
-    .unwrap();
-
-    assert_eq!(report.errors, Vec::<String>::new());
-    assert_eq!((report.processed, report.skipped), (2, 2));
+    let shrunk = compress(&large).expect("the large JPEG is re-encoded");
+    assert_eq!(
+        fs::read(&shrunk).unwrap(),
+        b"a smaller jpeg",
+        "the smaller re-encode is kept"
+    );
+    assert!(compress(&png).is_some(), "the PNG is converted");
+    assert_eq!(compress(&gif), None);
+    assert_eq!(compress(&small), None);
     assert_eq!(
         tools.runs().len(),
         2,
         "ffmpeg ran for a GIF or a small JPEG"
     );
-    assert_eq!(
-        fs::read(&large).unwrap(),
-        b"a smaller jpeg",
-        "the large JPEG was not replaced by the smaller re-encode"
-    );
-    assert_eq!(
-        remap.get("attachments/large.jpg").map(String::as_str),
-        Some("attachments/large.jpg")
-    );
-    assert_eq!(
-        remap.get("attachments/still.png").map(String::as_str),
-        Some("attachments/still.jpg")
-    );
-    assert_eq!(fs::read(&gif).unwrap(), b"GIF89a animated");
-    assert_eq!(fs::read(&small).unwrap(), b"\xff\xd8\xff small jpeg");
-    assert_eq!(remap.len(), 2);
 }
 
 /// Staging forecasts output names from `derivative_name`, and recovers after
@@ -1470,35 +1215,21 @@ fn derivative_name_for_missing_ignores_the_size_floors() {
 fn audio_becomes_mp3_and_a_small_mp3_is_left_alone() {
     for mode in [MediaMode::Convert, MediaMode::Compress] {
         let dir = tempfile::tempdir().unwrap();
-        let attachments = dir.path().join("attachments");
-        fs::create_dir_all(&attachments).unwrap();
-        let m4a = attachments.join("voice.m4a");
+        let m4a = dir.path().join("voice.m4a");
         fs::write(&m4a, b"an m4a voice note").unwrap();
         // Under the MP3 floor: ffmpeg must never see it.
-        let mp3 = attachments.join("small.mp3");
+        let mp3 = dir.path().join("small.mp3");
         fs::write(&mp3, b"ID3 small mp3").unwrap();
         let tools = FakeTools::new().writing("the mp3");
 
-        let (report, remap) = process_attachment_files(
-            &tools,
-            dir.path(),
-            &[m4a.clone(), mp3.clone()],
-            mode,
-            &CompressOptions::default(),
-            None,
-            None,
-        )
-        .unwrap();
-
-        assert_eq!(report.errors, Vec::<String>::new(), "{mode:?}");
-        assert_eq!((report.processed, report.skipped), (1, 1), "{mode:?}");
+        let produced = transcode_single(&tools, &m4a, mode, &CompressOptions::default());
+        assert!(produced.is_some(), "{mode:?}");
         assert_eq!(
-            remap.get("attachments/voice.m4a").map(String::as_str),
-            Some("attachments/voice.mp3"),
+            transcode_single(&tools, &mp3, mode, &CompressOptions::default()),
+            None,
             "{mode:?}"
         );
         assert!(has(&only_run(&tools), "libmp3lame"), "{mode:?}");
-        assert!(!m4a.exists(), "{mode:?}");
         assert_eq!(fs::read(&mp3).unwrap(), b"ID3 small mp3", "{mode:?}");
     }
 }
@@ -1509,9 +1240,7 @@ fn convert_turns_an_m4a_into_an_mp3() {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
-    let attachments = dir.path().join("attachments");
-    fs::create_dir_all(&attachments).unwrap();
-    let m4a = attachments.join("voice.m4a");
+    let m4a = dir.path().join("voice.m4a");
     tools
         .run_ffmpeg(&[
             "-y".into(),
@@ -1525,138 +1254,15 @@ fn convert_turns_an_m4a_into_an_mp3() {
         ])
         .expect("generate m4a fixture");
 
-    let new_rel = process_single(
+    let produced = transcode_single(
         &tools,
-        dir.path(),
         &m4a,
         MediaMode::Convert,
         &CompressOptions::default(),
-    );
+    )
+    .expect("an m4a is converted");
 
-    assert_eq!(new_rel.as_deref(), Some("attachments/voice.mp3"));
-    assert!(!m4a.exists());
-    assert!(fs::metadata(attachments.join("voice.mp3")).unwrap().len() > 0);
-}
-
-#[test]
-fn collect_media_files_keeps_media_and_leaves_everything_else() {
-    let dir = tempfile::tempdir().unwrap();
-    let nested = dir.path().join("attachments").join("a1");
-    fs::create_dir_all(&nested).unwrap();
-    fs::write(dir.path().join("photo.png"), b"png").unwrap();
-    fs::write(dir.path().join("receipt.pdf"), b"pdf").unwrap();
-    fs::write(nested.join("clip.mp4"), b"mp4").unwrap();
-    fs::write(nested.join("clip.msgmedia.tmp.mp4"), b"partial").unwrap();
-
-    let files = collect_media_files(dir.path()).unwrap();
-
-    assert_eq!(
-        files,
-        vec![nested.join("clip.mp4"), dir.path().join("photo.png")],
-        "only media, found in subdirectories too, sorted; never a PDF or an \
-         ffmpeg temp file"
-    );
-}
-
-/// A symlink under the attachments directory is never followed: a linked
-/// directory elsewhere is not listed for conversion, not swept of temp files,
-/// and not counted, and a link back to a parent does not loop (#2262).
-#[cfg(unix)]
-#[test]
-fn the_attachment_walks_never_follow_a_symlink() {
-    use std::os::unix::fs::symlink;
-
-    let dir = tempfile::tempdir().unwrap();
-    let att = dir.path().join("attachments");
-    fs::create_dir_all(&att).unwrap();
-    fs::write(att.join("photo.png"), vec![0u8; 100]).unwrap();
-
-    let elsewhere = dir.path().join("elsewhere");
-    fs::create_dir_all(&elsewhere).unwrap();
-    fs::write(elsewhere.join("clip.mp4"), vec![0u8; 5000]).unwrap();
-    let foreign_temp = elsewhere.join("clip.msgmedia.tmp.mp4");
-    fs::write(&foreign_temp, b"not ours").unwrap();
-
-    symlink(&elsewhere, att.join("linked")).unwrap();
-    symlink(elsewhere.join("clip.mp4"), att.join("linked-clip.mp4")).unwrap();
-    symlink(&att, att.join("loop")).unwrap();
-
-    assert_eq!(
-        collect_media_files(&att).unwrap(),
-        vec![att.join("photo.png")],
-        "only the real file is listed; nothing through a link"
-    );
-
-    remove_msgmedia_temps(&att).unwrap();
-    assert!(
-        foreign_temp.exists(),
-        "a temp-named file in a linked directory is not ours to delete"
-    );
-
-    assert_eq!(attachments_dir_bytes(&att).unwrap(), 100);
-}
-
-/// A socket named like media is not listed for conversion: only regular
-/// files are, because a conversion that opened a socket or pipe could block
-/// on it.
-#[cfg(unix)]
-#[test]
-fn the_attachment_walks_list_only_regular_files() {
-    let dir = tempfile::tempdir().unwrap();
-    let att = dir.path().join("attachments");
-    fs::create_dir_all(&att).unwrap();
-    fs::write(att.join("photo.png"), b"png").unwrap();
-    let _socket = std::os::unix::net::UnixListener::bind(att.join("socket.mp4")).unwrap();
-
-    assert_eq!(
-        collect_media_files(&att).unwrap(),
-        vec![att.join("photo.png")]
-    );
-}
-
-/// The line that starts a pass words its file count singular for one, so a
-/// single attachment reads `1 file` (#1815).
-#[test]
-fn the_starting_line_counts_one_file_and_many_files() {
-    assert_eq!(
-        starting_line("Converting", 1, 500),
-        "Converting attachments (1 file, 500 B)…"
-    );
-    assert_eq!(
-        starting_line("Compressing", 3, 2_000),
-        "Compressing attachments (3 files, 2.0 KB)…"
-    );
-}
-
-/// The line that ends a pass words each count singular for one, and names
-/// the files that failed only when one did (#1825).
-#[test]
-fn the_done_line_counts_one_file_and_many_files() {
-    let one = MediaReport {
-        processed: 1,
-        skipped: 1,
-        bytes_before: 2_000,
-        bytes_after: 500,
-        errors: vec!["a.heic: ffmpeg failed".into()],
-        ..MediaReport::default()
-    };
-    assert_eq!(
-        done_line_with_failures(MediaMode::Convert, &one),
-        "Attachment convert done: processed 1 file, skipped 1 file, size 2.0 KB → 500 B, \
-         1 file failed"
-    );
-    let many = MediaReport {
-        processed: 3,
-        skipped: 0,
-        bytes_before: 2_000,
-        bytes_after: 2_000,
-        errors: Vec::new(),
-        ..MediaReport::default()
-    };
-    assert_eq!(
-        done_line_with_failures(MediaMode::Compress, &many),
-        "Attachment compress done: processed 3 files, skipped 0 files, size 2.0 KB → 2.0 KB"
-    );
+    assert!(fs::metadata(&produced).unwrap().len() > 0);
 }
 
 /// The no-progress wait the fallback tests give.
@@ -1757,20 +1363,21 @@ impl MediaTools for ScriptedTools {
 const HANG: &str = "touch \"$dir/started\"\nexec sleep 600";
 
 /// Compress the first of [`two_large_videos`] with `tools`.
-fn compress_scripted(tools: &ScriptedTools) -> MediaReport {
+fn compress_scripted(tools: &ScriptedTools) -> Result<TranscodeOutcome> {
     let dir = tempfile::tempdir().unwrap();
     let (files, opts) = two_large_videos(dir.path());
-    process_attachment_files(
-        tools,
-        dir.path(),
-        &files[..1],
-        MediaMode::Compress,
-        &opts,
-        None,
-        None,
-    )
-    .unwrap()
-    .0
+    let dest = dir.path().join("out.mp4");
+    transcode_file(tools, &files[0], &dest, MediaMode::Compress, &opts, None)
+}
+
+/// Why HEVC failed, from a compression where H.264 stood in.
+fn hevc_failure(outcome: Result<TranscodeOutcome>) -> String {
+    match outcome {
+        Ok(TranscodeOutcome::Produced {
+            hevc_failure: Some(reason),
+        }) => reason,
+        other => panic!("expected a produced file with HEVC's reason, got {other:?}"),
+    }
 }
 
 /// A HEVC run that ffmpeg ended with an error, as when libx265 is missing
@@ -1780,12 +1387,10 @@ fn compress_scripted(tools: &ScriptedTools) -> MediaReport {
 fn compress_tries_h264_after_hevc_failed() {
     let tools = ScriptedTools::new("echo 'Unknown encoder libx265' >&2\nexit 1", false);
 
-    let report = compress_scripted(&tools);
+    let reason = hevc_failure(compress_scripted(&tools));
 
     assert!(tools.tried_h264(), "{:?}", tools.runs());
-    assert_eq!(report.processed, 1, "{:?}", report.errors);
-    let line = report.hevc_fallback.line().expect("a fallback reason");
-    assert!(line.contains("Unknown encoder libx265"), "{line}");
+    assert!(reason.contains("Unknown encoder libx265"), "{reason}");
 }
 
 /// A HEVC run that writes no progress and never exits most likely hung in
@@ -1796,14 +1401,12 @@ fn compress_tries_h264_after_hevc_failed() {
 fn compress_tries_h264_after_hevc_stalled_before_any_output() {
     let tools = ScriptedTools::new(HANG, true);
 
-    let report = compress_scripted(&tools);
+    let reason = hevc_failure(compress_scripted(&tools));
 
     assert!(tools.tried_h264(), "{:?}", tools.runs());
-    assert_eq!(report.processed, 1, "{:?}", report.errors);
-    let line = report.hevc_fallback.line().expect("a fallback reason");
     assert!(
-        line.contains("made no progress for 2 minutes before converting any of the file"),
-        "{line}"
+        reason.contains("made no progress for 2 minutes before converting any of the file"),
+        "{reason}"
     );
 }
 
@@ -1818,17 +1421,13 @@ fn compress_does_not_try_h264_after_hevc_stalled_partway() {
         true,
     );
 
-    let report = compress_scripted(&tools);
+    let err = compress_scripted(&tools).expect_err("the file fails");
 
     assert!(!tools.tried_h264(), "{:?}", tools.runs());
-    assert_eq!(report.processed, 0);
-    assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
     assert!(
-        report.errors[0].contains("made no progress for 2 minutes after converting 0:02"),
-        "{:?}",
-        report.errors
+        format!("{err:#}").contains("made no progress for 2 minutes after converting 0:02"),
+        "{err:#}"
     );
-    assert_eq!(report.hevc_fallback.line(), None);
 }
 
 /// A HEVC run whose position passes twice the file's length is a damaged
@@ -1843,14 +1442,12 @@ fn compress_does_not_try_h264_after_hevc_ran_past_its_length() {
         false,
     );
 
-    let report = compress_scripted(&tools);
+    let err = compress_scripted(&tools).expect_err("the file fails");
 
     assert!(!tools.tried_h264(), "{:?}", tools.runs());
-    assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
     assert!(
-        report.errors[0].contains("ran past twice the file's length of 0:05"),
-        "{:?}",
-        report.errors
+        format!("{err:#}").contains("ran past twice the file's length of 0:05"),
+        "{err:#}"
     );
 }
 
@@ -1916,33 +1513,6 @@ fn a_stopped_compression_starts_neither_hevc_nor_h264() {
 
     assert!(
         err.downcast_ref::<Killed>().map(Killed::reason) == Some(KillReason::StoppedBeforeStart),
-        "{err:#}"
-    );
-    assert_eq!(tools.runs(), Vec::<Vec<String>>::new());
-}
-
-/// A pass whose stop is set fails as stopped rather than recording the file
-/// as one it could not convert, and converts no other file.
-#[test]
-fn a_stopped_pass_fails_as_stopped() {
-    let dir = tempfile::tempdir().unwrap();
-    let (files, opts) = two_large_videos(dir.path());
-    let tools = FakeTools::new().probing(video_probe("h264", 30.0));
-    let stop = AtomicBool::new(true);
-
-    let err = process_attachment_files(
-        &tools,
-        dir.path(),
-        &files,
-        MediaMode::Compress,
-        &opts,
-        None,
-        Some(&stop),
-    )
-    .expect_err("a stopped pass fails");
-
-    assert!(
-        err.downcast_ref::<Killed>().map(Killed::reason) == Some(KillReason::Stopped),
         "{err:#}"
     );
     assert_eq!(tools.runs(), Vec::<Vec<String>>::new());

@@ -11,6 +11,12 @@
 use crate::flat_eml::Datatype;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
+use ir::{
+    ConversationDocument, ConversationType, Direction, IdentityType, Message, MessageKind, trimmed,
+};
+use ir_format::{
+    MergedArchive, filename_stem, give_each_document_its_own_file, load_attachment_bytes,
+};
 use mail::{attachment_part, eml_file_name, text_body_part};
 use mail_builder::MessageBuilder;
 use mail_builder::headers::address::Address;
@@ -18,12 +24,6 @@ use mail_builder::headers::date::Date;
 use mail_builder::headers::text::Text;
 use mail_builder::mime::MimePart;
 use message_crate_core::{ATTACHMENTS_MISSING, ExportReport, NOT_SMS_OR_MMS_LEFT_OUT};
-use message_ir::{
-    ConversationDocument, ConversationType, Direction, IdentityType, Message, MessageKind, trimmed,
-};
-use message_ir_format::{
-    MergedArchive, filename_stem, give_each_document_its_own_file, load_attachment_bytes,
-};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
@@ -35,7 +35,7 @@ use crate::flat_eml::UNKNOWN_EMAIL_DOMAIN;
 const DOMAIN: &str = "sms-backup-plus.local";
 
 /// Writes the SMS and MMS of every conversation as SMS Backup+ mail. Hand it
-/// to [`message_ir_format::FormatSink::with_archive`] for
+/// to [`ir_format::FormatSink::with_archive`] for
 /// [`message_crate_core::OutputFormat::SmsBackupPlus`].
 #[derive(Debug, Clone, Copy)]
 pub struct SmsBackupPlusArchive {
@@ -115,9 +115,9 @@ fn conversation_directories(documents: &[ConversationDocument]) -> Result<Vec<Op
         .filter(|(_, document)| document.messages.iter().any(Message::is_sms_or_mms))
         .map(|(index, document)| (index, with_messages(document, Vec::new())))
         .collect();
-    let mut docs: Vec<&mut ConversationDocument> =
+    let mut written_documents: Vec<&mut ConversationDocument> =
         written.iter_mut().map(|(_, document)| document).collect();
-    give_each_document_its_own_file(&mut docs).map_err(anyhow::Error::msg)?;
+    give_each_document_its_own_file(&mut written_documents).map_err(anyhow::Error::msg)?;
     let mut directories = vec![None; documents.len()];
     for (index, document) in written {
         directories[index] = Some(filename_stem(&document));
@@ -298,9 +298,9 @@ impl<'a> Conversation<'a> {
         let mut name_only = false;
         if peers.is_empty()
             && let Some(id) = trimmed(&document.conversation.chat_identifier)
-                .filter(|id| *id != message_ir::NAMELESS_CHAT_ID)
+                .filter(|id| *id != ir::NAMELESS_CHAT_ID)
         {
-            let name = message_ir::name_of_chat_id(id);
+            let name = ir::name_of_chat_id(id);
             name_only = name.is_some();
             peers.push(name.unwrap_or(id));
         }
@@ -347,7 +347,8 @@ impl<'a> Conversation<'a> {
     /// group message whose sender is unknown.
     fn sender_of<'m>(&'m self, message: &'m Message) -> Option<&'m str> {
         message
-            .sender_identity
+            .sender
+            .identity
             .as_deref()
             .and_then(trimmed)
             .or_else(|| {
@@ -376,7 +377,8 @@ impl<'a> Conversation<'a> {
             _ if self.name_only => self.peers.first().map(|name| (*name).to_string()),
             Direction::Incoming => sender.map(|handle| {
                 message
-                    .sender_display_name
+                    .sender
+                    .display_name
                     .as_deref()
                     .and_then(trimmed)
                     .or_else(|| self.display_name(handle))
@@ -431,7 +433,8 @@ impl<'a> Conversation<'a> {
                 // address no peer has, which the importer reads as no sender.
                 let sender = self.sender_of(message).unwrap_or("unknown");
                 let name = message
-                    .sender_display_name
+                    .sender
+                    .display_name
                     .as_deref()
                     .and_then(trimmed)
                     .or_else(|| self.display_name(sender));

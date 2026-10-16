@@ -5,7 +5,7 @@ journal is one JSON object per line, and readers rebuild skip-sets from it, so
 a run that stops partway can pick up where it left off rather than starting
 over.
 
-`message-crate-import` and `message-crate-export` use this crate to resume a transfer.
+`import` and `export` use this crate to resume a transfer.
 
 ## Build and test
 

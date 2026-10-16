@@ -41,7 +41,7 @@ owner at a fixed id is an invariant that holds by construction: "exactly one"
 and "cannot be deleted" become a comparison against a constant, the same
 mechanism `is_demo_account` already uses for `DEMO_ACCOUNT_ID`.
 
-## How the owner is modelled
+## How the owner is modeled
 
 The owner is a row in `accounts`, so login, session tokens, password hashing
 and password change work unchanged. What separates the owner is the

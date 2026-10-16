@@ -6,7 +6,7 @@
 //! `POST /v1/exports`, `GET /v1/exports/{id}/messages`,
 //! `POST /v1/exports/{id}/complete` (with `completed` or `failed`) or
 //! `/cancel`, and `GET /v1/assets/{sha256}`
-//! — with the JSON the server serializes (`message-crate-api-types`,
+//! — with the JSON the server serializes (`api-types`,
 //! `docs/src/assets/openapi.json`). Every request derives from
 //! `ExportConfig::base_url`, so the mock's address is the only seam.
 
@@ -17,13 +17,13 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use httpmock::prelude::*;
-use message_crate_export::{
+use export::{
     AssetFailure, ExportConfig, ExportJournalState, ExportQueryList, ExportReport, ProgressEvent,
     journal, run,
 };
-use message_ir::{Deletion, EarlierVersion, Reaction};
-use message_ir_format::{EXPORT_SENTINEL, read_conversation_jsonl};
+use httpmock::prelude::*;
+use ir::{Deletion, EarlierVersion, Reaction};
+use ir_format::{EXPORT_SENTINEL, read_conversation_jsonl};
 use serde_json::{Value, json};
 use tempfile::tempdir;
 
@@ -133,7 +133,7 @@ fn mock_auth(server: &MockServer) -> httpmock::Mock<'_> {
     })
 }
 
-/// `POST /v1/exports` for exactly `scope`, recorded as `message-crate-export`'s run.
+/// `POST /v1/exports` for exactly `scope`, recorded as `export`'s run.
 fn mock_create<'a>(server: &'a MockServer, scope: Value) -> httpmock::Mock<'a> {
     let body = json!({ "scope": scope.clone(), "tool": "message-crate-export" });
     server.mock(move |when, then| {
@@ -174,7 +174,7 @@ fn mock_cancel(server: &MockServer) -> httpmock::Mock<'_> {
         when.method(POST)
             .path(format!("/v1/exports/{EXPORT_ID}/cancel"));
         then.status(200)
-            .json_body(export_run(json!({ "kind": "everything" }), "cancelled"));
+            .json_body(export_run(json!({ "kind": "everything" }), "canceled"));
     })
 }
 
@@ -347,40 +347,50 @@ fn an_export_records_one_run_and_writes_the_conversation_and_every_asset_once_ac
         Vec::<String>::new(),
         "each temporary file is renamed into place"
     );
-    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
-    assert_eq!(doc.export.source, "sms-backup-restore");
-    assert_eq!(doc.export.exported_at_unix_ms, Some(EXPORTED_AT_UNIX_MS));
-    assert_eq!(doc.conversation.chat_identifier, "+15555550101");
+    let document = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    assert_eq!(document.export.source, "sms-backup-restore");
     assert_eq!(
-        doc.conversation.participants[0].display_name.as_deref(),
+        document.export.exported_at_unix_ms,
+        Some(EXPORTED_AT_UNIX_MS)
+    );
+    assert_eq!(document.conversation.chat_identifier, "+15555550101");
+    assert_eq!(
+        document.conversation.participants[0]
+            .display_name
+            .as_deref(),
         Some("Sam")
     );
-    assert_eq!(doc.conversation.stats.message_count, 3);
-    assert_eq!(doc.conversation.stats.attachment_count, 3);
+    assert_eq!(document.conversation.stats.message_count, 3);
+    assert_eq!(document.conversation.stats.attachment_count, 3);
     assert_eq!(
-        doc.messages
+        document
+            .messages
             .iter()
             .map(|m| m.guid.as_str())
             .collect::<Vec<_>>(),
         ["guid-1", "guid-2", "guid-3"]
     );
-    assert_eq!(doc.messages[0].text, "dinner at seven?");
+    assert_eq!(document.messages[0].text, "dinner at seven?");
     // The address the server holds each message at comes out on the message,
     // and on the header since every message shares it (#1098).
     assert_eq!(
-        doc.messages
+        document
+            .messages
             .iter()
             .map(|m| m.owner_identity.as_deref())
             .collect::<Vec<_>>(),
         [Some("+15555550100"); 3]
     );
-    assert_eq!(doc.export.owner_identity.as_deref(), Some("+15555550100"));
     assert_eq!(
-        doc.messages[0].attachments[0].digest_sha256.as_deref(),
+        document.export.owner_identity.as_deref(),
+        Some("+15555550100")
+    );
+    assert_eq!(
+        document.messages[0].attachments[0].digest_sha256.as_deref(),
         Some(MENU_SHA)
     );
     assert_eq!(
-        doc.messages[1].attachments[0].path.as_deref(),
+        document.messages[1].attachments[0].path.as_deref(),
         Some(format!("attachments/{PHOTO_SHA}").as_str())
     );
 }
@@ -428,9 +438,9 @@ fn an_attachment_path_that_leaves_the_directory_with_no_sha256_is_not_written() 
     assert_eq!(assets.calls(), 0, "nothing names a file to fetch");
     assert!(!dir.path().join("escape.pdf").exists());
     assert_eq!(report.refused_attachment_paths, [climbing.to_string()]);
-    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    let document = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
     assert_eq!(
-        doc.messages[0].attachments[0].path, None,
+        document.messages[0].attachments[0].path, None,
         "the conversation file names no path outside the Export's directory"
     );
     let line = format!(
@@ -503,8 +513,8 @@ fn an_attachment_path_that_leaves_the_output_directory_is_written_under_its_fing
         fs::read(out.join("attachments").join(PHOTO_SHA)).unwrap(),
         PHOTO_BYTES
     );
-    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
-    let written: Vec<Option<&str>> = doc
+    let document = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    let written: Vec<Option<&str>> = document
         .messages
         .iter()
         .map(|m| m.attachments[0].path.as_deref())
@@ -800,9 +810,10 @@ fn a_source_name_with_spaces_and_brackets_becomes_a_file_safe_suffix() {
 
     run(&config(&out, server.base_url()), None).unwrap();
 
-    let doc = read_conversation_jsonl(&out.join("+15555550101__whatsapp__phone_2_.jsonl")).unwrap();
-    assert_eq!(doc.export.source, "whatsapp (phone 2)");
-    assert_eq!(doc.conversation.stats.message_count, 3);
+    let document =
+        read_conversation_jsonl(&out.join("+15555550101__whatsapp__phone_2_.jsonl")).unwrap();
+    assert_eq!(document.export.source, "whatsapp (phone 2)");
+    assert_eq!(document.conversation.stats.message_count, 3);
 }
 
 #[test]
@@ -890,9 +901,9 @@ fn skipping_attachments_writes_messages_without_files_or_fetches() {
     assert_eq!(menu.calls(), 0);
     assert_eq!(photo.calls(), 0);
     assert!(!out.join("attachments").exists());
-    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
-    assert_eq!(doc.conversation.stats.attachment_count, 0);
-    assert!(doc.messages[0].attachments.is_empty());
+    let document = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    assert_eq!(document.conversation.stats.attachment_count, 0);
+    assert!(document.messages[0].attachments.is_empty());
 }
 
 #[test]
@@ -1039,12 +1050,12 @@ fn an_asset_the_server_does_not_have_is_named_in_the_report_and_every_conversati
         fs::read(out.join("attachments").join(PHOTO_SHA)).unwrap(),
         PHOTO_BYTES
     );
-    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
-    assert_eq!(doc.messages.len(), 3, "every message is written");
-    let attachments: Vec<_> = doc
+    let document = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    assert_eq!(document.messages.len(), 3, "every message is written");
+    let attachments: Vec<_> = document
         .messages
         .iter()
-        .flat_map(|msg| msg.attachments.iter())
+        .flat_map(|message| message.attachments.iter())
         .collect();
     let menus: Vec<_> = attachments
         .iter()
@@ -1054,7 +1065,7 @@ fn an_asset_the_server_does_not_have_is_named_in_the_report_and_every_conversati
     for menu in menus {
         assert_eq!(
             menu.missing_reason.as_deref(),
-            Some(message_ir::missing_reason::NOT_FETCHED),
+            Some(ir::missing_reason::NOT_FETCHED),
             "the conversation file says the Export could not fetch the menu"
         );
     }
@@ -1140,7 +1151,7 @@ fn bytes_whose_sha256_is_not_the_one_asked_for_are_not_kept() {
 }
 
 /// A page the server cannot hand over ends the run with an error, and the
-/// run is recorded as failed, never as cancelled: nobody cancelled it
+/// run is recorded as failed, never as canceled: nobody canceled it
 /// (#2069).
 #[test]
 fn a_page_that_cannot_be_fetched_closes_the_run_as_failed() {
@@ -1180,6 +1191,43 @@ fn a_page_that_cannot_be_fetched_closes_the_run_as_failed() {
     assert!(!load_journal(&out, &server).export_complete);
 }
 
+/// A page of a run the server closed (another Export of the account started,
+/// or no page was read for an hour) ends the Export with the sentence that
+/// says it was canceled, not quietly, and is not retried. Nothing tries to
+/// close the run again: the server already did (#2080).
+#[test]
+fn a_page_of_a_run_the_server_closed_says_the_export_was_canceled() {
+    let server = MockServer::start();
+    let _auth = mock_auth(&server);
+    let (create, complete) = mock_run(&server);
+    let fail = mock_fail(&server);
+    let cancel = mock_cancel(&server);
+    let page = server.mock(|when, then| {
+        when.method(GET)
+            .path(format!("/v1/exports/{EXPORT_ID}/messages"));
+        then.status(409).json_body(json!({
+            "type": "https://messagecrate.app/docs/developer/reference/errors/state-conflict",
+            "title": "State conflict",
+            "status": 409,
+            "detail": "export 7 is not running (status=canceled)"
+        }));
+    });
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("exported");
+
+    let error = run(&config(&out, server.base_url()), None).unwrap_err();
+
+    assert_eq!(error.to_string(), export::RUN_CANCELED_ON_SERVER);
+    assert!(export::is_run_canceled_on_server(&error));
+    assert_eq!(page.calls(), 1, "a 409 Conflict is not retried");
+    create.assert();
+    assert_eq!(fail.calls(), 0);
+    assert_eq!(complete.calls(), 0);
+    assert_eq!(cancel.calls(), 0);
+    assert!(!out.join(CONVERSATION_FILE).exists());
+    assert!(!load_journal(&out, &server).export_complete);
+}
+
 /// A session the server refuses while the Assets are fetched (it expired, or
 /// was ended from another window) refuses every other fetch too. The run
 /// ends with the sentence that says to log in again, closed as failed,
@@ -1213,9 +1261,9 @@ fn a_session_refused_while_fetching_assets_fails_the_run() {
 }
 
 /// A cancel that arrives while the pages are read closes the run as
-/// cancelled, the one way a run is recorded as cancelled.
+/// canceled, the one way a run is recorded as canceled.
 #[test]
-fn a_cancel_during_the_run_closes_it_as_cancelled() {
+fn a_cancel_during_the_run_closes_it_as_canceled() {
     let server = MockServer::start();
     let _auth = mock_auth(&server);
     let (create, complete) = mock_run(&server);
@@ -1397,14 +1445,14 @@ fn every_path_a_message_names_exists_after_an_export() {
     run(&config(&out, server.base_url()), None).unwrap();
 
     menu.assert_calls(1);
-    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
-    for msg in &doc.messages {
-        let rel = msg.attachments[0].path.as_deref().unwrap();
+    let document = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    for exported in &document.messages {
+        let rel = exported.attachments[0].path.as_deref().unwrap();
         assert_eq!(
             fs::read(out.join(rel)).ok().as_deref(),
             Some(MENU_BYTES),
             "message {} names {rel}, which the Export Run never wrote",
-            msg.guid
+            exported.guid
         );
     }
 }
@@ -1457,9 +1505,9 @@ fn an_exported_message_keeps_its_reactions_under_each_reactor() {
         ]),
         "{line}"
     );
-    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    let document = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
     assert_eq!(
-        doc.messages[0].reactions,
+        document.messages[0].reactions,
         [
             Reaction {
                 part_index: 0,
@@ -1554,8 +1602,8 @@ fn an_exported_message_keeps_its_deletion_mark() {
     assert_eq!(lines[0]["deletion"], "deleted_in_source_app", "{written}");
     assert_eq!(lines[1]["deletion"], "unsent", "{written}");
     assert!(lines[2].get("deletion").is_none(), "{written}");
-    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
-    let marks: Vec<Option<Deletion>> = doc.messages.iter().map(|m| m.deletion).collect();
+    let document = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    let marks: Vec<Option<Deletion>> = document.messages.iter().map(|m| m.deletion).collect();
     assert_eq!(
         marks,
         [
@@ -1603,10 +1651,10 @@ fn an_exported_message_keeps_its_earlier_versions() {
 
     run(&config(&out, server.base_url()), None).unwrap();
 
-    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
-    assert_eq!(doc.messages[0].text, "See you at noon");
+    let document = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    assert_eq!(document.messages[0].text, "See you at noon");
     assert_eq!(
-        doc.messages[0].edits,
+        document.messages[0].edits,
         [
             EarlierVersion {
                 part_index: 0,
@@ -1630,7 +1678,7 @@ fn an_exported_message_keeps_its_earlier_versions() {
 /// httpmock runs no code of the test's when a request arrives, so a test
 /// built on it could press Cancel only after the answer, racing the retry.
 /// The Upload's tests use a server of the same shape for the same reason
-/// (`serve_answering_batches_with` in `message-crate-import`).
+/// (`serve_answering_batches_with` in `import`).
 fn serve_by_hand(
     answer: impl Fn(&str) -> String + Send + 'static,
 ) -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
@@ -1792,7 +1840,7 @@ fn a_cancel_while_an_asset_fetch_fails_makes_no_further_retry_and_cancels_the_ru
             } else if request.starts_with(&format!("POST /v1/exports/{EXPORT_ID}/cancel")) {
                 response(
                     "200 OK",
-                    &export_run(json!({ "kind": "everything" }), "cancelled"),
+                    &export_run(json!({ "kind": "everything" }), "canceled"),
                 )
             } else {
                 if request.starts_with("GET /v1/assets/") {
@@ -1850,10 +1898,11 @@ fn a_cancel_while_the_run_cannot_be_recorded_makes_no_further_retry() {
 }
 
 /// A Cancel pressed while the close of a finished run is failing does not
-/// cut its retries short: nothing on the server closes a run left running,
-/// so the run would stay recorded as running for good. The close is tried
-/// again and the run is recorded as completed. The retry takes the real
-/// first backoff, about half a second; nothing here depends on its length.
+/// cut its retries short: the server closes a run left running only as
+/// `canceled`, an hour later, so the run would be recorded as something
+/// the person did not choose. The close is tried again and the run is
+/// recorded as completed. The retry takes the real first backoff, about half
+/// a second; nothing here depends on its length.
 #[test]
 fn a_cancel_while_a_finished_run_is_closed_keeps_the_close_retrying() {
     let dir = tempdir().unwrap();

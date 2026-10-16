@@ -11,7 +11,7 @@
 //! ```
 //!
 //! That is what `tracing-subscriber`'s default format writes for the server
-//! with ANSI colours off, so the server's log and a run log read the same way:
+//! with ANSI colors off, so the server's log and a run log read the same way:
 //! [`parse_line`] reads both, [`LineFilter`] filters both, and
 //! [`lines_backward`] walks both from their newest line. The desktop app
 //! writes its lines with [`format_lines`].

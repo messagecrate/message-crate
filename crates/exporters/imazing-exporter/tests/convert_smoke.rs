@@ -79,8 +79,8 @@ fn convert_messages_keys_the_chat_by_its_number() {
 }
 
 /// The fixture's reaction, reply, deleted and edited rows reach the
-/// message's own fields (#2030): each reaction under its reactor's display
-/// name, `Me` being the account holder; a reply linked to the message of
+/// message's own fields (#2030): each reaction as its emoji alone, with no
+/// reactor (#2045); a reply linked to the message of
 /// the same chat whose Message Date it quotes, and a reply quoting a date
 /// the export lacks left a reply with no link; a Deleted Date marking the
 /// message Deleted in the source app, never Unsent; and an Edited Date
@@ -88,7 +88,7 @@ fn convert_messages_keys_the_chat_by_its_number() {
 /// four cells is a vendor leftover any more.
 #[test]
 fn reactions_replies_deletions_and_edits_reach_the_message() {
-    use message_ir::{Deletion, EarlierVersion, Reaction, ReplyTo};
+    use ir::{Deletion, EarlierVersion, Reaction, ReplyTo};
 
     let messages = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/messages.csv");
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -99,7 +99,7 @@ fn reactions_replies_deletions_and_edits_reach_the_message() {
         convert_run: ConvertRun::default(),
     })
     .expect("convert");
-    let document = message_ir_format::read_conversation_json(&tmp.path().join("+13215550100.json"))
+    let document = ir_format::read_conversation_json(&tmp.path().join("+13215550100.json"))
         .expect("read the conversation back");
     let by_text = |text: &str| {
         document
@@ -110,20 +110,17 @@ fn reactions_replies_deletions_and_edits_reach_the_message() {
     };
 
     let lunch = by_text("Lunch tomorrow?");
-    let reaction = |emoji: &str, name: &str, is_from_me: bool| Reaction {
+    let reaction = |emoji: &str| Reaction {
         part_index: 0,
         kind: "emoji".into(),
         emoji: Some(emoji.into()),
-        is_from_me,
+        is_from_me: false,
         reactor_identity: None,
-        reactor_display_name: Some(name.into()),
+        reactor_display_name: None,
     };
     assert_eq!(
         lunch.reactions,
-        vec![
-            reaction("\u{2764}\u{fe0f}", "Me", true),
-            reaction("\u{1f44d}", "Bob Sample", false),
-        ]
+        vec![reaction("\u{2764}\u{fe0f}"), reaction("\u{1f44d}")]
     );
     assert_eq!(
         by_text("Yes at noon").reply_to,

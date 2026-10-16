@@ -1,7 +1,7 @@
+import { useServerInfo } from "../../hooks/useServerInfo";
 import type { AccountProfile } from "../../lib/account";
 import { productVersionOf, productVersionsDiffer } from "../../lib/buildFormat";
 import { formatDateTime } from "../../lib/formatDate";
-import { useServerInfo } from "../../lib/useServerInfo";
 import { sectionTitleClass } from "./profileStyles";
 
 const APP_NAMES = { desktop: "Desktop app", website: "Website" } as const;

@@ -31,7 +31,7 @@ import { endSessionIfRefused, leaveIfRefused, SessionRefusedError } from "./serv
  * A run ends when the server takes `/complete`, and its run directory is
  * deleted then: the server holds the record, and nothing will read the
  * directory again (#1233). That covers a finished Upload, and a failed Staging
- * or Media stage, which is discarded at once because nothing complete exists
+ * or Media Stage, which is discarded at once because nothing complete exists
  * to upload; ending it also frees the account to start a new import.
  *
  * Every other way out leaves the run open on the server, at the stage it
@@ -40,7 +40,7 @@ import { endSessionIfRefused, leaveIfRefused, SessionRefusedError } from "./serv
  *
  * - `paused`: an Upload that did not send every conversation, by Pause or
  *   by failure (`importOutcome`). It posts no `/complete`.
- * - `skipComplete`: a cancelled Staging or Media stage, and a stage change
+ * - `skipComplete`: a canceled Staging or Media Stage, and a stage change
  *   the server did not record. Both resume from what is on disk; posting
  *   `/complete` would free the run's slot and strand the directory.
  * - A `/complete` the server refuses: the server still holds the run as
@@ -54,7 +54,7 @@ export async function finishImport(
   ctx: RunContext,
   args: {
     runId: number | null;
-    status: "completed" | "completed_with_issues" | "failed" | "cancelled" | "paused";
+    status: "completed" | "completed_with_issues" | "failed" | "canceled" | "paused";
     uploadReport: UploadFinishedReport | null;
     uploadMs: number | null;
     skipComplete?: boolean;
@@ -84,7 +84,7 @@ export async function finishImport(
     notes: whole.notes ?? [],
   };
   // Keyed by label: the Staging row folds reading, attachments and prepare
-  // into one duration, and a mode with no Media stage has fewer rows.
+  // into one duration, and a mode with no Media Stage has fewer rows.
   const { parseMs, attachmentsMs, prepareMs } = whole;
   const stagingMs =
     parseMs != null || attachmentsMs != null || prepareMs != null
@@ -266,7 +266,7 @@ async function outcomeOfFailedDiscard(
 
 /**
  * End a run the person gave up on, by a Cancel at a Review or a Discard of a
- * paused run: close it on the server as cancelled, with the Import Errors and
+ * paused run: close it on the server as canceled, with the Import Errors and
  * notes its record holds (`issuesToDiscard`, `notesToDiscard`), and delete
  * its run directory.
  *

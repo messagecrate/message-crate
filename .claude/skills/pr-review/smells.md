@@ -5,15 +5,15 @@ even where the repo documents nothing. Two rules bind them:
 
 - **The repo overrides.** Where a repo document endorses something a smell
   would flag, the smell is not a finding.
-- **Always a judgement call.** Report each as "possible <smell>", kind
-  `judgement`. Skip anything tooling already enforces.
+- **Always a judgment call.** Report each as "possible <smell>", kind
+  `judgment`. Skip anything tooling already enforces.
 
 Each smell reads _what it is_ → _how to fix_:
 
 - **Mysterious Name**: a function, variable, or type whose name doesn't reveal what it does or holds. → rename it; if no honest name comes, the design is murky.
 - **Duplicated Code**: the same logic shape appears in more than one hunk or file in the change. → extract the shared shape, call it from both.
 - **Feature Envy**: a method that reaches into another object's data more than its own. → move the method onto the data it envies.
-- **Data Clumps**: the same few fields or params keep travelling together. → bundle them into one type, pass that.
+- **Data Clumps**: the same few fields or params keep traveling together. → bundle them into one type, pass that.
 - **Primitive Obsession**: a primitive or string standing in for a domain concept that deserves its own type. → give the concept its own small type.
 - **Repeated Switches**: the same `switch`/`if`-cascade on the same type recurs across the change. → replace with polymorphism, or one map both sites share.
 - **Shotgun Surgery**: one logical change forces scattered edits across many files in the diff. → gather what changes together into one module.

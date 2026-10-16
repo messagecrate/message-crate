@@ -90,9 +90,9 @@ impl FfmpegTools {
 }
 
 /// ffmpeg and ffprobe, as the code that decides what to do with a file uses
-/// them: the Media Stage's convert and compress passes ([`crate::process`]),
+/// them: the Media Stage's convert and compress passes (`crate::process`),
 /// the size forecast's probe, and the Thumbnail and Preview the server makes
-/// ([`crate::versions`]).
+/// (`crate::versions`).
 ///
 /// That code only decides which file to re-encode, with which arguments,
 /// and what to keep. Running the programs is behind this trait, and the
@@ -154,7 +154,7 @@ pub trait MediaTools: Send + Sync + std::fmt::Debug {
     /// it makes no progress for the no-progress wait
     /// ([`InstalledTools::with_stall_wait`]), a video's once it runs past
     /// twice the file's length, and audio's once it runs past its time limit
-    /// ([`audio_time_limit`]). With `stop`, setting it kills ffmpeg and fails
+    /// (`audio_time_limit`). With `stop`, setting it kills ffmpeg and fails
     /// the run as stopped.
     ///
     /// # Errors
@@ -227,7 +227,7 @@ pub struct InstalledTools {
     /// server started by hand has none.
     tools_dir: Option<PathBuf>,
     /// The `PATH` searched instead of the process's own. Only tests set it
-    /// ([`InstalledTools::searching`]), so a test decides what is found
+    /// (`InstalledTools::searching`), so a test decides what is found
     /// whether or not the machine has ffmpeg installed.
     search_path: Option<OsString>,
     /// How long a conversion that reads a whole file may go without moving
@@ -305,7 +305,7 @@ impl InstalledTools {
     }
 
     /// The `PATH` the lookup searches: the one a test put in place
-    /// ([`InstalledTools::searching`]), else the process's own.
+    /// (`InstalledTools::searching`), else the process's own.
     fn searched_path(&self) -> Option<OsString> {
         self.search_path
             .clone()
@@ -345,10 +345,10 @@ impl MediaTools for InstalledTools {
         self.tools_dir.as_deref()
     }
 
-    /// Both on `PATH`, else both in the Tools Directory ([`find_tools`]).
+    /// Both on `PATH`, else both in the Tools Directory (`find_tools`).
     /// Every call searches again, so a program that arrives, moves or leaves
     /// is seen at once without a restart; only the `-version` answer of a
-    /// file is kept ([`answered`]).
+    /// file is kept (`answered`).
     ///
     /// # Errors
     ///
@@ -658,7 +658,7 @@ pub enum Reads<'a> {
     /// running past twice the file's length.
     Video(&'a Path),
     /// Every sample of the audio at this path, watched for progress and
-    /// held to [`audio_time_limit`].
+    /// held to `audio_time_limit`.
     Audio(&'a Path),
 }
 
@@ -1305,14 +1305,6 @@ impl Killed {
         Self {
             program,
             why: KillReason::StoppedBeforeStart,
-        }
-    }
-
-    /// ffmpeg stopped while it ran.
-    pub(crate) fn ffmpeg_stopped() -> Self {
-        Self {
-            program: Program::Ffmpeg,
-            why: KillReason::Stopped,
         }
     }
 

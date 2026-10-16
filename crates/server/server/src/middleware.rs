@@ -6,6 +6,7 @@
 
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use tower_http::classify::{ClassifiedResponse, ClassifyEos, ClassifyResponse};
 use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer};
 use tower_http::trace::{DefaultOnResponse, OnResponse};
 use tracing::Level;
@@ -13,8 +14,8 @@ use tracing::Level;
 use crate::api_error::ApiError;
 use crate::limits::MAX_REQUEST_BODY_BYTES;
 use crate::problem::Problem;
-use crate::request_body::UploadTimeLimits;
-use crate::request_body::{declared_over, upload_body_bounded};
+use crate::request_body::BodyTimeLimits;
+use crate::request_body::{body_time_bounded, declared_over};
 
 /// Origins the packaged desktop app runs from. A Tauri window is not a page on
 /// the web, so its origin is fixed by the platform rather than chosen by
@@ -114,8 +115,8 @@ pub(crate) async fn json_body_limit_response(response: Response) -> Response {
 /// part size the upload started with, and the limit as it is now would refuse
 /// every remaining part of an upload the owner lowered the limit under.
 ///
-/// Every body is held to time as well as size, with the upload time limits
-/// ([`UploadTimeLimits`](crate::request_body::UploadTimeLimits)), so a client
+/// Every body is held to time as well as size, with the body time limits
+/// ([`BodyTimeLimits`]), so a client
 /// that stops sending a body part-way, or sends a byte now and then, holds its
 /// connection only so long (#2100).
 /// The three uploads ([`reads_its_own_body_in_time`]) are left to hold
@@ -123,7 +124,7 @@ pub(crate) async fn json_body_limit_response(response: Response) -> Response {
 /// reading.
 pub(crate) async fn limit_request_body(
     axum::extract::State(db): axum::extract::State<sqlx::SqlitePool>,
-    axum::extract::State(upload_time_limits): axum::extract::State<UploadTimeLimits>,
+    axum::extract::State(body_time_limits): axum::extract::State<BodyTimeLimits>,
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
@@ -150,7 +151,7 @@ pub(crate) async fn limit_request_body(
     let request = request.map(|body| {
         let body = axum::body::Body::new(http_body_util::Limited::new(body, limit));
         if in_time {
-            upload_body_bounded(body, upload_time_limits)
+            body_time_bounded(body, body_time_limits)
         } else {
             body
         }
@@ -159,7 +160,7 @@ pub(crate) async fn limit_request_body(
 }
 
 /// Whether `request` is one of the uploads that hold their body to the
-/// upload time limits themselves: an import batch, which waits for an
+/// body time limits themselves: an import batch, which waits for an
 /// import slot before it reads, a single-request attachment upload, and a
 /// part of a multipart one. Each starts the clock when it starts reading,
 /// and a clock started on arrival would count the wait for a slot against
@@ -216,11 +217,12 @@ pub(crate) async fn no_store_unless_set(
 ///
 /// Applied to the `/v1` routes only, through `route_layer`; the static app,
 /// `/health` and the OpenAPI UI are mounted outside it, so they keep
-/// producing what they produce. Five routes answer bytes, not JSON, and are
+/// producing what they produce. Six routes answer bytes, not JSON, and are
 /// let through here by path: the asset download, its preview and its
 /// thumbnail stream a file's own bytes (the preview and the thumbnail under
-/// `HEAD` as well), the address book export answers
-/// `text/csv`, and a file of the server's log downloads as `text/plain`.
+/// `HEAD` as well), the address book export and the address book written
+/// from a vCard file answer `text/csv`, and a file of the server's log
+/// downloads as `text/plain`.
 pub(crate) async fn require_json_acceptable(
     request: axum::extract::Request,
     next: axum::middleware::Next,
@@ -301,10 +303,14 @@ fn is_upload_part(request: &axum::extract::Request) -> bool {
     })
 }
 
-/// `POST /v1/contacts/address-book`: the address book as `text/csv`.
+/// `POST /v1/contacts/address-book` and `POST /v1/contacts/vcard-address-book`:
+/// the address book as `text/csv`.
 fn is_address_book_export(request: &axum::extract::Request) -> bool {
     request.method() == axum::http::Method::POST
-        && request.uri().path() == "/v1/contacts/address-book"
+        && matches!(
+            request.uri().path(),
+            "/v1/contacts/address-book" | "/v1/contacts/vcard-address-book"
+        )
 }
 
 /// `GET /v1/server/log-files/{id}`: one file of the server's log as `text/plain`.
@@ -457,6 +463,51 @@ pub(crate) fn log_response(
     DefaultOnResponse::new()
         .level(level)
         .on_response(response, latency, span);
+}
+
+/// The `TraceLayer`'s classifier: a response is never a failure for its
+/// status, because `ApiError::to_problem` already writes the `ERROR` line of
+/// a 5xx. Only its body can fail, partway, after the status went out with
+/// the response's line, such as a download that hits a disk error
+/// (#2870). tower-http's own `ServerErrorsAsFailures` classifies at the
+/// status and never looks at the body, so such a failure wrote no line.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct BodyFailures;
+
+impl ClassifyResponse for BodyFailures {
+    type FailureClass = String;
+    type ClassifyEos = Self;
+
+    fn classify_response<B>(self, _response: &Response<B>) -> ClassifiedResponse<String, Self> {
+        ClassifiedResponse::RequiresEos(self)
+    }
+
+    fn classify_error<E: std::fmt::Display + 'static>(self, error: &E) -> String {
+        error.to_string()
+    }
+}
+
+impl ClassifyEos for BodyFailures {
+    type FailureClass = String;
+
+    fn classify_eos(self, _trailers: Option<&axum::http::HeaderMap>) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn classify_error<E: std::fmt::Display + 'static>(self, error: &E) -> String {
+        error.to_string()
+    }
+}
+
+/// Write the `ERROR` line of a response whose body failed partway, under
+/// the request's span, so the request's id is on it next to the `status=200`
+/// line the response wrote when it started.
+pub(crate) fn log_body_failure(
+    error: String,
+    _latency: std::time::Duration,
+    _span: &tracing::Span,
+) {
+    tracing::error!(error = %error, "A response's body failed after its status was sent");
 }
 
 #[cfg(test)]

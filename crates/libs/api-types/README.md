@@ -1,4 +1,4 @@
-# message-crate-api-types
+# api-types
 
 The response shapes the server's HTTP API sends, defined once for the server
 that writes them and the client crates that read them: `Message`,
@@ -21,15 +21,15 @@ leave it off and never build utoipa.
 ## Build and test
 
 ```bash
-cargo test -p message-crate-api-types
+cargo test -p api-types
 ```
 
 Workspace setup: [CONTRIBUTING.md](../../../CONTRIBUTING.md).
 
 ## Docs
 
-This crate is a library shared by the server, `message-crate-import`,
-`message-crate-export`, and `message-crate-http`. It builds no binary.
+This crate is a library shared by the server, `import`,
+`export`, and `message-crate-http`. It builds no binary.
 
 ## License
 

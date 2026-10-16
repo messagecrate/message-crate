@@ -371,6 +371,15 @@ export const apiClient = {
   ): Promise<T> {
     return exchange("POST", path, { text: body, contentType }, opts, readJson<T>);
   },
+  /** POST a file's text under its own media type and read the answer as text: a file the server writes from it. */
+  postRawText(
+    path: string,
+    body: string,
+    contentType: string,
+    opts?: ApiRequestOptions,
+  ): Promise<string> {
+    return exchange("POST", path, { text: body, contentType }, opts, readText);
+  },
   /** POST a JSON body and read the answer as text: a file the server writes. */
   postText(path: string, body: unknown, opts?: ApiRequestOptions): Promise<string> {
     return exchange("POST", path, jsonBody(body), opts, readText);

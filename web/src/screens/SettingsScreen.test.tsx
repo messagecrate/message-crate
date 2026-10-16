@@ -111,7 +111,7 @@ describe("SettingsScreen tabs follow the account it reads", () => {
 });
 
 /**
- * Convert runs `message-reexport` inside the desktop process, so the tab is a
+ * Convert runs `reexport` inside the desktop process, so the tab is a
  * desktop-only tool. In a browser the tab must not exist and `?tab=convert`
  * must fall back to Account, like every other tab `visibleTabs` leaves out.
  */

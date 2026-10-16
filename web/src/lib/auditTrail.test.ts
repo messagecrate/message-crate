@@ -17,6 +17,17 @@ describe("describeAuditEntry", () => {
     );
   });
 
+  it("says why the server canceled an Export Run", () => {
+    expect(
+      describeAuditEntry(
+        entry({ action: "export_run_closed", reason: "replaced", export_run_id: 12 }),
+      ),
+    ).toBe("Export Run 12 canceled: a new Export started");
+    expect(
+      describeAuditEntry(entry({ action: "export_run_closed", reason: "idle", export_run_id: 12 })),
+    ).toBe("Export Run 12 canceled: no page was read for an hour");
+  });
+
   it("names the username a refused login typed when no account has it", () => {
     expect(
       describeAuditEntry(

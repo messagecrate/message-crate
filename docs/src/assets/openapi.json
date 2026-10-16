@@ -228,7 +228,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -237,7 +237,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -517,7 +517,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -526,7 +526,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -704,7 +704,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -713,7 +713,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -1017,7 +1017,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1026,7 +1026,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "413": {
@@ -1415,7 +1415,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1424,7 +1424,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "413": {
@@ -2247,7 +2247,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2256,7 +2256,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "413": {
@@ -2427,7 +2427,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2436,7 +2436,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "413": {
@@ -2897,7 +2897,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2906,7 +2906,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "413": {
@@ -3659,7 +3659,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3668,7 +3668,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -4255,7 +4255,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4264,7 +4264,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -4744,7 +4744,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4753,7 +4753,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -5120,7 +5120,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5129,7 +5129,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -5421,7 +5421,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5430,7 +5430,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "413": {
@@ -5604,7 +5604,7 @@
           "Contacts"
         ],
         "summary": "Load an address book into this account.",
-        "description": "The body is the file itself: Message Crate's own CSV, one row per identity, with the columns `contact_id`, `display_name`, `groups`, `service`, `identity_type` and `identity`, as `POST /v1/contacts/address-book` writes it.\n\nRows that share a `contact_id` are one contact. An id the account holds\nnames that contact, a blank id makes a new contact for that row, and any\nother text groups its rows into one new contact. `append` creates and\nrenames contacts and adds the identities and Contact Group memberships\nthe rows list. `edit` does the same and then takes off each contact in\nthe file every identity and membership its rows do not list. A contact\nthe file does not mention is left alone in both modes.\n\nA phone number written without `+`, which a spreadsheet can save in place\nof `+6555550100`, names the identity `+` and its digits when the row's\ncontact holds that key. Otherwise it is keyed as written: ten digits as a\nUS number, any other count as bare digits. `notes` names each row read\nwith its `+` back, and each such number that became a new identity.\n\nOne `'` before a cell that starts with `=`, `+`, `-`, `@`, a tab or a\ncarriage return is taken off, in any column, which undoes the `'` the\nexport writes there.\n\nThe load is one transaction. A file that breaks a rule is refused whole\nwith `422 Unprocessable Entity`, and `errors` holds one sentence for each\nbad row, starting with its row number.\n\nThe Demo Account is refused with `demo-account-protected`, in both modes,\nby its id: an Edit load deletes contacts for good and an Append load\nstores real people's names and numbers in an account anyone can enter\n(`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`). The import,\nexport and delete permissions are not asked for; they govern messages and\nimports, and any other account loads its address book with a session.",
+        "description": "The body is the file itself: Message Crate's own CSV, one row per identity, with the columns `contact_id`, `display_name`, `service`, `identity` and `groups`, as `POST /v1/contacts/address-book` writes it.\n\n`service` is `Text Message`, `Email` or `WhatsApp`, the words the screen\nwhere an identity is added offers, ignoring case. The file states no\ntype: the service decides which types are valid and the address's shape\npicks among them, as adding an identity does. `Text Message` carries a\nphone number, an email address or any other name; `Email` is an email\naddress on Text Message; `WhatsApp` carries a phone number or one of\nWhatsApp's own ids (`…@lid`, `…@g.us`, `…@broadcast`, `…@newsletter`),\nwhich are `other`. An identity written exactly as the account keys it on\nthat service is that identity, whatever its type, so an exported file\nloads back as it was. A row whose address the service cannot carry, such\nas an email address on `WhatsApp` (an `@` address at any other domain),\nis refused, where adding an identity stores it as `other`.\n\nRows that share a `contact_id` are one contact. An id the account holds\nnames that contact, a blank id makes a new contact for that row, and any\nother text groups its rows into one new contact. `append` creates and\nrenames contacts and adds the identities and Contact Group memberships\nthe rows list. `edit` does the same and then takes off each contact in\nthe file every identity and membership its rows do not list. A contact\nthe file does not mention is left alone in both modes.\n\nA phone number written without `+`, which a spreadsheet can save in place\nof `+6555550100`, names the identity `+` and its digits when the row's\ncontact holds that key. Otherwise it is keyed as written: ten digits as a\nUS number, any other count as bare digits. `notes` names each row read\nwith its `+` back, and each such number that became a new identity.\n\nOne `'` before a cell that starts with `=`, `+`, `-`, `@`, a tab or a\ncarriage return is taken off, in any column, which undoes the `'` the\nexport writes there.\n\nThe load is one transaction. A file that breaks a rule is refused whole\nwith `422 Unprocessable Entity`, and `errors` holds one sentence for each\nbad row, starting with its row number.\n\nThe Demo Account is refused with `demo-account-protected`, in both modes,\nby its id: an Edit load deletes contacts for good and an Append load\nstores real people's names and numbers in an account anyone can enter\n(`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`). The import,\nexport and delete permissions are not asked for; they govern messages and\nimports, and any other account loads its address book with a session.",
         "operationId": "create_contacts",
         "parameters": [
           {
@@ -5694,7 +5694,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5703,7 +5703,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "413": {
@@ -5759,7 +5759,7 @@
           "Contacts"
         ],
         "summary": "Write the address book for the contacts a search matches, the checked ones among them, or every contact when the body names neither.",
-        "description": "The answer is `text/csv`, not JSON: one row per identity, with the\ncolumns `contact_id`, `display_name`, `groups`, `service`, `identity_type`\nand `identity`. A contact's name and its Contact Group names, separated\nby `;`, repeat on each of its rows. A contact with no name has a blank\n`display_name`, and a contact with no identity is one row with the last\nthree columns blank. Contacts in the trash are left out.\n\nA cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return\nis written with a `'` in front, in every column, because a spreadsheet\nruns such a cell as a formula and drops the `+` of a phone number.\n`POST /v1/contacts` loads the file back and takes that `'` off.",
+        "description": "The answer is `text/csv`, not JSON: one row per identity, with the\ncolumns `contact_id`, `display_name`, `service`, `identity` and `groups`.\n`service` is `Text Message`, `Email` for an email address on Text\nMessage, or `WhatsApp`. A contact's name and its Contact Group names,\nseparated by `;`, repeat on each of its rows. A contact with no name has\na blank `display_name`, and a contact with no identity is one row with\n`service` and `identity` blank. Contacts in the trash are left out.\n\nA cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return\nis written with a `'` in front, in every column, because a spreadsheet\nruns such a cell as a formula and drops the `+` of a phone number.\n`POST /v1/contacts` loads the file back and takes that `'` off.",
         "operationId": "get_address_book",
         "requestBody": {
           "content": {
@@ -5831,7 +5831,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5840,7 +5840,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "413": {
@@ -5973,7 +5973,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5982,7 +5982,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "413": {
@@ -6114,7 +6114,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6123,7 +6123,156 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
+            ]
+          },
+          "413": {
+            "description": "[`payload-too-large`](https://messagecrate.app/docs/developer/reference/errors/payload-too-large): The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/payload-too-large"
+            ]
+          },
+          "415": {
+            "description": "[`unsupported-media-type`](https://messagecrate.app/docs/developer/reference/errors/unsupported-media-type): The request's `Content-Type` is absent or not one this route accepts.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/unsupported-media-type"
+            ]
+          },
+          "422": {
+            "description": "[`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
+            ]
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/contacts/vcard-address-book": {
+      "post": {
+        "tags": [
+          "Contacts"
+        ],
+        "summary": "Write an address book from a vCard file, for the person to edit and then load with `POST /v1/contacts`.",
+        "description": "The body is the file itself, one or more cards. Nothing is read from or stored in the account.\n\nThe answer is `text/csv` in the address book's columns: one row for each\n`TEL` and each `EMAIL` on each card. `contact_id` is `card1`, `card2`, …\nby the card's position in the file, so a card's rows load as one new\ncontact. `display_name` is the card's `FN`, or its `N` assembled when it\nhas no `FN`, and blank when it has neither. `service` is `Text Message`\nfor a number and `Email` for an email address, never `WhatsApp`, because\na card cannot say a number is on WhatsApp. `groups` is blank:\n`CATEGORIES` is not carried over. A card with no number and no email\naddress gives no rows.\n\nA number written without `+` is written in its `+` form in `country` when\nit is a valid number there. A number written with `+`, one that is not\nvalid in `country`, and every number when no `country` is given are\nwritten exactly as the card has them. Nothing else is checked: the load\nrefuses what it cannot store and names the rows. Cells are written with\nthe `'` the export puts before a cell a spreadsheet would run.\n\nA vCard 2.1 quoted-printable value is read in the charset its `CHARSET`\nnames, such as `SHIFT_JIS` or `ISO-8859-1`, and as UTF-8 when it names\nnone. A body that holds no `BEGIN:VCARD` line, and a card that writes its\nname, a number or an email address in a charset Message Crate cannot\nread, answer `422 Unprocessable Entity`.",
+        "operationId": "get_vcard_address_book",
+        "parameters": [
+          {
+            "name": "country",
+            "in": "query",
+            "description": "The country a number written without its `+` code is read in, as an ISO 3166-1 code that `GET /v1/phone-countries` lists, such as `US`. Absent, every number is written as the card has it.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "The vCard file: one or more cards.",
+          "content": {
+            "text/vcard": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The address book, as an attachment named `address-book.csv`",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`attachment; filename=\"address-book.csv\"`"
+              }
+            },
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "[`malformed-body`](https://messagecrate.app/docs/developer/reference/errors/malformed-body): The request could not be read at all: the body is not valid JSON, an import line is not JSON or not UTF-8, or the body failed to arrive.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/malformed-body"
+            ]
+          },
+          "401": {
+            "description": "[`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/authentication-required"
+            ]
+          },
+          "403": {
+            "description": "[`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.\n\n[`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/insufficient-scope",
+              "https://messagecrate.app/docs/developer/reference/errors/account-disabled"
+            ]
+          },
+          "408": {
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "413": {
@@ -6495,7 +6644,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6504,7 +6653,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -7715,7 +7864,7 @@
           "Export"
         ],
         "summary": "Start an Export Run: compile the scope, list and count the messages it matches now, and record the run as `running`.",
-        "description": "Read that list at `GET /v1/exports/{id}/messages`, then close the run with `complete` or `cancel`.",
+        "description": "Read that list at `GET /v1/exports/{id}/messages`, then close the run with `complete` or `cancel`. An account has one running run: starting one closes the one already running as `canceled`, and a run with no page read for an hour is closed the same way. Either way its pages then answer `409 Conflict`.",
         "operationId": "create_export",
         "requestBody": {
           "content": {
@@ -7800,7 +7949,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7809,7 +7958,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "413": {
@@ -8210,7 +8359,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8219,7 +8368,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -8661,7 +8810,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8670,7 +8819,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -8959,7 +9108,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8968,7 +9117,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -9043,7 +9192,7 @@
         "tags": [
           "Import"
         ],
-        "summary": "Import one message-ir JSONL body.",
+        "summary": "Import one JSONL conversation file body.",
         "description": "Every message needs a non-empty `guid`. A batch with a message without\none is refused with `422`, naming its lines, and nothing in it is stored.\nA message whose `guid` the source already holds is skipped, so a batch\nsent again after its answer was lost stores nothing twice. A batch hides\nno duplicates: the run's completion or discard hides them, once for the\nwhole run.",
         "operationId": "create_import_batch",
         "parameters": [
@@ -9059,7 +9208,7 @@
           }
         ],
         "requestBody": {
-          "description": "message-ir JSONL as application/x-ndjson or application/jsonl. Attachments are uploaded first by SHA-256 through /v1/assets.",
+          "description": "A JSONL conversation file as application/x-ndjson or application/jsonl. Attachments are uploaded first by SHA-256 through /v1/assets.",
           "content": {
             "application/jsonl": {},
             "application/x-ndjson": {}
@@ -9144,7 +9293,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9153,7 +9302,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -9345,7 +9494,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9354,7 +9503,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -9576,7 +9725,7 @@
           "Import"
         ],
         "summary": "Discard a running Import Run, freeing the account's single slot.",
-        "description": "The answer is the run, now `cancelled`, with the issues the request carried.\n\nThe messages the run's batches brought stay in the account, and once it\nhas discarded the run the server hides the duplicates of the whole\naccount, as a completion does. A dedupe that fails does not undo the\ndiscard: the next run's end hides them. A server told to stop refuses\nthe request with `503 Service Unavailable` (`server-stopping`), and the\nrun stays running.",
+        "description": "The answer is the run, now `canceled`, with the issues the request carried.\n\nThe messages the run's batches brought stay in the account, and once it\nhas discarded the run the server hides the duplicates of the whole\naccount, as a completion does. A dedupe that fails does not undo the\ndiscard: the next run's end hides them. A server told to stop refuses\nthe request with `503 Service Unavailable` (`server-stopping`), and the\nrun stays running.",
         "operationId": "discard_import",
         "parameters": [
           {
@@ -9679,7 +9828,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9688,7 +9837,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -9960,7 +10109,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9969,7 +10118,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -10336,7 +10485,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10345,7 +10494,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -10637,7 +10786,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10646,7 +10795,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "413": {
@@ -11224,7 +11373,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11233,7 +11382,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -11602,7 +11751,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11611,7 +11760,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -12002,7 +12151,7 @@
           "Server"
         ],
         "summary": "Report whether this Message Crate is unclaimed, closed, or open.",
-        "description": "Also reports this Message Crate's id, the server's Build, its Schema\nFingerprint, whether the Demo Account exists, the attachment size limit,\nand the upload time limits.",
+        "description": "Also reports this Message Crate's id, the server's Build, its Schema\nFingerprint, whether the Demo Account exists, the attachment size limit,\nand the body time limits.",
         "operationId": "get_server",
         "responses": {
           "200": {
@@ -12108,7 +12257,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12117,7 +12266,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -12341,7 +12490,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12350,7 +12499,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "409": {
@@ -12923,7 +13072,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12932,7 +13081,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "413": {
@@ -13225,7 +13374,7 @@
             ]
           },
           "408": {
-            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "description": "[`body-stalled`](https://messagecrate.app/docs/developer/reference/errors/body-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -13234,7 +13383,7 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+              "https://messagecrate.app/docs/developer/reference/errors/body-stalled"
             ]
           },
           "413": {
@@ -13976,6 +14125,7 @@
           "api_token_deleted",
           "address_book_loaded",
           "address_book_exported",
+          "export_run_closed",
           "import_run",
           "export_run"
         ]
@@ -14016,6 +14166,7 @@
           "conversations",
           "credential",
           "demo_data_size",
+          "export_run_id",
           "identities",
           "messages",
           "mode",
@@ -14173,6 +14324,14 @@
             ],
             "description": "`demo_account_added` and `demo_account_reset`: the set of Demo Data the\nbuild was asked for."
           },
+          "export_run_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "`export_run_closed`: the id of the Export Run the server closed, the\n`id` of that run's own `export_run` entry."
+          },
           "id": {
             "type": "integer",
             "format": "int64",
@@ -14294,7 +14453,7 @@
       },
       "AuditReason": {
         "type": "string",
-        "description": "How a Session ended, or why a login was refused.",
+        "description": "How a Session ended, why a login was refused, or why the server closed an\nExport Run.",
         "enum": [
           "logged_out",
           "replaced",
@@ -14302,7 +14461,8 @@
           "expired",
           "unknown_username",
           "wrong_password",
-          "account_disabled"
+          "account_disabled",
+          "idle"
         ]
       },
       "ClaimServerRequest": {
@@ -14315,7 +14475,8 @@
         "properties": {
           "password": {
             "type": "string",
-            "description": "Password for the owner. Must satisfy the server's password policy."
+            "description": "Password for the owner: one character or more, at most 128\ncharacters, counted as characters rather than bytes and not trimmed.\nEmpty or over 128 is refused with `422 Unprocessable Entity`.",
+            "maxLength": 128
           },
           "username": {
             "type": "string",
@@ -14758,7 +14919,8 @@
               "string",
               "null"
             ],
-            "description": "Local password, of any length. Absent or empty opens an account with\nno password."
+            "description": "Local password: no minimum length, at most 128 characters, counted\nas characters rather than bytes and not trimmed. Over 128 is refused\nwith `422 Unprocessable Entity`. Absent or empty opens an account\nwith no password.",
+            "maxLength": 128
           },
           "phone": {
             "type": [
@@ -15113,17 +15275,6 @@
           "source_identities": {
             "description": "Addresses the backup's device sent from, when the client read them.\nOver 65,536 bytes of JSON is refused with `422 Unprocessable Entity`."
           },
-          "stage": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ImportStage"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Stage the run opens at, `parse` when the request leaves it out. A run\nopens only at `parse`; any other stage is refused with\n`422 Unprocessable Entity`."
-          },
           "tool": {
             "type": [
               "string",
@@ -15188,7 +15339,8 @@
         "properties": {
           "password": {
             "type": "string",
-            "description": "Login password."
+            "description": "Login password, empty for an account with none. A password is at most\n128 characters, so a longer one is refused with\n`422 Unprocessable Entity` before the username is looked up.",
+            "maxLength": 128
           },
           "username": {
             "type": "string",
@@ -15264,7 +15416,8 @@
               "string",
               "null"
             ],
-            "description": "Required when the account's `has_password` is true."
+            "description": "Required when the account's `has_password` is true. A password is at\nmost 128 characters, so a longer one is refused with\n`422 Unprocessable Entity` before it is checked.",
+            "maxLength": 128
           }
         }
       },
@@ -15623,7 +15776,7 @@
           "running",
           "completed",
           "failed",
-          "cancelled"
+          "canceled"
         ]
       },
       "FieldDoc": {
@@ -16320,7 +16473,7 @@
             "description": "Lifecycle status."
           },
           "summary": {
-            "description": "What the person approved at the last Review they passed, which\n`PATCH /v1/imports/{id}` writes with its `summary`. A cancelled run\nkeeps it. A run that completed or failed holds instead the final\ncounts its `POST /v1/imports/{id}/complete` sent, and null when that\nrequest sent none, because completing replaces the plan. Null too\nwhile no Review has stored one."
+            "description": "What the person approved at the last Review they passed, which\n`PATCH /v1/imports/{id}` writes with its `summary`. A canceled run\nkeeps it. A run that completed or failed holds instead the final\ncounts its `POST /v1/imports/{id}/complete` sent, and null when that\nrequest sent none, because completing replaces the plan. Null too\nwhile no Review has stored one."
           },
           "tool": {
             "type": [
@@ -16359,7 +16512,7 @@
           "completed",
           "completed_with_issues",
           "failed",
-          "cancelled"
+          "canceled"
         ]
       },
       "JournalMode": {
@@ -17543,6 +17696,7 @@
                 "conversations",
                 "credential",
                 "demo_data_size",
+                "export_run_id",
                 "identities",
                 "messages",
                 "mode",
@@ -17699,6 +17853,14 @@
                     }
                   ],
                   "description": "`demo_account_added` and `demo_account_reset`: the set of Demo Data the\nbuild was asked for."
+                },
+                "export_run_id": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "int64",
+                  "description": "`export_run_closed`: the id of the Export Run the server closed, the\n`id` of that run's own `export_run` entry."
                 },
                 "id": {
                   "type": "integer",
@@ -18788,7 +18950,7 @@
                   "description": "Lifecycle status."
                 },
                 "summary": {
-                  "description": "What the person approved at the last Review they passed, which\n`PATCH /v1/imports/{id}` writes with its `summary`. A cancelled run\nkeeps it. A run that completed or failed holds instead the final\ncounts its `POST /v1/imports/{id}/complete` sent, and null when that\nrequest sent none, because completing replaces the plan. Null too\nwhile no Review has stored one."
+                  "description": "What the person approved at the last Review they passed, which\n`PATCH /v1/imports/{id}` writes with its `summary`. A canceled run\nkeeps it. A run that completed or failed holds instead the final\ncounts its `POST /v1/imports/{id}/complete` sent, and null when that\nrequest sent none, because completing replaces the plan. Null too\nwhile no Review has stored one."
                 },
                 "tool": {
                   "type": [
@@ -19803,15 +19965,18 @@
               "string",
               "null"
             ],
-            "description": "The password being replaced. Required when the owner changes its\nown; nobody else sends it."
+            "description": "The password being replaced. Required when the owner changes its\nown; nobody else sends it. A password is at most 128 characters, so a\nlonger one is refused with `422 Unprocessable Entity` before it is\nchecked.",
+            "maxLength": 128
           },
           "password": {
             "type": "string",
-            "description": "The new password. Empty clears a user account's password; the\nowner's must be one character or more."
+            "description": "The new password: no minimum length for a user account, where empty\nclears it, and one character or more for the owner's. At most 128\ncharacters, counted as characters rather than bytes and not trimmed;\nover 128 is refused with `422 Unprocessable Entity`.",
+            "maxLength": 128
           },
           "password_confirmation": {
             "type": "string",
-            "description": "The new password typed a second time. The server, not the screen,\nrefuses a pair that differs, so the checks run in one fixed order:\ncurrent password, then the pair, then that the new one differs from the\ncurrent one."
+            "description": "The new password typed a second time. The server, not the screen,\nrefuses a pair that differs, so the checks run in one fixed order:\ncurrent password, then the pair, then that the new one differs from the\ncurrent one.",
+            "maxLength": 128
           }
         }
       },
@@ -19904,7 +20069,7 @@
           "completed",
           "completed_with_issues",
           "failed",
-          "cancelled"
+          "canceled"
         ]
       },
       "SavedSearch": {
@@ -19946,14 +20111,26 @@
           "version",
           "schema_fingerprint",
           "asset_max_bytes",
-          "upload_stall_secs",
-          "upload_piece_secs"
+          "body_stall_secs",
+          "body_total_secs"
         ],
         "properties": {
           "asset_max_bytes": {
             "type": "integer",
             "format": "int64",
             "description": "The attachment size limit, in bytes: the largest asset the server\naccepts, as one `PUT` or as the declared total of a multipart upload.\nThe owner sets it in the server settings. An app reads it here before\nit prepares attachments for upload.",
+            "minimum": 0
+          },
+          "body_stall_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Seconds a request body, such as an import batch, an attachment, or a\npart of one, may go with no byte arriving before the server stops\nreading it and answers `408 Request Timeout` (`body-stalled`): the config\nfile's `[server] body_stall_secs`, 60 unless it sets one.",
+            "minimum": 0
+          },
+          "body_total_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Seconds a whole request body may take to arrive, from the start of\nthe read, before the server stops reading it and answers\n`408 Request Timeout` (`body-stalled`): the config file's\n`[server] body_total_secs`, 300 unless it sets one. The desktop\napp's Upload sizes its wait for each upload from it.",
             "minimum": 0
           },
           "demo_account": {
@@ -19972,18 +20149,6 @@
           "state": {
             "$ref": "#/components/schemas/ServerState",
             "description": "`unclaimed` shows Create Owner alone; `closed` shows Login alone;\n`open` shows Login and Create Account."
-          },
-          "upload_piece_secs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Seconds a whole request body may take to arrive, from the start of\nthe read, before the server stops reading it and answers\n`408 Request Timeout` (`upload-stalled`): the config file's\n`[server] upload_piece_secs`, 300 unless it sets one. The desktop\napp's Upload sizes its wait for each upload from it.",
-            "minimum": 0
-          },
-          "upload_stall_secs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Seconds a request body, such as an import batch, an attachment, or a\npart of one, may go with no byte arriving before the server stops\nreading it and answers `408 Request Timeout` (`upload-stalled`): the config\nfile's `[server] upload_stall_secs`, 60 unless it sets one.",
-            "minimum": 0
           },
           "version": {
             "type": "string",
@@ -20205,7 +20370,7 @@
               "string",
               "null"
             ],
-            "description": "The name the source gave the reactor of an incoming reaction\nwhen it gave no address for them, as an iMazing export does;\n`null` when `sender` is set, and for the account holder's own\nreactions. A name is shown, never matched to a contact."
+            "description": "The name the source gave the reactor of an incoming reaction\nwhen it gave no address for them; no source gives one yet.\n`null` when `sender` is set, and for the account holder's own\nreactions. A name is shown, never matched to a contact."
           }
         }
       },

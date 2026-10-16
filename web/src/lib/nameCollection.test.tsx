@@ -152,6 +152,27 @@ describe("useNameCollectionActions", () => {
     expect(routes.remove).toHaveBeenCalledWith(12);
   });
 
+  // The server matches a set's name with its own `lower()`, which lowers each
+  // letter on its own (`lower_each_letter` in `sqlite_functions.rs`): `İ` is
+  // `i`, and a word-final `Σ` is `σ`. `toLowerCase` gives `i` plus a
+  // combining dot, and `ς`, so it would miss sets the server calls the same.
+  it("matches a name letter by letter, as the server's lower() does", async () => {
+    const routes = fakeRoutes();
+    const sets = [
+      { id: 12, name: "istanbul" },
+      { id: 13, name: "οδοσ" },
+    ];
+    client.setQueryData(KEY, sets);
+    routes.list.mockResolvedValue(sets);
+    const { result } = renderHook(() => useNameCollectionActions(groupsOver(routes)), { wrapper });
+    await result.current.remove("İstanbul");
+    expect(routes.remove).toHaveBeenCalledWith(12);
+    await result.current.remove("ΟΔΟΣ");
+    expect(routes.remove).toHaveBeenCalledWith(13);
+    await expect(result.current.ensure("İSTANBUL")).resolves.toBe("istanbul");
+    expect(routes.create).not.toHaveBeenCalled();
+  });
+
   it("asks the server once when the cache does not hold the name", async () => {
     const routes = fakeRoutes();
     routes.list.mockResolvedValue([{ id: 7, name: "Holiday" }]);
@@ -180,6 +201,34 @@ describe("useNameCollectionActions", () => {
     const { result } = renderHook(() => useNameCollectionActions(groupsOver(routes)), { wrapper });
     await expect(result.current.create("Trash")).rejects.toThrow("Trash is reserved");
     expect(routes.create).not.toHaveBeenCalled();
+  });
+
+  // The server folds ASCII letters only (`to_ascii_lowercase` in
+  // `named_membership.rs`), so `UNKNOWN` with the Kelvin sign (U+212A) in
+  // place of `K` is a name it accepts. The form must not refuse it.
+  it("folds only ASCII letters before checking a reserved name, as the server does", async () => {
+    const routes = fakeRoutes();
+    const kelvin = "UN\u212ANOWN";
+    routes.create.mockResolvedValue({ id: 4, name: kelvin });
+    const collection = createNameCollection({
+      routes,
+      key: keys.contactGroups.all,
+      chips: [],
+      label: "group",
+      forName: (name) => `group:${name}`,
+      reserved: {
+        label: "Contact Group",
+        reserved: ["unknown"],
+        special: [{ name: "unknown", message: "Unknown is reserved" }],
+      },
+    });
+    expect(collection.isReserved("UNKNOWN")).toBe(true);
+    expect(collection.reservedError("UNKNOWN")).toBe("Unknown is reserved");
+    expect(collection.isReserved(kelvin)).toBe(false);
+    expect(collection.reservedError(kelvin)).toBe(`"${kelvin}" is a reserved Contact Group`);
+    const { result } = renderHook(() => useNameCollectionActions(collection), { wrapper });
+    await expect(result.current.create(kelvin)).resolves.toBe(kelvin);
+    expect(routes.create).toHaveBeenCalledWith({ name: kelvin });
   });
 
   it("answers the created name and marks its own list stale", async () => {

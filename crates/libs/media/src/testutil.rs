@@ -26,8 +26,8 @@ pub use crate::fake_tools::{FakeTools, video_probe};
 /// test that a file is not read again while it is unchanged.
 pub use crate::tools::times_read;
 
-/// A 1x1 PNG, which the convert pass turns into a JPEG in both Convert and
-/// Compress.
+/// A 1x1 PNG, which the convert pass turns into a JPEG in both the `convert`
+/// and `compress` modes.
 ///
 /// Plain RGB (PNG color type 2), not RGBA, because ffmpeg's PNG decoder
 /// fails on a 1x1 RGBA image and reads this one cleanly.

@@ -8,6 +8,7 @@
 
 use crate::jid::jid_to_e164;
 use anyhow::{Context, Result};
+use message_crate_core::LogSink;
 use phone::OwnerHandleSet;
 use std::path::{Path, PathBuf};
 
@@ -26,9 +27,10 @@ const OWNER_JID_KEYS: [&str; 2] = ["OwnJabberID", "LastOwnJabberID"];
 
 /// The holder's number from the first preferences plist under `roots` that
 /// carries one, as E.164. `None` when no plist is there or none has an owner
-/// key. A plist that cannot be read is reported on `log` and counts as
-/// absent, so the form's number still applies.
-pub(crate) fn owner_from_backup(roots: &[PathBuf], log: &mut Vec<String>) -> Option<String> {
+/// key. A plist that cannot be read is a warning on `log`, since the run
+/// goes on without it, and counts as absent, so the form's number still
+/// applies.
+pub(crate) fn owner_from_backup(roots: &[PathBuf], log: &LogSink) -> Option<String> {
     roots
         .iter()
         .flat_map(|root| PREFERENCE_PLISTS.iter().map(move |rel| root.join(rel)))
@@ -36,7 +38,7 @@ pub(crate) fn owner_from_backup(roots: &[PathBuf], log: &mut Vec<String>) -> Opt
         .find_map(|path| match owner_from_plist(&path) {
             Ok(owner) => owner,
             Err(err) => {
-                log.push(format!(
+                log.warn(format!(
                     "WhatsApp's preferences file {} could not be read: {err:#}",
                     path.display()
                 ));
@@ -73,6 +75,8 @@ pub(crate) fn owner_from_form(phone: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use message_crate_core::RunLogLevel;
+    use message_crate_core::testutil::{level_of, recorded_log};
     use std::fs;
 
     fn fixture_backup() -> PathBuf {
@@ -83,10 +87,10 @@ mod tests {
     /// the app-group domain with `Library/Preferences/<group>.plist` inside.
     #[test]
     fn reads_the_owner_jid_from_the_backup_plist() {
-        let mut log = Vec::new();
-        let owner = owner_from_backup(&[fixture_backup()], &mut log);
+        let (log, recorded) = recorded_log();
+        let owner = owner_from_backup(&[fixture_backup()], &log);
         assert_eq!(owner.as_deref(), Some("+15555550100"));
-        assert!(log.is_empty(), "{log:?}");
+        assert!(recorded.lock().unwrap().is_empty(), "{recorded:?}");
     }
 
     /// The working directory is searched first, then the backup directory; a
@@ -94,13 +98,10 @@ mod tests {
     #[test]
     fn a_directory_without_the_plist_yields_no_owner() {
         let empty = tempfile::tempdir().unwrap();
-        let mut log = Vec::new();
+        let log = LogSink::none();
+        assert_eq!(owner_from_backup(&[empty.path().to_path_buf()], &log), None);
         assert_eq!(
-            owner_from_backup(&[empty.path().to_path_buf()], &mut log),
-            None
-        );
-        assert_eq!(
-            owner_from_backup(&[empty.path().to_path_buf(), fixture_backup()], &mut log).as_deref(),
+            owner_from_backup(&[empty.path().to_path_buf(), fixture_backup()], &log).as_deref(),
             Some("+15555550100")
         );
     }
@@ -112,7 +113,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let prefs = dir.path().join(PREFERENCE_PLISTS[0]);
         fs::create_dir_all(prefs.parent().unwrap()).unwrap();
-        let mut log = Vec::new();
+        let (log, recorded) = recorded_log();
 
         fs::write(
             &prefs,
@@ -124,7 +125,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            owner_from_backup(&[dir.path().to_path_buf()], &mut log).as_deref(),
+            owner_from_backup(&[dir.path().to_path_buf()], &log).as_deref(),
             Some("+447700900123")
         );
 
@@ -139,7 +140,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            owner_from_backup(&[dir.path().to_path_buf()], &mut log).as_deref(),
+            owner_from_backup(&[dir.path().to_path_buf()], &log).as_deref(),
             Some("+15555550122")
         );
 
@@ -154,33 +155,32 @@ mod tests {
 </dict></plist>"#,
         )
         .unwrap();
-        assert_eq!(
-            owner_from_backup(&[dir.path().to_path_buf()], &mut log),
-            None
-        );
-        assert!(log.is_empty(), "{log:?}");
+        assert_eq!(owner_from_backup(&[dir.path().to_path_buf()], &log), None);
+        assert!(recorded.lock().unwrap().is_empty(), "{recorded:?}");
     }
 
-    /// A plist that is not a plist is logged and counts as absent rather
-    /// than stopping the import: the form's number covers it.
+    /// A plist that is not a plist is logged as a warning and counts as
+    /// absent rather than stopping the import: the form's number covers it
+    /// (#3070).
     #[test]
     fn an_unreadable_plist_is_logged_and_skipped() {
         let dir = tempfile::tempdir().unwrap();
         let prefs = dir.path().join(PREFERENCE_PLISTS[0]);
         fs::create_dir_all(prefs.parent().unwrap()).unwrap();
         fs::write(&prefs, b"not a plist").unwrap();
-        let mut log = Vec::new();
+        let (log, recorded) = recorded_log();
+        assert_eq!(owner_from_backup(&[dir.path().to_path_buf()], &log), None);
+        assert_eq!(recorded.lock().unwrap().len(), 1, "{recorded:?}");
         assert_eq!(
-            owner_from_backup(&[dir.path().to_path_buf()], &mut log),
-            None
-        );
-        assert_eq!(log.len(), 1, "{log:?}");
-        assert!(
-            log[0].starts_with(&format!(
-                "WhatsApp's preferences file {} could not be read: ",
-                prefs.display()
-            )),
-            "{log:?}"
+            level_of(
+                &recorded,
+                &format!(
+                    "WhatsApp's preferences file {} could not be read: ",
+                    prefs.display()
+                )
+            ),
+            Some(RunLogLevel::Warn),
+            "{recorded:?}"
         );
     }
 

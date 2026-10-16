@@ -9,7 +9,7 @@ use axum::Router;
 use crate::config::Config;
 use crate::exit_with_parent::ParentWatch;
 use crate::open_db::OpenDb;
-use crate::request_body::UploadTimeLimits;
+use crate::request_body::BodyTimeLimits;
 use crate::server::{AppState, http_app};
 
 /// Start the HTTP server. It runs until Ctrl-C or SIGTERM, or, when
@@ -57,11 +57,8 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
         "The database at {} is open, in journal mode {mode}",
         opened.cfg.paths.db.display()
     );
-    let state = AppState::new(
-        opened,
-        server.asset_part_size,
-        UploadTimeLimits::of(&server),
-    );
+    let body_time_limits = BodyTimeLimits::of(&server);
+    let state = AppState::new(opened, server.asset_part_size, body_time_limits);
     if crate::server_api::recover_stopped_demo_build(&state).await? {
         tracing::warn!(
             "The server stopped during a Demo Account build, so the part-built Demo Account was removed"
@@ -71,7 +68,7 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     crate::asset_store::sweep_incoming_at_start(
         &state.db,
         &state.cfg.paths,
-        state.upload_time_limits.stall,
+        state.body_time_limits.stall,
     )
     .await;
     // Import batch bodies a stopped server left, before any batch can start.
@@ -86,13 +83,16 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     // Clears a write-ahead log that a read kept from being cleared after a
     // delete for good (#2108).
     crate::db::erase::keep_retrying(state.db.clone());
+    // Closes Export Runs no page was read from for an hour, a server stopped
+    // part-way included (#2080).
+    crate::db::exports::keep_closing_idle_runs(state.db.clone());
     // Reported as they stand now; each upload reads them again. Any stored
     // limit starts the server: a part is never larger than the limit.
     let upload_limits = state.assets.upload_limits(&state.db).await?;
     tracing::info!(
         "An attachment may be up to {} MiB, and is uploaded in parts of {} MiB",
-        upload_limits.max_bytes / message_ir::MIB,
-        upload_limits.part_size as u64 / message_ir::MIB
+        upload_limits.max_bytes / ir::MIB,
+        upload_limits.part_size as u64 / ir::MIB
     );
 
     let demo_build = state.demo.build.clone();
@@ -117,7 +117,7 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
         let _ = writeln!(
             std::io::stderr(),
             "{}http://{}",
-            message_crate_serve_protocol::LISTENING_LINE,
+            serve_protocol::LISTENING_LINE,
             listener.local_addr()?
         );
     }
@@ -144,6 +144,7 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     serve_until_shutdown(
         listener,
         app,
+        crate::connections::ConnectionLimits::server(body_time_limits),
         shutdown_signal(exit_with_parent),
         on_signal,
         || tokio::time::sleep(STOP_DRAIN_LIMIT),
@@ -220,12 +221,14 @@ impl Stopped {
 /// What is still running when the limit passes is left to end with the
 /// process (`main` shuts the runtime down without waiting for it).
 ///
-/// Every connection is held to [`crate::connections::ConnectionLimits::SERVER`]:
-/// how many are open at once, and how long one may take over its headers or
-/// sit idle (#2100).
+/// Every connection is held to `limits`, which `serve` makes with
+/// [`crate::connections::ConnectionLimits::server`]: how many are open at
+/// once, how long one may take over its headers or sit idle (#2100), and how
+/// long an answer may wait on a client that reads none of it (#2984).
 async fn serve_until_shutdown<W, D>(
     listener: tokio::net::TcpListener,
     app: Router,
+    limits: crate::connections::ConnectionLimits,
     stop: impl Future<Output = ()> + Send + 'static,
     on_signal: impl FnOnce() -> W + Send + 'static,
     drain_limit: impl FnOnce() -> D,
@@ -236,16 +239,11 @@ where
 {
     let (work_tx, work_rx) = tokio::sync::oneshot::channel::<W>();
     let (signaled_tx, signaled_rx) = tokio::sync::oneshot::channel::<()>();
-    let served = crate::connections::serve_connections(
-        listener,
-        app,
-        crate::connections::ConnectionLimits::SERVER,
-        async move {
-            stop.await;
-            let _ = work_tx.send(on_signal());
-            let _ = signaled_tx.send(());
-        },
-    );
+    let served = crate::connections::serve_connections(listener, app, limits, async move {
+        stop.await;
+        let _ = work_tx.send(on_signal());
+        let _ = signaled_tx.send(());
+    });
     let work = async move {
         if let Ok(work) = work_rx.await {
             work.await;

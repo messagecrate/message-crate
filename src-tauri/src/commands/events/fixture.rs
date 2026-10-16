@@ -1,6 +1,7 @@
 //! Writes `tests/fixtures/desktop-events/events.json`: payloads of every event
 //! the window reads as a typed object, built from the structs in
-//! [`super`], keyed by the channel each is sent on.
+//! [`super`] and the app's own server's [`Notice`], keyed by the channel each
+//! is sent on.
 //! `web/src/lib/desktopEvents.test.ts` reads the file back and checks every
 //! payload against its TypeScript type in `web/src/lib/types.ts`, so a field
 //! renamed or removed on either side fails a test (#2109).
@@ -12,20 +13,22 @@
 //!
 //! Every optional field is set in at least one payload, and every value of
 //! each enum a payload carries appears in one, so the web test sees each
-//! field and each word the window can receive. An issue row's `step` is the
-//! exception: Rust carries it as a `String`, not an enum, so its one word
-//! here is a sample and the stages' other words are not checked.
+//! field and each word the window can receive.
 
 use std::path::PathBuf;
 
-use message_crate_core::{Cancelled, ProgressEvent, RunIssue, RunIssueKind, WriteStatus};
-use message_crate_import::FileStatus;
+use import::FileStatus;
+use message_crate_core::{
+    Canceled, ProgressEvent, RunIssue, RunIssueKind, RunIssueStep, WriteStatus,
+};
 use serde_json::Value;
 
 use super::{
     DesktopJobErrorEvent, ERROR, FILE_DONE, FILE_WRITTEN, ISSUE, ImportFileDoneEvent,
     ImportIssueEvent, ImportProgressEvent, PROGRESS, Step, WindowEvent,
 };
+use crate::commands::local_server::NOTICE;
+use crate::local_server::{Notice, Stop};
 use crate::tool_downloads::Program;
 
 /// The committed fixture, from the repository root.
@@ -74,17 +77,44 @@ fn payloads() -> Value {
         )
         .map(to_json);
 
+    let issue_row = |kind, step, item: &str, reason: &str| {
+        ImportIssueEvent::from(&RunIssue {
+            kind,
+            step,
+            item: item.into(),
+            reason: reason.into(),
+            conversation: Some("c.jsonl".into()),
+        })
+    };
+    // One per kind, then one per step, each with an item and reason of the
+    // kind that step reports.
     let issue = every!(RunIssueKind: Skip, Error, Note, Resolved)
         .into_iter()
         .map(|kind| {
-            ImportIssueEvent::from(&RunIssue {
+            issue_row(
                 kind,
-                step: "attachments".into(),
-                item: "/backup/IMG_0001.MOV".into(),
-                reason: "could not be decrypted".into(),
-                conversation: Some("c.jsonl".into()),
-            })
+                RunIssueStep::Attachments,
+                "/backup/IMG_0001.MOV",
+                "could not be decrypted",
+            )
         })
+        .chain(
+            every!(RunIssueStep: Parse, Attachments, Media, Upload)
+                .into_iter()
+                .map(|step| {
+                    let (item, reason) = match step {
+                        RunIssueStep::Parse => ("sms-1.xml", "could not be read"),
+                        RunIssueStep::Attachments => {
+                            ("/backup/IMG_0001.MOV", "could not be decrypted")
+                        }
+                        RunIssueStep::Media => {
+                            ("c.jsonl:attachments/IMG_0001.MOV", "could not be converted")
+                        }
+                        RunIssueStep::Upload => ("c.jsonl", "upload failed"),
+                    };
+                    issue_row(RunIssueKind::Skip, step, item, reason)
+                }),
+        )
         .map(to_json);
 
     let file_done = every!(FileStatus: Ok, Failed, Skipped)
@@ -108,7 +138,7 @@ fn payloads() -> Value {
     // A Cancel, and a failure with a sentence for the person: between them
     // every field, and both values of `canceled`.
     let error = [
-        DesktopJobErrorEvent::from(anyhow::Error::from(Cancelled)),
+        DesktopJobErrorEvent::from(anyhow::Error::from(Canceled)),
         DesktopJobErrorEvent::from(
             anyhow::Error::from(std::io::Error::new(
                 std::io::ErrorKind::StorageFull,
@@ -120,12 +150,26 @@ fn payloads() -> Value {
     .into_iter()
     .map(to_json);
 
-    let channels: [(&str, Vec<Value>); 5] = [
+    // The app's own server stopped each way, answered again, and failed.
+    let notice = every!(Stop: Unanswered, Exited)
+        .into_iter()
+        .map(|cause| Notice::Restarting { cause })
+        .chain([
+            Notice::Answering,
+            Notice::Failed {
+                message: "Message Crate stopped 4 times within 10 minutes.".into(),
+                details: "database is locked".into(),
+            },
+        ])
+        .map(to_json);
+
+    let channels: [(&str, Vec<Value>); 6] = [
         (PROGRESS, progress.collect()),
         (ISSUE, issue.collect()),
         (FILE_DONE, file_done.collect()),
         (FILE_WRITTEN, file_written.collect()),
         (ERROR, error.collect()),
+        (NOTICE, notice.collect()),
     ];
     Value::Object(
         channels

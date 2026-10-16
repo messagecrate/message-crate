@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use message_ir::trimmed;
+use ir::trimmed;
 use sqlx::SqliteConnection;
 
 use super::pipeline::ImportCounts;

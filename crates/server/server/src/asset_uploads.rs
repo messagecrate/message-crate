@@ -19,11 +19,11 @@ use crate::assets_api::{self, AssetError, Sha256, StoredAsset};
 /// Default part size advertised to clients: the largest import batch, so an
 /// attachment arrives at the speed a batch does
 /// (`docs/architecture/http-api.md`, "Credentials and reach").
-pub const DEFAULT_PART_SIZE: usize = message_crate_api_types::MAX_IMPORT_BATCH_BYTES;
+pub const DEFAULT_PART_SIZE: usize = api_types::MAX_IMPORT_BATCH_BYTES;
 
 /// How many multipart uploads one account may have open at once. An open
 /// upload keeps its parts on disk until it is completed, aborted, or
-/// abandoned: nothing written to it for `[server] upload_stall_secs`
+/// abandoned: nothing written to it for `[server] body_stall_secs`
 /// ([`crate::asset_store::sweep_incoming`]). Without a cap one account could
 /// start uploads without end and fill the disk every account shares. The
 /// desktop app runs at most 64 at once (16 attachment workers in each of 4
@@ -207,7 +207,7 @@ fn write_manifest(session: &Path, manifest: &UploadManifest) -> Result<()> {
 /// manifest's time, and a part arriving writes only its own temp file
 /// ([`begin_part`]) until all of it is in, while a completion rewrites no
 /// manifest. So the manifest of an upload in use can say nothing was
-/// written to it for longer than `[server] upload_stall_secs`. It is in the
+/// written to it for longer than `[server] body_stall_secs`. It is in the
 /// server's memory for the reason [`LOCKED_SESSIONS`] is.
 static IN_USE: LazyLock<Mutex<HashMap<PathBuf, usize>>> = LazyLock::new(Mutex::default);
 
@@ -358,7 +358,7 @@ fn count_open_uploads(assets_root: &Path) -> usize {
 /// Returns [`AssetError::Invalid`] when `bytes` is over the attachment size
 /// limit, [`AssetError::TooManyUploads`] when the account already has
 /// [`MAX_OPEN_UPLOADS`] uploads open that are not abandoned (nothing written
-/// to them for `stall`, `[server] upload_stall_secs`), and
+/// to them for `stall`, `[server] body_stall_secs`), and
 /// [`AssetError::Internal`] when the upload's directory cannot be made.
 pub fn start_upload(
     assets_root: &Path,
@@ -395,7 +395,7 @@ fn start_upload_with(
         return Err(AssetError::Invalid(format!(
             "object exceeds {} byte server limit ({} MiB)",
             limits.max_bytes,
-            limits.max_bytes / message_ir::MIB
+            limits.max_bytes / ir::MIB
         )));
     }
     if let Some(existing) = assets_api::lookup_by_sha256(assets_root, sha) {

@@ -71,25 +71,25 @@ Reading a file's details, reading the one frame of a Thumbnail or of an image's 
 `serve`, `process-assets` and `import` read the key; a server started with `--data-dir` and the desktop app's own conversions use the default.
 Why the rules: `docs/architecture/media.md`.
 
-### Server asset limits
+### Server upload and body limits
 
-`[server]` also accepts three optional upload settings:
+`[server]` also accepts three optional settings for uploads and request bodies:
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `asset_part_size` | `16777216` (16 MiB) | Largest part of a multipart upload. Must be greater than 0. Keep under ~100 MiB for Cloudflare-proxied setups, and small enough that a whole part arrives inside `upload_piece_secs`: 16 MiB arrives inside the default at about 0.45 Mbit/s. The part size a client is told is this or the attachment size limit, whichever is smaller. |
-| `upload_stall_secs` | `60` | Seconds a request body may go with no byte arriving before the server stops reading it. Every body is held to it, and an upload (an import batch, an attachment, or a part of one) is the body large enough to meet it. An attachment upload nothing has been written to for this long, with no request to it running, is abandoned, and the server removes it. Must be greater than 0. |
-| `upload_piece_secs` | `300` (5 minutes) | Seconds a whole request body may take to arrive before the server stops reading it: from the start of the read for an upload, and from when the request arrives for any other body. Every body is held to it, as to `upload_stall_secs`. Must be greater than 0. A full 16 MiB import batch arrives in time at about 0.45 Mbit/s. |
+| `asset_part_size` | `16777216` (16 MiB) | Largest part of a multipart upload. Must be greater than 0. Keep under ~100 MiB for Cloudflare-proxied setups, and small enough that a whole part arrives inside `body_total_secs`: 16 MiB arrives inside the default at about 0.45 Mbit/s. The part size a client is told is this or the attachment size limit, whichever is smaller. |
+| `body_stall_secs` | `60` | Seconds a request body may go with no byte arriving before the server stops reading it. Every body is held to it. A client that takes no byte of an answer for this long has its connection closed; a download that is still moving is never cut off. An attachment upload nothing has been written to for this long, with no request to it running, is abandoned, and the server removes it. Must be greater than 0. |
+| `body_total_secs` | `300` (5 minutes) | Seconds a whole request body may take to arrive before the server stops reading it: from the start of the read for an upload, and from when the request arrives for any other body. Every body is held to it, as to `body_stall_secs`. Must be greater than 0. A full 16 MiB import batch arrives in time at about 0.45 Mbit/s. |
 
 The server refuses a config file that sets either time to 0, naming the key.
-A body that meets either limit is refused with `408 Request Timeout` and the [`upload-stalled`](/docs/developer/reference/errors/upload-stalled/) problem type, and none of it is stored. Sending the request again can succeed, and for an upload, running the import again continues it.
+A body that meets either limit is refused with `408 Request Timeout` and the [`body-stalled`](/docs/developer/reference/errors/body-stalled/) problem type, and none of it is stored. Sending the request again can succeed, and for an upload, running the import again continues it.
 Why: an import batch holds one of the server's two import slots while it arrives, so a client that stops sending part-way, such as a laptop that goes to sleep, must not hold it for long.
-`GET /v1/server` states both limits as `upload_stall_secs` and `upload_piece_secs`, and the desktop app's Upload waits for each upload's answer as long as the server says it may take, plus 5 minutes for the server to save it.
+`GET /v1/server` states both limits as `body_stall_secs` and `body_total_secs`, and the desktop app's Upload waits for each upload's answer as long as the server says it may take, plus 5 minutes for the server to save it.
 A server started with `--data-dir`, as the desktop app starts its own, uses the defaults.
 
 The server refuses a config file that carries a section or key it does not use.
 Every command that loads the file, `serve` included, stops with an error that names each unknown key and its section, for example ``[server] has a key the server does not use: `bnd` ``.
-Why: a misspelt key would otherwise load as its default, and a removed key would sit in the file looking as though it still held.
+Why: a misspelled key would otherwise load as its default, and a removed key would sit in the file looking as though it still held.
 
 The attachment size limit is not a config key, and a file that still sets `[server] asset_max_bytes` is refused with a message saying where the limit is set now.
 It is the largest attachment the server accepts, as a single `PUT /v1/assets/{sha256}` body or as the total declared bytes of a multipart upload.

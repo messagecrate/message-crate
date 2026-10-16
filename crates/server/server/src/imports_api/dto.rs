@@ -1,7 +1,7 @@
 //! The request and response types of the `/v1/imports` routes, and the
 //! checks that turn a request's fields into what the database records.
 
-use message_crate_api_types::{ImportErrorKind, ImportMode};
+use api_types::{ImportErrorKind, ImportMode};
 use serde::{Deserialize, Serialize};
 
 use super::pipeline::ImportCounts;
@@ -57,11 +57,6 @@ pub(crate) struct CreateImportRequest {
     #[serde(default)]
     #[schema(max_length = 64)]
     pub(crate) tool: Option<String>,
-    /// Stage the run opens at, `parse` when the request leaves it out. A run
-    /// opens only at `parse`; any other stage is refused with
-    /// `422 Unprocessable Entity`.
-    #[serde(default)]
-    pub(crate) stage: Option<crate::db::imports::ImportStage>,
     /// Absolute path to the run directory on the client that owns this
     /// Import Run, stored as given, spaces at its ends included. Over 4,096
     /// characters is refused with `422 Unprocessable Entity`.
@@ -468,7 +463,7 @@ pub(crate) struct ImportRunSummary {
     /// imported, and for a run whose files name none.
     pub(crate) backup_taken_at: Option<String>,
     /// What the person approved at the last Review they passed, which
-    /// `PATCH /v1/imports/{id}` writes with its `summary`. A cancelled run
+    /// `PATCH /v1/imports/{id}` writes with its `summary`. A canceled run
     /// keeps it. A run that completed or failed holds instead the final
     /// counts its `POST /v1/imports/{id}/complete` sent, and null when that
     /// request sent none, because completing replaces the plan. Null too

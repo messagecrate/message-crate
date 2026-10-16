@@ -108,7 +108,7 @@ fn convert_to_documents(
     files: &[(&str, &str)],
 ) -> (
     ExportReport,
-    std::collections::BTreeMap<String, message_ir::ConversationDocument>,
+    std::collections::BTreeMap<String, ir::ConversationDocument>,
 ) {
     let dir = tempfile::tempdir().expect("tempdir");
     let input = dir.path().join("in");
@@ -129,14 +129,14 @@ fn convert_to_documents(
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
-        .map(|path| message_ir_format::read_conversation_json(&path).expect("read back"))
+        .map(|path| ir_format::read_conversation_json(&path).expect("read back"))
         .map(|document| (document.conversation.chat_identifier.clone(), document))
         .collect();
     (report, documents)
 }
 
 /// The phone handles on a conversation's roster.
-fn roster(document: &message_ir::ConversationDocument) -> Vec<&str> {
+fn roster(document: &ir::ConversationDocument) -> Vec<&str> {
     document
         .conversation
         .participants
@@ -145,7 +145,7 @@ fn roster(document: &message_ir::ConversationDocument) -> Vec<&str> {
         .collect()
 }
 
-/// A chat labelled with a name is keyed by the number its incoming rows
+/// A chat labeled with a name is keyed by the number its incoming rows
 /// carry, and that number is the roster. The owner's own number on a sent
 /// row comes first here and must not become the chat's key.
 #[test]
@@ -256,11 +256,11 @@ fn an_attachments_csv_is_not_read_as_a_conversation() {
 
 /// The sender handle of each message in a conversation, in order; `None` for
 /// a sent message.
-fn senders(document: &message_ir::ConversationDocument) -> Vec<Option<&str>> {
+fn senders(document: &ir::ConversationDocument) -> Vec<Option<&str>> {
     document
         .messages
         .iter()
-        .map(|m| m.sender_identity.as_deref().filter(|h| !h.is_empty()))
+        .map(|m| m.sender.identity.as_deref().filter(|h| !h.is_empty()))
         .collect()
 }
 
@@ -283,7 +283,7 @@ fn a_per_chat_file_with_three_senders_is_one_group() {
     assert!(document.conversation.chat_identifier.starts_with("group:"));
     assert_eq!(
         document.conversation.conversation_type,
-        message_ir::ConversationType::Group
+        ir::ConversationType::Group
     );
     assert_eq!(roster(document), vec!["+15555550122", "+15555550133"]);
     let named: Vec<_> = document
@@ -298,13 +298,13 @@ fn a_per_chat_file_with_three_senders_is_one_group() {
         vec![Some("+15555550122"), Some("+15555550133"), None, None]
     );
     assert_eq!(
-        document.messages[2].sender_display_name.as_deref(),
+        document.messages[2].sender.display_name.as_deref(),
         Some("Cathy Arp")
     );
 }
 
 /// The account holder's messages that name no recipient: the guid of each.
-fn guids(document: &message_ir::ConversationDocument) -> std::collections::BTreeSet<&str> {
+fn guids(document: &ir::ConversationDocument) -> std::collections::BTreeSet<&str> {
     document.messages.iter().map(|m| m.guid.as_str()).collect()
 }
 
@@ -380,7 +380,7 @@ fn an_all_conversations_group_is_apart_from_its_senders() {
     assert_eq!(source.fields["conversation"], "Trip");
     assert_eq!(
         trip.conversation.conversation_type,
-        message_ir::ConversationType::Group
+        ir::ConversationType::Group
     );
     assert_eq!(roster(trip), vec!["+15555550122", "+15555550133"]);
     assert_eq!(
@@ -417,7 +417,7 @@ fn a_per_chat_groups_key_comes_from_its_rows_and_name_not_its_directory() {
     let trip_key = |documents: &std::collections::BTreeMap<String, _>| {
         documents
             .iter()
-            .find(|(_, document): &(_, &message_ir::ConversationDocument)| {
+            .find(|(_, document): &(_, &ir::ConversationDocument)| {
                 document.messages[0].text == "Trip?"
             })
             .map(|(key, _)| key.clone())

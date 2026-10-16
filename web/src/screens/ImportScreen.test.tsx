@@ -6,13 +6,14 @@
 // can't answer falls through to the form rather than blocking it.
 
 import { QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { errorText } from "../lib/apiErrorMessage";
 import type { StagingSummary } from "../lib/desktop/staging";
 import type { ActiveImportRun } from "../lib/importRun";
 import { keys } from "../lib/queryKeys";
 import type { MediaToolName } from "../lib/types";
+import { act } from "../test/act";
 import { activeImportRun } from "../test/apiShapes";
 import { deferred } from "../test/deferred";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
@@ -38,6 +39,7 @@ const hookState = vi.hoisted(() => ({
   mediaToolsMissing: [] as MediaToolName[],
   mediaPartiallyRan: false,
   resumeError: null as string | null,
+  startError: null as string | null,
   sourceIdentities: null as string[] | null,
   runDirDeleteFailure: null as RunDirDeleteFailure | null,
 }));
@@ -50,6 +52,7 @@ const cancelMock = vi.hoisted(() => vi.fn());
 const returnToFormMock = vi.hoisted(() => vi.fn());
 const continueAfterIdentityStopMock = vi.hoisted(() => vi.fn());
 const cancelIdentityStopMock = vi.hoisted(() => vi.fn());
+const formEditedMock = vi.hoisted(() => vi.fn());
 const getActiveImportRunMock = vi.hoisted(() => vi.fn());
 const discardImportRunMock = vi.hoisted(() => vi.fn());
 const invokeDeleteRunDirMock = vi.hoisted(() => vi.fn());
@@ -80,6 +83,7 @@ vi.mock("./import/useImportJob", async (importOriginal) => {
       mediaToolsMissing: hookState.mediaToolsMissing,
       mediaPartiallyRan: hookState.mediaPartiallyRan,
       resumeError: hookState.resumeError,
+      startError: hookState.startError,
       sourceIdentities: hookState.sourceIdentities,
       computingSummary: false,
       completionText: undefined,
@@ -91,6 +95,7 @@ vi.mock("./import/useImportJob", async (importOriginal) => {
       returnToForm: returnToFormMock,
       continueAfterIdentityStop: continueAfterIdentityStopMock,
       cancelIdentityStop: cancelIdentityStopMock,
+      formEdited: formEditedMock,
       runDirDeleteFailure: hookState.runDirDeleteFailure,
       // The real one never throws: a failed delete is kept for the notice,
       // a refused close is its outcome, and its reading of the run record
@@ -156,7 +161,30 @@ vi.mock("../lib/tauriCheck", async (importOriginal) => ({
 }));
 
 vi.mock("./import/ImportFormFields", () => ({
-  default: () => <div data-testid="import-form" />,
+  default: (props: {
+    startError: string | null;
+    dispatch: (
+      action:
+        | { type: "set"; field: "backupPassword"; value: string }
+        | { type: "toggle"; field: "showBackupPassword" },
+    ) => void;
+  }) => (
+    <div data-testid="import-form">
+      {props.startError}
+      <button
+        type="button"
+        onClick={() => props.dispatch({ type: "set", field: "backupPassword", value: "hunter2" })}
+      >
+        form-type-password
+      </button>
+      <button
+        type="button"
+        onClick={() => props.dispatch({ type: "toggle", field: "showBackupPassword" })}
+      >
+        form-show-password
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock("./import/ImportRunView", () => ({
@@ -210,7 +238,7 @@ vi.mock("./import/ResumeImportPanel", () => ({
 }));
 
 const { default: ImportScreen } = await import("./ImportScreen");
-const { useImportAttention } = await import("./import/useImportAttention");
+const { useImportAttention } = await import("../components/useImportAttention");
 
 function stagingSummary(overrides: Partial<StagingSummary> = {}): StagingSummary {
   return {
@@ -237,6 +265,7 @@ describe("ImportScreen entering Import", () => {
     hookState.mediaToolsMissing = [];
     hookState.mediaPartiallyRan = false;
     hookState.resumeError = null;
+    hookState.startError = null;
     hookState.sourceIdentities = null;
     hookState.runDirDeleteFailure = null;
     startImportMock.mockReset();
@@ -248,6 +277,7 @@ describe("ImportScreen entering Import", () => {
     returnToFormMock.mockReset();
     continueAfterIdentityStopMock.mockReset();
     cancelIdentityStopMock.mockReset();
+    formEditedMock.mockReset();
     getActiveImportRunMock.mockReset();
     discardImportRunMock.mockReset();
     discardImportRunMock.mockResolvedValue(undefined);
@@ -296,6 +326,37 @@ describe("ImportScreen entering Import", () => {
     await settle();
     expect(screen.getByTestId("import-form")).toBeInTheDocument();
     expect(screen.queryByTestId("resume-panel")).not.toBeInTheDocument();
+  });
+
+  it("shows on the form why the last Import could not start", async () => {
+    getActiveImportRunMock.mockResolvedValue(null);
+    hookState.startError = "The backup password is wrong.";
+    renderWithProviders(<ImportScreen />);
+
+    await settle();
+    expect(screen.getByTestId("import-form")).toHaveTextContent("The backup password is wrong.");
+  });
+
+  it("drops the last start's failure when a field of the form changes", async () => {
+    getActiveImportRunMock.mockResolvedValue(null);
+    hookState.startError = "The backup password is wrong.";
+    renderWithProviders(<ImportScreen />);
+    await settle();
+
+    await setupUser().click(screen.getByRole("button", { name: "form-type-password" }));
+
+    expect(formEditedMock).toHaveBeenCalled();
+  });
+
+  it("keeps the last start's failure when a toggle only shows part of the form", async () => {
+    getActiveImportRunMock.mockResolvedValue(null);
+    hookState.startError = "The backup password is wrong.";
+    renderWithProviders(<ImportScreen />);
+    await settle();
+
+    await setupUser().click(screen.getByRole("button", { name: "form-show-password" }));
+
+    expect(formEditedMock).not.toHaveBeenCalled();
   });
 
   it("falls through to the form when the server cannot answer", async () => {
@@ -397,7 +458,7 @@ describe("ImportScreen entering Import", () => {
 
   it("also deletes the run directory when discarding a this-device run", async () => {
     // cancelRun already deletes the run directory when a review is
-    // cancelled -- a panel discard is the same operation reached
+    // canceled -- a panel discard is the same operation reached
     // through a different button, and used to only call
     // discardImportRun, orphaning a potentially multi-GB directory.
     const user = setupUser();
@@ -965,6 +1026,7 @@ describe("ImportScreen during a run", () => {
     hookState.mediaToolsMissing = [];
     hookState.mediaPartiallyRan = false;
     hookState.resumeError = null;
+    hookState.startError = null;
     hookState.sourceIdentities = null;
     hookState.runDirDeleteFailure = null;
     startImportMock.mockReset();
@@ -976,6 +1038,7 @@ describe("ImportScreen during a run", () => {
     returnToFormMock.mockReset();
     continueAfterIdentityStopMock.mockReset();
     cancelIdentityStopMock.mockReset();
+    formEditedMock.mockReset();
     getActiveImportRunMock.mockReset();
     getActiveImportRunMock.mockResolvedValue(null);
     discardImportRunMock.mockReset();

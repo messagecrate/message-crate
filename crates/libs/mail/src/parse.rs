@@ -3,11 +3,11 @@
 use crate::headers as hn;
 use crate::{MailAttachment, MailMessage, Participant};
 use anyhow::{Context, Result, bail};
-use mailparse::{MailHeader, MailHeaderMap, ParsedMail};
-use message_ir::{
+use ir::{
     Deletion, Direction, EarlierVersion, ImessageExtensions, Message, MessageKind, Reaction,
     ReplyTo, TimePrecision, Transport, VendorFields,
 };
+use mailparse::{MailHeader, MailHeaderMap, ParsedMail};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use std::fs;
@@ -171,8 +171,11 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             direction,
             service,
             message_kind,
-            sender_identity,
-            sender_display_name,
+            sender: ir::Sender {
+                identity: sender_identity,
+                display_name: sender_display_name,
+                country: None,
+            },
             owner_identity: optional_header(headers, hn::MESSAGE_OWNER_IDENTITY),
             subject,
             text,
@@ -185,7 +188,6 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             reply_to,
             imessage,
             source,
-            sender_country: None,
             backup_taken_at_unix_ms,
         },
         attachments,
@@ -195,7 +197,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
 /// The message a reply quotes, from `X-ME-Is-Reply` and the `X-ME-Reply-To-*`
 /// headers; `None` for a mail that is not a reply.
 fn parse_reply_to(headers: &[MailHeader<'_>]) -> Option<ReplyTo> {
-    message_ir::reply_to_from_mark(
+    ir::reply_to_from_mark(
         header_bool(headers, hn::IS_REPLY),
         optional_header(headers, hn::REPLY_TO_GUID),
         header_u32(headers, hn::REPLY_TO_PART),
@@ -236,9 +238,9 @@ pub fn mail_messages_from_mbox(path: &Path) -> Result<Vec<MailMessage>> {
     let records = split_mboxrd(&text);
     let mut out = Vec::with_capacity(records.len());
     for (i, eml) in records.iter().enumerate() {
-        let msg = mail_message_from_eml_bytes(eml)
+        let message = mail_message_from_eml_bytes(eml)
             .with_context(|| format!("parse mbox record {} in {}", i + 1, path.display()))?;
-        out.push(msg);
+        out.push(message);
     }
     Ok(out)
 }
@@ -363,7 +365,7 @@ fn parse_deletion(headers: &[MailHeader<'_>]) -> Result<Option<Deletion>> {
     let Some(raw) = typed_header(headers, hn::DELETION) else {
         return Ok(None);
     };
-    message_ir::parse_deletion(&raw).with_context(|| format!("This mail's {} header", hn::DELETION))
+    ir::parse_deletion(&raw).with_context(|| format!("This mail's {} header", hn::DELETION))
 }
 
 /// The message's reactions from `X-ME-Reactions`, or none when the header is
@@ -433,7 +435,7 @@ fn merge_attachments(
             .unwrap_or_else(|| (Vec::new(), None, None));
         out.push(MailAttachment {
             bytes,
-            meta: message_ir::AttachmentMeta {
+            meta: ir::AttachmentMeta {
                 path: None,
                 original_name: m.and_then(|c| c.original_name.clone()).or(name_fallback),
                 mime_type: m.and_then(|c| c.mime_type.clone()).or(mime_fallback),
@@ -492,12 +494,15 @@ mod tests {
     #[test]
     fn roundtrip_eml_headers_and_body() {
         let base = base_sms();
-        let msg = MailMessage {
+        let message = MailMessage {
             owner_display_name: Some("Me".into()),
             message: Message {
                 direction: Direction::Outgoing,
-                sender_identity: Some("+15555550100".into()),
-                sender_display_name: Some("Me".into()),
+                sender: ir::Sender {
+                    identity: Some("+15555550100".into()),
+                    display_name: Some("Me".into()),
+                    country: None,
+                },
                 text: "hello roundtrip".into(),
                 source: Some(VendorFields {
                     android_type: Some(2),
@@ -509,13 +514,13 @@ mod tests {
         };
 
         let tmp = tempfile::tempdir().unwrap();
-        let path = write_message_file(&tmp.path().join("chat"), 1, &msg).unwrap();
+        let path = write_message_file(&tmp.path().join("chat"), 1, &message).unwrap();
         let bytes = fs::read(&path).unwrap();
         let parsed = mail_message_from_eml_bytes(&bytes).unwrap();
         assert_eq!(parsed.message.text, "hello roundtrip");
         assert_eq!(parsed.message.direction, Direction::Outgoing);
         assert_eq!(
-            parsed.message.sender_identity.as_deref(),
+            parsed.message.sender.identity.as_deref(),
             Some("+15555550100")
         );
         assert_eq!(parsed.owner_identity, "+15555550100");
@@ -570,7 +575,7 @@ mod tests {
             guid: Some("parent-guid-1111".into()),
             part_index: Some(1),
         };
-        let imessage = message_ir::ImessageExtensions {
+        let imessage = ir::ImessageExtensions {
             send_effect: Some("Sent with Balloons".into()),
             shared_location: Some("Cupertino".into()),
             announcement: Some("named the conversation".into()),
@@ -586,7 +591,7 @@ mod tests {
             tapback_action: Some("add".into()),
         };
         let base = base_sms();
-        let msg = MailMessage {
+        let message = MailMessage {
             chat_identifier: "chat-group1".into(),
             conversation_type: "group".into(),
             group_title: Some("Family".into()),
@@ -608,11 +613,14 @@ mod tests {
                 guid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into(),
                 service: Transport::IMessage,
                 message_kind: MessageKind::IMessage,
-                sender_display_name: Some("Sam".into()),
+                sender: ir::Sender {
+                    display_name: Some("Sam".into()),
+                    ..base.message.sender.clone()
+                },
                 subject: Some("MMS subject".into()),
                 text: "full bag".into(),
                 reactions: reactions.clone(),
-                deletion: Some(message_ir::Deletion::Unsent),
+                deletion: Some(ir::Deletion::Unsent),
                 edits: edits.clone(),
                 reply_to: Some(reply_to.clone()),
                 imessage: Some(imessage.clone()),
@@ -625,7 +633,7 @@ mod tests {
             },
             attachments: vec![MailAttachment {
                 bytes: b"\xff\xd8\xfffakejpeg".to_vec(),
-                meta: message_ir::AttachmentMeta {
+                meta: ir::AttachmentMeta {
                     path: None,
                     original_name: Some("photo.jpg".into()),
                     mime_type: Some("image/jpeg".into()),
@@ -641,7 +649,7 @@ mod tests {
         };
 
         let tmp = tempfile::tempdir().unwrap();
-        let path = write_message_file(&tmp.path().join("chat"), 1, &msg).unwrap();
+        let path = write_message_file(&tmp.path().join("chat"), 1, &message).unwrap();
         let bytes = fs::read(&path).unwrap();
         let parsed = mail_message_from_eml_bytes(&bytes).unwrap();
 
@@ -652,7 +660,7 @@ mod tests {
         assert_eq!(parsed.participants[0].identity, "+15555550101");
         assert_eq!(parsed.participants[0].display_name.as_deref(), Some("Sam"));
         assert_eq!(parsed.participants[1].display_name, None);
-        assert_eq!(parsed.message.sender_display_name.as_deref(), Some("Sam"));
+        assert_eq!(parsed.message.sender.display_name.as_deref(), Some("Sam"));
         assert_eq!(parsed.message.subject.as_deref(), Some("MMS subject"));
         assert_eq!(
             parsed.message.text, "full bag",
@@ -672,7 +680,7 @@ mod tests {
             parsed.message.reactions, reactions,
             "each reaction keeps its reactor, even a name that looks like an encoded word"
         );
-        assert_eq!(parsed.message.deletion, Some(message_ir::Deletion::Unsent));
+        assert_eq!(parsed.message.deletion, Some(ir::Deletion::Unsent));
         assert_eq!(
             parsed.message.edits, edits,
             "each earlier version keeps its part, text and time"
@@ -703,7 +711,7 @@ mod tests {
     fn message_with_text_and_binary_attachments() -> MailMessage {
         let attachment = |name: &str, mime: &str, bytes: &[u8]| MailAttachment {
             bytes: bytes.to_vec(),
-            meta: message_ir::AttachmentMeta {
+            meta: ir::AttachmentMeta {
                 path: None,
                 original_name: Some(name.into()),
                 mime_type: Some(mime.into()),
@@ -778,19 +786,20 @@ mod tests {
     /// after it was paired with the text file's name.
     #[test]
     fn eml_roundtrip_keeps_the_bytes_of_text_attachments() {
-        let msg = message_with_text_and_binary_attachments();
+        let message = message_with_text_and_binary_attachments();
         let tmp = tempfile::tempdir().unwrap();
-        let path = write_message_file(&tmp.path().join("chat"), 1, &msg).unwrap();
+        let path = write_message_file(&tmp.path().join("chat"), 1, &message).unwrap();
         let parsed = mail_message_from_eml_bytes(&fs::read(&path).unwrap()).unwrap();
         assert_text_and_binary_attachments(&parsed);
     }
 
     #[test]
     fn mbox_roundtrip_keeps_the_bytes_of_text_attachments() {
-        let msg = message_with_text_and_binary_attachments();
+        let message = message_with_text_and_binary_attachments();
         let tmp = tempfile::tempdir().unwrap();
-        let path = write_conversation_mbox(&tmp.path().join("c.mbox"), std::slice::from_ref(&msg))
-            .unwrap();
+        let path =
+            write_conversation_mbox(&tmp.path().join("c.mbox"), std::slice::from_ref(&message))
+                .unwrap();
         let parsed = mail_messages_from_mbox(&path).unwrap();
         assert_eq!(parsed.len(), 1);
         assert_text_and_binary_attachments(&parsed[0]);

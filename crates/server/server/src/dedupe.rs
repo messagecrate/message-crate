@@ -21,7 +21,7 @@ const CONTENT_KEY_WRITE_LOG_EVERY: usize = 50_000;
 
 /// Collapse whitespace so minor text differences do not split the same SMS.
 pub fn normalize_body(body: Option<&str>) -> String {
-    message_ir::collapse_whitespace(body.unwrap_or(""))
+    ir::collapse_whitespace(body.unwrap_or(""))
 }
 
 /// Stable chat identity for content keys.
@@ -51,7 +51,7 @@ pub fn chat_identity_for_content_key(
 
 /// Build a content key from chat + direction + sender + UTC second + body + attachment hashes.
 ///
-/// The key is the message's [`message_ir::MessageIdentity`] at whole seconds,
+/// The key is the message's [`ir::MessageIdentity`] at whole seconds,
 /// made by the same function as an exported message's `guid` (which is made at
 /// milliseconds): it matches one message across sources, and iMazing,
 /// OpenExtract and GO SMS Pro's PDU files record whole seconds only.
@@ -69,7 +69,7 @@ pub fn compute_content_key(
     attachment_shas: &[String],
 ) -> Option<String> {
     let secs = parse_rfc3339_utc_secs(timestamp)?;
-    let identity = message_ir::MessageIdentity {
+    let identity = ir::MessageIdentity {
         chat: chat_identifier,
         is_from_me,
         sender: sender_normalized,
@@ -78,7 +78,7 @@ pub fn compute_content_key(
         attachment_digests: attachment_shas,
         vendor_key: None,
     };
-    Some(identity.key(message_ir::TimePrecision::Seconds))
+    Some(identity.key(ir::TimePrecision::Seconds))
 }
 
 /// Fingerprint one message row from its chat identity, direction, sender, time, body, and attachment hashes.
@@ -319,15 +319,15 @@ fn tied_messages(
     stored: &HashMap<i64, i64>,
     now: &HashMap<i64, i64>,
 ) -> BTreeSet<i64> {
-    let mut neighbours: HashMap<i64, Vec<i64>> = HashMap::new();
+    let mut neighbors: HashMap<i64, Vec<i64>> = HashMap::new();
     for (&loser, &winner) in stored.iter().chain(now.iter()) {
-        neighbours.entry(loser).or_default().push(winner);
-        neighbours.entry(winner).or_default().push(loser);
+        neighbors.entry(loser).or_default().push(winner);
+        neighbors.entry(winner).or_default().push(loser);
     }
     let mut tied: BTreeSet<i64> = changed.iter().copied().collect();
     let mut queue: Vec<i64> = changed.to_vec();
     while let Some(id) = queue.pop() {
-        for &next in neighbours.get(&id).into_iter().flatten() {
+        for &next in neighbors.get(&id).into_iter().flatten() {
             if tied.insert(next) {
                 queue.push(next);
             }
@@ -429,9 +429,9 @@ struct Cand {
 /// Whether `time_precision`, as `messages.time_precision` stores it, is
 /// whole seconds.
 fn is_whole_seconds(id: i64, time_precision: &str) -> Result<bool> {
-    Ok(message_ir::TimePrecision::parse(time_precision)
+    Ok(ir::TimePrecision::parse(time_precision)
         .with_context(|| format!("message {id}: time_precision {time_precision:?}"))?
-        == message_ir::TimePrecision::Seconds)
+        == ir::TimePrecision::Seconds)
 }
 
 /// Hide the messages that share a fingerprint with a preferred-source twin,

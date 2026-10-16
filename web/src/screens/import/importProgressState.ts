@@ -47,7 +47,7 @@ export const IMPORT_PHASE_EVENTS = [
   "media_start",
   /** Upload starts: approved at a review, or a resumed Upload once Staging's start ran. */
   "upload_start",
-  /** The run ended: finished, failed, paused or cancelled. */
+  /** The run ended: finished, failed, paused or canceled. */
   "finish",
   /** Back to the form, from wherever the screen is. */
   "back_to_form",
@@ -103,15 +103,15 @@ export const STAGING_LABEL = "Staging";
 export const MEDIA_LABEL = "Media";
 export const UPLOAD_LABEL = "Upload";
 
-/** Whether this attachment media mode runs a Media stage (convert/compress). */
+/** Whether this attachment media mode runs a Media Stage (convert/compress). */
 function hasMediaStage(mode: AttachmentMediaMode): boolean {
   return mode === "convert" || mode === "compress";
 }
 
 /**
  * The stage rows for this attachment media mode: three under convert and
- * compress, two under copy and skip. There is no Media stage in copy/skip,
- * so a greyed-out row would be promising work that will never run.
+ * compress, two under copy and skip. There is no Media Stage in copy/skip,
+ * so a grayed-out row would be promising work that will never run.
  */
 export function stepsFor(mode: AttachmentMediaMode): ImportStep[] {
   const labels = [STAGING_LABEL, ...(hasMediaStage(mode) ? [MEDIA_LABEL] : []), UPLOAD_LABEL];
@@ -140,7 +140,7 @@ const STEP_ROW_INDEX: Record<ImportProgressEvent["step"], (mode: AttachmentMedia
 /**
  * Index of the stage row that matches this event, in this mode's row list.
  * Returns -1 for a step with no row in this mode (`media` under copy/skip),
- * or for a step string this build does not recognise at all — the event
+ * or for a step string this build does not recognize at all — the event
  * comes off the wire unvalidated, so a lookup miss must resolve to "no row",
  * never `undefined`. Callers must treat -1 as "no row to update", not index
  * with it.

@@ -1,7 +1,7 @@
 use super::*;
 use crate::db::conversations::{ConversationSort, display_service_label};
 use crate::db::participant_names::Participant;
-use message_ir::IdentityType;
+use ir::IdentityType;
 use sqlx::SqliteConnection;
 
 use crate::db::{account_profile, imports};
@@ -419,8 +419,8 @@ async fn malformed_boolean_queries_are_invalid_search_queries_for_export() {
     let mut conn = pool.acquire().await.unwrap();
 
     for query in ["foo OR", "(foo OR bar", "foo OR bar)"] {
-        let scope = message_crate_api_types::ExportScope::Query {
-            list: message_crate_api_types::ExportQueryList::Messages,
+        let scope = api_types::ExportScope::Query {
+            list: api_types::ExportQueryList::Messages,
             q: query.into(),
         };
         let export_error = crate::exports_api::scope_filter(
@@ -930,7 +930,7 @@ async fn sort_is_parsed_against_the_lists_keys() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
     let (status, text) =
-        crate::test_support::get_raw(&state, "/v1/conversations?sort=colour", &user.token).await;
+        crate::test_support::get_raw(&state, "/v1/conversations?sort=color", &user.token).await;
     let problem = crate::test_support::expect_problem(
         status,
         &text,
@@ -938,7 +938,7 @@ async fn sort_is_parsed_against_the_lists_keys() {
     );
     assert_eq!(
         problem.errors.as_deref(),
-        Some(&["sort: unknown key 'colour'; accepted keys are date, messages".to_string()][..])
+        Some(&["sort: unknown key 'color'; accepted keys are date, messages".to_string()][..])
     );
     assert_eq!(
         crate::test_support::get_status(
@@ -2333,7 +2333,7 @@ async fn around_a_message_near_an_end_fills_the_page_from_the_other_side() {
 /// page just before a message and `after` the page just after it, in the
 /// page's own order, neither holding the message itself.
 #[tokio::test]
-async fn before_and_after_a_message_answer_the_neighbouring_pages() {
+async fn before_and_after_a_message_answer_the_neighboring_pages() {
     let (fixture, user, conversation_id) = conversation_messages_fixture().await;
     let mut conn = fixture.state.db.acquire().await.unwrap();
     insert_many_messages(&mut conn, conversation_id, user.account_id, 20).await;

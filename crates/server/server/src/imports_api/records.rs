@@ -1,9 +1,9 @@
-//! The records an import reads from a conversation file: message-ir JSONL
+//! The records an import reads from a conversation file: JSONL
 //! mapped to the rows staging writes, and `parse_ir_lines`, which reads them.
 
 use anyhow::{Context, Result};
 use chrono::{TimeZone, Utc};
-use message_ir::{
+use ir::{
     Attachment, ConversationHeader, Deletion, Direction, EarlierVersion, IdentityService,
     IdentityType, Message, MessageKind, Participant, Reaction, ReplyTo, TimePrecision,
     check_schema_version_in_json, nonempty, trimmed,
@@ -206,7 +206,7 @@ pub struct TapbackRecord {
     /// Reactor handle for incoming reactions.
     pub sender: Option<String>,
     /// The name the source gave the reactor of an incoming reaction when it
-    /// gave no address, as an iMazing CSV does. Shown, never matched: it
+    /// gave no address. No source gives one yet. Shown, never matched: it
     /// makes no identity. Never set together with `sender`, and never on
     /// the account holder's own reaction (`tapback_from_reaction`).
     pub sender_display_name: Option<String>,
@@ -222,7 +222,7 @@ pub fn clean_body(text: Option<&str>) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// Parse message-ir JSONL lines into import records.
+/// Parse JSONL conversation file lines into import records.
 ///
 /// Accepts one or more concatenated conversations (each: header line, then
 /// message lines). Upload clients batch multiple conversations this way.
@@ -406,10 +406,10 @@ fn message_from_ir(
     } else {
         (
             handle_value(
-                msg.sender_identity.as_deref(),
-                msg.sender_display_name.as_deref(),
+                msg.sender.identity.as_deref(),
+                msg.sender.display_name.as_deref(),
             ),
-            stated_country(msg.sender_country.as_deref())?,
+            stated_country(msg.sender.country.as_deref())?,
         )
     };
 

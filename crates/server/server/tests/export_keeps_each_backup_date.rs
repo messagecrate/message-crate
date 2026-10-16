@@ -15,6 +15,7 @@ use serde_json::Value;
 
 use common::claim::claimed_with_account;
 use common::lines::{conversation_header, message_line};
+use common::upload::upload;
 use common::{empty_message_crate, listen, serve};
 
 /// 2026-09-01T10:00:00Z, the older backup.
@@ -23,37 +24,6 @@ const EARLIER_BACKUP: i64 = 1_788_256_800_000;
 const LATER_BACKUP: i64 = 1_790_793_912_000;
 /// The Export Date the Export Run is given.
 const EXPORTED_AT: i64 = 1_791_000_000_000;
-
-/// Upload every conversation file under `input` to `base` as `token`, as
-/// the desktop app does.
-async fn upload(base: &str, token: &str, input: PathBuf) {
-    let config = message_crate_import::ImportConfig {
-        input,
-        base_url: base.to_string(),
-        token: token.to_string(),
-        mode: message_crate_import::ImportMode::Append,
-        force: false,
-        max_retries: 0,
-        batch_size: message_crate_import::NO_MESSAGE_COUNT_LIMIT,
-        asset_upload_workers: message_crate_import::DEFAULT_ASSET_UPLOAD_WORKERS,
-        prepare_ahead: message_crate_import::DEFAULT_PREPARE_AHEAD,
-        prepare_workers: message_crate_import::DEFAULT_PREPARE_WORKERS,
-        asset_multipart_threshold: 5 * 1024 * 1024,
-        asset_max_bytes: message_crate_import::DEFAULT_ASSET_MAX_BYTES,
-        log_path: None,
-        cancel: Default::default(),
-        import_id: None,
-        phone_country: None,
-    };
-    // tokio's own call: `request_id::spawn_blocking_in_current_span` is the
-    // server crate's own, and a test under `tests/` cannot call it.
-    #[allow(clippy::disallowed_methods)]
-    let report = tokio::task::spawn_blocking(move || message_crate_import::run(&config, None))
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(report.messages_failed, 0, "{report:?}");
-}
 
 /// A backup of the conversation with `+15555550123` holding `messages`
 /// (guid, time, Backup Date), written as one conversation file under
@@ -128,8 +98,8 @@ async fn an_export_of_a_conversation_from_two_backups_keeps_each_messages_date_e
             ("g-undated", 1_426_183_464_000, None),
         ],
     );
-    upload(&first, &first_token, older).await;
-    upload(&first, &first_token, newer).await;
+    upload(&first, &first_token, "sms-backup-restore", older).await;
+    upload(&first, &first_token, "sms-backup-restore", newer).await;
     let expected = BTreeMap::from([
         (
             "g-older".to_owned(),
@@ -145,29 +115,28 @@ async fn an_export_of_a_conversation_from_two_backups_keeps_each_messages_date_e
 
     // An Export Run writes each message's stored date into one file.
     let exported = root.path().join("exported");
-    let config = message_crate_export::ExportConfig {
+    let config = export::ExportConfig {
         out_dir: exported.clone(),
         base_url: first.clone(),
         token: first_token.clone(),
         query: String::new(),
-        list: message_crate_export::ExportQueryList::Messages,
+        list: export::ExportQueryList::Messages,
         skip_attachments: true,
-        page_limit: message_crate_export::DEFAULT_PAGE_LIMIT,
+        page_limit: export::DEFAULT_PAGE_LIMIT,
         cancel: Default::default(),
         asset_fetch_workers: 1,
         exported_at_unix_ms: EXPORTED_AT,
     };
     #[allow(clippy::disallowed_methods)]
-    tokio::task::spawn_blocking(move || message_crate_export::run(&config, None))
+    tokio::task::spawn_blocking(move || export::run(&config, None))
         .await
         .unwrap()
         .unwrap();
     let text =
         std::fs::read_to_string(exported.join("+15555550123__sms-backup-restore.jsonl")).unwrap();
     let mut lines = text.lines().filter(|line| !line.trim().is_empty());
-    let header: message_ir::ConversationHeader =
-        serde_json::from_str(lines.next().unwrap()).unwrap();
-    let messages: Vec<message_ir::Message> = lines
+    let header: ir::ConversationHeader = serde_json::from_str(lines.next().unwrap()).unwrap();
+    let messages: Vec<ir::Message> = lines
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
     assert_eq!(header.export.exported_at_unix_ms, Some(EXPORTED_AT));
@@ -188,6 +157,6 @@ async fn an_export_of_a_conversation_from_two_backups_keeps_each_messages_date_e
     let (_second, address) = listen(&mut serve(&data_dir, &static_dir));
     let second = format!("http://{address}");
     let second_token = claimed_with_account(&second).await.alice_token;
-    upload(&second, &second_token, exported).await;
+    upload(&second, &second_token, "sms-backup-restore", exported).await;
     assert_eq!(stored_dates(&second, &second_token).await, expected);
 }

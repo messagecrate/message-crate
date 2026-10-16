@@ -261,7 +261,7 @@ describe("ImportRunView", () => {
     expect(labels).toEqual(["Staging", "Staging Review", "Media", "Media Review", "Upload"]);
   });
 
-  it("has no Media rows when the operation has no Media stage", () => {
+  it("has no Media rows when the operation has no Media Stage", () => {
     renderView({
       form: form({ attachmentMedia: "copy" }),
       steps: stepsAt("copy", { Staging: "active" }),
@@ -372,7 +372,7 @@ describe("ImportRunView", () => {
     expect(screen.getByText("Obfuscate")).toBeInTheDocument();
   });
 
-  it("offers Cancel inside the running stage, disabled while a not-cancellable step runs", () => {
+  it("offers Cancel inside the running stage, disabled while a not-cancelable step runs", () => {
     renderView({ cancelDisabled: true });
     expect(within(stageRow("Staging")).getByRole("button", { name: "Cancel" })).toBeDisabled();
   });
@@ -503,7 +503,7 @@ describe("ImportRunView", () => {
     expect(review.queryByText("Existing")).not.toBeInTheDocument();
   });
 
-  it("sorts the estimates into three piles when a Media stage is coming", async () => {
+  it("sorts the estimates into three piles when a Media Stage is coming", async () => {
     const user = setupUser();
     renderView({
       phase: "staging_review",

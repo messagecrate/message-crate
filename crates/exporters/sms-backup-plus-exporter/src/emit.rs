@@ -11,19 +11,17 @@ use crate::read::{ParsedEmlKind, collect_eml_paths, parse_one_eml};
 use crate::types::ParsedMessage;
 use android_fields::android_vendor_fields;
 use anyhow::{Result, bail};
-use message_crate_core::{
-    CancelFlag, Cancelled, ConvertRun, Counter, ExportReport, ItemKind, LogSink, RunIssue,
-    RunIssueKind, count_of, prepare_outputs, project_conversation,
-};
-use message_ir::{
+use ir::{
     ConversationDocument, ConversationType, Direction, ExportMeta, PendingAttachment,
     PendingConversation, PendingMessage, ProjectionHooks, Transport, VendorFields,
 };
-use message_staging::{
-    AttachmentSpool, ExportWriter, Project, ReadBackup, WriterSetup, convert_backup,
+use message_crate_core::{
+    CancelFlag, Canceled, ConvertRun, Counter, ExportReport, ItemKind, LogSink, RunIssue,
+    RunIssueKind, RunIssueStep, count_of, prepare_outputs, project_conversation,
 };
 use phone::{Handle, OwnerHandleSet};
 use rayon::prelude::*;
+use staging::{AttachmentSpool, ExportWriter, Project, ReadBackup, WriterSetup, convert_backup};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -165,7 +163,7 @@ fn ensure_conversation_merging_roster<'a>(
     chat_id: &str,
     is_group: bool,
     display_name: Option<String>,
-    participant_e164s: Vec<String>,
+    participant_handles: Vec<String>,
 ) -> &'a mut PendingConversation {
     // Avoid allocating a new String on every message for an existing chat.
     if !map.contains_key(chat_id) {
@@ -177,9 +175,9 @@ fn ensure_conversation_merging_roster<'a>(
     let conversation = map
         .get_mut(chat_id)
         .expect("just inserted or already present");
-    conversation.participant_e164s.extend(participant_e164s);
-    conversation.participant_e164s.sort();
-    conversation.participant_e164s.dedup();
+    conversation.participant_handles.extend(participant_handles);
+    conversation.participant_handles.sort();
+    conversation.participant_handles.dedup();
     conversation
 }
 
@@ -195,8 +193,7 @@ fn pending_from_parsed(
     PendingMessage {
         sort_key: message.timestamp_secs as i64,
         is_from_me: message.is_from_me,
-        sender_identity: message.sender.map(Handle::into_key).unwrap_or_default(),
-        sender_display_name: message.name_alias,
+        sender: ir::Sender::new(message.sender.map(Handle::into_key), message.name_alias),
         text: message.text,
         attachments: pending_atts,
         extra: {
@@ -245,7 +242,7 @@ fn add_message(
         .push(pending_from_parsed(message, pending_atts));
 }
 
-/// SMS Backup+ deltas of the shared [`message_ir::pending_to_document`] projection.
+/// SMS Backup+ deltas of the shared [`ir::project_pending`] projection.
 struct SbpProjection {
     export: ExportMeta,
     /// Every message's Backup Date.
@@ -351,12 +348,12 @@ fn project_and_count(
                  nobody.",
             );
         }
-        if is_group && message.direction == Direction::Incoming && message.sender_identity.is_none()
+        if is_group && message.direction == Direction::Incoming && message.sender.identity.is_none()
         {
             report.bump(GROUP_MESSAGES_WITHOUT_SENDER, 1);
             report.issues.emit(RunIssue {
                 kind: RunIssueKind::Skip,
-                step: "parse".into(),
+                step: RunIssueStep::Parse,
                 item: format!("{eml_path} (sender)"),
                 reason: "The sender of this group message could not be read and was left out. The message itself is kept.".into(),
                 conversation: None,
@@ -433,7 +430,7 @@ pub(crate) struct ConvertExportArgs<'a, P: AsRef<Path>> {
 /// write the chosen output format.
 ///
 /// Copies of one message, such as two exports of one mailbox, are reduced to
-/// one by the shared projection (`message_ir::one_copy_per_message`).
+/// one by the shared projection (`ir::one_copy_per_message`).
 /// Cancellation is checked during the EML walk, while merging parse
 /// results, and between conversations.
 ///
@@ -633,8 +630,8 @@ fn parse_all_emls(
 /// Parse one EML on a worker thread. Checks cancel first so a canceled run
 /// stops reading files promptly.
 fn parse_eml_path(eml_path: &Path, inputs: &ParseInputs, cancel: &CancelFlag) -> ParsedEmlKind {
-    if message_crate_core::is_cancelled(cancel) {
-        return ParsedEmlKind::Cancelled;
+    if message_crate_core::is_canceled(cancel) {
+        return ParsedEmlKind::Canceled;
     }
     let rel_path = relative_eml_path(eml_path, &inputs.input_roots, &inputs.file_inputs);
     parse_one_eml(eml_path, rel_path, &inputs.owner)
@@ -681,7 +678,7 @@ impl<'a> EmlIngest<'a> {
     /// cannot be written to the spool.
     fn absorb(&mut self, outcome: ParsedEmlKind) -> Result<()> {
         match outcome {
-            ParsedEmlKind::Cancelled => return Err(Cancelled.into()),
+            ParsedEmlKind::Canceled => return Err(Canceled.into()),
             ParsedEmlKind::Flat { message } => {
                 self.report.bump(FLAT_EML, 1);
                 if message.unreadable_parts > 0 {
@@ -790,9 +787,9 @@ impl<'a> EmlIngest<'a> {
 mod tests {
     use super::*;
     use crate::types::AttachmentBytes;
+    use ir::{ConversationMeta, ConversationStats, Message, MessageKind, SCHEMA_VERSION};
     use message_crate_core::ProgressSink;
-    use message_ir::{ConversationMeta, ConversationStats, Message, MessageKind, SCHEMA_VERSION};
-    use message_staging::AttachmentSource;
+    use staging::AttachmentSource;
 
     /// The verbose list of Import Errors is what the run went on without, so
     /// every line of it is at `WARN` (#2047).
@@ -898,13 +895,11 @@ mod tests {
             messages: vec![Message {
                 guid: "g".into(),
                 timestamp_unix_ms: 0,
-                time_precision: message_ir::TimePrecision::Milliseconds,
+                time_precision: ir::TimePrecision::Milliseconds,
                 direction: Direction::Incoming,
                 service: Transport::Sms,
                 message_kind: MessageKind::Mms,
-                sender_identity: None,
-                sender_display_name: None,
-                sender_country: None,
+                sender: ir::Sender::default(),
                 owner_identity: None,
                 subject: None,
                 text: "hi".into(),
@@ -919,20 +914,20 @@ mod tests {
             }],
             packaging_stem_suffix: None,
         };
-        report.attachments_saved += message_staging::CountedAttachments::new(
+        report.attachments_saved += staging::CountedAttachments::new(
             document.messages.iter_mut(),
             message_crate_core::AttachmentFiles::Originals,
-            message_staging::PathSources::OnDisk,
-            |att| {
+            staging::PathSources::OnDisk,
+            |attachment| {
                 spool
-                    .source(att)
+                    .source(attachment)
                     .unwrap_or((AttachmentSource::Missing, None))
             },
             &LogSink::none(),
         )
         .stage(
             &att_dir,
-            message_staging::load_attachment_source,
+            staging::load_attachment_source,
             message_crate_core::Sinks {
                 log: &LogSink::none(),
                 progress: &ProgressSink::none(),
@@ -1009,12 +1004,12 @@ mod tests {
     }
 
     /// A worker that saw the cancel flag stops the scan with the typed
-    /// `Cancelled`, so a caller tells a cancel from a failure by its type.
+    /// `Canceled`, so a caller tells a cancel from a failure by its type.
     #[test]
-    fn a_cancelled_parse_stops_the_scan_with_cancelled() {
+    fn a_canceled_parse_stops_the_scan_with_canceled() {
         let mut ingest = EmlIngest::new(None, 1, ExportReport::default());
-        let error = ingest.absorb(ParsedEmlKind::Cancelled).unwrap_err();
-        assert!(error.downcast_ref::<Cancelled>().is_some(), "{error:#}");
+        let error = ingest.absorb(ParsedEmlKind::Canceled).unwrap_err();
+        assert!(error.downcast_ref::<Canceled>().is_some(), "{error:#}");
     }
 
     /// A MIME part that could not be decoded reaches the run's report by name.
@@ -1049,13 +1044,13 @@ mod tests {
             text: "Happy birthday!".into(),
             ..parsed(timestamp_secs, true, "")
         };
-        let (msgs, report) = project(vec![
+        let (messages, report) = project(vec![
             group("+15555550111", 1_600_000_000.1),
             group("+15555550122", 1_600_000_000.6),
         ]);
-        assert_eq!(msgs.len(), 2);
+        assert_eq!(messages.len(), 2);
         assert_eq!(report.duplicates_dropped, 0);
-        assert_ne!(msgs[0].guid, msgs[1].guid);
+        assert_ne!(messages[0].guid, messages[1].guid);
     }
 
     /// SMS Backup+ reads milliseconds from `X-smssync-date` and whole
@@ -1078,12 +1073,12 @@ mod tests {
     /// the same text sent twice 300 ms apart.
     #[test]
     fn two_millisecond_copies_at_different_times_are_two_messages() {
-        let (msgs, _) = project(vec![
+        let (messages, _) = project(vec![
             parsed(1_609_459_200.1, true, "a.eml"),
             parsed(1_609_459_200.4, true, "b.eml"),
         ]);
-        assert_eq!(msgs.len(), 2);
-        assert_ne!(msgs[0].guid, msgs[1].guid);
+        assert_eq!(messages.len(), 2);
+        assert_ne!(messages[0].guid, messages[1].guid);
     }
 
     /// Between two copies the backup cannot tell apart, the one that carries
@@ -1098,9 +1093,12 @@ mod tests {
             vec![with_id.clone(), without_id.clone()],
             vec![without_id, with_id],
         ] {
-            let (msgs, _) = project(order);
-            assert_eq!(msgs.len(), 1);
-            assert_eq!(msgs[0].source.as_ref().unwrap().fields["smssync_id"], "276");
+            let (messages, _) = project(order);
+            assert_eq!(messages.len(), 1);
+            assert_eq!(
+                messages[0].source.as_ref().unwrap().fields["smssync_id"],
+                "276"
+            );
         }
     }
 }

@@ -340,7 +340,7 @@ Why: a long conversation holds thousands of attachments, and loading any of
 them before it is near the screen spends the bandwidth and memory of the
 whole conversation on the part in view. Keeping the Thumbnail up while the
 full image loads means the viewer never shows an empty frame. Fetching the
-neighbours means stepping through a conversation's photos does not wait on
+neighbors means stepping through a conversation's photos does not wait on
 each one. A video streams only on play, because most videos in a
 conversation are scrolled past and never played. Audio has no picture to
 show as a Thumbnail, and a voice note shown as a file chip could not be

@@ -74,7 +74,7 @@ pub use db::conversation_messages::{DEFAULT_MESSAGE_SORT, MESSAGE_SORT_KEYS, Mes
 pub use server::AppState;
 pub use startup::run;
 
-pub use message_crate_api_types::{ExportQueryList, ExportScope};
+pub use api_types::{ExportQueryList, ExportScope};
 
 use clap::Command;
 

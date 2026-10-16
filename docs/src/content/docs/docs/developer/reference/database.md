@@ -94,7 +94,9 @@ The Audit Trail: what each user did, and when, for everything `imports` and
 account it is about and that account's `username`, with counts and names in
 `details`. A session's `logged_in` row carries `session_expires_at`, and the
 `session_ended` row that closes it points back through `session_entry_id`; a
-session with no such row reads as expired from its expiry. Deleting an account
+session with no such row reads as expired from its expiry, or from the later
+one in `session_extensions`, where each use of the session records how far it
+moved its expiry, because no `audit_entries` row is ever changed. Deleting an account
 sets `account_id` NULL here and on its `imports` and `exports`, which keep the
 `username`, and marks each of them with `deletion_entry_id`, the id of the
 account's `account_deleted` row, by which the deleted account is read apart
@@ -167,13 +169,18 @@ tables and reads back into them, one row per `contact_handles` link:
 |---|---|
 | `contact_id` | `contacts.id` |
 | `display_name` | `contacts.preferred_name`, trimmed |
-| `groups` | the names of the contact's `contact_groups`, joined with `;` |
-| `service` | `handles.service` |
-| `identity_type` | `handles.handle_type` |
+| `service` | `Email` for a `handles.handle_type` of `email`, otherwise `Text Message` for a `handles.service` of `phone` and `WhatsApp` for `whatsapp` |
 | `identity` | `handles.normalized` |
+| `groups` | the names of the contact's `contact_groups`, joined with `;` |
+
+No column holds `handles.handle_type`: a load types each row by its service
+and its shape, and keeps the stored type of an identity written exactly as
+`handles.normalized` holds it on that service.
 
 `POST /v1/contacts/address-book` writes it and `POST /v1/contacts` loads it;
-`crates/server/server/src/db/address_book.rs` holds both directions. The
+`POST /v1/contacts/vcard-address-book` writes one from a vCard file and
+stores nothing. `crates/server/server/src/db/address_book.rs` holds every
+direction. The
 rules of a load are in
 [`docs/architecture/contacts-identities-and-messages.md`](https://github.com/messagecrate/message-crate/blob/main/docs/architecture/contacts-identities-and-messages.md).
 

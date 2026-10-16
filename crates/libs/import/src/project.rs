@@ -4,7 +4,7 @@
 //! header. Each later line is one message.
 
 use anyhow::{Context, Result, bail};
-use message_ir::{ConversationDocument, ConversationHeader, Message, check_schema_version};
+use ir::{ConversationDocument, ConversationHeader, Message, check_schema_version};
 
 /// Return the backup source name from a conversation header, or an error if the
 /// schema version or source field is unusable.
@@ -28,11 +28,10 @@ pub fn validate_header(header: &ConversationHeader) -> Result<String> {
 ///
 /// Returns an error when the header fails [`validate_header`] or cannot be
 /// serialized.
-pub fn document_header_line(doc: &ConversationDocument) -> Result<Vec<u8>> {
-    let header = ConversationHeader::from_document(doc);
+pub fn document_header_line(document: &ConversationDocument) -> Result<Vec<u8>> {
+    let header = ConversationHeader::from_document(document);
     validate_header(&header)?;
-    let mut out =
-        serde_json::to_vec(&header).context("serialize message-ir conversation header")?;
+    let mut out = serde_json::to_vec(&header).context("serialize the conversation header")?;
     out.push(b'\n');
     Ok(out)
 }
@@ -60,10 +59,10 @@ pub enum AttachmentProjection {
 ///
 /// Returns an error when the message cannot be serialized.
 pub fn message_line(
-    msg: &Message,
+    message: &Message,
     projections: &[AttachmentProjection],
 ) -> Result<(Vec<u8>, String)> {
-    let mut msg = msg.clone();
+    let mut message = message.clone();
     for proj in projections {
         match proj {
             AttachmentProjection::Digested {
@@ -71,7 +70,7 @@ pub fn message_line(
                 digest,
                 size,
             } => {
-                if let Some(att) = msg.attachments.get_mut(*index) {
+                if let Some(att) = message.attachments.get_mut(*index) {
                     att.digest_sha256 = Some(digest.clone());
                     att.size_bytes = Some(*size);
                     att.missing_reason = None;
@@ -82,7 +81,7 @@ pub fn message_line(
                 reason,
                 size,
             } => {
-                if let Some(att) = msg.attachments.get_mut(*index) {
+                if let Some(att) = message.attachments.get_mut(*index) {
                     att.digest_sha256 = None;
                     att.missing_reason = Some(reason.clone());
                     if let Some(size) = size {
@@ -92,7 +91,7 @@ pub fn message_line(
             }
         }
     }
-    serialize_message(&msg)
+    serialize_message(&message)
 }
 
 /// Serialize one message and return `(line_bytes, guid)`.
@@ -103,32 +102,29 @@ pub fn message_line(
 /// # Errors
 ///
 /// Returns an error when JSON serialization fails.
-fn serialize_message(msg: &Message) -> Result<(Vec<u8>, String)> {
-    let mut out = serde_json::to_vec(msg).context("serialize message-ir message")?;
+fn serialize_message(message: &Message) -> Result<(Vec<u8>, String)> {
+    let mut out = serde_json::to_vec(message).context("serialize a message")?;
     out.push(b'\n');
-    Ok((out, msg.guid.clone()))
+    Ok((out, message.guid.clone()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_ir::Attachment;
-    use message_ir::testutil::{sample_attachment, sample_document};
+    use ir::Attachment;
+    use ir::testutil::{sample_attachment, sample_document};
 
     #[test]
     fn serializes_ir_sms() {
-        let mut doc = sample_document("hello");
-        let msg = doc.messages.remove(0);
-        let header = String::from_utf8(document_header_line(&doc).unwrap()).unwrap();
-        assert!(header.contains(&format!(
-            r#""schema_version":{}"#,
-            message_ir::SCHEMA_VERSION
-        )));
+        let mut document = sample_document("hello");
+        let message = document.messages.remove(0);
+        let header = String::from_utf8(document_header_line(&document).unwrap()).unwrap();
+        assert!(header.contains(&format!(r#""schema_version":{}"#, ir::SCHEMA_VERSION)));
         assert!(header.contains(r#""sms-backup-restore""#));
         assert!(!header.contains(r#""record":"conversation""#));
 
-        let (line, guid) = message_line(&msg, &[]).unwrap();
-        assert_eq!(guid, msg.guid);
+        let (line, guid) = message_line(&message, &[]).unwrap();
+        assert_eq!(guid, message.guid);
         let s = String::from_utf8(line).unwrap();
         assert!(s.contains(r#""direction":"incoming""#));
         assert!(!s.contains(r#""record":"message""#));
@@ -136,15 +132,15 @@ mod tests {
 
     #[test]
     fn projects_missing_reason_and_clears_digest() {
-        let mut msg = sample_document("with attachment").messages.remove(0);
-        msg.attachments = vec![Attachment {
+        let mut message = sample_document("with attachment").messages.remove(0);
+        message.attachments = vec![Attachment {
             original_name: Some("big.jpg".into()),
             digest_sha256: Some("deadbeef".into()),
             size_bytes: Some(99),
             ..sample_attachment()
         }];
         let (line, _) = message_line(
-            &msg,
+            &message,
             &[AttachmentProjection::Missing {
                 index: 0,
                 reason: "too_large".into(),

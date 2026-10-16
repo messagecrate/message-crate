@@ -27,7 +27,7 @@ use sqlx::SqlitePool;
 
 use crate::api_error::ApiError;
 use crate::assets_api::{Sha256, lookup_for_read};
-use crate::auth::{FullAccess, bearer_token, require_asset_read_access, resolve_auth};
+use crate::auth::{ExpiryMoves, FullAccess, bearer_token, require_asset_read_access, resolve_auth};
 use crate::config::Config;
 use crate::db::{account_profile, session_tokens};
 use crate::extract::Path as AxumPath;
@@ -205,6 +205,7 @@ where
     S: Send + Sync,
     SqlitePool: FromRef<S>,
     MediaLinkKey: FromRef<S>,
+    ExpiryMoves: FromRef<S>,
 {
     type Rejection = ApiError;
 
@@ -214,7 +215,7 @@ where
     ) -> Result<Self, Self::Rejection> {
         let db = SqlitePool::from_ref(state);
         if parts.headers.contains_key(header::AUTHORIZATION) {
-            let auth = resolve_auth(&parts.headers, &db).await?;
+            let auth = resolve_auth(&parts.headers, &db, &ExpiryMoves::from_ref(state)).await?;
             require_asset_read_access(&auth)?;
             return Ok(Self {
                 account_id: auth.account_id,

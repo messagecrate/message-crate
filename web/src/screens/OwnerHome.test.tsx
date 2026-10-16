@@ -6,6 +6,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { ApiError } from "../lib/api";
 import { APP_BUILD } from "../lib/build";
 import { productVersionOf } from "../lib/buildFormat";
+import { clearNameRefusals } from "../lib/nameRefusals";
 import { ThemeProvider } from "../lib/ThemeProvider";
 import { account } from "../test/apiShapes";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
@@ -104,7 +105,11 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
-  // jsdom has no matchMedia, and the theme reads the system colour scheme from it.
+  // A test that leaves a refused name in the field sends it again as its
+  // screen unmounts, and that refusal is held for the top of the page, which
+  // outlives the test. The next test starts without it.
+  clearNameRefusals();
+  // jsdom has no matchMedia, and the theme reads the system color scheme from it.
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
     addEventListener: () => {},
@@ -373,6 +378,48 @@ describe("OwnerHome", () => {
       expect.anything(),
     );
     expect(screen.queryByRole("heading", { name: "Server Settings" })).not.toBeInTheDocument();
+  });
+
+  it("opens the server's log on an Audit Trail entry's request, at every level", async () => {
+    const user = setupUser();
+    listAccounts.mockResolvedValue([theOwner, anAccount]);
+    listServerLogFiles.mockResolvedValue([]);
+    listAuditTrail.mockResolvedValue({
+      items: [
+        {
+          id: 4,
+          action: "logged_in",
+          at: "2026-10-01T09:00:00+00:00",
+          actor: "holder",
+          account_id: 101,
+          username: "bob",
+          request_id: "7f3a9c21",
+        },
+      ],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    });
+    // The log was rotated since, so it holds none of the request's lines.
+    listServerLogLines.mockResolvedValue({ items: [], limit: 200, has_more: false });
+    renderHome(["/owner/audit-trail"]);
+    await settle();
+
+    await user.click(screen.getByRole("link", { name: "View in log" }));
+    await settle();
+
+    expect(selectedSection()).toBe("Logs");
+    expect(screen.getByRole("textbox", { name: "Search the log" })).toHaveValue("7f3a9c21");
+    expect(screen.getByRole("button", { name: /^Everything/ })).toBeInTheDocument();
+    expect(listServerLogLines).toHaveBeenLastCalledWith(
+      expect.objectContaining({ level: undefined, text: "7f3a9c21" }),
+      expect.anything(),
+    );
+    expect(
+      screen.getByText(
+        "The server's log holds no line of this request. Either its oldest files were deleted as the log grew, or the log's level left the request's lines out.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("lists every account's Audit Trail, a deleted account's under its old username, and narrows it to one account", async () => {
@@ -740,7 +787,7 @@ describe("OwnerHome", () => {
     expect(screen.getByText("No identities yet")).toBeInTheDocument();
   });
 
-  it("shows an account's last login and its app on Profile, marking another release", async () => {
+  it("shows an account's last login and its app on Account, marking another release", async () => {
     getServerState.mockResolvedValue({
       state: "closed",
       version: "0.10.0+343fe0d8",
@@ -756,24 +803,27 @@ describe("OwnerHome", () => {
     renderHome(["/owner/accounts/101"]);
     await settle();
 
-    await user.click(screen.getByRole("tab", { name: "Profile" }));
-    await settle();
-
+    // Last Login and App are facts about the account, on its Account tab (#2988).
+    expect(screen.getByRole("tab", { name: "Account" })).toHaveAttribute("aria-selected", "true");
     const lastLogin = screen.getByRole("heading", { name: "Last Login" });
     expect(lastLogin.nextElementSibling).toHaveTextContent("2026");
     const app = screen.getByRole("heading", { name: "App" }).nextElementSibling as HTMLElement;
     expect(app).toHaveTextContent("Desktop app 0.9.0+aaaa1111");
     expect(app).toHaveTextContent("The server is 0.10.0");
+
+    // Profile holds what the holder sets about themselves, and not these.
+    await user.click(screen.getByRole("tab", { name: "Profile" }));
+    await settle();
+    expect(screen.getByRole("heading", { name: "Display Name" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Last Login" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "App" })).not.toBeInTheDocument();
   });
 
-  it("says Never and not connected on Profile for an account that has done neither", async () => {
-    const user = setupUser();
+  it("says Never and not connected on Account for an account that has done neither", async () => {
     renderHome(["/owner/accounts/101"]);
     await settle();
 
-    await user.click(screen.getByRole("tab", { name: "Profile" }));
-    await settle();
-
+    expect(screen.getByRole("tab", { name: "Account" })).toHaveAttribute("aria-selected", "true");
     const lastLogin = screen.getByRole("heading", { name: "Last Login" });
     expect(lastLogin.nextElementSibling).toHaveTextContent("Never");
     expect(screen.getByText("Never connected.")).toBeInTheDocument();
@@ -877,7 +927,7 @@ describe("OwnerHome", () => {
     expect(screen.getByText("bob")).toBeInTheDocument();
     const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
     expect(headers).toEqual(["User", "Status", "Last login"]);
-    // What an account holds is under its Storage tab, and its app under Profile.
+    // What an account holds is under its Storage tab, and its app under Account.
     expect(screen.queryByText("1,234")).not.toBeInTheDocument();
     expect(screen.queryByText(/The accounts on this Message Crate/)).not.toBeInTheDocument();
     // The table sets nothing: status reads as text, and the permissions, like
@@ -1085,6 +1135,9 @@ describe("OwnerHome", () => {
     expect(screen.getByRole("heading", { name: "Change Password" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Message Permissions" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Status" })).not.toBeInTheDocument();
+    // Last Login and App are the owner's view of another account.
+    expect(screen.queryByRole("heading", { name: "Last Login" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "App" })).not.toBeInTheDocument();
   });
 
   it("sets an account's password from its Settings, typed twice the same way", async () => {

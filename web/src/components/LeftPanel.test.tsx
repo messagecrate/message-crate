@@ -19,17 +19,17 @@ const savedSearchState = vi.hoisted(() => ({
   savedSearches: [] as { id: number; name: string; query: string; kind: string }[],
 }));
 
-vi.mock("../lib/useAccountProfile", () => ({
+vi.mock("../hooks/useAccountProfile", () => ({
   useAccountProfile: () => ({ profile: profileState.profile }),
 }));
 
 vi.mock("../lib/authContext", () => authModule());
 
-vi.mock("../lib/useContactGroups", () => ({
+vi.mock("../hooks/useContactGroups", () => ({
   useContactGroups: () => ({ groups: [] }),
 }));
 
-vi.mock("../lib/useMessageTags", () => ({
+vi.mock("../hooks/useMessageTags", () => ({
   useMessageTags: () => ({ tags: [] }),
 }));
 
@@ -41,7 +41,7 @@ const importAttentionState = vi.hoisted(() => ({
   attention: null as "waiting" | "paused" | "failed" | null,
 }));
 
-vi.mock("../screens/import/useImportAttention", () => ({
+vi.mock("./useImportAttention", () => ({
   useImportAttention: () => importAttentionState.attention,
 }));
 
@@ -146,6 +146,27 @@ describe("LeftPanel", () => {
     expect(alice.className).toContain("pl-[calc(15px+0.5rem)]");
     expect(alice.className).toContain("self-stretch");
     expect(alice.querySelector('[class*="size-[15px]"]')).not.toBeNull();
+  });
+
+  it("marks the open Saved Search row as the current page, and no other", () => {
+    savedSearchState.savedSearches = [
+      { id: 1, name: "From Alice", query: "from:alice", kind: "manual" },
+      { id: 2, name: "Photos", query: "has:photo", kind: "manual" },
+    ];
+    renderPanel([`/?q=${encodeURIComponent("from:alice")}`]);
+    expect(screen.getByRole("button", { name: "From Alice" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("button", { name: "Photos" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("marks no Saved Search row when none is open", () => {
+    savedSearchState.savedSearches = [
+      { id: 1, name: "From Alice", query: "from:alice", kind: "manual" },
+    ];
+    renderPanel(["/"]);
+    expect(screen.getByRole("button", { name: "From Alice" })).not.toHaveAttribute("aria-current");
   });
 
   it("closes the saved-search options menu on Escape", async () => {

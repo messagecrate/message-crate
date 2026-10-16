@@ -1,8 +1,8 @@
 import { useLocation, useNavigate } from "react-router-dom";
+import { useAccountProfile } from "../hooks/useAccountProfile";
+import { useIsOwner } from "../hooks/useIsOwner";
 import { useAuth } from "../lib/authContext";
 import { focusRingClass } from "../lib/uiStyles";
-import { useAccountProfile } from "../lib/useAccountProfile";
-import { useIsOwner } from "../lib/useIsOwner";
 import { GearIcon, LogOutIcon, PersonIcon } from "./icons";
 import PlainButton from "./PlainButton";
 import PopupMenu from "./PopupMenu";

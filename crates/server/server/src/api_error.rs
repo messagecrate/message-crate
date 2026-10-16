@@ -90,7 +90,7 @@ pub enum ApiError {
         /// The sentence, naming the number, its `+` form and who holds it.
         detail: String,
         /// Who holds the `+` form.
-        holder: message_crate_api_types::IdentityHolder,
+        holder: api_types::IdentityHolder,
     },
     /// `422 Unprocessable Entity`: a part, upload id or completion does not match the upload.
     AssetUploadInvalid(String),
@@ -110,8 +110,8 @@ pub enum ApiError {
         /// The file's length in bytes.
         length: u64,
     },
-    /// `408 Request Timeout`: an upload body stopped arriving, or took too long to arrive.
-    UploadStalled(String),
+    /// `408 Request Timeout`: a request body stopped arriving, or took too long to arrive.
+    BodyStalled(String),
     /// `503 Service Unavailable`: the server is stopping and refused work it had not started.
     ServerStopping(String),
     /// `500 Internal Server Error`: unexpected failure. The whole context chain goes to the log;
@@ -181,7 +181,7 @@ impl ApiError {
             | Self::MethodNotAllowed(m)
             | Self::NotAcceptable(m)
             | Self::MediaLinkInvalid(m)
-            | Self::UploadStalled(m)
+            | Self::BodyStalled(m)
             | Self::ServerStopping(m) => Some(m),
             Self::PayloadTooLarge => Some("the request body is too large"),
             Self::ValidationFailed(_)
@@ -473,11 +473,6 @@ impl From<crate::db::imports::StartImportError> for ApiError {
                 // surface the same error through anyhow.
                 Self::StateConflict(err.to_string())
             }
-            err @ crate::db::imports::StartImportError::OpeningStage { .. } => {
-                // A body field that broke a rule the client fixes by
-                // sending `parse` (`docs/architecture/http-api.md`).
-                Self::validation(err.to_string())
-            }
             crate::db::imports::StartImportError::Db(err) => Self::Internal(err),
         }
     }
@@ -583,6 +578,82 @@ impl From<crate::db::conversation_messages::MessagePageError> for ApiError {
     }
 }
 
+impl From<crate::db::address_book::LoadError> for ApiError {
+    fn from(e: crate::db::address_book::LoadError) -> Self {
+        use crate::db::address_book::LoadError;
+        match e {
+            LoadError::Refused(reasons) => Self::ValidationFailed(reasons),
+            LoadError::Failed(cause) => Self::Internal(cause.context("load address book")),
+        }
+    }
+}
+
+impl From<crate::db::address_book::VcardError> for ApiError {
+    fn from(e: crate::db::address_book::VcardError) -> Self {
+        use crate::db::address_book::VcardError;
+        match e {
+            VcardError::UnknownCharset(unknown) => Self::validation(unknown.to_string()),
+            VcardError::Failed(cause) => Self::Internal(cause.context("convert vCard file")),
+        }
+    }
+}
+
+impl From<crate::accounts_api::ProfileUpdateError> for ApiError {
+    fn from(e: crate::accounts_api::ProfileUpdateError) -> Self {
+        use crate::accounts_api::ProfileUpdateError;
+        match e {
+            err @ ProfileUpdateError::UnknownTimeZone(_) => Self::validation(err.to_string()),
+            ProfileUpdateError::Country(error) => error.into(),
+            ProfileUpdateError::Db(err) => Self::Internal(err),
+        }
+    }
+}
+
+impl From<crate::contacts_api::ContactEditError> for ApiError {
+    fn from(e: crate::contacts_api::ContactEditError) -> Self {
+        use crate::contacts_api::ContactEditError;
+        match e {
+            ContactEditError::Refused(message) => Self::validation(message),
+            ContactEditError::Country(error) => error.into(),
+            ContactEditError::Failed(cause) => Self::Internal(cause),
+        }
+    }
+}
+
+impl From<crate::identity_country::CountryError> for ApiError {
+    fn from(e: crate::identity_country::CountryError) -> Self {
+        use crate::identity_country::CountryError;
+        match e {
+            CountryError::Refused(message) => Self::validation(message),
+            CountryError::Exists { detail, holder } => Self::IdentityExists { detail, holder },
+            CountryError::Conflict(message) => Self::StateConflict(message),
+            CountryError::Failed(cause) => Self::Internal(cause),
+        }
+    }
+}
+
+impl From<crate::search::QueryError> for ApiError {
+    fn from(e: crate::search::QueryError) -> Self {
+        Self::SearchQueryInvalid {
+            detail: e.message,
+            word: e.field,
+            did_you_mean: e.did_you_mean,
+        }
+    }
+}
+
+impl From<crate::text_caps::TooLong> for ApiError {
+    fn from(e: crate::text_caps::TooLong) -> Self {
+        Self::validation(e.to_string())
+    }
+}
+
+impl From<crate::text_caps::RequiredTextError> for ApiError {
+    fn from(e: crate::text_caps::RequiredTextError) -> Self {
+        Self::validation(e.to_string())
+    }
+}
+
 impl From<sqlx::Error> for ApiError {
     fn from(e: sqlx::Error) -> Self {
         Self::Internal(e.into())
@@ -596,7 +667,7 @@ impl From<anyhow::Error> for ApiError {
 }
 
 /// Run `f` on the blocking thread pool and answer its result. A task that
-/// panics or is cancelled answers an internal error naming `task`; an error
+/// panics or is canceled answers an internal error naming `task`; an error
 /// `f` returns becomes the [`ApiError`] it converts to.
 pub(crate) async fn run_blocking<T, E>(
     task: &'static str,

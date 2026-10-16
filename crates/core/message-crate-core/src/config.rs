@@ -101,7 +101,7 @@ pub struct RunContext {
     /// app's directories, so the app names it here.
     pub scratch_dir: PathBuf,
     /// Shared cancel flag for in-process jobs. A run that cannot be
-    /// cancelled holds `CancelFlag::default()`, which nobody sets.
+    /// canceled holds `CancelFlag::default()`, which nobody sets.
     pub cancel: CancelFlag,
     /// Human-readable mid-run notes and warnings. The desktop app sets a sink
     /// and shows the lines in its log panel.
@@ -206,7 +206,7 @@ pub fn require_input(inputs: &[PathBuf]) -> Result<&Path, String> {
 /// inputs. [`ConvertRun::new`] builds them, so a new run-wide setting is
 /// added to this struct and to [`ConvertRun::new`], not to each exporter's
 /// arguments or to each `run` that fills them. The shared convert step,
-/// `message_staging::convert_backup`, unpacks every field, so a new one is
+/// `staging::convert_backup`, unpacks every field, so a new one is
 /// named there and the step decides what it does with it. Apple Messages,
 /// which keeps a convert step of its own, reads the fields it uses.
 ///
@@ -214,7 +214,7 @@ pub fn require_input(inputs: &[PathBuf]) -> Result<&Path, String> {
 /// either shares it, so a cancel set on the [`RunContext`] reaches the run.
 ///
 /// The default writes [`OutputFormat::Json`] with no transforms, cannot be
-/// cancelled, does not resume, sends its rows nowhere, names an empty
+/// canceled, does not resume, sends its rows nowhere, names an empty
 /// Scratch Directory, so a test whose run spools sets `scratch_dir`, and
 /// writes no Export Date.
 #[derive(Debug, Clone, Default)]
@@ -342,7 +342,7 @@ impl SourceConfig {
 
 #[derive(Debug, Clone, Default)]
 /// Convert an existing export directory to another output format
-/// (`message-reexport`). Not a backup type, so not a [`SourceConfig`].
+/// (`reexport`). Not a backup type, so not a [`SourceConfig`].
 pub struct FormatConfig {
     /// When the Export Run this conversion is part of started. Export pulls
     /// JSON Lines from the server and then converts them, so its run starts

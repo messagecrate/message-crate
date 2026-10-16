@@ -5,7 +5,7 @@ use quick_xml::{Reader, events::Event};
 use std::collections::HashMap;
 use std::path::Path;
 
-use message_ir::IdentityType;
+use ir::IdentityType;
 
 use crate::addresses::{MMS_ADDR_FROM, address_handle};
 use crate::mms_box::MmsBox;

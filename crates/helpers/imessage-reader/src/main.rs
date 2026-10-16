@@ -1,6 +1,6 @@
 //! `imessage-reader`: reads Apple Messages for the Message Crate desktop app.
 //!
-//! This program exists for a licence reason, not a product one. It links
+//! This program exists for a license reason, not a product one. It links
 //! `imessage-database` and `crabapple`, which are GPL-3.0-or-later, and the
 //! desktop app is under the Fair Core License, so the two cannot be one
 //! binary. The app starts this one, writes a request on its stdin, and reads

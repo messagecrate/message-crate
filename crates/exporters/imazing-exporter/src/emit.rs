@@ -15,22 +15,24 @@ use crate::row_marks;
 use crate::unnamed_files::{DirectoryRows, UnnamedFile, unnamed_files};
 use crate::zone::Zone;
 use anyhow::Result;
-use message_crate_core::{
-    ConvertRun, Counter, ExportReport, prepare_outputs, project_conversation,
-};
-use message_ir::{
+use ir::{
     Attachment, ConversationDocument, ConversationKey, Deletion, EarlierVersion, ExportMeta,
     Participant, PendingAttachment, PendingConversation, PendingMessage, PendingReply,
     ProjectedRole, ProjectionHooks, Reaction, Transport, VendorFields,
 };
-use message_staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
+use message_crate_core::{
+    ConvertRun, Counter, ExportReport, prepare_outputs, project_conversation,
+};
 use serde_json::Map;
 use session::{
     Session, group_vendor_id, group_vendor_id_with_name, is_notification, is_outgoing,
     parse_message_date, resolve_sender, session_key,
 };
+use staging::{
+    AttachmentPaths, AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup,
+};
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 const EXPORT_SOURCE: &str = message_crate_core::Exporter::Imazing.source_id();
@@ -168,7 +170,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
                     export,
                     backup_taken_at_unix_ms,
                     tz,
-                    sources: VecDeque::new(),
+                    sources: AttachmentPaths::default(),
                 },
                 report,
             })
@@ -187,7 +189,7 @@ struct ImazingDocuments {
     /// The source file of each attachment of the documents projected so
     /// far, in the order the writer asks for them
     /// ([`ImazingProjection::sources`]).
-    sources: VecDeque<Option<PathBuf>>,
+    sources: AttachmentPaths,
 }
 
 impl Project for ImazingDocuments {
@@ -209,22 +211,19 @@ impl Project for ImazingDocuments {
         };
         let chat_id = pending.chat_id.clone();
         let document = project_conversation(&chat_id, &mut pending, &hooks, report)?;
-        self.sources.extend(hooks.sources.into_inner());
+        for source in hooks.sources.into_inner() {
+            self.sources.push(source);
+        }
         Some(document)
     }
 
-    fn attachment_source(&mut self, att: &mut Attachment) -> (AttachmentSource, Option<u64>) {
-        match self.sources.pop_front().flatten() {
-            Some(path) => {
-                // iMazing's rows carry no size; stat the source so the byte
-                // counters and the headroom check see it.
-                let hint = att
-                    .size_bytes
-                    .or_else(|| std::fs::metadata(&path).ok().map(|m| m.len()));
-                (AttachmentSource::Path(path), hint)
-            }
-            None => (AttachmentSource::Missing, att.size_bytes),
-        }
+    fn attachment_source(
+        &mut self,
+        attachment: &mut Attachment,
+    ) -> (AttachmentSource, Option<u64>) {
+        // iMazing's rows carry no size, so the source's size on disk is
+        // what the byte counters and the headroom check see.
+        self.sources.next_source(attachment)
     }
 }
 
@@ -615,8 +614,8 @@ impl Ingest {
             self.report.skipped_invalid_date += 1;
             return None;
         };
-        let is_notification = is_notification(&row.msg_type);
-        let is_from_me = !is_notification && is_outgoing(&row.msg_type);
+        let is_notification = is_notification(&row.message_type);
+        let is_from_me = !is_notification && is_outgoing(&row.message_type);
         let (sender_identity, sender_display_name) =
             resolve_sender(row, is_from_me, is_notification, session);
         let (attachments, attachment_extra) =
@@ -639,7 +638,7 @@ impl Ingest {
         extra.insert("contact_name".into(), session.contact_name.clone());
         extra.insert("service".into(), service);
         extra.insert("imazing_status".into(), row.status.clone());
-        extra.insert("imazing_type".into(), row.msg_type.clone());
+        extra.insert("imazing_type".into(), row.message_type.clone());
         extra.insert("forwarded".into(), row.forwarded.clone());
         extra.insert("attachment_info".into(), row.attachment_info.clone());
         extra.insert("delivered_date".into(), row.delivered_date.clone());
@@ -651,8 +650,7 @@ impl Ingest {
         Some(PendingMessage {
             sort_key: secs,
             is_from_me,
-            sender_identity,
-            sender_display_name: (!sender_display_name.is_empty()).then_some(sender_display_name),
+            sender: ir::Sender::new(Some(sender_identity), Some(sender_display_name)),
             text: row.text.clone(),
             attachments,
             extra,
@@ -926,7 +924,7 @@ fn imazing_packaging_stem_suffix(source_kind: &str) -> Option<String> {
     }
 }
 
-/// iMazing deltas of the shared [`message_ir::pending_to_document`]
+/// iMazing deltas of the shared [`ir::project_pending`]
 /// projection, for one conversation.
 struct ImazingProjection<'a> {
     export: &'a ExportMeta,
@@ -997,8 +995,8 @@ impl ProjectionHooks for ImazingProjection<'_> {
         })
     }
 
-    /// The reactions the row's `Reactions` cell holds, each under its
-    /// reactor's display name and no address.
+    /// The reactions the row's `Reactions` cell holds, each its emoji
+    /// alone, with no reactor.
     fn reactions(&self, message: &PendingMessage) -> Vec<Reaction> {
         row_marks::parse_reactions(message.extra_str("reactions_cell"))
     }
@@ -1019,18 +1017,22 @@ impl ProjectionHooks for ImazingProjection<'_> {
         )]
     }
 
-    fn attachment_to_ir(&self, att: &PendingAttachment, message: &PendingMessage) -> Attachment {
+    fn attachment_to_ir(
+        &self,
+        attachment: &PendingAttachment,
+        message: &PendingMessage,
+    ) -> Attachment {
         // A message's attachments have different names: the row's file, and
         // a Live Photo video named as the picture with the video's extension.
         let source = message
             .attachments
             .iter()
-            .position(|held| held.rel_path == att.rel_path)
+            .position(|held| held.rel_path == attachment.rel_path)
             .map(|index| message.extra_str(&attachment_source_key(index)))
             .filter(|source| !source.is_empty())
             .map(PathBuf::from);
         self.sources.borrow_mut().push(source);
-        pending_attachment_to_ir(att, message)
+        pending_attachment_to_ir(attachment, message)
     }
 
     /// A group's members come from its key, never from its chat id. A

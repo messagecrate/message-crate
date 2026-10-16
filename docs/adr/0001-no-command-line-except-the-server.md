@@ -50,7 +50,7 @@ commands again. They are, and that is not the question.
 ## Amendment: a helper process is not a command line
 
 `imessage-reader` (`crates/helpers/imessage-reader`) is a program, and this
-decision still holds. It exists for a licence reason and no other: it links
+decision still holds. It exists for a license reason and no other: it links
 `imessage-database` and `crabapple`, which are GPL-3.0-or-later, and the rest
 of the repository is under the Fair Core License, which the GPL does not let
 a single binary combine with. The desktop app therefore starts the reader as
@@ -120,3 +120,11 @@ The text above is kept as it was decided. Since #1926, the crate it calls
 `message-crate-push` is `message-crate-import`, at `crates/libs/import/`,
 because CONTEXT.md names the operation Import and avoids Push for an Import
 Run. Nothing else in this decision changed.
+
+## Amended 2026-10-16: crates take their directory's name
+
+The text above is kept as it was decided. Since #2192, a crate's package
+name is its directory's name, so the crates it names have new names:
+`message-reexport` is `reexport`, `message-crate-import` is `import`, and
+`message-crate-export` is `export`. The directories did not move, and
+nothing else in this decision changed.

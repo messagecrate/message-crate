@@ -8,6 +8,8 @@ Releasing is a maintainer task. One product version ([Semantic Versioning](https
 - The server image `bitrealm/message-crate:<version>` on Docker Hub (also `<major>.<minor>` and `latest`). The Docker tag has no `v` prefix (`0.8.0`, not `v0.8.0`).
 - Unsigned desktop installers on [GitHub Releases](https://github.com/messagecrate/message-crate/releases): Linux `.deb` and AppImage, Windows `.msi`, macOS `.dmg`.
 
+The release also publishes a `SHA256SUMS` file beside the installers, and a build provenance attestation for each installer and for the image, signed with the workflow's own OIDC identity. Neither needs a certificate, so they ship while code signing waits on #1019. `gh attestation verify <file> --repo messagecrate/message-crate` checks an installer, and `gh attestation verify oci://docker.io/bitrealm/message-crate:<version> --repo messagecrate/message-crate` the image. The user guide's [Install the desktop app](/docs/user/try/install-the-desktop-app/#check-the-download) and [Run Message Crate with Docker](/docs/user/features/owner/run-with-docker/#check-the-image) say how a person checks them.
+
 The same tag publishes this documentation site to messagecrate.app, so the site always describes the released version.
 
 Nothing is published to npm or PyPI. Pushing the git tag `v<version>` is what runs the release jobs. A merge to `main` does not ship.

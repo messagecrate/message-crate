@@ -17,7 +17,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 function reportJson(overrides: Partial<UploadFinishedReport> = {}): string {
   const report = {
     ok: true,
-    cancelled: false,
+    canceled: false,
     session_refused: false,
     messages_attempted: 10,
     messages_inserted: 10,
@@ -29,7 +29,7 @@ function reportJson(overrides: Partial<UploadFinishedReport> = {}): string {
     conversations_total: 5,
     conversations_failed: 0,
     conversations_skipped: 0,
-    conversations_cancelled: 0,
+    conversations_canceled: 0,
     results: [],
     ...overrides,
   };
@@ -63,19 +63,19 @@ describe("parseDesktopJobResult", () => {
     expect(result.report).toBeUndefined();
   });
 
-  // Without `conversations_cancelled`, an Upload that left conversations
+  // Without `conversations_canceled`, an Upload that left conversations
   // unsent could read as finished.
-  it("does not attach a report missing conversations_cancelled", () => {
+  it("does not attach a report missing conversations_canceled", () => {
     const parsed: Record<string, unknown> = JSON.parse(reportJson());
-    delete parsed.conversations_cancelled;
+    delete parsed.conversations_canceled;
     const result = parseDesktopJobResult(JSON.stringify(parsed));
     expect(result.report).toBeUndefined();
   });
 
-  // Without `cancelled`, a paused Upload would read as a failed one.
-  it("does not attach a report missing cancelled", () => {
+  // Without `canceled`, a paused Upload would read as a failed one.
+  it("does not attach a report missing canceled", () => {
     const parsed: Record<string, unknown> = JSON.parse(reportJson());
-    delete parsed.cancelled;
+    delete parsed.canceled;
     const result = parseDesktopJobResult(JSON.stringify(parsed));
     expect(result.report).toBeUndefined();
   });
@@ -95,7 +95,7 @@ describe("parseDesktopJobResult", () => {
   // transcode_staging's payload: TranscodeReport has no serde derive, so
   // staging.rs hand-builds the finished payload with these fields flat
   // alongside `summary`, snake_case, not nested under a `report` key. A
-  // client that doesn't recognise this shape falls through to
+  // client that doesn't recognize this shape falls through to
   // `{ summary: <the raw JSON string> }`, which would render raw JSON
   // wherever the finished summary is displayed.
   it("recognizes the transcode-finished payload and returns typed counts, not raw JSON", () => {

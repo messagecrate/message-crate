@@ -181,6 +181,9 @@ pub fn api_openapi() -> OpenApiRouter<AppState> {
         .routes(routes!(crate::phone_countries_api::list_phone_countries))
         .routes(routes!(crate::contacts_api::address_book::create_contacts))
         .routes(routes!(crate::contacts_api::address_book::get_address_book))
+        .routes(routes!(
+            crate::contacts_api::address_book::get_vcard_address_book
+        ))
         .routes(routes!(crate::named_set_api::list_contact_groups))
         .routes(routes!(crate::named_set_api::create_contact_group))
         .routes(routes!(crate::named_set_api::get_contact_group))
@@ -275,20 +278,19 @@ pub fn dump_openapi_json() -> String {
     let (_b, rest) = api_openapi().split_for_parts();
     spec.merge(rest);
     finish(&mut spec);
-    serde_json::to_string_pretty(&spec).expect("OpenAPI document serializes to JSON")
+    let mut json =
+        serde_json::to_string_pretty(&spec).expect("OpenAPI document serializes to JSON");
+    // The committed file ends in a newline, as `.editorconfig` asks, so the
+    // dump does too, whether it goes to stdout or to `--output`.
+    json.push('\n');
+    json
 }
 
 /// Write the dump to `path`, or stdout when `path` is `None`.
 pub fn write_openapi(path: Option<&Path>) -> anyhow::Result<()> {
     let json = dump_openapi_json();
     match path {
-        None => {
-            let mut out = std::io::stdout().lock();
-            out.write_all(json.as_bytes())?;
-            if !json.ends_with('\n') {
-                out.write_all(b"\n")?;
-            }
-        }
+        None => std::io::stdout().lock().write_all(json.as_bytes())?,
         Some(p) => std::fs::write(p, json.as_bytes())
             .map_err(|e| anyhow::anyhow!("write {}: {e}", p.display()))?,
     }
@@ -425,11 +427,15 @@ mod tests {
 
     #[test]
     fn committed_openapi_matches_dump() {
-        let dumped = dump_openapi_json();
+        // Compares the file `dump-openapi --output` writes, byte for byte, so
+        // a missing final newline fails here as well as a stale document.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("openapi.json");
+        super::write_openapi(Some(&path)).unwrap();
+        let written = std::fs::read_to_string(&path).unwrap();
         let committed = include_str!("../../../../docs/src/assets/openapi.json");
         assert_eq!(
-            dumped.trim_end(),
-            committed.trim_end(),
+            written, committed,
             "run: cargo run -p message-crate-server -- dump-openapi --output docs/src/assets/openapi.json"
         );
     }

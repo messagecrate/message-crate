@@ -118,7 +118,7 @@ vi.mock("./CheckedContactsPanel", () => ({ default: () => null }));
 vi.mock("../lib/authContext", async () => (await import("../test/providers")).authModule());
 // The desktop app with a profile shows Export in the left panel.
 const desktop = vi.hoisted(() => ({ on: false }));
-vi.mock("../lib/useAccountProfile", () => ({
+vi.mock("../hooks/useAccountProfile", () => ({
   useAccountProfile: () => ({ profile: desktop.on ? {} : null, loading: false, error: "" }),
 }));
 const sets = vi.hoisted(() => ({
@@ -127,10 +127,10 @@ const sets = vi.hoisted(() => ({
   tags: [] as string[],
   tagsLoading: false,
 }));
-vi.mock("../lib/useContactGroups", () => ({
+vi.mock("../hooks/useContactGroups", () => ({
   useContactGroups: () => ({ groups: sets.groups, loading: sets.groupsLoading }),
 }));
-vi.mock("../lib/useMessageTags", () => ({
+vi.mock("../hooks/useMessageTags", () => ({
   useMessageTags: () => ({ tags: sets.tags, loading: sets.tagsLoading }),
 }));
 vi.mock("../lib/tauriCheck", () => ({ isTauri: () => desktop.on }));
@@ -138,7 +138,7 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverApi")>()),
   listSearchFields: vi.fn(async (list: SearchList) => searchFieldsFor(list)),
 }));
-vi.mock("../screens/import/useImportAttention", () => ({
+vi.mock("./useImportAttention", () => ({
   useImportAttention: () => null,
 }));
 vi.mock("../lib/savedSearches", () => ({
@@ -259,27 +259,28 @@ describe("Each route under the app layout", () => {
   });
 
   // #2480: the route says which item it is on, so a new route needs no
-  // entry in a table of the navigation panel's own.
+  // entry in a table of the navigation panel's own. An open set's own row is
+  // current too (#2590).
   it.each([
-    ["/", "Messages"],
-    ["/tag/Holiday", "Messages"],
-    ["/no-tag", "Messages"],
-    ["/messages/6", "Messages"],
-    ["/contacts", "Contacts"],
-    ["/group/Family", "Contacts"],
-    ["/no-group", "Contacts"],
-    ["/unknown", "Contacts"],
-    ["/trash", "Trash"],
-    ["/import", "Import"],
-    ["/export", "Export"],
-  ])("highlights its navigation item on %s", async (entry, item) => {
+    ["/", ["Messages"]],
+    ["/tag/Holiday", ["Messages", "Holiday"]],
+    ["/no-tag", ["Messages", "No Message Tag"]],
+    ["/messages/6", ["Messages"]],
+    ["/contacts", ["Contacts"]],
+    ["/group/Family", ["Contacts", "Family"]],
+    ["/no-group", ["Contacts", "No Contact Group"]],
+    ["/unknown", ["Contacts", "Unknown"]],
+    ["/trash", ["Trash"]],
+    ["/import", ["Import"]],
+    ["/export", ["Export"]],
+  ])("highlights its navigation items on %s", async (entry, items) => {
     desktop.on = true;
     sets.tags = ["Holiday"];
     sets.groups = ["Family"];
     renderLayout(entry);
     const current = () =>
       Array.from(document.querySelectorAll('button[aria-current="page"]'), (b) => b.textContent);
-    expect(current()).toEqual([item]);
+    expect(current()).toEqual(items);
   });
 
   it("highlights no navigation item on Settings", async () => {

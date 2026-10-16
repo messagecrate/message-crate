@@ -1,10 +1,10 @@
 //! The chat a parsed EML message belongs to, and its time in milliseconds.
 //!
 //! Which copies of a message are one message is decided by the shared
-//! projection (`message_ir::one_copy_per_message`), not here.
+//! projection (`ir::one_copy_per_message`), not here.
 
 use crate::types::ParsedMessage;
-use message_ir::{ConversationKey, NAMELESS_CHAT_ID};
+use ir::{ConversationKey, NAMELESS_CHAT_ID};
 
 /// Who this chat is with, as a stable string (the peer's handle key, or
 /// `chat-…` for groups).
@@ -15,7 +15,7 @@ use message_ir::{ConversationKey, NAMELESS_CHAT_ID};
 /// merge unrelated people; the server resolves the name against contacts on
 /// import. The name key carries a prefix no address has, so a person named
 /// "AMAZON" never shares the chat of the sender `AMAZON`. The file name is
-/// made from this key later, by `message_ir_format::filename_stem`.
+/// made from this key later, by `ir_format::filename_stem`.
 ///
 /// A mail that names nobody, with no address and no name, is keyed
 /// [`NAMELESS_CHAT_ID`], the key every exporter gives the conversation that
@@ -67,7 +67,7 @@ mod tests {
                 .as_ref()
                 .map(|p| p.key().to_string())
                 .unwrap_or_default(),
-            conversation_type: message_ir::ConversationType::OneToOne,
+            conversation_type: ir::ConversationType::OneToOne,
             group_title: None,
             participants: peer.iter().cloned().collect(),
             timestamp_secs,

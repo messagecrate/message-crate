@@ -1,9 +1,9 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDismissable } from "../hooks/useDismissable";
 import { errorLine } from "../lib/apiErrorMessage";
 import type { MembershipCheckState } from "../lib/membership";
 import { CONTACT_GROUP_MENU_COPY, type GroupsMenuCopy } from "../lib/namedSetCopy";
 import { popupShadowClass } from "../lib/uiStyles";
-import { useDismissable } from "../lib/useDismissable";
 import { Z_POPOVER } from "../lib/zLayers";
 import Checkbox from "./Checkbox";
 import { ChevronDownIcon, PeopleGroupIcon } from "./icons";
@@ -64,7 +64,7 @@ export default function GroupsMenu({
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   // Counts the forms the menu has shown. A create that settles after its form
-  // was closed (dismissed, cancelled, or replaced by a new one) leaves the
+  // was closed (dismissed, canceled, or replaced by a new one) leaves the
   // form on screen alone, so its result can't erase or mislabel a new name.
   const formCountRef = useRef(0);
   const rootRef = useRef<HTMLDivElement>(null);

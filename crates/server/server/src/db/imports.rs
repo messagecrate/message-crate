@@ -1,8 +1,8 @@
 //! Per-account Import Run records (one row per Import Run).
 
 use anyhow::{Context as _, Result};
+use api_types::ImportErrorKind;
 use chrono::Utc;
-use message_crate_api_types::ImportErrorKind;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Row, SqliteConnection};
@@ -62,16 +62,6 @@ impl ImportStage {
         Self::ALL.into_iter().find(|stage| stage.as_str() == s)
     }
 
-    /// Whether a new run may open at `self`: only [`Self::Parse`].
-    ///
-    /// The desktop app opens every run at `parse`, before Staging reads the
-    /// backup, and resumes an interrupted run by moving the run it already
-    /// has; the importer library sends no stage and so opens at `parse` too.
-    /// A run opened at any later stage would be resumed at work nobody did.
-    pub fn opens_a_run(self) -> bool {
-        self == Self::Parse
-    }
-
     /// Whether a running run at `self` may be moved to `next`: the moves the
     /// desktop app makes, and no other.
     ///
@@ -110,7 +100,7 @@ pub enum ImportStatus {
     /// Ended without finishing.
     Failed,
     /// Discarded by the person, or by the server on their behalf.
-    Cancelled,
+    Canceled,
 }
 
 impl ImportStatus {
@@ -120,7 +110,7 @@ impl ImportStatus {
         Self::Completed,
         Self::CompletedWithIssues,
         Self::Failed,
-        Self::Cancelled,
+        Self::Canceled,
     ];
 
     /// The value as the wire and the database spell it.
@@ -131,7 +121,7 @@ impl ImportStatus {
             Self::Completed => "completed",
             Self::CompletedWithIssues => "completed_with_issues",
             Self::Failed => "failed",
-            Self::Cancelled => "cancelled",
+            Self::Canceled => "canceled",
         }
     }
 
@@ -372,7 +362,7 @@ pub enum ImportLookupError {
 }
 
 /// A database statement that failed, with the step it was taking, so the
-/// error reads "<step>: <database error>" in the server's log.
+/// error reads "`<step>: <database error>`" in the server's log.
 #[derive(Debug, thiserror::Error)]
 #[error("{step}")]
 pub struct StatementFailed {
@@ -402,8 +392,6 @@ pub struct StartImportArgs<'a> {
     pub phone_country: Option<&'a str>,
     /// Client/tool name, when the caller names one.
     pub tool: Option<&'a str>,
-    /// Stage the run opens at.
-    pub stage: ImportStage,
     /// Absolute path to the run directory on the client.
     pub run_dir: Option<&'a str>,
     /// Which install is creating this run.
@@ -417,11 +405,11 @@ pub struct StartImportArgs<'a> {
 }
 
 impl<'a> StartImportArgs<'a> {
-    /// A run opening at [`ImportStage::Parse`] with nothing recorded
-    /// about the client: no run directory, device, form snapshot,
-    /// fingerprint, or identities. The CLI importer and most tests start
-    /// here; a caller with more to record uses struct update syntax on
-    /// top of it.
+    /// Arguments for a run with nothing recorded about the client: no run
+    /// directory, device, form snapshot, fingerprint, or identities. The
+    /// server's `import` and `reset-demo` commands and most tests start
+    /// here; a caller with more to record uses struct update syntax on top
+    /// of it.
     pub fn new(account_id: i64, source: &'a str, mode: &'a str, tool: Option<&'a str>) -> Self {
         Self {
             account_id,
@@ -429,7 +417,6 @@ impl<'a> StartImportArgs<'a> {
             mode,
             phone_country: None,
             tool,
-            stage: ImportStage::Parse,
             run_dir: None,
             device_id: None,
             form_json: None,
@@ -453,34 +440,27 @@ pub enum StartImportError {
         "this account already has a running Import Run; open Import in the desktop app to resume or discard it, or run `message-crate-server imports discard --account <account>`"
     )]
     AlreadyActive,
-    /// The run asked to open at a stage that does not open a run
-    /// ([`ImportStage::opens_a_run`]).
-    #[error("an Import Run opens at stage parse, not at stage {}", stage.as_str())]
-    OpeningStage {
-        /// The stage the request asked for.
-        stage: ImportStage,
-    },
     /// Anything else.
     #[error(transparent)]
     Db(anyhow::Error),
 }
 
-/// Open a new Import Run, started at `now`.
+/// Open a new Import Run at [`ImportStage::Parse`], started at `now`.
+///
+/// Every run opens at `parse`: the desktop app opens it before Staging
+/// reads the backup, and resumes an interrupted run by moving the run it
+/// already has. A run opened at a later stage would be resumed at work
+/// nobody did.
 ///
 /// # Errors
 ///
-/// [`StartImportError::OpeningStage`] when `args.stage` is not one a run
-/// may open at, [`StartImportError::AlreadyActive`] when a running Import Run
-/// already exists for this account; [`StartImportError::Db`] for any other
-/// failure.
+/// [`StartImportError::AlreadyActive`] when a running Import Run already
+/// exists for this account; [`StartImportError::Db`] for any other failure.
 pub async fn start_import(
     conn: &mut SqliteConnection,
     args: &StartImportArgs<'_>,
     now: chrono::DateTime<Utc>,
 ) -> std::result::Result<i64, StartImportError> {
-    if !args.stage.opens_a_run() {
-        return Err(StartImportError::OpeningStage { stage: args.stage });
-    }
     let started_at = now.to_rfc3339();
     let inserted: std::result::Result<i64, sqlx::Error> = sqlx::query_scalar(
         r"
@@ -498,7 +478,7 @@ pub async fn start_import(
     .bind(args.tool)
     .bind(args.mode)
     .bind(started_at)
-    .bind(args.stage.as_str())
+    .bind(ImportStage::Parse.as_str())
     .bind(args.run_dir)
     .bind(args.device_id)
     .bind(args.form_json)
@@ -729,7 +709,7 @@ async fn not_running(
 
 /// Close a running Import Run the user gave up on.
 ///
-/// Records `cancelled` at the instant `now` with `issues`, the Import Errors
+/// Records `canceled` at the instant `now` with `issues`, the Import Errors
 /// the run recorded before it was given up, and its `notes`, and clears
 /// `stage`, which frees the account's single active slot. Nothing reclaims a
 /// run on a timer. A run is broken by an explicit discard or not at all.
@@ -755,10 +735,10 @@ pub async fn discard_import(
         .await
         .map_err(failed("begin a write transaction"))?;
     // The status check is in the update, so a run that completed after the
-    // caller read it keeps its record instead of being rewritten as cancelled.
+    // caller read it keeps its record instead of being rewritten as canceled.
     let updated = sqlx::query(
         "UPDATE imports
-         SET status = 'cancelled', stage = NULL, finished_at = $1
+         SET status = 'canceled', stage = NULL, finished_at = $1
          WHERE id = $2 AND account_id = $3 AND status = 'running'",
     )
     .bind(now.to_rfc3339())
@@ -1305,10 +1285,10 @@ pub async fn top_attachments_by_size(
                 size_bytes,
                 conversation_id: Some(conversation_id),
                 group_title,
-                // A conversation keyed by a name is labelled with the name,
+                // A conversation keyed by a name is labeled with the name,
                 // not with its `name:` key.
                 chat_identifier: Some(
-                    message_ir::name_of_chat_id(&chat_identifier)
+                    ir::name_of_chat_id(&chat_identifier)
                         .map_or_else(|| chat_identifier.clone(), str::to_string),
                 ),
             },
@@ -1319,7 +1299,7 @@ pub async fn top_attachments_by_size(
 /// Ready the account's Import Runs to outlive it, just before the account is
 /// deleted: each keeps `username` and its counts, and is marked with
 /// `deletion_entry_id`, the account's `account_deleted` entry. A run still
-/// open is closed as `cancelled` at `now`, and what describes the person's
+/// open is closed as `canceled` at `now`, and what describes the person's
 /// messages goes: its issues and notes, form, run directory, source details and the
 /// addresses the backup sent from (ADR 0020).
 ///
@@ -1334,7 +1314,7 @@ pub async fn detach_from_account(
     now: &str,
 ) -> Result<()> {
     sqlx::query(
-        "UPDATE imports SET status = 'cancelled', finished_at = $2, stage = NULL
+        "UPDATE imports SET status = 'canceled', finished_at = $2, stage = NULL
          WHERE account_id = $1 AND status = 'running'",
     )
     .bind(account_id)

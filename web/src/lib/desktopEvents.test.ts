@@ -4,8 +4,7 @@
 // tests/fixtures/desktop-events/events.json from the real structs, and this
 // test checks every payload in it against its TypeScript type (#2109): a
 // field renamed or removed in Rust, a field the TypeScript type lacks, or a
-// word outside a TypeScript union fails here, with one exception that the
-// header of src-tauri/src/commands/events/fixture.rs names.
+// word outside a TypeScript union fails here.
 //
 // Each type's shape below is checked against the type by the compiler, so a
 // field renamed in TypeScript fails the type-check, and the payloads then
@@ -14,6 +13,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { LOCAL_SERVER_NOTICE, type LocalServerNotice } from "./desktop/localServer";
 import type {
   DesktopJobErrorEvent,
   ImportFileDoneEvent,
@@ -49,6 +49,17 @@ type Shape<T> = {
     : ValueShape<T[K]>;
 };
 
+/** Every key of any member of the union `U`. */
+type KeysOfUnion<U> = U extends unknown ? keyof U : never;
+
+/**
+ * A tagged union as one object type, for `Shape`: each field any member has,
+ * with every value it takes, optional when some member lacks it.
+ */
+type Flat<U> = {
+  [K in KeysOfUnion<U>]: U extends Record<K, infer V> ? V : undefined;
+};
+
 type AnyValueShape = "boolean" | "number" | "string" | Record<string, true>;
 
 const PROGRESS = {
@@ -71,7 +82,7 @@ const PROGRESS = {
 
 const ISSUE = {
   kind: { skip: true, error: true, note: true, resolved: true },
-  step: { parse: true, attachments: true, prepare: true, media: true, upload: true },
+  step: { parse: true, attachments: true, media: true, upload: true },
   item: "string",
   reason: "string",
   conversation: { optional: "string" },
@@ -92,6 +103,13 @@ const ERROR = {
   user_message: { optional: "string" },
   canceled: "boolean",
 } satisfies Shape<DesktopJobErrorEvent>;
+
+const NOTICE = {
+  state: { restarting: true, answering: true, failed: true },
+  cause: { optional: { unanswered: true, exited: true } },
+  message: { optional: "string" },
+  details: { optional: "string" },
+} satisfies Shape<Flat<LocalServerNotice>>;
 
 const FIXTURE_PATH = fileURLToPath(
   new URL("../../../tests/fixtures/desktop-events/events.json", import.meta.url),
@@ -160,6 +178,10 @@ describe("the desktop app's job events", () => {
     checkChannel("desktop-job:error", ERROR);
   });
 
+  it("local-server:notice matches LocalServerNotice", () => {
+    checkChannel(LOCAL_SERVER_NOTICE, NOTICE);
+  });
+
   it("the fixture holds no channel this test does not check", () => {
     expect(Object.keys(fixture).sort()).toEqual([
       "desktop-job:error",
@@ -167,6 +189,7 @@ describe("the desktop app's job events", () => {
       "desktop-job:file-written",
       "desktop-job:issue",
       "desktop-job:progress",
+      "local-server:notice",
     ]);
   });
 });

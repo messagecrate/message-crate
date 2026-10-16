@@ -1,6 +1,6 @@
 //! The shared blocking HTTP session and the `GET /v1/session` login call.
 //!
-//! `message-crate-import` and `message-crate-export` both talk to the server through one
+//! `import` and `export` both talk to the server through one
 //! [`HttpSession`]. The session owns base-URL trimming and bearer-header
 //! construction so no caller formats `Authorization` by hand.
 
@@ -212,7 +212,7 @@ mod tests {
     /// common error page in front of a server was reported as a JSON parse
     /// failure rather than as the wrong host.
     #[test]
-    fn an_html_error_page_is_recognised_whatever_its_case() {
+    fn an_html_error_page_is_recognized_whatever_its_case() {
         for body in [
             "<!doctype html><html><body>502 Bad Gateway</body></html>",
             "<!DOCTYPE html>",

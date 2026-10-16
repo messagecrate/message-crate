@@ -97,7 +97,7 @@ describe("completionTextFor", () => {
     expect(completionTextFor("completed_with_issues")).toBe("Import completed with issues");
   });
 
-  it("names a paused Upload as paused, not cancelled", () => {
+  it("names a paused Upload as paused, not canceled", () => {
     expect(completionTextFor("paused")).toBe("Import paused");
   });
 });

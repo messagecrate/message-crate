@@ -212,7 +212,6 @@ export async function runImport(
         ctx.server.createImport({
           ...importRunCreateBody(form.source),
           phone_country: form.phoneCountry || null,
-          stage: "parse",
           run_dir: runDir,
           device_id: getDeviceId(),
           form: formSnapshot(form),
@@ -302,23 +301,23 @@ export async function runImport(
     }
   } catch (e: unknown) {
     if (await leaveIfRefused(ctx, e, runId)) return;
-    // A cancelled Staging is not a failure: the conversations already
+    // A canceled Staging is not a failure: the conversations already
     // written are real work, and Staging can pick up from them. Leaving the
     // run at `write` is what lets the next Import visit offer that. A
     // `write` stage the server did not record stops the run where the server
     // has it, so it is not completed either. A genuine failure still
     // completes: a broken backup must not lock the account out of importing.
-    const cancelled = e instanceof CanceledError;
+    const canceled = e instanceof CanceledError;
     const stageNotRecorded = e instanceof StageNotRecordedError;
-    if (!cancelled) recordError(ctx, ctx.scratch.activeStage, jobErrorReason(e));
+    if (!canceled) recordError(ctx, ctx.scratch.activeStage, jobErrorReason(e));
     failActiveStep(ctx);
     store.set({ computingSummary: false });
     await finishImport(ctx, {
       runId,
-      status: cancelled ? "cancelled" : "failed",
+      status: canceled ? "canceled" : "failed",
       uploadReport: null,
       uploadMs: null,
-      skipComplete: cancelled || stageNotRecorded,
+      skipComplete: canceled || stageNotRecorded,
     });
   }
 }

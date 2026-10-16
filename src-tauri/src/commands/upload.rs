@@ -1,11 +1,10 @@
 //! `upload` command: the Upload of an Import Run, which sends a run directory to a Message Crate server.
 
-use message_crate_core::CancelFlag;
-use message_crate_import::ImportMode;
+use message_crate_core::{CancelFlag, RunIssueStep};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use message_crate_import::{FileStatus, ImportConfig, ProgressEvent, run as run_import};
+use import::{FileStatus, ImportConfig, ProgressEvent, run as run_import};
 
 use super::events;
 use super::events::ImportProgressEvent;
@@ -21,7 +20,7 @@ fn as_usize(value: u64) -> usize {
 
 /// Progress bar update and finished JSON payload after an Upload completes.
 fn finished_upload_events(
-    report: &message_crate_import::ImportReport,
+    report: &import::ImportReport,
 ) -> (ImportProgressEvent, serde_json::Value) {
     let total = as_usize(report.conversations_total);
     let progress = ImportProgressEvent::upload_count(total, total);
@@ -37,7 +36,7 @@ fn finished_upload_events(
             report.assets_uploaded
         ),
         "ok": report.ok,
-        "cancelled": report.cancelled,
+        "canceled": report.canceled,
         "session_refused": report.session_refused,
         "messages_attempted": report.messages_attempted,
         "messages_inserted": report.messages_inserted,
@@ -49,7 +48,7 @@ fn finished_upload_events(
         "conversations_total": report.conversations_total,
         "conversations_failed": report.conversations_failed,
         "conversations_skipped": report.conversations_skipped,
-        "conversations_cancelled": report.conversations_cancelled,
+        "conversations_canceled": report.conversations_canceled,
         "results": report.results,
     });
     (progress, summary)
@@ -66,11 +65,10 @@ pub struct UploadArgs {
     pub token: String,
     /// Directory of conversation files to upload.
     pub input_dir: String,
-    /// Import mode. `append` adds to existing data (safe to re-run);
-    /// `replace` deletes existing messages for this source, then imports.
-    pub mode: ImportMode,
-    /// Import id of an earlier import to resume, when set.
-    pub import_id: Option<i64>,
+    /// The Import Run the Upload posts into. The web app starts it before
+    /// the Upload and completes it after, and the Upload goes by the mode
+    /// the run was started with.
+    pub import_id: i64,
 }
 
 /// Ask this process to upload extracted conversations to a server.
@@ -109,11 +107,11 @@ pub fn upload(
 }
 
 /// The Upload settings the desktop app uses. They differ from the
-/// `message_crate_import::DEFAULT_*` constants because desktop imports are many
+/// `import::DEFAULT_*` constants because desktop imports are many
 /// small files over a local network; each number says why.
 ///
 /// The attachment size limit comes from the media settings Staging recorded
-/// in the directory ([`message_staging::read_media_settings`]): the number the
+/// in the directory ([`staging::read_media_settings`]): the number the
 /// Staging Review forecast against, read from the one place that holds it
 /// after Staging.
 ///
@@ -127,26 +125,25 @@ pub fn upload(
 /// because its Staging never finished.
 fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<ImportConfig> {
     let input = PathBuf::from(&args.input_dir);
-    let recorded = message_staging::read_media_settings(&input)?;
+    let recorded = staging::read_media_settings(&input)?;
     let log_path = Some(import_run_log(logs_dir, &input));
     Ok(ImportConfig {
         input,
         base_url: args.base_url,
         token: args.token,
-        mode: args.mode,
         // A resumed Upload skips what the journal in the run directory
         // already recorded as sent.
         force: false,
         max_retries: 3,
-        // Pack until message_crate_api_types::MAX_IMPORT_BATCH_BYTES (16 MiB); do not stop at a message count.
-        batch_size: message_crate_import::NO_MESSAGE_COUNT_LIMIT,
+        // Pack until api_types::MAX_IMPORT_BATCH_BYTES (16 MiB); do not stop at a message count.
+        batch_size: import::NO_MESSAGE_COUNT_LIMIT,
         // Above DEFAULT_ASSET_UPLOAD_WORKERS (8): desktop imports are often many small files.
         asset_upload_workers: 16,
         // Above DEFAULT_PREPARE_AHEAD (3): hide more hashing behind in-flight imports.
         prepare_ahead: 8,
         // Above DEFAULT_PREPARE_WORKERS (2): more of the prepare-ahead queue runs at once.
         prepare_workers: 4,
-        // Below message_crate_import::MAX_PROXY_BODY_BYTES (16 MiB):
+        // Below import::MAX_PROXY_BODY_BYTES (16 MiB):
         // desktop uploads switch to multipart sooner so a large attachment
         // moves in small parts instead of one long PUT.
         asset_multipart_threshold: 5 * 1024 * 1024,
@@ -156,9 +153,6 @@ fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<ImportConf
         log_path,
         cancel: CancelFlag::default(),
         import_id: args.import_id,
-        // The web app creates the Import Run, with the form's phone country
-        // on it, before the Upload starts, and the Upload posts into it.
-        phone_country: None,
     })
 }
 
@@ -204,7 +198,6 @@ fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
         }
         ProgressEvent::Issue {
             kind,
-            step,
             item,
             reason,
             conversation,
@@ -214,7 +207,7 @@ fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
                 events::ISSUE,
                 events::ImportIssueEvent {
                     kind,
-                    step,
+                    step: RunIssueStep::Upload,
                     item,
                     reason,
                     conversation: Some(conversation),
@@ -233,8 +226,8 @@ fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
 mod tests {
     use super::*;
     use httpmock::prelude::*;
-    use message_crate_import::{FileResult, ImportReport};
-    use message_ir::testutil::sample_document;
+    use import::{FileResult, ImportMode, ImportReport};
+    use ir::testutil::sample_document;
     use serde_json::json;
 
     /// Each conversation's lines are sentences, with no "Starting:" or
@@ -263,9 +256,9 @@ mod tests {
     /// attachment size limit `asset_max_bytes`.
     fn staged_directory(asset_max_bytes: u64) -> tempfile::TempDir {
         let run_dir = tempfile::tempdir().unwrap();
-        message_staging::write_media_settings(
+        staging::write_media_settings(
             run_dir.path(),
-            &message_staging::TranscodeOptions {
+            &staging::TranscodeOptions {
                 mode: media::MediaMode::Clone,
                 compress: media::CompressOptions::default(),
                 asset_max_bytes,
@@ -284,7 +277,6 @@ mod tests {
             "baseUrl": "http://127.0.0.1:8080",
             "token": "token",
             "inputDir": run_dir.path(),
-            "mode": "append",
             "importId": 7,
         }))
         .unwrap();
@@ -306,7 +298,6 @@ mod tests {
             "baseUrl": "http://127.0.0.1:8080",
             "token": "token",
             "inputDir": run_dir.path(),
-            "mode": "append",
             "importId": 7,
         }))
         .unwrap();
@@ -314,8 +305,9 @@ mod tests {
         assert!(format!("{err:#}").contains("no media settings"), "{err:#}");
     }
 
-    /// A server that answers the session check and states its upload time
-    /// limits, as every Upload reads them. [`take_batches`] has it take
+    /// A server that answers the session check, states its body time
+    /// limits, and answers import 7 as an append run, as every Upload reads
+    /// them. [`take_batches`] has it take
     /// import 7's batches.
     fn upload_server() -> MockServer {
         let server = MockServer::start();
@@ -329,9 +321,14 @@ mod tests {
         server.mock(|when, then| {
             when.method(GET).path("/v1/server");
             then.status(200).json_body(json!({
-                "upload_stall_secs": 60,
-                "upload_piece_secs": 300,
+                "body_stall_secs": 60,
+                "body_total_secs": 300,
             }));
+        });
+        server.mock(|when, then| {
+            when.method(GET).path("/v1/imports/7");
+            then.status(200)
+                .json_body(json!({ "id": 7, "mode": "append" }));
         });
         server
     }
@@ -369,16 +366,11 @@ mod tests {
 
     /// What the Import screen sends for an Upload of `run_dir` to `server`,
     /// first time and resumed, with the run's log in `logs`.
-    fn upload_to(
-        server: &MockServer,
-        run_dir: &Path,
-        logs: &Path,
-    ) -> message_crate_import::ImportReport {
+    fn upload_to(server: &MockServer, run_dir: &Path, logs: &Path) -> import::ImportReport {
         let args: UploadArgs = serde_json::from_value(json!({
             "baseUrl": server.base_url(),
             "token": "mc_test",
             "inputDir": run_dir,
-            "mode": "append",
             "importId": 7,
         }))
         .unwrap();
@@ -418,7 +410,7 @@ mod tests {
         let report = upload_to(&server, run_dir.path(), logs.path());
         assert!(report.ok, "{:?}", report.results);
         assert!(
-            !run_dir.path().join(message_crate_import::LOG_NAME).exists(),
+            !run_dir.path().join(import::LOG_NAME).exists(),
             "no log in the run's directory"
         );
         run_dir.close().unwrap();
@@ -431,13 +423,12 @@ mod tests {
     fn finished_upload_event_reports_complete_upload_and_totals() {
         let report = ImportReport {
             ok: true,
-            cancelled: false,
+            canceled: false,
             session_refused: false,
             server_away: None,
-            completion_refused: false,
             account: 1,
             username: "user".into(),
-            mode: ImportMode::Append,
+            mode: Some(ImportMode::Append),
             started_at: "2026-08-11T00:00:00Z".into(),
             finished_at: "2026-08-11T00:00:01Z".into(),
             elapsed_ms: 1_000,
@@ -445,7 +436,7 @@ mod tests {
             conversations_ok: 2,
             conversations_failed: 0,
             conversations_skipped: 1,
-            conversations_cancelled: 0,
+            conversations_canceled: 0,
             messages_attempted: 45,
             messages_inserted: 42,
             messages_deduped: 2,
@@ -475,7 +466,7 @@ mod tests {
         assert_eq!(summary["messages_failed"], 1);
         assert_eq!(summary["conversations_failed"], 0);
         assert_eq!(summary["conversations_skipped"], 1);
-        assert_eq!(summary["conversations_cancelled"], 0);
+        assert_eq!(summary["conversations_canceled"], 0);
         assert_eq!(summary["results"][0]["error"], "attachment exceeds limit");
         assert_eq!(
             summary["summary"],
@@ -484,7 +475,7 @@ mod tests {
         assert_eq!(summary["assets_bytes"], 12_345);
         assert_eq!(summary["conversations_ok"], 2);
         assert_eq!(summary["conversations_total"], 3);
-        assert_eq!(summary["cancelled"], false);
+        assert_eq!(summary["canceled"], false);
         // The window ends the Session when the Upload says the server refused it.
         assert_eq!(summary["session_refused"], false);
     }

@@ -56,7 +56,7 @@ pub enum ExportKind {
 }
 
 impl ExportKind {
-    /// Every kind, for recognising a name.
+    /// Every kind, for recognizing a name.
     const ALL: [Self; 2] = [Self::Export, Self::Convert];
 
     /// The first part of the directory's name.
@@ -300,7 +300,7 @@ impl ExportDirectories {
         }
         // The journal lets a later Export into the same directory skip what it
         // fetched. Nothing exports into this directory again.
-        let journal = dir.join(message_crate_export::EXPORT_JOURNAL_NAME);
+        let journal = dir.join(export::EXPORT_JOURNAL_NAME);
         if journal.exists() {
             std::fs::remove_file(&journal).map_err(|e| left_over(&journal, e))?;
         }
@@ -316,7 +316,7 @@ impl ExportDirectories {
     }
 
     /// Delete the directory `dir` and everything in it, after its Export or
-    /// Convert failed or was cancelled. A directory already gone is not an
+    /// Convert failed or was canceled. A directory already gone is not an
     /// error.
     ///
     /// # Errors

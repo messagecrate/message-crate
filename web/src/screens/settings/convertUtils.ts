@@ -1,7 +1,7 @@
 /**
  * True when two directory paths name the same directory as typed.
  *
- * `message-reexport` canonicalizes both paths and refuses to write into its
+ * `reexport` canonicalizes both paths and refuses to write into its
  * own input (`crates/libs/reexport/src/lib.rs`), so the screen catches the
  * plain case before a job starts: same text, ignoring surrounding whitespace
  * and trailing slashes. Symlinks and case-insensitive file systems are left

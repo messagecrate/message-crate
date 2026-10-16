@@ -7,7 +7,7 @@
 #
 # cargo-mutants changes the code one small way at a time and runs the tests
 # for the package that holds it. A mutant every test still passes is
-# "missed": a change in behaviour no test notices. That list is the finding,
+# "missed": a change in behavior no test notices. That list is the finding,
 # so the last thing printed is the per-file table, and
 # target/mutants/summary.md names every missed mutant with its line.
 # cargo-mutants' own output (a log and a diff per mutant) is under

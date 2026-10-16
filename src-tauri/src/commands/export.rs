@@ -3,11 +3,11 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use message_crate_core::count_of;
-use message_crate_export::{
+use export::{
     DEFAULT_ASSET_FETCH_WORKERS, DEFAULT_PAGE_LIMIT, ExportConfig, ExportQueryList, ProgressEvent,
     run as run_export,
 };
+use message_crate_core::count_of;
 
 use super::events;
 use super::jobs::{spawn_job, start_job};

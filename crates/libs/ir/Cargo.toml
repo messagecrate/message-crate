@@ -1,5 +1,5 @@
 [package]
-name = "message-ir"
+name = "ir"
 version = "0.1.0"
 edition = "2024"
 description = "Schema types for the common-message ConversationDocument intermediate representation"

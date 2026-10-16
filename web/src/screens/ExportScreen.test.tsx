@@ -117,7 +117,7 @@ describe("ExportScreen", () => {
     await settle();
     expect(invokeExport).toHaveBeenCalledTimes(1);
     // Everything is the scope the screen opens in without a query, and it
-    // sends a blank query, which message-crate-export reads as the whole account.
+    // sends a blank query, which the `export` crate reads as the whole account.
     expect(nth(invokeExport.mock.calls, 0)[0]).toMatchObject({
       out_dir: "/home/demo/out",
       query: "",
@@ -448,7 +448,7 @@ describe("ExportScreen", () => {
   });
 
   it("will not export a Search scope with a blank query", async () => {
-    // message-crate-export reads a blank query as the whole account, which is not what
+    // The `export` crate reads a blank query as the whole account, which is not what
     // someone who chose Search and left the box empty asked for.
     const user = setupUser();
     renderScreen("from:me");

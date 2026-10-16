@@ -5,7 +5,7 @@
 //! [`crate::ProgressEvent::Finished`]. Everything here is plain data with no
 //! I/O so the desktop app and tests can build and inspect reports directly.
 
-use message_crate_api_types::ImportMode;
+use api_types::ImportMode;
 use message_crate_core::count_of;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 pub struct FileResult {
     /// File name relative to the input directory.
     pub file: String,
-    /// `ok`, `failed`, `skipped`, or `cancelled` (the run was stopped before
+    /// `ok`, `failed`, `skipped`, or `canceled` (the run was stopped before
     /// every message of the file was sent).
     pub status: String,
     /// The failure, when `status` is `failed`.
@@ -47,10 +47,10 @@ impl FileResult {
     }
 
     /// Result row for a conversation the run was stopped before taking up.
-    pub(crate) fn cancelled(file: &str) -> Self {
+    pub(crate) fn canceled(file: &str) -> Self {
         Self {
             file: file.to_string(),
-            status: "cancelled".into(),
+            status: "canceled".into(),
             error: None,
             messages: 0,
             attachments: 0,
@@ -98,11 +98,11 @@ pub struct UploadProfile {
 /// Final summary of a whole Upload (also written to disk as the report file).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ImportReport {
-    /// `true` when no conversation failed and the run was not cancelled.
+    /// `true` when no conversation failed and the run was not canceled.
     pub ok: bool,
     /// `true` when the run halted before it finished, so the Upload is paused.
     /// The cancel flag halts it when it leaves conversations unsent: they are
-    /// in `conversations_cancelled`, and the journal leaves them for the next
+    /// in `conversations_canceled`, and the journal leaves them for the next
     /// Upload. A cancel that arrives after the last request went out halts
     /// nothing, so it is `false` then. Only the cancel flag, a refused
     /// session, or a server that was not there to take a request halts a
@@ -111,7 +111,7 @@ pub struct ImportReport {
     /// (`server_away`), halts the run as a cancel does, without setting the
     /// caller's cancel flag, and it is `true` then even when no conversation
     /// was left unsent.
-    pub cancelled: bool,
+    pub canceled: bool,
     /// `true` when the server refused the session token during the run (it
     /// expired or was ended), which halted the run as for a cancel. The
     /// requests it refused fail no conversation. The caller ends the session
@@ -123,23 +123,15 @@ pub struct ImportReport {
     /// conversation: the next Upload sends what this one did not.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_away: Option<ServerAway>,
-    /// `true` when the Upload could not complete the Import Run it started:
-    /// the server refused the request, or no answer came. The server may then
-    /// still hold the run as running, so `ok` is `false`. A paused run
-    /// (`cancelled`) is returned with this flag set, and
-    /// [`crate::ProgressEvent::Finished`] fires, because the caller tells a
-    /// pause from a failure by `cancelled`. For a run that did not pause,
-    /// `run` returns the refusal as its error instead, and only the report on
-    /// disk carries the flag. A completion refused because the session ended
-    /// sets `session_refused` too. The flag is always `false` when the caller
-    /// handed the Upload its Import Run, because the caller then completes it.
-    pub completion_refused: bool,
     /// Account id the token resolved to.
     pub account: i64,
     /// Username the server reports for that account.
     pub username: String,
-    /// `append` or `replace`.
-    pub mode: ImportMode,
+    /// The mode of the Import Run the Upload posted into, `append` or
+    /// `replace`. `None` for an Upload whose session the server refused at
+    /// login, which read no run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<ImportMode>,
     /// Unix seconds when the run started, as a string.
     pub started_at: String,
     /// Unix seconds when the run finished, as a string.
@@ -155,7 +147,7 @@ pub struct ImportReport {
     /// Files the journal said were already imported.
     pub conversations_skipped: u64,
     /// Files the run was stopped before it finished sending.
-    pub conversations_cancelled: u64,
+    pub conversations_canceled: u64,
     /// Messages placed in HTTP import request bodies.
     #[serde(default)]
     pub messages_attempted: u64,
@@ -212,10 +204,10 @@ pub(crate) struct FileResultCounts {
     pub ok: u64,
     pub failed: u64,
     pub skipped: u64,
-    pub cancelled: u64,
+    pub canceled: u64,
 }
 
-/// Count ok / failed / skipped / cancelled conversations.
+/// Count ok / failed / skipped / canceled conversations.
 pub(crate) fn count_file_results(results: &[FileResult]) -> FileResultCounts {
     let mut counted = FileResultCounts::default();
     for result in results {
@@ -223,7 +215,7 @@ pub(crate) fn count_file_results(results: &[FileResult]) -> FileResultCounts {
             "ok" => counted.ok += 1,
             "failed" => counted.failed += 1,
             "skipped" => counted.skipped += 1,
-            "cancelled" => counted.cancelled += 1,
+            "canceled" => counted.canceled += 1,
             _ => {}
         }
     }
@@ -264,25 +256,6 @@ pub fn format_duration_ms(ms: u64) -> String {
     }
 }
 
-/// Three-way Import Run status for `/v1/imports/{id}/complete`, read from the
-/// Upload's report rather than from whether the Upload returned. `failed` has a
-/// zero floor: cancelled (the run halted, see [`ImportReport::cancelled`]), or
-/// nothing landed at all. A skip-only repeat Upload is a no-op,
-/// not a failure. Item-level failures beside successes are
-/// `completed_with_issues`.
-pub fn outcome_status(report: &ImportReport) -> &'static str {
-    let nothing_landed = report.conversations_total > 0
-        && report.conversations_ok == 0
-        && report.conversations_skipped == 0;
-    if report.cancelled || nothing_landed {
-        return "failed";
-    }
-    if report.conversations_failed > 0 || report.messages_failed > 0 {
-        return "completed_with_issues";
-    }
-    "completed"
-}
-
 /// Format a millisecond count as seconds with one decimal place, like `3.3s`.
 pub(crate) fn format_ms_seconds(ms: u64) -> String {
     format!("{:.1}s", ms as f64 / 1000.0)
@@ -306,7 +279,7 @@ pub fn format_import_summary(report: &ImportReport) -> String {
     // A run that halted is paused (CONTEXT.md, Pause). A cancel that came
     // after the last conversation was sent halted nothing, so that run
     // completed.
-    let ending = if report.cancelled {
+    let ending = if report.canceled {
         match (report.session_refused, report.server_away) {
             (true, _) => format!(
                 "The Upload paused after {elapsed}, because the server refused the session."
@@ -345,7 +318,7 @@ Uploaded {}.{not_uploaded}",
         count_of(report.conversations_total, "conversation", "conversations"),
         report.conversations_failed,
         report.conversations_skipped,
-        report.conversations_cancelled,
+        report.conversations_canceled,
         count_of(report.messages_attempted, "message", "messages"),
         report.messages_inserted,
         report.messages_deduped,
@@ -386,13 +359,12 @@ mod tests {
     fn sample_report() -> ImportReport {
         ImportReport {
             ok: true,
-            cancelled: false,
+            canceled: false,
             session_refused: false,
             server_away: None,
-            completion_refused: false,
             account: 1,
             username: "user".into(),
-            mode: ImportMode::Append,
+            mode: Some(ImportMode::Append),
             started_at: "2026-08-29T00:00:00Z".into(),
             finished_at: "2026-08-29T00:01:00Z".into(),
             elapsed_ms: 60_000,
@@ -400,7 +372,7 @@ mod tests {
             conversations_ok: 10,
             conversations_failed: 0,
             conversations_skipped: 0,
-            conversations_cancelled: 0,
+            conversations_canceled: 0,
             messages_attempted: 100,
             messages_inserted: 90,
             messages_deduped: 10,
@@ -485,17 +457,17 @@ mod tests {
         };
         assert_eq!(
             first_line(ImportReport {
-                cancelled: true,
-                conversations_cancelled: 6,
+                canceled: true,
+                conversations_canceled: 6,
                 ..not_ok.clone()
             }),
             "The Upload paused after 1m00s."
         );
         assert_eq!(
             first_line(ImportReport {
-                cancelled: true,
+                canceled: true,
                 session_refused: true,
-                conversations_cancelled: 6,
+                conversations_canceled: 6,
                 ..not_ok.clone()
             }),
             "The Upload paused after 1m00s, because the server refused the session."
@@ -504,7 +476,7 @@ mod tests {
         // carried only a conversation that had already failed.
         assert_eq!(
             first_line(ImportReport {
-                cancelled: true,
+                canceled: true,
                 session_refused: true,
                 conversations_failed: 1,
                 ..not_ok.clone()
@@ -515,7 +487,7 @@ mod tests {
         // left a conversation unsent, and the line says why (#2727, #2092).
         assert_eq!(
             first_line(ImportReport {
-                cancelled: true,
+                canceled: true,
                 server_away: Some(ServerAway::Stopping),
                 ..not_ok.clone()
             }),
@@ -523,16 +495,16 @@ mod tests {
         );
         assert_eq!(
             first_line(ImportReport {
-                cancelled: true,
+                canceled: true,
                 server_away: Some(ServerAway::Unavailable),
-                conversations_cancelled: 6,
+                conversations_canceled: 6,
                 ..not_ok.clone()
             }),
             "The Upload paused after 1m00s, because the server could not be reached."
         );
         assert_eq!(
             first_line(ImportReport {
-                cancelled: true,
+                canceled: true,
                 server_away: Some(ServerAway::Busy),
                 ..not_ok.clone()
             }),
@@ -566,42 +538,6 @@ mod tests {
     }
 
     #[test]
-    fn outcome_status_matches_the_spec_verdicts() {
-        // Clean run.
-        assert_eq!(outcome_status(&sample_report()), "completed");
-
-        // Cancelled is failed regardless of counts.
-        let mut cancelled = sample_report();
-        cancelled.cancelled = true;
-        assert_eq!(outcome_status(&cancelled), "failed");
-
-        // Nothing landed at all: the zero floor.
-        let mut nothing = sample_report();
-        nothing.ok = false;
-        nothing.conversations_ok = 0;
-        nothing.conversations_failed = 10;
-        assert_eq!(outcome_status(&nothing), "failed");
-
-        // A skip-only repeat Upload is a no-op, not a failure.
-        let mut skips = sample_report();
-        skips.conversations_ok = 0;
-        skips.conversations_skipped = 10;
-        assert_eq!(outcome_status(&skips), "completed");
-
-        // Item-level failures beside successes.
-        let mut partial = sample_report();
-        partial.ok = false;
-        partial.conversations_ok = 8;
-        partial.conversations_failed = 2;
-        assert_eq!(outcome_status(&partial), "completed_with_issues");
-
-        // Message failures inside ok conversations.
-        let mut msgs = sample_report();
-        msgs.messages_failed = 3;
-        assert_eq!(outcome_status(&msgs), "completed_with_issues");
-    }
-
-    #[test]
     fn count_file_results_counts_each_status() {
         let results = vec![
             FileResult {
@@ -614,7 +550,7 @@ mod tests {
             },
             FileResult::failed("b.jsonl", "boom"),
             FileResult::skipped("c.jsonl"),
-            FileResult::cancelled("d.jsonl"),
+            FileResult::canceled("d.jsonl"),
         ];
         let counted = count_file_results(&results);
         assert_eq!(
@@ -622,7 +558,7 @@ mod tests {
                 counted.ok,
                 counted.failed,
                 counted.skipped,
-                counted.cancelled
+                counted.canceled
             ),
             (1, 1, 1, 1)
         );

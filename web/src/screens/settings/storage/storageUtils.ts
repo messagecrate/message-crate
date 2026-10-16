@@ -136,8 +136,8 @@ function toSummaryStatus(status: Schema["ImportStatus"]): ImportSummaryView["sta
       return "completed";
     case "completed_with_issues":
       return "completed_with_issues";
-    case "cancelled":
-      return "cancelled";
+    case "canceled":
+      return "canceled";
     case "running":
       return "running";
     case "failed":
@@ -162,8 +162,8 @@ export function importStatusLabel(status: Schema["ImportStatus"]): string {
       return "Completed with issues";
     case "failed":
       return "Failed";
-    case "cancelled":
-      return "Cancelled";
+    case "canceled":
+      return "Canceled";
     default:
       status satisfies never;
       return status;

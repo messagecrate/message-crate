@@ -35,6 +35,8 @@ docker rm message-crate
 docker pull bitrealm/message-crate:latest
 ```
 
+[Check the image](/docs/user/features/owner/run-with-docker/#check-the-image) shows that it is the one Message Crate's release built.
+
 The same command as the first time starts the new server on the same volume.
 
 ```bash title="Start the new server"
@@ -68,7 +70,7 @@ The tag has no `v` in front.
 ## Update the desktop app
 
 The installers are on the [latest release on GitHub](https://github.com/messagecrate/message-crate/releases/latest), under **Assets**.
-[Install the desktop app](/docs/user/try/install-the-desktop-app/) lists which file belongs to which computer.
+[Install the desktop app](/docs/user/try/install-the-desktop-app/) lists which file belongs to which computer, and [how to check a download](/docs/user/try/install-the-desktop-app/#check-the-download).
 
 A desktop app from a different release than the server still connects, and the server serves it.
 The Owner sees the difference on the account's **Profile** tab in [Owner Home](/docs/user/features/owner/owner-home/#profile), under **App**.
@@ -78,7 +80,7 @@ The Owner sees the difference on the account's **Profile** tab in [Owner Home](/
 Message Crate doesn't convert an old database to a new layout.
 A server whose database layout differs from the one in the volume rebuilds the database empty when it starts.
 
-How is a rebuild recognised?
+How is a rebuild recognized?
 
 - The browser shows **Create Owner**, as it did the first time.
 - **Schema fingerprint** under **Server Settings** shows a different number than before the update. The number is the same for every server with the same database layout.

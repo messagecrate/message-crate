@@ -67,7 +67,7 @@ pub fn format(
         };
         let output = OutputConfig::new(&output_dir, fmt);
 
-        let run_result = message_reexport::run(
+        let run_result = reexport::run(
             &context,
             &output,
             &[PathBuf::from(&input_dir)],

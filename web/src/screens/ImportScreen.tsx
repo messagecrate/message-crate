@@ -1,4 +1,9 @@
 import { useEffect, useReducer, useRef, useState } from "react";
+import {
+  useAccountProfile,
+  useFetchAccountProfile,
+  useUpdateAccountProfile,
+} from "../hooks/useAccountProfile";
 import { phoneNumbers, profileAddresses } from "../lib/account";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
 import { type IdentityType, identityOnProfile, parseSourceIdentities } from "../lib/backupIdentity";
@@ -27,23 +32,15 @@ import {
 } from "../lib/systemSettings";
 import { isTauri } from "../lib/tauriCheck";
 import { useTimeZone } from "../lib/timeZone";
-import {
-  useAccountProfile,
-  useFetchAccountProfile,
-  useUpdateAccountProfile,
-} from "../lib/useAccountProfile";
-import {
-  useAndroidSmsPathStats,
-  useImessagePathStats,
-  useWhatsappPathStats,
-} from "../lib/useBackupPathStats";
 import BackupIdentityList from "./import/BackupIdentityList";
 import BackupIdentityStopScreen from "./import/BackupIdentityStopScreen";
+import { useDeleteClosedRunDirectories } from "./import/closedRunDirectories";
 import type { ProfilePhones } from "./import/formSections/types";
 import { restoreFormFromSnapshot, snapshotSecret } from "./import/formSnapshot";
 import ImportFormFields from "./import/ImportFormFields";
 import ImportRunView from "./import/ImportRunView";
 import {
+  type ImportFormAction,
   type ImportPathField,
   importFormReducer,
   importJobValues,
@@ -63,6 +60,11 @@ import {
 } from "./import/resumeDecision";
 import type { DiscardOutcome } from "./import/run/finish";
 import { parseStoredStagingSummary } from "./import/run/stagingSummary";
+import {
+  useAndroidSmsPathStats,
+  useImessagePathStats,
+  useWhatsappPathStats,
+} from "./import/useBackupPathStats";
 import { useImportJob } from "./import/useImportJob";
 
 /** The account's phones before they are read, and for a source that does not ask for them. */
@@ -92,6 +94,7 @@ async function runDirectoryCheck(runDir: string): Promise<DirectoryCheck> {
 }
 
 export default function ImportScreen() {
+  useDeleteClosedRunDirectories();
   const fetchAccountProfile = useFetchAccountProfile();
   const cache = useRouteCache();
   const markAccountStale = useMarkAccountStale();
@@ -109,6 +112,7 @@ export default function ImportScreen() {
     mediaToolsMissing,
     mediaPartiallyRan,
     resumeError,
+    startError,
     reviewError,
     sourceIdentities,
     computingSummary,
@@ -121,6 +125,7 @@ export default function ImportScreen() {
     returnToForm,
     continueAfterIdentityStop,
     cancelIdentityStop,
+    formEdited,
     runDirDeleteFailure,
     discardRun,
     dismissRunDirDeleteFailure,
@@ -241,7 +246,7 @@ export default function ImportScreen() {
    */
   useEffect(() => {
     if (phase !== "form") return;
-    let cancelled = false;
+    let canceled = false;
     void (async () => {
       try {
         const run = await cache.fetch(keys.imports.running, (signal) => getActiveImportRun(signal));
@@ -261,7 +266,7 @@ export default function ImportScreen() {
           : checkSourceFingerprint(stored, null);
         // A resume or discard that started while this was in flight owns
         // the decision -- a stale answer must not put the panel back.
-        if (!cancelled && !resumingRef.current && !discardingRef.current) {
+        if (!canceled && !resumingRef.current && !discardingRef.current) {
           setResume(
             resumeDecisionFor({
               run,
@@ -273,15 +278,15 @@ export default function ImportScreen() {
         }
       } catch {
         // A server that cannot answer is not a reason to block the form.
-        if (!cancelled && !resumingRef.current && !discardingRef.current) setResume(NO_RESUME);
+        if (!canceled && !resumingRef.current && !discardingRef.current) setResume(NO_RESUME);
       } finally {
         // Only the first check decides what renders; a later one must not
         // blank the form while it runs.
-        if (!cancelled) setResumeChecked(true);
+        if (!canceled) setResumeChecked(true);
       }
     })();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [phase, cache]);
 
@@ -438,13 +443,12 @@ export default function ImportScreen() {
       return;
     }
     const wantsEmails = descriptor.asksOwnerEmails;
-    let cancelled = false;
+    let canceled = false;
     setProfilePhones((current) => ({ ...current, ready: false, error: false }));
     void (async () => {
       try {
         const profile = await fetchAccountProfile();
-        if (cancelled) return;
-        if (!profile) throw new Error("profile unavailable");
+        if (canceled) return;
         const phones = phoneNumbers(profile);
         setProfilePhones({ phones, ready: true, error: false });
         if (descriptor.asksWhatsappOwnerPhone) {
@@ -457,11 +461,11 @@ export default function ImportScreen() {
           ownerEmails: wantsEmails ? profile.emails.join(", ") : undefined,
         });
       } catch {
-        if (!cancelled) setProfilePhones({ phones: [], ready: true, error: true });
+        if (!canceled) setProfilePhones({ phones: [], ready: true, error: true });
       }
     })();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [source, fetchAccountProfile]);
 
@@ -493,7 +497,7 @@ export default function ImportScreen() {
     const gen = ++sourceChangeGenRef.current;
     lastMethodRef.current[importSourceFor(resolved).id] = resolved;
     const paths = rememberedPathsFor(resolved);
-    dispatch({ type: "source", source: resolved, paths });
+    editForm({ type: "source", source: resolved, paths });
     const loadedBackup = paths.backupPath;
 
     if (resolved !== "imessage-macos" || loadedBackup.trim() !== "" || !isTauri()) {
@@ -525,9 +529,19 @@ export default function ImportScreen() {
     })();
   }
 
+  /**
+   * Apply a change the person made on the form. A change to a value drops
+   * the last start's failure, which was about the values before it. A toggle
+   * only shows or hides part of the form, so the failure stays.
+   */
+  function editForm(action: ImportFormAction): void {
+    if (action.type !== "toggle") formEdited();
+    dispatch(action);
+  }
+
   /** Set a path field, and remember it for the source when the source keeps it. */
   const changePath = (field: ImportPathField, path: string) => {
-    dispatch({ type: "path", field, value: path });
+    editForm({ type: "path", field, value: path });
     if (!getRememberImporterPaths()) return;
     if (field === "backupPath") {
       setImporterPath(source, path);
@@ -547,7 +561,7 @@ export default function ImportScreen() {
       {phase === "form" && resumeChecked && resume.kind === "none" && (
         <ImportFormFields
           form={form}
-          dispatch={dispatch}
+          dispatch={editForm}
           onSourceChange={handleSourceChange}
           onPathChange={changePath}
           pathStats={pathStats}
@@ -557,6 +571,7 @@ export default function ImportScreen() {
           accountTimeZone={accountTimeZone}
           phoneCountries={phoneCountries}
           running={running}
+          startError={startError}
           onImport={(flushedPhones) =>
             void startImport(
               importJobValues(form, accountTimeZone, flushedPhones ?? form.ownerPhones),

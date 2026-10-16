@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # Full local check: everything CI runs on a pull request, in one command,
-# except, off Windows, the Windows-only server config tests.
+# except, off Windows, the Windows-only server config tests and the desktop
+# app's local-server tests, and the secret scan when gitleaks is not installed.
 #
 #   ./scripts/check-all.sh
 #
 # Stops on the first failure. Starts with ./scripts/check-pr.sh (format and
 # lint), then builds and tests the workspace and src-tauri, and runs the
-# license, Docker-context, version-lockstep and generated-API-type checks, cargo-deny
-# (advisories, licences and bans on the workspace, licences and bans on src-tauri), and
-# the web and docs test/build/audit steps. CI runs the same set in
-# parallel; this exists so nobody types nine commands by hand. Why the
-# split from check-pr.sh: docs/adr/0007-ci-is-the-only-gate.md.
+# license, Docker-context, secret-scan, version-lockstep and generated-API-type
+# checks, cargo-deny (advisories, licenses and bans on the workspace, licenses
+# and bans on src-tauri), and the web and docs test/build/audit steps. CI runs
+# the same set in parallel; this exists so nobody types nine commands by hand.
+# Why the split from check-pr.sh: docs/adr/0007-ci-is-the-only-gate.md.
 # Runs npm ci in web/ and docs/ only when that tree has no node_modules yet.
 set -euo pipefail
 
@@ -26,6 +27,13 @@ echo "==> license consistency"
 echo "==> the Dockerfile's build context and base image pins"
 "${SCRIPT_DIR}/check-docker-context.sh"
 
+echo "==> secret scan of the commits this branch adds (gitleaks)"
+if command -v gitleaks >/dev/null 2>&1; then
+  "${SCRIPT_DIR}/check-secrets.sh"
+else
+  echo "gitleaks not installed; skipping the secret scan (CI enforces it)" >&2
+fi
+
 echo "==> product version lockstep"
 "${SCRIPT_DIR}/check-version-lockstep.sh"
 
@@ -34,7 +42,7 @@ if cargo deny --version >/dev/null 2>&1; then
   cargo deny check advisories licenses bans
   cargo deny --manifest-path src-tauri/Cargo.toml --config deny.toml check licenses bans
 else
-  echo "cargo-deny not installed; skipping advisory and licence checks (CI enforces them)" >&2
+  echo "cargo-deny not installed; skipping advisory and license checks (CI enforces them)" >&2
 fi
 
 echo "==> cargo build --workspace"

@@ -4,7 +4,7 @@
 //! Calls are blocking so they can run on worker threads without an async
 //! runtime. The session type is [`message_crate_http::HttpSession`].
 //!
-//! The shapes are `message-crate-api-types`, the same definitions the server
+//! The shapes are `api-types`, the same definitions the server
 //! serializes from. This file used to mirror them by hand, and three defects
 //! shipped because the mirror and the server drifted apart with nothing to
 //! notice.
@@ -20,7 +20,7 @@ use sha2::{Digest, Sha256};
 
 use crate::part_file::write_asset;
 
-use message_crate_api_types::{CompleteExportStatus, ExportRun, ExportScope, Message, Page};
+use api_types::{CompleteExportStatus, ExportRun, ExportScope, Message, Page};
 
 pub use message_crate_http::HttpSession;
 
@@ -73,11 +73,39 @@ pub(crate) struct ExportMessagesArgs<'a> {
     pub offset: usize,
 }
 
+/// What the person reads when the server answers a page of the run with
+/// `409 Conflict`: the run is no longer running, because the server closed
+/// it. It does that when another Export of the account starts, and when no
+/// page of the run was read for an hour.
+pub const RUN_CANCELED_ON_SERVER: &str = "The Export was canceled because another Export of this account started, or because the server heard nothing from it for an hour. Start the Export again.";
+
+/// The error for a page the server refused because the run is no longer
+/// running. It is context over the server's [`HttpError`], so its text is
+/// [`RUN_CANCELED_ON_SERVER`] and the retry rules still read the `409` as
+/// permanent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RunCanceledOnServer;
+
+impl std::fmt::Display for RunCanceledOnServer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(RUN_CANCELED_ON_SERVER)
+    }
+}
+
+/// Whether `error` is a page the server refused because it closed the run
+/// ([`RunCanceledOnServer`]), under any context added to it since.
+#[must_use]
+pub fn is_run_canceled_on_server(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<RunCanceledOnServer>().is_some()
+}
+
 /// Fetch one `Page<Message>` from `GET /v1/exports/{id}/messages`.
 ///
 /// # Errors
 ///
-/// Returns an error when the request fails or the body is not valid JSON.
+/// Returns an error when the request fails or the body is not valid JSON,
+/// and [`RunCanceledOnServer`] when the server answers `409 Conflict`
+/// because the run is no longer running.
 pub fn export_messages(http: &HttpSession, args: ExportMessagesArgs<'_>) -> Result<Page<Message>> {
     let ExportMessagesArgs {
         base_url,
@@ -97,7 +125,11 @@ pub fn export_messages(http: &HttpSession, args: ExportMessagesArgs<'_>) -> Resu
 
     let status = response.status();
     let body = response.text().unwrap_or_default();
-    ok_json(&what, status, &body)
+    let page = ok_json(&what, status, &body);
+    if status == reqwest::StatusCode::CONFLICT {
+        return page.context(RunCanceledOnServer);
+    }
+    page
 }
 
 /// How an Export ends its run on the server: through `complete` with how
@@ -388,6 +420,50 @@ mod tests {
         );
     }
 
+    /// A page the server refuses with `409 Conflict` says the Export was
+    /// canceled, keeps the server's sentence beneath it, and is not retried:
+    /// the run is closed on the server and stays closed (#2080).
+    #[test]
+    fn a_page_of_a_closed_run_says_the_export_was_canceled() {
+        let server = httpmock::MockServer::start();
+        server.mock(|when, then| {
+            when.method("GET").path("/v1/exports/7/messages");
+            then.status(409)
+                .header("content-type", "application/problem+json")
+                .json_body(serde_json::json!({
+                    "type": "https://messagecrate.app/docs/developer/reference/errors/state-conflict",
+                    "title": "State conflict",
+                    "status": 409,
+                    "detail": "export 7 is not running (status=canceled)"
+                }));
+        });
+        let http = HttpSession::new().unwrap();
+        let err = export_messages(
+            &http,
+            ExportMessagesArgs {
+                base_url: &server.base_url(),
+                token: "mc_test",
+                export_id: 7,
+                limit: 2,
+                offset: 0,
+            },
+        )
+        .expect_err("a 409 is an error");
+        assert_eq!(err.to_string(), RUN_CANCELED_ON_SERVER);
+        assert_eq!(
+            format!("{err:#}"),
+            format!(
+                "{RUN_CANCELED_ON_SERVER}: Export Run 7 page failed (HTTP 409 Conflict): \
+                 export 7 is not running (status=canceled)"
+            )
+        );
+        assert_eq!(
+            message_crate_http::classify_retry(&err),
+            message_crate_http::RetryKind::Permanent
+        );
+        assert!(is_run_canceled_on_server(&err.context("read a page")));
+    }
+
     /// A cancel goes to the cancel route and a refusal names it a cancellation.
     #[test]
     fn a_refused_cancel_names_the_cancellation() {
@@ -448,13 +524,13 @@ mod tests {
         .unwrap();
 
         failed.assert();
-        assert_eq!(run.status, message_crate_api_types::ExportStatus::Failed);
+        assert_eq!(run.status, api_types::ExportStatus::Failed);
     }
 
     #[test]
     fn the_create_body_carries_the_scope_as_given_and_the_tool() {
         let scope = ExportScope::Query {
-            list: message_crate_api_types::ExportQueryList::Conversations,
+            list: api_types::ExportQueryList::Conversations,
             q: "from:me".into(),
         };
         let body = serde_json::to_value(CreateExportBody {

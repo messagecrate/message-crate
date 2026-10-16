@@ -35,7 +35,7 @@ export type ImportSummaryView = {
    * Pause or by a failure: the run stays open at its Upload and resumes
    * later. The server never records it, so only the run on screen has it.
    */
-  status: "completed" | "completed_with_issues" | "failed" | "cancelled" | "paused" | "running";
+  status: "completed" | "completed_with_issues" | "failed" | "canceled" | "paused" | "running";
   filesTotal?: number;
   filesSucceeded?: number;
   filesFailed?: number;
@@ -86,7 +86,7 @@ export function completionTextFor(
   if (status === "completed") return "Import complete";
   if (status === "completed_with_issues") return "Import completed with issues";
   if (status === "failed") return "Import failed";
-  if (status === "cancelled") return "Import cancelled";
+  if (status === "canceled") return "Import canceled";
   if (status === "paused") return "Import paused";
   return undefined;
 }

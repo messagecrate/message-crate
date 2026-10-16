@@ -5,7 +5,7 @@ import { startTimeLimit } from "./timeLimit";
 export const HEALTH_BACKOFF_CAP_MS = 30_000;
 export const HEALTH_SUCCESS_RECHECK_MS = 30_000;
 export const HEALTH_URL_DEBOUNCE_MS = 400;
-/** Give up on a single /health request so a black-holed host cannot leave the light grey. */
+/** Give up on a single /health request so a black-holed host cannot leave the light gray. */
 export const HEALTH_PROBE_TIMEOUT_MS = 8_000;
 /**
  * How long `checkServerHealthWithRetry` waits after a server's error before

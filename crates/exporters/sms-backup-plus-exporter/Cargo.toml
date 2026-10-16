@@ -9,17 +9,16 @@ autotests = false
 android-fields = { path = "../../libs/android-fields" }
 anyhow = { workspace = true }
 chrono = { workspace = true }
-csv = { workspace = true }
 file-io = { workspace = true }
 hex = { workspace = true }
 mail = { path = "../../libs/mail" }
 mail-builder = { workspace = true }
 mailparse = { workspace = true }
 message-crate-core = { path = "../../core/message-crate-core" }
-message-ir = { path = "../../libs/ir" }
+ir = { path = "../../libs/ir" }
 mms-parts = { path = "../../libs/mms-parts" }
-message-ir-format = { path = "../../libs/ir-format" }
-message-staging = { path = "../../libs/staging" }
+ir-format = { path = "../../libs/ir-format" }
+staging = { path = "../../libs/staging" }
 media = { path = "../../libs/media" }
 phone = { path = "../../libs/phone" }
 rayon = "1.12.0"
@@ -29,7 +28,7 @@ sha2 = { workspace = true }
 
 [dev-dependencies]
 message-crate-core = { path = "../../core/message-crate-core", features = ["testutil"] }
-message-ir = { path = "../../libs/ir", features = ["testutil"] }
+ir = { path = "../../libs/ir", features = ["testutil"] }
 tempfile = { workspace = true }
 
 [lints]

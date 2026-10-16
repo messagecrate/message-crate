@@ -11,7 +11,8 @@
 //! [`DesktopJobErrorEvent`].
 
 use message_crate_core::{
-    Cancelled, IssueSink, LogSink, ProgressEvent, ProgressSink, RunIssue, RunIssueKind, WriteStatus,
+    Canceled, IssueSink, LogSink, ProgressEvent, ProgressSink, RunIssue, RunIssueKind,
+    RunIssueStep, WriteStatus,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -37,15 +38,15 @@ pub const FINISHED: &str = "desktop-job:finished";
 pub const ERROR: &str = "desktop-job:error";
 
 /// Send one event to the UI. An emit fails only when no window is left to
-/// receive it; the job carries on, and the miss goes to the process log so it
-/// is not silent.
+/// receive it; the job carries on, and the miss goes to the desktop app's log
+/// ([`crate::app_log`]) so it is not silent.
 pub fn emit(app: &AppHandle, event: &str, payload: impl Serialize + Clone) {
     if let Err(error) = app.emit(event, payload) {
-        eprintln!("{}", undelivered_line(event, &error));
+        crate::app_log::warn(&undelivered_line(event, &error));
     }
 }
 
-/// The process log's line for an event no window received.
+/// The desktop app's log's line for an event no window received.
 fn undelivered_line(event: &str, error: &dyn std::fmt::Display) -> String {
     format!("The desktop app could not send the {event} event to its window: {error}")
 }
@@ -168,15 +169,15 @@ impl ImportProgressEvent {
 }
 
 /// The staging summary's count of attachments, on `check`.
-impl From<message_staging::SummaryProgress> for ImportProgressEvent {
-    fn from(progress: message_staging::SummaryProgress) -> Self {
+impl From<staging::SummaryProgress> for ImportProgressEvent {
+    fn from(progress: staging::SummaryProgress) -> Self {
         Self::counts(Step::Check, progress.done, progress.total)
     }
 }
 
 /// The Media Stage's count of files, on `media`.
-impl From<message_staging::TranscodeProgress> for ImportProgressEvent {
-    fn from(progress: message_staging::TranscodeProgress) -> Self {
+impl From<staging::TranscodeProgress> for ImportProgressEvent {
+    fn from(progress: staging::TranscodeProgress) -> Self {
         Self::counts(Step::Media, progress.done, progress.total)
     }
 }
@@ -213,13 +214,13 @@ impl From<ProgressEvent> for WindowEvent {
 }
 
 /// One row of the Import Run's issues, from an exporter's or the Media
-/// stage's [`RunIssue`], or from the Upload.
+/// Stage's [`RunIssue`], or from the Upload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImportIssueEvent {
     /// What the row is, sent as its lowercase word.
     pub kind: RunIssueKind,
-    /// The step that raised it, such as `attachments`.
-    pub step: String,
+    /// The step that raised it.
+    pub step: RunIssueStep,
     /// What was affected.
     pub item: String,
     /// Why, in one sentence.
@@ -236,7 +237,7 @@ impl From<&RunIssue> for ImportIssueEvent {
     fn from(issue: &RunIssue) -> Self {
         Self {
             kind: issue.kind,
-            step: issue.step.clone(),
+            step: issue.step,
             item: issue.item.clone(),
             reason: issue.reason.clone(),
             conversation: issue.conversation.clone(),
@@ -258,7 +259,7 @@ pub struct ImportFileDoneEvent {
 
 impl ImportFileDoneEvent {
     /// The Upload's word for what it did with `file`.
-    pub(crate) fn new(file: String, status: message_crate_import::FileStatus) -> Self {
+    pub(crate) fn new(file: String, status: import::FileStatus) -> Self {
         Self {
             file,
             status: status.as_str().into(),
@@ -323,7 +324,7 @@ const NOT_FOUND_TEXT: &str =
 /// alone carries it, and the window says it in its own words.
 impl From<anyhow::Error> for DesktopJobErrorEvent {
     fn from(err: anyhow::Error) -> Self {
-        let canceled = err.chain().any(|e| e.is::<Cancelled>());
+        let canceled = err.chain().any(|e| e.is::<Canceled>());
         Self {
             detail: format!("{err:#}"),
             user_message: (!canceled)
@@ -336,12 +337,16 @@ impl From<anyhow::Error> for DesktopJobErrorEvent {
 }
 
 /// The sentence for a failure the person can act on, found by its type in
-/// `err`'s chain: a session the server refused, or a full disk, a refused
-/// file or directory, or a missing one. `None` for anything else, so the
-/// window shows the chain when nothing better is known.
+/// `err`'s chain: a session the server refused, an Export Run the server
+/// closed before every page was read, or a full disk, a refused file or
+/// directory, or a missing one. `None` for anything else, so the window
+/// shows the chain when nothing better is known.
 fn user_message(err: &anyhow::Error) -> Option<&'static str> {
     if message_crate_http::is_session_refused(err) {
         return Some(message_crate_http::SESSION_REFUSED);
+    }
+    if export::is_run_canceled_on_server(err) {
+        return Some(export::RUN_CANCELED_ON_SERVER);
     }
     let io = err
         .chain()
@@ -398,7 +403,7 @@ mod tests {
     #[test]
     fn a_cancel_under_context_is_still_a_cancel() {
         let event = DesktopJobErrorEvent::from(
-            anyhow::Error::from(Cancelled).context("write a conversation"),
+            anyhow::Error::from(Canceled).context("write a conversation"),
         );
         assert!(event.canceled);
         assert_eq!(event.user_message, None);
@@ -440,6 +445,12 @@ mod tests {
                 anyhow::Error::from(message_crate_http::session_refused("Upload a batch"))
                     .context("upload chat.jsonl"),
                 message_crate_http::SESSION_REFUSED,
+            ),
+            (
+                anyhow::anyhow!("Export Run 7 page failed (HTTP 409 Conflict)")
+                    .context(export::RunCanceledOnServer)
+                    .context("export the account"),
+                export::RUN_CANCELED_ON_SERVER,
             ),
         ];
         for (error, sentence) in cases {
@@ -577,16 +588,18 @@ mod tests {
     #[test]
     fn the_staging_summary_media_stage_and_upload_count_on_their_steps() {
         assert_eq!(
-            serde_json::to_value(ImportProgressEvent::from(
-                message_staging::SummaryProgress { done: 2, total: 9 }
-            ))
+            serde_json::to_value(ImportProgressEvent::from(staging::SummaryProgress {
+                done: 2,
+                total: 9
+            }))
             .unwrap(),
             serde_json::json!({ "step": "check", "done": 2, "total": 9 })
         );
         assert_eq!(
-            serde_json::to_value(ImportProgressEvent::from(
-                message_staging::TranscodeProgress { done: 1, total: 4 }
-            ))
+            serde_json::to_value(ImportProgressEvent::from(staging::TranscodeProgress {
+                done: 1,
+                total: 4
+            }))
             .unwrap(),
             serde_json::json!({ "step": "media", "done": 1, "total": 4 })
         );
@@ -676,7 +689,7 @@ mod tests {
     fn a_staging_row_keeps_its_conversation() {
         let json = serde_json::to_value(ImportIssueEvent::from(&RunIssue {
             kind: message_crate_core::RunIssueKind::Error,
-            step: "attachments".into(),
+            step: RunIssueStep::Attachments,
             item: "/backup/IMG_0001.MOV".into(),
             reason: "could not be decrypted: No space left on device".into(),
             conversation: Some("c.jsonl".into()),
@@ -691,7 +704,7 @@ mod tests {
     fn a_run_issue_is_sent_as_an_import_issue() {
         let json = serde_json::to_value(ImportIssueEvent::from(&RunIssue {
             kind: message_crate_core::RunIssueKind::Error,
-            step: "attachments".into(),
+            step: RunIssueStep::Attachments,
             item: "/backup/IMG_0001.MOV".into(),
             reason: "could not be decrypted: No space left on device".into(),
             conversation: None,

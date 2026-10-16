@@ -4,16 +4,16 @@
 use crate::read::{RawRow, SourceKind, discover_csv_files, parse_csv_file};
 use anyhow::Result;
 use chrono::DateTime;
-use message_crate_core::{ConvertRun, ExportReport, prepare_outputs, project_conversation};
-use message_ir::{
+use ir::{
     Attachment, ConversationDocument, ConversationKey, ConversationType, ExportMeta, IdentityType,
     NAMELESS_CHAT_ID, Participant, PendingConversation, PendingMessage, ProjectionHooks, Transport,
     VendorFields, orphaned_chat_id,
 };
-use message_staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
+use message_crate_core::{ConvertRun, ExportReport, prepare_outputs, project_conversation};
 use phone::Handle;
 use serde_json::{Map, json};
 use sha2::{Digest, Sha256};
+use staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -230,15 +230,15 @@ impl Ingest {
                 by_label.entry(label).or_default().push(row);
             }
         }
-        let labelled: HashMap<String, Conversation> = by_label
+        let labeled: HashMap<String, Conversation> = by_label
             .into_iter()
-            .map(|(label, rows)| (label.to_string(), labelled_conversation(&rows, label)))
+            .map(|(label, rows)| (label.to_string(), labeled_conversation(&rows, label)))
             .collect();
         // How many rows alike in every column went to "Orphaned · Unknown
         // person" before this one ([`row_digest`]).
         let mut alike: HashMap<[u8; 32], usize> = HashMap::new();
         for row in rows {
-            match conversation_label(&row).and_then(|label| labelled.get(label)) {
+            match conversation_label(&row).and_then(|label| labeled.get(label)) {
                 Some(conversation) => self.ingest_row(path, row, conversation, None),
                 None if resolve_is_from_me(&row) => {
                     let earlier = alike.entry(row_digest(&row)).or_default();
@@ -288,7 +288,7 @@ impl Ingest {
 
     /// Add one row of the CSV at `path` to its conversation, or count why it
     /// was dropped. `vendor_key` tells apart rows the export cannot: two
-    /// copies with different keys are two messages ([`message_ir::one_copy_per_message`]).
+    /// copies with different keys are two messages ([`ir::one_copy_per_message`]).
     fn ingest_row(
         &mut self,
         path: &Path,
@@ -341,8 +341,7 @@ impl Ingest {
         pending.conversation.messages.push(PendingMessage {
             sort_key: secs,
             is_from_me,
-            sender_identity,
-            sender_display_name: (!sender_display_name.is_empty()).then_some(sender_display_name),
+            sender: ir::Sender::new(Some(sender_identity), Some(sender_display_name)),
             text: row.text,
             attachments: Vec::new(),
             extra,
@@ -367,7 +366,7 @@ fn conversation_label(row: &RawRow) -> Option<&str> {
 /// person did, it is one-to-one with them, and where nobody did, with the
 /// person the label names: as for iMazing, only a second person makes a
 /// group.
-fn labelled_conversation(rows: &[&RawRow], label: &str) -> Conversation {
+fn labeled_conversation(rows: &[&RawRow], label: &str) -> Conversation {
     match other_parties(rows).as_slice() {
         [] => one_to_one(None, Some(label)),
         [one] => one_to_one(Some(one), Some(label)),
@@ -429,7 +428,7 @@ fn member(party: &str) -> Participant {
 /// the person the `Conversation` value names (`label`).
 ///
 /// It is keyed by an address when either gives one, the sender's first. A
-/// chat labelled with a person's name whose rows carry that person's number
+/// chat labeled with a person's name whose rows carry that person's number
 /// is keyed by the number the source recorded. Only when neither is an
 /// address is it keyed by the name, the label's first: the exporter records
 /// the name and no address, and the server resolves it against contacts on
@@ -576,7 +575,7 @@ fn parse_timestamp(raw: &str) -> Option<i64> {
     None
 }
 
-/// OpenExtract deltas of the shared [`message_ir::pending_to_document`] projection.
+/// OpenExtract deltas of the shared [`ir::project_pending`] projection.
 struct OpenExtractProjection<'a> {
     export: &'a ExportMeta,
     /// Every message's Backup Date.

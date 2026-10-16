@@ -3,11 +3,11 @@
 //!
 //! Staging writes the run's [`TranscodeOptions`] (the attachment mode, the
 //! compress options and the attachment size limit) beside the export
-//! sentinel. The Staging Review's summary, the Media stage and Upload read
+//! sentinel. The Staging Review's summary, the Media Stage and Upload read
 //! them back from the directory instead of being handed the form's fields
 //! again, so no stage after Staging can disagree with it about what the run
 //! asked for. The summary carries the mode on to the screen, which decides
-//! from it whether the run has a Media stage.
+//! from it whether the run has a Media Stage.
 
 use std::path::Path;
 

@@ -1,9 +1,9 @@
 use super::*;
+use ir::TimePrecision;
 use message_crate_core::{
     AppleConfig, OutputFormat,
     testutil::{TestRun, names_in},
 };
-use message_ir::TimePrecision;
 use std::{fs, path::Path};
 
 fn apple_cfg(input: &Path, apple: AppleConfig) -> TestRun<AppleConfig> {
@@ -311,7 +311,7 @@ fn rows_the_program_skipped_are_counted_in_the_run_result() {
 fn cancel_stops_a_run_whose_program_has_gone_quiet() {
     use imessage_reader_protocol::PROTOCOL_VERSION;
     use ios_backup::testutil::{fake_helper, source_line};
-    use message_crate_core::Cancelled;
+    use message_crate_core::Canceled;
     use std::sync::{Arc, atomic::Ordering};
 
     let dir = tempfile::tempdir().unwrap();
@@ -340,7 +340,7 @@ fn cancel_stops_a_run_whose_program_has_gone_quiet() {
         Helper::spawn_at(&program, request, log, progress)
     })
     .unwrap_err();
-    assert!(err.downcast_ref::<Cancelled>().is_some(), "{err:#}");
+    assert!(err.downcast_ref::<Canceled>().is_some(), "{err:#}");
 }
 
 #[cfg(unix)]
@@ -398,9 +398,11 @@ fn one_message_script(attachments: Vec<imessage_reader_protocol::Attachment>) ->
             outgoing: false,
             service: "iMessage".into(),
             message_kind: "imessage".into(),
-            sender_identity: Some("+15555550122".into()),
-            sender_display_name: None,
-            sender_country: None,
+            sender: Some(imessage_reader_protocol::Sender {
+                identity: "+15555550122".into(),
+                display_name: "+15555550122".into(),
+                country: None,
+            }),
             subject: None,
             text: String::new(),
             owner_identity: "+15555550100".into(),
@@ -475,7 +477,7 @@ fn run_one_message(
 #[test]
 fn inline_and_missing_attachments_reach_a_file_backed_export() {
     use imessage_reader_protocol::AttachmentSource;
-    use message_ir_format::read_conversation_json;
+    use ir_format::read_conversation_json;
 
     const SVG: &str = "<svg></svg>";
     let dir = tempfile::tempdir().unwrap();
@@ -562,9 +564,11 @@ fn a_jsonl_run_reports_its_conversations_and_messages() {
             outgoing: false,
             service: "iMessage".into(),
             message_kind: "imessage".into(),
-            sender_identity: Some("+15555550122".into()),
-            sender_display_name: None,
-            sender_country: None,
+            sender: Some(imessage_reader_protocol::Sender {
+                identity: "+15555550122".into(),
+                display_name: "+15555550122".into(),
+                country: None,
+            }),
             subject: None,
             text: "hello".into(),
             owner_identity: "+15555550100".into(),
@@ -651,9 +655,11 @@ fn encrypted_export_script(dir: &Path, video: &str, photo: &str) -> String {
             outgoing: false,
             service: "iMessage".into(),
             message_kind: "imessage".into(),
-            sender_identity: Some("+15555550122".into()),
-            sender_display_name: None,
-            sender_country: None,
+            sender: Some(imessage_reader_protocol::Sender {
+                identity: "+15555550122".into(),
+                display_name: "+15555550122".into(),
+                country: None,
+            }),
             subject: None,
             text: String::new(),
             owner_identity: "+15555550100".into(),
@@ -770,7 +776,7 @@ fn an_attachment_that_fails_to_decrypt_is_counted_apart_from_missing_ones() {
         *issues.lock().unwrap(),
         [message_crate_core::RunIssue {
             kind: message_crate_core::RunIssueKind::Error,
-            step: "attachments".into(),
+            step: message_crate_core::RunIssueStep::Attachments,
             item: "/backup/IMG_0001.MOV".into(),
             reason: "This attachment could not be decrypted: write the decrypted file: No space \
                      left on device"

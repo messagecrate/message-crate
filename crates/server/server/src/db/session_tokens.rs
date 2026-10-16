@@ -2,8 +2,8 @@
 //! Opening and ending a Session writes its entries in the Audit Trail.
 
 use anyhow::{Context, Result, bail};
+pub use api_types::AppKind;
 use chrono::{DateTime, Utc};
-pub use message_crate_api_types::AppKind;
 use rand::TryRng;
 use sqlx::SqliteConnection;
 
@@ -12,8 +12,31 @@ use crate::db::unix_secs;
 
 const TOKEN_ALPHANUM: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
-/// Default GUI session lifetime (30 days).
-pub const SESSION_TTL_SECS: u64 = 30 * 24 * 60 * 60;
+/// How long a Session lasts unused (7 days). A login sets its expiry this
+/// far ahead, and each use moves it this far ahead again, up to
+/// [`SESSION_MAX_SECS`] after the login.
+pub const SESSION_IDLE_SECS: u64 = 7 * 24 * 60 * 60;
+
+/// The longest a Session lasts however much it is used (30 days), counted
+/// from the login, or from the password change that renewed it.
+pub const SESSION_MAX_SECS: u64 = 30 * 24 * 60 * 60;
+
+/// The least a use moves a Session's expiry before the move is written (1
+/// hour), so a Session in use writes at most once an hour, not on every
+/// request.
+const SESSION_EXTEND_STEP_SECS: u64 = 60 * 60;
+
+/// The expiry a Session made at `created_at`, expiring at `expires_at`, moves
+/// to when it is used at `now`: the earlier of `now` plus
+/// [`SESSION_IDLE_SECS`] and `created_at` plus [`SESSION_MAX_SECS`]. `None`
+/// when that is less than [`SESSION_EXTEND_STEP_SECS`] later than
+/// `expires_at`, so nothing is written. All three are Unix seconds.
+fn extended_expiry(created_at: u64, expires_at: u64, now: u64) -> Option<u64> {
+    let next = now
+        .saturating_add(SESSION_IDLE_SECS)
+        .min(created_at.saturating_add(SESSION_MAX_SECS));
+    (next >= expires_at.saturating_add(SESSION_EXTEND_STEP_SECS)).then_some(next)
+}
 
 /// Generate a new GUI session token (`mc-user-` + 32 alphanumeric characters).
 ///
@@ -123,10 +146,30 @@ pub struct Session {
     pub account_id: i64,
     /// `None` until a request names its app.
     pub app: Option<ConnectingApp>,
+    /// The move of its expiry the lookup that found it made due, for
+    /// [`move_session_expiry`] to write (`auth::ExpiryMoves` writes it apart
+    /// from the request). `None` when the move would be less
+    /// than [`SESSION_EXTEND_STEP_SECS`].
+    pub expiry_move: Option<ExpiryMove>,
+}
+
+/// The row `lookup_session` reads.
+#[derive(sqlx::FromRow)]
+struct SessionRow {
+    account_id: i64,
+    /// Unix seconds, as text.
+    created_at: String,
+    /// Unix seconds, as text.
+    expires_at: String,
+    app_kind: Option<String>,
+    app_build: Option<String>,
+    login_entry_id: Option<i64>,
 }
 
 /// Look up the session this Bearer names (by hash) that is live at `now`.
-/// Expired rows are removed.
+/// Expired rows are removed. The session found carries the move of its
+/// expiry this use is due, if any ([`Session::expiry_move`]); the lookup
+/// writes nothing for it.
 ///
 /// # Errors
 ///
@@ -137,30 +180,90 @@ pub async fn lookup_session(
     now: DateTime<Utc>,
 ) -> Result<Option<Session>> {
     let token_hash = hash_api_token(token);
-    let found: Option<(i64, String, Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT account_id, expires_at, app_kind, app_build \
+    let found: Option<SessionRow> = sqlx::query_as(
+        "SELECT account_id, created_at, expires_at, app_kind, app_build, login_entry_id \
          FROM account_session_tokens WHERE token_hash = $1",
     )
     .bind(token_hash.as_str())
     .fetch_optional(&mut *conn)
     .await
     .context("look up the Session a token names")?;
-    let Some((account_id, expires_at, app_kind, app_build)) = found else {
+    let Some(row) = found else {
         return Ok(None);
     };
     let now = unix_secs(now);
     // An `expires_at` that does not parse counts as expired.
-    if !expires_at.parse::<u64>().is_ok_and(|expires| expires > now) {
+    let Some(expires_at) = row
+        .expires_at
+        .parse::<u64>()
+        .ok()
+        .filter(|&expires| expires > now)
+    else {
         let _ = sqlx::query("DELETE FROM account_session_tokens WHERE token_hash = $1")
             .bind(token_hash.as_str())
             .execute(&mut *conn)
             .await;
         return Ok(None);
-    }
+    };
+    // A `created_at` that does not parse leaves the expiry where it is.
+    let expiry_move = row
+        .created_at
+        .parse::<u64>()
+        .ok()
+        .and_then(|created| extended_expiry(created, expires_at, now))
+        .map(|expires_at| ExpiryMove {
+            token_hash,
+            login_entry_id: row.login_entry_id,
+            expires_at,
+        });
     Ok(Some(Session {
-        account_id,
-        app: ConnectingApp::from_columns(app_kind, app_build),
+        account_id: row.account_id,
+        app: ConnectingApp::from_columns(row.app_kind, row.app_build),
+        expiry_move,
     }))
+}
+
+/// A move of a Session's expiry that a use made due: the Session, by the
+/// hash of its token, its `logged_in` entry, and the new expiry in Unix
+/// seconds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpiryMove {
+    token_hash: String,
+    login_entry_id: Option<i64>,
+    expires_at: u64,
+}
+
+/// Write `expiry_move`: the Session's new expiry, and the same expiry for
+/// the Audit Trail under its `logged_in` entry, when a login made it. Both
+/// writes happen or neither does. A Session ended or replaced since the
+/// lookup matches no row, and its `logged_in` entry already has the entry
+/// that ended it, so the Audit Trail reads nothing from the record.
+///
+/// # Errors
+///
+/// Returns an error when a write fails, including `SQLITE_BUSY` once the
+/// busy timeout runs out.
+pub async fn move_session_expiry(
+    conn: &mut SqliteConnection,
+    expiry_move: &ExpiryMove,
+) -> Result<()> {
+    let mut tx = crate::db::begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
+    sqlx::query("UPDATE account_session_tokens SET expires_at = $1 WHERE token_hash = $2")
+        .bind(expiry_move.expires_at.to_string())
+        .bind(expiry_move.token_hash.as_str())
+        .execute(&mut *tx)
+        .await
+        .context("move the Session's expiry")?;
+    if let Some(login_entry_id) = expiry_move.login_entry_id {
+        audit_trail::record_session_extended(&mut tx, login_entry_id, expiry_move.expires_at)
+            .await?;
+    }
+    tx.commit()
+        .await
+        .context("commit the Session's new expiry")?;
+    Ok(())
 }
 
 /// The hash of `account_id`'s Session token, or `None` when the account
@@ -261,7 +364,7 @@ pub async fn rotate_account_session_token(
     let SessionTimes {
         created_at,
         expires_at: expires,
-    } = SessionTimes::at(now, SESSION_TTL_SECS);
+    } = SessionTimes::at(now, SESSION_IDLE_SECS);
     sqlx::query(
         r"
         INSERT INTO account_session_tokens (account_id, token_hash, created_at, expires_at)
@@ -313,7 +416,7 @@ pub(crate) async fn live_login_entry(
 /// records that app from the start. Called by every route that opens a
 /// Session for a person: login, claiming the Message Crate, and registering.
 /// The Session and the entries it writes are stamped `now`, and the Session
-/// expires [`SESSION_TTL_SECS`] after it.
+/// expires [`SESSION_IDLE_SECS`] after it unless it is used.
 ///
 /// # Errors
 ///
@@ -334,7 +437,7 @@ pub async fn open_session(
     let SessionTimes {
         created_at,
         expires_at: expires,
-    } = SessionTimes::at(now, SESSION_TTL_SECS);
+    } = SessionTimes::at(now, SESSION_IDLE_SECS);
     let login_entry_id =
         audit_trail::record_login(conn, (account_id, username), app, expires, now).await?;
     sqlx::query(
@@ -377,7 +480,7 @@ pub async fn insert_account_session_token(
     account_id: i64,
     now: DateTime<Utc>,
 ) -> Result<String> {
-    insert_account_session_token_with_ttl(conn, account_id, SESSION_TTL_SECS, now).await
+    insert_account_session_token_with_ttl(conn, account_id, SESSION_IDLE_SECS, now).await
 }
 
 /// Create a session token made at `now` that lasts `ttl_secs`, and return
@@ -492,6 +595,22 @@ pub async fn revoke_account_sessions(
         .await
         .context("delete the account's Session")?;
     Ok(())
+}
+
+/// Look up the session `token` names at `now` and write the move of its
+/// expiry the lookup made due, as a request and the move it spawns do, for
+/// a test to wait on both.
+#[cfg(test)]
+pub(crate) async fn use_session_at(
+    conn: &mut SqliteConnection,
+    token: &str,
+    now: DateTime<Utc>,
+) -> Result<Option<Session>> {
+    let session = lookup_session(conn, token, now).await?;
+    if let Some(expiry_move) = session.as_ref().and_then(|s| s.expiry_move.as_ref()) {
+        move_session_expiry(conn, expiry_move).await?;
+    }
+    Ok(session)
 }
 
 #[cfg(test)]
@@ -663,11 +782,11 @@ mod tests {
         );
     }
 
-    /// A login is good for thirty days from the instant it was made, and the
-    /// row's `created_at` is that instant: one login reads one clock.
+    /// A login is good for 7 days unused from the instant it was made,
+    /// and the row's `created_at` is that instant: one login reads one clock.
     #[tokio::test]
-    async fn a_session_expires_thirty_days_after_login() {
-        const THIRTY_DAYS_SECS: u64 = 2_592_000;
+    async fn a_session_expires_seven_days_after_login() {
+        const SEVEN_DAYS_SECS: u64 = 604_800;
         let (pool, _dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
@@ -683,13 +802,13 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(created, login.to_string());
-        assert_eq!(stored_expiry(&mut conn).await, login + THIRTY_DAYS_SECS);
+        assert_eq!(stored_expiry(&mut conn).await, login + SEVEN_DAYS_SECS);
     }
 
-    /// A password change renews the Session for thirty days from the
-    /// instant of the change.
+    /// A password change renews the Session for 7 days from the instant
+    /// of the change.
     #[tokio::test]
-    async fn a_rotated_session_expires_thirty_days_after_the_rotation() {
+    async fn a_rotated_session_expires_seven_days_after_the_rotation() {
         let (pool, _dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
@@ -700,8 +819,177 @@ mod tests {
         let (_token, expires) = rotate_account_session_token(&mut conn, 7, later)
             .await
             .unwrap();
-        assert_eq!(expires, unix_secs(later) + SESSION_TTL_SECS);
+        assert_eq!(expires, unix_secs(later) + SESSION_IDLE_SECS);
         assert_eq!(stored_expiry(&mut conn).await, expires);
+    }
+
+    /// A use moves the expiry 7 days past the use, stopping at 30
+    /// days after the login, and only by a step of an hour or more.
+    #[test]
+    fn a_use_moves_the_expiry_by_an_hour_or_more_and_never_past_the_cap() {
+        const DAY: u64 = 86_400;
+        let login = 1_000_000;
+        let first_expiry = login + 7 * DAY;
+        assert_eq!(
+            extended_expiry(login, first_expiry, login + 3 * DAY),
+            Some(login + 10 * DAY),
+            "a use 3 days in lasts 7 days from then"
+        );
+        assert_eq!(
+            extended_expiry(login, first_expiry, login + 3599),
+            None,
+            "a move of less than an hour is not written"
+        );
+        assert_eq!(
+            extended_expiry(login, first_expiry, login + 3600),
+            Some(first_expiry + 3600),
+            "a move of an hour is written"
+        );
+        assert_eq!(
+            extended_expiry(login, login + 28 * DAY, login + 27 * DAY),
+            Some(login + 30 * DAY),
+            "the move stops at 30 days after the login"
+        );
+        assert_eq!(
+            extended_expiry(login, login + 30 * DAY, login + 29 * DAY),
+            None,
+            "a Session at its cap does not move"
+        );
+    }
+
+    /// A Session used before it runs out lasts 7 days from that use, and
+    /// the Audit Trail is told the new expiry. A use within the hour after
+    /// writes nothing.
+    #[tokio::test]
+    async fn using_a_session_moves_its_expiry_seven_days_past_the_use() {
+        let (pool, _dir) = crate::test_support::schema_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
+        let token = open_session(&mut conn, 7, "alice", None, fixed_instant())
+            .await
+            .unwrap();
+        let used = fixed_instant() + chrono::Duration::days(6);
+        assert!(
+            use_session_at(&mut conn, &token, used)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        let moved = unix_secs(used) + SESSION_IDLE_SECS;
+        assert_eq!(stored_expiry(&mut conn).await, moved);
+        let recorded: String = sqlx::query_scalar("SELECT expires_at FROM session_extensions")
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+        assert_eq!(
+            recorded,
+            (used + chrono::Duration::days(7)).to_rfc3339(),
+            "the Audit Trail reads the new expiry"
+        );
+
+        let soon_after = used + chrono::Duration::minutes(59);
+        assert!(
+            use_session_at(&mut conn, &token, soon_after)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(
+            stored_expiry(&mut conn).await,
+            moved,
+            "no write within the hour"
+        );
+
+        // Past the first 7 days, the Session the use moved is still live.
+        let past_first_expiry = fixed_instant() + chrono::Duration::days(8);
+        assert!(
+            use_session_at(&mut conn, &token, past_first_expiry)
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    /// A lookup writes nothing for the move it makes due: it reports it, so
+    /// the request it serves never waits for the write lock, and the move
+    /// is written apart.
+    #[tokio::test]
+    async fn a_lookup_reports_the_move_and_writes_nothing() {
+        let (pool, _dir) = crate::test_support::schema_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
+        let token = open_session(&mut conn, 7, "alice", None, fixed_instant())
+            .await
+            .unwrap();
+        let first_expiry = stored_expiry(&mut conn).await;
+
+        let used = fixed_instant() + chrono::Duration::days(3);
+        let session = lookup_session(&mut conn, &token, used)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored_expiry(&mut conn).await, first_expiry);
+
+        let expiry_move = session.expiry_move.expect("a move is due");
+        move_session_expiry(&mut conn, &expiry_move).await.unwrap();
+        assert_eq!(
+            stored_expiry(&mut conn).await,
+            unix_secs(used) + SESSION_IDLE_SECS
+        );
+    }
+
+    /// A Session left unused for 7 days is refused.
+    #[tokio::test]
+    async fn a_session_unused_for_seven_days_is_refused() {
+        let (pool, _dir) = crate::test_support::schema_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
+        let token = open_session(&mut conn, 7, "alice", None, fixed_instant())
+            .await
+            .unwrap();
+        let used = fixed_instant() + chrono::Duration::days(2);
+        assert!(
+            use_session_at(&mut conn, &token, used)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        let idle = used + chrono::Duration::days(7);
+        assert!(
+            use_session_at(&mut conn, &token, idle)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    /// A Session used every day still ends 30 days after the login.
+    #[tokio::test]
+    async fn a_session_in_daily_use_ends_thirty_days_after_login() {
+        let (pool, _dir) = crate::test_support::schema_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
+        let token = open_session(&mut conn, 7, "alice", None, fixed_instant())
+            .await
+            .unwrap();
+        for day in 1..30 {
+            let used = fixed_instant() + chrono::Duration::days(day);
+            assert!(
+                use_session_at(&mut conn, &token, used)
+                    .await
+                    .unwrap()
+                    .is_some(),
+                "live on day {day}"
+            );
+        }
+        let cap = fixed_instant() + chrono::Duration::days(30);
+        assert_eq!(stored_expiry(&mut conn).await, unix_secs(cap));
+        assert!(
+            use_session_at(&mut conn, &token, cap)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]

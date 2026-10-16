@@ -1,11 +1,11 @@
 //! Round-trip tests for reading and writing conversation documents.
 
 use super::*;
-use message_crate_core::OutputFormat;
-use message_ir::{
+use ir::{
     ConversationDocument, Direction, ImessageExtensions, Message, MessageKind, TimePrecision,
     Transport,
 };
+use message_crate_core::OutputFormat;
 use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
@@ -13,13 +13,13 @@ use std::path::Path;
 #[test]
 fn writes_json_csv_jsonl_and_eml() {
     let tmp = tempfile::tempdir().unwrap();
-    let doc = message_ir::testutil::sample_document("hello ir");
+    let document = ir::testutil::sample_document("hello ir");
 
-    let json_path = write_format(tmp.path(), OutputFormat::Json, doc.clone()).unwrap();
+    let json_path = write_format(tmp.path(), OutputFormat::Json, document.clone()).unwrap();
     assert!(json_path.ends_with("+15555550101.json"));
     let raw = fs::read_to_string(&json_path).unwrap();
     let parsed: ConversationDocument = serde_json::from_str(&raw).unwrap();
-    assert_eq!(parsed.schema_version, message_ir::SCHEMA_VERSION);
+    assert_eq!(parsed.schema_version, ir::SCHEMA_VERSION);
     assert_eq!(parsed.messages[0].text, "hello ir");
     assert!(parsed.messages[0].attachments.is_empty());
     assert_eq!(
@@ -35,7 +35,7 @@ fn writes_json_csv_jsonl_and_eml() {
             .contains_key("address")
     );
     assert_eq!(
-        parsed.messages[0].sender_identity.as_deref(),
+        parsed.messages[0].sender.identity.as_deref(),
         Some("+15555550101")
     );
     assert_eq!(parsed.conversation.stats.message_count, 1);
@@ -45,20 +45,20 @@ fn writes_json_csv_jsonl_and_eml() {
     assert!(raw.contains("\"group_title\": null") || raw.contains("\"group_title\":null"));
     assert!(raw.contains("\"imessage\": null") || raw.contains("\"imessage\":null"));
 
-    let jsonl_path = write_format(tmp.path(), OutputFormat::Jsonl, doc.clone()).unwrap();
+    let jsonl_path = write_format(tmp.path(), OutputFormat::Jsonl, document.clone()).unwrap();
     assert!(jsonl_path.ends_with("+15555550101.jsonl"));
     let jsonl = fs::read_to_string(&jsonl_path).unwrap();
     let mut lines = jsonl.lines();
     let header: Value = serde_json::from_str(lines.next().unwrap()).unwrap();
-    assert_eq!(header["schema_version"], message_ir::SCHEMA_VERSION);
+    assert_eq!(header["schema_version"], ir::SCHEMA_VERSION);
     assert!(header.get("messages").is_none());
     assert_eq!(header["conversation"]["stats"]["message_count"], 1);
-    let msg_line: Value = serde_json::from_str(lines.next().unwrap()).unwrap();
-    assert_eq!(msg_line["text"], "hello ir");
-    assert!(msg_line["source"]["fields"].is_object());
-    assert_eq!(msg_line["source"]["android_type"], 1);
+    let message_line: Value = serde_json::from_str(lines.next().unwrap()).unwrap();
+    assert_eq!(message_line["text"], "hello ir");
+    assert!(message_line["source"]["fields"].is_object());
+    assert_eq!(message_line["source"]["android_type"], 1);
 
-    let csv_path = write_format(tmp.path(), OutputFormat::Csv, doc.clone()).unwrap();
+    let csv_path = write_format(tmp.path(), OutputFormat::Csv, document.clone()).unwrap();
     let csv = fs::read_to_string(&csv_path).unwrap();
     assert!(csv.contains("hello ir"));
     assert!(csv.contains("sms-backup-restore"));
@@ -66,21 +66,21 @@ fn writes_json_csv_jsonl_and_eml() {
     assert!(csv.contains("timestamp_unix_ms"));
     assert!(csv.contains("+15555550100")); // owner identity filled
 
-    let eml_dir = write_format(tmp.path(), OutputFormat::Eml, doc).unwrap();
+    let eml_dir = write_format(tmp.path(), OutputFormat::Eml, document).unwrap();
     assert!(eml_dir.is_dir());
 }
 
 #[test]
 fn imessage_bag_restores_mail_extension_headers() {
     let tmp = tempfile::tempdir().unwrap();
-    let doc = message_ir::testutil::sample_imessage_document();
-    let mail_messages = document_to_mail_messages(&doc, tmp.path()).unwrap();
+    let document = ir::testutil::sample_imessage_document();
+    let mail_messages = document_to_mail_messages(&document, tmp.path()).unwrap();
 
     let reply = &mail_messages[0];
     let reply_im = reply.message.imessage.as_ref().unwrap();
-    assert_eq!(reply.message.reply_to, doc.messages[0].reply_to);
+    assert_eq!(reply.message.reply_to, document.messages[0].reply_to);
     assert_eq!(reply_im.send_effect.as_deref(), Some("Sent with Balloons"));
-    assert_eq!(reply.message.reactions, doc.messages[0].reactions);
+    assert_eq!(reply.message.reactions, document.messages[0].reactions);
     assert_eq!(reply.message.reactions[0].kind, "loved");
     assert!(
         reply_im
@@ -103,7 +103,7 @@ fn imessage_bag_restores_mail_extension_headers() {
     assert_eq!(tapback_im.tapback_action.as_deref(), Some("add"));
     assert_eq!(tapback.owner_display_name.as_deref(), Some("Me"));
     assert_eq!(
-        tapback.message.sender_identity.as_deref(),
+        tapback.message.sender.identity.as_deref(),
         Some("+15555550100")
     );
 }
@@ -111,9 +111,9 @@ fn imessage_bag_restores_mail_extension_headers() {
 #[test]
 fn unified_csv_headers_for_all_sources() {
     let tmp = tempfile::tempdir().unwrap();
-    let doc = message_ir::testutil::sample_imessage_document();
+    let document = ir::testutil::sample_imessage_document();
 
-    let csv_path = write_format(tmp.path(), OutputFormat::Csv, doc).unwrap();
+    let csv_path = write_format(tmp.path(), OutputFormat::Csv, document).unwrap();
     let csv = fs::read_to_string(&csv_path).unwrap();
     let header_line = csv.lines().next().unwrap();
     assert_eq!(header_line, CSV_HEADERS.join(","));
@@ -130,8 +130,8 @@ fn unified_csv_headers_for_all_sources() {
     assert!(csv.contains("loved"));
     assert!(csv.contains("+15555550100")); // outgoing sender / owner
 
-    let sms_doc = message_ir::testutil::sample_document("hello ir");
-    let sms_csv_path = write_format(tmp.path(), OutputFormat::Csv, sms_doc).unwrap();
+    let sms_document = ir::testutil::sample_document("hello ir");
+    let sms_csv_path = write_format(tmp.path(), OutputFormat::Csv, sms_document).unwrap();
     let sms_csv = fs::read_to_string(&sms_csv_path).unwrap();
     assert_eq!(sms_csv.lines().next().unwrap(), CSV_HEADERS.join(","));
     assert!(!sms_csv.contains("xml_fields_json"));
@@ -140,10 +140,10 @@ fn unified_csv_headers_for_all_sources() {
 
 #[test]
 fn packaging_stem_suffix_affects_filename_not_json() {
-    let mut doc = message_ir::testutil::sample_document("hello ir");
-    doc.packaging_stem_suffix = Some("__chatapp".into());
+    let mut document = ir::testutil::sample_document("hello ir");
+    document.packaging_stem_suffix = Some("__chatapp".into());
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_format(tmp.path(), OutputFormat::Json, doc).unwrap();
+    let path = write_format(tmp.path(), OutputFormat::Json, document).unwrap();
     assert!(
         path.file_name()
             .unwrap()
@@ -156,7 +156,10 @@ fn packaging_stem_suffix_affects_filename_not_json() {
     assert!(!raw.contains("__chatapp"));
 }
 
-fn assert_docs_equal_after_normalize(mut a: ConversationDocument, mut b: ConversationDocument) {
+fn assert_documents_equal_after_normalize(
+    mut a: ConversationDocument,
+    mut b: ConversationDocument,
+) {
     normalize_document_for_compare(&mut a);
     normalize_document_for_compare(&mut b);
     let va = serde_json::to_value(&a).unwrap();
@@ -166,12 +169,12 @@ fn assert_docs_equal_after_normalize(mut a: ConversationDocument, mut b: Convers
 
 #[test]
 fn roundtrip_csv_sms_and_imessage() {
-    for doc in [
-        message_ir::testutil::sample_document("hello ir"),
-        message_ir::testutil::sample_imessage_document(),
+    for document in [
+        ir::testutil::sample_document("hello ir"),
+        ir::testutil::sample_imessage_document(),
     ] {
         let tmp = tempfile::tempdir().unwrap();
-        let csv_path = write_conversation_csv(tmp.path(), &doc).unwrap();
+        let csv_path = write_conversation_csv(tmp.path(), &document).unwrap();
         let csv = fs::read_to_string(&csv_path).unwrap();
         // Nested bag cells are empty strings, never the literal `null`.
         let header = csv.lines().next().unwrap();
@@ -200,7 +203,7 @@ fn roundtrip_csv_sms_and_imessage() {
         assert!(!csv_path.with_extension("meta.json").is_file());
 
         let back = read_conversation_csv(&csv_path).unwrap();
-        assert_docs_equal_after_normalize(doc, back);
+        assert_documents_equal_after_normalize(document, back);
     }
 }
 
@@ -210,8 +213,8 @@ fn roundtrip_csv_sms_and_imessage() {
 /// takes it off, so the messages come back exactly as they were.
 #[test]
 fn csv_quotes_every_cell_a_spreadsheet_would_run_and_reads_it_back() {
-    let mut doc = message_ir::testutil::sample_document("=1+1");
-    let template = doc.messages[0].clone();
+    let mut document = ir::testutil::sample_document("=1+1");
+    let template = document.messages[0].clone();
     for (n, text) in [
         "+1 call me",
         "-- signed",
@@ -223,17 +226,17 @@ fn csv_quotes_every_cell_a_spreadsheet_would_run_and_reads_it_back() {
     .into_iter()
     .enumerate()
     {
-        let mut msg = template.clone();
-        msg.guid = format!("FORMULA-{n}");
-        msg.text = text.to_string();
-        doc.messages.push(msg);
+        let mut message = template.clone();
+        message.guid = format!("FORMULA-{n}");
+        message.text = text.to_string();
+        document.messages.push(message);
     }
-    doc.messages[0].sender_identity = Some("+15551234567".into());
-    doc.messages[0].sender_display_name = Some("=HYPERLINK(\"x\")".into());
-    doc.finalize_stats();
+    document.messages[0].sender.identity = Some("+15551234567".into());
+    document.messages[0].sender.display_name = Some("=HYPERLINK(\"x\")".into());
+    document.finalize_stats();
 
     let tmp = tempfile::tempdir().unwrap();
-    let csv_path = write_conversation_csv(tmp.path(), &doc).unwrap();
+    let csv_path = write_conversation_csv(tmp.path(), &document).unwrap();
     let mut rdr = csv::Reader::from_path(&csv_path).unwrap();
     let headers = rdr.headers().unwrap().clone();
     let at = |name: &str| headers.iter().position(|c| c == name).unwrap();
@@ -241,17 +244,22 @@ fn csv_quotes_every_cell_a_spreadsheet_would_run_and_reads_it_back() {
     assert_eq!(&rows[0][at("text")], "'=1+1");
     assert_eq!(&rows[0][at("sender_identity")], "'+15551234567");
     assert_eq!(&rows[0][at("sender_display_name")], "'=HYPERLINK(\"x\")");
-    for (row, msg) in rows.iter().zip(&doc.messages) {
-        assert_eq!(row[at("text")], format!("'{}", msg.text), "{}", msg.guid);
+    for (row, message) in rows.iter().zip(&document.messages) {
+        assert_eq!(
+            row[at("text")],
+            format!("'{}", message.text),
+            "{}",
+            message.guid
+        );
     }
 
     let back = read_conversation_csv(&csv_path).unwrap();
     assert_eq!(back.messages[0].text, "=1+1");
     assert_eq!(
-        back.messages[0].sender_identity.as_deref(),
+        back.messages[0].sender.identity.as_deref(),
         Some("+15551234567")
     );
-    assert_docs_equal_after_normalize(doc, back);
+    assert_documents_equal_after_normalize(document, back);
 }
 
 /// A `deletion` cell that names neither mark is refused rather than read as
@@ -259,8 +267,8 @@ fn csv_quotes_every_cell_a_spreadsheet_would_run_and_reads_it_back() {
 #[test]
 fn csv_refuses_a_deletion_that_names_no_mark() {
     let tmp = tempfile::tempdir().unwrap();
-    let doc = message_ir::testutil::sample_imessage_document();
-    let csv_path = write_conversation_csv(tmp.path(), &doc).unwrap();
+    let document = ir::testutil::sample_imessage_document();
+    let csv_path = write_conversation_csv(tmp.path(), &document).unwrap();
     let csv = fs::read_to_string(&csv_path).unwrap();
     assert!(csv.contains(",deleted_in_source_app,"), "{csv}");
     fs::write(
@@ -279,19 +287,21 @@ fn csv_refuses_a_deletion_that_names_no_mark() {
 #[test]
 fn csv_omits_trivial_parts_json_keeps_rich_parts() {
     let tmp = tempfile::tempdir().unwrap();
-    let mut doc = message_ir::testutil::sample_imessage_document();
+    let mut document = ir::testutil::sample_imessage_document();
     // First message has a single run equal to text → omit parts_json.
     // Add a second body with multi-part parts that must be kept.
-    doc.messages.push(Message {
+    document.messages.push(Message {
         guid: "MULTI-PART-GUID".into(),
         timestamp_unix_ms: 1_400_773_263_000,
-        time_precision: message_ir::TimePrecision::Milliseconds,
+        time_precision: ir::TimePrecision::Milliseconds,
         direction: Direction::Incoming,
         service: Transport::IMessage,
         message_kind: MessageKind::IMessage,
-        sender_identity: Some("+15555550101".into()),
-        sender_display_name: Some("Sam".into()),
-        sender_country: None,
+        sender: ir::Sender {
+            identity: Some("+15555550101".into()),
+            display_name: Some("Sam".into()),
+            country: None,
+        },
         owner_identity: None,
         subject: None,
         text: "hello".into(),
@@ -310,9 +320,9 @@ fn csv_omits_trivial_parts_json_keeps_rich_parts() {
         source: None,
         backup_taken_at_unix_ms: None,
     });
-    doc.finalize_stats();
+    document.finalize_stats();
 
-    let csv_path = write_conversation_csv(tmp.path(), &doc).unwrap();
+    let csv_path = write_conversation_csv(tmp.path(), &document).unwrap();
     let csv = fs::read_to_string(&csv_path).unwrap();
     let header = csv.lines().next().unwrap();
     let cols: Vec<&str> = header.split(',').collect();
@@ -345,25 +355,46 @@ fn csv_omits_trivial_parts_json_keeps_rich_parts() {
 
 #[test]
 fn roundtrip_json_and_jsonl() {
-    for doc in [
-        message_ir::testutil::sample_document("hello ir"),
-        message_ir::testutil::sample_imessage_document(),
+    for document in [
+        ir::testutil::sample_document("hello ir"),
+        ir::testutil::sample_imessage_document(),
     ] {
         let tmp = tempfile::tempdir().unwrap();
-        let json_path = write_format(tmp.path(), OutputFormat::Json, doc.clone()).unwrap();
+        let json_path = write_format(tmp.path(), OutputFormat::Json, document.clone()).unwrap();
         let back_json = read_conversation_json(&json_path).unwrap();
-        assert_docs_equal_after_normalize(doc.clone(), back_json);
+        assert_documents_equal_after_normalize(document.clone(), back_json);
 
         let _ = clean_previous_ir_output(tmp.path());
-        let jsonl_path = write_format(tmp.path(), OutputFormat::Jsonl, doc.clone()).unwrap();
+        let jsonl_path = write_format(tmp.path(), OutputFormat::Jsonl, document.clone()).unwrap();
         let back_jsonl = read_conversation_jsonl(&jsonl_path).unwrap();
-        assert_docs_equal_after_normalize(doc, back_jsonl);
+        assert_documents_equal_after_normalize(document, back_jsonl);
     }
 }
 
-/// The CSV `identity_type` cell of `doc`'s first message, written to `dir`.
-fn sender_identity_type_cell(dir: &Path, doc: &ConversationDocument) -> String {
-    let csv_path = write_conversation_csv(dir, doc).unwrap();
+/// A JSONL message line carries its sender as one `sender` object, and no
+/// sender key beside it, so a new fact about a sender has one place to go.
+#[test]
+fn jsonl_writes_a_messages_sender_as_one_object() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut document = ir::testutil::sample_document("hi");
+    document.messages[0].sender.country = Some("US".into());
+    let path = write_format(tmp.path(), OutputFormat::Jsonl, document).unwrap();
+    let text = fs::read_to_string(path).unwrap();
+    let line: Value = serde_json::from_str(text.lines().nth(1).unwrap()).unwrap();
+    assert_eq!(
+        line["sender"],
+        json!({"identity": "+15555550101", "display_name": "Sam", "country": "US"})
+    );
+    let keys: Vec<&String> = line.as_object().unwrap().keys().collect();
+    assert!(
+        keys.iter().all(|key| !key.starts_with("sender_")),
+        "{keys:?}"
+    );
+}
+
+/// The CSV `identity_type` cell of `document`'s first message, written to `dir`.
+fn sender_identity_type_cell(dir: &Path, document: &ConversationDocument) -> String {
+    let csv_path = write_conversation_csv(dir, document).unwrap();
     let mut rdr = csv::Reader::from_path(&csv_path).unwrap();
     let identity_type_idx = rdr
         .headers()
@@ -389,11 +420,8 @@ fn csv_writes_the_sender_type_column_and_no_participant_type() {
     }
 
     let tmp = tempfile::tempdir().unwrap();
-    let csv_path = write_conversation_csv(
-        tmp.path(),
-        &message_ir::testutil::sample_document("hello ir"),
-    )
-    .unwrap();
+    let csv_path =
+        write_conversation_csv(tmp.path(), &ir::testutil::sample_document("hello ir")).unwrap();
     let csv = fs::read_to_string(&csv_path).unwrap();
     let (cols, row) = first_row_cols(&csv);
     let participants_idx = cols.iter().position(|c| c == "participants_json").unwrap();
@@ -409,9 +437,9 @@ fn csv_writes_the_sender_type_column_and_no_participant_type() {
     // A missing or blank sender identity is not an address: an empty cell,
     // never "other".
     for sender in [None, Some("  ")] {
-        let mut doc = message_ir::testutil::sample_document("hello ir");
-        doc.messages[0].sender_identity = sender.map(str::to_string);
-        assert_eq!(sender_identity_type_cell(tmp.path(), &doc), "");
+        let mut document = ir::testutil::sample_document("hello ir");
+        document.messages[0].sender.identity = sender.map(str::to_string);
+        assert_eq!(sender_identity_type_cell(tmp.path(), &document), "");
     }
 }
 
@@ -421,12 +449,12 @@ fn csv_writes_the_sender_type_column_and_no_participant_type() {
 #[test]
 fn csv_types_an_at_sender_by_its_service() {
     let tmp = tempfile::tempdir().unwrap();
-    let mut doc = message_ir::testutil::sample_document("hello ir");
-    doc.messages[0].sender_identity = Some("123456@lid".into());
-    doc.messages[0].service = message_ir::Transport::Whatsapp;
-    assert_eq!(sender_identity_type_cell(tmp.path(), &doc), "other");
-    doc.messages[0].service = message_ir::Transport::Sms;
-    assert_eq!(sender_identity_type_cell(tmp.path(), &doc), "email");
+    let mut document = ir::testutil::sample_document("hello ir");
+    document.messages[0].sender.identity = Some("123456@lid".into());
+    document.messages[0].service = ir::Transport::Whatsapp;
+    assert_eq!(sender_identity_type_cell(tmp.path(), &document), "other");
+    document.messages[0].service = ir::Transport::Sms;
+    assert_eq!(sender_identity_type_cell(tmp.path(), &document), "email");
 }
 
 /// An address written with `tel:` is a phone number in the CSV
@@ -435,15 +463,15 @@ fn csv_types_an_at_sender_by_its_service() {
 #[test]
 fn a_tel_address_is_a_phone_identity_in_csv_eml_and_mbox() {
     let tel = "tel:+15555550157";
-    let mut doc = message_ir::testutil::sample_document("hello ir");
-    doc.conversation.participants[0].identity = Some(tel.into());
-    doc.messages[0].sender_identity = Some(tel.into());
+    let mut document = ir::testutil::sample_document("hello ir");
+    document.conversation.participants[0].identity = Some(tel.into());
+    document.messages[0].sender.identity = Some(tel.into());
     let tmp = tempfile::tempdir().unwrap();
 
-    assert_eq!(sender_identity_type_cell(tmp.path(), &doc), "phone");
+    assert_eq!(sender_identity_type_cell(tmp.path(), &document), "phone");
 
-    let eml_dir = write_format(tmp.path(), OutputFormat::Eml, doc.clone()).unwrap();
-    let mbox_path = write_format(tmp.path(), OutputFormat::Mbox, doc).unwrap();
+    let eml_dir = write_format(tmp.path(), OutputFormat::Eml, document.clone()).unwrap();
+    let mbox_path = write_format(tmp.path(), OutputFormat::Mbox, document).unwrap();
     for back in [
         read_conversation_eml_dir(&eml_dir).unwrap(),
         read_conversation_mbox(&mbox_path).unwrap(),
@@ -462,27 +490,27 @@ fn a_tel_address_is_a_phone_identity_in_csv_eml_and_mbox() {
 #[test]
 fn eml_and_mbox_are_named_by_the_conversation_stem() {
     let tmp = tempfile::tempdir().unwrap();
-    let mut doc = message_ir::testutil::sample_document("hello ir");
-    doc.packaging_stem_suffix = Some("__whatsapp".into());
+    let mut document = ir::testutil::sample_document("hello ir");
+    document.packaging_stem_suffix = Some("__whatsapp".into());
 
-    let eml_dir = write_format(tmp.path(), OutputFormat::Eml, doc.clone()).unwrap();
+    let eml_dir = write_format(tmp.path(), OutputFormat::Eml, document.clone()).unwrap();
     assert_eq!(eml_dir, tmp.path().join("+15555550101__whatsapp"));
-    let mbox_path = write_format(tmp.path(), OutputFormat::Mbox, doc).unwrap();
+    let mbox_path = write_format(tmp.path(), OutputFormat::Mbox, document).unwrap();
     assert_eq!(mbox_path, tmp.path().join("+15555550101__whatsapp.mbox"));
 }
 
 #[test]
 fn roundtrip_eml_and_mbox() {
-    for doc in [
-        message_ir::testutil::sample_document("hello ir"),
-        message_ir::testutil::sample_imessage_document(),
+    for document in [
+        ir::testutil::sample_document("hello ir"),
+        ir::testutil::sample_imessage_document(),
     ] {
         let tmp = tempfile::tempdir().unwrap();
-        let eml_dir = write_format(tmp.path(), OutputFormat::Eml, doc.clone()).unwrap();
+        let eml_dir = write_format(tmp.path(), OutputFormat::Eml, document.clone()).unwrap();
         let back_eml = read_conversation_eml_dir(&eml_dir).unwrap();
         // Outgoing EML must carry sender + owner identity headers. Only the
         // iMessage fixture has an outgoing row (the tapback).
-        if doc
+        if document
             .messages
             .iter()
             .any(|m| m.direction == Direction::Outgoing)
@@ -502,11 +530,11 @@ fn roundtrip_eml_and_mbox() {
             assert!(outgoing_text.contains("X-ME-Owner-Identity:"));
         }
 
-        assert_docs_equal_after_normalize(doc.clone(), back_eml);
+        assert_documents_equal_after_normalize(document.clone(), back_eml);
 
-        let mbox_path = write_format(tmp.path(), OutputFormat::Mbox, doc.clone()).unwrap();
+        let mbox_path = write_format(tmp.path(), OutputFormat::Mbox, document.clone()).unwrap();
         let back_mbox = read_conversation_mbox(&mbox_path).unwrap();
-        assert_docs_equal_after_normalize(doc, back_mbox);
+        assert_documents_equal_after_normalize(document, back_mbox);
     }
 }
 
@@ -524,14 +552,14 @@ fn json_refuses_a_version_3_file_by_name() {
     .unwrap();
     let err = read_conversation_json(&path).unwrap_err();
     let refusal = err
-        .downcast_ref::<message_ir::UnsupportedSchemaVersion>()
+        .downcast_ref::<ir::UnsupportedSchemaVersion>()
         .expect("typed refusal");
     assert_eq!(refusal.found, 3);
     assert_eq!(
         refusal.to_string(),
         format!(
             "this file is schema version 3; Message Crate reads version {}",
-            message_ir::SCHEMA_VERSION
+            ir::SCHEMA_VERSION
         )
     );
 }
@@ -547,7 +575,7 @@ fn jsonl_refuses_a_version_3_file_by_name() {
     .unwrap();
     let err = read_conversation_jsonl(&path).unwrap_err();
     let refusal = err
-        .downcast_ref::<message_ir::UnsupportedSchemaVersion>()
+        .downcast_ref::<ir::UnsupportedSchemaVersion>()
         .expect("typed refusal");
     assert_eq!(refusal.found, 3);
     assert!(format!("{err:#}").contains("schema version 3"), "{err:#}");
@@ -576,20 +604,20 @@ fn jsonl_refuses_a_version_9_file_by_name() {
     .unwrap();
     let err = read_conversation_jsonl(&path).unwrap_err();
     let refusal = err
-        .downcast_ref::<message_ir::UnsupportedSchemaVersion>()
+        .downcast_ref::<ir::UnsupportedSchemaVersion>()
         .expect("typed refusal");
     assert_eq!(refusal.found, 9);
     assert_eq!(
         refusal.to_string(),
         format!(
             "this file is schema version 9; Message Crate reads version {}",
-            message_ir::SCHEMA_VERSION
+            ir::SCHEMA_VERSION
         )
     );
 }
 
 /// Message texts that a careless writer or reader damages: line endings a
-/// normaliser rewrites, an mbox `From ` line, CSV quoting, multi-code-point
+/// normalizer rewrites, an mbox `From ` line, CSV quoting, multi-code-point
 /// emoji, and no text at all beside an attachment. Every per-conversation
 /// format writes each one and reads it back byte for byte.
 #[test]
@@ -654,15 +682,15 @@ fn hard_texts_survive_every_format() {
     let mut failures = Vec::new();
     for case in &cases {
         for format in formats {
-            let mut doc = message_ir::testutil::sample_document(&case.text);
+            let mut document = ir::testutil::sample_document(&case.text);
             if case.with_attachment {
-                doc.messages[0].attachments.push(message_ir::Attachment {
+                document.messages[0].attachments.push(ir::Attachment {
                     bytes: Some(b"\xff\xd8\xfffakejpeg".to_vec()),
-                    ..message_ir::testutil::sample_attachment()
+                    ..ir::testutil::sample_attachment()
                 });
             }
             let tmp = tempfile::tempdir().unwrap();
-            let path = write_format(tmp.path(), format, doc.clone()).unwrap();
+            let path = write_format(tmp.path(), format, document.clone()).unwrap();
             let back = match format {
                 OutputFormat::Json => read_conversation_json(&path),
                 OutputFormat::Jsonl => read_conversation_jsonl(&path),
@@ -692,12 +720,12 @@ fn hard_texts_survive_every_format() {
                     got.text
                 ));
             }
-            if got.attachments.len() != doc.messages[0].attachments.len() {
+            if got.attachments.len() != document.messages[0].attachments.len() {
                 failures.push(format!(
                     "{} / {}: {} attachments came back as {}",
                     format.as_str(),
                     case.name,
-                    doc.messages[0].attachments.len(),
+                    document.messages[0].attachments.len(),
                     got.attachments.len()
                 ));
             }
@@ -708,15 +736,15 @@ fn hard_texts_survive_every_format() {
 
 #[test]
 fn csv_marks_only_an_announcement_row_as_an_announcement() {
-    let mut doc = message_ir::testutil::sample_document("hello ir");
-    let mut announcement = doc.messages[0].clone();
+    let mut document = ir::testutil::sample_document("hello ir");
+    let mut announcement = document.messages[0].clone();
     announcement.guid = "ANNOUNCEMENT-GUID".into();
     announcement.message_kind = MessageKind::Announcement;
-    doc.messages.push(announcement);
-    doc.finalize_stats();
+    document.messages.push(announcement);
+    document.finalize_stats();
 
     let tmp = tempfile::tempdir().unwrap();
-    let csv_path = write_conversation_csv(tmp.path(), &doc).unwrap();
+    let csv_path = write_conversation_csv(tmp.path(), &document).unwrap();
     let mut rdr = csv::Reader::from_path(&csv_path).unwrap();
     let headers = rdr.headers().unwrap().clone();
     let guid_idx = headers.iter().position(|c| c == "guid").unwrap();
@@ -741,14 +769,14 @@ fn csv_marks_only_an_announcement_row_as_an_announcement() {
 
 #[test]
 fn csv_with_no_participants_reads_back_with_an_empty_roster() {
-    let mut doc = message_ir::testutil::sample_document("hello ir");
-    doc.conversation.participants.clear();
+    let mut document = ir::testutil::sample_document("hello ir");
+    document.conversation.participants.clear();
     let tmp = tempfile::tempdir().unwrap();
-    let csv_path = write_conversation_csv(tmp.path(), &doc).unwrap();
+    let csv_path = write_conversation_csv(tmp.path(), &document).unwrap();
 
     let back = read_conversation_csv(&csv_path).unwrap();
     assert!(back.conversation.participants.is_empty());
-    assert_eq!(back.messages.len(), doc.messages.len());
+    assert_eq!(back.messages.len(), document.messages.len());
 }
 
 /// The stem suffix belongs to the exporter that chose it, so this crate
@@ -767,11 +795,11 @@ fn a_file_with_a_stem_suffix_keeps_its_name_when_read_and_written_again() {
     ];
     for (format, read) in readers {
         for suffix in [Some("__chatapp"), Some("__other__app"), None] {
-            let mut doc = message_ir::testutil::sample_document("hello ir");
-            doc.packaging_stem_suffix = suffix.map(String::from);
+            let mut document = ir::testutil::sample_document("hello ir");
+            document.packaging_stem_suffix = suffix.map(String::from);
             let label = format!("{} {suffix:?}", format.as_str());
             let first = tmp.path().join(format!("first-{label}"));
-            let path = write_format(&first, format, doc).unwrap();
+            let path = write_format(&first, format, document).unwrap();
             let back = read(&path).unwrap();
             assert_eq!(back.packaging_stem_suffix.as_deref(), suffix, "{label}");
 
@@ -787,15 +815,15 @@ fn a_file_with_a_stem_suffix_keeps_its_name_when_read_and_written_again() {
 /// an attachment for each missing reason with its size, and a contact card
 /// whose lines end in CRLF.
 fn document_with_hard_fields() -> ConversationDocument {
-    let mut doc = message_ir::testutil::sample_document("from my phone number");
-    doc.export.source = "imessage".into();
-    let attachment = |name: &str, mime: &str| message_ir::Attachment {
+    let mut document = ir::testutil::sample_document("from my phone number");
+    document.export.source = "imessage".into();
+    let attachment = |name: &str, mime: &str| ir::Attachment {
         original_name: Some(name.into()),
         mime_type: Some(mime.into()),
-        ..message_ir::testutil::sample_attachment()
+        ..ir::testutil::sample_attachment()
     };
 
-    let first = &mut doc.messages[0];
+    let first = &mut document.messages[0];
     first.service = Transport::IMessage;
     first.message_kind = MessageKind::IMessage;
     first.owner_identity = Some("+15555550100".into());
@@ -811,7 +839,7 @@ fn document_with_hard_fields() -> ConversationDocument {
         ),
     ]
     .into_iter()
-    .map(|(name, mime, size, reason)| message_ir::Attachment {
+    .map(|(name, mime, size, reason)| ir::Attachment {
         size_bytes: Some(size),
         missing_reason: Some(reason.into()),
         ..attachment(name, mime)
@@ -819,15 +847,15 @@ fn document_with_hard_fields() -> ConversationDocument {
     .collect();
 
     let card = b"BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Sam\r\nEND:VCARD\r\n".to_vec();
-    let mut second = doc.messages[0].clone();
+    let mut second = document.messages[0].clone();
     second.guid = "bbccddeeff0011223344556677889900".into();
     second.timestamp_unix_ms += 60_000;
     second.direction = Direction::Outgoing;
-    second.sender_identity = Some("me@example.com".into());
-    second.sender_display_name = Some("Me".into());
+    second.sender.identity = Some("me@example.com".into());
+    second.sender.display_name = Some("Me".into());
     second.owner_identity = Some("me@example.com".into());
     second.text = "from my Apple ID".into();
-    second.attachments = vec![message_ir::Attachment {
+    second.attachments = vec![ir::Attachment {
         // The SHA-256 of `card`.
         digest_sha256: Some(
             "b0131e62957346f7cb488efd25f1fa6efc34e63dd49daa3a9b984668003e536c".into(),
@@ -836,17 +864,17 @@ fn document_with_hard_fields() -> ConversationDocument {
         bytes: Some(card),
         ..attachment("sam.vcf", "text/vcard")
     }];
-    doc.messages.push(second);
-    doc.finalize_stats();
-    doc
+    document.messages.push(second);
+    document.finalize_stats();
+    document
 }
 
 /// Write [`document_with_hard_fields`] in `format`, read it back, and require
 /// the same document, and for a mail format the same attachment bytes.
 fn assert_hard_fields_survive(format: OutputFormat) {
-    let doc = document_with_hard_fields();
+    let document = document_with_hard_fields();
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_format(tmp.path(), format, doc.clone()).unwrap();
+    let path = write_format(tmp.path(), format, document.clone()).unwrap();
     let back = match format {
         OutputFormat::Csv => read_conversation_csv(&path),
         OutputFormat::Eml => read_conversation_eml_dir(&path),
@@ -863,9 +891,9 @@ fn assert_hard_fields_survive(format: OutputFormat) {
                 .flat_map(|m| m.attachments.iter().map(|a| a.bytes.clone()))
                 .collect()
         };
-        assert_eq!(bytes(&back), bytes(&doc), "attachment bytes");
+        assert_eq!(bytes(&back), bytes(&document), "attachment bytes");
     }
-    assert_docs_equal_after_normalize(doc, back);
+    assert_documents_equal_after_normalize(document, back);
 }
 
 #[test]
@@ -892,10 +920,10 @@ fn dates_after_round_trip(
     backup_dates: [Option<i64>; 3],
     exported_at_unix_ms: Option<i64>,
 ) -> (Vec<Option<i64>>, Option<i64>) {
-    let mut doc = message_ir::testutil::sample_document("from the backup");
-    doc.export.exported_at_unix_ms = exported_at_unix_ms;
-    let first = doc.messages[0].clone();
-    doc.messages = backup_dates
+    let mut document = ir::testutil::sample_document("from the backup");
+    document.export.exported_at_unix_ms = exported_at_unix_ms;
+    let first = document.messages[0].clone();
+    document.messages = backup_dates
         .iter()
         .enumerate()
         .map(|(i, date)| {
@@ -906,9 +934,9 @@ fn dates_after_round_trip(
             message
         })
         .collect();
-    doc.finalize_stats();
+    document.finalize_stats();
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_format(tmp.path(), format, doc).unwrap();
+    let path = write_format(tmp.path(), format, document).unwrap();
     let back = match format {
         OutputFormat::Json => read_conversation_json(&path),
         OutputFormat::Jsonl => read_conversation_jsonl(&path),
@@ -958,9 +986,9 @@ fn every_format_keeps_each_messages_backup_date_and_the_export_date() {
 
 #[test]
 fn csv_refuses_a_backup_date_that_is_not_a_number() {
-    let doc = message_ir::testutil::sample_document("hello");
+    let document = ir::testutil::sample_document("hello");
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_format(tmp.path(), OutputFormat::Csv, doc).unwrap();
+    let path = write_format(tmp.path(), OutputFormat::Csv, document).unwrap();
     let text = fs::read_to_string(&path).unwrap();
     let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
     let column = CSV_HEADERS
@@ -996,8 +1024,8 @@ fn csv_refuses_a_backup_date_that_is_not_a_number() {
 /// seconds and one whose source recorded milliseconds that end in `.000`,
 /// in `format`, and read back each message's precision in time order.
 fn precisions_after_round_trip(format: OutputFormat) -> Vec<(i64, TimePrecision)> {
-    let mut doc = message_ir::testutil::sample_document("whole second");
-    let mut whole = doc.messages[0].clone();
+    let mut document = ir::testutil::sample_document("whole second");
+    let mut whole = document.messages[0].clone();
     whole.timestamp_unix_ms = 1_400_773_261_000;
     whole.time_precision = TimePrecision::Seconds;
     let mut exact = whole.clone();
@@ -1005,9 +1033,9 @@ fn precisions_after_round_trip(format: OutputFormat) -> Vec<(i64, TimePrecision)
     exact.text = "milliseconds that end in .000".into();
     exact.timestamp_unix_ms = 1_400_773_262_000;
     exact.time_precision = TimePrecision::Milliseconds;
-    doc.messages = vec![whole, exact];
+    document.messages = vec![whole, exact];
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_format(tmp.path(), format, doc).unwrap();
+    let path = write_format(tmp.path(), format, document).unwrap();
     let back = match format {
         OutputFormat::Json => read_conversation_json(&path),
         OutputFormat::Jsonl => read_conversation_jsonl(&path),
@@ -1054,9 +1082,9 @@ fn every_format_keeps_whether_a_time_has_milliseconds() {
 /// either precision.
 #[test]
 fn csv_refuses_a_row_without_a_time_precision() {
-    let doc = message_ir::testutil::sample_document("hello");
+    let document = ir::testutil::sample_document("hello");
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_format(tmp.path(), OutputFormat::Csv, doc).unwrap();
+    let path = write_format(tmp.path(), OutputFormat::Csv, document).unwrap();
     let text = fs::read_to_string(&path).unwrap();
     let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
     let column = CSV_HEADERS

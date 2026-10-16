@@ -468,7 +468,7 @@ async fn a_small_attachment_size_limit_holds_only_the_attachment_uploads() {
         &crate::test_support::message_line("g-1", &"a".repeat(4096))
             .at(1_700_000_000_000)
             .sms()
-            .service(message_ir::Transport::Whatsapp)
+            .service(ir::Transport::Whatsapp)
             .sender("+15555550107")
             .line(),
     );
@@ -740,6 +740,67 @@ async fn a_handler_that_panics_answers_a_500_problem_with_its_request_id() {
     assert_eq!(errors.len(), 1, "{lines:#?}");
     assert!(
         errors[0].text.contains("the request's handler panicked"),
+        "{}",
+        errors[0].text
+    );
+    assert!(errors[0].text.contains(&header_id), "{}", errors[0].text);
+}
+
+/// A download whose body fails partway, after its `200 OK` was sent, writes
+/// one `ERROR` line naming the error, under the request's id. Its `INFO`
+/// response line, written when the answer started, says `status=200`, so
+/// without this line the log showed a successful download that was cut off
+/// (#2870).
+#[tokio::test]
+async fn a_body_that_fails_partway_writes_an_error_line_with_its_request_id() {
+    use futures_util::StreamExt as _;
+
+    // The body sends its first part, then fails once the test has read the
+    // answer's head, so the `200 OK` is on the wire before the failure.
+    let (fail, failed) = tokio::sync::oneshot::channel::<()>();
+    let failed = Arc::new(std::sync::Mutex::new(Some(failed)));
+    let cut_off = move || {
+        let failed = failed.lock().unwrap().take().unwrap();
+        let first = futures_util::stream::once(async {
+            Ok(axum::body::Bytes::from_static(b"the first part"))
+        });
+        let then_fail = futures_util::stream::once(async move {
+            let _ = failed.await;
+            Err(std::io::Error::other("the disk this test fails"))
+        });
+        async move { axum::body::Body::from_stream(first.chain(then_fail)) }
+    };
+
+    let fixture = test_fixture().await;
+    let routes = Router::new().route("/v1/cut-off", axum::routing::get(cut_off));
+    let (header_id, lines) = crate::test_support::lines_written_by("info", async {
+        let server =
+            crate::test_support::serve_router(with_server_layers(routes, fixture.state.clone()))
+                .await;
+        let response = server.get("/v1/cut-off").send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let header_id = response
+            .headers()
+            .get(crate::request_id::HEADER)
+            .and_then(|v| v.to_str().ok())
+            .expect("the answer carries its request id")
+            .to_string();
+        fail.send(()).unwrap();
+        assert!(
+            response.bytes().await.is_err(),
+            "the body ends in an error, not a clean end"
+        );
+        header_id
+    })
+    .await;
+
+    let errors: Vec<_> = lines
+        .iter()
+        .filter(|line| line.level == LogLevel::Error)
+        .collect();
+    assert_eq!(errors.len(), 1, "{lines:#?}");
+    assert!(
+        errors[0].text.contains("the disk this test fails"),
         "{}",
         errors[0].text
     );

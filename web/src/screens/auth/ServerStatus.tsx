@@ -30,7 +30,7 @@ function sentence(state: ServerConnection, address: string): string {
  * keeps the slow flash the old light had, moved onto the text as an opacity
  * pulse, because scaling type wobbles the baseline underneath it.
  *
- * Untested is grey and still: green and red are answers about a server, and an
+ * Untested is gray and still: green and red are answers about a server, and an
  * address nobody has tried has not earned either one. It does not pulse, since
  * nothing is happening for the pulse to stand for.
  */

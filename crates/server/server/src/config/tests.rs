@@ -123,8 +123,8 @@ fn a_config_with_no_settings_loads_the_documented_defaults() {
     let server = cfg.require_server().unwrap();
     assert_eq!(server.bind, "127.0.0.1:8080");
     assert_eq!(server.asset_part_size, 16_777_216);
-    assert_eq!(server.upload_stall_secs, 60);
-    assert_eq!(server.upload_piece_secs, 300);
+    assert_eq!(server.body_stall_secs, 60);
+    assert_eq!(server.body_total_secs, 300);
     assert!(!server.openapi_ui);
     assert!(server.cors_origins.is_empty());
     assert_eq!(server.transcode_stall_secs, 120);
@@ -206,24 +206,24 @@ fn a_config_that_still_sets_asset_max_bytes_is_refused_and_told_where_the_limit_
     assert!(text.contains("Server Settings screen"), "{text}");
 }
 
-/// The upload time limits the file sets are the ones the server holds.
+/// The body time limits the file sets are the ones the server holds.
 #[test]
-fn a_config_sets_the_upload_time_limits() {
+fn a_config_sets_the_body_time_limits() {
     let cfg = load_text(
-        "[paths]\ndb = \"data/messagecrate.db\"\n\n[server]\nupload_stall_secs = 7\nupload_piece_secs = 45\n",
+        "[paths]\ndb = \"data/messagecrate.db\"\n\n[server]\nbody_stall_secs = 7\nbody_total_secs = 45\n",
     )
     .unwrap();
 
     let server = cfg.require_server().unwrap();
-    assert_eq!(server.upload_stall_secs, 7);
-    assert_eq!(server.upload_piece_secs, 45);
+    assert_eq!(server.body_stall_secs, 7);
+    assert_eq!(server.body_total_secs, 45);
 }
 
 /// A limit of 0 would refuse every upload at once, so the server refuses
 /// the file, naming the key.
 #[test]
-fn an_upload_time_limit_of_zero_is_refused_naming_the_key() {
-    for key in ["upload_stall_secs", "upload_piece_secs"] {
+fn a_body_time_limit_of_zero_is_refused_naming_the_key() {
+    for key in ["body_stall_secs", "body_total_secs"] {
         let cfg = load_text(&format!(
             "[paths]\ndb = \"data/messagecrate.db\"\n\n[server]\n{key} = 0\n"
         ))
@@ -237,7 +237,7 @@ fn an_upload_time_limit_of_zero_is_refused_naming_the_key() {
 }
 
 /// A key the server does not use is refused wherever it sits, by its name
-/// and its section: a misspelt key otherwise loads as the default.
+/// and its section: a misspelled key otherwise loads as the default.
 #[test]
 fn a_config_with_an_unknown_key_is_refused_naming_the_key_and_its_section() {
     for (section, config) in [
@@ -293,7 +293,7 @@ fn a_config_with_an_unknown_section_is_refused_naming_it() {
 
 /// `[database]` named the connection URL while the server ran on Postgres
 /// too. It is an unknown section now, so a config that still has it is
-/// refused by name and never read as if the URL were honoured.
+/// refused by name and never read as if the URL were honored.
 #[test]
 fn a_config_with_the_removed_database_section_is_refused_naming_it() {
     let text = format!(

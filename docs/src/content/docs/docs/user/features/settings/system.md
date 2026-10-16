@@ -32,10 +32,18 @@ Two kinds of path are not saved, and the default stays in force:
 
 Emptying the field returns to the default.
 
+### Space used
+
+The line under the field says how much disk space the account's own Import Runs take in the Staging Directory on this computer, such as "Your Import Runs on this computer take up 1.5 GB."
+It counts each run's directory wherever the Staging Directory pointed when the run started.
+The size is measured when Settings opens and doesn't change while the tab is open.
+A run's directory is deleted when the run ends, and opening Import deletes the directory of any run Message Crate reports as ended, so the number is mostly runs that are paused or waiting at a Review.
+The Owner sees the size of the whole Staging Directory under [Server Settings](/docs/user/features/owner/owner-home/#staging-directory-on-this-computer).
+
 A change applies to the Import Runs started after it.
 An import already staged keeps the directory it was staged in, so it can still be resumed, discarded or cleaned up after the setting moves.
 
-When Message Crate can't delete the directory of a finished, cancelled or discarded import, the Import screen names the directory and the reason, so the directory can be deleted by hand.
+When Message Crate can't delete the directory of a finished, canceled or discarded import, the Import screen names the directory and the reason, so the directory can be deleted by hand.
 
 ### Remember importer paths
 
@@ -97,7 +105,7 @@ It downloads its own copies into the Tools Directory instead, and nothing needs 
 **Exports** names the Export Directory and opens it.
 Each [Export](/docs/user/features/messages/export/), and each [Convert](/docs/user/features/settings/convert/) with no output directory chosen, gets a directory of its own there, named for what it is, when it started and its format, such as `export-2026-10-04-1430-mbox` or `convert-2026-10-04-1502-csv`.
 The result is written there unless the Export form names another directory.
-The directory holds only the result once the run finishes; a run that fails or is cancelled deletes it, and one the app did not see to its end is deleted the next time the app starts.
+The directory holds only the result once the run finishes; a run that fails or is canceled deletes it, and one the app did not see to its end is deleted the next time the app starts.
 
 The Export Directory is `exports` in the Message Crate Directory, such as `/home/sam/message-crate/exports` on Linux.
 Message Crate never deletes a finished export from it.
@@ -113,7 +121,7 @@ Only the user who runs the app can read it, because it holds every account's mes
 | Data Directory | `data` | The database, each account's attachments and the server's log, of the Message Crate this app starts. A copy of it is a backup |
 | Staging Directory | `staging` | One directory per Import Run, unless [Staging directory](#staging-directory) names another place |
 | Export Directory | `exports` | One directory per Export, and per Convert with no output directory chosen. See [Exports](#exports) |
-| Logs Directory | `logs` | Each Import Run's log, named for the run, such as `import-iphone-ios-261004-143000.log`. Never deleted. The run's account reads it from **Settings → Storage**, and the Owner from **Logs** on Owner Home |
+| Logs Directory | `logs` | Each Import Run's log, named for the run, such as `import-iphone-ios-261004-143000.log`, and the desktop app's own log, `desktop-app.log`. Never deleted. The run's account reads a run's log from **Settings → Storage**, and the Owner every log from **Logs** on Owner Home |
 | Scratch Directory | `scratch` | Decrypted iPhone backup databases, the WhatsApp database decrypted from an Android backup, WhatsApp's files read out of a phone backup, and the attachments read out of SMS backups, while a run needs them. What a stopped run left is deleted the next time the app starts |
 | Tools Directory | `tools` | ffmpeg, ffprobe and wtsexporter, when the app downloaded them or they were put there by hand. See [Media](#media) |
 

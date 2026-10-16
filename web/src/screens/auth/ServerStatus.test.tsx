@@ -38,7 +38,7 @@ describe("ServerStatus", () => {
     expect(screen.getByRole("status")).toHaveTextContent(/^Starting Message Crate…$/);
   });
 
-  it("keeps an untested address out of the answered colours", () => {
+  it("keeps an untested address out of the answered colors", () => {
     render(<ServerStatus state="untested" address="http://localhost:8080" />);
     const status = screen.getByRole("status");
     expect(status).toHaveClass("text-muted");
@@ -47,7 +47,7 @@ describe("ServerStatus", () => {
     expect(status).not.toHaveClass("motion-safe:animate-pulse");
   });
 
-  it("colours the status to agree with what it says", () => {
+  it("colors the status to agree with what it says", () => {
     const { rerender } = render(<ServerStatus state="connected" address="http://localhost:8080" />);
     expect(screen.getByRole("status")).toHaveClass("text-ok");
 

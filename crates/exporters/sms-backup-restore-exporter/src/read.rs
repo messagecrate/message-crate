@@ -2,23 +2,23 @@
 
 use anyhow::{Result, bail};
 
+use ir::{
+    ConversationDocument, ExportMeta, Message, MessageKind, Participant, PendingAttachment,
+    PendingConversation, PendingMessage, Projection, ProjectionHooks, Transport, VendorFields,
+    prepare_conversation, project_pending,
+};
 use message_crate_core::{
     AttachmentFiles, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, RunLogLevel,
     SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART,
     Sinks, check_cancel, document_messages, import_error_lines, item_line,
 };
-use message_csv::format_local_ts;
-use message_ir::{
-    ConversationDocument, ExportMeta, Message, MessageKind, Participant, PendingAttachment,
-    PendingConversation, PendingMessage, Projection, ProjectionHooks, Transport, VendorFields,
-    prepare_conversation, project_pending,
-};
-use message_staging::{
-    AttachmentSource, AttachmentSpool, CountedAttachments, PathSources, load_attachment_source,
-};
+use message_crate_csv::format_local_ts;
 use phone::{Handle, OwnerHandleSet};
 use sbr::{
     AttachmentBytes, ConversationKind, ParseStats, Record, infer_owner_phones, parse_file_with,
+};
+use staging::{
+    AttachmentSource, AttachmentSpool, CountedAttachments, PathSources, load_attachment_source,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
@@ -164,7 +164,7 @@ impl ReadReport {
         ]
     }
 
-    /// [`Self::leveled_lines`] without their levels: what Convert's log
+    /// `Self::leveled_lines` without their levels: what Convert's log
     /// gives, and an import's summary gives in the same words.
     pub fn log_lines(&self) -> Vec<String> {
         self.leveled_lines()
@@ -173,7 +173,7 @@ impl ReadReport {
             .collect()
     }
 
-    /// Write [`Self::leveled_lines`] to `log`, each at its level.
+    /// Write `Self::leveled_lines` to `log`, each at its level.
     pub fn write_log(&self, log: &LogSink) {
         for (level, line) in self.leveled_lines() {
             match level {
@@ -287,7 +287,7 @@ struct MessageRow {
 struct ConversationInProgress {
     kind: ConversationKind,
     /// The conversation as the shared projection reads it: each
-    /// participant's handle key in `participant_e164s`, the group title in
+    /// participant's handle key in `participant_handles`, the group title in
     /// `display_name`.
     pending: PendingConversation,
     /// Each message's [`MessageRow`], in the order the read added them.
@@ -372,10 +372,10 @@ pub fn spooled_attachments<'a>(
         document_messages(documents),
         files,
         PathSources::OnDisk,
-        |att| {
+        |attachment| {
             options
                 .spool
-                .and_then(|spool| spool.source(att))
+                .and_then(|spool| spool.source(attachment))
                 .unwrap_or((AttachmentSource::Missing, None))
         },
         options.sinks.log,
@@ -390,7 +390,7 @@ pub fn spooled_attachments<'a>(
 /// # Errors
 ///
 /// Returns an error when an attachment cannot be staged or the run is
-/// cancelled.
+/// canceled.
 pub fn stage_read_attachments(
     documents: &mut [ConversationDocument],
     options: &ReadOptions<'_>,
@@ -443,7 +443,7 @@ fn add_record(
         .unwrap_or_default();
     let extra = BTreeMap::from([
         (ROW.to_string(), conversation.rows.len().to_string()),
-        // Read by the shared `message_ir::message_time`.
+        // Read by the shared `ir::message_time`.
         ("date_ms".to_string(), record.date_ms),
     ]);
     conversation.rows.push(MessageRow {
@@ -462,11 +462,13 @@ fn add_record(
         // Whole seconds, for the shared check that the time can be
         // represented; the order is the parser's own seconds
         // (`SbrProjection::message_order`) and the time the `date_ms`
-        // extra (`message_ir::message_time`).
+        // extra (`ir::message_time`).
         sort_key: record.timestamp_secs as i64,
         is_from_me: record.is_from_me,
-        sender_identity: record.sender.map(Handle::into_key).unwrap_or_default(),
-        sender_display_name: record.sender_display_name,
+        sender: ir::Sender::new(
+            record.sender.map(Handle::into_key),
+            record.sender_display_name,
+        ),
         text: record.text,
         attachments,
         extra,
@@ -498,18 +500,18 @@ impl SbrProjection<'_> {
     fn names_by_handle(&self, conversation: &PendingConversation) -> HashMap<String, String> {
         let mut names = HashMap::new();
         for message in &conversation.messages {
-            if let Some(name) = message
-                .sender_display_name
+            if let Some((identity, name)) = message
+                .sender
+                .identity
                 .as_deref()
-                .and_then(message_ir::trimmed)
-                .filter(|_| !message.sender_identity.is_empty())
+                .zip(message.sender.display_name.as_deref().and_then(ir::trimmed))
             {
                 names
-                    .entry(message.sender_identity.clone())
+                    .entry(identity.to_string())
                     .or_insert_with(|| name.to_string());
             }
             if let Some(name) = sbr::contact_name(&self.row(message).contact_name, self.kind) {
-                for peer in &conversation.participant_e164s {
+                for peer in &conversation.participant_handles {
                     names
                         .entry(peer.clone())
                         .or_insert_with(|| name.to_string());
@@ -562,7 +564,7 @@ impl ProjectionHooks for SbrProjection<'_> {
     fn participants(&self, _chat_id: &str, conversation: &PendingConversation) -> Vec<Participant> {
         let names = self.names_by_handle(conversation);
         conversation
-            .participant_e164s
+            .participant_handles
             .iter()
             .map(|handle| Participant {
                 identity: Some(handle.clone()),
@@ -646,7 +648,10 @@ fn describe(
         .and_then(|attrs| attrs.get("address"))
         .and_then(serde_json::Value::as_str)
         .filter(|address| !address.trim().is_empty());
-    let with = address.map_or_else(|| conversation.participant_e164s.join(", "), str::to_string);
+    let with = address.map_or_else(
+        || conversation.participant_handles.join(", "),
+        str::to_string,
+    );
     format!("message of {time} with {with}")
 }
 
@@ -661,7 +666,7 @@ fn describe(
 ///
 /// Returns an error when `input` is not a file, is not valid XML, or a
 /// payload cannot be written to the spool, and
-/// [`Cancelled`](message_crate_core::Cancelled) when the run
+/// [`Canceled`](message_crate_core::Canceled) when the run
 /// is canceled. A file that is not valid XML is refused whole, in the
 /// owner-phone pass and the message pass alike; a message that cannot be
 /// kept in a valid file is counted and the read goes on.

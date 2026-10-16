@@ -32,16 +32,16 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use anyhow::{Context, Result};
+use ir::{Attachment, ConversationDocument};
+use ir_format::{filename_stem, give_each_document_its_own_file};
 use message_crate_core::{
     AttachmentFiles, AttachmentJob, CONVERSATION_FILES_PREPARING, CONVERSATIONS_RESUMED, Counter,
     LoadError, LogSink, OutputFormat, ProgressEvent, ProgressSink, Sinks, WriteStatus,
     attachment_size_hint, check_cancel, run_attachment_jobs,
 };
-use message_ir::{Attachment, ConversationDocument};
-use message_ir_format::{filename_stem, give_each_document_its_own_file};
 
 use crate::headroom::{Disk, bytes_to_copy, check_headroom};
-use message_ir_format::{is_complete_file, write_format};
+use ir_format::{is_complete_file, write_format};
 
 /// Where a unit's attachment bytes come from at write time.
 #[derive(Debug, Default)]
@@ -74,7 +74,7 @@ impl AttachmentSource {
 /// One attachment of a unit, pinned to its place in the document.
 #[derive(Debug)]
 pub struct UnitAttachment {
-    /// Index into `doc.messages`.
+    /// Index into `document.messages`.
     pub message_index: usize,
     /// Index into that message's `attachments`.
     pub attachment_index: usize,
@@ -84,7 +84,7 @@ pub struct UnitAttachment {
     pub timestamp_unix_ms: i64,
     /// Size from the backup when known; byte totals grow as unhinted files load.
     /// Always `None` for a `Missing` source, which is never copied, even when
-    /// the backup knew its size. [`ConversationUnit::from_doc`] makes an
+    /// the backup knew its size. [`ConversationUnit::from_document`] makes an
     /// empty `Bytes` source `Missing`, and [`drain_write_queue`] does the same
     /// for a `Path` with no file there, before either sums a total.
     pub size_hint: Option<u64>,
@@ -94,29 +94,26 @@ pub struct UnitAttachment {
 #[derive(Debug)]
 pub struct ConversationUnit {
     /// The conversation to write.
-    pub doc: ConversationDocument,
+    pub document: ConversationDocument,
     /// Its attachments, in message order.
     pub attachments: Vec<UnitAttachment>,
 }
 
 impl ConversationUnit {
-    /// Pair every attachment in `doc` with a source and a size hint.
+    /// Pair every attachment in `document` with a source and a size hint.
     ///
     /// The closure sees each attachment in message order and receives it as
     /// `&mut`, so an exporter carrying bytes on the document can move them
     /// out with `att.bytes.take()` instead of copying them.
-    pub fn from_doc(
-        mut doc: ConversationDocument,
-        mut source_for: impl FnMut(
-            usize,
-            &mut message_ir::Attachment,
-        ) -> (AttachmentSource, Option<u64>),
+    pub fn from_document(
+        mut document: ConversationDocument,
+        mut source_for: impl FnMut(usize, &mut ir::Attachment) -> (AttachmentSource, Option<u64>),
     ) -> Self {
         let mut attachments = Vec::new();
         let mut flat = 0usize;
-        for (message_index, msg) in doc.messages.iter_mut().enumerate() {
-            let timestamp_unix_ms = msg.timestamp_unix_ms;
-            for (attachment_index, att) in msg.attachments.iter_mut().enumerate() {
+        for (message_index, message) in document.messages.iter_mut().enumerate() {
+            let timestamp_unix_ms = message.timestamp_unix_ms;
+            for (attachment_index, att) in message.attachments.iter_mut().enumerate() {
                 let (source, size_hint) = counted_source(source_for(flat, att));
                 attachments.push(UnitAttachment {
                     message_index,
@@ -128,7 +125,10 @@ impl ConversationUnit {
                 flat += 1;
             }
         }
-        Self { doc, attachments }
+        Self {
+            document,
+            attachments,
+        }
     }
 }
 
@@ -359,7 +359,7 @@ fn leave_out_files_that_are_gone(
     log: &LogSink,
 ) {
     for unit in units {
-        if written_by_an_earlier_run(output_dir, &unit.doc, resume) {
+        if written_by_an_earlier_run(output_dir, &unit.document, resume) {
             continue;
         }
         for attachment in &mut unit.attachments {
@@ -414,29 +414,34 @@ pub fn unreadable_attachment_line(path: &Path, why: impl std::fmt::Display) -> S
 }
 
 /// The conversation file a unit is written to.
-pub(crate) fn conversation_file(output_dir: &Path, doc: &ConversationDocument) -> PathBuf {
-    output_dir.join(conversation_file_name(doc))
+pub(crate) fn conversation_file(output_dir: &Path, document: &ConversationDocument) -> PathBuf {
+    output_dir.join(conversation_file_name(document))
 }
 
 /// The name of the conversation file a unit is written to, without its
 /// directory: the name the Upload gives the file, and the one
 /// [`ProgressEvent::FileWritten`] and a loader's rows name it by.
-fn conversation_file_name(doc: &ConversationDocument) -> String {
-    format!("{}.jsonl", filename_stem(doc))
+fn conversation_file_name(document: &ConversationDocument) -> String {
+    format!("{}.jsonl", filename_stem(document))
 }
 
 /// Whether a resumed run skips this conversation: an earlier run wrote its
 /// file to the end, attachments and all. An empty or cut-off file left by a
 /// power loss is written again.
-fn written_by_an_earlier_run(output_dir: &Path, doc: &ConversationDocument, resume: bool) -> bool {
-    resume && is_complete_file(&conversation_file(output_dir, doc))
+fn written_by_an_earlier_run(
+    output_dir: &Path,
+    document: &ConversationDocument,
+    resume: bool,
+) -> bool {
+    resume && is_complete_file(&conversation_file(output_dir, document))
 }
 
 /// Give every unit a file name no other unit in the run has; see
 /// [`give_each_document_its_own_file`].
 fn give_each_unit_its_own_file(units: &mut [ConversationUnit]) -> Result<()> {
-    let mut docs: Vec<&mut ConversationDocument> = units.iter_mut().map(|u| &mut u.doc).collect();
-    give_each_document_its_own_file(&mut docs).map_err(anyhow::Error::msg)
+    let mut documents: Vec<&mut ConversationDocument> =
+        units.iter_mut().map(|u| &mut u.document).collect();
+    give_each_document_its_own_file(&mut documents).map_err(anyhow::Error::msg)
 }
 
 /// Writers scale with the machine: writing is IO and hashing, and past a
@@ -582,8 +587,8 @@ pub fn drain_write_queue(
         }
     });
 
-    if let Some(msg) = first_error.into_inner().expect("write queue error slot") {
-        anyhow::bail!(msg);
+    if let Some(message) = first_error.into_inner().expect("write queue error slot") {
+        anyhow::bail!(message);
     }
 
     let report = WriteQueueReport {
@@ -601,7 +606,7 @@ pub fn drain_write_queue(
 /// slack is the requirement.
 ///
 /// With no attachment files copied, nothing is counted. A
-/// `Missing` source is never copied either, and [`ConversationUnit::from_doc`]
+/// `Missing` source is never copied either, and [`ConversationUnit::from_document`]
 /// already drops its hint, so the sum leaves it out.
 fn check_units_headroom(
     output_dir: &Path,
@@ -616,7 +621,7 @@ fn check_units_headroom(
     // on disk already.
     let needed = bytes_to_copy(units.iter().flat_map(|unit| {
         unit.attachments.iter().filter_map(|a| {
-            let digest = unit.doc.messages[a.message_index].attachments[a.attachment_index]
+            let digest = unit.document.messages[a.message_index].attachments[a.attachment_index]
                 .digest_sha256
                 .as_deref();
             Some((digest, a.size_hint?))
@@ -666,15 +671,15 @@ fn write_one_unit(
     check_cancel(sinks.cancel)?;
 
     let ConversationUnit {
-        mut doc,
+        mut document,
         attachments,
     } = unit;
     let attachment_count = attachments.len();
     let hint_sum: u64 = attachments.iter().filter_map(|a| a.size_hint).sum();
 
-    let file = conversation_file_name(&doc);
+    let file = conversation_file_name(&document);
     let path = output_dir.join(&file);
-    if written_by_an_earlier_run(output_dir, &doc, options.resume) {
+    if written_by_an_earlier_run(output_dir, &document, options.resume) {
         // Count its attachments and their bytes as done, and load nothing.
         // Progress describes the whole import, not just this run's share of
         // it.
@@ -690,7 +695,11 @@ fn write_one_unit(
         });
     }
 
-    let timestamps: Vec<i64> = doc.messages.iter().map(|m| m.timestamp_unix_ms).collect();
+    let timestamps: Vec<i64> = document
+        .messages
+        .iter()
+        .map(|m| m.timestamp_unix_ms)
+        .collect();
     let mut slots: HashMap<(usize, usize), UnitAttachment> = attachments
         .into_iter()
         .map(|a| ((a.message_index, a.attachment_index), a))
@@ -698,9 +707,9 @@ fn write_one_unit(
 
     let mut sources: Vec<AttachmentSource> = Vec::with_capacity(attachment_count);
     let mut jobs: Vec<AttachmentJob<'_>> = Vec::new();
-    for (message_index, msg) in doc.messages.iter_mut().enumerate() {
+    for (message_index, message) in document.messages.iter_mut().enumerate() {
         let fallback_ts = timestamps.get(message_index).copied().unwrap_or(0);
-        for (attachment_index, att) in msg.attachments.iter_mut().enumerate() {
+        for (attachment_index, att) in message.attachments.iter_mut().enumerate() {
             let slot = slots.remove(&(message_index, attachment_index));
             let (source, size_hint, timestamp_unix_ms) = match slot {
                 Some(a) => (a.source, a.size_hint, a.timestamp_unix_ms),
@@ -752,14 +761,14 @@ fn write_one_unit(
         .count();
     drop(jobs);
 
-    message_ir_format::clear_attachments_when_skipped(&mut doc, options.files);
-    for msg in &mut doc.messages {
-        for att in &mut msg.attachments {
+    ir_format::clear_attachments_when_skipped(&mut document, options.files);
+    for message in &mut document.messages {
+        for att in &mut message.attachments {
             att.bytes = None;
         }
     }
 
-    write_format(output_dir, OutputFormat::Jsonl, doc)
+    write_format(output_dir, OutputFormat::Jsonl, document)
         .with_context(|| format!("write {}", path.display()))?;
 
     Ok(UnitOutcome {

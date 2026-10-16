@@ -26,7 +26,7 @@ impl Zone {
     /// Returns an error when the string is neither a UTC offset nor a known
     /// zone name.
     pub(crate) fn parse(raw: Option<&str>) -> Result<Self> {
-        let Some(name) = raw.and_then(message_ir::trimmed) else {
+        let Some(name) = raw.and_then(ir::trimmed) else {
             return Ok(Self::Local);
         };
         if let Ok(offset) = parse_utc_offset(name) {

@@ -1,15 +1,20 @@
-//! Convert or compress attachment media under a converter export directory.
+//! Convert or compress one attachment file at a time ([`transcode_file`],
+//! [`transcode_file_as`]). The desktop app's Media Stage, which walks a run's
+//! conversations and their attachments, is `message_staging::transcode_staged`.
 //!
 //! Modes:
-//! - **Disabled**: do not copy or write attachment files (the export form's "Do not copy" choice)
-//! - **Clone**: leave exported files as-is (a no-op after export)
+//! - **Disabled**: do not copy or write attachment files (the Import form's
+//!   **Skip**)
+//! - **Clone**: leave exported files as-is, a no-op after export (**Copy**)
 //! - **Convert**: rewrite images to `.jpg`, videos to `.mp4`, audio to `.mp3`
-//! - **Compress**: re-encode to shrink files, with optional video settings
+//!   (**Convert media**)
+//! - **Compress**: convert, and re-encode to shrink files, with optional video
+//!   settings (**Convert & Compress media**)
 //!
-//! Convert and compress need `ffmpeg` / `ffprobe`, both on `PATH` or both
-//! in the Tools Directory, and nowhere else. The caller says where the Tools
-//! Directory is by the [`InstalledTools`] it passes in; a test passes a fake
-//! [`MediaTools`] instead (`testutil::FakeTools`).
+//! The `convert` and `compress` modes need `ffmpeg` / `ffprobe`, both on
+//! `PATH` or both in the Tools Directory, and nowhere else. The caller says
+//! where the Tools Directory is by the [`InstalledTools`] it passes in; a test
+//! passes a fake [`MediaTools`] instead (`testutil::FakeTools`).
 
 mod estimate;
 #[cfg(any(test, feature = "testutil"))]
@@ -30,9 +35,8 @@ pub use mime::{
 };
 pub use probe::MediaProbe;
 pub use process::{
-    HevcFallback, MediaReport, NotConverted, TranscodeOutcome, classify, collect_media_files,
-    derivative_name, derivative_name_for_missing, done_line, format_bytes, kind_of,
-    process_attachment_files, transcode_file, transcode_file_as, why_not_converted,
+    HevcFallback, TranscodeOutcome, classify, derivative_name, derivative_name_for_missing,
+    format_bytes, kind_of, transcode_file, transcode_file_as, why_not_converted,
 };
 pub use signature::{SIGNATURE_LEN, media_type_from_bytes, media_type_in_file};
 pub use tools::{
@@ -106,7 +110,7 @@ impl MediaMode {
         }
     }
 
-    /// True when the mode requires ffmpeg/ffprobe (Convert or Compress).
+    /// True when the mode requires ffmpeg/ffprobe (`convert` or `compress`).
     pub fn needs_tools(self) -> bool {
         matches!(self, Self::Convert | Self::Compress)
     }

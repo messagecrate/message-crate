@@ -19,14 +19,15 @@
 // Every test is told when what it waits for has happened: a fake settles a
 // promise the test awaits, or the test awaits the logout or the run itself.
 
-import { act, renderHook, screen } from "@testing-library/react";
+import { renderHook, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AuthShell from "../../components/AuthShell";
 import { ApiError, getAccountId, getBaseUrl, getToken } from "../../lib/api";
 import { useAuth } from "../../lib/authContext";
 import type { DesktopJobResult } from "../../lib/desktop/job";
 import type { UploadFinishedReport } from "../../lib/desktop/upload";
-import { isUploadRunning } from "../../lib/runningUpload";
+import { isUploadRunning, registerRunningUpload } from "../../lib/runningUpload";
+import { act } from "../../test/act";
 import { deferred } from "../../test/deferred";
 import { advanceTimersAndSettle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { importForm } from "../../test/importForm";
@@ -147,8 +148,22 @@ let service: ImportRunService;
 /** The run the test started, which settles once the run has stopped. */
 let running: Promise<void> | null = null;
 
+/**
+ * Forget an Upload an earlier test left registered in `lib/runningUpload`
+ * (#3131). A test that times out while a call its run makes is held never
+ * ends that run, and `endRun` cannot end it either, so the Upload's own
+ * `ended` never runs and the next test's logout would ask about it.
+ * Registering a stand-in and ending it leaves no Upload registered, and the
+ * held run's `ended`, should it ever run, finds the registration is not its
+ * own and leaves it alone.
+ */
+function forgetLeftoverUpload(): void {
+  registerRunningUpload(async () => {})();
+}
+
 /** A fresh run and fresh fakes, for both groups of tests below. */
 function resetRun(): void {
+  forgetLeftoverUpload();
   localStorage.clear();
   service = createImportRunService(fakeDeps());
   running = null;
@@ -191,7 +206,7 @@ const form = importForm();
 function pausedReport(): UploadFinishedReport {
   return {
     ok: false,
-    cancelled: true,
+    canceled: true,
     session_refused: false,
     messages_attempted: 4_000,
     messages_inserted: 4_000,
@@ -203,7 +218,7 @@ function pausedReport(): UploadFinishedReport {
     conversations_total: 681,
     conversations_failed: 0,
     conversations_skipped: 0,
-    conversations_cancelled: 481,
+    conversations_canceled: 481,
     results: [],
   };
 }
@@ -598,9 +613,9 @@ describe("a session the server refuses to the Import Run's own calls (#1677)", (
       report: {
         ...pausedReport(),
         ok: true,
-        cancelled: false,
+        canceled: false,
         conversations_ok: 681,
-        conversations_cancelled: 0,
+        conversations_canceled: 0,
       },
     });
     await act(async () => {

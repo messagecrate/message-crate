@@ -41,10 +41,10 @@ export type AttachmentMediaMode = "copy" | "convert" | "compress" | "skip";
 
 /**
  * The four attachment choices an import is started with: what happens to
- * attachments, and the three limits Compress works to. `mediaExtractFields`
- * (`sbrExtractFields.ts`) turns them into the `attachment_media`,
- * `media_max_resolution`, `media_max_fps`, and `media_min_size` fields of
- * `ExtractConfig`.
+ * attachments, and the three limits Convert & Compress media works to.
+ * `mediaExtractFields` (`sbrExtractFields.ts`) turns them into the
+ * `attachment_media`, `media_max_resolution`, `media_max_fps`, and
+ * `media_min_size` fields of `ExtractConfig`.
  */
 export type AttachmentChoices = {
   attachmentMedia: AttachmentMediaMode;
@@ -108,7 +108,7 @@ export interface DesktopJobErrorEvent {
 /** A program the desktop app keeps in its Tools Directory, as `tools_status` names it. */
 export type ToolName = "ffmpeg" | "ffprobe" | "wtsexporter";
 
-/** The programs Convert and Compress run. */
+/** The programs Convert media and Convert & Compress media run. */
 export type MediaToolName = "ffmpeg" | "ffprobe";
 
 /**
@@ -154,7 +154,11 @@ export interface ImportIssueEvent {
    * file on a later try.
    */
   kind: RunIssueKind;
-  step: "parse" | "attachments" | "prepare" | "media" | "upload";
+  /**
+   * The step that raised the row: `RunIssueStep` in
+   * `crates/core/message-crate-core/src/pipeline.rs`.
+   */
+  step: "parse" | "attachments" | "media" | "upload";
   item: string;
   reason: string;
   /**
@@ -180,9 +184,9 @@ export interface ImportFileDoneEvent {
 
 /**
  * What an Upload said of one conversation: an `ImportFileDoneEvent` status,
- * or `cancelled` from its report, for one a stop left unsent.
+ * or `canceled` from its report, for one a stop left unsent.
  */
-export type ConversationStatus = ImportFileDoneEvent["status"] | "cancelled";
+export type ConversationStatus = ImportFileDoneEvent["status"] | "canceled";
 
 /**
  * Staging's write queue finished with one conversation file

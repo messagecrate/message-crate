@@ -7,7 +7,7 @@ license = "LicenseRef-FCL-1.0-ALv2"
 
 [dependencies]
 android-fields = { path = "../android-fields" }
-message-ir = { workspace = true }
+ir = { workspace = true }
 mms-parts = { path = "../mms-parts" }
 anyhow = { workspace = true }
 file-io = { workspace = true }

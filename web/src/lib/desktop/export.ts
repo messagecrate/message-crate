@@ -34,7 +34,7 @@ export async function invokeExport(config: ExportConfig): Promise<void> {
 }
 
 /**
- * File formats `message-reexport` can write, in the order the Export screen
+ * File formats `reexport` can write, in the order the Export screen
  * offers them. The ids are the strings the `format` command parses
  * (`src-tauri/src/commands/format.rs`); anything else is rejected there.
  */
@@ -92,7 +92,7 @@ export async function invokeFinishExportDir(dir: string): Promise<string | null>
   return invoke("finish_export_dir", { dir });
 }
 
-/** Delete an Export's or Convert's directory after it failed or was cancelled. */
+/** Delete an Export's or Convert's directory after it failed or was canceled. */
 export async function invokeDiscardExportDir(dir: string): Promise<void> {
   return invoke("discard_export_dir", { dir });
 }
@@ -100,7 +100,7 @@ export async function invokeDiscardExportDir(dir: string): Promise<void> {
 /**
  * Rewrite an export directory into another format.
  *
- * `input_dir` and `output_dir` must differ: `message-reexport` canonicalizes
+ * `input_dir` and `output_dir` must differ: `reexport` canonicalizes
  * both and refuses to write into its own input.
  */
 export async function invokeFormat(config: {

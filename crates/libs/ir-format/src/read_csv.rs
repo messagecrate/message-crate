@@ -3,13 +3,13 @@
 use crate::CSV_HEADERS;
 use crate::normalize::{imessage_from_parts, vendor_fields_from_parts};
 use anyhow::{Context, Result, bail};
-use message_csv::{AttachmentCell, ParticipantCell, read_cell};
-use message_ir::{
+use ir::{
     Attachment, ConversationDocument, ConversationHeader, ConversationMeta, ConversationStats,
     ConversationType, Direction, EarlierVersion, ExportMeta, ImessageExtensions, Message,
     MessageKind, Participant, Reaction, ReplyTo, SCHEMA_VERSION, TimePrecision, Transport,
     nonempty,
 };
+use message_crate_csv::{AttachmentCell, ParticipantCell, read_cell};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
@@ -58,9 +58,9 @@ pub fn read_conversation_csv(path: &Path) -> Result<ConversationDocument> {
         );
     }
 
-    let mut doc = header.into_document(messages);
-    crate::util::recover_stem_suffix(&mut doc, path.file_stem());
-    Ok(doc)
+    let mut document = header.into_document(messages);
+    crate::util::recover_stem_suffix(&mut document, path.file_stem());
+    Ok(document)
 }
 
 /// Rebuild the conversation header from the first CSV row's conversation columns.
@@ -146,12 +146,12 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
     );
 
     let reply_to = reply_to_from_cells(
-        message_csv::parse_bool(get("is_reply")),
+        message_crate_csv::parse_bool(get("is_reply")),
         get("reply_to_guid"),
         get("reply_to_part"),
     );
     // A mark the CSV names wrongly is refused rather than read as none.
-    let deletion = message_ir::parse_deletion(get("deletion")).context("bad deletion")?;
+    let deletion = ir::parse_deletion(get("deletion")).context("bad deletion")?;
     let associated_part = {
         let s = get("associated_part");
         if s.is_empty() { None } else { s.parse().ok() }
@@ -179,9 +179,11 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         direction,
         service: Transport::parse(get("service")),
         message_kind: MessageKind::parse(get("message_kind")),
-        sender_identity: nonempty(get("sender_identity")),
-        sender_display_name: nonempty(get("sender_display_name")),
-        sender_country: None,
+        sender: ir::Sender {
+            identity: nonempty(get("sender_identity")),
+            display_name: nonempty(get("sender_display_name")),
+            country: None,
+        },
         owner_identity: nonempty(get("message_owner_identity")),
         subject: nonempty(get("subject")),
         text: get("text").to_string(),
@@ -207,7 +209,7 @@ fn reply_to_from_cells(is_reply: bool, guid: &str, part: &str) -> Option<ReplyTo
     } else {
         part.parse().ok()
     };
-    message_ir::reply_to_from_mark(is_reply, nonempty(guid), part_index)
+    ir::reply_to_from_mark(is_reply, nonempty(guid), part_index)
 }
 
 /// Check every required column is present and return the name → index map

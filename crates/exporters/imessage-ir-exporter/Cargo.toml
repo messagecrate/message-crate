@@ -3,7 +3,7 @@ name = "imessage-ir-exporter"
 version = "0.1.0"
 edition = "2024"
 license = "LicenseRef-FCL-1.0-ALv2"
-description = "Export Apple Messages to per-conversation JSON Lines / JSON / CSV / EML / MBOX via message-ir, reading the database through the imessage-reader helper process"
+description = "Export Apple Messages to per-conversation JSON Lines / JSON / CSV / EML / MBOX via the `ir` crate, reading the database through the imessage-reader helper process"
 repository = "https://github.com/messagecrate/message-crate"
 
 [lib]
@@ -20,9 +20,9 @@ anyhow = { workspace = true }
 imessage-reader-protocol = { path = "../../helpers/imessage-reader-protocol" }
 ios-backup = { path = "../../libs/ios-backup" }
 message-crate-core = { path = "../../core/message-crate-core" }
-message-ir = { path = "../../libs/ir" }
-message-ir-format = { path = "../../libs/ir-format" }
-message-staging = { path = "../../libs/staging" }
+ir = { path = "../../libs/ir" }
+ir-format = { path = "../../libs/ir-format" }
+staging = { path = "../../libs/staging" }
 phone = { path = "../../libs/phone" }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
@@ -31,7 +31,7 @@ tempfile = { workspace = true }
 message-crate-core = { path = "../../core/message-crate-core", features = ["testutil"] }
 chat-db-fixture = { path = "../../helpers/chat-db-fixture" }
 ios-backup = { path = "../../libs/ios-backup", features = ["testutil"] }
-message-ir = { path = "../../libs/ir", features = ["testutil"] }
+ir = { path = "../../libs/ir", features = ["testutil"] }
 serde_json = { workspace = true }
 
 [lints]

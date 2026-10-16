@@ -4,8 +4,8 @@
 //! [`SetIdentityCountryRequest`] and run [`set_identity_country`]; the
 //! statements are in `db::identity_country` (#1676).
 
-use message_crate_api_types::IdentityHolder;
-use message_ir::IdentityService;
+use api_types::IdentityHolder;
+use ir::IdentityService;
 use serde::Deserialize;
 use sqlx::SqliteConnection;
 
@@ -68,17 +68,6 @@ pub enum CountryError {
     /// Something failed that changing the request would not help.
     #[error(transparent)]
     Failed(#[from] anyhow::Error),
-}
-
-impl From<CountryError> for crate::api_error::ApiError {
-    fn from(error: CountryError) -> Self {
-        match error {
-            CountryError::Refused(message) => Self::validation(message),
-            CountryError::Exists { detail, holder } => Self::IdentityExists { detail, holder },
-            CountryError::Conflict(message) => Self::StateConflict(message),
-            CountryError::Failed(cause) => Self::Internal(cause),
-        }
-    }
 }
 
 /// Give the identity `request` names the `+` form its country gives it, and

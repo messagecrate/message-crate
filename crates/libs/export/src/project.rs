@@ -7,10 +7,10 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, NaiveDateTime};
-// `message_crate_api_types` and `message_ir` both name a `Message` and an
+// `api_types` and `ir` both name a `Message` and an
 // `Attachment`; the conversation file's are imported here as `IrMessage` and
 // `IrAttachment`.
-use message_ir::{
+use ir::{
     Attachment as IrAttachment, ConversationDocument, ConversationMeta, ConversationStats,
     ConversationType, Deletion, Direction, EarlierVersion, ExportMeta, ImessageExtensions,
     Message as IrMessage, MessageKind, Participant, Reaction, ReplyTo, SCHEMA_VERSION,
@@ -18,11 +18,14 @@ use message_ir::{
 };
 use serde_json::json;
 
-use message_crate_api_types::{Attachment, Message, Tapback};
+use api_types::{Attachment, Message, Tapback};
 
 /// Grouping key so messages from the same chat and backup source stay together.
-pub fn conversation_key(msg: &Message) -> String {
-    format!("{}::{}", msg.source, msg.conversation.chat_identifier)
+pub fn conversation_key(message: &Message) -> String {
+    format!(
+        "{}::{}",
+        message.source, message.conversation.chat_identifier
+    )
 }
 
 /// Build one conversation document from a seed message and the mapped rows,
@@ -93,42 +96,43 @@ pub fn build_document(
 /// # Errors
 ///
 /// Returns an error when the timestamp or the backup date cannot be parsed.
-pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage> {
-    let timestamp_unix_ms = parse_timestamp_unix_ms(msg.timestamp.as_str())
-        .with_context(|| format!("message {} timestamp", msg.id))?;
-    let backup_taken_at_unix_ms = msg
+pub fn to_ir_message(message: &Message, skip_attachments: bool) -> Result<IrMessage> {
+    let timestamp_unix_ms = parse_timestamp_unix_ms(message.timestamp.as_str())
+        .with_context(|| format!("message {} timestamp", message.id))?;
+    let backup_taken_at_unix_ms = message
         .backup_taken_at
         .as_deref()
         .map(parse_timestamp_unix_ms)
         .transpose()
-        .with_context(|| format!("message {} backup date", msg.id))?;
+        .with_context(|| format!("message {} backup date", message.id))?;
 
-    let service = Transport::parse(msg.service.as_deref().unwrap_or(""));
-    let direction = if msg.is_from_me {
+    let service = Transport::parse(message.service.as_deref().unwrap_or(""));
+    let direction = if message.is_from_me {
         Direction::Outgoing
     } else {
         Direction::Incoming
     };
-    let message_kind = infer_kind(msg, service);
+    let message_kind = infer_kind(message, service);
 
     let attachments = if skip_attachments {
         Vec::new()
     } else {
-        msg.attachments
+        message
+            .attachments
             .iter()
             .map(to_ir_attachment)
             .collect::<Vec<_>>()
     };
 
-    let reply_to = msg.reply_to.as_ref().map(|reply_to| ReplyTo {
+    let reply_to = message.reply_to.as_ref().map(|reply_to| ReplyTo {
         guid: reply_to.guid.clone(),
         part_index: reply_to.part_index.and_then(|n| u32::try_from(n).ok()),
     });
     let imessage = ImessageExtensions {
         // An announcement with no text carries no information, so drop it.
-        announcement: msg
+        announcement: message
             .is_announcement
-            .then(|| msg.text.clone().unwrap_or_default())
+            .then(|| message.text.clone().unwrap_or_default())
             .filter(|text| !text.is_empty()),
         ..Default::default()
     };
@@ -136,31 +140,37 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
     // Keep the server's row id and source name so a later import can trace
     // each message back to the server it came from.
     let mut source_fields = serde_json::Map::new();
-    source_fields.insert("server_message_id".into(), json!(msg.id));
-    source_fields.insert("server_source".into(), json!(msg.source));
+    source_fields.insert("server_message_id".into(), json!(message.id));
+    source_fields.insert("server_source".into(), json!(message.source));
 
     Ok(IrMessage {
-        guid: msg.guid.clone(),
+        guid: message.guid.clone(),
         timestamp_unix_ms,
-        time_precision: time_precision_from_api(msg.time_precision),
+        time_precision: time_precision_from_api(message.time_precision),
         direction,
         service,
         message_kind,
-        sender_identity: msg.sender.clone(),
-        sender_display_name: None,
-        sender_country: None,
-        owner_identity: msg.owner.clone().filter(|o| !o.trim().is_empty()),
-        subject: msg.subject.clone(),
-        text: msg.text.clone().unwrap_or_default(),
+        sender: ir::Sender {
+            identity: message.sender.clone(),
+            display_name: None,
+            country: None,
+        },
+        owner_identity: message.owner.clone().filter(|o| !o.trim().is_empty()),
+        subject: message.subject.clone(),
+        text: message.text.clone().unwrap_or_default(),
         attachments,
-        reactions: msg.tapbacks.iter().filter_map(reaction_from_row).collect(),
-        deletion: msg.deletion.map(deletion_from_api),
-        edits: msg
+        reactions: message
+            .tapbacks
+            .iter()
+            .filter_map(reaction_from_row)
+            .collect(),
+        deletion: message.deletion.map(deletion_from_api),
+        edits: message
             .earlier_versions
             .iter()
             .map(earlier_version_from_api)
             .collect::<Result<_>>()
-            .with_context(|| format!("message {} earlier versions", msg.id))?,
+            .with_context(|| format!("message {} earlier versions", message.id))?,
         reply_to,
         imessage: imessage.into_option(),
         source: VendorFields {
@@ -174,9 +184,7 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
 
 /// One earlier version the server stores, as the conversation file writes
 /// it: its time back in milliseconds.
-fn earlier_version_from_api(
-    version: &message_crate_api_types::EarlierVersion,
-) -> Result<EarlierVersion> {
+fn earlier_version_from_api(version: &api_types::EarlierVersion) -> Result<EarlierVersion> {
     Ok(EarlierVersion {
         part_index: u32::try_from(version.part_index)
             .with_context(|| format!("part index {}", version.part_index))?,
@@ -190,18 +198,18 @@ fn earlier_version_from_api(
 }
 
 /// The precision the server stored, as the conversation file writes it.
-fn time_precision_from_api(precision: message_crate_api_types::TimePrecision) -> TimePrecision {
+fn time_precision_from_api(precision: api_types::TimePrecision) -> TimePrecision {
     match precision {
-        message_crate_api_types::TimePrecision::Seconds => TimePrecision::Seconds,
-        message_crate_api_types::TimePrecision::Milliseconds => TimePrecision::Milliseconds,
+        api_types::TimePrecision::Seconds => TimePrecision::Seconds,
+        api_types::TimePrecision::Milliseconds => TimePrecision::Milliseconds,
     }
 }
 
 /// The mark a server message carries, as the conversation file writes it.
-fn deletion_from_api(deletion: message_crate_api_types::Deletion) -> Deletion {
+fn deletion_from_api(deletion: api_types::Deletion) -> Deletion {
     match deletion {
-        message_crate_api_types::Deletion::DeletedInSourceApp => Deletion::DeletedInSourceApp,
-        message_crate_api_types::Deletion::Unsent => Deletion::Unsent,
+        api_types::Deletion::DeletedInSourceApp => Deletion::DeletedInSourceApp,
+        api_types::Deletion::Unsent => Deletion::Unsent,
     }
 }
 
@@ -254,16 +262,16 @@ pub struct ExportPath {
 /// The server's path is input: an import that reuses a stored fingerprint
 /// never read the file, so the server can hold `../x` or an absolute path.
 /// Joined onto the output directory, such a path writes outside it, so it goes
-/// through [`message_ir::safe_attachment_path`] like every other reader of an
+/// through [`ir::safe_attachment_path`] like every other reader of an
 /// attachment path. A refused path is not used: the attachment falls back to
 /// `attachments/{sha256}`, the name an attachment with no path gets.
 pub fn export_path(att: &Attachment) -> ExportPath {
     let by_fingerprint = att
         .sha256
         .as_deref()
-        .and_then(message_ir::trimmed)
+        .and_then(ir::trimmed)
         .map(|sha| format!("attachments/{sha}"));
-    let Some(path) = att.path.as_deref().and_then(message_ir::trimmed) else {
+    let Some(path) = att.path.as_deref().and_then(ir::trimmed) else {
         return ExportPath {
             rel: by_fingerprint,
             refused: None,
@@ -271,7 +279,7 @@ pub fn export_path(att: &Attachment) -> ExportPath {
     };
     // The base is empty because only the verdict matters here: the caller
     // joins the accepted path onto the output directory itself.
-    if message_ir::safe_attachment_path(Path::new(""), path).is_ok() {
+    if ir::safe_attachment_path(Path::new(""), path).is_ok() {
         ExportPath {
             rel: Some(path.to_string()),
             refused: None,
@@ -318,11 +326,11 @@ fn reaction_from_row(row: &Tapback) -> Option<Reaction> {
 }
 
 /// Choose SMS, MMS, iMessage, or announcement from service and attachments.
-fn infer_kind(msg: &Message, service: Transport) -> MessageKind {
-    if msg.is_announcement {
+fn infer_kind(message: &Message, service: Transport) -> MessageKind {
+    if message.is_announcement {
         return MessageKind::Announcement;
     }
-    if !msg.attachments.is_empty() && matches!(service, Transport::Sms | Transport::Rcs) {
+    if !message.attachments.is_empty() && matches!(service, Transport::Sms | Transport::Rcs) {
         return MessageKind::Mms;
     }
     match service {
@@ -334,7 +342,7 @@ fn infer_kind(msg: &Message, service: Transport) -> MessageKind {
         | Transport::Telegram
         | Transport::Slack => MessageKind::Unknown,
         Transport::Unknown => {
-            if msg.attachments.is_empty() {
+            if message.attachments.is_empty() {
                 MessageKind::Sms
             } else {
                 MessageKind::Mms

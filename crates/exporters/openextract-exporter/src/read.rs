@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result, bail};
 use message_crate_core::discover_files;
-use message_csv::{col, field};
+use message_crate_csv::{col, field};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,7 +76,7 @@ fn is_conversation_csv(path: &Path) -> bool {
 
 /// Read every row of one OpenExtract CSV, stripping a UTF-8 BOM first.
 pub(crate) fn parse_csv_file(path: &Path) -> Result<Vec<RawRow>> {
-    let (mut rdr, headers) = message_csv::open_csv_lowercase(path)?;
+    let (mut rdr, headers) = message_crate_csv::open_csv_lowercase(path)?;
 
     let date_i = col(&headers, "date")?;
     let sender_i = col(&headers, "sender")?;
@@ -101,8 +101,8 @@ pub(crate) fn parse_csv_file(path: &Path) -> Result<Vec<RawRow>> {
         if date.is_empty() && sender.is_empty() && text.is_empty() {
             continue;
         }
-        let is_from_me = message_csv::parse_bool(&field(&rec, is_from_me_i));
-        let has_attachments = message_csv::parse_bool(&field(&rec, has_att_i));
+        let is_from_me = message_crate_csv::parse_bool(&field(&rec, is_from_me_i));
+        let has_attachments = message_crate_csv::parse_bool(&field(&rec, has_att_i));
         let conversation = conversation_i
             .map(|i| field(&rec, i))
             .filter(|s| !s.is_empty());

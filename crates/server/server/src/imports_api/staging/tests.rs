@@ -9,8 +9,8 @@ use crate::imports_api::pipeline::{FixedImportArgs, ImportCounts, ImportOptions}
 use crate::imports_api::records::AttachmentRecord;
 use crate::imports_api::{ImportError, ImportFailure};
 use crate::test_support::{attachment, conversation_header, import_for_account, message_line};
-use message_crate_api_types::ImportMode;
-use message_ir::{Attachment, MessageKind, Transport};
+use api_types::ImportMode;
+use ir::{Attachment, MessageKind, Transport};
 
 const TEST_ACCOUNT: i64 = 7;
 
@@ -172,7 +172,7 @@ fn a_path_that_leaves_the_export_directory_is_refused_whether_or_not_its_fingerp
             err.to_string(),
             format!(
                 "line 2 of the file: {}: ../escape.txt",
-                message_ir::UNSAFE_ATTACHMENT_PATH
+                ir::UNSAFE_ATTACHMENT_PATH
             )
         );
         assert_eq!(stats.deduped, 0);
@@ -189,7 +189,7 @@ async fn an_attachment_staging_refuses_is_a_rejection_naming_its_file() {
     let tmp = TempDir::new().unwrap();
     let header = one_to_one_header();
     // The path is the input under test, so the line stays written out.
-    let message = r#"{"guid":"g-escape","timestamp_unix_ms":1426183462000,"time_precision":"milliseconds","direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550154","sender_display_name":null,"subject":null,"text":"hi","attachments":[{"path":"../escape.txt","original_name":null,"mime_type":null,"is_sticker":false,"transcription":null,"sticker_effect":null}],"imessage":null,"source":null}
+    let message = r#"{"guid":"g-escape","timestamp_unix_ms":1426183462000,"time_precision":"milliseconds","direction":"incoming","service":"imessage","message_kind":"imessage","sender":{"identity":"+15555550154","display_name":null},"subject":null,"text":"hi","attachments":[{"path":"../escape.txt","original_name":null,"mime_type":null,"is_sticker":false,"transcription":null,"sticker_effect":null}],"imessage":null,"source":null}
 "#;
     let path = tmp.path().join("+15555550154.jsonl");
     std::fs::write(&path, format!("{header}{message}")).unwrap();
@@ -756,7 +756,7 @@ async fn an_import_writes_no_email_identity_on_whatsapp() {
             .kind(MessageKind::Unknown)
             .sender("15555550160@s.whatsapp.net")
             .owner_identity("15555550100@s.whatsapp.net")
-            .reaction(message_ir::Reaction {
+            .reaction(ir::Reaction {
                 part_index: 0,
                 kind: "liked".into(),
                 emoji: None,
@@ -866,7 +866,7 @@ async fn a_participant_who_reacts_is_one_identity_on_one_contact() {
     let body = typed_other
         + &message_line("g-react-1", "hi")
             .outgoing()
-            .reaction(message_ir::Reaction {
+            .reaction(ir::Reaction {
                 part_index: 0,
                 kind: "liked".into(),
                 emoji: None,
@@ -985,7 +985,7 @@ async fn a_number_is_read_in_the_country_the_file_names_for_it() {
             .line()
         + &message_line("g-gb-2", "liked")
             .outgoing()
-            .reaction(message_ir::Reaction {
+            .reaction(ir::Reaction {
                 part_index: 0,
                 kind: "liked".into(),
                 emoji: None,

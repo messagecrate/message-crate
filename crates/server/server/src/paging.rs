@@ -21,7 +21,7 @@ pub const MAX_LIST_OFFSET: usize = 50_000;
 /// `IN` list stays under SQLite's variable cap.
 pub const MAX_CONTACT_SUMMARY_IDS: usize = 500;
 
-pub use message_crate_api_types::Page;
+pub use api_types::Page;
 
 /// The page a list answers: the rows read for `params`, the count of every
 /// row the query matches, and the `limit` and `offset` they were read with.
@@ -340,11 +340,11 @@ mod tests {
 
     #[test]
     fn an_unknown_or_repeated_key_is_refused_naming_the_accepted_set() {
-        let err = parse_sort(Some("colour"), &KEYS, &DEFAULT).unwrap_err();
+        let err = parse_sort(Some("color"), &KEYS, &DEFAULT).unwrap_err();
         assert!(matches!(
             err,
             ApiError::ValidationFailed(m)
-                if m == ["sort: unknown key 'colour'; accepted keys are date, messages"]
+                if m == ["sort: unknown key 'color'; accepted keys are date, messages"]
         ));
         let err = parse_sort(Some("date,-date"), &KEYS, &DEFAULT).unwrap_err();
         assert!(

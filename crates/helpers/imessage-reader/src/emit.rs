@@ -26,7 +26,8 @@ use imessage_database::{
 use imessage_reader_protocol::{
     Conversation as ConversationRecord, Deletion, Event, Imessage as ImessageRecord,
     Message as MessageRecord, ONE_TO_ONE_CONVERSATION_TYPE, ORPHANED_CONVERSATION_TYPE,
-    Participant, Progress, Reaction, ReplyTo, TimePrecision, bare_address, orphaned_chat_id,
+    Participant, Progress, Reaction, ReplyTo, Sender, TimePrecision, bare_address,
+    orphaned_chat_id,
 };
 use serde_json::Value;
 
@@ -184,6 +185,20 @@ fn display_name_for(session: &MailSession, handle_id: i32) -> Option<String> {
         .handle_name(handle_id)
         .or_else(|| session.handle_address(handle_id))
         .map(str::to_string)
+}
+
+/// The sender of a received row with this `handle_id`: the handle's address,
+/// its contact name (else its address) and its country. `None` when the
+/// handle names no address, as handle 0 never does.
+fn sender(session: &MailSession, handle_id: i32) -> Option<Sender> {
+    let identity = raw_handle(session, handle_id)?;
+    Some(Sender {
+        // `display_name_for` falls back to the same address, so it has a
+        // name whenever there is an identity.
+        display_name: display_name_for(session, handle_id).unwrap_or_else(|| identity.clone()),
+        identity,
+        country: session.handle_country(handle_id).map(str::to_string),
+    })
 }
 
 /// Participants and conversation type (`one-to-one` / `group`) for one chat room.
@@ -427,9 +442,7 @@ fn build_reactions(session: &MailSession, message: &Message) -> Vec<Reaction> {
 struct RowContext {
     conversation: ConversationRecord,
     is_from_me: bool,
-    sender_identity: Option<String>,
-    sender_display_name: Option<String>,
-    sender_country: Option<String>,
+    sender: Option<Sender>,
     service: String,
 }
 
@@ -456,16 +469,12 @@ fn resolve_context(session: &MailSession, message: &Message) -> RowContext {
     };
 
     let is_from_me = message.is_from_me();
-    let (sender_identity, sender_display_name, sender_country) = if is_from_me {
-        (None, None, None)
-    } else if let Some(handle_id) = message.handle_id {
-        (
-            raw_handle(session, handle_id),
-            display_name_for(session, handle_id),
-            session.handle_country(handle_id).map(str::to_string),
-        )
+    let sender = if is_from_me {
+        None
     } else {
-        (None, None, None)
+        message
+            .handle_id
+            .and_then(|handle_id| sender(session, handle_id))
     };
 
     let service = match message.service() {
@@ -476,9 +485,7 @@ fn resolve_context(session: &MailSession, message: &Message) -> RowContext {
     RowContext {
         conversation,
         is_from_me,
-        sender_identity,
-        sender_display_name,
-        sender_country,
+        sender,
         service,
     }
 }
@@ -527,9 +534,7 @@ fn build_record(
         outgoing: context.is_from_me,
         service: context.service,
         message_kind: kind.to_string(),
-        sender_identity: context.sender_identity,
-        sender_display_name: context.sender_display_name,
-        sender_country: context.sender_country,
+        sender: context.sender,
         subject: message.subject.clone().filter(|s| !s.is_empty()),
         text,
         reactions,

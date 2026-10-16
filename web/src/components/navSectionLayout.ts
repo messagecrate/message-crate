@@ -20,6 +20,11 @@ export function navGlyphRowClass(active: boolean): string {
   }`;
 }
 
+/** A nav row's `aria-current`: `page` on the open row, so a screen reader hears which it is. */
+export function navCurrent(active: boolean): "page" | undefined {
+  return active ? "page" : undefined;
+}
+
 /** A row shell that is itself the button, such as Import or **No Contact Group**. */
 export function navGlyphButtonRowClass(active: boolean): string {
   return `${navGlyphRowClass(active)} cursor-pointer`;

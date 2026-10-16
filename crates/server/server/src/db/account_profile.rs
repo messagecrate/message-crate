@@ -1,7 +1,7 @@
 //! Account rows, profile fields, and message deletion.
 
 use anyhow::{Context, Result, bail};
-use message_ir::{IdentityService, IdentityType};
+use ir::{IdentityService, IdentityType};
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 

@@ -1,9 +1,9 @@
 import Checkbox from "../../components/Checkbox";
 import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
+import { type ManagedAccountChanges, useUpdateAccount } from "../../hooks/useOwnerAccounts";
 import { type AccountProfile, fixedSettings } from "../../lib/account";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { parseSelectKey } from "../../lib/selectKey";
-import { type ManagedAccountChanges, useUpdateAccount } from "../owner/useOwnerAccounts";
 import { sectionTitleClass } from "./profileStyles";
 
 const STATUSES = ["active", "disabled"] as const;
@@ -35,7 +35,7 @@ export function AccountPermissionsSection({
   const fixed = fixedSettings(profile).statusAndPermissions;
   const managed = managedAccountId !== undefined && !fixed;
   // Not locked while a change is sent: the server answers in a moment, and
-  // greying all four controls for that moment reads as a flash.
+  // graying all four controls for that moment reads as a flash.
   const locked = !managed;
 
   const change = (changes: ManagedAccountChanges) => {

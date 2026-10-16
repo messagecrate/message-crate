@@ -10,8 +10,8 @@ import { CanceledError } from "./desktopJobError";
  * (`src-tauri/src/commands/jobs.rs`). A Cancel pressed while the run is
  * between jobs, or while a job command is starting, finds no job to stop and
  * would be lost. So the run remembers its Cancel here: `guard` refuses to
- * start a job once the run is cancelled, and sends the Cancel again after a
- * job command returns, when the run was cancelled while that command was
+ * start a job once the run is canceled, and sends the Cancel again after a
+ * job command returns, when the run was canceled while that command was
  * starting.
  */
 export type RunCancel = {
@@ -27,16 +27,16 @@ export type RunCancel = {
 
 /** A run's Cancel, stopping the running job with `stopJob` (the desktop side's Cancel). */
 export function createRunCancel(stopJob: () => Promise<void> = invokeCancel): RunCancel {
-  let cancelled = false;
+  let canceled = false;
   return {
     cancel: async () => {
-      cancelled = true;
+      canceled = true;
       await stopJob();
     },
     guard: (invokeFn) => async () => {
-      if (cancelled) throw new CanceledError();
+      if (canceled) throw new CanceledError();
       await invokeFn();
-      if (cancelled) await stopJob();
+      if (canceled) await stopJob();
     },
   };
 }

@@ -1,7 +1,7 @@
 //! Builds the Demo Account's phone numbers, all from ranges set aside for fiction.
 //!
 //! The Demo Account ships with every Message Crate, so a number that could be
-//! dialled might belong to a real person, who would then appear beside made-up
+//! dialed might belong to a real person, who would then appear beside made-up
 //! names and messages. Two ranges are reserved so that cannot happen:
 //!
 //! - North American numbers 555-0100 to 555-0199, in every area code (NANPA).
@@ -97,7 +97,7 @@ pub fn group_conversation_phone(index: usize) -> Option<String> {
 /// Build a North American number in the 555-0100 to 555-0199 range.
 ///
 /// It draws an exchange and four digits, as the generator did when its
-/// numbers could be dialled, so the draws after it stay where they were. The
+/// numbers could be dialed, so the draws after it stay where they were. The
 /// exchange is not used, and the last two digits pick the line.
 fn us_phone(rng: &mut impl Rng) -> String {
     let area = *US_AREA.choose(rng).unwrap_or(&415);
@@ -117,7 +117,7 @@ const OLD_INTL_LENGTHS: [usize; 7] = [10, 9, 9, 10, 10, 10, 10];
 /// Build a UK mobile number in Ofcom's drama range.
 ///
 /// It draws a country and that country's number of digits, as the generator
-/// did when its numbers could be dialled, so the draws after it stay where
+/// did when its numbers could be dialed, so the draws after it stay where
 /// they were. The last three digits pick the line.
 fn uk_phone(rng: &mut impl Rng) -> String {
     let national_len = *OLD_INTL_LENGTHS.choose(rng).unwrap_or(&10);

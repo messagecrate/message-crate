@@ -16,7 +16,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use sqlx::SqliteConnection;
 
-use message_crate_api_types::IdentityHolder;
+use api_types::IdentityHolder;
 
 use crate::db::contacts::{self, IdentityGoes, Origin};
 use crate::db::dedupe::HAS_CONTENT_KEY_SQL;
@@ -62,10 +62,10 @@ pub async fn plus_form(
         return Ok(Err(CountryRefusal::CountryKnown));
     };
     // A key that starts with `+` names its country already.
-    if row.handle_type != message_ir::IdentityType::Phone.as_str() || row.key.starts_with('+') {
+    if row.handle_type != ir::IdentityType::Phone.as_str() || row.key.starts_with('+') {
         return Ok(Err(CountryRefusal::CountryKnown));
     }
-    let typed = phone::key_typed_handle(&row.raw, message_ir::IdentityType::Phone, Some(country));
+    let typed = phone::key_typed_handle(&row.raw, ir::IdentityType::Phone, Some(country));
     if !typed.key.starts_with('+') {
         let reason = typed
             .note

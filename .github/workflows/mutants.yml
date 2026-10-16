@@ -3,7 +3,7 @@ name: Mutants
 # Mutation testing for the Rust workspace (every crate but the few that
 # .cargo/mutants.toml leaves out), run by cargo-mutants through
 # scripts/mutants.sh. A
-# mutant the tests still pass is a change in behaviour no test notices; the
+# mutant the tests still pass is a change in behavior no test notices; the
 # list of those is the report. It is a report, not a gate: nothing here
 # fails a pull request, so it lives outside ci.yml, whose every job the
 # ruleset on main requires. Why: docs/adr/0007-ci-is-the-only-gate.md.

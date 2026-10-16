@@ -48,7 +48,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 name = "android-fields"
 version = "0.1.0"
 dependencies = [
- "message-ir",
+ "ir",
  "serde_json",
 ]
 
@@ -116,6 +116,15 @@ name = "anyhow"
 version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
+
+[[package]]
+name = "api-types"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "utoipa",
+]
 
 [[package]]
 name = "argon2"
@@ -563,7 +572,8 @@ checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
 name = "contacts"
 version = "0.1.0"
 dependencies = [
- "anyhow",
+ "encoding_rs",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -750,8 +760,8 @@ dependencies = [
  "clap",
  "file-io",
  "image",
+ "ir",
  "media",
- "message-ir",
  "rand",
  "rand_chacha",
  "rand_distr",
@@ -882,6 +892,29 @@ checksum = "8be9f3dfaaffdae2972880079a491a1a8bb7cbed0b8dd7a347f668b4150a3b93"
 dependencies = [
  "event-listener",
  "pin-project-lite",
+]
+
+[[package]]
+name = "export"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "api-types",
+ "chrono",
+ "file-io",
+ "hex",
+ "httpmock",
+ "ir",
+ "ir-format",
+ "journal",
+ "media",
+ "message-crate-core",
+ "message-crate-http",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
 ]
 
 [[package]]
@@ -1111,9 +1144,7 @@ dependencies = [
 name = "go-sms-mms"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "mms-parts",
- "phone",
  "regex",
  "tempfile",
 ]
@@ -1127,15 +1158,14 @@ dependencies = [
  "csv",
  "file-io",
  "go-sms-mms",
+ "ir",
  "media",
  "message-crate-core",
- "message-csv",
- "message-ir",
- "message-ir-format",
- "message-staging",
+ "message-crate-csv",
  "phone",
  "quick-xml 0.42.0",
  "serde_json",
+ "staging",
  "tempfile",
 ]
 
@@ -1561,18 +1591,16 @@ dependencies = [
  "anyhow",
  "chrono",
  "chrono-tz",
- "csv",
  "file-io",
  "hex",
- "media",
+ "ir",
+ "ir-format",
  "message-crate-core",
- "message-csv",
- "message-ir",
- "message-ir-format",
- "message-staging",
+ "message-crate-csv",
  "phone",
  "serde_json",
  "sha2 0.11.0",
+ "staging",
  "tempfile",
 ]
 
@@ -1601,12 +1629,12 @@ dependencies = [
  "chat-db-fixture",
  "imessage-reader-protocol",
  "ios-backup",
+ "ir",
+ "ir-format",
  "message-crate-core",
- "message-ir",
- "message-ir-format",
- "message-staging",
  "phone",
  "serde_json",
+ "staging",
  "tempfile",
 ]
 
@@ -1632,6 +1660,26 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "import"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "api-types",
+ "file-io",
+ "httpmock",
+ "ir",
+ "ir-format",
+ "journal",
+ "media",
+ "message-crate-core",
+ "message-crate-http",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -1676,6 +1724,38 @@ name = "ipnet"
 version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d98f6fed1fde3f8c21bc40a1abb88dd75e67924f9cffc3ef95607bad8017f8e2"
+
+[[package]]
+name = "ir"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "hex",
+ "imessage-reader-protocol",
+ "phone",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+]
+
+[[package]]
+name = "ir-format"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "csv",
+ "file-io",
+ "hex",
+ "ir",
+ "mail",
+ "message-crate-core",
+ "message-crate-csv",
+ "obfuscate",
+ "phone",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+]
 
 [[package]]
 name = "is_terminal_polyfill"
@@ -1774,6 +1854,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
+name = "log-lines"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "tempfile",
+ "utoipa",
+]
+
+[[package]]
 name = "lru-slab"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1795,10 +1885,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "ir",
  "mail-builder",
  "mailparse",
  "media",
- "message-ir",
  "serde",
  "serde_json",
  "tempfile",
@@ -1854,7 +1944,6 @@ name = "media"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "csv",
  "file-io",
  "rustix",
  "serde",
@@ -1868,26 +1957,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
-name = "message-crate-api-types"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "utoipa",
-]
-
-[[package]]
 name = "message-crate-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "api-types",
  "chrono",
  "file-io",
+ "ir",
+ "log-lines",
  "media",
- "message-crate-api-types",
- "message-crate-log-lines",
- "message-csv",
- "message-ir",
+ "message-crate-csv",
  "obfuscate",
  "phone",
  "serde",
@@ -1897,26 +1977,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "message-crate-export"
+name = "message-crate-csv"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "chrono",
- "file-io",
- "hex",
- "httpmock",
- "journal",
- "media",
- "message-crate-api-types",
- "message-crate-core",
- "message-crate-http",
- "message-ir",
- "message-ir-format",
- "reqwest",
+ "csv",
+ "ir",
  "serde",
  "serde_json",
- "sha2 0.11.0",
- "tempfile",
 ]
 
 [[package]]
@@ -1924,8 +1992,8 @@ name = "message-crate-http"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "api-types",
  "httpmock",
- "message-crate-api-types",
  "rcgen",
  "reqwest",
  "rustls",
@@ -1935,44 +2003,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "message-crate-import"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "file-io",
- "httpmock",
- "journal",
- "media",
- "message-crate-api-types",
- "message-crate-core",
- "message-crate-http",
- "message-ir",
- "message-ir-format",
- "reqwest",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "message-crate-log-lines"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "serde",
- "tempfile",
- "utoipa",
-]
-
-[[package]]
-name = "message-crate-serve-protocol"
-version = "0.1.0"
-
-[[package]]
 name = "message-crate-server"
 version = "0.10.1"
 dependencies = [
  "anyhow",
+ "api-types",
  "argon2",
  "axum",
  "build-version",
@@ -1980,8 +2015,10 @@ dependencies = [
  "chrono-tz",
  "clap",
  "clap-markdown",
+ "contacts",
  "csv",
  "demo-seed",
+ "export",
  "file-io",
  "fs2",
  "futures-util",
@@ -1991,16 +2028,13 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "import",
+ "ir",
  "libc",
  "libsqlite3-sys",
+ "log-lines",
  "media",
- "message-crate-api-types",
- "message-crate-export",
- "message-crate-import",
- "message-crate-log-lines",
- "message-crate-serve-protocol",
- "message-csv",
- "message-ir",
+ "message-crate-csv",
  "phone",
  "rand",
  "rayon",
@@ -2008,6 +2042,7 @@ dependencies = [
  "rpassword",
  "serde",
  "serde_json",
+ "serve-protocol",
  "sha2 0.11.0",
  "sqlx",
  "tempfile",
@@ -2023,84 +2058,6 @@ dependencies = [
  "utoipa-axum",
  "utoipa-swagger-ui",
  "uuid",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "message-csv"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "csv",
- "message-ir",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "message-ir"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "hex",
- "imessage-reader-protocol",
- "phone",
- "serde",
- "serde_json",
- "sha2 0.11.0",
-]
-
-[[package]]
-name = "message-ir-format"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "csv",
- "file-io",
- "hex",
- "mail",
- "message-crate-core",
- "message-csv",
- "message-ir",
- "obfuscate",
- "phone",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
-]
-
-[[package]]
-name = "message-reexport"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "csv",
- "media",
- "message-crate-core",
- "message-ir",
- "message-ir-format",
- "message-staging",
- "serde_json",
- "sms-backup-plus-exporter",
- "sms-backup-restore-exporter",
- "tempfile",
-]
-
-[[package]]
-name = "message-staging"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "file-io",
- "fs2",
- "media",
- "message-crate-core",
- "message-ir",
- "message-ir-format",
- "serde",
- "serde_json",
- "tempfile",
  "windows-sys 0.61.2",
 ]
 
@@ -2260,17 +2217,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
- "csv",
  "hex",
- "media",
+ "ir",
+ "ir-format",
  "message-crate-core",
- "message-csv",
- "message-ir",
- "message-ir-format",
- "message-staging",
+ "message-crate-csv",
  "phone",
  "serde_json",
  "sha2 0.11.0",
+ "staging",
  "tempfile",
 ]
 
@@ -2669,6 +2624,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "reexport"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "csv",
+ "ir",
+ "ir-format",
+ "media",
+ "message-crate-core",
+ "serde_json",
+ "sms-backup-plus-exporter",
+ "sms-backup-restore-exporter",
+ "staging",
+ "tempfile",
+]
+
+[[package]]
 name = "regex"
 version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2896,7 +2869,7 @@ dependencies = [
  "base64 0.23.1",
  "file-io",
  "html-escape",
- "message-ir",
+ "ir",
  "mms-parts",
  "phone",
  "quick-xml 0.42.0",
@@ -3028,6 +3001,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "serve-protocol"
+version = "0.1.0"
+
+[[package]]
 name = "sha1"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3136,23 +3113,22 @@ dependencies = [
  "android-fields",
  "anyhow",
  "chrono",
- "csv",
  "file-io",
  "hex",
+ "ir",
+ "ir-format",
  "mail",
  "mail-builder",
  "mailparse",
  "media",
  "message-crate-core",
- "message-ir",
- "message-ir-format",
- "message-staging",
  "mms-parts",
  "phone",
  "rayon",
  "regex",
  "serde_json",
  "sha2 0.11.0",
+ "staging",
  "tempfile",
 ]
 
@@ -3161,15 +3137,15 @@ name = "sms-backup-restore-exporter"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ir",
+ "ir-format",
  "message-crate-core",
- "message-csv",
- "message-ir",
- "message-ir-format",
- "message-staging",
+ "message-crate-csv",
  "mms-parts",
  "phone",
  "sbr",
  "serde_json",
+ "staging",
  "tempfile",
 ]
 
@@ -3378,6 +3354,23 @@ name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
+
+[[package]]
+name = "staging"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "file-io",
+ "fs2",
+ "ir",
+ "ir-format",
+ "media",
+ "message-crate-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "stringmetrics"
@@ -4102,16 +4095,16 @@ dependencies = [
  "hex",
  "imessage-reader-protocol",
  "ios-backup",
+ "ir",
+ "ir-format",
  "media",
  "message-crate-core",
- "message-csv",
- "message-ir",
- "message-ir-format",
- "message-staging",
+ "message-crate-csv",
  "phone",
  "plist",
  "serde",
  "serde_json",
+ "staging",
  "tempfile",
 ]
 

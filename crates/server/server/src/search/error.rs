@@ -2,8 +2,6 @@
 
 use std::ops::Range;
 
-use crate::api_error::ApiError;
-
 /// Why a query was refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueryErrorKind {
@@ -53,16 +51,6 @@ impl QueryError {
             span,
             field: None,
             did_you_mean: None,
-        }
-    }
-}
-
-impl From<QueryError> for ApiError {
-    fn from(e: QueryError) -> Self {
-        ApiError::SearchQueryInvalid {
-            detail: e.message,
-            word: e.field,
-            did_you_mean: e.did_you_mean,
         }
     }
 }

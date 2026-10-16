@@ -27,7 +27,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use message_crate_serve_protocol::{EXIT_WITH_PARENT_ARG, PARENT_CHECK_INTERVAL};
+use serve_protocol::{EXIT_WITH_PARENT_ARG, PARENT_CHECK_INTERVAL};
 
 use common::{WAIT, empty_message_crate, listening_address};
 

@@ -229,7 +229,7 @@ function isRunError(issue: ImportIssue): boolean {
 /**
  * What this part's Upload said of each conversation: the files it finished
  * as they finished, and every file its report lists, which adds the ones a
- * pause left unsent (`cancelled`).
+ * pause left unsent (`canceled`).
  */
 function conversationStatuses(part: RunPart): Map<string, ConversationStatus> {
   const statuses = new Map(part.conversations);
@@ -239,7 +239,7 @@ function conversationStatuses(part: RunPart): Map<string, ConversationStatus> {
   return statuses;
 }
 
-const CONVERSATION_STATUSES: readonly string[] = ["ok", "skipped", "failed", "cancelled"];
+const CONVERSATION_STATUSES: readonly string[] = ["ok", "skipped", "failed", "canceled"];
 
 /** A report's status for a conversation, as one the record knows. */
 function isConversationStatus(status: string): status is ConversationStatus {
@@ -455,14 +455,14 @@ export function resolveInRecord(
 }
 
 /**
- * The Import Errors a Discard sends with the cancelled run: the whole
+ * The Import Errors a Discard sends with the canceled run: the whole
  * record's, with the latest stop's that a resume would have reported again.
  */
 export function issuesToDiscard(record: RunRecord): ImportIssue[] {
   return mergeIssues(record.issues, record.lastStopIssues ?? []);
 }
 
-/** The notes a Discard sends with the cancelled run: every part's. */
+/** The notes a Discard sends with the canceled run: every part's. */
 export function notesToDiscard(record: RunRecord): ImportNote[] {
   return record.notes ?? [];
 }

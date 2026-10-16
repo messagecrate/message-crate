@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result, bail};
 use message_crate_core::discover_files;
-use message_csv::{col, field};
+use message_crate_csv::{col, field};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -40,7 +40,7 @@ pub(crate) struct RawRow {
     pub deleted_date: String,
     pub sent_date: String,
     pub service: String,
-    pub msg_type: String,
+    pub message_type: String,
     pub sender_id: String,
     pub sender_name: String,
     pub status: String,
@@ -135,7 +135,7 @@ fn classify_imazing_csv(path: &Path) -> Result<Option<SourceKind>> {
 
 /// Read every row of one iMazing CSV, stripping a UTF-8 BOM first.
 pub(crate) fn parse_csv_file(path: &Path, kind: SourceKind) -> Result<Vec<RawRow>> {
-    let (mut rdr, headers) = message_csv::open_csv_lowercase(path)?;
+    let (mut rdr, headers) = message_crate_csv::open_csv_lowercase(path)?;
 
     let chat_i = col(&headers, "chat session")?;
     let date_i = col(&headers, "message date")?;
@@ -185,7 +185,7 @@ pub(crate) fn parse_csv_file(path: &Path, kind: SourceKind) -> Result<Vec<RawRow
             deleted_date: deleted_i.map(|i| field(&rec, i)).unwrap_or_default(),
             sent_date: sent_i.map(|i| field(&rec, i)).unwrap_or_default(),
             service,
-            msg_type: field(&rec, type_i),
+            message_type: field(&rec, type_i),
             sender_id: field(&rec, sender_id_i),
             sender_name: field(&rec, sender_name_i),
             status: status_i.map(|i| field(&rec, i)).unwrap_or_default(),

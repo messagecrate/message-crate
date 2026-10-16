@@ -2,13 +2,14 @@ import { useId, useState } from "react";
 import Button from "../../components/Button";
 import Checkbox from "../../components/Checkbox";
 import { textInputClass } from "../../components/TextField";
+import { useServerInfo } from "../../hooks/useServerInfo";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache, useRouteMutation } from "../../lib/routeQuery";
 import { updateServerSettings } from "../../lib/serverApi";
-import { useServerInfo } from "../../lib/useServerInfo";
-import { useServerSettings } from "../../lib/useServerSettings";
+import { AllStagingUsage } from "../settings/StagingDirectoryUsage";
 import { DemoAccountCard } from "./DemoAccountCard";
+import { useServerSettings } from "./useServerSettings";
 
 const MIB = 1024 * 1024;
 
@@ -135,6 +136,8 @@ export function ServerSettingsPanel() {
           </p>
         ) : null}
       </form>
+
+      <AllStagingUsage />
 
       <DemoAccountCard />
 

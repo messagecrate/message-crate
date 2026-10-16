@@ -468,7 +468,7 @@ async fn import_files(conn: &mut sqlx::SqliteConnection, files: &[(&str, String)
         crate::imports_api::pipeline::FixedImportArgs {
             assets_dir: &assets,
             asset_root: Some(tmp.path()),
-            mode: message_crate_api_types::ImportMode::Append,
+            mode: api_types::ImportMode::Append,
             source: "imessage",
             account_id: TEST_ACCOUNT,
             import_id: None,
@@ -883,8 +883,8 @@ async fn an_import_names_a_nameless_contact_the_person_made() {
 async fn an_import_names_a_nameless_contact_a_load_made() {
     use crate::db::address_book::{LoadMode, load};
     let (mut conn, _pool, _dir) = account().await;
-    let text = "contact_id,display_name,groups,service,identity_type,identity\n\
-                ,,,phone,phone,+15555550170\n";
+    let text = "contact_id,display_name,service,identity,groups\n\
+                ,,Text Message,+15555550170,\n";
     load(
         &mut conn,
         TEST_ACCOUNT,

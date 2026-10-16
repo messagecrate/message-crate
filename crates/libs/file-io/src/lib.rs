@@ -9,7 +9,7 @@
 //! through ([`open_nofollow`], [`file_sha256_nofollow`]), and the
 //! directories and files only their owner can read, which hold every
 //! account's messages ([`create_dir_all_owner_only`],
-//! [`create_dir_owner_only`], [`restrict_to_owner`], [`owner_only`]).
+//! [`create_dir_owner_only`], [`restrict_to_owner`], [`owner_only()`]).
 //!
 //! [`sha256_hex`] lives here, not with its callers, so it stays beside
 //! [`file_sha256`] and the tests pin the two to one fingerprint format,
@@ -18,7 +18,7 @@
 //!
 //! They live in a leaf crate so attachment staging, media conversion, the
 //! journal, the export and import crates, the server and the desktop app share
-//! one copy without depending on the conversation model in `message-ir`.
+//! one copy without depending on the conversation model in `ir`.
 
 use sha2::{Digest, Sha256};
 use std::io::{self, Read};

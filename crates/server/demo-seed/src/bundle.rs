@@ -10,7 +10,7 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use message_ir::IdentityType;
+use ir::IdentityType;
 use serde::{Deserialize, Serialize};
 
 use crate::personas::{OWNER_EMAIL, OWNER_PHONE};
@@ -36,7 +36,7 @@ const SEED_TOML_HEADER: &str = "\
 ";
 
 /// `config/seed.toml` in a demo bundle. A key it does not use is an error,
-/// never ignored (`deny_unknown_fields` here and on its section): a misspelt
+/// never ignored (`deny_unknown_fields` here and on its section): a misspelled
 /// key would seed the Demo Account without what the line asked for.
 ///
 /// It names no username. The Demo Account's username is fixed in the server,
@@ -136,7 +136,7 @@ mod tests {
     }
 
     /// A key the server does not use is refused by its name, with the file: a
-    /// misspelt `emails` otherwise seeds a Demo Account with no email identity.
+    /// misspelled `emails` otherwise seeds a Demo Account with no email identity.
     #[test]
     fn a_seed_toml_with_an_unknown_key_or_section_is_refused_naming_it() {
         let text = refusal_of_written_seed_with("emails = ", "email = ");

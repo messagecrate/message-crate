@@ -12,8 +12,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Result, bail};
+use api_types::ImportMode;
 use clap::{Args, Command, CommandFactory, Parser, Subcommand};
-use message_crate_api_types::ImportMode;
 
 use crate::config::{Config, ServeFlags, validate_source_id};
 use crate::dedupe::DedupeStats;
@@ -33,7 +33,7 @@ pub struct Cli {
 /// One subcommand per CLI operation: import, serve, and maintenance.
 #[derive(Debug, Subcommand)]
 pub enum Commands {
-    /// Import a message-ir JSONL directory, one Import Run per source (source from export.source unless --source)
+    /// Import a directory of JSONL conversation files, one Import Run per source (source from export.source unless --source)
     Import(ImportArgs),
 
     /// Work on an account's Import Runs (`discard` clears a stranded one)
@@ -261,7 +261,7 @@ pub struct ServeArgs {
     /// The desktop app passes its own id, so a server it started does not
     /// outlive a crash of the app. Without it the server runs until it is
     /// stopped
-    #[arg(long = message_crate_serve_protocol::EXIT_WITH_PARENT_ARG, value_name = "PID")]
+    #[arg(long = serve_protocol::EXIT_WITH_PARENT_ARG, value_name = "PID")]
     pub exit_with_parent: Option<u32>,
 }
 
@@ -342,14 +342,14 @@ pub async fn run(cli: Cli) -> Result<()> {
 /// [`OPERATION_LOCK_HELD_EXIT_CODE`] when another server, or reset-demo, holds
 /// the database `serve` was asked to open; 1 for every other failure.
 ///
-/// [`OPERATION_LOCK_HELD_EXIT_CODE`]: message_crate_serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE
+/// [`OPERATION_LOCK_HELD_EXIT_CODE`]: serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE
 #[must_use]
 pub fn exit_code(error: &anyhow::Error) -> u8 {
     if error
         .downcast_ref::<crate::operation_lock::OperationLockHeld>()
         .is_some()
     {
-        message_crate_serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE
+        serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE
     } else {
         1
     }
@@ -643,11 +643,6 @@ async fn run_reset_demo(args: ResetDemoArgs) -> Result<()> {
         ),
         ("Thumbnails made", stats.process_assets.thumbnails, ""),
         (
-            "incomplete originals removed",
-            stats.process_assets.removed,
-            "left by a transfer that never finished",
-        ),
-        (
             "damaged Previews and Thumbnails dropped",
             stats.process_assets.dropped,
             "they could not be made again",
@@ -668,14 +663,14 @@ async fn run_reset_demo(args: ResetDemoArgs) -> Result<()> {
             "originals whose Preview or Thumbnail could not be made",
         ),
         (
-            "not removed",
-            stats.process_assets.not_removed,
-            "incomplete originals that could not be removed",
-        ),
-        (
             "not dropped",
             stats.process_assets.not_dropped,
             "damaged Previews and Thumbnails that could not be dropped",
+        ),
+        (
+            "not decided",
+            stats.process_assets.not_decided,
+            "originals whose shown-as-is decision could not be recorded",
         ),
     ];
     for (label, count, what) in rows {
@@ -753,9 +748,9 @@ fn serve_config(args: ServeArgs) -> Result<Config> {
 /// # Errors
 ///
 /// Returns an error after the summary line when the Preview or Thumbnail of
-/// any original could not be made, an incomplete original could not be
-/// removed, or a damaged version could not be dropped, so a cron job or
-/// script that runs the command sees a non-zero exit status.
+/// any original could not be made, a damaged version could not be dropped,
+/// or an original's shown-as-is decision could not be recorded, so a cron
+/// job or script that runs the command sees a non-zero exit status.
 /// Returns an error too when Ctrl-C or SIGTERM stops it, after killing the
 /// ffmpeg that runs and removing what it wrote (#1729). A second Ctrl-C or
 /// SIGTERM ends it at once.

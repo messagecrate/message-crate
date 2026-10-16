@@ -70,7 +70,7 @@ fn the_content_key_is_the_message_identity_at_whole_seconds() {
         &[],
     )
     .unwrap();
-    let identity = message_ir::MessageIdentity {
+    let identity = ir::MessageIdentity {
         chat: "+14075550106",
         is_from_me: false,
         sender: Some("+14075550106"),
@@ -79,8 +79,8 @@ fn the_content_key_is_the_message_identity_at_whole_seconds() {
         attachment_digests: &[],
         vendor_key: None,
     };
-    assert_eq!(key, identity.key(message_ir::TimePrecision::Seconds));
-    assert_ne!(key, message_ir::MessageGuid::new(&identity).as_str());
+    assert_eq!(key, identity.key(ir::TimePrecision::Seconds));
+    assert_ne!(key, ir::MessageGuid::new(&identity).as_str());
 }
 
 #[test]
@@ -706,7 +706,7 @@ async fn sms_backup_plus_row(
     conn: &mut SqliteConnection,
     guid: &str,
     timestamp: &'static str,
-    precision: message_ir::TimePrecision,
+    precision: ir::TimePrecision,
 ) -> i64 {
     MessageRow {
         source: "sms-backup-plus",
@@ -734,14 +734,14 @@ async fn a_whole_second_message_is_the_duplicate_of_its_millisecond_twin_in_one_
         &mut conn,
         "g-whole",
         "2015-03-12T18:04:22.000Z",
-        message_ir::TimePrecision::Seconds,
+        ir::TimePrecision::Seconds,
     )
     .await;
     let exact = sms_backup_plus_row(
         &mut conn,
         "g-exact",
         "2015-03-12T18:04:22.250Z",
-        message_ir::TimePrecision::Milliseconds,
+        ir::TimePrecision::Milliseconds,
     )
     .await;
 
@@ -768,21 +768,21 @@ async fn a_millisecond_time_ending_in_000_is_not_whole_seconds() {
         &mut conn,
         "g-000",
         "2015-03-12T18:04:22.000Z",
-        message_ir::TimePrecision::Milliseconds,
+        ir::TimePrecision::Milliseconds,
     )
     .await;
     let later = sms_backup_plus_row(
         &mut conn,
         "g-250",
         "2015-03-12T18:04:22.250Z",
-        message_ir::TimePrecision::Milliseconds,
+        ir::TimePrecision::Milliseconds,
     )
     .await;
     let whole = sms_backup_plus_row(
         &mut conn,
         "g-whole",
         "2015-03-12T18:04:22.000Z",
-        message_ir::TimePrecision::Seconds,
+        ir::TimePrecision::Seconds,
     )
     .await;
 
@@ -813,7 +813,7 @@ async fn two_whole_second_messages_from_one_source_are_both_kept() {
                 &mut conn,
                 guid,
                 "2015-03-12T18:04:22.000Z",
-                message_ir::TimePrecision::Seconds,
+                ir::TimePrecision::Seconds,
             )
             .await,
         );
@@ -2034,7 +2034,7 @@ async fn copy(
     conn: &mut SqliteConnection,
     source: &str,
     timestamp: &'static str,
-    precision: message_ir::TimePrecision,
+    precision: ir::TimePrecision,
     import_id: i64,
 ) -> i64 {
     MessageRow {
@@ -2071,8 +2071,8 @@ async fn more_of_run(conn: &mut SqliteConnection, source: &str, import_id: i64, 
     }
 }
 
-const SECONDS: message_ir::TimePrecision = message_ir::TimePrecision::Seconds;
-const MILLISECONDS: message_ir::TimePrecision = message_ir::TimePrecision::Milliseconds;
+const SECONDS: ir::TimePrecision = ir::TimePrecision::Seconds;
+const MILLISECONDS: ir::TimePrecision = ir::TimePrecision::Milliseconds;
 
 /// The copy with more attachments is shown, though the other is timed to
 /// the millisecond, came from the larger Import Run and from the source

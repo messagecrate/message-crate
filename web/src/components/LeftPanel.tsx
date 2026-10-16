@@ -1,15 +1,15 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useAccountProfile } from "../hooks/useAccountProfile";
+import { useColumnResize } from "../hooks/useColumnResize";
+import { useContactGroups } from "../hooks/useContactGroups";
+import { useMessageTags } from "../hooks/useMessageTags";
+import { useWindowWidth } from "../hooks/useWindowWidth";
 import { errorLine } from "../lib/apiErrorMessage";
 import { canUseImportExportWithProfile } from "../lib/desktopFeatures";
 import { type SavedSearch, useSavedSearchActions, useSavedSearches } from "../lib/savedSearches";
 import { isTauri } from "../lib/tauriCheck";
 import { resizeHandleGutterClass } from "../lib/tw";
-import { useAccountProfile } from "../lib/useAccountProfile";
-import { useContactGroups } from "../lib/useContactGroups";
-import { useMessageTags } from "../lib/useMessageTags";
-import { useWindowWidth } from "../lib/useWindowWidth";
-import { type ImportAttention, useImportAttention } from "../screens/import/useImportAttention";
 import type { NavItem } from "./appLayoutContext";
 import ColumnResizeHandle from "./ColumnResizeHandle";
 import { COLUMN_DIVIDER_CLASS } from "./columnDivider";
@@ -40,13 +40,14 @@ import {
   NAV_LEADING_GLYPH_CLASS,
   NAV_LEADING_ROW_CLASS,
   NAV_NESTED_ROW_CLASS,
+  navCurrent,
   navGlyphButtonRowClass,
   navGlyphRowClass,
 } from "./navSectionLayout";
 import PlainButton from "./PlainButton";
 import PopupMenu from "./PopupMenu";
 import SavedSearchForm from "./SavedSearchForm";
-import { useColumnResize } from "./useColumnResize";
+import { type ImportAttention, useImportAttention } from "./useImportAttention";
 
 /** The Import entry's badge: its word, and the sentence its tooltip reads. */
 const IMPORT_BADGE: Record<ImportAttention, { label: string; title: string }> = {
@@ -125,7 +126,7 @@ export default function LeftPanel({
    */
   const itemRow = (item: NavItem, rowClass: (active: boolean) => string) => {
     const active = navItem === item;
-    return { className: rowClass(active), "aria-current": active ? ("page" as const) : undefined };
+    return { className: rowClass(active), "aria-current": navCurrent(active) };
   };
 
   const { savedSearches: groups } = useSavedSearches();
@@ -279,6 +280,7 @@ export default function LeftPanel({
                     <PlainButton
                       onPress={() => navigate(`/?q=${encodeURIComponent(g.query)}`)}
                       className={`${NAV_NESTED_ROW_CLASS} cursor-pointer border-none bg-transparent p-0 text-left text-inherit`}
+                      aria-current={navCurrent(active)}
                     >
                       <span className={NAV_LEADING_GLYPH_CLASS}>
                         <SearchIcon size={15} className="shrink-0" />

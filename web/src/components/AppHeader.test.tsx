@@ -7,8 +7,8 @@ import AppHeader from "./AppHeader";
 
 vi.mock("./AppAccountMenu", () => ({ default: () => null }));
 vi.mock("./VersionNotice", () => ({ default: () => null }));
-vi.mock("../lib/useSearchSuggestions", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../lib/useSearchSuggestions")>()),
+vi.mock("./useSearchSuggestions", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./useSearchSuggestions")>()),
   useSearchSuggestions: () => [],
 }));
 

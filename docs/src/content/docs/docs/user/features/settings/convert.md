@@ -39,14 +39,14 @@ A failed one shows the reason in a red panel and as an `Error:` line in the log.
 
 With **Output directory** left empty, the conversion writes into a directory of its own in the Export Directory, named `convert-` followed by the date, the time and the format, such as `convert-2026-10-04-1502-mbox`.
 [**Settings → System**](/docs/user/features/settings/system/#exports) names the Export Directory and opens it.
-A conversion that fails or is cancelled deletes that directory.
+A conversion that fails or is canceled deletes that directory.
 
 ## What it reads
 
 The input format is detected from the directory, not chosen.
 Convert reads six of the seven formats Export writes, all but **EML (SMS Backup+)**:
 
-| Format | Recognised by |
+| Format | Recognized by |
 |---|---|
 | JSON Lines | `.jsonl` files |
 | JSON | `.json` files |

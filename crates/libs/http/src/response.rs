@@ -3,14 +3,14 @@
 //!
 //! Every route the server serves answers a failure with an RFC 7807 problem
 //! document (`docs/architecture/http-api.md`), and its `detail` is written for the person to read.
-//! Both client crates were reading it themselves (`message-crate-import` with an
-//! `ok_json` helper, `message-crate-export` with an `error_sentence` one) over two
+//! Both client crates were reading it themselves (`import` with an
+//! `ok_json` helper, `export` with an `error_sentence` one) over two
 //! private copies of the same struct. One copy of the reading lives here, over
 //! the shared [`Problem`] type, so a change to the server's failure shape is
 //! one edit rather than a hunt.
 
 use anyhow::Result;
-use message_crate_api_types::Problem;
+use api_types::Problem;
 use serde::de::DeserializeOwned;
 
 use crate::retry::HttpError;

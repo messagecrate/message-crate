@@ -12,7 +12,7 @@ const profileState = vi.hoisted(() => ({
 }));
 const authState = vi.hoisted(() => ({ logout: vi.fn(async () => {}) }));
 
-vi.mock("../lib/useAccountProfile", () => ({
+vi.mock("../hooks/useAccountProfile", () => ({
   useAccountProfile: () => ({ profile: profileState.profile, loading: false, error: "" }),
 }));
 

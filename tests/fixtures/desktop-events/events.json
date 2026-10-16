@@ -62,6 +62,34 @@
       "kind": "resolved",
       "reason": "could not be decrypted",
       "step": "attachments"
+    },
+    {
+      "conversation": "c.jsonl",
+      "item": "sms-1.xml",
+      "kind": "skip",
+      "reason": "could not be read",
+      "step": "parse"
+    },
+    {
+      "conversation": "c.jsonl",
+      "item": "/backup/IMG_0001.MOV",
+      "kind": "skip",
+      "reason": "could not be decrypted",
+      "step": "attachments"
+    },
+    {
+      "conversation": "c.jsonl",
+      "item": "c.jsonl:attachments/IMG_0001.MOV",
+      "kind": "skip",
+      "reason": "could not be converted",
+      "step": "media"
+    },
+    {
+      "conversation": "c.jsonl",
+      "item": "c.jsonl",
+      "kind": "skip",
+      "reason": "upload failed",
+      "step": "upload"
     }
   ],
   "desktop-job:progress": [
@@ -151,6 +179,24 @@
       "step": "media",
       "total": 0,
       "waiting": "wtsexporter"
+    }
+  ],
+  "local-server:notice": [
+    {
+      "cause": "unanswered",
+      "state": "restarting"
+    },
+    {
+      "cause": "exited",
+      "state": "restarting"
+    },
+    {
+      "state": "answering"
+    },
+    {
+      "details": "database is locked",
+      "message": "Message Crate stopped 4 times within 10 minutes.",
+      "state": "failed"
     }
   ]
 }

@@ -42,7 +42,7 @@ members = [
 exclude = ["src-tauri"]
 
 [workspace.dependencies]
-message-ir = { path = "crates/libs/ir" }
+ir = { path = "crates/libs/ir" }
 file-io = { path = "crates/libs/file-io" }
 contacts = { path = "crates/libs/contacts" }
 phone = { path = "crates/libs/phone" }
@@ -82,15 +82,15 @@ redundant_pub_crate = "allow"
 
 # Release binaries (the Docker image and the desktop bundles) are built rarely
 # and run for a long time, so spend the build time on whole-program
-# optimisation. `panic` stays `unwind`: message-crate-import, the journal and the
+# optimization. `panic` stays `unwind`: `import`, the journal and the
 # iMessage helper catch a worker thread's panic through `join`.
 [profile.release]
 lto = "fat"
 codegen-units = 1
 strip = true
 
-# Argon2 is built to be slow, and unoptimised it is slower still: every test
-# that sets or checks a password pays for it. Optimising the two crates that
+# Argon2 is built to be slow, and unoptimized it is slower still: every test
+# that sets or checks a password pays for it. Optimizing the two crates that
 # do the hashing cuts the server's unit tests from about 52 s to 22 s, and a
 # mutation-testing run pays that once per server mutant.
 [profile.dev.package.argon2]

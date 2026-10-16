@@ -2,15 +2,15 @@
 //! server that writes them and the client crates that read them.
 //!
 //! Two crates sit on either side of these shapes: `message-crate-server`
-//! serializes them, and `message-crate-export` deserializes them on its way to
-//! `message-ir`. While each kept its own struct, the two could disagree
-//! silently and did, three times: `message-crate-export` declared a
+//! serializes them, and `export` deserializes them on its way to
+//! `ir`. While each kept its own struct, the two could disagree
+//! silently and did, three times: `export` declared a
 //! participant's address a `String` after the server started sending `null`
 //! for a participant a backup named without an address, kept
 //! `#[serde(default)]` on a field the server had removed, and read a
 //! `service` off the conversation the server has never sent there. Each of
 //! those was an Export that failed at runtime, or quietly produced worse data,
-//! with nothing in either crate's tests to catch it. `message-crate-export`'s
+//! with nothing in either crate's tests to catch it. `export`'s
 //! "real export page" was a JSON literal it wrote itself, so it agreed with
 //! whatever the mirror said.
 //!
@@ -133,7 +133,7 @@ impl AppKind {
 
 /// What happens to a source's messages that were imported before: `replace`
 /// wipes them first, `append` keeps them and adds only new ones.
-// Every path that carries a mode, the `POST /v1/imports` body, the `import` CLI flag, `message-crate-import`'s settings and the
+// Every path that carries a mode, the `POST /v1/imports` body, the `import` CLI flag, `import`'s settings and the
 // desktop upload command, uses this type, so a misspelling cannot compile as
 // "append".
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -199,7 +199,7 @@ impl std::str::FromStr for ImportMode {
 /// run did something with it worth knowing that is not a failure, and
 /// `resolved` when an earlier row about the same item no longer holds.
 // Every crate that sends or reads a row (the exporters, Media, the Upload,
-// the desktop app and the server) takes this type, so a misspelt kind does
+// the desktop app and the server) takes this type, so a misspelled kind does
 // not compile. `message-crate-core` re-exports it beside its `RunIssue`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
@@ -509,17 +509,12 @@ pub enum ExportStatus {
     /// Ended without finishing.
     Failed,
     /// Closed by the person before it finished.
-    Cancelled,
+    Canceled,
 }
 
 impl ExportStatus {
     /// Every status, in the order the documentation lists them.
-    pub const ALL: [Self; 4] = [
-        Self::Running,
-        Self::Completed,
-        Self::Failed,
-        Self::Cancelled,
-    ];
+    pub const ALL: [Self; 4] = [Self::Running, Self::Completed, Self::Failed, Self::Canceled];
 
     /// The value as the wire and the database spell it.
     #[must_use]
@@ -528,7 +523,7 @@ impl ExportStatus {
             Self::Running => "running",
             Self::Completed => "completed",
             Self::Failed => "failed",
-            Self::Cancelled => "cancelled",
+            Self::Canceled => "canceled",
         }
     }
 
@@ -895,7 +890,7 @@ api_shape! {
         /// The identity that reacted, for incoming reactions.
         pub sender: Option<String>,
         /// The name the source gave the reactor of an incoming reaction
-        /// when it gave no address for them, as an iMazing export does;
+        /// when it gave no address for them; no source gives one yet.
         /// `null` when `sender` is set, and for the account holder's own
         /// reactions. A name is shown, never matched to a contact.
         pub sender_display_name: Option<String>,
@@ -917,8 +912,8 @@ mod tests {
             );
             assert_eq!(ExportStatus::parse(status.as_str()), Some(status));
         }
-        assert_eq!(ExportStatus::Cancelled.as_str(), "cancelled");
-        assert_eq!(ExportStatus::parse("canceled"), None);
+        assert_eq!(ExportStatus::Canceled.as_str(), "canceled");
+        assert_eq!(ExportStatus::parse("cancelled"), None);
     }
 
     /// The rule this module states, checked rather than trusted: a value

@@ -15,8 +15,8 @@ use crate::imports_api::{ImportError, ImportFailure};
 use crate::jsonl;
 use crate::open_db::OpenDb;
 use crate::progress::Progress;
+use api_types::ImportMode;
 use media::MediaMode;
-use message_crate_api_types::ImportMode;
 
 /// Options for a CLI directory import.
 #[derive(Debug, Clone)]
@@ -84,7 +84,7 @@ impl SourcePlan {
         if discovered.is_empty() {
             bail!(
                 "no conversation export.source found in {}; each conversation needs \
-                 export.source in the message-ir header (or pass --source)",
+                 export.source in the conversation file header (or pass --source)",
                 input.display()
             );
         }

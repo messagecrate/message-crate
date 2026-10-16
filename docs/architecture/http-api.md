@@ -134,7 +134,7 @@ Two levels of nesting. The multipart upload,
 three. `/health` is the only route outside `/v1`. Path segments are
 kebab-case; every field and query parameter on the wire is snake_case.
 
-Rejected: no verbs at all. Modelling every action as a field write turns
+Rejected: no verbs at all. Modeling every action as a field write turns
 trashing into `PATCH {"trashed": true}`, and trash is the only door to
 permanent deletion, which `POST .../trash` says and a field write does not.
 
@@ -167,13 +167,17 @@ format, and anything about how to apply it is a declared query parameter.
 The file the server writes is answered by a `POST` named for it,
 `POST /v1/contacts/address-book`, whose body `{q, ids}` selects the contacts
 and whose answer is `text/csv` with a `Content-Disposition` filename.
+A route that reads one file and writes another does both:
+`POST /v1/contacts/vcard-address-book` takes a vCard file as a `text/vcard`
+body and `country=` as a declared query parameter, and answers the address
+book written from it, named for what it returns.
 Why: a body that is the file cannot carry a mode field, and a JSON envelope
 around a file base64-encodes it for nothing. Rejected: `?format=csv` on
 `GET /v1/contacts`, which cannot carry the checked ids and is the `fields=`
 idea in another coat; `Accept: text/csv` on the list, which makes one list
 negotiate where every other answers JSON.
 
-Behaviour that differs by caller lives inside one handler, not in two routes.
+Behavior that differs by caller lives inside one handler, not in two routes.
 `PUT /v1/accounts/{id}/password` is one route: the owner sets another
 account's password without the current one, a user account changes its own on
 its session alone, and the owner changing its own must supply the
@@ -256,12 +260,10 @@ current one, because that account reaches every other.
   is still there sends the body again, as it would after any broken
   connection.
 - A body that the server stopped reading because it took too long is
-  `408 Request Timeout` (`upload-stalled`): a body that went `[server]
-  upload_stall_secs` (60) with no byte arriving, or was still arriving
-  `upload_piece_secs` (300) after the read started. It is mostly an import
-  batch, an attachment or a part of one, the bodies large enough to meet
-  the limits, but every body is held to them
-  ([Connections](#connections)). Why: the connection failed, not the data, and
+  `408 Request Timeout` (`body-stalled`): a body that went `[server]
+  body_stall_secs` (60) with no byte arriving, or was still arriving
+  `body_total_secs` (300) after the read started. Every body is held to
+  the limits ([Connections](#connections)). Why: the connection failed, not the data, and
   `malformed-body` told the person their data was bad. The client is still
   there to read the answer, so the answer says that running the import
   again continues it. The desktop app shows it and does not send the piece
@@ -610,8 +612,11 @@ second try at once meets the same busy database. It never tries a write
 again: it shows the write's failure with its `detail`. The pool
 (`crates/server/server/src/db/engine.rs`) holds 8 connections: two import
 batches and the sweep of unreferenced files after an Import Run
-(`asset_store::sweep_after_run`) can each hold one for a whole run, and
-under write-ahead logging the rest serve reads side by side. A request waits
+(`asset_store::sweep_after_run`) can each hold one for a whole run. The
+background move of a Session's expiry (`auth::ExpiryMoves`, under
+[Credentials and reach](#credentials-and-reach)) holds one more for up to
+the busy timeout while an import holds the write lock. Under write-ahead
+logging the rest serve reads side by side. A request waits
 10 seconds for a connection, and a write waits SQLite's 15-second busy
 timeout for the write lock. Why: with 4 connections, two imports and a sweep
 left one for every other request, and a request waited sqlx's default 30
@@ -663,13 +668,15 @@ set to.
 
 ## Connections
 
-The server holds every connection to three limits, so one slow or stuck
+The server holds every connection to four limits, so one slow or stuck
 client cannot hold it
-([#2100](https://github.com/messagecrate/message-crate/issues/2100)). A
+([#2100](https://github.com/messagecrate/message-crate/issues/2100),
+[#2984](https://github.com/messagecrate/message-crate/issues/2984)). A
 connection that sends no request, or sends one too slowly, is closed after
 30 seconds. At most 256 connections are open at once, and the next waits
 for one to close. A body that stops arriving, or arrives too slowly, is no
-longer read once the upload time limits pass. In detail:
+longer read once the body time limits pass. A connection whose client reads
+none of its answer for the body stall time is closed. In detail:
 
 - A connection has 30 seconds to send a request's headers, counted from when
   it opens or from the previous answer, and is closed when it has not
@@ -684,30 +691,46 @@ longer read once the upload time limits pass. In detail:
   desktop app's Upload open together, and under the 1024 open files a Linux
   process gets by default, which the connections share with the database and
   the upload files.
-- Every request body is held to the upload time limits, `[server]
-  upload_stall_secs` (60) with no byte arriving and `upload_piece_secs` (300)
+- Every request body is held to the body time limits, `[server]
+  body_stall_secs` (60) with no byte arriving and `body_total_secs` (300)
   for the whole body, and one that meets either answers `408 Request Timeout`
-  (`upload-stalled`). An import batch, an attachment and a part of one hold
+  (`body-stalled`). An import batch, an attachment and a part of one hold
   their bodies to the limits themselves, from when they start reading. The
   layers hold every other body from when the request arrives
   (`limit_request_body` in `crates/server/server/src/middleware.rs`). Why the uploads start their own
   clock: an import batch waits for an import slot before it reads, and a
   clock started on arrival would count that wait against its body.
-
-Nothing limits how long an answer takes to send: an export download or a
-large attachment takes as long as the client's link needs.
+- An answer the client takes no byte of for `[server] body_stall_secs`
+  (60) closes its connection, and the server lets go of the answer and the
+  file it reads from (`AnswerStall` in
+  `crates/server/server/src/connections.rs`). The wait counts only while a
+  write waits on the client, and starts again with every byte the client
+  takes, so a download that is still moving, however slowly, is never cut
+  off, and an answer the server is still making is not timed. The close is
+  written to the server's log at `INFO`, so the limit firing shows at the
+  default level and reads apart from a client that hung up, which is
+  written at `DEBUG`. Nothing limits
+  how long a whole answer takes to send: an export download or a large
+  attachment takes as long as the client's link needs.
 
 Why: `axum::serve` builds each connection without a timer, and hyper reads
 its own 30-second header limit only with one set, so a device that opened a
 connection and sent nothing, or sent its headers or a JSON body a byte at a
 time, held a task and a file handle for as long as it liked, and any number
 of devices could. On a home network one misbehaving device could starve a
-server that has one database file and two import slots. The limits are
-fixed in the code, not config keys, because no setup needs others: a
-working client sends its headers at once. Why the body limits are the
-upload ones rather than figures of their own: every other body is smaller
-than an import batch, so the limits a batch arrives inside hold it too, and
-one pair of figures is one to explain.
+server that has one database file and two import slots. The header read
+limit and the connection cap are fixed in the code, not config keys,
+because no setup needs others: a working client sends its headers at once.
+Why the body limits are the upload ones rather than figures of their own:
+every other body is smaller than an import batch, so the limits a batch
+arrives inside hold it too, and one pair of figures is one to explain.
+
+Why the answer is held to the body stall time rather than a figure of its
+own: a client that reads none of an answer is as stuck as one that sends
+none of a body, and one figure for "no byte moved" is one to explain. Why
+the limit sits on the connection rather than on the answer's body: while
+the client reads nothing, the server is waiting to write and does not ask
+the body for more, so a timer in the body would never be looked at.
 
 Rejected: a cap on requests in flight (`tower::limit::ConcurrencyLimitLayer`)
 in place of the cap on connections. A connection that never sends its
@@ -730,12 +753,12 @@ member of it matches `application/json`, `application/problem+json`,
 `application/*`, or `*/*`. `application/*` is a media range that matches
 `application/json` (RFC 9110), so refusing it would refuse a client that asks
 for JSON. A missing `Accept` is a request for JSON. The check runs on every `/v1` route
-but the five that answer bytes: `GET /v1/assets/{sha256}`, which streams the
+but the six that answer bytes: `GET /v1/assets/{sha256}`, which streams the
 asset's own contents, `GET` and `HEAD /v1/assets/{sha256}/preview` and
 `GET` and `HEAD /v1/assets/{sha256}/thumbnail`, which stream its Preview and
 its Thumbnail or answer the headers that stream would carry,
-`POST /v1/contacts/address-book`, which answers the address book as
-`text/csv`, and `GET /v1/server/log-files/{id}`, which answers a file of the
+`POST /v1/contacts/address-book` and `POST /v1/contacts/vcard-address-book`,
+which answer the address book as `text/csv`, and `GET /v1/server/log-files/{id}`, which answers a file of the
 server's log as `text/plain`. A media element probes a file with `HEAD` and an
 `Accept` such as `image/*`, so refusing that `HEAD` would refuse the probe.
 `HEAD /v1/assets/{sha256}` is checked, because it is the probe for whether an
@@ -825,6 +848,19 @@ security scheme with its scopes, so every route says which it accepts.
   settings and the installation's storage totals, because the owner holds no
   messages. It also reads the country list (`GET /v1/phone-countries`),
   because the owner picks the country of a number on an account it manages.
+  A Session ends after 7 days unused, and after 30 days from the login
+  however much it is used. A login sets its expiry 7 days ahead. A request
+  that the Session serves moves the expiry to 7 days after the request, but
+  never past 30 days after the login, and writes it only when the move is
+  an hour or more, so a Session in use writes at most once an hour. The
+  move is written in the background, one at a time, so a request never
+  waits for the write lock an import holds. A
+  password change renews the Session for 7 days, and starts its 30 days
+  again. Why: a Session forgotten on a shared computer ends within a week,
+  while an account in daily use never sees the shorter limit, and the cap
+  bounds how long one Session token lasts however it is used. The Audit
+  Trail reads a Session's moved expiry from `session_extensions`, because
+  its own entries are never edited.
 - An **API token** is a named credential an account makes for a program, with
   the scopes the person chose from `import` and `export`, capped by the
   account's own. The cap holds on every request, when the token is made, and
@@ -1042,7 +1078,7 @@ What each reaches:
   limit of 1 byte or more, and a limit that held every body would refuse
   the login and the settings change that raise it again.
 - An import batch body is held to 16 MiB, the most the desktop app's Upload
-  packs into one (`MAX_IMPORT_BATCH_BYTES` in `message-crate-api-types`, the
+  packs into one (`MAX_IMPORT_BATCH_BYTES` in `api-types`, the
   one figure both sides read), and a larger one answers
   `413 Payload Too Large`. Why 16 MiB: the server saves a batch in one write
   transaction, and every other writer, a login included, waits 15 seconds
@@ -1053,16 +1089,16 @@ What each reaches:
   A batch takes its import slot before it reads its
   body, and writes the body under the Data Directory
   (`data_dir/.import-batches/`), which `serve` empties as it starts. A body
-  that goes `[server] upload_stall_secs` (60) with no byte arriving, or is
-  still arriving `upload_piece_secs` (300) after the read started, ends the
-  read with `408 Request Timeout` (`upload-stalled`), which frees the slot.
+  that goes `[server] body_stall_secs` (60) with no byte arriving, or is
+  still arriving `body_total_secs` (300) after the read started, ends the
+  read with `408 Request Timeout` (`body-stalled`), which frees the slot.
   An attachment body and a part of one are held to the same two limits,
   though they take no slot, because each holds a connection and a file
   while it reads, and so is every other body
   ([Connections](#connections)). At 16 MiB, a full batch arrives inside 5 minutes at about
   0.45 Mbit/s. A multipart part is 16 MiB by default (`[server]
   asset_part_size`), and the Upload sends an attachment over 16 MiB in parts
-  (`MAX_PROXY_BODY_BYTES` in `message-crate-import`), so an attachment
+  (`MAX_PROXY_BODY_BYTES` in `import`), so an attachment
   arrives at the same speed a batch does. Why: the server accepted eight
   times what its client sends, and held a batch's whole text in memory
   beside its parsed records (#2075); every batch waiting for a slot held its
@@ -1073,10 +1109,10 @@ What each reaches:
   now and then, would stop every import on the server. A 10-minute limit for
   a whole body held a slot that long
   ([#2897](https://github.com/messagecrate/message-crate/issues/2897)).
-- `GET /v1/server` states the two upload time limits, in seconds, as
-  `upload_stall_secs` and `upload_piece_secs`, to any client. The desktop
+- `GET /v1/server` states the two body time limits, in seconds, as
+  `body_stall_secs` and `body_total_secs`, to any client. The desktop
   app's Upload reads them once it has logged in, and waits for the answer to
-  each batch, attachment or part for `upload_piece_secs` plus 5 minutes for
+  each batch, attachment or part for `body_total_secs` plus 5 minutes for
   the server's wait for a slot and its save. Why: the limits are config
   keys, and an Upload that kept its own copy, as it once kept a 10-minute
   timeout written beside the server's, drifts from them. They are stated
@@ -1117,6 +1153,16 @@ What each reaches:
   given to unlink or to find a row is not held to the cap, because it names
   something already stored, and neither is an address book load, because a
   file Export wrote must load back whatever an import stored.
+- A password is at most 128 characters wherever a request sends one: a new
+  account's, a login's, a new or current password on a change, and the
+  owner's on a claim. It is counted in characters, as a username is, never
+  trimmed, and has no minimum length but the owner's one character. One
+  over the cap is `validation-failed`, and the OpenAPI description and
+  `maxLength` state it. Why: people count characters, not bytes; Argon2
+  reduces a password to a fixed size before its costly work, so the cap only
+  keeps a client from sending a huge body as a password, and 128 leaves
+  room for any generated password or passphrase, over the 64 NIST SP 800-63B
+  asks a verifier to allow (#2996).
 - Each part of a multipart upload is held to the part size its upload was
   told when it started, which the upload's manifest records, and not to the
   limit as it is now. Why: an upload in progress keeps the limit it started
@@ -1146,7 +1192,7 @@ What each reaches:
   number is twice the uploads the desktop app runs at once, 16 attachments in
   each of 4 conversations, so an import goes as fast as the app can send it.
 - An upload, multipart or a single-request body, is abandoned once nothing
-  has been written to it for `[server] upload_stall_secs` (60) and no request
+  has been written to it for `[server] body_stall_secs` (60) and no request
   to it is running. A start that finds the account at the limit removes the
   account's abandoned uploads first and counts again, and `serve` removes
   every account's as it starts and each account's when its Import Run ends.
@@ -1216,7 +1262,7 @@ username typed and the password are never written
 ## Runs
 
 An Import Run and an Export Run are recorded permanently, whether they
-completed, failed or were cancelled, and outlive the account that ran them, as
+completed, failed or were canceled, and outlive the account that ran them, as
 the rest of the Audit Trail does. Each run records what started it: a Session
 with the app it named, or an API token by its label and hint as they were
 then. The client closes a run: a run's
@@ -1228,14 +1274,14 @@ There is no sessionless import and no unrecorded export.
 `completed_with_issues` or `failed` for an Import Run, and `completed` or
 `failed` for an Export Run. An Export Run's `cancel` is for a run the person
 gave up. A run an error stopped is closed with `complete` as `failed`, never
-with `cancel`. Why: the Audit Trail and the export history show `cancelled` as
+with `cancel`. Why: the Audit Trail and the export history show `canceled` as
 the person's own choice, so a failed run recorded that way lies the same way
-a cancelled run marked completed would (#2069).
+a canceled run marked completed would (#2069).
 
 A run that has finished answers `409 Conflict` to `complete`, `discard`,
 `cancel`, a batch, and a change of stage; its record is never rewritten. Its
 outcome is stated once, as `status`. Why: the finished record is the history
-the person reads, and a cancelled run marked completed afterwards would lie. A
+the person reads, and a canceled run marked completed afterwards would lie. A
 program unsure how a run ended reads it with `GET` rather than repeating the
 call.
 
@@ -1251,11 +1297,11 @@ other change of stage, backwards or skipping a stage, answers
 `409 Conflict` `state-conflict` naming both stages, and the run keeps its stage
 and summary. Why: the next visit resumes a run at the stage the server holds,
 so a client that sent a wrong stage would have the run resumed at work it
-already did (#1227). A run opens only at `parse`: `POST /v1/imports` with any
-other `stage` answers `422 Unprocessable Entity` (`validation-failed`) and
-opens no run. Why: a run opened later in the order would be resumed at work
-nobody did (#2638), and `422 Unprocessable Entity` because the client fixes it
-by sending `parse`.
+already did (#1227). Every run opens at `parse`, and `POST /v1/imports` takes
+no stage: a `stage` in its body is ignored like any other field the request
+does not name. Why: a run opened later in the order would be resumed at work
+nobody did (#2638), and a field with one valid value carries nothing
+(#2858).
 
 A running run with no stored stage is refused any change of stage with
 `500 Internal Server Error`. Why: the server never writes such a row, so there
@@ -1308,6 +1354,29 @@ between pages move the offsets, so pages skipped or repeated messages and
   client steps `offset` by `limit` until it reaches `total`, never by the
   items it got, and never stops on a short or empty page.
 
+An account has at most one running Export Run, held by a partial unique
+index on `exports(account_id) WHERE status = 'running'`, as for Import Runs.
+`POST /v1/exports` replaces the account's running run: in the transaction
+that records the new run, the running one is closed as `canceled` and its
+list deleted. A start is never refused because a run is open. The server
+also closes as `canceled` a running run with no page read for an hour,
+counted from its last page or, before the first, from its start; it looks
+once a minute, and when it starts. A page past the end of the list hands
+over nothing and still counts as a page read, so the desktop app reads one
+every ten minutes while it fetches the run's Assets, which read no page. A
+client still reading a run closed either way gets the `409 Conflict` any run
+that is not running answers, and the desktop app's Export fails with a
+sentence saying it was canceled. Each closure is an `export_run_closed` entry
+in the Audit Trail, with the reason `replaced` (by the person starting the
+new Export) or `idle` (by the server), naming the run.
+Why: every running run holds one row per message it matched, written while
+holding the database's write lock. With no limit, a program with the
+`export` scope could start runs in a loop and grow that table by the
+account's whole message count each time, and a client killed mid-Export
+left its list behind for good (#2080). Replacing rather than refusing keeps
+a person who restarts an Export from being locked out by the run their
+killed app left.
+
 ## The reference
 
 The generated reference, `docs/src/assets/openapi.json`, is produced from the
@@ -1317,7 +1386,7 @@ when the two differ, and CI checks the web app's generated types against it.
 An operation's error responses are built from shared parts, never written out
 by hand. The credential a route accepts brings its `401 Unauthorized` and
 `403 Forbidden`, and a Media Link brings `media-link-invalid`; a request
-body brings `400 Bad Request`, `408 Request Timeout` (`upload-stalled`),
+body brings `400 Bad Request`, `408 Request Timeout` (`body-stalled`),
 `413 Payload Too Large`, `415 Unsupported Media Type` and
 `422 Unprocessable Entity`; an id in the path
 brings `404 Not Found` and `422 Unprocessable Entity`; every `/v1` route brings
@@ -1426,7 +1495,7 @@ A wire type whose Rust name would clash with a shared crate's type, or with
 the `db/` struct it carries whole, takes the `Api` prefix in Rust and keeps
 its wire name through `#[schema(as = …)]`:
 `ApiIdentityService` in `db/handles.rs` is `IdentityService` on the wire,
-beside the conversation file's `message_ir::IdentityService`, and
+beside the conversation file's `ir::IdentityService`, and
 `ApiServerSettings` in `server_api.rs` is `ServerSettings` on the wire,
 carrying `db/server_settings.rs`'s `ServerSettings` and the database's
 journal. Why: two types
@@ -1444,7 +1513,7 @@ A handler takes the part of the server's state it reads, never `AppState`
 whole. The database is `State<SqlitePool>`, the configuration is
 `State<Arc<Config>>`, and each other part is a sub-state that `server.rs`
 cuts from `AppState` with `FromRef`: `ImportState`, `AssetState`,
-`DemoState`, `RefusalWait`, `UploadTimeLimits`, `MediaLinkKey` and
+`DemoState`, `RefusalWait`, `BodyTimeLimits`, `MediaLinkKey` and
 `WalError`. The import routes take `Importer`, in
 `imports_api/run_control.rs`, which holds what running and ending an Import
 Run reads. The credential extractors (`AuthIdentity`, `FullAccess`, `Owner`
@@ -1487,7 +1556,7 @@ answers with the read's own struct. That struct derives `Serialize` and
 hands it on unchanged: `list_saved_searches` answers
 `Json<Page<SavedSearch>>` with the `SavedSearch` rows `db/saved_searches.rs`
 reads. A struct that a client crate reads too lives in
-`message-crate-api-types`, and the `db/` read returns that struct:
+`api-types`, and the `db/` read returns that struct:
 `ExportRun` from `db/exports.rs`, `Message` from `db/conversation_messages.rs`.
 Why: one struct cannot drift from itself, and a copy beside it would be a
 second place to change for every column.

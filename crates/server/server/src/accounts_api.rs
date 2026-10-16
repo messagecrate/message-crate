@@ -20,7 +20,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
-use message_ir::IdentityService;
+use ir::IdentityService;
 use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
 
@@ -30,7 +30,7 @@ use crate::config::Config;
 use crate::credentials::RefusalWait;
 use crate::credentials::{
     change_password_on_conn, hash_owner_password, hash_user_password, passwords_match,
-    require_username_free, require_valid_username,
+    require_password_within_cap, require_username_free, require_valid_username,
 };
 use crate::db::audit_trail::{self, AuditAction, AuditActor, Details, NewEntry};
 use crate::db::handles::{self, ApiIdentityService, Identity};
@@ -287,15 +287,20 @@ pub async fn list_accounts(
 }
 
 /// Body for creating an account, by the owner or by a stranger.
+// `max_length` takes only a literal; `the_reference_states_the_password_cap`
+// holds each to `MAX_PASSWORD_CHARS`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateAccountRequest {
     /// Login username, which the server trims: 1 to 128 characters, each a
     /// letter A to Z, a digit, `_`, `-` or `.`. Any other is refused with
     /// `422 Unprocessable Entity`.
     pub username: String,
-    /// Local password, of any length. Absent or empty opens an account with
-    /// no password.
+    /// Local password: no minimum length, at most 128 characters, counted
+    /// as characters rather than bytes and not trimmed. Over 128 is refused
+    /// with `422 Unprocessable Entity`. Absent or empty opens an account
+    /// with no password.
     #[serde(default)]
+    #[schema(max_length = 128)]
     pub password: Option<String>,
     /// Display name shown in Message Crate, trimmed. Over 200 characters is
     /// refused with `422 Unprocessable Entity`.
@@ -365,13 +370,13 @@ pub async fn create_account(
         .as_deref()
         .map(|name| capped_text("preferred_name", name, MAX_PERSON_NAME_CHARS))
         .transpose()?
-        .and_then(message_ir::nonempty);
+        .and_then(ir::nonempty);
     let phone = req
         .phone
         .as_deref()
         .map(|phone| capped_text("phone", phone, MAX_IDENTITY_ADDRESS_CHARS))
         .transpose()?
-        .and_then(message_ir::nonempty);
+        .and_then(ir::nonempty);
 
     // A stranger is refused on a closed server before the password is hashed,
     // so a refusal costs no Argon2 work. This read takes no lock, so the
@@ -621,7 +626,7 @@ impl UpdateAccountRequest {
 
 /// Why a profile update was refused.
 #[derive(Debug, thiserror::Error)]
-enum ProfileUpdateError {
+pub(crate) enum ProfileUpdateError {
     /// The client named a time zone chrono-tz does not know.
     #[error("unknown time zone: {0}; use an IANA name such as America/New_York")]
     UnknownTimeZone(String),
@@ -636,16 +641,6 @@ enum ProfileUpdateError {
 impl From<sqlx::Error> for ProfileUpdateError {
     fn from(value: sqlx::Error) -> Self {
         Self::Db(value.into())
-    }
-}
-
-impl From<ProfileUpdateError> for ApiError {
-    fn from(e: ProfileUpdateError) -> Self {
-        match e {
-            err @ ProfileUpdateError::UnknownTimeZone(_) => Self::validation(err.to_string()),
-            ProfileUpdateError::Country(error) => error.into(),
-            ProfileUpdateError::Db(err) => Self::Internal(err),
-        }
     }
 }
 
@@ -926,12 +921,17 @@ pub async fn update_account(
 
 /// Confirmation flag and the current password when one is set: the body an
 /// account sends to delete itself. The owner sends none.
+// `max_length` takes only a literal; `the_reference_states_the_password_cap`
+// holds each to `MAX_PASSWORD_CHARS`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct DeleteAccountRequest {
     /// Must be `true`; anything else is rejected.
     pub confirm: bool,
-    /// Required when the account's `has_password` is true.
+    /// Required when the account's `has_password` is true. A password is at
+    /// most 128 characters, so a longer one is refused with
+    /// `422 Unprocessable Entity` before it is checked.
     #[serde(default)]
+    #[schema(max_length = 128)]
     pub current_password: Option<String>,
 }
 
@@ -1059,6 +1059,10 @@ pub async fn delete_account(
 /// `invalid-credentials`: an open session must not be a way to guess the
 /// password faster than the login allows.
 ///
+/// A current password over the cap is refused as a login refuses one, as
+/// `validation-failed` before any check: no password the server accepts is
+/// that long.
+///
 /// Argon2 runs on the blocking thread pool. The caller holds no database
 /// connection across this call, so neither the check nor the wait holds
 /// one.
@@ -1067,6 +1071,7 @@ async fn require_current_password(
     password_hash: Option<&str>,
     current: &str,
 ) -> Result<(), ApiError> {
+    require_password_within_cap("current_password", current)?;
     if !passwords_match(password_hash, current).await? {
         return Err(refusal_wait.refuse("current password is incorrect").await);
     }
@@ -1074,19 +1079,28 @@ async fn require_current_password(
 }
 
 /// The new password.
+// `max_length` takes only a literal; `the_reference_states_the_password_cap`
+// holds each to `MAX_PASSWORD_CHARS`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct ReplaceAccountPasswordRequest {
-    /// The new password. Empty clears a user account's password; the
-    /// owner's must be one character or more.
+    /// The new password: no minimum length for a user account, where empty
+    /// clears it, and one character or more for the owner's. At most 128
+    /// characters, counted as characters rather than bytes and not trimmed;
+    /// over 128 is refused with `422 Unprocessable Entity`.
+    #[schema(max_length = 128)]
     pub password: String,
     /// The new password typed a second time. The server, not the screen,
     /// refuses a pair that differs, so the checks run in one fixed order:
     /// current password, then the pair, then that the new one differs from the
     /// current one.
+    #[schema(max_length = 128)]
     pub password_confirmation: String,
     /// The password being replaced. Required when the owner changes its
-    /// own; nobody else sends it.
+    /// own; nobody else sends it. A password is at most 128 characters, so a
+    /// longer one is refused with `422 Unprocessable Entity` before it is
+    /// checked.
     #[serde(default)]
+    #[schema(max_length = 128)]
     pub current_password: Option<String>,
 }
 
@@ -1438,7 +1452,7 @@ pub(crate) enum AccountImportRun {
 #[serde(untagged)]
 pub(crate) enum AccountExportRuns {
     /// The account's own runs.
-    Own(Page<message_crate_api_types::ExportRun>),
+    Own(Page<api_types::ExportRun>),
     /// Another account's runs, as the owner reads them.
     Owner(Page<OwnerExportRun>),
 }
@@ -1525,7 +1539,7 @@ pub(crate) async fn get_account_import(
     security(("session" = [])),
     params(
         ("id" = i64, Path, description = "Account id"),
-        ("status" = Option<message_crate_api_types::ExportStatus>, Query, description = "Only the runs with this status"),
+        ("status" = Option<api_types::ExportStatus>, Query, description = "Only the runs with this status"),
         ("limit" = Option<usize>, Query, description = "Page size, default 40, at most 500"),
         ("offset" = Option<usize>, Query, description = "Rows to skip, at most 50000"),
         ("sort" = Option<String>, Query, description = "`started_at` or `-started_at`. Default `-started_at`, newest first.")

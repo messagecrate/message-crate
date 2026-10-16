@@ -413,7 +413,7 @@ async fn a_message_without_a_guid_is_refused() {
 /// know can never be stored and returned as no mark.
 #[tokio::test]
 async fn a_message_deletion_is_one_of_the_two_marks_or_none() {
-    use message_ir::Deletion;
+    use ir::Deletion;
     let (pool, _fixture) = seeded_schema_fixture().await;
     let mut conn = pool.acquire().await.unwrap();
     let conv = conversation_id(&mut conn, A1).await;
@@ -867,7 +867,7 @@ async fn messages_fts_holds_no_row_for_an_unsent_message() {
         source: "sms",
         guid: Some("g-unsent".into()),
         body: Some("lighthouse"),
-        deletion: Some(message_ir::Deletion::Unsent),
+        deletion: Some(ir::Deletion::Unsent),
         ..MessageRow::new(A1, conversation_id)
     }
     .insert_in(&mut tx)

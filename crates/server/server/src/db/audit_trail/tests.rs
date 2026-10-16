@@ -114,7 +114,7 @@ async fn deleting_an_account_keeps_an_import_runs_counts_and_drops_its_details()
         (
             None,
             Some("alice".into()),
-            "cancelled".into(),
+            "canceled".into(),
             12,
             None,
             None
@@ -184,6 +184,42 @@ async fn a_renewed_session_does_not_read_as_expired() {
     .await
     .unwrap();
     assert_eq!(login_expiry, stale, "the logged_in entry is never edited");
+}
+
+/// A Session that a use moved reads as live until the moved expiry, and as
+/// expired at it: not at the expiry its `logged_in` entry was written with.
+#[tokio::test]
+async fn a_used_session_reads_as_expired_at_its_moved_expiry() {
+    let fixture = test_fixture().await;
+    let account = fixture.account("alice").await;
+    let mut conn = fixture.conn().await;
+    let login = crate::test_support::fixed_instant();
+    let token = crate::db::session_tokens::open_session(&mut conn, account, "alice", None, login)
+        .await
+        .unwrap();
+    let used = login + chrono::Duration::days(3);
+    crate::db::session_tokens::use_session_at(&mut conn, &token, used)
+        .await
+        .unwrap()
+        .unwrap();
+    let moved = used + chrono::Duration::days(7);
+
+    let ended_by = async |conn: &mut SqliteConnection, now| {
+        let (items, _) = page(conn, Scope::Account(account), 10, 0, now)
+            .await
+            .unwrap();
+        items
+            .into_iter()
+            .filter(|item| item.action == AuditAction::SessionEnded)
+            .map(|item| (item.reason.unwrap(), item.at))
+            .collect::<Vec<_>>()
+    };
+    let past_first_expiry = login + chrono::Duration::days(8);
+    assert_eq!(ended_by(&mut conn, past_first_expiry).await, []);
+    assert_eq!(
+        ended_by(&mut conn, moved).await,
+        [(AuditReason::Expired, moved.to_rfc3339())]
+    );
 }
 
 /// Let the account's Session run out: its row stays, as it does until its
@@ -381,7 +417,7 @@ async fn an_entry_says_its_account_was_deleted_only_when_it_was() {
         &mut conn,
         &crate::db::exports::StartExportArgs {
             account_id: alice,
-            scope: &message_crate_api_types::ExportScope::Everything,
+            scope: &api_types::ExportScope::Everything,
             tool: None,
         },
         crate::test_support::fixed_instant(),
@@ -494,13 +530,14 @@ async fn each_run_table_records_its_own_runs_credential() {
         &mut conn,
         &crate::db::exports::StartExportArgs {
             account_id: account,
-            scope: &message_crate_api_types::ExportScope::Everything,
+            scope: &api_types::ExportScope::Everything,
             tool: None,
         },
         crate::test_support::fixed_instant(),
     )
     .await
-    .unwrap();
+    .unwrap()
+    .id;
     assert_eq!(import_id, export_id, "the test needs one id in both tables");
 
     let session = CredentialUsed::Session(Some(ConnectingApp {

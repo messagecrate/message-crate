@@ -1,5 +1,5 @@
 //! Convert a GO SMS Pro backup into the shared conversation structure
-//! ([`message_ir::ConversationDocument`]) every exporter writes, then write the chosen
+//! ([`ir::ConversationDocument`]) every exporter writes, then write the chosen
 //! output format through [`convert_backup`].
 
 use crate::attachments_emit::queue_pdu_attachments;
@@ -7,17 +7,17 @@ use crate::read::{MAX_SKIP_DETAILS, SkippedBadAddrDetail, XmlMessage, parse_xml_
 use android_fields::android_vendor_fields;
 use anyhow::{Context, Result, bail};
 use go_sms_mms::{ParsedPdu, PduError, parse_pdu_file};
+use ir::{
+    ConversationDocument, ExportMeta, PendingAttachment, PendingConversation, PendingMessage,
+    ProjectionHooks, Transport, VendorFields, ensure_conversation,
+};
 use message_crate_core::{
     ConvertRun, Counter, ExportReport, ItemKind, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE,
     prepare_outputs, project_conversation,
 };
-use message_csv::write_guarded_record;
-use message_ir::{
-    ConversationDocument, ExportMeta, PendingAttachment, PendingConversation, PendingMessage,
-    ProjectionHooks, Transport, VendorFields, ensure_conversation,
-};
-use message_staging::{AttachmentSpool, Project, ReadBackup, WriterSetup, convert_backup};
+use message_crate_csv::write_guarded_record;
 use phone::{Handle, OwnerHandleSet};
+use staging::{AttachmentSpool, Project, ReadBackup, WriterSetup, convert_backup};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -172,20 +172,18 @@ trait SkippedCsv<const N: usize> {
 /// Append parsed XML SMS rows to pending conversations.
 fn add_xml_messages(
     conversations: &mut BTreeMap<String, PendingConversation>,
-    msgs: Vec<XmlMessage>,
+    messages: Vec<XmlMessage>,
 ) {
-    for message in msgs {
+    for message in messages {
         let chat_id = message.other.key();
         let conversation = ensure_conversation(conversations, chat_id, false, None, Vec::new());
         conversation.messages.push(PendingMessage {
             sort_key: message.timestamp_secs as i64,
             is_from_me: message.is_from_me,
-            sender_identity: if message.is_from_me {
-                String::new()
-            } else {
-                message.other.into_key()
-            },
-            sender_display_name: message.name_alias.clone(),
+            sender: ir::Sender::new(
+                (!message.is_from_me).then(|| message.other.into_key()),
+                message.name_alias.clone(),
+            ),
             text: message.text,
             attachments: Vec::new(),
             extra: {
@@ -337,10 +335,9 @@ fn pdu_pending_message(
 ) -> PendingMessage {
     // The projection names the owner as the sender of every outgoing message
     // itself, so only a received PDU carries its sender here.
-    let sender_identity = match sender {
-        Some(sender) if !parsed.is_sent => sender.into_key(),
-        _ => String::new(),
-    };
+    let identity = sender
+        .filter(|_| !parsed.is_sent)
+        .map(|sender| sender.into_key());
     let mut extra = BTreeMap::new();
     extra.insert("source_kind".into(), "pdu".to_string());
     extra.insert("android_type".into(), String::new());
@@ -356,8 +353,7 @@ fn pdu_pending_message(
     PendingMessage {
         sort_key: parsed.timestamp,
         is_from_me: parsed.is_sent,
-        sender_identity,
-        sender_display_name: None,
+        sender: ir::Sender::new(identity, None),
         text: parsed.body,
         attachments,
         extra,
@@ -379,7 +375,7 @@ fn is_pdu_file(p: &Path) -> bool {
         .is_some_and(|n| (n.starts_with("I_") || n.starts_with("S_")) && n.ends_with(".pdu"))
 }
 
-/// GO SMS Pro deltas of the shared [`message_ir::pending_to_document`] projection.
+/// GO SMS Pro deltas of the shared [`ir::project_pending`] projection.
 struct GoSmsProjection {
     export: ExportMeta,
     /// Every message's Backup Date.
@@ -448,7 +444,7 @@ pub(crate) struct ConvertExportArgs<'a> {
 }
 
 /// Convert a GO SMS Pro export directory into the shared conversation structure
-/// ([`message_ir::ConversationDocument`]), then write the chosen output format.
+/// ([`ir::ConversationDocument`]), then write the chosen output format.
 ///
 /// Cancellation is checked between XML files, between PDU files, and
 /// between conversations. A canceled run returns
@@ -593,7 +589,7 @@ impl Ingest<'_> {
     /// Add every SMS row from one backup XML. Parse failures are recorded in
     /// the report and the file is skipped.
     fn ingest_xml(&mut self, xml_path: &Path) {
-        let (msgs, stats) = match parse_xml_file(xml_path) {
+        let (messages, stats) = match parse_xml_file(xml_path) {
             Ok(parsed) => parsed,
             Err(err) => {
                 self.report.error(
@@ -620,7 +616,7 @@ impl Ingest<'_> {
                 detail,
             );
         }
-        add_xml_messages(&mut self.conversations, msgs);
+        add_xml_messages(&mut self.conversations, messages);
     }
 
     /// Add the MMS in one PDU file. A stub (the placeholder GO SMS Pro
@@ -683,7 +679,7 @@ fn remove_if_exists(path: &Path) {
 /// Write `T`'s file in `output_dir` (or remove a stale one) with its header and one row per item
 /// of `details`. When `more` entries were left out, a last row says so in its final column,
 /// padded with empty columns to the header's width. Every detail row's cells go through
-/// [`message_csv::written_cell`], because the addresses and text come from the backup and a
+/// [`message_crate_csv::written_cell`], because the addresses and text come from the backup and a
 /// spreadsheet would run one that starts with `=` as a formula.
 fn write_skipped_csv<const N: usize, T: SkippedCsv<N>>(
     output_dir: &Path,
@@ -826,7 +822,7 @@ mod tests {
     }
 
     /// The messages of one conversation as the shared projection writes them.
-    fn project(messages: Vec<PendingMessage>) -> (Vec<message_ir::Message>, ExportReport) {
+    fn project(messages: Vec<PendingMessage>) -> (Vec<ir::Message>, ExportReport) {
         let hooks = GoSmsProjection {
             export: message_crate_core::export_meta(
                 EXPORT_SOURCE,
@@ -856,8 +852,7 @@ mod tests {
         PendingMessage {
             sort_key: 1_609_459_200,
             is_from_me: true,
-            sender_identity: String::new(),
-            sender_display_name: None,
+            sender: ir::Sender::default(),
             text: text.into(),
             attachments: digests
                 .iter()
@@ -880,15 +875,15 @@ mod tests {
         let xml = || test_message("xml", "hello", &[]);
         let pdu = || test_message("pdu", "hello", &["a1"]);
         for rows in [vec![xml(), pdu()], vec![pdu(), xml()]] {
-            let (msgs, report) = project(rows);
-            assert_eq!(msgs.len(), 1);
+            let (messages, report) = project(rows);
+            assert_eq!(messages.len(), 1);
             assert_eq!(report.duplicates_dropped, 1);
-            assert_eq!(msgs[0].attachments.len(), 1);
+            assert_eq!(messages[0].attachments.len(), 1);
             assert_eq!(
-                msgs[0].source.as_ref().unwrap().fields["source_kind"],
+                messages[0].source.as_ref().unwrap().fields["source_kind"],
                 "pdu"
             );
-            assert_eq!(msgs[0].timestamp_unix_ms, 1_609_459_200_250);
+            assert_eq!(messages[0].timestamp_unix_ms, 1_609_459_200_250);
         }
     }
 
@@ -896,21 +891,21 @@ mod tests {
     fn distinct_mms_with_one_caption_in_one_second_are_both_kept() {
         // Two MMS sharing second, direction, and caption but with different
         // media are distinct messages: both rows survive.
-        let (msgs, _) = project(vec![
+        let (messages, _) = project(vec![
             test_message("pdu", "photo", &["a1"]),
             test_message("pdu", "photo", &["a2"]),
         ]);
-        assert_eq!(msgs.len(), 2);
-        assert_ne!(msgs[0].guid, msgs[1].guid);
+        assert_eq!(messages.len(), 2);
+        assert_ne!(messages[0].guid, messages[1].guid);
     }
 
     #[test]
     fn plain_sms_duplicates_dropped() {
-        let (msgs, report) = project(vec![
+        let (messages, report) = project(vec![
             test_message("xml", "hi", &[]),
             test_message("xml", "hi", &[]),
         ]);
-        assert_eq!(msgs.len(), 1);
+        assert_eq!(messages.len(), 1);
         assert_eq!(report.duplicates_dropped, 1);
     }
 
@@ -931,12 +926,12 @@ mod tests {
             let addresses = PduAddresses::of(&parsed);
             pdu_pending_message(parsed, addresses.sender, Vec::new())
         };
-        let (msgs, _) = project(vec![pending("15555550122"), pending("15555550133")]);
+        let (messages, _) = project(vec![pending("15555550122"), pending("15555550133")]);
         assert_eq!(
-            msgs.len(),
+            messages.len(),
             2,
             "Lee's message was dropped as a duplicate of Ana's"
         );
-        assert_ne!(msgs[0].guid, msgs[1].guid);
+        assert_ne!(messages[0].guid, messages[1].guid);
     }
 }

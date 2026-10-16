@@ -18,7 +18,7 @@ Real messages never go into the Demo Account. It can't import, so that no backup
 ## Create the Owner
 
 1. Open the desktop app. A Message Crate with no Owner shows **Create Owner**. Whoever fills it in first becomes the Owner.
-2. Enter a **Username** and a **Password**, and repeat the password in **Confirm Password**.
+2. Enter a **Username** and a **Password**, and repeat the password in **Confirm Password**. A password is at most 128 characters.
 3. Select **Create Owner**.
 
 ![The Create Owner form, filled in](../../../../../assets/user-guide/create-owner.png)
@@ -32,7 +32,7 @@ The Owner's password is the only thing between the network and every account on 
 
 1. On **User Accounts**, select **Add account**.
 2. Enter a **Username**.
-3. Enter a **Password** and repeat it in **Confirm password**. The form allows an account with no password. An account that holds real messages should have one.
+3. Enter a **Password** and repeat it in **Confirm password**. The form allows an account with no password. An account that holds real messages should have one. A password is at most 128 characters.
 4. Select **Create**.
 
 ![The New account form in Owner Home](../../../../../assets/user-guide/add-account.png)
@@ -59,7 +59,7 @@ The first login opens **Profile Setup**:
 ![Profile Setup, shown on an account's first login](../../../../../assets/user-guide/profile-setup.png)
 
 Each row under **Your Accounts** has a type, **Text Message**, **Email**, or **WhatsApp**, and a value.
-**Continue to Message Crate** stays greyed out until **Display Name** and at least one row under **Your Accounts** are filled in, because Import has nothing to match sent messages against without an address.
+**Continue to Message Crate** stays grayed out until **Display Name** and at least one row under **Your Accounts** are filled in, because Import has nothing to match sent messages against without an address.
 Selecting it then opens the conversation list, which is empty.
 
 ## Check that it worked

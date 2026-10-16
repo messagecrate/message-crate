@@ -13,7 +13,7 @@
 //!
 //! `summarize_staging` and `transcode_staging` take only the directory. They
 //! read the run's media settings from it, where `extract` recorded them
-//! ([`message_staging::read_media_settings`]), so a summary, the Media stage it
+//! ([`staging::read_media_settings`]), so a summary, the Media Stage it
 //! forecasts, and the Staging before them all work to the one set of values
 //! the Import Run was started with.
 //!
@@ -30,13 +30,15 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use message_staging::{StagingSummary, TranscodeOptions, TranscodeReport};
+use staging::{StagingSummary, TranscodeOptions, TranscodeReport};
 
 use super::events;
 use super::events::{ImportProgressEvent, Step};
 use super::jobs::{spawn_job, start_job};
 use crate::app_directories::RunLog;
-use crate::run_directories::{self, RunDirectories, StagingRoot};
+use crate::run_directories::{
+    self, ClosedRun, DirectoryOfRun, RunDirectories, SignedIn, StagingRoot,
+};
 use crate::state::{AppState, JobName};
 use crate::tool_downloads::{Program, ToolDownloads};
 
@@ -115,8 +117,7 @@ fn staged_directory(
     run_dir: &str,
 ) -> Result<(PathBuf, TranscodeOptions), String> {
     let run_dir = directories.directory(run_dir)?;
-    let options =
-        message_staging::read_media_settings(&run_dir).map_err(|error| format!("{error:#}"))?;
+    let options = staging::read_media_settings(&run_dir).map_err(|error| format!("{error:#}"))?;
     Ok((run_dir, options))
 }
 
@@ -144,7 +145,7 @@ pub async fn summarize_staging(
     let progress_app = app.clone();
     let installed = installed.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        message_staging::summarize_staging(&run_dir, &options, &installed, &mut |progress| {
+        staging::summarize_staging(&run_dir, &options, &installed, &mut |progress| {
             events::emit(
                 &progress_app,
                 events::PROGRESS,
@@ -162,16 +163,16 @@ fn plural_s(count: usize) -> &'static str {
     if count == 1 { "" } else { "s" }
 }
 
-/// One human-readable sentence describing the Media stage's outcome.
+/// One human-readable sentence describing the Media Stage's outcome.
 ///
 /// Used both as the `desktop-job:finished` payload's `summary` field (so a
 /// client that falls back to raw JSON still has readable text) and, when
 /// either count is nonzero, as a `desktop-job:log` line so the same wording is
-/// visible while the Media stage runs, not only after it finishes.
+/// visible while the Media Stage runs, not only after it finishes.
 ///
 /// `too_large` and `failed` get separate clauses on purpose: a `too_large`
 /// file WAS converted. It just came out over the limit and will not be
-/// uploaded, which is a different fact from `failed`, a file the Media stage
+/// uploaded, which is a different fact from `failed`, a file the Media Stage
 /// could not convert at all. The report has no per-file reasons (those are written
 /// into the conversation files' `missing_reason` instead), so this can only
 /// speak in counts.
@@ -196,27 +197,27 @@ fn transcode_summary(report: &TranscodeReport) -> String {
     format!("{}.", clauses.join("; "))
 }
 
-/// Run the Media stage over a staged directory, after the Staging Review
+/// Run the Media Stage over a staged directory, after the Staging Review
 /// approves it.
 ///
 /// Follows `extract`'s job shape: the job starts through [`start_job`], with
-/// a cancel flag of its own, the Media stage runs on a background thread, and
+/// a cancel flag of its own, the Media Stage runs on a background thread, and
 /// progress/log/finished go back as `desktop-job:*` events so the UI reuses
-/// one progress view. A cancelled Media stage is reported through
+/// one progress view. A canceled Media Stage is reported through
 /// `desktop-job:error` the same way any other failure is. That is exactly how
-/// a cancelled `extract` run already behaves (`extract` never special-cases
+/// a canceled `extract` run already behaves (`extract` never special-cases
 /// its own cancellation either; `spawn_job`'s generic `Err` handling covers
-/// both). An earlier version of this command ended a cancelled Media stage
+/// both). An earlier version of this command ended a canceled Media Stage
 /// quietly instead (a `desktop-job:log` line, `Ok(())`, no
 /// `desktop-job:error`); that left `awaitDesktopJob`'s promise on the web
 /// side permanently unsettled (no `desktop-job:finished`, no
 /// `desktop-job:error`), wedging the screen with `running` stuck true and no
 /// way back except restarting the app. Do not restore the quiet path.
 ///
-/// Each file the Media stage could not convert goes to the window as a
-/// `desktop-job:issue` the moment the Media stage gives up on it, so the
+/// Each file the Media Stage could not convert goes to the window as a
+/// `desktop-job:issue` the moment the Media Stage gives up on it, so the
 /// window has written it into the run record before an app that closes
-/// during the Media stage stops.
+/// during the Media Stage stops.
 /// The report carries counts only, so a nonzero `failed`/`too_large` count
 /// is also surfaced as one summarizing `desktop-job:log` line (see
 /// [`transcode_summary`]).
@@ -226,7 +227,7 @@ fn transcode_summary(report: &TranscodeReport) -> String {
 /// Returns an error if `run_dir` is not a run directory this app made
 /// or holds no media settings, another job is running, or another thread
 /// panicked while holding the shared state lock. Failures during the Media
-/// stage, including a cancellation and ffmpeg/ffprobe being unavailable, are
+/// Stage, including a cancellation and ffmpeg/ffprobe being unavailable, are
 /// sent as `desktop-job:error`, verbatim, not returned here.
 #[tauri::command(async)]
 pub fn transcode_staging(
@@ -273,7 +274,7 @@ pub fn transcode_staging(
         // `&self`), so it borrows the one clone above rather than needing a
         // second. The same handle is still available by reference below,
         // once this borrow ends at the end of the `transcode_staged` call.
-        let outcome = message_staging::transcode_staged(
+        let outcome = staging::transcode_staged(
             &run_dir,
             &options,
             &installed,
@@ -291,7 +292,7 @@ pub fn transcode_staging(
 
         // A cancellation is just another `Err` here. `spawn_job` reports it
         // as `desktop-job:error` with the error chain as `detail`, the same
-        // generic path a cancelled `extract` run already goes through. See
+        // generic path a canceled `extract` run already goes through. See
         // this function's doc comment for why the earlier quiet-cancel
         // special case was removed.
         let report = outcome.inspect_err(|error| run_log.error(error))?;
@@ -342,6 +343,63 @@ pub fn delete_run_dir(
     directories.delete(&args.run_dir)
 }
 
+/// The run directories on this computer of the signed-in account's Import
+/// Runs on the Message Crate it is signed in to, each with its run's id, so
+/// Import can ask the server how each run stands (#2822).
+///
+/// # Errors
+///
+/// Returns an error when the record of run directories cannot be read.
+#[tauri::command(async)]
+pub fn list_account_run_dirs(
+    directories: tauri::State<'_, RunDirectories>,
+    args: SignedIn,
+) -> Result<Vec<DirectoryOfRun>, String> {
+    directories.runs_of(&args)
+}
+
+/// The disk space the signed-in account's Import Runs take in the Staging
+/// Directory on this computer, in bytes, measured now (#3087).
+///
+/// # Errors
+///
+/// Returns an error when the record of run directories cannot be read.
+#[tauri::command(async)]
+pub fn account_staging_bytes(
+    directories: tauri::State<'_, RunDirectories>,
+    args: SignedIn,
+) -> Result<u64, String> {
+    directories.bytes_of(&args)
+}
+
+/// The disk space the whole Staging Directory takes on this computer, in
+/// bytes, measured now ([`RunDirectories::bytes_of_all`]). Server Settings
+/// shows it to the owner (#3087).
+///
+/// # Errors
+///
+/// Returns an error when the record of run directories cannot be read.
+#[tauri::command(async)]
+pub fn all_staging_bytes(directories: tauri::State<'_, RunDirectories>) -> Result<u64, String> {
+    directories.bytes_of_all()
+}
+
+/// Delete the directory of an Import Run the server reports as closed, and
+/// write one line in the run's log naming the run and the directory. Returns
+/// whether a directory was removed.
+///
+/// # Errors
+///
+/// Returns an error when the directory is not the run's, or cannot be
+/// deleted.
+#[tauri::command(async)]
+pub fn delete_closed_run_dir(
+    directories: tauri::State<'_, RunDirectories>,
+    args: ClosedRun,
+) -> Result<bool, String> {
+    directories.delete_closed(&args)
+}
+
 /// File in a run directory holding the Import Run's record so far: the
 /// Import Errors, timings and counts of the parts that ran before the run
 /// paused or stopped at a Review.
@@ -352,7 +410,7 @@ pub fn delete_run_dir(
 /// it finally posts covers the whole run. The leading dot keeps it out of
 /// every listing of conversation files, and it is deleted with the directory.
 /// It has no `.json` extension, for the reason the media settings file has
-/// none (`message_staging::MEDIA_SETTINGS_FILE`): a fresh export into the
+/// none (`staging::MEDIA_SETTINGS_FILE`): a fresh export into the
 /// directory would delete it as an earlier run's output.
 pub const RUN_RECORD_NAME: &str = ".message-crate-run";
 
@@ -454,7 +512,7 @@ mod tests {
 
     #[test]
     fn a_staged_directory_is_read_with_the_settings_its_staging_recorded() {
-        // The summary and the Media stage are given only the directory, so they
+        // The summary and the Media Stage are given only the directory, so they
         // cannot be handed a mode the run did not start with (#1153).
         let made = made();
         let recorded = TranscodeOptions {
@@ -465,7 +523,7 @@ mod tests {
             },
             asset_max_bytes: 123_456_789,
         };
-        message_staging::write_media_settings(&made.run, &recorded).unwrap();
+        staging::write_media_settings(&made.run, &recorded).unwrap();
 
         let (dir, options) =
             staged_directory(&made.directories, made.run.to_str().unwrap()).unwrap();
@@ -477,7 +535,7 @@ mod tests {
     #[test]
     fn a_paused_run_resumes_and_is_deleted_after_the_staging_directory_changes() {
         // Issue #1154, through what a resume runs: the run record is read,
-        // the staged directory is checked for the summary and the Media stage,
+        // the staged directory is checked for the summary and the Media Stage,
         // and the directory is deleted, all after the setting moved.
         let made = made();
         let options = TranscodeOptions {
@@ -485,7 +543,7 @@ mod tests {
             compress: media::CompressOptions::default(),
             asset_max_bytes: 1,
         };
-        message_staging::write_media_settings(&made.run, &options).unwrap();
+        staging::write_media_settings(&made.run, &options).unwrap();
         let record = serde_json::json!({ "phase": "staging_review" });
         save_run_record(&made.run, &record).unwrap();
         let elsewhere = tempfile::tempdir().unwrap();

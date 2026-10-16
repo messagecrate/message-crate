@@ -13,7 +13,7 @@
 //! [`android_vendor_fields`], and SMS Backup & Restore and SMS Backup+ read an
 //! attachment's name with [`valid_filename`].
 
-use message_ir::{PendingConversation, PendingMessage, VendorFields};
+use ir::{PendingConversation, PendingMessage, VendorFields};
 use serde_json::{Map, Value};
 
 /// The last millisecond of the year 9999, the latest `date` read as real.
@@ -69,7 +69,7 @@ pub fn valid_filename(value: &str) -> Option<String> {
 }
 
 /// Android's message `type` (1 received, 2 sent, and so on) as a number, or
-/// `None` when the field is blank or not a whole number. `message-ir-format`'s
+/// `None` when the field is blank or not a whole number. `ir-format`'s
 /// CSV reader reads its `android_type` column the same way; keep the two in
 /// step.
 fn parse_android_type(s: &str) -> Option<i32> {
@@ -82,7 +82,7 @@ fn parse_android_type(s: &str) -> Option<i32> {
 /// title is stored as data only; filenames do not use it.
 pub fn android_vendor_fields(
     conversation: &PendingConversation,
-    msg: &PendingMessage,
+    message: &PendingMessage,
     mut fields: Map<String, Value>,
 ) -> VendorFields {
     if let Some(title) = conversation
@@ -96,7 +96,7 @@ pub fn android_vendor_fields(
         );
     }
     VendorFields {
-        android_type: parse_android_type(msg.extra_str("android_type")),
+        android_type: parse_android_type(message.extra_str("android_type")),
         fields,
     }
 }

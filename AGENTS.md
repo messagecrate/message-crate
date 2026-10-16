@@ -48,7 +48,7 @@ skipped check reads as passed, so they say nothing. Why:
 The templates exist for whoever opens the pull request to fill in — an agent included —
 not as options offered to a reviewer:
 
-- `.github/PULL_REQUEST_TEMPLATE/feature.md` for new behaviour: what it does
+- `.github/PULL_REQUEST_TEMPLATE/feature.md` for new behavior: what it does
   and for whom, the key files changed, HTTP API and schema changes, how to
   test it.
 - `.github/PULL_REQUEST_TEMPLATE/bugfix.md` for a fix: expected against
@@ -343,7 +343,7 @@ message-crate
 │   ├── exporters/          # backup parsers (iMessage, WhatsApp, SMS, experimental)
 │   ├── helpers/            # imessage-reader (GPL helper process the app spawns) and its protocol
 │   ├── libs/               # shared libraries (ir, ir-format, reexport, contacts, media,
-│   │                       #   message-crate-import, message-crate-export, …)
+│   │                       #   import, export, …)
 │   └── server/             # message-crate-server (HTTP API + SQLite) and demo-seed
 ├── docker/                 # Dockerfile and Compose for a release-shaped server image
 ├── docs/                   # Astro Starlight site (messagecrate.app)
@@ -429,6 +429,11 @@ mkdir -p ~/message-crate/tools && ln -sf "$(pipx environment --value PIPX_BIN_DI
 pipx install sqlite-web                                          # --sqlweb on port 8081
 cargo install cargo-llvm-cov --locked                             # ./scripts/coverage.sh
 cargo install cargo-mutants cargo-nextest --locked                # ./scripts/mutants.sh
+# gitleaks for ./scripts/check-secrets.sh, at the version and archive SHA-256 that
+# ci.yml's secrets job pins. Run from the clone (step 5), which holds ci.yml.
+v=$(sed -n 's/^ *GITLEAKS_VERSION: //p' .github/workflows/ci.yml); sum=$(sed -n 's/^ *GITLEAKS_SHA256: //p' .github/workflows/ci.yml); d=$(mktemp -d)
+curl -sSfL -o "$d/gitleaks.tar.gz" "https://github.com/gitleaks/gitleaks/releases/download/v${v}/gitleaks_${v}_linux_x64.tar.gz"
+echo "${sum}  $d/gitleaks.tar.gz" | sha256sum -c - && mkdir -p ~/.local/bin && tar -xzf "$d/gitleaks.tar.gz" -C ~/.local/bin gitleaks && rm -r "$d"
 ```
 
 **5. Clone and install the frontend**
@@ -498,18 +503,23 @@ Optional: `./scripts/build-static.sh` copies `web/dist` to `static/` so the serv
 
 Run these from the repository root unless a `cd` is shown.
 
-Rust formatter is `rustfmt`. CI gates Clippy at `-D warnings` on the workspace and on `src-tauri`. `src-tauri/` is not a workspace member, so format it with `--manifest-path`. `rust-toolchain.toml` pins the toolchain for every checkout, for CI, and for the release image (`docker/Dockerfile` copies the file and installs that toolchain; `scripts/check-docker-context.sh` fails when its base image drifts to another minor); bump it deliberately, in its own pull request, fixing any new Clippy lints there — a floating stable can redden `main` with no code change.
+Rust formatter is `rustfmt`. CI gates Clippy and rustdoc at `-D warnings` on the workspace and on `src-tauri`; rustdoc runs with `--document-private-items`, so a broken intra-doc link anywhere fails. `src-tauri/` is not a workspace member, so format it with `--manifest-path`. `rust-toolchain.toml` pins the toolchain for every checkout, for CI, and for the release image (`docker/Dockerfile` copies the file and installs that toolchain; `scripts/check-docker-context.sh` fails when its base image drifts to another minor); bump it deliberately, in its own pull request, fixing any new Clippy lints there — a floating stable can redden `main` with no code change.
 
 ```bash
 # Check format (what CI runs)
 cargo fmt --all -- --check
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
+# Rustdoc at -D warnings, private items included (what CI runs: a step of
+# the clippy job and of check-tauri; check-pr.sh runs both)
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
+RUSTDOCFLAGS="-D warnings" cargo doc --manifest-path src-tauri/Cargo.toml --no-deps --document-private-items
+
 # Rewrite Rust (workspace + src-tauri) and web/ (Biome)
 ./scripts/format-all.sh
 
 # Fast pre-flight: CHANGELOG.md format, fmt --check, Clippy -D warnings,
-# Biome ci, tsc.
+# rustdoc -D warnings, Biome ci, tsc.
 ./scripts/check-pr.sh
 
 # Everything CI runs, serially (build, tests, audits, docs, the lot).
@@ -553,7 +563,8 @@ Coverage is a report, not a gate, and it points at gaps rather than measuring te
 
 Mutation testing is a report too, and it answers what coverage cannot: whether a test that calls a function would fail if the function were wrong. cargo-mutants changes the code one small way at a time (`<` to `<=`, `&&` to `||`, a function returning `Default::default()`) and runs that package's tests. A mutant every test still passes is "missed", and that list is the finding. Every workspace crate is mutated except the few `.cargo/mutants.toml` leaves out (test-data generators, the build stamp, serde-only types), along with `Display` and `Debug` text, a handful of functions that only build a log or hint line, arithmetic in top-level constants, and retry jitter; it says why for each. `scripts/mutants.sh` needs `cargo-mutants`, `cargo-nextest` (it runs each mutant's tests and stops at the first failure, which halves the time of a caught mutant) and `python3`; other arguments go to `cargo mutants`, and `--file` mutates only that file. The `Mutants` workflow (`mutants.yml`) runs only when started by hand from the Actions tab, never on a schedule or a pull request. It splits the run across 40 shards of about 2.5 hours each (about 100 runner-hours in all, most of it the server crate, whose whole test suite runs for every mutant), puts the joined table and every missed mutant on the run's summary page, and keeps each shard's logs and diffs as a workflow artifact for 30 days.
 
-The `Nightly` workflow (`nightly.yml`) builds the release Dockerfile from `main` every day at 10:37 UTC and starts the image with `scripts/check-docker-compose.sh`. It is the only run that starts the image before a release: no pull request builds it, and the release's `docker` job builds it but does not start it before it pushes (#3000). It passes `--website`, so a headless browser then loads the website the image serves, logs in to the Demo Account, searches and opens a conversation. It builds and never publishes; publishing a release stays with a `v*` tag, and a manual CI run can push `sha-<commit>` ("Releases and versions"). A scheduled run ends at once when `main` is still at the commit the previous scheduled run saw. A run started by hand from the Actions tab (`gh workflow run nightly.yml`) builds regardless. It is a report, not a gate: it does not run on pull requests and the ruleset does not require it. A failed night opens an issue titled "Nightly run failed" with the `bug` label, or adds a comment to that issue while it is open, naming the failed job and linking the run. A night that fails is not built again until `main` moves, so the fix is a commit or a run started by hand.
+The `Nightly` workflow (`nightly.yml`) builds the release Dockerfile from `main` every day at 10:37 UTC and starts the image with `scripts/check-docker-compose.sh`. It is the only run that starts the image before a release: no pull request builds it, and the release's `docker` job builds it but does not start it before it pushes (#3000). It passes `--website`, so a headless browser then loads the website the image serves, logs in to the Demo Account, searches and opens a conversation. It builds and never publishes; publishing a release stays with a `v*` tag, and a manual CI run can push `sha-<commit>` ("Releases and versions"). A scheduled run ends at once when `main` is still at the commit the previous scheduled run saw. A run started by hand from the Actions tab (`gh workflow run nightly.yml`) builds regardless. It is a report, not a gate: it does not run on pull requests and the ruleset does not require it. A failed night opens an issue titled "Nightly run failed" with the `bug` label, or adds a comment to that issue while it is open, naming the failed job and linking the run. A night that fails is not built again until `main` moves, so the fix is a commit or a run started by hand. The workflow has a second job, which checks on GitHub's Windows on ARM runner that the Windows x64 ffmpeg and ffprobe the desktop app downloads there run under emulation. `scripts/check-windows-arm-ffmpeg.sh` downloads the files `src-tauri/src/tool_downloads/pins.rs` pins for Windows on ARM, checks their SHA-256, probes a committed video and converts it the way the Media Stage does, to H.264 for Convert media and to HEVC for Convert & Compress media.
+
 
 Every `uses:` in a workflow names a third-party action by the full commit SHA of a tag, with the tag in a trailing comment: `actions/checkout@<40-hex-sha> # v7`. Anyone with push access to the action's repository can move a tag, and a moved tag would run new code on the runners that build the installers and hold `DOCKERHUB_TOKEN`; a commit cannot move. Look up the commit a tag names today with `gh api repos/<owner>/<repo>/commits/<tag> --jq .sha`. Dependabot's weekly `github-actions` update moves the SHA and its comment together.
 
@@ -573,7 +584,7 @@ npm run build             # tsc && vite build
 npm run dev               # Vite on http://localhost:5173 (proxies /v1 to :8080)
 ```
 
-From the repository root, `./scripts/format-all.sh` rewrites Rust and web sources to the formatters. `./scripts/check-pr.sh` is the fast pre-flight — the `CHANGELOG.md` formatting check, `cargo fmt --check` and Clippy at `-D warnings` on both manifests, `biome ci`, the timed-wait rule's canary, the restricted-import list check, and the web type-check; it checks and never rewrites. `./scripts/check-all.sh` runs CI's checks serially on the machine it is started on, starting with `check-pr.sh`. On Linux or macOS it skips the Windows-only cases of the server config tests, which CI's `windows-config` job runs. Why the split: `docs/adr/0007-ci-is-the-only-gate.md`.
+From the repository root, `./scripts/format-all.sh` rewrites Rust and web sources to the formatters. `./scripts/check-pr.sh` is the fast pre-flight — the `CHANGELOG.md` formatting check, `cargo fmt --check`, Clippy at `-D warnings`, and rustdoc at `-D warnings` with private items on both manifests, `biome ci`, the timed-wait rule's canary, the restricted-import list check, and the web type-check; it checks and never rewrites. `./scripts/check-all.sh` runs CI's checks serially on the machine it is started on, starting with `check-pr.sh`. It skips the secret scan (`scripts/check-secrets.sh`) when gitleaks is not installed ("First time setup", step 4). On Linux or macOS it skips the Windows-only cases of the server config tests, which CI's `windows-config` job runs, and the desktop app's Job Object tests, which CI's `windows-local-server` job runs. Why the split: `docs/adr/0007-ci-is-the-only-gate.md`.
 
 Do not start a separate `npm run dev` while `cargo tauri dev` is running. Tauri starts Vite itself.
 
@@ -629,7 +640,7 @@ Leave most other `Cargo.toml` files at `0.1.0`. Do not bump `web-next/` (`0.3.0`
 3. Set the four product version files to the new number (for example `0.8.0`).
 4. Push a git tag `v0.8.0` on that commit. Pushing the tag is what ships. Push/PR to `main` does not. The `version` job fails the tag run if the four files, their lockfiles, or the changelog heading disagree with the tag, and nothing is built or published.
 
-`.github/workflows/ci.yml` then: runs fmt/test, pushes `bitrealm/message-crate`, builds Tauri installers (Linux `.deb` + AppImage, Windows `.msi`, macOS `.dmg`), and creates a GitHub Release named `Message Crate v0.8.0`. `.github/workflows/docs.yml` publishes the documentation site to messagecrate.app on the same tag; a merge to `main` does not publish it.
+`.github/workflows/ci.yml` then: runs fmt/test, pushes `bitrealm/message-crate`, builds Tauri installers (Linux `.deb` + AppImage, Windows `.msi`, macOS `.dmg`), and creates a GitHub Release named `Message Crate v0.8.0`. The release carries `SHA256SUMS` beside the installers, and a build provenance attestation (`actions/attest-build-provenance`) for each installer and for the pushed image, which `gh attestation verify` checks. `.github/workflows/docs.yml` publishes the documentation site to messagecrate.app on the same tag; a merge to `main` does not publish it.
 
 The docs deploy runs in the `github-pages` environment, whose deployment branch policy in the repository settings must allow the `v*` tag rule as well as `main` (for `workflow_dispatch`). The workflow trigger and that policy have to agree: a tag push against an environment that only allows `main` builds the site and then refuses the deploy, which is what happened to `v0.9.0` (#654). Check and set it with:
 

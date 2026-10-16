@@ -109,7 +109,7 @@ fn a_shared_location_is_started_or_stopped() {
 }
 
 #[test]
-fn text_effects_are_labelled() {
+fn text_effects_are_labeled() {
     assert_eq!(effect_label(&TextEffect::Default), "default");
     assert_eq!(
         effect_label(&TextEffect::Mention("+1555".to_string())),

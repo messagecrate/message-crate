@@ -172,7 +172,7 @@
         "src/lib/routeQuery.ts",
         "src/components/DownloadAttachmentButton.tsx",
         "src/hooks/useStreamedMedia.ts",
-        "src/lib/useToolsStatus.ts"
+        "src/hooks/useToolsStatus.ts"
       ],
       "linter": {
         "rules": {

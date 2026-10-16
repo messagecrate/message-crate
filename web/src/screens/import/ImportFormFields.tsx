@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import Button from "../../components/Button";
 import Checkbox from "../../components/Checkbox";
 import PathPicker from "../../components/PathPicker";
+import PhoneCountrySelect from "../../components/PhoneCountrySelect";
 import type { PhoneTokenFieldHandle } from "../../components/PhoneTokenField";
-import { phoneCountryItems } from "../../components/phoneCountryItems";
 import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
 import { textInputClass } from "../../components/TextField";
 import TimeZoneField from "../../components/TimeZoneField";
+import { useToolsStatus } from "../../hooks/useToolsStatus";
 import { toolUsable } from "../../lib/desktop/tools";
 import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
 import { IMPORT_SOURCES, importSourceById, importSourceFor } from "../../lib/importSources";
@@ -14,8 +15,6 @@ import type { PhoneCountryChoice } from "../../lib/phoneCountries";
 import { ownerPhonesNeedMismatchAck } from "../../lib/phoneTokens";
 import { parseSelectKey } from "../../lib/selectKey";
 import type { AttachmentChoices, AttachmentMediaMode } from "../../lib/types";
-import { useLowDiskSpace } from "../../lib/useLowDiskSpace";
-import { useToolsStatus } from "../../lib/useToolsStatus";
 import { IMPORT_FORM_SECTIONS } from "./formSections";
 import { FieldStatus } from "./formSections/FieldStatus";
 import type { ImportFormFieldsProps, OwnerPhoneEntry } from "./formSections/types";
@@ -31,9 +30,7 @@ import {
 import { formTimeZone } from "./importForm";
 import { MissingProgramNotice } from "./MissingProgramNotice";
 import { mediaJobVerb } from "./reviewForecast";
-
-/** The choice that states no country for the phone. */
-const NO_PHONE_COUNTRY = "none";
+import { useLowDiskSpace } from "./useLowDiskSpace";
 
 /**
  * The country of the phone the backup came from. A backup writes many numbers
@@ -54,26 +51,13 @@ function PhoneCountryField({
 }) {
   return (
     <StackedField label="Phone's country" optional>
-      <Select
-        selectedKey={value || NO_PHONE_COUNTRY}
-        onSelectionChange={(k) => {
-          if (typeof k === "string") onChange(k === NO_PHONE_COUNTRY ? "" : k);
-        }}
-        aria-label="Phone's country"
+      <PhoneCountrySelect
+        value={value}
+        countries={countries}
+        onChange={onChange}
+        label="Phone's country"
         triggerClassName="!bg-bg"
-      >
-        {[
-          <ListBoxItem
-            key={NO_PHONE_COUNTRY}
-            id={NO_PHONE_COUNTRY}
-            textValue="Not stated"
-            className={selectItemClassName}
-          >
-            Not stated
-          </ListBoxItem>,
-          ...phoneCountryItems(countries),
-        ]}
-      </Select>
+      />
       <p className={hintClass}>
         Numbers written without a country code are read as numbers in this country. Leave it unset
         when the backup holds numbers from more than one country written that way.
@@ -231,8 +215,9 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   const blockedBy = runningJob !== null && runningJob !== "Import Run" ? runningJob : null;
 
   // A WhatsApp import runs wtsexporter and can't start without it; one still
-  // downloading is waited for. Convert and Compress run ffmpeg and ffprobe
-  // after Staging, so a missing one is said here and blocks nothing yet.
+  // downloading is waited for. Convert media and Convert & Compress media run
+  // ffmpeg and ffprobe after Staging, so a missing one is said here and blocks
+  // nothing yet.
   const tools = useToolsStatus().data ?? null;
   const wtsexporterBlocked =
     source.needsWtsexporter && tools !== null && !toolUsable(tools.wtsexporter);
@@ -415,6 +400,12 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
           {line}
         </p>
       ))}
+
+      {props.startError ? (
+        <p role="alert" className="mt-2 mb-0 text-[0.813rem] text-danger">
+          {props.startError}
+        </p>
+      ) : null}
 
       <div className="mt-2 flex gap-3">
         <Button

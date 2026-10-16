@@ -11,7 +11,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use message_ir::{UnsafeAttachmentPath, UnsupportedSchemaVersion};
+use ir::{UnsafeAttachmentPath, UnsupportedSchemaVersion};
 
 use super::promote::PromoteError;
 use super::staging::StagingError;
@@ -29,7 +29,7 @@ pub enum ImportFailure {
         refusal: UnsupportedSchemaVersion,
         line: usize,
     },
-    /// A line is JSON and breaks a rule of message-ir: a header or message
+    /// A line is JSON and breaks a rule of the conversation file: a header or message
     /// with the wrong fields, a message before any header, or a file with no
     /// header.
     Invalid { line: usize, detail: String },
@@ -223,7 +223,7 @@ mod tests {
             f.to_string(),
             format!(
                 "this file is schema version 3; Message Crate reads version {} (line 1 of the file)",
-                message_ir::SCHEMA_VERSION
+                ir::SCHEMA_VERSION
             )
         );
     }

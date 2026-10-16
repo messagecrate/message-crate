@@ -9,8 +9,8 @@
 //! `docs/src/content/docs/docs/developer/reference/errors/` from the same
 //! declarations, so nothing has to be kept in step by hand.
 
+pub use api_types::Problem;
 use axum::http::StatusCode;
-pub use message_crate_api_types::Problem;
 
 use crate::api_error::{ApiError, is_database_busy};
 
@@ -166,9 +166,9 @@ problem_types! {
     /// A `Range` that selects no byte of the file.
     RangeNotSatisfiable => ("range-not-satisfiable", RANGE_NOT_SATISFIABLE, "Range not satisfiable")
         from ApiError::RangeNotSatisfiable { .. },
-    /// An upload body stopped arriving, or took too long to arrive.
-    UploadStalled => ("upload-stalled", REQUEST_TIMEOUT, "Upload stalled")
-        from ApiError::UploadStalled(_),
+    /// A request body stopped arriving, or took too long to arrive.
+    BodyStalled => ("body-stalled", REQUEST_TIMEOUT, "Body stalled")
+        from ApiError::BodyStalled(_),
     /// The server is stopping and refused work it had not started.
     ServerStopping => ("server-stopping", SERVICE_UNAVAILABLE, "Server stopping")
         from ApiError::ServerStopping(_),
@@ -212,16 +212,17 @@ impl ProblemType {
         match self {
             Self::ValidationFailed => "A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.\n\n\
 `errors` lists every rule the request broke, one sentence each, not only the first. Fix each one and send the request again.\n\n\
-For an import batch, a line that is JSON and breaks a rule of message-ir (a wrong field, a message before any header, a message without a `guid`, an old `schema_version`) answers this type, and `line` carries the first such line of the request body, counted from 1 with blank lines included. It is a line of the batch, not of any file: a client that packed the batch from several files turns it into the file and line it came from. An unsafe attachment path and a stated SHA-256 that is not 64 hex digits answer this type too, and `line` carries the line of the message the attachment is on. A batch never carries an attachment's bytes, so its `path` names no file on the server: only a `digest_sha256` already uploaded through `/v1/assets` finds the Asset. An empty batch answers this type without `line`.".to_string(),
+For an import batch, a line that is JSON and breaks a rule of the conversation file (a wrong field, a message before any header, a message without a `guid`, an old `schema_version`) answers this type, and `line` carries the first such line of the request body, counted from 1 with blank lines included. It is a line of the batch, not of any file: a client that packed the batch from several files turns it into the file and line it came from. An unsafe attachment path and a stated SHA-256 that is not 64 hex digits answer this type too, and `line` carries the line of the message the attachment is on. A batch never carries an attachment's bytes, so its `path` names no file on the server: only a `digest_sha256` already uploaded through `/v1/assets` finds the Asset. An empty batch answers this type without `line`.".to_string(),
             Self::MalformedBody => "The request could not be read at all: the body is not valid JSON, an import line is not JSON or not UTF-8, or the body failed to arrive. Nothing was parsed, so nothing is reported field by field; `detail` says where reading stopped.\n\n\
 For an import batch, `line` carries the line of the request body that could not be read, counted from 1 with blank lines included. It is a line of the batch, not of any file: a client that packed the batch from several files turns it into the file and line it came from.".to_string(),
             Self::UnsupportedMediaType => "The request's `Content-Type` is absent or not one this route accepts. An import body is `application/x-ndjson` or `application/jsonl`; a JSON route takes `application/json`. Send the right header with the same body.".to_string(),
             Self::PayloadTooLarge => format!(
-                "The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading. `PUT /v1/assets/{{sha256}}` caps at the attachment size limit, which the owner sets in Server Settings and `GET /v1/server` reports as `asset_max_bytes`. Each part of a multipart upload caps at the part size the upload was given when it started. Every other cap is fixed in the server: `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/claim` at {}, any other JSON body at {}, an address book loaded with `POST /v1/contacts` at {}, an import batch at {}, the most the desktop app sends in one, and any other body at {}. Send less, or, for an attachment, have the owner raise the limit.",
+                "The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading. `PUT /v1/assets/{{sha256}}` caps at the attachment size limit, which the owner sets in Server Settings and `GET /v1/server` reports as `asset_max_bytes`. Each part of a multipart upload caps at the part size the upload was given when it started. Every other cap is fixed in the server: `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/claim` at {}, any other JSON body at {}, an address book loaded with `POST /v1/contacts` at {}, a vCard file sent to `POST /v1/contacts/vcard-address-book` at {}, an import batch at {}, the most the desktop app sends in one, and any other body at {}. Send less, or, for an attachment, have the owner raise the limit.",
                 byte_size(crate::limits::MAX_AUTH_BODY_BYTES),
                 byte_size(crate::limits::MAX_JSON_BODY_BYTES),
                 byte_size(crate::contacts_api::address_book::MAX_ADDRESS_BOOK_BYTES),
-                byte_size(message_crate_api_types::MAX_IMPORT_BATCH_BYTES),
+                byte_size(crate::contacts_api::address_book::MAX_VCARD_BYTES),
+                byte_size(api_types::MAX_IMPORT_BATCH_BYTES),
                 byte_size(crate::limits::MAX_REQUEST_BODY_BYTES),
             ),
             Self::InvalidCredentials => "The username or password did not match an account, the account is disabled, or the current password given to confirm deleting an account or changing the owner's password was wrong. The server does not say which. A login to a disabled account answers this whether the password was right or not, so a guesser learns nothing. Check both and try again, or ask the owner whether the account is disabled. The server waits about a second before it answers each refused attempt, so a wrong password costs a moment before the next try. That wait is not protection for a Message Crate reachable from the internet: that is the job of the proxy in front of it.".to_string(),
@@ -246,8 +247,8 @@ Every `401 Unauthorized` answer carries `WWW-Authenticate: Bearer realm=\"messag
                 crate::assets_api::media_links::MEDIA_LINK_TTL.as_secs() / 60
             ),
             Self::RangeNotSatisfiable => "The request's `Range` selects no byte of the file: it starts at or past the end, or asks for a suffix of no bytes. The `Content-Range` header (`bytes */<length>`) says how long the file is. Ask for a range inside it, or send no `Range` to get the whole file. A `Range` the server does not serve as one range, such as several ranges or another unit, is not refused: it answers the whole file.".to_string(),
-            Self::UploadStalled => "The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. The server stopped reading it and stored none of it. `detail` says which limit it met. Every body is held to the limits, so any route that reads one can answer this. An import batch, a `PUT /v1/assets/{sha256}` body and a part of a multipart upload are the bodies large enough to meet them.\n\n\
-The connection failed, not the data: nothing in the body is wrong. The limits are 60 seconds with no byte and 300 seconds for a whole body unless the server's config file sets `[server] upload_stall_secs` and `upload_piece_secs`, and `GET /v1/server` states both, in seconds, as `upload_stall_secs` and `upload_piece_secs`. Send the same request again once the connection is better. For an upload, the desktop app does not send it again by itself: running the import again continues it from where it stopped.".to_string(),
+            Self::BodyStalled => "The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body. The server stopped reading it and stored none of it. `detail` says which limit it met. Every body is held to the limits, so any route that reads one can answer this.\n\n\
+The connection failed, not the data: nothing in the body is wrong. The limits are 60 seconds with no byte and 300 seconds for a whole body unless the server's config file sets `[server] body_stall_secs` and `body_total_secs`, and `GET /v1/server` states both, in seconds, as `body_stall_secs` and `body_total_secs`. Send the same request again once the connection is better. For an upload, the desktop app does not send it again by itself: running the import again continues it from where it stopped.".to_string(),
             Self::ServerStopping => "The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for. An import batch waiting for its turn, or whose body was still arriving, answers this: nothing in it was stored. Send the same request once the server is running again.".to_string(),
             Self::DatabaseBusy => "The database was too busy to take this request in time: another request, such as an import batch, held the write lock for longer than this one could wait for it, or every database connection stayed taken while it waited for one. Wait the number of seconds in the `Retry-After` header (repeated as `retry_after` in the body) and send the same request again.\n\n\
 Any route that reads or writes the database can answer this, so no route in the OpenAPI document lists it.".to_string(),
@@ -345,7 +346,8 @@ mod tests {
                 crate::contacts_api::address_book::MAX_ADDRESS_BOOK_BYTES,
                 "8 MiB",
             ),
-            (message_crate_api_types::MAX_IMPORT_BATCH_BYTES, "16 MiB"),
+            (crate::contacts_api::address_book::MAX_VCARD_BYTES, "64 MiB"),
+            (api_types::MAX_IMPORT_BATCH_BYTES, "16 MiB"),
             (crate::limits::MAX_REQUEST_BODY_BYTES, "512 MiB"),
         ] {
             assert_eq!(byte_size(cap), text);

@@ -25,7 +25,7 @@ import { parseSelectKey } from "../lib/selectKey";
 import { isTauri } from "../lib/tauriCheck";
 
 /**
- * What an export covers. `everything` sends a blank query, which message-crate-export
+ * What an export covers. `everything` sends a blank query, which the `export` crate
  * reads as the whole account; `search` sends the text of the query box.
  */
 type ExportScope = "everything" | "search";
@@ -65,19 +65,19 @@ function formatLabel(id: ExportFormat): string {
 }
 
 /**
- * Desktop export: `message-crate-export` downloads the account's conversations as
- * JSON Lines, and for any other format `message-reexport` rewrites them into
+ * Desktop export: `export` downloads the account's conversations as
+ * JSON Lines, and for any other format `reexport` rewrites them into
  * the chosen format.
  *
  * Every export gets a directory of its own in the Export Directory, named for
  * when it started and its format (`export-2026-10-04-1430-mbox`). The result
  * lands there unless the person chose another directory under **Save to**.
  * The JSON Lines a non-JSONL export writes wait in that directory while they
- * are converted, since `message-reexport` refuses to write into a directory
+ * are converted, since `reexport` refuses to write into a directory
  * that holds its input, and the conversion writes beside them. When the export
  * finishes, the desktop deletes the JSON Lines and moves the result up, so the
  * directory holds only the result; a directory left empty because the result
- * went elsewhere is deleted. A failed or cancelled export deletes its
+ * went elsewhere is deleted. A failed or canceled export deletes its
  * directory whole, so no copy of the conversations is left behind.
  *
  * The scope is Everything or Search. The screen opens in Search when its URL

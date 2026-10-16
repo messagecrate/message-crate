@@ -1,6 +1,6 @@
 //! Attachment helpers for the emitter.
 
-use message_ir::{Attachment, PendingAttachment, PendingMessage};
+use ir::{Attachment, PendingAttachment, PendingMessage};
 
 /// The `extra` key of the source file of a message's `index`-th attachment.
 pub(super) fn attachment_source_key(index: usize) -> String {
@@ -35,7 +35,7 @@ pub(super) fn attachment_digests(message: &PendingMessage) -> Vec<String> {
         .enumerate()
         .filter(|(index, _)| !message.extra_flag(&attachment_matches_any_file_key(*index)))
         .map(|(index, a)| {
-            message_ir::trimmed(message.extra_str(&attachment_content_key(index)))
+            ir::trimmed(message.extra_str(&attachment_content_key(index)))
                 .map(str::to_string)
                 .or_else(|| a.digest_sha256.clone())
                 .unwrap_or_else(|| a.rel_path.clone())

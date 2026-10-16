@@ -26,7 +26,7 @@ use media::{CompressOptions, InstalledTools, MaxResolution, MediaMode};
 use message_crate_core::{
     AttachmentFiles, ExporterConfig, Form, FormContext, OutputFormat, RunResult,
 };
-use message_staging::TranscodeOptions;
+use staging::TranscodeOptions;
 
 use super::events;
 use super::jobs::{cancel_running_job, spawn_job, start_job};
@@ -128,7 +128,7 @@ pub struct ExtractArgs {
     /// The server's attachment size limit, in bytes, as the app read it from
     /// `GET /v1/server` when the Import Run was created. Staging records it
     /// with the run's media settings, where the Staging Review's forecast
-    /// and the Media stage read it.
+    /// and the Media Stage read it.
     pub asset_max_bytes: u64,
 }
 
@@ -270,7 +270,7 @@ struct ExtractOptions {
 ///
 /// Returns an error if the string is not copy, convert, compress, or skip.
 fn parse_attachment_media(raw: Option<&str>) -> Result<MediaMode, String> {
-    let Some(raw) = raw.and_then(message_ir::trimmed) else {
+    let Some(raw) = raw.and_then(ir::trimmed) else {
         return Ok(MediaMode::default());
     };
     MediaMode::parse(raw).ok_or_else(|| {
@@ -284,7 +284,7 @@ fn parse_attachment_media(raw: Option<&str>) -> Result<MediaMode, String> {
 ///
 /// Returns an error if the string is not 720p, 1080p, or 4k.
 fn parse_max_resolution(raw: Option<&str>) -> Result<MaxResolution, String> {
-    let Some(raw) = raw.and_then(message_ir::trimmed) else {
+    let Some(raw) = raw.and_then(ir::trimmed) else {
         return Ok(MaxResolution::default());
     };
     MaxResolution::parse(raw).ok_or_else(|| {
@@ -292,7 +292,7 @@ fn parse_max_resolution(raw: Option<&str>) -> Result<MaxResolution, String> {
     })
 }
 
-/// Build the `CompressOptions` the Media stage will use, from the
+/// Build the `CompressOptions` the Media Stage will use, from the
 /// max-resolution/fps/min-size fields the Import form sends.
 ///
 /// `CompressOptions` only takes effect under [`media::MediaMode::Compress`],
@@ -349,7 +349,7 @@ fn media_settings_for(
 /// beside the export sentinel it wrote.
 ///
 /// The record is written after the exporter and not before, because a fresh
-/// export refuses a directory that already holds files it does not recognise.
+/// export refuses a directory that already holds files it does not recognize.
 /// A Staging that is interrupted leaves no record. Nothing reads one until
 /// Staging finishes, and the resumed Staging writes it.
 ///
@@ -362,7 +362,7 @@ fn run_staging(
     media_settings: &TranscodeOptions,
 ) -> anyhow::Result<RunResult> {
     let run_result = exporters::run(config)?;
-    message_staging::write_media_settings(output_dir, media_settings)?;
+    staging::write_media_settings(output_dir, media_settings)?;
     Ok(run_result)
 }
 
@@ -383,7 +383,7 @@ fn run_staging(
 /// validation problems are joined with `; `. Staging stages the original
 /// attachment files or none ([`AttachmentFiles`]), so the compress fields
 /// are not checked here: [`media_settings_for`] checks them, and the Media
-/// stage checks ffmpeg against the person's choice. `installed` is passed
+/// Stage checks ffmpeg against the person's choice. `installed` is passed
 /// on, so the WhatsApp exporter finds `wtsexporter` in its Tools Directory.
 fn build_exporter_config(
     scratch_dir: &Path,
@@ -395,9 +395,10 @@ fn build_exporter_config(
 ) -> Result<ExporterConfig, String> {
     let mut form = Form {
         output: output_dir.to_string(),
-        // Staging copies the originals under Copy, Convert and Compress, and
-        // the desktop runs the Media Stage itself after the Staging Review,
-        // so converting waits until the person has approved it.
+        // Staging copies the originals under Copy, Convert media and Convert &
+        // Compress media, and the desktop runs the Media Stage itself after
+        // the Staging Review, so converting waits until the person has
+        // approved it.
         attachments: if options.attachment_media == MediaMode::Disabled {
             AttachmentFiles::Skip
         } else {

@@ -11,7 +11,7 @@
 
 use crate::flat_eml::{group_key, names_a_group};
 use crate::types::ParsedMessage;
-use message_ir::{ConversationType, IdentityType};
+use ir::{ConversationType, IdentityType};
 use phone::Handle;
 use std::collections::{BTreeSet, HashMap, HashSet};
 

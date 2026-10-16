@@ -54,7 +54,7 @@ const STEP_LABEL: Record<
 
 /**
  * Label shown while a step is running. Falls back to a plain word for a
- * step string this build doesn't recognise — the event comes off the wire
+ * step string this build doesn't recognize — the event comes off the wire
  * unvalidated.
  */
 function progressLabel(
@@ -83,7 +83,7 @@ function applyProgress(ctx: RunContext, event: ImportProgressEvent): void {
   }
 
   const stepIndex = stepIndexFor(event.step, scratch.attachmentMode);
-  // No row for this step in the current mode (or an unrecognised step off
+  // No row for this step in the current mode (or an unrecognized step off
   // the wire): leave activeStage pointing at the stage of whatever step has a row, so a
   // dropped event here never mislabels the next error.
   if (stepIndex < 0) return;
@@ -248,7 +248,7 @@ export function runJob(ctx: RunContext, invokeFn: () => Promise<void>): Promise<
 
 /**
  * `invokeSummarizeStaging`, with a listener on the same `desktop-job:progress`
- * channel Staging and the Media stage use. `summarize_staging` (Rust)
+ * channel Staging and the Media Stage use. `summarize_staging` (Rust)
  * emits progress on the `check` step while it walks a big directory, and
  * `applyProgress` already knows to draw that on the Staging row, so this
  * only has to make sure the event reaches it.

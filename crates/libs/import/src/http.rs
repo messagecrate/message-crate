@@ -5,13 +5,13 @@
 //! [`message_crate_http::auth_check`]; the session type here is
 //! [`message_crate_http::HttpSession`].
 
-use message_crate_api_types::ImportMode;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
+use api_types::ImportMode;
 use message_crate_http::{
     HttpError, error_sentence, looks_like_html, ok_json, read_body, session_refused, trim_base_url,
 };
@@ -52,13 +52,6 @@ pub(crate) struct AssetUpload<'a> {
     pub multipart_threshold: usize,
 }
 
-/// How an Import Run ended, for `/v1/imports/{id}/complete`.
-pub(crate) struct ImportOutcome<'a> {
-    /// `completed`, `completed_with_issues`, or `failed`.
-    pub status: &'a str,
-    pub bytes_uploaded: u64,
-}
-
 /// How long the Upload waits for the answer to a request that sends a piece
 /// (an import batch, an attachment, or a part of one) beyond the server's
 /// own limit for the piece to arrive: the server's wait for an import slot
@@ -71,14 +64,14 @@ const ANSWER_WAIT: Duration = Duration::from_secs(300);
 
 /// The part of the server's answer to `GET /v1/server` the Upload reads.
 #[derive(Debug, Deserialize)]
-struct ServerUploadTimes {
+struct ServerBodyTimes {
     /// Seconds the server lets a whole piece take to arrive.
-    upload_piece_secs: u64,
+    body_total_secs: u64,
 }
 
 /// How long a request that sends a piece waits for its answer: the time the
 /// server at `url` states it lets a whole piece take to arrive
-/// (`upload_piece_secs` in `GET /v1/server`), plus [`ANSWER_WAIT`]. Read
+/// (`body_total_secs` in `GET /v1/server`), plus [`ANSWER_WAIT`]. Read
 /// from the server rather than kept here, because its config file sets it.
 ///
 /// # Errors
@@ -93,21 +86,48 @@ pub(crate) fn piece_wait(http: &HttpSession, url: &str, token: &str) -> Result<D
         .send()
         .with_context(|| format!("{what} failed"))?;
     let (status, text) = read_body(what, response)?;
-    let stated: ServerUploadTimes = ok_json(what, status, &text)?;
-    Ok(Duration::from_secs(stated.upload_piece_secs) + ANSWER_WAIT)
+    let stated: ServerBodyTimes = ok_json(what, status, &text)?;
+    Ok(Duration::from_secs(stated.body_total_secs) + ANSWER_WAIT)
 }
 
-/// The answer to `POST /v1/imports`: the new Import Run's id.
+/// The part of the server's answer to `GET /v1/imports/{id}` the Upload
+/// reads.
 #[derive(Debug, Deserialize)]
-struct CreateImportResponse {
-    id: i64,
+struct ImportRunMode {
+    mode: ImportMode,
 }
 
-/// The Import Run `POST /v1/imports/{id}/complete` answers. Only `id` is read: it
-/// names the run the server closed.
-#[derive(Debug, Deserialize)]
-struct ImportRun {
-    id: i64,
+/// The mode of the Import Run `import_id`, read from the server at `url`
+/// (`GET /v1/imports/{id}`). The Upload takes its mode from the run it
+/// posts into, because the server wipes the source by the run's mode
+/// (#3144).
+///
+/// The answer carries every issue and note the run recorded, which has no
+/// bound: a WhatsApp run can record 20,000 skipped files. So it waits as
+/// long as a request that sends a piece does (the `piece_wait` argument,
+/// from [`piece_wait`]), not a fixed few seconds.
+///
+/// # Errors
+///
+/// Returns an error when the server cannot be reached, refuses the session
+/// token, or does not answer the run.
+pub(crate) fn run_mode(
+    http: &HttpSession,
+    url: &str,
+    token: &str,
+    import_id: i64,
+    piece_wait: Duration,
+) -> Result<ImportMode> {
+    let what = format!("Reading Import Run {import_id}");
+    let path = format!("/v1/imports/{import_id}");
+    let response = http
+        .server_request(Method::GET, url, &path, token)
+        .timeout(piece_wait)
+        .send()
+        .with_context(|| format!("{what} failed"))?;
+    let (status, text) = read_body(&what, response)?;
+    let run: ImportRunMode = ok_json(&what, status, &text)?;
+    Ok(run.mode)
 }
 
 /// The answer to `POST /v1/assets/{sha256}/uploads`.
@@ -134,11 +154,11 @@ fn payload_too_large_message(kind: &str, bytes: Option<usize>) -> String {
     let size = bytes
         .map(|n| format!(" (request was {n} bytes)"))
         .unwrap_or_default();
-    let batch_mib = message_crate_api_types::MAX_IMPORT_BATCH_BYTES / (1024 * 1024);
+    let batch_mib = api_types::MAX_IMPORT_BATCH_BYTES / (1024 * 1024);
     format!(
         "{kind} rejected: HTTP 413 Payload Too Large{size}. \
          Cloudflare Free/Pro caps proxied uploads at ~100 MB. \
-         message-crate-import chunks message imports under {batch_mib} MiB and large assets via multipart; \
+         The Import Run splits message imports under {batch_mib} MiB and sends large assets in multipart parts; \
          if this still fails, raise nginx client_max_body_size for /v1 (need ≥20m for 16 MiB parts) \
          or tunnel to the server on :8080."
     )
@@ -330,87 +350,6 @@ impl Session {
         }
         ok_json::<CreateImportBatchResponse>(&what, status, &text)
     }
-
-    /// Create an Import Run on the server and return its id. Every batch is
-    /// posted into it; the bearer token names the account.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the server refuses, which includes an account
-    /// that already has a running Import Run.
-    pub(crate) fn start_import(
-        &self,
-        source: &str,
-        mode: ImportMode,
-        tool: Option<&str>,
-        phone_country: Option<&str>,
-    ) -> Result<i64> {
-        let what = "Import Run start";
-        let mut body = serde_json::json!({
-            "source": source,
-            "mode": mode,
-        });
-        if let Some(tool) = tool {
-            body["tool"] = serde_json::Value::String(tool.to_string());
-        }
-        if let Some(phone_country) = phone_country {
-            body["phone_country"] = serde_json::Value::String(phone_country.to_string());
-        }
-        let response = self
-            .http
-            .server_request(Method::POST, &self.url, "/v1/imports", &self.token)
-            .timeout(Duration::from_secs(60))
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send()
-            .with_context(|| format!("{what} failed"))?;
-        let (status, text) = read_body(what, response)?;
-        let parsed: CreateImportResponse = ok_json(what, status, &text)?;
-        Ok(parsed.id)
-    }
-
-    /// Record how the Import Run ended.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the server refuses.
-    pub(crate) fn complete_import(
-        &self,
-        import_id: i64,
-        outcome: &ImportOutcome<'_>,
-    ) -> Result<()> {
-        let what = format!("Import Run {import_id} completion");
-        let body = serde_json::json!({
-            "status": outcome.status,
-            "bytes_uploaded": outcome.bytes_uploaded,
-        });
-        let response = self
-            .http
-            .server_request(
-                Method::POST,
-                &self.url,
-                &format!("/v1/imports/{import_id}/complete"),
-                &self.token,
-            )
-            // The server hides the duplicates of the whole account before it
-            // completes the run, a pass whose time grows with every message
-            // the account holds. 600 s is the ten minutes the web app gives
-            // the same call.
-            .timeout(Duration::from_secs(600))
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send()
-            .with_context(|| format!("{what} failed"))?;
-        let (status, text) = read_body(&what, response)?;
-        let closed: ImportRun = ok_json(&what, status, &text)?;
-        if closed.id != import_id {
-            return Err(anyhow!(
-                "the server closed Import Run {} when asked to complete Import Run {import_id}",
-                closed.id
-            ));
-        }
-        Ok(())
-    }
 }
 
 /// A multipart upload the server has opened for one attachment.
@@ -565,6 +504,7 @@ mod tests {
             refused: Default::default(),
             away: Default::default(),
             piece_wait: Duration::from_secs(5),
+            mode: ImportMode::Append,
         }
     }
 
@@ -666,37 +606,12 @@ mod tests {
         abort.assert();
     }
 
-    /// A server that answers the completion of one Import Run with another
-    /// has not closed the run the Upload holds, so the completion fails and
-    /// names both runs.
-    #[test]
-    fn complete_import_fails_when_the_server_closes_another_run() {
-        let server = MockServer::start();
-        let _complete = server.mock(|when, then| {
-            when.method(POST).path("/v1/imports/7/complete");
-            then.status(200).json_body(serde_json::json!({ "id": 9 }));
-        });
-        let err = session(server.base_url())
-            .complete_import(
-                7,
-                &ImportOutcome {
-                    status: "completed",
-                    bytes_uploaded: 0,
-                },
-            )
-            .unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "the server closed Import Run 9 when asked to complete Import Run 7"
-        );
-    }
-
     #[test]
     fn payload_too_large_names_the_import_chunk_size() {
-        let msg = payload_too_large_message("Import Run 42 batch", Some(10));
+        let message = payload_too_large_message("Import Run 42 batch", Some(10));
         assert!(
-            msg.contains("imports under 16 MiB"),
-            "413 help must name the import chunk size, got {msg}"
+            message.contains("imports under 16 MiB"),
+            "413 help must name the import chunk size, got {message}"
         );
     }
 
@@ -709,8 +624,8 @@ mod tests {
         let _limits = server.mock(|when, then| {
             when.method(GET).path("/v1/server");
             then.status(200).json_body(serde_json::json!({
-                "upload_stall_secs": 5,
-                "upload_piece_secs": 45,
+                "body_stall_secs": 5,
+                "body_total_secs": 45,
             }));
         });
 
@@ -722,7 +637,7 @@ mod tests {
     /// A server that states no limit stops the Upload before it sends
     /// anything, rather than leaving it to guess one.
     #[test]
-    fn a_server_that_states_no_piece_limit_is_an_error() {
+    fn a_server_that_states_no_total_limit_is_an_error() {
         let server = MockServer::start();
         let _limits = server.mock(|when, then| {
             when.method(GET).path("/v1/server");

@@ -198,7 +198,7 @@ describe("ContactList", () => {
   });
 
   it("exports the group the list shows, or the checked rows when there are any", async () => {
-    exportMock.mockResolvedValue("contact_id,display_name,groups,service,identity_type,identity\n");
+    exportMock.mockResolvedValue("contact_id,display_name,service,identity,groups\n");
     renderList({ groupFilter: "Family" });
     await settle();
     const rowCheckbox = screen.getByRole("checkbox", { name: "Select Alice" });

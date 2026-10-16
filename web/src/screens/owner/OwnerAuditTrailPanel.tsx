@@ -5,17 +5,18 @@ import Select, {
   selectItemClassName,
   selectSectionHeaderClass,
 } from "../../components/Select";
-import { formatDateTime } from "../../lib/formatDate";
-import type { DeletedAccount } from "../../lib/serverApi";
-import AuditTrail from "../auditTrail/AuditTrail";
 import {
   type AuditTrailOf,
   auditTrailKey,
   auditTrailOf,
   useDeletedAccounts,
-} from "../auditTrail/useAuditTrail";
+} from "../../hooks/useAuditTrail";
+import { useOwnerAccounts } from "../../hooks/useOwnerAccounts";
+import { formatDateTime } from "../../lib/formatDate";
+import type { DeletedAccount } from "../../lib/serverApi";
+import AuditTrail from "../auditTrail/AuditTrail";
 import { sectionHintClass } from "../settings/storage/storageUtils";
-import { useOwnerAccounts } from "./useOwnerAccounts";
+import { serverLogOfRequest } from "./serverLogOfRequest";
 
 const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
   selectItemClassName(state, "sm");
@@ -46,6 +47,8 @@ function deletedLabels(deleted: DeletedAccount[]) {
  * its holder reads under Settings. Below the live accounts it lists each
  * deleted account by its old username and when it was deleted, and picking
  * one narrows the list to the entries and runs that account left behind.
+ *
+ * An entry written in a request links to that request's lines in Logs.
  */
 export function OwnerAuditTrailPanel() {
   const [of, setOf] = useState<AuditTrailOf>({ kind: "all" });
@@ -104,7 +107,7 @@ export function OwnerAuditTrailPanel() {
         Logins, imports, exports and every change to an account, newest first. Entries are never
         changed or removed, and stay after an account is deleted.
       </p>
-      <AuditTrail of={of} showAccount={of.kind === "all"} />
+      <AuditTrail of={of} showAccount={of.kind === "all"} logHref={serverLogOfRequest} />
     </section>
   );
 }

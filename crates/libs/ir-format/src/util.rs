@@ -1,13 +1,13 @@
 //! Small shared helpers for reading and writing conversation documents.
 
 use anyhow::{Context, Result};
-use message_ir::{Attachment, ConversationDocument};
+use ir::{Attachment, ConversationDocument};
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-/// Give `doc` back the stem suffix its file was written with.
+/// Give `document` back the stem suffix its file was written with.
 ///
 /// An exporter chooses the suffix, such as one per source app so two apps'
 /// chats with one person land in two files, and the suffix is never written
@@ -15,14 +15,14 @@ use std::path::Path;
 /// without one, when that starts with `__`. This crate knows no suffix by
 /// name. A document that already has a suffix, or a file renamed so its
 /// stem no longer starts with the document's own, is left as it is.
-pub(crate) fn recover_stem_suffix(doc: &mut ConversationDocument, file_stem: Option<&OsStr>) {
-    if doc.packaging_stem_suffix.is_some() {
+pub(crate) fn recover_stem_suffix(document: &mut ConversationDocument, file_stem: Option<&OsStr>) {
+    if document.packaging_stem_suffix.is_some() {
         return;
     }
     let Some(file_stem) = file_stem.and_then(OsStr::to_str) else {
         return;
     };
-    let base = crate::filename_stem(doc);
+    let base = crate::filename_stem(document);
     if base.is_empty() {
         return;
     }
@@ -30,7 +30,7 @@ pub(crate) fn recover_stem_suffix(doc: &mut ConversationDocument, file_stem: Opt
         && rest.len() > 2
         && rest.starts_with("__")
     {
-        doc.packaging_stem_suffix = Some(rest.to_string());
+        document.packaging_stem_suffix = Some(rest.to_string());
     }
 }
 
@@ -55,12 +55,12 @@ pub fn load_attachment_bytes(att: &Attachment, output_dir: &Path) -> Result<Vec<
 /// Missing paths yield `Ok(None)`. IO failures return an error (strict). Callers
 /// that want lenient behavior map with `.ok().flatten()`.
 ///
-/// The relative path is validated via [`message_ir::safe_attachment_path`].
+/// The relative path is validated via [`ir::safe_attachment_path`].
 pub(crate) fn read_attachment_file(att: &Attachment, output_dir: &Path) -> Result<Option<Vec<u8>>> {
     let Some(rel) = att.path.as_deref() else {
         return Ok(None);
     };
-    let path = message_ir::safe_attachment_path(output_dir, rel)?;
+    let path = ir::safe_attachment_path(output_dir, rel)?;
     if !path.is_file() {
         return Ok(None);
     }
@@ -95,14 +95,14 @@ pub fn is_complete_file(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_ir::Attachment;
+    use ir::Attachment;
     use std::fs;
     use std::io::Write;
 
     fn att_with_path(rel: &str) -> Attachment {
         Attachment {
             path: Some(rel.into()),
-            ..message_ir::testutil::sample_attachment()
+            ..ir::testutil::sample_attachment()
         }
     }
 

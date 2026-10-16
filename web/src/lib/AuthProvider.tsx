@@ -1,8 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { warmAccountProfile } from "../hooks/useAccountProfile";
 import { getToken } from "./api";
 import { applyApiSession, useApiSession } from "./apiSession";
-import { AuthContext, type AuthState } from "./authContext";
+import { AuthContext, type AuthState, type LoginLifetime } from "./authContext";
 import { type AccountRunDirectories, deleteRunDirectories } from "./importRun";
 import { LogoutPromptContext, type LogoutPromptState } from "./logoutPromptContext";
 import { isUploadRunning, pauseRunningUpload } from "./runningUpload";
@@ -10,6 +11,7 @@ import {
   checkSavedLogin,
   forgetSavedLogin,
   loadSavedLogin,
+  savedLoginLifetime,
   saveLogin,
   saveServerAddress,
   startingAuthState,
@@ -17,7 +19,6 @@ import {
 import { logout as serverLogout } from "./serverApi";
 import { SessionQueryClientProvider } from "./sessionQueryClient";
 import { onSessionRefused } from "./sessionRefusal";
-import { fetchAccountProfileFor } from "./useAccountProfile";
 import { useLogoutOnWindowClose } from "./windowCloseLogout";
 
 /**
@@ -85,17 +86,16 @@ function SessionProvider({ children }: { children: ReactNode }) {
     if (!state.isAuthenticated || restored || token === null || accountId === null) return;
     const login = { serverUrl, token, accountId };
 
-    let cancelled = false;
+    let canceled = false;
     const validate = async () => {
       const check = await checkSavedLogin(login);
-      if (cancelled) return;
+      if (canceled) return;
       if (check === "valid") {
         // Warm the profile before the app renders. Whether this account still
         // owes profile setup is read from it, so fetching it here keeps the
-        // guards from deciding against an empty cache. A profile that fails
-        // to load is left to the guards, which hold until it loads.
-        await fetchAccountProfileFor(queryClient, login.accountId, true);
-        if (!cancelled) setRestored(true);
+        // guards from deciding against an empty cache.
+        await warmAccountProfile(queryClient, login.accountId);
+        if (!canceled) setRestored(true);
         return;
       }
       // A login the server gave no answer about stays saved for
@@ -113,7 +113,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
     };
     validate();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [state, restored, queryClient]);
 
@@ -132,7 +132,12 @@ function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(
-    async (serverUrl: string, token: string, accountId: number) => {
+    async (
+      serverUrl: string,
+      token: string,
+      accountId: number,
+      lifetime: LoginLifetime = "kept",
+    ) => {
       const epoch = ++authEpoch.current;
       // One call, and it cannot be incomplete: every cached entry is named
       // with the account that filled it, so this only releases memory.
@@ -144,7 +149,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
       // Fetch the profile before the app renders: it carries whether this
       // account still owes profile setup or a password change, and the guards
       // read it from there rather than from anything decided here.
-      await fetchAccountProfileFor(queryClient, accountId, true);
+      await warmAccountProfile(queryClient, accountId);
 
       if (authEpoch.current !== epoch) return; // A later login or logout replaced this one.
 
@@ -155,7 +160,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
         isAuthenticated: true,
       };
       saveServerAddress(serverUrl);
-      saveLogin(newState);
+      saveLogin(newState, lifetime);
       setState(newState);
       setRestored(true);
     },
@@ -167,7 +172,8 @@ function SessionProvider({ children }: { children: ReactNode }) {
     setState((s) => {
       if (!s.isAuthenticated) return s;
       const next: AuthState = { ...s, token };
-      saveLogin(next);
+      // The new token is kept where the login it replaces was.
+      saveLogin(next, savedLoginLifetime());
       return next;
     });
   }, []);

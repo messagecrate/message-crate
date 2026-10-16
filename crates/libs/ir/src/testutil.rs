@@ -3,7 +3,7 @@
 use crate::{
     Attachment, ConversationDocument, ConversationMeta, ConversationStats, ConversationType,
     Deletion, Direction, EarlierVersion, ExportMeta, ImessageExtensions, Message, MessageKind,
-    Participant, Reaction, ReplyTo, SCHEMA_VERSION, Transport, VendorFields,
+    Participant, Reaction, ReplyTo, SCHEMA_VERSION, Sender, Transport, VendorFields,
 };
 use serde_json::json;
 
@@ -29,7 +29,7 @@ pub fn sample_attachment() -> Attachment {
 ///
 /// `text` becomes the message body. Stats are computed on return.
 pub fn sample_document(text: &str) -> ConversationDocument {
-    let mut doc = ConversationDocument {
+    let mut document = ConversationDocument {
         schema_version: SCHEMA_VERSION,
         export: ExportMeta {
             source: "sms-backup-restore".into(),
@@ -57,9 +57,11 @@ pub fn sample_document(text: &str) -> ConversationDocument {
             direction: Direction::Incoming,
             service: Transport::Sms,
             message_kind: MessageKind::Sms,
-            sender_identity: Some("+15555550101".into()),
-            sender_display_name: Some("Sam".into()),
-            sender_country: None,
+            sender: Sender {
+                identity: Some("+15555550101".into()),
+                display_name: Some("Sam".into()),
+                country: None,
+            },
             owner_identity: None,
             subject: None,
             text: text.into(),
@@ -81,26 +83,26 @@ pub fn sample_document(text: &str) -> ConversationDocument {
         }],
         packaging_stem_suffix: None,
     };
-    doc.finalize_stats();
-    doc
+    document.finalize_stats();
+    document
 }
 
 /// One-message WhatsApp conversation fixture: [`sample_document`] with
 /// `+15555550102` as the other person and every message on the WhatsApp
 /// service, with no source bag. `text` becomes the message body.
 pub fn sample_whatsapp_document(text: &str) -> ConversationDocument {
-    let mut doc = sample_document(text);
-    doc.export.source = "whatsapp".into();
-    doc.conversation.chat_identifier = "+15555550102".into();
-    doc.conversation.participants[0].identity = Some("+15555550102".into());
-    for msg in &mut doc.messages {
-        msg.guid = "ffeeddccbbaa99887766554433221100".into();
-        msg.service = Transport::Whatsapp;
-        msg.message_kind = MessageKind::Unknown;
-        msg.sender_identity = Some("+15555550102".into());
-        msg.source = None;
+    let mut document = sample_document(text);
+    document.export.source = "whatsapp".into();
+    document.conversation.chat_identifier = "+15555550102".into();
+    document.conversation.participants[0].identity = Some("+15555550102".into());
+    for message in &mut document.messages {
+        message.guid = "ffeeddccbbaa99887766554433221100".into();
+        message.service = Transport::Whatsapp;
+        message.message_kind = MessageKind::Unknown;
+        message.sender.identity = Some("+15555550102".into());
+        message.source = None;
     }
-    doc
+    document
 }
 
 /// Two-message iMessage conversation fixture: an incoming reply with a send
@@ -109,7 +111,7 @@ pub fn sample_whatsapp_document(text: &str) -> ConversationDocument {
 /// might mirror is set, so a format that must not leak them has something to
 /// leak.
 pub fn sample_imessage_document() -> ConversationDocument {
-    let mut doc = ConversationDocument {
+    let mut document = ConversationDocument {
         schema_version: SCHEMA_VERSION,
         export: ExportMeta {
             source: "imessage".into(),
@@ -138,9 +140,11 @@ pub fn sample_imessage_document() -> ConversationDocument {
                 direction: Direction::Incoming,
                 service: Transport::IMessage,
                 message_kind: MessageKind::IMessage,
-                sender_identity: Some("+15555550101".into()),
-                sender_display_name: Some("Sam".into()),
-                sender_country: None,
+                sender: Sender {
+                    identity: Some("+15555550101".into()),
+                    display_name: Some("Sam".into()),
+                    country: None,
+                },
                 owner_identity: None,
                 subject: None,
                 text: "hello imessage".into(),
@@ -185,9 +189,11 @@ pub fn sample_imessage_document() -> ConversationDocument {
                 direction: Direction::Outgoing,
                 service: Transport::IMessage,
                 message_kind: MessageKind::Tapback,
-                sender_identity: Some("+15555550100".into()),
-                sender_display_name: Some("Me".into()),
-                sender_country: None,
+                sender: Sender {
+                    identity: Some("+15555550100".into()),
+                    display_name: Some("Me".into()),
+                    country: None,
+                },
                 owner_identity: None,
                 subject: None,
                 text: "Loved a message".into(),
@@ -209,6 +215,6 @@ pub fn sample_imessage_document() -> ConversationDocument {
         ],
         packaging_stem_suffix: None,
     };
-    doc.finalize_stats();
-    doc
+    document.finalize_stats();
+    document
 }

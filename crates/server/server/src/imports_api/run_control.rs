@@ -6,9 +6,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use message_crate_api_types::ImportMode;
+use api_types::ImportMode;
 use sqlx::SqliteConnection;
 use tokio::sync::OwnedSemaphorePermit;
+use tokio_util::sync::CancellationToken;
 
 use super::dto::CreateImportBatchResponse;
 use super::pipeline::{
@@ -21,11 +22,11 @@ use crate::db::imports::{self, CompleteImportArgs};
 use crate::extract::Json;
 use crate::media_queue::MediaQueue;
 use crate::progress::Progress;
-use crate::request_body::UploadTimeLimits;
+use crate::request_body::BodyTimeLimits;
 use crate::server::{AppState, ImportState};
 
 /// What a handler that runs or ends an Import Run reads: the database, the
-/// configuration, the import locks and slots, the upload time limits, and
+/// configuration, the import locks and slots, the body time limits, and
 /// the queue the run's Assets go on for their Thumbnails and Previews. Cut
 /// from [`AppState`] for each request, so it never holds a copy of its own.
 #[derive(Debug, Clone)]
@@ -33,7 +34,7 @@ pub(crate) struct Importer {
     pub(crate) db: sqlx::SqlitePool,
     pub(crate) cfg: Arc<Config>,
     pub(crate) imports: ImportState,
-    pub(crate) upload_time_limits: UploadTimeLimits,
+    pub(crate) body_time_limits: BodyTimeLimits,
     pub(crate) media_queue: MediaQueue,
 }
 
@@ -43,7 +44,7 @@ impl axum::extract::FromRef<AppState> for Importer {
             db: state.db.clone(),
             cfg: Arc::clone(&state.cfg),
             imports: state.imports.clone(),
-            upload_time_limits: state.upload_time_limits,
+            body_time_limits: state.body_time_limits,
             media_queue: state.media_queue.clone(),
         }
     }
@@ -208,7 +209,7 @@ async fn after_run_ended(
         &importer.db,
         &importer.cfg.paths,
         account,
-        importer.upload_time_limits.stall,
+        importer.body_time_limits.stall,
     )
     .await;
     crate::media_queue::queue_import_run(
@@ -266,12 +267,23 @@ pub(super) fn server_stopping() -> ApiError {
 
 /// `create_import_batch` is the only entry point, and the run's `source`,
 /// validated when the run was created, names an on-disk directory. The
-/// batch holds `_import_permit`, its import slot, until the import ends.
+/// caller holds the batch's import slot until this returns.
+///
+/// `client_gone` is canceled when the batch's client stops waiting. A
+/// batch still waiting for the account's import lock then returns at once
+/// and writes nothing, so its caller frees its slot: nobody waits for its
+/// answer, and the Upload sends the batch again. Once the batch holds the
+/// lock it no longer looks, so an import never stops part-way (#2090).
+///
+/// # Errors
+///
+/// [`ApiError::Internal`] for a batch whose client went before it took
+/// the lock, which no client reads, and the error of the import.
 pub(super) async fn run_import_path(
     importer: Importer,
-    _import_permit: OwnedSemaphorePermit,
     context: BatchContext,
     jsonl_path: PathBuf,
+    client_gone: CancellationToken,
 ) -> Result<Json<CreateImportBatchResponse>, ApiError> {
     let cfg = Arc::clone(&importer.cfg);
     let BatchContext {
@@ -282,11 +294,23 @@ pub(super) async fn run_import_path(
         phone_country,
     } = context;
 
-    let _guard = importer
-        .imports
-        .account_locks
-        .lock(account.to_string())
-        .await;
+    // `biased` looks at the client first, so a batch whose client went
+    // before its turn came does not start, even when the lock is free.
+    let _guard = tokio::select! {
+        biased;
+        () = client_gone.cancelled() => {
+            tracing::info!(
+                import_id,
+                "The client of a batch stopped waiting before its import started, so the batch was not imported"
+            );
+            return Err(ApiError::Internal(anyhow::anyhow!(
+                "the client stopped waiting before the batch's import started"
+            )));
+        }
+        guard = importer.imports.account_locks.lock(account.to_string()) => guard,
+    };
+    #[cfg(test)]
+    drop(importer.imports.after_account_lock.read().await);
 
     // One pooled connection held for the whole import; the batch's import
     // slot keeps enough of the pool free for other requests.

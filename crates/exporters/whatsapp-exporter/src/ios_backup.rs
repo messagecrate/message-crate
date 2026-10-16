@@ -16,8 +16,8 @@ use imessage_reader_protocol::{
 use ios_backup::{
     DecryptedDomain, decrypt_ios_backup_domain, ios_backup_domain_files, ios_backup_encrypted_flag,
 };
-use message_crate_core::{RunContext, WhatsappConfig};
-use message_staging::{Disk, check_headroom};
+use message_crate_core::{RunContext, Sinks, WhatsappConfig};
+use staging::{Disk, check_headroom};
 use std::path::{Path, PathBuf};
 
 /// The app-group domain WhatsApp keeps its data under in an iPhone backup.
@@ -111,8 +111,11 @@ pub(crate) fn decrypt_if_encrypted(
             // The decrypted files go under the Scratch Directory, so its
             // disk is checked for room before the first one is written.
             |bytes| check_headroom(work, bytes, Disk::Scratch),
-            context.log.clone(),
-            context.progress.clone(),
+            Sinks {
+                log: &context.log,
+                progress: &context.progress,
+                cancel: &context.cancel,
+            },
         )
     })
 }

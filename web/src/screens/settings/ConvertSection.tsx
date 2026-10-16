@@ -17,7 +17,7 @@ function formatLabel(id: ExportFormat): string {
 
 /**
  * Settings → Convert: rewrite a directory of already-exported files into another
- * format. `message-reexport` detects the input format from the directory, so the
+ * format. `reexport` detects the input format from the directory, so the
  * screen picks the output format only, and it refuses to write into its own
  * input, so the two directories must differ. With no output directory chosen,
  * the conversion gets a directory of its own in the Export Directory

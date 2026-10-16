@@ -222,7 +222,7 @@ fn open_append(path: &Path) -> io::Result<File> {
 
 /// `event` as one line ending in `\n`: trailing line breaks dropped, each
 /// line break inside written as `\n`, and every other control character
-/// escaped (`message_crate_log_lines::push_escaped`), so a terminal shows the
+/// escaped (`log_lines::push_escaped`), so a terminal shows the
 /// line rather than acting on it. `tracing-subscriber` escapes them in an
 /// event's message, but not in a field written with `%`. The event is read as
 /// UTF-8, which is all `tracing-subscriber` writes; a byte that is not would
@@ -236,7 +236,7 @@ fn one_line(event: &[u8]) -> Vec<u8> {
         match c {
             '\r' if chars.peek() == Some(&'\n') => {}
             '\n' | '\r' => line.push_str("\\n"),
-            _ => message_crate_log_lines::push_escaped(&mut line, c),
+            _ => log_lines::push_escaped(&mut line, c),
         }
     }
     line.push('\n');

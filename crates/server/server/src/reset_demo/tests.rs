@@ -41,8 +41,8 @@ pub(crate) fn write_tiny_reset_bundle(root: &Path) {
     demo_seed::bundle::write_seed_toml(&root.join("config")).expect("write seed.toml");
     fs::write(
         root.join("config/contacts.csv"),
-        "contact_id,display_name,groups,service,identity_type,identity\n\
-         test,Test,,phone,phone,+15555550100\n",
+        "contact_id,display_name,service,identity,groups\n\
+         test,Test,Text Message,+15555550100,\n",
     )
     .expect("write contacts");
     let conversation = |source: &str, chat: &str, guid: &str| {
@@ -1492,7 +1492,7 @@ fn read_generated_bundle(bundle: &Path) -> BundleContents {
             contents.files += 1;
             let text = fs::read_to_string(&path).expect("read conversation file");
             for line in text.lines().skip(1) {
-                let message: message_ir::Message = serde_json::from_str(line)
+                let message: ir::Message = serde_json::from_str(line)
                     .unwrap_or_else(|error| panic!("parse {}: {error}", path.display()));
                 contents.messages += 1;
                 contents.tapbacks += message.reactions.len();
@@ -1699,14 +1699,21 @@ fn read_generated_address_book(bundle: &Path) -> BTreeMap<String, BookContact> {
         let record = record.expect("an address book row");
         let contact = book.entry(record[0].to_string()).or_default();
         contact.name = record[1].to_string();
-        contact.groups = record[2]
+        contact.groups = record[4]
             .split(';')
             .filter(|g| !g.is_empty())
             .map(str::to_string)
             .collect();
+        // The file states no type: every identity the demo lists is a phone
+        // number, on Text Message or on WhatsApp.
+        let service = match &record[2] {
+            "Text Message" => "phone",
+            "WhatsApp" => "whatsapp",
+            other => panic!("the demo address book lists the service {other:?}"),
+        };
         contact
             .identities
-            .push(format!("{}/{}/{}", &record[3], &record[4], &record[5]));
+            .push(format!("{service}/phone/{}", &record[3]));
     }
     book
 }
@@ -2172,13 +2179,14 @@ fn the_not_done_line_names_each_count_and_is_silent_at_zero() {
     assert_eq!(
         not_done_line(&ProcessAssetsStats {
             not_made: 2,
-            not_removed: 1,
+            not_dropped: 1,
             ..ProcessAssetsStats::default()
         })
         .as_deref(),
         Some(
             "The Demo Account has 2 originals whose Preview or Thumbnail could not be made \
-             and 1 incomplete original that could not be removed. Its build goes on all the same"
+             and 1 damaged Preview or Thumbnail that could not be dropped. Its build goes on all \
+             the same"
         )
     );
 }

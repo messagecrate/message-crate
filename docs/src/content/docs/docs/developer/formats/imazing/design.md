@@ -18,7 +18,7 @@ Discovery walks the selected path recursively without following directory symbol
 
 ## Output policy
 
-- Pipeline: iMazing CSV → `ConversationDocument` → [`message_ir_format::FormatSink`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/format_sink.rs) Import writes JSON Lines; the other formats come from [Convert](/docs/developer/formats/convert/). Shared header: [`CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs) / [CSV columns](/docs/developer/reference/csv-columns/).
+- Pipeline: iMazing CSV → `ConversationDocument` → [`ir_format::FormatSink`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/format_sink.rs) Import writes JSON Lines; the other formats come from [Convert](/docs/developer/formats/convert/). Shared header: [`CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs) / [CSV columns](/docs/developer/reference/csv-columns/).
 - SMS + iMessage for the same peer merge into one conversation (Messages family).
 - WhatsApp for the same peer is a **separate** file (`…__whatsapp.csv` / matching stem suffix for other formats).
 - Notification rows keep `imazing_type=Notification` in `source_fields_json`; direction is emitted as `incoming`.
@@ -28,7 +28,7 @@ Discovery walks the selected path recursively without following directory symbol
   `Replying to`, `Deleted Date` and `Edited Date` cells are the message's own fields instead
   (see "Reactions, replies, deletions and edits").
 - `participants_json` is always written (unified header).
-- The shared dedupe step (`message_ir::one_copy_per_message`) compares a row's attachment by its `Attachment` cell, so rows with one time and text and different files named are kept.
+- The shared dedupe step (`ir::one_copy_per_message`) compares a row's attachment by its `Attachment` cell, so rows with one time and text and different files named are kept.
   Rows of one conversation and one second that name one file, and that iMazing wrote different files for (`image0.jpg`, `image0 2.jpg`), are compared by the SHA-256 of each file instead, because their cell is the same.
   Different pictures are then two messages, each with its own picture, and two copies of one picture are one message.
   A group is hashed only when one CSV holds two or more of its rows with different files, and its rows from every CSV are then hashed, so a second export of the chat still repeats the same messages.
@@ -58,7 +58,7 @@ Discovery walks the selected path recursively without following directory symbol
 
 ## Conversation identity and participants
 
-Each chat session has a `message_ir::ConversationKey`: a one-to-one conversation with an address, a group conversation, or a one-to-one conversation known by a name only.
+Each chat session has an `ir::ConversationKey`: a one-to-one conversation with an address, a group conversation, or a one-to-one conversation known by a name only.
 The key's chat id is the conversation's `chat_identifier`: the address, `group:` and the group's id, or `name:` and the whole trimmed name.
 Each kind other than an address has a prefix of its own, so a name never takes an address's or a group's key.
 The rows of one session in one CSV are one conversation.
@@ -136,15 +136,20 @@ Non-senders are invisible in the CSV.
 
 ## Reactions, replies, deletions and edits
 
-iMazing writes each of the four as text with no id, and the exporter reads what the text says and no more (`row_marks.rs`, [#2030](https://github.com/messagecrate/message-crate/issues/2030)). The counts below were measured on the maintainer's export of 83,079 rows on 2026-10-09. The line grammar of the `Reactions` cell was not, so two readings of it are assumptions to check against a real export ([#2045](https://github.com/messagecrate/message-crate/issues/2045)): that the name is the text beside the emoji, and that the account holder's line is named `Me`.
+iMazing writes each of the four as text with no id, and the exporter keeps only part of what the text says (`row_marks.rs`, [#2030](https://github.com/messagecrate/message-crate/issues/2030)). The row counts below were measured on the maintainer's export of 83,079 rows on 2026-10-09, and the line grammar of the `Reactions` cell on the same export's 681 Messages CSVs on 2026-10-15 ([#2045](https://github.com/messagecrate/message-crate/issues/2045)).
 
 ### Reactions
 
-5,253 rows. The `Reactions` cell holds one reaction per line: the reactor's display name, the emoji, and the time they reacted, and no address. Each line becomes one reaction of the common message, with part `0`, kind `emoji`, the emoji, and the name as written and no `reactor_identity`. The conversation file carries the name, and the server stores it on the reaction and shows the reaction under it. The name is never matched to a contact ([#2044](https://github.com/messagecrate/message-crate/issues/2044)).
+5,253 rows. The `Reactions` cell holds one reaction per line, separated by a line feed, and every one of its 5,860 lines has one of two shapes:
 
-The name is the text before the emoji, or after it when nothing comes before, or before the time when the line has no emoji. A line naming `Me`, what iMazing calls the account holder in its own window, is the holder's own (`is_from_me`). The time is read past, because a reaction carries none in the common message. It is cut from the name whether it is written as `M/D/YYYY` or as `YYYY-MM-DD`.
+- `<Name> reacted with <emoji> on <M/D/YYYY h:mm:ss AM/PM>` (5,855 lines). `<Name>` is a contact name, a phone number, or `You` for the account holder, never `Me`.
+- `<Name> removed the reaction <emoji> on <M/D/YYYY h:mm:ss AM/PM>` (5 lines). Each stands alone in its cell.
 
-The emoji is the first run of symbol characters with their joiners, selectors and skin tones. A digit, `#`, `*` or a symbol that a variation selector or keycap follows starts the run too, because the Emphasize tapback (`‼️`) and a keycap are punctuation or a digit by themselves. A letter a selector follows stays in the name, as some CJK names are written.
+The same export's 66 WhatsApp CSVs write all 3,683 lines of their `Reactions` cells in the first shape.
+
+Only the emoji is kept. Each `reacted with` line becomes one reaction of the common message, with part `0`, kind `emoji`, and the emoji: the text between ` reacted with ` and the last ` on `, whole with its variation selector, joiners and skin tone. The reaction carries no reactor (`reactor_identity` and `reactor_display_name` are absent, and `is_from_me` is false, on a `You` line too), and no time, which the common message has no field for. One of the 5,855 `reacted with` lines reads `reacted with a sticker`: it becomes kind `sticker` with no emoji, as Apple Messages writes a sticker reaction.
+
+A `removed the reaction` line, and a line in neither shape, gives no reaction.
 
 ### Replies
 
@@ -176,4 +181,4 @@ A cell whose date no row has, or that two kept rows share, is a reply with no li
 ## Related docs
 
 - Input format and source limitations: [iMazing input format](/docs/developer/formats/imazing/input/)
-- Shared model and output contracts: [message-ir architecture](/docs/developer/architecture/common-message/), [export structure](/docs/developer/reference/export-structure/), [CSV columns](/docs/developer/reference/csv-columns/)
+- Shared model and output contracts: [common message architecture](/docs/developer/architecture/common-message/), [export structure](/docs/developer/reference/export-structure/), [CSV columns](/docs/developer/reference/csv-columns/)

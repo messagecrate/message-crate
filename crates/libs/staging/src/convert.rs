@@ -9,9 +9,9 @@
 use crate::export_writer::ExportWriter;
 use crate::write_queue::AttachmentSource;
 use anyhow::Result;
+use ir::{Attachment, ConversationDocument};
+use ir_format::MergedArchive;
 use message_crate_core::{CancelFlag, ConvertRun, ExportReport, check_cancel};
-use message_ir::{Attachment, ConversationDocument};
-use message_ir_format::MergedArchive;
 use std::path::Path;
 
 /// How [`convert_backup`] opens the run's [`ExportWriter`], beyond what
@@ -172,7 +172,7 @@ mod tests {
     #[test]
     fn every_file_carries_the_export_date_the_caller_gave() {
         let output = tempfile::tempdir().unwrap();
-        let mut document = message_ir::testutil::sample_document("hello");
+        let mut document = ir::testutil::sample_document("hello");
         document.messages[0].backup_taken_at_unix_ms = Some(1_790_000_000_000);
         convert_backup(
             output.path(),
@@ -196,7 +196,7 @@ mod tests {
             .map(|entry| entry.unwrap().path())
             .find(|path| path.extension().is_some_and(|e| e == "jsonl"))
             .unwrap();
-        let read = message_ir_format::read_conversation_jsonl(&written).unwrap();
+        let read = ir_format::read_conversation_jsonl(&written).unwrap();
         assert_eq!(read.export.exported_at_unix_ms, Some(1_791_000_000_000));
         assert_eq!(
             read.messages[0].backup_taken_at_unix_ms,

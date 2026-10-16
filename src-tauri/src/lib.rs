@@ -14,6 +14,7 @@
 //! calls [`run`], which is the layout the Tauri v2 template uses.
 
 mod app_directories;
+mod app_log;
 mod commands;
 mod export_directories;
 mod local_server;
@@ -63,18 +64,23 @@ pub fn run() {
             let directory = MessageCrateDirectory::in_home(&home, tauri::is_dev());
             // A directory that cannot be made now is made again by whatever
             // writes into it first, which reports the failure where it
-            // matters.
+            // matters. With no Message Crate Directory there is no Logs
+            // Directory to write this line in, so it goes to standard error.
             if let Err(error) = directory.make() {
                 eprintln!("Could not make the Message Crate Directory: {error}");
             }
+            // Every line the app writes outside an Import Run goes to its
+            // own log in the Logs Directory from here on (#2185).
+            app_log::init(&directory.logs());
             // ffmpeg and ffprobe are looked for on PATH, then in the Tools
-            // Directory; wtsexporter only there (#1053). Every command that
-            // runs them, and the server the app starts, gets them from the
-            // `InstalledTools` kept here.
+            // Directory; wtsexporter only there (#1053). The commands that
+            // run them, and the server the app starts, get them from the
+            // `InstalledTools` kept here. The Tools commands build their own
+            // the same way (`commands::tools::installed_tools`).
             // What is missing there is downloaded in the background, and
             // nothing waits for it (`tool_downloads`).
             let tools_dir = directory.tools();
-            let installed = media::InstalledTools::new(Some(tools_dir.clone()));
+            let installed = commands::tools::installed_tools(&tools_dir);
             tool_downloads::start(
                 tools_dir,
                 installed.clone(),
@@ -94,6 +100,9 @@ pub fn run() {
             ));
             app.manage(ExportDirectories::at(directory.exports()));
             app.manage(directory.clone());
+            // The window is told when the app's own server is started again
+            // after it stopped, whichever screen is open (#2695).
+            commands::local_server::send_notices(app.handle());
             std::thread::spawn(move || app_directories::sweep_at_start_up(&directory));
             Ok(())
         })
@@ -123,12 +132,16 @@ pub fn run() {
             commands::staging::create_run_dir,
             commands::staging::import_run_log,
             commands::run_logs::start_import_run_log,
-            commands::run_logs::list_import_run_logs,
-            commands::run_logs::read_import_run_log_lines,
-            commands::run_logs::read_import_run_log,
+            commands::run_logs::list_logs,
+            commands::run_logs::read_log_lines,
+            commands::run_logs::read_log,
             commands::staging::summarize_staging,
             commands::staging::transcode_staging,
             commands::staging::delete_run_dir,
+            commands::staging::list_account_run_dirs,
+            commands::staging::delete_closed_run_dir,
+            commands::staging::account_staging_bytes,
+            commands::staging::all_staging_bytes,
             commands::staging::read_import_run_record,
             commands::staging::save_import_run_record,
             commands::disk_space::low_disk_space,

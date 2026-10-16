@@ -33,7 +33,7 @@ BRACE_COMPONENT = re.compile(r"::\{[^{}]*\}")
 
 
 def strip_generic_args(name: str) -> str:
-    """Remove every `::<...>` turbofish, honouring nested angle brackets."""
+    """Remove every `::<...>` turbofish, honoring nested angle brackets."""
     out = []
     i = 0
     while i < len(name):
