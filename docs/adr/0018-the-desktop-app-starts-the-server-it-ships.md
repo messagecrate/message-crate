@@ -149,3 +149,26 @@ The app's button reads "Open Message Crate directory" and opens the parent.
 Nothing is moved from the app-data directory: an app that kept a database
 there starts a new Message Crate in `data`, and the CHANGELOG says how to
 bring the old one across.
+
+## Note, 2026-10-16: the app checks its own server on its own
+
+The checks of 2026-10-11 ran only while the login card was open, so a server
+that stopped answering while the person browsed went unnoticed, and every
+screen failed with network errors (#2695). The thread that watches the app's
+own server now asks the address every three seconds for as long as the
+server runs, whether a screen asks or not. A Message Crate the app only
+found is still checked only by the login card. A server killed for not
+answering is started again like one that exits, and counts against the same
+limit of three restarts in ten minutes. The app tells the window when it
+starts the server again and why. For that start, a restart for the network
+setting, and a Retry after any failure, it tells the window when a Message
+Crate answers and when the start fails. The web app shows it across the top
+of the page, under the header of the message shell and of Owner Home, where a
+refused display name shows too (#2991), and above Profile Setup and the
+screen that says a profile could not be loaded. The login card shows the
+state itself. It reads
+"The server stopped answering. Restarting it…" ("The server stopped." for
+one that exited), clears itself once the server answers, and after a failure
+shows why, with Try again. The window listens for the app's word rather than
+asking, so no screen polls. It reads the state once when it opens, so a
+window reloaded after a failed restart still shows the failure.

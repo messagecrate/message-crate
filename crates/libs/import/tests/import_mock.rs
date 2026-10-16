@@ -2096,7 +2096,7 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
     );
 }
 
-/// "Do not copy" leaves attachments with no path but a reason. Importing must
+/// Skip leaves attachments with no path but a reason. Importing must
 /// keep the metadata rather than failing the whole conversation.
 #[test]
 fn keeps_conversation_ok_when_skipped_attachment_has_no_path() {

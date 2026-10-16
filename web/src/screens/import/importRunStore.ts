@@ -50,7 +50,7 @@ export type ImportRunState = {
   mediaSummary: StagingSummary | null;
   /**
    * Files Media tried and could not convert or compress. Null when Media
-   * has not run, and on a resume, where the Media stage's own report is gone.
+   * has not run, and on a resume, where the Media Stage's own report is gone.
    */
   mediaFailedCount: number | null;
   /** Which of ffmpeg and ffprobe the chosen Media mode needs and can't use. */

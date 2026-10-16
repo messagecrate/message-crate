@@ -33,7 +33,7 @@ function summary(forecasts: AttachmentForecast[]): StagingSummary {
 }
 
 describe("mediaJobVerb", () => {
-  it("names the job only for the modes that have a Media stage", () => {
+  it("names the job only for the modes that have a Media Stage", () => {
     expect(mediaJobVerb("convert")).toBe("converting");
     expect(mediaJobVerb("compress")).toBe("compressing");
     expect(mediaJobVerb("copy")).toBeNull();
@@ -101,7 +101,7 @@ describe("estimatePiles", () => {
 });
 
 describe("estimatesHeading", () => {
-  it("names the operation, and is absent when there is no Media stage", () => {
+  it("names the operation, and is absent when there is no Media Stage", () => {
     expect(estimatesHeading("compress")).toBe("Compression estimates");
     expect(estimatesHeading("convert")).toBe("Conversion estimates");
     expect(estimatesHeading("copy")).toBeNull();

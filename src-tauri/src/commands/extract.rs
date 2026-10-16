@@ -383,7 +383,7 @@ fn run_staging(
 /// validation problems are joined with `; `. Staging stages the original
 /// attachment files or none ([`AttachmentFiles`]), so the compress fields
 /// are not checked here: [`media_settings_for`] checks them, and the Media
-/// stage checks ffmpeg against the person's choice. `installed` is passed
+/// Stage checks ffmpeg against the person's choice. `installed` is passed
 /// on, so the WhatsApp exporter finds `wtsexporter` in its Tools Directory.
 fn build_exporter_config(
     scratch_dir: &Path,
@@ -395,9 +395,10 @@ fn build_exporter_config(
 ) -> Result<ExporterConfig, String> {
     let mut form = Form {
         output: output_dir.to_string(),
-        // Staging copies the originals under Copy, Convert and Compress, and
-        // the desktop runs the Media Stage itself after the Staging Review,
-        // so converting waits until the person has approved it.
+        // Staging copies the originals under Copy, Convert media and Convert &
+        // Compress media, and the desktop runs the Media Stage itself after
+        // the Staging Review, so converting waits until the person has
+        // approved it.
         attachments: if options.attachment_media == MediaMode::Disabled {
             AttachmentFiles::Skip
         } else {

@@ -350,7 +350,7 @@ fn starting_line(verb: &str, total: usize, bytes: u64) -> String {
     )
 }
 
-/// The line that ends a Convert or Compress pass over staged attachments:
+/// The line that ends a `convert` or `compress` pass over staged attachments:
 /// the files processed and skipped, and the attachments' size before and
 /// after. The write queue's own pass ends with it too, so both passes word
 /// it alike.
@@ -605,7 +605,7 @@ fn has_gif_ext(path: &Path) -> bool {
 /// What the caller asked of the media step for one file.
 #[derive(Clone, Copy)]
 struct Asked<'a> {
-    /// Convert or compress.
+    /// `convert` or `compress`.
     mode: MediaMode,
     /// How to compress, in [`MediaMode::Compress`].
     compress: &'a CompressOptions,

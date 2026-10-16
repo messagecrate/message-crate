@@ -16,7 +16,7 @@ export type ResumeDecision = {
     // fresh from the directory and shown again, nothing restored, because the
     // directory is the truth.
     | "resume_review"
-    // A run that died mid Media stage: the stage re-runs over whatever
+    // A run that died mid Media Stage: the stage re-runs over whatever
     // originals it had not reached yet, which is safe because an original
     // still on disk always means work remains, then
     // continues to the Media Review exactly as the normal flow does.

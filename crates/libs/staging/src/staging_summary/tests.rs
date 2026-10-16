@@ -236,7 +236,7 @@ fn the_summary_carries_the_limit_its_verdicts_were_measured_against() {
 
 #[test]
 fn the_summary_carries_the_attachment_mode_staging_recorded() {
-    // The screen decides from this whether the run has a Media stage, so it
+    // The screen decides from this whether the run has a Media Stage, so it
     // must be the directory's mode, sent under the form's name for it.
     for (mode, form_name) in [
         (MediaMode::Disabled, "skip"),
@@ -318,7 +318,7 @@ fn only_files_worth_reporting_get_a_forecast_row() {
 
 #[test]
 fn clone_mode_forecasts_each_file_at_the_size_it_already_has() {
-    // The Media stage does nothing under these modes, so every file is judged on
+    // The Media Stage does nothing under these modes, so every file is judged on
     // the size it already has and no probing happens at all.
     let dir = staged_fixture_with_sizes(&[("huge.png", 900 * 1024 * 1024)]);
     let mut options = summary_options();

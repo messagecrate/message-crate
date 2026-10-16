@@ -115,7 +115,7 @@ export async function invokeSummarizeStaging(config: RunDirConfig): Promise<Stag
 }
 
 /**
- * Run the Media stage over a staged directory, after the Staging Review
+ * Run the Media Stage over a staged directory, after the Staging Review
  * approves it. Reports through the `desktop-job:*` events like every other long
  * job, so `awaitDesktopJob` drives it exactly as it drives extract and the Upload.
  */

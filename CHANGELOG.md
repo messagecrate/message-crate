@@ -518,6 +518,16 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-16: **The desktop app notices its own server stop answering on
+  any screen.** The app checked whether its own server still answered only
+  while the login card was open, so a server that hung while you browsed
+  left every screen failing with network errors. The app now checks on its
+  own every few seconds, starts a server that stopped answering again, and
+  says so in a line across the top of the page: **The server stopped
+  answering. Restarting it…** clears itself once the server answers. A
+  server that crashed gets the line too, saying **The server stopped.
+  Restarting it…**. If it cannot be started, the line says why and offers
+  **Try again** (#2695).
 - 2026-10-16: **The website no longer refuses a Contact Group or Message
   Tag name the server accepts.** A name written with a letter that only looks
   like a plain one, such as the Kelvin sign in place of `K` in `UNKNOWN`, was
@@ -961,6 +971,9 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-16: **The Resume panel writes Media Stage as the rest of the app
+  does.** When an Import Run stopped during the Media Stage, the panel that
+  offers to resume it wrote "Media stage" (#3125).
 - 2026-10-16: **A closed Import Run's directory no longer stays on disk.**
   When a discard reached the server only after the app had read the run as
   still running, the run's directory, staged photos and videos included,
@@ -1439,6 +1452,17 @@ carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-16: **WhatsApp, Instagram and SMS messages show their
+  reactions.** Only Apple Messages and Discord messages drew the reactions
+  left on them. A WhatsApp, Instagram or SMS message, and an iMazing message
+  drawn as SMS, now shows each reaction with its count under the message,
+  and pointing at it names who reacted (#3054).
+- 2026-10-16: **An announcement reads as an event of the conversation.** A
+  group renamed, or a member added or removed, was drawn in a bubble with a
+  sender's name, as if someone had sent it. The conversation now shows it as
+  a centered line of small, muted text with its time, in its place among the
+  messages, with any attachments and reactions under it. Find still finds its
+  text. In a group, the next message names its sender again (#3050).
 - 2026-10-15: **A screen reader hears which Contact Group, Message Tag or
   Saved Search is open.** The left panel's row for the open Contact Group,
   Unknown, No Contact Group, Message Tag, No Message Tag or Saved Search is

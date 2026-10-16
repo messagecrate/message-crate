@@ -8,8 +8,7 @@ function missingWhy(reason: string | null | undefined): string {
   if (reason === "file_missing") return "missing — file not found";
   // An Export could not fetch the file from the server.
   if (reason === "not_fetched") return "missing — not fetched by the export";
-  // Chosen on import ("Do not copy"), so the file is absent by request, not
-  // lost.
+  // Chosen on import (Skip), so the file is absent by request, not lost.
   if (reason === "not_copied") return "skipped";
   if (reason.startsWith("convert_failed: ")) {
     const detail = reason.slice("convert_failed: ".length);

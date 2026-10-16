@@ -1,3 +1,4 @@
+import { errorText } from "./apiErrorMessage";
 import { DEFAULT_TAURI_SERVER_URL } from "./authGuards";
 import { invokeStartLocalServer, type LocalServerStatus } from "./desktop/localServer";
 import { readPref, removePref, writePref } from "./storage";
@@ -26,6 +27,19 @@ export function isOwnAddress(url: string): boolean {
  */
 export async function startLocalServer(): Promise<LocalServerStatus> {
   return invokeStartLocalServer(getOpenToNetwork());
+}
+
+/**
+ * What the screens say when the app could not even be asked to start its
+ * own Message Crate: the command itself failed, with `error`.
+ */
+export function startFailure(error: unknown): Extract<LocalServerStatus, { status: "failed" }> {
+  return {
+    status: "failed",
+    reason: "start_failed",
+    message: "Message Crate could not be started.",
+    details: errorText(error),
+  };
 }
 
 const OPEN_TO_NETWORK_KEY = "mc-local-server-open-to-network";
