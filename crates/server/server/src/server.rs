@@ -35,9 +35,9 @@ use crate::keyed_locks::KeyedLocks;
 use crate::limits::{MAX_AUTH_BODY_BYTES, MAX_JSON_BODY_BYTES};
 use crate::media_queue::MediaQueue;
 use crate::middleware::{
-    CONTENT_SECURITY_POLICY, answer_panic, build_cors_layer, json_body_limit_response,
-    limit_request_body, log_response, logged_uri, mark_routine, no_store_unless_set,
-    require_json_acceptable,
+    BodyFailures, CONTENT_SECURITY_POLICY, answer_panic, build_cors_layer,
+    json_body_limit_response, limit_request_body, log_body_failure, log_response, logged_uri,
+    mark_routine, no_store_unless_set, require_json_acceptable,
 };
 use crate::open_db::OpenDb;
 use crate::request_body::UploadTimeLimits;
@@ -439,13 +439,15 @@ pub(crate) fn with_server_layers(routes: Router<AppState>, state: AppState) -> R
         // for a successful `Routine` answer and at `info` for every other
         // (`log_response`). Nothing more for a 5xx, because
         // `ApiError::to_problem` writes its one `error` line with the
-        // error's chain. A refused request's problem type is
-        // logged where the problem is built (`log_refusal`). Runs outside
+        // error's chain. A body that fails after its status was sent writes
+        // an `error` line of its own (`BodyFailures`, `log_body_failure`).
+        // A refused request's problem type is logged where the problem is
+        // built (`log_refusal`). Runs outside
         // CORS so the status it logs is the one the client receives. The span
         // carries method and path; its level must match the line's or the
         // default `info` filter drops it.
         .layer(
-            TraceLayer::new_for_http()
+            TraceLayer::new(tower_http::classify::SharedClassifier::new(BodyFailures))
                 .make_span_with(|request: &axum::extract::Request| {
                     tracing::info_span!(
                         "request",
@@ -459,7 +461,7 @@ pub(crate) fn with_server_layers(routes: Router<AppState>, state: AppState) -> R
                     )
                 })
                 .on_response(log_response)
-                .on_failure(()),
+                .on_failure(log_body_failure),
         )
         // Outermost of all: the request id is made before the trace span
         // reads it and stays in scope while every problem body is built.

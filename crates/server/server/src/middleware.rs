@@ -6,6 +6,7 @@
 
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use tower_http::classify::{ClassifiedResponse, ClassifyEos, ClassifyResponse};
 use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer};
 use tower_http::trace::{DefaultOnResponse, OnResponse};
 use tracing::Level;
@@ -462,6 +463,51 @@ pub(crate) fn log_response(
     DefaultOnResponse::new()
         .level(level)
         .on_response(response, latency, span);
+}
+
+/// The `TraceLayer`'s classifier: a response is never a failure for its
+/// status, because `ApiError::to_problem` already writes the `ERROR` line of
+/// a 5xx. Only its body can fail, partway, after the status went out with
+/// the response's line, such as a download that hits a disk error
+/// (#2870). tower-http's own `ServerErrorsAsFailures` classifies at the
+/// status and never looks at the body, so such a failure wrote no line.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct BodyFailures;
+
+impl ClassifyResponse for BodyFailures {
+    type FailureClass = String;
+    type ClassifyEos = Self;
+
+    fn classify_response<B>(self, _response: &Response<B>) -> ClassifiedResponse<String, Self> {
+        ClassifiedResponse::RequiresEos(self)
+    }
+
+    fn classify_error<E: std::fmt::Display + 'static>(self, error: &E) -> String {
+        error.to_string()
+    }
+}
+
+impl ClassifyEos for BodyFailures {
+    type FailureClass = String;
+
+    fn classify_eos(self, _trailers: Option<&axum::http::HeaderMap>) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn classify_error<E: std::fmt::Display + 'static>(self, error: &E) -> String {
+        error.to_string()
+    }
+}
+
+/// Write the `ERROR` line of a response whose body failed partway, under
+/// the request's span, so the request's id is on it next to the `status=200`
+/// line the response wrote when it started.
+pub(crate) fn log_body_failure(
+    error: String,
+    _latency: std::time::Duration,
+    _span: &tracing::Span,
+) {
+    tracing::error!("the response's body failed partway, after its status was sent: {error}");
 }
 
 #[cfg(test)]
