@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Full local check: everything CI runs except the Docker image build, in one
-# command.
+# Full local check: everything CI runs on a pull request, in one command,
+# except, off Windows, the Windows-only server config tests and the desktop
+# app's local-server tests, and the secret scan when gitleaks is not installed.
 #
 #   ./scripts/check-all.sh
 #

@@ -68,11 +68,10 @@ jobs:
       rust: ${{ steps.classify.outputs.rust }}
       web: ${{ steps.classify.outputs.web }}
       docs: ${{ steps.classify.outputs.docs }}
-      docker: ${{ steps.classify.outputs.docker }}
       server_config: ${{ steps.classify.outputs.server_config }}
       local_server: ${{ steps.classify.outputs.local_server }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -88,10 +87,10 @@ jobs:
               git fetch --quiet origin "$BASE"
               range="origin/$BASE...HEAD" ;;
             *)
-              printf 'rust=true\nweb=true\ndocs=true\ndocker=true\nserver_config=true\nlocal_server=true\n' >> "$GITHUB_OUTPUT"
+              printf 'rust=true\nweb=true\ndocs=true\nserver_config=true\nlocal_server=true\n' >> "$GITHUB_OUTPUT"
               exit 0 ;;
           esac
-          rust=false web=false docs=false docker=false server_config=false local_server=false
+          rust=false web=false docs=false server_config=false local_server=false
           while IFS= read -r f; do
             case "$f" in
               # The committed OpenAPI document feeds the web app's generated
@@ -106,15 +105,6 @@ jobs:
               tests/fixtures/desktop-events/*) rust=true; web=true ;;
               web/*) web=true ;;
               web-next/*) ;;                # legacy tree, not the product path
-              # The image is built from the Dockerfile, the Cargo manifests
-              # and lockfile it copies, and the toolchain pin. A change to one
-              # of them is how the image stops building while the Rust jobs
-              # stay green. The job also starts the image with the script
-              # that checks it, which imports its own fixture and the
-              # server's hevc.mov. A change to the server's code alone does
-              # not run the job. nightly.yml runs the same check on main.
-              docker/*|Cargo.toml|Cargo.lock|rust-toolchain.toml|config/config.docker.toml|scripts/check-docker-compose.sh|tests/fixtures/docker-compose-check/*|crates/server/server/tests/fixtures/media/hevc.mov) rust=true; docker=true ;;
-              crates/*/Cargo.toml|vendor/*/Cargo.toml) rust=true; docker=true ;;
               # The server's config, whose website and Data Directory check
               # has Windows-only cases the windows-config job tests.
               crates/server/server/src/config.rs|crates/server/server/src/config/*) rust=true; server_config=true ;;
@@ -125,7 +115,7 @@ jobs:
               # docker-context job, which runs on every change, checks the
               # Dockerfile's frontend stage against it.
               .nvmrc) web=true; docs=true ;;
-              .github/workflows/*) rust=true; web=true; docs=true; docker=true; server_config=true; local_server=true ;;
+              .github/workflows/*) rust=true; web=true; docs=true; server_config=true; local_server=true ;;
               .github/*|.cursor/*|.gitignore|LICENSE*) ;;
               # The secret scan runs on every pull request whatever it
               # changes, so its config and script trigger nothing else.
@@ -134,9 +124,9 @@ jobs:
               *) rust=true ;;               # crates, src-tauri, vendor, schema,
             esac                            # scripts — Rust CI
           done < <(git diff --name-only "$range")
-          printf 'rust=%s\nweb=%s\ndocs=%s\ndocker=%s\nserver_config=%s\nlocal_server=%s\n' \
-            "$rust" "$web" "$docs" "$docker" "$server_config" "$local_server" >> "$GITHUB_OUTPUT"
-          echo "rust=$rust web=$web docs=$docs docker=$docker server_config=$server_config local_server=$local_server"
+          printf 'rust=%s\nweb=%s\ndocs=%s\nserver_config=%s\nlocal_server=%s\n' \
+            "$rust" "$web" "$docs" "$server_config" "$local_server" >> "$GITHUB_OUTPUT"
+          echo "rust=$rust web=$web docs=$docs server_config=$server_config local_server=$local_server"
 
   # ── Rust: rustfmt ─────────────────────────────────────────────────────
   fmt:
@@ -146,7 +136,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Check formatting
         run: |
@@ -167,12 +157,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install system dependencies
         run: ./scripts/ci-apt-install.sh libfontconfig1-dev libxkbcommon-dev
 
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             ~/.cargo/registry
@@ -201,12 +191,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install system dependencies
         run: ./scripts/ci-apt-install.sh libfontconfig1-dev libxkbcommon-dev ffmpeg
 
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             ~/.cargo/registry
@@ -235,7 +225,7 @@ jobs:
     # no cache compiles the server as well as the app.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Tauri build dependencies
         run: |
@@ -250,7 +240,7 @@ jobs:
             libjavascriptcoregtk-4.1-dev \
             libsoup-3.0-dev
 
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             ~/.cargo/registry
@@ -291,9 +281,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             ~/.cargo/registry
@@ -350,10 +340,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -396,10 +386,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -424,19 +414,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Check license metadata agrees on the Fair Core License
         run: ./scripts/check-license.sh
 
   # ── Always: release Dockerfile's build context and pinned base images ──
   docker-context:
-    name: Docker rust-builder context
+    name: Docker build context
     needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Check the Dockerfile's build context and base image pins
         run: ./scripts/check-docker-context.sh
@@ -481,44 +471,6 @@ jobs:
           git fetch --quiet origin "$BASE"
           ./scripts/check-secrets.sh "origin/$BASE"
 
-  # ── docker: the release Dockerfile builds ─────────────────────────────
-  # The image used to be built for the first time on the release tag, so a
-  # pull request that broke docker/Dockerfile merged green and the tag
-  # failed. This job builds it without pushing whenever the Dockerfile, a
-  # Cargo manifest or the lockfile changes, then starts it with
-  # docker/compose.release.yml. Pull requests only: the docker
-  # job below builds and pushes the same image on a tag or a manual run with
-  # push_docker_image, and nightly.yml builds it from main.
-  docker-build:
-    name: Docker image builds
-    needs: changes
-    if: github.event_name == 'pull_request' && needs.changes.outputs.docker == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Build
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./docker/Dockerfile
-          push: false
-          load: true
-          tags: message-crate-server:check
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # The Compose files make the root filesystem read-only and drop every
-      # privilege, so an image that writes outside /app/data builds and then
-      # fails to start, or fails an import, the media pass or an export. This
-      # starts it the way Compose does and runs all three.
-      - name: Start the release Compose stack, log in to the Demo Account, import, run the media pass and export
-        run: ./scripts/check-docker-compose.sh message-crate-server:check
-
   # ── Always: product version lockstep ──────────────────────────────────
   # The four version files and their lockfiles must agree; on a v* tag they
   # must also agree with the tag, and CHANGELOG.md must have a heading for it.
@@ -530,7 +482,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Check the product version agrees everywhere
         env:
@@ -546,6 +498,11 @@ jobs:
   # green. A manual run with push_docker_image ticked pushes sha-<commit>
   # and nothing else: the version tags and latest belong to a release, so
   # an image built from a branch can never replace the one people pull.
+  #
+  # No pull request builds the image: nightly.yml builds it from main and
+  # starts it. This job builds it before it pushes, so an image that does
+  # not build fails the release, but it does not start it (#3000). Why:
+  # docs/adr/0007-ci-is-the-only-gate.md.
   docker:
     name: Docker image
     if: needs.changes.outputs.release == 'true' || (github.event_name == 'workflow_dispatch' && inputs.push_docker_image)
@@ -563,20 +520,20 @@ jobs:
       # both use, so the two agree. 8 is build-version's --short=8.
       SHORT_SHA_LENGTH: 8
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         env:
           DOCKER_METADATA_SHORT_SHA_LENGTH: ${{ env.SHORT_SHA_LENGTH }}
         with:
@@ -615,7 +572,7 @@ jobs:
 
       - name: Build and push
         id: push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           file: ./docker/Dockerfile
@@ -663,10 +620,10 @@ jobs:
     # Installers ship unsigned: no signing or notarization step exists in
     # this job. Whether to sign them is open in issue #1019.
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -707,7 +664,7 @@ jobs:
       # api.github.com; unauthenticated, the 60-per-hour limit is shared by
       # every runner on the same address and the lookup 403s.
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.25.3
+        uses: cargo-bins/cargo-binstall@3be4ad2b146f3302f92e5956c54fedbb6ae8cccc # v1.25.3
 
       - name: Install Tauri CLI
         shell: bash
@@ -754,7 +711,7 @@ jobs:
           esac
           ls -la dist/
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: package-${{ matrix.label }}
           path: dist/*
@@ -778,9 +735,9 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           path: dist
           merge-multiple: true
