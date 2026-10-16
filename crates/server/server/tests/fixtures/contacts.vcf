@@ -1,0 +1,45 @@
+BEGIN:VCARD
+VERSION:3.0
+FN:Ada Lovelace
+N:Lovelace;Ada;;;
+TEL;TYPE=CELL:(555) 555-0101
+EMAIL;TYPE=INTERNET;TYPE=HOME:ada@example.com
+CATEGORIES:myContacts,Family
+NOTE:Met at the analytical engine demo\, and again at the gallery. This note is lo
+ ng enough to be folded.
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+PRODID:-//Apple Inc.//iPhone OS 18.0//EN
+N:Smith;Bao;;;
+FN:Smith\, Bao
+item1.TEL:+15555550102
+item1.X-ABLabel:_$!<Mobile>!$_
+TEL;TYPE=CELL;TYPE=VOICE:+44 7700 900123
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+FN:Cy Diaz
+N:Diaz;Cy;;;
+TEL:15555550103
+TEL;TYPE=WORK:(555) 555-0104 123
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+TEL;TYPE=HOME:555.555.0105
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+FN:Nobody Reachable
+N:Reachable;Nobody;;;
+ADR;TYPE=HOME:;;1 Example Street;Springfield;;;
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+N:Okafor;Bea;;;
+TEL:+1 555-555-0106
+item1.EMAIL;TYPE=INTERNET:bea.okafor@exa
+ mple.org
+PHOTO;ENCODING=b;TYPE=JPEG:iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
+ EQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==
+END:VCARD

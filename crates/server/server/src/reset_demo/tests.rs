@@ -41,8 +41,8 @@ pub(crate) fn write_tiny_reset_bundle(root: &Path) {
     demo_seed::bundle::write_seed_toml(&root.join("config")).expect("write seed.toml");
     fs::write(
         root.join("config/contacts.csv"),
-        "contact_id,display_name,groups,service,identity_type,identity\n\
-         test,Test,,phone,phone,+15555550100\n",
+        "contact_id,display_name,service,identity,groups\n\
+         test,Test,Text Message,+15555550100,\n",
     )
     .expect("write contacts");
     let conversation = |source: &str, chat: &str, guid: &str| {
@@ -1699,14 +1699,21 @@ fn read_generated_address_book(bundle: &Path) -> BTreeMap<String, BookContact> {
         let record = record.expect("an address book row");
         let contact = book.entry(record[0].to_string()).or_default();
         contact.name = record[1].to_string();
-        contact.groups = record[2]
+        contact.groups = record[4]
             .split(';')
             .filter(|g| !g.is_empty())
             .map(str::to_string)
             .collect();
+        // The file states no type: every identity the demo lists is a phone
+        // number, on Text Message or on WhatsApp.
+        let service = match &record[2] {
+            "Text Message" => "phone",
+            "WhatsApp" => "whatsapp",
+            other => panic!("the demo address book lists the service {other:?}"),
+        };
         contact
             .identities
-            .push(format!("{}/{}/{}", &record[3], &record[4], &record[5]));
+            .push(format!("{service}/phone/{}", &record[3]));
     }
     book
 }

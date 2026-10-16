@@ -761,10 +761,14 @@ pub(super) fn body_for(op: &Operation, n: usize) -> Option<(&'static str, Vec<u8
         }
         ("post", "/v1/contacts") => Some((
             "text/csv",
-            b"contact_id,display_name,groups,service,identity_type,identity\n,Robin,,phone,phone,+15555550199\n"
+            b"contact_id,display_name,service,identity,groups\n,Robin,Text Message,+15555550199,\n"
                 .to_vec(),
         )),
         ("post", "/v1/contacts/address-book") => json(json!({})),
+        ("post", "/v1/contacts/vcard-address-book") => Some((
+            "text/vcard",
+            b"BEGIN:VCARD\nVERSION:3.0\nFN:Robin\nTEL:+15555550199\nEND:VCARD\n".to_vec(),
+        )),
         ("post", "/v1/contacts/summaries") => json(json!({ "ids": [1] })),
         ("post", "/v1/contacts/unmatched-identities") => json(json!({ "identifiers": [] })),
         ("patch", "/v1/contacts/{id}") => json(json!({ "name": "Samantha" })),

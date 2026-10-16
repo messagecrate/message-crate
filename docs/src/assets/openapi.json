@@ -5604,7 +5604,7 @@
           "Contacts"
         ],
         "summary": "Load an address book into this account.",
-        "description": "The body is the file itself: Message Crate's own CSV, one row per identity, with the columns `contact_id`, `display_name`, `groups`, `service`, `identity_type` and `identity`, as `POST /v1/contacts/address-book` writes it.\n\nRows that share a `contact_id` are one contact. An id the account holds\nnames that contact, a blank id makes a new contact for that row, and any\nother text groups its rows into one new contact. `append` creates and\nrenames contacts and adds the identities and Contact Group memberships\nthe rows list. `edit` does the same and then takes off each contact in\nthe file every identity and membership its rows do not list. A contact\nthe file does not mention is left alone in both modes.\n\nA phone number written without `+`, which a spreadsheet can save in place\nof `+6555550100`, names the identity `+` and its digits when the row's\ncontact holds that key. Otherwise it is keyed as written: ten digits as a\nUS number, any other count as bare digits. `notes` names each row read\nwith its `+` back, and each such number that became a new identity.\n\nOne `'` before a cell that starts with `=`, `+`, `-`, `@`, a tab or a\ncarriage return is taken off, in any column, which undoes the `'` the\nexport writes there.\n\nThe load is one transaction. A file that breaks a rule is refused whole\nwith `422 Unprocessable Entity`, and `errors` holds one sentence for each\nbad row, starting with its row number.\n\nThe Demo Account is refused with `demo-account-protected`, in both modes,\nby its id: an Edit load deletes contacts for good and an Append load\nstores real people's names and numbers in an account anyone can enter\n(`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`). The import,\nexport and delete permissions are not asked for; they govern messages and\nimports, and any other account loads its address book with a session.",
+        "description": "The body is the file itself: Message Crate's own CSV, one row per identity, with the columns `contact_id`, `display_name`, `service`, `identity` and `groups`, as `POST /v1/contacts/address-book` writes it.\n\n`service` is `Text Message`, `Email` or `WhatsApp`, the words the screen\nwhere an identity is added offers, ignoring case. The file states no\ntype: the service decides which types are valid and the address's shape\npicks among them, as adding an identity does. `Text Message` carries a\nphone number, an email address or any other name; `Email` is an email\naddress on Text Message; `WhatsApp` carries a phone number or one of\nWhatsApp's own ids (`…@lid`, `…@g.us`, `…@broadcast`, `…@newsletter`),\nwhich are `other`. An identity written exactly as the account keys it on\nthat service is that identity, whatever its type, so an exported file\nloads back as it was. A row whose address the service cannot carry, such\nas an email address on `WhatsApp` (an `@` address at any other domain),\nis refused, where adding an identity stores it as `other`.\n\nRows that share a `contact_id` are one contact. An id the account holds\nnames that contact, a blank id makes a new contact for that row, and any\nother text groups its rows into one new contact. `append` creates and\nrenames contacts and adds the identities and Contact Group memberships\nthe rows list. `edit` does the same and then takes off each contact in\nthe file every identity and membership its rows do not list. A contact\nthe file does not mention is left alone in both modes.\n\nA phone number written without `+`, which a spreadsheet can save in place\nof `+6555550100`, names the identity `+` and its digits when the row's\ncontact holds that key. Otherwise it is keyed as written: ten digits as a\nUS number, any other count as bare digits. `notes` names each row read\nwith its `+` back, and each such number that became a new identity.\n\nOne `'` before a cell that starts with `=`, `+`, `-`, `@`, a tab or a\ncarriage return is taken off, in any column, which undoes the `'` the\nexport writes there.\n\nThe load is one transaction. A file that breaks a rule is refused whole\nwith `422 Unprocessable Entity`, and `errors` holds one sentence for each\nbad row, starting with its row number.\n\nThe Demo Account is refused with `demo-account-protected`, in both modes,\nby its id: an Edit load deletes contacts for good and an Append load\nstores real people's names and numbers in an account anyone can enter\n(`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`). The import,\nexport and delete permissions are not asked for; they govern messages and\nimports, and any other account loads its address book with a session.",
         "operationId": "create_contacts",
         "parameters": [
           {
@@ -5759,7 +5759,7 @@
           "Contacts"
         ],
         "summary": "Write the address book for the contacts a search matches, the checked ones among them, or every contact when the body names neither.",
-        "description": "The answer is `text/csv`, not JSON: one row per identity, with the\ncolumns `contact_id`, `display_name`, `groups`, `service`, `identity_type`\nand `identity`. A contact's name and its Contact Group names, separated\nby `;`, repeat on each of its rows. A contact with no name has a blank\n`display_name`, and a contact with no identity is one row with the last\nthree columns blank. Contacts in the trash are left out.\n\nA cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return\nis written with a `'` in front, in every column, because a spreadsheet\nruns such a cell as a formula and drops the `+` of a phone number.\n`POST /v1/contacts` loads the file back and takes that `'` off.",
+        "description": "The answer is `text/csv`, not JSON: one row per identity, with the\ncolumns `contact_id`, `display_name`, `service`, `identity` and `groups`.\n`service` is `Text Message`, `Email` for an email address on Text\nMessage, or `WhatsApp`. A contact's name and its Contact Group names,\nseparated by `;`, repeat on each of its rows. A contact with no name has\na blank `display_name`, and a contact with no identity is one row with\n`service` and `identity` blank. Contacts in the trash are left out.\n\nA cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return\nis written with a `'` in front, in every column, because a spreadsheet\nruns such a cell as a formula and drops the `+` of a phone number.\n`POST /v1/contacts` loads the file back and takes that `'` off.",
         "operationId": "get_address_book",
         "requestBody": {
           "content": {
@@ -6111,6 +6111,155 @@
             },
             "x-problem-types": [
               "https://messagecrate.app/docs/developer/reference/errors/not-acceptable"
+            ]
+          },
+          "408": {
+            "description": "[`upload-stalled`](https://messagecrate.app/docs/developer/reference/errors/upload-stalled): The body of a request stopped arriving: no byte of it arrived for the server's stall limit, or it was still arriving at the server's limit for a whole body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/upload-stalled"
+            ]
+          },
+          "413": {
+            "description": "[`payload-too-large`](https://messagecrate.app/docs/developer/reference/errors/payload-too-large): The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/payload-too-large"
+            ]
+          },
+          "415": {
+            "description": "[`unsupported-media-type`](https://messagecrate.app/docs/developer/reference/errors/unsupported-media-type): The request's `Content-Type` is absent or not one this route accepts.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/unsupported-media-type"
+            ]
+          },
+          "422": {
+            "description": "[`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
+            ]
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/contacts/vcard-address-book": {
+      "post": {
+        "tags": [
+          "Contacts"
+        ],
+        "summary": "Write an address book from a vCard file, for the person to edit and then load with `POST /v1/contacts`.",
+        "description": "The body is the file itself, one or more cards. Nothing is read from or stored in the account.\n\nThe answer is `text/csv` in the address book's columns: one row for each\n`TEL` and each `EMAIL` on each card. `contact_id` is `card1`, `card2`, …\nby the card's position in the file, so a card's rows load as one new\ncontact. `display_name` is the card's `FN`, or its `N` assembled when it\nhas no `FN`, and blank when it has neither. `service` is `Text Message`\nfor a number and `Email` for an email address, never `WhatsApp`, because\na card cannot say a number is on WhatsApp. `groups` is blank:\n`CATEGORIES` is not carried over. A card with no number and no email\naddress gives no rows.\n\nA number written without `+` is written in its `+` form in `country` when\nit is a valid number there. A number written with `+`, one that is not\nvalid in `country`, and every number when no `country` is given are\nwritten exactly as the card has them. Nothing else is checked: the load\nrefuses what it cannot store and names the rows. Cells are written with\nthe `'` the export puts before a cell a spreadsheet would run.\n\nA body that holds no `BEGIN:VCARD` line answers\n`422 Unprocessable Entity`.",
+        "operationId": "get_vcard_address_book",
+        "parameters": [
+          {
+            "name": "country",
+            "in": "query",
+            "description": "The country a number written without its `+` code is read in, as an ISO 3166-1 code that `GET /v1/phone-countries` lists, such as `US`. Absent, every number is written as the card has it.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "The vCard file: one or more cards.",
+          "content": {
+            "text/vcard": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The address book, as an attachment named `address-book.csv`",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`attachment; filename=\"address-book.csv\"`"
+              }
+            },
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "[`malformed-body`](https://messagecrate.app/docs/developer/reference/errors/malformed-body): The request could not be read at all: the body is not valid JSON, an import line is not JSON or not UTF-8, or the body failed to arrive.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/malformed-body"
+            ]
+          },
+          "401": {
+            "description": "[`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/authentication-required"
+            ]
+          },
+          "403": {
+            "description": "[`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.\n\n[`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so an API token it already has may not act.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/insufficient-scope",
+              "https://messagecrate.app/docs/developer/reference/errors/account-disabled"
             ]
           },
           "408": {
