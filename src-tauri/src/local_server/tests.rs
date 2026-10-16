@@ -1052,3 +1052,151 @@ mod with_a_script {
         );
     }
 }
+
+/// The Job Object the app's server runs in, on Windows (#1962). The Unix
+/// tests above cover the process group; Linux and macOS share that code.
+///
+/// The server here is this test program, run again as a stand-in. Started as
+/// the parent, it starts itself once more as a child, the way the server
+/// starts ffmpeg, writes the child's process id, and waits for it. The child
+/// waits for nothing and runs until something ends it. Each test reads the
+/// child's id from the parent's output, so it is told when both have started,
+/// and waits on the processes' handles, so it is told when each has ended.
+#[cfg(windows)]
+mod in_a_job {
+    use super::*;
+    use std::io::Write;
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::Foundation::{WAIT_OBJECT_0, WAIT_TIMEOUT};
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, TerminateProcess, WaitForSingleObject,
+    };
+
+    /// The environment variable that tells [`stand_in`] which process to be.
+    const ROLE: &str = "MESSAGE_CRATE_STAND_IN_ROLE";
+
+    /// The line the parent writes before the child's process id.
+    const CHILD_LINE: &str = "stand-in child: ";
+
+    /// The stand-in server and its child, when this test program is run
+    /// again by [`run_as`]. Run any other way it does nothing.
+    #[test]
+    #[ignore = "the stand-in the tests below start as their server and its child"]
+    fn stand_in() {
+        match std::env::var(ROLE).as_deref() {
+            Ok("parent") => {
+                let mut child = run_as("child")
+                    .stdout(Stdio::null())
+                    .spawn()
+                    .expect("start the child");
+                let mut out = std::io::stdout();
+                writeln!(out, "{CHILD_LINE}{}", child.id()).unwrap();
+                out.flush().unwrap();
+                let _ = child.wait();
+            }
+            Ok("child") => loop {
+                thread::park();
+            },
+            _ => {}
+        }
+    }
+
+    /// This test program, running [`stand_in`] alone as `role`.
+    fn run_as(role: &str) -> Command {
+        // libtest names a test by its path without the crate's name.
+        let (_, module) = module_path!().split_once("::").unwrap();
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .args([&format!("{module}::stand_in"), "--exact", "--ignored"])
+            .args(["--nocapture", "--test-threads=1"])
+            .env(ROLE, role);
+        command
+    }
+
+    /// Start the stand-in server the way the app starts its server, and
+    /// return it once it has started its child, with a handle to the child.
+    fn start_server() -> (ServerProcess, OwnedHandle) {
+        let mut command = run_as("parent");
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        hide_console(&mut command);
+        let mut server = ServerProcess::spawn(&mut command).expect("start the stand-in server");
+        let stdout = server.child().stdout.take().unwrap();
+        let child = BufReader::new(stdout)
+            .lines()
+            .map_while(Result::ok)
+            .find_map(|line| line.strip_prefix(CHILD_LINE).map(str::to_owned))
+            .expect("the stand-in server ended before it started its child");
+        let child = open_process(child.trim().parse().unwrap());
+        (server, child)
+    }
+
+    /// A handle to process `pid`, to wait on and to end it with. A running
+    /// process keeps its id, so the handle names the process the id did.
+    fn open_process(pid: u32) -> OwnedHandle {
+        // SAFETY: the call takes no pointers.
+        let raw = unsafe { OpenProcess(PROCESS_SYNCHRONIZE | PROCESS_TERMINATE, 0, pid) };
+        assert!(
+            !raw.is_null(),
+            "open process {pid}: {}",
+            std::io::Error::last_os_error()
+        );
+        // SAFETY: `raw` is a handle just opened and owned by nothing else.
+        unsafe { OwnedHandle::from_raw_handle(raw) }
+    }
+
+    /// Whether `process` ends. The wait returns as soon as it ends; its
+    /// minute only turns a process that never ends into a failure rather
+    /// than a test that never returns. One still running then is ended here,
+    /// so a failed test leaves nothing running.
+    fn ends(process: &OwnedHandle) -> bool {
+        // SAFETY: `process` is an open process handle with SYNCHRONIZE.
+        let ended =
+            unsafe { WaitForSingleObject(process.as_raw_handle(), 60_000) } == WAIT_OBJECT_0;
+        if !ended {
+            // SAFETY: `process` is an open process handle with TERMINATE.
+            unsafe { TerminateProcess(process.as_raw_handle(), 1) };
+        }
+        ended
+    }
+
+    /// Whether `process` is running now. Returns at once.
+    fn is_running(process: &OwnedHandle) -> bool {
+        // SAFETY: `process` is an open process handle with SYNCHRONIZE.
+        unsafe { WaitForSingleObject(process.as_raw_handle(), 0) == WAIT_TIMEOUT }
+    }
+
+    /// The app closing: `stop` kills its server this way.
+    #[test]
+    fn killing_the_server_ends_the_process_it_started() {
+        let (mut server, child) = start_server();
+        let parent = open_process(server.child().id());
+
+        server.kill();
+
+        assert!(ends(&parent), "the server outlived the kill");
+        assert!(ends(&child), "the server's own process outlived the server");
+    }
+
+    /// The server ended abruptly and alone, the way Task Manager ends a
+    /// process, and the job's handle then closed, as the system closes it
+    /// when the app ends.
+    #[test]
+    fn the_process_the_server_started_ends_when_the_job_handle_closes() {
+        let (mut server, child) = start_server();
+        let parent = open_process(server.child().id());
+
+        server.child().kill().expect("end the stand-in server");
+        assert!(ends(&parent), "the server outlived its own end");
+        assert!(
+            is_running(&child),
+            "the child ended with the server, so the job's handle closing ends nothing"
+        );
+
+        drop(server);
+
+        assert!(ends(&child), "the server's own process outlived the job");
+    }
+}
