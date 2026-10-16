@@ -40,6 +40,8 @@ export type ImportFormFieldsProps = {
   /** The countries to offer, from `GET /v1/phone-countries`; empty until loaded. */
   phoneCountries: readonly PhoneCountryChoice[];
   running: boolean;
+  /** Why the last Import could not start, or null. */
+  startError: string | null;
   /** Optional flushed owner phones (SBR commits draft before import). */
   onImport: (ownerPhones?: string[]) => void;
 };

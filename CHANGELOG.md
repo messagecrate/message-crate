@@ -896,7 +896,7 @@ carry their date on the heading.
 
 #### Importing
 
-- 2026-10-15: **A closed Import Run's directory no longer stays on disk.**
+- 2026-10-16: **A closed Import Run's directory no longer stays on disk.**
   When a discard reached the server only after the app had read the run as
   still running, the run's directory, staged photos and videos included,
   stayed in the Staging Directory with nothing to delete it. Opening Import
@@ -904,6 +904,13 @@ carry their date on the heading.
   that Message Crate reports as completed, failed or canceled, and the run's
   log says so. A running run keeps its directory, and so does every run when
   Message Crate does not answer (#2822).
+- 2026-10-15: **An Apple Messages import stops when its identity check
+  cannot run.** Before an import, Message Crate reads which addresses the
+  backup's phone sent from and compares them with your profile. When the
+  backup could not be read, such as with a wrong backup password, or your
+  account could not be read, the import went on without the check and
+  recorded the backup as one with no addresses. The import now stops on the
+  form with the reason, and no run is started (#2174).
 - 2026-10-15: **A batch the Upload stopped waiting for no longer holds up
   its next try.** When the Upload gave up on a batch, such as after its
   ten-minute wait, the server deleted the batch's file but kept the batch
