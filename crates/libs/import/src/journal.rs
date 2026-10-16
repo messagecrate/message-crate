@@ -204,6 +204,10 @@ pub struct RunJournal {
     state: JournalState,
     path: PathBuf,
     target: ServerTarget,
+    /// True while earlier Uploads' rows for this target are still on disk
+    /// and must go before the first batch is sent
+    /// ([`EarlierProgress::Forget`]).
+    forget_pending: bool,
 }
 
 /// What a new Upload does with the progress earlier Uploads recorded.
@@ -217,7 +221,11 @@ pub enum EarlierProgress {
     /// Send everything again, and delete this target's rows on disk (replace
     /// mode). A replace wipes the source on the server, so the rows no longer
     /// say what the server holds, and a later append that read them after
-    /// a failed replace would skip what the replace removed.
+    /// a failed replace would skip what the replace removed. The server
+    /// wipes the source with the first batch, so the rows are deleted just
+    /// before that batch is sent ([`RunJournal::forget_before_first_batch`]).
+    /// A replace that stops before that batch has wiped nothing, so the rows
+    /// stay.
     Forget,
 }
 
@@ -228,8 +236,7 @@ impl RunJournal {
     ///
     /// # Errors
     ///
-    /// Returns an error when an existing journal file cannot be read, or, for
-    /// [`EarlierProgress::Forget`], cannot be rewritten.
+    /// Returns an error when an existing journal file cannot be read.
     pub fn open(
         path: PathBuf,
         target: ServerTarget,
@@ -238,18 +245,31 @@ impl RunJournal {
     ) -> Result<Self> {
         let state = match earlier {
             EarlierProgress::Resume => load(&path, &target, on_unreadable)?,
-            EarlierProgress::Ignore => JournalState::default(),
-            EarlierProgress::Forget => {
-                let state = JournalState::default();
-                compact(&path, &target, &state)?;
-                state
-            }
+            EarlierProgress::Ignore | EarlierProgress::Forget => JournalState::default(),
         };
         Ok(Self {
             state,
             path,
             target,
+            forget_pending: earlier == EarlierProgress::Forget,
         })
+    }
+
+    /// Delete earlier Uploads' rows for this target from disk, keeping what
+    /// this Upload recorded, if the journal was opened with
+    /// [`EarlierProgress::Forget`] and has not done so yet. Called just
+    /// before each batch is sent, because the first batch of a replace
+    /// wipes the source on the server.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the journal file cannot be rewritten.
+    pub fn forget_before_first_batch(&mut self) -> Result<()> {
+        if self.forget_pending {
+            compact(&self.path, &self.target, &self.state)?;
+            self.forget_pending = false;
+        }
+        Ok(())
     }
 
     /// True when this conversation file fully imported on an earlier run.
@@ -347,11 +367,17 @@ impl RunJournal {
     }
 
     /// Rewrite the journal file from the in-memory sets (see [`compact`]).
+    /// A replace that sent no batch wiped nothing, so its journal stays as
+    /// it is. Rewriting it from the in-memory sets would drop the earlier
+    /// Uploads' rows.
     ///
     /// # Errors
     ///
     /// Returns an error when the file cannot be rewritten.
     pub fn compact(&self) -> Result<()> {
+        if self.forget_pending {
+            return Ok(());
+        }
         compact(&self.path, &self.target, &self.state)
     }
 }
