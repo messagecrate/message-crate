@@ -1,5 +1,5 @@
 import { contactGroups } from "../lib/contactGroups";
-import { useNameCollection } from "../lib/nameCollection";
+import { useNameCollection } from "./useNameCollection";
 
 /** Live list of contact groups for the logged-in account. */
 export function useContactGroups(): {

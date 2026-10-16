@@ -27,7 +27,7 @@ vi.mock("../../lib/importRun", async (importOriginal) => ({
   accountRunDirectories: (...a: unknown[]) => accountRunDirectories(...a),
 }));
 
-vi.mock("../../lib/authContext", () => authModule(() => ({ accountId: 7, logout })));
+vi.mock("../../hooks/useAuth", () => authModule(() => ({ accountId: 7, logout })));
 
 vi.mock("../../hooks/useOwnerAccounts", () => ({
   useDeleteAccount: () => ({ mutateAsync: vi.fn() }),

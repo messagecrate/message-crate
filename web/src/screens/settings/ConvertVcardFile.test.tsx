@@ -12,8 +12,8 @@ import { ConvertVcardFile } from "./ConvertVcardFile";
 
 vi.mock("../../lib/serverApi", () => ({ convertVcardToAddressBook: vi.fn() }));
 vi.mock("../../lib/saveFile", () => ({ saveFile: vi.fn() }));
-vi.mock("../../lib/phoneCountries", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../lib/phoneCountries")>()),
+vi.mock("../../hooks/usePhoneCountries", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../hooks/usePhoneCountries")>()),
   usePhoneCountries: () => ({
     countries: [
       { code: "GB", calling_code: "44", name: "United Kingdom" },

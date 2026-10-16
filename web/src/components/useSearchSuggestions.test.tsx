@@ -16,7 +16,7 @@ import {
   useSearchSuggestions,
 } from "./useSearchSuggestions";
 
-vi.mock("../lib/authContext", async () =>
+vi.mock("../hooks/useAuth", async () =>
   (await import("../test/providers")).authModule({ accountId: 7 }),
 );
 

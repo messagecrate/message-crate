@@ -1,22 +1,5 @@
-import { useIsOwner } from "../../hooks/useIsOwner";
-import { useServerInfo } from "../../hooks/useServerInfo";
-import { useAuth } from "../../lib/authContext";
-import {
-  invokeListLogs,
-  invokeReadLog,
-  invokeReadLogLines,
-  type LogEntry,
-  type LogReader,
-} from "../../lib/desktop/runLog";
-import { canReadDesktopLogs } from "../../lib/desktopFeatures";
-import { useRouteQuery } from "../../lib/routeQuery";
-import {
-  getServerLogFile,
-  type LogLinesPage,
-  listServerLogFiles,
-  listServerLogLines,
-} from "../../lib/serverApi";
-import { isTauri } from "../../lib/tauriCheck";
+import { invokeReadLog, invokeReadLogLines, type LogReader } from "../../lib/desktop/runLog";
+import { type LogLinesPage, listServerLogLines } from "../../lib/serverApi";
 
 /** What the level filter shows: errors, warnings and up, or every line. */
 export type LevelFilter = "error" | "warn" | "all";
@@ -79,61 +62,4 @@ export const UNREADABLE_RUN_LOG =
 /** The download of one log in this computer's Logs Directory, whole, under its own name. */
 export function desktopLogDownload(reader: LogReader, name: string): LogDownload {
   return { name, read: () => invokeReadLog(reader, name) };
-}
-
-/**
- * The files of the server's log, each a download, newest first. The owner's
- * alone, like the lines.
- */
-export function useServerLogDownloads(): { downloads: LogDownload[]; error: Error | null } {
-  const files = useRouteQuery(["logs", "server", "files"], (signal) =>
-    listServerLogFiles({ signal }),
-  );
-  return {
-    downloads: (files.data ?? []).map((file) => ({
-      name: file.name,
-      read: () => getServerLogFile(file.id),
-    })),
-    error: files.error,
-  };
-}
-
-/**
- * Who reads the logs in this computer's Logs Directory: the signed-in
- * account on the Message Crate it is signed in to, and whether it is the
- * owner, who reads every one, the desktop app's own included. Null in a
- * browser, where none is, and before the profile says whether the account
- * is the owner and the server says its id.
- */
-export function useLogReader(): LogReader | null {
-  const { accountId } = useAuth();
-  const { isOwner, loading } = useIsOwner();
-  const server = useServerInfo();
-  const messageCrateId = server.data?.id;
-  if (!canReadDesktopLogs(isTauri()) || accountId === null || loading || !messageCrateId) {
-    return null;
-  }
-  return { messageCrateId, accountId, owner: isOwner };
-}
-
-/**
- * The logs in this computer's Logs Directory that `reader` may read, newest
- * first: its Import Run logs, and for the owner every one and the desktop
- * app's own.
- */
-export function useDesktopLogs(reader: LogReader | null): {
-  logs: LogEntry[];
-  loading: boolean;
-  error: Error | null;
-} {
-  const listing = useRouteQuery(
-    ["logs", "desktop", "list", reader?.messageCrateId, reader?.owner],
-    () => (reader ? invokeListLogs(reader) : Promise.resolve([])),
-    { enabled: reader !== null },
-  );
-  return {
-    logs: listing.data ?? [],
-    loading: reader !== null && listing.isPending,
-    error: listing.error,
-  };
 }

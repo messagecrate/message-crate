@@ -1,5 +1,5 @@
+import { useRouteQuery } from "../../hooks/useRouteQuery";
 import { keys } from "../../lib/queryKeys";
-import { useRouteQuery } from "../../lib/routeQuery";
 import { getServerSettings } from "../../lib/serverApi";
 
 /**

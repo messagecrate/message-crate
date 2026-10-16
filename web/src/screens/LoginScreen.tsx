@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import Button from "../components/Button";
 import PlainButton from "../components/PlainButton";
+import { useAuth } from "../hooks/useAuth";
 import { setBaseUrl } from "../lib/api";
 import { errorLine } from "../lib/apiErrorMessage";
-import { useAuth } from "../lib/authContext";
 import { DEFAULT_TAURI_SERVER_URL, initialLoginServerUrl } from "../lib/authGuards";
 import {
   invokeOpenMessageCrateDirectory,

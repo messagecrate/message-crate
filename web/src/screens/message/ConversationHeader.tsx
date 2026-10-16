@@ -3,16 +3,16 @@ import { ToggleButton } from "react-aria-components";
 import { useNavigate } from "react-router-dom";
 import PlainButton from "../../components/PlainButton";
 import PopupMenu, { type PopupMenuItem } from "../../components/PopupMenu";
+import { useTimeZone } from "../../hooks/useTimeZone";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { conversationName } from "../../lib/conversationName";
 import { formatMonthYear } from "../../lib/formatDate";
 import { conversationServiceLabel } from "../../lib/serviceLabel";
-import { useTimeZone } from "../../lib/timeZone";
-import { useTrashConversation } from "../../lib/trash";
 import type { Conversation } from "../../lib/types";
 import { focusRingClass } from "../../lib/uiStyles";
 import ContactGroupFromConversation from "./ContactGroupFromConversation";
-import { useContactGroupMembers } from "./contactGroupMembers";
+import { useContactGroupMembers } from "./useContactGroupMembers";
+import { useTrashConversation } from "./useTrashConversation";
 
 const TOOL_CLASS = `cursor-pointer rounded-md border border-border bg-panel px-2.5 py-[0.2rem] text-[0.813rem] text-text hover:bg-hover ${focusRingClass}`;
 

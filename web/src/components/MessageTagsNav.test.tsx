@@ -7,7 +7,7 @@ import { authModule, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
 import MessageTagsNav from "./MessageTagsNav";
 
-vi.mock("../lib/authContext", () => authModule());
+vi.mock("../hooks/useAuth", () => authModule());
 
 afterEach(() => {
   cleanup();

@@ -4,6 +4,7 @@ import MessageSearchRow from "../components/MessageSearchRow";
 import SortMenu, { type SortField } from "../components/SortMenu";
 import VirtualList from "../components/VirtualList";
 import { useDebouncedQuery } from "../hooks/useDebouncedQuery";
+import { useRoutePagedList } from "../hooks/useRouteQuery";
 import { errorLine } from "../lib/apiErrorMessage";
 import { MAX_LIST_OFFSET } from "../lib/listPaging";
 import {
@@ -15,7 +16,7 @@ import {
 } from "../lib/messageSearchSort";
 import { countOf } from "../lib/plural";
 import { keys } from "../lib/queryKeys";
-import { type PagedFetchPage, useRoutePagedList } from "../lib/routeQuery";
+import type { PagedFetchPage } from "../lib/routeQuery";
 import { listMessages } from "../lib/serverApi";
 import type { FreeTextTerm, Message, MessageSearch } from "../lib/types";
 

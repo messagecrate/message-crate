@@ -22,7 +22,7 @@ import { authModule, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
 import TrashScreen from "./TrashScreen";
 
-vi.mock("../lib/authContext", () => authModule());
+vi.mock("../hooks/useAuth", () => authModule());
 
 vi.mock("../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverApi")>()),

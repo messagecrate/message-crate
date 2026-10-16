@@ -5,8 +5,8 @@ import {
   contactPreviewFromConversationParticipants,
 } from "../components/contactDrawer/contactDrawerTypes";
 import SourcesPanel from "../components/SourcesPanel";
+import { useTimeZone } from "../hooks/useTimeZone";
 import { lightboxImages } from "../lib/lightboxImages";
-import { useTimeZone } from "../lib/timeZone";
 import type { Conversation, MessageAttachment } from "../lib/types";
 import ConversationHeader from "./message/ConversationHeader";
 import ConversationView from "./message/ConversationView";

@@ -8,7 +8,7 @@ import { authModule, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
 import GroupsNav from "./GroupsNav";
 
-vi.mock("../lib/authContext", () => authModule());
+vi.mock("../hooks/useAuth", () => authModule());
 
 beforeEach(() => {
   startFakeClock();

@@ -41,15 +41,16 @@ vi.mock("./useSearchSuggestions", async (importOriginal) => ({
 
 // The words each list takes come from the server; here, from the fixture,
 // marked by the real rule.
-vi.mock("../lib/searchFields", async (importOriginal) => {
-  const real = await importOriginal<typeof import("../lib/searchFields")>();
+vi.mock("../hooks/useMarkedWords", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../hooks/useMarkedWords")>();
+  const { markedWords } = await import("../lib/searchFields");
   const { searchFieldsFor } = await import("../test/searchFields");
   return {
     ...real,
     useMarkedWords: (query: string, list: SearchList | null, otherList: SearchList | null) => ({
       marked:
         list && otherList
-          ? real.markedWords(query, searchFieldsFor(list), {
+          ? markedWords(query, searchFieldsFor(list), {
               list: otherList,
               fields: searchFieldsFor(otherList),
             })

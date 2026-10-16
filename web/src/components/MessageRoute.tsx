@@ -1,4 +1,5 @@
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useRouteQuery } from "../hooks/useRouteQuery";
 import { errorLine } from "../lib/apiErrorMessage";
 import { asMessagesLocationState } from "../lib/messagesLocationState";
 import { keys } from "../lib/queryKeys";
@@ -10,7 +11,6 @@ import {
   openedAt,
   openedMatchedVersions,
 } from "../lib/resultsView";
-import { useRouteQuery } from "../lib/routeQuery";
 import { getConversation } from "../lib/serverApi";
 import MessageView from "../screens/MessageView";
 import ListColumn from "./ListColumn";

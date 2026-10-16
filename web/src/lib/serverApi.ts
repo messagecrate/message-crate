@@ -767,7 +767,7 @@ export function deleteContact(contactId: string | number): Promise<void> {
 // ── Contact Groups ──────────────────────────────────────────────────────────
 //
 // A Contact Group is addressed by its id. Screens hold names; the lookup from
-// a name to an id lives in `nameCollection.ts`, not here.
+// a name to an id lives in `hooks/useNameCollectionActions.ts`, not here.
 
 /** Every Contact Group of the logged-in account. */
 export function listContactGroups(opts?: RequestOptions): Promise<Schema["NamedSet"][]> {

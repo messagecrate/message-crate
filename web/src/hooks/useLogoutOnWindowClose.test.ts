@@ -3,17 +3,17 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { useLogoutOnWindowClose } from "./windowCloseLogout";
+import { useLogoutOnWindowClose } from "./useLogoutOnWindowClose";
 
 const isTauri = vi.fn();
 const onWindowCloseRequested = vi.fn();
 const destroyWindow = vi.fn();
 
-vi.mock("./tauriCheck", () => ({
+vi.mock("../lib/tauriCheck", () => ({
   isTauri: () => isTauri(),
 }));
 
-vi.mock("./desktop/window", () => ({
+vi.mock("../lib/desktop/window", () => ({
   onWindowCloseRequested: (...args: unknown[]) => onWindowCloseRequested(...args),
   destroyWindow: () => destroyWindow(),
 }));

@@ -5,8 +5,8 @@ import { fixedSettings } from "../../lib/account";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { AddressBookSection } from "./AddressBookSection";
 import { IdentitiesSection } from "./IdentitiesSection";
-import type { NameEdit } from "./nameEdit";
 import { sectionTitleClass } from "./profileStyles";
+import type { NameEdit } from "./useNameEdit";
 import { useSettingsAccount, useUpdateSettingsProfile } from "./useSettingsAccount";
 
 /**

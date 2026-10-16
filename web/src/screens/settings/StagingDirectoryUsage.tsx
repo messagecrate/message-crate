@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "../../hooks/useAuth";
 import { useServerInfo } from "../../hooks/useServerInfo";
 import { errorLine } from "../../lib/apiErrorMessage";
-import { useAuth } from "../../lib/authContext";
 import { invokeAccountStagingBytes, invokeAllStagingBytes } from "../../lib/desktop/staging";
 import { canMeasureStagingDirectory } from "../../lib/desktopFeatures";
 import { formatBytes } from "../../lib/formatBytes";

@@ -1,13 +1,13 @@
 import type { ReactNode } from "react";
+import { useColumnResizing } from "../hooks/useColumnResizing";
+import { useTimeZone } from "../hooks/useTimeZone";
 import { conversationName } from "../lib/conversationName";
 import { formatDateSpan } from "../lib/formatDate";
 import { conversationServiceLabel } from "../lib/serviceLabel";
-import { useTimeZone } from "../lib/timeZone";
 import { listRowDividerClass } from "../lib/tw";
 import type { Conversation } from "../lib/types";
 import { focusRingClass } from "../lib/uiStyles";
 import Checkbox from "./Checkbox";
-import { useColumnResizing } from "./columnResizeState";
 import { GroupConversationIcon } from "./icons";
 import PlainButton from "./PlainButton";
 

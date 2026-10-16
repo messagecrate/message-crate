@@ -6,7 +6,6 @@
  * `AuthProvider` holds the login in React state, and `api.ts` is read outside
  * React, so every change is pushed across here.
  */
-import { useEffect } from "react";
 import { setAccountId, setBaseUrl, setToken } from "./api";
 
 export interface ApiSession {
@@ -23,11 +22,4 @@ export function applyApiSession(session: Partial<ApiSession>): void {
   if (session.serverUrl !== undefined) setBaseUrl(session.serverUrl);
   if (session.token !== undefined) setToken(session.token);
   if (session.accountId !== undefined) setAccountId(session.accountId);
-}
-
-/** Keep `api.ts` on `session` whenever any of its fields changes. */
-export function useApiSession({ serverUrl, token, accountId }: ApiSession): void {
-  useEffect(() => {
-    applyApiSession({ serverUrl, token, accountId });
-  }, [serverUrl, token, accountId]);
 }

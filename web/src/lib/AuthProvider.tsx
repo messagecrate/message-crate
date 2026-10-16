@@ -1,8 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { warmAccountProfile } from "../hooks/useAccountProfile";
+import { useApiSession } from "../hooks/useApiSession";
+import { useLogoutOnWindowClose } from "../hooks/useLogoutOnWindowClose";
 import { getToken } from "./api";
-import { applyApiSession, useApiSession } from "./apiSession";
+import { applyApiSession } from "./apiSession";
 import { AuthContext, type AuthState, type LoginLifetime } from "./authContext";
 import { type AccountRunDirectories, deleteRunDirectories } from "./importRun";
 import { LogoutPromptContext, type LogoutPromptState } from "./logoutPromptContext";
@@ -19,7 +21,6 @@ import {
 import { logout as serverLogout } from "./serverApi";
 import { SessionQueryClientProvider } from "./sessionQueryClient";
 import { onSessionRefused } from "./sessionRefusal";
-import { useLogoutOnWindowClose } from "./windowCloseLogout";
 
 /**
  * How long logout waits for a running Upload to pause before it revokes the
@@ -48,9 +49,9 @@ function logoutTimeoutSignal(): AbortSignal {
  * from `useLogoutPrompt`; `AuthShell` places that dialog, not this provider.
  *
  * The rest of the login lives beside it: the query client in
- * `sessionQueryClient.tsx`, keeping `api.ts` on the login in `apiSession.ts`,
- * the saved login in `savedLogin.ts`, and logging out when the desktop
- * window closes in `windowCloseLogout.ts`.
+ * `sessionQueryClient.tsx` and the saved login in `savedLogin.ts`. Keeping
+ * `api.ts` on the login is `hooks/useApiSession.ts`, and logging out when the
+ * desktop window closes is `hooks/useLogoutOnWindowClose.ts`.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   return (
@@ -61,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 function SessionProvider({ children }: { children: ReactNode }) {
-  // Talking to the client directly rather than through `routeQuery`'s hooks,
+  // Talking to the client directly rather than through `useRouteQuery` and its kin,
   // which read `useAuth` from this provider.
   const queryClient = useQueryClient();
   const resetRouteCache = useCallback(() => {

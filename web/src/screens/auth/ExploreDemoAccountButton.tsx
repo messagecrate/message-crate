@@ -1,7 +1,7 @@
 import Button from "../../components/Button";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
+import { useAuth } from "../../hooks/useAuth";
 import { setBaseUrl } from "../../lib/api";
-import { useAuth } from "../../lib/authContext";
 import { login as serverLogin } from "../../lib/serverApi";
 
 /** The Demo Account's username. It has no password, so this is all it takes. */

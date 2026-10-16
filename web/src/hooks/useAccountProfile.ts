@@ -2,11 +2,11 @@ import { type UseMutationResult, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import type { AccountProfile } from "../lib/account";
 import { errorLine } from "../lib/apiErrorMessage";
-import { useAuth } from "../lib/authContext";
 import { keys } from "../lib/queryKeys";
-import { useRouteCache, useRouteMutation, useRouteQuery } from "../lib/routeQuery";
 import { ANONYMOUS_ACCOUNT, routeQueryKey } from "../lib/routeQueryKey";
 import { getAccountProfile, updateAccountProfile } from "../lib/serverApi";
+import { useAuth } from "./useAuth";
+import { useRouteCache, useRouteMutation, useRouteQuery } from "./useRouteQuery";
 
 /**
  * The logged-in account's profile.

@@ -12,6 +12,7 @@ import { useDebouncedQuery } from "../hooks/useDebouncedQuery";
 import { useMessageTags } from "../hooks/useMessageTags";
 import { useResetOnChange } from "../hooks/useResetOnChange";
 import { useSetRightToolbar } from "../hooks/useRightToolbar";
+import { useRoutePagedList } from "../hooks/useRouteQuery";
 import { useSelectAll } from "../hooks/useSelectAll";
 import { errorLine } from "../lib/apiErrorMessage";
 import {
@@ -21,11 +22,14 @@ import {
 } from "../lib/conversationSort";
 import { formatVisibleRange } from "../lib/listPaging";
 import { checksFromMembers, clearAllMembers } from "../lib/membership";
-import { useMessageTagActions, useSetMessageTagMembers } from "../lib/messageTags";
 import { keys } from "../lib/queryKeys";
-import { type PagedFetchPage, useRoutePagedList } from "../lib/routeQuery";
+import type { PagedFetchPage } from "../lib/routeQuery";
 import { listConversations } from "../lib/serverApi";
 import type { Conversation } from "../lib/types";
+import {
+  useMessageTagActions,
+  useSetMessageTagMembers,
+} from "./conversations/useMessageTagActions";
 
 export default function ConversationList({
   selectedId,

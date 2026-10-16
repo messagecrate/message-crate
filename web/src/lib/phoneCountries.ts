@@ -10,9 +10,6 @@
  * for a single identity. Each of them offers this list.
  */
 
-import { keys } from "./queryKeys";
-import { useRouteQuery } from "./routeQuery";
-import { listPhoneCountries } from "./serverApi";
 import type { components } from "./serverApi.types";
 
 /** One country, with the name the person reads it by. */
@@ -30,7 +27,7 @@ export function phoneCountryLabel(country: PhoneCountryChoice): string {
  * The countries named in `locale` and sorted by name. A code the browser
  * cannot name keeps the code as its name.
  */
-function namedPhoneCountries(
+export function namedPhoneCountries(
   countries: readonly components["schemas"]["PhoneCountry"][],
   locale?: string,
 ): PhoneCountryChoice[] {
@@ -43,22 +40,4 @@ function namedPhoneCountries(
   return countries
     .map((country) => ({ ...country, name: names?.of(country.code) ?? country.code }))
     .sort((a, b) => a.name.localeCompare(b.name, locale));
-}
-
-/** The country list, fetched once a session. */
-export function usePhoneCountries(): {
-  countries: PhoneCountryChoice[];
-  loading: boolean;
-  error: Error | null;
-} {
-  const { data, isPending, error } = useRouteQuery(
-    keys.phoneCountries.all,
-    (signal) => listPhoneCountries({ signal }),
-    { staleTime: Number.POSITIVE_INFINITY },
-  );
-  return {
-    countries: data ? namedPhoneCountries(data) : [],
-    loading: isPending,
-    error: data === undefined ? error : null,
-  };
 }

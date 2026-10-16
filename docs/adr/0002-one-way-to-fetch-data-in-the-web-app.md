@@ -189,7 +189,7 @@ nothing — the opposite of the pattern this decision removes.
   generated file. Shapes that describe the interface rather than a server
   response stay.
 - `useResource`, `usePagedList`, `contactDetailCache`, and the four
-  `mv-*-changed` events are removed. `nameCollection.ts`, `savedSearches.ts`,
+  `mv-*-changed` events are removed. `nameCollection.ts`, `useSavedSearches.ts`,
   `contactGroups.ts`, `messageTags.ts`, `useAccountProfile.ts`, and
   `importRun.ts` survive as
   the per-feature layer over TanStack Query, without caches of their own.
@@ -216,7 +216,7 @@ nothing — the opposite of the pattern this decision removes.
 - `AuthProvider.tsx` clears nothing by hand. Its two lists are one
   `queryClient.clear()` in each path, which releases memory and nothing more.
 - Every write marks the whole account's cache stale once it settles, through
-  one call: `useMarkAccountStale` in `web/src/lib/routeQuery.ts`. A write
+  one call: `useMarkAccountStale` in `web/src/hooks/useRouteQuery.ts`. A write
   made with TanStack Query goes through `useRouteMutation` in the same file.
   It makes that call before the write's own `onSettled`. Biome refuses
   `useMutation`, `MutationObserver` and a namespace import of

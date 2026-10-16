@@ -12,7 +12,7 @@ const getAccountStorage = vi.hoisted(() => vi.fn());
 const listAccountImports = vi.hoisted(() => vi.fn());
 const listAccountExports = vi.hoisted(() => vi.fn());
 
-vi.mock("../../../lib/authContext", () => authModule({ accountId: 7 }));
+vi.mock("../../../hooks/useAuth", () => authModule({ accountId: 7 }));
 
 vi.mock("../../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../lib/serverApi")>()),

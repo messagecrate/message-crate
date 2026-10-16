@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { useRouteQuery } from "../hooks/useRouteQuery";
+import { useSearchFields } from "../hooks/useSearchFields";
 import { keys } from "../lib/queryKeys";
-import { useRouteQuery } from "../lib/routeQuery";
-import { type SearchField, type SearchList, useSearchFields } from "../lib/searchFields";
+import type { SearchField, SearchList } from "../lib/searchFields";
 import {
   forPerson,
   lastToken,

@@ -1,8 +1,8 @@
 import { Navigate, Outlet } from "react-router-dom";
 import { useAccountProfile } from "../hooks/useAccountProfile";
+import { useAuth } from "../hooks/useAuth";
 import { useIsOwner } from "../hooks/useIsOwner";
 import { useNeedsProfileSetup } from "../hooks/useNeedsProfileSetup";
-import { useAuth } from "../lib/authContext";
 import Button from "./Button";
 import LocalServerNotice from "./LocalServerNotice";
 

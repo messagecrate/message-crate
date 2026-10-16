@@ -13,24 +13,19 @@ import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import {
+  createNameCollection,
+  type MembersChanged,
+  type NameCollectionRoutes,
+} from "../lib/nameCollection";
+import { keys } from "../lib/queryKeys";
 import { deferred } from "../test/deferred";
 import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { authModule, testQueryClient } from "../test/providers";
 import { freshEntries, seedEntries } from "../test/staleEntries";
-import {
-  type ChipTarget,
-  createNameCollection,
-  type MembersChanged,
-  type NameCollectionRoutes,
-  patchChips,
-  useNameCollection,
-  useNameCollectionActions,
-  useSetNamedSetMembers,
-  withName,
-} from "./nameCollection";
-import { keys } from "./queryKeys";
+import { useNameCollectionActions, useSetNamedSetMembers } from "./useNameCollectionActions";
 
-vi.mock("./authContext", () => authModule({ accountId: 7 }));
+vi.mock("./useAuth", () => authModule({ accountId: 7 }));
 
 let client: QueryClient;
 
@@ -113,20 +108,6 @@ beforeEach(() => {
 
 afterEach(() => {
   stopFakeClock();
-});
-
-describe("useNameCollection", () => {
-  it("answers the names in the server's order", async () => {
-    const routes = fakeRoutes();
-    routes.list.mockResolvedValue([
-      { id: 2, name: "Family" },
-      { id: 1, name: "Work" },
-    ]);
-    const { result } = renderHook(() => useNameCollection(groupsOver(routes)), { wrapper });
-    await settle();
-    expect(result.current.loading).toBe(false);
-    expect(result.current.names).toEqual(["Family", "Work"]);
-  });
 });
 
 describe("useNameCollectionActions", () => {
@@ -389,38 +370,5 @@ describe("useSetNamedSetMembers", () => {
     expect(order[0]).toBe("cancel");
     expect(order).toContain("patch");
     expect(order.indexOf("cancel")).toBeLessThan(order.indexOf("patch"));
-  });
-});
-
-describe("withName", () => {
-  it("adds a name that is not there under any spelling", () => {
-    expect(withName(["Work"], "Family", true)).toEqual(["Work", "Family"]);
-  });
-
-  it("does nothing when the name is already there under another spelling", () => {
-    expect(withName(["family"], "Family", true)).toEqual(["family"]);
-  });
-
-  it("removes a name regardless of letter case", () => {
-    expect(withName(["Family", "Work"], "family", false)).toEqual(["Work"]);
-  });
-});
-
-describe("patchChips", () => {
-  const rowTarget: ChipTarget = { key: ["contacts", "detail"], field: "groups", shape: "row" };
-  const pagesTarget: ChipTarget = { key: ["contacts", "list"], field: "groups", shape: "pages" };
-
-  it("leaves a non-pages entry alone when the target expects pages", () => {
-    const entry = { id: "1", groups: [] };
-    expect(patchChips(entry, pagesTarget, new Set(["1"]), "Family", true)).toBe(entry);
-  });
-
-  it("treats a row with no groups field as starting from empty", () => {
-    const entry = { id: "1", name: "Ada" };
-    expect(patchChips(entry, rowTarget, new Set(["1"]), "Family", true)).toEqual({
-      id: "1",
-      name: "Ada",
-      groups: ["Family"],
-    });
   });
 });

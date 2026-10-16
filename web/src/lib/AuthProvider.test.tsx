@@ -128,7 +128,7 @@ describe("AuthProvider logout", () => {
     });
 
     const { AuthProvider } = await import("./AuthProvider");
-    const { useAuth } = await import("./authContext");
+    const { useAuth } = await import("../hooks/useAuth");
     const { result } = renderHook(() => useAuth(), {
       wrapper: ({ children }: { children: ReactNode }) => (
         <Providers>
@@ -154,7 +154,7 @@ describe("AuthProvider logout", () => {
     post.mockRejectedValue(new Error("network down"));
 
     const { AuthProvider } = await import("./AuthProvider");
-    const { useAuth } = await import("./authContext");
+    const { useAuth } = await import("../hooks/useAuth");
     const { result } = renderHook(() => useAuth(), {
       wrapper: ({ children }: { children: ReactNode }) => (
         <Providers>
@@ -182,7 +182,7 @@ describe("AuthProvider logout", () => {
     }));
     const { pushRecentSearch, loadRecentSearches } = await import("./recentSearches");
     const { AuthProvider } = await import("./AuthProvider");
-    const { useAuth } = await import("./authContext");
+    const { useAuth } = await import("../hooks/useAuth");
     const { result } = renderHook(() => useAuth(), {
       wrapper: ({ children }: { children: ReactNode }) => (
         <Providers>
@@ -218,7 +218,7 @@ describe("AuthProvider logout", () => {
 
   it("skips the server logout request when there is no session token", async () => {
     const { AuthProvider } = await import("./AuthProvider");
-    const { useAuth } = await import("./authContext");
+    const { useAuth } = await import("../hooks/useAuth");
     const { result } = renderHook(() => useAuth(), {
       wrapper: ({ children }: { children: ReactNode }) => (
         <Providers>
@@ -237,7 +237,7 @@ describe("AuthProvider logout", () => {
 
   it("keeps a login for this visit only out of localStorage, through a password change", async () => {
     const { AuthProvider } = await import("./AuthProvider");
-    const { useAuth } = await import("./authContext");
+    const { useAuth } = await import("../hooks/useAuth");
     const { result } = renderHook(() => useAuth(), {
       wrapper: ({ children }: { children: ReactNode }) => (
         <Providers>
@@ -274,7 +274,7 @@ describe("AuthProvider logout", () => {
 
     seedSession();
     const { AuthProvider } = await import("./AuthProvider");
-    const { useAuth } = await import("./authContext");
+    const { useAuth } = await import("../hooks/useAuth");
     const { result } = renderHook(() => useAuth(), {
       wrapper: ({ children }: { children: ReactNode }) => (
         <Providers>
@@ -317,7 +317,7 @@ describe("AuthProvider restoring a saved login", () => {
 
   async function renderAuth() {
     const { AuthProvider } = await import("./AuthProvider");
-    const { useAuth } = await import("./authContext");
+    const { useAuth } = await import("../hooks/useAuth");
     return renderHook(() => useAuth(), {
       wrapper: ({ children }: { children: ReactNode }) => (
         <Providers>
@@ -429,7 +429,7 @@ describe("AuthProvider keeping the server address", () => {
 
   async function renderAuth() {
     const { AuthProvider } = await import("./AuthProvider");
-    const { useAuth } = await import("./authContext");
+    const { useAuth } = await import("../hooks/useAuth");
     return renderHook(() => useAuth(), {
       wrapper: ({ children }: { children: ReactNode }) => (
         <Providers>
@@ -523,8 +523,8 @@ describe("AuthProvider when the server says the session has ended", () => {
   it("logs out when a query fails with 401 Unauthorized", async () => {
     seedSession();
     const { ApiError } = await import("./api");
-    const { useAuth } = await import("./authContext");
-    const { useRouteQuery } = await import("./routeQuery");
+    const { useAuth } = await import("../hooks/useAuth");
+    const { useRouteQuery } = await import("../hooks/useRouteQuery");
     const ended = vi.fn(async (): Promise<string[]> => {
       throw new ApiError(401, "expired session token");
     });
@@ -548,8 +548,8 @@ describe("AuthProvider when the server says the session has ended", () => {
   it("pauses a running Upload without asking when the server has ended the session", async () => {
     seedSession();
     const { ApiError } = await import("./api");
-    const { useAuth } = await import("./authContext");
-    const { useRouteQuery } = await import("./routeQuery");
+    const { useAuth } = await import("../hooks/useAuth");
+    const { useRouteQuery } = await import("../hooks/useRouteQuery");
     const { registerRunningUpload } = await import("./runningUpload");
     const pause = vi.fn(async () => {});
     const ended = registerRunningUpload(pause);
@@ -579,8 +579,8 @@ describe("AuthProvider when the server says the session has ended", () => {
   it("logs out when a mutation fails with 401 Unauthorized", async () => {
     seedSession();
     const { ApiError } = await import("./api");
-    const { useAuth } = await import("./authContext");
-    const { useRouteMutation } = await import("./routeQuery");
+    const { useAuth } = await import("../hooks/useAuth");
+    const { useRouteMutation } = await import("../hooks/useRouteQuery");
 
     const { result } = renderHook(
       () => ({
@@ -611,8 +611,8 @@ describe("AuthProvider when the server says the session has ended", () => {
     // ended session. Only the problem type tells them apart.
     seedSession();
     const { ApiError } = await import("./api");
-    const { useAuth } = await import("./authContext");
-    const { useRouteMutation } = await import("./routeQuery");
+    const { useAuth } = await import("../hooks/useAuth");
+    const { useRouteMutation } = await import("../hooks/useRouteQuery");
 
     const { result } = renderHook(
       () => ({

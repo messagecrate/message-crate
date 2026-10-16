@@ -115,7 +115,7 @@ vi.mock("./ImportExportRoute", () => ({
 vi.mock("./MessageRoute", () => ({ default: () => <div data-testid="message-route" /> }));
 vi.mock("./CheckedContactsPanel", () => ({ default: () => null }));
 
-vi.mock("../lib/authContext", async () => (await import("../test/providers")).authModule());
+vi.mock("../hooks/useAuth", async () => (await import("../test/providers")).authModule());
 // The desktop app with a profile shows Export in the left panel.
 const desktop = vi.hoisted(() => ({ on: false }));
 vi.mock("../hooks/useAccountProfile", () => ({
@@ -141,7 +141,7 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
 vi.mock("./useImportAttention", () => ({
   useImportAttention: () => null,
 }));
-vi.mock("../lib/savedSearches", () => ({
+vi.mock("./useSavedSearches", () => ({
   useSavedSearches: () => ({
     savedSearches: [{ id: 1, name: "Groups", query: "kind:group", kind: "conversations" }],
     loading: false,

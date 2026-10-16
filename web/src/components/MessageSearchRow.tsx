@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
+import { useTimeZone } from "../hooks/useTimeZone";
 import { conversationName } from "../lib/conversationName";
 import { deletedInSourceText, UNSENT_TEXT } from "../lib/deletionMarkText";
 import { formatDay } from "../lib/formatDate";
 import { type MatchRange, matchRanges, snippet } from "../lib/messageMatch";
 import { messageRowText, messageSenderName } from "../lib/messageRowText";
 import { countOf } from "../lib/plural";
-import { useTimeZone } from "../lib/timeZone";
 import { listRowDividerClass } from "../lib/tw";
 import type { FreeTextTerm, Message } from "../lib/types";
 import { focusRingClass } from "../lib/uiStyles";

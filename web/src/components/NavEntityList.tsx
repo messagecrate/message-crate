@@ -1,8 +1,9 @@
 import { type ReactNode, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useNameCollectionActions } from "../hooks/useNameCollectionActions";
 import { errorLine } from "../lib/apiErrorMessage";
 import { groupFromSlug, slugFromPath, slugPath } from "../lib/contactGroups";
-import { type NameCollection, useNameCollectionActions } from "../lib/nameCollection";
+import type { NameCollection } from "../lib/nameCollection";
 import type { NavEntityCopy } from "../lib/namedSetCopy";
 import ConfirmDialog from "./ConfirmDialog";
 import GroupNameDialog from "./GroupNameDialog";

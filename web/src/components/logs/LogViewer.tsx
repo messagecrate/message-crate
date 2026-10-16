@@ -1,8 +1,8 @@
 import { keepPreviousData } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
+import { useRouteInfiniteQuery } from "../../hooks/useRouteQuery";
 import { errorLine } from "../../lib/apiErrorMessage";
-import { useRouteInfiniteQuery } from "../../lib/routeQuery";
 import { saveFile } from "../../lib/saveFile";
 import type { LogLevel, LogLine, LogLinesPage } from "../../lib/serverApi";
 import Button from "../Button";

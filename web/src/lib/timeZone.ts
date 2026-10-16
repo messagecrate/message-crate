@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react";
+import { createContext } from "react";
 
 /**
  * The account's time zone, and the one place the web app reads it.
@@ -39,8 +39,3 @@ export function yearIn(iso: string, zone: string): number {
 }
 
 export const TimeZoneContext = createContext<string | null>(null);
-
-/** The zone to show message times in. Outside a provider: the browser's. */
-export function useTimeZone(): string {
-  return useContext(TimeZoneContext) ?? browserTimeZone();
-}

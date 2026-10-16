@@ -1,13 +1,11 @@
-import { useCallback } from "react";
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
 import { getAccountId, onAccountIdChange } from "../../lib/api";
-import { useAuth } from "../../lib/authContext";
 import type { StagingSummary } from "../../lib/desktop/staging";
 import { holdDesktopJob } from "../../lib/desktopJob";
-import { createExternalStore, useExternalStore } from "../../lib/externalStore";
+import { createExternalStore } from "../../lib/externalStore";
 import type { ImportJobFormValues } from "../../lib/importSources/types";
 import type { MediaToolName } from "../../lib/types";
-import { type ImportPhase, type ImportStep, stepsFor } from "./importProgressState";
+import type { ImportPhase, ImportStep } from "./importProgressState";
 
 /** A run directory Message Crate could not delete, and the reason it gave. */
 export type RunDirDeleteFailure = { path: string; reason: string };
@@ -192,30 +190,6 @@ function followRun(): void {
 }
 importRunStore.subscribe(followRun);
 onAccountIdChange(followRun);
-
-/** The fresh form, as an account that has no run in the store reads it. */
-const FRESH_RUN = initialImportRunState(stepsFor("copy"));
-
-/**
- * The run in the store when `accountId` started it, and the fresh form when
- * another account did.
- */
-function importRunFor(state: ImportRunState, accountId: number | null): ImportRunState {
-  return state.accountId === accountId ? state : FRESH_RUN;
-}
-
-/**
- * The logged-in account's run in `store` as it stands, re-rendering the
- * caller whenever any of it changes.
- */
-export function useImportRunState(store: ImportRunStore = importRunStore): ImportRunState {
-  const accountId = useAuth().accountId ?? null;
-  const select = useCallback(
-    (state: ImportRunState) => importRunFor(state, accountId),
-    [accountId],
-  );
-  return useExternalStore(store, select);
-}
 
 /** True at either review: the run is waiting for the person to decide. */
 export function isReviewPhase(phase: ImportPhase): boolean {

@@ -12,7 +12,7 @@ import { nth } from "../../test/nth";
 import { authModule, Providers } from "../../test/providers";
 import { conversationYears, useConversationMessages } from "./useConversationMessages";
 
-vi.mock("../../lib/authContext", () => authModule());
+vi.mock("../../hooks/useAuth", () => authModule());
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),

@@ -12,8 +12,8 @@ import {
 } from "../components/leftPanelWidth";
 import { NAV_LEADING_ROW_CLASS } from "../components/navSectionLayout";
 import PlainButton from "../components/PlainButton";
+import { useAuth } from "../hooks/useAuth";
 import { useWindowWidth } from "../hooks/useWindowWidth";
-import { useAuth } from "../lib/authContext";
 import { parseSelectKey } from "../lib/selectKey";
 import { SettingsScreen } from "./lazySettingsScreen";
 import { JournalModeNotice } from "./owner/JournalModeNotice";

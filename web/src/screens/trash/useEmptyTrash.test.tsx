@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 /**
- * What each trash mutation sends, and what it leaves marked stale.
+ * What each of the Trash screen's writes sends, and what it leaves marked stale.
  *
  * Every write marks the whole account's cache stale. The entries each case
  * names are the ones a screen showed out of date when a write left them out,
@@ -12,45 +12,37 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { authModule, testQueryClient } from "../test/providers";
-import { freshEntries, seedEntries } from "../test/staleEntries";
-import { keys } from "./queryKeys";
+import { keys } from "../../lib/queryKeys";
 import {
   deleteContact as deleteContactRoute,
   deleteConversation as deleteConversationRoute,
   emptyTrash as emptyTrashRoute,
   restoreContact as restoreContactRoute,
   restoreConversation as restoreConversationRoute,
-  trashContact as trashContactRoute,
-  trashConversation as trashConversationRoute,
-} from "./serverApi";
+} from "../../lib/serverApi";
+import { authModule, testQueryClient } from "../../test/providers";
+import { freshEntries, seedEntries } from "../../test/staleEntries";
 import {
   useDeleteContact,
   useDeleteConversation,
   useEmptyTrash,
   useRestoreContact,
   useRestoreConversation,
-  useTrashContact,
-  useTrashConversation,
-} from "./trash";
+} from "./useEmptyTrash";
 
-vi.mock("./authContext", () => authModule({ accountId: 7 }));
+vi.mock("../../hooks/useAuth", () => authModule({ accountId: 7 }));
 
-vi.mock("./serverApi", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./serverApi")>()),
-  trashConversation: vi.fn(),
+vi.mock("../../lib/serverApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/serverApi")>()),
   restoreConversation: vi.fn(),
   deleteConversation: vi.fn(),
-  trashContact: vi.fn(),
   restoreContact: vi.fn(),
   deleteContact: vi.fn(),
   emptyTrash: vi.fn(),
 }));
 
-const trashConversation = vi.mocked(trashConversationRoute);
 const restoreConversation = vi.mocked(restoreConversationRoute);
 const deleteConversation = vi.mocked(deleteConversationRoute);
-const trashContact = vi.mocked(trashContactRoute);
 const restoreContact = vi.mocked(restoreContactRoute);
 const deleteContact = vi.mocked(deleteContactRoute);
 const emptyTrash = vi.mocked(emptyTrashRoute);
@@ -87,18 +79,8 @@ const conversationTrashState = [
 /** The account's message count and storage, and each identity's message count. */
 const accountCounts = [keys.accountProfile.all, keys.accountProfile.identities];
 
-describe("useTrashConversation / useRestoreConversation", () => {
-  it("trash marks every list and count that shows trash state stale", async () => {
-    trashConversation.mockResolvedValue(undefined);
-    const { result } = renderHook(() => useTrashConversation(), { wrapper });
-
-    const fresh = await freshAfter(conversationTrashState, () => result.current.mutateAsync(42));
-
-    expect(trashConversation).toHaveBeenCalledWith(42, expect.anything());
-    expect(fresh).toEqual([]);
-  });
-
-  it("restore marks the same entries stale", async () => {
+describe("useRestoreConversation", () => {
+  it("marks every list and count that shows trash state stale", async () => {
     restoreConversation.mockResolvedValue(undefined);
     const { result } = renderHook(() => useRestoreConversation(), { wrapper });
 
@@ -109,20 +91,10 @@ describe("useTrashConversation / useRestoreConversation", () => {
   });
 });
 
-describe("useTrashContact / useRestoreContact", () => {
+describe("useRestoreContact", () => {
   const shown = [keys.contacts.lists, keys.contacts.detail(9)];
 
-  it("trash marks the contacts list and the contact's own detail stale", async () => {
-    trashContact.mockResolvedValue(undefined);
-    const { result } = renderHook(() => useTrashContact(), { wrapper });
-
-    const fresh = await freshAfter(shown, () => result.current.mutateAsync(9));
-
-    expect(trashContact).toHaveBeenCalledWith(9, expect.anything());
-    expect(fresh).toEqual([]);
-  });
-
-  it("restore addresses the contact it was called with", async () => {
+  it("marks the contacts list and the contact's own detail stale", async () => {
     restoreContact.mockResolvedValue(undefined);
     const { result } = renderHook(() => useRestoreContact(), { wrapper });
 

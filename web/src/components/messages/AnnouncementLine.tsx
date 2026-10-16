@@ -1,5 +1,5 @@
+import { useTimeZone } from "../../hooks/useTimeZone";
 import { formatClockTime } from "../../lib/formatDate";
-import { useTimeZone } from "../../lib/timeZone";
 import MessageAttachments from "../MessageAttachments";
 import {
   bubbleBody,

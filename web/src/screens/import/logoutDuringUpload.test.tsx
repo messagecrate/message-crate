@@ -22,8 +22,8 @@
 import { renderHook, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AuthShell from "../../components/AuthShell";
+import { useAuth } from "../../hooks/useAuth";
 import { ApiError, getAccountId, getBaseUrl, getToken } from "../../lib/api";
-import { useAuth } from "../../lib/authContext";
 import type { DesktopJobResult } from "../../lib/desktop/job";
 import type { UploadFinishedReport } from "../../lib/desktop/upload";
 import { isUploadRunning, registerRunningUpload } from "../../lib/runningUpload";

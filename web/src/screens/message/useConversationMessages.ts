@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouteCache, useRouteInfiniteQuery, useRouteQuery } from "../../hooks/useRouteQuery";
 import { matchedVersionIndexes, withMatchedVersions } from "../../lib/earlierVersionMatch";
 import { keys } from "../../lib/queryKeys";
-import { useRouteCache, useRouteInfiniteQuery, useRouteQuery } from "../../lib/routeQuery";
 import { quote } from "../../lib/searchQuery";
 import { listMessages } from "../../lib/serverApi";
 import { yearIn } from "../../lib/timeZone";

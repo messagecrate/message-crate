@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useUpdateContact } from "../hooks/useUpdateContact";
 import { ApiError } from "../lib/api";
 import { errorLine } from "../lib/apiErrorMessage";
 import type { ContactBrowseScope, ContactBrowseTarget } from "../lib/contactBrowseQuery";
-import { type ContactDetail, useContactDetail, useUpdateContact } from "../lib/contactDetail";
+import type { ContactDetail } from "../lib/contactDetail";
 import { contactLabelText } from "../lib/contactLabel";
-import { useTrashContact } from "../lib/trash";
 import { focusRingClass } from "../lib/uiStyles";
 import { UNKNOWN_GROUP_LABEL } from "../lib/unknownGroup";
 import { Z_CONTACT_DRAWER } from "../lib/zLayers";
@@ -19,6 +19,8 @@ import {
 import { PencilIcon } from "./icons";
 import PlainButton from "./PlainButton";
 import { RIGHT_PANE_MIN_WIDTH } from "./RightPane";
+import { useContactDetail } from "./useContactDetail";
+import { useTrashContact } from "./useTrashContact";
 
 /**
  * Overlay mode only: the list column's right edge, which `overlayDrawerLeft`

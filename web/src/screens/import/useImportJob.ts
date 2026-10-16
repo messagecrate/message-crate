@@ -1,7 +1,8 @@
 import { completionTextFor } from "../../components/import/ImportSummaryPanel";
 import { useFetchAccountProfile } from "../../hooks/useAccountProfile";
+import { useAuth } from "../../hooks/useAuth";
+import { useImportRunState } from "../../hooks/useImportRunState";
 import { getAccountId, getBaseUrl, getToken } from "../../lib/api";
-import { useAuth } from "../../lib/authContext";
 import { invokeImessageBackupIdentities } from "../../lib/desktop/backup";
 import { invokeExtract } from "../../lib/desktop/extract";
 import { invokePathStat } from "../../lib/desktop/fs";
@@ -25,7 +26,7 @@ import {
 import type { ImportJobFormValues } from "../../lib/importSources/types";
 import { completeImport, createImport, getServerState } from "../../lib/serverApi";
 import { isTauri } from "../../lib/tauriCheck";
-import { type ImportRunState, importRunStore, useImportRunState } from "./importRunStore";
+import { type ImportRunState, importRunStore } from "./importRunStore";
 import type { ImportRunDeps } from "./run/context";
 import { createImportRunService, type ImportRunService, type RunAccount } from "./run/service";
 import type { Resume } from "./run/staging";

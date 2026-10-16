@@ -6,7 +6,7 @@ import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { authModule, renderWithProviders } from "../test/providers";
 import SourcesPanel from "./SourcesPanel";
 
-vi.mock("../lib/authContext", () => authModule({ accountId: 7 }));
+vi.mock("../hooks/useAuth", () => authModule({ accountId: 7 }));
 
 const getSources = vi.fn();
 

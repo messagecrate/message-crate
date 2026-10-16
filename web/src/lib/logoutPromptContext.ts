@@ -5,7 +5,7 @@
  * shows it lives in `components/` and `components/AuthShell.tsx` places it
  * beside the provider, so `lib/` renders nothing of its own (#2214).
  */
-import { createContext, useContext } from "react";
+import { createContext } from "react";
 import type { DirectoryReason } from "./importRun";
 
 /**
@@ -29,7 +29,7 @@ export type LogoutPromptState =
       unreadable: readonly DirectoryReason[];
     };
 
-interface LogoutPrompt {
+export interface LogoutPrompt {
   /** What to show, or null when logging out has nothing to show. */
   state: LogoutPromptState | null;
   /** The person chose to log out while an Upload runs. */
@@ -43,10 +43,3 @@ interface LogoutPrompt {
 }
 
 export const LogoutPromptContext = createContext<LogoutPrompt | null>(null);
-
-/** What logging out shows. Must be called under AuthProvider. */
-export function useLogoutPrompt(): LogoutPrompt {
-  const ctx = useContext(LogoutPromptContext);
-  if (!ctx) throw new Error("useLogoutPrompt must be used within AuthProvider");
-  return ctx;
-}
