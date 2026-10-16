@@ -90,44 +90,56 @@ pub(crate) fn piece_wait(http: &HttpSession, url: &str, token: &str) -> Result<D
     Ok(Duration::from_secs(stated.body_total_secs) + ANSWER_WAIT)
 }
 
-/// The part of the server's answer to `GET /v1/imports/{id}` the Upload
-/// reads.
+/// The part of the server's answer to `GET /v1/imports?status=running` the
+/// Upload reads: the account's running Import Run, if it has one.
 #[derive(Debug, Deserialize)]
-struct ImportRunMode {
+struct RunningImports {
+    items: Vec<RunningImport>,
+}
+
+/// The part of a row of [`RunningImports`] the Upload reads.
+#[derive(Debug, Deserialize)]
+struct RunningImport {
+    id: i64,
     mode: ImportMode,
 }
 
-/// The mode of the Import Run `import_id`, read from the server at `url`
-/// (`GET /v1/imports/{id}`). The Upload takes its mode from the run it
-/// posts into, because the server wipes the source by the run's mode
-/// (#3144).
+/// The mode of the Import Run `import_id`, read from the server at `url`.
+/// The Upload takes its mode from the run it posts into, because the server
+/// wipes the source by the run's mode (#3144).
 ///
-/// The answer carries every issue and note the run recorded, which has no
-/// bound: a WhatsApp run can record 20,000 skipped files. So it waits as
-/// long as a request that sends a piece does (the `piece_wait` argument,
-/// from [`piece_wait`]), not a fixed few seconds.
+/// It reads the run's row in `GET /v1/imports?status=running`, not
+/// `GET /v1/imports/{id}`: a row of the list carries the run without its
+/// issues and notes, which have no bound (a WhatsApp run can record 20,000
+/// skipped files), and an account runs at most one Import Run at a time, so
+/// the page holds one row at most (#3165). A run that is not running takes
+/// no batch, so the Upload stops here rather than at its first batch.
 ///
 /// # Errors
 ///
 /// Returns an error when the server cannot be reached, refuses the session
-/// token, or does not answer the run.
+/// token, or does not answer `import_id` as the account's running run.
 pub(crate) fn run_mode(
     http: &HttpSession,
     url: &str,
     token: &str,
     import_id: i64,
-    piece_wait: Duration,
 ) -> Result<ImportMode> {
     let what = format!("Reading Import Run {import_id}");
-    let path = format!("/v1/imports/{import_id}");
     let response = http
-        .server_request(Method::GET, url, &path, token)
-        .timeout(piece_wait)
+        .server_request(Method::GET, url, "/v1/imports", token)
+        .query(&[("status", "running"), ("limit", "1")])
+        .timeout(Duration::from_secs(15))
         .send()
         .with_context(|| format!("{what} failed"))?;
     let (status, text) = read_body(&what, response)?;
-    let run: ImportRunMode = ok_json(&what, status, &text)?;
-    Ok(run.mode)
+    let running: RunningImports = ok_json(&what, status, &text)?;
+    match running.items.into_iter().next() {
+        Some(run) if run.id == import_id => Ok(run.mode),
+        _ => Err(anyhow!(
+            "Import Run {import_id} is not running on the server"
+        )),
+    }
 }
 
 /// The answer to `POST /v1/assets/{sha256}/uploads`.

@@ -71,9 +71,10 @@ fn write_jsonl(dir: &Path, document: &ConversationDocument) {
 const TOTAL_SECS: u64 = 300;
 
 /// A mock Message Crate that answers `GET /v1/server` with its body time
-/// limits, and `GET /v1/imports/{id}` with the mode of the Import Run
-/// [`RUN_ID`] (append) and [`REPLACE_RUN_ID`] (replace), as every Upload
-/// reads both once it has logged in.
+/// limits, and `GET /v1/imports?status=running` with the running Import Run
+/// of the account each token names: [`RUN_ID`] (append) for [`TOKEN`] and
+/// [`REPLACE_RUN_ID`] (replace) for [`REPLACE_TOKEN`], as every Upload reads
+/// both once it has logged in.
 fn mock_server() -> MockServer {
     let server = MockServer::start();
     server.mock(|when, then| {
@@ -83,14 +84,24 @@ fn mock_server() -> MockServer {
             "body_total_secs": TOTAL_SECS,
         }));
     });
-    for (id, mode) in [(RUN_ID, "append"), (REPLACE_RUN_ID, "replace")] {
-        server.mock(|when, then| {
-            when.method(GET).path(format!("/v1/imports/{id}"));
-            then.status(200)
-                .json_body(json!({ "id": id, "mode": mode }));
-        });
-    }
+    mock_running_run(&server, TOKEN, RUN_ID, "append");
+    mock_running_run(&server, REPLACE_TOKEN, REPLACE_RUN_ID, "replace");
     server
+}
+
+/// Have `server` answer `GET /v1/imports?status=running` for `token` with
+/// the one running Import Run of its account, `id` in `mode`, as the Upload
+/// reads its run's mode at login. An account runs one Import Run at a time,
+/// so each run the tests post into has a token of its own.
+fn mock_running_run(server: &MockServer, token: &str, id: i64, mode: &str) {
+    server.mock(|when, then| {
+        when.method(GET)
+            .path("/v1/imports")
+            .query_param("status", "running")
+            .header("authorization", format!("Bearer {token}"));
+        then.status(200)
+            .json_body(json!({ "items": [{ "id": id, "mode": mode }] }));
+    });
 }
 
 /// Wait, for at most ten seconds, until the server has received a request
@@ -110,10 +121,18 @@ fn wait_for_first_call(mock: &httpmock::Mock<'_>) {
 /// run before the Upload and completes it after, so no test mocks either.
 const RUN_ID: i64 = 7;
 
+/// The session token every test's Upload sends, whose account runs
+/// [`RUN_ID`].
+const TOKEN: &str = "mc_test";
+
 /// An Import Run in replace mode, which [`mock_server`] answers for. An
 /// Upload takes its mode from the run it posts into, so a test uploads into
-/// this one to replace.
+/// this one, with [`REPLACE_TOKEN`], to replace.
 const REPLACE_RUN_ID: i64 = 8;
+
+/// The session token of the account whose running Import Run is
+/// [`REPLACE_RUN_ID`].
+const REPLACE_TOKEN: &str = "mc_test_replace";
 
 /// Import config with no retries, pointed at a mock server URL, posting into
 /// [`RUN_ID`].
@@ -121,7 +140,7 @@ fn mock_server_config(dir: &Path, base_url: String) -> ImportConfig {
     ImportConfig {
         input: dir.to_path_buf(),
         base_url,
-        token: "mc_test".into(),
+        token: TOKEN.into(),
         force: false,
         max_retries: 0,
         batch_size: 50,
@@ -301,11 +320,7 @@ fn posts_into_the_callers_import_run_without_starting_or_completing_one() {
             "bytes_uploaded": 0
         }));
     });
-    server.mock(|when, then| {
-        when.method(GET).path("/v1/imports/99");
-        then.status(200)
-            .json_body(json!({ "id": 99, "mode": "append" }));
-    });
+    mock_running_run(&server, "mc_run_99", 99, "append");
     let import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/99/batches");
         then.status(200).json_body(json!({
@@ -326,6 +341,7 @@ fn posts_into_the_callers_import_run_without_starting_or_completing_one() {
 
     let cfg = ImportConfig {
         import_id: 99,
+        token: "mc_run_99".into(),
         ..mock_server_config(dir.path(), server.base_url())
     };
     let report = run(&cfg, None).unwrap();
@@ -345,6 +361,40 @@ fn posts_into_the_callers_import_run_without_starting_or_completing_one() {
     import.assert();
     let log = read_log(dir.path());
     assert!(log.contains("Uploading into Import Run 99"), "{log}");
+}
+
+/// The Upload reads its run's mode from the account's running Import Run
+/// (#3165), so a run the server does not answer as running stops it at
+/// login, before it sends anything.
+#[test]
+fn an_upload_into_a_run_that_is_not_running_stops_before_it_sends() {
+    let server = mock_server();
+    let _auth = server.mock(|when, then| {
+        when.method(GET).path("/v1/session");
+        then.status(200).json_body(json!({
+            "account_id": 1,
+            "username": "alice",
+        }));
+    });
+    let batches = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/99/batches");
+        then.status(200).json_body(json!({}));
+    });
+
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_import_document());
+    // `TOKEN`'s account runs `RUN_ID`, not 99.
+    let cfg = ImportConfig {
+        import_id: 99,
+        ..mock_server_config(dir.path(), server.base_url())
+    };
+    let error = run(&cfg, None).unwrap_err();
+
+    assert_eq!(
+        format!("{error:#}"),
+        "Import Run 99 is not running on the server"
+    );
+    assert_eq!(batches.calls(), 0);
 }
 
 /// An import whose only batch fails names the failed file in its log and
@@ -461,6 +511,7 @@ fn flushes_at_message_limit_across_two_batches_of_one_run() {
     write_jsonl(dir.path(), &sample_document_for("+15555550103", "guid-3"));
     let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.import_id = REPLACE_RUN_ID;
+    cfg.token = REPLACE_TOKEN.into();
     cfg.batch_size = 2;
 
     let report = run(&cfg, None).unwrap();
@@ -742,6 +793,7 @@ fn a_replace_import_ignores_the_journal_and_sends_every_message_again() {
 
     let replace = ImportConfig {
         import_id: REPLACE_RUN_ID,
+        token: REPLACE_TOKEN.into(),
         force: false,
         ..cfg
     };
@@ -808,6 +860,7 @@ fn an_append_after_a_failed_replace_sends_what_the_replace_did_not_import() {
     let mut refused = mock_batch_refusing(&server, "guid-2");
     let replace = ImportConfig {
         import_id: REPLACE_RUN_ID,
+        token: REPLACE_TOKEN.into(),
         ..cfg.clone()
     };
     let replaced = run(&replace, None).unwrap();
@@ -854,6 +907,7 @@ fn an_upload_into_a_replace_run_sends_what_the_journal_records() {
 
     let into_replace = ImportConfig {
         import_id: REPLACE_RUN_ID,
+        token: REPLACE_TOKEN.into(),
         ..cfg
     };
     let report = run(&into_replace, None).unwrap();
@@ -930,6 +984,7 @@ fn a_replace_that_sends_no_batch_keeps_the_journal() {
     });
     let replace = ImportConfig {
         import_id: REPLACE_RUN_ID,
+        token: REPLACE_TOKEN.into(),
         ..cfg
     };
     let replaced = run(&replace, None).unwrap();
@@ -999,7 +1054,7 @@ fn profiles_attachment_upload_phases() {
     let cfg = ImportConfig {
         input: dir.path().to_path_buf(),
         base_url: server.base_url(),
-        token: "mc_test".into(),
+        token: TOKEN.into(),
         force: false,
         max_retries: 0,
         batch_size: 50,
@@ -1791,8 +1846,8 @@ fn serve_a_held_first_upload(first_put: &'static str) -> (String, Arc<Mutex<Vec<
                     answer("200 OK", r#"{"account_id":1,"username":"alice"}"#)
                 } else if request_line.starts_with("GET /v1/server ") {
                     answer("200 OK", r#"{"body_stall_secs":60,"body_total_secs":300}"#)
-                } else if request_line.starts_with("GET /v1/imports/7 ") {
-                    answer("200 OK", r#"{"id":7,"mode":"append"}"#)
+                } else if request_line.starts_with("GET /v1/imports?status=running") {
+                    answer("200 OK", r#"{"items":[{"id":7,"mode":"append"}]}"#)
                 } else if request_line.starts_with("POST /v1/imports/7/batches ") {
                     let body = String::from_utf8_lossy(&body);
                     let guids: Vec<&str> = ["guid-a", "guid-b"]
@@ -2946,8 +3001,8 @@ fn serve_answering_batches_with(
                 answer("200 OK", r#"{"account_id":1,"username":"alice"}"#)
             } else if request_line.starts_with("GET /v1/server ") {
                 answer("200 OK", r#"{"body_stall_secs":60,"body_total_secs":300}"#)
-            } else if request_line.starts_with("GET /v1/imports/7 ") {
-                answer("200 OK", r#"{"id":7,"mode":"append"}"#)
+            } else if request_line.starts_with("GET /v1/imports?status=running") {
+                answer("200 OK", r#"{"items":[{"id":7,"mode":"append"}]}"#)
             } else if request_line.starts_with("POST /v1/imports/7/batches ") {
                 counted.fetch_add(1, Ordering::SeqCst);
                 on_batch();

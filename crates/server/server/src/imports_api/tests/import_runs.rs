@@ -3,24 +3,13 @@
 //! run, and the `can_import` permission that guards them.
 
 use super::*;
-use crate::auth::{ImportAccess, require_import_access, resolve_auth_on_conn};
-use crate::db::imports::{ImportIssueStage, ImportStage};
-use crate::extract::{Json, Path as AxumPath, Query};
-use crate::imports_api::dto::{
-    CompleteImportRequest, CreateImportRequest, DiscardImportRequest, ImportIssueRequest,
-    ImportRunSummary, ListImportsQuery, UpdateImportRequest,
-};
-use crate::imports_api::run_control::Importer;
-use crate::imports_api::{
-    complete_import, create_import, discard_import, get_import, list_imports, update_import,
-};
+use crate::imports_api::dto::ListImportsQuery;
 use crate::problem::ProblemType;
 use crate::server::AppState;
 use crate::test_support::{
-    ImportingAccount, claim_as_owner, expect_problem, fixed_instant, get_raw, get_status,
-    patch_status, register_via_api,
+    claim_as_owner, expect_problem, get_raw, get_status, patch_status, post_json_raw,
+    register_via_api,
 };
-use axum::extract::{FromRef, State};
 use axum::http::StatusCode;
 
 /// A fixture holding one running Import Run at `staging_review` whose
@@ -1329,305 +1318,199 @@ async fn import_endpoint_honors_can_import_flag() {
 }
 
 /// The account's running Import Run through `GET /v1/imports?status=running`,
-/// as the desktop app finds it.
-async fn running_import(state: &AppState, token: &str) -> Option<ImportRunSummary> {
-    list_imports(
-        State(state.db.clone()),
-        import_access(state, token).await,
-        Query(ListImportsQuery {
-            sort: None,
-            status: Some("running".into()),
-            limit: None,
-            offset: None,
-        }),
-    )
-    .await
-    .unwrap()
-    .0
-    .items
-    .into_iter()
-    .next()
+/// as the desktop app finds it, or `None` when the page is empty.
+async fn running_run(state: &AppState, token: &str) -> Option<serde_json::Value> {
+    let page: serde_json::Value = get_json(state, "/v1/imports?status=running", token).await;
+    let items = page["items"].as_array().expect("a page of runs");
+    assert!(items.len() <= 1, "an account runs one Import Run: {page}");
+    items.first().cloned()
 }
 
-/// Resolve the token the way the `ImportAccess` extractor would, at the
-/// test's fixed instant, for tests that call import handlers directly
-/// instead of over HTTP.
-async fn import_access(state: &AppState, token: &str) -> ImportAccess {
-    let mut conn = state.db.acquire().await.unwrap();
-    let auth = resolve_auth_on_conn(&mut conn, token, None, fixed_instant())
-        .await
-        .unwrap();
-    require_import_access(&auth).unwrap();
-    ImportAccess(auth)
+/// Start an Import Run over HTTP with `body` and return its id.
+async fn start_run(state: &AppState, token: &str, body: serde_json::Value) -> i64 {
+    let (_, created): (String, serde_json::Value) =
+        post_created_json(state, "/v1/imports", token, body).await;
+    created["id"].as_i64().expect("created run has an id")
 }
 
 #[tokio::test]
 async fn imports_complete_and_detail_surface_timings_and_issues() {
-    let fixture = test_fixture().await;
-    let state = fixture.state.clone();
-    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
-    let body = CompleteImportRequest {
-        status: "completed".into(),
-        bytes_uploaded: Some(100),
-        duration_ms: Some(48_000),
-        parse_ms: Some(18_000),
-        attachments_ms: Some(22_000),
-        prepare_ms: Some(4_000),
-        upload_ms: Some(8_000),
-        summary: Some(serde_json::json!({
-            "parse": { "messages": 10 },
-            "convert": { "files": 2 }
-        })),
-        issues: vec![
-            ImportIssueRequest {
-                kind: api_types::ImportErrorKind::Skip,
-                stage: ImportIssueStage::Media,
-                item: "photo.heic".into(),
-                reason: "convert failed".into(),
-            },
-            ImportIssueRequest {
-                kind: api_types::ImportErrorKind::Error,
-                stage: ImportIssueStage::Upload,
-                item: "archive.zip".into(),
-                reason: "upload failed".into(),
-            },
-        ],
-        notes: Vec::new(),
-    };
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    let import_id = start_run(state, token, serde_json::json!({ "source": "imessage" })).await;
 
-    let response = complete_import(
-        State(Importer::from_ref(&state)),
-        import_access(&state, &token).await,
-        AxumPath(import_id),
-        Json(body),
+    let completed: serde_json::Value = post_json(
+        state,
+        &format!("/v1/imports/{import_id}/complete"),
+        token,
+        serde_json::json!({
+            "status": "completed",
+            "bytes_uploaded": 100,
+            "duration_ms": 48_000,
+            "parse_ms": 18_000,
+            "attachments_ms": 22_000,
+            "prepare_ms": 4_000,
+            "upload_ms": 8_000,
+            "summary": { "parse": { "messages": 10 }, "convert": { "files": 2 } },
+            "issues": [
+                { "kind": "skip", "stage": "media", "item": "photo.heic", "reason": "convert failed" },
+                { "kind": "error", "stage": "upload", "item": "archive.zip", "reason": "upload failed" },
+            ],
+        }),
     )
-    .await
-    .unwrap();
-    assert_eq!(response.0.run.status.as_str(), "completed");
+    .await;
+    assert_eq!(completed["status"], "completed", "{completed}");
     // Counted from what the run holds, which is nothing here.
-    assert_eq!(response.0.run.message_count, 0);
-    assert_eq!(response.0.run.attachment_count, 0);
-    assert_eq!(response.0.run.bytes_uploaded, 100);
+    assert_eq!(completed["message_count"], 0, "{completed}");
+    assert_eq!(completed["attachment_count"], 0, "{completed}");
+    assert_eq!(completed["bytes_uploaded"], 100, "{completed}");
 
-    let detail = get_import(
-        State(state.db.clone()),
-        import_access(&state, &token).await,
-        AxumPath(import_id),
-    )
-    .await
-    .unwrap();
-    let value = detail.0;
-    assert_eq!(value.run.id, import_id);
-    assert_eq!(value.run.duration_ms, Some(48_000));
-    assert_eq!(value.run.parse_ms, Some(18_000));
-    assert_eq!(value.run.attachments_ms, Some(22_000));
-    assert_eq!(value.run.prepare_ms, Some(4_000));
-    assert_eq!(value.run.upload_ms, Some(8_000));
-    assert_eq!(value.run.summary["parse"]["messages"], 10);
-    assert_eq!(value.issues.len(), 2);
-    assert_eq!(value.issues[0].kind, api_types::ImportErrorKind::Skip);
-    assert_eq!(value.issues[0].stage, ImportIssueStage::Media);
-    assert_eq!(value.issues[1].kind, api_types::ImportErrorKind::Error);
-    assert_eq!(value.issues[1].stage, ImportIssueStage::Upload);
+    let detail: serde_json::Value =
+        get_json(state, &format!("/v1/imports/{import_id}"), token).await;
+    assert_eq!(detail["id"], import_id);
+    assert_eq!(detail["duration_ms"], 48_000);
+    assert_eq!(detail["parse_ms"], 18_000);
+    assert_eq!(detail["attachments_ms"], 22_000);
+    assert_eq!(detail["prepare_ms"], 4_000);
+    assert_eq!(detail["upload_ms"], 8_000);
+    assert_eq!(detail["summary"]["parse"]["messages"], 10);
+    let issues = detail["issues"].as_array().expect("the run's issues");
+    assert_eq!(issues.len(), 2, "{detail}");
+    assert_eq!(issues[0]["kind"], "skip");
+    assert_eq!(issues[0]["stage"], "media");
+    assert_eq!(issues[1]["kind"], "error");
+    assert_eq!(issues[1]["stage"], "upload");
 }
 
 #[tokio::test]
 async fn imports_complete_stores_completed_with_issues_status() {
-    let fixture = test_fixture().await;
-    let state = fixture.state.clone();
-    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
-    let body = CompleteImportRequest {
-        status: "completed_with_issues".into(),
-        bytes_uploaded: Some(100),
-        duration_ms: None,
-        parse_ms: None,
-        attachments_ms: None,
-        prepare_ms: None,
-        upload_ms: None,
-        summary: None,
-        issues: Vec::new(),
-        notes: Vec::new(),
-    };
-    let response = complete_import(
-        State(Importer::from_ref(&state)),
-        import_access(&state, &token).await,
-        AxumPath(import_id),
-        Json(body),
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    let import_id = start_run(state, token, serde_json::json!({ "source": "imessage" })).await;
+
+    let completed: serde_json::Value = post_json(
+        state,
+        &format!("/v1/imports/{import_id}/complete"),
+        token,
+        serde_json::json!({ "status": "completed_with_issues", "bytes_uploaded": 100 }),
     )
-    .await
-    .unwrap();
-    assert_eq!(response.0.run.status.as_str(), "completed_with_issues");
+    .await;
+    assert_eq!(completed["status"], "completed_with_issues", "{completed}");
+    let detail: serde_json::Value =
+        get_json(state, &format!("/v1/imports/{import_id}"), token).await;
+    assert_eq!(detail["status"], "completed_with_issues", "{detail}");
 }
 
 #[tokio::test]
 async fn imports_complete_rejects_unknown_status() {
-    let fixture = test_fixture().await;
-    let state = fixture.state.clone();
-    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
-    let body = CompleteImportRequest {
-        status: "victorious".into(),
-        bytes_uploaded: None,
-        duration_ms: None,
-        parse_ms: None,
-        attachments_ms: None,
-        prepare_ms: None,
-        upload_ms: None,
-        summary: None,
-        issues: Vec::new(),
-        notes: Vec::new(),
-    };
-    let err = complete_import(
-        State(Importer::from_ref(&state)),
-        import_access(&state, &token).await,
-        AxumPath(import_id),
-        Json(body),
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(err, ApiError::ValidationFailed(_)));
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    let import_id = start_run(state, token, serde_json::json!({ "source": "imessage" })).await;
 
-    // The session is untouched.
-    let mut conn = state.db.acquire().await.unwrap();
-    let status: String = sqlx::query_scalar("SELECT status FROM imports WHERE id = $1")
-        .bind(import_id)
-        .fetch_one(&mut *conn)
-        .await
-        .unwrap();
-    assert_eq!(status, "running");
+    let (status, text) = post_json_raw(
+        state,
+        &format!("/v1/imports/{import_id}/complete"),
+        token,
+        serde_json::json!({ "status": "victorious" }),
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::ValidationFailed);
+
+    // The run is untouched.
+    let run = running_run(state, token).await.expect("the run still runs");
+    assert_eq!(run["id"], import_id);
 }
 
 #[tokio::test]
-async fn imports_get_handler_returns_not_found_for_missing_import() {
-    let fixture = test_fixture().await;
-    let state = fixture.state.clone();
-    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
-    let err = get_import(
-        State(state.db.clone()),
-        import_access(&state, &token).await,
-        AxumPath(import_id + 1),
-    )
-    .await
-    .unwrap_err();
+async fn reading_a_missing_import_run_is_not_found() {
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    let import_id = start_run(state, token, serde_json::json!({ "source": "imessage" })).await;
 
-    match err {
-        ApiError::NotFound(msg) => {
-            assert!(msg.contains("import"));
-            assert!(msg.contains("not found"));
-        }
-        other => panic!("expected not found, got {other:?}"),
-    }
+    let (status, text) = get_raw(state, &format!("/v1/imports/{}", import_id + 1), token).await;
+    let problem = expect_problem(status, &text, ProblemType::NotFound);
+    let detail = problem.detail.unwrap_or_default();
+    assert!(
+        detail.contains("import") && detail.contains("not found"),
+        "{text}"
+    );
 }
 
 #[tokio::test]
 async fn active_import_run_is_empty_then_reports_the_live_one() {
-    let fixture = test_fixture().await;
-    let state = fixture.state.clone();
-    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    assert!(running_run(state, token).await.is_none());
 
-    let body = CreateImportRequest {
-        source: "imessage".into(),
-        mode: ImportMode::Append,
-        tool: Some("message-crate".into()),
-        run_dir: Some("/home/u/message-crate/staging-260830".into()),
-        device_id: Some("device-a".into()),
-        form: Some(serde_json::json!({ "source": "imessage-ios" })),
-        source_fingerprint: Some(serde_json::json!({ "size_bytes": 42 })),
-        source_identities: None,
-        phone_country: None,
-    };
-    // The fixture already started an Import Run; discard it so this one can start.
-    let _ = discard_import(
-        State(Importer::from_ref(&state)),
-        import_access(&state, &token).await,
-        AxumPath(import_id),
-        Json(DiscardImportRequest {
-            issues: Vec::new(),
-            notes: Vec::new(),
+    let import_id = start_run(
+        state,
+        token,
+        serde_json::json!({
+            "source": "imessage",
+            "mode": "replace",
+            "tool": "message-crate",
+            "run_dir": "/home/u/message-crate/staging-260830",
+            "device_id": "device-a",
+            "form": { "source": "imessage-ios" },
+            "source_fingerprint": { "size_bytes": 42 },
         }),
     )
-    .await
-    .unwrap();
+    .await;
 
-    let created = create_import(
-        State(state.db.clone()),
-        import_access(&state, &token).await,
-        Json(body),
-    )
-    .await
-    .unwrap();
-
-    let session = running_import(&state, &token)
+    let run = running_run(state, token)
         .await
         .expect("a running run is listed");
-    assert_eq!(session.id, created.body.id);
-    assert_eq!(session.stage, Some(ImportStage::Parse));
-    assert_eq!(
-        session.run_dir.as_deref(),
-        Some("/home/u/message-crate/staging-260830")
-    );
-    assert_eq!(session.device_id.as_deref(), Some("device-a"));
-    assert_eq!(session.form["source"], "imessage-ios");
+    assert_eq!(run["id"], import_id);
+    assert_eq!(run["stage"], "parse");
+    // The Upload reads its run's mode from this row (#3165).
+    assert_eq!(run["mode"], "replace");
+    assert_eq!(run["run_dir"], "/home/u/message-crate/staging-260830");
+    assert_eq!(run["device_id"], "device-a");
+    assert_eq!(run["form"]["source"], "imessage-ios");
 }
 
 /// A stored form snapshot never carries credentials, whatever the
 /// client posts: the row outlives the run, and the secret must not.
 #[tokio::test]
 async fn a_stored_form_snapshot_drops_credentials() {
-    let fixture = test_fixture().await;
-    let state = fixture.state.clone();
-    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
-    let _ = discard_import(
-        State(Importer::from_ref(&state)),
-        import_access(&state, &token).await,
-        AxumPath(import_id),
-        Json(DiscardImportRequest {
-            issues: Vec::new(),
-            notes: Vec::new(),
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    start_run(
+        state,
+        token,
+        serde_json::json!({
+            "source": "imessage",
+            // A client that has not learned the rule.
+            "form": {
+                "source": "imessage-ios",
+                "backupPassword": "hunter2",
+                "whatsappKey": "0123456789abcdef",
+            },
         }),
     )
-    .await
-    .unwrap();
+    .await;
 
-    let body = CreateImportRequest {
-        source: "imessage".into(),
-        mode: ImportMode::Append,
-        tool: None,
-        run_dir: None,
-        device_id: None,
-        // A client that has not learned the rule.
-        form: Some(serde_json::json!({
-            "source": "imessage-ios",
-            "backupPassword": "hunter2",
-            "whatsappKey": "0123456789abcdef",
-        })),
-        source_fingerprint: None,
-        source_identities: None,
-        phone_country: None,
-    };
-    let _ = create_import(
-        State(state.db.clone()),
-        import_access(&state, &token).await,
-        Json(body),
-    )
-    .await
-    .unwrap();
-
-    let session = running_import(&state, &token)
+    let run = running_run(state, token)
         .await
         .expect("a running run is listed");
+    let form = &run["form"];
     assert_eq!(
-        session.form["source"], "imessage-ios",
+        form["source"], "imessage-ios",
         "the rest of the snapshot is kept"
     );
     assert!(
-        session.form.get("backupPassword").is_none(),
-        "backupPassword was stored: {}",
-        session.form
+        form.get("backupPassword").is_none(),
+        "backupPassword was stored: {form}"
     );
     assert!(
-        session.form.get("whatsappKey").is_none(),
-        "whatsappKey was stored: {}",
-        session.form
+        form.get("whatsappKey").is_none(),
+        "whatsappKey was stored: {form}"
     );
 }
 
@@ -1635,122 +1518,85 @@ async fn a_stored_form_snapshot_drops_credentials() {
 /// so a resumed Staging Review can show it without re-reading the backup.
 #[tokio::test]
 async fn imports_create_stores_source_identities() {
-    let fixture = test_fixture().await;
-    let state = fixture.state.clone();
-    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
-    let _ = discard_import(
-        State(Importer::from_ref(&state)),
-        import_access(&state, &token).await,
-        AxumPath(import_id),
-        Json(DiscardImportRequest {
-            issues: Vec::new(),
-            notes: Vec::new(),
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    start_run(
+        state,
+        token,
+        serde_json::json!({
+            "source": "imessage",
+            "source_identities": ["+15555550110", "owner@example.com"],
         }),
     )
-    .await
-    .unwrap();
+    .await;
 
-    let body = CreateImportRequest {
-        source: "imessage".into(),
-        mode: ImportMode::Append,
-        tool: None,
-        run_dir: None,
-        device_id: None,
-        form: None,
-        source_fingerprint: None,
-        source_identities: Some(serde_json::json!(["+15555550110", "owner@example.com"])),
-        phone_country: None,
-    };
-    let _ = create_import(
-        State(state.db.clone()),
-        import_access(&state, &token).await,
-        Json(body),
-    )
-    .await
-    .unwrap();
-
-    let session = running_import(&state, &token)
+    let run = running_run(state, token)
         .await
         .expect("a running run is listed");
     assert_eq!(
-        session.source_identities,
+        run["source_identities"],
         serde_json::json!(["+15555550110", "owner@example.com"])
     );
 }
 
 #[tokio::test]
 async fn a_second_import_run_is_refused_with_conflict() {
-    let fixture = test_fixture().await;
-    let state = fixture.state.clone();
-    let ImportingAccount { token, .. } = fixture.account_with_running_import().await;
-    let body = CreateImportRequest {
-        source: "imessage".into(),
-        mode: ImportMode::Append,
-        tool: None,
-        run_dir: None,
-        device_id: None,
-        form: None,
-        source_fingerprint: None,
-        source_identities: None,
-        phone_country: None,
-    };
-    let err = create_import(
-        State(state.db.clone()),
-        import_access(&state, &token).await,
-        Json(body),
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    start_run(state, token, serde_json::json!({ "source": "imessage" })).await;
+
+    let (status, text) = post_json_raw(
+        state,
+        "/v1/imports",
+        token,
+        serde_json::json!({ "source": "imessage" }),
     )
-    .await
-    .unwrap_err();
-    let ApiError::StateConflict(message) = &err else {
-        panic!("expected StateConflict, got {err:?}");
-    };
-    // The 409 has to name the way out: a stranded session is resumed or
+    .await;
+    let problem = expect_problem(status, &text, ProblemType::StateConflict);
+    // The 409 has to name the way out: a stranded run is resumed or
     // discarded from the desktop app's Import screen, or discarded with
     // `message-crate-server imports discard`.
+    let detail = problem.detail.unwrap_or_default();
     assert!(
-        message.contains("Import in the desktop app"),
-        "the conflict names how to clear the session: {message}"
+        detail.contains("Import in the desktop app"),
+        "the conflict names how to clear the run: {detail}"
     );
 }
 
 #[tokio::test]
 async fn stage_endpoint_advances() {
-    let fixture = test_fixture().await;
-    let state = fixture.state.clone();
-    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    let import_id = start_run(state, token, serde_json::json!({ "source": "imessage" })).await;
 
-    let _ = update_import(
-        State(state.db.clone()),
-        import_access(&state, &token).await,
-        AxumPath(import_id),
-        Json(UpdateImportRequest {
-            stage: ImportStage::Write,
-            summary: None,
-        }),
+    let _: serde_json::Value = patch_json(
+        state,
+        &format!("/v1/imports/{import_id}"),
+        token,
+        serde_json::json!({ "stage": "write" }),
     )
-    .await
-    .unwrap();
-    assert_eq!(
-        running_import(&state, &token).await.unwrap().stage,
-        Some(ImportStage::Write)
-    );
+    .await;
+    let run = running_run(state, token).await.expect("the run still runs");
+    assert_eq!(run["stage"], "write");
 }
 
 #[tokio::test]
 async fn discard_frees_the_slot() {
-    let fixture = test_fixture().await;
-    let state = fixture.state.clone();
-    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
-    let _ = discard_import(
-        State(Importer::from_ref(&state)),
-        import_access(&state, &token).await,
-        AxumPath(import_id),
-        Json(DiscardImportRequest {
-            issues: Vec::new(),
-            notes: Vec::new(),
-        }),
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    let import_id = start_run(state, token, serde_json::json!({ "source": "imessage" })).await;
+
+    let _: serde_json::Value = post_json(
+        state,
+        &format!("/v1/imports/{import_id}/discard"),
+        token,
+        serde_json::json!({ "issues": [], "notes": [] }),
     )
-    .await
-    .unwrap();
-    assert!(running_import(&state, &token).await.is_none());
+    .await;
+    assert!(running_run(state, token).await.is_none());
+    start_run(state, token, serde_json::json!({ "source": "imessage" })).await;
 }
