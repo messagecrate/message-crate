@@ -14475,7 +14475,8 @@
         "properties": {
           "password": {
             "type": "string",
-            "description": "Password for the owner. Must satisfy the server's password policy."
+            "description": "Password for the owner: one character or more, at most 128\ncharacters, counted as characters rather than bytes and not trimmed.\nEmpty or over 128 is refused with `422 Unprocessable Entity`.",
+            "maxLength": 128
           },
           "username": {
             "type": "string",
@@ -14918,7 +14919,8 @@
               "string",
               "null"
             ],
-            "description": "Local password, of any length. Absent or empty opens an account with\nno password."
+            "description": "Local password: no minimum length, at most 128 characters, counted\nas characters rather than bytes and not trimmed. Over 128 is refused\nwith `422 Unprocessable Entity`. Absent or empty opens an account\nwith no password.",
+            "maxLength": 128
           },
           "phone": {
             "type": [
@@ -15337,7 +15339,8 @@
         "properties": {
           "password": {
             "type": "string",
-            "description": "Login password."
+            "description": "Login password, empty for an account with none. A password is at most\n128 characters, so a longer one is refused with\n`422 Unprocessable Entity` before the username is looked up.",
+            "maxLength": 128
           },
           "username": {
             "type": "string",
@@ -15413,7 +15416,8 @@
               "string",
               "null"
             ],
-            "description": "Required when the account's `has_password` is true."
+            "description": "Required when the account's `has_password` is true. A password is at\nmost 128 characters, so a longer one is refused with\n`422 Unprocessable Entity` before it is checked.",
+            "maxLength": 128
           }
         }
       },
@@ -19961,15 +19965,18 @@
               "string",
               "null"
             ],
-            "description": "The password being replaced. Required when the owner changes its\nown; nobody else sends it."
+            "description": "The password being replaced. Required when the owner changes its\nown; nobody else sends it. A password is at most 128 characters, so a\nlonger one is refused with `422 Unprocessable Entity` before it is\nchecked.",
+            "maxLength": 128
           },
           "password": {
             "type": "string",
-            "description": "The new password. Empty clears a user account's password; the\nowner's must be one character or more."
+            "description": "The new password: no minimum length for a user account, where empty\nclears it, and one character or more for the owner's. At most 128\ncharacters, counted as characters rather than bytes and not trimmed;\nover 128 is refused with `422 Unprocessable Entity`.",
+            "maxLength": 128
           },
           "password_confirmation": {
             "type": "string",
-            "description": "The new password typed a second time. The server, not the screen,\nrefuses a pair that differs, so the checks run in one fixed order:\ncurrent password, then the pair, then that the new one differs from the\ncurrent one."
+            "description": "The new password typed a second time. The server, not the screen,\nrefuses a pair that differs, so the checks run in one fixed order:\ncurrent password, then the pair, then that the new one differs from the\ncurrent one.",
+            "maxLength": 128
           }
         }
       },

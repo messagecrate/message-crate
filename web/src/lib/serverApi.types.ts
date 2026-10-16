@@ -2164,7 +2164,11 @@ export interface components {
         AuditReason: "logged_out" | "replaced" | "revoked" | "expired" | "unknown_username" | "wrong_password" | "account_disabled" | "idle";
         /** @description Body for claiming a Message Crate. */
         ClaimServerRequest: {
-            /** @description Password for the owner. Must satisfy the server's password policy. */
+            /**
+             * @description Password for the owner: one character or more, at most 128
+             *     characters, counted as characters rather than bytes and not trimmed.
+             *     Empty or over 128 is refused with `422 Unprocessable Entity`.
+             */
             password: string;
             /**
              * @description Login username for the owner, which the server trims: 1 to 128
@@ -2464,8 +2468,10 @@ export interface components {
         /** @description Body for creating an account, by the owner or by a stranger. */
         CreateAccountRequest: {
             /**
-             * @description Local password, of any length. Absent or empty opens an account with
-             *     no password.
+             * @description Local password: no minimum length, at most 128 characters, counted
+             *     as characters rather than bytes and not trimmed. Over 128 is refused
+             *     with `422 Unprocessable Entity`. Absent or empty opens an account
+             *     with no password.
              */
             password?: string | null;
             /**
@@ -2771,7 +2777,11 @@ export interface components {
         };
         /** @description Username and password, the body of `POST /v1/session`. */
         CreateSessionRequest: {
-            /** @description Login password. */
+            /**
+             * @description Login password, empty for an account with none. A password is at most
+             *     128 characters, so a longer one is refused with
+             *     `422 Unprocessable Entity` before the username is looked up.
+             */
             password?: string;
             /** @description Login username. */
             username: string;
@@ -2817,7 +2827,11 @@ export interface components {
         DeleteAccountRequest: {
             /** @description Must be `true`; anything else is rejected. */
             confirm: boolean;
-            /** @description Required when the account's `has_password` is true. */
+            /**
+             * @description Required when the account's `has_password` is true. A password is at
+             *     most 128 characters, so a longer one is refused with
+             *     `422 Unprocessable Entity` before it is checked.
+             */
             current_password?: string | null;
         };
         /**
@@ -5436,12 +5450,16 @@ export interface components {
         ReplaceAccountPasswordRequest: {
             /**
              * @description The password being replaced. Required when the owner changes its
-             *     own; nobody else sends it.
+             *     own; nobody else sends it. A password is at most 128 characters, so a
+             *     longer one is refused with `422 Unprocessable Entity` before it is
+             *     checked.
              */
             current_password?: string | null;
             /**
-             * @description The new password. Empty clears a user account's password; the
-             *     owner's must be one character or more.
+             * @description The new password: no minimum length for a user account, where empty
+             *     clears it, and one character or more for the owner's. At most 128
+             *     characters, counted as characters rather than bytes and not trimmed;
+             *     over 128 is refused with `422 Unprocessable Entity`.
              */
             password: string;
             /**

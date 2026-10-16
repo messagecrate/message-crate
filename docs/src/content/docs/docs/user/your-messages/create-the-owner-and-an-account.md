@@ -32,7 +32,7 @@ The Owner's password is the only thing between the network and every account on 
 
 1. On **User Accounts**, select **Add account**.
 2. Enter a **Username**.
-3. Enter a **Password** and repeat it in **Confirm password**. The form allows an account with no password. An account that holds real messages should have one.
+3. Enter a **Password** and repeat it in **Confirm password**. The form allows an account with no password. An account that holds real messages should have one. A password is at most 128 characters.
 4. Select **Create**.
 
 ![The New account form in Owner Home](../../../../../assets/user-guide/add-account.png)

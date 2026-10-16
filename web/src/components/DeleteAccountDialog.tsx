@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { MAX_PASSWORD_CHARS } from "../lib/account";
 import Button from "./Button";
 import ModalShell, { DialogError } from "./ModalShell";
 import PathList from "./PathList";
@@ -131,6 +132,7 @@ function DeleteAccountForm({
           <span className="text-[0.875rem] text-text">Current password</span>
           <input
             type="password"
+            maxLength={MAX_PASSWORD_CHARS}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             disabled={deleting}

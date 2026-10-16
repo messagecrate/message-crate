@@ -10,6 +10,14 @@ import type { components } from "./serverApi.types";
  */
 export type AccountProfile = components["schemas"]["Account"];
 
+/**
+ * Most characters in a password, the server's cap (`MAX_PASSWORD_CHARS`),
+ * which every password field carries as its `maxLength`. The server counts
+ * characters; the browser counts UTF-16 units, so a character outside the
+ * Basic Multilingual Plane, such as an emoji, counts as two here.
+ */
+export const MAX_PASSWORD_CHARS = 128;
+
 /** The account's phone numbers, each once, whatever services they are on. */
 export function phoneNumbers(profile: Pick<AccountProfile, "phones">): string[] {
   return profile.phones.map((phone) => phone.address);

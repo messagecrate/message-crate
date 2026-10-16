@@ -2,6 +2,7 @@ import { useState } from "react";
 import { LockIcon, PersonIcon } from "../../components/icons";
 import PasswordField from "../../components/PasswordField";
 import TextField from "../../components/TextField";
+import { MAX_PASSWORD_CHARS } from "../../lib/account";
 
 /** One field's value, and the setter the form keeps it with. */
 type FieldState = { value: string; onChange: (value: string) => void };
@@ -54,6 +55,7 @@ export default function CredentialFields({
         onChange={password.onChange}
         name={autoComplete === "current-password" ? "password" : "new-password"}
         autoComplete={autoComplete}
+        maxLength={MAX_PASSWORD_CHARS}
         showPassword={showPassword}
         onToggle={() => setShowPassword((v) => !v)}
         isDisabled={disabled}
@@ -68,6 +70,7 @@ export default function CredentialFields({
           onChange={confirmPassword.onChange}
           name="confirm-password"
           autoComplete="new-password"
+          maxLength={MAX_PASSWORD_CHARS}
           showPassword={showConfirm}
           onToggle={() => setShowConfirm((v) => !v)}
           isDisabled={disabled}

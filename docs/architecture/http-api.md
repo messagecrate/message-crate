@@ -1137,6 +1137,16 @@ What each reaches:
   given to unlink or to find a row is not held to the cap, because it names
   something already stored, and neither is an address book load, because a
   file Export wrote must load back whatever an import stored.
+- A password is at most 128 characters wherever a request sends one: a new
+  account's, a login's, a new or current password on a change, and the
+  owner's on a claim. It is counted in characters, as a username is, never
+  trimmed, and has no minimum length but the owner's one character. One
+  over the cap is `validation-failed`, and the OpenAPI description and
+  `maxLength` state it. Why: people count characters, not bytes; Argon2
+  reduces a password to a fixed size before its costly work, so the cap only
+  keeps a client from sending a huge body as a password, and 128 leaves
+  room for any generated password or passphrase, over the 64 NIST SP 800-63B
+  asks a verifier to allow (#2996).
 - Each part of a multipart upload is held to the part size its upload was
   told when it started, which the upload's manifest records, and not to the
   limit as it is now. Why: an upload in progress keeps the limit it started

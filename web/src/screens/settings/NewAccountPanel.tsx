@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Button from "../../components/Button";
 import { textInputClass } from "../../components/TextField";
 import { useCreateAccountForm } from "../../hooks/useCreateAccountForm";
+import { MAX_PASSWORD_CHARS } from "../../lib/account";
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache } from "../../lib/routeQuery";
 import { sectionTitleClass } from "./profileStyles";
@@ -74,6 +75,7 @@ export function NewAccountPanel() {
           <span className="mb-1 block text-[0.813rem] font-medium">Password</span>
           <input
             type="password"
+            maxLength={MAX_PASSWORD_CHARS}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="new-password"
@@ -85,6 +87,7 @@ export function NewAccountPanel() {
           <span className="mb-1 block text-[0.813rem] font-medium">Confirm password</span>
           <input
             type="password"
+            maxLength={MAX_PASSWORD_CHARS}
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             autoComplete="new-password"
