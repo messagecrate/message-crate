@@ -1,49 +1,11 @@
-use std::collections::HashMap;
-use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use anyhow::{Context, Result, bail};
 
 use crate::tools::{FfmpegFailed, MediaTools, Reads};
 use crate::{CompressOptions, KillReason, Killed, MediaMode};
-
-/// Aggregate counts and errors from one media convert/compress pass.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct MediaReport {
-    /// Number of files converted or compressed.
-    pub processed: usize,
-    /// Number of files left unchanged.
-    pub skipped: usize,
-    /// Total bytes under `attachments/` before convert/compress (non-temp files).
-    pub bytes_before: u64,
-    /// Total bytes under `attachments/` after convert/compress (non-temp files).
-    pub bytes_after: u64,
-    /// What the pass could not do, for the log, from either of its two
-    /// writers. [`process_attachment_files`] puts one `path: error` line
-    /// here for each file it could not convert or compress, with the whole
-    /// error. Staging's own Media pass (`run_media_post_pass` in
-    /// `staging`) puts one sentence counting the files it could not
-    /// convert instead, since each one's conversation entry already says
-    /// why.
-    pub errors: Vec<String>,
-    /// Each file [`process_attachment_files`] could not convert or
-    /// compress, with the reason its attachment records.
-    pub not_converted: Vec<NotConverted>,
-    /// Why HEVC failed, when the pass compressed a video as H.264 instead.
-    /// The caller logs it as a warning with [`HevcFallback::line`].
-    pub hevc_fallback: HevcFallback,
-}
-
-/// A file a convert or compress pass could not convert.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NotConverted {
-    /// The file, as the pass was given it.
-    pub path: PathBuf,
-    /// Why, as [`why_not_converted`] words it.
-    pub reason: String,
-}
 
 /// Why ffmpeg did not convert `file`, short enough to keep on the
 /// attachment as `convert_failed: <reason>`, and naming neither `file` nor
@@ -52,16 +14,15 @@ pub struct NotConverted {
 /// - why ffmpeg was stopped ([`Killed`]);
 /// - the line ffmpeg wrote that names the cause ([`cause_line`]), with
 ///   each file it was given written as `<input>` or `<output>`
-///   ([`FfmpegFailed::without_files`]);
+///   ([`FfmpegFailed::without_files`]) and its tags without their
+///   addresses ([`without_addresses`]);
 /// - how ffmpeg exited, when it failed and wrote nothing;
 /// - otherwise the error's first line, with `file` written as `<input>`,
 ///   and without each step of it that names another file in `file`'s
 ///   directory, such as the temporary file a conversion writes.
 ///
-/// The desktop app's Media Stage and the convert pass of an Import Run that
-/// converts as it stages both record this, so one failure reads alike on
-/// either path. The whole error, with everything ffmpeg wrote, goes to the
-/// run's log.
+/// The desktop app's Media Stage records this on the attachment. The whole
+/// error, with everything ffmpeg wrote, goes to the run's log.
 #[must_use]
 pub fn why_not_converted(err: &anyhow::Error, file: &Path) -> String {
     if let Some(killed) = err.downcast_ref::<Killed>() {
@@ -69,7 +30,7 @@ pub fn why_not_converted(err: &anyhow::Error, file: &Path) -> String {
     }
     if let Some(failed) = err.downcast_ref::<FfmpegFailed>() {
         return match cause_line(failed.said()) {
-            Some(cause) => failed.without_files(cause),
+            Some(cause) => failed.without_files(&without_addresses(cause)),
             None => failed.to_string(),
         };
     }
@@ -96,6 +57,42 @@ pub fn why_not_converted(err: &anyhow::Error, file: &Path) -> String {
         .next()
         .unwrap_or_default()
         .to_string()
+}
+
+/// `line` with each of its leading `[<component> @ <address>]` tags written
+/// as `[<component>]`. The address is a pointer inside the ffmpeg process,
+/// different on every run, so the same failure would otherwise read
+/// differently each time (#3055). ffmpeg prints it with the C runtime's
+/// `%p`, which writes `0x5e6836f4af00` on Linux and macOS and can write
+/// `000001C8A4F2E0C0`, without `0x`, on Windows. A tag without an address,
+/// and the text after the tags, are kept as they are.
+fn without_addresses(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some((tag, after)) = rest.strip_prefix('[').and_then(|r| r.split_once(']')) {
+        let component = match tag.rsplit_once(" @ ") {
+            Some((component, address)) if is_address(address) => component,
+            _ => tag,
+        };
+        let text = after.trim_start();
+        out.push('[');
+        out.push_str(component);
+        out.push(']');
+        out.push_str(&after[..after.len() - text.len()]);
+        rest = text;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Whether `text` is a pointer as `%p` prints it: hex digits, with or
+/// without a `0x` or `0X` before them.
+fn is_address(text: &str) -> bool {
+    let digits = text
+        .strip_prefix("0x")
+        .or_else(|| text.strip_prefix("0X"))
+        .unwrap_or(text);
+    !digits.is_empty() && digits.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// What ffmpeg writes after a failure that only follows from it: a task
@@ -213,223 +210,11 @@ impl HevcFallback {
     }
 }
 
-/// How often to write `…n/total` progress lines during convert/compress.
-const MEDIA_PROGRESS_EVERY: usize = 100;
-
 /// JPEGs at or under this size are left alone in compress mode: re-encoding
 /// them buys nothing.
 const JPEG_COMPRESS_FLOOR: u64 = 500 * 1024;
 /// MP3s at or under this size are left alone in compress mode.
 const MP3_COMPRESS_FLOOR: u64 = 100 * 1024;
-
-/// Convert or compress the given attachment files in place.
-///
-/// The caller builds `files` (usually via [`collect_media_files`]), so a
-/// resumed or scoped pass can name exactly the files it means instead of
-/// sweeping the whole directory. Paths must live under `output_dir`'s
-/// `attachments/` directory.
-///
-/// Returns a path remap (`old_rel` → `new_rel`, forward-slash relative to
-/// `output_dir`) for callers that update IR / CSV themselves.
-///
-/// Setting `stop` kills the ffmpeg that runs and converts no other file.
-///
-/// # Errors
-///
-/// Returns an error when ffmpeg/ffprobe are missing or fail, an input path
-/// escapes the output directory, IO fails, or `stop` is set ([`Killed`]).
-pub fn process_attachment_files(
-    tools: &dyn MediaTools,
-    output_dir: &Path,
-    files: &[PathBuf],
-    mode: MediaMode,
-    compress: &CompressOptions,
-    mut log: Option<&mut dyn FnMut(&str)>,
-    stop: Option<&AtomicBool>,
-) -> Result<(MediaReport, HashMap<String, String>)> {
-    if matches!(mode, MediaMode::Clone | MediaMode::Disabled) {
-        return Ok((MediaReport::default(), HashMap::new()));
-    }
-    tools.require()?;
-
-    let attachments = output_dir.join("attachments");
-    if !attachments.is_dir() {
-        return Ok((MediaReport::default(), HashMap::new()));
-    }
-
-    // Leftovers from a previous failed ffmpeg run.
-    remove_msgmedia_temps(&attachments)?;
-
-    let mut report = MediaReport::default();
-    let mut remap = HashMap::new();
-    let total = files.len();
-    if total == 0 {
-        return Ok((report, remap));
-    }
-
-    report.bytes_before = attachments_dir_bytes(&attachments)?;
-    let verb = match mode {
-        MediaMode::Compress => "Compressing",
-        _ => "Converting",
-    };
-    emit(&mut log, "");
-    emit(&mut log, &starting_line(verb, total, report.bytes_before));
-
-    let asked = Asked {
-        mode,
-        compress,
-        stop,
-    };
-    let mut done = 0usize;
-    for path in files {
-        let mut hevc_failure = None;
-        let outcome = process_one(tools, output_dir, path, asked, &mut hevc_failure);
-        report.hevc_fallback.record(hevc_failure);
-        match outcome {
-            Ok(Outcome::Changed { old_rel, new_rel }) => {
-                report.processed += 1;
-                remap.insert(old_rel, new_rel);
-            }
-            Ok(Outcome::Skipped) => report.skipped += 1,
-            // A conversion the stop killed is not the file's failure, and
-            // no other file is started.
-            Err(_) if stop.is_some_and(|stop| stop.load(Ordering::Relaxed)) => {
-                let _ = remove_msgmedia_temps(&attachments);
-                return Err(Killed::ffmpeg_stopped().into());
-            }
-            Err(err) => {
-                report.errors.push(format!("{}: {err:#}", path.display()));
-                report.not_converted.push(NotConverted {
-                    path: path.clone(),
-                    reason: why_not_converted(&err, path),
-                });
-            }
-        }
-        done += 1;
-        if done.is_multiple_of(MEDIA_PROGRESS_EVERY) || done == total {
-            emit(&mut log, &format!("  …{done}/{total}"));
-        }
-    }
-
-    // Always sweep again so a failed convert cannot leave junk behind.
-    let swept =
-        remove_msgmedia_temps(&attachments).and_then(|()| attachments_dir_bytes(&attachments));
-    report.bytes_after = match (swept, report.hevc_fallback.line()) {
-        (Ok(bytes), _) => bytes,
-        (Err(err), None) => return Err(err),
-        // The report is lost with this error, so the error carries the
-        // fallback its caller would have logged.
-        (Err(err), Some(line)) => {
-            return Err(err.context(format!("{line}. Then converting stopped")));
-        }
-    };
-
-    emit(&mut log, &done_line_with_failures(mode, &report));
-
-    Ok((report, remap))
-}
-
-/// `n` files, singular for one. This crate sits below `message-crate-core`
-/// (core depends on it), so it words the count itself rather than through
-/// `count_of_files`.
-fn files(n: usize) -> String {
-    if n == 1 {
-        "1 file".to_string()
-    } else {
-        format!("{n} files")
-    }
-}
-
-/// The line that starts the pass: `verb` is `Converting` or `Compressing`,
-/// over `total` files of `bytes` in all.
-fn starting_line(verb: &str, total: usize, bytes: u64) -> String {
-    format!(
-        "{verb} attachments ({}, {})…",
-        files(total),
-        format_bytes(bytes)
-    )
-}
-
-/// The line that ends a `convert` or `compress` pass over staged attachments:
-/// the files processed and skipped, and the attachments' size before and
-/// after. The write queue's own pass ends with it too, so both passes word
-/// it alike.
-pub fn done_line(mode: MediaMode, report: &MediaReport) -> String {
-    format!(
-        "Attachment {mode} done: processed {}, skipped {}, size {} → {}",
-        files(report.processed),
-        files(report.skipped),
-        format_bytes(report.bytes_before),
-        format_bytes(report.bytes_after),
-    )
-}
-
-/// [`done_line`] with the files that failed, when any did. The write queue
-/// counts its failures as one note instead, so only this pass adds them.
-fn done_line_with_failures(mode: MediaMode, report: &MediaReport) -> String {
-    let mut line = done_line(mode, report);
-    if !report.errors.is_empty() {
-        let _ = write!(line, ", {} failed", files(report.errors.len()));
-    }
-    line
-}
-
-/// Send one line to the log callback, if there is one.
-fn emit(log: &mut Option<&mut dyn FnMut(&str)>, line: &str) {
-    if let Some(log) = log.as_mut() {
-        log(line);
-    }
-}
-
-/// Sum sizes of non-temp files under `attachments/` (directory-level total).
-fn attachments_dir_bytes(attachments: &Path) -> Result<u64> {
-    let mut total = 0u64;
-    for entry in files_under(attachments)? {
-        let path = entry.path();
-        if !is_msgmedia_temp(&path) {
-            total = total.saturating_add(
-                entry
-                    .metadata()
-                    .with_context(|| format!("stat {}", path.display()))?
-                    .len(),
-            );
-        }
-    }
-    Ok(total)
-}
-
-/// Every regular file under `root`, recursively, reading each entry's type
-/// without following a symlink.
-///
-/// Only real directories are descended into, and a symlink is skipped
-/// whatever it points at. A link under `root` therefore never brings files
-/// from elsewhere into a media pass, and a link to a parent directory cannot
-/// make the walk loop (#2262).
-///
-/// A socket, pipe or device file is skipped too, because a conversion that
-/// opened one could block on it.
-///
-/// # Errors
-///
-/// Returns an error when a directory under `root` cannot be read.
-fn files_under(root: &Path) -> Result<Vec<fs::DirEntry>> {
-    let mut out = Vec::new();
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        for entry in fs::read_dir(&dir).with_context(|| format!("read {}", dir.display()))? {
-            let entry = entry.with_context(|| format!("read {}", dir.display()))?;
-            let file_type = entry
-                .file_type()
-                .with_context(|| format!("stat {}", entry.path().display()))?;
-            if file_type.is_dir() {
-                stack.push(entry.path());
-            } else if file_type.is_file() {
-                out.push(entry);
-            }
-        }
-    }
-    Ok(out)
-}
 
 /// A byte count as KB, MB, or GB with one decimal, for progress lines and
 /// reports. Decimal units: that is how people read a file size.
@@ -449,49 +234,14 @@ pub fn format_bytes(bytes: u64) -> String {
     }
 }
 
-enum Outcome {
-    Changed { old_rel: String, new_rel: String },
-    Skipped,
-}
-
 pub(crate) use crate::mime::Kind;
 
-/// List the files media conversion would touch under `root`.
-///
-/// Every non-temp file [`classify`] recognizes, recursively, sorted so two
-/// runs enumerate in the same order. A symlink is skipped and never followed,
-/// so nothing outside `root` is listed. Callers hand the result, or a subset of
-/// it, to [`process_attachment_files`].
-///
-/// # Errors
-///
-/// Returns an error when a directory under `root` cannot be read.
-pub fn collect_media_files(root: &Path) -> Result<Vec<PathBuf>> {
-    let mut out: Vec<PathBuf> = files_under(root)?
-        .into_iter()
-        .map(|entry| entry.path())
-        .filter(|path| !is_msgmedia_temp(path) && classify(path).is_some())
-        .collect();
-    out.sort();
-    Ok(out)
-}
-
-/// Sidecar written by ffmpeg before [`replace_original`] (must never remain on disk).
+/// Sidecar ffmpeg writes before [`commit_produced`] moves it to its
+/// destination (must never remain on disk).
 fn is_msgmedia_temp(path: &Path) -> bool {
     path.file_name()
         .and_then(|n| n.to_str())
         .is_some_and(|n| n.contains(".msgmedia.tmp."))
-}
-
-/// Delete `*.msgmedia.tmp.*` files left by an interrupted run anywhere under `root`.
-fn remove_msgmedia_temps(root: &Path) -> Result<()> {
-    for entry in files_under(root)? {
-        let path = entry.path();
-        if is_msgmedia_temp(&path) {
-            let _ = fs::remove_file(&path);
-        }
-    }
-    Ok(())
 }
 
 /// Delete ffmpeg scratch left beside `path` by an earlier interrupted run.
@@ -532,11 +282,11 @@ fn with_temp_output<T>(tmp: &Path, f: impl FnOnce() -> Result<T>) -> Result<T> {
     }
 }
 
-/// Remux into MP4 without re-encoding and commit it; `None` when ffmpeg cannot remux the container.
-fn try_remux_replace(
+/// Remux into MP4 without re-encoding and move it to `dest`; `None` when ffmpeg cannot remux the container.
+fn try_remux(
     tools: &dyn MediaTools,
     path: &Path,
-    commit: Commit<'_>,
+    dest: &Path,
     stop: Option<&AtomicBool>,
 ) -> Result<Option<PathBuf>> {
     let tmp = temp_sibling(path, "mp4");
@@ -544,7 +294,7 @@ fn try_remux_replace(
         let _ = fs::remove_file(&tmp);
         return Ok(None);
     }
-    match commit_produced(commit, path, &tmp) {
+    match commit_produced(dest, path, &tmp) {
         Ok(p) => Ok(Some(p)),
         Err(err) => {
             let _ = fs::remove_file(&tmp);
@@ -613,7 +363,7 @@ struct Asked<'a> {
     stop: Option<&'a AtomicBool>,
 }
 
-/// Run the media step over one file, committing however `commit` says.
+/// Run the media step over one file, writing what it produces to `dest`.
 ///
 /// Returns the produced path, or `None` when the media step leaves this file
 /// alone, either because the mode does not touch it, or because a same-format
@@ -624,7 +374,7 @@ fn run_one(
     path: &Path,
     kind: Kind,
     asked: Asked<'_>,
-    commit: Commit<'_>,
+    dest: &Path,
     hevc_failure: &mut Option<String>,
 ) -> Result<Option<PathBuf>> {
     let Asked {
@@ -644,7 +394,7 @@ fn run_one(
             if matches!(ext.as_str(), "jpg" | "jpeg" | "gif") {
                 return Ok(None);
             }
-            convert_image(tools, path, false, false, commit, stop)
+            convert_image(tools, path, false, false, dest, stop)
         }
         (Kind::Image, MediaMode::Compress) => {
             if ext == "gif" {
@@ -654,42 +404,26 @@ fn run_one(
             if same_format && fs::metadata(path)?.len() <= JPEG_COMPRESS_FLOOR {
                 return Ok(None);
             }
-            convert_image(tools, path, true, same_format, commit, stop)
+            convert_image(tools, path, true, same_format, dest, stop)
         }
         (Kind::Audio, MediaMode::Convert) => {
             if ext == "mp3" {
                 return Ok(None);
             }
-            convert_audio(tools, path, false, false, commit, stop)
+            convert_audio(tools, path, false, false, dest, stop)
         }
         (Kind::Audio, MediaMode::Compress) => {
             let same_format = ext == "mp3";
             if same_format && fs::metadata(path)?.len() <= MP3_COMPRESS_FLOOR {
                 return Ok(None);
             }
-            convert_audio(tools, path, true, same_format, commit, stop)
+            convert_audio(tools, path, true, same_format, dest, stop)
         }
-        (Kind::Video, MediaMode::Convert) => convert_video(tools, path, commit, stop).map(Some),
+        (Kind::Video, MediaMode::Convert) => convert_video(tools, path, dest, stop).map(Some),
         (Kind::Video, MediaMode::Compress) => {
-            compress_video(tools, path, compress, commit, stop, hevc_failure)
+            compress_video(tools, path, compress, dest, stop, hevc_failure)
         }
         (_, MediaMode::Clone | MediaMode::Disabled) => Ok(None),
-    }
-}
-
-/// Convert or compress one file by its media kind and report what changed.
-fn process_one(
-    tools: &dyn MediaTools,
-    output_dir: &Path,
-    path: &Path,
-    asked: Asked<'_>,
-    hevc_failure: &mut Option<String>,
-) -> Result<Outcome> {
-    let old_rel = rel_path(output_dir, path)?;
-    let kind = classify(path).context("unknown media kind")?;
-    match run_one(tools, path, kind, asked, Commit::InPlace, hevc_failure)? {
-        Some(new_path) => changed(output_dir, &old_rel, &new_path),
-        None => Ok(Outcome::Skipped),
     }
 }
 
@@ -720,7 +454,7 @@ pub enum TranscodeOutcome {
 /// write one. For video this is a forecast, not a promise: `derivative_name`
 /// cannot see `CompressOptions`, so it always answers `mp4` for a video in
 /// either mode, even though `compress_video` may skip a small or
-/// already-efficient file and `try_remux_replace` may fall through on a
+/// already-efficient file and `try_remux` may fall through on a
 /// remux failure. Callers must treat [`TranscodeOutcome::Skipped`] from
 /// [`transcode_file`] as authoritative over whatever this function predicted.
 ///
@@ -901,102 +635,40 @@ fn transcode_as(
 ) -> Result<TranscodeOutcome> {
     tools.require()?;
     let mut hevc_failure = None;
-    match run_one(tools, src, kind, asked, Commit::To(dest), &mut hevc_failure)? {
+    match run_one(tools, src, kind, asked, dest, &mut hevc_failure)? {
         Some(_) => Ok(TranscodeOutcome::Produced { hevc_failure }),
         None => Ok(TranscodeOutcome::Skipped),
     }
 }
 
-/// A `Changed` outcome naming the new relative path. Always Changed, even when the path
-/// is the same: callers must refresh digests after an in-place rewrite.
-fn changed(output_dir: &Path, old_rel: &str, new_path: &Path) -> Result<Outcome> {
-    let new_rel = rel_path(output_dir, new_path)?;
-    // Always report Changed, even when the relative path is unchanged (e.g. JPG
-    // recompressed in place). Callers must invalidate digest_sha256 for remapped
-    // paths; treating same-path rewrites as Skipped left stale fingerprints in
-    // JSON Lines files and caused `import` sha256 mismatches after upload.
-    Ok(Outcome::Changed {
-        old_rel: old_rel.to_string(),
-        new_rel,
-    })
-}
-
-/// The path under `output_dir` with forward slashes.
-fn rel_path(output_dir: &Path, path: &Path) -> Result<String> {
-    let rel = path
-        .strip_prefix(output_dir)
-        .with_context(|| format!("{} not under {}", path.display(), output_dir.display()))?;
-    Ok(rel.to_string_lossy().replace('\\', "/"))
-}
-
-/// `path` with its extension replaced by `ext`; unchanged when that would be the same path.
-fn sibling_with_ext(path: &Path, ext: &str) -> PathBuf {
-    let stem = path.file_stem().unwrap_or_default();
-    let mut dest = path.with_file_name(stem);
-    dest.set_extension(ext);
-    if dest == path {
-        return dest;
+/// Move the produced file to exactly `dest`, leaving the original alone.
+///
+/// The caller commits: it patches whatever points at the original, renames
+/// the derivative into its final name, and only then deletes the original,
+/// so the final name never exists before a conversation file points at it.
+fn commit_produced(dest: &Path, original: &Path, produced: &Path) -> Result<PathBuf> {
+    if dest == original {
+        // The final name must not exist until the caller has patched
+        // whatever points at the original and renamed this derivative into
+        // place itself. A destination equal to the original would overwrite
+        // it here, before any of that has happened. For example,
+        // `derivative_name` returning the source's own name (a same-format
+        // compress) joined onto the source's directory without a
+        // caller-added suffix like `.in_progress`.
+        bail!(
+            "transcode destination {} is the original file: write the \
+             derivative to a distinct temporary name (e.g. suffixed with \
+             `.in_progress`) and rename it into place only after patching \
+             whatever points at {}",
+            dest.display(),
+            original.display()
+        );
     }
-    if !dest.exists() {
-        return dest;
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     }
-    // collision: stem_{n}.ext, counting up from 1
-    let mut n = 1u32;
-    loop {
-        let name = format!("{}_{n}.{ext}", stem.to_string_lossy());
-        let candidate = path.with_file_name(name);
-        if !candidate.exists() {
-            return candidate;
-        }
-        n += 1;
-    }
-}
-
-/// Where a freshly produced derivative goes.
-#[derive(Debug, Clone, Copy)]
-enum Commit<'a> {
-    /// Replace the original in place, deleting it. The directory pass's
-    /// behavior, unchanged.
-    InPlace,
-    /// Move the derivative to exactly this path and leave the original alone.
-    ///
-    /// The caller commits: it patches whatever points at the original, renames
-    /// this file into its final name, and only then deletes the original,
-    /// so the final name never exists before a conversation file points at it.
-    To(&'a Path),
-}
-
-/// Move the produced file to where the commit mode says: over the original, or to a named destination.
-fn commit_produced(commit: Commit<'_>, original: &Path, produced: &Path) -> Result<PathBuf> {
-    match commit {
-        Commit::InPlace => replace_original(original, produced),
-        Commit::To(dest) => {
-            if dest == original {
-                // The whole point of Commit::To is that the final name never
-                // exists until the caller has patched whatever points at the
-                // original and renamed this derivative into place itself.
-                // A destination equal to the original would
-                // overwrite it here, before any of that has happened. For
-                // example, `derivative_name` returning the source's own name
-                // (a same-format compress) joined onto the source's directory
-                // without a caller-added suffix like `.in_progress`.
-                bail!(
-                    "transcode destination {} is the original file: write the \
-                     derivative to a distinct temporary name (e.g. suffixed with \
-                     `.in_progress`) and rename it into place only after patching \
-                     whatever points at {}",
-                    dest.display(),
-                    original.display()
-                );
-            }
-            if let Some(parent) = dest.parent() {
-                fs::create_dir_all(parent)
-                    .with_context(|| format!("create {}", parent.display()))?;
-            }
-            move_file(produced, dest)?;
-            Ok(dest.to_path_buf())
-        }
-    }
+    move_file(produced, dest)?;
+    Ok(dest.to_path_buf())
 }
 
 /// Move `from` to `to`: a rename when both sit on one filesystem, else a copy
@@ -1020,33 +692,6 @@ fn is_smaller(produced: &Path, original: &Path) -> Result<bool> {
     Ok(fs::metadata(produced)?.len() < fs::metadata(original)?.len())
 }
 
-/// Replace the original with the produced file, renaming to the new extension and removing the old file.
-fn replace_original(original: &Path, produced: &Path) -> Result<PathBuf> {
-    if produced == original {
-        return Ok(original.to_path_buf());
-    }
-    let target_ext = produced
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("bin");
-    // `rename_into_place` syncs the produced file before the rename, so a
-    // power loss cannot leave an empty file where the original was.
-    let final_path = if original.extension().and_then(|e| e.to_str()) == Some(target_ext) {
-        // The rename replaces the original in one step.
-        file_io::rename_into_place(produced, original)?;
-        original.to_path_buf()
-    } else {
-        let dest = sibling_with_ext(original, target_ext);
-        if dest.exists() && dest != produced {
-            let _ = fs::remove_file(&dest);
-        }
-        file_io::rename_into_place(produced, &dest)?;
-        let _ = fs::remove_file(original);
-        dest
-    };
-    Ok(final_path)
-}
-
 /// Convert an image to JPEG (compressing when asked), keeping the original when the result
 /// is not smaller and `keep_smaller` is set.
 fn convert_image(
@@ -1054,7 +699,7 @@ fn convert_image(
     path: &Path,
     compress: bool,
     keep_smaller: bool,
-    commit: Commit<'_>,
+    dest: &Path,
     stop: Option<&AtomicBool>,
 ) -> Result<Option<PathBuf>> {
     let tmp = temp_sibling(path, "jpg");
@@ -1080,7 +725,7 @@ fn convert_image(
             let _ = fs::remove_file(&tmp);
             return Ok(None);
         }
-        commit_produced(commit, path, &tmp).map(Some)
+        commit_produced(dest, path, &tmp).map(Some)
     })
 }
 
@@ -1091,7 +736,7 @@ fn convert_audio(
     path: &Path,
     compress: bool,
     keep_smaller: bool,
-    commit: Commit<'_>,
+    dest: &Path,
     stop: Option<&AtomicBool>,
 ) -> Result<Option<PathBuf>> {
     let tmp = temp_sibling(path, "mp3");
@@ -1116,7 +761,7 @@ fn convert_audio(
             let _ = fs::remove_file(&tmp);
             return Ok(None);
         }
-        commit_produced(commit, path, &tmp).map(Some)
+        commit_produced(dest, path, &tmp).map(Some)
     })
 }
 
@@ -1124,7 +769,7 @@ fn convert_audio(
 fn convert_video(
     tools: &dyn MediaTools,
     path: &Path,
-    commit: Commit<'_>,
+    dest: &Path,
     stop: Option<&AtomicBool>,
 ) -> Result<PathBuf> {
     let tmp = temp_sibling(path, "mp4");
@@ -1132,7 +777,7 @@ fn convert_video(
     with_temp_output(&tmp, || {
         // Prefer remux into mp4 when already a video file.
         if remux_mp4(tools, path, &tmp, stop).is_ok() {
-            return commit_produced(commit, path, &tmp);
+            return commit_produced(dest, path, &tmp);
         }
         let _ = fs::remove_file(&tmp);
 
@@ -1161,7 +806,7 @@ fn convert_video(
         tools
             .transcode(&args, &tmp, Reads::Video(path), stop)
             .with_context(|| format!("convert video {}", path.display()))?;
-        commit_produced(commit, path, &tmp)
+        commit_produced(dest, path, &tmp)
     })
 }
 
@@ -1189,7 +834,7 @@ fn remux_mp4(
 fn keep_or_remux(
     tools: &dyn MediaTools,
     path: &Path,
-    commit: Commit<'_>,
+    dest: &Path,
     stop: Option<&AtomicBool>,
 ) -> Result<Option<PathBuf>> {
     let ext = path
@@ -1200,7 +845,7 @@ fn keep_or_remux(
     if ext == "mp4" {
         return Ok(None);
     }
-    try_remux_replace(tools, path, commit, stop)
+    try_remux(tools, path, dest, stop)
 }
 
 /// Re-encode a video under the resolution, frame-rate, and quality caps; `None` when it is already within them.
@@ -1212,14 +857,14 @@ fn compress_video(
     tools: &dyn MediaTools,
     path: &Path,
     opts: &CompressOptions,
-    commit: Commit<'_>,
+    dest: &Path,
     stop: Option<&AtomicBool>,
     hevc_failure: &mut Option<String>,
 ) -> Result<Option<PathBuf>> {
     let meta = fs::metadata(path)?;
     if meta.len() < opts.min_size_bytes {
         // Still remux non-mp4 small files for container consistency.
-        return keep_or_remux(tools, path, commit, stop);
+        return keep_or_remux(tools, path, dest, stop);
     }
 
     // A probe that fails yields empty codec and zero dimensions, which never
@@ -1228,7 +873,7 @@ fn compress_video(
     if opts.skip_efficient
         && is_efficient(&probe.codec, probe.width, probe.height, probe.bitrate, opts)
     {
-        return keep_or_remux(tools, path, commit, stop);
+        return keep_or_remux(tools, path, dest, stop);
     }
 
     let max_edge = opts.max_resolution.max_long_edge();
@@ -1288,7 +933,7 @@ fn compress_video(
                 .with_context(|| format!("compress video {}", path.display()))?;
             *hevc_failure = Some(error_line_without_files(&hevc_err));
         }
-        Ok(Some(commit_produced(commit, path, &tmp)?))
+        Ok(Some(commit_produced(dest, path, &tmp)?))
     })
 }
 

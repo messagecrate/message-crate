@@ -767,9 +767,8 @@ pub struct Launch {
     /// server, a different origin, and names it here.
     pub cors_origins: Vec<String>,
     /// The app's Tools Directory, where the server looks for ffmpeg and
-    /// ffprobe after `PATH`, as the app does. `None` when the app has none
-    /// (no home directory).
-    pub tools_dir: Option<PathBuf>,
+    /// ffprobe after `PATH`, as the app does.
+    pub tools_dir: PathBuf,
 }
 
 impl Launch {
@@ -793,16 +792,14 @@ impl Launch {
             self.bind().to_string(),
             "--static-dir".into(),
             self.static_dir.display().to_string(),
+            "--tools-dir".into(),
+            self.tools_dir.display().to_string(),
             format!("--{EXIT_WITH_PARENT_ARG}"),
             std::process::id().to_string(),
         ];
         for origin in &self.cors_origins {
             arguments.push("--cors-origin".into());
             arguments.push(origin.clone());
-        }
-        if let Some(tools_dir) = &self.tools_dir {
-            arguments.push("--tools-dir".into());
-            arguments.push(tools_dir.display().to_string());
         }
         arguments
     }

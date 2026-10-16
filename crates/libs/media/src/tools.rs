@@ -1308,14 +1308,6 @@ impl Killed {
         }
     }
 
-    /// ffmpeg stopped while it ran.
-    pub(crate) fn ffmpeg_stopped() -> Self {
-        Self {
-            program: Program::Ffmpeg,
-            why: KillReason::Stopped,
-        }
-    }
-
     /// Why the run was killed.
     #[must_use]
     pub fn reason(&self) -> KillReason {

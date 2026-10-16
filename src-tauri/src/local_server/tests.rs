@@ -111,7 +111,7 @@ fn launch_at(address: SocketAddr, program: &Path, parent: &Path) -> Launch {
         address,
         open_to_network: false,
         cors_origins: Vec::new(),
-        tools_dir: None,
+        tools_dir: parent.join("tools"),
     }
 }
 
@@ -150,14 +150,14 @@ fn the_server_is_started_on_this_computer_with_no_config_file() {
         address: OWN_ADDRESS.parse().unwrap(),
         open_to_network: false,
         cors_origins: Vec::new(),
-        tools_dir: None,
+        tools_dir: PathBuf::from("/tools"),
     };
     assert_eq!(
         Launch {
             cors_origins: vec!["http://localhost:5173".into()],
             ..launch.clone()
         }
-        .arguments()[9..],
+        .arguments()[11..],
         ["--cors-origin", "http://localhost:5173"]
     );
     // The app names itself, so the server ends if the app crashes (#1934).
@@ -171,6 +171,8 @@ fn the_server_is_started_on_this_computer_with_no_config_file() {
             "127.0.0.1:8080",
             "--static-dir",
             "/site",
+            "--tools-dir",
+            "/tools",
             "--exit-with-parent",
             &std::process::id().to_string(),
         ]
@@ -182,7 +184,7 @@ fn the_server_is_started_on_this_computer_with_no_config_file() {
 #[test]
 fn the_server_is_told_the_tools_directory() {
     let launch = Launch {
-        tools_dir: Some(PathBuf::from("/home/someone/message-crate/tools")),
+        tools_dir: PathBuf::from("/home/someone/message-crate/tools"),
         ..launch_at(
             OWN_ADDRESS.parse().unwrap(),
             Path::new("unused"),
@@ -190,7 +192,7 @@ fn the_server_is_told_the_tools_directory() {
         )
     };
     assert_eq!(
-        launch.arguments()[9..],
+        launch.arguments()[7..9],
         ["--tools-dir", "/home/someone/message-crate/tools"]
     );
 }

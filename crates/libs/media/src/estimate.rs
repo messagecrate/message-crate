@@ -134,7 +134,7 @@ fn is_processable(ext: &str) -> bool {
 /// Does the media step leave a file with this extension alone in this mode,
 /// independent of size?
 ///
-/// Mirrors the early returns in `process_one`/`run_one` that do not depend on
+/// Mirrors the early returns in `run_one` that do not depend on
 /// a size gate: nothing is touched in `Clone`/`Disabled` (`run_one`'s last
 /// arm skips every file), GIF is untouched in either of the remaining modes,
 /// JPEG is already in `Convert`'s target form, MP3 already in `Convert`'s.

@@ -971,6 +971,13 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-16: **A file that could not be converted reads the same each
+  time.** The short reason on an attachment ffmpeg could not convert quoted
+  ffmpeg's line with a memory address in each tag, such as
+  `[libx265 @ 0x5e6836f4af00]`, which differed on every run. The reason now
+  keeps only the part's name, such as `[libx265] Error setting preset/tune
+  nonsense/(null).` The whole error, address and all, stays in the Import
+  Run's log (#3055).
 - 2026-10-16: **Cancel stops a WhatsApp import while it decrypts an
   encrypted iPhone backup.** Cancel waited for Message Crate to finish
   decrypting WhatsApp's files, which takes a long time when the backup holds
