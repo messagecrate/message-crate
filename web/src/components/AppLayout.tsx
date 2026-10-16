@@ -3,7 +3,7 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { type ContactBrowseTarget, contactBrowseQuery } from "../lib/contactBrowseQuery";
 import { asMessagesLocationState } from "../lib/messagesLocationState";
 import AppHeader from "./AppHeader";
-import { AppLayoutContext, type AppLayoutContextValue, useSectionSlot } from "./appLayoutContext";
+import { AppLayoutContext, type AppLayoutContextValue } from "./appLayoutContext";
 import { ColumnResizeProvider } from "./ColumnResizeContext";
 import ContactDrawer from "./ContactDrawer";
 import { COLUMN_DIVIDER_WIDTH } from "./columnDivider";
@@ -13,6 +13,7 @@ import LeftPanel from "./LeftPanel";
 import { LIST_COLUMN_MIN_WIDTH } from "./ListColumn";
 import { RIGHT_PANE_MIN_WIDTH } from "./RightPane";
 import { RightToolbarProvider } from "./RightToolbarContext";
+import { useSectionSlot } from "./useSectionSlot";
 
 /**
  * The width the list column and the right pane need beside the navigation

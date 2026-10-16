@@ -11,11 +11,11 @@
 
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useContactGroupActions } from "../hooks/useContactGroupActions";
 import { useContactGroups } from "../hooks/useContactGroups";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { Providers } from "../test/providers";
 import { apiClient } from "./api";
-import { useContactGroupActions } from "./contactGroups";
 import {
   getConversationSources,
   listAccountIdentities,
@@ -27,7 +27,7 @@ import {
   listSearchFields,
 } from "./serverApi";
 
-vi.mock("./authContext", async () => (await import("../test/providers")).authModule());
+vi.mock("../hooks/useAuth", async () => (await import("../test/providers")).authModule());
 
 vi.mock("./api", () => ({
   apiClient: {

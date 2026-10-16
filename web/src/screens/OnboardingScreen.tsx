@@ -10,7 +10,8 @@ import TextField from "../components/TextField";
 import TimeZoneField from "../components/TimeZoneField";
 import { useAccountProfile } from "../hooks/useAccountProfile";
 import { useAsyncAction } from "../hooks/useAsyncAction";
-import { useAuth } from "../lib/authContext";
+import { useAuth } from "../hooks/useAuth";
+import { useRouteQuery } from "../hooks/useRouteQuery";
 import { newId } from "../lib/newId";
 import {
   DUPLICATE_IDENTITY_MESSAGE,
@@ -23,7 +24,6 @@ import {
   serverService,
 } from "../lib/offeredService";
 import { keys } from "../lib/queryKeys";
-import { useRouteQuery } from "../lib/routeQuery";
 import { parseSelectKey } from "../lib/selectKey";
 import { listAccountIdentities, updateAccountProfile } from "../lib/serverApi";
 import { browserTimeZone } from "../lib/timeZone";

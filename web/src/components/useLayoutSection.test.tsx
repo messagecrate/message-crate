@@ -4,13 +4,9 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { type ReactNode, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setupUser } from "../test/user";
-import {
-  AppLayoutContext,
-  type NavItem,
-  useLayoutNavItem,
-  useLayoutSection,
-  useSectionSlot,
-} from "./appLayoutContext";
+import { AppLayoutContext, type NavItem } from "./appLayoutContext";
+import { useLayoutNavItem, useLayoutSection } from "./useLayoutSection";
+import { useSectionSlot } from "./useSectionSlot";
 
 afterEach(cleanup);
 

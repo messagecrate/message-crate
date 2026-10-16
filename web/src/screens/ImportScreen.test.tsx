@@ -153,7 +153,7 @@ vi.mock("../lib/desktop/runDir", async (importOriginal) => ({
   invokeDeleteRunDir: (...args: unknown[]) => invokeDeleteRunDirMock(...args),
 }));
 
-vi.mock("../lib/authContext", () => authModule());
+vi.mock("../hooks/useAuth", () => authModule());
 
 vi.mock("../lib/tauriCheck", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/tauriCheck")>()),

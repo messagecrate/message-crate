@@ -1,10 +1,10 @@
 import { type ReactNode, useMemo } from "react";
 import { Cell, Column, Row, Table, TableBody, TableHeader } from "react-aria-components";
 import { useOrphanedColumn } from "../hooks/useOrphanedColumn";
+import { useTimeZone } from "../hooks/useTimeZone";
 import { formatIsoDateOnly } from "../lib/formatDate";
 import { formatOfferedServiceLabel } from "../lib/offeredService";
 import { countOf } from "../lib/plural";
-import { useTimeZone } from "../lib/timeZone";
 import { focusRingClass } from "../lib/uiStyles";
 import Button from "./Button";
 import { TrashIcon } from "./icons";

@@ -1,7 +1,7 @@
 import { type CSSProperties, type ReactNode, useId, useState } from "react";
+import { useTimeZone } from "../../hooks/useTimeZone";
 import { deletedInSourceText, UNSENT_TEXT } from "../../lib/deletionMarkText";
 import { highlightText } from "../../lib/highlightText";
-import { useTimeZone } from "../../lib/timeZone";
 import type { Message, MessageAttachment, MessageTapback } from "../../lib/types";
 import { focusRingClass } from "../../lib/uiStyles";
 import MessageAttachments from "../MessageAttachments";

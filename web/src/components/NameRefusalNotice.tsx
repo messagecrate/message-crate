@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useExternalStore } from "../lib/externalStore";
+import { useExternalStore } from "../hooks/useExternalStore";
 import { dismissNameRefusal, type NameRefusal, nameRefusals } from "../lib/nameRefusals";
 import Button from "./Button";
 

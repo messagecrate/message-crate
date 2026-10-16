@@ -1,14 +1,14 @@
 import type { UseMutationResult } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { keys } from "./queryKeys";
-import { useRouteMutation, useRouteQuery } from "./routeQuery";
+import { useRouteMutation, useRouteQuery } from "../hooks/useRouteQuery";
+import { keys } from "../lib/queryKeys";
 import {
   createSavedSearch,
   deleteSavedSearch,
   listSavedSearches,
   updateSavedSearch,
-} from "./serverApi";
-import type { components } from "./serverApi.types";
+} from "../lib/serverApi";
+import type { components } from "../lib/serverApi.types";
 
 type Schema = components["schemas"];
 

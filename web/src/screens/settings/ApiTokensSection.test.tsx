@@ -31,7 +31,7 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
   deleteApiToken: vi.fn(),
 }));
 
-vi.mock("../../lib/authContext", () => authModule());
+vi.mock("../../hooks/useAuth", () => authModule());
 
 afterEach(() => {
   cleanup();

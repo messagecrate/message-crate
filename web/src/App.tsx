@@ -12,9 +12,9 @@ import {
   TrashRoute,
 } from "./components/BrowseRoutes";
 import ImportExportRoute from "./components/ImportExportRoute";
+import { useAuth } from "./hooks/useAuth";
 import { useIsOwner } from "./hooks/useIsOwner";
 import { useNeedsProfileSetup } from "./hooks/useNeedsProfileSetup";
-import { useAuth } from "./lib/authContext";
 import { lazyChunk } from "./lib/chunkLoad";
 import { ThemeProvider } from "./lib/ThemeProvider";
 import { TimeZoneProvider } from "./lib/TimeZoneProvider";

@@ -1,5 +1,5 @@
 import { messageTags } from "../lib/messageTags";
-import { useNameCollection } from "../lib/nameCollection";
+import { useNameCollection } from "./useNameCollection";
 
 /** Live list of message tags for the logged-in account. */
 export function useMessageTags(): {

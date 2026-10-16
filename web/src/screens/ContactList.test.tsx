@@ -23,7 +23,7 @@ import { advanceTimersAndSettle, settle, startFakeClock, stopFakeClock } from ".
 import { Providers } from "../test/providers";
 import ContactList, { FILTER_DEBOUNCE_MS } from "./ContactList";
 
-vi.mock("../lib/authContext", async () => (await import("../test/providers")).authModule());
+vi.mock("../hooks/useAuth", async () => (await import("../test/providers")).authModule());
 
 const tauriMock = vi.hoisted(() => ({ current: false }));
 vi.mock("../lib/tauriCheck", () => ({ isTauri: () => tauriMock.current }));

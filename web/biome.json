@@ -56,7 +56,7 @@
             "paths": {
               "@tanstack/react-query": {
                 "importNames": ["useMutation", "MutationObserver", "*"],
-                "message": "Write account data with useRouteMutation from src/lib/routeQuery.ts, which marks the account's cache stale once the write settles (docs/adr/0002-one-way-to-fetch-data-in-the-web-app.md)."
+                "message": "Write account data with useRouteMutation from src/hooks/useRouteQuery.ts, which marks the account's cache stale once the write settles (docs/adr/0002-one-way-to-fetch-data-in-the-web-app.md)."
               },
               "@tauri-apps/api/core": "Call the desktop through a module in src/lib/desktop/",
               "@tauri-apps/api/event": "Call the desktop through a module in src/lib/desktop/",
@@ -128,7 +128,7 @@
                 "paths": {
                   "@tanstack/react-query": {
                     "importNames": ["useMutation", "MutationObserver", "*"],
-                    "message": "Write account data with useRouteMutation from src/lib/routeQuery.ts, which marks the account's cache stale once the write settles (docs/adr/0002-one-way-to-fetch-data-in-the-web-app.md)."
+                    "message": "Write account data with useRouteMutation from src/hooks/useRouteQuery.ts, which marks the account's cache stale once the write settles (docs/adr/0002-one-way-to-fetch-data-in-the-web-app.md)."
                   },
                   "@testing-library/user-event": "Use setupUser() and fill() from src/test/user.ts, which say why a test's user fires events without a delay (#1653).",
                   "react-aria-components": {
@@ -153,7 +153,7 @@
                 "paths": {
                   "@tanstack/react-query": {
                     "importNames": ["useMutation", "MutationObserver", "*"],
-                    "message": "Write account data with useRouteMutation from src/lib/routeQuery.ts, which marks the account's cache stale once the write settles (docs/adr/0002-one-way-to-fetch-data-in-the-web-app.md)."
+                    "message": "Write account data with useRouteMutation from src/hooks/useRouteQuery.ts, which marks the account's cache stale once the write settles (docs/adr/0002-one-way-to-fetch-data-in-the-web-app.md)."
                   },
                   "@tauri-apps/api/core": "Call the desktop through a module in src/lib/desktop/",
                   "@tauri-apps/api/event": "Call the desktop through a module in src/lib/desktop/",
@@ -169,7 +169,7 @@
     },
     {
       "includes": [
-        "src/lib/routeQuery.ts",
+        "src/hooks/useRouteQuery.ts",
         "src/components/DownloadAttachmentButton.tsx",
         "src/hooks/useStreamedMedia.ts",
         "src/hooks/useToolsStatus.ts"

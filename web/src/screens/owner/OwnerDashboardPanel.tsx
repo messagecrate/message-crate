@@ -1,6 +1,6 @@
+import { useRouteQuery } from "../../hooks/useRouteQuery";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
-import { useRouteQuery } from "../../lib/routeQuery";
 import { getServerStorage } from "../../lib/serverApi";
 import { ContentsSection } from "./dashboard/ContentsSection";
 import { DatabaseSection } from "./dashboard/DatabaseSection";

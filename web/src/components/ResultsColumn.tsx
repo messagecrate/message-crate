@@ -1,5 +1,6 @@
 import { type Key, ToggleButton, ToggleButtonGroup } from "react-aria-components";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useListQuery } from "../hooks/useMarkedWords";
 import { matchedVersionIndexes } from "../lib/earlierVersionMatch";
 import { pickedSortParam } from "../lib/messageSearchSort";
 import {
@@ -15,7 +16,7 @@ import {
   TAG_PARAM,
   VIEW_PARAM,
 } from "../lib/resultsView";
-import { SEARCH_LIST_NAMES, useListQuery } from "../lib/searchFields";
+import { SEARCH_LIST_NAMES } from "../lib/searchFields";
 import type { Conversation } from "../lib/types";
 import { focusRingClass } from "../lib/uiStyles";
 import ConversationList from "../screens/ConversationList";

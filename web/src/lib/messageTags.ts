@@ -1,9 +1,5 @@
 import { groupFromSlug, groupSlug } from "./contactGroups";
-import {
-  createNameCollection,
-  useNameCollectionActions,
-  useSetNamedSetMembers,
-} from "./nameCollection";
+import { createNameCollection } from "./nameCollection";
 import { keys } from "./queryKeys";
 import reservedNames from "./reservedNames.json";
 import { forTag } from "./searchQuery";
@@ -40,13 +36,3 @@ export const tagFromSlug = groupFromSlug;
 
 /** Build the conversation-list query for a tag page plus optional typed search. */
 export const tagListQuery = messageTags.listQuery;
-
-/** Create, rename, delete, and set membership on Message Tags. */
-export function useMessageTagActions() {
-  return useNameCollectionActions(messageTags);
-}
-
-/** Put conversations in or out of one Message Tag, drawn before the server answers. */
-export function useSetMessageTagMembers() {
-  return useSetNamedSetMembers(messageTags);
-}

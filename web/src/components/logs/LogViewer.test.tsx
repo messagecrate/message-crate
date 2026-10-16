@@ -17,7 +17,7 @@ import { setupUser } from "../../test/user";
 import LogViewer, { LOG_PAGE_SIZE, SEARCH_DELAY_MS } from "./LogViewer";
 import type { LinesRequest, LogSource } from "./logSource";
 
-vi.mock("../../lib/authContext", () => authModule({ accountId: 1 }));
+vi.mock("../../hooks/useAuth", () => authModule({ accountId: 1 }));
 vi.mock("../../lib/saveFile", () => ({ saveFile: vi.fn() }));
 
 const saveMock = vi.mocked(saveFile);

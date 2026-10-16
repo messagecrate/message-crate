@@ -12,17 +12,18 @@ import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useContactDetail } from "../components/useContactDetail";
+import { keys } from "../lib/queryKeys";
+import { getContact, updateContact } from "../lib/serverApi";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { authModule, testQueryClient } from "../test/providers";
+import { testQueryClient } from "../test/providers";
 import { freshEntries, seedEntries } from "../test/staleEntries";
-import { useContactDetail, useUpdateContact } from "./contactDetail";
-import { keys } from "./queryKeys";
-import { getContact, updateContact } from "./serverApi";
+import { useUpdateContact } from "./useUpdateContact";
 
-vi.mock("./authContext", () => authModule({ accountId: 7 }));
+vi.mock("./useAuth", async () => (await import("../test/providers")).authModule({ accountId: 7 }));
 
-vi.mock("./serverApi", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./serverApi")>()),
+vi.mock("../lib/serverApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/serverApi")>()),
   getContact: vi.fn(),
   updateContact: vi.fn(),
 }));

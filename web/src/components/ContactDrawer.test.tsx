@@ -16,7 +16,7 @@ import { inTimeZone } from "../test/timeZone";
 import { fill, setupUser } from "../test/user";
 import ContactDrawer from "./ContactDrawer";
 
-vi.mock("../lib/authContext", () => authModule({ accountId: 7 }));
+vi.mock("../hooks/useAuth", () => authModule({ accountId: 7 }));
 
 let client: QueryClient;
 

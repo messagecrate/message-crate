@@ -12,7 +12,7 @@ import { inTimeZone } from "../test/timeZone";
 import { setupUser } from "../test/user";
 import CheckedContactsPanel from "./CheckedContactsPanel";
 
-vi.mock("../lib/authContext", () => authModule());
+vi.mock("../hooks/useAuth", () => authModule());
 const summaries = vi.fn();
 
 vi.mock("../lib/serverApi", async (importOriginal) => ({

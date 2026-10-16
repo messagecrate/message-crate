@@ -1,4 +1,4 @@
-import { createExternalStore, useExternalStore } from "./externalStore";
+import { createExternalStore, type ExternalStore } from "./externalStore";
 
 /** The screens that run desktop jobs, by the name of what they run. */
 export type DesktopJobName = "Import Run" | "Export" | "Convert";
@@ -33,19 +33,20 @@ export function holdDesktopJob(name: DesktopJobName): () => void {
   };
 }
 
+/** The holds, for `useDesktopJob` to follow. Only `holdDesktopJob` changes them. */
+export const desktopJobHolds: Pick<
+  ExternalStore<readonly { name: DesktopJobName }[]>,
+  "get" | "subscribe"
+> = holds;
+
 /** The first hold still held: the job that took the desktop first. */
-function firstHeld(held: readonly { name: DesktopJobName }[]): DesktopJobName | null {
+export function firstHeld(held: readonly { name: DesktopJobName }[]): DesktopJobName | null {
   return held[0]?.name ?? null;
 }
 
 /** The desktop job that is running, or null. */
 export function currentDesktopJob(): DesktopJobName | null {
   return firstHeld(holds.get());
-}
-
-/** The desktop job that is running, or null, kept up to date. */
-export function useDesktopJob(): DesktopJobName | null {
-  return useExternalStore(holds, firstHeld);
 }
 
 const RUNNING: Record<DesktopJobName, string> = {

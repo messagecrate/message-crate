@@ -51,10 +51,25 @@ async fn open_verify(db: &Path) -> (sqlx::SqlitePool, sqlx::pool::PoolConnection
 }
 
 fn replace_opts<'a>(assets: &'a Path, root: &'a Path, source: &'a str) -> ImportOptions<'a> {
+    opts_in_mode(assets, root, source, ImportMode::Replace)
+}
+
+/// Append-mode options for an import of `source`.
+fn append_opts<'a>(assets: &'a Path, root: &'a Path, source: &'a str) -> ImportOptions<'a> {
+    opts_in_mode(assets, root, source, ImportMode::Append)
+}
+
+/// Options for an import of `source` into [`TEST_ACCOUNT`] in `mode`.
+fn opts_in_mode<'a>(
+    assets: &'a Path,
+    root: &'a Path,
+    source: &'a str,
+    mode: ImportMode,
+) -> ImportOptions<'a> {
     ImportOptions::fixed(FixedImportArgs {
         assets_dir: assets,
         asset_root: Some(root),
-        mode: ImportMode::Replace,
+        mode,
         source,
         account_id: TEST_ACCOUNT,
         import_id: None,

@@ -23,7 +23,7 @@ vi.mock("../hooks/useAccountProfile", () => ({
   useAccountProfile: () => ({ profile: profileState.profile }),
 }));
 
-vi.mock("../lib/authContext", () => authModule());
+vi.mock("../hooks/useAuth", () => authModule());
 
 vi.mock("../hooks/useContactGroups", () => ({
   useContactGroups: () => ({ groups: [] }),
@@ -51,7 +51,7 @@ const savedSearchActions = vi.hoisted(() => ({
   remove: vi.fn(),
 }));
 
-vi.mock("../lib/savedSearches", () => ({
+vi.mock("./useSavedSearches", () => ({
   useSavedSearches: () => ({ savedSearches: savedSearchState.savedSearches, loading: false }),
   useSavedSearchActions: () => ({ ...savedSearchActions, pending: false, error: null }),
 }));

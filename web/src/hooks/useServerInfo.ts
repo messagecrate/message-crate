@@ -1,6 +1,6 @@
 import { keys } from "../lib/queryKeys";
-import { useRouteQuery } from "../lib/routeQuery";
 import { getServerState } from "../lib/serverApi";
+import { useRouteQuery } from "./useRouteQuery";
 
 /**
  * What the server says about itself to a logged-in screen: its Build and its

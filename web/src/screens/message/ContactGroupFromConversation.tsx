@@ -1,10 +1,11 @@
 import { useState } from "react";
 import GroupNameDialog from "../../components/GroupNameDialog";
+import { useContactGroupActions } from "../../hooks/useContactGroupActions";
+import { useNameCollection } from "../../hooks/useNameCollection";
 import { errorLine } from "../../lib/apiErrorMessage";
-import { contactGroups, useContactGroupActions } from "../../lib/contactGroups";
-import { useNameCollection } from "../../lib/nameCollection";
+import { contactGroups } from "../../lib/contactGroups";
 import type { Conversation } from "../../lib/types";
-import { useContactGroupMembers } from "./contactGroupMembers";
+import { useContactGroupMembers } from "./useContactGroupMembers";
 
 /**
  * "Make a Contact Group from these people": a group conversation is a grouping the

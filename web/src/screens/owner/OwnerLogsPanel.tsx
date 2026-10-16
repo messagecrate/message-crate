@@ -6,20 +6,20 @@ import {
   desktopLogSource,
   SERVER_LOG,
   UNREADABLE_RUN_LOG,
-  useDesktopLogs,
-  useLogReader,
-  useServerLogDownloads,
 } from "../../components/logs/logSource";
 import Select, {
   ListBoxItem,
   selectItemClassName,
   selectSectionHeaderClass,
 } from "../../components/Select";
+import { useDesktopLogs } from "../../hooks/useDesktopLogs";
+import { useLogReader } from "../../hooks/useLogReader";
 import { useOwnerAccounts } from "../../hooks/useOwnerAccounts";
 import { errorLine } from "../../lib/apiErrorMessage";
 import type { LogEntry } from "../../lib/desktop/runLog";
 import { formatDateTime } from "../../lib/formatDate";
 import { sectionHintClass } from "../settings/storage/storageUtils";
+import { useServerLogDownloads } from "./useServerLogDownloads";
 
 const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
   selectItemClassName(state, "sm");

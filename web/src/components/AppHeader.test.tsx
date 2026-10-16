@@ -12,8 +12,8 @@ vi.mock("./useSearchSuggestions", async (importOriginal) => ({
   useSearchSuggestions: () => [],
 }));
 
-vi.mock("../lib/searchFields", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../lib/searchFields")>()),
+vi.mock("../hooks/useMarkedWords", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../hooks/useMarkedWords")>()),
   useMarkedWords: () => ({ marked: [], ready: true }),
 }));
 

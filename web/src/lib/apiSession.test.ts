@@ -1,8 +1,7 @@
 /** @vitest-environment jsdom */
 
-import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { type ApiSession, applyApiSession, useApiSession } from "./apiSession";
+import { applyApiSession } from "./apiSession";
 
 const setBaseUrl = vi.fn();
 const setToken = vi.fn();
@@ -43,21 +42,5 @@ describe("applyApiSession", () => {
     expect(setBaseUrl).toHaveBeenCalledWith("");
     expect(setToken).not.toHaveBeenCalled();
     expect(setAccountId).not.toHaveBeenCalled();
-  });
-});
-
-describe("useApiSession", () => {
-  it("follows the login as it changes", () => {
-    const loggedIn: ApiSession = { serverUrl: "http://127.0.0.1:8080", token: "old", accountId: 7 };
-    const { rerender } = renderHook((session: ApiSession) => useApiSession(session), {
-      initialProps: loggedIn,
-    });
-    expect(setToken).toHaveBeenLastCalledWith("old");
-    expect(setAccountId).toHaveBeenLastCalledWith(7);
-
-    rerender({ serverUrl: "http://127.0.0.1:8080", token: null, accountId: null });
-
-    expect(setToken).toHaveBeenLastCalledWith(null);
-    expect(setAccountId).toHaveBeenLastCalledWith(null);
   });
 });

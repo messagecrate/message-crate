@@ -17,7 +17,7 @@ import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
 import { authModule, testQueryClient } from "../test/providers";
 import { useAccountProfile, useUpdateAccountProfile } from "./useAccountProfile";
 
-vi.mock("../lib/authContext", () => authModule({ accountId: 7 }));
+vi.mock("./useAuth", () => authModule({ accountId: 7 }));
 
 vi.mock("../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverApi")>()),

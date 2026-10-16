@@ -16,7 +16,7 @@ vi.mock("../hooks/useAccountProfile", () => ({
   useAccountProfile: () => ({ profile: profileState.profile, loading: false, error: "" }),
 }));
 
-vi.mock("../lib/authContext", () => authModule({ logout: authState.logout }));
+vi.mock("../hooks/useAuth", () => authModule({ logout: authState.logout }));
 
 afterEach(() => {
   cleanup();

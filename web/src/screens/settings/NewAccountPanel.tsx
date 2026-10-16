@@ -3,8 +3,8 @@ import { useNavigate } from "react-router-dom";
 import Button from "../../components/Button";
 import { textInputClass } from "../../components/TextField";
 import { useCreateAccountForm } from "../../hooks/useCreateAccountForm";
+import { useRouteCache } from "../../hooks/useRouteQuery";
 import { keys } from "../../lib/queryKeys";
-import { useRouteCache } from "../../lib/routeQuery";
 import { sectionTitleClass } from "./profileStyles";
 
 /**

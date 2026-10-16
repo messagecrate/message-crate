@@ -1,8 +1,9 @@
+import { useImportRunState } from "../hooks/useImportRunState";
+import { useRouteQuery } from "../hooks/useRouteQuery";
 import { getActiveImportRun } from "../lib/importRun";
 import { keys } from "../lib/queryKeys";
-import { useRouteQuery } from "../lib/routeQuery";
 import type { ImportPhase } from "../screens/import/importProgressState";
-import { isReviewPhase, useImportRunState } from "../screens/import/importRunStore";
+import { isReviewPhase } from "../screens/import/importRunStore";
 
 /** Why the Import sidebar entry carries a badge, or null when it does not. */
 export type ImportAttention = "waiting" | "paused" | "failed";

@@ -11,7 +11,7 @@ const seeds = {
 };
 const shareString = "#112233,#445566,#778899,#aabbcc";
 
-vi.mock("../lib/ThemeProvider", () => ({
+vi.mock("./useTheme", () => ({
   useTheme: () => ({
     mode: "light",
     setMode: vi.fn(),

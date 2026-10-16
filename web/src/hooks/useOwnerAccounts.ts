@@ -1,7 +1,6 @@
 import type { UseMutationResult } from "@tanstack/react-query";
 import { errorLine } from "../lib/apiErrorMessage";
 import { keys } from "../lib/queryKeys";
-import { useRouteCache, useRouteMutation, useRouteQuery } from "../lib/routeQuery";
 import {
   deleteAccountById,
   deleteAccountMessages,
@@ -9,6 +8,7 @@ import {
   updateAccount,
 } from "../lib/serverApi";
 import type { components } from "../lib/serverApi.types";
+import { useRouteCache, useRouteMutation, useRouteQuery } from "./useRouteQuery";
 
 /** One account as the owner sees it: the same row the account itself reads. */
 export type ManagedAccount = components["schemas"]["Account"];

@@ -11,7 +11,7 @@ vi.mock("../../../lib/serverApi", () => ({
   getImportContacts: vi.fn(),
 }));
 
-vi.mock("../../../lib/authContext", () => authModule());
+vi.mock("../../../hooks/useAuth", () => authModule());
 
 const get = vi.mocked(getImportContacts);
 

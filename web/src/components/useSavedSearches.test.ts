@@ -16,21 +16,21 @@ import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
-import { authModule, testQueryClient } from "../test/providers";
-import { type SavedSearch, useSavedSearchActions, useSavedSearches } from "./savedSearches";
 import {
   createSavedSearch,
   deleteSavedSearch,
   listSavedSearches,
   updateSavedSearch,
-} from "./serverApi";
+} from "../lib/serverApi";
+import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
+import { authModule, testQueryClient } from "../test/providers";
+import { type SavedSearch, useSavedSearchActions, useSavedSearches } from "./useSavedSearches";
 
 const account = { current: 7 };
-vi.mock("./authContext", () => authModule(() => ({ accountId: account.current })));
+vi.mock("../hooks/useAuth", () => authModule(() => ({ accountId: account.current })));
 
-vi.mock("./serverApi", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./serverApi")>()),
+vi.mock("../lib/serverApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/serverApi")>()),
   listSavedSearches: vi.fn(),
   createSavedSearch: vi.fn(),
   updateSavedSearch: vi.fn(),

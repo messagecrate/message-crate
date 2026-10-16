@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 import type { DirectoryReason } from "../lib/importRun";
-import { useLogoutPrompt } from "../lib/logoutPromptContext";
 import Button from "./Button";
 import ConfirmDialog from "./ConfirmDialog";
 import ModalShell, { DialogFooter } from "./ModalShell";
 import PathList from "./PathList";
+import { useLogoutPrompt } from "./useLogoutPrompt";
 
 const UPLOAD_RUNNING_PROMPT =
   "An Upload is running. Logging out pauses it; you can resume it after you log in.";

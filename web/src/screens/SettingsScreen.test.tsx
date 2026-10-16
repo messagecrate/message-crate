@@ -34,7 +34,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
 }));
 
-vi.mock("../lib/authContext", () => authModule({ updateToken: vi.fn() }));
+vi.mock("../hooks/useAuth", () => authModule({ updateToken: vi.fn() }));
 
 afterEach(() => {
   cleanup();

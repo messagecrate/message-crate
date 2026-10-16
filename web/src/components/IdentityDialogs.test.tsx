@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fill, setupUser } from "../test/user";
 import IdentityDialogs from "./IdentityDialogs";
 
-vi.mock("../lib/phoneCountries", () => ({
+vi.mock("../hooks/usePhoneCountries", () => ({
   usePhoneCountries: () => ({ countries: [], loading: false, error: null }),
 }));
 

@@ -1,7 +1,7 @@
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { type CSSProperties, type ReactNode, useEffect, useReducer, useRef } from "react";
+import { useColumnResizing } from "../hooks/useColumnResizing";
 import { resizeHandleGutterClass } from "../lib/tw";
-import { useColumnResizing } from "./columnResizeState";
 
 /** How often the x–y of z label may update while scrolling. */
 export const RANGE_REPORT_MS = 50;

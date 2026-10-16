@@ -1,12 +1,4 @@
-import {
-  createContext,
-  type ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { writePref } from "./storage";
 import {
   applyTheme,
@@ -14,7 +6,6 @@ import {
   DEFAULT_SEEDS,
   formatThemeShare,
   parseThemeShare,
-  type ResolvedTheme,
   readStoredMode,
   readStoredSeeds,
   resolveMode,
@@ -25,21 +16,7 @@ import {
   type ThemePreset,
   type ThemeSeeds,
 } from "./theme";
-
-type UseThemeResult = {
-  mode: ThemeMode;
-  setMode: (mode: ThemeMode) => void;
-  seeds: ThemeSeeds;
-  setSeeds: (seeds: ThemeSeeds) => void;
-  patchSeed: (key: keyof ThemeSeeds, hex: string) => void;
-  shareString: string;
-  setShareString: (raw: string) => boolean;
-  applyPreset: (preset: ThemePreset) => void;
-  resolvedMode: ResolvedTheme;
-  presets: ThemePreset[];
-};
-
-const ThemeContext = createContext<UseThemeResult | null>(null);
+import { ThemeContext } from "./themeContext";
 
 /** Shared theme state. Writes CSS variables on `<html>` and saves choices in the browser. */
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -128,13 +105,4 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
-}
-
-/** Current theme. Must be called under ThemeProvider. */
-export function useTheme(): UseThemeResult {
-  const ctx = useContext(ThemeContext);
-  if (!ctx) {
-    throw new Error("useTheme must be used within ThemeProvider");
-  }
-  return ctx;
 }

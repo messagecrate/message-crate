@@ -14,7 +14,7 @@ const changePassword = vi.hoisted(() => vi.fn());
 const setAccountPassword = vi.hoisted(() => vi.fn());
 const updateToken = vi.hoisted(() => vi.fn());
 
-vi.mock("../../lib/authContext", () => authModule(() => ({ accountId: 101, updateToken })));
+vi.mock("../../hooks/useAuth", () => authModule(() => ({ accountId: 101, updateToken })));
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),

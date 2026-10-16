@@ -1,8 +1,8 @@
 import type { UseMutationResult } from "@tanstack/react-query";
 import { type AccountProfileChange, useUpdateAccountProfile } from "../../hooks/useAccountProfile";
+import { useRouteCache, useRouteMutation, useRouteQuery } from "../../hooks/useRouteQuery";
 import type { AccountProfile } from "../../lib/account";
 import { keys } from "../../lib/queryKeys";
-import { useRouteCache, useRouteMutation, useRouteQuery } from "../../lib/routeQuery";
 import { getAccount, getAccountProfile, updateAccount } from "../../lib/serverApi";
 
 /**

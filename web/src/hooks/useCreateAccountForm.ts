@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { ApiError } from "../lib/api";
-import { useRouteMutation } from "../lib/routeQuery";
 import { createAccount } from "../lib/serverApi";
 import type { components } from "../lib/serverApi.types";
 import { useAsyncAction } from "./useAsyncAction";
+import { useRouteMutation } from "./useRouteQuery";
 
 /** What the server answers when it creates an account. */
 type CreatedAccount = components["schemas"]["CreateAccountResponse"];

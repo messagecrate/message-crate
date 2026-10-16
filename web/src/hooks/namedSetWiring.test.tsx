@@ -3,13 +3,13 @@
 /**
  * The two real collections, driven through the real actions.
  *
- * `nameCollection.test.tsx` builds its own collection with `groupsOver()`, a
- * hand-written copy of the configuration in `contactGroups.ts`. That tests the
- * engine, and tests it well, but it means the configuration itself has no
- * test. Two parts of it are worth pinning: the lists that show a name are
- * stale after a write, so no screen keeps a group name that was just renamed,
- * and the chip targets decide where a ticked box shows before the server
- * answers.
+ * `useNameCollectionActions.test.tsx` builds its own collection with
+ * `groupsOver()`, a hand-written copy of the configuration in
+ * `contactGroups.ts`. That tests the engine, and tests it well, but it means
+ * the configuration itself has no test. Two parts of it are worth pinning:
+ * the lists that show a name are stale after a write, so no screen keeps a
+ * group name that was just renamed, and the chip targets decide where a
+ * ticked box shows before the server answers.
  *
  * These import `contactGroups` and `messageTags` themselves. Only the server
  * routes are faked, at the same boundary the rest of the suite uses.
@@ -19,16 +19,16 @@ import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../lib/api";
+import { contactGroups } from "../lib/contactGroups";
+import { messageTags } from "../lib/messageTags";
+import { keys } from "../lib/queryKeys";
+import * as serverApi from "../lib/serverApi";
 import { act } from "../test/act";
 import { deferred } from "../test/deferred";
 import { authModule, testQueryClient } from "../test/providers";
 import { freshEntries, seedEntries } from "../test/staleEntries";
-import { ApiError } from "./api";
-import { contactGroups } from "./contactGroups";
-import { messageTags } from "./messageTags";
-import { useNameCollectionActions } from "./nameCollection";
-import { keys } from "./queryKeys";
-import * as serverApi from "./serverApi";
+import { useNameCollectionActions } from "./useNameCollectionActions";
 
 /** A cache key as the client sees it: the account, then the key itself. */
 function scoped(key: readonly string[]): unknown[] {
@@ -40,9 +40,9 @@ const showGroups = [keys.contactGroups.all, keys.contacts.all];
 /** The lists that show a Message Tag's name, and the Trash count a tag search narrows. */
 const showTags = [keys.messageTags.all, keys.conversations.all, keys.trash.all];
 
-vi.mock("./authContext", () => authModule({ accountId: 7 }));
+vi.mock("./useAuth", () => authModule({ accountId: 7 }));
 
-vi.mock("./serverApi", () => ({
+vi.mock("../lib/serverApi", () => ({
   listContactGroups: vi.fn().mockResolvedValue([]),
   createContactGroup: vi.fn().mockResolvedValue({ id: 3, name: "Work" }),
   updateContactGroup: vi.fn().mockResolvedValue({ id: 12, name: "Fam" }),

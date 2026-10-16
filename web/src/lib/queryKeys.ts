@@ -8,7 +8,7 @@
  * screens kept their own override maps rather than trusting a prefix they
  * could not name. Marking entries stale needs no prefix from here: every
  * write marks the whole account's cache stale (`useMarkAccountStale` in
- * `routeQuery.ts`).
+ * `hooks/useRouteQuery.ts`).
  *
  * One rule, for every resource: a namespace whose `all` is the prefix, with
  * the builders nested under it. The account is not here — `routeQueryKey` puts

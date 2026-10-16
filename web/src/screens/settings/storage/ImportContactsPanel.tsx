@@ -1,8 +1,9 @@
 import { type UIEvent, useCallback } from "react";
+import { useRoutePagedList } from "../../../hooks/useRouteQuery";
 import { errorLine } from "../../../lib/apiErrorMessage";
 import { isNearEnd } from "../../../lib/listPaging";
 import { keys } from "../../../lib/queryKeys";
-import { type PagedFetchPage, useRoutePagedList } from "../../../lib/routeQuery";
+import type { PagedFetchPage } from "../../../lib/routeQuery";
 import { getImportContacts } from "../../../lib/serverApi";
 import type { components } from "../../../lib/serverApi.types";
 

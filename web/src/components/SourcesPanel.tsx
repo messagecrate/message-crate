@@ -1,7 +1,7 @@
 import { useCallback } from "react";
+import { useRouteQuery } from "../hooks/useRouteQuery";
 import { errorLine } from "../lib/apiErrorMessage";
 import { keys } from "../lib/queryKeys";
-import { useRouteQuery } from "../lib/routeQuery";
 import { getConversationSources } from "../lib/serverApi";
 import ModalShell from "./ModalShell";
 

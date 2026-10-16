@@ -1,12 +1,13 @@
 /**
- * The logged-in account, as every screen and query reads it.
+ * The logged-in account, as every screen and query reads it through `useAuth`
+ * (`hooks/useAuth.ts`).
  *
- * Its own module, importing neither `routeQuery` nor `useAccountProfile`,
- * because both read `useAuth` and `AuthProvider.tsx` imports both (`routeQuery`
- * through `sessionQueryClient.tsx`): `AuthProvider.tsx` holds the provider that fills
- * this context.
+ * Its own module, importing neither `useRouteQuery` nor `useAccountProfile`,
+ * because both read `useAuth` and `AuthProvider.tsx` imports both
+ * (`useRouteQuery` through `sessionQueryClient.tsx`): `AuthProvider.tsx` holds
+ * the provider that fills this context.
  */
-import { createContext, useContext } from "react";
+import { createContext } from "react";
 import type { AccountRunDirectories } from "./importRun";
 import type { PrefLifetime } from "./storage";
 
@@ -24,7 +25,7 @@ export interface AuthState {
   isAuthenticated: boolean;
 }
 
-interface AuthContextValue extends AuthState {
+export interface AuthContextValue extends AuthState {
   /**
    * Log in with a session the server issued. `lifetime` `"visit"` keeps the
    * saved login for this visit only, as "Keep me logged in" unticked asks;
@@ -69,10 +70,3 @@ interface AuthContextValue extends AuthState {
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
-
-/** Current login state. Must be called under AuthProvider. */
-export function useAuth(): AuthContextValue {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-  return ctx;
-}
