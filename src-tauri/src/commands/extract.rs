@@ -190,7 +190,7 @@ pub fn extract(
 
     let media_settings = media_settings_for(&options, args.asset_max_bytes)?;
     let mut config = build_exporter_config(
-        &scratch_dir(&app)?,
+        &scratch_dir(&app),
         &installed,
         &args.source,
         &args.path,
@@ -198,6 +198,9 @@ pub fn extract(
         &options,
     )?;
     config.output.resume = args.resume.unwrap_or(false);
+    // The Export Date every conversation file of the run carries: the
+    // exporters are given the instant and never read the clock.
+    config.output.exported_at_unix_ms = Some(chrono::Utc::now().timestamp_millis());
 
     let job = start_job(&state, JobName::Staging)?;
 
@@ -210,7 +213,7 @@ pub fn extract(
     // the prose.
     // The same lines go into the run's log in the Logs Directory, which
     // outlives the run's directory.
-    let run_log = RunLog::open(&logs_dir(&app)?, &output_dir);
+    let run_log = RunLog::open(&logs_dir(&app), &output_dir);
     config.context.log = events::run_log_sink(&app_handle, &run_log);
     config.context.progress = events::progress_sink(&app_handle);
     config.context.issues = events::run_issue_sink(&app_handle, &run_log);

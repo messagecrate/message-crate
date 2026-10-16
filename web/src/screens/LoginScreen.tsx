@@ -5,6 +5,10 @@ import { setBaseUrl } from "../lib/api";
 import { errorLine } from "../lib/apiErrorMessage";
 import { useAuth } from "../lib/authContext";
 import { DEFAULT_TAURI_SERVER_URL, initialLoginServerUrl } from "../lib/authGuards";
+import {
+  invokeOpenMessageCrateDirectory,
+  type LocalServerStatus,
+} from "../lib/desktop/localServer";
 import { isOwnAddress } from "../lib/localServer";
 import { isPlainHttpOverNetwork } from "../lib/plainHttp";
 import {
@@ -12,7 +16,6 @@ import {
   checkServerHealthWithRetry,
   type ServerHealthStatus,
 } from "../lib/serverHealth";
-import { invokeOpenDataDirectory, type LocalServerStatus } from "../lib/tauri";
 import { isTauri } from "../lib/tauriCheck";
 import {
   accentLinkClass,
@@ -94,12 +97,12 @@ function StartFailed({
           variant="secondary"
           onPress={() => {
             setOpenError(null);
-            invokeOpenDataDirectory().catch((caught: unknown) => {
+            invokeOpenMessageCrateDirectory().catch((caught: unknown) => {
               setOpenError(errorLine(caught));
             });
           }}
         >
-          Open data directory
+          Open Message Crate directory
         </Button>
       </div>
       {openError ? <p className="m-0 mt-1 text-[0.75rem] text-danger">{openError}</p> : null}

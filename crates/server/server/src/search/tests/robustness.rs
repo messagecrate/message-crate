@@ -343,7 +343,7 @@ async fn truncated_and_corrupted_queries_are_answered_or_refused() {
     crate::test_support::insert_account_with_id(&mut conn, ACCOUNT, "alice").await;
     let chat = handle(&mut conn, ACCOUNT, "+15555550150", "imessage").await;
     contact(&mut conn, ACCOUNT, "Zoë Lima", &[chat]).await;
-    let conv = conversation(&mut conn, ACCOUNT, chat, "individual", None, &[chat]).await;
+    let conv = conversation(&mut conn, ACCOUNT, chat, "one-to-one", None, &[chat]).await;
     let body = "party \u{1F389} café o'brien";
     let edited = message(
         &mut conn,

@@ -430,15 +430,17 @@ pub fn prepare_outputs(
     Ok((resolved, output))
 }
 
-/// Standard export metadata: source / tool / version, the owner identity,
-/// and when the backup was made.
+/// Standard export metadata: source / tool / version and the owner
+/// identity. The Export Date is left for the convert step to stamp
+/// (`message_staging::convert_backup`), which is given it by its caller; each
+/// message's Backup Date is the exporter's
+/// [`ProjectionHooks::backup_taken_at_unix_ms`](message_ir::ProjectionHooks::backup_taken_at_unix_ms).
 pub fn export_meta(
     source: &str,
     tool: &str,
     tool_version: &str,
     owner_identity: Option<String>,
     owner_display_name: Option<String>,
-    backup_taken_at_unix_ms: Option<i64>,
 ) -> message_ir::ExportMeta {
     message_ir::ExportMeta {
         source: source.to_string(),
@@ -446,7 +448,7 @@ pub fn export_meta(
         tool_version: tool_version.to_string(),
         owner_identity,
         owner_display_name,
-        backup_taken_at_unix_ms,
+        exported_at_unix_ms: None,
     }
 }
 

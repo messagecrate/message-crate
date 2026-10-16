@@ -157,7 +157,7 @@ async fn an_edit_evaluates_the_copies_around_the_message_again() {
 #[tokio::test]
 async fn an_attachment_keeps_a_copy_that_still_matches_hidden() {
     let (state, _fixture, token) = importer().await;
-    let missing = IrAttachment {
+    let missing = Attachment {
         size_bytes: Some(12),
         missing_reason: Some("not_found".into()),
         ..attachment(
@@ -206,7 +206,7 @@ async fn an_attachment_keeps_a_copy_that_still_matches_hidden() {
     )
     .await;
     assert!(status.is_success(), "{status}: {text}");
-    let found_file = IrAttachment {
+    let found_file = Attachment {
         digest_sha256: Some(sha),
         size_bytes: Some(bytes.len() as u64),
         ..attachment(

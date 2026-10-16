@@ -14,26 +14,19 @@ use serde::Serialize;
 use std::path::{Component, Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
+use crate::app_directories::MessageCrateDirectory;
 use crate::export_directories::ExportDirectories;
 use crate::run_directories::RunDirectories;
 
 /// The Scratch Directory, which every run's scratch directories go under
 /// (`message_crate_core::ScratchDir`).
-///
-/// # Errors
-///
-/// Returns an error when the operating system names no app-data directory.
-pub(crate) fn scratch_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(crate::app_directories::scratch_dir_in(&app_data_dir(app)?))
+pub(crate) fn scratch_dir(app: &AppHandle) -> PathBuf {
+    app.state::<MessageCrateDirectory>().scratch()
 }
 
 /// The Logs Directory, which holds every Import Run's log.
-///
-/// # Errors
-///
-/// Returns an error when the operating system names no app-data directory.
-pub(crate) fn logs_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(crate::app_directories::logs_dir_in(&app_data_dir(app)?))
+pub(crate) fn logs_dir(app: &AppHandle) -> PathBuf {
+    app.state::<MessageCrateDirectory>().logs()
 }
 
 /// `path`, resolved, when it is in the Logs Directory `logs`, whether or not
@@ -41,13 +34,6 @@ pub(crate) fn logs_dir(app: &AppHandle) -> Result<PathBuf, String> {
 /// ([`missing_path_error`]) rather than calling it outside.
 fn openable_in_logs(path: &str, logs: &Path) -> Option<PathBuf> {
     resolve_openable_path(path, &logs.display().to_string()).ok()
-}
-
-/// The app-data directory.
-fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_data_dir()
-        .map_err(|e| format!("Could not find the app-data directory: {e}"))
 }
 
 /// The logged-in user's home directory, plus which OS this process is running on.
@@ -211,7 +197,7 @@ pub async fn imessage_backup_identities(
     ios: bool,
     backup_password: Option<String>,
 ) -> Result<Vec<String>, String> {
-    let scratch_root = scratch_dir(&app)?.join(message_crate_core::IMESSAGE_READER_DIRECTORY);
+    let scratch_root = scratch_dir(&app).join(message_crate_core::IMESSAGE_READER_DIRECTORY);
     tauri::async_runtime::spawn_blocking(move || {
         let password = backup_password.as_deref().and_then(message_ir::trimmed);
         let log =
@@ -265,7 +251,7 @@ pub fn open_path(
     exports: tauri::State<'_, ExportDirectories>,
     path: String,
 ) -> Result<(), String> {
-    let logs = logs_dir(&app)?;
+    let logs = logs_dir(&app);
     let resolved = match exports
         .openable(Path::new(path.trim()))
         .or_else(|| openable_in_logs(&path, &logs))
@@ -778,8 +764,9 @@ mod tests {
 
     #[test]
     fn a_log_not_written_yet_in_the_logs_directory_is_reported_missing_not_outside() {
-        let app_data = tempfile::tempdir().unwrap();
-        let logs = crate::app_directories::logs_dir_in(app_data.path());
+        let home = tempfile::tempdir().unwrap();
+        let directory = crate::app_directories::MessageCrateDirectory::in_home(home.path(), false);
+        let logs = directory.logs();
         let log = logs.join("import-whatsapp-261004-143000.log");
 
         let resolved = openable_in_logs(&log.display().to_string(), &logs).unwrap();
@@ -788,15 +775,13 @@ mod tests {
             missing_path_error(&resolved).unwrap_err(),
             "Nothing exists at import-whatsapp-261004-143000.log yet"
         );
-        let elsewhere = app_data.path().join("data").join("messagecrate.db");
+        let elsewhere = directory.data().join("messagecrate.db");
         assert!(openable_in_logs(&elsewhere.display().to_string(), &logs).is_none());
     }
 
     #[test]
     fn missing_log_is_reported_like_any_other_missing_path() {
-        let log = PathBuf::from(
-            "/home/sam/.local/share/message-crate/logs/import-whatsapp-261004-143000.log",
-        );
+        let log = PathBuf::from("/home/sam/message-crate/logs/import-whatsapp-261004-143000.log");
         let err = missing_path_error(&log).unwrap_err();
         assert_eq!(
             err,

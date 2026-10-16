@@ -13,9 +13,9 @@ use anyhow::{Context, Result};
 use message_crate_core::{ConvertRun, Counter, ExportReport, project_conversation};
 use message_csv::format_local_ts;
 use message_ir::{
-    ConversationDocument, ExportMeta, IdentityType, IrAttachment, IrParticipant, IrService,
-    IrSource, PendingAttachment, PendingConversation, PendingMessage, PendingReply,
-    ProjectionHooks, Reaction, SortKeyUnit,
+    Attachment, ConversationDocument, ExportMeta, IdentityType, Participant, PendingAttachment,
+    PendingConversation, PendingMessage, PendingReply, ProjectionHooks, Reaction, SortKeyUnit,
+    Transport, VendorFields,
 };
 use message_staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
 use serde_json::Map;
@@ -42,8 +42,8 @@ pub(crate) struct ConvertExportArgs<'a> {
     /// so on every message as the address it was held at. `None` records no
     /// owner, which leaves the conversations counted toward no identity.
     pub owner_identity: Option<String>,
-    /// When the backup was made, in Unix milliseconds, stamped on the export
-    /// header ([`backup_taken_at_unix_ms`](crate::run::backup_taken_at_unix_ms)).
+    /// When the backup was made, in Unix milliseconds: every message's
+    /// Backup Date ([`backup_taken_at_unix_ms`](crate::run::backup_taken_at_unix_ms)).
     pub backup_taken_at_unix_ms: Option<i64>,
     pub convert_run: ConvertRun,
 }
@@ -79,7 +79,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         |writer, cancel, mut report| {
             let copy_attachments = writer.files().copies();
             let mut conversations: BTreeMap<String, PendingConversation> = BTreeMap::new();
-            let mut rosters: BTreeMap<String, Vec<IrParticipant>> = BTreeMap::new();
+            let mut rosters: BTreeMap<String, Vec<Participant>> = BTreeMap::new();
 
             for (jid, chat) in store {
                 message_crate_core::check_cancel(cancel)?;
@@ -115,8 +115,8 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
                             EXPORT_TOOL_VERSION,
                             owner_identity,
                             None,
-                            backup_taken_at_unix_ms,
                         ),
+                        backup_taken_at_unix_ms,
                     },
                     media_sources: VecDeque::new(),
                 },
@@ -148,7 +148,7 @@ impl Project for WhatsappDocuments {
         Some(document)
     }
 
-    fn attachment_source(&mut self, att: &mut IrAttachment) -> (AttachmentSource, Option<u64>) {
+    fn attachment_source(&mut self, att: &mut Attachment) -> (AttachmentSource, Option<u64>) {
         let hint = att.size_bytes;
         match self.media_sources.pop_front().flatten() {
             Some(path) => (AttachmentSource::Path(path), hint),
@@ -199,7 +199,7 @@ fn ingest_chat(
     copy_attachments: bool,
     media_search_roots: &[PathBuf],
     report: &mut ExportReport,
-) -> Option<(String, PendingConversation, Vec<IrParticipant>)> {
+) -> Option<(String, PendingConversation, Vec<Participant>)> {
     let group = is_group_jid(jid);
     let chat_id = chat_id_from_jid(jid);
     let chat_name = chat.name.as_deref().and_then(message_ir::nonempty);
@@ -380,7 +380,7 @@ fn is_a_name(sender: &str) -> bool {
 /// a member or sender with the owner's number is left out.
 struct Roster<'a> {
     owner: Option<&'a str>,
-    participants: Vec<IrParticipant>,
+    participants: Vec<Participant>,
     /// The phone numbers among `participants`, in the same order.
     numbers: Vec<String>,
     /// Index into `participants` of each person already added.
@@ -438,7 +438,7 @@ impl<'a> Roster<'a> {
         {
             self.numbers.push(number.clone());
         }
-        self.participants.push(IrParticipant {
+        self.participants.push(Participant {
             identity,
             display_name: name,
             country: None,
@@ -453,7 +453,7 @@ impl<'a> Roster<'a> {
         if jid_to_e164(jid).is_some() {
             self.numbers.push(chat_id.to_string());
         }
-        self.participants.push(IrParticipant {
+        self.participants.push(Participant {
             identity: Some(chat_id.to_string()),
             display_name: name,
             country: None,
@@ -637,8 +637,10 @@ fn reaction_from_json(reaction: &ReactionJson) -> Option<Reaction> {
 /// WhatsApp deltas of the shared [`message_ir::pending_to_document`] projection.
 struct WhatsappProjection {
     export: ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
     /// Each conversation's participants, by chat id.
-    rosters: BTreeMap<String, Vec<IrParticipant>>,
+    rosters: BTreeMap<String, Vec<Participant>>,
 }
 
 impl ProjectionHooks for WhatsappProjection {
@@ -646,8 +648,12 @@ impl ProjectionHooks for WhatsappProjection {
         self.export.clone()
     }
 
-    fn service(&self, _message: &PendingMessage) -> IrService {
-        IrService::Whatsapp
+    fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+        self.backup_taken_at_unix_ms
+    }
+
+    fn service(&self, _message: &PendingMessage) -> Transport {
+        Transport::Whatsapp
     }
 
     fn sort_key_unit(&self) -> SortKeyUnit {
@@ -698,8 +704,8 @@ impl ProjectionHooks for WhatsappProjection {
         }
     }
 
-    fn attachment_to_ir(&self, att: &PendingAttachment, message: &PendingMessage) -> IrAttachment {
-        IrAttachment {
+    fn attachment_to_ir(&self, att: &PendingAttachment, message: &PendingMessage) -> Attachment {
+        Attachment {
             // No path yet: the writer sets it when it stages the file.
             path: None,
             original_name: att.name_hint.clone(),
@@ -715,11 +721,7 @@ impl ProjectionHooks for WhatsappProjection {
     }
 
     /// The participants [`ingest_chat`] gathered for the chat ([`Roster`]).
-    fn participants(
-        &self,
-        chat_id: &str,
-        _conversation: &PendingConversation,
-    ) -> Vec<IrParticipant> {
+    fn participants(&self, chat_id: &str, _conversation: &PendingConversation) -> Vec<Participant> {
         self.rosters.get(chat_id).cloned().unwrap_or_default()
     }
 
@@ -739,7 +741,11 @@ impl ProjectionHooks for WhatsappProjection {
     /// nor `reply_key_id` is stored beside it. Nor is a reaction copied
     /// here: `reactions` records each on the message, and the fork's
     /// name-to-emoji `reactions` map is not read at all.
-    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> IrSource {
+    fn vendor_fields(
+        &self,
+        conversation: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields {
         let mut fields = Map::new();
         let whatsapp_jid = conversation.extra_str("whatsapp_jid");
         if !whatsapp_jid.is_empty() {
@@ -755,7 +761,7 @@ impl ProjectionHooks for WhatsappProjection {
                 serde_json::Value::String(key_id.to_string()),
             );
         }
-        IrSource {
+        VendorFields {
             android_type: None,
             fields,
         }

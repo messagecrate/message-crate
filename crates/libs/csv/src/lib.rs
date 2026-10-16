@@ -9,7 +9,7 @@ use std::path::Path;
 /// One attachment object written into `attachments_json`.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AttachmentCell {
-    /// Shared attachment metadata (serialized inline — same JSON shape as before).
+    /// Shared attachment metadata (serialized inline, same JSON shape as before).
     #[serde(flatten)]
     pub meta: message_ir::AttachmentMeta,
     /// Sticker flag.
@@ -22,7 +22,7 @@ pub struct AttachmentCell {
     pub sticker_effect: Option<String>,
 }
 
-impl From<AttachmentCell> for message_ir::IrAttachment {
+impl From<AttachmentCell> for message_ir::Attachment {
     fn from(cell: AttachmentCell) -> Self {
         let AttachmentCell {
             meta,

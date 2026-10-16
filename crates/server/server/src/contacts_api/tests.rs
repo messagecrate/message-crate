@@ -712,7 +712,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
         .unwrap()
         .expect("contact exists");
     assert_eq!(detail.name, "Sam");
-    assert_eq!(detail.direct_conversations, 1);
+    assert_eq!(detail.one_to_one_conversations, 1);
     assert_eq!(detail.group_conversations, 1);
     assert_eq!(detail.total_messages, 3);
     assert_eq!(detail.identities.len(), 1);
@@ -725,7 +725,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     assert_eq!(detail.identities[0].conversations, 2);
     // The identity table counts what Sam sent from the identity, as
     // `total_messages` does: your reply is not Sam's (#913).
-    assert_eq!(detail.identities[0].direct_messages, 2);
+    assert_eq!(detail.identities[0].one_to_one_messages, 2);
     assert_eq!(detail.identities[0].group_messages, 1);
     assert_eq!(
         detail.identities[0].start_date.as_deref(),
@@ -881,9 +881,9 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
 
     assert_eq!(summaries[0].id, sam_id);
     assert_eq!(summaries[0].name, "Sam");
-    assert_eq!(summaries[0].individual_conversations, 1);
+    assert_eq!(summaries[0].one_to_one_conversations, 1);
     assert_eq!(summaries[0].group_conversations, 1);
-    assert_eq!(summaries[0].individual_message_count, 2);
+    assert_eq!(summaries[0].one_to_one_message_count, 2);
     assert_eq!(summaries[0].group_message_count, 1);
     assert_eq!(
         summaries[0].start_date.as_deref(),
@@ -896,9 +896,9 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
 
     assert_eq!(summaries[1].id, pat_id);
     assert_eq!(summaries[1].name, "Pat");
-    assert_eq!(summaries[1].individual_conversations, 1);
+    assert_eq!(summaries[1].one_to_one_conversations, 1);
     assert_eq!(summaries[1].group_conversations, 0);
-    assert_eq!(summaries[1].individual_message_count, 1);
+    assert_eq!(summaries[1].one_to_one_message_count, 1);
     assert_eq!(summaries[1].group_message_count, 0);
     assert_eq!(
         summaries[1].start_date.as_deref(),
@@ -980,14 +980,14 @@ async fn a_conversation_with_two_of_a_contacts_identities_counts_once() {
     for identity in &detail.identities {
         assert_eq!(identity.conversations, 1, "{}", identity.address);
     }
-    assert_eq!(detail.direct_conversations, 0);
+    assert_eq!(detail.one_to_one_conversations, 0);
     assert_eq!(detail.group_conversations, 1);
 
     let summaries = get_contact_summaries(&mut conn, account, &[contact_id])
         .await
         .unwrap();
     assert_eq!(summaries.len(), 1);
-    assert_eq!(summaries[0].individual_conversations, 0);
+    assert_eq!(summaries[0].one_to_one_conversations, 0);
     assert_eq!(summaries[0].group_conversations, 1);
 }
 
@@ -1128,7 +1128,7 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
         &mut conn,
         account,
         1,
-        "individual",
+        "one-to-one",
         jane_phone,
         &[jane_phone],
         false,
@@ -1201,7 +1201,7 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
     };
     assert_eq!(phone.address, "+15555550100");
     assert_eq!(phone.conversations, 2, "the trashed group is left out");
-    assert_eq!(phone.direct_messages, 40);
+    assert_eq!(phone.one_to_one_messages, 40);
     assert_eq!(phone.group_messages, 10);
     assert_eq!(
         phone.start_date.as_deref(),
@@ -1210,7 +1210,7 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
     assert_eq!(phone.end_date.as_deref(), Some("2024-02-01T00:55:00.000Z"));
     assert_eq!(email.address, "jane@example.com");
     assert_eq!(email.conversations, 1, "it takes part in the group");
-    assert_eq!(email.direct_messages, 0);
+    assert_eq!(email.one_to_one_messages, 0);
     assert_eq!(email.group_messages, 0);
     assert_eq!(email.start_date, None);
     assert_eq!(email.end_date, None);
@@ -1222,9 +1222,9 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
         panic!("two summaries: {summaries:?}");
     };
     assert_eq!(jane_summary.id, jane);
-    assert_eq!(jane_summary.individual_conversations, 1);
+    assert_eq!(jane_summary.one_to_one_conversations, 1);
     assert_eq!(jane_summary.group_conversations, 1);
-    assert_eq!(jane_summary.individual_message_count, 40);
+    assert_eq!(jane_summary.one_to_one_message_count, 40);
     assert_eq!(jane_summary.group_message_count, 10);
     assert_eq!(
         jane_summary.start_date.as_deref(),
@@ -1235,7 +1235,7 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
         Some("2024-02-01T00:55:00.000Z")
     );
     assert_eq!(bob_summary.id, bob);
-    assert_eq!(bob_summary.individual_message_count, 0);
+    assert_eq!(bob_summary.one_to_one_message_count, 0);
     assert_eq!(bob_summary.group_message_count, 30);
 
     // The holder's identity counts every message held at it, sent or
@@ -1248,7 +1248,7 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
         .find(|identity| identity.address == "+15555550128")
         .expect("the holder's identity");
     assert_eq!(held.conversations, 2);
-    assert_eq!(held.direct_messages, 100);
+    assert_eq!(held.one_to_one_messages, 100);
     assert_eq!(held.group_messages, 60);
     assert_eq!(held.start_date.as_deref(), Some("2024-01-01T00:00:00.000Z"));
     assert_eq!(held.end_date.as_deref(), Some("2024-02-01T00:59:00.000Z"));
@@ -1317,7 +1317,7 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
     .unwrap();
 
     for (id, kind, chat, day) in [
-        (1, "individual", ada_phone, "2024-01-01"),
+        (1, "one-to-one", ada_phone, "2024-01-01"),
         (2, "group", group_handle, "2024-02-01"),
         (3, "orphaned", orphaned_chat, "2024-03-01"),
     ] {
@@ -1331,7 +1331,7 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
         .expect("Ada exists");
     assert_eq!(
         (
-            detail.direct_conversations,
+            detail.one_to_one_conversations,
             detail.group_conversations,
             detail.orphaned_conversations
         ),
@@ -1344,7 +1344,7 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
     assert_eq!(phone.conversations, 3);
     assert_eq!(
         (
-            phone.direct_messages,
+            phone.one_to_one_messages,
             phone.group_messages,
             phone.orphaned_messages
         ),
@@ -1359,7 +1359,7 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
     };
     assert_eq!(
         (
-            summary.individual_conversations,
+            summary.one_to_one_conversations,
             summary.group_conversations,
             summary.orphaned_conversations
         ),
@@ -1367,7 +1367,7 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
     );
     assert_eq!(
         (
-            summary.individual_message_count,
+            summary.one_to_one_message_count,
             summary.group_message_count,
             summary.orphaned_message_count
         ),
@@ -1424,7 +1424,7 @@ async fn the_holders_orphaned_messages_count_as_orphaned() {
     // conversation of orphaned messages that has no sender's address in its
     // key and no participant (#1776).
     for (id, kind, chat, count) in [
-        (1, "individual", ada_phone, 1),
+        (1, "one-to-one", ada_phone, 1),
         (2, "group", group_handle, 2),
     ] {
         insert_conversation(&mut conn, account, id, kind, chat, &[ada_phone], false).await;
@@ -1448,7 +1448,7 @@ async fn the_holders_orphaned_messages_count_as_orphaned() {
     assert_eq!(held.conversations, 3);
     assert_eq!(
         (
-            held.direct_messages,
+            held.one_to_one_messages,
             held.group_messages,
             held.orphaned_messages
         ),
@@ -2218,7 +2218,7 @@ async fn insert_contact_with_handle(
     contact_id
 }
 
-async fn insert_direct_conversation(
+async fn insert_one_to_one_conversation(
     conn: &mut SqliteConnection,
     account: i64,
     conversation_id: i64,
@@ -2278,7 +2278,7 @@ async fn list_contacts_filters_has_messages_and_never_messaged() {
     let mut conn = fixture.conn().await;
     insert_contact_with_handle(&mut conn, account, "Messaged", "+15555550100").await;
     insert_contact_with_handle(&mut conn, account, "Silent", "+15555550135").await;
-    insert_direct_conversation(
+    insert_one_to_one_conversation(
         &mut conn,
         account,
         1,
@@ -2361,9 +2361,9 @@ async fn list_contacts_sorts_by_last_heard_with_silent_contacts_last() {
     account_profile::link_account_handle(&mut conn, account, "+15555550128", IdentityType::Phone)
         .await
         .unwrap();
-    insert_direct_conversation(&mut conn, account, 1, "+15555550100", "imessage", &[]).await;
-    insert_direct_conversation(&mut conn, account, 2, "+15555550135", "imessage", &[]).await;
-    insert_direct_conversation(&mut conn, account, 3, "+15555550143", "imessage", &[]).await;
+    insert_one_to_one_conversation(&mut conn, account, 1, "+15555550100", "imessage", &[]).await;
+    insert_one_to_one_conversation(&mut conn, account, 2, "+15555550135", "imessage", &[]).await;
+    insert_one_to_one_conversation(&mut conn, account, 3, "+15555550143", "imessage", &[]).await;
     insert_message_from(
         &mut conn,
         account,
@@ -2547,7 +2547,7 @@ async fn list_contacts_filters_service_or() {
     insert_contact_with_handle(&mut conn, account, "IMsg", "+15555550100").await;
     insert_contact_with_handle(&mut conn, account, "Sms", "+15555550135").await;
     insert_contact_with_handle(&mut conn, account, "Wa", "+15555550143").await;
-    insert_direct_conversation(
+    insert_one_to_one_conversation(
         &mut conn,
         account,
         1,
@@ -2556,7 +2556,7 @@ async fn list_contacts_filters_service_or() {
         &["2024-06-01T12:00:00Z"],
     )
     .await;
-    insert_direct_conversation(
+    insert_one_to_one_conversation(
         &mut conn,
         account,
         2,
@@ -2565,7 +2565,7 @@ async fn list_contacts_filters_service_or() {
         &["2024-06-01T12:00:00Z"],
     )
     .await;
-    insert_direct_conversation(
+    insert_one_to_one_conversation(
         &mut conn,
         account,
         3,
@@ -3232,7 +3232,7 @@ async fn trashed_contact_row_count(conn: &mut SqliteConnection, account_id: i64,
 async fn trashed_contact_fixture() -> (TestFixture, RegisteredAccount, i64) {
     let (fixture, account) = contacts_fixture_with_handles(&["+15550100"]).await;
     let mut conn = fixture.conn().await;
-    insert_direct_conversation(
+    insert_one_to_one_conversation(
         &mut conn,
         account.account_id,
         1,
@@ -3298,7 +3298,7 @@ async fn contact_delete_makes_it_unknown_and_leaves_its_conversations_alone() {
     .await;
     assert_eq!(detail["name"], "", "{detail}");
     assert_eq!(detail["unknown"], true, "{detail}");
-    assert_eq!(detail["direct_conversations"], 1, "{detail}");
+    assert_eq!(detail["one_to_one_conversations"], 1, "{detail}");
     assert_eq!(detail["total_messages"], 2, "{detail}");
     let conversations: serde_json::Value = crate::test_support::get_json(
         &fixture.state,

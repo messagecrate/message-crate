@@ -15,7 +15,7 @@ async fn reset_for_account_leaves_other_accounts() {
             &StagingConversation {
                 account_id: account,
                 chat_handle_id: 1,
-                conversation_type: "individual",
+                conversation_type: "one-to-one",
                 group_title: None,
                 group_title_at: None,
                 source_file: "t.json",

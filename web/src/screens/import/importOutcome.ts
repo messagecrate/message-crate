@@ -1,10 +1,6 @@
 import type { ImportIssue } from "../../components/import/ImportSummaryPanel";
-import type {
-  AttachmentForecast,
-  SizeVerdict,
-  StagingSummary,
-  UploadFinishedReport,
-} from "../../lib/tauri";
+import type { AttachmentForecast, SizeVerdict, StagingSummary } from "../../lib/desktop/staging";
+import type { UploadFinishedReport } from "../../lib/desktop/upload";
 
 /**
  * How an Upload ended. `paused` is an Upload that did not send every

@@ -19,7 +19,7 @@ The run model (`RunContext`, `OutputConfig`, `ExportReport`, `ExportTransforms`,
 On-disk forms:
 
 - **JSON** — one pretty-printed `<conversation-stem>.json` per chat
-- **JSONL** (the desktop app's default) — one `<conversation-stem>.jsonl` per chat: header line, then one `IrMessage` per line
+- **JSONL** (the desktop app's default) — one `<conversation-stem>.jsonl` per chat: header line, then one `message_ir::Message` per line
 
 Stem rules match CSV filenames. Packaging-only suffixes (e.g. `__whatsapp`) affect the on-disk stem but are **not** serialized in the JSON body. When two conversations in one run reduce to the same stem, ignoring case (two groups with one title, or two untitled groups with the same people), each gets `__` and the first 8 hex digits of the SHA-256 of its `chat_identifier` appended, so neither file replaces the other. Two conversations with the same `chat_identifier` and stem stop the run instead.
 Reading a file back gives the document whatever follows the stem it would have without a suffix, when that starts with `__`, so a converted file keeps its name. The readers know no suffix by name: the exporter that adds one owns it.
@@ -30,24 +30,24 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 
 - **Common-message path** (`ConversationDocument` → `message_ir_format::FormatSink`, one of json/jsonl/csv/eml/mbox/xml): all exporters, including iMessage (`imessage-ir-exporter`). Per-chat formats also accept `write_format`; XML uses a single `smses.xml` via the sink.
 - **Media + obfuscate** run inside `FormatSink::finish` for every format (`message_crate_core::ExportTransforms`: none / copy / convert / compress, plus optional obfuscate). When obfuscate is on, exporters skip staging real attachment bytes and convert/compress is not run — only placeholder files are written. Exporters pass transforms from `OutputConfig.media` / `.obfuscate`; there is no CSV-only post-step. EML / MBOX / XML embed media and drop the staged `attachments/` directory afterward.
-- **Schema version 15 only** (breaking). Version 15 lets a participant and a message's sender carry the country the source read their identity in (`country`, `sender_country`; see [Identity country](#identity-country)), which version 14 had no field for. Version 14 had let an earlier version of an edited message carry no `text` (see [Earlier versions](#earlier-versions)), for a source that records the edit and not the text it replaced, as iMazing does; version 13 required the text. A version-13 file would parse under version 14's rules, and is refused all the same: a file is imported by its own version's rules or not at all. Version 13 had given a participant no `identity_type`: the server works out every identity's type from the service and the address (see [Identity types](#identity-types)), where version 12 stated a type for each participant that the import took over the address. Version 12 had said whether each message's time has milliseconds, in its required `time_precision` (see [Time precision](#time-precision)), which version 11 did not, so a time ending in `.000` could be a whole second or a millisecond time, and the import could not tell a whole-second copy of a message from a millisecond one. Version 11 had said when the backup was made, in `export.backup_taken_at_unix_ms` (see [When the backup was made](#when-the-backup-was-made)), which version 10 did not, so an import could not tell which of two backups of one phone is the later one. Version 10 had kept the message a reply quotes in the message's own `reply_to`, for every source (see [Replies](#replies)), where version 9 kept the Apple Messages reply link in `imessage.is_reply` and `imessage.in_reply_to_guid`, and a reply count in `imessage.num_replies`. Version 9 had given orphaned messages conversations of type `orphaned` (see [Orphaned messages](#orphaned-messages)), where version 8 put them all in one `individual` conversation named `orphaned`. Version 8 had kept an edited message's earlier versions in its own `edits`, for every source, where version 7 kept the Apple Messages edit history as a JSON value in `imessage.edits`. Version 7 had moved a message's mark, Deleted in the source app or Unsent, in its own `deletion`, for every source, where version 6 kept the Apple Messages deleted mark in `imessage.is_deleted`. Version 6 had moved a message's reactions into its own `reactions` list, one shape for every source, where version 5 kept Apple Messages reactions as a JSON value in `imessage.tapbacks`. Version 5 had named every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`. Version 14 and older are refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
+- **Schema version 17 only** (breaking). Version 17 dates each message by the backup it was read from, in the message's own `backup_taken_at_unix_ms` (see [When the backup was made](#when-the-backup-was-made)), and says when the file was written, in `export.exported_at_unix_ms` (see [When the file was written](#when-the-file-was-written)); version 16 gave the whole file one backup date in `export.backup_taken_at_unix_ms`, which was wrong for some messages of a file holding messages from two backups. Version 16 had named a one-to-one conversation `one-to-one` in `conversation_type`, where version 15 said `individual`. Version 15 had let a participant and a message's sender carry the country the source read their identity in (`country`, `sender_country`; see [Identity country](#identity-country)), which version 14 had no field for. Version 14 had let an earlier version of an edited message carry no `text` (see [Earlier versions](#earlier-versions)), for a source that records the edit and not the text it replaced, as iMazing does; version 13 required the text. A version-13 file would parse under version 14's rules, and is refused all the same: a file is imported by its own version's rules or not at all. Version 13 had given a participant no `identity_type`: the server works out every identity's type from the service and the address (see [Identity types](#identity-types)), where version 12 stated a type for each participant that the import took over the address. Version 12 had said whether each message's time has milliseconds, in its required `time_precision` (see [Time precision](#time-precision)), which version 11 did not, so a time ending in `.000` could be a whole second or a millisecond time, and the import could not tell a whole-second copy of a message from a millisecond one. Version 11 had said when the backup was made, in `export.backup_taken_at_unix_ms` (see [When the backup was made](#when-the-backup-was-made)), which version 10 did not, so an import could not tell which of two backups of one phone is the later one. Version 10 had kept the message a reply quotes in the message's own `reply_to`, for every source (see [Replies](#replies)), where version 9 kept the Apple Messages reply link in `imessage.is_reply` and `imessage.in_reply_to_guid`, and a reply count in `imessage.num_replies`. Version 9 had given orphaned messages conversations of type `orphaned` (see [Orphaned messages](#orphaned-messages)), where version 8 put them all in one `individual` conversation named `orphaned`. Version 8 had kept an edited message's earlier versions in its own `edits`, for every source, where version 7 kept the Apple Messages edit history as a JSON value in `imessage.edits`. Version 7 had moved a message's mark, Deleted in the source app or Unsent, in its own `deletion`, for every source, where version 6 kept the Apple Messages deleted mark in `imessage.is_deleted`. Version 6 had moved a message's reactions into its own `reactions` list, one shape for every source, where version 5 kept Apple Messages reactions as a JSON value in `imessage.tapbacks`. Version 5 had named every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`. Version 16 and older are refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
 
-## Document schema (`schema_version: 15`)
+## Document schema (`schema_version: 17`)
 
 ```json
 {
-  "schema_version": 15,
+  "schema_version": 17,
   "export": {
     "source": "sms-backup-restore",
     "tool": "SMS Backup & Restore",
     "tool_version": "10.26.003",
     "owner_identity": "+15555550100",
     "owner_display_name": "Me",
-    "backup_taken_at_unix_ms": 1400800000000
+    "exported_at_unix_ms": 1400900000000
   },
   "conversation": {
     "chat_identifier": "+15555550101",
-    "conversation_type": "individual",
+    "conversation_type": "one-to-one",
     "group_title": null,
     "participants": [
       { "identity": "+15555550101", "display_name": "Sam" }
@@ -76,7 +76,8 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
       "source": {
         "android_type": 2,
         "fields": { "kind": "sms", "attrs": { "address": "+15555550101" } }
-      }
+      },
+      "backup_taken_at_unix_ms": 1400800000000
     }
   ]
 }
@@ -85,7 +86,7 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 | Tier | Contents |
 |------|----------|
 | Core | typed conversation + message fields |
-| `imessage` | typed Apple extensions (`IrImessage`); nested `parts` / `app` are JSON values |
+| `imessage` | typed Apple extensions (`message_ir::ImessageExtensions`); nested `parts` / `app` are JSON values |
 | `source` | `android_type` (`i32` or null) + vendor `fields` object |
 
 ### Identity
@@ -158,7 +159,7 @@ CSV carries it in the `time_precision` column, and EML and MBOX in the `X-ME-Tim
 
 ### When the backup was made
 
-`export.backup_taken_at_unix_ms` is when the backup the file was read from was made, in Unix milliseconds, or `null` when nothing says. Each exporter reads it from its source:
+A message's `backup_taken_at_unix_ms`, its Backup Date, is when the backup it was read from was made, in Unix milliseconds. It is left out when nothing says. It is the message's own, not the file's: a file an Export Run wrote can hold messages stored from several backups, each with its own date, and a message without one beside dated ones. Each exporter reads one backup and gives every message the date of that backup:
 
 | Source | Date |
 |--------|------|
@@ -167,14 +168,20 @@ CSV carries it in the `time_precision` column, and EML and MBOX in the `X-ME-Tim
 | WhatsApp from an iPhone backup | The `Date` in the backup's `Manifest.plist` |
 | WhatsApp from Android | The modification time of the database file, `msgstore.db.crypt15` or a decrypted `msgstore.db` |
 | WhatsApp from a ready-made `result.json` | The JSON file's modification time |
-| SMS Backup & Restore | The root element's `backup_date` attribute; a file without one is dated by its modification time. An import reads one file, so every conversation in it has that one date. Message Crate's own XML export writes `backup_date` back, the newest date of the conversations it holds |
+| SMS Backup & Restore | The root element's `backup_date` attribute; a file without one is dated by its modification time. An import reads one file, so every message in it has that one date. The format dates a whole file, not each message, so Message Crate's own XML export writes one `backup_date`: the newest date of the messages it holds |
 | iMazing | The export date: the newest modification time of the CSV files iMazing wrote |
 | OpenExtract, GO SMS Pro, SMS Backup+ | The newest modification time of the files read, because none of them records a date of its own |
-| An Export Run of the server | The backup date of the conversation's messages when they all have the same one, else `null`, because one date for messages from two backups would be wrong for some of them. A message a file without a date gave its mark or text has no date here, so such a conversation is exported with `null` |
+| An Export Run of the server | The date the server stored for each message, so a conversation stored from two backups keeps each message's date, and an import of the file elsewhere stores them. A message a file without a date gave its mark or text has no date, and is written without one, beside its dated neighbors |
 
 The import reads it to decide between two copies of one message from one source. The copy from the later backup gives the message its deletion mark, mark or no mark, and its text and earlier versions, in one import in either file order and across imports in either order. A copy from an earlier backup changes neither. The server keeps the date to the millisecond. A file that says nothing, or two copies with the same date, keep the rules for files without a date: a mark adds and is never cleared, and an edit counts as later when its newest earlier version is newer. What a file that says nothing gave a message stays under those rules after a dated file arrives: its mark is never cleared, and its text gives way only to a later edit, in any file order. Attachments and reactions add from either copy.
 
-CSV carries it in the `backup_taken_at_unix_ms` column of every row, and EML and MBOX in the `X-ME-Backup-Taken-At-Unix-Ms` header of every mail, blank or absent when the file says nothing. A value that is not a whole number is refused rather than read as no date.
+CSV carries it in the `backup_taken_at_unix_ms` column of each row, and EML and MBOX in the `X-ME-Backup-Taken-At-Unix-Ms` header of each mail, blank or absent when nothing says. A value that is not a whole number is refused rather than read as no date.
+
+### When the file was written
+
+`export.exported_at_unix_ms`, the Export Date, is when the run that wrote the file wrote it, in Unix milliseconds: an import's exporter run or an Export Run. The run is given the instant by its caller, the desktop app, and never reads the clock itself. It is `null` for a file read from a format that does not say, such as SMS Backup & Restore XML. A Convert, which rewrites files already exported into another format, keeps the date each file carries: the date names the run that first wrote the messages out, and a Convert only changes their format.
+
+The date is for whoever opens the file. It decides nothing on import, and the server does not store it: the Audit Trail already records every Export Run with its time. CSV carries it in the `exported_at_unix_ms` column of every row, and EML and MBOX in the `X-ME-Exported-At-Unix-Ms` header of every mail.
 
 ### Reactions
 
@@ -247,7 +254,7 @@ Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + 
 
 ### Vocabulary (enums)
 
-- `conversation_type`: `individual` \| `group` \| `orphaned`
+- `conversation_type`: `one-to-one` \| `group` \| `orphaned`
 - `service`: `sms` \| `imessage` \| `whatsapp` \| `rcs` \| `discord` \| `signal` \| `telegram` \| `slack` \| `unknown`
 - `message_kind`: `sms` \| `mms` \| `imessage` \| `tapback` \| `sticker_tapback` \| `announcement` \| `location_share` \| `balloon` \| `unknown`
 
@@ -264,12 +271,12 @@ Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + 
 ## JSONL layout
 
 ```text
-{"schema_version":15,"export":{…},"conversation":{…}}
+{"schema_version":17,"export":{…},"conversation":{…}}
 {"guid":"…","timestamp_unix_ms":…, …}
 …
 ```
 
-Line 1 is the header (includes `conversation.stats`; no `messages` array). Each following line is one `IrMessage`.
+Line 1 is the header (includes `conversation.stats`; no `messages` array). Each following line is one `message_ir::Message`.
 
 ## Projectors
 

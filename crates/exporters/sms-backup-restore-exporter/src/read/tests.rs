@@ -1,7 +1,7 @@
 use super::*;
 use crate::write::SbrBackupSession;
 use message_crate_core::{CancelFlag, LogSink, ProgressSink};
-use message_ir::IrDirection;
+use message_ir::Direction;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -152,7 +152,7 @@ fn group_mms_sender_direction_and_conversation() {
         ["+15555550101", "+15555550102", "+15555550103"],
         "the owner is not a participant, in any spelling"
     );
-    let seen: Vec<(&str, IrDirection, Option<&str>)> = document
+    let seen: Vec<(&str, Direction, Option<&str>)> = document
         .messages
         .iter()
         .map(|m| (m.text.as_str(), m.direction, m.sender_identity.as_deref()))
@@ -160,10 +160,10 @@ fn group_mms_sender_direction_and_conversation() {
     assert_eq!(
         seen,
         [
-            ("from lee", IrDirection::Incoming, Some("+15555550103")),
-            ("no from", IrDirection::Incoming, None),
-            ("sent by me", IrDirection::Outgoing, Some("+15555550100")),
-            ("from ana", IrDirection::Incoming, Some("+15555550102")),
+            ("from lee", Direction::Incoming, Some("+15555550103")),
+            ("no from", Direction::Incoming, None),
+            ("sent by me", Direction::Outgoing, Some("+15555550100")),
+            ("from ana", Direction::Incoming, Some("+15555550102")),
         ]
     );
 }
@@ -350,7 +350,7 @@ fn two_messages_that_differ_only_in_an_attachment_are_both_kept() {
 }
 
 #[test]
-fn a_contact_name_names_the_peer_of_a_direct_conversation() {
+fn a_contact_name_names_the_peer_of_a_one_to_one_conversation() {
     // Only sent messages, which name the peer but carry no sender.
     let docs = read_xml(
         r#"<sms protocol="0" address="+15555550101" date="1400773261000" type="2" body="hi" contact_name="Sam"/>"#,
@@ -606,16 +606,20 @@ fn dated_fixture() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/dated_backup.xml")
 }
 
-/// The backup date of each conversation read from `input`, by chat id.
-fn backup_dates(input: &Path) -> Vec<(String, Option<i64>)> {
+/// The Backup Dates the messages of each conversation read from `input`
+/// carry, each date once, by chat id.
+fn backup_dates(input: &Path) -> Vec<(String, Vec<Option<i64>>)> {
     let owners = ["+15555550100".to_string()];
     let (docs, _) = read_backup(input, opts(&owners, None, None)).unwrap();
     docs.into_iter()
         .map(|document| {
-            (
-                document.conversation.chat_identifier,
-                document.export.backup_taken_at_unix_ms,
-            )
+            let mut dates: Vec<Option<i64>> = document
+                .messages
+                .iter()
+                .map(|m| m.backup_taken_at_unix_ms)
+                .collect();
+            dates.dedup();
+            (document.conversation.chat_identifier, dates)
         })
         .collect()
 }
@@ -630,8 +634,8 @@ fn the_backup_date_is_the_files_backup_date_attribute() {
     assert_eq!(
         backup_dates(&input),
         [
-            ("+15555550101".to_string(), Some(1_790_793_912_000)),
-            ("+15555550102".to_string(), Some(1_790_793_912_000)),
+            ("+15555550101".to_string(), vec![Some(1_790_793_912_000)]),
+            ("+15555550102".to_string(), vec![Some(1_790_793_912_000)]),
         ]
     );
 }
@@ -649,6 +653,6 @@ fn a_file_without_a_backup_date_is_dated_by_its_modification_time() {
     message_crate_core::testutil::set_modified_unix_ms(&input, 1_500_000_000_000);
     assert_eq!(
         backup_dates(&input),
-        [("+15555550101".to_string(), Some(1_500_000_000_000))]
+        [("+15555550101".to_string(), vec![Some(1_500_000_000_000)])]
     );
 }

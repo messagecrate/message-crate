@@ -8,8 +8,8 @@ use message_csv::{
     AttachmentCell, ParticipantCell, format_local_ts, json_cell, write_guarded_record,
 };
 use message_ir::{
-    ConversationDocument, ConversationHeader, Deletion, IdentityService, IrImessage, IrMessage,
-    IrMessageKind, IrService,
+    ConversationDocument, ConversationHeader, Deletion, IdentityService, ImessageExtensions,
+    Message, MessageKind, Transport,
 };
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 /// Unified CSV columns for every exporter (IR v4 projection).
 ///
 /// Apple-only cells are empty for non-iMessage sources. Legacy names
-/// (`date_ms`, `contact_name`, `xml_fields_json`) are gone — use
+/// (`date_ms`, `contact_name`, `xml_fields_json`) are gone. Use
 /// `timestamp_unix_ms`, `sender_display_name`, and `source_fields_json`.
 pub const CSV_HEADERS: &[&str] = &[
     "chat_identifier",
@@ -51,6 +51,7 @@ pub const CSV_HEADERS: &[&str] = &[
     "owner_identity",
     "owner_display_name",
     "backup_taken_at_unix_ms",
+    "exported_at_unix_ms",
     "message_owner_identity",
     "android_type",
     "source_fields_json",
@@ -155,7 +156,7 @@ fn value_cell(v: Option<&Value>) -> String {
 }
 
 /// CSV `parts_json` cell: only from the iMessage bag, and omit a single plain
-/// text/run part that merely duplicates [`IrMessage::text`].
+/// text/run part that merely duplicates [`Message::text`].
 fn parts_cell_for_csv(text: &str, parts: Option<&Value>) -> String {
     if parts_are_trivial_text_duplicate(text, parts) {
         return String::new();
@@ -193,11 +194,11 @@ pub(crate) fn parts_are_trivial_text_duplicate(message_text: &str, parts: Option
 /// `123456@lid` is `other`. Empty when the message has no sender identity,
 /// or when the sender identity is blank, because a blank one is not an
 /// address.
-fn sender_identity_type_cell(sender_identity: Option<&str>, service: IrService) -> &'static str {
+fn sender_identity_type_cell(sender_identity: Option<&str>, service: Transport) -> &'static str {
     sender_identity
         .and_then(phone::Handle::parse)
         .map_or("", |handle| {
-            IdentityService::from_ir_service(service)
+            IdentityService::from_transport(service)
                 .type_on(handle.kind())
                 .as_str()
         })
@@ -224,9 +225,9 @@ pub(crate) fn write_conversation_csv(
             })
             .collect::<Vec<_>>(),
     );
-    let backup_taken_at = doc
+    let exported_at = doc
         .export
-        .backup_taken_at_unix_ms
+        .exported_at_unix_ms
         .map(|ms| ms.to_string())
         .unwrap_or_default();
 
@@ -240,7 +241,7 @@ pub(crate) fn write_conversation_csv(
             // message that starts with `=` as text rather than running it.
             write_guarded_record(
                 &mut wtr,
-                csv_record(doc, &participants_json, &backup_taken_at, msg, &cells),
+                csv_record(doc, &participants_json, &exported_at, msg, &cells),
             )
             .with_context(|| format!("write row {}", path.display()))?;
         }
@@ -258,6 +259,8 @@ struct MessageCells {
     ts_utc: String,
     ts_display: String,
     timestamp_unix_ms: String,
+    /// The message's Backup Date, blank when it has none.
+    backup_taken_at: String,
     attachments_json: String,
     reactions_json: String,
     earlier_versions_json: String,
@@ -271,7 +274,7 @@ impl MessageCells {
     /// # Errors
     ///
     /// Returns an error when the timestamp is outside the representable range.
-    fn new(msg: &IrMessage) -> Result<Self> {
+    fn new(msg: &Message) -> Result<Self> {
         let secs = msg.timestamp_unix_ms.div_euclid(1000);
         let (ts_local, ts_utc, ts_display) = format_local_ts(secs).ok_or_else(|| {
             anyhow::anyhow!("invalid timestamp_unix_ms {}", msg.timestamp_unix_ms)
@@ -291,6 +294,10 @@ impl MessageCells {
             ts_utc,
             ts_display,
             timestamp_unix_ms: msg.timestamp_unix_ms.to_string(),
+            backup_taken_at: msg
+                .backup_taken_at_unix_ms
+                .map(|ms| ms.to_string())
+                .unwrap_or_default(),
             attachments_json: json_cell(&attachment_cells),
             reactions_json: if msg.reactions.is_empty() {
                 String::new()
@@ -342,7 +349,7 @@ struct ImessageCells {
 impl ImessageCells {
     /// `text` is the message text, which decides whether the parts column
     /// repeats it and is therefore left blank.
-    fn new(text: &str, im: Option<&IrImessage>) -> Self {
+    fn new(text: &str, im: Option<&ImessageExtensions>) -> Self {
         let Some(im) = im else {
             return Self {
                 parts_json: parts_cell_for_csv(text, None),
@@ -386,10 +393,10 @@ fn bool_cell(value: bool) -> &'static str {
 fn csv_record<'a>(
     doc: &'a ConversationDocument,
     participants_json: &'a str,
-    backup_taken_at: &'a str,
-    msg: &'a IrMessage,
+    exported_at: &'a str,
+    msg: &'a Message,
     cells: &'a MessageCells,
-) -> [&'a str; 48] {
+) -> [&'a str; 49] {
     let im = &cells.imessage;
     [
         doc.conversation.chat_identifier.as_str(),
@@ -425,14 +432,15 @@ fn csv_record<'a>(
         doc.export.tool_version.as_str(),
         doc.export.owner_identity.as_deref().unwrap_or(""),
         doc.export.owner_display_name.as_deref().unwrap_or(""),
-        backup_taken_at,
+        cells.backup_taken_at.as_str(),
+        exported_at,
         msg.owner_identity.as_deref().unwrap_or(""),
         cells.android_type.as_str(),
         cells.source_fields_json.as_str(),
         im.read_receipt.as_str(),
         im.send_effect.as_str(),
         im.shared_location.as_str(),
-        bool_cell(msg.message_kind == IrMessageKind::Announcement),
+        bool_cell(msg.message_kind == MessageKind::Announcement),
         im.announcement.as_str(),
         im.parts_json.as_str(),
         im.app_json.as_str(),
@@ -502,7 +510,7 @@ pub fn document_to_mail_messages(
             export_source: doc.export.source.clone(),
             export_tool: doc.export.tool.clone(),
             export_tool_version: doc.export.tool_version.clone(),
-            backup_taken_at_unix_ms: doc.export.backup_taken_at_unix_ms,
+            exported_at_unix_ms: doc.export.exported_at_unix_ms,
             message: msg.clone(),
             attachments,
         });

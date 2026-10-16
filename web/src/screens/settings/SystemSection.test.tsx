@@ -28,7 +28,7 @@ const desktopStaging = vi.hoisted(() => ({
   readError: null as string | null,
 }));
 const setStagingDirectory = vi.hoisted(() => vi.fn());
-const invokeOpenDataDirectory = vi.hoisted(() => vi.fn());
+const invokeOpenMessageCrateDirectory = vi.hoisted(() => vi.fn());
 
 const startLocalServer = vi.hoisted(() => vi.fn());
 const invokeSetOpenToNetwork = vi.hoisted(() => vi.fn());
@@ -42,9 +42,16 @@ vi.mock("../../lib/tauriCheck", () => ({
   isTauri: () => tauriState.isTauri,
 }));
 
-vi.mock("../../lib/tauri", async (importOriginal) => ({
-  toolsDownloading: (await importOriginal<typeof import("../../lib/tauri")>()).toolsDownloading,
-  invokeToolsStatus: () => toolsStatus(),
+vi.mock("../../lib/desktop/export", () => ({
+  invokeExportDirectory: async () => "/home/demo/.local/share/app.messagecrate.desktop/exports",
+}));
+
+vi.mock("../../lib/desktop/localServer", () => ({
+  invokeOpenMessageCrateDirectory: () => invokeOpenMessageCrateDirectory(),
+  invokeSetOpenToNetwork: (on: boolean) => invokeSetOpenToNetwork(on),
+}));
+
+vi.mock("../../lib/desktop/staging", () => ({
   invokeStagingDirectory: async () => {
     if (desktopStaging.readError !== null) throw desktopStaging.readError;
     return {
@@ -53,10 +60,15 @@ vi.mock("../../lib/tauri", async (importOriginal) => ({
     };
   },
   invokeSetStagingDirectory: (root: string) => setStagingDirectory(root),
-  invokeExportDirectory: async () => "/home/demo/.local/share/app.messagecrate.desktop/exports",
-  invokeOpenDataDirectory: () => invokeOpenDataDirectory(),
-  invokeSetOpenToNetwork: (on: boolean) => invokeSetOpenToNetwork(on),
 }));
+
+vi.mock("../../lib/desktop/tools", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/desktop/tools")>();
+  return {
+    toolsDownloading: actual.toolsDownloading,
+    invokeToolsStatus: () => toolsStatus(),
+  };
+});
 
 afterEach(() => {
   cleanup();
@@ -121,22 +133,22 @@ describe("SystemSection", () => {
     expect(screen.queryByText("Third-party software")).toBeNull();
   });
 
-  it("opens the data directory of the app's own Message Crate", async () => {
-    invokeOpenDataDirectory.mockResolvedValue(undefined);
+  it("opens the Message Crate directory", async () => {
+    invokeOpenMessageCrateDirectory.mockResolvedValue(undefined);
     render(<SystemSection />);
     await settle();
     const user = setupUser();
-    await user.click(screen.getByRole("button", { name: "Open data directory" }));
+    await user.click(screen.getByRole("button", { name: "Open Message Crate directory" }));
     await settle();
-    expect(invokeOpenDataDirectory).toHaveBeenCalledTimes(1);
+    expect(invokeOpenMessageCrateDirectory).toHaveBeenCalledTimes(1);
   });
 
-  it("says why the data directory could not be opened", async () => {
-    invokeOpenDataDirectory.mockRejectedValue(new Error("Could not open /data"));
+  it("says why the Message Crate directory could not be opened", async () => {
+    invokeOpenMessageCrateDirectory.mockRejectedValue(new Error("Could not open /data"));
     render(<SystemSection />);
     await settle();
     const user = setupUser();
-    await user.click(screen.getByRole("button", { name: "Open data directory" }));
+    await user.click(screen.getByRole("button", { name: "Open Message Crate directory" }));
     await settle();
     expect(screen.getByRole("alert")).toHaveTextContent("Could not open /data");
   });
@@ -202,10 +214,10 @@ describe("SystemSection", () => {
     expect(screen.getByRole("status")).toHaveTextContent("This app did not start");
   });
 
-  it("offers no data directory in the browser", () => {
+  it("offers no Message Crate directory in the browser", () => {
     tauriState.isTauri = false;
     render(<SystemSection />);
-    expect(screen.queryByRole("button", { name: "Open data directory" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open Message Crate directory" })).toBeNull();
   });
 
   it("shows the desktop-only stub when not in Tauri", () => {

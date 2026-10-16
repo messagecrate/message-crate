@@ -13,8 +13,8 @@ use tracing::Level;
 use crate::api_error::ApiError;
 use crate::limits::MAX_REQUEST_BODY_BYTES;
 use crate::problem::Problem;
+use crate::request_body::UploadTimeLimits;
 use crate::request_body::{declared_over, upload_body_bounded};
-use crate::server::AppState;
 
 /// Origins the packaged desktop app runs from. A Tauri window is not a page on
 /// the web, so its origin is fixed by the platform rather than chosen by
@@ -23,7 +23,7 @@ use crate::server::AppState;
 ///
 /// These are allowed whatever the config says. A server built from source starts
 /// with `cors_origins` commented out, and the desktop app pointed at it then
-/// fails in a way that reads as a network problem — the browser refuses the
+/// fails in a way that reads as a network problem. The browser refuses the
 /// response before any code can see it, so the app reports the server as
 /// unreachable while `curl` to the same port succeeds. That sends people to
 /// their firewall for a missing line of TOML.
@@ -83,7 +83,7 @@ pub(crate) fn build_cors_layer(origins: &[String]) -> CorsLayer {
 
 /// `tower_http`'s `RequestBodyLimitLayer` answers a plain-text `413` itself,
 /// bypassing every extractor, the moment a `Content-Length` header already
-/// announces a payload over the limit — `extract::Json`'s own 413 handling
+/// announces a payload over the limit. `extract::Json`'s own 413 handling
 /// only ever sees a body that had to be read to discover it was too long.
 /// Rewrite that one plain-text response into the `payload-too-large` problem
 /// so a body over the limit answers the same way however the client declares
@@ -122,7 +122,8 @@ pub(crate) async fn json_body_limit_response(response: Response) -> Response {
 /// their bodies themselves, because each starts the clock when it starts
 /// reading.
 pub(crate) async fn limit_request_body(
-    axum::extract::State(state): axum::extract::State<AppState>,
+    axum::extract::State(db): axum::extract::State<sqlx::SqlitePool>,
+    axum::extract::State(upload_time_limits): axum::extract::State<UploadTimeLimits>,
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
@@ -135,7 +136,7 @@ pub(crate) async fn limit_request_body(
         return next.run(request).await;
     }
     let limit = if is_attachment_upload(&request) {
-        match state.asset_max_bytes().await {
+        match crate::asset_uploads::asset_max_bytes(&db).await {
             Ok(limit) => usize::try_from(limit).unwrap_or(usize::MAX),
             Err(error) => return ApiError::Internal(error).into_response(),
         }
@@ -149,7 +150,7 @@ pub(crate) async fn limit_request_body(
     let request = request.map(|body| {
         let body = axum::body::Body::new(http_body_util::Limited::new(body, limit));
         if in_time {
-            upload_body_bounded(body, state.upload_time_limits)
+            upload_body_bounded(body, upload_time_limits)
         } else {
             body
         }

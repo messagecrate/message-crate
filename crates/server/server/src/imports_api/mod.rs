@@ -24,7 +24,7 @@
 use axum::extract::{Request, State};
 use axum::http::HeaderMap;
 use message_crate_api_types::{ImportMode, MAX_IMPORT_BATCH_BYTES};
-use sqlx::SqliteConnection;
+use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::api_error::{ApiError, run_blocking};
 use crate::auth::{ImportAccess, resolve_import_account};
@@ -37,7 +37,7 @@ use crate::request_body::{
     content_type_base, declared_over, is_jsonl_content_type, stream_body_to_file,
     upload_body_bounded,
 };
-use crate::server::{AppState, Created};
+use crate::server::Created;
 use crate::text_caps::{
     MAX_DEVICE_ID_CHARS, MAX_IMPORT_TOOL_CHARS, MAX_PATH_CHARS, capped_path, capped_text,
     too_long_sentences,
@@ -54,6 +54,7 @@ pub(crate) mod run_control;
 pub mod staging;
 pub mod with_yourself;
 
+use crate::imports_api::run_control::Importer;
 use dto::{
     CompleteImportRequest, CreateImportBatchResponse, CreateImportRequest, CreateImportResponse,
     DiscardImportRequest, ImportIssue, ImportNote, ImportRun, ImportRunSummary, ListImportsQuery,
@@ -125,11 +126,11 @@ async fn listed_import(
     )
 )]
 pub(crate) async fn list_imports(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     ImportAccess(auth): ImportAccess,
     Query(query): Query<ListImportsQuery>,
 ) -> Result<Json<Page<ImportRunSummary>>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let rows = import_rows_page(&mut conn, resolve_import_account(&auth), query).await?;
     Ok(Json(rows.map(ImportRunSummary::from)))
 }
@@ -180,11 +181,11 @@ pub(crate) async fn import_rows_page(
     )
 )]
 pub(crate) async fn get_import(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     ImportAccess(auth): ImportAccess,
     AxumPath(import_id): AxumPath<i64>,
 ) -> Result<Json<ImportRun>, ApiError> {
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     full_import_run(&mut conn, auth.account_id, import_id)
         .await
         .map(Json)
@@ -221,7 +222,7 @@ pub(crate) async fn full_import_run(
     )
 )]
 pub(crate) async fn create_import(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     ImportAccess(auth): ImportAccess,
     Json(body): Json<CreateImportRequest>,
 ) -> Result<Created<CreateImportResponse>, ApiError> {
@@ -287,7 +288,7 @@ pub(crate) async fn create_import(
         empty_as_none(device_id),
     );
 
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     let args = crate::db::imports::StartImportArgs {
         account_id: account,
         source: &body.source,
@@ -345,7 +346,7 @@ pub(crate) async fn create_import(
     )
 )]
 pub(crate) async fn complete_import(
-    State(state): State<AppState>,
+    State(importer): State<Importer>,
     ImportAccess(auth): ImportAccess,
     AxumPath(import_id): AxumPath<i64>,
     Json(body): Json<CompleteImportRequest>,
@@ -376,8 +377,8 @@ pub(crate) async fn complete_import(
         notes,
     };
     let now = chrono::Utc::now();
-    let row = end_run(&state, account, import_id, RunEnd::Complete(args), now).await?;
-    let mut conn = state.db.acquire().await?;
+    let row = end_run(&importer, account, import_id, RunEnd::Complete(args), now).await?;
+    let mut conn = importer.db.acquire().await?;
     import_run(&mut conn, row).await.map(Json)
 }
 
@@ -404,13 +405,13 @@ pub(crate) async fn complete_import(
     )
 )]
 pub(crate) async fn list_import_contacts(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     ImportAccess(auth): ImportAccess,
     AxumPath(import_id): AxumPath<i64>,
     Query(query): Query<PageQuery>,
 ) -> Result<Json<Page<crate::db::import_contacts::ImportContact>>, ApiError> {
     let params = page_params(query.limit, query.offset, DEFAULT_LIST_LIMIT, None)?;
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     crate::db::imports::get_owned_import(&mut conn, auth.account_id, import_id)
         .await
         .map_err(ApiError::from)?;
@@ -480,7 +481,7 @@ pub(crate) async fn import_run(
     )
 )]
 pub(crate) async fn update_import(
-    State(state): State<AppState>,
+    State(db): State<SqlitePool>,
     ImportAccess(auth): ImportAccess,
     AxumPath(import_id): AxumPath<i64>,
     Json(body): Json<UpdateImportRequest>,
@@ -488,7 +489,7 @@ pub(crate) async fn update_import(
     let account = resolve_import_account(&auth);
     let stage = body.stage;
     let summary_json = optional_json_string(body.summary.as_ref(), "summary")?;
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     crate::db::imports::set_import_stage(
         &mut conn,
         account,
@@ -525,7 +526,7 @@ pub(crate) async fn update_import(
     )
 )]
 pub(crate) async fn discard_import(
-    State(state): State<AppState>,
+    State(importer): State<Importer>,
     ImportAccess(auth): ImportAccess,
     AxumPath(import_id): AxumPath<i64>,
     Json(body): Json<DiscardImportRequest>,
@@ -534,14 +535,14 @@ pub(crate) async fn discard_import(
     let (issues, notes) = issues_and_notes(&body.issues, &body.notes, Vec::new())?;
     let now = chrono::Utc::now();
     let row = end_run(
-        &state,
+        &importer,
         account,
         import_id,
         RunEnd::Discard { issues, notes },
         now,
     )
     .await?;
-    let mut conn = state.db.acquire().await?;
+    let mut conn = importer.db.acquire().await?;
     import_run(&mut conn, row).await.map(Json)
 }
 
@@ -573,7 +574,7 @@ pub(crate) async fn discard_import(
     )
 )]
 pub(crate) async fn create_import_batch(
-    State(state): State<AppState>,
+    State(importer): State<Importer>,
     ImportAccess(auth): ImportAccess,
     AxumPath(import_id): AxumPath<i64>,
     headers: HeaderMap,
@@ -590,7 +591,7 @@ pub(crate) async fn create_import_batch(
     // running, or belongs to another account, refuses the batch here before
     // any of the body is read.
     let context = {
-        let mut conn = state.db.acquire().await?;
+        let mut conn = importer.db.acquire().await?;
         let row = crate::db::imports::require_running_import(&mut conn, account, import_id).await?;
         BatchContext::from_row(&row)
     };
@@ -606,11 +607,11 @@ pub(crate) async fn create_import_batch(
         // body stops arriving or takes too long (`upload-stalled`), so a
         // client gone part-way, or one that sends a byte now and then, never
         // holds the slot for good.
-        let permit = take_import_slot(&state).await?;
-        let temp = batch_bodies::new_dir(&state.cfg.paths.data_dir)
+        let permit = take_import_slot(&importer.imports).await?;
+        let temp = batch_bodies::new_dir(&importer.cfg.paths.data_dir)
             .map_err(|e| ApiError::Internal(anyhow::anyhow!("import batch directory: {e}")))?;
         let jsonl_path = temp.path().join("_import.jsonl");
-        let body = upload_body_bounded(request.into_body(), state.upload_time_limits);
+        let body = upload_body_bounded(request.into_body(), importer.upload_time_limits);
         // A server told to stop while the body arrives stops reading it at
         // once and refuses the batch, as it refuses one waiting for a slot,
         // so the stop never waits for the rest of a body (#2878). Dropping
@@ -618,7 +619,7 @@ pub(crate) async fn create_import_batch(
         // `temp`.
         let n = tokio::select! {
             biased;
-            () = state.stopping.cancelled() => return Err(server_stopping()),
+            () = importer.imports.stopping.cancelled() => return Err(server_stopping()),
             read = stream_body_to_file(body, &jsonl_path, MAX_IMPORT_BATCH_BYTES) => read?,
         };
         if n == 0 {
@@ -627,15 +628,15 @@ pub(crate) async fn create_import_batch(
         // A server told to stop as the body's last byte arrived refuses the
         // batch before its import starts, so the stop never waits for a
         // whole import more.
-        if state.stopping.is_cancelled() {
+        if importer.imports.stopping.is_cancelled() {
             return Err(server_stopping());
         }
         // The import pipeline does blocking file IO (JSONL parse, asset
-        // hashing and copies) — run it off the async workers so a large
+        // hashing and copies). Run it off the async workers so a large
         // import cannot stall unrelated requests.
         let handle = tokio::runtime::Handle::current();
         let response = run_blocking("import", move || {
-            handle.block_on(run_import_path(state, permit, context, jsonl_path))
+            handle.block_on(run_import_path(importer, permit, context, jsonl_path))
         })
         .await;
         drop(temp);

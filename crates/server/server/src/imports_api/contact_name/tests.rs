@@ -361,7 +361,7 @@ async fn assert_imported_as_three_orphaned_conversations(
     .await
     .unwrap();
     let expected = [
-        ("+15555550154", "individual", 1),
+        ("+15555550154", "one-to-one", 1),
         ("orphaned:", "orphaned", 3),
         ("orphaned:+15555550154", "orphaned", 2),
         ("orphaned:+15555550155", "orphaned", 2),
@@ -494,7 +494,7 @@ async fn assert_every_met_handle_has_a_live_contact(conn: &mut sqlx::SqliteConne
                          JOIN conversations c ON c.id = p.conversation_id
                          WHERE c.account_id = $1)
              OR h.id IN (SELECT chat_handle_id FROM conversations
-                         WHERE account_id = $1 AND conversation_type = 'individual'))
+                         WHERE account_id = $1 AND conversation_type = 'one-to-one'))
            AND h.id NOT IN (
              SELECT ch.handle_id FROM contact_handles ch
              WHERE ch.account_id = $1

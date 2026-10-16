@@ -30,8 +30,7 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-/// The Export Directory's name in the app-data directory. #1053 moves it into
-/// the Message Crate Directory.
+/// The Export Directory's name in the Message Crate Directory.
 pub const EXPORT_DIRECTORY_NAME: &str = "exports";
 
 /// The directory inside an Export's directory that holds the JSON Lines it
@@ -90,7 +89,7 @@ pub struct ExportDir {
     pub converting: String,
 }
 
-/// The Export Directory, in the app-data directory, and the markers this
+/// The Export Directory, in the Message Crate Directory, and the markers this
 /// process holds for the runs it has under way.
 #[derive(Debug)]
 pub struct ExportDirectories {
@@ -101,10 +100,10 @@ pub struct ExportDirectories {
 }
 
 impl ExportDirectories {
-    /// The Export Directory in `app_data_dir`.
-    pub fn in_app_data(app_data_dir: &Path) -> Self {
+    /// The Export Directory `root`.
+    pub fn at(root: PathBuf) -> Self {
         Self {
-            root: app_data_dir.join(EXPORT_DIRECTORY_NAME),
+            root,
             running: Mutex::new(HashMap::new()),
         }
     }

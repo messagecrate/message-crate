@@ -276,7 +276,7 @@ pub(crate) fn decrypt_file(
             })?,
     ) {
         Ok(file) => {
-            // file_id may contain '/' (e.g. "2f/2fcab…") — replace path
+            // file_id may contain '/' (e.g. "2f/2fcab…"). Replace path
             // separators to keep the temp filename flat, and strip any leading
             // path components from a malicious manifest.
             let safe_id = file.file_id.rsplit('/').next().unwrap_or(&file.file_id);

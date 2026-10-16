@@ -489,7 +489,7 @@ impl<'a> World<'a> {
             &SeedConversation {
                 account_id: alice,
                 handle: "+15555550100",
-                conversation_type: "individual",
+                conversation_type: "one-to-one",
                 group_title: None,
                 source_file: "seed.jsonl",
                 messages: &[SeedMessage {

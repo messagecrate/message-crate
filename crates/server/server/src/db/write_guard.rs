@@ -168,7 +168,7 @@ mod tests {
             &SeedConversation {
                 account_id: account,
                 handle: "+15555550100",
-                conversation_type: "individual",
+                conversation_type: "one-to-one",
                 group_title: None,
                 source_file: "guard.jsonl",
                 messages: &[SeedMessage {

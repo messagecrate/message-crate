@@ -9,15 +9,15 @@ use crate::flat_eml::Owner;
 use crate::identity::{chat_id_for, timestamp_ms};
 use crate::read::{ParsedEmlKind, collect_eml_paths, parse_one_eml};
 use crate::types::ParsedMessage;
-use android_fields::android_source;
+use android_fields::android_vendor_fields;
 use anyhow::{Result, bail};
 use message_crate_core::{
     CancelFlag, Cancelled, ConvertRun, Counter, ExportReport, ItemKind, LogSink, RunIssue,
     RunIssueKind, count_of, prepare_outputs, project_conversation,
 };
 use message_ir::{
-    ConversationDocument, ExportMeta, IrConversationType, IrDirection, IrService, IrSource,
-    PendingAttachment, PendingConversation, PendingMessage, ProjectionHooks,
+    ConversationDocument, ConversationType, Direction, ExportMeta, PendingAttachment,
+    PendingConversation, PendingMessage, ProjectionHooks, Transport, VendorFields,
 };
 use message_staging::{
     AttachmentSpool, ExportWriter, Project, ReadBackup, WriterSetup, convert_backup,
@@ -248,6 +248,8 @@ fn add_message(
 /// SMS Backup+ deltas of the shared [`message_ir::pending_to_document`] projection.
 struct SbpProjection {
     export: ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
 }
 
 impl ProjectionHooks for SbpProjection {
@@ -255,8 +257,12 @@ impl ProjectionHooks for SbpProjection {
         self.export.clone()
     }
 
-    fn service(&self, _message: &PendingMessage) -> IrService {
-        IrService::Sms
+    fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+        self.backup_taken_at_unix_ms
+    }
+
+    fn service(&self, _message: &PendingMessage) -> Transport {
+        Transport::Sms
     }
 
     /// Every handle is a [`Handle`] key already.
@@ -278,7 +284,11 @@ impl ProjectionHooks for SbpProjection {
             .then_with(|| a.extra_str("eml_path").cmp(b.extra_str("eml_path")))
     }
 
-    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> IrSource {
+    fn vendor_fields(
+        &self,
+        conversation: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields {
         let mut fields = serde_json::Map::new();
         for key in ["smssync_id", "eml_path"] {
             let value = message.extra_str(key);
@@ -286,7 +296,7 @@ impl ProjectionHooks for SbpProjection {
                 fields.insert(key.into(), serde_json::Value::String(value.to_string()));
             }
         }
-        android_source(conversation, message, fields)
+        android_vendor_fields(conversation, message, fields)
     }
 }
 
@@ -314,7 +324,7 @@ fn project_and_count(
     report: &mut ExportReport,
 ) -> Option<ConversationDocument> {
     let document = project_conversation(chat_id, conversation, hooks, report)?;
-    let is_group = document.conversation.conversation_type == IrConversationType::Group;
+    let is_group = document.conversation.conversation_type == ConversationType::Group;
     for message in &document.messages {
         let eml_path = message
             .source
@@ -341,9 +351,7 @@ fn project_and_count(
                  nobody.",
             );
         }
-        if is_group
-            && message.direction == IrDirection::Incoming
-            && message.sender_identity.is_none()
+        if is_group && message.direction == Direction::Incoming && message.sender_identity.is_none()
         {
             report.bump(GROUP_MESSAGES_WITHOUT_SENDER, 1);
             report.issues.emit(RunIssue {
@@ -515,9 +523,9 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
                     EXPORT_TOOL_VERSION,
                     Some(owner_identity),
                     None,
-                    message_crate_core::newest_file_modified_unix_ms(
-                        eml_paths.iter().map(PathBuf::as_path),
-                    ),
+                ),
+                backup_taken_at_unix_ms: message_crate_core::newest_file_modified_unix_ms(
+                    eml_paths.iter().map(PathBuf::as_path),
                 ),
             };
             Ok(ReadBackup {
@@ -783,9 +791,7 @@ mod tests {
     use super::*;
     use crate::types::AttachmentBytes;
     use message_crate_core::ProgressSink;
-    use message_ir::{
-        ConversationMeta, ConversationStats, IrMessage, IrMessageKind, SCHEMA_VERSION,
-    };
+    use message_ir::{ConversationMeta, ConversationStats, Message, MessageKind, SCHEMA_VERSION};
     use message_staging::AttachmentSource;
 
     /// The verbose list of Import Errors is what the run went on without, so
@@ -880,22 +886,22 @@ mod tests {
                 tool_version: String::new(),
                 owner_identity: None,
                 owner_display_name: None,
-                backup_taken_at_unix_ms: None,
+                exported_at_unix_ms: None,
             },
             conversation: ConversationMeta {
                 chat_identifier: "test".into(),
-                conversation_type: IrConversationType::Individual,
+                conversation_type: ConversationType::OneToOne,
                 group_title: None,
                 participants: Vec::new(),
                 stats: ConversationStats::default(),
             },
-            messages: vec![IrMessage {
+            messages: vec![Message {
                 guid: "g".into(),
                 timestamp_unix_ms: 0,
                 time_precision: message_ir::TimePrecision::Milliseconds,
-                direction: IrDirection::Incoming,
-                service: IrService::Sms,
-                message_kind: IrMessageKind::Mms,
+                direction: Direction::Incoming,
+                service: Transport::Sms,
+                message_kind: MessageKind::Mms,
                 sender_identity: None,
                 sender_display_name: None,
                 sender_country: None,
@@ -909,6 +915,7 @@ mod tests {
                 reply_to: None,
                 imessage: None,
                 source: None,
+                backup_taken_at_unix_ms: None,
             }],
             packaging_stem_suffix: None,
         };
@@ -948,7 +955,7 @@ mod tests {
 
     /// The messages of every conversation as the shared projection writes
     /// them, with the copies of one message reduced to one.
-    fn project(parsed: Vec<ParsedMessage>) -> (Vec<IrMessage>, ExportReport) {
+    fn project(parsed: Vec<ParsedMessage>) -> (Vec<Message>, ExportReport) {
         let mut ingest = EmlIngest::new(None, parsed.len(), ExportReport::default());
         for message in parsed {
             ingest.add_parsed(message).unwrap();
@@ -960,8 +967,8 @@ mod tests {
                 EXPORT_TOOL_VERSION,
                 Some("+15555550100".into()),
                 None,
-                None,
             ),
+            backup_taken_at_unix_ms: None,
         };
         let mut report = ingest.report;
         let caveats = ingest.caveats;
@@ -982,7 +989,7 @@ mod tests {
     fn parsed(timestamp_secs: f64, has_milliseconds: bool, eml_path: &str) -> ParsedMessage {
         ParsedMessage {
             chat_key: "+15555550101".into(),
-            conversation_type: IrConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: Handle::parse("+15555550101").into_iter().collect(),
             timestamp_secs,
@@ -1037,7 +1044,7 @@ mod tests {
     fn verify_e3_1_two_group_senders_in_one_second_are_two_messages() {
         let group = |sender: &str, timestamp_secs: f64| ParsedMessage {
             chat_key: "+15555550111_+15555550122".into(),
-            conversation_type: IrConversationType::Group,
+            conversation_type: ConversationType::Group,
             sender: Handle::parse(sender),
             text: "Happy birthday!".into(),
             ..parsed(timestamp_secs, true, "")

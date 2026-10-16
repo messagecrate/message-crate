@@ -93,7 +93,8 @@ pub async fn outliving_rows(
     )
     .bind(DELETION_ENTRY_COLUMN)
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("list the tables whose rows outlive their account")?;
     let mut rows = BTreeMap::new();
     for table in tables {
         let ids: Vec<i64> = sqlx::query_scalar(AssertSqlSafe(format!(
@@ -103,7 +104,7 @@ pub async fn outliving_rows(
         .bind(value)
         .fetch_all(&mut *conn)
         .await
-        .with_context(|| format!("read {table}"))?;
+        .context("read the ids of a table's rows that outlive their account")?;
         rows.insert(table, ids.into_iter().collect());
     }
     Ok(rows)
@@ -129,7 +130,8 @@ pub async fn tables(conn: &mut SqliteConnection) -> Result<Vec<Table>> {
          ORDER BY name",
     )
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("list the database's tables")?;
     Ok(tables
         .into_iter()
         .map(|(name, sql)| Table {
@@ -207,7 +209,7 @@ pub async fn each_row_outside(
     let mut rows = query.fetch(&mut *conn);
     drain(&mut rows, &mut add)
         .await
-        .with_context(|| format!("read {table}"))
+        .context("read a table's rows outside the Demo Account")
 }
 
 /// Pass each row of `rows` to `add`, in the order they come.
@@ -288,7 +290,7 @@ pub async fn each_index_entry_outside(
         .fetch(&mut *conn);
     drain(&mut rows, &mut add)
         .await
-        .with_context(|| format!("read {table}"))
+        .context("read a search index's entries outside the Demo Account")
 }
 
 /// Search a search index for each of `terms` as a phrase, the way a search
@@ -325,7 +327,7 @@ pub async fn each_match_outside(
         while let Some(message) = found
             .try_next()
             .await
-            .with_context(|| format!("search {table} for {phrase}"))?
+            .context("search a search index for a term outside the Demo Account")?
         {
             add(term, message);
         }
@@ -385,7 +387,8 @@ async fn row_owner(
     )
     .bind(table)
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("read a table's required foreign keys")?;
     for (parent, from, to) in &keys {
         let parent_columns = table_columns(conn, parent).await?;
         if parent_columns.iter().any(|c| c == "account_id") {
@@ -404,7 +407,8 @@ async fn row_owner(
     let any_key: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM pragma_foreign_key_list($1)")
         .bind(table)
         .fetch_one(&mut *conn)
-        .await?;
+        .await
+        .context("count a table's foreign keys")?;
     if any_key > 0 {
         bail!("cannot tell which account a row of {table} belongs to");
     }
@@ -413,12 +417,11 @@ async fn row_owner(
 
 /// The column names of `table`, in declaration order.
 async fn table_columns(conn: &mut SqliteConnection, table: &str) -> Result<Vec<String>> {
-    Ok(
-        sqlx::query_scalar("SELECT name FROM pragma_table_info($1) ORDER BY cid")
-            .bind(table)
-            .fetch_all(&mut *conn)
-            .await?,
-    )
+    sqlx::query_scalar("SELECT name FROM pragma_table_info($1) ORDER BY cid")
+        .bind(table)
+        .fetch_all(&mut *conn)
+        .await
+        .context("read a table's column names")
 }
 
 /// `name` as a quoted SQLite identifier.

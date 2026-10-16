@@ -31,11 +31,11 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
     // The two sources' notes are an hour apart, so the dedupe at the end of
     // each Import Run keeps both.
     for (source, self_participant, service, sent_at) in [
-        ("imessage", None, IrService::IMessage, 1_400_773_261_000),
+        ("imessage", None, Transport::IMessage, 1_400_773_261_000),
         (
             "whatsapp",
             Some("+15555550199"),
-            IrService::Whatsapp,
+            Transport::Whatsapp,
             1_400_776_861_000,
         ),
     ] {
@@ -43,7 +43,7 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
             let mut message = message_line(guid, text)
                 .at(sent_at)
                 .service(service)
-                .kind(IrMessageKind::Unknown);
+                .kind(MessageKind::Unknown);
             message = match sender {
                 Some(sender) => message.sender(sender),
                 None => message.outgoing(),
@@ -232,8 +232,8 @@ async fn import_notes_to_yourself(
     let message = |guid: &str, sender: Option<&str>| {
         let message = message_line(guid, "Note to self")
             .at(1_400_773_261_000)
-            .service(IrService::Whatsapp)
-            .kind(IrMessageKind::Unknown);
+            .service(Transport::Whatsapp)
+            .kind(MessageKind::Unknown);
         match sender {
             Some(sender) => message.sender(sender),
             None => message.outgoing(),
@@ -251,7 +251,7 @@ async fn import_notes_to_yourself(
             .line(),
         message_line("ada", "hi")
             .at(1_400_773_262_000)
-            .service(IrService::Whatsapp)
+            .service(Transport::Whatsapp)
             .sender("+15555550101")
             .line(),
     ]
@@ -342,8 +342,8 @@ fn notes_to_yourself_file(holder_name: Option<&str>, other: Option<&str>) -> Str
         header.line(),
         message_line("note-received", "Note to self")
             .at(1_400_773_261_000)
-            .service(IrService::Whatsapp)
-            .kind(IrMessageKind::Unknown)
+            .service(Transport::Whatsapp)
+            .kind(MessageKind::Unknown)
             .sender("+15555550199")
             .line(),
     ]
@@ -596,7 +596,7 @@ async fn linking_an_identity_takes_the_holder_off_its_groups() {
             .line(),
         message_line("group-hi", "hi")
             .at(1_400_773_262_000)
-            .service(IrService::Whatsapp)
+            .service(Transport::Whatsapp)
             .sender("+15555550101")
             .line(),
     ]
@@ -656,7 +656,7 @@ fn holder_listed_with_ada_file(holder_name: &str, suffix: &str) -> String {
     let message = |guid: &str| {
         message_line(&format!("{guid}-{suffix}"), "hi")
             .at(1_400_773_262_000)
-            .service(IrService::Whatsapp)
+            .service(Transport::Whatsapp)
             .sender("+15555550101")
             .line()
     };
@@ -807,7 +807,7 @@ fn holder_sent_in_a_group_file() -> String {
     let message = |guid: &str, sender: &str| {
         message_line(guid, "hi")
             .at(1_400_773_262_000)
-            .service(IrService::Whatsapp)
+            .service(Transport::Whatsapp)
             .sender(sender)
             .line()
     };

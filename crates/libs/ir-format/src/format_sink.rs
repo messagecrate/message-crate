@@ -136,7 +136,7 @@ impl FormatSink {
     /// Unlike [`open_prepared`](Self::open_prepared), nothing is cleaned: the
     /// conversation files and staged attachments the interrupted run left
     /// behind are exactly the work a resumed run gets to skip. The directory
-    /// must already be an export directory — it carries the sentinel — because
+    /// must already be an export directory (it carries the sentinel), because
     /// resuming into anything else is a caller bug, not something to repair
     /// by cleaning.
     ///
@@ -276,7 +276,7 @@ pub fn write_documents_through_sink(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_ir::IrAttachment;
+    use message_ir::Attachment;
     use std::fs;
 
     #[test]
@@ -322,7 +322,7 @@ mod tests {
         for chat in ["chat1", "chat2"] {
             let mut doc = message_ir::testutil::sample_document(chat);
             doc.conversation.chat_identifier = chat.into();
-            doc.conversation.conversation_type = message_ir::IrConversationType::Group;
+            doc.conversation.conversation_type = message_ir::ConversationType::Group;
             doc.conversation.group_title = Some("Family".into());
             sink.write_document(doc).unwrap();
         }
@@ -429,7 +429,7 @@ mod tests {
             fs::write(tmp.path().join(rel), b"\xff\xd8\xffjpeg-bytes").unwrap();
 
             let mut doc = message_ir::testutil::sample_document("with media");
-            doc.messages[0].attachments = vec![IrAttachment {
+            doc.messages[0].attachments = vec![Attachment {
                 path: Some(rel.into()),
                 ..message_ir::testutil::sample_attachment()
             }];

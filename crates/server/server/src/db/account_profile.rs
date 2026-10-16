@@ -50,7 +50,7 @@ async fn account_email_addresses(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<Vec<String>> {
-    Ok(sqlx::query_scalar::<_, String>(
+    sqlx::query_scalar::<_, String>(
         "SELECT h.normalized FROM handles h
          JOIN account_handles ah ON ah.handle_id = h.id
          WHERE ah.account_id = $1 AND h.handle_type = $2
@@ -59,7 +59,8 @@ async fn account_email_addresses(
     .bind(account_id)
     .bind(IdentityType::Email.as_str())
     .fetch_all(&mut *conn)
-    .await?)
+    .await
+    .context("read the account's email addresses")
 }
 
 /// The account's phone numbers, A to Z, each listed once. A number's services
@@ -75,7 +76,8 @@ async fn account_phones(conn: &mut SqliteConnection, account_id: i64) -> Result<
     .bind(account_id)
     .bind(IdentityType::Phone.as_str())
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("read the account's phone numbers")?;
     let mut phones: Vec<AccountPhone> = Vec::new();
     for (address, service) in rows {
         let service = ApiIdentityService::from(IdentityService::parse(&service));
@@ -114,7 +116,8 @@ pub async fn account_identity_keys(
     )
     .bind(account_id)
     .fetch_all(&mut *conn)
-    .await?;
+    .await
+    .context("read the account's identities")?;
     Ok(rows
         .into_iter()
         .map(|(normalized, handle_type)| (normalized, IdentityType::parse(&handle_type)))
@@ -147,14 +150,15 @@ pub async fn is_account_identity(
     account_id: i64,
     handle_id: i64,
 ) -> Result<bool> {
-    Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+    sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT EXISTS (SELECT 1 FROM handles h WHERE h.account_id = $1 AND h.id = $2 AND {})",
         is_account_identity_sql("h", "$1"),
     )))
     .bind(account_id)
     .bind(handle_id)
     .fetch_one(&mut *conn)
-    .await?)
+    .await
+    .context("check whether an identity is one of the account's own")
 }
 
 /// The id of the account's own identity shown as `address` on `service`,
@@ -172,7 +176,7 @@ pub async fn account_identity_id(
     address: &str,
     service: Option<IdentityService>,
 ) -> Result<Option<i64>> {
-    Ok(sqlx::query_scalar(
+    sqlx::query_scalar(
         "SELECT h.id FROM account_handles ah
          JOIN handles h ON h.id = ah.handle_id
          WHERE ah.account_id = $1 AND (h.raw = $2 OR h.normalized = $2)
@@ -184,7 +188,8 @@ pub async fn account_identity_id(
     .bind(address.trim())
     .bind(service.map(IdentityService::as_str))
     .fetch_optional(&mut *conn)
-    .await?)
+    .await
+    .context("find the account's identity at an address")
 }
 
 /// Create an `accounts` row at `account_id`, with the id as its stub
@@ -207,7 +212,7 @@ pub async fn create_account_row_if_missing(
     .bind(account_id.to_string())
     .execute(&mut *conn)
     .await
-    .with_context(|| format!("failed to create the account row for {account_id}"))?;
+    .context("create an account row if it is missing")?;
     Ok(())
 }
 
@@ -248,13 +253,15 @@ pub async fn write_demo_account_row(
     .bind(username)
     .bind(preferred_name)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("write the Demo Account's row")?;
     // Phone and email identities that mark messages as from "you" live in
     // `handles`, linked through `account_handles`.
     sqlx::query("DELETE FROM account_handles WHERE account_id = $1")
         .bind(account_id)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("unlink the Demo Account's identities")?;
     Ok(())
 }
 
@@ -286,7 +293,8 @@ pub async fn link_account_handle_with_service(
     .bind(account_id)
     .bind(handle_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("link an identity to the account")?;
     Ok(handle_id)
 }
 
@@ -308,7 +316,8 @@ pub async fn lookup_account_by_username(
         sqlx::query_scalar("SELECT id FROM accounts WHERE username = $1 COLLATE NOCASE")
             .bind(username)
             .fetch_optional(&mut *conn)
-            .await?;
+            .await
+            .context("look up an account by username")?;
     Ok(by_user)
 }
 
@@ -324,7 +333,8 @@ pub async fn lookup_account_ref(
         let by_id: Option<i64> = sqlx::query_scalar("SELECT id FROM accounts WHERE id = $1")
             .bind(id)
             .fetch_optional(&mut *conn)
-            .await?;
+            .await
+            .context("look up an account by id")?;
         if by_id.is_some() {
             return Ok(by_id);
         }
@@ -353,7 +363,8 @@ pub async fn username_for_account(
     let name: Option<String> = sqlx::query_scalar("SELECT username FROM accounts WHERE id = $1")
         .bind(account_id)
         .fetch_optional(&mut *conn)
-        .await?;
+        .await
+        .context("read the account's username")?;
     Ok(name)
 }
 
@@ -369,7 +380,8 @@ pub async fn load_password_hash(
         sqlx::query_scalar("SELECT password_hash FROM accounts WHERE id = $1")
             .bind(account_id)
             .fetch_optional(&mut *conn)
-            .await?;
+            .await
+            .context("read the account's password hash")?;
     Ok(hash.flatten())
 }
 
@@ -384,7 +396,7 @@ pub async fn update_password_hash(
         .bind(account_id)
         .execute(&mut *conn)
         .await
-        .with_context(|| format!("update password hash for {account_id}"))?;
+        .context("store the account's password hash")?;
     Ok(())
 }
 
@@ -402,7 +414,7 @@ pub async fn record_login(
         .bind(account_id)
         .execute(&mut *conn)
         .await
-        .with_context(|| format!("record login for {account_id}"))?;
+        .context("record when the account last logged in")?;
     Ok(())
 }
 
@@ -415,7 +427,8 @@ pub async fn load_last_login(
         sqlx::query_scalar("SELECT last_login_at FROM accounts WHERE id = $1")
             .bind(account_id)
             .fetch_optional(&mut *conn)
-            .await?;
+            .await
+            .context("read when the account last logged in")?;
     Ok(at.flatten())
 }
 
@@ -433,14 +446,16 @@ pub async fn delete_account(
     actor: crate::db::audit_trail::AuditActor,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<bool> {
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     let existed =
         crate::db::audit_trail::prepare_account_deletion(&mut tx, account_id, actor, now).await?;
     sqlx::query("DELETE FROM accounts WHERE id = $1")
         .bind(account_id)
         .execute(&mut *tx)
         .await
-        .with_context(|| format!("delete account {account_id}"))?;
+        .context("delete the account")?;
     crate::db::erase::erase_and_commit(tx).await?;
     crate::db::erase::clear_write_ahead_log(conn).await;
     Ok(existed)
@@ -494,15 +509,19 @@ pub async fn delete_account_messages_batch(
              (SELECT id FROM messages WHERE account_id = $1 LIMIT $2)"
         }
     };
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     let deleted = sqlx::query(sql)
         .bind(account_id)
         .bind(i64::from(limit.get()))
         .execute(&mut *tx)
         .await
-        .with_context(|| format!("delete a batch of account {account_id}'s messages"))?
+        .context("delete a batch of the account's messages")?
         .rows_affected();
-    tx.commit().await?;
+    tx.commit()
+        .await
+        .context("commit a batch of message deletions")?;
     Ok(if deleted == u64::from(limit.get()) {
         MessageBatch::MoreMayRemain
     } else {
@@ -554,7 +573,8 @@ pub async fn is_claimed(conn: &mut SqliteConnection) -> Result<bool> {
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts WHERE id = $1")
         .bind(OWNER_ACCOUNT_ID)
         .fetch_one(&mut *conn)
-        .await?;
+        .await
+        .context("check whether the owner's account exists")?;
     Ok(count > 0)
 }
 
@@ -588,7 +608,8 @@ pub async fn load_account_auth(
     )
     .bind(account_id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read the account's disabled flag and permissions")?;
     Ok(row.map(
         |(disabled, must_set_up, import, export, delete)| AccountAuth {
             disabled: disabled != 0,
@@ -620,7 +641,8 @@ pub async fn set_must_set_up_profile(
         .bind(i32::from(must_set_up))
         .bind(account_id)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("mark whether the account owes profile setup")?;
     Ok(())
 }
 
@@ -645,7 +667,9 @@ pub async fn delete_all_messages_for_account(
     actor: crate::db::audit_trail::AuditActor,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<DeletedMessagesStats> {
-    let mut tx = begin_write(conn).await?;
+    let mut tx = begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     let attachment_count: i64 = sqlx::query_scalar(
         r"
         SELECT COUNT(*)
@@ -657,21 +681,22 @@ pub async fn delete_all_messages_for_account(
     )
     .bind(account_id)
     .fetch_one(&mut *tx)
-    .await?;
+    .await
+    .context("count the account's attachments")?;
     let conversations = sqlx::query("DELETE FROM conversations WHERE account_id = $1")
         .bind(account_id)
         .execute(&mut *tx)
         .await
-        .with_context(|| format!("delete conversations for {account_id}"))?
+        .context("delete the account's conversations")?
         .rows_affected();
     sqlx::query("DELETE FROM staging_conversations WHERE account_id = $1")
         .bind(account_id)
         .execute(&mut *tx)
         .await
-        .with_context(|| format!("delete staging conversations for {account_id}"))?;
+        .context("delete the account's staged conversations")?;
     crate::db::trash::purge_account(&mut tx, account_id)
         .await
-        .with_context(|| format!("purge trash markers for {account_id}"))?;
+        .context("remove the account's trash markers")?;
     // Recorded in the delete's own transaction, so the two land together.
     crate::db::audit_trail::record_about(
         &mut tx,
@@ -701,7 +726,8 @@ pub async fn load_time_zone(conn: &mut SqliteConnection, account_id: i64) -> Res
     let name: Option<String> = sqlx::query_scalar("SELECT time_zone FROM accounts WHERE id = $1")
         .bind(account_id)
         .fetch_optional(&mut *conn)
-        .await?;
+        .await
+        .context("read the account's time zone")?;
     Ok(name
         .and_then(|n| n.trim().parse::<chrono_tz::Tz>().ok())
         .unwrap_or(chrono_tz::UTC))
@@ -717,7 +743,8 @@ pub async fn set_time_zone(
         .bind(zone.name())
         .bind(account_id)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("store the account's time zone")?;
     Ok(())
 }
 
@@ -741,7 +768,8 @@ pub async fn load_preferred_name(
         sqlx::query_scalar("SELECT preferred_name FROM accounts WHERE id = $1")
             .bind(account_id)
             .fetch_optional(&mut *conn)
-            .await?;
+            .await
+            .context("read the account's preferred name")?;
     Ok(name
         .flatten()
         .map(|s| s.trim().to_string())
@@ -762,7 +790,8 @@ pub async fn set_preferred_name(
         .bind(name)
         .bind(account_id)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .context("store the account's preferred name")?;
     Ok(())
 }
 
@@ -806,7 +835,8 @@ pub async fn set_account_flags(
     .bind(flags.can_delete.map(i32::from))
     .bind(account_id)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("store the account's status and permissions")?;
     Ok(())
 }
 
@@ -816,9 +846,10 @@ pub async fn set_account_flags(
 ///
 /// Returns an error when the statement fails.
 pub async fn count_accounts(conn: &mut SqliteConnection) -> Result<i64> {
-    Ok(sqlx::query_scalar("SELECT COUNT(*) FROM accounts")
+    sqlx::query_scalar("SELECT COUNT(*) FROM accounts")
         .fetch_one(&mut *conn)
-        .await?)
+        .await
+        .context("count the accounts")
 }
 
 /// Every account's id, lowest first.
@@ -827,9 +858,10 @@ pub async fn count_accounts(conn: &mut SqliteConnection) -> Result<i64> {
 ///
 /// Returns an error when the statement fails.
 pub async fn account_ids(conn: &mut SqliteConnection) -> Result<Vec<i64>> {
-    Ok(sqlx::query_scalar("SELECT id FROM accounts ORDER BY id")
+    sqlx::query_scalar("SELECT id FROM accounts ORDER BY id")
         .fetch_all(&mut *conn)
-        .await?)
+        .await
+        .context("read every account's id")
 }
 
 /// Whether the account `account_id` exists.
@@ -837,14 +869,12 @@ pub async fn account_ids(conn: &mut SqliteConnection) -> Result<Vec<i64>> {
 /// # Errors
 ///
 /// Returns an error when the statement fails.
-pub async fn account_exists(
-    conn: &mut SqliteConnection,
-    account_id: i64,
-) -> Result<bool, sqlx::Error> {
+pub async fn account_exists(conn: &mut SqliteConnection, account_id: i64) -> anyhow::Result<bool> {
     Ok(sqlx::query("SELECT 1 FROM accounts WHERE id = $1")
         .bind(account_id)
         .fetch_optional(&mut *conn)
-        .await?
+        .await
+        .context("check that the account exists")?
         .is_some())
 }
 
@@ -859,7 +889,7 @@ pub async fn account_ids_page(
     limit: usize,
     offset: usize,
 ) -> Result<Vec<i64>> {
-    Ok(sqlx::query_scalar(
+    sqlx::query_scalar(
         "SELECT id FROM accounts \
          ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END, username LIMIT $2 OFFSET $3",
     )
@@ -867,7 +897,8 @@ pub async fn account_ids_page(
     .bind(limit as i64)
     .bind(i64::try_from(offset)?)
     .fetch_all(&mut *conn)
-    .await?)
+    .await
+    .context("read a page of account ids")
 }
 
 /// Insert a new account row at the next generated id. All fields except
@@ -891,7 +922,8 @@ pub async fn insert_account(
     let highest: Option<i64> =
         sqlx::query_scalar("SELECT seq FROM sqlite_sequence WHERE name = 'accounts'")
             .fetch_optional(&mut *conn)
-            .await?;
+            .await
+            .context("read the highest account id ever used")?;
     let id = highest.map_or(FIRST_GENERATED_ACCOUNT_ID, |highest| {
         highest.max(FIRST_GENERATED_ACCOUNT_ID - 1) + 1
     });
@@ -931,7 +963,7 @@ pub async fn insert_account_at(
     .bind(granted)
     .execute(&mut *conn)
     .await
-    .with_context(|| format!("insert account {username} at id {id}"))?;
+    .context("insert an account")?;
     Ok(())
 }
 
@@ -975,7 +1007,8 @@ pub async fn unlink_account_handle(
     .bind(handle_type.as_str())
     .bind(service)
     .execute(&mut *conn)
-    .await?
+    .await
+    .context("unlink one of the account's identities")?
     .rows_affected();
     Ok(removed > 0)
 }
@@ -1318,7 +1351,7 @@ mod tests {
         sqlx::query(
             "INSERT INTO staging_conversations (
                 account_id, chat_handle_id, conversation_type, source_file
-             ) VALUES ($1, $2, 'individual', 'c.jsonl')",
+             ) VALUES ($1, $2, 'one-to-one', 'c.jsonl')",
         )
         .bind(ACCOUNT_ID)
         .bind(handle_id)

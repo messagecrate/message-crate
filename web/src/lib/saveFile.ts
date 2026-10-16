@@ -1,4 +1,4 @@
-import { invokeSaveFile } from "./tauri";
+import { invokeSaveFile } from "./desktop/fs";
 import { isTauri } from "./tauriCheck";
 
 /**

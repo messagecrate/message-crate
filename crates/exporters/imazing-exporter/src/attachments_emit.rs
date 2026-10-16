@@ -1,6 +1,6 @@
 //! Attachment helpers for the emitter.
 
-use message_ir::{IrAttachment, PendingAttachment, PendingMessage};
+use message_ir::{Attachment, PendingAttachment, PendingMessage};
 
 /// The `extra` key of the source file of a message's `index`-th attachment.
 pub(super) fn attachment_source_key(index: usize) -> String {
@@ -45,12 +45,12 @@ pub(super) fn attachment_digests(message: &PendingMessage) -> Vec<String> {
     digests
 }
 
-/// Map a staged attachment onto the shared [`IrAttachment`] shape.
+/// Map a staged attachment onto the shared [`Attachment`] shape.
 pub(super) fn pending_attachment_to_ir(
     a: &PendingAttachment,
     message: &PendingMessage,
-) -> IrAttachment {
-    IrAttachment {
+) -> Attachment {
+    Attachment {
         path: a
             .rel_path
             .starts_with("attachments/")

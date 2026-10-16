@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 #[test]
-fn convert_fixture_json_individual_and_group() {
+fn convert_fixture_json_one_to_one_and_group() {
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/result.json");
     assert!(fixture.is_file(), "missing {}", fixture.display());
 
@@ -28,9 +28,9 @@ fn convert_fixture_json_individual_and_group() {
     assert_eq!(report.sent, 2);
     assert_eq!(report.received, 2);
 
-    let individual = tmp.path().join("+15555550122__whatsapp.csv");
-    assert!(individual.is_file(), "missing {}", individual.display());
-    let body = fs::read_to_string(&individual).expect("read individual");
+    let one_to_one = tmp.path().join("+15555550122__whatsapp.csv");
+    assert!(one_to_one.is_file(), "missing {}", one_to_one.display());
+    let body = fs::read_to_string(&one_to_one).expect("read one-to-one");
     assert!(body.contains("chat_identifier"));
     assert!(body.contains("whatsapp"));
     assert!(body.contains("Hello from Sam"));
@@ -134,7 +134,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
             },
         })
     });
-    assert_eq!(report.conversations, 2, "one individual chat and one group");
+    assert_eq!(report.conversations, 2, "one one-to-one chat and one group");
 }
 
 /// Convert `json` into a JSON export and read each conversation back,
@@ -669,7 +669,7 @@ fn guid_of<'a>(document: &'a message_ir::ConversationDocument, text: &str) -> &'
 fn message_of<'a>(
     document: &'a message_ir::ConversationDocument,
     text: &str,
-) -> &'a message_ir::IrMessage {
+) -> &'a message_ir::Message {
     document
         .messages
         .iter()

@@ -1,11 +1,11 @@
 use super::*;
 use crate::CancelFlag;
-use message_ir::IrAttachment;
+use message_ir::Attachment;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-fn empty_att(name: &str) -> IrAttachment {
-    IrAttachment {
+fn empty_att(name: &str) -> Attachment {
+    Attachment {
         original_name: Some(name.into()),
         ..message_ir::testutil::sample_attachment()
     }
@@ -210,7 +210,7 @@ fn read_error_marks_file_missing_and_continues() {
 fn a_fatal_load_error_stops_the_run_and_marks_nothing_missing() {
     let dir = tempfile::tempdir().unwrap();
     let att_dir = dir.path().join("attachments");
-    let mut atts: Vec<IrAttachment> = ["a.jpg", "b.jpg", "c.jpg", "d.jpg"]
+    let mut atts: Vec<Attachment> = ["a.jpg", "b.jpg", "c.jpg", "d.jpg"]
         .into_iter()
         .map(empty_att)
         .collect();
@@ -380,8 +380,8 @@ fn clone_temp_paths_are_unique_per_call() {
 #[test]
 fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
     use message_ir::{
-        ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrConversationType,
-        IrDirection, IrMessage, IrMessageKind, IrService,
+        ConversationDocument, ConversationMeta, ConversationStats, ConversationType, Direction,
+        ExportMeta, Message, MessageKind, Transport,
     };
 
     let dir = tempfile::tempdir().expect("tempdir");
@@ -415,22 +415,22 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
             tool_version: "0.1.0".into(),
             owner_identity: Some("+15555550100".into()),
             owner_display_name: None,
-            backup_taken_at_unix_ms: None,
+            exported_at_unix_ms: None,
         },
         conversation: ConversationMeta {
             chat_identifier: "+15555550101".into(),
-            conversation_type: IrConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: vec![],
             stats: ConversationStats::default(),
         },
-        messages: vec![IrMessage {
+        messages: vec![Message {
             guid: "guid-1".into(),
             timestamp_unix_ms: 1_400_773_261_000,
             time_precision: message_ir::TimePrecision::Milliseconds,
-            direction: IrDirection::Incoming,
-            service: IrService::Sms,
-            message_kind: IrMessageKind::Mms,
+            direction: Direction::Incoming,
+            service: Transport::Sms,
+            message_kind: MessageKind::Mms,
             sender_identity: Some("+15555550101".into()),
             sender_display_name: None,
             sender_country: None,
@@ -444,6 +444,7 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
             reply_to: None,
             imessage: None,
             source: None,
+            backup_taken_at_unix_ms: None,
         }],
         packaging_stem_suffix: None,
     }];
@@ -643,8 +644,8 @@ fn an_empty_file_is_recorded_as_missing_rather_than_staged() {
 #[test]
 fn staging_frees_the_bytes_the_documents_were_carrying() {
     use message_ir::{
-        ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrConversationType,
-        IrDirection, IrMessage, IrMessageKind, IrService,
+        ConversationDocument, ConversationMeta, ConversationStats, ConversationType, Direction,
+        ExportMeta, Message, MessageKind, Transport,
     };
 
     let dir = tempfile::tempdir().expect("tempdir");
@@ -662,22 +663,22 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
             tool_version: "0.1.0".into(),
             owner_identity: None,
             owner_display_name: None,
-            backup_taken_at_unix_ms: None,
+            exported_at_unix_ms: None,
         },
         conversation: ConversationMeta {
             chat_identifier: "+15555550101".into(),
-            conversation_type: IrConversationType::Individual,
+            conversation_type: ConversationType::OneToOne,
             group_title: None,
             participants: vec![],
             stats: ConversationStats::default(),
         },
-        messages: vec![IrMessage {
+        messages: vec![Message {
             guid: "guid-1".into(),
             timestamp_unix_ms: 1_400_773_261_000,
             time_precision: message_ir::TimePrecision::Milliseconds,
-            direction: IrDirection::Incoming,
-            service: IrService::Sms,
-            message_kind: IrMessageKind::Mms,
+            direction: Direction::Incoming,
+            service: Transport::Sms,
+            message_kind: MessageKind::Mms,
             sender_identity: None,
             sender_display_name: None,
             sender_country: None,
@@ -691,6 +692,7 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
             reply_to: None,
             imessage: None,
             source: None,
+            backup_taken_at_unix_ms: None,
         }],
         packaging_stem_suffix: None,
     }];

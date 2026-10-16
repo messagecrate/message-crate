@@ -347,9 +347,9 @@ async fn append_adds_a_later_deletion_mark_to_a_stored_message_and_keeps_it() {
 
 /// One attachment of a message in a conversation file, missing unless
 /// `digest` names stored bytes.
-fn attachment_with(name: &str, digest: Option<&str>) -> IrAttachment {
+fn attachment_with(name: &str, digest: Option<&str>) -> Attachment {
     match digest {
-        Some(digest) => IrAttachment {
+        Some(digest) => Attachment {
             digest_sha256: Some(digest.into()),
             missing_reason: None,
             ..missing_attachment(name)
@@ -370,7 +370,7 @@ fn file_with_children(
     dir: &Path,
     name: &str,
     before: &[String],
-    attachments: &[IrAttachment],
+    attachments: &[Attachment],
     reactions: &[Reaction],
 ) -> PathBuf {
     let header = conversation_header("imessage", "+15555550123")
@@ -540,7 +540,7 @@ async fn append_existing_guid_adds_missing_children() {
             "{header}\n{}\n",
             message_line("g-children", "replacement body")
                 .sender("+15555550123")
-                .attachment(IrAttachment {
+                .attachment(Attachment {
                     missing_reason: Some("not_found".into()),
                     size_bytes: Some(12),
                     ..attachment(
@@ -550,7 +550,7 @@ async fn append_existing_guid_adds_missing_children() {
                     )
                 })
                 .reaction(liked_by("+15555550167"))
-                .imessage(IrImessage::default())
+                .imessage(ImessageExtensions::default())
         ),
     );
 

@@ -1,5 +1,6 @@
+import type { ToolStatus } from "./desktop/tools";
 import { formatBytes } from "./formatBytes";
-import type { ToolName, ToolStatus } from "./tauri";
+import type { ToolName } from "./types";
 
 /**
  * A download's progress: "12 MB of 29 MB (41%)", or "12 MB so far" with no

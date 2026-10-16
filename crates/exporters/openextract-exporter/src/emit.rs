@@ -6,9 +6,9 @@ use anyhow::Result;
 use chrono::DateTime;
 use message_crate_core::{ConvertRun, ExportReport, prepare_outputs, project_conversation};
 use message_ir::{
-    ConversationDocument, ConversationKey, ExportMeta, IdentityType, IrAttachment,
-    IrConversationType, IrParticipant, IrService, IrSource, NAMELESS_CHAT_ID, PendingConversation,
-    PendingMessage, ProjectionHooks, orphaned_chat_id,
+    Attachment, ConversationDocument, ConversationKey, ConversationType, ExportMeta, IdentityType,
+    NAMELESS_CHAT_ID, Participant, PendingConversation, PendingMessage, ProjectionHooks, Transport,
+    VendorFields, orphaned_chat_id,
 };
 use message_staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
 use phone::Handle;
@@ -64,21 +64,24 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
                 message_crate_core::check_cancel(cancel)?;
                 ingest.ingest_file(path);
             }
-            // OpenExtract writes no date of its own, so the backup is as new
-            // as the newest CSV it wrote.
             let export = message_crate_core::export_meta(
                 EXPORT_SOURCE,
                 EXPORT_TOOL,
                 EXPORT_TOOL_VERSION,
                 None,
                 None,
-                message_crate_core::newest_file_modified_unix_ms(
-                    csv_files.iter().map(PathBuf::as_path),
-                ),
+            );
+            // OpenExtract writes no date of its own, so the backup is as new
+            // as the newest CSV it wrote.
+            let backup_taken_at_unix_ms = message_crate_core::newest_file_modified_unix_ms(
+                csv_files.iter().map(PathBuf::as_path),
             );
             Ok(ReadBackup {
                 conversations: ingest.conversations.into_iter().collect(),
-                project: OpenExtractDocuments { export },
+                project: OpenExtractDocuments {
+                    export,
+                    backup_taken_at_unix_ms,
+                },
                 report: ingest.report,
             })
         },
@@ -88,6 +91,8 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
 /// The projection of each conversation read, for [`convert_backup`].
 struct OpenExtractDocuments {
     export: ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
 }
 
 impl Project for OpenExtractDocuments {
@@ -100,12 +105,13 @@ impl Project for OpenExtractDocuments {
     ) -> Option<ConversationDocument> {
         let hooks = OpenExtractProjection {
             export: &self.export,
+            backup_taken_at_unix_ms: self.backup_taken_at_unix_ms,
             key: &pending.key,
         };
         let mut document =
             project_conversation(&chat_id, &mut pending.conversation, &hooks, report)?;
         if matches!(pending.key, Key::UnknownPerson) {
-            document.conversation.conversation_type = IrConversationType::Orphaned;
+            document.conversation.conversation_type = ConversationType::Orphaned;
         }
         Some(document)
     }
@@ -113,7 +119,7 @@ impl Project for OpenExtractDocuments {
     /// OpenExtract carries no attachments; every attachment source is Missing.
     fn attachment_source(
         &mut self,
-        attachment: &mut IrAttachment,
+        attachment: &mut Attachment,
     ) -> (AttachmentSource, Option<u64>) {
         (AttachmentSource::Missing, attachment.size_bytes)
     }
@@ -182,7 +188,7 @@ impl Conversation {
         }
     }
 
-    fn group(vendor_id: String, members: Vec<IrParticipant>, group_name: Option<String>) -> Self {
+    fn group(vendor_id: String, members: Vec<Participant>, group_name: Option<String>) -> Self {
         Self {
             key: Key::Keyed(ConversationKey::Group { vendor_id, members }),
             contact_name: String::new(),
@@ -404,14 +410,14 @@ fn address(sender: &str) -> Option<Handle> {
 }
 
 /// A group member: their address, or the name the source gives in its place.
-fn member(party: &str) -> IrParticipant {
+fn member(party: &str) -> Participant {
     match address(party) {
-        Some(address) => IrParticipant {
+        Some(address) => Participant {
             identity: Some(address.into_key()),
             display_name: None,
             country: None,
         },
-        None => IrParticipant {
+        None => Participant {
             identity: None,
             display_name: Some(party.to_string()),
             country: None,
@@ -573,6 +579,8 @@ fn parse_timestamp(raw: &str) -> Option<i64> {
 /// OpenExtract deltas of the shared [`message_ir::pending_to_document`] projection.
 struct OpenExtractProjection<'a> {
     export: &'a ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
     /// The key of the conversation being projected.
     key: &'a Key,
 }
@@ -582,15 +590,23 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
         self.export.clone()
     }
 
-    fn service(&self, _message: &PendingMessage) -> IrService {
-        IrService::Sms
+    fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+        self.backup_taken_at_unix_ms
+    }
+
+    fn service(&self, _message: &PendingMessage) -> Transport {
+        Transport::Sms
     }
 
     fn vendor_key(&self, message: &PendingMessage) -> Option<String> {
         message.extra.get(VENDOR_KEY).cloned()
     }
 
-    fn source(&self, conversation: &PendingConversation, message: &PendingMessage) -> IrSource {
+    fn vendor_fields(
+        &self,
+        conversation: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields {
         let mut fields = Map::new();
         fields.insert(
             "source_kind".into(),
@@ -605,7 +621,7 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
         if let Some(name) = &conversation.display_name {
             fields.insert("conversation".into(), json!(name));
         }
-        IrSource {
+        VendorFields {
             android_type: None,
             fields,
         }
@@ -616,20 +632,16 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
     /// conversation keyed by a name, the name and no address. The conversation
     /// that names nobody, and "Orphaned · Unknown person", have no roster at
     /// all.
-    fn participants(
-        &self,
-        _chat_id: &str,
-        conversation: &PendingConversation,
-    ) -> Vec<IrParticipant> {
+    fn participants(&self, _chat_id: &str, conversation: &PendingConversation) -> Vec<Participant> {
         match self.key {
             Key::Nameless | Key::UnknownPerson => Vec::new(),
             Key::Keyed(ConversationKey::Group { members, .. }) => members.clone(),
-            Key::Keyed(ConversationKey::OneToOne(handle)) => vec![IrParticipant {
+            Key::Keyed(ConversationKey::OneToOne(handle)) => vec![Participant {
                 identity: Some(handle.clone()),
                 display_name: conversation.first_contact_name(),
                 country: None,
             }],
-            Key::Keyed(ConversationKey::NameOnly(_)) => vec![IrParticipant {
+            Key::Keyed(ConversationKey::NameOnly(_)) => vec![Participant {
                 identity: None,
                 display_name: conversation.first_contact_name(),
                 country: None,

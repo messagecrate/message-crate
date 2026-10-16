@@ -2,9 +2,9 @@ use super::*;
 use message_crate_core::AttachmentFiles;
 use message_crate_core::{ExportReport, OutputFormat};
 use message_ir::{
-    ConversationMeta, ConversationStats, EarlierVersion, ExportMeta, IrConversationType,
-    IrImessage, IrMessage, IrMessageKind, IrParticipant, IrService, IrSource, MessageGuid,
-    MessageIdentity, Reaction, ReplyTo, SCHEMA_VERSION,
+    ConversationMeta, ConversationStats, ConversationType, EarlierVersion, ExportMeta,
+    ImessageExtensions, Message, MessageGuid, MessageIdentity, MessageKind, Participant, Reaction,
+    ReplyTo, SCHEMA_VERSION, Transport, VendorFields,
 };
 use serde_json::{Value, json};
 use std::fs;
@@ -13,7 +13,7 @@ use std::fs;
 /// attached.
 fn doc_with_image_attachment() -> ConversationDocument {
     let mut doc = message_ir::testutil::sample_document("hi");
-    doc.messages[0].attachments = vec![IrAttachment {
+    doc.messages[0].attachments = vec![Attachment {
         path: Some("photo.jpg".into()),
         ..message_ir::testutil::sample_attachment()
     }];
@@ -58,7 +58,7 @@ fn obfuscate_replaces_the_owner_address_on_each_message() {
 fn obfuscate_keeps_me_on_a_sent_message_and_replaces_a_real_name() {
     let mut doc = doc_with_image_attachment();
     let mut labelled = doc.messages[0].clone();
-    labelled.direction = IrDirection::Outgoing;
+    labelled.direction = Direction::Outgoing;
     labelled.sender_display_name = Some("Me".into());
     let mut named = labelled.clone();
     named.sender_display_name = Some("Alex Rivera".into());
@@ -175,13 +175,13 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
             tool_version: "10.20".into(),
             owner_identity: Some("LEAK-01".into()),
             owner_display_name: Some("LEAK-02".into()),
-            backup_taken_at_unix_ms: Some(1_790_793_912_000),
+            exported_at_unix_ms: Some(1_791_000_000_000),
         },
         conversation: ConversationMeta {
             chat_identifier: "LEAK-03".into(),
-            conversation_type: IrConversationType::Group,
+            conversation_type: ConversationType::Group,
             group_title: Some("LEAK-04".into()),
-            participants: vec![IrParticipant {
+            participants: vec![Participant {
                 identity: Some("LEAK-05".into()),
                 display_name: Some("LEAK-06".into()),
                 country: None,
@@ -193,19 +193,19 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
                 last_timestamp_unix_ms: Some(1_400_773_261_000),
             },
         },
-        messages: vec![IrMessage {
+        messages: vec![Message {
             guid: "LEAK-27".into(),
             timestamp_unix_ms: 1_400_773_261_000,
             time_precision: message_ir::TimePrecision::Milliseconds,
-            direction: IrDirection::Incoming,
-            service: IrService::IMessage,
-            message_kind: IrMessageKind::IMessage,
+            direction: Direction::Incoming,
+            service: Transport::IMessage,
+            message_kind: MessageKind::IMessage,
             sender_identity: Some("LEAK-07".into()),
             sender_display_name: Some("LEAK-08".into()),
             owner_identity: Some("LEAK-09".into()),
             subject: Some("LEAK-10".into()),
             text: "LEAK-11".into(),
-            attachments: vec![IrAttachment {
+            attachments: vec![Attachment {
                 path: Some("attachments/LEAK-12.jpg".into()),
                 original_name: Some("LEAK-13.jpg".into()),
                 digest_sha256: Some("LEAK-14".into()),
@@ -233,7 +233,7 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
                 guid: Some("LEAK-28".into()),
                 part_index: Some(0),
             }),
-            imessage: Some(IrImessage {
+            imessage: Some(ImessageExtensions {
                 send_effect: Some("slam".into()),
                 shared_location: Some("LEAK-16".into()),
                 announcement: Some("LEAK-17".into()),
@@ -248,11 +248,12 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
                 tapback_emoji: Some("👍".into()),
                 tapback_action: Some("added".into()),
             }),
-            source: Some(IrSource {
+            source: Some(VendorFields {
                 android_type: Some(1),
                 fields: serde_json::Map::from_iter([("address".into(), json!("LEAK-26"))]),
             }),
             sender_country: None,
+            backup_taken_at_unix_ms: Some(1_790_793_912_000),
         }],
         packaging_stem_suffix: None,
     }
@@ -495,7 +496,7 @@ fn obfuscate_makes_each_guid_again_and_keeps_replies_pointing_at_their_target() 
 
 /// Two conversations for the cross-conversation tests: A holds one message,
 /// and B holds one that `link` points at A's message's id.
-fn two_conversations(link: impl FnOnce(&mut IrMessage, &str)) -> Vec<ConversationDocument> {
+fn two_conversations(link: impl FnOnce(&mut Message, &str)) -> Vec<ConversationDocument> {
     let mut a = doc_with_image_attachment();
     a.messages[0].attachments.clear();
     a.messages[0].guid = "a-target".into();
@@ -529,7 +530,7 @@ enum Link {
 
 impl Link {
     /// Make `msg` name `target` by this link.
-    fn set(self, msg: &mut IrMessage, target: &str) {
+    fn set(self, msg: &mut Message, target: &str) {
         let target = Some(target.to_owned());
         match self {
             Link::Reply => {
@@ -539,16 +540,16 @@ impl Link {
                 });
             }
             Link::Tapback => {
-                msg.imessage = Some(IrImessage {
+                msg.imessage = Some(ImessageExtensions {
                     associated_guid: target,
-                    ..IrImessage::default()
+                    ..ImessageExtensions::default()
                 });
             }
         }
     }
 
     /// The id this link names in `msg`.
-    fn target(self, msg: &IrMessage) -> Option<&str> {
+    fn target(self, msg: &Message) -> Option<&str> {
         match self {
             Link::Reply => msg.reply_to.as_ref()?.guid.as_deref(),
             Link::Tapback => msg.imessage.as_ref()?.associated_guid.as_deref(),
@@ -580,7 +581,8 @@ fn obfuscate_points_a_reply_or_tapback_at_its_target_in_another_conversation() {
 fn obfuscate_points_a_reply_or_tapback_at_the_copy_in_its_own_conversation() {
     for link in [Link::Reply, Link::Tapback] {
         for linking_first in [true, false] {
-            let mut docs = two_conversations(|msg, _| msg.imessage = Some(IrImessage::default()));
+            let mut docs =
+                two_conversations(|msg, _| msg.imessage = Some(ImessageExtensions::default()));
             let mut copy = docs[0].messages[0].clone();
             copy.imessage = None;
             copy.reply_to = None;

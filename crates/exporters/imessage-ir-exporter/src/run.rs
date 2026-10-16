@@ -59,7 +59,7 @@ pub(crate) enum AttachmentEmbed {
 /// Map `AppleConfig.copy_method` to attachment handling.
 ///
 /// `clone` copies files, `basic` embeds thumbnails, and `full` embeds
-/// originals — all three resolve bytes through the same embed path in this
+/// originals. All three resolve bytes through the same embed path in this
 /// exporter. `disabled` skips media bytes entirely.
 fn attachment_embed_from_copy_method(copy_method: &str) -> Result<AttachmentEmbed> {
     match copy_method.trim().to_ascii_lowercase().as_str() {
@@ -122,6 +122,17 @@ impl ExportOptions {
     /// checkpoint. `None` when neither can be read.
     pub fn backup_taken_at_unix_ms(&self) -> Option<i64> {
         backup_taken_at_unix_ms(&self.source)
+    }
+
+    /// The dates every conversation file of the run carries: each
+    /// message's Backup Date ([`Self::backup_taken_at_unix_ms`]) and the
+    /// file's Export Date, which the caller gave
+    /// ([`ConvertRun::exported_at_unix_ms`](message_crate_core::ConvertRun::exported_at_unix_ms)).
+    pub(crate) fn file_dates(&self) -> crate::emit::FileDates {
+        crate::emit::FileDates {
+            backup_taken_at_unix_ms: self.backup_taken_at_unix_ms(),
+            exported_at_unix_ms: self.convert_run.exported_at_unix_ms,
+        }
     }
 }
 

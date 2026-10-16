@@ -143,7 +143,8 @@ pub async fn lookup_session(
     )
     .bind(token_hash.as_str())
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("look up the Session a token names")?;
     let Some((account_id, expires_at, app_kind, app_build)) = found else {
         return Ok(None);
     };
@@ -180,7 +181,8 @@ pub async fn live_session_hash(
     )
     .bind(account_id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read the account's Session token hash")?;
     let now = unix_secs(now);
     Ok(found.and_then(|(token_hash, expires_at)| {
         expires_at
@@ -213,7 +215,7 @@ pub async fn record_connecting_app(
     .bind(session.account_id)
     .execute(&mut *conn)
     .await
-    .with_context(|| format!("record the connecting app for {}", session.account_id))?;
+    .context("record the connecting app on the Session")?;
     Ok(())
 }
 
@@ -232,7 +234,8 @@ pub async fn connecting_app_for_account(
     )
     .bind(account_id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read the app recorded on the account's Session")?;
     Ok(found.and_then(|(kind, build)| ConnectingApp::from_columns(kind, build)))
 }
 
@@ -275,7 +278,7 @@ pub async fn rotate_account_session_token(
     .bind(expires.to_string())
     .execute(&mut *conn)
     .await
-    .with_context(|| format!("rotate session token for {account_id}"))?;
+    .context("replace the account's Session token")?;
     Ok((token, expires))
 }
 
@@ -293,7 +296,8 @@ pub(crate) async fn live_login_entry(
     )
     .bind(account_id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read the login entry of the account's Session")?;
     let now = unix_secs(now);
     // An `expires_at` that does not parse counts as expired, as in `lookup_session`.
     Ok(found.and_then(|(login_entry_id, expires_at)| {
@@ -356,7 +360,7 @@ pub async fn open_session(
     .bind(login_entry_id)
     .execute(&mut *conn)
     .await
-    .with_context(|| format!("open a session for {account_id}"))?;
+    .context("store the account's new Session")?;
     Ok(token)
 }
 
@@ -405,7 +409,7 @@ pub async fn insert_account_session_token_with_ttl(
     .bind(expires_at.to_string())
     .execute(&mut *conn)
     .await
-    .with_context(|| format!("insert session token for {account_id}"))?;
+    .context("insert a Session token")?;
     Ok(token)
 }
 
@@ -424,13 +428,16 @@ pub async fn revoke_session_token(
     now: DateTime<Utc>,
 ) -> Result<bool> {
     let token_hash = hash_api_token(token);
-    let mut tx = crate::db::begin_write(conn).await?;
+    let mut tx = crate::db::begin_write(conn)
+        .await
+        .context("begin a write transaction")?;
     let found: Option<(i64, Option<i64>)> = sqlx::query_as(
         "SELECT account_id, login_entry_id FROM account_session_tokens WHERE token_hash = $1",
     )
     .bind(token_hash.as_str())
     .fetch_optional(&mut *tx)
-    .await?;
+    .await
+    .context("look up the Session a token names")?;
     let Some((account_id, login_entry_id)) = found else {
         return Ok(false);
     };
@@ -447,8 +454,9 @@ pub async fn revoke_session_token(
     sqlx::query("DELETE FROM account_session_tokens WHERE token_hash = $1")
         .bind(token_hash)
         .execute(&mut *tx)
-        .await?;
-    tx.commit().await?;
+        .await
+        .context("delete the Session")?;
+    tx.commit().await.context("commit the logout")?;
     Ok(true)
 }
 
@@ -482,7 +490,7 @@ pub async fn revoke_account_sessions(
         .bind(account_id)
         .execute(&mut **tx)
         .await
-        .with_context(|| format!("revoke sessions for {account_id}"))?;
+        .context("delete the account's Session")?;
     Ok(())
 }
 

@@ -19,9 +19,9 @@ use message_crate_core::{
     ConvertRun, Counter, ExportReport, prepare_outputs, project_conversation,
 };
 use message_ir::{
-    ConversationDocument, ConversationKey, Deletion, EarlierVersion, ExportMeta, IrAttachment,
-    IrParticipant, IrService, IrSource, PendingAttachment, PendingConversation, PendingMessage,
-    PendingReply, ProjectedRole, ProjectionHooks, Reaction,
+    Attachment, ConversationDocument, ConversationKey, Deletion, EarlierVersion, ExportMeta,
+    Participant, PendingAttachment, PendingConversation, PendingMessage, PendingReply,
+    ProjectedRole, ProjectionHooks, Reaction, Transport, VendorFields,
 };
 use message_staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
 use serde_json::Map;
@@ -161,12 +161,12 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
                 EXPORT_TOOL_VERSION,
                 None,
                 None,
-                backup_taken_at_unix_ms,
             );
             Ok(ReadBackup {
                 conversations: conversations.into_values().collect(),
                 project: ImazingDocuments {
                     export,
+                    backup_taken_at_unix_ms,
                     tz,
                     sources: VecDeque::new(),
                 },
@@ -180,6 +180,8 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
 /// the source file of each attachment it keeps.
 struct ImazingDocuments {
     export: ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
     /// The zone every date of the export is read in.
     tz: Zone,
     /// The source file of each attachment of the documents projected so
@@ -200,6 +202,7 @@ impl Project for ImazingDocuments {
     ) -> Option<ConversationDocument> {
         let hooks = ImazingProjection {
             export: &self.export,
+            backup_taken_at_unix_ms: self.backup_taken_at_unix_ms,
             tz: self.tz,
             key: &key,
             sources: RefCell::new(Vec::new()),
@@ -210,7 +213,7 @@ impl Project for ImazingDocuments {
         Some(document)
     }
 
-    fn attachment_source(&mut self, att: &mut IrAttachment) -> (AttachmentSource, Option<u64>) {
+    fn attachment_source(&mut self, att: &mut Attachment) -> (AttachmentSource, Option<u64>) {
         match self.sources.pop_front().flatten() {
             Some(path) => {
                 // iMazing's rows carry no size; stat the source so the byte
@@ -371,7 +374,7 @@ fn merge_group_into(into: &mut Conversation, other: Conversation) {
     ) = (&mut into.key, other.key)
     {
         for member in other_members {
-            let same = |held: &IrParticipant| {
+            let same = |held: &Participant| {
                 held.identity == member.identity && held.display_name == member.display_name
             };
             if !members.iter().any(same) {
@@ -927,6 +930,8 @@ fn imazing_packaging_stem_suffix(source_kind: &str) -> Option<String> {
 /// projection, for one conversation.
 struct ImazingProjection<'a> {
     export: &'a ExportMeta,
+    /// Every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
     /// The zone every date of the export is read in.
     tz: Zone,
     /// The key of the conversation being projected.
@@ -943,8 +948,12 @@ impl ProjectionHooks for ImazingProjection<'_> {
         self.export.clone()
     }
 
-    fn service(&self, message: &PendingMessage) -> IrService {
-        IrService::parse(message.extra_str("service"))
+    fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+        self.backup_taken_at_unix_ms
+    }
+
+    fn service(&self, message: &PendingMessage) -> Transport {
+        Transport::parse(message.extra_str("service"))
     }
 
     fn role(&self, message: &PendingMessage) -> ProjectedRole {
@@ -1010,7 +1019,7 @@ impl ProjectionHooks for ImazingProjection<'_> {
         )]
     }
 
-    fn attachment_to_ir(&self, att: &PendingAttachment, message: &PendingMessage) -> IrAttachment {
+    fn attachment_to_ir(&self, att: &PendingAttachment, message: &PendingMessage) -> Attachment {
         // A message's attachments have different names: the row's file, and
         // a Live Photo video named as the picture with the video's extension.
         let source = message
@@ -1028,15 +1037,15 @@ impl ProjectionHooks for ImazingProjection<'_> {
     /// one-to-one conversation's one participant is the person it is with:
     /// their address, or for a conversation keyed by a name, the name and no
     /// address.
-    fn participants(&self, _chat_id: &str, pending: &PendingConversation) -> Vec<IrParticipant> {
+    fn participants(&self, _chat_id: &str, pending: &PendingConversation) -> Vec<Participant> {
         match self.key {
             ConversationKey::Group { members, .. } => members.clone(),
-            ConversationKey::OneToOne(handle) => vec![IrParticipant {
+            ConversationKey::OneToOne(handle) => vec![Participant {
                 identity: Some(handle.clone()),
                 display_name: pending.first_contact_name(),
                 country: None,
             }],
-            ConversationKey::NameOnly(_) => vec![IrParticipant {
+            ConversationKey::NameOnly(_) => vec![Participant {
                 identity: None,
                 display_name: pending.first_contact_name(),
                 country: None,
@@ -1048,7 +1057,11 @@ impl ProjectionHooks for ImazingProjection<'_> {
         imazing_packaging_stem_suffix(pending.extra_str("source_kind"))
     }
 
-    fn source(&self, pending: &PendingConversation, message: &PendingMessage) -> IrSource {
+    fn vendor_fields(
+        &self,
+        pending: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields {
         let mut fields = Map::new();
         // Session string is not a real group title: stored as data only
         // (the document's `group_title` stays `None`, matching the previous
@@ -1076,7 +1089,7 @@ impl ProjectionHooks for ImazingProjection<'_> {
                 fields.insert(key.into(), serde_json::Value::String(val.to_string()));
             }
         }
-        IrSource {
+        VendorFields {
             android_type: None,
             fields,
         }

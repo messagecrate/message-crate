@@ -477,7 +477,7 @@ pub(super) async fn import_file_to_staging(
                 let source = resolve_conversation_source(opts, &c)?;
                 pending = Some(StagedConversation::from_record(c, source));
             }
-            ExportRecord::Message(m) => messages.push(m),
+            ExportRecord::Message(m) => messages.push(*m),
         }
     }
 
@@ -498,9 +498,6 @@ struct StagedConversation {
     group_title: Option<String>,
     participants: Vec<ParticipantRecord>,
     source: String,
-    /// When the backup the file was read from was made, in the form a
-    /// message's timestamp takes; `None` when the file does not say.
-    backup_taken_at: Option<crate::models::StoredTime>,
 }
 
 impl StagedConversation {
@@ -513,7 +510,6 @@ impl StagedConversation {
             group_title: record.group_title.filter(|t| !t.trim().is_empty()),
             participants: record.participants,
             source,
-            backup_taken_at: record.backup_taken_at,
         }
     }
 }
@@ -599,13 +595,13 @@ impl FileStaging<'_> {
             }
         }
 
-        let individual = conversation
+        let one_to_one = conversation
             .conversation_type
-            .eq_ignore_ascii_case("individual");
+            .eq_ignore_ascii_case("one-to-one");
         // A one-to-one conversation's id is its person's address, read in
         // the country their participant or sender record names, so the chat
         // handle is the same identity they are.
-        let chat_country = if individual {
+        let chat_country = if one_to_one {
             stated.of_address(&conversation.chat_identifier)
         } else {
             None
@@ -615,7 +611,7 @@ impl FileStaging<'_> {
         // WhatsApp `…@g.us` has an `@`), and so is an orphaned conversation's
         // `orphaned:` key. A one-to-one conversation's id is an address, typed by the
         // service and its shape like every other (#1933).
-        let chat_handle_type = if individual {
+        let chat_handle_type = if one_to_one {
             handle_type_on(&conversation.chat_identifier, service)
         } else {
             IdentityType::Other
@@ -655,7 +651,7 @@ impl FileStaging<'_> {
         // none either, and the received copy of each note has no sender
         // (#1094). Its header's participant, if any, is the holder and
         // `insert_participant` drops it.
-        let chat_is_an_address = individual
+        let chat_is_an_address = one_to_one
             && message_ir::name_of_chat_id(&conversation.chat_identifier).is_none()
             && conversation.chat_identifier != message_ir::NAMELESS_CHAT_ID;
         let with_yourself = chat_is_an_address
@@ -691,9 +687,11 @@ impl FileStaging<'_> {
         )
         .await?;
         counts.conversations = 1;
-        if let (Some(import_id), Some(backup_taken_at)) =
-            (self.stmts.import_id, conversation.backup_taken_at.as_ref())
-        {
+        let newest_backup = prepared_messages
+            .iter()
+            .filter_map(|(msg, _)| msg.backup_taken_at.as_ref())
+            .max();
+        if let (Some(import_id), Some(backup_taken_at)) = (self.stmts.import_id, newest_backup) {
             crate::db::imports::note_backup_taken_at(self.tx, import_id, backup_taken_at).await?;
         }
 
@@ -742,7 +740,6 @@ impl FileStaging<'_> {
                 StagedSource {
                     conversation_id,
                     source: &conversation.source,
-                    backup_taken_at: conversation.backup_taken_at.as_ref(),
                 },
                 self.opts.assets_dir,
                 chunk,
@@ -1017,12 +1014,12 @@ struct PendingStagingMessage {
 }
 
 /// Where one conversation's message rows are staged from: its staging
-/// conversation, its source, and when its backup was made.
+/// conversation and its source. Each message's Backup Date is its own
+/// ([`MessageRecord::backup_taken_at`]).
 #[derive(Clone, Copy)]
 struct StagedSource<'a> {
     conversation_id: i64,
     source: &'a str,
-    backup_taken_at: Option<&'a crate::models::StoredTime>,
 }
 
 /// Bulk-insert one chunk of message rows, then their attachments, tapbacks
@@ -1116,7 +1113,7 @@ async fn add_staged_copy(
         && row.attachments.is_empty()
         && row.msg.tapbacks.is_empty()
         && row.msg.deletion.is_none()
-        && staged_source.backup_taken_at.is_none()
+        && row.msg.backup_taken_at.is_none()
         && row.msg.time_precision == message_ir::TimePrecision::Seconds
     {
         return Ok(());
@@ -1136,12 +1133,15 @@ async fn add_staged_copy(
     let copy = StagedCopy {
         body: row.body.as_deref(),
         versions: &row.msg.earlier_versions,
-        undated: staged_source.backup_taken_at.is_none(),
+        undated: row.msg.backup_taken_at.is_none(),
     };
     let order = if held.undated {
         BackupOrder::Undecided
     } else {
-        db_staging::later_backup(staged_source.backup_taken_at, held.backup_taken_at.as_ref())
+        db_staging::later_backup(
+            row.msg.backup_taken_at.as_ref(),
+            held.backup_taken_at.as_ref(),
+        )
     };
     match order {
         BackupOrder::Later => {
@@ -1151,13 +1151,18 @@ async fn add_staged_copy(
         BackupOrder::Undecided => {
             let taken = !row.msg.earlier_versions.is_empty()
                 && db_staging::take_later_staged_copy(tx, staged, &copy).await?;
-            if let (false, Some(backup)) = (taken, staged_source.backup_taken_at) {
+            if let (false, Some(backup)) = (taken, row.msg.backup_taken_at.as_ref()) {
                 db_staging::note_backed_staged_text(tx, staged, &copy, backup).await?;
             }
         }
     }
-    db_staging::add_staged_copy_mark(tx, staged, row.msg.deletion, staged_source.backup_taken_at)
-        .await?;
+    db_staging::add_staged_copy_mark(
+        tx,
+        staged,
+        row.msg.deletion,
+        row.msg.backup_taken_at.as_ref(),
+    )
+    .await?;
 
     let att_rows: Vec<StagingAttachment> = row
         .attachments
@@ -1208,7 +1213,7 @@ async fn insert_message_rows(
             deletion: row.msg.deletion,
             sort_order: row.sort_order,
             import_id: stmts.import_id,
-            backup_taken_at: staged_source.backup_taken_at,
+            backup_taken_at: row.msg.backup_taken_at.as_ref(),
         })
         .collect();
     db_staging::insert_messages(tx, &rows).await

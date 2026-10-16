@@ -2,9 +2,10 @@
 //! may do, the `require_*` guards each route runs, and the extractors that
 //! run a guard before a handler can start.
 
+use axum::extract::FromRef;
 use axum::http::{HeaderMap, header};
 use message_crate_api_types::{APP_HEADER, APP_VERSION_HEADER};
-use sqlx::SqliteConnection;
+use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::api_error::ApiError;
 use crate::db::account_profile;
@@ -12,7 +13,6 @@ use crate::db::api_tokens;
 use crate::db::audit_trail::CredentialUsed;
 use crate::db::permissions::Permissions;
 use crate::db::session_tokens;
-use crate::server::AppState;
 
 /// What a Bearer credential is allowed to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -258,14 +258,18 @@ pub fn require_full_delete_access(auth: &AuthIdentity) -> Result<(), ApiError> {
 /// of the capability wrappers below) instead of hand-rolling the
 /// `resolve_auth` + `require_*` preamble. Rejections are the same
 /// [`ApiError`] responses the preamble produced.
-impl axum::extract::FromRequestParts<AppState> for AuthIdentity {
+impl<S> axum::extract::FromRequestParts<S> for AuthIdentity
+where
+    S: Send + Sync,
+    SqlitePool: FromRef<S>,
+{
     type Rejection = ApiError;
 
     async fn from_request_parts(
         parts: &mut axum::http::request::Parts,
-        state: &AppState,
+        state: &S,
     ) -> Result<Self, Self::Rejection> {
-        resolve_auth(&parts.headers, state).await
+        resolve_auth(&parts.headers, &SqlitePool::from_ref(state)).await
     }
 }
 
@@ -274,17 +278,23 @@ impl axum::extract::FromRequestParts<AppState> for AuthIdentity {
 /// sent, the resolved credential when one was, and the usual `401` or `403`
 /// when the header names nothing usable. A bad credential is never quietly
 /// treated as no credential.
-impl axum::extract::OptionalFromRequestParts<AppState> for AuthIdentity {
+impl<S> axum::extract::OptionalFromRequestParts<S> for AuthIdentity
+where
+    S: Send + Sync,
+    SqlitePool: FromRef<S>,
+{
     type Rejection = ApiError;
 
     async fn from_request_parts(
         parts: &mut axum::http::request::Parts,
-        state: &AppState,
+        state: &S,
     ) -> Result<Option<Self>, Self::Rejection> {
         if parts.headers.get(header::AUTHORIZATION).is_none() {
             return Ok(None);
         }
-        resolve_auth(&parts.headers, state).await.map(Some)
+        resolve_auth(&parts.headers, &SqlitePool::from_ref(state))
+            .await
+            .map(Some)
     }
 }
 
@@ -295,14 +305,18 @@ macro_rules! auth_guard {
         $(#[$doc])*
         pub struct $name(pub AuthIdentity);
 
-        impl axum::extract::FromRequestParts<AppState> for $name {
+        impl<S> axum::extract::FromRequestParts<S> for $name
+        where
+            S: Send + Sync,
+            SqlitePool: FromRef<S>,
+        {
             type Rejection = ApiError;
 
             async fn from_request_parts(
                 parts: &mut axum::http::request::Parts,
-                state: &AppState,
+                state: &S,
             ) -> Result<Self, Self::Rejection> {
-                let auth = resolve_auth(&parts.headers, state).await?;
+                let auth = resolve_auth(&parts.headers, &SqlitePool::from_ref(state)).await?;
                 $check(&auth)?;
                 Ok(Self(auth))
             }
@@ -386,11 +400,11 @@ pub fn bearer_token(headers: &HeaderMap) -> Result<String, ApiError> {
 /// # Errors
 ///
 /// Returns unauthorized when the token is missing or invalid.
-pub async fn resolve_auth(headers: &HeaderMap, state: &AppState) -> Result<AuthIdentity, ApiError> {
+pub async fn resolve_auth(headers: &HeaderMap, db: &SqlitePool) -> Result<AuthIdentity, ApiError> {
     let token = bearer_token(headers)?;
     // Always look up against SQLite so rotate/delete in Settings takes effect
     // without restarting serve (no process-local token cache).
-    let mut conn = state.db.acquire().await?;
+    let mut conn = db.acquire().await?;
     resolve_auth_on_conn(
         &mut conn,
         &token,

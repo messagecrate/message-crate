@@ -4,8 +4,8 @@
 use anyhow::{Context, Result};
 use chrono::{TimeZone, Utc};
 use message_ir::{
-    ConversationHeader, Deletion, EarlierVersion, IdentityService, IdentityType, IrAttachment,
-    IrDirection, IrMessage, IrMessageKind, IrParticipant, Reaction, ReplyTo, TimePrecision,
+    Attachment, ConversationHeader, Deletion, Direction, EarlierVersion, IdentityService,
+    IdentityType, Message, MessageKind, Participant, Reaction, ReplyTo, TimePrecision,
     check_schema_version_in_json, nonempty, trimmed,
 };
 use serde_json::Value;
@@ -20,8 +20,9 @@ use crate::models::{StoredTime, utc_timestamp_text};
 pub enum ExportRecord {
     /// A conversation header record.
     Conversation(ConversationRecord),
-    /// One message record.
-    Message(MessageRecord),
+    /// One message record, boxed: a message holds far more than a header,
+    /// and every record of a file takes the larger variant's room.
+    Message(Box<MessageRecord>),
 }
 
 /// The conversation header of one JSONL conversation.
@@ -32,17 +33,14 @@ pub struct ConversationRecord {
     pub line: usize,
     /// The conversation's identifier as the export wrote it.
     pub chat_identifier: String,
-    /// `individual` or `group`.
+    /// `one-to-one` or `group`.
     pub conversation_type: String,
     /// Group label, when set.
     pub group_title: Option<String>,
     /// Participants of the conversation.
     pub participants: Vec<ParticipantRecord>,
-    /// IR `export.source` — used as `messages.source` for directory import.
+    /// IR `export.source`, used as `messages.source` for directory import.
     pub export_source: Option<String>,
-    /// When the backup the file was read from was made, in the form a
-    /// message's timestamp takes; `None` when the file does not say.
-    pub backup_taken_at: Option<StoredTime>,
 }
 
 impl ConversationRecord {
@@ -167,6 +165,10 @@ pub struct MessageRecord {
     /// The earlier versions of an edited message, in the order the file
     /// lists them; `text` is the final version.
     pub earlier_versions: Vec<EarlierVersionRecord>,
+    /// The message's Backup Date: when the backup it was read from was
+    /// made, in the form a message's timestamp takes; `None` when the file
+    /// does not say.
+    pub backup_taken_at: Option<StoredTime>,
 }
 
 /// One attachment of an imported message.
@@ -283,7 +285,7 @@ pub fn parse_ir_lines(
                     detail: "a message appears before the conversation header".into(),
                 });
             }
-            let msg: IrMessage =
+            let msg: Message =
                 serde_json::from_value(value).map_err(|e| ImportFailure::Invalid {
                     line: line_no,
                     detail: format!("the message is not valid: {e}"),
@@ -293,7 +295,7 @@ pub fn parse_ir_lines(
             // already leave removed reactions out.
             if matches!(
                 msg.message_kind,
-                IrMessageKind::Tapback | IrMessageKind::StickerTapback
+                MessageKind::Tapback | MessageKind::StickerTapback
             ) {
                 continue;
             }
@@ -310,7 +312,7 @@ pub fn parse_ir_lines(
                     detail: format!("{e:#}"),
                 }
             })?;
-            out.push(ExportRecord::Message(record));
+            out.push(ExportRecord::Message(Box::new(record)));
         }
     }
     if missing_guid_total > 0 {
@@ -337,9 +339,8 @@ fn is_ir_header(value: &Value) -> bool {
 ///
 /// # Errors
 ///
-/// Returns an error when the backup date is outside the times a timestamp
-/// can hold, or a participant's `country` is not a country Message Crate
-/// knows.
+/// Returns an error when a participant's `country` is not a country Message
+/// Crate knows.
 fn conversation_from_ir(header: &ConversationHeader, line: usize) -> Result<ConversationRecord> {
     let export_source = {
         let s = header.export.source.trim();
@@ -349,14 +350,6 @@ fn conversation_from_ir(header: &ConversationHeader, line: usize) -> Result<Conv
             Some(s.to_string())
         }
     };
-    let backup_taken_at = header
-        .export
-        .backup_taken_at_unix_ms
-        .map(|ms| {
-            format_utc_timestamp(ms)
-                .with_context(|| format!("unrepresentable backup_taken_at_unix_ms {ms}"))
-        })
-        .transpose()?;
     Ok(ConversationRecord {
         line,
         chat_identifier: header.conversation.chat_identifier.clone(),
@@ -369,14 +362,13 @@ fn conversation_from_ir(header: &ConversationHeader, line: usize) -> Result<Conv
             .filter_map(|p| participant_from_ir(p).transpose())
             .collect::<Result<_>>()?,
         export_source,
-        backup_taken_at,
     })
 }
 
 /// Map one IR message onto the server's message record. `header_owner` is the
 /// owner the conversation header names, used when the message names none.
 fn message_from_ir(
-    msg: &IrMessage,
+    msg: &Message,
     header_owner: Option<&str>,
     line: usize,
 ) -> Result<MessageRecord> {
@@ -386,7 +378,14 @@ fn message_from_ir(
             msg.timestamp_unix_ms
         )
     })?;
-    let is_from_me = msg.direction == IrDirection::Outgoing;
+    let backup_taken_at = msg
+        .backup_taken_at_unix_ms
+        .map(|ms| {
+            format_utc_timestamp(ms)
+                .with_context(|| format!("unrepresentable backup_taken_at_unix_ms {ms}"))
+        })
+        .transpose()?;
+    let is_from_me = msg.direction == Direction::Outgoing;
     let im = msg.imessage.as_ref();
     let text = {
         let t = msg.text.trim();
@@ -431,7 +430,7 @@ fn message_from_ir(
         subject: msg.subject.clone().filter(|s| !s.is_empty()),
         text,
         is_announcement: im.is_some_and(|i| i.announcement.is_some())
-            || matches!(msg.message_kind, IrMessageKind::Announcement),
+            || matches!(msg.message_kind, MessageKind::Announcement),
         announcement: im.and_then(|i| i.announcement.clone()),
         attachments: msg.attachments.iter().map(attachment_from_ir).collect(),
         tapbacks,
@@ -441,6 +440,7 @@ fn message_from_ir(
         }),
         deletion: msg.deletion,
         earlier_versions,
+        backup_taken_at,
     })
 }
 
@@ -475,7 +475,7 @@ fn earlier_version_from_ir(version: &EarlierVersion) -> Result<EarlierVersionRec
 ///
 /// Returns an error when the participant's `country` is not a country
 /// Message Crate knows.
-fn participant_from_ir(p: &IrParticipant) -> Result<Option<ParticipantRecord>> {
+fn participant_from_ir(p: &Participant) -> Result<Option<ParticipantRecord>> {
     let name_alias = p.display_name.clone();
     let Some(handle) = handle_value(p.identity.as_deref(), p.display_name.as_deref()) else {
         return Ok(None);
@@ -514,7 +514,7 @@ fn handle_value(address: Option<&str>, name: Option<&str>) -> Option<HandleValue
 }
 
 /// Map one IR attachment onto the server's attachment record.
-fn attachment_from_ir(a: &IrAttachment) -> AttachmentRecord {
+fn attachment_from_ir(a: &Attachment) -> AttachmentRecord {
     AttachmentRecord {
         path: a.path.clone(),
         original_name: a.original_name.clone(),

@@ -16,8 +16,8 @@ import Select, {
   selectSectionHeaderClass,
 } from "../../components/Select";
 import { errorLine } from "../../lib/apiErrorMessage";
+import type { RunLogEntry } from "../../lib/desktop/runLog";
 import { formatDateTime } from "../../lib/formatDate";
-import type { RunLogEntry } from "../../lib/tauri";
 import { sectionHintClass } from "../settings/storage/storageUtils";
 import { useOwnerAccounts } from "./useOwnerAccounts";
 

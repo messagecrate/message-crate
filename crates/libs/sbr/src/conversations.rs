@@ -3,12 +3,12 @@
 
 use phone::Handle;
 
-/// Individual or group conversation classification.
+/// One-to-one or group conversation classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ConversationKind {
     /// One-to-one conversation (default).
     #[default]
-    Individual,
+    OneToOne,
     /// Group conversation with multiple participants.
     Group,
 }
@@ -35,9 +35,9 @@ pub fn contact_name(raw: &str, kind: ConversationKind) -> Option<&str> {
 pub(crate) struct MmsConversation {
     /// The peer's handle key, or the group key.
     pub(crate) chat_key: String,
-    /// Individual or group.
+    /// One-to-one or group.
     pub(crate) kind: ConversationKind,
-    /// The generated title of a group; `None` for an individual.
+    /// The generated title of a group; `None` for a one-to-one conversation.
     pub(crate) group_title: Option<String>,
     /// Each peer with the name the element gives it, if any.
     pub(crate) participants: Vec<(Handle, Option<String>)>,
@@ -45,15 +45,15 @@ pub(crate) struct MmsConversation {
 
 impl MmsConversation {
     /// `peers` is sorted and non-empty; `raw_name` is the element's contact
-    /// name as written, which names the one peer of an individual
+    /// name as written, which names the one peer of a one-to-one
     /// conversation and nobody in a group.
     pub(crate) fn for_peers(mut peers: Vec<Handle>, raw_name: &str) -> Self {
         if peers.len() == 1 {
             let peer = peers.remove(0);
-            let name = contact_name(raw_name, ConversationKind::Individual).map(String::from);
+            let name = contact_name(raw_name, ConversationKind::OneToOne).map(String::from);
             return Self {
                 chat_key: peer.key().to_string(),
-                kind: ConversationKind::Individual,
+                kind: ConversationKind::OneToOne,
                 group_title: None,
                 participants: vec![(peer, name)],
             };

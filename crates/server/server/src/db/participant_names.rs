@@ -86,7 +86,7 @@ pub(crate) fn first_participant_name_sql(conv: &str) -> String {
 /// subquery's own alias is `nf_p`.
 pub(crate) fn named_from_chat_handle_sql(conv: &str) -> String {
     format!(
-        "({conv}.conversation_type = 'individual' COLLATE NOCASE
+        "({conv}.conversation_type = 'one-to-one' COLLATE NOCASE
           AND NOT {with_yourself}
           AND NOT EXISTS (SELECT 1 FROM participants nf_p WHERE nf_p.conversation_id = {conv}.id))",
         with_yourself = crate::db::conversations::is_with_yourself_sql(conv)
@@ -159,7 +159,7 @@ async fn load_participant_rows(
 /// The chat handle of each conversation in `conversation_ids` as its sole
 /// participant, for conversations that have no participants rows at all.
 ///
-/// Only a one-to-one (`individual`) conversation's chat handle is a person
+/// Only a one-to-one conversation's chat handle is a person
 /// (`docs/architecture/contacts-identities-and-messages.md`, "A group
 /// conversation is not a person"). Any other conversation type is left out,
 /// so it has no participants. The type is compared without case, as the import
@@ -185,7 +185,7 @@ async fn load_from_chat_handle(
         conversation_ids,
         |placeholders| {
             format!(
-                "SELECT conv.id,
+                "SELECT conv.id AS conversation_id,
                         COALESCE(NULLIF(c.preferred_name, ''), h.raw) AS name,
                         h.raw AS handle,
                         COALESCE(NULLIF(trim(h.service), ''), h.handle_type) AS service,
@@ -208,16 +208,16 @@ async fn load_from_chat_handle(
     .await
 }
 
-/// One row of either query above: the conversation id, then the participant
-/// as (name, handle, service, contact id).
+/// One row of either query above, read by column name: `conversation_id`,
+/// then the participant as `name`, `handle`, `service` and `contact_id`.
 fn participant_row(row: &SqliteRow) -> Result<(i64, Participant), sqlx::Error> {
     Ok((
-        row.try_get::<i64, _>(0)?,
+        row.try_get::<i64, _>("conversation_id")?,
         Participant {
-            name: row.try_get(1)?,
-            identity: row.try_get(2)?,
-            service: row.try_get(3)?,
-            contact_id: row.try_get(4)?,
+            name: row.try_get("name")?,
+            identity: row.try_get("handle")?,
+            service: row.try_get("service")?,
+            contact_id: row.try_get("contact_id")?,
         },
     ))
 }

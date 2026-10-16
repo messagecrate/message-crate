@@ -9,8 +9,8 @@ use message_crate_core::{
 };
 use message_csv::format_local_ts;
 use message_ir::{
-    ConversationDocument, ExportMeta, IrMessage, IrMessageKind, IrParticipant, IrService, IrSource,
-    PendingAttachment, PendingConversation, PendingMessage, Projection, ProjectionHooks,
+    ConversationDocument, ExportMeta, Message, MessageKind, Participant, PendingAttachment,
+    PendingConversation, PendingMessage, Projection, ProjectionHooks, Transport, VendorFields,
     prepare_conversation, project_pending,
 };
 use message_staging::{
@@ -268,7 +268,7 @@ struct MessageRow {
     /// Unix seconds, as the parser read them from the `date` attribute.
     timestamp_secs: f64,
     /// SMS or MMS.
-    message_kind: IrMessageKind,
+    message_kind: MessageKind,
     /// The subject, when the message has one.
     subject: Option<String>,
     /// The `contact_name` attribute as the file writes it.
@@ -408,7 +408,7 @@ pub fn stage_read_attachments(
 fn chat_id(record: &Record) -> String {
     match record.conversation_kind {
         ConversationKind::Group => format!("chat-{}", record.chat_key),
-        ConversationKind::Individual => record.chat_key.clone(),
+        ConversationKind::OneToOne => record.chat_key.clone(),
     }
 }
 
@@ -448,7 +448,7 @@ fn add_record(
     ]);
     conversation.rows.push(MessageRow {
         timestamp_secs: record.timestamp_secs,
-        message_kind: IrMessageKind::parse(record.message_kind),
+        message_kind: MessageKind::parse(record.message_kind),
         subject: (!record.subject.is_empty()).then_some(record.subject),
         contact_name: record.contact_name,
         android_type: record.android_type.trim().parse().ok(),
@@ -478,6 +478,8 @@ fn add_record(
 /// for one conversation.
 struct SbrProjection<'a> {
     export: &'a ExportMeta,
+    /// When the file was made: every message's Backup Date.
+    backup_taken_at_unix_ms: Option<i64>,
     kind: ConversationKind,
     rows: &'a [MessageRow],
 }
@@ -523,13 +525,21 @@ impl ProjectionHooks for SbrProjection<'_> {
         self.export.clone()
     }
 
-    fn service(&self, _message: &PendingMessage) -> IrService {
-        IrService::Sms
+    fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+        self.backup_taken_at_unix_ms
     }
 
-    fn source(&self, _conversation: &PendingConversation, message: &PendingMessage) -> IrSource {
+    fn service(&self, _message: &PendingMessage) -> Transport {
+        Transport::Sms
+    }
+
+    fn vendor_fields(
+        &self,
+        _conversation: &PendingConversation,
+        message: &PendingMessage,
+    ) -> VendorFields {
         let row = self.row(message);
-        IrSource {
+        VendorFields {
             android_type: row.android_type,
             fields: row.source_fields.clone(),
         }
@@ -539,7 +549,7 @@ impl ProjectionHooks for SbrProjection<'_> {
         self.row(message).subject.clone()
     }
 
-    fn message_kind(&self, message: &PendingMessage) -> IrMessageKind {
+    fn message_kind(&self, message: &PendingMessage) -> MessageKind {
         self.row(message).message_kind
     }
 
@@ -549,16 +559,12 @@ impl ProjectionHooks for SbrProjection<'_> {
             .total_cmp(&self.row(b).timestamp_secs)
     }
 
-    fn participants(
-        &self,
-        _chat_id: &str,
-        conversation: &PendingConversation,
-    ) -> Vec<IrParticipant> {
+    fn participants(&self, _chat_id: &str, conversation: &PendingConversation) -> Vec<Participant> {
         let names = self.names_by_handle(conversation);
         conversation
             .participant_e164s
             .iter()
-            .map(|handle| IrParticipant {
+            .map(|handle| Participant {
                 identity: Some(handle.clone()),
                 display_name: names.get(handle).cloned(),
                 country: None,
@@ -571,13 +577,15 @@ impl ProjectionHooks for SbrProjection<'_> {
     }
 }
 
-/// Project one conversation in progress into a document, or `None` when no
+/// Project one conversation in progress into a document whose messages
+/// carry the file's Backup Date `backup_taken_at_unix_ms`, or `None` when no
 /// message has a time that can be represented, and fold its counts into the
 /// report.
 fn to_document(
     file_path: &str,
     conversation: ConversationInProgress,
     export: &ExportMeta,
+    backup_taken_at_unix_ms: Option<i64>,
     report: &mut ReadReport,
 ) -> Option<ConversationDocument> {
     let ConversationInProgress {
@@ -587,6 +595,7 @@ fn to_document(
     } = conversation;
     let hooks = SbrProjection {
         export,
+        backup_taken_at_unix_ms,
         kind,
         rows: &rows,
     };
@@ -625,7 +634,7 @@ fn to_document(
 /// search of the file finds it. An MMS with no `address` attribute names
 /// every identity in its conversation instead.
 fn describe(
-    message: &IrMessage,
+    message: &Message,
     source_fields: &serde_json::Map<String, serde_json::Value>,
     conversation: &PendingConversation,
 ) -> String {
@@ -725,11 +734,17 @@ pub fn read_backup(
         tool_version: EXPORT_TOOL_VERSION.into(),
         owner_identity,
         owner_display_name: None,
-        backup_taken_at_unix_ms,
+        exported_at_unix_ms: None,
     };
     let mut documents = Vec::new();
     for conversation in conversations.into_values() {
-        if let Some(document) = to_document(&file_path, conversation, &export, &mut report) {
+        if let Some(document) = to_document(
+            &file_path,
+            conversation,
+            &export,
+            backup_taken_at_unix_ms,
+            &mut report,
+        ) {
             documents.push(document);
             report.conversations += 1;
         }

@@ -135,3 +135,17 @@ must not be started forever, so the app starts it again at most three times
 within ten minutes. The fourth exit in that time fails the start as before,
 and Retry starts the count again. The app gives each exit the time it found
 it, so the rule that counts them reads no clock and is tested without one.
+
+## Note, 2026-10-15: the data is in the Message Crate Directory
+
+The server's data is no longer in the operating system's app-data directory
+(#1053, #1998). The app keeps one Message Crate Directory, `message-crate` in
+the home directory, and starts the server with `--data-dir` pointing at
+`data` in it, or `data-dev` for a dev build. The Staging, Export, Logs,
+Scratch and Tools Directories are beside it, so a copy of `data` alone is
+still the whole Message Crate. The home directory is not under Documents, so
+the reason for keeping the database out of a synced directory still holds.
+The app's button reads "Open Message Crate directory" and opens the parent.
+Nothing is moved from the app-data directory: an app that kept a database
+there starts a new Message Crate in `data`, and the CHANGELOG says how to
+bring the old one across.

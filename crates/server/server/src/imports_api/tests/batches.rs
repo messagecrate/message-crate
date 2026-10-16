@@ -2,6 +2,8 @@
 //! a batch posted again storing each message once.
 
 use super::*;
+use crate::imports_api::run_control::Importer;
+use axum::extract::FromRef;
 
 /// Each server counts its own import slots. With every slot of one server
 /// taken, a second server in the same process still imports.
@@ -10,7 +12,8 @@ async fn import_slots_belong_to_one_server() {
     let (busy, _busy_fixture, _busy_token) = importer().await;
     let (idle, _idle_fixture, idle_token) = importer().await;
     let _every_slot = busy
-        .import_slots
+        .imports
+        .slots
         .try_acquire_many(MAX_CONCURRENT_IMPORTS as u32)
         .expect("a new server has every import slot free");
 
@@ -52,7 +55,8 @@ fn the_upload_reads_the_stopping_and_busy_types_by_their_slugs() {
 async fn a_batch_waiting_for_a_slot_when_the_server_stops_is_refused_and_stores_nothing() {
     let (state, _fixture, token) = importer().await;
     let every_slot = state
-        .import_slots
+        .imports
+        .slots
         .try_acquire_many(MAX_CONCURRENT_IMPORTS as u32)
         .expect("a new server has every import slot free");
     let path = batches_path(&state, &token, "imessage").await;
@@ -112,7 +116,7 @@ async fn a_batch_waiting_for_a_slot_has_not_read_its_body() {
 fn hold_every_import_slot(state: &crate::server::AppState) -> Vec<OwnedSemaphorePermit> {
     (0..MAX_CONCURRENT_IMPORTS)
         .map(|_| {
-            Arc::clone(&state.import_slots)
+            Arc::clone(&state.imports.slots)
                 .try_acquire_owned()
                 .expect("a new server has every import slot free")
         })
@@ -170,11 +174,11 @@ async fn hand_a_slot_to_the_waiting_batch<T>(
             "a batch imported while every import slot was held"
         );
         drop(held.pop().expect("a held import slot"));
-        if state.import_slots.available_permits() == 0 {
+        if state.imports.slots.available_permits() == 0 {
             return;
         }
         held.push(
-            Arc::clone(&state.import_slots)
+            Arc::clone(&state.imports.slots)
                 .try_acquire_owned()
                 .expect("the slot just freed is free"),
         );
@@ -201,7 +205,7 @@ async fn a_batch_waits_while_every_import_slot_is_held() {
     assert_eq!(stored_messages(&state).await, 1);
     drop(held);
     assert_eq!(
-        state.import_slots.available_permits(),
+        state.imports.slots.available_permits(),
         MAX_CONCURRENT_IMPORTS,
         "the batch gave its import slot back"
     );
@@ -228,7 +232,7 @@ async fn a_batch_refused_after_taking_its_slot_gives_the_slot_back() {
     );
     drop(held);
     assert_eq!(
-        state.import_slots.available_permits(),
+        state.imports.slots.available_permits(),
         MAX_CONCURRENT_IMPORTS,
         "the refused batch gave its import slot back"
     );
@@ -332,7 +336,7 @@ async fn http_import_of_a_schema_4_file_is_a_422_naming_both_versions() {
     let path = batches_path(&state, &token, "whatsapp").await;
     let body = concat!(
         r#"{"schema_version":4,"export":{"source":"whatsapp","tool":"t","tool_version":"1","owner_handle":"+15555550106","owner_display_name":"Me"},"#,
-        r#""conversation":{"chat_identifier":"+15555550107","conversation_type":"individual","group_title":null,"participants":[{"handle":"+15555550107","display_name":"Sam","handle_type":"phone"}]}}"#,
+        r#""conversation":{"chat_identifier":"+15555550107","conversation_type":"one-to-one","group_title":null,"participants":[{"handle":"+15555550107","display_name":"Sam","handle_type":"phone"}]}}"#,
         "\n",
     );
     let (status, text) =
@@ -989,8 +993,8 @@ async fn a_batch_for_an_account_deleted_while_it_waited_brings_no_account_back()
 
     let dir = TempDir::new().unwrap();
     let jsonl = write_jsonl(dir.path(), "batch.jsonl", &one_message_batch());
-    let permit = take_import_slot(&state).await.unwrap();
-    let err = run_import_path(state, permit, context, jsonl)
+    let permit = take_import_slot(&state.imports).await.unwrap();
+    let err = run_import_path(Importer::from_ref(&state), permit, context, jsonl)
         .await
         .expect_err("the deleted account's batch must be refused");
 
@@ -1029,7 +1033,7 @@ async fn an_import_run_for_a_deleted_account_brings_no_account_back() {
     let body: CreateImportRequest =
         serde_json::from_value(serde_json::json!({ "source": "imessage" })).unwrap();
     let err = create_import(
-        axum::extract::State(state),
+        axum::extract::State(state.db.clone()),
         ImportAccess(auth),
         crate::extract::Json(body),
     )

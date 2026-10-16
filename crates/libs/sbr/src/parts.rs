@@ -102,7 +102,7 @@ fn extension(part: &MmsPart) -> String {
 /// Shared by attachment staging and source-field write-back so each part is
 /// decoded once.
 pub(crate) enum DecodedPartData {
-    /// Empty or `"null"` — no payload.
+    /// Empty or `"null"`: no payload.
     Absent,
     /// Successfully decoded payload.
     Ok {

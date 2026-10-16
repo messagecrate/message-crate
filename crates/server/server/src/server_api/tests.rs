@@ -170,7 +170,7 @@ async fn the_settings_carry_the_journal_mode_the_database_runs_in() {
         crate::db::schema::ensure_schema(&mut conn).await.unwrap();
     }
     let mut state = crate::server::test_app_state(pool, dir.path());
-    state.wal_error = Some("database is locked".into());
+    state.wal_error = crate::server::WalError(Some("database is locked".into()));
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let body: ApiServerSettings = get_json(&state, "/v1/server/settings", &owner.token).await;
     assert_eq!(body.journal.mode, Some(JournalMode::Delete));
@@ -579,7 +579,7 @@ async fn the_owner_sets_a_limit_below_the_configured_part_size() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
-    let below = state.asset_part_size as u64 - 1;
+    let below = state.assets.part_size as u64 - 1;
 
     let accepted: serde_json::Value = crate::test_support::patch_json(
         &state,
@@ -769,7 +769,7 @@ async fn the_owner_reads_the_server_totals_summed_over_every_account() {
             &SeedConversation {
                 account_id,
                 handle,
-                conversation_type: "individual",
+                conversation_type: "one-to-one",
                 group_title: None,
                 source_file: "seed.jsonl",
                 messages: &messages,
@@ -991,9 +991,9 @@ impl OpenGate {
         });
         tokio::select! {
             arrived = arrived => arrived.unwrap(),
-            () = state.demo_build.ended() => panic!(
+            () = state.demo.build.ended() => panic!(
                 "the build ended before it generated: {:?}",
-                state.demo_build.get()
+                state.demo.build.get()
             ),
         }
     }
@@ -1121,7 +1121,7 @@ async fn start_demo_build(state: &AppState, token: &str) -> (StatusCode, String)
 
 /// Read the Demo Account once its build has ended.
 async fn demo_account_after_build(state: &AppState, token: &str) -> DemoAccount {
-    state.demo_build.ended().await;
+    state.demo.build.ended().await;
     get_json(state, "/v1/server/demo-account", token).await
 }
 
@@ -1132,7 +1132,7 @@ async fn demo_account_after_build(state: &AppState, token: &str) -> DemoAccount 
 async fn the_owner_adds_the_demo_account_and_no_other_account_changes() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
-    state.demo_bundle_generator = tiny_bundle;
+    state.demo.bundle_generator = tiny_bundle;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let other = fixture.account("someone").await;
     crate::test_support::seed_one_message(&state, other).await;
@@ -1180,7 +1180,7 @@ async fn the_owner_adds_the_demo_account_and_no_other_account_changes() {
 async fn adding_and_resetting_the_demo_account_are_recorded() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
-    state.demo_bundle_generator = tiny_bundle;
+    state.demo.bundle_generator = tiny_bundle;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
     for _ in 0..2 {
@@ -1241,7 +1241,7 @@ async fn adding_and_resetting_the_demo_account_are_recorded() {
 async fn the_demo_username_stays_reserved_after_the_demo_account_is_deleted() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
-    state.demo_bundle_generator = tiny_bundle;
+    state.demo.bundle_generator = tiny_bundle;
     let demo = fixture.demo_account().await;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     assert_eq!(
@@ -1272,7 +1272,7 @@ async fn a_running_demo_build_refuses_a_second_build_and_a_delete() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
     let gate = SECOND_BUILD_GATE.close();
-    state.demo_bundle_generator = second_build_bundle;
+    state.demo.bundle_generator = second_build_bundle;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
     let (status, body) = start_demo_build(&state, &owner.token).await;
@@ -1302,7 +1302,7 @@ async fn a_running_demo_build_refuses_a_second_build_and_a_delete() {
 async fn a_failed_demo_build_reports_why_and_leaves_no_account() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
-    state.demo_bundle_generator = no_bundle;
+    state.demo.bundle_generator = no_bundle;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
     let (status, body) = start_demo_build(&state, &owner.token).await;
@@ -1319,7 +1319,7 @@ async fn a_failed_demo_build_reports_why_and_leaves_no_account() {
     let info: Server = get_json(&state, "/v1/server", "").await;
     assert!(!info.demo_account);
 
-    state.demo_bundle_generator = tiny_bundle;
+    state.demo.bundle_generator = tiny_bundle;
     let (status, body) = start_demo_build(&state, &owner.token).await;
     assert_eq!(status, StatusCode::ACCEPTED, "{body}");
     let demo = demo_account_after_build(&state, &owner.token).await;
@@ -1352,7 +1352,7 @@ async fn demo_account_exists(fixture: &crate::test_support::TestFixture) -> bool
 async fn a_demo_build_the_server_stopped_is_removed_and_failed_on_the_next_start() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
-    state.demo_bundle_generator = tiny_bundle;
+    state.demo.bundle_generator = tiny_bundle;
     fixture.demo_account().await;
     {
         let mut conn = fixture.conn().await;
@@ -1393,7 +1393,7 @@ async fn stopping_the_server_during_a_demo_build_leaves_no_demo_account() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
     let gate = STOPPED_BUILD_GATE.close();
-    state.demo_bundle_generator = stopped_build_bundle;
+    state.demo.bundle_generator = stopped_build_bundle;
     fixture.demo_account().await;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
@@ -1405,7 +1405,7 @@ async fn stopping_the_server_during_a_demo_build_leaves_no_demo_account() {
         "the build had not written its record when its generator reached the gate"
     );
 
-    state.demo_build.stop().await;
+    state.demo.build.stop().await;
 
     assert!(!demo_account_exists(&fixture).await);
     assert!(demo_build_is_unfinished(&fixture).await);
@@ -1414,7 +1414,7 @@ async fn stopping_the_server_during_a_demo_build_leaves_no_demo_account() {
 
     // The next start: a new server over the same database.
     let mut next = state.clone();
-    next.demo_build = DemoBuild::default();
+    next.demo.build = DemoBuild::default();
     crate::server_api::recover_stopped_demo_build(&next)
         .await
         .expect("the next start removes the stopped build");
@@ -1443,14 +1443,14 @@ fn stopping_the_server_during_generation_stops_the_generator_and_leaves_no_bundl
     runtime.block_on(async {
         let fixture = test_fixture().await;
         let mut state = fixture.state.clone();
-        state.demo_bundle_generator = long_bundle;
+        state.demo.bundle_generator = long_bundle;
         let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
         let (status, body) = start_demo_build(&state, &owner.token).await;
         assert_eq!(status, StatusCode::ACCEPTED, "{body}");
         // The generator has written its first file and waits.
         gate.arrival(&state).await;
-        state.demo_build.stop().await;
+        state.demo.build.stop().await;
         // The build was dropped, which set the flag; the generator goes on
         // writing until it looks at it.
         gate.open();
@@ -1487,14 +1487,14 @@ async fn a_demo_build_asked_for_after_the_stop_is_refused_and_never_runs() {
     let state = fixture.state.clone();
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
-    state.demo_build.stop().await;
+    state.demo.build.stop().await;
     let (status, body) = start_demo_build(&state, &owner.token).await;
     crate::test_support::expect_problem(status, &body, ProblemType::ServerStopping);
-    assert!(!state.demo_build.is_building());
+    assert!(!state.demo.build.is_building());
 
     let ran = std::sync::Arc::new(AtomicBool::new(false));
-    assert!(state.demo_build.start(DemoDataSize::Medium));
-    let started = state.demo_build.run(state.cfg.clone(), state.db.clone(), {
+    assert!(state.demo.build.start(DemoDataSize::Medium));
+    let started = state.demo.build.run(state.cfg.clone(), state.db.clone(), {
         let ran = std::sync::Arc::clone(&ran);
         async move {
             ran.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -1513,13 +1513,14 @@ async fn a_demo_build_asked_for_after_the_stop_is_refused_and_never_runs() {
 async fn a_demo_build_that_panics_fails_and_the_next_build_starts() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
-    state.demo_bundle_generator = tiny_bundle;
+    state.demo.bundle_generator = tiny_bundle;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
-    assert!(state.demo_build.start(DemoDataSize::Medium));
+    assert!(state.demo.build.start(DemoDataSize::Medium));
     assert!(
         state
-            .demo_build
+            .demo
+            .build
             .run(state.cfg.clone(), state.db.clone(), async {
                 panic!("the build broke")
             })
@@ -1543,7 +1544,7 @@ async fn the_demo_account_cannot_be_entered_while_it_is_built() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
     let gate = ENTERED_BUILD_GATE.close();
-    state.demo_bundle_generator = entered_build_bundle;
+    state.demo.bundle_generator = entered_build_bundle;
     fixture.demo_account().await;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let visitor = crate::test_support::log_in(&state, "demo", "").await;
@@ -1593,7 +1594,7 @@ fn a_demo_build_converts_no_other_accounts_attachments() {
         .block_on(async {
             let fixture = test_fixture().await;
             let mut state = fixture.state.clone();
-            state.demo_bundle_generator = tiny_bundle;
+            state.demo.bundle_generator = tiny_bundle;
             let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
             let other = fixture.account("someone").await;
             crate::test_support::seed_one_message(&state, other).await;

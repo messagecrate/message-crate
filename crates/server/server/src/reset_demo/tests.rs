@@ -1492,7 +1492,7 @@ fn read_generated_bundle(bundle: &Path) -> BundleContents {
             contents.files += 1;
             let text = fs::read_to_string(&path).expect("read conversation file");
             for line in text.lines().skip(1) {
-                let message: message_ir::IrMessage = serde_json::from_str(line)
+                let message: message_ir::Message = serde_json::from_str(line)
                     .unwrap_or_else(|error| panic!("parse {}: {error}", path.display()));
                 contents.messages += 1;
                 contents.tapbacks += message.reactions.len();
@@ -1651,7 +1651,7 @@ async fn a_generated_demo_bundle_imports_whole_and_its_overlap_dedupes() {
         .collect();
     assert_eq!(listed_emails, profile.emails);
     assert!(
-        email_identities[0].direct_messages > 0,
+        email_identities[0].one_to_one_messages > 0,
         "{:?}",
         email_identities[0]
     );
@@ -1874,7 +1874,7 @@ async fn the_demo_address_book_names_the_unknowns_the_imports_made() {
         "SELECT COUNT(*) FROM conversations cv
          JOIN contact_handles ch ON ch.handle_id = cv.chat_handle_id
          JOIN contacts c ON c.id = ch.contact_id
-         WHERE cv.account_id = $1 AND cv.conversation_type = 'individual'
+         WHERE cv.account_id = $1 AND cv.conversation_type = 'one-to-one'
            AND c.preferred_name <> ''
            AND c.id IN (SELECT value FROM json_each($2))",
     )

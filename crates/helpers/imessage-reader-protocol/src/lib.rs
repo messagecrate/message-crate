@@ -88,7 +88,14 @@ use serde_json::Value;
 /// for that identity.
 /// 17: [`Event::Warning`] carries a line about something the run went on
 /// without, which [`Event::Log`] carried before.
-pub const PROTOCOL_VERSION: u32 = 17;
+/// 18: a one-to-one conversation's [`Conversation::conversation_type`] is
+/// [`ONE_TO_ONE_CONVERSATION_TYPE`] (`one-to-one`), where it was
+/// `individual`.
+pub const PROTOCOL_VERSION: u32 = 18;
+
+/// The [`Conversation::conversation_type`] of a one-to-one conversation: one
+/// with a single other person that the source does not mark as a group.
+pub const ONE_TO_ONE_CONVERSATION_TYPE: &str = "one-to-one";
 
 /// The [`Conversation::conversation_type`] of a conversation that holds
 /// orphaned messages: messages the backup holds without recording which
@@ -378,7 +385,8 @@ pub struct Conversation {
     /// Apple's `chat.chat_identifier`, or [`orphaned_chat_id`] for messages
     /// in no chat.
     pub chat_identifier: String,
-    /// `individual`, `group`, or [`ORPHANED_CONVERSATION_TYPE`].
+    /// [`ONE_TO_ONE_CONVERSATION_TYPE`], `group`, or
+    /// [`ORPHANED_CONVERSATION_TYPE`].
     pub conversation_type: String,
     /// The name a person gave the group, if any.
     pub group_title: Option<String>,

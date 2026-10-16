@@ -1,8 +1,8 @@
 import type { ImportIssue, ImportNote } from "../../../components/import/ImportSummaryPanel";
 import type { ImportIssueStage } from "../../../components/import/importIssueStage";
+import type { UploadFinishedReport } from "../../../lib/desktop/upload";
 import type { ImportJobFormValues } from "../../../lib/importSources/types";
 import { createRunCancel, type RunCancel } from "../../../lib/runCancel";
-import type { UploadFinishedReport } from "../../../lib/tauri";
 import type { AttachmentMediaMode, ConversationStatus, StagedStatus } from "../../../lib/types";
 import {
   type AttachmentProgressCounts,

@@ -22,10 +22,7 @@ use serde::Serialize;
 use crate::http::{CloseAction, ExportMessagesArgs, HttpSession};
 use crate::journal::{self, ExportJournalEvent, ExportJournalState, ServerTarget};
 use crate::part_file::write_asset;
-use crate::project::{
-    ExportPath, build_document, common_backup_taken_at, conversation_key, export_path,
-    to_ir_message,
-};
+use crate::project::{ExportPath, build_document, conversation_key, export_path, to_ir_message};
 use message_crate_api_types::{
     CompleteExportStatus, ExportQueryList, ExportRun, ExportScope, Message,
 };
@@ -87,6 +84,10 @@ pub struct ExportConfig {
     pub cancel: CancelFlag,
     /// Number of workers that fetch Assets in parallel (default 8).
     pub asset_fetch_workers: usize,
+    /// The Export Date every conversation file carries, in Unix
+    /// milliseconds: the instant the caller gives. The run never reads the
+    /// clock for it.
+    pub exported_at_unix_ms: i64,
 }
 
 /// Final summary of an Export Run: conversations, messages, and the Assets
@@ -326,7 +327,7 @@ fn missing_assets_line(count: usize) -> String {
 /// conversation, the attachments they reference, and the running count.
 struct Fetched {
     /// Conversation key → (first message as the metadata seed, converted messages).
-    by_conv: BTreeMap<String, (Message, Vec<message_ir::IrMessage>)>,
+    by_conv: BTreeMap<String, (Message, Vec<message_ir::Message>)>,
     /// sha256 → relative path under the output directory.
     assets: HashMap<String, String>,
     /// sha256 → every other path a message names for the same bytes. The
@@ -590,12 +591,11 @@ impl<'a> Export<'a> {
                     }
                 }
                 let ir = to_ir_message(&msg, cfg.skip_attachments)?;
-                let (seed, messages) = fetched
+                let (_, messages) = fetched
                     .by_conv
                     .entry(conversation_key(&msg))
                     // Keep first message as seed for conversation metadata.
                     .or_insert_with(|| (msg.clone(), Vec::new()));
-                common_backup_taken_at(seed, &msg);
                 messages.push(ir);
             }
             match next_offset(offset, limit, page.total) {
@@ -712,12 +712,13 @@ impl<'a> Export<'a> {
     /// Returns an error when a file cannot be created, serialized, or renamed.
     fn write_conversations(
         &self,
-        by_conv: BTreeMap<String, (Message, Vec<message_ir::IrMessage>)>,
+        by_conv: BTreeMap<String, (Message, Vec<message_ir::Message>)>,
     ) -> Result<u64> {
         let mut docs: Vec<message_ir::ConversationDocument> = by_conv
             .into_values()
             .map(|(seed, messages)| {
-                let mut doc = build_document(&seed.source, &seed, messages);
+                let mut doc =
+                    build_document(&seed.source, &seed, messages, self.cfg.exported_at_unix_ms);
                 // Disambiguate same chat across sources.
                 if !doc.export.source.trim().is_empty() {
                     doc.packaging_stem_suffix =
@@ -797,7 +798,7 @@ impl<'a> Export<'a> {
 /// file once the run's log is gone. The path and fingerprint stay, so a next
 /// Export into the same directory still knows what to fetch.
 fn mark_unfetched(
-    by_conv: &mut BTreeMap<String, (Message, Vec<message_ir::IrMessage>)>,
+    by_conv: &mut BTreeMap<String, (Message, Vec<message_ir::Message>)>,
     failed: &[AssetFailure],
 ) {
     if failed.is_empty() {
@@ -815,7 +816,7 @@ fn mark_unfetched(
             .and_then(asset_key)
             .is_some_and(|sha| failed.contains(sha.as_str()));
         if unfetched {
-            att.missing_reason = Some(message_ir::NOT_FETCHED.to_string());
+            att.missing_reason = Some(message_ir::missing_reason::NOT_FETCHED.to_string());
         }
     }
 }
@@ -1178,7 +1179,7 @@ mod asset_ref_tests {
             "conversation": {
                 "id": 9,
                 "chat_identifier": "+15555550101",
-                "conversation_type": "individual",
+                "conversation_type": "one-to-one",
                 "is_group": false,
                 "participants": []
             },

@@ -12,7 +12,7 @@
 //!
 //! Windows has no permission bits. There a new directory or file takes the
 //! access list of the directory it is made in, which under the user's own
-//! profile (the app-data directory) is that user's alone; these functions
+//! profile (the Message Crate Directory) is that user's alone; these functions
 //! make the directory and change nothing else.
 
 use std::fs::OpenOptions;

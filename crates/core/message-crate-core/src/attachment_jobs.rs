@@ -8,7 +8,7 @@ use crate::process::{Cancelled, LogSink, Sinks};
 use crate::progress::{ProgressEvent, ProgressSink};
 use anyhow::Context as _;
 use file_io::sha256_hex;
-use message_ir::{ConversationDocument, IrAttachment, IrMessage};
+use message_ir::{Attachment, ConversationDocument, Message, missing_reason};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -33,7 +33,7 @@ pub struct AttachmentProgress {
 #[derive(Debug)]
 pub struct AttachmentJob<'a> {
     /// Conversation attachment to fill after the write.
-    pub attachment: &'a mut IrAttachment,
+    pub attachment: &'a mut Attachment,
     /// Message timestamp in milliseconds (used for the dest date prefix).
     pub timestamp_unix_ms: i64,
     /// Size from the backup, if known.
@@ -74,8 +74,9 @@ impl std::error::Error for LoadError {}
 ///
 /// `load(i)` returns `Ok(None)` when the source is missing. `Ok(Some(bytes))`
 /// is the file to stage. [`LoadError::Unreadable`] is treated the same as a
-/// missing source: the attachment gets `missing_reason = "file_missing"` and
-/// the run continues rather than aborting. A write or rename of the staged
+/// missing source: the attachment's `missing_reason` is
+/// [`missing_reason::FILE_MISSING`] and the run continues rather than
+/// aborting. A write or rename of the staged
 /// file that fails is handled the same way, and its error goes to `log`.
 /// Cancel is checked before each job.
 ///
@@ -108,7 +109,7 @@ pub fn run_attachment_jobs(
     }
     if files == AttachmentFiles::Skip {
         for job in jobs.iter_mut() {
-            job.attachment.missing_reason = Some("not_copied".into());
+            job.attachment.missing_reason = Some(missing_reason::NOT_COPIED.into());
         }
         on_progress(AttachmentProgress {
             done: total,
@@ -140,7 +141,7 @@ pub fn run_attachment_jobs(
         let bytes = match loaded {
             Some(bytes) if !bytes.is_empty() => bytes,
             _ => {
-                job.attachment.missing_reason = Some("file_missing".into());
+                job.attachment.missing_reason = Some(missing_reason::FILE_MISSING.into());
                 bytes_total = bytes_total.saturating_sub(job.size_hint.unwrap_or(0));
                 on_progress(AttachmentProgress {
                     done: i + 1,
@@ -166,7 +167,7 @@ pub fn run_attachment_jobs(
                     .as_deref()
                     .unwrap_or("(no name)")
             ));
-            job.attachment.missing_reason = Some("file_missing".into());
+            job.attachment.missing_reason = Some(missing_reason::FILE_MISSING.into());
             bytes_total = bytes_total.saturating_sub(bytes.len() as u64);
             on_progress(AttachmentProgress {
                 done: i + 1,
@@ -248,14 +249,14 @@ pub fn stage_attachment_jobs(
 /// documents.
 pub fn document_messages(
     documents: &mut [ConversationDocument],
-) -> impl Iterator<Item = &mut IrMessage> {
+) -> impl Iterator<Item = &mut Message> {
     documents.iter_mut().flat_map(|doc| doc.messages.iter_mut())
 }
 
 /// The size to report for an attachment before its bytes are read: the
 /// record's own size, else the length of the bytes held in memory, else
 /// unknown (the progress total grows once the file loads).
-pub fn attachment_size_hint(att: &IrAttachment) -> Option<u64> {
+pub fn attachment_size_hint(att: &Attachment) -> Option<u64> {
     att.size_bytes
         .or_else(|| att.bytes.as_ref().map(|b| b.len() as u64))
 }
@@ -264,7 +265,7 @@ pub fn attachment_size_hint(att: &IrAttachment) -> Option<u64> {
 /// position in the result is the flat attachment index a `load(i)` hook
 /// receives.
 pub fn attachment_jobs<'a>(
-    messages: impl IntoIterator<Item = &'a mut IrMessage>,
+    messages: impl IntoIterator<Item = &'a mut Message>,
 ) -> Vec<AttachmentJob<'a>> {
     let mut jobs = Vec::new();
     for msg in messages {
@@ -301,8 +302,8 @@ pub fn report_attachment_progress<'a>(
 /// Monotonic counter distinguishing concurrent temp files.
 ///
 /// The final name is content-addressed, so two workers staging identical
-/// bytes produce the same `dest` — that is fine, the second rename is a
-/// no-op overwrite of identical bytes — but they must not share a temp path
+/// bytes produce the same `dest`. That is fine, because the second rename is
+/// a no-op overwrite of identical bytes. But they must not share a temp path
 /// mid-write, or one worker's rename pulls the file out from under the
 /// other's still-open write.
 static CLONE_TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -336,8 +337,8 @@ fn persist_clone(
 
 /// MIME type inferred from a `attachments/…` relative path's extension.
 ///
-/// Thin wrapper over [`media::mime_for_ext`] — the one shared
-/// extension-to-mime table — kept because many pipeline callers hand paths
+/// Thin wrapper over [`media::mime_for_ext`] (the one shared
+/// extension-to-mime table), kept because many pipeline callers hand paths
 /// rather than extensions. `None` for unrecognized extensions.
 pub fn mime_for_rel(rel: &str) -> Option<String> {
     let ext = Path::new(rel).extension().and_then(|e| e.to_str())?;

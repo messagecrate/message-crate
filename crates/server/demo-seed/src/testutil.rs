@@ -83,7 +83,7 @@ apple_fallback_transport_fraction = 0.2
 unassigned_phones = 2
 unassigned_emails = 1
 orphaned_messages = 3
-empty_individual = true
+empty_one_to_one = true
 empty_group = true
 
 [sources]

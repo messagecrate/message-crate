@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use message_ir::{IdentityService, IdentityType};
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
@@ -222,7 +222,8 @@ pub async fn existing_handle_id(
     .bind(raw)
     .bind(key.as_str())
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read the identity the account holds for an address")?;
     Ok(id)
 }
 
@@ -257,7 +258,8 @@ pub async fn keyed_row(
     .bind(account_id)
     .bind(handle_id)
     .fetch_optional(&mut *conn)
-    .await?;
+    .await
+    .context("read an identity's address, type, service and key")?;
     Ok(row.map(|(raw, handle_type, service, key)| KeyedRow {
         raw,
         handle_type,
@@ -279,7 +281,7 @@ pub async fn phone_holding_key(
     service: &str,
     except: i64,
 ) -> Result<Option<i64>> {
-    Ok(sqlx::query_scalar(
+    sqlx::query_scalar(
         "SELECT id FROM handles
          WHERE account_id = $1 AND normalized = $2 AND handle_type = 'phone' AND service = $3
            AND id <> $4",
@@ -289,7 +291,8 @@ pub async fn phone_holding_key(
     .bind(service)
     .bind(except)
     .fetch_optional(&mut *conn)
-    .await?)
+    .await
+    .context("read the phone identity holding a key")
 }
 
 /// Give the account's `handles` row `handle_id` the key `key`, a phone
@@ -313,7 +316,8 @@ pub async fn set_plus_form(
     .bind(handle_id)
     .bind(key)
     .execute(&mut *conn)
-    .await?;
+    .await
+    .context("give a phone identity its + form")?;
     Ok(())
 }
 
@@ -360,7 +364,8 @@ pub async fn upsert_handle_row_in(
     .bind(handle_type.as_str())
     .bind(service_str)
     .execute(&mut *conn)
-    .await?
+    .await
+    .context("insert an identity")?
     .rows_affected();
     let id: i64 = sqlx::query_scalar(
         "SELECT id FROM handles
@@ -371,7 +376,8 @@ pub async fn upsert_handle_row_in(
     .bind(handle_type.as_str())
     .bind(service_str)
     .fetch_one(&mut *conn)
-    .await?;
+    .await
+    .context("read the id of an identity")?;
     Ok((id, inserted > 0 && note.is_some()))
 }
 
@@ -438,7 +444,7 @@ pub struct Identity {
     pub conversations: u64,
     /// The identity's messages in one-to-one conversations, trashed
     /// conversations and duplicates excluded.
-    pub direct_messages: u64,
+    pub one_to_one_messages: u64,
     /// The identity's messages in group conversations, on the same terms.
     pub group_messages: u64,
     /// The identity's messages in conversations of orphaned messages, on the
@@ -540,7 +546,7 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
                 (SELECT MIN(m.timestamp) {messages}),
                 (SELECT MAX(m.timestamp) {messages}),
                 {conversations},
-                (SELECT COUNT(*) {messages} AND c.conversation_type = 'individual'),
+                (SELECT COUNT(*) {messages} AND c.conversation_type = 'one-to-one'),
                 (SELECT COUNT(*) {messages} AND c.conversation_type = 'group'),
                 (SELECT COUNT(*) {messages} AND c.conversation_type = 'orphaned')
          FROM linked l
@@ -552,7 +558,10 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
     if let IdentitiesOf::Contact { contact_id, .. } = of {
         query = query.bind(contact_id);
     }
-    let rows = query.fetch_all(&mut *conn).await?;
+    let rows = query
+        .fetch_all(&mut *conn)
+        .await
+        .context("read the identities and their message counts")?;
     Ok(rows
         .into_iter()
         .map(
@@ -563,7 +572,7 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
                 start_date,
                 end_date,
                 conversations,
-                direct,
+                one_to_one,
                 group,
                 orphaned,
             )| {
@@ -574,7 +583,7 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
                     start_date,
                     end_date,
                     conversations: conversations.max(0) as u64,
-                    direct_messages: direct.max(0) as u64,
+                    one_to_one_messages: one_to_one.max(0) as u64,
                     group_messages: group.max(0) as u64,
                     orphaned_messages: orphaned.max(0) as u64,
                 }
@@ -590,13 +599,14 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
 ///
 /// Returns an error when the query fails.
 pub async fn identity_handle_ids(conn: &mut SqliteConnection, account_id: i64) -> Result<Vec<i64>> {
-    Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+    sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT h.id FROM handles h WHERE h.account_id = $1 AND {} ORDER BY h.id",
         crate::db::account_profile::is_account_identity_sql("h", "$1"),
     )))
     .bind(account_id)
     .fetch_all(&mut *conn)
-    .await?)
+    .await
+    .context("read the account's own identities on every service")
 }
 
 /// True when an import would give `handle_id` a contact for what the
@@ -611,13 +621,13 @@ pub async fn is_met_in_conversations(
     account_id: i64,
     handle_id: i64,
 ) -> Result<bool> {
-    Ok(sqlx::query_scalar(
+    sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM participants p
                         JOIN conversations c ON c.id = p.conversation_id
                         WHERE c.account_id = $1 AND p.handle_id = $2)
              OR EXISTS (SELECT 1 FROM conversations c
                         WHERE c.account_id = $1 AND c.chat_handle_id = $2
-                          AND c.conversation_type = 'individual' COLLATE NOCASE)
+                          AND c.conversation_type = 'one-to-one' COLLATE NOCASE)
              OR EXISTS (SELECT 1 FROM messages m
                         WHERE m.account_id = $1 AND m.sender_handle_id = $2
                           AND m.is_from_me = 0)",
@@ -625,7 +635,8 @@ pub async fn is_met_in_conversations(
     .bind(account_id)
     .bind(handle_id)
     .fetch_one(&mut *conn)
-    .await?)
+    .await
+    .context("check whether an identity is met in the account's conversations")
 }
 
 #[cfg(test)]

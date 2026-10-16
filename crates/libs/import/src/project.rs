@@ -4,7 +4,7 @@
 //! header. Each later line is one message.
 
 use anyhow::{Context, Result, bail};
-use message_ir::{ConversationDocument, ConversationHeader, IrMessage, check_schema_version};
+use message_ir::{ConversationDocument, ConversationHeader, Message, check_schema_version};
 
 /// Return the backup source name from a conversation header, or an error if the
 /// schema version or source field is unusable.
@@ -60,7 +60,7 @@ pub enum AttachmentProjection {
 ///
 /// Returns an error when the message cannot be serialized.
 pub fn message_line(
-    msg: &IrMessage,
+    msg: &Message,
     projections: &[AttachmentProjection],
 ) -> Result<(Vec<u8>, String)> {
     let mut msg = msg.clone();
@@ -103,7 +103,7 @@ pub fn message_line(
 /// # Errors
 ///
 /// Returns an error when JSON serialization fails.
-fn serialize_message(msg: &IrMessage) -> Result<(Vec<u8>, String)> {
+fn serialize_message(msg: &Message) -> Result<(Vec<u8>, String)> {
     let mut out = serde_json::to_vec(msg).context("serialize message-ir message")?;
     out.push(b'\n');
     Ok((out, msg.guid.clone()))
@@ -112,7 +112,7 @@ fn serialize_message(msg: &IrMessage) -> Result<(Vec<u8>, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_ir::IrAttachment;
+    use message_ir::Attachment;
     use message_ir::testutil::{sample_attachment, sample_document};
 
     #[test]
@@ -120,7 +120,10 @@ mod tests {
         let mut doc = sample_document("hello");
         let msg = doc.messages.remove(0);
         let header = String::from_utf8(document_header_line(&doc).unwrap()).unwrap();
-        assert!(header.contains(r#""schema_version":15"#));
+        assert!(header.contains(&format!(
+            r#""schema_version":{}"#,
+            message_ir::SCHEMA_VERSION
+        )));
         assert!(header.contains(r#""sms-backup-restore""#));
         assert!(!header.contains(r#""record":"conversation""#));
 
@@ -134,7 +137,7 @@ mod tests {
     #[test]
     fn projects_missing_reason_and_clears_digest() {
         let mut msg = sample_document("with attachment").messages.remove(0);
-        msg.attachments = vec![IrAttachment {
+        msg.attachments = vec![Attachment {
             original_name: Some("big.jpg".into()),
             digest_sha256: Some("deadbeef".into()),
             size_bytes: Some(99),
@@ -149,7 +152,7 @@ mod tests {
             }],
         )
         .unwrap();
-        let parsed: IrMessage = serde_json::from_slice(&line).unwrap();
+        let parsed: Message = serde_json::from_slice(&line).unwrap();
         assert!(parsed.attachments[0].digest_sha256.is_none());
         assert_eq!(
             parsed.attachments[0].missing_reason.as_deref(),

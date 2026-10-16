@@ -62,7 +62,7 @@ async fn an_account_gone_before_its_username_is_read_answers_unauthorized() {
                         },
                         credential: crate::db::audit_trail::CredentialUsed::Session(None),
                     };
-                    get_session(State(state), auth).await
+                    get_session(State(state.db.clone()), auth).await
                 }
             }),
         )
@@ -225,7 +225,7 @@ async fn seed_source(state: &crate::server::AppState, account_id: i64, source: &
         &SeedConversation {
             account_id,
             handle: &format!("+1555{account_id}{}", source.len()),
-            conversation_type: "individual",
+            conversation_type: "one-to-one",
             group_title: None,
             source_file: "seed.jsonl",
             messages: &[SeedMessage {
