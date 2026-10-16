@@ -14,7 +14,7 @@ use anyhow::{Context, bail};
 pub use api_types::RunIssueKind;
 use ir::{
     ConversationDocument, PendingConversation, ProjectionHooks, ProjectionTally,
-    pending_to_document, prepare_conversation,
+    prepare_conversation, project_pending,
 };
 use std::fmt;
 use std::fs;
@@ -389,7 +389,7 @@ impl ExportReport {
 ///
 /// This is the step every exporter runs after parsing: sort the messages the
 /// way the exporter's hooks say, drop rows whose timestamp cannot be
-/// represented, project the rest with [`pending_to_document`], and fold the
+/// represented, project the rest with [`project_pending`], and fold the
 /// counts into `report`. Returns `None` when no message survives.
 pub fn project_conversation<H: ProjectionHooks + ?Sized>(
     chat_id: &str,
@@ -407,9 +407,9 @@ pub fn project_conversation<H: ProjectionHooks + ?Sized>(
     if !keep {
         return None;
     }
-    let (document, tally) = pending_to_document(chat_id, conversation, hooks);
-    report.absorb_tally(tally);
-    Some(document)
+    let projection = project_pending(chat_id, conversation, hooks);
+    report.absorb_tally(projection.tally);
+    Some(projection.document)
 }
 
 /// Create and canonicalize the output directory, canonicalize every input,

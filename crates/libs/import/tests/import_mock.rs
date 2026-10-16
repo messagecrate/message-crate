@@ -38,7 +38,7 @@ fn sample_document_for(handle: &str, guid: &str) -> ConversationDocument {
     document.conversation.chat_identifier = handle.into();
     document.conversation.participants[0].identity = Some(handle.into());
     document.messages[0].guid = guid.into();
-    document.messages[0].sender_identity = Some(handle.into());
+    document.messages[0].sender.identity = Some(handle.into());
     if let Some(source) = &mut document.messages[0].source {
         source.fields.insert("address".into(), json!(handle));
     }

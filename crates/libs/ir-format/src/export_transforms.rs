@@ -90,13 +90,13 @@ fn obfuscate_document(document: &mut ConversationDocument, anon: &mut Obfuscator
         *n = anon.obfuscate_display_name(n);
     }
     for message in &mut document.messages {
-        if let Some(h) = message.sender_identity.as_mut() {
+        if let Some(h) = message.sender.identity.as_mut() {
             *h = anon.obfuscate_handle(h);
         }
         if let Some(h) = message.owner_identity.as_mut() {
             *h = anon.obfuscate_handle(h);
         }
-        if let Some(n) = message.sender_display_name.as_mut() {
+        if let Some(n) = message.sender.display_name.as_mut() {
             if message.direction == Direction::Outgoing && n == "Me" {
                 // Keep the conventional outgoing label.
             } else {
@@ -158,7 +158,7 @@ fn obfuscate_guids(document: &mut ConversationDocument, anon: &Obfuscator) -> Re
         message.guid = MessageGuid::new(&MessageIdentity {
             chat: &chat,
             is_from_me: message.direction == Direction::Outgoing,
-            sender: message.sender_identity.as_deref(),
+            sender: message.sender.identity.as_deref(),
             timestamp_unix_ms: message.timestamp_unix_ms,
             text: &message.text,
             attachment_digests: &digests,

@@ -341,8 +341,7 @@ impl Ingest {
         pending.conversation.messages.push(PendingMessage {
             sort_key: secs,
             is_from_me,
-            sender_identity,
-            sender_display_name: (!sender_display_name.is_empty()).then_some(sender_display_name),
+            sender: ir::Sender::new(Some(sender_identity), Some(sender_display_name)),
             text: row.text,
             attachments: Vec::new(),
             extra,
@@ -576,7 +575,7 @@ fn parse_timestamp(raw: &str) -> Option<i64> {
     None
 }
 
-/// OpenExtract deltas of the shared [`ir::pending_to_document`] projection.
+/// OpenExtract deltas of the shared [`ir::project_pending`] projection.
 struct OpenExtractProjection<'a> {
     export: &'a ExportMeta,
     /// Every message's Backup Date.

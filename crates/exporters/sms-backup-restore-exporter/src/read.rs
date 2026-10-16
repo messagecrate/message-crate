@@ -287,7 +287,7 @@ struct MessageRow {
 struct ConversationInProgress {
     kind: ConversationKind,
     /// The conversation as the shared projection reads it: each
-    /// participant's handle key in `participant_e164s`, the group title in
+    /// participant's handle key in `participant_handles`, the group title in
     /// `display_name`.
     pending: PendingConversation,
     /// Each message's [`MessageRow`], in the order the read added them.
@@ -465,8 +465,10 @@ fn add_record(
         // extra (`ir::message_time`).
         sort_key: record.timestamp_secs as i64,
         is_from_me: record.is_from_me,
-        sender_identity: record.sender.map(Handle::into_key).unwrap_or_default(),
-        sender_display_name: record.sender_display_name,
+        sender: ir::Sender::new(
+            record.sender.map(Handle::into_key),
+            record.sender_display_name,
+        ),
         text: record.text,
         attachments,
         extra,
@@ -498,18 +500,18 @@ impl SbrProjection<'_> {
     fn names_by_handle(&self, conversation: &PendingConversation) -> HashMap<String, String> {
         let mut names = HashMap::new();
         for message in &conversation.messages {
-            if let Some(name) = message
-                .sender_display_name
+            if let Some((identity, name)) = message
+                .sender
+                .identity
                 .as_deref()
-                .and_then(ir::trimmed)
-                .filter(|_| !message.sender_identity.is_empty())
+                .zip(message.sender.display_name.as_deref().and_then(ir::trimmed))
             {
                 names
-                    .entry(message.sender_identity.clone())
+                    .entry(identity.to_string())
                     .or_insert_with(|| name.to_string());
             }
             if let Some(name) = sbr::contact_name(&self.row(message).contact_name, self.kind) {
-                for peer in &conversation.participant_e164s {
+                for peer in &conversation.participant_handles {
                     names
                         .entry(peer.clone())
                         .or_insert_with(|| name.to_string());
@@ -562,7 +564,7 @@ impl ProjectionHooks for SbrProjection<'_> {
     fn participants(&self, _chat_id: &str, conversation: &PendingConversation) -> Vec<Participant> {
         let names = self.names_by_handle(conversation);
         conversation
-            .participant_e164s
+            .participant_handles
             .iter()
             .map(|handle| Participant {
                 identity: Some(handle.clone()),
@@ -646,7 +648,10 @@ fn describe(
         .and_then(|attrs| attrs.get("address"))
         .and_then(serde_json::Value::as_str)
         .filter(|address| !address.trim().is_empty());
-    let with = address.map_or_else(|| conversation.participant_e164s.join(", "), str::to_string);
+    let with = address.map_or_else(
+        || conversation.participant_handles.join(", "),
+        str::to_string,
+    );
     format!("message of {time} with {with}")
 }
 

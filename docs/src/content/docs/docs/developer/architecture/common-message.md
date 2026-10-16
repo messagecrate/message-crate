@@ -30,13 +30,13 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 
 - **Common-message path** (`ConversationDocument` → `ir_format::FormatSink`, one of json/jsonl/csv/eml/mbox/xml): all exporters, including iMessage (`imessage-ir-exporter`). Per-chat formats also accept `write_format`; XML uses a single `smses.xml` via the sink.
 - **Media + obfuscate** run inside `FormatSink::finish` for every format (`message_crate_core::ExportTransforms`: none / copy / convert / compress, plus optional obfuscate). When obfuscate is on, exporters skip staging real attachment bytes and convert/compress is not run — only placeholder files are written. Exporters pass transforms from `OutputConfig.media` / `.obfuscate`; there is no CSV-only post-step. EML / MBOX / XML embed media and drop the staged `attachments/` directory afterward.
-- **Schema version 17 only** (breaking). Version 17 dates each message by the backup it was read from, in the message's own `backup_taken_at_unix_ms` (see [When the backup was made](#when-the-backup-was-made)), and says when the file was written, in `export.exported_at_unix_ms` (see [When the file was written](#when-the-file-was-written)); version 16 gave the whole file one backup date in `export.backup_taken_at_unix_ms`, which was wrong for some messages of a file holding messages from two backups. Version 16 had named a one-to-one conversation `one-to-one` in `conversation_type`, where version 15 said `individual`. Version 15 had let a participant and a message's sender carry the country the source read their identity in (`country`, `sender_country`; see [Identity country](#identity-country)), which version 14 had no field for. Version 14 had let an earlier version of an edited message carry no `text` (see [Earlier versions](#earlier-versions)), for a source that records the edit and not the text it replaced, as iMazing does; version 13 required the text. A version-13 file would parse under version 14's rules, and is refused all the same: a file is imported by its own version's rules or not at all. Version 13 had given a participant no `identity_type`: the server works out every identity's type from the service and the address (see [Identity types](#identity-types)), where version 12 stated a type for each participant that the import took over the address. Version 12 had said whether each message's time has milliseconds, in its required `time_precision` (see [Time precision](#time-precision)), which version 11 did not, so a time ending in `.000` could be a whole second or a millisecond time, and the import could not tell a whole-second copy of a message from a millisecond one. Version 11 had said when the backup was made, in `export.backup_taken_at_unix_ms` (see [When the backup was made](#when-the-backup-was-made)), which version 10 did not, so an import could not tell which of two backups of one phone is the later one. Version 10 had kept the message a reply quotes in the message's own `reply_to`, for every source (see [Replies](#replies)), where version 9 kept the Apple Messages reply link in `imessage.is_reply` and `imessage.in_reply_to_guid`, and a reply count in `imessage.num_replies`. Version 9 had given orphaned messages conversations of type `orphaned` (see [Orphaned messages](#orphaned-messages)), where version 8 put them all in one `individual` conversation named `orphaned`. Version 8 had kept an edited message's earlier versions in its own `edits`, for every source, where version 7 kept the Apple Messages edit history as a JSON value in `imessage.edits`. Version 7 had moved a message's mark, Deleted in the source app or Unsent, in its own `deletion`, for every source, where version 6 kept the Apple Messages deleted mark in `imessage.is_deleted`. Version 6 had moved a message's reactions into its own `reactions` list, one shape for every source, where version 5 kept Apple Messages reactions as a JSON value in `imessage.tapbacks`. Version 5 had named every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`. Version 16 and older are refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
+- **Schema version 18 only** (breaking). Version 18 carries a message's sender as one `sender` object, with its `identity`, `display_name` and `country` (see [Identity](#identity)), where version 17 wrote `sender_identity`, `sender_display_name` and `sender_country` beside each other. Version 17 had dated each message by the backup it was read from, in the message's own `backup_taken_at_unix_ms` (see [When the backup was made](#when-the-backup-was-made)), and said when the file was written, in `export.exported_at_unix_ms` (see [When the file was written](#when-the-file-was-written)); version 16 gave the whole file one backup date in `export.backup_taken_at_unix_ms`, which was wrong for some messages of a file holding messages from two backups. Version 16 had named a one-to-one conversation `one-to-one` in `conversation_type`, where version 15 said `individual`. Version 15 had let a participant and a message's sender carry the country the source read their identity in (`country`, and `sender_country` on a message; see [Identity country](#identity-country)), which version 14 had no field for. Version 14 had let an earlier version of an edited message carry no `text` (see [Earlier versions](#earlier-versions)), for a source that records the edit and not the text it replaced, as iMazing does; version 13 required the text. A version-13 file would parse under version 14's rules, and is refused all the same: a file is imported by its own version's rules or not at all. Version 13 had given a participant no `identity_type`: the server works out every identity's type from the service and the address (see [Identity types](#identity-types)), where version 12 stated a type for each participant that the import took over the address. Version 12 had said whether each message's time has milliseconds, in its required `time_precision` (see [Time precision](#time-precision)), which version 11 did not, so a time ending in `.000` could be a whole second or a millisecond time, and the import could not tell a whole-second copy of a message from a millisecond one. Version 11 had said when the backup was made, in `export.backup_taken_at_unix_ms` (see [When the backup was made](#when-the-backup-was-made)), which version 10 did not, so an import could not tell which of two backups of one phone is the later one. Version 10 had kept the message a reply quotes in the message's own `reply_to`, for every source (see [Replies](#replies)), where version 9 kept the Apple Messages reply link in `imessage.is_reply` and `imessage.in_reply_to_guid`, and a reply count in `imessage.num_replies`. Version 9 had given orphaned messages conversations of type `orphaned` (see [Orphaned messages](#orphaned-messages)), where version 8 put them all in one `individual` conversation named `orphaned`. Version 8 had kept an edited message's earlier versions in its own `edits`, for every source, where version 7 kept the Apple Messages edit history as a JSON value in `imessage.edits`. Version 7 had moved a message's mark, Deleted in the source app or Unsent, in its own `deletion`, for every source, where version 6 kept the Apple Messages deleted mark in `imessage.is_deleted`. Version 6 had moved a message's reactions into its own `reactions` list, one shape for every source, where version 5 kept Apple Messages reactions as a JSON value in `imessage.tapbacks`. Version 5 had named every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`. Version 17 and older are refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
 
-## Document schema (`schema_version: 17`)
+## Document schema (`schema_version: 18`)
 
 ```json
 {
-  "schema_version": 17,
+  "schema_version": 18,
   "export": {
     "source": "sms-backup-restore",
     "tool": "SMS Backup & Restore",
@@ -67,8 +67,7 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
       "direction": "outgoing",
       "service": "sms",
       "message_kind": "sms",
-      "sender_identity": "+15555550100",
-      "sender_display_name": "Me",
+      "sender": { "identity": "+15555550100", "display_name": "Me" },
       "subject": null,
       "text": "Hello",
       "attachments": [],
@@ -91,7 +90,8 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 
 ### Identity
 
-- Outgoing rows set `sender_identity` / `sender_display_name` from `export.owner_*` (display defaults to `"Me"` when an identity is known).
+- A message's sender is one `sender` object: its `identity`, its `display_name`, and its `country` (left out when the source names none; see [Identity country](#identity-country)). Every fact about a sender goes in it.
+- Outgoing rows set `sender.identity` / `sender.display_name` from `export.owner_*` (display defaults to `"Me"` when an identity is known).
 - Incoming rows use the peer identity.
 - `owner_identity` on a message is the owner's own address on it: the one it was sent from, or the one it was received at. Only sources that record the owner per message write it (iMessage, from `destination_caller_id`); everywhere else it is omitted and `export.owner_identity` stands for every message. An iMessage outgoing row keeps the address it was sent from, and takes `export.owner_identity` only when the database recorded none.
 - Display names are not duplicated under `source`.
@@ -120,7 +120,7 @@ reaction's sender typed `phone`.
 
 ### Identity country
 
-A participant's `country` and an incoming message's `sender_country` name
+A participant's `country` and an incoming message's `sender.country` name
 the country the source read that identity in, as an upper-case ISO 3166-1
 alpha-2 code (`GB`). A phone number written without its `+` code, such as
 `07700 900123`, is a number in that country, and the server keys it in its
@@ -271,7 +271,7 @@ Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + 
 ## JSONL layout
 
 ```text
-{"schema_version":17,"export":{…},"conversation":{…}}
+{"schema_version":18,"export":{…},"conversation":{…}}
 {"guid":"…","timestamp_unix_ms":…, …}
 …
 ```

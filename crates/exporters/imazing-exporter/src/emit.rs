@@ -650,8 +650,7 @@ impl Ingest {
         Some(PendingMessage {
             sort_key: secs,
             is_from_me,
-            sender_identity,
-            sender_display_name: (!sender_display_name.is_empty()).then_some(sender_display_name),
+            sender: ir::Sender::new(Some(sender_identity), Some(sender_display_name)),
             text: row.text.clone(),
             attachments,
             extra,
@@ -925,7 +924,7 @@ fn imazing_packaging_stem_suffix(source_kind: &str) -> Option<String> {
     }
 }
 
-/// iMazing deltas of the shared [`ir::pending_to_document`]
+/// iMazing deltas of the shared [`ir::project_pending`]
 /// projection, for one conversation.
 struct ImazingProjection<'a> {
     export: &'a ExportMeta,

@@ -35,7 +35,7 @@ fn writes_json_csv_jsonl_and_eml() {
             .contains_key("address")
     );
     assert_eq!(
-        parsed.messages[0].sender_identity.as_deref(),
+        parsed.messages[0].sender.identity.as_deref(),
         Some("+15555550101")
     );
     assert_eq!(parsed.conversation.stats.message_count, 1);
@@ -103,7 +103,7 @@ fn imessage_bag_restores_mail_extension_headers() {
     assert_eq!(tapback_im.tapback_action.as_deref(), Some("add"));
     assert_eq!(tapback.owner_display_name.as_deref(), Some("Me"));
     assert_eq!(
-        tapback.message.sender_identity.as_deref(),
+        tapback.message.sender.identity.as_deref(),
         Some("+15555550100")
     );
 }
@@ -231,8 +231,8 @@ fn csv_quotes_every_cell_a_spreadsheet_would_run_and_reads_it_back() {
         message.text = text.to_string();
         document.messages.push(message);
     }
-    document.messages[0].sender_identity = Some("+15551234567".into());
-    document.messages[0].sender_display_name = Some("=HYPERLINK(\"x\")".into());
+    document.messages[0].sender.identity = Some("+15551234567".into());
+    document.messages[0].sender.display_name = Some("=HYPERLINK(\"x\")".into());
     document.finalize_stats();
 
     let tmp = tempfile::tempdir().unwrap();
@@ -256,7 +256,7 @@ fn csv_quotes_every_cell_a_spreadsheet_would_run_and_reads_it_back() {
     let back = read_conversation_csv(&csv_path).unwrap();
     assert_eq!(back.messages[0].text, "=1+1");
     assert_eq!(
-        back.messages[0].sender_identity.as_deref(),
+        back.messages[0].sender.identity.as_deref(),
         Some("+15551234567")
     );
     assert_documents_equal_after_normalize(document, back);
@@ -297,9 +297,11 @@ fn csv_omits_trivial_parts_json_keeps_rich_parts() {
         direction: Direction::Incoming,
         service: Transport::IMessage,
         message_kind: MessageKind::IMessage,
-        sender_identity: Some("+15555550101".into()),
-        sender_display_name: Some("Sam".into()),
-        sender_country: None,
+        sender: ir::Sender {
+            identity: Some("+15555550101".into()),
+            display_name: Some("Sam".into()),
+            country: None,
+        },
         owner_identity: None,
         subject: None,
         text: "hello".into(),
@@ -369,6 +371,27 @@ fn roundtrip_json_and_jsonl() {
     }
 }
 
+/// A JSONL message line carries its sender as one `sender` object, and no
+/// sender key beside it, so a new fact about a sender has one place to go.
+#[test]
+fn jsonl_writes_a_messages_sender_as_one_object() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut document = ir::testutil::sample_document("hi");
+    document.messages[0].sender.country = Some("US".into());
+    let path = write_format(tmp.path(), OutputFormat::Jsonl, document).unwrap();
+    let text = fs::read_to_string(path).unwrap();
+    let line: Value = serde_json::from_str(text.lines().nth(1).unwrap()).unwrap();
+    assert_eq!(
+        line["sender"],
+        json!({"identity": "+15555550101", "display_name": "Sam", "country": "US"})
+    );
+    let keys: Vec<&String> = line.as_object().unwrap().keys().collect();
+    assert!(
+        keys.iter().all(|key| !key.starts_with("sender_")),
+        "{keys:?}"
+    );
+}
+
 /// The CSV `identity_type` cell of `document`'s first message, written to `dir`.
 fn sender_identity_type_cell(dir: &Path, document: &ConversationDocument) -> String {
     let csv_path = write_conversation_csv(dir, document).unwrap();
@@ -415,7 +438,7 @@ fn csv_writes_the_sender_type_column_and_no_participant_type() {
     // never "other".
     for sender in [None, Some("  ")] {
         let mut document = ir::testutil::sample_document("hello ir");
-        document.messages[0].sender_identity = sender.map(str::to_string);
+        document.messages[0].sender.identity = sender.map(str::to_string);
         assert_eq!(sender_identity_type_cell(tmp.path(), &document), "");
     }
 }
@@ -427,7 +450,7 @@ fn csv_writes_the_sender_type_column_and_no_participant_type() {
 fn csv_types_an_at_sender_by_its_service() {
     let tmp = tempfile::tempdir().unwrap();
     let mut document = ir::testutil::sample_document("hello ir");
-    document.messages[0].sender_identity = Some("123456@lid".into());
+    document.messages[0].sender.identity = Some("123456@lid".into());
     document.messages[0].service = ir::Transport::Whatsapp;
     assert_eq!(sender_identity_type_cell(tmp.path(), &document), "other");
     document.messages[0].service = ir::Transport::Sms;
@@ -442,7 +465,7 @@ fn a_tel_address_is_a_phone_identity_in_csv_eml_and_mbox() {
     let tel = "tel:+15555550157";
     let mut document = ir::testutil::sample_document("hello ir");
     document.conversation.participants[0].identity = Some(tel.into());
-    document.messages[0].sender_identity = Some(tel.into());
+    document.messages[0].sender.identity = Some(tel.into());
     let tmp = tempfile::tempdir().unwrap();
 
     assert_eq!(sender_identity_type_cell(tmp.path(), &document), "phone");
@@ -828,8 +851,8 @@ fn document_with_hard_fields() -> ConversationDocument {
     second.guid = "bbccddeeff0011223344556677889900".into();
     second.timestamp_unix_ms += 60_000;
     second.direction = Direction::Outgoing;
-    second.sender_identity = Some("me@example.com".into());
-    second.sender_display_name = Some("Me".into());
+    second.sender.identity = Some("me@example.com".into());
+    second.sender.display_name = Some("Me".into());
     second.owner_identity = Some("me@example.com".into());
     second.text = "from my Apple ID".into();
     second.attachments = vec![ir::Attachment {

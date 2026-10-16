@@ -140,9 +140,7 @@ pub fn message_line(guid: &str, text: &str) -> MessageLine {
         direction: ir::Direction::Incoming,
         service: ir::Transport::IMessage,
         message_kind: ir::MessageKind::IMessage,
-        sender_identity: None,
-        sender_display_name: None,
-        sender_country: None,
+        sender: ir::Sender::default(),
         owner_identity: None,
         subject: None,
         text: text.to_string(),
@@ -208,20 +206,20 @@ impl MessageLine {
 
     /// Sent by the person reached at `identity`.
     pub fn sender(mut self, identity: &str) -> Self {
-        self.0.sender_identity = Some(identity.to_string());
+        self.0.sender.identity = Some(identity.to_string());
         self
     }
 
     /// The country the source read the sender's identity in, as an ISO
     /// 3166-1 alpha-2 code.
     pub fn sender_country(mut self, country: &str) -> Self {
-        self.0.sender_country = Some(country.to_string());
+        self.0.sender.country = Some(country.to_string());
         self
     }
 
     /// The name the source gave the sender.
     pub fn sender_display_name(mut self, display_name: &str) -> Self {
-        self.0.sender_display_name = Some(display_name.to_string());
+        self.0.sender.display_name = Some(display_name.to_string());
         self
     }
 

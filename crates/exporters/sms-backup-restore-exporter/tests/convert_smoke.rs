@@ -321,7 +321,7 @@ fn convert_export_json_and_jsonl_use_pristine_v4() {
         "MMS must not fragment into a group conversation"
     );
     let has_outgoing = document["messages"].as_array().unwrap().iter().any(|m| {
-        m["direction"] == "outgoing" && m["sender_identity"].as_str() == Some("+15555550100")
+        m["direction"] == "outgoing" && m["sender"]["identity"].as_str() == Some("+15555550100")
     });
     assert!(has_outgoing, "expected outgoing message with owner sender");
 

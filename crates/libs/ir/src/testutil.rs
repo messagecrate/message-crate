@@ -3,7 +3,7 @@
 use crate::{
     Attachment, ConversationDocument, ConversationMeta, ConversationStats, ConversationType,
     Deletion, Direction, EarlierVersion, ExportMeta, ImessageExtensions, Message, MessageKind,
-    Participant, Reaction, ReplyTo, SCHEMA_VERSION, Transport, VendorFields,
+    Participant, Reaction, ReplyTo, SCHEMA_VERSION, Sender, Transport, VendorFields,
 };
 use serde_json::json;
 
@@ -57,9 +57,11 @@ pub fn sample_document(text: &str) -> ConversationDocument {
             direction: Direction::Incoming,
             service: Transport::Sms,
             message_kind: MessageKind::Sms,
-            sender_identity: Some("+15555550101".into()),
-            sender_display_name: Some("Sam".into()),
-            sender_country: None,
+            sender: Sender {
+                identity: Some("+15555550101".into()),
+                display_name: Some("Sam".into()),
+                country: None,
+            },
             owner_identity: None,
             subject: None,
             text: text.into(),
@@ -97,7 +99,7 @@ pub fn sample_whatsapp_document(text: &str) -> ConversationDocument {
         message.guid = "ffeeddccbbaa99887766554433221100".into();
         message.service = Transport::Whatsapp;
         message.message_kind = MessageKind::Unknown;
-        message.sender_identity = Some("+15555550102".into());
+        message.sender.identity = Some("+15555550102".into());
         message.source = None;
     }
     document
@@ -138,9 +140,11 @@ pub fn sample_imessage_document() -> ConversationDocument {
                 direction: Direction::Incoming,
                 service: Transport::IMessage,
                 message_kind: MessageKind::IMessage,
-                sender_identity: Some("+15555550101".into()),
-                sender_display_name: Some("Sam".into()),
-                sender_country: None,
+                sender: Sender {
+                    identity: Some("+15555550101".into()),
+                    display_name: Some("Sam".into()),
+                    country: None,
+                },
                 owner_identity: None,
                 subject: None,
                 text: "hello imessage".into(),
@@ -185,9 +189,11 @@ pub fn sample_imessage_document() -> ConversationDocument {
                 direction: Direction::Outgoing,
                 service: Transport::IMessage,
                 message_kind: MessageKind::Tapback,
-                sender_identity: Some("+15555550100".into()),
-                sender_display_name: Some("Me".into()),
-                sender_country: None,
+                sender: Sender {
+                    identity: Some("+15555550100".into()),
+                    display_name: Some("Me".into()),
+                    country: None,
+                },
                 owner_identity: None,
                 subject: None,
                 text: "Loved a message".into(),

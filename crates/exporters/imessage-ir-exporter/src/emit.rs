@@ -399,27 +399,25 @@ fn message_to_ir(
         Direction::Incoming
     };
     let owner_identity = nonempty(&record.owner_identity);
-    let (sender_identity, sender_display_name, sender_country) = match direction {
-        Direction::Outgoing => {
-            let (identity, name) = owner_sender(&ExportMeta {
-                source: EXPORT_SOURCE.into(),
-                tool: EXPORT_TOOL.into(),
-                tool_version: env!("CARGO_PKG_VERSION").into(),
-                owner_identity: (!record.owner_identity.is_empty())
-                    .then(|| record.owner_identity.clone()),
-                owner_display_name: record.owner_display_name.clone(),
-                exported_at_unix_ms: None,
-            });
-            (identity, name, None)
+    let sender = match direction {
+        Direction::Outgoing => owner_sender(&ExportMeta {
+            source: EXPORT_SOURCE.into(),
+            tool: EXPORT_TOOL.into(),
+            tool_version: env!("CARGO_PKG_VERSION").into(),
+            owner_identity: (!record.owner_identity.is_empty())
+                .then(|| record.owner_identity.clone()),
+            owner_display_name: record.owner_display_name.clone(),
+            exported_at_unix_ms: None,
+        }),
+        Direction::Incoming => {
+            record
+                .sender
+                .map_or_else(ir::Sender::default, |sender| ir::Sender {
+                    identity: Some(sender.identity),
+                    display_name: Some(sender.display_name),
+                    country: known_country(sender.country),
+                })
         }
-        Direction::Incoming => match record.sender {
-            Some(sender) => (
-                Some(sender.identity),
-                Some(sender.display_name),
-                known_country(sender.country),
-            ),
-            None => (None, None, None),
-        },
     };
 
     let mut loads = Vec::with_capacity(record.attachments.len());
@@ -441,9 +439,7 @@ fn message_to_ir(
         direction,
         service: Transport::parse(&record.service),
         message_kind: MessageKind::parse(&record.message_kind),
-        sender_identity,
-        sender_display_name,
-        sender_country,
+        sender,
         owner_identity,
         subject: record.subject,
         text: record.text,
@@ -795,13 +791,12 @@ fn chat_to_document(
     };
     // Each message keeps the address it was sent from; the conversation's
     // owner fills in only where the database recorded none.
-    let (owner_identity, owner_display_name) = owner_sender(&export);
+    let owner = owner_sender(&export);
     let mut messages = conversation.messages;
     for message in &mut messages {
         message.backup_taken_at_unix_ms = dates.backup_taken_at_unix_ms;
-        if message.direction == Direction::Outgoing && message.sender_identity.is_none() {
-            message.sender_identity.clone_from(&owner_identity);
-            message.sender_display_name.clone_from(&owner_display_name);
+        if message.direction == Direction::Outgoing && message.sender.identity.is_none() {
+            message.sender.clone_from(&owner);
         }
     }
     ConversationDocument {
@@ -1149,7 +1144,8 @@ mod tests {
                 .country = Some(country.into());
             message_to_ir(record, AttachmentEmbed::Disabled, false)
                 .0
-                .sender_country
+                .sender
+                .country
         };
         assert_eq!(country_in_file("UK"), None);
         assert_eq!(country_in_file("GB").as_deref(), Some("GB"));
@@ -1276,7 +1272,7 @@ mod tests {
             true,
         );
         assert_eq!(incoming.direction, Direction::Incoming);
-        assert_eq!(incoming.sender_identity.as_deref(), Some("+15555550122"));
+        assert_eq!(incoming.sender.identity.as_deref(), Some("+15555550122"));
         assert_eq!(incoming.service, Transport::IMessage);
         assert_eq!(incoming.message_kind, MessageKind::IMessage);
         assert_eq!(incoming.owner_identity.as_deref(), Some("+15555550100"));
@@ -1287,8 +1283,8 @@ mod tests {
             true,
         );
         assert_eq!(outgoing.direction, Direction::Outgoing);
-        assert_eq!(outgoing.sender_identity.as_deref(), Some("+15555550100"));
-        assert_eq!(outgoing.sender_display_name.as_deref(), Some("Me"));
+        assert_eq!(outgoing.sender.identity.as_deref(), Some("+15555550100"));
+        assert_eq!(outgoing.sender.display_name.as_deref(), Some("Me"));
     }
 
     #[test]
@@ -1329,7 +1325,7 @@ mod tests {
         let senders: Vec<_> = document
             .messages
             .iter()
-            .map(|m| m.sender_identity.as_deref())
+            .map(|m| m.sender.identity.as_deref())
             .collect();
         assert_eq!(
             senders,
@@ -1406,9 +1402,11 @@ mod tests {
             direction: Direction::Incoming,
             service: Transport::IMessage,
             message_kind: MessageKind::IMessage,
-            sender_identity: Some("+15555550101".into()),
-            sender_display_name: None,
-            sender_country: None,
+            sender: ir::Sender {
+                identity: Some("+15555550101".into()),
+                display_name: None,
+                country: None,
+            },
             owner_identity: None,
             subject: None,
             text: "hi".into(),

@@ -155,7 +155,7 @@ fn group_mms_sender_direction_and_conversation() {
     let seen: Vec<(&str, Direction, Option<&str>)> = document
         .messages
         .iter()
-        .map(|m| (m.text.as_str(), m.direction, m.sender_identity.as_deref()))
+        .map(|m| (m.text.as_str(), m.direction, m.sender.identity.as_deref()))
         .collect();
     assert_eq!(
         seen,
@@ -373,7 +373,7 @@ fn a_placeholder_contact_name_names_nobody() {
             [("+15555550101", None)],
             "{placeholder}"
         );
-        assert_eq!(documents[0].messages[1].sender_display_name, None);
+        assert_eq!(documents[0].messages[1].sender.display_name, None);
     }
 }
 
@@ -388,7 +388,7 @@ fn a_group_contact_name_names_no_sender() {
         roster(&documents[0]),
         [("+15555550101", None), ("+15555550102", None)]
     );
-    assert_eq!(documents[0].messages[0].sender_display_name, None);
+    assert_eq!(documents[0].messages[0].sender.display_name, None);
 }
 
 #[test]
@@ -485,7 +485,7 @@ fn an_email_sender_is_an_email_identity() {
         Some("john1985@example.com")
     );
     assert_eq!(
-        documents[0].messages[0].sender_identity.as_deref(),
+        documents[0].messages[0].sender.identity.as_deref(),
         Some("john1985@example.com")
     );
 }

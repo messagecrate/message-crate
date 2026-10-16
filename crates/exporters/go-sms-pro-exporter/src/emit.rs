@@ -180,12 +180,10 @@ fn add_xml_messages(
         conversation.messages.push(PendingMessage {
             sort_key: message.timestamp_secs as i64,
             is_from_me: message.is_from_me,
-            sender_identity: if message.is_from_me {
-                String::new()
-            } else {
-                message.other.into_key()
-            },
-            sender_display_name: message.name_alias.clone(),
+            sender: ir::Sender::new(
+                (!message.is_from_me).then(|| message.other.into_key()),
+                message.name_alias.clone(),
+            ),
             text: message.text,
             attachments: Vec::new(),
             extra: {
@@ -337,10 +335,9 @@ fn pdu_pending_message(
 ) -> PendingMessage {
     // The projection names the owner as the sender of every outgoing message
     // itself, so only a received PDU carries its sender here.
-    let sender_identity = match sender {
-        Some(sender) if !parsed.is_sent => sender.into_key(),
-        _ => String::new(),
-    };
+    let identity = sender
+        .filter(|_| !parsed.is_sent)
+        .map(|sender| sender.into_key());
     let mut extra = BTreeMap::new();
     extra.insert("source_kind".into(), "pdu".to_string());
     extra.insert("android_type".into(), String::new());
@@ -356,8 +353,7 @@ fn pdu_pending_message(
     PendingMessage {
         sort_key: parsed.timestamp,
         is_from_me: parsed.is_sent,
-        sender_identity,
-        sender_display_name: None,
+        sender: ir::Sender::new(identity, None),
         text: parsed.body,
         attachments,
         extra,
@@ -379,7 +375,7 @@ fn is_pdu_file(p: &Path) -> bool {
         .is_some_and(|n| (n.starts_with("I_") || n.starts_with("S_")) && n.ends_with(".pdu"))
 }
 
-/// GO SMS Pro deltas of the shared [`ir::pending_to_document`] projection.
+/// GO SMS Pro deltas of the shared [`ir::project_pending`] projection.
 struct GoSmsProjection {
     export: ExportMeta,
     /// Every message's Backup Date.
@@ -856,8 +852,7 @@ mod tests {
         PendingMessage {
             sort_key: 1_609_459_200,
             is_from_me: true,
-            sender_identity: String::new(),
-            sender_display_name: None,
+            sender: ir::Sender::default(),
             text: text.into(),
             attachments: digests
                 .iter()

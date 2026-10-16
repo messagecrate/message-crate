@@ -43,8 +43,7 @@ fn digests_of(attachments: Vec<PendingAttachment>) -> Vec<String> {
     attachment_digests(&PendingMessage {
         sort_key: 0,
         is_from_me: false,
-        sender_identity: String::new(),
-        sender_display_name: None,
+        sender: ir::Sender::default(),
         text: String::new(),
         attachments,
         extra: BTreeMap::new(),
@@ -570,8 +569,8 @@ Bob,2020-01-01 12:01:00,SMS,Notification,,,,,,Bob left the conversation,,,\n",
         .iter()
         .find(|m| m.text == "Bob left the conversation")
         .unwrap();
-    assert_eq!(notification.sender_identity, None);
-    assert_eq!(notification.sender_display_name, None);
+    assert_eq!(notification.sender.identity, None);
+    assert_eq!(notification.sender.display_name, None);
 }
 
 /// An incoming message whose row names no sender is from the chat's peer:
@@ -591,8 +590,8 @@ Bob Mail,2020-01-01 12:01:00,iMessage,Incoming,,,Read,,,Still me,,,\n",
         .map(|m| {
             (
                 m.text.as_str(),
-                m.sender_identity.as_deref(),
-                m.sender_display_name.as_deref(),
+                m.sender.identity.as_deref(),
+                m.sender.display_name.as_deref(),
             )
         })
         .collect();
@@ -680,7 +679,7 @@ fn an_incoming_row_without_a_sender_in_a_short_code_chat_is_from_the_short_code(
     let documents = convert_rows("262966,2020-01-01 12:00:00,SMS,Incoming,,,Read,,,Your code,,,\n");
     assert_eq!(documents[0].conversation.chat_identifier, "262966");
     assert_eq!(
-        documents[0].messages[0].sender_identity.as_deref(),
+        documents[0].messages[0].sender.identity.as_deref(),
         Some("262966")
     );
 }
@@ -1122,8 +1121,8 @@ fn an_incoming_group_row_without_a_sender_has_no_made_up_sender() {
             .iter()
             .find(|m| m.text == "Who")
             .unwrap();
-        assert_eq!(who.sender_identity, None, "{session}");
-        assert_eq!(who.sender_display_name, None, "{session}");
+        assert_eq!(who.sender.identity, None, "{session}");
+        assert_eq!(who.sender.display_name, None, "{session}");
     }
 }
 
@@ -1636,7 +1635,7 @@ fn a_sender_id_that_is_no_address_is_still_the_sender() {
     assert_eq!(documents.len(), 1);
     assert_eq!(documents[0].conversation.chat_identifier, "+15555550101");
     assert_eq!(
-        documents[0].messages[0].sender_identity.as_deref(),
+        documents[0].messages[0].sender.identity.as_deref(),
         Some("AMAZON")
     );
 }
