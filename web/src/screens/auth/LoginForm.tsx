@@ -5,7 +5,8 @@ import { useAuth } from "../../lib/authContext";
 import { login as serverLogin } from "../../lib/serverApi";
 import { useAsyncAction } from "../../lib/useAsyncAction";
 import CredentialFields from "./CredentialFields";
-import { KeepLoggedInSubmit, useKeepLoggedIn } from "./KeepLoggedIn";
+import KeepLoggedInSubmit from "./KeepLoggedInSubmit";
+import { useKeepLoggedIn } from "./useKeepLoggedIn";
 
 /** Username and password login. */
 export default function LoginForm({

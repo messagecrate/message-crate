@@ -10,9 +10,9 @@ import {
   checkSavedLogin,
   forgetSavedLogin,
   loadSavedLogin,
+  savedLoginLifetime,
   saveLogin,
   saveServerAddress,
-  savedLoginLifetime,
   startingAuthState,
 } from "./savedLogin";
 import { logout as serverLogout } from "./serverApi";

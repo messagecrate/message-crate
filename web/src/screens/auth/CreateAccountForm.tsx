@@ -3,8 +3,9 @@ import AuthErrorFooter from "../../components/AuthErrorFooter";
 import { setBaseUrl } from "../../lib/api";
 import { useAuth } from "../../lib/authContext";
 import CredentialFields from "./CredentialFields";
-import { KeepLoggedInSubmit, useKeepLoggedIn } from "./KeepLoggedIn";
+import KeepLoggedInSubmit from "./KeepLoggedInSubmit";
 import { useCreateAccountForm } from "./useCreateAccountForm";
+import { useKeepLoggedIn } from "./useKeepLoggedIn";
 
 /**
  * New account: username plus the password twice.

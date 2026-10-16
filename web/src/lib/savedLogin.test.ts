@@ -7,9 +7,9 @@ import {
   forgetSavedLogin,
   loadSavedLogin,
   loadServerAddress,
+  savedLoginLifetime,
   saveLogin,
   saveServerAddress,
-  savedLoginLifetime,
   startingAuthState,
 } from "./savedLogin";
 import { type PrefLifetime, writePref } from "./storage";

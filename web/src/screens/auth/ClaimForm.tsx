@@ -5,7 +5,8 @@ import { useAuth } from "../../lib/authContext";
 import { claimServer } from "../../lib/serverApi";
 import { useAsyncAction } from "../../lib/useAsyncAction";
 import CredentialFields from "./CredentialFields";
-import { KeepLoggedInSubmit, useKeepLoggedIn } from "./KeepLoggedIn";
+import KeepLoggedInSubmit from "./KeepLoggedInSubmit";
+import { useKeepLoggedIn } from "./useKeepLoggedIn";
 
 /**
  * Create the owner, which is the only thing an unclaimed Message Crate offers.
