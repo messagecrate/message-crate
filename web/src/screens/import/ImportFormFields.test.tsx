@@ -111,6 +111,7 @@ function formProps(override: FormOverride = {}): ImportFormFieldsProps {
     accountTimeZone = "America/New_York",
     phoneCountries = [],
     running = false,
+    startError = null,
     onImport = vi.fn(),
     ...fields
   } = override;
@@ -131,6 +132,7 @@ function formProps(override: FormOverride = {}): ImportFormFieldsProps {
     accountTimeZone,
     phoneCountries,
     running,
+    startError,
     onImport,
   };
 }
@@ -544,6 +546,12 @@ describe("ImportFormFields Import button", () => {
     await user.click(button);
 
     expect(onImport).not.toHaveBeenCalled();
+  });
+
+  it("says why the last Import could not start", () => {
+    renderForm({ startError: "Could not read your account: offline" });
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not read your account: offline");
   });
 
   it("is refused with no backup chosen, which is the one thing an import needs", async () => {

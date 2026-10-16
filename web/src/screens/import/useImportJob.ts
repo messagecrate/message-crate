@@ -106,6 +106,7 @@ export function useImportJob(service: ImportRunService = importRunService) {
     mediaToolsMissing: state.mediaToolsMissing,
     mediaPartiallyRan: state.mediaPartiallyRan,
     resumeError: state.resumeError,
+    startError: state.startError,
     reviewError: state.reviewError,
     computingSummary: state.computingSummary,
     completionText:

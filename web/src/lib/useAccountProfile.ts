@@ -63,7 +63,8 @@ export function useUpdateAccountProfile(): UseMutationResult<
 
 /**
  * Read the profile outside a render — during login, and before an import
- * decides whether the backup belongs to this person.
+ * decides whether the backup belongs to this person. Rejects when the server
+ * cannot be read, so each caller decides what a failed read means.
  *
  * `accountId` is passed explicitly because login knows the account before the
  * auth state carries it, and the entry has to land under the key the hook above
@@ -73,14 +74,14 @@ export function fetchAccountProfileFor(
   client: ReturnType<typeof useQueryClient>,
   accountId: number | null,
   force = false,
-): Promise<AccountProfile | null> {
+): Promise<AccountProfile> {
   const key = routeQueryKey(accountId ?? ANONYMOUS_ACCOUNT, keys.accountProfile.all);
   if (force) client.removeQueries({ queryKey: key });
-  return client.fetchQuery({ queryKey: key, queryFn: () => getAccountProfile() }).catch(() => null);
+  return client.fetchQuery({ queryKey: key, queryFn: () => getAccountProfile() });
 }
 
 /** The same, for a caller that is already inside the logged-in tree. */
-export function useFetchAccountProfile(): (force?: boolean) => Promise<AccountProfile | null> {
+export function useFetchAccountProfile(): (force?: boolean) => Promise<AccountProfile> {
   const client = useQueryClient();
   const { accountId } = useAuth();
   return useCallback(

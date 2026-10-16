@@ -450,7 +450,7 @@ describe("useImportJob wiring", () => {
     invokeImessageBackupIdentitiesMock.mockReset();
     // No identities read by default, so the identity check never stops an
     // existing test that doesn't set up its own probe/profile response
-    // (needsIdentityStop is a no-op on an empty list, fail-open by design).
+    // (needsIdentityStop never stops a backup read with no identities).
     invokeImessageBackupIdentitiesMock.mockResolvedValue([]);
     setProfile({ phones: [], emails: [] });
     createImportMock.mockReset();
@@ -2745,14 +2745,68 @@ describe("useImportJob wiring", () => {
       );
     });
 
-    it("fails open when the probe errors", async () => {
-      invokeImessageBackupIdentitiesMock.mockRejectedValue(new Error("locked"));
+    it("stops with the probe's own message when the backup cannot be read", async () => {
+      // A desktop command rejects with its error as a string.
+      invokeImessageBackupIdentitiesMock.mockRejectedValue("the backup password is wrong");
       setProfile({ phones: [], emails: [] });
       const { result } = renderJob();
       await act(async () => {
         await result.current.startImport(imessageForm());
       });
-      expect(result.current.phase).not.toBe("identity_stop");
+      expect(result.current.phase).toBe("form");
+      expect(result.current.running).toBe(false);
+      expect(result.current.startError).toBe("The backup password is wrong");
+      expect(result.current.sourceIdentities).toBeNull();
+      expect(createImportMock).not.toHaveBeenCalled();
+      expect(invokeExtractMock).not.toHaveBeenCalled();
+    });
+
+    it("stops with the reason when the account's profile cannot be read", async () => {
+      invokeImessageBackupIdentitiesMock.mockResolvedValue(["+15555550110"]);
+      await act(() =>
+        service.startImport(
+          {
+            ...auth,
+            fetchProfile: () => Promise.reject(new ApiError(503, "the database is busy")),
+          },
+          imessageForm(),
+        ),
+      );
+      const state = service.store.get();
+      expect(state.phase).toBe("form");
+      expect(state.running).toBe(false);
+      expect(state.startError).toBe("Could not read your account: the database is busy");
+      expect(state.sourceIdentities).toBeNull();
+      expect(createImportMock).not.toHaveBeenCalled();
+      expect(invokeExtractMock).not.toHaveBeenCalled();
+    });
+
+    it("clears the last start's failure when the next Import starts", async () => {
+      invokeImessageBackupIdentitiesMock.mockRejectedValueOnce("the backup password is wrong");
+      const { result } = renderJob();
+      await act(async () => {
+        await result.current.startImport(imessageForm());
+      });
+      expect(result.current.startError).not.toBeNull();
+      await act(async () => {
+        await result.current.startImport(imessageForm());
+      });
+      expect(result.current.startError).toBeNull();
+      expect(createImportMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("goes on without a stop when the backup was read and sent from no address", async () => {
+      invokeImessageBackupIdentitiesMock.mockResolvedValue([]);
+      setProfile({ phones: [], emails: [] });
+      const { result } = renderJob();
+      await act(async () => {
+        await result.current.startImport(imessageForm());
+      });
+      expect(result.current.startError).toBeNull();
+      expect(result.current.sourceIdentities).toEqual([]);
+      expect(createImportMock).toHaveBeenCalledWith(
+        expect.objectContaining({ source_identities: [] }),
+      );
     });
 
     it("does not probe non-iMessage sources", async () => {
@@ -3881,6 +3935,7 @@ describe("one desktop app, two accounts (#1085)", () => {
     a.unmount();
 
     auth = ACCOUNT_B;
+    setProfile({ phones: [], emails: [] });
     const b = renderJob();
     await act(() => b.result.current.startImport(importForm()));
     await act(() => runOfA);

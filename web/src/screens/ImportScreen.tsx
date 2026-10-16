@@ -109,6 +109,7 @@ export default function ImportScreen() {
     mediaToolsMissing,
     mediaPartiallyRan,
     resumeError,
+    startError,
     reviewError,
     sourceIdentities,
     computingSummary,
@@ -557,6 +558,7 @@ export default function ImportScreen() {
           accountTimeZone={accountTimeZone}
           phoneCountries={phoneCountries}
           running={running}
+          startError={startError}
           onImport={(flushedPhones) =>
             void startImport(
               importJobValues(form, accountTimeZone, flushedPhones ?? form.ownerPhones),

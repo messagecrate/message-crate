@@ -1,5 +1,6 @@
 import type { AccountProfile } from "../../../lib/account";
 import { profileAddresses } from "../../../lib/account";
+import { errorLine, errorText } from "../../../lib/apiErrorMessage";
 import { needsIdentityStop, parseSourceIdentities } from "../../../lib/backupIdentity";
 import type { ActiveImportRun } from "../../../lib/importRun";
 import { importSourceFor } from "../../../lib/importSources";
@@ -30,8 +31,8 @@ import { runUpload } from "./upload";
 export type RunAccount = {
   token: string | null;
   accountId: number | null;
-  /** Read the account's profile, for the identity check before a new iMessage run. */
-  fetchProfile: () => Promise<AccountProfile | null>;
+  /** Read the account's profile, for the identity check before a new iMessage run. Rejects when it cannot. */
+  fetchProfile: () => Promise<AccountProfile>;
 };
 
 /**
@@ -104,8 +105,10 @@ export function createImportRunService(deps: ImportRunDeps) {
    * addresses the backup's device sent from and compares them to the
    * profile; when nothing matches, it parks the form and stops at
    * `identity_stop`, before any run exists, so Cancel has nothing to clean
-   * up. The probe fails open: a source it cannot read will fail in the
-   * extractor moments later with the proper error.
+   * up. When the backup or the profile cannot be read, the attempt ends there
+   * too, with the reason on `startError` and no identities stored, because a
+   * check that did not run must not read as a backup with no addresses
+   * (#2174).
    */
   async function startImport(
     account: RunAccount,
@@ -141,21 +144,20 @@ export function createImportRunService(deps: ImportRunDeps) {
       // The probe reads the backup (and, for an encrypted one, decrypts
       // it) before any run exists, which can take seconds: mark the run
       // busy for that stretch so the Import button reflects it.
-      store.set({ running: true });
+      store.set({ running: true, startError: null, sourceIdentities: null });
       try {
-        identities = await ctx.desktop
-          .invokeImessageBackupIdentities({
-            path: form.backupPath,
-            ios: identityRead.ios,
-            backupPassword: form.backupPassword,
-          })
-          .catch(() => []);
-        store.set({ sourceIdentities: identities });
-        const profile = await account.fetchProfile();
-        // The account logged out during the probe: the profile just read
+        const read = await readIdentityCheck(account, form, identityRead.ios);
+        // The account logged out during the probe: what was just read
         // is another account's, and no run exists yet to resume.
         if (accountLeft(ctx)) return;
-        if (needsIdentityStop(identities, profile && profileAddresses(profile))) {
+        if (read.kind === "failed") {
+          store.set({ startError: read.message });
+          return;
+        }
+        const { profile } = read;
+        identities = read.identities;
+        store.set({ sourceIdentities: identities });
+        if (needsIdentityStop(identities, profileAddresses(profile))) {
           ctx.scratch.pendingIdentityForm = form;
           movePhase(ctx, "identity_stop");
           return;
@@ -165,10 +167,43 @@ export function createImportRunService(deps: ImportRunDeps) {
       }
     } else {
       store.set({
+        startError: null,
         sourceIdentities: resume?.at === "staging" ? (resume.run.identities ?? null) : null,
       });
     }
     await runImport(ctx, account.token, form, identities, resume);
+  }
+
+  /**
+   * What the identity check compares: the addresses the backup's device sent
+   * from, and the account's profile. Either read failing ends the attempt
+   * with a message for the form: the probe's own (a wrong backup password,
+   * an unreadable backup, the reader stopping), or the profile's reason
+   * after "Could not read your account".
+   */
+  async function readIdentityCheck(
+    account: RunAccount,
+    form: ImportJobFormValues,
+    ios: boolean,
+  ): Promise<
+    | { kind: "read"; identities: string[]; profile: AccountProfile }
+    | { kind: "failed"; message: string }
+  > {
+    let identities: string[];
+    try {
+      identities = await ctx.desktop.invokeImessageBackupIdentities({
+        path: form.backupPath,
+        ios,
+        backupPassword: form.backupPassword,
+      });
+    } catch (e: unknown) {
+      return { kind: "failed", message: errorLine(e) };
+    }
+    try {
+      return { kind: "read", identities, profile: await account.fetchProfile() };
+    } catch (e: unknown) {
+      return { kind: "failed", message: `Could not read your account: ${errorText(e)}` };
+    }
   }
 
   /** Continue past the identity stop with the parked form. */

@@ -38,9 +38,8 @@ describe("needsIdentityStop", () => {
     expect(needsIdentityStop(["+15555550180", "owner@example.com"], profile)).toBe(false);
   });
 
-  it("fails open: no identities read, or no profile loaded", () => {
+  it("does not stop for a backup read with no identities", () => {
     expect(needsIdentityStop([], profile)).toBe(false);
-    expect(needsIdentityStop(["+15555550180"], null)).toBe(false);
   });
 });
 

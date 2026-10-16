@@ -38,6 +38,7 @@ const hookState = vi.hoisted(() => ({
   mediaToolsMissing: [] as MediaToolName[],
   mediaPartiallyRan: false,
   resumeError: null as string | null,
+  startError: null as string | null,
   sourceIdentities: null as string[] | null,
   runDirDeleteFailure: null as RunDirDeleteFailure | null,
 }));
@@ -80,6 +81,7 @@ vi.mock("./import/useImportJob", async (importOriginal) => {
       mediaToolsMissing: hookState.mediaToolsMissing,
       mediaPartiallyRan: hookState.mediaPartiallyRan,
       resumeError: hookState.resumeError,
+      startError: hookState.startError,
       sourceIdentities: hookState.sourceIdentities,
       computingSummary: false,
       completionText: undefined,
@@ -156,7 +158,9 @@ vi.mock("../lib/tauriCheck", async (importOriginal) => ({
 }));
 
 vi.mock("./import/ImportFormFields", () => ({
-  default: () => <div data-testid="import-form" />,
+  default: (props: { startError: string | null }) => (
+    <div data-testid="import-form">{props.startError}</div>
+  ),
 }));
 
 vi.mock("./import/ImportRunView", () => ({
@@ -237,6 +241,7 @@ describe("ImportScreen entering Import", () => {
     hookState.mediaToolsMissing = [];
     hookState.mediaPartiallyRan = false;
     hookState.resumeError = null;
+    hookState.startError = null;
     hookState.sourceIdentities = null;
     hookState.runDirDeleteFailure = null;
     startImportMock.mockReset();
@@ -296,6 +301,15 @@ describe("ImportScreen entering Import", () => {
     await settle();
     expect(screen.getByTestId("import-form")).toBeInTheDocument();
     expect(screen.queryByTestId("resume-panel")).not.toBeInTheDocument();
+  });
+
+  it("shows on the form why the last Import could not start", async () => {
+    getActiveImportRunMock.mockResolvedValue(null);
+    hookState.startError = "The backup password is wrong.";
+    renderWithProviders(<ImportScreen />);
+
+    await settle();
+    expect(screen.getByTestId("import-form")).toHaveTextContent("The backup password is wrong.");
   });
 
   it("falls through to the form when the server cannot answer", async () => {
@@ -965,6 +979,7 @@ describe("ImportScreen during a run", () => {
     hookState.mediaToolsMissing = [];
     hookState.mediaPartiallyRan = false;
     hookState.resumeError = null;
+    hookState.startError = null;
     hookState.sourceIdentities = null;
     hookState.runDirDeleteFailure = null;
     startImportMock.mockReset();

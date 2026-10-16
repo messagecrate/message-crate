@@ -70,6 +70,12 @@ export type ImportRunState = {
    */
   resumeError: string | null;
   /**
+   * Why the last Import could not start: the backup or the account's profile
+   * could not be read for the identity check, so no run exists. Shown on the
+   * form until the next Import starts.
+   */
+  startError: string | null;
+  /**
    * The server did not record that the run reached the review on screen.
    * Shown on the review; approving writes the stage again before it goes on.
    */
@@ -94,7 +100,7 @@ export type ImportRunState = {
  * What a finished run leaves on screen, at its empty values: every site that
  * clears a run spreads it. `resumeError` and `runDirDeleteFailure` are not
  * in it: each outlives a return to the form, so the sites that do clear them
- * write them.
+ * write them. `startError` is not either: it is written only on the form.
  */
 export const CLEARED_RUN = {
   summaryView: null,
@@ -118,6 +124,7 @@ export function initialImportRunState(steps: ImportStep[]): ImportRunState {
     steps,
     form: null,
     resumeError: null,
+    startError: null,
     sourceIdentities: null,
     runDirDeleteFailure: null,
   };

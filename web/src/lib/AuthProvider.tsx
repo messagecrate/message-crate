@@ -95,7 +95,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
         // owes profile setup is read from it, so fetching it here keeps the
         // guards from deciding against an empty cache. A profile that fails
         // to load is left to the guards, which hold until it loads.
-        await fetchAccountProfileFor(queryClient, login.accountId, true);
+        await fetchAccountProfileFor(queryClient, login.accountId, true).catch(() => {});
         if (!cancelled) setRestored(true);
         return;
       }
@@ -149,8 +149,9 @@ function SessionProvider({ children }: { children: ReactNode }) {
 
       // Fetch the profile before the app renders: it carries whether this
       // account still owes profile setup or a password change, and the guards
-      // read it from there rather than from anything decided here.
-      await fetchAccountProfileFor(queryClient, accountId, true);
+      // read it from there rather than from anything decided here. A profile
+      // that fails to load is left to the guards, which hold until it loads.
+      await fetchAccountProfileFor(queryClient, accountId, true).catch(() => {});
 
       if (authEpoch.current !== epoch) return; // A later login or logout replaced this one.
 
