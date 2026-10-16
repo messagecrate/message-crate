@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <title>Message Crate</title>
+  <rect width="32" height="32" rx="6" fill="#000" />
+  <g fill="#ff6044" transform="translate(4 4)">
+    <path d="M3 2h5v3H6v14h2v3H3zm18 0h-5v3h2v14h-2v3h5z" />
+    <rect x="9.5" y="9.5" width="5" height="5" />
+  </g>
+</svg>
