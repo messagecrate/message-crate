@@ -1,6 +1,7 @@
 import { textInputClass } from "../../components/TextField";
 import { fixedSettings } from "../../lib/account";
 import { useSettingsAccount } from "../../lib/useSettingsAccount";
+import { AccountActivitySection } from "./AccountActivitySection";
 import { AccountPermissionsSection } from "./AccountPermissionsSection";
 import { ApiTokensSection } from "./ApiTokensSection";
 import { ChangePasswordSection } from "./ChangePasswordSection";
@@ -9,11 +10,12 @@ import { ProfileDangerZone } from "./ProfileDangerZone";
 import { sectionTitleClass } from "./profileStyles";
 
 /**
- * Account settings: username, password, status, permissions, API tokens,
- * danger zone.
+ * Account settings: username, last login and app (an account the owner
+ * opened), password, status, permissions, API tokens, danger zone.
  *
  * Given `managedAccountId`, the account is one the owner opened from
- * User Accounts. The owner sees that account's API tokens without their
+ * User Accounts. The owner reads when it last logged in and which app it
+ * connects with, and sees that account's API tokens without their
  * secrets and revokes them, so a leaked token can be ended; making and
  * renaming one are the holder's. The owner's own account has no tokens and
  * cannot be deleted, so it has neither section.
@@ -44,6 +46,7 @@ export function AccountSettingsPanel({ managedAccountId }: { managedAccountId?: 
           className={`${textInputClass} !text-muted`}
         />
       </div>
+      {managed && <AccountActivitySection profile={profile} />}
       {/* The owner cannot be disabled and holds no messages to import, export or delete. */}
       {!isOwner ? (
         <AccountPermissionsSection profile={profile} managedAccountId={managedAccountId} />
