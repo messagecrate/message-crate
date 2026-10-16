@@ -392,6 +392,28 @@ impl Snapshot {
     }
 }
 
+/// The domains of WhatsApp's own ids: a person's `…@lid` and
+/// `…@s.whatsapp.net` (once `…@c.us`), a group's `…@g.us`, a broadcast list's
+/// `…@broadcast` and a channel's `…@newsletter`.
+const WHATSAPP_ID_DOMAINS: [&str; 6] = [
+    "lid",
+    "s.whatsapp.net",
+    "c.us",
+    "g.us",
+    "broadcast",
+    "newsletter",
+];
+
+/// Whether `address` is one of WhatsApp's own ids rather than an email
+/// address: an `@` followed by one of [`WHATSAPP_ID_DOMAINS`].
+fn is_whatsapp_id(address: &str) -> bool {
+    address.rsplit_once('@').is_some_and(|(_, domain)| {
+        WHATSAPP_ID_DOMAINS
+            .iter()
+            .any(|known| known.eq_ignore_ascii_case(domain))
+    })
+}
+
 /// The `service` value the `handles` table stores, or `None` for any other
 /// text. Unlike [`IdentityService::parse`], which reads every unknown word as
 /// the phone platform, a row holding any other word is skipped.
@@ -501,8 +523,9 @@ fn read_rows(csv_text: &str) -> Result<Vec<FileRow>, Vec<String>> {
 /// keys it on the row's service is that identity, whatever its type, so a
 /// file Export wrote loads back as it was. Any other is typed by its shape
 /// ([`handles::handle_type_of`]) among the types its service carries, as an
-/// identity added on the screen is, and a shape the service cannot carry,
-/// such as an email address on WhatsApp, is refused.
+/// identity added on the screen is: one of WhatsApp's own ids
+/// ([`is_whatsapp_id`]) is `other` on WhatsApp. A shape the service cannot
+/// carry, such as an email address on WhatsApp, is refused.
 ///
 /// `contact` is the contact the row names, when the account holds it. A
 /// phone number written without `+` that no key matches as written is read
@@ -541,14 +564,17 @@ fn row_identity(
     // with: a file loaded straight back must never be refused over a key an
     // import stored. The shape's own type is tried first.
     let shape = handles::handle_type_of(&row.identity);
-    let held = std::iter::once(shape)
-        .chain(file_service.held_types().iter().copied())
-        .filter(|t| file_service.held_types().contains(t))
-        .find(|&t| {
-            snapshot
-                .handles
-                .contains_key(&keyed_as(t, row.identity.clone()))
-        });
+    let is_held = |t: IdentityType| {
+        snapshot
+            .handles
+            .contains_key(&keyed_as(t, row.identity.clone()))
+    };
+    let candidates = file_service.held_types();
+    let held = if candidates.contains(&shape) && is_held(shape) {
+        Some(shape)
+    } else {
+        candidates.iter().copied().find(|&t| is_held(t))
+    };
     let handle_type = match (held, file_service) {
         (Some(held), _) => held,
         (None, FileService::Email) if shape != IdentityType::Email => {
@@ -557,6 +583,11 @@ fn row_identity(
                 row.identity
             ));
         }
+        // WhatsApp's own ids (`…@lid`, `…@g.us`, `…@s.whatsapp.net`) are
+        // `other` there, as an import and the screen store them, and are
+        // never an email address. Any other `@` address on WhatsApp is an
+        // email address, which WhatsApp cannot carry, and is refused below.
+        (None, FileService::Whatsapp) if is_whatsapp_id(&row.identity) => IdentityType::Other,
         (None, _) => shape,
     };
     if let Err(refusal) = handles::check_service_carries(&row.identity, service, handle_type) {

@@ -230,8 +230,10 @@ is accepted as it stands, with the type it was stored with, so an exported
 file always loads back.
 Any other is typed by its shape among the types the service carries: a
 number is `phone`, an `@` address is `email`, and anything else is `other`.
-`Email` takes an email address only, and an `@` address on `WhatsApp` is
-refused, because WhatsApp carries no email address.
+`Email` takes an email address only. On `WhatsApp`, one of WhatsApp's own
+ids (`…@lid`, `…@g.us`, `…@s.whatsapp.net`, `…@c.us`, `…@broadcast`,
+`…@newsletter`) is `other`, as an import stores it, and any other `@` address
+is refused, because WhatsApp carries no email address.
 
 A phone number written without `+` that matches no key as written may be one
 whose `+` a spreadsheet dropped.

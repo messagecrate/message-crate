@@ -537,8 +537,12 @@ shape picks among them, as adding an identity on the screen does. `Email` is
 an email address on Text Message, and a row whose address is not one is
 refused. An identity written exactly as the account keys it on the row's
 service is that identity, with the type it was stored with, so an exported
-file loads back as it was: a WhatsApp id such as `…@lid` is `other` on
-WhatsApp, and is never read as an email address there. Export writes `Email`
+file loads back as it was. A WhatsApp id such as `…@lid` is `other` on
+WhatsApp, held or new, and is never read as an email address there: a new
+`@` address on WhatsApp is `other` when its domain is one of WhatsApp's own
+(`lid`, `g.us`, `s.whatsapp.net`, `c.us`, `broadcast`, `newsletter`), and any
+other is an email address, which WhatsApp cannot carry, so the row is
+refused. Export writes `Email`
 for an email address and the service's own word for anything else. Why: a
 person editing the sheet reads the services by the names the screen gives
 them, and a type column could only disagree with the service and the address,

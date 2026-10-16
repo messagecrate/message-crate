@@ -294,7 +294,8 @@ async fn a_phone_that_cannot_be_keyed_is_refused_with_its_row() {
 /// The file states no type: the shape picks it among the types the service
 /// carries, as adding an identity on the screen does. Text that is neither a
 /// number nor an address is a name of type `other`, an `@` address on Text
-/// Message is an email address, and `Email` names one on Text Message.
+/// Message is an email address, `Email` names one on Text Message, and one
+/// of WhatsApp's own ids is `other` on WhatsApp, never an email address.
 #[tokio::test]
 async fn a_row_is_typed_by_its_service_and_its_shape() {
     let (mut conn, _pool, _dir) = account().await;
@@ -305,6 +306,7 @@ async fn a_row_is_typed_by_its_service_and_its_shape() {
         "a,Ada,Text Message,555-0100 x99,",
         "a,Ada,WhatsApp,+15555550100,",
         "a,Ada,whatsapp,AMAZON,",
+        "a,Ada,WhatsApp,123456789012345@LID,",
     ]);
     loaded(&mut conn, &text, LoadMode::Append).await;
     let ada = contact_named(&mut conn, "Ada").await;
@@ -315,6 +317,7 @@ async fn a_row_is_typed_by_its_service_and_its_shape() {
             "phone/email/ada@example.org",
             "phone/other/555-0100 x99",
             "phone/phone/5555550100",
+            "whatsapp/other/123456789012345@LID",
             "whatsapp/other/AMAZON",
             "whatsapp/phone/+15555550100",
         ]

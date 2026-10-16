@@ -108,10 +108,12 @@ impl From<LoadError> for ApiError {
 /// picks among them, as adding an identity does. `Text Message` carries a
 /// phone number, an email address or any other name; `Email` is an email
 /// address on Text Message; `WhatsApp` carries a phone number or one of
-/// WhatsApp's own ids. An identity written exactly as the account keys it on
+/// WhatsApp's own ids (`…@lid`, `…@g.us`, `…@s.whatsapp.net`, `…@c.us`,
+/// `…@broadcast`, `…@newsletter`), which are `other`. An identity written exactly as the account keys it on
 /// that service is that identity, whatever its type, so an exported file
 /// loads back as it was. A row whose address the service cannot carry, such
-/// as an email address on `WhatsApp`, is refused.
+/// as an email address on `WhatsApp` (an `@` address at any other domain),
+/// is refused.
 ///
 /// Rows that share a `contact_id` are one contact. An id the account holds
 /// names that contact, a blank id makes a new contact for that row, and any
@@ -290,17 +292,7 @@ pub(crate) async fn get_address_book(
         now,
     )
     .await?;
-    Ok((
-        [
-            (header::CONTENT_TYPE, "text/csv; charset=utf-8".to_string()),
-            (
-                header::CONTENT_DISPOSITION,
-                format!("attachment; filename=\"{EXPORT_FILE_NAME}\""),
-            ),
-        ],
-        written.csv,
-    )
-        .into_response())
+    Ok(address_book_attachment(written.csv))
 }
 
 /// The query of `POST /v1/contacts/vcard-address-book`.
@@ -384,7 +376,13 @@ pub(crate) async fn get_vcard_address_book(
             "the file holds no vCard: it has no BEGIN:VCARD line",
         ));
     };
-    Ok((
+    Ok(address_book_attachment(csv))
+}
+
+/// An address book answered as a file: `text/csv`, as an attachment named
+/// [`EXPORT_FILE_NAME`].
+fn address_book_attachment(csv: String) -> Response {
+    (
         [
             (header::CONTENT_TYPE, "text/csv; charset=utf-8".to_string()),
             (
@@ -394,5 +392,5 @@ pub(crate) async fn get_vcard_address_book(
         ],
         csv,
     )
-        .into_response())
+        .into_response()
 }
