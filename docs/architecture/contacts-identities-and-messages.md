@@ -342,7 +342,7 @@ when the source names the phone's country. SMS Backup+ does not. Apple's
 and Message Crate reads it: `imessage-database` 4.3.0's `Handle` does not
 load the column, so the Apple Messages Reader reads it with its own query,
 and the conversation file carries it per identity, as a participant's
-`country` and a message's `sender_country`. Staging keys a number written
+`country` and a message's `sender.country`. Staging keys a number written
 without `+` in the country the file names for it, before the run's country,
 and reads a reactor and a one-to-one conversation's id in the country the
 same conversation names for the same address

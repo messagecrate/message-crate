@@ -515,7 +515,7 @@ fn messages_are_counted_under_the_owner_handle_that_sent_or_received_them() {
             copy.guid = guid.into();
             copy.direction = direction;
             if direction == ir::Direction::Outgoing {
-                copy.sender_identity = sender.map(str::to_string);
+                copy.sender.identity = sender.map(str::to_string);
             }
             copy.owner_identity = owner.map(str::to_string);
             copy

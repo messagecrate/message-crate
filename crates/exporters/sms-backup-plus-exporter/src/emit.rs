@@ -163,7 +163,7 @@ fn ensure_conversation_merging_roster<'a>(
     chat_id: &str,
     is_group: bool,
     display_name: Option<String>,
-    participant_e164s: Vec<String>,
+    participant_handles: Vec<String>,
 ) -> &'a mut PendingConversation {
     // Avoid allocating a new String on every message for an existing chat.
     if !map.contains_key(chat_id) {
@@ -175,9 +175,9 @@ fn ensure_conversation_merging_roster<'a>(
     let conversation = map
         .get_mut(chat_id)
         .expect("just inserted or already present");
-    conversation.participant_e164s.extend(participant_e164s);
-    conversation.participant_e164s.sort();
-    conversation.participant_e164s.dedup();
+    conversation.participant_handles.extend(participant_handles);
+    conversation.participant_handles.sort();
+    conversation.participant_handles.dedup();
     conversation
 }
 
@@ -193,8 +193,7 @@ fn pending_from_parsed(
     PendingMessage {
         sort_key: message.timestamp_secs as i64,
         is_from_me: message.is_from_me,
-        sender_identity: message.sender.map(Handle::into_key).unwrap_or_default(),
-        sender_display_name: message.name_alias,
+        sender: ir::Sender::new(message.sender.map(Handle::into_key), message.name_alias),
         text: message.text,
         attachments: pending_atts,
         extra: {
@@ -243,7 +242,7 @@ fn add_message(
         .push(pending_from_parsed(message, pending_atts));
 }
 
-/// SMS Backup+ deltas of the shared [`ir::pending_to_document`] projection.
+/// SMS Backup+ deltas of the shared [`ir::project_pending`] projection.
 struct SbpProjection {
     export: ExportMeta,
     /// Every message's Backup Date.
@@ -349,7 +348,7 @@ fn project_and_count(
                  nobody.",
             );
         }
-        if is_group && message.direction == Direction::Incoming && message.sender_identity.is_none()
+        if is_group && message.direction == Direction::Incoming && message.sender.identity.is_none()
         {
             report.bump(GROUP_MESSAGES_WITHOUT_SENDER, 1);
             report.issues.emit(RunIssue {
@@ -900,9 +899,7 @@ mod tests {
                 direction: Direction::Incoming,
                 service: Transport::Sms,
                 message_kind: MessageKind::Mms,
-                sender_identity: None,
-                sender_display_name: None,
-                sender_country: None,
+                sender: ir::Sender::default(),
                 owner_identity: None,
                 subject: None,
                 text: "hi".into(),

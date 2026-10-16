@@ -277,7 +277,7 @@ struct AttachmentRef {
 /// are blank.
 fn owner_identity_of<'a>(message: &'a Message, export_owner: Option<&'a str>) -> Option<&'a str> {
     let outgoing_sender = match message.direction {
-        Direction::Outgoing => message.sender_identity.as_deref(),
+        Direction::Outgoing => message.sender.identity.as_deref(),
         Direction::Incoming => None,
     };
     [

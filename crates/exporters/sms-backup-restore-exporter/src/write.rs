@@ -374,7 +374,8 @@ fn addr_entry(address: &str, addr_type: &str) -> BTreeMap<String, String> {
 /// The other party's address: the sender for incoming messages, else the chat identifier.
 fn peer_address(document: &ConversationDocument, message: &Message) -> String {
     if let Some(h) = message
-        .sender_identity
+        .sender
+        .identity
         .as_deref()
         .filter(|s| !s.is_empty())
         .filter(|_| message.direction == Direction::Incoming)
@@ -437,7 +438,7 @@ fn contact_name_alias(
         }
     }
     if message.direction == Direction::Incoming
-        && let Some(n) = message.sender_display_name.as_deref().and_then(trimmed)
+        && let Some(n) = message.sender.display_name.as_deref().and_then(trimmed)
     {
         return Some(n.to_string());
     }

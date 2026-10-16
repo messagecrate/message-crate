@@ -291,8 +291,8 @@ fn sender_of<'a>(
 ) -> (Option<&'a str>, Option<&'a str>) {
     let message = message_of(document, text);
     (
-        message.sender_identity.as_deref(),
-        message.sender_display_name.as_deref(),
+        message.sender.identity.as_deref(),
+        message.sender.display_name.as_deref(),
     )
 }
 
@@ -662,7 +662,7 @@ fn a_lid_chat_has_its_id_as_its_participant() {
         .collect();
     assert_eq!(participants, vec![Some("123456@lid")]);
     assert_eq!(
-        document.messages[0].sender_identity.as_deref(),
+        document.messages[0].sender.identity.as_deref(),
         Some("123456@lid")
     );
 }
@@ -896,7 +896,7 @@ fn a_group_event_with_a_text_is_an_announcement() {
         let message = message_of(group, text);
         assert_eq!(message.message_kind, MessageKind::Announcement, "{text}");
         assert_eq!(message.direction, Direction::Incoming, "{text}");
-        assert_eq!(message.sender_identity.as_deref(), Some(sender), "{text}");
+        assert_eq!(message.sender.identity.as_deref(), Some(sender), "{text}");
         assert_eq!(named_id(message).as_deref(), Some(named), "{text}");
     }
 

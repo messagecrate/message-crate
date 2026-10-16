@@ -753,7 +753,7 @@ impl FileStaging<'_> {
 
 /// The countries one conversation's file names for its identities, by
 /// address: each participant's `country` and each sender's
-/// `sender_country`. A participant's comes first, then senders' in message
+/// `sender.country`. A participant's comes first, then senders' in message
 /// order, so one address takes one country across the conversation, and
 /// every participant, sender, reactor and one-to-one chat id at that
 /// address is read in it.

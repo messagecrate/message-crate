@@ -59,19 +59,19 @@ fn obfuscate_keeps_me_on_a_sent_message_and_replaces_a_real_name() {
     let mut document = document_with_image_attachment();
     let mut labeled = document.messages[0].clone();
     labeled.direction = Direction::Outgoing;
-    labeled.sender_display_name = Some("Me".into());
+    labeled.sender.display_name = Some("Me".into());
     let mut named = labeled.clone();
-    named.sender_display_name = Some("Alex Rivera".into());
+    named.sender.display_name = Some("Alex Rivera".into());
     document.messages = vec![labeled, named];
 
     let mut anon = Obfuscator::new([7u8; 32]);
     obfuscate_one(&mut document, &mut anon);
 
     assert_eq!(
-        document.messages[0].sender_display_name.as_deref(),
+        document.messages[0].sender.display_name.as_deref(),
         Some("Me")
     );
-    let replaced = document.messages[1].sender_display_name.as_deref().unwrap();
+    let replaced = document.messages[1].sender.display_name.as_deref().unwrap();
     assert_ne!(replaced, "Alex Rivera");
     assert_ne!(replaced, "Me");
 }
@@ -203,8 +203,11 @@ fn document_with_a_marker_in_every_field() -> ConversationDocument {
             direction: Direction::Incoming,
             service: Transport::IMessage,
             message_kind: MessageKind::IMessage,
-            sender_identity: Some("LEAK-07".into()),
-            sender_display_name: Some("LEAK-08".into()),
+            sender: ir::Sender {
+                identity: Some("LEAK-07".into()),
+                display_name: Some("LEAK-08".into()),
+                country: None,
+            },
             owner_identity: Some("LEAK-09".into()),
             subject: Some("LEAK-10".into()),
             text: "LEAK-11".into(),
@@ -255,7 +258,6 @@ fn document_with_a_marker_in_every_field() -> ConversationDocument {
                 android_type: Some(1),
                 fields: serde_json::Map::from_iter([("address".into(), json!("LEAK-26"))]),
             }),
-            sender_country: None,
             backup_taken_at_unix_ms: Some(1_790_793_912_000),
         }],
         packaging_stem_suffix: None,

@@ -29,7 +29,7 @@ In CSV form: one file per conversation. Decoded MMS media under `attachments/` w
 | `timestamp` / `timestamp_utc` / `timestamp_display` / `timestamp_unix_ms` | From `date` (Unix epoch milliseconds, UTC) |
 | `direction` | `incoming` / `outgoing` from SMS `type` or MMS `msg_box` / From addr |
 | `service` | Always `sms` |
-| `sender_identity` / `sender_display_name` | Incoming peer; outgoing uses export owner (`owner_*`) |
+| `sender.identity` / `sender.display_name` | Incoming peer; outgoing uses export owner (`owner_*`) |
 | `subject` | SMS `subject`, or MMS `sub` |
 | `text` | SMS `body`, or MMS text/plain parts (HTML entities decoded) |
 | `attachments_json` | Extracted MMS media paths |
@@ -48,7 +48,7 @@ Apple-only columns (`parts_json`, tapbacks, balloons, …) stay empty.
 - `type` `1` / `2` → `direction` incoming / outgoing; `3` (draft) and `4` (outbox) are skipped and counted as `skipped_never_sent`; other types are skipped and counted as `skipped_unknown_type`; raw value in `android_type`
 - `body` → `text` (character references and HTML entities decoded; a surrogate pair written as two references, such as `&#55357;&#56832;`, becomes one character; a reference that is not a character, such as `&#0;` or a lone surrogate, is dropped and counted as `dropped_character_references`. The message is kept, and the Import Run carries a note naming its file by its path, its time in UTC and its `address` as the file writes it)
 - `subject` → `subject` when present
-- `contact_name` → `sender_display_name` for incoming and the peer's participant name (not a separate CSV column). The app writes `null` or `(Unknown)` where the phone has no contact, so an empty value, `null` and `(Unknown)`, compared without case, give no name and the peer stays Unknown
+- `contact_name` → `sender.display_name` for incoming and the peer's participant name (not a separate CSV column). The app writes `null` or `(Unknown)` where the phone has no contact, so an empty value, `null` and `(Unknown)`, compared without case, give no name and the peer stays Unknown
 - **Every** `<sms>` attribute → `source_fields_json.attrs`
 
 Example: `<sms address="+15555550101" date="1400773261000" type="1" body="hello &amp; hi" contact_name="Sam" />` becomes an incoming row with `chat_identifier=+15555550101` and text `hello & hi`.
