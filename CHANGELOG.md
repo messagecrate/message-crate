@@ -1941,10 +1941,8 @@ carry their date on the heading.
 ### Upgrading
 
 - 2026-10-16: A conversation file written by an earlier build is refused
-  when you import it, because a message's sender is now written as one
-  `sender` object, with its address, name and country, where the file had
-  three separate fields. Read the backup again with this build to write a
-  file the import takes (#3094).
+  when you import it. Read the backup again with this build to write a file
+  the import takes (#3094).
 - 2026-10-16: A program that reads Import Runs, Export Runs or the Audit
   Trail from your Message Crate and looks for the status "cancelled" must
   look for "canceled" instead, the spelling the screens use (#2279).
