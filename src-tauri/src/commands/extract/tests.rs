@@ -30,7 +30,7 @@ fn test_options(owner_phones: Vec<String>) -> ExtractOptions {
 
 #[test]
 fn convert_and_compress_stage_originals_and_defer_the_media_stage() {
-    // The desktop runs conversion as its own Media stage so a Review can sit in
+    // The desktop runs conversion as its own Media Stage so a Review can sit in
     // front of it. Staging copies the originals, and the exporter has no way
     // to be asked to convert. Checked against the iMessage source.
     for chosen in [MediaMode::Convert, MediaMode::Compress] {
@@ -203,7 +203,7 @@ fn the_media_settings_carry_the_mode_the_fields_and_the_limit() {
 
 #[test]
 fn staging_records_the_media_settings_in_the_directory() {
-    // The Staging Review's summary and the Media stage read them from here,
+    // The Staging Review's summary and the Media Stage read them from here,
     // so the whole run works to the values Staging was started with.
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("sms.xml");
