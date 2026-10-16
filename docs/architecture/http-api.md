@@ -1267,11 +1267,11 @@ other change of stage, backwards or skipping a stage, answers
 `409 Conflict` `state-conflict` naming both stages, and the run keeps its stage
 and summary. Why: the next visit resumes a run at the stage the server holds,
 so a client that sent a wrong stage would have the run resumed at work it
-already did (#1227). A run opens only at `parse`: `POST /v1/imports` with any
-other `stage` answers `422 Unprocessable Entity` (`validation-failed`) and
-opens no run. Why: a run opened later in the order would be resumed at work
-nobody did (#2638), and `422 Unprocessable Entity` because the client fixes it
-by sending `parse`.
+already did (#1227). Every run opens at `parse`, and `POST /v1/imports` takes
+no stage: a `stage` in its body is ignored like any other field the request
+does not name. Why: a run opened later in the order would be resumed at work
+nobody did (#2638), and a field with one valid value carries nothing
+(#2858).
 
 A running run with no stored stage is refused any change of stage with
 `500 Internal Server Error`. Why: the server never writes such a row, so there

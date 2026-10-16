@@ -19,6 +19,19 @@ The server is published as a Docker image.
 
 `docker --version` in a terminal prints a version number once Docker is installed.
 
+## Check the image
+
+This step is optional.
+The image carries a build provenance attestation, the same kind of signed record an installer carries, which [Install the desktop app](/docs/user/try/install-the-desktop-app/#check-the-download) explains.
+Images from 0.11.0 on carry one. Earlier images don't.
+The GitHub CLI checks the image the `latest` tag names:
+
+```bash
+gh attestation verify oci://docker.io/bitrealm/message-crate:latest --repo messagecrate/message-crate
+```
+
+A version tag in place of `latest`, such as `0.11.0`, checks that release.
+
 ## Start the server
 
 ```bash title="Start a Message Crate"

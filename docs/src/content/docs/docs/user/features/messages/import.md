@@ -330,14 +330,14 @@ A run resumed at a Review, Media, or Upload keeps them, because none of those re
 
 | The run stopped | The screen reads | The button |
 |---|---|---|
-| Before Staging began copying | `Pick up your last import` | **Start over** reads the backup from the beginning with the same settings. |
-| During Staging | `Finish copying your backup` | **Pick up** reads the backup again and skips the conversations already copied. |
+| Before Staging began copying | `Resume your last import` | **Start over** reads the backup from the beginning with the same settings. |
+| During Staging | `Finish copying your backup` | **Resume** reads the backup again and skips the conversations already copied. |
 | During Staging, and the backup has changed since | `The backup has changed` | **Start over** reads it fresh, because copying more of it would mix two backups in one directory. |
-| At a Review | `Pick up where you left off` | **Show me the summary** reads the staged files again and returns to the Review. |
-| During Media | `Finish preparing your media` | **Carry on** processes the files Media had not reached. |
+| At a Review | `Resume where you left off` | **Show me the summary** reads the staged files again and returns to the Review. |
+| During Media | `Finish preparing your media` | **Resume** processes the files Media had not reached. |
 | During Upload, or paused | `Finish your last import` | **Resume** sends the conversations that are not uploaded yet, without staging again. |
 
-Three cases offer only **Discard this import**, because there is nothing on this computer to carry on from:
+Three cases offer only **Discard this import**, because there is nothing on this computer to resume:
 
 - The run's directory is gone.
 - The run was started on another computer, and its files are staged there.

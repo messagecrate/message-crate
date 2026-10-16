@@ -22,6 +22,11 @@ carry their date on the heading.
 
 ### Features
 
+- 2026-10-15: **Check that a download is the one the release built.** Each
+  release now lists a `SHA256SUMS` file beside the installers, and every
+  installer and the Docker image carry a signed record of the release run
+  that built them. The GitHub CLI checks that record. The install pages say
+  how to check a download on each system (#2096).
 - 2026-10-15: **Log in on the website for one visit only.** The login card
   has a **Keep me logged in** box, ticked to start with. Untick it on a
   shared or borrowed computer, and the browser forgets the Session when the
@@ -236,6 +241,12 @@ carry their date on the heading.
   computer now ends within a week. The database format changed: an
   existing Message Crate is rebuilt empty on first start and its messages
   must be imported again (#2131).
+- 2026-10-15: The way the desktop app opens an Import Run on the server was
+  reworked inside, with nothing visible (#2858).
+- 2026-10-15: **The Import screen says Resume for an interrupted import.**
+  When an import stopped during Staging or Media, its button now reads
+  **Resume**, where it read **Pick up** and **Carry on**. The headings read
+  "Resume your last import" and "Resume where you left off" (#2856).
 - 2026-10-15: The way the desktop app sends an import's conversations to
   the server was reworked inside, with nothing visible (#2053).
 - 2026-10-15: **The desktop app keeps everything in one directory.** The
@@ -1348,6 +1359,13 @@ carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-15: **A screen reader hears which Contact Group, Message Tag or
+  Saved Search is open.** The left panel's row for the open Contact Group,
+  Unknown, No Contact Group, Message Tag, No Message Tag or Saved Search is
+  now announced as the current page, as the Messages, Contacts, Trash,
+  Import and Export rows already were. A Contact Group or Message Tag opened
+  from an address that spells its name in another case is now highlighted
+  too (#2590).
 - 2026-10-12: **A refused search is one sentence.** A search the lists
   cannot run is now refused in one sentence, such as "from: is not a
   Contacts word; it works on Messages", rather than two. The list starts it
