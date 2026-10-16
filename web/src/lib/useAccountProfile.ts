@@ -81,7 +81,7 @@ export function fetchAccountProfileFor(
 }
 
 /**
- * Fill the profile's entry at login, before the app renders. A profile that
+ * Fill the profile's entry at login or session restore, before the app renders. A profile that
  * fails to load is left to the guards, which read the entry and hold until it
  * loads, so the failure is not this caller's to report.
  */

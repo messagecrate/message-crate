@@ -2802,8 +2802,31 @@ describe("useImportJob wiring", () => {
         await result.current.startImport(imessageForm());
       });
       expect(result.current.startError).not.toBeNull();
-      act(() => result.current.clearStartError());
+      act(() => result.current.formEdited());
       expect(result.current.startError).toBeNull();
+    });
+
+    it("shows no failure for a form edited while the probe ran", async () => {
+      const probe = deferred<string[]>();
+      const probing = deferred();
+      invokeImessageBackupIdentitiesMock.mockImplementation(() => {
+        probing.resolve();
+        return probe.promise;
+      });
+      const { result } = renderJob();
+      let started: Promise<void> = Promise.resolve();
+      act(() => {
+        started = result.current.startImport(imessageForm());
+      });
+      await act(() => probing.promise);
+      act(() => result.current.formEdited());
+      await act(async () => {
+        probe.reject("the backup password is wrong");
+        await started;
+      });
+      expect(result.current.startError).toBeNull();
+      expect(result.current.running).toBe(false);
+      expect(createImportMock).not.toHaveBeenCalled();
     });
 
     it("goes on without a stop when the backup was read and sent from no address", async () => {

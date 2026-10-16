@@ -55,6 +55,8 @@ export function createImportRunService(deps: ImportRunDeps) {
     work: null,
   };
   const { store } = ctx;
+  /** How many times the person changed a value on the form; `formEdited` counts them. */
+  let formEdits = 0;
 
   /** Put the store and the scratch back to a fresh form, started by no account. */
   function reset(): void {
@@ -137,6 +139,7 @@ export function createImportRunService(deps: ImportRunDeps) {
     resume?: Resume,
   ): Promise<void> {
     store.set({ startError: null });
+    const editsAtStart = formEdits;
     let identities: string[] | null = null;
     const identityRead = resume
       ? null
@@ -152,7 +155,9 @@ export function createImportRunService(deps: ImportRunDeps) {
         // is another account's, and no run exists yet to resume.
         if (accountLeft(ctx)) return;
         if (read.kind === "failed") {
-          store.set({ startError: read.message });
+          // A form edited while the probe ran no longer holds the values
+          // the failure is about, so the failure is not shown.
+          if (formEdits === editsAtStart) store.set({ startError: read.message });
           return;
         }
         const { profile } = read;
@@ -215,10 +220,15 @@ export function createImportRunService(deps: ImportRunDeps) {
     await asWork(() => runImport(ctx, account.token, form, store.get().sourceIdentities));
   }
 
-  /** Drop the last start's failure: the form it was about has changed. */
-  function clearStartError(account: RunAccount): void {
-    if (!ownsRun(account) || store.get().startError === null) return;
-    store.set({ startError: null });
+  /**
+   * The person changed a value on the form. A start failure already shown,
+   * or one still to come from a probe under way, is about the values before
+   * the change, so it is dropped.
+   */
+  function formEdited(account: RunAccount): void {
+    if (!ownsRun(account)) return;
+    formEdits += 1;
+    if (store.get().startError !== null) store.set({ startError: null });
   }
 
   /** Leave the identity stop; nothing was created, so only the phase moves. */
@@ -432,7 +442,7 @@ export function createImportRunService(deps: ImportRunDeps) {
     startImport,
     continueAfterIdentityStop,
     cancelIdentityStop,
-    clearStartError,
+    formEdited,
     approve,
     resumeAtReview,
     // Another account's run is that account's to cancel, stop or leave.

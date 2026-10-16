@@ -44,7 +44,7 @@ import { restoreFormFromSnapshot, snapshotSecret } from "./import/formSnapshot";
 import ImportFormFields from "./import/ImportFormFields";
 import ImportRunView from "./import/ImportRunView";
 import {
-  type ImportFormFieldAction,
+  type ImportFormAction,
   type ImportPathField,
   importFormReducer,
   importJobValues,
@@ -123,7 +123,7 @@ export default function ImportScreen() {
     returnToForm,
     continueAfterIdentityStop,
     cancelIdentityStop,
-    clearStartError,
+    formEdited,
     runDirDeleteFailure,
     discardRun,
     dismissRunDirDeleteFailure,
@@ -495,8 +495,7 @@ export default function ImportScreen() {
     const gen = ++sourceChangeGenRef.current;
     lastMethodRef.current[importSourceFor(resolved).id] = resolved;
     const paths = rememberedPathsFor(resolved);
-    clearStartError();
-    dispatch({ type: "source", source: resolved, paths });
+    editForm({ type: "source", source: resolved, paths });
     const loadedBackup = paths.backupPath;
 
     if (resolved !== "imessage-macos" || loadedBackup.trim() !== "" || !isTauri()) {
@@ -528,16 +527,19 @@ export default function ImportScreen() {
     })();
   }
 
-  /** Set or toggle a field the person edits; the last start's failure was about the form before it. */
-  const editField = (action: ImportFormFieldAction) => {
-    clearStartError();
+  /**
+   * Apply a change the person made on the form. A change to a value drops
+   * the last start's failure, which was about the values before it. A toggle
+   * only shows or hides part of the form, so the failure stays.
+   */
+  function editForm(action: ImportFormAction): void {
+    if (action.type !== "toggle") formEdited();
     dispatch(action);
-  };
+  }
 
   /** Set a path field, and remember it for the source when the source keeps it. */
   const changePath = (field: ImportPathField, path: string) => {
-    clearStartError();
-    dispatch({ type: "path", field, value: path });
+    editForm({ type: "path", field, value: path });
     if (!getRememberImporterPaths()) return;
     if (field === "backupPath") {
       setImporterPath(source, path);
@@ -557,7 +559,7 @@ export default function ImportScreen() {
       {phase === "form" && resumeChecked && resume.kind === "none" && (
         <ImportFormFields
           form={form}
-          dispatch={editField}
+          dispatch={editForm}
           onSourceChange={handleSourceChange}
           onPathChange={changePath}
           pathStats={pathStats}

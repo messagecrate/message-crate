@@ -119,7 +119,7 @@ export function useImportJob(service: ImportRunService = importRunService) {
       service.startImport(account, form, resume),
     continueAfterIdentityStop: () => service.continueAfterIdentityStop(account),
     cancelIdentityStop: () => service.cancelIdentityStop(account),
-    clearStartError: () => service.clearStartError(account),
+    formEdited: () => service.formEdited(account),
     approve: () => service.approve(account),
     cancelRun: () => service.cancelRun(account),
     resumeAtReview: (importRun: ActiveImportRun, resumedForm: ImportJobFormValues) =>
