@@ -65,9 +65,9 @@
     },
     {
       "conversation": "c.jsonl",
-      "item": "/backup/IMG_0001.MOV",
+      "item": "sms-1.xml",
       "kind": "skip",
-      "reason": "could not be decrypted",
+      "reason": "could not be read",
       "step": "parse"
     },
     {
@@ -79,16 +79,16 @@
     },
     {
       "conversation": "c.jsonl",
-      "item": "/backup/IMG_0001.MOV",
+      "item": "c.jsonl:attachments/IMG_0001.MOV",
       "kind": "skip",
-      "reason": "could not be decrypted",
+      "reason": "could not be converted",
       "step": "media"
     },
     {
       "conversation": "c.jsonl",
-      "item": "/backup/IMG_0001.MOV",
+      "item": "c.jsonl",
       "kind": "skip",
-      "reason": "could not be decrypted",
+      "reason": "upload failed",
       "step": "upload"
     }
   ],

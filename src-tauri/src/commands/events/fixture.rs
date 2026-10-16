@@ -74,23 +74,43 @@ fn payloads() -> Value {
         )
         .map(to_json);
 
-    // One per kind, then one per step.
-    let issue_row = |kind, step| {
+    let issue_row = |kind, step, item: &str, reason: &str| {
         ImportIssueEvent::from(&RunIssue {
             kind,
             step,
-            item: "/backup/IMG_0001.MOV".into(),
-            reason: "could not be decrypted".into(),
+            item: item.into(),
+            reason: reason.into(),
             conversation: Some("c.jsonl".into()),
         })
     };
+    // One per kind, then one per step, each with an item and reason of the
+    // kind that step reports.
     let issue = every!(RunIssueKind: Skip, Error, Note, Resolved)
         .into_iter()
-        .map(|kind| issue_row(kind, RunIssueStep::Attachments))
+        .map(|kind| {
+            issue_row(
+                kind,
+                RunIssueStep::Attachments,
+                "/backup/IMG_0001.MOV",
+                "could not be decrypted",
+            )
+        })
         .chain(
             every!(RunIssueStep: Parse, Attachments, Media, Upload)
                 .into_iter()
-                .map(|step| issue_row(RunIssueKind::Skip, step)),
+                .map(|step| {
+                    let (item, reason) = match step {
+                        RunIssueStep::Parse => ("sms-1.xml", "could not be read"),
+                        RunIssueStep::Attachments => {
+                            ("/backup/IMG_0001.MOV", "could not be decrypted")
+                        }
+                        RunIssueStep::Media => {
+                            ("c.jsonl:attachments/IMG_0001.MOV", "could not be converted")
+                        }
+                        RunIssueStep::Upload => ("c.jsonl", "upload failed"),
+                    };
+                    issue_row(RunIssueKind::Skip, step, item, reason)
+                }),
         )
         .map(to_json);
 
