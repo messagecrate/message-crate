@@ -1296,9 +1296,10 @@ async fn a_missing_original_is_planned_from_the_decision_recorded_for_it() {
 /// #2866: an original whose stored path leaves the account's assets
 /// directory, by climbing out with `..` or by being absolute, is passed
 /// over: the pass neither reads the file it names nor records anything for
-/// its row, counts it among the originals it could not process, and says so
-/// in the server's log with the account, the path and the Asset, so the
-/// damaged row can be found.
+/// its row, counts it apart as not read, and says so once in the server's
+/// log with the account, the path and the Asset, so the damaged row can be
+/// found. Deciding whether it is shown as it is passes over it too, and logs
+/// it itself, because a server without ffmpeg runs only that step.
 #[tokio::test]
 async fn an_original_whose_stored_path_leaves_the_assets_directory_is_passed_over() {
     let (opened, dir) = open_db().await;
@@ -1339,22 +1340,32 @@ async fn an_original_whose_stored_path_leaves_the_assets_directory_is_passed_ove
         attachments.push((id, sha, assets_path));
     }
 
-    let ((decided, counted), lines) = crate::test_support::lines_written_by("warn", async {
-        let decided = decide_shown_as_is(&opened.cfg, &ON_PATH, &opened.db, ACCOUNT, None).await;
-        let counted = run(
+    let (decided, decide_lines) = crate::test_support::lines_written_by(
+        "warn",
+        decide_shown_as_is(&opened.cfg, &ON_PATH, &opened.db, ACCOUNT, None),
+    )
+    .await;
+    let (counted, pass_lines) = crate::test_support::lines_written_by(
+        "warn",
+        run(
             &opened,
             &ON_PATH,
             &ProcessAssetsOptions::default(),
             &NOT_STOPPED,
-            Progress::Print,
-        )
-        .await;
-        (decided, counted)
-    })
+            Progress::Log,
+        ),
+    )
     .await;
 
     decided.unwrap();
-    assert_eq!(counted.unwrap(), stats(2, 0, 0, 0, 2));
+    assert_eq!(
+        counted.unwrap(),
+        ProcessAssetsStats {
+            scanned: 2,
+            not_read: 2,
+            ..ProcessAssetsStats::default()
+        }
+    );
     for (id, sha, assets_path) in &attachments {
         let shown: Option<i64> =
             sqlx::query_scalar("SELECT shown_as_is FROM attachments WHERE id = $1")
@@ -1366,15 +1377,30 @@ async fn an_original_whose_stored_path_leaves_the_assets_directory_is_passed_ove
         assert_eq!(not_made_reasons(&mut conn, *id).await, (None, None));
         assert_eq!(thumbnail_of(&mut conn, *id).await, None);
         let asset = format!("Asset {sha}");
-        assert!(
+        let names_it = |lines: &[crate::logging::LogLine]| {
             lines
                 .iter()
-                .any(|line| line.level == crate::logging::LogLevel::Warn
-                    && line.text.contains(&format!("account_id={ACCOUNT}"))
-                    && line.text.contains(assets_path.as_str())
-                    && line.text.contains(&asset)),
-            "{assets_path}: {lines:?}"
+                .filter(|line| {
+                    line.level == crate::logging::LogLevel::Warn
+                        && line.text.contains(assets_path.as_str())
+                        && line.text.contains(&asset)
+                })
+                .count()
+        };
+        assert_eq!(
+            decide_lines
+                .iter()
+                .filter(|line| line.text.contains(&format!("account_id={ACCOUNT}")))
+                .count(),
+            2,
+            "{decide_lines:?}"
         );
+        assert_eq!(
+            names_it(&decide_lines),
+            1,
+            "{assets_path}: {decide_lines:?}"
+        );
+        assert_eq!(names_it(&pass_lines), 1, "{assets_path}: {pass_lines:?}");
     }
     assert_eq!(fs::read(&outside).unwrap(), PNG_1X1_RGB);
 }
@@ -2316,6 +2342,7 @@ fn the_done_line_counts_one_and_many() {
         shared: 1,
         skipped: 1,
         not_made: 1,
+        not_read: 1,
         not_dropped: 1,
         not_decided: 1,
     };
@@ -2325,6 +2352,7 @@ fn the_done_line_counts_one_and_many() {
          dropped 1 damaged Preview or Thumbnail, \
          shared 1 existing Preview or Thumbnail with more attachments, left 1 original as it was, \
          1 original whose Preview or Thumbnail could not be made, \
+         1 original whose stored location leaves its directory, \
          1 damaged Preview or Thumbnail that could not be dropped, \
          1 original whose shown-as-is decision could not be recorded"
     );
@@ -2336,6 +2364,7 @@ fn the_done_line_counts_one_and_many() {
         shared: 2,
         skipped: 0,
         not_made: 2,
+        not_read: 3,
         not_dropped: 4,
         not_decided: 0,
     };
@@ -2346,6 +2375,7 @@ fn the_done_line_counts_one_and_many() {
          shared 2 existing Previews or Thumbnails with more attachments, \
          left 0 originals as they were, \
          2 originals whose Preview or Thumbnail could not be made, \
+         3 originals whose stored locations leave their directory, \
          4 damaged Previews or Thumbnails that could not be dropped (dry run)"
     );
 }

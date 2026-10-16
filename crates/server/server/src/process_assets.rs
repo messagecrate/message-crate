@@ -76,9 +76,11 @@ pub struct ProcessAssetsStats {
     /// original that named none, such as the rows of a second source
     /// imported after they were made.
     pub shared: u64,
-    /// Originals whose Preview or Thumbnail could not be made, an original
-    /// whose stored path the pass refuses to read among them.
+    /// Originals whose Preview or Thumbnail could not be made.
     pub not_made: u64,
+    /// Originals not read because their stored path leaves the account's
+    /// assets directory (#2866).
+    pub not_read: u64,
     /// Damaged Previews and Thumbnails that could not be dropped.
     pub not_dropped: u64,
     /// Originals whose shown-as-is decision (`attachments.shown_as_is`)
@@ -96,6 +98,7 @@ impl ProcessAssetsStats {
         self.shared += other.shared;
         self.skipped += other.skipped;
         self.not_made += other.not_made;
+        self.not_read += other.not_read;
         self.not_dropped += other.not_dropped;
         self.not_decided += other.not_decided;
     }
@@ -113,6 +116,9 @@ impl ProcessAssetsStats {
         self.shared += outcome.shared;
         if outcome.not_made.is_some() {
             self.not_made += 1;
+        }
+        if outcome.not_read.is_some() {
+            self.not_read += 1;
         }
         if outcome.not_decided.is_some() {
             self.not_decided += 1;
@@ -141,6 +147,13 @@ impl ProcessAssetsStats {
         let mut failures = Vec::new();
         if self.not_made > 0 {
             failures.push(self.not_made_words());
+        }
+        if self.not_read > 0 {
+            failures.push(words(
+                self.not_read,
+                "1 original whose stored location leaves its directory",
+                "{n} originals whose stored locations leave their directory",
+            ));
         }
         if self.not_dropped > 0 {
             failures.push(words(
@@ -197,19 +210,6 @@ struct ReadOriginal {
     /// read or an MP4 while ffprobe is missing, so a decision an earlier
     /// pass recorded stays.
     decided: Option<bool>,
-}
-
-/// Where `row`'s original is stored under `account_id`'s `assets_dir`, or
-/// `None`, logged, when its stored path is not a plain relative one
-/// ([`crate::asset_store::join_stored`]): such an original is passed over,
-/// neither read nor converted (#2866).
-fn original_path(assets_dir: &Path, row: &StoredOriginal, account_id: i64) -> Option<PathBuf> {
-    crate::asset_store::join_stored(
-        assets_dir,
-        &row.assets_path,
-        account_id,
-        &crate::asset_store::describe_original(&row.sha256),
-    )
 }
 
 /// Read `row`'s original, stored at `path`, for its type and whether every
@@ -272,7 +272,14 @@ pub(crate) async fn decide_shown_as_is(
         if decided.contains(row.sha256.as_str()) {
             continue;
         }
-        let Some(path) = original_path(&assets_dir, row, account_id) else {
+        // A path that leaves the directory is logged and passed over (#2866).
+        // On a server without ffmpeg this is the only step that meets it.
+        let Some(path) = crate::asset_store::join_stored(
+            &assets_dir,
+            &row.assets_path,
+            account_id,
+            &crate::asset_store::describe_original(&row.sha256),
+        ) else {
             continue;
         };
         decided.insert(row.sha256.as_str());
@@ -481,9 +488,11 @@ struct Outcome {
     shared: u64,
     /// Why a Preview or Thumbnail that was wanted was not made. Each
     /// version's reason is also recorded on the original's rows
-    /// ([`AccountPass::record_not_made`]); an original whose stored path is
-    /// refused is not read, so nothing is known to record.
+    /// ([`AccountPass::record_not_made`]).
     not_made: Option<anyhow::Error>,
+    /// Why the original was not read: its stored path leaves the assets
+    /// directory.
+    not_read: Option<anyhow::Error>,
     /// Why each damaged version that could not be dropped stayed.
     not_dropped: Vec<anyhow::Error>,
     /// Why whether the original is shown as it is could not be recorded.
@@ -505,6 +514,7 @@ impl Outcome {
     fn failures(&self) -> impl Iterator<Item = &anyhow::Error> {
         self.not_made
             .iter()
+            .chain(&self.not_read)
             .chain(&self.not_dropped)
             .chain(&self.not_decided)
     }
@@ -676,12 +686,16 @@ impl<'a> AccountPass<'a> {
     /// does what the plan says. An existing version is hashed, so one cut
     /// short by a killed run is made again.
     async fn process(&self, db: &SqlitePool, row: &StoredOriginal) -> Outcome {
-        let Some(source_path) = original_path(&self.assets_dir, row, self.account_id) else {
-            // Counted among the failures, so the run says it and does not
-            // end as though everything was done.
+        // A path that leaves the directory is said once, through `progress`
+        // as a failure, so the run does not end as though everything was
+        // done (#2866).
+        let Some(source_path) = crate::asset_store::join_under(&self.assets_dir, &row.assets_path)
+        else {
             return Outcome {
-                not_made: Some(anyhow::anyhow!(
-                    "its stored path is not a plain relative one, so it is not read"
+                not_read: Some(anyhow::anyhow!(
+                    "the stored location of {} is not a plain relative path, so the server \
+                     neither opens nor converts its file",
+                    crate::asset_store::describe_original(&row.sha256)
                 )),
                 ..Outcome::default()
             };
