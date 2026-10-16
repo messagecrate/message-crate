@@ -17,18 +17,36 @@ export interface NameRefusal {
   name: string;
   /** Why the server refused it, as one line. */
   reason: string;
+  /** When the save was sent, from `nameSendStamp`. */
+  sent: number;
+}
+
+let sends = 0;
+
+/**
+ * A number that grows with every display name save sent from any Settings
+ * screen. Answers arrive in any order, and a screen left and opened again
+ * starts afresh, so the order the saves were sent in is what says which
+ * refusal or success is the newer one.
+ */
+export function nameSendStamp(): number {
+  sends += 1;
+  return sends;
 }
 
 /** Refused saves not yet dismissed, oldest first, at most one per Profile. */
 export const nameRefusals = createExternalStore<readonly NameRefusal[]>([]);
 
 /**
- * Hold `refusal` for the page to show. A newer refusal from the same Profile
- * replaces the older one. A refusal sent by an account that is no longer
- * logged in is dropped: it is not the logged-in person's to read.
+ * Hold `refusal` for the page to show. A refusal of a save sent later from
+ * the same Profile replaces an earlier one, and is not replaced by one. A
+ * refusal sent by an account that is no longer logged in is dropped: it is
+ * not the logged-in person's to read.
  */
 export function reportNameRefusal(refusal: NameRefusal): void {
   if (refusal.accountId !== getAccountId()) return;
+  const held = nameRefusals.get().find((r) => r.profilePath === refusal.profilePath);
+  if (held && held.sent > refusal.sent) return;
   nameRefusals.set([
     ...nameRefusals.get().filter((r) => r.profilePath !== refusal.profilePath),
     refusal,
@@ -36,18 +54,26 @@ export function reportNameRefusal(refusal: NameRefusal): void {
 }
 
 /**
- * Stop showing the refusal from the Profile at `profilePath`: the person
- * dismissed it, or a later save from that Profile went through.
+ * Stop showing the refusal from the Profile at `profilePath` whose save was
+ * sent before `sentBefore`. The person's Dismiss passes no stamp and removes
+ * it whatever its age. A save that went through passes its own stamp, so it
+ * clears a refusal of an earlier save and never one of a save sent after it.
  */
-export function dismissNameRefusal(profilePath: string): void {
-  if (!nameRefusals.get().some((r) => r.profilePath === profilePath)) return;
-  nameRefusals.set(nameRefusals.get().filter((r) => r.profilePath !== profilePath));
+export function dismissNameRefusal(
+  profilePath: string,
+  sentBefore = Number.POSITIVE_INFINITY,
+): void {
+  const gone = (r: NameRefusal) => r.profilePath === profilePath && r.sent < sentBefore;
+  if (!nameRefusals.get().some(gone)) return;
+  nameRefusals.set(nameRefusals.get().filter((r) => !gone(r)));
 }
 
-/** Drop every refusal held, for a test that must start without one. */
+/**
+ * Drop every refusal held: when the account logs out or another logs in, and
+ * for a test that must start without one.
+ */
 export function clearNameRefusals(): void {
   if (nameRefusals.get().length > 0) nameRefusals.set([]);
 }
 
-// Logging out, or in as another account, drops every refusal held.
 onAccountIdChange(clearNameRefusals);

@@ -67,6 +67,7 @@ function renderApp(path: string) {
       <MemoryRouter initialEntries={[path]}>
         <NameRefusalNotice />
         <Link to="/search">Search</Link>
+        <Link to="/settings?tab=profile">Settings</Link>
         <Routes>
           <Route path="/settings" element={<SettingsScreen />} />
           <Route
@@ -191,6 +192,34 @@ describe("a display name refused after Settings is left", () => {
 
     expect(updateAccountProfile).toHaveBeenLastCalledWith({ preferred_name: "Stored Name Jr" });
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("stays when a save sent before it goes through later", async () => {
+    const first = deferred<AccountProfile>();
+    const second = deferred<AccountProfile>();
+    updateAccountProfile.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const user = setupUser();
+    renderApp("/settings?tab=profile");
+    await settle();
+
+    // The first save is still on the way when Settings is left.
+    await fill(user, nameField(), " Jr");
+    await user.click(screen.getByRole("link", { name: "Search" }));
+    // Settings, opened again, sends a second name and is left again.
+    await user.click(screen.getByRole("link", { name: "Settings" }));
+    await settle();
+    await fill(user, nameField(), " Sr");
+    await user.click(screen.getByRole("link", { name: "Search" }));
+    expect(updateAccountProfile).toHaveBeenLastCalledWith({ preferred_name: "Stored Name Sr" });
+
+    second.reject(new ApiError(503, "database is busy"));
+    await settle();
+    first.resolve({ ...own, preferred_name: "Stored Name Jr" });
+    await settle();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      `Your display name "Stored Name Sr" wasn't saved: Database is busy`,
+    );
   });
 
   it("goes when the account that typed it logs out", async () => {

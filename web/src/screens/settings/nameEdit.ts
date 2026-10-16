@@ -8,7 +8,7 @@ import {
 } from "react";
 import { getAccountId } from "../../lib/api";
 import { errorLine } from "../../lib/apiErrorMessage";
-import { dismissNameRefusal, reportNameRefusal } from "../../lib/nameRefusals";
+import { dismissNameRefusal, nameSendStamp, reportNameRefusal } from "../../lib/nameRefusals";
 
 /**
  * A display name typed on the Profile tab and not yet saved, with the
@@ -72,11 +72,12 @@ export function useNameEdit(origin: NameEditOrigin): NameEdit {
       sending.current = next;
       setError("");
       const accountId = getAccountId();
+      const sent = nameSendStamp();
       try {
         await send(next || null);
-        // The name is saved, so an earlier refusal from this Profile no
-        // longer holds.
-        dismissNameRefusal(originRef.current.profilePath);
+        // The name is saved, so the refusal of a save sent before it from
+        // this Profile no longer holds. One sent after it still does.
+        dismissNameRefusal(originRef.current.profilePath, sent);
         if (sending.current !== next) return;
         // Only the name that was sent is cleared. A name typed while it was
         // on the way stays, to be saved in its turn.
@@ -85,7 +86,13 @@ export function useNameEdit(origin: NameEditOrigin): NameEdit {
         if (sending.current !== next) return;
         if (mounted.current) setError(errorLine(e));
         else
-          reportNameRefusal({ accountId, ...originRef.current, name: next, reason: errorLine(e) });
+          reportNameRefusal({
+            accountId,
+            ...originRef.current,
+            name: next,
+            reason: errorLine(e),
+            sent,
+          });
       } finally {
         if (sending.current === next) sending.current = null;
       }
