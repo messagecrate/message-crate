@@ -1293,6 +1293,91 @@ async fn a_missing_original_is_planned_from_the_decision_recorded_for_it() {
     );
 }
 
+/// #2866: an original whose stored path leaves the account's assets
+/// directory, by climbing out with `..` or by being absolute, is passed
+/// over: the pass neither reads the file it names nor records anything for
+/// its row, and says so in the server's log with the account, the path and
+/// the Asset, so the damaged row can be found.
+#[tokio::test]
+async fn an_original_whose_stored_path_leaves_the_assets_directory_is_passed_over() {
+    let (opened, dir) = open_db().await;
+    let mut conn = opened.conn().await.unwrap();
+    seed_account(&mut conn, ACCOUNT).await;
+    fs::create_dir_all(opened.cfg.paths.assets_dir_for_account(ACCOUNT)).unwrap();
+    let outside = dir.path().join("outside.png");
+    fs::write(&outside, PNG_1X1_RGB).unwrap();
+    let climbing = "../../../outside.png".to_string();
+    assert_eq!(
+        fs::canonicalize(
+            opened
+                .cfg
+                .paths
+                .assets_dir_for_account(ACCOUNT)
+                .join(&climbing)
+        )
+        .unwrap(),
+        fs::canonicalize(&outside).unwrap(),
+        "the climbing path names the file outside"
+    );
+    let absolute = outside.to_str().unwrap().to_string();
+    let mut attachments = Vec::new();
+    for (sha, assets_path) in [("c".repeat(64), climbing), ("d".repeat(64), absolute)] {
+        let message_id = seed_message(&mut conn, &sha[..1]).await;
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO attachments (message_id, sha256, assets_path, mime_type)
+             VALUES ($1, $2, $3, 'image/png') RETURNING id",
+        )
+        .bind(message_id)
+        .bind(&sha)
+        .bind(&assets_path)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        attachments.push((id, sha, assets_path));
+    }
+
+    let ((decided, counted), lines) = crate::test_support::lines_written_by("warn", async {
+        let decided = decide_shown_as_is(&opened.cfg, &ON_PATH, &opened.db, ACCOUNT, None).await;
+        let counted = run(
+            &opened,
+            &ON_PATH,
+            &ProcessAssetsOptions::default(),
+            &NOT_STOPPED,
+            Progress::Print,
+        )
+        .await;
+        (decided, counted)
+    })
+    .await;
+
+    decided.unwrap();
+    assert_eq!(counted.unwrap(), stats(2, 0, 0, 2, 0));
+    for (id, sha, assets_path) in &attachments {
+        let shown: Option<i64> =
+            sqlx::query_scalar("SELECT shown_as_is FROM attachments WHERE id = $1")
+                .bind(id)
+                .fetch_one(&mut *conn)
+                .await
+                .unwrap();
+        assert_eq!(shown, None, "{assets_path}");
+        assert_eq!(not_made_reasons(&mut conn, *id).await, (None, None));
+        assert_eq!(thumbnail_of(&mut conn, *id).await, None);
+        let asset = format!("Asset {sha}");
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.level == crate::logging::LogLevel::Warn
+                    && line.text.contains(&format!("account_id={ACCOUNT}"))
+                    && line.text.contains(assets_path.as_str())
+                    && line.text.contains(&asset)),
+            "{assets_path}: {lines:?}"
+        );
+    }
+    assert_eq!(fs::read(&outside).unwrap(), PNG_1X1_RGB);
+}
+
 /// Why each version of one attachment row was not made: Preview, then
 /// Thumbnail.
 async fn not_made_reasons(

@@ -198,17 +198,29 @@ struct ReadOriginal {
     decided: Option<bool>,
 }
 
-/// Read `row`'s original, stored under `assets_dir`, for its type and
-/// whether every browser shows it as it is: the one reading both
-/// [`decide_shown_as_is`] and the pass make.
-fn read_original(tools: &dyn MediaTools, assets_dir: &Path, row: &StoredOriginal) -> ReadOriginal {
+/// Where `row`'s original is stored under `account_id`'s `assets_dir`, or
+/// `None`, logged, when its stored path is not a plain relative one
+/// ([`crate::asset_store::join_stored`]): such an original is passed over,
+/// neither read nor converted (#2866).
+fn original_path(assets_dir: &Path, row: &StoredOriginal, account_id: i64) -> Option<PathBuf> {
+    crate::asset_store::join_stored(
+        assets_dir,
+        &row.assets_path,
+        account_id,
+        &format!("Asset {}", row.sha256),
+    )
+}
+
+/// Read `row`'s original, stored at `path`, for its type and whether every
+/// browser shows it as it is: the one reading both [`decide_shown_as_is`]
+/// and the pass make.
+fn read_original(tools: &dyn MediaTools, path: &Path, row: &StoredOriginal) -> ReadOriginal {
     let declared = media_type(row);
-    let path = assets_dir.join(&row.assets_path);
-    let by_bytes = media::media_type_in_file(&path, declared.as_deref());
+    let by_bytes = media::media_type_in_file(path, declared.as_deref());
     let media_type = by_bytes.map(str::to_string).or(declared);
     ReadOriginal {
         by_bytes,
-        decided: media::browser_shows(tools, &path, media_type.as_deref()),
+        decided: media::browser_shows(tools, path, media_type.as_deref()),
         media_type,
     }
 }
@@ -252,17 +264,23 @@ pub(crate) async fn decide_shown_as_is(
     let assets_dir = cfg.paths.assets_dir_for_account(account_id);
     let rows = versions_db::stored_originals(&mut *db.acquire().await?, account_id, only).await?;
     // Rows come one per original and stored path; an original stored under
-    // two paths is decided once.
+    // two paths is decided once, from the first path that stays in the
+    // assets directory.
     let mut decided = std::collections::HashSet::new();
     for row in &rows {
-        if decided.insert(row.sha256.as_str()) {
-            let original = OriginalRows {
-                account_id,
-                original_sha: &row.sha256,
-            };
-            let decided = read_original(tools, &assets_dir, row).decided;
-            record_decision_if_known(db, original, decided).await?;
+        if decided.contains(row.sha256.as_str()) {
+            continue;
         }
+        let Some(path) = original_path(&assets_dir, row, account_id) else {
+            continue;
+        };
+        decided.insert(row.sha256.as_str());
+        let original = OriginalRows {
+            account_id,
+            original_sha: &row.sha256,
+        };
+        let shown = read_original(tools, &path, row).decided;
+        record_decision_if_known(db, original, shown).await?;
     }
     Ok(())
 }
@@ -656,7 +674,9 @@ impl<'a> AccountPass<'a> {
     /// does what the plan says. An existing version is hashed, so one cut
     /// short by a killed run is made again.
     async fn process(&self, db: &SqlitePool, row: &StoredOriginal) -> Outcome {
-        let source_path = self.assets_dir.join(&row.assets_path);
+        let Some(source_path) = original_path(&self.assets_dir, row, self.account_id) else {
+            return Outcome::default();
+        };
         let state = |version: Version| {
             preview_file(
                 row.named(version).assets_path.as_deref(),
@@ -669,7 +689,7 @@ impl<'a> AccountPass<'a> {
             by_bytes,
             media_type,
             decided,
-        } = read_original(self.tools, &self.assets_dir, row);
+        } = read_original(self.tools, &source_path, row);
         let on_disk = OnDisk {
             original_exists: source_path.is_file(),
             preview: state(Version::Preview),

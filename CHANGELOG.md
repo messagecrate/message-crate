@@ -1553,6 +1553,12 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-16: **Making Previews and Thumbnails reads only an account's own
+  attachments.** When the server makes Previews and Thumbnails, it passes
+  over an attachment whose stored location points outside the account's
+  attachments directory, and says so in its log with the account and the
+  attachment. Before, it read the file at that location and made a Preview
+  or Thumbnail of it (#2866).
 - 2026-10-15: **A failed request's log line names the database step that
   failed.** When a request fails because of a database problem, its line in
   the server's log now says which database step failed, such as `read the
