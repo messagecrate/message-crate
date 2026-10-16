@@ -803,8 +803,8 @@ pub async fn replace_staged_text(
 
 /// A `(SELECT ...)` of `rows` rows bound in turn, each with one value per
 /// column of `columns` (such as [`ATTACHMENT_COLUMNS`]), under those
-/// column names: the copies [`add_copy_attachments`] and
-/// [`add_copy_tapbacks`] hand the shared rules.
+/// column names: the copies [`add_copy_attachments`] hands the shared
+/// rules.
 fn bound_rows_sql(columns: &[&str], rows: usize) -> String {
     let aliases: Vec<String> = columns
         .iter()
@@ -858,11 +858,16 @@ pub async fn add_copy_attachments(
 }
 
 /// Add the tapbacks `rows` of another copy of a staged message from the
-/// same import to that message, skipping any the message holds field for
-/// field, by the rule promotion adds a copy's tapbacks to a stored message
+/// same import to that message, skipping any the message holds already, by
+/// the rule promotion adds a copy's tapbacks to a stored message
 /// ([`insert_new_tapbacks_sql`]). Every row's `message_id` is the staged
 /// message's. Returns how many were inserted. The caller passes one copy
 /// at a time, as for [`add_copy_attachments`].
+///
+/// The copy goes into the temp table `_copy_tapbacks` first, in chunks
+/// that fit the bind limit, and the rule then runs once over all of it: a
+/// rule run per chunk would count a later chunk's reactions with no
+/// reactor against the rows an earlier chunk added.
 ///
 /// # Errors
 ///
@@ -871,18 +876,30 @@ pub async fn add_copy_tapbacks(
     conn: &mut SqliteConnection,
     rows: &[StagingTapback],
 ) -> Result<u64> {
+    if rows.is_empty() {
+        return Ok(0);
+    }
+    let columns = TAPBACK_COLUMNS.join(", ");
+    reset_temp_table(conn, "_copy_tapbacks", &columns).await?;
     let size = max_rows_for_bind_limit(TAPBACK_BIND_COLUMNS).max(1);
-    let mut inserted = 0u64;
     for chunk in rows.chunks(size) {
-        let copies = bound_rows_sql(TAPBACK_COLUMNS, chunk.len());
-        let sql = insert_new_tapbacks_sql("staging_tapbacks", &copies);
-        inserted += bind_tapbacks(sqlx::query(sql), chunk)
+        let sql = format!(
+            "INSERT INTO _copy_tapbacks ({columns}) VALUES {}",
+            values_tuples(chunk.len(), TAPBACK_BIND_COLUMNS)
+        );
+        bind_tapbacks(sqlx::query(AssertSqlSafe(sql)), chunk)
+            .execute(&mut *conn)
+            .await
+            .context("hold a chunk of a copy's reactions")?;
+    }
+    let copies = format!("(SELECT {columns}, rowid AS seq FROM _copy_tapbacks)");
+    Ok(
+        sqlx::query(insert_new_tapbacks_sql("staging_tapbacks", &copies))
             .execute(&mut *conn)
             .await
             .context("stage a copy's new reactions")?
-            .rows_affected();
-    }
-    Ok(inserted)
+            .rows_affected(),
+    )
 }
 
 // ── Promotion: staging rows into the production tables ───────────────────
@@ -892,26 +909,37 @@ pub async fn add_copy_tapbacks(
 // below fill in the order `imports_api::promote` calls them.
 
 /// Create, or empty, a temp table mapping staging ids to production ids,
-/// with the column definitions `extra_columns` after those two.
-/// Two statements on purpose: one prepared statement holds one command.
+/// with the column definitions `extra_columns` after those two
+/// ([`reset_temp_table`]).
 async fn reset_id_map(
     conn: &mut SqliteConnection,
     table: &str,
     extra_columns: &[&str],
 ) -> Result<()> {
     let extra: String = extra_columns.iter().map(|c| format!(", {c}")).collect();
-    let create = format!(
-        "CREATE TEMP TABLE IF NOT EXISTS {table} (staging_id BIGINT PRIMARY KEY, prod_id BIGINT NOT NULL{extra})"
-    );
-    sqlx::query(AssertSqlSafe(create))
+    reset_temp_table(
+        conn,
+        table,
+        &format!("staging_id BIGINT PRIMARY KEY, prod_id BIGINT NOT NULL{extra}"),
+    )
+    .await
+    .context("reset a promotion id map")
+}
+
+/// Create the temp table `table` with the column definitions `columns`,
+/// or empty it when it exists. Two statements on purpose: one prepared
+/// statement holds one command.
+async fn reset_temp_table(conn: &mut SqliteConnection, table: &str, columns: &str) -> Result<()> {
+    sqlx::query(AssertSqlSafe(format!(
+        "CREATE TEMP TABLE IF NOT EXISTS {table} ({columns})"
+    )))
+    .execute(&mut *conn)
+    .await
+    .with_context(|| format!("create the temp table {table}"))?;
+    sqlx::query(AssertSqlSafe(format!("DELETE FROM {table}")))
         .execute(&mut *conn)
         .await
-        .context("create a promotion id map")?;
-    let clear = format!("DELETE FROM {table}");
-    sqlx::query(AssertSqlSafe(clear))
-        .execute(&mut *conn)
-        .await
-        .context("clear a promotion id map")?;
+        .with_context(|| format!("empty the temp table {table}"))?;
     Ok(())
 }
 
@@ -1983,40 +2011,75 @@ fn insert_new_attachments_sql(held: &str, copies: &str) -> SqlStr {
     .into_sql_str()
 }
 
-/// The statement that inserts into `held` each tapback row of `copies`
-/// that `held` does not hold field for field, where `copies` is a table
-/// or `(SELECT ...)` with the [`TAPBACK_COLUMNS`] whose `message_id` is a
-/// row of `held`'s message. The one rule for when another copy of a
-/// reaction is new, for a stored message ([`promote_tapbacks`]) and for
-/// two copies staged in one import ([`add_copy_tapbacks`]).
+/// The statement that inserts into `held` the tapback rows of `copies`
+/// that `held` does not hold yet, where `copies` is a table or
+/// `(SELECT ...)` with the [`TAPBACK_COLUMNS`] and `seq`, whose
+/// `message_id` is a row of `held`'s message. The one rule for when
+/// another copy of a reaction is new, for a stored message
+/// ([`promote_tapbacks`]) and for two copies staged in one import
+/// ([`add_copy_tapbacks`]).
+///
+/// A reaction that names its reactor (a handle, a display name, or the
+/// account holder) is new when no row of `held` matches it field for field.
+/// A reaction with no reactor ([`NO_REACTOR`]) cannot be told from another
+/// person's reaction with the same emoji, so those are counted instead:
+/// per message, part, kind and emoji, the copy adds as many as it holds
+/// above the count `held` has. A copy with fewer adds none and removes
+/// none (#3112). iMazing writes only reactions with no reactor, and
+/// WhatsApp writes one when the backup does not name who reacted.
+///
+/// `seq` orders the rows of `copies`, such as by the staging row's id. The
+/// rows are numbered and inserted in that order, so readers that sort
+/// reactions by id see the source's order.
 fn insert_new_tapbacks_sql(held: &str, copies: &str) -> SqlStr {
     let columns = TAPBACK_COLUMNS.join(", ");
+    // A row of `held` that matches the copy's row `st` field for field. A
+    // copy's row with no reactor matches exactly the held rows with no
+    // reactor, so the count below needs no test of its own.
+    let same = r"
+                t.message_id = st.message_id
+                AND t.part_index = st.part_index
+                AND t.kind = st.kind
+                AND t.emoji IS NOT DISTINCT FROM st.emoji
+                AND t.is_from_me = st.is_from_me
+                AND t.sender_handle_id IS NOT DISTINCT FROM st.sender_handle_id
+                AND t.sender_display_name IS NOT DISTINCT FROM st.sender_display_name";
     AssertSqlSafe(format!(
         r"
         INSERT INTO {held} ({columns})
         SELECT {columns}
-        FROM {copies} AS st
-        WHERE NOT EXISTS (
-            SELECT 1
-            FROM {held} t
-            WHERE t.message_id = st.message_id
-              AND t.part_index = st.part_index
-              AND t.kind = st.kind
-              AND t.emoji IS NOT DISTINCT FROM st.emoji
-              AND t.is_from_me = st.is_from_me
-              AND t.sender_handle_id IS NOT DISTINCT FROM st.sender_handle_id
-              AND t.sender_display_name IS NOT DISTINCT FROM st.sender_display_name
-        )
+        FROM (
+            SELECT {columns},
+                   seq,
+                   {NO_REACTOR} AS no_reactor,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY message_id, part_index, kind, emoji, {NO_REACTOR}
+                       ORDER BY seq
+                   ) AS nth
+            FROM {copies}
+        ) AS st
+        WHERE CASE
+            WHEN st.no_reactor
+                THEN st.nth > (SELECT COUNT(*) FROM {held} t WHERE {same})
+            ELSE NOT EXISTS (SELECT 1 FROM {held} t WHERE {same})
+        END
+        ORDER BY st.seq
         "
     ))
     .into_sql_str()
 }
 
+/// True in SQL for a tapback row that names no reactor: not the account
+/// holder's, with no handle and no display name ([`insert_new_tapbacks_sql`]).
+const NO_REACTOR: &str =
+    "(is_from_me = 0 AND sender_handle_id IS NULL AND sender_display_name IS NULL)";
+
 /// The rows of the staging table `table`, whose columns are `columns`
 /// (such as [`ATTACHMENT_COLUMNS`]), each under its production message as
 /// the shared rules ([`insert_new_attachments_sql`] and the others) take
 /// them. `columns` starts with `message_id`, which becomes the production
-/// message's id, so the columns keep their order.
+/// message's id, so the columns keep their order. After them comes `seq`,
+/// the staging row's id, which orders the rows ([`insert_new_tapbacks_sql`]).
 fn staged_by_production_message(table: &str, columns: &[&str]) -> String {
     debug_assert_eq!(columns.first(), Some(&"message_id"));
     let rest: Vec<String> = columns[1..]
@@ -2024,7 +2087,7 @@ fn staged_by_production_message(table: &str, columns: &[&str]) -> String {
         .map(|name| format!("s.{name}"))
         .collect();
     format!(
-        "(SELECT mm.prod_id AS message_id, {} \
+        "(SELECT mm.prod_id AS message_id, {}, s.id AS seq \
           FROM {table} s JOIN _promote_msg_map mm ON mm.staging_id = s.message_id)",
         rest.join(", ")
     )
@@ -2081,7 +2144,7 @@ pub async fn promote_attachments(conn: &mut SqliteConnection) -> Result<Promoted
 }
 
 /// Insert the staged tapbacks under their production messages, skipping any
-/// row production already has ([`insert_new_tapbacks_sql`]). Returns how
+/// production already holds ([`insert_new_tapbacks_sql`]). Returns how
 /// many were inserted.
 ///
 /// # Errors
