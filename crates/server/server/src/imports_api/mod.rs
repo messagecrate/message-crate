@@ -265,7 +265,6 @@ pub(crate) async fn create_import(
         .transpose();
     errors.extend(too_long_sentences([&tool, &run_dir, &device_id]));
     let account = resolve_import_account(&auth);
-    let stage = body.stage.unwrap_or(crate::db::imports::ImportStage::Parse);
     // Credentials never reach the row, whoever the client is.
     let form = body.form.as_ref().map(strip_form_credentials);
     let form_json = capped_json_string(form.as_ref(), "form", &mut errors)?;
@@ -296,7 +295,6 @@ pub(crate) async fn create_import(
         mode: body.mode.as_str(),
         phone_country: phone_country.map(|country| country.code),
         tool,
-        stage,
         run_dir,
         device_id,
         form_json: form_json.as_deref(),

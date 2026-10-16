@@ -2413,7 +2413,6 @@ describe("useImportJob wiring", () => {
     const createCall = createImportMock.mock.calls[0];
     expect(createCall).toBeDefined();
     const body = createCall?.[0] as Record<string, unknown>;
-    expect(body.stage).toBe("parse");
     expect(body.device_id).toEqual(expect.any(String));
     expect(body.run_dir).toBe("/home/u/message-crate/staging-260830");
     expect(body.form).toMatchObject({ source: "imessage-ios" });

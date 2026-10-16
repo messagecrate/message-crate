@@ -234,6 +234,8 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-15: The way the desktop app opens an Import Run on the server was
+  reworked inside, with nothing visible (#2858).
 - 2026-10-15: **The Import screen says Resume for an interrupted import.**
   When an import stopped during Staging or Media, its button now reads
   **Resume**, where it read **Pick up** and **Carry on**. The headings read
