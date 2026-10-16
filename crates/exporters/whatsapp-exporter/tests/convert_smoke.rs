@@ -561,6 +561,44 @@ fn photo_only_chat() -> serde_json::Value {
     })
 }
 
+/// Ingest gives a media attachment no size, so the progress byte total,
+/// and the headroom check made from the same sizes, count each media file
+/// by its size on disk (#3057). With two files, the total sent after the
+/// first is copied already holds the second.
+#[test]
+fn media_files_count_their_size_on_disk_in_the_byte_total() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("photo.jpg"), vec![0u8; 1234]).expect("write media");
+    fs::write(dir.path().join("video.mp4"), vec![0u8; 1000]).expect("write media");
+    let mut chat = photo_only_chat();
+    let mut video = row("K2", 1_609_459_201.into(), "video.mp4".into());
+    video["media"] = true.into();
+    video["mime"] = "video/mp4".into();
+    chat["15555550122@s.whatsapp.net"]["messages"]["K2"] = video;
+    let json_path = dir.path().join("result.json");
+    fs::write(&json_path, chat.to_string()).expect("write json");
+    let (progress, totals) = message_crate_core::testutil::attachment_totals();
+    let mut convert_run = ConvertRun::default();
+    convert_run.transforms.progress = progress;
+    convert_export(ConvertExportArgs {
+        json_path: &json_path,
+        output: &dir.path().join("out"),
+        media_search_roots: &[dir.path().to_path_buf()],
+        owner_identity: None,
+        backup_taken_at_unix_ms: None,
+        convert_run,
+    })
+    .expect("convert");
+    let totals = totals.lock().unwrap();
+    assert!(!totals.is_empty(), "no attachment progress was sent");
+    assert!(
+        totals
+            .iter()
+            .all(|&(_, _, bytes_total)| bytes_total == 2234),
+        "{totals:?}"
+    );
+}
+
 /// A media file that is not found stays on the message, marked
 /// `file_missing`, so a photo-only message does not become an empty one.
 /// Finding the file later gives the message the same GUID, so a second

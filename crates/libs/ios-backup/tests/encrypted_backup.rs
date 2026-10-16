@@ -33,7 +33,7 @@ use ios_backup::{
     DecryptedDomain, Helper, backup_identities, decrypt_ios_backup_domain,
     reader_build::build_imessage_reader,
 };
-use message_crate_core::{LogSink, ProgressSink};
+use message_crate_core::{CancelFlag, LogSink, ProgressSink, Sinks};
 
 /// A backup in a directory that lives as long as the value.
 fn backup(encryption: Encryption<'_>) -> tempfile::TempDir {
@@ -434,8 +434,11 @@ fn a_backup_domain_request_decrypts_into_the_directory_it_names() {
             seen_before_the_go = file_names(work.path());
             Ok(())
         },
-        LogSink::none(),
-        ProgressSink::none(),
+        Sinks {
+            log: &LogSink::none(),
+            progress: &ProgressSink::none(),
+            cancel: &CancelFlag::default(),
+        },
     )
     .unwrap();
 
