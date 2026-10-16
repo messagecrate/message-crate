@@ -24,9 +24,10 @@ carry their date on the heading.
 
 - 2026-10-15: **Log in on the website for one visit only.** The login card
   has a **Keep me logged in** box, ticked to start with. Untick it on a
-  shared or borrowed computer, and the login ends when the tab closes; a new
-  tab asks to log in again. The desktop app is unchanged: it logs out when
-  its window closes (#2205).
+  shared or borrowed computer, and the browser forgets the Session when the
+  tab closes. A new tab asks to log in again. **Log out** still ends the
+  Session itself. The desktop app is unchanged: it logs out when its window
+  closes (#2205).
 - 2026-10-15: **A WhatsApp group event shows in the conversation.** When a
   member joined or left a group, or someone renamed it or changed its
   picture, the conversation now shows a line saying so, such as "Ada joined

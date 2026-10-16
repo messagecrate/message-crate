@@ -13,9 +13,11 @@ This page covers the first two.
 
 ## Staying logged in
 
-In a browser, the **Keep me logged in** box on the login card decides whether the login outlasts the tab.
-Ticked, which is how the card opens, the browser keeps the login, and the next visit opens logged in.
-Unticked, the login lasts until the tab closes, and a new tab asks to log in again, which suits a shared or borrowed computer.
+In a browser, the login card's forms carry a **Keep me logged in** box beside the button that logs in.
+Ticked, which is how each form opens, the browser keeps the Session, and the next visit opens logged in.
+Unticked, the browser forgets the Session when the tab closes, and a new tab asks to log in again, which suits a shared or borrowed computer.
+A browser that reopens a closed tab or restores its last session brings the Session back with it, and a duplicated tab shares it.
+**Log out** is what ends the Session itself.
 The desktop app shows no such box, because it logs out when its window closes.
 
 ## What the Owner sees
