@@ -1867,3 +1867,45 @@ async fn a_page_past_the_end_counts_as_a_page_read() {
     assert_eq!((ids.len(), total), (0, 3));
     assert!(last_read().await.is_some());
 }
+
+/// The `ExportAccess` extractor guards `GET /v1/exports`: with `can_export`
+/// off, the endpoint refuses; turned back on, it succeeds.
+#[tokio::test]
+async fn export_endpoint_honors_can_export_flag() {
+    let fixture = crate::test_support::test_fixture().await;
+    let state = fixture.state.clone();
+    let owner =
+        crate::test_support::claim_as_owner(&state, "export-guard-keeper", "hunter2hunter2").await;
+    let user =
+        crate::test_support::register_via_api(&state, "export-guard-user", "hunter2hunter2").await;
+
+    assert_eq!(
+        crate::test_support::patch_status(
+            &state,
+            &format!("/v1/accounts/{}", user.account_id),
+            &owner.token,
+            serde_json::json!({ "can_export": false }),
+        )
+        .await,
+        StatusCode::OK
+    );
+    // can_export=false refuses GET /v1/exports.
+    let (status, text) = crate::test_support::get_raw(&state, "/v1/exports", &user.token).await;
+    expect_problem(status, &text, ProblemType::InsufficientScope);
+
+    assert_eq!(
+        crate::test_support::patch_status(
+            &state,
+            &format!("/v1/accounts/{}", user.account_id),
+            &owner.token,
+            serde_json::json!({ "can_export": true }),
+        )
+        .await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        crate::test_support::get_status(&state, "/v1/exports", &user.token).await,
+        StatusCode::OK,
+        "can_export=true must allow GET /v1/exports"
+    );
+}

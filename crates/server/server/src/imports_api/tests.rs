@@ -117,7 +117,7 @@ fn edit_options<'a>(assets: &'a Path, root: &'a Path) -> ImportOptions<'a> {
 
 /// A registered account may import with its session token: `can_import`
 /// is on by default, which `import_endpoint_honors_can_import_flag` in
-/// `server/tests.rs` relies on to prove the opposite case.
+/// `tests/import_runs.rs` relies on to prove the opposite case.
 async fn importer() -> (
     crate::server::AppState,
     crate::test_support::TestFixture,
@@ -360,6 +360,7 @@ mod changed_content_dedupe;
 mod completion;
 mod conversations;
 mod edits;
+mod handlers;
 mod identities;
 mod import_runs;
 mod participants;

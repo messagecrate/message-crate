@@ -3,6 +3,9 @@
 //! account's run.
 
 use super::*;
+use crate::problem::ProblemType;
+use crate::test_support::expect_problem;
+use axum::http::StatusCode;
 
 /// A fixture holding one running Import Run at `staging_review` whose
 /// `summary_json` already carries `summary` — as if an earlier
@@ -1267,4 +1270,46 @@ async fn a_page_of_import_runs_is_read_without_a_statement_per_row() {
     assert_eq!(counts, [1, 0, 3], "newest first");
     let owner: Page<OwnerImportRunSummary> = rows.map(OwnerImportRunSummary::from);
     assert_eq!(owner.items[2].issue_count, 3);
+}
+
+/// The `ImportAccess` extractor guards `GET /v1/imports`: with
+/// `can_import` off, the endpoint refuses; turned back on, it succeeds.
+#[tokio::test]
+async fn import_endpoint_honors_can_import_flag() {
+    let fixture = crate::test_support::test_fixture().await;
+    let state = fixture.state.clone();
+    let owner =
+        crate::test_support::claim_as_owner(&state, "import-guard-keeper", "hunter2hunter2").await;
+    let user =
+        crate::test_support::register_via_api(&state, "import-guard-user", "hunter2hunter2").await;
+
+    assert_eq!(
+        crate::test_support::patch_status(
+            &state,
+            &format!("/v1/accounts/{}", user.account_id),
+            &owner.token,
+            serde_json::json!({ "can_import": false }),
+        )
+        .await,
+        StatusCode::OK
+    );
+    // can_import=false refuses GET /v1/imports.
+    let (status, text) = crate::test_support::get_raw(&state, "/v1/imports", &user.token).await;
+    expect_problem(status, &text, ProblemType::InsufficientScope);
+
+    assert_eq!(
+        crate::test_support::patch_status(
+            &state,
+            &format!("/v1/accounts/{}", user.account_id),
+            &owner.token,
+            serde_json::json!({ "can_import": true }),
+        )
+        .await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        crate::test_support::get_status(&state, "/v1/imports", &user.token).await,
+        StatusCode::OK,
+        "can_import=true must allow GET /v1/imports"
+    );
 }
