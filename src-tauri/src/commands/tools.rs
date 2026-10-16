@@ -117,9 +117,11 @@ pub struct ToolsStatus {
 }
 
 /// The ffmpeg and ffprobe the app runs: on `PATH`, else in `tools_dir`, the
-/// Tools Directory. The app keeps one built here as its state, and the
-/// Tools commands build the same one from the same directory, so the Tools
-/// Directory has one source.
+/// Tools Directory. The app's `setup` in `lib.rs` builds its managed
+/// `InstalledTools` with this function, and [`tools_status`] and
+/// [`retry_tool_downloads`] build their own with it from the same Tools
+/// Directory, so each is built the same way. `InstalledTools` holds no
+/// state, so a second value built alike finds what the managed one finds.
 pub(crate) fn installed_tools(tools_dir: &Path) -> InstalledTools {
     InstalledTools::new(Some(tools_dir.to_path_buf()))
 }

@@ -73,9 +73,10 @@ pub fn run() {
             // own log in the Logs Directory from here on (#2185).
             app_log::init(&directory.logs());
             // ffmpeg and ffprobe are looked for on PATH, then in the Tools
-            // Directory; wtsexporter only there (#1053). Every command that
-            // runs them, and the server the app starts, gets them from the
-            // `InstalledTools` kept here.
+            // Directory; wtsexporter only there (#1053). The commands that
+            // run them, and the server the app starts, get them from the
+            // `InstalledTools` kept here. The Tools commands build their own
+            // the same way (`commands::tools::installed_tools`).
             // What is missing there is downloaded in the background, and
             // nothing waits for it (`tool_downloads`).
             let tools_dir = directory.tools();
