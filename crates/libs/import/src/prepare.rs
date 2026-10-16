@@ -313,7 +313,7 @@ fn scan_one_attachment(
     scan: &mut AttachmentScan,
 ) -> Result<AttachmentProjection> {
     let Some(rel) = att.path.as_deref().and_then(ir::trimmed) else {
-        // No path means the bytes were never staged. "Do not copy" exports
+        // No path means the bytes were never staged. Exports made with Skip
         // look like this, and the reason the exporter set (`not_copied`)
         // explains why.
         // Keep the metadata so the thread still shows the file was there.

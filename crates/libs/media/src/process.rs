@@ -605,7 +605,7 @@ fn has_gif_ext(path: &Path) -> bool {
 /// What the caller asked of the media step for one file.
 #[derive(Clone, Copy)]
 struct Asked<'a> {
-    /// Convert or compress.
+    /// `convert` or `compress`.
     mode: MediaMode,
     /// How to compress, in [`MediaMode::Compress`].
     compress: &'a CompressOptions,

@@ -1,17 +1,18 @@
 //! Convert or compress attachment media under a converter export directory.
 //!
 //! Modes:
-//! - **Disabled**: do not copy or write attachment files (the Import form's **Skip**)
+//! - **Disabled**: do not copy or write attachment files (the Import form's
+//!   **Skip**)
 //! - **Clone**: leave exported files as-is, a no-op after export (**Copy**)
 //! - **Convert**: rewrite images to `.jpg`, videos to `.mp4`, audio to `.mp3`
 //!   (**Convert media**)
 //! - **Compress**: convert, and re-encode to shrink files, with optional video
 //!   settings (**Convert & Compress media**)
 //!
-//! The `convert` and `compress` modes need `ffmpeg` / `ffprobe`, both on `PATH` or both
-//! in the Tools Directory, and nowhere else. The caller says where the Tools
-//! Directory is by the [`InstalledTools`] it passes in; a test passes a fake
-//! [`MediaTools`] instead (`testutil::FakeTools`).
+//! The `convert` and `compress` modes need `ffmpeg` / `ffprobe`, both on
+//! `PATH` or both in the Tools Directory, and nowhere else. The caller says
+//! where the Tools Directory is by the [`InstalledTools`] it passes in; a test
+//! passes a fake [`MediaTools`] instead (`testutil::FakeTools`).
 
 mod estimate;
 #[cfg(any(test, feature = "testutil"))]

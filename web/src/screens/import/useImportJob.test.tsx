@@ -502,8 +502,8 @@ describe("useImportJob wiring", () => {
   });
 
   it("gives Staging the media settings once and the later stages only the directory", async () => {
-    // Compress with Max FPS cleared: extract is given the real mode and the
-    // fields, so it refuses them before anything is staged.
+    // Convert & Compress media with Max FPS cleared: extract is given the
+    // real mode and the fields, so it refuses them before anything is staged.
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
@@ -524,8 +524,8 @@ describe("useImportJob wiring", () => {
   });
 
   it("an iMazing run, whose form shows no attachment option, has no Media stage", async () => {
-    // Compress was chosen on the Apple Messages form; the source then
-    // changed to iMazing and the field kept its value.
+    // Convert & Compress media was chosen on the Apple Messages form; the
+    // source then changed to iMazing and the field kept its value.
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
