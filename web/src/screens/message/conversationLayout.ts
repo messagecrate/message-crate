@@ -36,8 +36,8 @@ export type ConversationRow = {
   day: string | null;
   /**
    * Whether it starts a run: the first message, or one after a new day, a new
-   * sender, or a gap of an hour or more. In a group, only a run's first
-   * message carries its sender's name.
+   * sender, an announcement, or a gap of an hour or more. In a group, only a
+   * run's first message carries its sender's name.
    */
   startsRun: boolean;
 };
@@ -62,6 +62,7 @@ export function conversationRows(
     const startsRun =
       previous === null ||
       newDay ||
+      previous.is_announcement ||
       !sameSender(previous, message) ||
       Date.parse(message.timestamp) - Date.parse(previous.timestamp) >= RUN_GAP_MS;
     previous = message;

@@ -128,6 +128,55 @@ export function tapbackGroups(m: Message): TapbackGroup[] {
 }
 
 /**
+ * A message's reactions as rounded chips, one per emoji with its count, each
+ * naming who left it on hover. `className` lays out the row they sit in.
+ */
+export function TapbackChips({ message, className }: { message: Message; className: string }) {
+  const tapbacks = tapbackGroups(message);
+  if (tapbacks.length === 0) return null;
+  return (
+    <div className={`flex flex-wrap gap-1 ${className}`}>
+      {tapbacks.map((t) => (
+        <span
+          key={t.emoji}
+          title={t.senderNames.join(", ")}
+          className="rounded-full border border-border bg-elevated px-[0.35rem] py-[0.1rem] text-[0.75rem] text-text"
+        >
+          {t.emoji} {t.count}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The frame every message row shares, a bubble's, a flat row's or an
+ * announcement's: the `msg-<id>` anchor a jump to the message lands on, and
+ * the background of the active Find match.
+ */
+export function MessageRowFrame({
+  messageId,
+  isActive,
+  className,
+  children,
+}: {
+  messageId: number | string;
+  isActive?: boolean;
+  /** The row's own layout; the background is added to it. */
+  className: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      id={`msg-${messageId}`}
+      className={`${className} ${isActive ? "bg-search-active" : "bg-transparent"}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
  * A chat bubble's shape, marked or not: round corners with the tail corner on
  * the author's side, its width, padding and text size. Each caller adds colors.
  */
@@ -180,7 +229,7 @@ function MarkedBubble({
  * source as the product does: "· Deleted in Apple Messages". An Unsent message
  * says so in its bubble, and an unmarked one carries no note.
  */
-function DeletionNote({ deletion, source }: { deletion?: Deletion | null; source: string }) {
+export function DeletionNote({ deletion, source }: { deletion?: Deletion | null; source: string }) {
   if (deletion !== "deleted_in_source_app") return null;
   return <span>· {deletedInSourceText(source)}</span>;
 }
@@ -385,11 +434,12 @@ export function ChatBubbleRow({
   const versions = useEarlierVersions(message);
 
   return (
-    <div
-      id={`msg-${message.id}`}
+    <MessageRowFrame
+      messageId={message.id}
+      isActive={isActive}
       className={`flex flex-col px-4 py-[0.2rem] ${
         mine ? "mb-[0.15rem] items-end" : "mb-[0.4rem] items-start"
-      } ${isActive ? "bg-search-active" : "bg-transparent"}`}
+      }`}
     >
       {showSender && senderLabel ? (
         <div
@@ -434,7 +484,7 @@ export function ChatBubbleRow({
       </div>
 
       <EarlierVersionsList state={versions} mine={mine} />
-    </div>
+    </MessageRowFrame>
   );
 }
 
@@ -449,14 +499,13 @@ function ServiceRow({
   children: ReactNode;
 }) {
   return (
-    <div
-      id={`msg-${messageId}`}
-      className={`border-b border-border px-6 py-2 ${
-        isActive ? "bg-search-active" : "bg-transparent"
-      }`}
+    <MessageRowFrame
+      messageId={messageId}
+      isActive={isActive}
+      className="border-b border-border px-6 py-2"
     >
       {children}
-    </div>
+    </MessageRowFrame>
   );
 }
 
