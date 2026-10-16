@@ -72,7 +72,7 @@ let cached: Choices | null = null;
  * The zones of a `@vvo/tzdb` group share today's rules, not their history:
  * America/Indiana/Knox kept Eastern time from 1991 to 2006 and America/Chicago
  * did not. A group's row therefore stands for its representative alone, and
- * each other zone of the group has a row of its own, labelled with its name,
+ * each other zone of the group has a row of its own, labeled with its name,
  * so the zone a person finds is the zone that is stored.
  */
 function choices(): Choices {

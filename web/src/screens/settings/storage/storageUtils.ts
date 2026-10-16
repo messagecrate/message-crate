@@ -163,7 +163,7 @@ export function importStatusLabel(status: Schema["ImportStatus"]): string {
     case "failed":
       return "Failed";
     case "cancelled":
-      return "Cancelled";
+      return "Canceled";
     default:
       status satisfies never;
       return status;

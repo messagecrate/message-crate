@@ -1,7 +1,7 @@
 //! What a conversation is keyed by.
 //!
 //! A conversation's chat id is its key: it is part of every message's
-//! `guid`, and the server recognises the conversation on the next import by
+//! `guid`, and the server recognizes the conversation on the next import by
 //! it. [`ConversationKey`] says what kind of key a conversation has, so that
 //! a group's key is never a person's address and a group's members are never
 //! read back out of its id.

@@ -455,14 +455,14 @@ export function resolveInRecord(
 }
 
 /**
- * The Import Errors a Discard sends with the cancelled run: the whole
+ * The Import Errors a Discard sends with the canceled run: the whole
  * record's, with the latest stop's that a resume would have reported again.
  */
 export function issuesToDiscard(record: RunRecord): ImportIssue[] {
   return mergeIssues(record.issues, record.lastStopIssues ?? []);
 }
 
-/** The notes a Discard sends with the cancelled run: every part's. */
+/** The notes a Discard sends with the canceled run: every part's. */
 export function notesToDiscard(record: RunRecord): ImportNote[] {
   return record.notes ?? [];
 }

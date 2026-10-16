@@ -1140,7 +1140,7 @@ fn bytes_whose_sha256_is_not_the_one_asked_for_are_not_kept() {
 }
 
 /// A page the server cannot hand over ends the run with an error, and the
-/// run is recorded as failed, never as cancelled: nobody cancelled it
+/// run is recorded as failed, never as canceled: nobody canceled it
 /// (#2069).
 #[test]
 fn a_page_that_cannot_be_fetched_closes_the_run_as_failed() {
@@ -1253,9 +1253,9 @@ fn a_session_refused_while_fetching_assets_fails_the_run() {
 }
 
 /// A cancel that arrives while the pages are read closes the run as
-/// cancelled, the one way a run is recorded as cancelled.
+/// canceled, the one way a run is recorded as canceled.
 #[test]
-fn a_cancel_during_the_run_closes_it_as_cancelled() {
+fn a_cancel_during_the_run_closes_it_as_canceled() {
     let server = MockServer::start();
     let _auth = mock_auth(&server);
     let (create, complete) = mock_run(&server);

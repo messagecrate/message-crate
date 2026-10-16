@@ -193,7 +193,7 @@ CREATE TABLE IF NOT EXISTS imports (
     -- import form named none: such a number keeps its digits and no + form
     -- (#1676). Stated once, when the run is created.
     phone_country TEXT,
-    -- Run status (for example running, completed, failed, cancelled).
+    -- Run status (for example running, completed, failed, canceled).
     status TEXT NOT NULL,
     -- When the import started.
     started_at TEXT NOT NULL,
@@ -254,7 +254,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_imports_active_account
 
 -- One row per Export Run: what was asked for and how much matched, never
 -- message content. Recorded permanently whether the run completed, failed
--- or was cancelled, so every read of message data by a program leaves a
+-- or was canceled, so every read of message data by a program leaves a
 -- record.
 CREATE TABLE IF NOT EXISTS exports (
     -- Surrogate primary key for this export run.
@@ -302,7 +302,7 @@ CREATE TABLE IF NOT EXISTS exports (
     scope_message_ids TEXT,
     -- Client/tool name that ran the export (optional).
     tool TEXT,
-    -- Run status: running, completed, failed, or cancelled.
+    -- Run status: running, completed, failed, or canceled.
     status TEXT NOT NULL,
     -- When the export started.
     started_at TEXT NOT NULL,

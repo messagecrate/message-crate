@@ -112,7 +112,7 @@ fn removes_the_files_an_archive_recorded_and_nothing_else() {
 
 /// An archive that writes a directory per conversation records each one, so
 /// the next clean removes it with everything in it, even when a run stopped
-/// before the directory held anything the mail clean would recognise. A
+/// before the directory held anything the mail clean would recognize. A
 /// directory nothing recorded stays.
 #[test]
 fn removes_the_directories_an_archive_recorded() {
@@ -158,7 +158,7 @@ fn marks_an_empty_directory() {
 }
 
 #[test]
-fn export_artifacts_are_recognised_by_name() {
+fn export_artifacts_are_recognized_by_name() {
     for name in [
         "a.csv",
         "a.csv.tmp",

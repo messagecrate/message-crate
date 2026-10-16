@@ -129,7 +129,7 @@ export function tapbackGroups(m: Message): TapbackGroup[] {
 
 /**
  * A chat bubble's shape, marked or not: round corners with the tail corner on
- * the author's side, its width, padding and text size. Each caller adds colours.
+ * the author's side, its width, padding and text size. Each caller adds colors.
  */
 function bubbleShape(mine: boolean): string {
   const corners = mine ? "rounded-[18px] rounded-br-[4px]" : "rounded-[18px] rounded-bl-[4px]";

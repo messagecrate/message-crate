@@ -156,7 +156,7 @@ pub fn check_service_carries(
 /// The address's shape picks the identity's type among those the service
 /// carries, so an address with an `@` is `other` on WhatsApp.
 //
-// Any other word is refused, naming the two. Read as `phone`, a misspelt
+// Any other word is refused, naming the two. Read as `phone`, a misspelled
 // `whatsap` put an identity on Text Message without a word (#1630), and
 // `email` lived on as a second name for `phone` (#1631).
 //

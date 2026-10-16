@@ -221,7 +221,7 @@ impl Session {
         self.away.get().copied()
     }
 
-    /// Whether the run must stop: the caller cancelled it, the server
+    /// Whether the run must stop: the caller canceled it, the server
     /// refused the session token, or the server was not there to take a
     /// request.
     ///

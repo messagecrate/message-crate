@@ -483,7 +483,7 @@ impl ExpiryMoves {
 }
 
 /// Holds a flag set while a move runs, and clears it when dropped, so a move
-/// that fails, panics or is cancelled lets the next one start.
+/// that fails, panics or is canceled lets the next one start.
 struct MoveRunning(Arc<AtomicBool>);
 
 impl MoveRunning {

@@ -8,7 +8,7 @@ import { focusRingClass } from "../lib/uiStyles";
  * slides to the selected tab. Settings and the login card both use it, so a
  * change to how a tab looks is made here once (#1728).
  *
- * The tone comes from React Aria's data attributes: muted, the text colour when
+ * The tone comes from React Aria's data attributes: muted, the text color when
  * hovered or selected, and dimmed with the not-allowed cursor when disabled
  * (`web/STYLE_GUIDE.md`, "Disabled"). React Aria never marks a disabled tab
  * hovered, so a disabled tab keeps its muted tone under the pointer.

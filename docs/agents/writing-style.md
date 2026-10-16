@@ -120,7 +120,7 @@ A glossary at the bottom arrives too late to prevent the misreading.
 
 ## Uncertainty is stated once
 
-An unknown is named plainly and then set aside. Neighbouring sentences are not
+An unknown is named plainly and then set aside. Neighboring sentences are not
 hedged to cover it:
 
 > How the sections are delimited is not yet established. What matters here is

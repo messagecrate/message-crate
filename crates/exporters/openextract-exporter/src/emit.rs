@@ -429,7 +429,7 @@ fn member(party: &str) -> Participant {
 /// the person the `Conversation` value names (`label`).
 ///
 /// It is keyed by an address when either gives one, the sender's first. A
-/// chat labelled with a person's name whose rows carry that person's number
+/// chat labeled with a person's name whose rows carry that person's number
 /// is keyed by the number the source recorded. Only when neither is an
 /// address is it keyed by the name, the label's first: the exporter records
 /// the name and no address, and the server resolves it against contacts on

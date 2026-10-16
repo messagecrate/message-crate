@@ -197,7 +197,7 @@ impl tracing::Subscriber for AskEachTime {
     fn exit(&self, _: &tracing::span::Id) {}
 }
 
-/// The server's log layer: the stderr format without colour, one event per
+/// The server's log layer: the stderr format without color, one event per
 /// line.
 fn file_layer<S>(target: FileTarget) -> impl tracing_subscriber::Layer<S>
 where

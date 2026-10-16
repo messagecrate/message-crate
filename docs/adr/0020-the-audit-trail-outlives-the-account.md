@@ -40,7 +40,7 @@ When an account is deleted, an entry keeps what was asked for and how much
 matched, and loses what describes the person's messages.
 An Export Run loses its search text, its hand-picked conversation and message ids, and its list of messages.
 An Import Run loses its issues, its form, its run directory, its source details and the addresses the backup sent from.
-A run still open is closed as cancelled, and the account's live session ends as revoked by whoever deleted it.
+A run still open is closed as canceled, and the account's live session ends as revoked by whoever deleted it.
 Refused logins for a username that matches no account belong to no one and are deleted after 90 days, so that anyone who can reach the server cannot grow the record without limit.
 Such a refusal keeps the username, trimmed, only when it is a valid username, because a person whose browser fills the wrong field types their password there (#2135).
 Any other text is left out, and the entry records the attempt with no username.

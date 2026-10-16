@@ -117,7 +117,7 @@ fn compress_validates_the_minimum_size_before_staging() {
 
 #[test]
 fn compress_reads_the_minimum_size_as_megabytes() {
-    // #1469: the field is labelled in megabytes, and the web app sends the
+    // #1469: the field is labeled in megabytes, and the web app sends the
     // number as typed.
     let mut options = test_options(Vec::new());
     options.attachment_media = MediaMode::Compress;

@@ -12,7 +12,7 @@ import type { AttachmentMediaMode } from "./types";
  * What is worth pinning is the one decision the function makes rather than
  * states: convert and compress share a label, because a person choosing
  * either is watching the same step do the same work, and every mode gets copy
- * of its own so no step is unlabelled.
+ * of its own so no step is unlabeled.
  */
 const MODES: AttachmentMediaMode[] = ["skip", "copy", "convert", "compress"];
 

@@ -349,7 +349,7 @@ fn after_international_prefix<'a>(digits: &'a str, country: &Country) -> Option<
     Some(&digits[found.end()..])
 }
 
-/// The `+` form of `digits`, dialled after `country`'s international
+/// The `+` form of `digits`, dialed after `country`'s international
 /// prefix. Digits that start with no calling code are refused, because the
 /// prefix was then most likely not one: a wrong guess would give a key that
 /// names nobody.
@@ -567,7 +567,7 @@ impl Handle {
 }
 
 /// Whether a value is written as a phone number: after an optional `tel:`,
-/// at least one digit and nothing but digits and the punctuation a dialled
+/// at least one digit and nothing but digits and the punctuation a dialed
 /// number carries.
 fn is_written_as_a_number(value: &str) -> bool {
     let number = value

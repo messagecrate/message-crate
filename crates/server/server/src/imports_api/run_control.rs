@@ -269,7 +269,7 @@ pub(super) fn server_stopping() -> ApiError {
 /// validated when the run was created, names an on-disk directory. The
 /// caller holds the batch's import slot until this returns.
 ///
-/// `client_gone` is cancelled when the batch's client stops waiting. A
+/// `client_gone` is canceled when the batch's client stops waiting. A
 /// batch still waiting for the account's import lock then returns at once
 /// and writes nothing, so its caller frees its slot: nobody waits for its
 /// answer, and the Upload sends the batch again. Once the batch holds the

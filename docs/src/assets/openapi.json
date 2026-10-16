@@ -16469,7 +16469,7 @@
             "description": "Lifecycle status."
           },
           "summary": {
-            "description": "What the person approved at the last Review they passed, which\n`PATCH /v1/imports/{id}` writes with its `summary`. A cancelled run\nkeeps it. A run that completed or failed holds instead the final\ncounts its `POST /v1/imports/{id}/complete` sent, and null when that\nrequest sent none, because completing replaces the plan. Null too\nwhile no Review has stored one."
+            "description": "What the person approved at the last Review they passed, which\n`PATCH /v1/imports/{id}` writes with its `summary`. A canceled run\nkeeps it. A run that completed or failed holds instead the final\ncounts its `POST /v1/imports/{id}/complete` sent, and null when that\nrequest sent none, because completing replaces the plan. Null too\nwhile no Review has stored one."
           },
           "tool": {
             "type": [
@@ -18946,7 +18946,7 @@
                   "description": "Lifecycle status."
                 },
                 "summary": {
-                  "description": "What the person approved at the last Review they passed, which\n`PATCH /v1/imports/{id}` writes with its `summary`. A cancelled run\nkeeps it. A run that completed or failed holds instead the final\ncounts its `POST /v1/imports/{id}/complete` sent, and null when that\nrequest sent none, because completing replaces the plan. Null too\nwhile no Review has stored one."
+                  "description": "What the person approved at the last Review they passed, which\n`PATCH /v1/imports/{id}` writes with its `summary`. A canceled run\nkeeps it. A run that completed or failed holds instead the final\ncounts its `POST /v1/imports/{id}/complete` sent, and null when that\nrequest sent none, because completing replaces the plan. Null too\nwhile no Review has stored one."
                 },
                 "tool": {
                   "type": [

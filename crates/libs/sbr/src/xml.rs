@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 /// The element's attributes as a map with lower-case keys.
 ///
 /// Each value is taken raw and its references decoded, HTML entities such
-/// as `&nbsp;` included. XML attribute-value normalisation is not applied:
+/// as `&nbsp;` included. XML attribute-value normalization is not applied:
 /// it would turn a literal line break in a message into a space, and
 /// SMS Backup & Restore files hold literal line breaks. A reference that is
 /// not a character is dropped and added to `dropped`.

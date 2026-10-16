@@ -145,7 +145,7 @@ fn roster(document: &message_ir::ConversationDocument) -> Vec<&str> {
         .collect()
 }
 
-/// A chat labelled with a name is keyed by the number its incoming rows
+/// A chat labeled with a name is keyed by the number its incoming rows
 /// carry, and that number is the roster. The owner's own number on a sent
 /// row comes first here and must not become the chat's key.
 #[test]

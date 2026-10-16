@@ -54,7 +54,7 @@ fn key_list(unknown: &BTreeMap<String, toml::Value>) -> String {
 
 /// Take a section's known keys, refusing it when it carries any other.
 ///
-/// A key the server does not use is an error, never ignored: a misspelt key
+/// A key the server does not use is an error, never ignored: a misspelled key
 /// would load as its default, and a key that was removed would sit in the
 /// file looking as though it still held.
 fn known_keys<T>(name: &str, section: Section<T>) -> Result<T> {

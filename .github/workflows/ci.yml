@@ -27,12 +27,12 @@ on:
 
 # The group a run joins, by event:
 #   pull_request       CI-refs/pull/<N>/merge  a new push cancels the run before it
-#   push to main       CI-refs/heads/main      never cancelled while it runs
-#   push of a v* tag   CI-refs/tags/v<x.y.z>   never cancelled while it runs
-#   workflow_dispatch  CI-dispatch-<run id>    a group of its own, never cancelled
+#   push to main       CI-refs/heads/main      never canceled while it runs
+#   push of a v* tag   CI-refs/tags/v<x.y.z>   never canceled while it runs
+#   workflow_dispatch  CI-dispatch-<run id>    a group of its own, never canceled
 # A new push to a pull request cancels its previous run, so queued Rust jobs
 # do not sit until the 6-hour default timeout on a branch nobody is waiting for
-# any more. A push run is not cancelled while it runs, because its verdict is
+# any more. A push run is not canceled while it runs, because its verdict is
 # the one that counts. GitHub keeps one waiting run per group, though, so a
 # merge to main while one run works and another waits cancels the one that
 # waits. A manual run gets a group of its own for that reason, so no push run

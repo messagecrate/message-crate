@@ -170,7 +170,7 @@ route functions instead, and the URLs those functions build are asserted in
 
 Two tests keep naming URLs on purpose. `api.test.ts` and `assetUrl.test.ts`
 have the URL as their subject. `AdminUsersPanel.test.tsx` stubs `fetch` and
-throws on an address it does not recognise, so it exercises the real route
+throws on an address it does not recognize, so it exercises the real route
 functions end to end and fails loudly on a rename rather than quietly matching
 nothing — the opposite of the pattern this decision removes.
 

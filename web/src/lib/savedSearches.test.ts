@@ -7,7 +7,7 @@
  * in-flight request, and the browser event announcing a change are gone with
  * the code they covered — that is TanStack Query's job now, and
  * `routeQuery.test.tsx` covers the part of it that is ours. What remains is
- * this module's own behaviour: the shape it reads out of a response, the ids it
+ * this module's own behavior: the shape it reads out of a response, the ids it
  * addresses mutations by, and re-reading the list the sidebar shows after a
  * mutation.
  */

@@ -103,7 +103,7 @@ pub(crate) async fn serve_connections<L: Listener>(
         .expect("the connection slots are never closed");
 }
 
-/// Serve one connection until it closes, or until `stopping` is cancelled
+/// Serve one connection until it closes, or until `stopping` is canceled
 /// and the request in flight on it, if any, has been answered.
 async fn serve_one<I>(
     io: I,

@@ -212,7 +212,7 @@ mod tests {
     /// common error page in front of a server was reported as a JSON parse
     /// failure rather than as the wrong host.
     #[test]
-    fn an_html_error_page_is_recognised_whatever_its_case() {
+    fn an_html_error_page_is_recognized_whatever_its_case() {
         for body in [
             "<!doctype html><html><body>502 Bad Gateway</body></html>",
             "<!DOCTYPE html>",

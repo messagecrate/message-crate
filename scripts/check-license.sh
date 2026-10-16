@@ -12,7 +12,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 EXPECTED_CARGO_LICENSE="LicenseRef-FCL-1.0-ALv2"
-# The three crates that are deliberately not FCL, and the licence each
+# The three crates that are deliberately not FCL, and the license each
 # carries. The helper program links GPL code, so it is GPL; the protocol crate
 # is linked by both the GPL helper and the FCL app, and the chat.db fixture by
 # the tests of both, so those two are permissive. Every other crate is FCL.

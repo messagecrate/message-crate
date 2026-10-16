@@ -37,7 +37,7 @@ pub const EXIT_WITH_PARENT_ARG: &str = "exit-with-parent";
 /// whether its parent is still the process it was given. On Unix a process
 /// whose parent ends gets a new parent, and nothing tells it so, which is why
 /// the server asks. On Windows the server waits on the parent's process
-/// handle, which is signalled the moment the parent ends.
+/// handle, which is signaled the moment the parent ends.
 ///
 /// The server checks at this interval, and `tests/exit_with_parent.rs` in
 /// the server crate fails a server that misses a check. It is part of the

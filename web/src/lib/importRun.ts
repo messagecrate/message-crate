@@ -145,7 +145,7 @@ export async function setImportStage(
 
 /**
  * Close an Import Run the user gave up on, freeing the account's slot. The run is
- * recorded as cancelled with `issues`, the Import Errors it recorded before,
+ * recorded as canceled with `issues`, the Import Errors it recorded before,
  * and `notes`.
  */
 export async function discardImportRun(

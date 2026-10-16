@@ -30,7 +30,7 @@ Both were weighed on issue #104.
 a year of catching up on formats Apple changes with every release, for a
 parser that would still trail the one we have.
 
-**Asking the author for a licence exception.** It depends on one person's
+**Asking the author for a license exception.** It depends on one person's
 answer and does not cover `crabapple` or `crabstep`. It stays available as a
 fallback, below.
 
@@ -41,7 +41,7 @@ the reader is part of Message Crate or a separate program Message Crate runs.
 The FSF's GPL FAQ says two programs that run as separate processes and exchange
 data over pipes are separate works. GPL section 5 says that placing separate
 works on one distribution medium is "mere aggregation" and does not extend
-the licence to the other work. This is that arrangement: a GPL executable, an
+the license to the other work. This is that arrangement: a GPL executable, an
 FCL app that starts it and reads JSON lines from it, a permissive protocol
 crate so neither side links the other, and both shipped in one installer. It
 is the pattern under which commercial software ships ffmpeg and git.
@@ -98,23 +98,23 @@ rule under "Adapted GPL code" below covers it.
 - `imessage-reader` is the one program beside the server, which ADR 0001's
   amendment accounts for.
 - Every desktop installer conveys a GPL program and owes its recipients the
-  licence text and the corresponding source.
+  license text and the corresponding source.
 - A future GPL-family dependency needs a second process on the same pattern,
   or a different crate.
 
 ## The rules
 
-### Which licences a dependency may carry
+### Which licenses a dependency may carry
 
-Permissive licences are accepted for dependencies. The list is the `allow`
+Permissive licenses are accepted for dependencies. The list is the `allow`
 array under `[licenses]` in `deny.toml`: MIT, Apache-2.0, the BSD variants,
 ISC, Zlib, Unicode, CC0, BSL-1.0, MPL-2.0, and the handful of other permissive
-texts the current graph carries. A crate under a licence not on that list
+texts the current graph carries. A crate under a license not on that list
 fails `cargo deny check licenses`, and the answer is to find a permissively
-licensed alternative or to add the licence to the list after reading it, in
+licensed alternative or to add the license to the list after reading it, in
 the same pull request, with the reason in the commit message.
 
-GPL-family licences (GPL, LGPL, AGPL, and anything `-or-later`) are accepted
+GPL-family licenses (GPL, LGPL, AGPL, and anything `-or-later`) are accepted
 only behind a process boundary. The GPL code lives in its own program, that
 program is published under the GPL, and the FCL code starts it as a child
 process and talks to it over pipes. The two share no address space and link
@@ -198,10 +198,10 @@ links an exporter.
 ### What we ship and what we owe
 
 Every desktop installer conveys a GPL program, so its recipients are owed the
-licence text and the corresponding source (GPL sections 4 and 6). What meets
+license text and the corresponding source (GPL sections 4 and 6). What meets
 that:
 
-- **A licence file beside the reader.** `src-tauri/build.rs` joins
+- **A license file beside the reader.** `src-tauri/build.rs` joins
   `crates/helpers/imessage-reader/NOTICE.txt` (what the program is, what it
   links, what it adapted, and where its source is, with the Product Version
   filled in) and the crate's `LICENSE` (the GPL text) into
@@ -209,7 +209,7 @@ that:
   lists under `bundle.resources`. The file is generated, not committed.
 - **A notice in the app.** Settings → System shows a "Third-party software"
   block in the desktop app only (the website ships no reader), naming the
-  Apple Messages reader (imessage-reader), its licence, and two links built
+  Apple Messages reader (imessage-reader), its license, and two links built
   from the app's own Build: the reader's directory at the release tag
   (`.../tree/v<version>/crates/helpers/imessage-reader`) and the GPL text at
   the same tag. The tag, not `main`, so an old install keeps pointing at the
@@ -239,27 +239,27 @@ Three settings in `deny.toml` carry the rule:
   `LicenseRef-FCL-1.0-ALv2` so the workspace crates pass.
 - `[licenses] exceptions` names the four crates that may carry
   `GPL-3.0-or-later`: `imessage-database`, `crabstep`, `crabapple`, and
-  `imessage-reader`. A GPL licence on any other crate fails.
+  `imessage-reader`. A GPL license on any other crate fails.
 - `[bans] deny` lists the GPL libraries with `wrappers`, so
   `imessage-database` and `crabapple` may be depended on by `imessage-reader`
   alone, and `crabstep` by `imessage-database` alone. An FCL crate that adds
-  one of them fails the bans check even though the licence check would have
+  one of them fails the bans check even though the license check would have
   let the crate through on its exception.
 
 `scripts/check-license.sh` (in CI on every pull request) checks the other
 direction: every tracked `Cargo.toml` declares `LicenseRef-FCL-1.0-ALv2`
 except the three crates in its `LICENCE_EXCEPTIONS` table, which must declare
-exactly the licence recorded there.
+exactly the license recorded there.
 
 `./scripts/check-all.sh` runs both `cargo deny` invocations locally when
 `cargo-deny` is installed (`cargo install cargo-deny`).
 
 ### Adding a dependency
 
-A crate under MIT, Apache-2.0, or another licence already on the list needs
-nothing beyond the normal review. A crate under a permissive licence not yet
-on the list needs the licence read and added to `allow` in the same pull
+A crate under MIT, Apache-2.0, or another license already on the list needs
+nothing beyond the normal review. A crate under a permissive license not yet
+on the list needs the license read and added to `allow` in the same pull
 request, with the reason in the commit message. A crate under a GPL-family
-licence needs a second process, on the pattern above, or a different crate;
+license needs a second process, on the pattern above, or a different crate;
 there is no third option. Manifest and `LICENSE` file must agree for every
 crate that is not FCL, and `scripts/check-license.sh` must know about it.

@@ -681,7 +681,7 @@ pub enum WaitError {
         /// Why, as [`DownloadError`] says it.
         reason: String,
     },
-    /// The import was cancelled while it waited.
+    /// The import was canceled while it waited.
     Cancelled,
 }
 

@@ -589,7 +589,7 @@ fn jsonl_refuses_a_version_9_file_by_name() {
 }
 
 /// Message texts that a careless writer or reader damages: line endings a
-/// normaliser rewrites, an mbox `From ` line, CSV quoting, multi-code-point
+/// normalizer rewrites, an mbox `From ` line, CSV quoting, multi-code-point
 /// emoji, and no text at all beside an attachment. Every per-conversation
 /// format writes each one and reads it back byte for byte.
 #[test]

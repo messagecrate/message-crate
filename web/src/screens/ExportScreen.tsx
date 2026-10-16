@@ -77,7 +77,7 @@ function formatLabel(id: ExportFormat): string {
  * that holds its input, and the conversion writes beside them. When the export
  * finishes, the desktop deletes the JSON Lines and moves the result up, so the
  * directory holds only the result; a directory left empty because the result
- * went elsewhere is deleted. A failed or cancelled export deletes its
+ * went elsewhere is deleted. A failed or canceled export deletes its
  * directory whole, so no copy of the conversations is left behind.
  *
  * The scope is Everything or Search. The screen opens in Search when its URL

@@ -120,7 +120,7 @@ pub struct MailMessage {
     pub exported_at_unix_ms: Option<i64>,
     /// The message itself (headers read guid, timestamp, direction, service,
     /// kind, sender, subject, text, and the iMessage / source bags from here;
-    /// its `attachments` list is ignored in favour of `attachments` below).
+    /// its `attachments` list is ignored in favor of `attachments` below).
     pub message: Message,
     /// MIME parts plus the `X-ME-Attachment-Meta` JSON (bytes loaded).
     pub attachments: Vec<MailAttachment>,
@@ -757,7 +757,7 @@ fn build_eml(msg: &MailMessage) -> Result<Vec<u8>> {
 /// Every byte of the text is quoted-printable encoded, each CR and LF as
 /// `=0D` and `=0A` (RFC 2045 section 6.7, rule 1), so the text's own line
 /// endings, trailing newlines and trailing whitespace come back unchanged
-/// instead of being folded to the CRLF a text body is canonicalised to
+/// instead of being folded to the CRLF a text body is canonicalized to
 /// (RFC 2049 section 4). The encoded body ends in a soft line break (`=` at
 /// the end of a line, rule 5), which encodes nothing: the line ending a
 /// `.eml` file or an mbox record adds after it belongs to that soft break

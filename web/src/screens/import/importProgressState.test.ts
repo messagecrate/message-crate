@@ -72,7 +72,7 @@ describe("stepsFor", () => {
   });
 
   it("has no Media stage under copy or skip", () => {
-    // There is no Media stage in these modes, so a greyed-out row would be
+    // There is no Media stage in these modes, so a grayed-out row would be
     // promising work that will never run.
     expect(stepsFor("copy").map((s) => s.label)).toEqual(["Staging", "Upload"]);
     expect(stepsFor("skip").map((s) => s.label)).toEqual(["Staging", "Upload"]);
@@ -114,7 +114,7 @@ describe("stepIndexFor", () => {
     expect(stepIndexFor("media", "copy")).toBe(-1);
   });
 
-  it("returns -1, not undefined, for a step string this build doesn't recognise", () => {
+  it("returns -1, not undefined, for a step string this build doesn't recognize", () => {
     // The event comes off the wire unvalidated. A lookup miss must resolve
     // to "no row"; `undefined` would make every `index < stepIndex` and
     // `index > stepIndex` comparison false at once, marking every row

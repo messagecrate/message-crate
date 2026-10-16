@@ -46,7 +46,7 @@ impl std::fmt::Display for DemoSize {
 /// backups, and how often messages get photos or replies.
 ///
 /// A key the generator does not use is an error, never ignored
-/// (`deny_unknown_fields` here and on every section): a misspelt key would
+/// (`deny_unknown_fields` here and on every section): a misspelled key would
 /// otherwise be dropped and the run would differ from what the file says.
 /// The refusal names the key, its line, and the keys that section takes.
 #[derive(Debug, Clone, Deserialize)]
@@ -438,7 +438,7 @@ mod tests {
     }
 
     /// A key the generator does not use is refused wherever it sits, by its
-    /// name and its line: a misspelt key otherwise loads as nothing at all.
+    /// name and its line: a misspelled key otherwise loads as nothing at all.
     #[test]
     fn settings_with_an_unknown_key_are_refused_naming_the_key_and_its_line() {
         for (section, key) in [("[contacts]\n", "cuont"), ("[sources]\n", "overlap")] {
