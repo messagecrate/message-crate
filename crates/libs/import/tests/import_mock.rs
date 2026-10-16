@@ -812,6 +812,56 @@ fn an_append_after_a_failed_replace_sends_what_the_replace_did_not_import() {
     );
 }
 
+/// A replace Upload that stops before it sends its first batch has wiped
+/// nothing on the server, because the server wipes the source with that
+/// batch. So the journal keeps the rows of the Uploads before it, and the
+/// next append skips what they sent rather than send it all again (#3017).
+/// Here the server is away when the replace asks about the conversation's
+/// attachments, which it does before the batch.
+#[test]
+fn a_replace_that_sends_no_batch_keeps_the_journal() {
+    let server = mock_server();
+    let _auth = mock_session(&server);
+    let mut head = server.mock(|when, then| {
+        when.method("HEAD").path_includes("/v1/assets/");
+        then.status(200)
+            .json_body(json!({ "already_present": true }));
+    });
+    let batches = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/7/batches");
+        then.status(200).json_body(json!({
+            "messages": 1,
+            "messages_appended": 1,
+            "conversations": 1
+        }));
+    });
+    let dir = tempdir().unwrap();
+    two_attachment_documents(dir.path(), "a.txt", b"first file", "b.txt", b"second file");
+    let cfg = mock_server_config(dir.path(), server.base_url());
+    assert!(run(&cfg, None).unwrap().ok);
+    assert_eq!(journal_events(dir.path(), "file_ok").len(), 1);
+
+    head.delete();
+    let _away = server.mock(|when, then| {
+        when.method("HEAD").path_includes("/v1/assets/");
+        then.status(502);
+    });
+    let replace = ImportConfig {
+        mode: ImportMode::Replace,
+        ..cfg
+    };
+    let replaced = run(&replace, None).unwrap();
+
+    assert_eq!(replaced.server_away, Some(ServerAway::Unavailable));
+    assert_eq!(batches.calls(), 1, "the replace sent no batch");
+    assert_eq!(
+        journal_events(dir.path(), "file_ok").len(),
+        1,
+        "the append's rows are kept"
+    );
+    assert_eq!(journaled_guids(dir.path()), vec!["guid-1".to_string()]);
+}
+
 #[test]
 fn profiles_attachment_upload_phases() {
     const ASSET_BYTES: &[u8] = b"attachment profile fixture";
