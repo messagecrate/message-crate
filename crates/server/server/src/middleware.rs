@@ -14,8 +14,8 @@ use tracing::Level;
 use crate::api_error::ApiError;
 use crate::limits::MAX_REQUEST_BODY_BYTES;
 use crate::problem::Problem;
-use crate::request_body::UploadTimeLimits;
-use crate::request_body::{declared_over, upload_body_bounded};
+use crate::request_body::BodyTimeLimits;
+use crate::request_body::{body_time_bounded, declared_over};
 
 /// Origins the packaged desktop app runs from. A Tauri window is not a page on
 /// the web, so its origin is fixed by the platform rather than chosen by
@@ -115,8 +115,8 @@ pub(crate) async fn json_body_limit_response(response: Response) -> Response {
 /// part size the upload started with, and the limit as it is now would refuse
 /// every remaining part of an upload the owner lowered the limit under.
 ///
-/// Every body is held to time as well as size, with the upload time limits
-/// ([`UploadTimeLimits`](crate::request_body::UploadTimeLimits)), so a client
+/// Every body is held to time as well as size, with the body time limits
+/// ([`BodyTimeLimits`](crate::request_body::BodyTimeLimits)), so a client
 /// that stops sending a body part-way, or sends a byte now and then, holds its
 /// connection only so long (#2100).
 /// The three uploads ([`reads_its_own_body_in_time`]) are left to hold
@@ -124,7 +124,7 @@ pub(crate) async fn json_body_limit_response(response: Response) -> Response {
 /// reading.
 pub(crate) async fn limit_request_body(
     axum::extract::State(db): axum::extract::State<sqlx::SqlitePool>,
-    axum::extract::State(upload_time_limits): axum::extract::State<UploadTimeLimits>,
+    axum::extract::State(body_time_limits): axum::extract::State<BodyTimeLimits>,
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
@@ -151,7 +151,7 @@ pub(crate) async fn limit_request_body(
     let request = request.map(|body| {
         let body = axum::body::Body::new(http_body_util::Limited::new(body, limit));
         if in_time {
-            upload_body_bounded(body, upload_time_limits)
+            body_time_bounded(body, body_time_limits)
         } else {
             body
         }
@@ -160,7 +160,7 @@ pub(crate) async fn limit_request_body(
 }
 
 /// Whether `request` is one of the uploads that hold their body to the
-/// upload time limits themselves: an import batch, which waits for an
+/// body time limits themselves: an import batch, which waits for an
 /// import slot before it reads, a single-request attachment upload, and a
 /// part of a multipart one. Each starts the clock when it starts reading,
 /// and a clock started on arrival would count the wait for a slot against

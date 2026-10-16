@@ -63,7 +63,7 @@ fn a_stored_name_gives_its_fingerprint_and_any_other_name_gives_none() {
     }
 }
 
-/// `[server] upload_stall_secs` at its default, the limit the sweep tests
+/// `[server] body_stall_secs` at its default, the limit the sweep tests
 /// hold uploads to.
 pub(crate) const STALL: Duration = Duration::from_secs(60);
 
