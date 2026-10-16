@@ -437,18 +437,21 @@ impl RunDirectories {
     ///
     /// Returns an error when the record cannot be read.
     pub fn runs_of(&self, signed_in: &SignedIn) -> Result<Vec<DirectoryOfRun>, String> {
-        Ok(self
-            .read()?
-            .directories
-            .into_iter()
-            .filter_map(|made| {
-                let account = account_of(&import_run_log(&self.logs, &made.path))?;
+        Ok(self.runs_in(&made_paths(self.read()?), signed_in))
+    }
+
+    /// The directories among `made` whose log ties them to a run of
+    /// `signed_in`, each with that run's id.
+    fn runs_in(&self, made: &[PathBuf], signed_in: &SignedIn) -> Vec<DirectoryOfRun> {
+        made.iter()
+            .filter_map(|path| {
+                let account = account_of(&import_run_log(&self.logs, path))?;
                 signed_in.ran(&account).then(|| DirectoryOfRun {
-                    run_dir: made.path.display().to_string(),
+                    run_dir: path.display().to_string(),
                     import_run_id: account.import_run_id,
                 })
             })
-            .collect())
+            .collect()
     }
 
     /// The disk space the run directories of `signed_in`'s Import Runs take
@@ -461,14 +464,11 @@ impl RunDirectories {
     ///
     /// Returns an error when the record cannot be read.
     pub fn bytes_of(&self, signed_in: &SignedIn) -> Result<u64, String> {
-        let made: Vec<PathBuf> = self
-            .read()?
-            .directories
-            .into_iter()
-            .map(|made| made.path)
-            .collect();
+        // One read, so the runs measured and the runs skipped inside them
+        // come from the same record.
+        let made = made_paths(self.read()?);
         Ok(self
-            .runs_of(signed_in)?
+            .runs_in(&made, signed_in)
             .iter()
             .map(|run| {
                 let run = Path::new(&run.run_dir);
@@ -493,11 +493,7 @@ impl RunDirectories {
             .root
             .clone()
             .unwrap_or_else(|| self.default_root.clone());
-        let mut tops: Vec<PathBuf> = record
-            .directories
-            .into_iter()
-            .map(|made| made.path)
-            .collect();
+        let mut tops = made_paths(record);
         // A Staging Directory not made yet holds nothing.
         if let Ok(root) = root.canonicalize() {
             tops.push(root);
@@ -622,6 +618,15 @@ fn device_of(metadata: &std::fs::Metadata) -> Option<u64> {
 #[cfg(not(unix))]
 fn device_of(_metadata: &std::fs::Metadata) -> Option<u64> {
     None
+}
+
+/// The run directories `record` lists.
+fn made_paths(record: Record) -> Vec<PathBuf> {
+    record
+        .directories
+        .into_iter()
+        .map(|made| made.path)
+        .collect()
 }
 
 /// The bytes the files under `directory` hold, `directory` included, leaving

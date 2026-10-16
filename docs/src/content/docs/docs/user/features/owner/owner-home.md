@@ -68,7 +68,9 @@ An Import Run already under way keeps the limit it started with, so its Staging 
 ### Staging Directory on this computer
 
 In the desktop app, **Staging Directory on this computer** says how much disk space the whole Staging Directory takes on the computer running the app.
-That is everything in the directory **Settings → System** names, the Import Runs of every account that imports from this computer included, into this Message Crate or another, and any run still staged under an earlier setting.
+That is everything in the directory **Settings → System** names.
+It includes the Import Runs of every account that imports from this computer, into this Message Crate or another.
+It also counts any run still staged under an earlier setting.
 The Staging Directory is on that computer, so a browser doesn't show it.
 The size is measured when Server Settings opens.
 Each account sees what its own Import Runs take under [Settings → System](/docs/user/features/settings/system/#space-used).

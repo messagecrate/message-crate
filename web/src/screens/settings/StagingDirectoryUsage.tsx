@@ -73,7 +73,9 @@ export function AccountStagingUsage({ className }: { className: string }) {
   return (
     <UsageLine
       bytes={usage.data}
-      error={usage.error ?? server.error}
+      // The server's error only when it is why nothing was measured: a later
+      // read of the server that fails leaves a measurement already made.
+      error={usage.error ?? (messageCrateId === undefined ? server.error : null)}
       says={(size) => `Your Import Runs on this computer take up ${size}.`}
       className={className}
     />

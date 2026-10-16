@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, screen } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { act, cleanup, render as renderPlain, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setBaseUrl } from "../../lib/api";
 import { APP_BUILD } from "../../lib/build";
@@ -13,7 +14,7 @@ import {
   startFakeClock,
   stopFakeClock,
 } from "../../test/fakeTimers";
-import { authModule, renderWithProviders as render } from "../../test/providers";
+import { authModule, renderWithProviders as render, testQueryClient } from "../../test/providers";
 import { MIB } from "../../test/units";
 import { fill, setupUser } from "../../test/user";
 import { SystemSection } from "./SystemSection";
@@ -149,6 +150,23 @@ describe("SystemSection", () => {
     expect(accountStagingBytes).not.toHaveBeenCalled();
     expect(screen.getByRole("alert")).toHaveTextContent("Could not measure the Staging Directory.");
     expect(screen.queryByText("Measuring…")).toBeNull();
+  });
+
+  it("keeps a measurement when a later read of the server fails", async () => {
+    accountStagingBytes.mockResolvedValue(2 * 1024 * MIB);
+    const client = testQueryClient();
+    renderPlain(
+      <QueryClientProvider client={client}>
+        <SystemSection />
+      </QueryClientProvider>,
+    );
+    await settle();
+    serverState.mockRejectedValue(new TypeError("Failed to fetch"));
+    await act(() => client.refetchQueries());
+    await settle();
+
+    expect(screen.getByText("Your Import Runs on this computer take up 2.0 GB.")).toBeTruthy();
+    expect(screen.queryByText(/Could not measure/)).toBeNull();
   });
 
   it("measures nothing in a browser", async () => {
