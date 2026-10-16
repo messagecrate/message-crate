@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use crate::personas::Roster;
 
 /// The columns of the address book, as the server's Export writes them.
-const ADDRESS_BOOK_HEADER: &str = "contact_id,display_name,groups,service,identity_type,identity";
+const ADDRESS_BOOK_HEADER: &str = "contact_id,display_name,service,identity,groups";
 
 /// Write `contacts.csv`, the demo's address book, in the format the server
 /// exports and loads: one row per identity.
@@ -32,19 +32,15 @@ pub fn write_address_book(config_dir: &Path, roster: &Roster) -> Result<()> {
     let mut out = String::from(ADDRESS_BOOK_HEADER);
     out.push('\n');
     for (index, c) in roster.contacts.iter().enumerate() {
-        let lead = format!(
-            "{},{},{}",
-            contact_id(index),
-            csv_field(&c.display_hint()),
-            csv_field(&c.groups.join(";"))
-        );
+        let lead = format!("{},{}", contact_id(index), csv_field(&c.display_hint()));
+        let groups = csv_field(&c.groups.join(";"));
         for phone in &c.phones {
-            writeln!(out, "{lead},phone,phone,{}", csv_field(phone))?;
+            writeln!(out, "{lead},Text Message,{},{groups}", csv_field(phone))?;
         }
         if c.has_whatsapp {
             writeln!(
                 out,
-                "{lead},whatsapp,phone,{}",
+                "{lead},WhatsApp,{},{groups}",
                 csv_field(c.primary_phone())
             )?;
         }

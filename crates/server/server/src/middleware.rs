@@ -216,11 +216,12 @@ pub(crate) async fn no_store_unless_set(
 ///
 /// Applied to the `/v1` routes only, through `route_layer`; the static app,
 /// `/health` and the OpenAPI UI are mounted outside it, so they keep
-/// producing what they produce. Five routes answer bytes, not JSON, and are
+/// producing what they produce. Six routes answer bytes, not JSON, and are
 /// let through here by path: the asset download, its preview and its
 /// thumbnail stream a file's own bytes (the preview and the thumbnail under
-/// `HEAD` as well), the address book export answers
-/// `text/csv`, and a file of the server's log downloads as `text/plain`.
+/// `HEAD` as well), the address book export and the address book written
+/// from a vCard file answer `text/csv`, and a file of the server's log
+/// downloads as `text/plain`.
 pub(crate) async fn require_json_acceptable(
     request: axum::extract::Request,
     next: axum::middleware::Next,
@@ -301,10 +302,14 @@ fn is_upload_part(request: &axum::extract::Request) -> bool {
     })
 }
 
-/// `POST /v1/contacts/address-book`: the address book as `text/csv`.
+/// `POST /v1/contacts/address-book` and `POST /v1/contacts/vcard-address-book`:
+/// the address book as `text/csv`.
 fn is_address_book_export(request: &axum::extract::Request) -> bool {
     request.method() == axum::http::Method::POST
-        && request.uri().path() == "/v1/contacts/address-book"
+        && matches!(
+            request.uri().path(),
+            "/v1/contacts/address-book" | "/v1/contacts/vcard-address-book"
+        )
 }
 
 /// `GET /v1/server/log-files/{id}`: one file of the server's log as `text/plain`.

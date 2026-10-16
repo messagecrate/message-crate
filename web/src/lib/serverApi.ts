@@ -726,6 +726,24 @@ export function exportAddressBook(body: Schema["GetAddressBookRequest"]): Promis
   return apiClient.postText("/v1/contacts/address-book", body, LONG_CALL);
 }
 
+/**
+ * An address book written from a vCard file, as CSV text, for the person to
+ * edit and load with `loadAddressBook`. `country` is the ISO code a number
+ * written without its `+` code is read in, or null to keep every number as
+ * the card has it. Nothing is stored.
+ */
+export function convertVcardToAddressBook(
+  content: string,
+  country: string | null,
+): Promise<string> {
+  return apiClient.postRawText(
+    withQuery("/v1/contacts/vcard-address-book", query({ country })),
+    content,
+    "text/vcard",
+    LONG_CALL,
+  );
+}
+
 /** Put a contact in the trash. Idempotent: trashing an already-trashed one still answers. */
 export function trashContact(contactId: string | number): Promise<void> {
   return apiClient.post<void>(`/v1/contacts/${encodeURIComponent(String(contactId))}/trash`, {});

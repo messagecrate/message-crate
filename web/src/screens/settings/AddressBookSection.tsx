@@ -7,6 +7,7 @@ import { useRouteMutation } from "../../lib/routeQuery";
 import { type AddressBookLoadMode, loadAddressBook } from "../../lib/serverApi";
 import type { components } from "../../lib/serverApi.types";
 import { focusOutlineClass } from "../../lib/uiStyles";
+import { ConvertVcardFile } from "./ConvertVcardFile";
 import { sectionTitleClass } from "./profileStyles";
 
 /** Largest file the server accepts, mirrored here so the refusal is immediate. */
@@ -54,7 +55,8 @@ function refusalLines(err: unknown): string[] {
 
 /**
  * Load an address book: the CSV that Export on the Contacts screen writes,
- * edited in a spreadsheet and put back.
+ * edited in a spreadsheet and put back. A vCard file converts to the same
+ * CSV here, for editing before a load.
  *
  * Contacts arrive with message imports, so this is not where they come from.
  * It is how a person names, regroups, and corrects many of them at once. A
@@ -194,6 +196,7 @@ export function AddressBookSection() {
           </ul>
         </div>
       ) : null}
+      <ConvertVcardFile />
     </section>
   );
 }

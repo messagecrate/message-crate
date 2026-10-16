@@ -14,12 +14,14 @@ import { setupUser } from "../../test/user";
 import { AddressBookSection } from "./AddressBookSection";
 
 vi.mock("../../lib/serverApi", () => ({ loadAddressBook: vi.fn() }));
+// The vCard conversion beside Load has tests of its own.
+vi.mock("./ConvertVcardFile", () => ({ ConvertVcardFile: () => null }));
 
 vi.mock("../../lib/authContext", () => authModule({ accountId: 7 }));
 
 const post = vi.mocked(loadAddressBook);
 
-const FILE = "contact_id,display_name,groups,service,identity_type,identity\n";
+const FILE = "contact_id,display_name,service,identity,groups\n";
 
 const NOTHING = {
   contacts_created: 0,

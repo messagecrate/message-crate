@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import Button from "../../components/Button";
 import Checkbox from "../../components/Checkbox";
 import PathPicker from "../../components/PathPicker";
+import PhoneCountrySelect from "../../components/PhoneCountrySelect";
 import type { PhoneTokenFieldHandle } from "../../components/PhoneTokenField";
-import { phoneCountryItems } from "../../components/phoneCountryItems";
 import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
 import { textInputClass } from "../../components/TextField";
 import TimeZoneField from "../../components/TimeZoneField";
@@ -32,9 +32,6 @@ import { formTimeZone } from "./importForm";
 import { MissingProgramNotice } from "./MissingProgramNotice";
 import { mediaJobVerb } from "./reviewForecast";
 
-/** The choice that states no country for the phone. */
-const NO_PHONE_COUNTRY = "none";
-
 /**
  * The country of the phone the backup came from. A backup writes many numbers
  * without their `+` code, as the phone showed them, and nothing in it says
@@ -54,26 +51,13 @@ function PhoneCountryField({
 }) {
   return (
     <StackedField label="Phone's country" optional>
-      <Select
-        selectedKey={value || NO_PHONE_COUNTRY}
-        onSelectionChange={(k) => {
-          if (typeof k === "string") onChange(k === NO_PHONE_COUNTRY ? "" : k);
-        }}
-        aria-label="Phone's country"
+      <PhoneCountrySelect
+        value={value}
+        countries={countries}
+        onChange={onChange}
+        label="Phone's country"
         triggerClassName="!bg-bg"
-      >
-        {[
-          <ListBoxItem
-            key={NO_PHONE_COUNTRY}
-            id={NO_PHONE_COUNTRY}
-            textValue="Not stated"
-            className={selectItemClassName}
-          >
-            Not stated
-          </ListBoxItem>,
-          ...phoneCountryItems(countries),
-        ]}
-      </Select>
+      />
       <p className={hintClass}>
         Numbers written without a country code are read as numbers in this country. Leave it unset
         when the backup holds numbers from more than one country written that way.

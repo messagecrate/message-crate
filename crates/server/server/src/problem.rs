@@ -217,10 +217,11 @@ For an import batch, a line that is JSON and breaks a rule of message-ir (a wron
 For an import batch, `line` carries the line of the request body that could not be read, counted from 1 with blank lines included. It is a line of the batch, not of any file: a client that packed the batch from several files turns it into the file and line it came from.".to_string(),
             Self::UnsupportedMediaType => "The request's `Content-Type` is absent or not one this route accepts. An import body is `application/x-ndjson` or `application/jsonl`; a JSON route takes `application/json`. Send the right header with the same body.".to_string(),
             Self::PayloadTooLarge => format!(
-                "The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading. `PUT /v1/assets/{{sha256}}` caps at the attachment size limit, which the owner sets in Server Settings and `GET /v1/server` reports as `asset_max_bytes`. Each part of a multipart upload caps at the part size the upload was given when it started. Every other cap is fixed in the server: `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/claim` at {}, any other JSON body at {}, an address book loaded with `POST /v1/contacts` at {}, an import batch at {}, the most the desktop app sends in one, and any other body at {}. Send less, or, for an attachment, have the owner raise the limit.",
+                "The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading. `PUT /v1/assets/{{sha256}}` caps at the attachment size limit, which the owner sets in Server Settings and `GET /v1/server` reports as `asset_max_bytes`. Each part of a multipart upload caps at the part size the upload was given when it started. Every other cap is fixed in the server: `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/claim` at {}, any other JSON body at {}, an address book loaded with `POST /v1/contacts` at {}, a vCard file sent to `POST /v1/contacts/vcard-address-book` at {}, an import batch at {}, the most the desktop app sends in one, and any other body at {}. Send less, or, for an attachment, have the owner raise the limit.",
                 byte_size(crate::limits::MAX_AUTH_BODY_BYTES),
                 byte_size(crate::limits::MAX_JSON_BODY_BYTES),
                 byte_size(crate::contacts_api::address_book::MAX_ADDRESS_BOOK_BYTES),
+                byte_size(crate::contacts_api::address_book::MAX_VCARD_BYTES),
                 byte_size(message_crate_api_types::MAX_IMPORT_BATCH_BYTES),
                 byte_size(crate::limits::MAX_REQUEST_BODY_BYTES),
             ),
@@ -345,6 +346,7 @@ mod tests {
                 crate::contacts_api::address_book::MAX_ADDRESS_BOOK_BYTES,
                 "8 MiB",
             ),
+            (crate::contacts_api::address_book::MAX_VCARD_BYTES, "64 MiB"),
             (message_crate_api_types::MAX_IMPORT_BATCH_BYTES, "16 MiB"),
             (crate::limits::MAX_REQUEST_BODY_BYTES, "512 MiB"),
         ] {

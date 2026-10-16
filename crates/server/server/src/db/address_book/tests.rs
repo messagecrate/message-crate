@@ -3,7 +3,7 @@ use crate::db::handles::upsert_handle_row;
 use crate::test_support::ConversationRow;
 
 const ACCOUNT: i64 = 7;
-const HEADER: &str = "contact_id,display_name,groups,service,identity_type,identity";
+const HEADER: &str = "contact_id,display_name,service,identity,groups";
 
 /// A database with the schema and one account, and a connection to it. The
 /// pool and the directory are returned so they outlive the test body.
@@ -189,8 +189,8 @@ async fn loaded(conn: &mut SqliteConnection, text: &str, mode: LoadMode) -> Load
 async fn rows_of_one_contact_that_disagree_on_the_name_are_refused_with_the_row() {
     let (mut conn, _pool, _dir) = account().await;
     let text = file(&[
-        "ada,Ada Lovelace,,phone,phone,+15555550100",
-        "ada,Ada L,,phone,email,ada@example.com",
+        "ada,Ada Lovelace,Text Message,+15555550100,",
+        "ada,Ada L,Email,ada@example.com,",
     ]);
     let reasons = refused(&mut conn, &text, LoadMode::Append).await;
     assert_eq!(reasons.len(), 1, "{reasons:?}");
@@ -205,8 +205,8 @@ async fn rows_of_one_contact_that_disagree_on_the_name_are_refused_with_the_row(
 async fn rows_of_one_contact_that_disagree_on_groups_are_refused_with_the_row() {
     let (mut conn, _pool, _dir) = account().await;
     let text = file(&[
-        "ada,Ada,Family;Work,phone,phone,+15555550100",
-        "ada,Ada,Family,phone,email,ada@example.com",
+        "ada,Ada,Text Message,+15555550100,Family;Work",
+        "ada,Ada,Email,ada@example.com,Family",
     ]);
     let reasons = refused(&mut conn, &text, LoadMode::Append).await;
     assert_eq!(reasons.len(), 1, "{reasons:?}");
@@ -220,9 +220,9 @@ async fn rows_of_one_contact_that_disagree_on_groups_are_refused_with_the_row() 
 async fn a_blank_name_or_groups_cell_agrees_with_the_rows_that_fill_it() {
     let (mut conn, _pool, _dir) = account().await;
     let text = file(&[
-        "ada,Ada,Family;Work,phone,phone,+15555550100",
-        "ada,,,phone,email,ada@example.com",
-        "ada,Ada,work; family,whatsapp,phone,+15555550100",
+        "ada,Ada,Text Message,+15555550100,Family;Work",
+        "ada,,Email,ada@example.com,",
+        "ada,Ada,WhatsApp,+15555550100,work; family",
     ]);
     let counts = loaded(&mut conn, &text, LoadMode::Append).await;
     assert_eq!(counts.contacts_created, 1);
@@ -251,9 +251,9 @@ async fn a_phone_is_stored_under_the_key_an_import_gives_the_same_number() {
     // +65 5555 0100 is no one's number. The note on the `phone` crate's `mod
     // tests` says why.
     let text = file(&[
-        "a,Ada,,phone,phone,(555) 555-0100",
-        "b,Bao,,phone,phone,+65 5555 0100",
-        "c,Cy,,phone,phone,020 7946 0000",
+        "a,Ada,Text Message,(555) 555-0100,",
+        "b,Bao,Text Message,+65 5555 0100,",
+        "c,Cy,Text Message,020 7946 0000,",
     ]);
     loaded(&mut conn, &text, LoadMode::Append).await;
     let keys: Vec<String> = sqlx::query_scalar(
@@ -281,22 +281,53 @@ async fn a_phone_is_stored_under_the_key_an_import_gives_the_same_number() {
 async fn a_phone_that_cannot_be_keyed_is_refused_with_its_row() {
     let (mut conn, _pool, _dir) = account().await;
     let text = file(&[
-        "a,Ada,,phone,phone,+15555550100",
-        "b,Bao,,phone,phone,call me",
-        "c,Cy,,phone,phone,555-0100 x99",
-        "d,Di,,phone,phone,12",
+        "a,Ada,Text Message,+15555550100,",
+        "b,Bao,Text Message,12,",
+        "c,Cy,WhatsApp,1234567890123456,",
     ]);
     let reasons = refused(&mut conn, &text, LoadMode::Append).await;
-    assert_eq!(reasons.len(), 3, "{reasons:?}");
-    assert!(reasons[0].starts_with("row 3: \"call me\" is not a phone number"));
-    assert!(reasons[1].starts_with("row 4: \"555-0100 x99\""));
-    assert!(reasons[2].starts_with("row 5: \"12\""));
+    assert_eq!(reasons.len(), 2, "{reasons:?}");
+    assert!(reasons[0].starts_with("row 3: \"12\" is not a phone number"));
+    assert!(reasons[1].starts_with("row 4: \"1234567890123456\""));
+}
+
+/// The file states no type: the shape picks it among the types the service
+/// carries, as adding an identity on the screen does. Text that is neither a
+/// number nor an address is a name of type `other`, an `@` address on Text
+/// Message is an email address, `Email` names one on Text Message, and one
+/// of WhatsApp's own ids is `other` on WhatsApp, never an email address.
+#[tokio::test]
+async fn a_row_is_typed_by_its_service_and_its_shape() {
+    let (mut conn, _pool, _dir) = account().await;
+    let text = file(&[
+        "a,Ada,Text Message,(555) 555-0100,",
+        "a,Ada,Text Message,Ada@Example.com,",
+        "a,Ada,Email,ada@example.org,",
+        "a,Ada,Text Message,555-0100 x99,",
+        "a,Ada,WhatsApp,+15555550100,",
+        "a,Ada,whatsapp,AMAZON,",
+        "a,Ada,WhatsApp,123456789012345@lid,",
+    ]);
+    loaded(&mut conn, &text, LoadMode::Append).await;
+    let ada = contact_named(&mut conn, "Ada").await;
+    assert_eq!(
+        identities_of(&mut conn, ada).await,
+        [
+            "phone/email/ada@example.com",
+            "phone/email/ada@example.org",
+            "phone/other/555-0100 x99",
+            "phone/phone/5555550100",
+            "whatsapp/other/123456789012345@lid",
+            "whatsapp/other/AMAZON",
+            "whatsapp/phone/+15555550100",
+        ]
+    );
 }
 
 #[tokio::test]
 async fn an_email_is_lowercased() {
     let (mut conn, _pool, _dir) = account().await;
-    let text = file(&["a,Ada,,phone,email,Ada.Lovelace@Example.COM"]);
+    let text = file(&["a,Ada,Email,Ada.Lovelace@Example.COM,"]);
     loaded(&mut conn, &text, LoadMode::Append).await;
     let id = contact_named(&mut conn, "Ada").await;
     assert_eq!(
@@ -309,11 +340,11 @@ async fn an_email_is_lowercased() {
 async fn an_email_without_one_at_sign_and_text_on_both_sides_is_refused_with_its_row() {
     let (mut conn, _pool, _dir) = account().await;
     let text = file(&[
-        "a,Ada,,phone,email,ada.example.com",
-        "b,Bao,,phone,email,@example.com",
-        "c,Cy,,phone,email,cy@",
-        "d,Di,,phone,email,di@home@example.com",
-        "e,Ed,,phone,email,ed@example.com",
+        "a,Ada,Email,ada.example.com,",
+        "b,Bao,Email,@example.com,",
+        "c,Cy,Email,cy@,",
+        "d,Di,Email,di@home@example.com,",
+        "e,Ed,Email,ed@example.com,",
     ]);
     let reasons = refused(&mut conn, &text, LoadMode::Append).await;
     assert_eq!(reasons.len(), 4, "{reasons:?}");
@@ -329,49 +360,68 @@ async fn an_email_without_one_at_sign_and_text_on_both_sides_is_refused_with_its
 async fn an_unknown_service_is_refused_with_its_row() {
     let (mut conn, _pool, _dir) = account().await;
     let text = file(&[
-        "a,Ada,,phone,phone,+15555550100",
-        "b,Bao,,imessage,phone,+15555550101",
+        "a,Ada,Text Message,+15555550100,",
+        "b,Bao,phone,+15555550101,",
+        "c,Cy,iMessage,+15555550102,",
     ]);
     let reasons = refused(&mut conn, &text, LoadMode::Append).await;
-    assert_eq!(reasons.len(), 1, "{reasons:?}");
-    assert!(
-        reasons[0].starts_with("row 3: service \"imessage\""),
-        "{reasons:?}"
+    assert_eq!(
+        reasons,
+        [
+            "row 3: service \"phone\" is not one Message Crate offers; use Text Message, Email, WhatsApp",
+            "row 4: service \"iMessage\" is not one Message Crate offers; use Text Message, Email, WhatsApp",
+        ]
     );
 }
 
-/// A row whose service does not carry its identity type is refused with the
-/// reason, as an identity added by hand is: a load stored an email address on
-/// WhatsApp and a username on Text Message, which nothing else stores (#2212).
+/// A row whose address its service cannot carry is refused, naming the
+/// service and the address: a load stored an email address on WhatsApp,
+/// which nothing else stores (#2212). `Email` names an email address only.
 #[tokio::test]
-async fn an_identity_type_its_service_does_not_carry_is_refused_with_its_row() {
+async fn an_address_its_service_does_not_carry_is_refused_with_its_row() {
     let (mut conn, _pool, _dir) = account().await;
     let text = file(&[
-        "a,Ada,,phone,phone,+15555550100",
-        "b,Bao,,whatsapp,email,bao@example.com",
-        "c,Cy,,phone,username,cy",
-        "d,Di,,whatsapp,username,di",
+        "a,Ada,Text Message,+15555550100,",
+        "b,Bao,WhatsApp,bao@example.com,",
+        "c,Cy,Email,+15555550102,",
+        "d,Di,WhatsApp,15555550103@s.whatsapp.net,",
     ]);
     let reasons = refused(&mut conn, &text, LoadMode::Append).await;
     assert_eq!(
         reasons,
         [
             "row 3: bao@example.com is an email address, and WhatsApp carries no email addresses",
-            "row 4: cy is a username, and Text Message carries no usernames",
-            "row 5: di is a username, and WhatsApp carries no usernames",
+            "row 4: \"+15555550102\" is not an email address: it needs one @ with text on both sides",
+            "row 5: 15555550103@s.whatsapp.net is an email address, and WhatsApp carries no email addresses",
         ]
     );
 }
 
+/// A WhatsApp id such as `…@lid` is stored as `other` and has an `@`. Export
+/// writes it as the account keys it, so the file loads back onto that
+/// identity rather than being read as an email address on WhatsApp.
 #[tokio::test]
-async fn an_unknown_identity_type_is_refused_with_its_row() {
+async fn an_identity_written_as_the_account_keys_it_keeps_its_stored_type() {
     let (mut conn, _pool, _dir) = account().await;
-    let text = file(&["a,Ada,,phone,mobile,+15555550100"]);
-    let reasons = refused(&mut conn, &text, LoadMode::Append).await;
-    assert_eq!(reasons.len(), 1, "{reasons:?}");
-    assert!(
-        reasons[0].starts_with("row 2: identity_type \"mobile\""),
-        "{reasons:?}"
+    let ada = imported(
+        &mut conn,
+        "Ada",
+        &[
+            ("whatsapp", "other", "123456789012345@lid"),
+            ("phone", "other", "55555"),
+        ],
+    )
+    .await;
+    let text = file(&[
+        &format!("{ada},Ada,WhatsApp,123456789012345@lid,"),
+        &format!("{ada},Ada,Text Message,55555,"),
+    ]);
+    let counts = loaded(&mut conn, &text, LoadMode::Edit).await;
+    assert_eq!(counts.identities_added, 0);
+    assert_eq!(counts.identities_removed, 0);
+    assert_eq!(
+        identities_of(&mut conn, ada).await,
+        ["phone/other/55555", "whatsapp/other/123456789012345@lid"]
     );
 }
 
@@ -380,8 +430,8 @@ async fn the_same_identity_under_two_ids_is_refused_with_both_rows() {
     let (mut conn, _pool, _dir) = account().await;
     // Row 3 writes the number another way; it is the same key.
     let text = file(&[
-        "a,Ada,,phone,phone,+15555550100",
-        "b,Bao,,phone,phone,+1 (555) 555-0100",
+        "a,Ada,Text Message,+15555550100,",
+        "b,Bao,Text Message,+1 (555) 555-0100,",
     ]);
     let reasons = refused(&mut conn, &text, LoadMode::Append).await;
     assert_eq!(reasons.len(), 1, "{reasons:?}");
@@ -392,8 +442,8 @@ async fn the_same_identity_under_two_ids_is_refused_with_both_rows() {
 
     // Two rows with a blank id are two contacts, so they collide the same way.
     let text = file(&[
-        ",Ada,,phone,phone,+15555550100",
-        ",Bao,,phone,phone,+15555550100",
+        ",Ada,Text Message,+15555550100,",
+        ",Bao,Text Message,+15555550100,",
     ]);
     let reasons = refused(&mut conn, &text, LoadMode::Append).await;
     assert!(reasons[0].starts_with("row 3: "), "{reasons:?}");
@@ -419,8 +469,8 @@ async fn identities_move_from_an_unknown_holding_one_number_on_two_services() {
     )
     .await;
     let text = file(&[
-        "ada,Ada,,phone,phone,+15555550100",
-        "ada,Ada,,whatsapp,phone,+15555550100",
+        "ada,Ada,Text Message,+15555550100,",
+        "ada,Ada,WhatsApp,+15555550100,",
     ]);
     let counts = loaded(&mut conn, &text, LoadMode::Edit).await;
     assert_eq!(
@@ -467,7 +517,7 @@ async fn a_load_moves_only_the_identity_its_row_lists() {
             ],
         )
         .await;
-        let text = file(&["ada,Ada,,phone,phone,+15555550100"]);
+        let text = file(&["ada,Ada,Text Message,+15555550100,"]);
         let counts = loaded(&mut conn, &text, mode).await;
         assert_eq!(
             counts,
@@ -513,8 +563,8 @@ async fn a_file_that_lists_both_identities_under_two_contacts_places_each_as_wri
         )
         .await;
         let text = file(&[
-            "ada,Ada,,phone,phone,+15555550100",
-            "bao,Bao,,whatsapp,phone,+15555550100",
+            "ada,Ada,Text Message,+15555550100,",
+            "bao,Bao,WhatsApp,+15555550100,",
         ]);
         loaded(&mut conn, &text, mode).await;
         let ada = contact_named(&mut conn, "Ada").await;
@@ -548,7 +598,7 @@ async fn edit_takes_off_the_same_number_on_the_other_service_when_no_row_lists_i
         ],
     )
     .await;
-    let text = file(&[&format!("{ada},Ada,,phone,phone,+15555550100")]);
+    let text = file(&[&format!("{ada},Ada,Text Message,+15555550100,")]);
     let counts = loaded(&mut conn, &text, LoadMode::Edit).await;
     assert_eq!(counts.identities_removed, 1);
     assert_eq!(
@@ -586,10 +636,10 @@ async fn an_identity_moves_between_two_contacts_that_are_both_in_the_file() {
             }
         };
         let mut rows = vec![
-            format!("{first},{first_name},,phone,phone,{}", phone_of(first)),
-            format!("{second},{second_name},,phone,phone,{}", phone_of(second)),
+            format!("{first},{first_name},Text Message,{},", phone_of(first)),
+            format!("{second},{second_name},Text Message,{},", phone_of(second)),
         ];
-        rows.push(format!("{ada},Ada,,phone,email,ada@example.com"));
+        rows.push(format!("{ada},Ada,Email,ada@example.com,"));
         let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
         let counts = loaded(&mut conn, &file(&rows), mode).await;
         assert_eq!(
@@ -624,8 +674,8 @@ async fn an_identity_of_a_named_contact_outside_the_file_is_refused_naming_both_
     let ada = imported(&mut conn, "Ada", &[("phone", "phone", "+15555550100")]).await;
     let bao = imported(&mut conn, "Bao", &[("phone", "phone", "+15555550101")]).await;
     let text = file(&[
-        &format!("{bao},Bao,,phone,phone,+15555550101"),
-        &format!("{bao},Bao,,phone,phone,+15555550100"),
+        &format!("{bao},Bao,Text Message,+15555550101,"),
+        &format!("{bao},Bao,Text Message,+15555550100,"),
     ]);
     for mode in [LoadMode::Append, LoadMode::Edit] {
         let reasons = refused(&mut conn, &text, mode).await;
@@ -669,10 +719,10 @@ async fn an_identity_of_a_trashed_named_contact_is_refused_saying_it_is_in_the_t
          so it cannot move to \"Ada\" (contact {ada}); restore \"Bob\" and add it to the file, \
          or delete \"Bob\" for good, to move it"
     );
-    let without_bob = file(&[&format!("{ada},Ada,,phone,phone,+15555550142")]);
+    let without_bob = file(&[&format!("{ada},Ada,Text Message,+15555550142,")]);
     let with_bob = file(&[
-        &format!("{ada},Ada,,phone,phone,+15555550142"),
-        &format!("{bob},Bob,,,,"),
+        &format!("{ada},Ada,Text Message,+15555550142,"),
+        &format!("{bob},Bob,,,"),
     ]);
     for text in [without_bob, with_bob] {
         for mode in [LoadMode::Append, LoadMode::Edit] {
@@ -695,8 +745,8 @@ async fn an_identity_of_a_trashed_named_contact_is_refused_saying_it_is_in_the_t
 async fn a_blank_id_creates_a_contact_for_each_row() {
     let (mut conn, _pool, _dir) = account().await;
     let text = file(&[
-        ",Ada,,phone,phone,+15555550100",
-        ",Ada,,phone,email,ada@example.com",
+        ",Ada,Text Message,+15555550100,",
+        ",Ada,Email,ada@example.com,",
     ]);
     let counts = loaded(&mut conn, &text, LoadMode::Append).await;
     assert_eq!(counts.contacts_created, 2);
@@ -724,10 +774,10 @@ async fn a_blank_id_creates_a_contact_for_each_row() {
 async fn rows_sharing_an_unknown_id_are_one_new_contact() {
     let (mut conn, _pool, _dir) = account().await;
     let text = file(&[
-        "new-1,Ada,,phone,phone,+15555550100",
-        "new-1,,,phone,email,ada@example.com",
-        "9001,Bao,,phone,phone,+15555550101",
-        "9001,Bao,,phone,email,bao@example.com",
+        "new-1,Ada,Text Message,+15555550100,",
+        "new-1,,Email,ada@example.com,",
+        "9001,Bao,Text Message,+15555550101,",
+        "9001,Bao,Email,bao@example.com,",
     ]);
     let counts = loaded(&mut conn, &text, LoadMode::Append).await;
     assert_eq!(counts.contacts_created, 2);
@@ -751,9 +801,9 @@ async fn a_known_id_renames_the_contact() {
         .unwrap();
     let kept = imported(&mut conn, "Cy", &[("phone", "phone", "+15555550102")]).await;
     let text = file(&[
-        &format!("{by_import},Ada Lovelace,,phone,phone,+15555550100"),
-        &format!("{typed},Bao Nguyen,,,,"),
-        &format!("{kept},,,phone,phone,+15555550102"),
+        &format!("{by_import},Ada Lovelace,Text Message,+15555550100,"),
+        &format!("{typed},Bao Nguyen,,,"),
+        &format!("{kept},,Text Message,+15555550102,"),
     ]);
     let counts = loaded(&mut conn, &text, LoadMode::Append).await;
     assert_eq!(
@@ -803,7 +853,7 @@ async fn a_load_replaces_a_name_the_person_typed() {
         );
     }
 
-    let edited = file(&[&format!("{ada},Ada Lovelace,,phone,phone,+15555550100")]);
+    let edited = file(&[&format!("{ada},Ada Lovelace,Text Message,+15555550100,")]);
     let counts = loaded(&mut conn, &edited, LoadMode::Append).await;
     assert_eq!(
         counts,
@@ -824,7 +874,9 @@ async fn a_load_replaces_a_name_the_person_typed() {
 async fn an_import_does_not_rename_a_contact_a_load_named() {
     let (mut conn, _pool, _dir) = account().await;
     let unknown = imported(&mut conn, "", &[("phone", "phone", "+15555550100")]).await;
-    let text = file(&[&format!("{unknown},Ada Lovelace,,phone,phone,+15555550100")]);
+    let text = file(&[&format!(
+        "{unknown},Ada Lovelace,Text Message,+15555550100,"
+    )]);
     loaded(&mut conn, &text, LoadMode::Append).await;
     let renamed = contacts::propose_name(
         &mut conn,
@@ -859,8 +911,8 @@ async fn append_adds_identities_and_memberships_and_removes_nothing() {
     .await;
     join_group(&mut conn, ada, "Family").await;
     let text = file(&[
-        &format!("{ada},Ada,Work,phone,phone,+15555550100"),
-        &format!("{ada},Ada,Work,phone,email,ada@example.com"),
+        &format!("{ada},Ada,Text Message,+15555550100,Work"),
+        &format!("{ada},Ada,Email,ada@example.com,Work"),
     ]);
     let counts = loaded(&mut conn, &text, LoadMode::Append).await;
     assert_eq!(
@@ -898,8 +950,8 @@ async fn edit_removes_the_identities_and_memberships_the_rows_do_not_list() {
     join_group(&mut conn, ada, "Family").await;
     in_a_conversation(&mut conn, "+15555550109").await;
     let text = file(&[
-        &format!("{ada},Ada,Work,phone,phone,+15555550100"),
-        &format!("{ada},Ada,Work,phone,email,ada@example.com"),
+        &format!("{ada},Ada,Text Message,+15555550100,Work"),
+        &format!("{ada},Ada,Email,ada@example.com,Work"),
     ]);
     let counts = loaded(&mut conn, &text, LoadMode::Edit).await;
     assert_eq!(
@@ -954,7 +1006,7 @@ async fn edit_deletes_an_unlisted_identity_nothing_uses() {
         ],
     )
     .await;
-    let text = file(&[&format!("{ada},Ada,,phone,phone,+15555550100")]);
+    let text = file(&[&format!("{ada},Ada,Text Message,+15555550100,")]);
     let counts = loaded(&mut conn, &text, LoadMode::Edit).await;
     assert_eq!(counts.identities_removed, 1);
     let left: i64 = sqlx::query_scalar(
@@ -975,8 +1027,8 @@ async fn a_group_name_matching_no_contact_group_creates_one() {
     let ada = imported(&mut conn, "Ada", &[("phone", "phone", "+15555550100")]).await;
     join_group(&mut conn, ada, "Family").await;
     let text = file(&[
-        "b,Bao,family;Chess Club,phone,phone,+15555550101",
-        "c,Cy,Chess Club,phone,phone,+15555550102",
+        "b,Bao,Text Message,+15555550101,family;Chess Club",
+        "c,Cy,Text Message,+15555550102,Chess Club",
     ]);
     let counts = loaded(&mut conn, &text, LoadMode::Append).await;
     assert_eq!(counts.groups_created, 1);
@@ -996,7 +1048,7 @@ async fn a_group_name_matching_no_contact_group_creates_one() {
 #[tokio::test]
 async fn a_reserved_group_name_is_refused_with_its_row() {
     let (mut conn, _pool, _dir) = account().await;
-    let text = file(&["a,Ada,Family;Unknown,phone,phone,+15555550100"]);
+    let text = file(&["a,Ada,Text Message,+15555550100,Family;Unknown"]);
     let reasons = refused(&mut conn, &text, LoadMode::Append).await;
     assert_eq!(reasons.len(), 1, "{reasons:?}");
     assert!(
@@ -1011,7 +1063,7 @@ async fn a_nameless_contact_edit_leaves_with_no_identity_is_deleted() {
     let unknown = imported(&mut conn, "", &[("phone", "phone", "+15555550100")]).await;
     let named = imported(&mut conn, "Bao", &[("phone", "phone", "+15555550101")]).await;
     // Both contacts stay in the file with their identity rows taken out.
-    let text = file(&[&format!("{unknown},,,,,"), &format!("{named},Bao,,,,")]);
+    let text = file(&[&format!("{unknown},,,,"), &format!("{named},Bao,,,")]);
 
     // Append removes nothing, so nothing is deleted.
     let counts = loaded(&mut conn, &text, LoadMode::Append).await;
@@ -1053,7 +1105,7 @@ async fn a_contact_absent_from_the_file_is_untouched_in_both_modes() {
         .execute(&mut *conn)
         .await
         .unwrap();
-    let text = file(&[&format!("{ada},Ada Lovelace,,phone,phone,+15555550100")]);
+    let text = file(&[&format!("{ada},Ada Lovelace,Text Message,+15555550100,")]);
     for mode in [LoadMode::Append, LoadMode::Edit] {
         loaded(&mut conn, &text, mode).await;
         assert_eq!(name_of(&mut conn, bao).await.as_deref(), Some("Bao"));
@@ -1077,8 +1129,8 @@ async fn the_rows_a_load_makes_carry_the_address_book_origin() {
     let (mut conn, _pool, _dir) = account().await;
     imported(&mut conn, "", &[("phone", "phone", "+15555550100")]).await;
     let text = file(&[
-        "a,Ada,,phone,phone,+15555550100",
-        "a,Ada,,phone,email,ada@example.com",
+        "a,Ada,Text Message,+15555550100,",
+        "a,Ada,Email,ada@example.com,",
     ]);
     loaded(&mut conn, &text, LoadMode::Append).await;
     let rows: Vec<(String, String, String, String)> = sqlx::query_as(
@@ -1127,10 +1179,10 @@ async fn a_refused_load_names_every_bad_row_and_writes_nothing() {
     let ada = imported(&mut conn, "Ada", &[("phone", "phone", "+15555550100")]).await;
     let before = picture(&mut conn).await;
     let text = file(&[
-        &format!("{ada},Ada Lovelace,New Group,phone,phone,+15555550100"),
-        "b,Bao,,phone,phone,+15555550101",
-        "c,Cy,,sms,phone,+15555550102",
-        "d,Di,,phone,email,nobody",
+        &format!("{ada},Ada Lovelace,Text Message,+15555550100,New Group"),
+        "b,Bao,Text Message,+15555550101,",
+        "c,Cy,sms,+15555550102,",
+        "d,Di,Email,nobody,",
     ]);
     for mode in [LoadMode::Append, LoadMode::Edit] {
         let reasons = refused(&mut conn, &text, mode).await;
@@ -1151,7 +1203,7 @@ async fn a_refused_load_names_every_bad_row_and_writes_nothing() {
 }
 
 #[tokio::test]
-async fn a_file_without_the_six_columns_is_refused() {
+async fn a_file_without_the_five_columns_is_refused() {
     let (mut conn, _pool, _dir) = account().await;
     let reasons = refused(
         &mut conn,
@@ -1169,7 +1221,7 @@ async fn a_file_without_the_six_columns_is_refused() {
 #[tokio::test]
 async fn a_new_contact_with_no_name_and_no_identity_is_refused_with_its_row() {
     let (mut conn, _pool, _dir) = account().await;
-    let text = file(&["a,Ada,,phone,phone,+15555550100", "b,,Family,,,"]);
+    let text = file(&["a,Ada,Text Message,+15555550100,", "b,,,,Family"]);
     let reasons = refused(&mut conn, &text, LoadMode::Append).await;
     assert_eq!(
         reasons,
@@ -1191,13 +1243,13 @@ async fn a_row_with_more_fields_than_the_header_is_refused_with_its_row() {
     .await;
     join_group(&mut conn, ada, "Family").await;
     let before = picture(&mut conn).await;
-    let text = file(&[&format!("{ada},Lovelace, Ada,,,,")]);
+    let text = file(&[&format!("{ada},Lovelace, Ada,,,")]);
     for mode in [LoadMode::Append, LoadMode::Edit] {
         let reasons = refused(&mut conn, &text, mode).await;
         assert_eq!(
             reasons,
             [
-                "row 2: has 7 fields where the header has 6; put a cell that holds a comma in double quotes"
+                "row 2: has 6 fields where the header has 5; put a cell that holds a comma in double quotes"
             ]
         );
         assert_eq!(picture(&mut conn).await, before, "the load wrote");
@@ -1209,7 +1261,7 @@ async fn a_row_with_more_fields_than_the_header_is_refused_with_its_row() {
 #[tokio::test]
 async fn a_row_with_fewer_fields_than_the_header_reads_the_missing_cells_as_blank() {
     let (mut conn, _pool, _dir) = account().await;
-    let text = file(&["a,Ada", "a,,,phone,phone,+15555550100"]);
+    let text = file(&["a,Ada", "a,,Text Message,+15555550100,"]);
     let counts = loaded(&mut conn, &text, LoadMode::Append).await;
     assert_eq!(counts.contacts_created, 1);
     let ada = contact_named(&mut conn, "Ada").await;
@@ -1224,9 +1276,9 @@ async fn a_row_with_fewer_fields_than_the_header_reads_the_missing_cells_as_blan
 #[tokio::test]
 async fn a_file_a_spreadsheet_saved_loads() {
     let (mut conn, _pool, _dir) = account().await;
-    let text = "\u{feff}display_name,contact_id,identity,service,identity_type,groups\r\n\
-                \"Lovelace, Ada\",a,+15555550100,phone,phone,Family\r\n\
-                ,,,,,\r\n";
+    let text = "\u{feff}display_name,contact_id,identity,service,groups\r\n\
+                \"Lovelace, Ada\",a,+15555550100,text message,Family\r\n\
+                ,,,,\r\n";
     let counts = loaded(&mut conn, text, LoadMode::Append).await;
     assert_eq!(counts.contacts_created, 1);
     let ada = contact_named(&mut conn, "Lovelace, Ada").await;
@@ -1272,11 +1324,11 @@ async fn export_writes_one_row_per_identity_with_the_contact_repeated() {
         text,
         format!(
             "{HEADER}\n\
-             {unknown},,,phone,phone,'+15555550101\n\
-             {ada},Ada,Family;Work,phone,email,ada@example.com\n\
-             {ada},Ada,Family;Work,phone,phone,'+15555550100\n\
-             {ada},Ada,Family;Work,whatsapp,phone,'+15555550100\n\
-             {no_identity},Cy,,,,\n"
+             {unknown},,Text Message,'+15555550101,\n\
+             {ada},Ada,Email,ada@example.com,Family;Work\n\
+             {ada},Ada,Text Message,'+15555550100,Family;Work\n\
+             {ada},Ada,WhatsApp,'+15555550100,Family;Work\n\
+             {no_identity},Cy,,,\n"
         )
     );
 
@@ -1285,7 +1337,7 @@ async fn export_writes_one_row_per_identity_with_the_contact_repeated() {
     assert_eq!((written.contacts, written.identities), (1, 1));
     assert_eq!(
         written.csv,
-        format!("{HEADER}\n{unknown},,,phone,phone,'+15555550101\n")
+        format!("{HEADER}\n{unknown},,Text Message,'+15555550101,\n")
     );
 }
 
@@ -1353,8 +1405,8 @@ async fn an_identity_only_a_file_knew_goes_when_edit_takes_it_off() {
     loaded(
         &mut conn,
         &file(&[
-            "a,Ada,,phone,phone,+15555550100",
-            "a,Ada,,phone,email,old@example.com",
+            "a,Ada,Text Message,+15555550100,",
+            "a,Ada,Email,old@example.com,",
         ]),
         LoadMode::Append,
     )
@@ -1362,7 +1414,7 @@ async fn an_identity_only_a_file_knew_goes_when_edit_takes_it_off() {
     let ada = contact_named(&mut conn, "Ada").await;
     let counts = loaded(
         &mut conn,
-        &file(&[&format!("{ada},Ada,,phone,phone,+15555550100")]),
+        &file(&[&format!("{ada},Ada,Text Message,+15555550100,")]),
         LoadMode::Edit,
     )
     .await;
@@ -1385,7 +1437,7 @@ async fn s4_6_a_number_without_its_plus_keeps_the_real_identity() {
     let (mut conn, _pool, _dir) = account().await;
     let ada = imported(&mut conn, "Ada", &[("phone", "phone", "+6555550100")]).await;
     let before = identities_of(&mut conn, ada).await;
-    let row = format!("{ada},Ada,,phone,phone,6555550100");
+    let row = format!("{ada},Ada,Text Message,6555550100,");
     let _ = load(
         &mut conn,
         ACCOUNT,
@@ -1405,7 +1457,7 @@ async fn a_number_read_with_its_plus_back_is_named_in_the_result() {
     let ada = imported(&mut conn, "Ada", &[("phone", "phone", "+6555550100")]).await;
     let counts = loaded(
         &mut conn,
-        &file(&[&format!("{ada},Ada,,phone,phone,6555550100")]),
+        &file(&[&format!("{ada},Ada,Text Message,6555550100,")]),
         LoadMode::Edit,
     )
     .await;
@@ -1438,7 +1490,7 @@ async fn a_number_without_plus_whose_contact_holds_both_readings_is_refused() {
     let reasons = refused(
         &mut conn,
         // Written with spaces, so it is not the stored key as it stands.
-        &file(&[&format!("{ada},Ada,,phone,phone,655 555 0100")]),
+        &file(&[&format!("{ada},Ada,Text Message,655 555 0100,")]),
         LoadMode::Edit,
     )
     .await;
@@ -1458,7 +1510,7 @@ async fn a_number_without_plus_never_takes_another_contacts_identity() {
     let ada = imported(&mut conn, "Ada", &[]).await;
     let counts = loaded(
         &mut conn,
-        &file(&[&format!("{ada},Ada,,phone,phone,6555550100")]),
+        &file(&[&format!("{ada},Ada,Text Message,6555550100,")]),
         LoadMode::Append,
     )
     .await;
@@ -1483,7 +1535,7 @@ async fn a_new_identity_of_bare_digits_is_named_in_the_result() {
     let (mut conn, _pool, _dir) = account().await;
     let counts = loaded(
         &mut conn,
-        &file(&["new,Ada,,phone,phone,447700900123"]),
+        &file(&["new,Ada,Text Message,447700900123,"]),
         LoadMode::Append,
     )
     .await;
@@ -1506,9 +1558,9 @@ async fn the_notes_follow_the_order_of_the_rows() {
     let counts = loaded(
         &mut conn,
         &file(&[
-            "ada,Ada,,phone,phone,447700900123",
-            "bob,Bob,,phone,phone,447700900124",
-            "ada,,,phone,phone,447700900125",
+            "ada,Ada,Text Message,447700900123,",
+            "bob,Bob,Text Message,447700900124,",
+            "ada,,Text Message,447700900125,",
         ]),
         LoadMode::Append,
     )
@@ -1534,7 +1586,7 @@ async fn a_national_number_without_plus_is_not_read_as_a_us_number() {
     let ada = imported(&mut conn, "Ada", &[("phone", "phone", "+15555550100")]).await;
     let counts = loaded(
         &mut conn,
-        &file(&[&format!("{ada},Ada,,phone,phone,555-555-0100")]),
+        &file(&[&format!("{ada},Ada,Text Message,555-555-0100,")]),
         LoadMode::Edit,
     )
     .await;
@@ -1575,9 +1627,9 @@ async fn export_writes_a_quote_before_a_cell_a_spreadsheet_would_run() {
         text,
         format!(
             "{HEADER}\n\
-             {ada},{cell},'+Work,phone,other,'-ada\n\
-             {ada},{cell},'+Work,phone,other,'@ada\n\
-             {ada},{cell},'+Work,phone,phone,'+15555550100\n"
+             {ada},{cell},Text Message,'-ada,'+Work\n\
+             {ada},{cell},Text Message,'@ada,'+Work\n\
+             {ada},{cell},Text Message,'+15555550100,'+Work\n"
         )
     );
 }
@@ -1625,8 +1677,8 @@ async fn a_cell_loads_the_same_with_or_without_its_quote() {
     let counts = loaded(
         &mut conn,
         &file(&[
-            ",'=Ada,'+Work,phone,phone,'+15555550100",
-            ",=Bo,+Work,phone,phone,+15555550101",
+            ",'=Ada,Text Message,'+15555550100,'+Work",
+            ",=Bo,Text Message,+15555550101,+Work",
         ]),
         LoadMode::Append,
     )
@@ -1650,8 +1702,8 @@ async fn a_quote_before_other_text_is_part_of_the_cell() {
     loaded(
         &mut conn,
         &file(&[
-            ",'Twas,,phone,phone,+15555550100",
-            ",''=Cy,,phone,phone,+15555550101",
+            ",'Twas,Text Message,+15555550100,",
+            ",''=Cy,Text Message,+15555550101,",
         ]),
         LoadMode::Append,
     )
@@ -1668,7 +1720,7 @@ async fn a_name_loaded_with_a_leading_tab_is_stored_trimmed_and_loads_back_uncha
     let (mut conn, _pool, _dir) = account().await;
     loaded(
         &mut conn,
-        &file(&[",'\tTab,,phone,phone,+15555550100"]),
+        &file(&[",'\tTab,Text Message,+15555550100,"]),
         LoadMode::Append,
     )
     .await;
@@ -1731,7 +1783,7 @@ async fn a_write_that_commits_while_the_load_reads_does_not_fail_it() {
     crate::db::account_profile::create_account_row_if_missing(&mut other, ACCOUNT + 1)
         .await
         .unwrap();
-    let text = file(&["ada,Ada,Family,phone,phone,+15555550100"]);
+    let text = file(&["ada,Ada,Text Message,+15555550100,Family"]);
     let counts = crate::db::write_tx::commit_during(
         other,
         load(
@@ -1762,7 +1814,7 @@ async fn a_new_contact_whose_identity_a_nameless_contact_holds_names_it_in_place
     let text = rewrite_ids_to_nameless(
         &mut conn,
         ACCOUNT,
-        &file(&["abc,Alice,,phone,phone,+15555550150"]),
+        &file(&["abc,Alice,Text Message,+15555550150,"]),
     )
     .await
     .unwrap();
@@ -1780,8 +1832,8 @@ async fn a_new_contact_whose_rows_read_otherwise_under_the_nameless_contacts_id_
     // As a new contact, the second row is another number; under the
     // nameless contact's id it would read as the first row's `+6555550100`.
     let original = file(&[
-        "c1,Carol,,phone,phone,+6555550100",
-        "c1,,,phone,phone,6555550100",
+        "c1,Carol,Text Message,+6555550100,",
+        "c1,,Text Message,6555550100,",
     ]);
 
     let text = rewrite_ids_to_nameless(&mut conn, ACCOUNT, &original)
@@ -1812,7 +1864,7 @@ async fn a_new_contact_listing_one_service_of_a_number_leaves_its_nameless_holde
     let text = rewrite_ids_to_nameless(
         &mut conn,
         ACCOUNT,
-        &file(&["abc,Alice,,phone,phone,+15555550150"]),
+        &file(&["abc,Alice,Text Message,+15555550150,"]),
     )
     .await
     .unwrap();
@@ -1837,5 +1889,87 @@ async fn a_new_contact_listing_one_service_of_a_number_leaves_its_nameless_holde
     assert_eq!(
         identities_of(&mut conn, alice).await,
         ["phone/phone/+15555550150"]
+    );
+}
+
+// --- A vCard file ---
+
+/// Cards in the shapes a Google Contacts export and an iPhone's contacts
+/// take, made up: several cards in one file, folded lines, `item1.TEL`,
+/// `TEL;TYPE=CELL`, numbers with and without `+`, a 13-digit number without
+/// `+`, a card with no name, and a card with no number or email.
+const CARDS: &str = include_str!("../../../tests/fixtures/contacts.vcf");
+
+#[test]
+fn a_vcard_file_becomes_one_row_per_number_and_email_in_the_chosen_country() {
+    let book = from_vcard(CARDS, phone::country("US")).unwrap().unwrap();
+    assert_eq!(
+        book,
+        "contact_id,display_name,service,identity,groups\n\
+         card1,Ada Lovelace,Text Message,'+15555550101,\n\
+         card1,Ada Lovelace,Email,ada@example.com,\n\
+         card2,\"Smith, Bao\",Text Message,'+15555550102,\n\
+         card2,\"Smith, Bao\",Text Message,'+44 7700 900123,\n\
+         card3,Cy Diaz,Text Message,'+15555550103,\n\
+         card3,Cy Diaz,Text Message,(555) 555-0104 123,\n\
+         card4,,Text Message,'+15555550105,\n\
+         card6,Bea Okafor,Text Message,'+1 555-555-0106,\n\
+         card6,Bea Okafor,Email,bea.okafor@example.org,\n"
+    );
+}
+
+/// With no country, nothing says which country a number without `+` is in,
+/// so every number is written as the card has it.
+#[test]
+fn a_vcard_file_with_no_country_keeps_every_number_as_written() {
+    let book = from_vcard(CARDS, None).unwrap().unwrap();
+    let identities: Vec<&str> = book
+        .lines()
+        .skip(1)
+        .map(|line| line.rsplit(',').nth(1).unwrap())
+        .collect();
+    assert_eq!(
+        identities,
+        [
+            "(555) 555-0101",
+            "ada@example.com",
+            "'+15555550102",
+            "'+44 7700 900123",
+            "15555550103",
+            "(555) 555-0104 123",
+            "555.555.0105",
+            "'+1 555-555-0106",
+            "bea.okafor@example.org",
+        ]
+    );
+}
+
+#[test]
+fn text_with_no_card_is_no_address_book() {
+    assert_eq!(
+        from_vcard("First Name,Phone\nAda,555\n", None).unwrap(),
+        None
+    );
+}
+
+/// The converted file is an address book the load takes as it stands: each
+/// card is one new contact, and the numbers are the identities an import
+/// in the same country would key.
+#[tokio::test]
+async fn a_converted_vcard_file_loads() {
+    let (mut conn, _pool, _dir) = account().await;
+    let book = from_vcard(CARDS, phone::country("US")).unwrap().unwrap();
+    let counts = loaded(&mut conn, &book, LoadMode::Append).await;
+    assert_eq!(counts.contacts_created, 5);
+    assert_eq!(counts.identities_added, 9);
+    let ada = contact_named(&mut conn, "Ada Lovelace").await;
+    assert_eq!(
+        identities_of(&mut conn, ada).await,
+        ["phone/email/ada@example.com", "phone/phone/+15555550101"]
+    );
+    let bao = contact_named(&mut conn, "Smith, Bao").await;
+    assert_eq!(
+        identities_of(&mut conn, bao).await,
+        ["phone/phone/+15555550102", "phone/phone/+447700900123"]
     );
 }

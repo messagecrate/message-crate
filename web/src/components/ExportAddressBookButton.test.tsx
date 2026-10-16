@@ -14,8 +14,7 @@ vi.mock("../lib/saveFile", () => ({ saveFile: vi.fn() }));
 const exportMock = vi.mocked(exportAddressBook);
 const saveMock = vi.mocked(saveFile);
 
-const CSV =
-  "contact_id,display_name,groups,service,identity_type,identity\n7,,,phone,phone,+15555550100\n";
+const CSV = "contact_id,display_name,service,identity,groups\n7,,Text Message,+15555550100,\n";
 
 describe("ExportAddressBookButton", () => {
   beforeEach(() => {

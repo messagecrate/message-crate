@@ -6,7 +6,6 @@ license = "LicenseRef-FCL-1.0-ALv2"
 description = "vCard (VCF) parser for message-crate"
 
 [dependencies]
-anyhow = { workspace = true }
 
 [lints]
 workspace = true
