@@ -225,9 +225,10 @@ Adding the Demo Account is recorded under no account, and resetting it under the
 **Log** at the top picks which one:
 
 - **The server's log**, what the server did for every account. It opens on this one.
+- In the desktop app, **Desktop app**: what the desktop app went on without outside an Import Run, such as a program it downloaded whose record it could not write. It is listed once the app has written a line.
 - In the desktop app, each Import Run's log on this computer, whoever ran the import, under **Import Runs on this computer**. Each is named by its run, the account that ran it, and when its last line was written.
 
-A browser offers the server's log only, because an Import Run's log stays on the computer that ran the import.
+A browser offers the server's log only, because the desktop app's log and an Import Run's log stay on the computer that wrote them.
 
 Each line shows its time in UTC, its level, and what it says.
 

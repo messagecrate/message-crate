@@ -1,6 +1,7 @@
-//! Commands for the Import Run logs in the Logs Directory: the account line
-//! a new run's log starts with, and listing and reading the logs for the
-//! Logs panel and Settings → Storage ([`crate::run_logs`]).
+//! Commands for the logs in the Logs Directory: the account line a new
+//! Import Run's log starts with, and listing and reading the Import Run logs
+//! and the desktop app's own log ([`crate::app_log`]) for the Logs panel and
+//! Settings → Storage ([`crate::run_logs`]).
 
 use std::path::Path;
 
@@ -28,9 +29,9 @@ pub fn start_import_run_log(app: tauri::AppHandle, args: StartRunLogArgs) {
     RunLog::open(&logs_dir(&app), Path::new(args.run_dir.trim())).account(&args.account);
 }
 
-/// The Import Run logs on this computer that `reader` may read: every one for
-/// the owner, the signed-in account's own otherwise. The most recently
-/// written first.
+/// The logs on this computer that `reader` may read: every Import Run log
+/// and the desktop app's own for the owner, the signed-in account's own
+/// Import Run logs otherwise. The most recently written first.
 ///
 /// # Errors
 ///
@@ -56,7 +57,7 @@ pub struct ReadLinesArgs {
     pub query: LinesQuery,
 }
 
-/// A page of one Import Run log's lines, newest first.
+/// A page of one log's lines, newest first.
 ///
 /// # Errors
 ///
@@ -80,7 +81,7 @@ pub struct ReadLogArgs {
     pub name: String,
 }
 
-/// One Import Run log whole, byte for byte as it is on disk, for the window
+/// One log whole, byte for byte as it is on disk, for the window
 /// to save. The bytes reach the window as an `ArrayBuffer`, not as JSON
 /// text, so a byte that is not UTF-8 is kept and a large log is not copied
 /// into a string.

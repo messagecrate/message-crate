@@ -35,10 +35,15 @@ export interface RunLogReader {
   owner: boolean;
 }
 
-/** One Import Run log on this computer. */
+/** One log on this computer: an Import Run's, or the desktop app's own. */
 export interface RunLogEntry {
   /** The file's name in the Logs Directory, which a download keeps. */
   name: string;
+  /**
+   * An Import Run's log, or the desktop app's own: what it did outside an
+   * Import Run, which names no account and so is listed for the owner alone.
+   */
+  kind: "importRun" | "desktopApp";
   /** Who ran the run, or null when the log does not say. */
   account: RunLogAccount | null;
   /** Whether the run imported into the Message Crate the reader is signed in to. */
@@ -53,7 +58,10 @@ export interface RunLogEntry {
   modifiedAt: string;
 }
 
-/** The Import Run logs on this computer that `reader` may read, newest first. */
+/**
+ * The logs on this computer that `reader` may read, newest first: its Import
+ * Run logs, and for the owner every one and the desktop app's own.
+ */
 export async function invokeListImportRunLogs(reader: RunLogReader): Promise<RunLogEntry[]> {
   return invoke("list_import_run_logs", { reader });
 }

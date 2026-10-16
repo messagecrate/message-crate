@@ -44,11 +44,23 @@ const HERE = "0123456789abcdef0123456789abcdef";
 
 const ALICE_RUN = {
   name: "import-whatsapp-261004-143000.log",
+  kind: "importRun",
   account: { importRunId: 42, accountId: 2, server: "http://127.0.0.1:8080", messageCrateId: HERE },
   thisMessageCrate: true,
   hasLines: true,
   bytes: 120,
   modifiedAt: "2026-10-04T14:35:00Z",
+};
+
+/** The desktop app's own log, which names no account. */
+const DESKTOP_APP_LOG = {
+  name: "desktop-app.log",
+  kind: "desktopApp",
+  account: null,
+  thisMessageCrate: false,
+  hasLines: true,
+  bytes: 80,
+  modifiedAt: "2026-10-05T09:00:00Z",
 };
 
 function renderPanel() {
@@ -110,6 +122,33 @@ describe("OwnerLogsPanel", () => {
       expect.objectContaining({ level: "warn" }),
     );
     expect(screen.getByRole("button", { name: "Download" })).toBeInTheDocument();
+  });
+
+  it("picks the desktop app's own log as Desktop app, apart from the Import Runs", async () => {
+    invokeListImportRunLogs.mockResolvedValue([DESKTOP_APP_LOG, ALICE_RUN]);
+    invokeReadImportRunLogLines.mockResolvedValue(
+      page("The server's processes will not end with it"),
+    );
+    const user = setupUser();
+    renderPanel();
+    await settle();
+
+    await user.click(screen.getByRole("button", { name: /Log$/ }));
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "The server's log",
+      "Desktop app",
+      expect.stringMatching(/^Import Run 42 by alice/),
+    ]);
+    await user.click(screen.getByRole("option", { name: "Desktop app" }));
+    await settle();
+
+    expect(screen.getByText("The server's processes will not end with it")).toBeInTheDocument();
+    expect(invokeReadImportRunLogLines).toHaveBeenCalledWith(
+      { messageCrateId: HERE, accountId: 1, owner: true },
+      "desktop-app.log",
+      expect.objectContaining({ level: "warn" }),
+    );
+    expect(screen.getByText(/^desktop-app\.log, kept in the Logs Directory/)).toBeInTheDocument();
   });
 
   it("offers the server's log alone in a browser", async () => {

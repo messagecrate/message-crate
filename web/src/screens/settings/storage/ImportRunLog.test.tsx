@@ -50,6 +50,7 @@ describe("ImportRunLog", () => {
     invokeListImportRunLogs.mockResolvedValue([
       {
         name: "import-whatsapp-261004-143000.log",
+        kind: "importRun",
         account: { importRunId: 42, accountId: 2, server: SERVER, messageCrateId: HERE },
         thisMessageCrate: true,
         hasLines: true,
@@ -59,6 +60,7 @@ describe("ImportRunLog", () => {
       // Run 43 of another Message Crate at the same address is another run.
       {
         name: "import-sms-261005-090000.log",
+        kind: "importRun",
         account: {
           importRunId: 43,
           accountId: 2,
@@ -107,6 +109,7 @@ describe("ImportRunLog", () => {
     invokeListImportRunLogs.mockResolvedValue([
       {
         name: "import-whatsapp-261004-143000.log",
+        kind: "importRun",
         account: { importRunId: 42, accountId: 2, server: SERVER, messageCrateId: HERE },
         thisMessageCrate: true,
         hasLines: false,

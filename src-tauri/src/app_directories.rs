@@ -25,8 +25,9 @@
 //! - The **Logs Directory** holds each Import Run's log, named for the run,
 //!   and keeps it after the run's directory in the Staging Directory is
 //!   deleted. Staging, Media and Upload all write into it ([`RunLog`] for the
-//!   first two, the import library's own writer for the Upload). Nothing
-//!   deletes a log.
+//!   first two, the import library's own writer for the Upload). It also
+//!   holds the desktop app's own log ([`crate::app_log`]). Nothing deletes a
+//!   log.
 //! - The **Scratch Directory** holds what a run writes that is neither its
 //!   output nor kept: the attachment spool and the databases the Apple
 //!   Messages Reader decrypts ([`message_crate_core::ScratchDir`]). What a

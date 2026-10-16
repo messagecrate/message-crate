@@ -189,7 +189,8 @@ pub fn ios_backup_encrypted(path: String) -> Option<bool> {
 /// next request cleans if this one is killed.
 ///
 /// The check runs before any Import Run exists, so it has no run log: the
-/// Reader's log lines go to the process log ([`reader_log_line`]).
+/// Reader's log lines go to the desktop app's log ([`reader_log_line`]),
+/// its warnings as warnings.
 #[tauri::command]
 pub async fn imessage_backup_identities(
     app: AppHandle,
@@ -200,8 +201,14 @@ pub async fn imessage_backup_identities(
     let scratch_root = scratch_dir(&app).join(message_crate_core::IMESSAGE_READER_DIRECTORY);
     tauri::async_runtime::spawn_blocking(move || {
         let password = backup_password.as_deref().and_then(message_ir::trimmed);
-        let log =
-            message_crate_core::LogSink::new(|line: &str| eprintln!("{}", reader_log_line(line)));
+        let backup = path.trim().to_string();
+        let warnings = backup.clone();
+        let log = message_crate_core::LogSink::new(move |line: &str| {
+            crate::app_log::info(&reader_log_line(line, &backup));
+        })
+        .with_warnings(move |line: &str| {
+            crate::app_log::warn(&reader_log_line(line, &warnings));
+        });
         ios_backup::backup_identities(Path::new(path.trim()), ios, password, &scratch_root, log)
             .map_err(|e| format!("{e:#}"))
     })
@@ -209,9 +216,18 @@ pub async fn imessage_backup_identities(
     .map_err(|e| e.to_string())?
 }
 
-/// The process log's line for one line the Apple Messages Reader logged
-/// while the Import screen's identity check ran.
-fn reader_log_line(line: &str) -> String {
+/// The desktop app's log's line for one line the Apple Messages Reader
+/// logged while the Import screen's identity check ran, with the backup's
+/// path, `backup`, written as "the backup". Why: the desktop app's log names
+/// only paths inside Message Crate's own directories, and a backup's path
+/// can name the person whose phone it is
+/// (`docs/architecture/import-run-logs.md`, "The desktop app's log").
+fn reader_log_line(line: &str, backup: &str) -> String {
+    let line = if backup.is_empty() {
+        line.to_string()
+    } else {
+        line.replace(backup, "the backup")
+    };
     format!("The Apple Messages Reader logged during the identity check: {line}")
 }
 
@@ -525,8 +541,24 @@ mod tests {
     #[test]
     fn a_reader_log_line_names_the_reader_and_the_check() {
         assert_eq!(
-            reader_log_line("opening chat.db"),
+            reader_log_line("opening chat.db", "/Users/sam/Backup/00008030"),
             "The Apple Messages Reader logged during the identity check: opening chat.db"
+        );
+    }
+
+    /// The desktop app's log names no path outside Message Crate's own
+    /// directories, so the backup's path, which can name the person whose
+    /// phone it is, is written as "the backup" (#2185).
+    #[test]
+    fn a_reader_log_line_writes_the_backup_s_path_as_the_backup() {
+        assert_eq!(
+            reader_log_line(
+                "Backup file 3d/3d0d7e could not be read: /Users/sam/Backup/00008030/3d/3d0d7e: \
+                 Permission denied",
+                "/Users/sam/Backup/00008030"
+            ),
+            "The Apple Messages Reader logged during the identity check: Backup file 3d/3d0d7e \
+             could not be read: the backup/3d/3d0d7e: Permission denied"
         );
     }
 

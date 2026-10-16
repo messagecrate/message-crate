@@ -49,10 +49,10 @@ function runLogLabel(log: RunLogEntry, usernames: ReadonlyMap<number, string>): 
 }
 
 /**
- * Owner Home's Logs: the server's log, and in the desktop app every Import
- * Run log on this computer, whoever ran the import (#1665). A run log stays
- * on the computer that ran the import, so in a browser the picker offers the
- * server's log alone. Each log reads in the same viewer.
+ * Owner Home's Logs: the server's log, and in the desktop app the desktop
+ * app's own log (#2185) and every Import Run log on this computer, whoever
+ * ran the import (#1665). Both stay on this computer, so in a browser the
+ * picker offers the server's log alone. Each log reads in the same viewer.
  */
 export function OwnerLogsPanel() {
   const [picked, setPicked] = useState(SERVER_KEY);
@@ -64,6 +64,8 @@ export function OwnerLogsPanel() {
 
   const pickedRun =
     reader && picked !== SERVER_KEY ? runs.logs.find((log) => runKey(log.name) === picked) : null;
+  const desktopApp = runs.logs.find((log) => log.kind === "desktopApp");
+  const importRuns = runs.logs.filter((log) => log.kind === "importRun");
 
   return (
     <section>
@@ -83,10 +85,15 @@ export function OwnerLogsPanel() {
             <ListBoxItem id={SERVER_KEY} className={itemClassName}>
               The server's log
             </ListBoxItem>
-            {reader && runs.logs.length > 0 ? (
+            {reader && desktopApp ? (
+              <ListBoxItem id={runKey(desktopApp.name)} className={itemClassName}>
+                Desktop app
+              </ListBoxItem>
+            ) : null}
+            {reader && importRuns.length > 0 ? (
               <ListBoxSection>
                 <Header className={selectSectionHeaderClass}>Import Runs on this computer</Header>
-                {runs.logs.map((log) => {
+                {importRuns.map((log) => {
                   const label = runLogLabel(log, usernames);
                   return (
                     <ListBoxItem
@@ -105,13 +112,15 @@ export function OwnerLogsPanel() {
         </div>
       </div>
       <p className={sectionHintClass}>
-        {pickedRun
-          ? `${pickedRun.name}, kept in the Logs Directory on this computer. A log names counts, files and what went wrong, never what a message says.`
-          : "What the server did, every account's requests in one place. A log names counts, routes and what went wrong, never what a message says."}
+        {pickedRun?.kind === "desktopApp"
+          ? `${pickedRun.name}, kept in the Logs Directory on this computer. What the desktop app went on without outside an Import Run, such as a download it could not record.`
+          : pickedRun
+            ? `${pickedRun.name}, kept in the Logs Directory on this computer. A log names counts, files and what went wrong, never what a message says.`
+            : "What the server did, every account's requests in one place. A log names counts, routes and what went wrong, never what a message says."}
       </p>
       {runs.error ? (
         <p role="alert" className="mt-2 text-[0.813rem] text-danger">
-          {errorLine(runs.error, "Could not list the Import Run logs on this computer.")}
+          {errorLine(runs.error, "Could not list the logs on this computer.")}
         </p>
       ) : null}
       <div className="mt-3">

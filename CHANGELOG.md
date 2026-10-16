@@ -22,6 +22,11 @@ carry their date on the heading.
 
 ### Features
 
+- 2026-10-16: **The desktop app keeps a log of its own.** What the desktop
+  app went on without outside an import, such as a program it downloaded
+  whose record it could not write, was written where nobody could see it.
+  It now goes to a log in the Logs Directory, which the owner reads under
+  **Logs** on Owner Home as **Desktop app** (#2185).
 - 2026-10-15: **A phone's contacts convert to the address book.** Settings →
   Profile → Address book has Convert a vCard file, which turns the .vcf file
   a phone or Google Contacts exports into the address book CSV, to edit in a
