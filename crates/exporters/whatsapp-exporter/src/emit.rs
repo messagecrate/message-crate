@@ -155,8 +155,11 @@ impl Project for WhatsappDocuments {
         Some(document)
     }
 
-    fn attachment_source(&mut self, att: &mut Attachment) -> (AttachmentSource, Option<u64>) {
-        let hint = att.size_bytes;
+    fn attachment_source(
+        &mut self,
+        attachment: &mut Attachment,
+    ) -> (AttachmentSource, Option<u64>) {
+        let hint = attachment.size_bytes;
         match self.media_sources.pop_front().flatten() {
             Some(path) => (AttachmentSource::Path(path), hint),
             None => (AttachmentSource::Missing, hint),
@@ -733,13 +736,17 @@ impl ProjectionHooks for WhatsappProjection {
         }
     }
 
-    fn attachment_to_ir(&self, att: &PendingAttachment, message: &PendingMessage) -> Attachment {
+    fn attachment_to_ir(
+        &self,
+        attachment: &PendingAttachment,
+        message: &PendingMessage,
+    ) -> Attachment {
         Attachment {
             // No path yet: the writer sets it when it stages the file.
             path: None,
-            original_name: att.name_hint.clone(),
-            mime_type: att.mime_type(),
-            digest_sha256: att.digest_sha256.clone(),
+            original_name: attachment.name_hint.clone(),
+            mime_type: attachment.mime_type(),
+            digest_sha256: attachment.digest_sha256.clone(),
             is_sticker: message.extra_flag("is_sticker"),
             transcription: None,
             sticker_effect: None,

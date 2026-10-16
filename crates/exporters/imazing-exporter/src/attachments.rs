@@ -466,7 +466,7 @@ mod tests {
             "finding the file must not write files"
         );
         let source = source.expect("source path found");
-        let mut att = Attachment {
+        let mut attachment = Attachment {
             path: None,
             original_name: cell.meta.original_name,
             mime_type: cell.meta.mime_type,
@@ -479,7 +479,7 @@ mod tests {
             bytes: None,
         };
         let mut jobs = [AttachmentJob {
-            attachment: &mut att,
+            attachment: &mut attachment,
             timestamp_unix_ms: 1_600_000_000_000,
             size_hint: None,
         }];
@@ -493,9 +493,15 @@ mod tests {
             &CancelFlag::default(),
         )
         .unwrap();
-        let digest = att.digest_sha256.expect("digest set after runner");
+        let digest = attachment.digest_sha256.expect("digest set after runner");
         assert_eq!(digest.len(), 64);
-        assert!(att.path.as_deref().unwrap().starts_with("attachments/"));
+        assert!(
+            attachment
+                .path
+                .as_deref()
+                .unwrap()
+                .starts_with("attachments/")
+        );
         assert_eq!(fs::read_dir(&attachments).unwrap().count(), 1);
     }
 

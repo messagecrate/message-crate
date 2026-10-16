@@ -276,9 +276,9 @@ fn without_a_spool_no_payload_is_kept() {
     fs::write(&input, r#"<smses><mms date="1400773400000" msg_box="1" address="+15555550101"><parts><part ct="image/jpeg" name="a.jpg" data="aGVsbG8="/></parts><addrs><addr address="+15555550101" type="137"/></addrs></mms></smses>"#).unwrap();
     let owner = vec!["+15555550100".to_string()];
     let (docs, _) = read_backup(&input, opts(&owner, None, None)).unwrap();
-    let att = &docs[0].messages[0].attachments[0];
-    assert!(att.bytes.is_none() && att.path.is_none());
-    assert_eq!(att.size_bytes, Some(5), "the size is still recorded");
+    let attachment = &docs[0].messages[0].attachments[0];
+    assert!(attachment.bytes.is_none() && attachment.path.is_none());
+    assert_eq!(attachment.size_bytes, Some(5), "the size is still recorded");
 }
 
 /// Read `messages` wrapped in `<smses>` with +15555550100 as the owner.

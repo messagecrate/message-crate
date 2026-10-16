@@ -921,9 +921,9 @@ mod tests {
             document.messages.iter_mut(),
             message_crate_core::AttachmentFiles::Originals,
             staging::PathSources::OnDisk,
-            |att| {
+            |attachment| {
                 spool
-                    .source(att)
+                    .source(attachment)
                     .unwrap_or((AttachmentSource::Missing, None))
             },
             &LogSink::none(),

@@ -30,12 +30,12 @@ fn read_with_bytes(
     let spool_dir = tempfile::tempdir().unwrap();
     let spool = AttachmentSpool::new(spool_dir.path());
     let (mut docs, report) = crate::read_backup(path, read_options(owners, &spool)).unwrap();
-    for att in docs
+    for attachment in docs
         .iter_mut()
         .flat_map(|document| document.messages.iter_mut())
         .flat_map(|message| message.attachments.iter_mut())
     {
-        att.bytes = att
+        attachment.bytes = attachment
             .digest_sha256
             .as_deref()
             .and_then(|digest| spool.path(digest))
@@ -495,8 +495,8 @@ fn restored_mms_parts_get_back_their_own_attachment_bytes() {
     // and with the third attachment gone the last part, with nothing left
     // to take, gets no data.
     transformed[0].messages[0].attachments.truncate(2);
-    for att in &mut transformed[0].messages[0].attachments {
-        att.digest_sha256 = None;
+    for attachment in &mut transformed[0].messages[0].attachments {
+        attachment.digest_sha256 = None;
     }
     let read = round_trip(&transformed);
     assert_eq!(part_payloads(&read[0].messages[0]), payloads(None));
