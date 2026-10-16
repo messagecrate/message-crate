@@ -5,7 +5,7 @@ import {
   bubbleBody,
   DeletionNote,
   type MessageBubbleProps,
-  messageRowFrame,
+  MessageRowFrame,
   TapbackChips,
 } from "./chatBubbleShared";
 
@@ -26,12 +26,12 @@ export default function AnnouncementLine({
 }: Omit<MessageBubbleProps, "showSender">) {
   const time = formatClockTime(message.timestamp, useTimeZone());
   const body = (message.text || "").trim();
-  const frame = messageRowFrame(message.id, isActive);
 
   return (
-    <div
-      id={frame.id}
-      className={`my-[0.4rem] flex flex-col items-center px-4 py-[0.2rem] ${frame.background}`}
+    <MessageRowFrame
+      messageId={message.id}
+      isActive={isActive}
+      className="my-[0.4rem] flex flex-col items-center px-4 py-[0.2rem]"
     >
       <div role="note" className="text-center text-[0.75rem] text-muted">
         {body ? (
@@ -43,6 +43,6 @@ export default function AnnouncementLine({
       </div>
       <MessageAttachments message={message} onAttachmentClick={onAttachmentClick} />
       <TapbackChips message={message} className="mt-1 justify-center" />
-    </div>
+    </MessageRowFrame>
   );
 }

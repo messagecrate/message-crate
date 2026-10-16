@@ -154,14 +154,26 @@ export function TapbackChips({ message, className }: { message: Message; classNa
  * announcement's: the `msg-<id>` anchor a jump to the message lands on, and
  * the background of the active Find match.
  */
-export function messageRowFrame(
-  messageId: number | string,
-  isActive: boolean | undefined,
-): { id: string; background: string } {
-  return {
-    id: `msg-${messageId}`,
-    background: isActive ? "bg-search-active" : "bg-transparent",
-  };
+export function MessageRowFrame({
+  messageId,
+  isActive,
+  className,
+  children,
+}: {
+  messageId: number | string;
+  isActive?: boolean;
+  /** The row's own layout; the background is added to it. */
+  className: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      id={`msg-${messageId}`}
+      className={`${className} ${isActive ? "bg-search-active" : "bg-transparent"}`}
+    >
+      {children}
+    </div>
+  );
 }
 
 /**
@@ -420,14 +432,14 @@ export function ChatBubbleRow({
   const mine = message.is_from_me;
   const { deletion, source } = message;
   const versions = useEarlierVersions(message);
-  const frame = messageRowFrame(message.id, isActive);
 
   return (
-    <div
-      id={frame.id}
+    <MessageRowFrame
+      messageId={message.id}
+      isActive={isActive}
       className={`flex flex-col px-4 py-[0.2rem] ${
         mine ? "mb-[0.15rem] items-end" : "mb-[0.4rem] items-start"
-      } ${frame.background}`}
+      }`}
     >
       {showSender && senderLabel ? (
         <div
@@ -472,7 +484,7 @@ export function ChatBubbleRow({
       </div>
 
       <EarlierVersionsList state={versions} mine={mine} />
-    </div>
+    </MessageRowFrame>
   );
 }
 
@@ -486,11 +498,14 @@ function ServiceRow({
   isActive?: boolean;
   children: ReactNode;
 }) {
-  const frame = messageRowFrame(messageId, isActive);
   return (
-    <div id={frame.id} className={`border-b border-border px-6 py-2 ${frame.background}`}>
+    <MessageRowFrame
+      messageId={messageId}
+      isActive={isActive}
+      className="border-b border-border px-6 py-2"
+    >
       {children}
-    </div>
+    </MessageRowFrame>
   );
 }
 
