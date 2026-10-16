@@ -979,7 +979,7 @@ export interface paths {
         put?: never;
         /**
          * Start an Export Run: compile the scope, list and count the messages it matches now, and record the run as `running`.
-         * @description Read that list at `GET /v1/exports/{id}/messages`, then close the run with `complete` or `cancel`. An account has one running run: starting one closes the one already running as `cancelled`, and a run with no page read for an hour is closed the same way. Either way its pages then answer `409 Conflict`.
+         * @description Read that list at `GET /v1/exports/{id}/messages`, then close the run with `complete` or `cancel`. An account has one running run: starting one closes the one already running as `canceled`, and a run with no page read for an hour is closed the same way. Either way its pages then answer `409 Conflict`.
          */
         post: operations["create_export"];
         delete?: never;
@@ -1205,7 +1205,7 @@ export interface paths {
         put?: never;
         /**
          * Discard a running Import Run, freeing the account's single slot.
-         * @description The answer is the run, now `cancelled`, with the issues the request carried.
+         * @description The answer is the run, now `canceled`, with the issues the request carried.
          *
          *     The messages the run's batches brought stay in the account, and once it
          *     has discarded the run the server hides the duplicates of the whole
@@ -3032,7 +3032,7 @@ export interface components {
          *     `GET /v1/exports?status=` accepts, and the word every Export Run carries.
          * @enum {string}
          */
-        ExportStatus: "running" | "completed" | "failed" | "cancelled";
+        ExportStatus: "running" | "completed" | "failed" | "canceled";
         /** @description One word as the web and the docs see it. */
         FieldDoc: {
             /** @description One example, ready to type. */
@@ -3498,7 +3498,7 @@ export interface components {
          *     `GET /v1/imports?status=` accepts, and the words every response carries.
          * @enum {string}
          */
-        ImportStatus: "running" | "completed" | "completed_with_issues" | "failed" | "cancelled";
+        ImportStatus: "running" | "completed" | "completed_with_issues" | "failed" | "canceled";
         /**
          * @description The journal mode SQLite runs a database in, as `PRAGMA journal_mode`
          *     names it.
@@ -5504,7 +5504,7 @@ export interface components {
          *     status, or an Export Run's, which never finishes with issues.
          * @enum {string}
          */
-        RunStatus: "running" | "completed" | "completed_with_issues" | "failed" | "cancelled";
+        RunStatus: "running" | "completed" | "completed_with_issues" | "failed" | "canceled";
         /** @description One row of `saved_searches`. */
         SavedSearch: {
             /**

@@ -25,7 +25,7 @@ Every finding closes one of three ways, with a reply in its thread saying which:
 Then resolve the thread if it is an agent thread. A user thread gets the same
 reply and the fix, and stays open for the user.
 
-A `judgement` finding is closed the same way as any other. A small finding is
+A `judgment` finding is closed the same way as any other. A small finding is
 fixed, never declined for being small.
 
 ## Pushing and posting
@@ -113,13 +113,13 @@ brief ends with the same output rule:
 
 > Return a list of findings. Each finding: `path`, `line` (a line number in
 > the file on the new side of the diff, or `none`), `kind` (`rule`, `spec`,
-> `bug`, or `judgement`), and the text: what is wrong, why it matters, and
+> `bug`, or `judgment`), and the text: what is wrong, why it matters, and
 > the fix. Return an empty list if you find nothing. Under 400 words.
 
 - **Standards**: the standards files from step 1, and
   `.claude/skills/pr-review/smells.md`. "Report every place the diff breaks a
   documented repo rule, citing the file and the rule (`rule`), and every smell
-  from the baseline you see, quoting the hunk (`judgement`). A repo rule
+  from the baseline you see, quoting the hunk (`judgment`). A repo rule
   overrides the baseline. Skip what tooling enforces."
 - **Spec**: the issue text. "Report requirements the spec asked for that are
   missing or partial, behavior the spec did not ask for, and requirements that

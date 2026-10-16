@@ -17,7 +17,7 @@ EXPECTED_CARGO_LICENSE="LicenseRef-FCL-1.0-ALv2"
 # is linked by both the GPL helper and the FCL app, and the chat.db fixture by
 # the tests of both, so those two are permissive. Every other crate is FCL.
 # Why: docs/adr/0014-gpl-code-only-behind-a-process-boundary.md.
-declare -A LICENCE_EXCEPTIONS=(
+declare -A LICENSE_EXCEPTIONS=(
   ["crates/helpers/imessage-reader/Cargo.toml"]="GPL-3.0-or-later"
   ["crates/helpers/imessage-reader-protocol/Cargo.toml"]="MIT OR Apache-2.0"
   ["crates/helpers/chat-db-fixture/Cargo.toml"]="MIT OR Apache-2.0"
@@ -46,7 +46,7 @@ fi
 # the exclusion in mind when the sweep seems to miss a manifest.
 while IFS= read -r manifest; do
   if grep -q '^\[package\]' "${manifest}"; then
-    expected="${LICENCE_EXCEPTIONS[${manifest}]:-${EXPECTED_CARGO_LICENSE}}"
+    expected="${LICENSE_EXCEPTIONS[${manifest}]:-${EXPECTED_CARGO_LICENSE}}"
     if ! grep -q "^license = \"${expected}\"$" "${manifest}"; then
       echo "${manifest}: license must be \"${expected}\"" >&2
       failures=$((failures + 1))

@@ -1475,7 +1475,7 @@ fn a_cancel_ends_the_wait() {
         )
     });
 
-    assert_eq!(waited, Err(WaitError::Cancelled));
+    assert_eq!(waited, Err(WaitError::Canceled));
 }
 
 /// Try again runs the check once on a thread of its own and returns before

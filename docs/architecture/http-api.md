@@ -1248,7 +1248,7 @@ There is no sessionless import and no unrecorded export.
 `completed_with_issues` or `failed` for an Import Run, and `completed` or
 `failed` for an Export Run. An Export Run's `cancel` is for a run the person
 gave up. A run an error stopped is closed with `complete` as `failed`, never
-with `cancel`. Why: the Audit Trail and the export history show `cancelled` as
+with `cancel`. Why: the Audit Trail and the export history show `canceled` as
 the person's own choice, so a failed run recorded that way lies the same way
 a canceled run marked completed would (#2069).
 
@@ -1331,9 +1331,9 @@ between pages move the offsets, so pages skipped or repeated messages and
 An account has at most one running Export Run, held by a partial unique
 index on `exports(account_id) WHERE status = 'running'`, as for Import Runs.
 `POST /v1/exports` replaces the account's running run: in the transaction
-that records the new run, the running one is closed as `cancelled` and its
+that records the new run, the running one is closed as `canceled` and its
 list deleted. A start is never refused because a run is open. The server
-also closes as `cancelled` a running run with no page read for an hour,
+also closes as `canceled` a running run with no page read for an hour,
 counted from its last page or, before the first, from its start; it looks
 once a minute, and when it starts. A page past the end of the list hands
 over nothing and still counts as a page read, so the desktop app reads one

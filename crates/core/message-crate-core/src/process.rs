@@ -87,7 +87,7 @@ impl fmt::Debug for LogSink {
 }
 
 /// Whether cancel has been requested.
-pub fn is_cancelled(cancel: &CancelFlag) -> bool {
+pub fn is_canceled(cancel: &CancelFlag) -> bool {
     cancel.load(Ordering::Relaxed)
 }
 
@@ -100,16 +100,16 @@ pub fn is_cancelled(cancel: &CancelFlag) -> bool {
 /// turning it into a string, which loses the type. It displays as `canceled`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("canceled")]
-pub struct Cancelled;
+pub struct Canceled;
 
-/// Return `Err(Cancelled)` if cancel was requested.
+/// Return `Err(Canceled)` if cancel was requested.
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`] when the flag is set.
-pub fn check_cancel(cancel: &CancelFlag) -> Result<(), Cancelled> {
-    if is_cancelled(cancel) {
-        Err(Cancelled)
+/// Returns [`Canceled`] when the flag is set.
+pub fn check_cancel(cancel: &CancelFlag) -> Result<(), Canceled> {
+    if is_canceled(cancel) {
+        Err(Canceled)
     } else {
         Ok(())
     }
@@ -126,7 +126,7 @@ pub struct Sinks<'a> {
     pub log: &'a LogSink,
     /// Where the step sends its progress events.
     pub progress: &'a ProgressSink,
-    /// Set to stop the step. The step then fails with [`Cancelled`] in its
+    /// Set to stop the step. The step then fails with [`Canceled`] in its
     /// error chain (#2077).
     pub cancel: &'a CancelFlag,
 }
@@ -136,7 +136,7 @@ pub struct Sinks<'a> {
 ///
 /// Workers pull the next job index from a shared counter (work stealing).
 /// Cancel is checked before each job; once cancel is requested, every job not
-/// yet started records [`Cancelled`] (converted into `E`) instead of running
+/// yet started records [`Canceled`] (converted into `E`) instead of running
 /// `f`.
 pub fn parallel_for_each<J, T, E, F>(
     jobs: &[J],
@@ -147,7 +147,7 @@ pub fn parallel_for_each<J, T, E, F>(
 where
     J: Sync,
     T: Send,
-    E: From<Cancelled> + Send,
+    E: From<Canceled> + Send,
     F: Fn(&J) -> Result<T, E> + Sync,
 {
     if jobs.is_empty() {
@@ -170,7 +170,7 @@ where
                     }
                     let result = match check_cancel(cancel) {
                         Ok(()) => f(&jobs[index]),
-                        Err(cancelled) => Err(cancelled.into()),
+                        Err(canceled) => Err(canceled.into()),
                     };
                     results.lock().expect("parallel job mutex poisoned")[index] = Some(result);
                 }
@@ -189,7 +189,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cancelled_displays_as_canceled() {
+    fn canceled_displays_as_canceled() {
         let flag: CancelFlag = Arc::new(AtomicBool::new(true));
         let err = check_cancel(&flag).unwrap_err();
         assert_eq!(err.to_string(), "canceled");
@@ -221,7 +221,7 @@ mod tests {
         let results = parallel_for_each(&jobs, 2, &flag, |_| Ok::<_, anyhow::Error>(()));
         assert!(results.iter().all(|r| {
             r.as_ref()
-                .is_err_and(|error| error.downcast_ref::<Cancelled>().is_some())
+                .is_err_and(|error| error.downcast_ref::<Canceled>().is_some())
         }));
     }
 

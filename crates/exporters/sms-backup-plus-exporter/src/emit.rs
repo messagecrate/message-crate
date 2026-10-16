@@ -12,7 +12,7 @@ use crate::types::ParsedMessage;
 use android_fields::android_vendor_fields;
 use anyhow::{Result, bail};
 use message_crate_core::{
-    CancelFlag, Cancelled, ConvertRun, Counter, ExportReport, ItemKind, LogSink, RunIssue,
+    CancelFlag, Canceled, ConvertRun, Counter, ExportReport, ItemKind, LogSink, RunIssue,
     RunIssueKind, count_of, prepare_outputs, project_conversation,
 };
 use message_ir::{
@@ -633,8 +633,8 @@ fn parse_all_emls(
 /// Parse one EML on a worker thread. Checks cancel first so a canceled run
 /// stops reading files promptly.
 fn parse_eml_path(eml_path: &Path, inputs: &ParseInputs, cancel: &CancelFlag) -> ParsedEmlKind {
-    if message_crate_core::is_cancelled(cancel) {
-        return ParsedEmlKind::Cancelled;
+    if message_crate_core::is_canceled(cancel) {
+        return ParsedEmlKind::Canceled;
     }
     let rel_path = relative_eml_path(eml_path, &inputs.input_roots, &inputs.file_inputs);
     parse_one_eml(eml_path, rel_path, &inputs.owner)
@@ -681,7 +681,7 @@ impl<'a> EmlIngest<'a> {
     /// cannot be written to the spool.
     fn absorb(&mut self, outcome: ParsedEmlKind) -> Result<()> {
         match outcome {
-            ParsedEmlKind::Cancelled => return Err(Cancelled.into()),
+            ParsedEmlKind::Canceled => return Err(Canceled.into()),
             ParsedEmlKind::Flat { message } => {
                 self.report.bump(FLAT_EML, 1);
                 if message.unreadable_parts > 0 {
@@ -1009,12 +1009,12 @@ mod tests {
     }
 
     /// A worker that saw the cancel flag stops the scan with the typed
-    /// `Cancelled`, so a caller tells a cancel from a failure by its type.
+    /// `Canceled`, so a caller tells a cancel from a failure by its type.
     #[test]
     fn a_canceled_parse_stops_the_scan_with_canceled() {
         let mut ingest = EmlIngest::new(None, 1, ExportReport::default());
-        let error = ingest.absorb(ParsedEmlKind::Cancelled).unwrap_err();
-        assert!(error.downcast_ref::<Cancelled>().is_some(), "{error:#}");
+        let error = ingest.absorb(ParsedEmlKind::Canceled).unwrap_err();
+        assert!(error.downcast_ref::<Canceled>().is_some(), "{error:#}");
     }
 
     /// A MIME part that could not be decoded reaches the run's report by name.

@@ -104,7 +104,7 @@ pub(super) enum ParsedEmlKind {
         reason: String,
     },
     /// Cooperative cancel observed at the start of a parallel worker.
-    Cancelled,
+    Canceled,
 }
 
 /// Read one EML: a single SMS Backup+ message, or something to skip.

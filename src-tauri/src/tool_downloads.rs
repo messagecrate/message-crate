@@ -612,7 +612,7 @@ impl ToolDownloads {
     /// a program still downloading goes on once it has arrived (#1053).
     ///
     /// `waiting` hears the program waited for and its progress each time it
-    /// changes, for the import's progress line. `cancelled` is asked at
+    /// changes, for the import's progress line. `canceled` is asked at
     /// least every [`WAIT_TICK`], so a Cancel ends the wait.
     ///
     /// Returns at once when none of `programs` is downloading: the import
@@ -621,11 +621,11 @@ impl ToolDownloads {
     /// # Errors
     ///
     /// [`WaitError::Failed`] when a download waited for ended failed, with
-    /// its reason; [`WaitError::Cancelled`] when `cancelled` said so.
+    /// its reason; [`WaitError::Canceled`] when `canceled` said so.
     pub fn wait_for(
         &self,
         programs: &[Program],
-        cancelled: &dyn Fn() -> bool,
+        canceled: &dyn Fn() -> bool,
         waiting: &mut dyn FnMut(Program, u64, Option<u64>),
     ) -> Result<(), WaitError> {
         let mut waited = Vec::new();
@@ -646,8 +646,8 @@ impl ToolDownloads {
                 waited.push(program);
             }
             drop(states);
-            if cancelled() {
-                return Err(WaitError::Cancelled);
+            if canceled() {
+                return Err(WaitError::Canceled);
             }
             waiting(program, received, total);
             states = self.states();
@@ -682,7 +682,7 @@ pub enum WaitError {
         reason: String,
     },
     /// The import was canceled while it waited.
-    Cancelled,
+    Canceled,
 }
 
 impl fmt::Display for WaitError {
@@ -694,7 +694,7 @@ impl fmt::Display for WaitError {
                 program.name(),
                 troubleshooting(*program)
             ),
-            Self::Cancelled => fmt::Display::fmt(&message_crate_core::Cancelled, f),
+            Self::Canceled => fmt::Display::fmt(&message_crate_core::Canceled, f),
         }
     }
 }

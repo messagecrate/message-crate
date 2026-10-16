@@ -191,7 +191,7 @@ const form = importForm();
 function pausedReport(): UploadFinishedReport {
   return {
     ok: false,
-    cancelled: true,
+    canceled: true,
     session_refused: false,
     messages_attempted: 4_000,
     messages_inserted: 4_000,
@@ -203,7 +203,7 @@ function pausedReport(): UploadFinishedReport {
     conversations_total: 681,
     conversations_failed: 0,
     conversations_skipped: 0,
-    conversations_cancelled: 481,
+    conversations_canceled: 481,
     results: [],
   };
 }
@@ -598,9 +598,9 @@ describe("a session the server refuses to the Import Run's own calls (#1677)", (
       report: {
         ...pausedReport(),
         ok: true,
-        cancelled: false,
+        canceled: false,
         conversations_ok: 681,
-        conversations_cancelled: 0,
+        conversations_canceled: 0,
       },
     });
     await act(async () => {

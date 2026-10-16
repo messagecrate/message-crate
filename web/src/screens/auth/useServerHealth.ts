@@ -20,7 +20,7 @@ export function useServerHealth(serverUrl: string | null): ServerHealthStatus {
       return;
     }
 
-    let cancelled = false;
+    let canceled = false;
     let debounceTimer: ReturnType<typeof setTimeout> | undefined;
     let loopTimer: ReturnType<typeof setTimeout> | undefined;
     let controller: AbortController | null = null;
@@ -39,7 +39,7 @@ export function useServerHealth(serverUrl: string | null): ServerHealthStatus {
     };
 
     const probe = () => {
-      if (cancelled) return;
+      if (canceled) return;
       controller?.abort();
       controller = new AbortController();
       const signal = controller.signal;
@@ -47,7 +47,7 @@ export function useServerHealth(serverUrl: string | null): ServerHealthStatus {
 
       void (async () => {
         const ok = await checkServerHealth(serverUrl, signal);
-        if (cancelled || signal.aborted) return;
+        if (canceled || signal.aborted) return;
         if (ok) {
           failureIndex = 0;
           setStatus("ok");
@@ -63,12 +63,12 @@ export function useServerHealth(serverUrl: string | null): ServerHealthStatus {
 
     setStatus("unknown");
     debounceTimer = setTimeout(() => {
-      if (cancelled) return;
+      if (canceled) return;
       probe();
     }, HEALTH_URL_DEBOUNCE_MS);
 
     return () => {
-      cancelled = true;
+      canceled = true;
       if (debounceTimer !== undefined) clearTimeout(debounceTimer);
       clearLoop();
       controller?.abort();

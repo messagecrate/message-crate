@@ -3,7 +3,7 @@
 //! list of message places each run hands over, which its pages read.
 //!
 //! An account has at most one running Export Run. Starting one closes the
-//! account's running run as `cancelled` ([`start_export`]), and a running run
+//! account's running run as `canceled` ([`start_export`]), and a running run
 //! with no page read for [`IDLE_EXPORT_RUN_LIMIT`] is closed the same way
 //! ([`close_idle_runs`]), so a run its client abandoned does not keep its
 //! list of messages forever (#2080). The Audit Trail records each closure and
@@ -28,7 +28,7 @@ use crate::db::sql::{SqlParam, bind_all};
 use crate::paging::{Direction, Page, PageParams, SortKey, page_from_rows};
 
 /// How long a running Export Run may go with no page of its messages read
-/// before the server closes it as `cancelled`. A client reads its pages one
+/// before the server closes it as `canceled`. A client reads its pages one
 /// after another, so a run this quiet was abandoned: its client was killed,
 /// lost its session, or failed to close it.
 pub const IDLE_EXPORT_RUN_LIMIT: TimeDelta = TimeDelta::hours(1);
@@ -173,7 +173,7 @@ fn id_list(raw: Option<String>) -> Result<Vec<i64>> {
 pub struct StartedExport {
     /// The new run's id.
     pub id: i64,
-    /// The account's running run the start closed as `cancelled`, if it had
+    /// The account's running run the start closed as `canceled`, if it had
     /// one. The caller logs it once its transaction commits
     /// ([`RunClosure::log`]).
     pub replaced: Option<i64>,
@@ -184,7 +184,7 @@ pub struct StartedExport {
 /// [`record_counts`], in the same transaction. The run starts at `now`.
 ///
 /// The account's running run, when it has one, is closed first as
-/// `cancelled` at `now` and its list of messages deleted, and the Audit Trail
+/// `canceled` at `now` and its list of messages deleted, and the Audit Trail
 /// records that a new Export replaced it. A start is never refused because a
 /// run is open, and a client still reading the replaced run is answered as
 /// for any run that is not running. Call it inside a write transaction, so
@@ -350,7 +350,7 @@ impl RunClosure<'_> {
     }
 }
 
-/// Close the running runs `closure` names as `cancelled` at `now`, delete
+/// Close the running runs `closure` names as `canceled` at `now`, delete
 /// their lists of messages, and record each closure in the Audit Trail with
 /// its reason. Returns each closed run's id and account. Call it inside a
 /// write transaction, and [`RunClosure::log`] once it commits.
@@ -360,7 +360,7 @@ async fn close_runs(
     now: DateTime<Utc>,
 ) -> Result<Vec<(i64, Option<i64>)>> {
     let query = sqlx::query_as::<_, (i64, Option<i64>)>(sqlx::AssertSqlSafe(format!(
-        "UPDATE exports SET status = 'cancelled', finished_at = $2
+        "UPDATE exports SET status = 'canceled', finished_at = $2
          WHERE {condition}
          RETURNING id, account_id",
         condition = closure.condition(),
@@ -405,7 +405,7 @@ async fn delete_run_messages(conn: &mut SqliteConnection, export_id: i64) -> Res
 }
 
 /// Close every running run with no page read for [`IDLE_EXPORT_RUN_LIMIT`]
-/// at `now` as `cancelled`, delete their lists of messages, and record each
+/// at `now` as `canceled`, delete their lists of messages, and record each
 /// closure in the Audit Trail as the server's, idle. Returns the closed
 /// runs' ids. Takes the write lock only when a run is idle.
 ///
@@ -751,7 +751,7 @@ pub async fn export_messages(
 /// Ready the account's Export Runs to outlive it, just before the account is
 /// deleted: each keeps `username`, what was asked for and how much matched,
 /// and is marked with `deletion_entry_id`, the account's `account_deleted`
-/// entry. A run still open is closed as `cancelled` at `now`, and its list of
+/// entry. A run still open is closed as `canceled` at `now`, and its list of
 /// messages, search text and picked ids go (ADR 0020).
 ///
 /// # Errors
@@ -765,7 +765,7 @@ pub async fn detach_from_account(
     now: &str,
 ) -> Result<()> {
     sqlx::query(
-        "UPDATE exports SET status = 'cancelled', finished_at = $2
+        "UPDATE exports SET status = 'canceled', finished_at = $2
          WHERE account_id = $1 AND status = 'running'",
     )
     .bind(account_id)

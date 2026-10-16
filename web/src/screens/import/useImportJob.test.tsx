@@ -305,7 +305,7 @@ function runResultWithIssue(result: DesktopJobResult, ...issues: ImportIssueEven
 function failedReport(): UploadFinishedReport {
   return {
     ok: false,
-    cancelled: false,
+    canceled: false,
     session_refused: false,
     messages_attempted: 8_000,
     messages_inserted: 0,
@@ -317,7 +317,7 @@ function failedReport(): UploadFinishedReport {
     conversations_total: 681,
     conversations_failed: 681,
     conversations_skipped: 0,
-    conversations_cancelled: 0,
+    conversations_canceled: 0,
     results: [],
   };
 }
@@ -325,7 +325,7 @@ function failedReport(): UploadFinishedReport {
 function okReport(overrides: Partial<UploadFinishedReport> = {}): UploadFinishedReport {
   return {
     ok: true,
-    cancelled: false,
+    canceled: false,
     session_refused: false,
     messages_attempted: 10,
     messages_inserted: 10,
@@ -337,7 +337,7 @@ function okReport(overrides: Partial<UploadFinishedReport> = {}): UploadFinished
     conversations_total: 1,
     conversations_failed: 0,
     conversations_skipped: 0,
-    conversations_cancelled: 0,
+    conversations_canceled: 0,
     results: [],
     ...overrides,
   };
@@ -1483,7 +1483,7 @@ describe("useImportJob wiring", () => {
           conversations_total: 10,
           conversations_ok: 7,
           conversations_failed: 1,
-          conversations_cancelled: 2,
+          conversations_canceled: 2,
         }),
       }),
     );
@@ -1998,7 +1998,7 @@ describe("useImportJob wiring", () => {
 
     expect(invokeUploadMock).not.toHaveBeenCalled();
     expect(result.current.phase).toBe("done");
-    expect(result.current.summaryView?.status).toBe("cancelled");
+    expect(result.current.summaryView?.status).toBe("canceled");
     // The run stays wherever it actually got to — "media" —
     // never advanced to a stage the canceled run never reached.
     expect(setImportStageMock).not.toHaveBeenCalledWith(1, "media_review", expect.anything());
@@ -2020,7 +2020,7 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
     await act(() => result.current.approve());
 
-    expect(result.current.summaryView?.status).toBe("cancelled");
+    expect(result.current.summaryView?.status).toBe("canceled");
     expect(completeImportMock.mock.calls.some(([id]) => id === 1)).toBe(false);
   });
 
@@ -2072,7 +2072,7 @@ describe("useImportJob wiring", () => {
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
 
-    expect(result.current.summaryView?.status).toBe("cancelled");
+    expect(result.current.summaryView?.status).toBe("canceled");
     expect(completeImportMock.mock.calls.some(([id]) => id === 1)).toBe(false);
   });
 
@@ -2093,7 +2093,7 @@ describe("useImportJob wiring", () => {
     await act(() => started);
 
     expect(invokeExtractMock).not.toHaveBeenCalled();
-    expect(result.current.summaryView?.status).toBe("cancelled");
+    expect(result.current.summaryView?.status).toBe("canceled");
     expect(completeImportMock.mock.calls.some(([id]) => id === 1)).toBe(false);
   });
 
@@ -2131,7 +2131,7 @@ describe("useImportJob wiring", () => {
         summary: "Upload complete",
         report: okReport({
           ok: false,
-          cancelled: true,
+          canceled: true,
           conversations_ok: 200,
           conversations_total: 681,
           conversations_failed: 0,
@@ -2236,7 +2236,7 @@ describe("useImportJob wiring", () => {
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "copy" })));
     await act(() => result.current.cancel());
-    expect(result.current.summaryView?.status).toBe("cancelled");
+    expect(result.current.summaryView?.status).toBe("canceled");
 
     // The form, where the next run starts, shows only once the person leaves the ended run.
     act(() => result.current.returnToForm());

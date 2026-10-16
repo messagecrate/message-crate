@@ -101,7 +101,7 @@ pub enum AuditAction {
     AddressBookLoaded,
     /// The holder exported the address book.
     AddressBookExported,
-    /// The server closed a running Export Run as `cancelled`, removing its
+    /// The server closed a running Export Run as `canceled`, removing its
     /// list of messages; `reason` says why and `export_run_id` names the run.
     ExportRunClosed,
     /// An Import Run, read from `imports`.
@@ -278,7 +278,7 @@ pub enum RunStatus {
     /// Ended without finishing.
     Failed,
     /// Ended by the person, or by the server on their behalf.
-    Cancelled,
+    Canceled,
 }
 
 impl From<ImportStatus> for RunStatus {
@@ -288,7 +288,7 @@ impl From<ImportStatus> for RunStatus {
             ImportStatus::Completed => Self::Completed,
             ImportStatus::CompletedWithIssues => Self::CompletedWithIssues,
             ImportStatus::Failed => Self::Failed,
-            ImportStatus::Cancelled => Self::Cancelled,
+            ImportStatus::Canceled => Self::Canceled,
         }
     }
 }
@@ -299,7 +299,7 @@ impl From<ExportStatus> for RunStatus {
             ExportStatus::Running => Self::Running,
             ExportStatus::Completed => Self::Completed,
             ExportStatus::Failed => Self::Failed,
-            ExportStatus::Cancelled => Self::Cancelled,
+            ExportStatus::Canceled => Self::Canceled,
         }
     }
 }
@@ -972,7 +972,7 @@ pub async fn record_refused_login(
 }
 
 /// Write the `export_run_closed` entry, stamped `now`, for the account's
-/// Export Run `export_id`, which the server closed as `cancelled` for
+/// Export Run `export_id`, which the server closed as `canceled` for
 /// `reason`: `replaced` when `actor` started a new Export, `idle` when no
 /// page was read for an hour. Nothing is written when the account does not
 /// exist.

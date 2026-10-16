@@ -62,7 +62,7 @@ pub enum ProgressEvent {
         file: String,
     },
     /// Work on one conversation file ended. A conversation a stop left
-    /// unsent gets no `FileDone`; its `cancelled` row is in the report.
+    /// unsent gets no `FileDone`; its `canceled` row is in the report.
     FileDone {
         /// File name relative to the input directory.
         file: String,
@@ -389,7 +389,7 @@ impl<'p, 'f> Reporter<'p, 'f> {
         for result in results {
             let (kind, fallback) = match result.status.as_str() {
                 "failed" => (RunIssueKind::Error, "upload failed"),
-                "cancelled" => (
+                "canceled" => (
                     RunIssueKind::Skip,
                     "the Upload ended before this conversation was sent",
                 ),
@@ -582,7 +582,7 @@ mod tests {
                 },
                 FileResult::failed("bad.jsonl", "attachment exceeds limit"),
                 FileResult::skipped("done.jsonl"),
-                FileResult::cancelled("unsent.jsonl"),
+                FileResult::canceled("unsent.jsonl"),
                 FileResult {
                     file: "silent.jsonl".into(),
                     status: "failed".into(),

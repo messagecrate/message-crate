@@ -944,7 +944,7 @@ async fn the_list_is_newest_first_filters_by_status_and_refuses_unknown_values()
         json!({ "kind": "query", "list": "messages", "q": "pizza" }),
     )
     .await;
-    // The second start closed the first as `cancelled`.
+    // The second start closed the first as `canceled`.
 
     let list: Value = get_json(&fixture.state, "/v1/exports", &alice.token).await;
     assert_eq!(list["total"], 2);
@@ -953,7 +953,7 @@ async fn the_list_is_newest_first_filters_by_status_and_refuses_unknown_values()
     let listed: Vec<&Value> = list["items"].as_array().unwrap().iter().collect();
     assert_eq!(listed[0]["id"], second["id"], "newest first: {list}");
     assert_eq!(listed[1]["id"], first["id"]);
-    assert_eq!(listed[1]["status"], "cancelled");
+    assert_eq!(listed[1]["status"], "canceled");
 
     let oldest_first: Value =
         get_json(&fixture.state, "/v1/exports?sort=started_at", &alice.token).await;
@@ -967,11 +967,9 @@ async fn the_list_is_newest_first_filters_by_status_and_refuses_unknown_values()
     let problem = expect_problem(status, &text, ProblemType::ValidationFailed);
     assert_eq!(
         problem.errors.unwrap(),
-        [
-            "status: unknown value 'bogus'; accepted values are running, completed, failed, cancelled"
-        ]
+        ["status: unknown value 'bogus'; accepted values are running, completed, failed, canceled"]
     );
-    let (status, text) = get_raw(&fixture.state, "/v1/exports?sort=colour", &alice.token).await;
+    let (status, text) = get_raw(&fixture.state, "/v1/exports?sort=color", &alice.token).await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
 }
 
@@ -1129,15 +1127,15 @@ async fn a_finished_run_refuses_pages_and_a_second_close() {
 
     let other = create_run(&fixture, &alice.token, json!({ "kind": "everything" })).await;
     let other_id = other["id"].as_i64().unwrap();
-    let cancelled: Value = post_json(
+    let canceled: Value = post_json(
         &fixture.state,
         &format!("/v1/exports/{other_id}/cancel"),
         &alice.token,
         json!({}),
     )
     .await;
-    assert_eq!(cancelled["status"], "cancelled");
-    assert!(cancelled["finished_at"].is_string());
+    assert_eq!(canceled["status"], "canceled");
+    assert!(canceled["finished_at"].is_string());
     let (status, text) = post_json_raw(
         &fixture.state,
         &format!("/v1/exports/{other_id}/complete"),
@@ -1148,7 +1146,7 @@ async fn a_finished_run_refuses_pages_and_a_second_close() {
     expect_problem(status, &text, ProblemType::StateConflict);
 }
 
-/// A run an error stopped is recorded as `failed`, never as `cancelled`,
+/// A run an error stopped is recorded as `failed`, never as `canceled`,
 /// which says the person gave it up (#2069). `complete` takes only the two
 /// outcomes it records, and a refused status leaves the run open.
 #[tokio::test]
@@ -1157,7 +1155,7 @@ async fn complete_records_a_failed_run_as_failed() {
     let run = create_run(&fixture, &alice.token, json!({ "kind": "everything" })).await;
     let id = run["id"].as_i64().unwrap();
 
-    for status in ["running", "cancelled", "bogus"] {
+    for status in ["running", "canceled", "bogus"] {
         let (code, text) = post_json_raw(
             &fixture.state,
             &format!("/v1/exports/{id}/complete"),
@@ -1587,7 +1585,7 @@ async fn a_deleted_message_leaves_its_place_empty_and_closing_drops_the_list() {
     let other = create_run(&fixture, &alice.token, json!({ "kind": "everything" })).await;
     let other_id = other["id"].as_i64().unwrap();
     assert_eq!(snapshot_rows(&fixture, other_id).await, 1);
-    let _cancelled: Value = post_json(
+    let _canceled: Value = post_json(
         &fixture.state,
         &format!("/v1/exports/{other_id}/cancel"),
         &alice.token,
@@ -1701,7 +1699,7 @@ async fn closures(
 }
 
 /// An account has one running Export Run: a second start closes the first
-/// as `cancelled` and deletes its list, a page of the first is refused as for
+/// as `canceled` and deletes its list, a page of the first is refused as for
 /// any run that is not running, and the Audit Trail says a new Export
 /// replaced it (#2080).
 #[tokio::test]
@@ -1723,7 +1721,7 @@ async fn a_second_start_closes_the_first_and_its_list_goes() {
         &alice.token,
     )
     .await;
-    assert_eq!(first["status"], "cancelled");
+    assert_eq!(first["status"], "canceled");
     assert!(first["finished_at"].is_string(), "{first}");
     assert_eq!(snapshot_rows(&fixture, first_id).await, 0);
     assert_eq!(snapshot_rows(&fixture, second_id).await, 3);
@@ -1737,7 +1735,7 @@ async fn a_second_start_closes_the_first_and_its_list_goes() {
     let problem = expect_problem(status, &text, ProblemType::StateConflict);
     assert_eq!(
         problem.detail.as_deref(),
-        Some(format!("export {first_id} is not running (status=cancelled)").as_str())
+        Some(format!("export {first_id} is not running (status=canceled)").as_str())
     );
     let (ids, total) = run_page_ids(&fixture, &alice.token, second_id, "").await;
     assert_eq!((ids.len(), total), (3, 3));
@@ -1827,7 +1825,7 @@ async fn a_run_idle_past_the_hour_is_closed_and_one_read_within_it_is_not() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(closed.status, ExportStatus::Cancelled);
+    assert_eq!(closed.status, ExportStatus::Canceled);
     assert_eq!(closed.finished_at, Some(closed_at.to_rfc3339()));
     assert_eq!(snapshot_rows(&fixture, run.id).await, 0);
     // A page read after the close is refused.

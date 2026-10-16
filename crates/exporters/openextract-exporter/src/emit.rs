@@ -230,15 +230,15 @@ impl Ingest {
                 by_label.entry(label).or_default().push(row);
             }
         }
-        let labelled: HashMap<String, Conversation> = by_label
+        let labeled: HashMap<String, Conversation> = by_label
             .into_iter()
-            .map(|(label, rows)| (label.to_string(), labelled_conversation(&rows, label)))
+            .map(|(label, rows)| (label.to_string(), labeled_conversation(&rows, label)))
             .collect();
         // How many rows alike in every column went to "Orphaned · Unknown
         // person" before this one ([`row_digest`]).
         let mut alike: HashMap<[u8; 32], usize> = HashMap::new();
         for row in rows {
-            match conversation_label(&row).and_then(|label| labelled.get(label)) {
+            match conversation_label(&row).and_then(|label| labeled.get(label)) {
                 Some(conversation) => self.ingest_row(path, row, conversation, None),
                 None if resolve_is_from_me(&row) => {
                     let earlier = alike.entry(row_digest(&row)).or_default();
@@ -367,7 +367,7 @@ fn conversation_label(row: &RawRow) -> Option<&str> {
 /// person did, it is one-to-one with them, and where nobody did, with the
 /// person the label names: as for iMazing, only a second person makes a
 /// group.
-fn labelled_conversation(rows: &[&RawRow], label: &str) -> Conversation {
+fn labeled_conversation(rows: &[&RawRow], label: &str) -> Conversation {
     match other_parties(rows).as_slice() {
         [] => one_to_one(None, Some(label)),
         [one] => one_to_one(Some(one), Some(label)),

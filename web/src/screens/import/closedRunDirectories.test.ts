@@ -30,11 +30,11 @@ function calls(
 
 describe("deleting the directories of closed Import Runs when Import opens (#2822)", () => {
   it("deletes a closed run's directory and keeps a running run's", async () => {
-    const c = calls([closed, running], { 41: "cancelled", 42: "running" });
+    const c = calls([closed, running], { 41: "canceled", 42: "running" });
 
     await deleteClosedRunDirectories(c);
 
-    expect(c.deleted).toEqual([[closed.runDir, "cancelled"]]);
+    expect(c.deleted).toEqual([[closed.runDir, "canceled"]]);
   });
 
   it("deletes the directory of every way a run closes", async () => {
@@ -46,7 +46,7 @@ describe("deleting the directories of closed Import Runs when Import opens (#282
       41: "completed",
       43: "completed_with_issues",
       44: "failed",
-      45: "cancelled",
+      45: "canceled",
     });
 
     await deleteClosedRunDirectories(c);
@@ -55,7 +55,7 @@ describe("deleting the directories of closed Import Runs when Import opens (#282
       "completed",
       "completed_with_issues",
       "failed",
-      "cancelled",
+      "canceled",
     ]);
   });
 
@@ -90,7 +90,7 @@ describe("deleting the directories of closed Import Runs when Import opens (#282
   });
 
   it("deletes nothing once the screen no longer wants the work", async () => {
-    const c = calls([closed], { 41: "cancelled" });
+    const c = calls([closed], { 41: "canceled" });
 
     await deleteClosedRunDirectories(c, () => false);
 

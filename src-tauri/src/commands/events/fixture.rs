@@ -18,7 +18,7 @@
 
 use std::path::PathBuf;
 
-use message_crate_core::{Cancelled, ProgressEvent, RunIssue, RunIssueKind, WriteStatus};
+use message_crate_core::{Canceled, ProgressEvent, RunIssue, RunIssueKind, WriteStatus};
 use message_crate_import::FileStatus;
 use serde_json::Value;
 
@@ -108,7 +108,7 @@ fn payloads() -> Value {
     // A Cancel, and a failure with a sentence for the person: between them
     // every field, and both values of `canceled`.
     let error = [
-        DesktopJobErrorEvent::from(anyhow::Error::from(Cancelled)),
+        DesktopJobErrorEvent::from(anyhow::Error::from(Canceled)),
         DesktopJobErrorEvent::from(
             anyhow::Error::from(std::io::Error::new(
                 std::io::ErrorKind::StorageFull,

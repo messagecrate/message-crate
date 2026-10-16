@@ -422,7 +422,7 @@ fn generate_replaces_an_earlier_bundle_and_removes_its_backup() {
     assert!(!out.join(".previous-active").exists());
 }
 
-/// Generation whose cancel flag is set stops with [`Cancelled`], leaves the
+/// Generation whose cancel flag is set stops with [`Canceled`], leaves the
 /// earlier bundle at `out` as it was, and removes its temporary directory,
 /// so a server that stops during a Demo Account build neither waits for the
 /// whole data set nor leaves a part-written one behind (#1431).
@@ -435,9 +435,9 @@ fn a_canceled_generation_stops_and_leaves_no_temporary_directory() {
     fs::write(out.join("README.md"), b"old readme").expect("write old readme");
 
     let error =
-        generate_cancellable(&cfg, &AtomicBool::new(true)).expect_err("a canceled run fails");
+        generate_cancelable(&cfg, &AtomicBool::new(true)).expect_err("a canceled run fails");
 
-    assert!(error.downcast_ref::<Cancelled>().is_some(), "{error:#}");
+    assert!(error.downcast_ref::<Canceled>().is_some(), "{error:#}");
     assert_eq!(
         fs::read(out.join("README.md")).expect("read README.md"),
         b"old readme",
@@ -479,7 +479,7 @@ fn prepared_conversations(parent: &Path) -> usize {
 /// The large data set, canceled once its first conversation is written,
 /// stops part-way and removes its temporary directory. The count of files
 /// it wrote is the guard: with a check at the start and in the final
-/// validation walk alone, the run would still end `Cancelled`, but only
+/// validation walk alone, the run would still end `Canceled`, but only
 /// after writing every conversation, far more than a quarter of the
 /// contacts (#1431).
 #[test]
@@ -513,7 +513,7 @@ fn a_large_generation_canceled_part_way_stops_and_leaves_no_temporary_directory(
     });
 
     let error = generated.expect_err("a run canceled part-way fails");
-    assert!(error.downcast_ref::<Cancelled>().is_some(), "{error:#}");
+    assert!(error.downcast_ref::<Canceled>().is_some(), "{error:#}");
     assert!(
         most_written < contacts / 4,
         "{most_written} conversations were written after the stop"

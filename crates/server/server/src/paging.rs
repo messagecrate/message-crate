@@ -340,11 +340,11 @@ mod tests {
 
     #[test]
     fn an_unknown_or_repeated_key_is_refused_naming_the_accepted_set() {
-        let err = parse_sort(Some("colour"), &KEYS, &DEFAULT).unwrap_err();
+        let err = parse_sort(Some("color"), &KEYS, &DEFAULT).unwrap_err();
         assert!(matches!(
             err,
             ApiError::ValidationFailed(m)
-                if m == ["sort: unknown key 'colour'; accepted keys are date, messages"]
+                if m == ["sort: unknown key 'color'; accepted keys are date, messages"]
         ));
         let err = parse_sort(Some("date,-date"), &KEYS, &DEFAULT).unwrap_err();
         assert!(

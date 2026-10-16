@@ -28,7 +28,7 @@ use crate::personas::{
     OWNER_EMAIL, OWNER_PHONE, Roster, Unassigned,
 };
 use crate::phones;
-use crate::stop_if_cancelled;
+use crate::stop_if_canceled;
 
 #[derive(Clone, Copy)]
 enum SourceFlavor {
@@ -116,7 +116,7 @@ pub struct StagingDirs<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`crate::Cancelled`] when `cancel` is set, checked before each
+/// Returns [`crate::Canceled`] when `cancel` is set, checked before each
 /// conversation, or an error if a conversation file cannot be created or
 /// written.
 pub fn write_all<R: Rng>(
@@ -172,29 +172,29 @@ impl<R: Rng> Seeder<'_, R> {
         let (android_only, imessage_only) = rest.split_at(android_only_count);
 
         for contact in imessage_only {
-            stop_if_cancelled(self.cancel)?;
+            stop_if_canceled(self.cancel)?;
             let spec = OneToOne::for_contact(contact, SourceFlavor::IMessage);
             self.one_to_one(staging.imessage, &spec)?;
         }
         for contact in android_only {
-            stop_if_cancelled(self.cancel)?;
+            stop_if_canceled(self.cancel)?;
             let spec = OneToOne::for_contact(contact, SourceFlavor::SmsBackupRestore);
             self.one_to_one(staging.sbr, &spec)?;
         }
         for contact in overlap {
-            stop_if_cancelled(self.cancel)?;
+            stop_if_canceled(self.cancel)?;
             self.overlap_one_to_one(staging, contact)?;
         }
         for ua in &roster.unassigned {
-            stop_if_cancelled(self.cancel)?;
+            stop_if_canceled(self.cancel)?;
             let count = self.rng.random_range(4..16);
             self.unassigned(staging.imessage, ua, count)?;
         }
         for group in &roster.groups {
-            stop_if_cancelled(self.cancel)?;
+            stop_if_canceled(self.cancel)?;
             self.group(staging.imessage, roster, group)?;
         }
-        stop_if_cancelled(self.cancel)?;
+        stop_if_canceled(self.cancel)?;
         self.orphaned(staging.imessage)?;
 
         if self.cfg.edge_cases.empty_one_to_one {
@@ -217,7 +217,7 @@ impl<R: Rng> Seeder<'_, R> {
         // WhatsApp conversations reuse the contact's phone number. Import treats them as
         // a separate platform on the same person.
         for contact in roster.contacts.iter().filter(|c| c.has_whatsapp) {
-            stop_if_cancelled(self.cancel)?;
+            stop_if_canceled(self.cancel)?;
             let spec = OneToOne::for_contact(contact, SourceFlavor::Whatsapp);
             self.one_to_one(staging.whatsapp, &spec)?;
         }

@@ -1859,6 +1859,9 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-16: A program that reads Import Runs, Export Runs or the Audit
+  Trail from your Message Crate and looks for the status "cancelled" must
+  look for "canceled" instead, the spelling the screens use (#2279).
 - 2026-10-15: An address book exported by an earlier build is refused when
   you load it, because its columns changed. Export it again from the
   Contacts screen and make the edits in the new file (#916).
