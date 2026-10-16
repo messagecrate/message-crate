@@ -31,12 +31,12 @@ and the heavy jobs read them:
 | `secrets` | pull requests only | `check-secrets.sh`: gitleaks reads every commit the pull request adds, with the default rules plus `.gitleaks.toml`'s rule for `mc-user-` and `mc-api-` tokens and its allowlist of test vectors |
 | `version` | always | `check-version-lockstep.sh`: the four product version files and their lockfiles agree, and on a `v*` tag agree with the tag; then `check-changelog.sh`: `CHANGELOG.md`'s width, tight lists and dated entries |
 
-The ruleset requires eleven of them: every job but `windows-config`,
-`windows-local-server` and `secrets`. Whether it should require the two
-Windows jobs too is open in #2788.
-`secrets` joins the required checks once it has run green (#3093). GitHub's
-own secret scanning and push protection are on for the repository as well.
-They block a provider token at `git push`, and the gitleaks job finds what
+The ruleset requires twelve of them: every job but `secrets` and
+`windows-local-server`. The maintainer adds `secrets` to the required checks
+once it has run green (#3093), and `windows-local-server` once it has run
+green, for the reason the ruleset requires `windows-config` (#2788).
+GitHub's own secret scanning and push protection are on for the repository
+as well. They block a provider token at `git push`, and the gitleaks job finds what
 their patterns miss, such as a pasted Session or API token. The job runs on
 pull requests only, like `docker-build`, so the release jobs do not need it:
 a tag carries commits a pull request already scanned.
@@ -63,9 +63,12 @@ check that keeps the website directory and the Data Directory apart
 target that comes back verbatim (`\\?\C:\...`), and a short name
 (`WEBSIT~1`) that stands for a long one. Every other job that runs on a pull
 request runs on Linux. A Windows build is not worth its time on a pull request
-that cannot change these paths. On a push, a tag or a manual run it runs like
-every other job, and the `docker` and `release` jobs need it, so a release
-waits for it (#2683).
+that cannot change these paths. The ruleset requires the job all the same
+(#2788). When the job's `if:` skips it, GitHub counts the required check as
+passed. So the job holds back only a pull request that changes the config
+paths or a workflow. Any other pull request merges without a Windows build.
+On a push, a tag or a manual run it runs like every other job, and the `docker` and
+`release` jobs need it, so a release waits for it (#2683).
 `src-tauri/src/local_server.rs` and everything under
 `src-tauri/src/local_server/` set `local_server` as well as `rust`, and so
 does any change to a workflow. The `windows-local-server` job reads it, the
@@ -77,7 +80,7 @@ The job's tests start a stand-in server in the Job Object with a child of
 its own, then kill the server, or end it alone and close the job's handle,
 and see both processes end (#1962). macOS runs the process-group code the
 Linux tests cover. `Cargo.lock` does not set `local_server`, so a dependency
-bump does not start a Windows build on a pull request; the push to `main`
+bump does not start a Windows build on a pull request. The push to `main`
 runs the job.
 
 `src-tauri`'s Clippy stays inside `check-tauri` rather than the `clippy` job,
@@ -123,7 +126,7 @@ takes minutes, so `docker-build` in `ci.yml` leaves it out. It gates
 nothing: it has no pull request trigger and is not in the ruleset's required
 list. A scheduled run does nothing when `main` is still at the commit the
 previous scheduled run saw. Its verdict arrives after the merge, so it reports
-by opening an issue labelled `bug`, or by commenting on that issue while it is
+by opening an issue labeled `bug`, or by commenting on that issue while it is
 open, rather than by a check on a pull request.
 
 The docs build on a pull request is the `docs` job in `ci.yml`, not a trigger
@@ -137,7 +140,7 @@ product people can install, and between releases that is the tagged version,
 not the tip of `main`; a page that documents a screen nobody can download yet
 is wrong for every reader who arrives from the download link. Publishing on
 merge also did real work for nothing: a burst of twelve squash merges on
-2026-09-05 produced twelve Pages runs, eleven of them cancelled by the next,
+2026-09-05 produced twelve Pages runs, eleven of them canceled by the next,
 each after a full `cargo doc`. `workflow_dispatch` stays for a docs-only
 correction that should not wait for the next tag.
 
@@ -336,8 +339,8 @@ request whose review finds `main` red on the same job stops and says so
 
 `ci.yml` cancels an in-progress run only for a `pull_request` event, never for
 a push to `main` or a tag, so a run on `main` that has started keeps its
-verdict. Before this, a burst of squash merges cancelled every `main` run but
-the last. Twelve merges on 2026-09-05 left eleven cancelled runs and one
+verdict. Before this, a burst of squash merges canceled every `main` run but
+the last. Twelve merges on 2026-09-05 left eleven canceled runs and one
 result.
 
 GitHub still keeps only one waiting run per concurrency group, so a merge that
@@ -362,7 +365,7 @@ conversations do not already make.
 The `pr-review` skill (`.claude/skills/pr-review/`) is that review. Three
 sub-agents read the diff with fresh context, one each for the repo's
 standards, the issue it implements, and correctness, so one axis cannot mask
-another. Every finding is posted, judgement calls included, and closes as
+another. Every finding is posted, judgment calls included, and closes as
 fixed, declined with evidence, or deferred to a filed issue, so nothing the
 review raised is dropped without a record. The fix commits get one more
 Standards and Correctness pass. Its comments carry a `<!-- pr-review -->`

@@ -36,7 +36,9 @@ use super::events;
 use super::events::{ImportProgressEvent, Step};
 use super::jobs::{spawn_job, start_job};
 use crate::app_directories::RunLog;
-use crate::run_directories::{self, RunDirectories, StagingRoot};
+use crate::run_directories::{
+    self, ClosedRun, DirectoryOfRun, RunDirectories, SignedIn, StagingRoot,
+};
 use crate::state::{AppState, JobName};
 use crate::tool_downloads::{Program, ToolDownloads};
 
@@ -202,11 +204,11 @@ fn transcode_summary(report: &TranscodeReport) -> String {
 /// Follows `extract`'s job shape: the job starts through [`start_job`], with
 /// a cancel flag of its own, the Media stage runs on a background thread, and
 /// progress/log/finished go back as `desktop-job:*` events so the UI reuses
-/// one progress view. A cancelled Media stage is reported through
+/// one progress view. A canceled Media stage is reported through
 /// `desktop-job:error` the same way any other failure is. That is exactly how
-/// a cancelled `extract` run already behaves (`extract` never special-cases
+/// a canceled `extract` run already behaves (`extract` never special-cases
 /// its own cancellation either; `spawn_job`'s generic `Err` handling covers
-/// both). An earlier version of this command ended a cancelled Media stage
+/// both). An earlier version of this command ended a canceled Media stage
 /// quietly instead (a `desktop-job:log` line, `Ok(())`, no
 /// `desktop-job:error`); that left `awaitDesktopJob`'s promise on the web
 /// side permanently unsettled (no `desktop-job:finished`, no
@@ -291,7 +293,7 @@ pub fn transcode_staging(
 
         // A cancellation is just another `Err` here. `spawn_job` reports it
         // as `desktop-job:error` with the error chain as `detail`, the same
-        // generic path a cancelled `extract` run already goes through. See
+        // generic path a canceled `extract` run already goes through. See
         // this function's doc comment for why the earlier quiet-cancel
         // special case was removed.
         let report = outcome.inspect_err(|error| run_log.error(error))?;
@@ -340,6 +342,63 @@ pub fn delete_run_dir(
     args: RunDirArgs,
 ) -> Result<(), String> {
     directories.delete(&args.run_dir)
+}
+
+/// The run directories on this computer of the signed-in account's Import
+/// Runs on the Message Crate it is signed in to, each with its run's id, so
+/// Import can ask the server how each run stands (#2822).
+///
+/// # Errors
+///
+/// Returns an error when the record of run directories cannot be read.
+#[tauri::command(async)]
+pub fn list_account_run_dirs(
+    directories: tauri::State<'_, RunDirectories>,
+    args: SignedIn,
+) -> Result<Vec<DirectoryOfRun>, String> {
+    directories.runs_of(&args)
+}
+
+/// The disk space the signed-in account's Import Runs take in the Staging
+/// Directory on this computer, in bytes, measured now (#3087).
+///
+/// # Errors
+///
+/// Returns an error when the record of run directories cannot be read.
+#[tauri::command(async)]
+pub fn account_staging_bytes(
+    directories: tauri::State<'_, RunDirectories>,
+    args: SignedIn,
+) -> Result<u64, String> {
+    directories.bytes_of(&args)
+}
+
+/// The disk space the whole Staging Directory takes on this computer, in
+/// bytes, measured now ([`RunDirectories::bytes_of_all`]). Server Settings
+/// shows it to the owner (#3087).
+///
+/// # Errors
+///
+/// Returns an error when the record of run directories cannot be read.
+#[tauri::command(async)]
+pub fn all_staging_bytes(directories: tauri::State<'_, RunDirectories>) -> Result<u64, String> {
+    directories.bytes_of_all()
+}
+
+/// Delete the directory of an Import Run the server reports as closed, and
+/// write one line in the run's log naming the run and the directory. Returns
+/// whether a directory was removed.
+///
+/// # Errors
+///
+/// Returns an error when the directory is not the run's, or cannot be
+/// deleted.
+#[tauri::command(async)]
+pub fn delete_closed_run_dir(
+    directories: tauri::State<'_, RunDirectories>,
+    args: ClosedRun,
+) -> Result<bool, String> {
+    directories.delete_closed(&args)
 }
 
 /// File in a run directory holding the Import Run's record so far: the

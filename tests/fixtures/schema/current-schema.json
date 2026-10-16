@@ -42,6 +42,7 @@
     "message_versions_fts_docsize",
     "message_versions_fts_idx",
     "server_settings",
+    "session_extensions",
     "staging_message_versions"
   ],
   "indexes": [

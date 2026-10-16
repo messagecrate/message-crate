@@ -3,11 +3,11 @@ import { textInputClass } from "../../components/TextField";
 import TimeZoneField from "../../components/TimeZoneField";
 import { fixedSettings } from "../../lib/account";
 import { errorLine } from "../../lib/apiErrorMessage";
-import { useSettingsAccount, useUpdateSettingsProfile } from "../../lib/useSettingsAccount";
 import { AddressBookSection } from "./AddressBookSection";
 import { IdentitiesSection } from "./IdentitiesSection";
 import type { NameEdit } from "./nameEdit";
 import { sectionTitleClass } from "./profileStyles";
+import { useSettingsAccount, useUpdateSettingsProfile } from "./useSettingsAccount";
 
 /**
  * Profile settings: display name, time zone, identities, address book.

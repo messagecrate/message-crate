@@ -1,5 +1,7 @@
 //! Listing and reading the Import Run logs in the Logs Directory, for the
-//! Logs panel on Owner Home and the run's row in Settings → Storage.
+//! Logs panel on Owner Home and the run's row in Settings → Storage, and the
+//! desktop app's own log beside them ([`crate::app_log`]), which names no
+//! account and so is the owner's alone, listed as "Desktop app".
 //!
 //! Who reads which log (decided on #1665): the owner reads every run log on
 //! this computer, whoever ran the import; an account reads the logs of the
@@ -28,6 +30,8 @@ use std::path::{Path, PathBuf};
 
 use message_crate_core::{RunLogAccount, RunLogLevel, RunLogLine, parse_run_log_line};
 use message_crate_log_lines::{LineFilter, lines_backward, parse_line};
+
+use crate::app_log::DESKTOP_APP_LOG;
 use serde::{Deserialize, Serialize};
 
 /// How many lines at the start of a log are read for its account line.
@@ -71,13 +75,43 @@ impl Reader {
     }
 }
 
-/// One Import Run log on this computer.
+/// Which log a file in the Logs Directory is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LogKind {
+    /// An Import Run's log, `import-….log`.
+    ImportRun,
+    /// The desktop app's own log, [`DESKTOP_APP_LOG`].
+    DesktopApp,
+}
+
+impl LogKind {
+    /// The kind of the log named `name` in the Logs Directory, or `None`
+    /// when `name` is not one: one file name, `import-….log` or
+    /// [`DESKTOP_APP_LOG`], with no directory in it.
+    fn of(name: &str) -> Option<Self> {
+        if name == DESKTOP_APP_LOG {
+            Some(Self::DesktopApp)
+        } else if name.starts_with("import-")
+            && name.ends_with(".log")
+            && !name.contains(['/', '\\'])
+        {
+            Some(Self::ImportRun)
+        } else {
+            None
+        }
+    }
+}
+
+/// One log on this computer: an Import Run's, or the desktop app's own.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RunLogEntry {
+pub struct LogEntry {
     /// The file's name in the Logs Directory, such as
     /// `import-iphone-ios-261004-143000.log`. A download is named the same.
     pub name: String,
+    /// Whether it is an Import Run's log or the desktop app's.
+    pub kind: LogKind,
     /// Who ran the run, on which Message Crate, or `None` when the log does
     /// not say.
     pub account: Option<RunLogAccount>,
@@ -124,14 +158,15 @@ pub struct LinesPage {
     pub has_more: bool,
 }
 
-/// The run logs in `logs_dir` that `reader` may read, the most recently
-/// written first. A Logs Directory that does not exist yet holds none.
+/// The logs in `logs_dir` that `reader` may read, the most recently written
+/// first: the Import Run logs, and the desktop app's own for the owner. A
+/// Logs Directory that does not exist yet holds none.
 ///
 /// # Errors
 ///
 /// Returns an error when the directory cannot be read. A log in it that
 /// cannot be read is left out.
-pub fn list(logs_dir: &Path, reader: &Reader) -> io::Result<Vec<RunLogEntry>> {
+pub fn list(logs_dir: &Path, reader: &Reader) -> io::Result<Vec<LogEntry>> {
     let entries = match fs::read_dir(logs_dir) {
         Ok(entries) => entries,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -142,7 +177,10 @@ pub fn list(logs_dir: &Path, reader: &Reader) -> io::Result<Vec<RunLogEntry>> {
     // listed, is left out: one bad file does not empty the listing.
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if !is_run_log_name(&name) || !entry.file_type().is_ok_and(|kind| kind.is_file()) {
+        let Some(kind) = LogKind::of(&name) else {
+            continue;
+        };
+        if !entry.file_type().is_ok_and(|kind| kind.is_file()) {
             continue;
         }
         let Ok(Head { account, has_lines }) = head_of(&entry.path()) else {
@@ -158,8 +196,9 @@ pub fn list(logs_dir: &Path, reader: &Reader) -> io::Result<Vec<RunLogEntry>> {
             continue;
         };
         let modified: chrono::DateTime<chrono::Utc> = modified.into();
-        logs.push(RunLogEntry {
+        logs.push(LogEntry {
             name,
+            kind,
             this_message_crate: account
                 .as_ref()
                 .is_some_and(|account| reader.signed_in_to(account)),
@@ -234,37 +273,40 @@ pub fn read_whole(logs_dir: &Path, reader: &Reader, name: &str) -> Result<Vec<u8
     fs::read(&path).map_err(|error| format!("Could not read {name}: {error}"))
 }
 
-/// The path of the log `name` in `logs_dir`, when it is a run log there that
+/// The path of the log `name` in `logs_dir`, when it is a log there that
 /// `reader` may read.
 fn readable_log(logs_dir: &Path, reader: &Reader, name: &str) -> Result<PathBuf, String> {
-    if !is_run_log_name(name) {
-        return Err(format!("{name} is not an Import Run log"));
-    }
+    let Some(kind) = LogKind::of(name) else {
+        return Err(format!("{name} is not a log in the Logs Directory"));
+    };
     let path = logs_dir.join(name);
     // Not `is_file`, which follows a symbolic link: a link named like a run
     // log would read whatever it points at.
     if !fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.is_file()) {
-        return Err(format!(
-            "No Import Run log named {name} is on this computer"
-        ));
+        return Err(format!("No log named {name} is on this computer"));
     }
     let account = head_of(&path)
         .map_err(|error| format!("Could not read {name}: {error}"))?
         .account;
     if !reader.reads(account.as_ref()) {
-        return Err(format!("{name} is the log of another account's Import Run"));
+        return Err(match kind {
+            LogKind::ImportRun => format!("{name} is the log of another account's Import Run"),
+            LogKind::DesktopApp => format!("{name}, the desktop app's log, is the owner's alone"),
+        });
     }
     Ok(path)
 }
 
-/// Whether `name` is the name of a run log in the Logs Directory: one file
-/// name, `import-….log`, with no directory in it.
-fn is_run_log_name(name: &str) -> bool {
-    name.starts_with("import-")
-        && name.ends_with(".log")
-        && !name.contains(['/', '\\'])
-        && name != "."
-        && name != ".."
+/// The account line of the log at `path`: which Import Run the log is of,
+/// for which account, on which Message Crate. `None` when the log is not
+/// there, cannot be read, or names no account.
+pub fn account_of(path: &Path) -> Option<RunLogAccount> {
+    // Not `is_file`, which follows a symbolic link: a link named like a run
+    // log would tie a directory to whatever it points at.
+    if !fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file()) {
+        return None;
+    }
+    head_of(path).ok()?.account
 }
 
 /// What a log's first and last lines say: the account the first name, if

@@ -86,6 +86,9 @@ pub struct AppState {
     /// names each one in the log (`serve_until_shutdown` in
     /// [`crate::startup`]).
     pub(crate) in_flight: crate::in_flight::InFlight,
+    /// The move of a Session's expiry running in the background, if any
+    /// ([`crate::auth::ExpiryMoves`]).
+    pub(crate) expiry_moves: crate::auth::ExpiryMoves,
     /// The error SQLite gave when the server asked for write-ahead logging
     /// as it opened the database.
     pub(crate) wal_error: WalError,
@@ -103,7 +106,7 @@ pub(crate) struct ImportState {
     /// so imports can never drain the connection pool. Held here, not in a
     /// static, so tests in one binary cannot wait on each other's imports.
     pub(crate) slots: Arc<tokio::sync::Semaphore>,
-    /// Cancelled the moment the server is told to stop
+    /// Canceled the moment the server is told to stop
     /// ([`AppState::on_stop_signal`]), so an import batch still reading its
     /// body stops reading and is refused with `server-stopping` at once,
     /// rather than making the stop wait for the rest of the body (#2878).
@@ -208,6 +211,7 @@ sub_state!(
     DemoState => demo,
     MediaLinkKey => media_link_key,
     WalError => wal_error,
+    crate::auth::ExpiryMoves => expiry_moves,
 );
 
 impl AppState {
@@ -235,6 +239,7 @@ impl AppState {
             media_link_key: MediaLinkKey::random(),
             media_queue: MediaQueue::default(),
             in_flight: crate::in_flight::InFlight::default(),
+            expiry_moves: crate::auth::ExpiryMoves::default(),
             wal_error: WalError(opened.wal_error),
         }
     }

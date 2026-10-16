@@ -228,7 +228,7 @@ fn prepare_out_dir(out_dir: &Path, skip_attachments: bool) -> Result<()> {
 ///
 /// Returns an error when the session token or output directory is missing,
 /// login fails, a page fetch fails, a conversation file cannot be written, or
-/// the run is cancelled.
+/// the run is canceled.
 pub fn run(
     cfg: &ExportConfig,
     mut on_progress: Option<&mut ProgressFn<'_>>,
@@ -255,7 +255,7 @@ pub fn run(
     let export = exporter.start_export(&mut on_progress)?;
     let outcome = exporter.export_into_directory(&export, &mut on_progress);
     // The client closes the run either way, so the server's record says how
-    // it ended: cancelled only when the person asked, failed for any other
+    // it ended: canceled only when the person asked, failed for any other
     // error. A run the server already closed is left as it is. A close that
     // fails after the files are written is a warning, not a failed export:
     // the directory is complete, only the record is not.
@@ -311,7 +311,7 @@ pub fn run(
 }
 
 /// How a run that returned `outcome` is closed on the server: completed when
-/// it wrote its conversation files, cancelled when the person stopped it,
+/// it wrote its conversation files, canceled when the person stopped it,
 /// and failed for every other error. `None` when the server already closed
 /// it ([`crate::http::RunCanceledOnServer`]): a close would only be refused.
 fn close_action<T>(outcome: &Result<T>) -> Option<CloseAction> {
@@ -517,7 +517,7 @@ impl<'a> Export<'a> {
     ///
     /// Returns an error when a page fetch fails after retries, a message
     /// cannot be converted, a file cannot be written, or the run is
-    /// cancelled. An Asset that cannot be fetched is counted in the result
+    /// canceled. An Asset that cannot be fetched is counted in the result
     /// instead.
     fn export_into_directory(
         &self,
@@ -556,7 +556,7 @@ impl<'a> Export<'a> {
     /// # Errors
     ///
     /// Returns an error when a page fails after retries, a message cannot be
-    /// converted, or the run is cancelled.
+    /// converted, or the run is canceled.
     fn fetch_all_messages(
         &self,
         export: &ExportRun,
@@ -634,7 +634,7 @@ impl<'a> Export<'a> {
     ///
     /// # Errors
     ///
-    /// Returns an error when the run is cancelled or the server refuses the
+    /// Returns an error when the run is canceled or the server refuses the
     /// session.
     fn fetch_assets(
         &self,

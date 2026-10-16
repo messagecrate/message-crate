@@ -349,7 +349,7 @@ fn media_settings_for(
 /// beside the export sentinel it wrote.
 ///
 /// The record is written after the exporter and not before, because a fresh
-/// export refuses a directory that already holds files it does not recognise.
+/// export refuses a directory that already holds files it does not recognize.
 /// A Staging that is interrupted leaves no record. Nothing reads one until
 /// Staging finishes, and the resumed Staging writes it.
 ///

@@ -15,7 +15,7 @@ name: Nightly
 # It is a report, not a gate: it has no pull_request trigger and nothing
 # here is in the ruleset's required list, so it lives outside ci.yml, whose
 # every job the ruleset on main requires. A failed night opens an issue
-# labelled bug instead. Why: docs/adr/0007-ci-is-the-only-gate.md.
+# labeled bug instead. Why: docs/adr/0007-ci-is-the-only-gate.md.
 #
 # No job installs a package: the build happens inside the Dockerfile's own
 # stages, and the browser runs inside the Playwright image.
@@ -30,7 +30,7 @@ on:
   # Started by hand, the build runs whether or not main changed.
   workflow_dispatch:
 
-# One run at a time. A second run waits for the first rather than cancelling
+# One run at a time. A second run waits for the first rather than canceling
 # it, so a night's verdict is never lost to a manual run.
 concurrency:
   group: ${{ github.workflow }}
@@ -48,7 +48,7 @@ jobs:
   # scheduled run late or drops one: nothing is built twice and no commit
   # falls between two windows.
   #
-  # A cancelled run does not count as the previous run, because it may have
+  # A canceled run does not count as the previous run, because it may have
   # stopped before the build. With no previous run, or when the lookup
   # fails, the build runs: building once too often costs minutes, and
   # skipping wrongly hides a broken image.
@@ -137,8 +137,8 @@ jobs:
   # ── A failed night opens an issue ─────────────────────────────────────
   # One open issue holds every failed night: the first failure opens it and
   # each later one adds a comment, until somebody closes it. A job that
-  # timed out ends as cancelled, so that counts as failed too; a run that a
-  # person cancelled does not.
+  # timed out ends with GitHub's result `cancelled`, so that counts as failed
+  # too; a run that a person canceled does not.
   report:
     name: Report a failed night
     needs: [changed, docker-build]

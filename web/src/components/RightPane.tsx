@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
+import { useRightToolbar } from "../hooks/useRightToolbar";
 import { LIST_TOOLBAR_CLASS } from "./ListRangeHeader";
-import { useRightToolbar } from "./useRightToolbar";
 
 /** The narrowest the right pane gets: a narrower window scrolls the row under the header sideways (#1722). */
 export const RIGHT_PANE_MIN_WIDTH = 320;

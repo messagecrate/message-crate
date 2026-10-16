@@ -14,8 +14,8 @@ const listServerLogFiles = vi.hoisted(() => vi.fn());
 const listAccounts = vi.hoisted(() => vi.fn());
 const getAccountProfile = vi.hoisted(() => vi.fn());
 const getServerState = vi.hoisted(() => vi.fn());
-const invokeListImportRunLogs = vi.hoisted(() => vi.fn());
-const invokeReadImportRunLogLines = vi.hoisted(() => vi.fn());
+const invokeListLogs = vi.hoisted(() => vi.fn());
+const invokeReadLogLines = vi.hoisted(() => vi.fn());
 
 vi.mock("../../lib/authContext", () => authModule({ accountId: 1 }));
 vi.mock("../../lib/tauriCheck", () => ({ isTauri: () => desktop.on }));
@@ -29,8 +29,8 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
 }));
 vi.mock("../../lib/desktop/runLog", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/desktop/runLog")>()),
-  invokeListImportRunLogs: (...a: unknown[]) => invokeListImportRunLogs(...a),
-  invokeReadImportRunLogLines: (...a: unknown[]) => invokeReadImportRunLogLines(...a),
+  invokeListLogs: (...a: unknown[]) => invokeListLogs(...a),
+  invokeReadLogLines: (...a: unknown[]) => invokeReadLogLines(...a),
 }));
 
 const page = (text: string) => ({
@@ -44,11 +44,23 @@ const HERE = "0123456789abcdef0123456789abcdef";
 
 const ALICE_RUN = {
   name: "import-whatsapp-261004-143000.log",
+  kind: "importRun",
   account: { importRunId: 42, accountId: 2, server: "http://127.0.0.1:8080", messageCrateId: HERE },
   thisMessageCrate: true,
   hasLines: true,
   bytes: 120,
   modifiedAt: "2026-10-04T14:35:00Z",
+};
+
+/** The desktop app's own log, which names no account. */
+const DESKTOP_APP_LOG = {
+  name: "desktop-app.log",
+  kind: "desktopApp",
+  account: null,
+  thisMessageCrate: false,
+  hasLines: true,
+  bytes: 80,
+  modifiedAt: "2026-10-05T09:00:00Z",
 };
 
 function renderPanel() {
@@ -75,8 +87,8 @@ describe("OwnerLogsPanel", () => {
       { id: 2, name: "server-000002.log", bytes: 10, modified_at: "2026-10-08T12:00:00Z" },
       { id: 1, name: "server-000001.log", bytes: 50, modified_at: "2026-10-07T12:00:00Z" },
     ]);
-    invokeListImportRunLogs.mockResolvedValue([ALICE_RUN]);
-    invokeReadImportRunLogLines.mockResolvedValue(page("chat.jsonl failed: the server refused"));
+    invokeListLogs.mockResolvedValue([ALICE_RUN]);
+    invokeReadLogLines.mockResolvedValue(page("chat.jsonl failed: the server refused"));
     startFakeClock();
   });
 
@@ -93,7 +105,7 @@ describe("OwnerLogsPanel", () => {
     expect(screen.getByText("the server refused a login")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download server-000002.log" })).toBeInTheDocument();
     // The owner reads every run log on this computer.
-    expect(invokeListImportRunLogs).toHaveBeenCalledWith({
+    expect(invokeListLogs).toHaveBeenCalledWith({
       messageCrateId: HERE,
       accountId: 1,
       owner: true,
@@ -104,12 +116,37 @@ describe("OwnerLogsPanel", () => {
     await settle();
 
     expect(screen.getByText("chat.jsonl failed: the server refused")).toBeInTheDocument();
-    expect(invokeReadImportRunLogLines).toHaveBeenCalledWith(
+    expect(invokeReadLogLines).toHaveBeenCalledWith(
       { messageCrateId: HERE, accountId: 1, owner: true },
       ALICE_RUN.name,
       expect.objectContaining({ level: "warn" }),
     );
     expect(screen.getByRole("button", { name: "Download" })).toBeInTheDocument();
+  });
+
+  it("picks the desktop app's own log as Desktop app, apart from the Import Runs", async () => {
+    invokeListLogs.mockResolvedValue([DESKTOP_APP_LOG, ALICE_RUN]);
+    invokeReadLogLines.mockResolvedValue(page("The server's processes will not end with it"));
+    const user = setupUser();
+    renderPanel();
+    await settle();
+
+    await user.click(screen.getByRole("button", { name: /Log$/ }));
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "The server's log",
+      "Desktop app",
+      expect.stringMatching(/^Import Run 42 by alice/),
+    ]);
+    await user.click(screen.getByRole("option", { name: "Desktop app" }));
+    await settle();
+
+    expect(screen.getByText("The server's processes will not end with it")).toBeInTheDocument();
+    expect(invokeReadLogLines).toHaveBeenCalledWith(
+      { messageCrateId: HERE, accountId: 1, owner: true },
+      "desktop-app.log",
+      expect.objectContaining({ level: "warn" }),
+    );
+    expect(screen.getByText(/^desktop-app\.log, kept in the Logs Directory/)).toBeInTheDocument();
   });
 
   it("offers the server's log alone in a browser", async () => {
@@ -122,6 +159,6 @@ describe("OwnerLogsPanel", () => {
     await user.click(screen.getByRole("button", { name: /Log$/ }));
     const options = screen.getAllByRole("option");
     expect(options.map((option) => option.textContent)).toEqual(["The server's log"]);
-    expect(invokeListImportRunLogs).not.toHaveBeenCalled();
+    expect(invokeListLogs).not.toHaveBeenCalled();
   });
 });

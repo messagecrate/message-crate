@@ -143,7 +143,7 @@ fn one_to_one_header(chat: &str) -> String {
         .to_string()
 }
 
-/// #1173: two conversations whose chat ids differ as written and normalise
+/// #1173: two conversations whose chat ids differ as written and normalize
 /// to one identity, in one batch, become one conversation holding both
 /// conversations' messages, as they do when they arrive in separate batches.
 /// Both messages share one second, so the second conversation's message
@@ -346,7 +346,7 @@ async fn copies_whose_messages_end_together_keep_the_stored_title() {
 }
 
 /// #1172: a group header that lists one person twice, under two spellings of
-/// one number that normalise to one handle, is taken with `200 OK` and the
+/// one number that normalize to one handle, is taken with `200 OK` and the
 /// group lists that person once.
 #[tokio::test]
 async fn a_participant_listed_twice_under_one_identity_is_listed_once() {

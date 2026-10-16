@@ -86,7 +86,7 @@ export function completionTextFor(
   if (status === "completed") return "Import complete";
   if (status === "completed_with_issues") return "Import completed with issues";
   if (status === "failed") return "Import failed";
-  if (status === "cancelled") return "Import cancelled";
+  if (status === "cancelled") return "Import canceled";
   if (status === "paused") return "Import paused";
   return undefined;
 }

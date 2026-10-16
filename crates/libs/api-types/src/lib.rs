@@ -199,7 +199,7 @@ impl std::str::FromStr for ImportMode {
 /// run did something with it worth knowing that is not a failure, and
 /// `resolved` when an earlier row about the same item no longer holds.
 // Every crate that sends or reads a row (the exporters, Media, the Upload,
-// the desktop app and the server) takes this type, so a misspelt kind does
+// the desktop app and the server) takes this type, so a misspelled kind does
 // not compile. `message-crate-core` re-exports it beside its `RunIssue`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
@@ -895,7 +895,7 @@ api_shape! {
         /// The identity that reacted, for incoming reactions.
         pub sender: Option<String>,
         /// The name the source gave the reactor of an incoming reaction
-        /// when it gave no address for them, as an iMazing export does;
+        /// when it gave no address for them; no source gives one yet.
         /// `null` when `sender` is set, and for the account holder's own
         /// reactions. A name is shown, never matched to a contact.
         pub sender_display_name: Option<String>,

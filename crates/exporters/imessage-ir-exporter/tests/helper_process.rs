@@ -507,7 +507,7 @@ fn an_unreadable_database_is_reported_in_the_helpers_words() {
 }
 
 #[test]
-fn a_second_run_reuses_the_cancelled_flag_only_when_set() {
+fn a_second_run_reuses_the_canceled_flag_only_when_set() {
     helper_binary();
     let dir = tempfile::tempdir().unwrap();
     let db_path = write_chat_db(dir.path());

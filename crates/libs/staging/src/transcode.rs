@@ -185,7 +185,7 @@ pub struct TranscodeReport {
 ///
 /// # Errors
 ///
-/// Returns an error when the Media stage is cancelled, ffmpeg/ffprobe are
+/// Returns an error when the Media stage is canceled, ffmpeg/ffprobe are
 /// unavailable, or the directory cannot be read, or a conversation file cannot
 /// be parsed or written. A single attachment ffmpeg cannot process is an
 /// item-level issue, counted in the report and sent to `issues` as it

@@ -12,7 +12,7 @@ use std::fmt;
 use std::path::{Component, Path, PathBuf};
 
 /// The message every refused path carries, so a test or a log line can
-/// recognise the refusal without depending on the exact path text.
+/// recognize the refusal without depending on the exact path text.
 pub const UNSAFE_ATTACHMENT_PATH: &str = "unsafe attachment path";
 
 /// An attachment path that could escape its directory, or names nothing.

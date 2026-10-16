@@ -48,7 +48,7 @@ skipped check reads as passed, so they say nothing. Why:
 The templates exist for whoever opens the pull request to fill in — an agent included —
 not as options offered to a reviewer:
 
-- `.github/PULL_REQUEST_TEMPLATE/feature.md` for new behaviour: what it does
+- `.github/PULL_REQUEST_TEMPLATE/feature.md` for new behavior: what it does
   and for whom, the key files changed, HTTP API and schema changes, how to
   test it.
 - `.github/PULL_REQUEST_TEMPLATE/bugfix.md` for a fix: expected against

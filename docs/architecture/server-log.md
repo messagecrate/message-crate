@@ -106,7 +106,7 @@ its message is what makes it possible to fix.
 
 ## One line per event
 
-Each file holds one event per line, in the stderr format without colour: the
+Each file holds one event per line, in the stderr format without color: the
 time in UTC (RFC 3339, microseconds), the level, the request or work the event
 belongs to, and what it says. A line break inside an event, from an error
 chain or a message that holds one, is written as the two characters `\n`.

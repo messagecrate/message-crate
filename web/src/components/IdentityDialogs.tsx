@@ -1,7 +1,7 @@
+import type { useIdentityCountryPick } from "../hooks/useIdentityCountryPick";
 import type { OfferedService } from "../lib/offeredService";
 import AddIdentityDialog from "./AddIdentityDialog";
 import IdentityCountryDialog from "./IdentityCountryDialog";
-import type { useIdentityCountryPick } from "./useIdentityCountryPick";
 
 /**
  * The Pick country dialog and the Add identity dialog of one identity table.

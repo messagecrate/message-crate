@@ -8,6 +8,7 @@ import VirtualizedImportIssuesTable, {
 } from "../../components/import/VirtualizedImportIssuesTable";
 import OpenPathButton from "../../components/OpenPathButton";
 import StepProgress, { type Step } from "../../components/StepProgress";
+import { useToolsStatus } from "../../hooks/useToolsStatus";
 import { groupSlug, slugPath } from "../../lib/contactGroups";
 import { invokeImportRunLog } from "../../lib/desktop/runLog";
 import type { AttachmentForecast, StagingSummary } from "../../lib/desktop/staging";
@@ -20,7 +21,6 @@ import { useRouteQuery } from "../../lib/routeQuery";
 import { getImport } from "../../lib/serverApi";
 import { isTauri } from "../../lib/tauriCheck";
 import type { AttachmentMediaMode, MediaToolName } from "../../lib/types";
-import { useToolsStatus } from "../../lib/useToolsStatus";
 import ImportContactsPanel from "../settings/storage/ImportContactsPanel";
 import {
   type ImportPhase,
@@ -314,7 +314,7 @@ export default function ImportRunView({
   /** Leave a finished run for the import form. */
   onBack: () => void;
   /**
-   * True while a not-cancellable step (recomputing the staging summary) is
+   * True while a not-cancelable step (recomputing the staging summary) is
    * running: Cancel stays visible, since a running job is still shown, but
    * disabled rather than offered as a control with nothing to stop.
    */

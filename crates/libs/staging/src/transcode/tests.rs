@@ -509,7 +509,7 @@ fn a_convert_failed_attachment_keeps_its_path_and_is_retried_on_resume() {
 }
 
 #[test]
-fn cancelling_stops_the_media_stage_without_corrupting_the_directory() {
+fn canceling_stops_the_media_stage_without_corrupting_the_directory() {
     let tools = media::testutil::FakeTools::new();
     let (dir, jsonl, _) = staged_one("photo.png", PNG_1X1_RGB);
     let cancel = CancelFlag::default();
@@ -696,7 +696,7 @@ fn a_heal_that_the_media_step_skips_repoints_at_the_original_deterministically()
     // TranscodeOutcome::Skipped without looking at the video's content
     // at all — compress_video's `ext == "mp4"` branch short-circuits
     // before any ffmpeg probe or encode — so this Skip is deterministic
-    // regardless of the installed ffmpeg's version or behaviour, unlike
+    // regardless of the installed ffmpeg's version or behavior, unlike
     // (say) an already-efficient-codec skip, which depends on what that
     // ffmpeg actually reports.
     let (dir, jsonl, original) = staged_one("clip.mp4", b"not really a video, but small");

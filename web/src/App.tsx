@@ -12,17 +12,17 @@ import {
   TrashRoute,
 } from "./components/BrowseRoutes";
 import ImportExportRoute from "./components/ImportExportRoute";
-import { useMouseHistoryNavigation } from "./hooks/useMouseHistoryNavigation";
+import { useIsOwner } from "./hooks/useIsOwner";
+import { useNeedsProfileSetup } from "./hooks/useNeedsProfileSetup";
 import { useAuth } from "./lib/authContext";
 import { lazyChunk } from "./lib/chunkLoad";
 import { ThemeProvider } from "./lib/ThemeProvider";
 import { TimeZoneProvider } from "./lib/TimeZoneProvider";
-import { useIsOwner } from "./lib/useIsOwner";
-import { useNeedsProfileSetup } from "./lib/useNeedsProfileSetup";
 import LoginScreen from "./screens/LoginScreen";
 import { SettingsScreen } from "./screens/lazySettingsScreen";
 import OnboardingScreen from "./screens/OnboardingScreen";
 import OwnerHome from "./screens/OwnerHome";
+import { useMouseHistoryNavigation } from "./useMouseHistoryNavigation";
 
 /**
  * Import and export only ever run in the desktop app, so their code — the

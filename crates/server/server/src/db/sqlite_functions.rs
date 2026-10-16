@@ -134,12 +134,12 @@ unsafe extern "C" fn unicode_lower(
     }
 }
 
-/// `text` with each letter lowered on its own, never by its neighbours.
+/// `text` with each letter lowered on its own, never by its neighbors.
 ///
-/// `str::to_lowercase` reads a letter's neighbours: it lowers a word-final
+/// `str::to_lowercase` reads a letter's neighbors: it lowers a word-final
 /// `Σ` to `ς` and every other `Σ` to `σ`. A search lowers the typed text and
 /// the column apart, so `ΚΩΣ` would lower to `κως` and miss `κωστας`.
-/// `char::to_lowercase` reads no neighbours, but lowers `İ` (U+0130) to two
+/// `char::to_lowercase` reads no neighbors, but lowers `İ` (U+0130) to two
 /// characters, `i` and a combining dot, so `istanbul` would miss
 /// "İstanbul"; `İ` lowers to `i` alone here.
 fn lower_each_letter(text: &str) -> String {

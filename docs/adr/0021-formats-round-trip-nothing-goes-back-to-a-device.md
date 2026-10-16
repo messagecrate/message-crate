@@ -18,7 +18,7 @@ file in the vendor's format is useful whether or not the app still exists:
 Message Crate reads it back, and for mail formats any mail program can archive
 it.
 
-A message written into a format that cannot describe it is mislabelled. A
+A message written into a format that cannot describe it is mislabeled. A
 WhatsApp chat written as SMS Backup+ mail would come back from a re-import as
 SMS, under a new id. So each vendor writer keeps to its format, and the
 person is told what was left out; Message Crate's own formats (JSON Lines,
@@ -38,7 +38,7 @@ for a guarantee no one has needed yet, and a loss of those fields was
 accepted on 2 October 2026.
 
 **Writing every message into every format**, as the SMS Backup & Restore
-writer did. Rejected because of the mislabelling above.
+writer did. Rejected because of the mislabeling above.
 
 ## Consequences
 

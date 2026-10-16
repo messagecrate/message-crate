@@ -1,7 +1,7 @@
 /* Documentation (Starlight) theme.
 
    The same look as the landing page (landing.css), from src/DESIGN.md: a
-   monochrome palette on a light grey page, white cards separated by shadow
+   monochrome palette on a light gray page, white cards separated by shadow
    rather than borders, Cal Sans headings, Inter body text. Light only, like
    the landing page: src/components/LightTheme.astro pins the theme and the
    theme switch is removed in astro.config.mjs.
@@ -60,7 +60,7 @@
   --mc-ok-bg: #e7f1ea;
   --mc-ok-ink: #245a35;
 
-  /* Starlight's grey scale runs from text (white) to page (black). */
+  /* Starlight's gray scale runs from text (white) to page (black). */
   --sl-color-white: var(--mc-ink);
   --sl-color-gray-1: var(--mc-graphite);
   --sl-color-gray-2: var(--mc-graphite);
@@ -262,7 +262,7 @@ h1#_top,
 
 /* Expressive Code frames: White, like every other card on the page. Set
    here as well as in astro.config.mjs so the frame backgrounds cannot fall
-   back to Starlight's grey scale. */
+   back to Starlight's gray scale. */
 .expressive-code {
   --ec-frm-edBg: var(--mc-white);
   --ec-frm-trmBg: var(--mc-white);
@@ -315,7 +315,7 @@ h1#_top,
   white-space: nowrap;
 }
 
-/* Starlight stripes every other row with its grey scale. */
+/* Starlight stripes every other row with its gray scale. */
 .sl-markdown-content .mc-table tr:nth-child(2n):not(:where(.not-content *)) {
   background: none;
 }
@@ -327,7 +327,7 @@ h1#_top,
 /* ---- Asides --------------------------------------------------------- */
 
 /* A White card. The icon and title say which kind it is; only a caution
-   takes a colour. */
+   takes a color. */
 .sl-markdown-content .starlight-aside {
   background: var(--mc-white);
   border: 0;

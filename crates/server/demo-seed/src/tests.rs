@@ -427,7 +427,7 @@ fn generate_replaces_an_earlier_bundle_and_removes_its_backup() {
 /// so a server that stops during a Demo Account build neither waits for the
 /// whole data set nor leaves a part-written one behind (#1431).
 #[test]
-fn a_cancelled_generation_stops_and_leaves_no_temporary_directory() {
+fn a_canceled_generation_stops_and_leaves_no_temporary_directory() {
     let temp = tempfile::tempdir().expect("create test directory");
     let cfg = small_config(temp.path());
     let out = Path::new(&cfg.out);
@@ -435,7 +435,7 @@ fn a_cancelled_generation_stops_and_leaves_no_temporary_directory() {
     fs::write(out.join("README.md"), b"old readme").expect("write old readme");
 
     let error =
-        generate_cancellable(&cfg, &AtomicBool::new(true)).expect_err("a cancelled run fails");
+        generate_cancellable(&cfg, &AtomicBool::new(true)).expect_err("a canceled run fails");
 
     assert!(error.downcast_ref::<Cancelled>().is_some(), "{error:#}");
     assert_eq!(
@@ -476,14 +476,14 @@ fn prepared_conversations(parent: &Path) -> usize {
         .count()
 }
 
-/// The large data set, cancelled once its first conversation is written,
+/// The large data set, canceled once its first conversation is written,
 /// stops part-way and removes its temporary directory. The count of files
 /// it wrote is the guard: with a check at the start and in the final
 /// validation walk alone, the run would still end `Cancelled`, but only
 /// after writing every conversation, far more than a quarter of the
 /// contacts (#1431).
 #[test]
-fn a_large_generation_cancelled_part_way_stops_and_leaves_no_temporary_directory() {
+fn a_large_generation_canceled_part_way_stops_and_leaves_no_temporary_directory() {
     let temp = tempfile::tempdir().expect("create test directory");
     let out = temp.path().join("demo");
     let contacts = SeedConfig::for_size(DemoSize::Large)
@@ -512,7 +512,7 @@ fn a_large_generation_cancelled_part_way_stops_and_leaves_no_temporary_directory
         (generated, most_written)
     });
 
-    let error = generated.expect_err("a run cancelled part-way fails");
+    let error = generated.expect_err("a run canceled part-way fails");
     assert!(error.downcast_ref::<Cancelled>().is_some(), "{error:#}");
     assert!(
         most_written < contacts / 4,
@@ -1166,7 +1166,7 @@ fn is_fictional_phone_accepts_only_555_01xx_and_07700_900xxx() {
     assert!(!is_fictional_phone("+33639981234"));
     // These numbers have a length no UK mobile number has, so no one has
     // them. They pin the length check on the drama mobile range. The number
-    // just past 07700 900999 can be dialled, so the `900` part of the prefix
+    // just past 07700 900999 can be dialed, so the `900` part of the prefix
     // has no test. The note on the `phone` crate's `mod tests` gives the
     // source.
     assert!(!is_fictional_phone("+4477009001000"));
@@ -1174,7 +1174,7 @@ fn is_fictional_phone_accepts_only_555_01xx_and_07700_900xxx() {
 }
 
 /// The Demo Account ships with every Message Crate, so a number in it that
-/// could be dialled could reach a real person and show them beside made-up
+/// could be dialed could reach a real person and show them beside made-up
 /// names and messages.
 #[test]
 fn every_phone_number_in_the_medium_and_large_sets_is_in_a_range_reserved_for_fiction() {

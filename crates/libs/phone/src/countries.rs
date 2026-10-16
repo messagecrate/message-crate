@@ -16,13 +16,13 @@ pub struct Country {
     /// share one (`1` is the United States, Canada and much of the
     /// Caribbean), because they share one numbering plan.
     pub calling_code: &'static str,
-    /// The trunk prefix a national number is dialled with inside the country
+    /// The trunk prefix a national number is dialed with inside the country
     /// and dropped from its `+` form: `0` in most countries, `8` in Russia,
     /// `06` in Hungary, empty where the leading digit belongs to the number
     /// (Italy's `06` is part of a Rome number). The calling code `1` is
     /// written by its own rule and does not read this.
     pub trunk_prefix: &'static str,
-    /// The international prefix dialled from the country before a calling
+    /// The international prefix dialed from the country before a calling
     /// code, as libphonenumber's regular expression: `00` in most countries,
     /// `011` in a `+1` country, `810` in Russia, `010` in Japan, and several
     /// forms in some (`001[14-689]|…` in Australia).

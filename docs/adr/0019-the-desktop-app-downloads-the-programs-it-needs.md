@@ -47,7 +47,7 @@ with no internet, and it was rejected because it makes Message Crate a
 distributor of a GPL ffmpeg build and adds about 100 MB to every installer.
 
 **Shipping wtsexporter and downloading ffmpeg.** wtsexporter is small and
-under the MIT licence, so nothing forbids it. It was rejected because two
+under the MIT license, so nothing forbids it. It was rejected because two
 programs would then reach the computer by two mechanisms.
 
 **A download button in Settings and on the Import form.** It was rejected

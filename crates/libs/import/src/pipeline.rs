@@ -45,7 +45,7 @@ pub(crate) enum ChunkStep {
     Continue,
     /// A flush failed for this conversation; drop its remaining chunks but keep the run going.
     FileFailed,
-    /// The run must stop: the caller cancelled it, the server refused the
+    /// The run must stop: the caller canceled it, the server refused the
     /// session, or the server was not there to take a request.
     Abort,
 }
@@ -207,7 +207,7 @@ struct BatchError {
 }
 
 impl BatchError {
-    /// The failure `error`, from a run that `stopped` (cancelled, refused,
+    /// The failure `error`, from a run that `stopped` (canceled, refused,
     /// or with the server away) by the time the request gave up.
     fn new(error: &anyhow::Error, stopped: bool) -> Self {
         // A stop ends the retries of a failure that might have passed on a
@@ -279,7 +279,7 @@ impl<'a> ImportPipeline<'a> {
     ///
     /// Only a stopped run leaves such files: the ones it never took up, and
     /// the one whose messages were partly queued when the stop came. A
-    /// cancelled file is not journalled as done, so a later run sends it
+    /// canceled file is not journalled as done, so a later run sends it
     /// again; any of its messages that did reach the server are already in
     /// the journal and are not sent twice.
     pub(crate) fn record_cancelled(&mut self, files: &[PathBuf], out: &mut Reporter<'_, '_>) {
@@ -302,7 +302,7 @@ impl<'a> ImportPipeline<'a> {
                 None => FileResult::cancelled(&file_label(path)),
             };
             out.log(&format!(
-                "Cancelled {} with {} uploaded",
+                "Canceled {} with {} uploaded",
                 result.file,
                 count_of(result.messages, "message", "messages")
             ));
@@ -430,7 +430,7 @@ impl<'a> ImportPipeline<'a> {
 
     /// Flush, then say whether the run may keep going.
     ///
-    /// A failed request stops the run only when the caller cancelled it, the
+    /// A failed request stops the run only when the caller canceled it, the
     /// server refused the session, or the server was not there to take a
     /// request. Otherwise the failure is
     /// recorded against the conversations in that batch and the run moves on.
@@ -747,7 +747,7 @@ impl<'a> ImportPipeline<'a> {
         Ok(())
     }
 
-    /// True once the run must stop: the caller cancelled it, the server
+    /// True once the run must stop: the caller canceled it, the server
     /// refused the session, or the server was not there to take a request.
     fn must_stop(&self) -> bool {
         self.session.check_stop().is_err()

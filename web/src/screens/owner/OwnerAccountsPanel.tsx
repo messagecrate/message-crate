@@ -3,10 +3,10 @@ import Button from "../../components/Button";
 import { GearIcon } from "../../components/icons";
 import NavGlyphButton from "../../components/NavGlyphButton";
 import ScrollingTableCard from "../../components/ScrollingTableCard";
+import { type ManagedAccount, useOwnerAccounts } from "../../hooks/useOwnerAccounts";
 import { formatDateTime } from "../../lib/formatDate";
 import { tdClass, tdMutedClass } from "../settings/apiTokensUtils";
 import { rowStripeClass, thClass, thSeparatorClass } from "./ownerTableStyles";
-import { type ManagedAccount, useOwnerAccounts } from "./useOwnerAccounts";
 
 /** Columns the table has, which the "no match" row spans. */
 const COLUMN_COUNT = 4;
@@ -74,7 +74,7 @@ export function OwnerAccountsPanel({ filter = "" }: { filter?: string }) {
         <table className="w-full border-collapse">
           <thead>
             <tr>
-              {/* The gear column has no heading; each gear is labelled with its account. */}
+              {/* The gear column has no heading; each gear is labeled with its account. */}
               <td className="w-6 py-2 pl-3" />
               <th className={thClass}>User</th>
               <th className={`${thClass} ${thSeparatorClass}`}>Status</th>

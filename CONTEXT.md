@@ -66,7 +66,7 @@ _Avoid_: Text, Post, Item, Row
 **Deleted in the source app**:
 A mark on a Message the person had deleted in the app it came from before
 the backup was made, while the backup still held it. The message is kept,
-shown muted with its text where the backup has it, and labelled with the
+shown muted with its text where the backup has it, and labeled with the
 source, for example "Deleted in WhatsApp". Search finds it.
 `deleted:yes` or `deleted:no` narrows a search to or away from it. It is a different
 thing from the Trash, which is what a person removes inside Message Crate.
@@ -147,7 +147,7 @@ _Avoid_: Signed URL, Share link (it is never meant to leave the page)
 
 **Import Run**:
 One attempt to bring messages from a backup into Message Crate, recorded
-permanently whether it succeeded, failed, or was cancelled. An account has at
+permanently whether it succeeded, failed, or was canceled. An account has at
 most one running at a time. A run moves through its Stages and stops at each
 Review until the person approves or cancels it. The record belongs to the
 account and cannot be deleted by the person; anything in the interface that
@@ -297,7 +297,7 @@ _Avoid_: First seen, First active, First message
 The Contact Group Message Crate computes from contacts that have no name or no
 address. An identity of type `other` holds a name, not an address, so a
 contact whose only identities are of that type is Unknown. It has no members of its own and empties as a person names people.
-_Avoid_: Unnamed, Unresolved, Uncategorised
+_Avoid_: Unnamed, Unresolved, Uncategorized
 
 **Trash**:
 Where a person sets aside conversations and contacts they do not want to
@@ -426,7 +426,7 @@ _Avoid_: Extract, Pull, Download
 
 **Export Run**:
 One attempt to move messages out of Message Crate, recorded permanently whether
-it completed, failed, or was cancelled. The record holds what was asked for
+it completed, failed, or was canceled. The record holds what was asked for
 and how much matched, never what the messages said. A person asks in one of
 three ways: everything the account holds, whatever a search currently shows,
 or conversations and messages they have picked by hand. The run hands over
@@ -498,7 +498,7 @@ A stop inside an Import Run where the run shows what it has staged and waits
 for the person to approve or cancel it before spending more time or touching
 Message Crate. There are at most two: the Staging Review after Staging, and
 the Media Review after Media. A waiting review reads "Awaiting approval".
-Approving continues the run; cancelling ends it and deletes what was staged.
+Approving continues the run; canceling ends it and deletes what was staged.
 A run left at a review keeps waiting, on another screen or after the app is
 closed, until the person decides. The stop is named for what the person does
 there; "approve" stays the word for the decision that continues the run.
@@ -520,7 +520,7 @@ _Avoid_: Retry, Restart
 
 **Cancel**:
 Ending an Import Run at a Review, or before Staging starts, and deleting
-what it has staged. A cancelled run is recorded as cancelled.
+what it has staged. A canceled run is recorded as canceled.
 _Avoid_: Stop, Abort, Pause (for this)
 
 **Discard**:
@@ -554,13 +554,19 @@ _Avoid_: Data Folder, DB Directory, Database Directory
 **Staging Directory**:
 The directory that holds one directory for each Import Run, where the
 desktop app prepares a backup for import. A run's directory is deleted when
-the run ends, whether it succeeded, failed or was cancelled, the resume
+the run ends, whether it succeeded, failed or was canceled, the resume
 journal and run record with it; the run's log is in the Logs Directory and
 stays. An Import Run that can still be resumed, paused or waiting at a
-Review, keeps it, since the staged files are what Resume reads. A run's
+Review, keeps it, since the staged files are what Resume reads. A directory
+that outlives its run, as when a discard reaches the server only after the
+app read the run as still running, is deleted the next time the run's
+account opens Import on that computer and the server reports the run as
+closed; the run's log says so. A run's
 directory has no term of its own: on screen it is "this Import Run's
 directory". Exports and Converts never use it; they work in the Export
-Directory. It is `staging` in the Message Crate Directory unless Settings
+Directory. Settings → System shows an account the space its own runs take in
+it on that computer, and Server Settings shows the owner the space the whole
+directory takes. It is `staging` in the Message Crate Directory unless Settings
 name another directory.
 _Avoid_: Import Staging Directory, Temp Folder, Working Directory
 
@@ -571,7 +577,7 @@ and its format, such as `export-2026-10-04-1430-mbox`. That directory is
 where the result lands unless the person chose another destination. While
 the run goes, it also holds the in-between files, such as the JSON Lines an
 Export writes before converting them; they are deleted when the run
-finishes, leaving only the result. A run that fails or is cancelled deletes
+finishes, leaving only the result. A run that fails or is canceled deletes
 its directory, and the app deletes one it did not see to its end the next
 time it starts. Message Crate never deletes a finished export from it. It is
 `exports` in the Message Crate Directory.
@@ -584,8 +590,10 @@ computer that ran the import and is never deleted, so it outlives the run's
 directory in the Staging Directory. Its first line names the run, the
 account that ran it, the server's address and the Message Crate's id. The
 owner reads every log in it, and an account the logs of its own runs, in
-the desktop app on that computer. It is `logs` in the Message Crate
-Directory. The server's own log is in the Data Directory.
+the desktop app on that computer. It also holds the desktop app's own log,
+`desktop-app.log`, what the app did and failed at outside an Import Run,
+which the owner reads. It is `logs` in the Message Crate Directory. The
+server's own log is in the Data Directory.
 _Avoid_: Log Folder, Run Log Directory
 
 **Scratch Directory**:

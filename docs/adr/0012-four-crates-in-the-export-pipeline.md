@@ -92,8 +92,8 @@ Two things forced more than a set of file moves.
 constant existed because the path-escape check was written twice — once in
 `ir-format`'s `safe_attachment_path`, once in the server's `safe_rel_path` at
 `crates/server/server/src/config.rs:144` — with a doc comment instructing the
-next reader to keep the two error strings identical. A defence against directory
-traversal held in step by a shared string is a defence waiting to diverge, so
+next reader to keep the two error strings identical. A defense against directory
+traversal held in step by a shared string is a defense waiting to diverge, so
 the check itself moves into `message-ir`, both call sites use it, and the server
 drops `message-ir-format` from its manifest entirely. A third copy turned up
 while doing it — `message-crate-push`'s `safe_rel`, which accepted an absolute path in
@@ -167,7 +167,7 @@ case into Convert would have to be undone.
   gains one entry, **Staging**, for the operation, beside the existing **Staging
   Directory** for the place.
 - `message-ir-format` keeps `write_sbr.rs`'s job but not its home. Writing
-  `smses.xml` is production behaviour, asserted at
+  `smses.xml` is production behavior, asserted at
   `crates/libs/reexport/src/tests.rs:128`, and it moves to the SBR crate behind
   the new trait rather than being deleted or left where it was.
 - The three copies of the assemble-jobs, run-jobs, clear-bytes sequence collapse
@@ -187,7 +187,7 @@ case into Convert would have to be undone.
 - The work lands as six pull requests, split for reviewability and for clean
   reverts: unify the path check, unify the staging sequences, invert the SBR
   seam, move the SBR reader and writer, push the run model down into `message-crate-core`,
-  extract `message-staging`. The first two change behaviour and are deliberately
+  extract `message-staging`. The first two change behavior and are deliberately
   not carried along with a file move. The SBR seam has to be inverted before the
   writer can move, and before `FormatSinkResult` travels to `message-crate-core`.
 - Progress, by step: (1) the path check is `message_ir::safe_attachment_path`,

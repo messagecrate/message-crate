@@ -1,10 +1,10 @@
 import type { FormEvent } from "react";
 import AuthErrorFooter from "../../components/AuthErrorFooter";
+import { useCreateAccountForm } from "../../hooks/useCreateAccountForm";
 import { setBaseUrl } from "../../lib/api";
 import { useAuth } from "../../lib/authContext";
 import CredentialFields from "./CredentialFields";
 import KeepLoggedInSubmit from "./KeepLoggedInSubmit";
-import { useCreateAccountForm } from "./useCreateAccountForm";
 import { useKeepLoggedIn } from "./useKeepLoggedIn";
 
 /**
@@ -17,7 +17,7 @@ import { useKeepLoggedIn } from "./useKeepLoggedIn";
  * This is the first half of creating an account, not the whole of it. The name
  * and phone numbers are not asked for here — the account opens with an empty
  * profile, which sends the user straight to profile setup, and only finishing
- * that leaves them with a fully set up account. The action is labelled
+ * that leaves them with a fully set up account. The action is labeled
  * "Continue" for that reason.
  */
 export default function CreateAccountForm({
@@ -55,7 +55,7 @@ export default function CreateAccountForm({
   });
 
   // A real submit, the same as `LoginForm`: Enter submits from any field, and
-  // a password manager can recognise the pair of new-password fields and offer
+  // a password manager can recognize the pair of new-password fields and offer
   // to store what it generates.
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();

@@ -220,7 +220,7 @@ describe("NavEntityList navigation", () => {
     expect(routes.deleteContactGroup).not.toHaveBeenCalled();
   });
 
-  it("deletes nothing when the confirmation is cancelled", async () => {
+  it("deletes nothing when the confirmation is canceled", async () => {
     const user = setupUser();
     renderTags("/tag/Holiday", ["Holiday"]);
 

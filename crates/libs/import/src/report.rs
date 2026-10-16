@@ -98,7 +98,7 @@ pub struct UploadProfile {
 /// Final summary of a whole Upload (also written to disk as the report file).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ImportReport {
-    /// `true` when no conversation failed and the run was not cancelled.
+    /// `true` when no conversation failed and the run was not canceled.
     pub ok: bool,
     /// `true` when the run halted before it finished, so the Upload is paused.
     /// The cancel flag halts it when it leaves conversations unsent: they are
@@ -204,7 +204,7 @@ pub(crate) struct FileResultCounts {
     pub cancelled: u64,
 }
 
-/// Count ok / failed / skipped / cancelled conversations.
+/// Count ok / failed / skipped / canceled conversations.
 pub(crate) fn count_file_results(results: &[FileResult]) -> FileResultCounts {
     let mut counted = FileResultCounts::default();
     for result in results {

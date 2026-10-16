@@ -404,7 +404,7 @@ fn scan_one_attachment(
 /// # Errors
 ///
 /// Returns an error when a message cannot be encoded, a single message with
-/// the conversation header exceeds the chunk limit, or the run is cancelled.
+/// the conversation header exceeds the chunk limit, or the run is canceled.
 fn build_import_chunks(
     ctx: &PrepareContext<'_>,
     name: &str,
@@ -651,7 +651,7 @@ struct AssetUploadStats {
 /// # Errors
 ///
 /// Returns an error when a file is missing, when HEAD/PUT fails after
-/// retries, when a worker panics, or when the run is cancelled.
+/// retries, when a worker panics, or when the run is canceled.
 fn upload_assets(
     ctx: &PrepareContext<'_>,
     name: &str,
@@ -725,7 +725,7 @@ fn upload_claimed(
 /// # Errors
 ///
 /// Returns an error when a claimed file is missing or unreadable, or when
-/// the run is cancelled. Dropping `claims` gives up what was claimed.
+/// the run is canceled. Dropping `claims` gives up what was claimed.
 fn claim_upload_jobs<'u>(
     ctx: &PrepareContext<'_>,
     name: &str,
@@ -767,7 +767,7 @@ fn claim_upload_jobs<'u>(
 ///
 /// # Errors
 ///
-/// Returns an error when the run is cancelled while waiting.
+/// Returns an error when the run is canceled while waiting.
 fn wait_for_claims(ctx: &PrepareContext<'_>, digests: &[&String]) -> Result<()> {
     let mut journal = ctx.lock_journal();
     while digests.iter().any(|digest| journal.asset_in_flight(digest)) {
@@ -784,7 +784,7 @@ fn wait_for_claims(ctx: &PrepareContext<'_>, digests: &[&String]) -> Result<()> 
 /// The sha256 claims one conversation holds and has not yet settled.
 ///
 /// Dropping it gives up every claim still held and wakes the workers waiting
-/// on them, so a conversation that fails or is cancelled never leaves
+/// on them, so a conversation that fails or is canceled never leaves
 /// another one waiting on a file nobody is uploading.
 struct AssetClaims<'c, 'a> {
     ctx: &'c PrepareContext<'a>,

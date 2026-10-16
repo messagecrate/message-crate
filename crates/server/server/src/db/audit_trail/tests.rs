@@ -186,6 +186,42 @@ async fn a_renewed_session_does_not_read_as_expired() {
     assert_eq!(login_expiry, stale, "the logged_in entry is never edited");
 }
 
+/// A Session that a use moved reads as live until the moved expiry, and as
+/// expired at it: not at the expiry its `logged_in` entry was written with.
+#[tokio::test]
+async fn a_used_session_reads_as_expired_at_its_moved_expiry() {
+    let fixture = test_fixture().await;
+    let account = fixture.account("alice").await;
+    let mut conn = fixture.conn().await;
+    let login = crate::test_support::fixed_instant();
+    let token = crate::db::session_tokens::open_session(&mut conn, account, "alice", None, login)
+        .await
+        .unwrap();
+    let used = login + chrono::Duration::days(3);
+    crate::db::session_tokens::use_session_at(&mut conn, &token, used)
+        .await
+        .unwrap()
+        .unwrap();
+    let moved = used + chrono::Duration::days(7);
+
+    let ended_by = async |conn: &mut SqliteConnection, now| {
+        let (items, _) = page(conn, Scope::Account(account), 10, 0, now)
+            .await
+            .unwrap();
+        items
+            .into_iter()
+            .filter(|item| item.action == AuditAction::SessionEnded)
+            .map(|item| (item.reason.unwrap(), item.at))
+            .collect::<Vec<_>>()
+    };
+    let past_first_expiry = login + chrono::Duration::days(8);
+    assert_eq!(ended_by(&mut conn, past_first_expiry).await, []);
+    assert_eq!(
+        ended_by(&mut conn, moved).await,
+        [(AuditReason::Expired, moved.to_rfc3339())]
+    );
+}
+
 /// Let the account's Session run out: its row stays, as it does until its
 /// token is presented again, and its login reads as expired.
 async fn expire_session(conn: &mut SqliteConnection) {

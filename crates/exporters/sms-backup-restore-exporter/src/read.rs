@@ -390,7 +390,7 @@ pub fn spooled_attachments<'a>(
 /// # Errors
 ///
 /// Returns an error when an attachment cannot be staged or the run is
-/// cancelled.
+/// canceled.
 pub fn stage_read_attachments(
     documents: &mut [ConversationDocument],
     options: &ReadOptions<'_>,

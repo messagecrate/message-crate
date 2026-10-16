@@ -274,7 +274,7 @@ beforeEach(({ signal }) => {
  * `runMock` stands in for `awaitDesktopJob`, which always calls the
  * invoke function it is given before resolving. Tests that assert on
  * `invokeExtract`/`invokeTranscodeStaging`/`invokeUpload` args need that same
- * behaviour, so every canned result below goes through this instead of
+ * behavior, so every canned result below goes through this instead of
  * `mockResolvedValueOnce` (which would never call the function at all).
  */
 function runResult(result: DesktopJobResult) {
@@ -1130,7 +1130,7 @@ describe("useImportJob wiring", () => {
     expect(result.current.phase).toBe("form");
   });
 
-  it("sends the run's Import Errors with the cancelled run when a review is cancelled (#1479)", async () => {
+  it("sends the run's Import Errors with the canceled run when a review is canceled (#1479)", async () => {
     // The directory goes with the discard, and the run record in it with it, so
     // the record's Import Errors must reach the server first.
     const stagingIssue: ImportIssueEvent = {
@@ -1184,7 +1184,7 @@ describe("useImportJob wiring", () => {
     );
   });
 
-  it("sends the run's notes with the cancelled run when a review is cancelled (#1626)", async () => {
+  it("sends the run's notes with the canceled run when a review is canceled (#1626)", async () => {
     const noteEvent: ImportIssueEvent = {
       kind: "note",
       step: "parse",
@@ -1209,7 +1209,7 @@ describe("useImportJob wiring", () => {
     );
   });
 
-  it("sends a paused run's Import Errors with the cancelled run when it is discarded (#1479)", async () => {
+  it("sends a paused run's Import Errors with the canceled run when it is discarded (#1479)", async () => {
     const carried = {
       kind: "skip",
       stage: "upload",
@@ -1982,8 +1982,8 @@ describe("useImportJob wiring", () => {
     expect(result.current.summaryView?.status).toBe("paused");
   });
 
-  it("unwedges on a cancelled Media stage instead of freezing the screen", async () => {
-    // Critical: transcode_staging used to end a cancelled Media stage quietly (an
+  it("unwedges on a canceled Media stage instead of freezing the screen", async () => {
+    // Critical: transcode_staging used to end a canceled Media stage quietly (an
     // desktop-job:log line, Ok(())) with no desktop-job:finished and no
     // desktop-job:error, so awaitDesktopJob's promise never settled and the
     // screen was stuck. It now reports through desktop-job:error like any other
@@ -2000,18 +2000,18 @@ describe("useImportJob wiring", () => {
     expect(result.current.phase).toBe("done");
     expect(result.current.summaryView?.status).toBe("cancelled");
     // The run stays wherever it actually got to — "media" —
-    // never advanced to a stage the cancelled run never reached.
+    // never advanced to a stage the canceled run never reached.
     expect(setImportStageMock).not.toHaveBeenCalledWith(1, "media_review", expect.anything());
     expect(setImportStageMock).not.toHaveBeenCalledWith(1, "upload", expect.anything());
   });
 
-  it("does not complete the run on a cancelled Media stage, so it stays resumable", async () => {
+  it("does not complete the run on a canceled Media stage, so it stays resumable", async () => {
     // A cancellation during the Media stage gets the same recovery as a
     // crash at that stage, and only an explicit discard ends a waiting run.
     // Posting /complete would free the one-running-run slot and drop the
     // run out of GET /v1/imports?status=running, stranding the staged
-    // directory with no run left to resume it through — even though the
-    // "cancelled" outcome is still shown locally.
+    // directory with no run left to resume it through. The canceled outcome
+    // is still shown locally.
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
       throw new CanceledError();
@@ -2059,7 +2059,7 @@ describe("useImportJob wiring", () => {
     );
   });
 
-  it("does not complete the run on a cancelled extract, so the copy can be picked up", async () => {
+  it("does not complete the run on a canceled extract, so the copy can be picked up", async () => {
     // A cancellation gets the same recovery as a crash at that
     // stage, and the write stage is resumable now: the conversations already
     // copied are real work. Completing here would free the one-running-run
@@ -2596,7 +2596,7 @@ describe("useImportJob wiring", () => {
       view.unmount();
     });
 
-    it("lets the desktop job go when the run is cancelled at a review", async () => {
+    it("lets the desktop job go when the run is canceled at a review", async () => {
       const { view, convert } = await renderConvert();
       const { result } = renderJob();
       await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));

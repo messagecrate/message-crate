@@ -45,7 +45,7 @@ The Owner's row reads zero, because the Owner holds no messages.
 
 ## Server Settings
 
-**Server Settings** holds one switch, the attachment size limit, the Demo Account, and three facts about the server.
+**Server Settings** holds one switch, the attachment size limit, the space the Staging Directory takes on this computer in the desktop app, the Demo Account, and three facts about the server.
 
 The switch is **Let anyone who can reach this server create their own account**.
 
@@ -64,6 +64,16 @@ Any number above zero is accepted.
 
 A new limit holds for every upload after it is saved, with no restart.
 An Import Run already under way keeps the limit it started with, so its Staging Review still describes what it will upload.
+
+### Staging Directory on this computer
+
+In the desktop app, **Staging Directory on this computer** says how much disk space the whole Staging Directory takes on the computer running the app.
+That is everything in the directory **Settings → System** names.
+It includes the Import Runs of every account that imports from this computer, into this Message Crate or another.
+It also counts any run still staged under an earlier setting.
+The Staging Directory is on that computer, so a browser doesn't show it.
+The size is measured when Server Settings opens.
+Each account sees what its own Import Runs take under [Settings → System](/docs/user/features/settings/system/#space-used).
 
 ### Demo Account
 
@@ -225,9 +235,10 @@ Adding the Demo Account is recorded under no account, and resetting it under the
 **Log** at the top picks which one:
 
 - **The server's log**, what the server did for every account. It opens on this one.
+- In the desktop app, **Desktop app**: what the desktop app went on without outside an Import Run, such as a program it downloaded whose record it could not write. It is listed once the app has written a line.
 - In the desktop app, each Import Run's log on this computer, whoever ran the import, under **Import Runs on this computer**. Each is named by its run, the account that ran it, and when its last line was written.
 
-A browser offers the server's log only, because an Import Run's log stays on the computer that ran the import.
+A browser offers the server's log only, because the desktop app's log and an Import Run's log stay on the computer that wrote them.
 
 Each line shows its time in UTC, its level, and what it says.
 

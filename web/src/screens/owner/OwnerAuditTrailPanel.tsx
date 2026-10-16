@@ -5,17 +5,17 @@ import Select, {
   selectItemClassName,
   selectSectionHeaderClass,
 } from "../../components/Select";
-import { formatDateTime } from "../../lib/formatDate";
-import type { DeletedAccount } from "../../lib/serverApi";
-import AuditTrail from "../auditTrail/AuditTrail";
 import {
   type AuditTrailOf,
   auditTrailKey,
   auditTrailOf,
   useDeletedAccounts,
-} from "../auditTrail/useAuditTrail";
+} from "../../hooks/useAuditTrail";
+import { useOwnerAccounts } from "../../hooks/useOwnerAccounts";
+import { formatDateTime } from "../../lib/formatDate";
+import type { DeletedAccount } from "../../lib/serverApi";
+import AuditTrail from "../auditTrail/AuditTrail";
 import { sectionHintClass } from "../settings/storage/storageUtils";
-import { useOwnerAccounts } from "./useOwnerAccounts";
 
 const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
   selectItemClassName(state, "sm");

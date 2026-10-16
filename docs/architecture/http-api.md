@@ -134,7 +134,7 @@ Two levels of nesting. The multipart upload,
 three. `/health` is the only route outside `/v1`. Path segments are
 kebab-case; every field and query parameter on the wire is snake_case.
 
-Rejected: no verbs at all. Modelling every action as a field write turns
+Rejected: no verbs at all. Modeling every action as a field write turns
 trashing into `PATCH {"trashed": true}`, and trash is the only door to
 permanent deletion, which `POST .../trash` says and a field write does not.
 
@@ -177,7 +177,7 @@ around a file base64-encodes it for nothing. Rejected: `?format=csv` on
 idea in another coat; `Accept: text/csv` on the list, which makes one list
 negotiate where every other answers JSON.
 
-Behaviour that differs by caller lives inside one handler, not in two routes.
+Behavior that differs by caller lives inside one handler, not in two routes.
 `PUT /v1/accounts/{id}/password` is one route: the owner sets another
 account's password without the current one, a user account changes its own on
 its session alone, and the owner changing its own must supply the
@@ -614,8 +614,11 @@ second try at once meets the same busy database. It never tries a write
 again: it shows the write's failure with its `detail`. The pool
 (`crates/server/server/src/db/engine.rs`) holds 8 connections: two import
 batches and the sweep of unreferenced files after an Import Run
-(`asset_store::sweep_after_run`) can each hold one for a whole run, and
-under write-ahead logging the rest serve reads side by side. A request waits
+(`asset_store::sweep_after_run`) can each hold one for a whole run. The
+background move of a Session's expiry (`auth::ExpiryMoves`, under
+[Credentials and reach](#credentials-and-reach)) holds one more for up to
+the busy timeout while an import holds the write lock. Under write-ahead
+logging the rest serve reads side by side. A request waits
 10 seconds for a connection, and a write waits SQLite's 15-second busy
 timeout for the write lock. Why: with 4 connections, two imports and a sweep
 left one for every other request, and a request waited sqlx's default 30
@@ -829,6 +832,19 @@ security scheme with its scopes, so every route says which it accepts.
   settings and the installation's storage totals, because the owner holds no
   messages. It also reads the country list (`GET /v1/phone-countries`),
   because the owner picks the country of a number on an account it manages.
+  A Session ends after 7 days unused, and after 30 days from the login
+  however much it is used. A login sets its expiry 7 days ahead. A request
+  that the Session serves moves the expiry to 7 days after the request, but
+  never past 30 days after the login, and writes it only when the move is
+  an hour or more, so a Session in use writes at most once an hour. The
+  move is written in the background, one at a time, so a request never
+  waits for the write lock an import holds. A
+  password change renews the Session for 7 days, and starts its 30 days
+  again. Why: a Session forgotten on a shared computer ends within a week,
+  while an account in daily use never sees the shorter limit, and the cap
+  bounds how long one Session token lasts however it is used. The Audit
+  Trail reads a Session's moved expiry from `session_extensions`, because
+  its own entries are never edited.
 - An **API token** is a named credential an account makes for a program, with
   the scopes the person chose from `import` and `export`, capped by the
   account's own. The cap holds on every request, when the token is made, and
@@ -1220,7 +1236,7 @@ username typed and the password are never written
 ## Runs
 
 An Import Run and an Export Run are recorded permanently, whether they
-completed, failed or were cancelled, and outlive the account that ran them, as
+completed, failed or were canceled, and outlive the account that ran them, as
 the rest of the Audit Trail does. Each run records what started it: a Session
 with the app it named, or an API token by its label and hint as they were
 then. The client closes a run: a run's
@@ -1234,12 +1250,12 @@ There is no sessionless import and no unrecorded export.
 gave up. A run an error stopped is closed with `complete` as `failed`, never
 with `cancel`. Why: the Audit Trail and the export history show `cancelled` as
 the person's own choice, so a failed run recorded that way lies the same way
-a cancelled run marked completed would (#2069).
+a canceled run marked completed would (#2069).
 
 A run that has finished answers `409 Conflict` to `complete`, `discard`,
 `cancel`, a batch, and a change of stage; its record is never rewritten. Its
 outcome is stated once, as `status`. Why: the finished record is the history
-the person reads, and a cancelled run marked completed afterwards would lie. A
+the person reads, and a canceled run marked completed afterwards would lie. A
 program unsure how a run ended reads it with `GET` rather than repeating the
 call.
 

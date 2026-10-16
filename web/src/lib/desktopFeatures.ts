@@ -55,10 +55,19 @@ export function canUseConvert(isTauriApp: boolean): boolean {
 }
 
 /**
- * Import Run logs stay on the computer that ran the import (#1665), so only
- * the desktop app lists and reads them. In a browser the Logs panel offers
- * the server's log alone.
+ * The logs in the Logs Directory, each Import Run's and the desktop app's
+ * own, stay on the computer that wrote them (#1665, #2185), so only the
+ * desktop app lists and reads them. In a browser the Logs panel offers the
+ * server's log alone.
  */
-export function canReadImportRunLogs(isTauriApp: boolean): boolean {
+export function canReadDesktopLogs(isTauriApp: boolean): boolean {
+  return isTauriApp;
+}
+
+/**
+ * The Staging Directory is on the computer running the desktop app, so only
+ * the desktop app measures it (#3087). A browser shows no size for it.
+ */
+export function canMeasureStagingDirectory(isTauriApp: boolean): boolean {
   return isTauriApp;
 }

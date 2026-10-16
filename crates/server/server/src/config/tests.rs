@@ -237,7 +237,7 @@ fn an_upload_time_limit_of_zero_is_refused_naming_the_key() {
 }
 
 /// A key the server does not use is refused wherever it sits, by its name
-/// and its section: a misspelt key otherwise loads as the default.
+/// and its section: a misspelled key otherwise loads as the default.
 #[test]
 fn a_config_with_an_unknown_key_is_refused_naming_the_key_and_its_section() {
     for (section, config) in [
@@ -293,7 +293,7 @@ fn a_config_with_an_unknown_section_is_refused_naming_it() {
 
 /// `[database]` named the connection URL while the server ran on Postgres
 /// too. It is an unknown section now, so a config that still has it is
-/// refused by name and never read as if the URL were honoured.
+/// refused by name and never read as if the URL were honored.
 #[test]
 fn a_config_with_the_removed_database_section_is_refused_naming_it() {
     let text = format!(

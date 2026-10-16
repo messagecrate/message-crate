@@ -10,8 +10,8 @@ import { CanceledError } from "./desktopJobError";
  * (`src-tauri/src/commands/jobs.rs`). A Cancel pressed while the run is
  * between jobs, or while a job command is starting, finds no job to stop and
  * would be lost. So the run remembers its Cancel here: `guard` refuses to
- * start a job once the run is cancelled, and sends the Cancel again after a
- * job command returns, when the run was cancelled while that command was
+ * start a job once the run is canceled, and sends the Cancel again after a
+ * job command returns, when the run was canceled while that command was
  * starting.
  */
 export type RunCancel = {

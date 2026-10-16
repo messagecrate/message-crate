@@ -92,7 +92,7 @@ export async function invokeFinishExportDir(dir: string): Promise<string | null>
   return invoke("finish_export_dir", { dir });
 }
 
-/** Delete an Export's or Convert's directory after it failed or was cancelled. */
+/** Delete an Export's or Convert's directory after it failed or was canceled. */
 export async function invokeDiscardExportDir(dir: string): Promise<void> {
   return invoke("discard_export_dir", { dir });
 }

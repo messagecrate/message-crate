@@ -20,6 +20,9 @@ A browser that reopens a closed tab, or reopens its tabs after a restart, brings
 **Log out** is what ends the Session itself.
 The desktop app shows no such box, because it logs out when its window closes.
 
+A Session also ends on its own after 7 days in which it isn't used, and 30 days after the login however much it is used.
+Each use within those 30 days starts the 7 days again, so an account in daily use is asked to log in once a month.
+
 ## What the Owner sees
 
 The Owner's Settings has four tabs, **Account**, **Profile**, **Audit Trail**, and **Appearance**, under the heading **Settings for Owner**.

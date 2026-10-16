@@ -79,7 +79,7 @@ export type RunScratch = {
   carried: RunRecord;
 };
 
-/** The scratch of a run that has not started, cancelling its jobs with `stopJob`. */
+/** The scratch of a run that has not started, canceling its jobs with `stopJob`. */
 export function freshScratch(stopJob: () => Promise<void>): RunScratch {
   return {
     pendingIdentityForm: null,

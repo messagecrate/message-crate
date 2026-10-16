@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { warmAccountProfile } from "../hooks/useAccountProfile";
 import { getToken } from "./api";
 import { applyApiSession, useApiSession } from "./apiSession";
 import { AuthContext, type AuthState, type LoginLifetime } from "./authContext";
@@ -18,7 +19,6 @@ import {
 import { logout as serverLogout } from "./serverApi";
 import { SessionQueryClientProvider } from "./sessionQueryClient";
 import { onSessionRefused } from "./sessionRefusal";
-import { warmAccountProfile } from "./useAccountProfile";
 import { useLogoutOnWindowClose } from "./windowCloseLogout";
 
 /**

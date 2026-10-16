@@ -45,7 +45,7 @@ export const authCardBodyClass = "flex min-h-0 flex-1 flex-col";
  */
 export const authCardFooterClass = "mt-auto flex flex-col";
 /**
- * Heading of a step inside the flow, set left rather than centred. `m-0` for
+ * Heading of a step inside the flow, set left rather than centered. `m-0` for
  * the same reason as `authScreenTitleClass`: without Tailwind's preflight a heading
  * keeps the browser's own margins, which push it off the top of the card and
  * away from the line under it.
@@ -71,7 +71,7 @@ export const popupShadowClass = "shadow-popup";
  * The keyboard focus ring of an element that takes DOM focus itself, such as
  * a button or a list row (`web/STYLE_GUIDE.md`, "Focus"). It is an outline,
  * like the theme's own `:focus-visible` rule, so the 1px gap between the
- * element and the ring shows the surface behind it. A ring offset has a colour
+ * element and the ring shows the surface behind it. A ring offset has a color
  * of its own, white unless set, which drew a white line in the dark theme.
  */
 export const focusRingClass =
@@ -81,12 +81,12 @@ export const focusRingClass =
  * `focusRingClass`'s outline with no variant, for an element whose focus sits on a
  * hidden input, such as React Aria's `Radio`: the caller shows it when React
  * Aria's `isFocusVisible` render prop is true. Tailwind reads class names from
- * the source as written, so the two strings are spelt out, and
+ * the source as written, so the two strings are spelled out, and
  * `src/styleTokens.test.ts` checks that they agree.
  */
 export const focusOutlineClass = "outline-2 outline-solid outline-offset-1 outline-accent";
 
-/** A menu item without its text colour. The focused one (arrow keys or hover) takes the hover background. */
+/** A menu item without its text color. The focused one (arrow keys or hover) takes the hover background. */
 export const menuItemClass =
   "box-border flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[0.813rem] outline-none data-focused:bg-hover data-disabled:cursor-not-allowed data-disabled:opacity-40";
 

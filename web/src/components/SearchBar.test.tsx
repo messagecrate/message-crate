@@ -34,8 +34,8 @@ const suggestionsMock = vi.hoisted(() => ({
 // Only the hook is faked. `applySuggestionToQuery` is the real one: the mock
 // used to reimplement it line for line, so the test proved the copy worked
 // and would have passed with the product function deleted.
-vi.mock("../lib/useSearchSuggestions", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../lib/useSearchSuggestions")>()),
+vi.mock("./useSearchSuggestions", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./useSearchSuggestions")>()),
   useSearchSuggestions: () => suggestionsMock.current,
 }));
 

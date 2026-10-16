@@ -233,7 +233,7 @@ async fn a_refused_contact_edit_answers_422_with_the_persons_sentence() {
 
 /// A contact edit takes `phone` or `whatsapp` as a service and refuses any
 /// other word, naming the two. Every other word was read as `phone`, so a
-/// misspelt `whatsap` put the identity on Text Message without a word (#1630).
+/// misspelled `whatsap` put the identity on Text Message without a word (#1630).
 #[tokio::test]
 async fn a_contact_edit_refuses_a_service_other_than_phone_or_whatsapp() {
     let (fixture, account) = contacts_fixture_with_handles(&[]).await;

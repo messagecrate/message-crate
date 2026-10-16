@@ -9,10 +9,10 @@ name: Audit
 # advisories on main. These checks are deliberately not in the ruleset's
 # required list. Why: docs/adr/0007-ci-is-the-only-gate.md.
 #
-# The same trigger runs the licence policy
+# The same trigger runs the license policy
 # (docs/adr/0014-gpl-code-only-behind-a-process-boundary.md): every
 # crate in the workspace and in the desktop app must carry a permissive
-# licence, and the two GPL readers of Apple Messages may appear only under
+# license, and the two GPL readers of Apple Messages may appear only under
 # the imessage-reader helper program. A new dependency is a lockfile change,
 # so a GPL crate added to a Fair Core License crate fails here.
 
@@ -46,7 +46,7 @@ permissions:
 
 jobs:
   deny:
-    name: cargo-deny (advisories, licences, bans)
+    name: cargo-deny (advisories, licenses, bans)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

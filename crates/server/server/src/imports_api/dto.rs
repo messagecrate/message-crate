@@ -463,7 +463,7 @@ pub(crate) struct ImportRunSummary {
     /// imported, and for a run whose files name none.
     pub(crate) backup_taken_at: Option<String>,
     /// What the person approved at the last Review they passed, which
-    /// `PATCH /v1/imports/{id}` writes with its `summary`. A cancelled run
+    /// `PATCH /v1/imports/{id}` writes with its `summary`. A canceled run
     /// keeps it. A run that completed or failed holds instead the final
     /// counts its `POST /v1/imports/{id}/complete` sent, and null when that
     /// request sent none, because completing replaces the plan. Null too

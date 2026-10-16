@@ -2333,7 +2333,7 @@ async fn around_a_message_near_an_end_fills_the_page_from_the_other_side() {
 /// page just before a message and `after` the page just after it, in the
 /// page's own order, neither holding the message itself.
 #[tokio::test]
-async fn before_and_after_a_message_answer_the_neighbouring_pages() {
+async fn before_and_after_a_message_answer_the_neighboring_pages() {
     let (fixture, user, conversation_id) = conversation_messages_fixture().await;
     let mut conn = fixture.state.db.acquire().await.unwrap();
     insert_many_messages(&mut conn, conversation_id, user.account_id, 20).await;

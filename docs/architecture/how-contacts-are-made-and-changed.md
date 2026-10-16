@@ -93,7 +93,7 @@ flowchart TD
 ### What gets no contact
 
 A group conversation's own id, such as `chat1000000005`, is stored on the
-conversation so the group is recognised next time. It is nobody's identity
+conversation so the group is recognized next time. It is nobody's identity
 and gets no contact. The same holds for the `orphaned:` key of a
 conversation of orphaned messages; the person in it is its participant, and
 gets a contact as one.
@@ -392,7 +392,7 @@ identity (step 4). Each sentence starts with its row number.
 | | Import of a backup | Address book load |
 |---|---|---|
 | What starts it | Each person the backup's messages meet: a participant, the other side of a one-to-one conversation, or a sender | Each row of the CSV |
-| New contact | One for every address no contact holds, named if the backup gives a name, otherwise nameless | One for a blank or unrecognised `contact_id`. It needs a name or an identity |
+| New contact | One for every address no contact holds, named if the backup gives a name, otherwise nameless | One for a blank or unrecognized `contact_id`. It needs a name or an identity |
 | Naming an existing contact | Only when the contact has no name, whatever made it | Whenever the file's name differs, whatever set the old one |
 | Same number on the other service | Joins the contact that already holds the other one | Stays where it is. Only a row for it moves it, so a file can split a number |
 | Identity already on another contact | Never moved. The import uses that contact | Moved if the holder is nameless or in the file. Otherwise the load is refused |

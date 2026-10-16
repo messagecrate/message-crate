@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
+import { useAccountProfile } from "../hooks/useAccountProfile";
 import { browserTimeZone, knowsTimeZone, TimeZoneContext } from "./timeZone";
-import { useAccountProfile } from "./useAccountProfile";
 
 /**
  * Hands the account's zone to everything under it. Until the profile has

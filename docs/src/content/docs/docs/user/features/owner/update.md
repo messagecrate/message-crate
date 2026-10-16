@@ -80,7 +80,7 @@ The Owner sees the difference on the account's **Profile** tab in [Owner Home](/
 Message Crate doesn't convert an old database to a new layout.
 A server whose database layout differs from the one in the volume rebuilds the database empty when it starts.
 
-How is a rebuild recognised?
+How is a rebuild recognized?
 
 - The browser shows **Create Owner**, as it did the first time.
 - **Schema fingerprint** under **Server Settings** shows a different number than before the update. The number is the same for every server with the same database layout.

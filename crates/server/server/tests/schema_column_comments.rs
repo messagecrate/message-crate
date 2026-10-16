@@ -152,7 +152,7 @@ fn every_schema_column_has_a_comment() {
 fn the_check_sees_the_tables_it_should() {
     // A guard against the parser silently matching nothing: the real schema
     // has many columns, and every one of them is commented, so a version of
-    // this parser that recognises no columns would also pass the test above.
+    // this parser that recognizes no columns would also pass the test above.
     let sql = "CREATE TABLE IF NOT EXISTS t (\n    id INTEGER PRIMARY KEY,\n    name TEXT NOT NULL,\n    UNIQUE(name)\n);\nCREATE VIRTUAL TABLE IF NOT EXISTS f USING fts5(\n    body,\n    content='t'\n);\n";
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("t.sql");

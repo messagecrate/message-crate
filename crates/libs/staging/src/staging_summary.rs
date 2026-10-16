@@ -1,7 +1,7 @@
 //! Recompute what a staged directory holds, for the reviews.
 //!
 //! Everything here is measured from the directory. The one estimate is what the
-//! Media stage will do to a file's size, and it is labelled as an estimate all
+//! Media stage will do to a file's size, and it is labeled as an estimate all
 //! the way to the screen.
 //!
 //! This is always recomputed from the directory, never read back

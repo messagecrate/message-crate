@@ -956,7 +956,7 @@ fn sibling_with_ext(path: &Path, ext: &str) -> PathBuf {
 #[derive(Debug, Clone, Copy)]
 enum Commit<'a> {
     /// Replace the original in place, deleting it. The directory pass's
-    /// behaviour, unchanged.
+    /// behavior, unchanged.
     InPlace,
     /// Move the derivative to exactly this path and leave the original alone.
     ///

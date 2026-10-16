@@ -259,7 +259,7 @@ pub async fn delete(conn: &mut SqliteConnection, account_id: i64, id: i64) -> Re
 /// Create the saved search that points at one import run's messages.
 ///
 /// Called when a run finishes having inserted at least one message. A run
-/// that failed, was cancelled, or stored nothing gets no saved search. It is
+/// that failed, was canceled, or stored nothing gets no saved search. It is
 /// still recorded in `imports` either way.
 ///
 /// The name is `Import <source> <date>`, or that with " 2", " 3", … when the

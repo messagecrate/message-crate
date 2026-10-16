@@ -38,6 +38,26 @@ export async function invokeSetStagingDirectory(root: string): Promise<StagingDi
 }
 
 /**
+ * The disk space, in bytes, that `accountId`'s Import Runs on the Message
+ * Crate `messageCrateId` take in the Staging Directory on this computer,
+ * measured now.
+ */
+export async function invokeAccountStagingBytes(
+  accountId: number,
+  messageCrateId: string,
+): Promise<number> {
+  return invoke("account_staging_bytes", { args: { accountId, messageCrateId } });
+}
+
+/**
+ * The disk space, in bytes, every Import Run on this computer takes in the
+ * Staging Directory, for every account, measured now.
+ */
+export async function invokeAllStagingBytes(): Promise<number> {
+  return invoke("all_staging_bytes");
+}
+
+/**
  * One sentence for each disk that holds the Staging Directory or the Scratch
  * Directory with less free than `LOW_DISK_SPACE_BYTES` in `message-staging`,
  * naming the disk, the directory and the space free. Empty when every disk

@@ -140,7 +140,7 @@ that name.
 
 **A group conversation is not a person.** A source gives a group an id of its
 own, such as `chat1000000005`. The server stores it as the conversation's chat
-handle (`conversations.chat_handle_id`) so the same group is recognised on
+handle (`conversations.chat_handle_id`) so the same group is recognized on
 the next import. It gets no contact and is nobody's identity. The same holds
 for the key of a conversation of orphaned messages (below). Only a one-to-one
 conversation's chat handle is a person's address, and only that one gets a
@@ -229,7 +229,7 @@ identity's type.** SMS, MMS, RCS and iMessage are transports. Each message
 records the one that carried it in `messages.service`, such as `sms`, `rcs`
 or `imessage`. An MMS is recorded as `sms`, and a message whose source names
 no transport is recorded as `unknown` and stays on Text Message. The
-transport says how that one message travelled, not what its address is. So
+transport says how that one message traveled, not what its address is. So
 an address with an `@` is an `email` identity on Text Message whatever
 transport carried it. An email-to-text gateway such
 as `alerts@example.com` that writes over SMS is one `email` row on `phone`,
@@ -479,7 +479,7 @@ the same number as a sender as `phone`, and one that read the service typed
 contact edit and an account's own identities take those two words and refuse
 any other, naming the two. An email address is on `phone`, where iMessage
 reaches it.
-Why: every other word was read as `phone`, so a misspelt `whatsap` put an
+Why: every other word was read as `phone`, so a misspelled `whatsap` put an
 identity on Text Message without a word
 ([#1630](https://github.com/messagecrate/message-crate/issues/1630)), and
 once the address decided the type, `email` was only a second name for `phone`

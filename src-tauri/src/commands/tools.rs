@@ -201,7 +201,7 @@ const WAITING_STEP_BYTES: u64 = 256 * 1024;
 ///
 /// # Errors
 ///
-/// Returns [`Cancelled`] when the run is cancelled while it waits, and the
+/// Returns [`Cancelled`] when the run is canceled while it waits, and the
 /// failed download's reason when a download waited for fails.
 pub(crate) fn wait_for_downloads(
     app: &AppHandle,

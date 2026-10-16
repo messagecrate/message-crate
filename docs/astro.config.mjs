@@ -236,7 +236,7 @@ export default defineConfig({
       expressiveCode: {
         themes: ['starlight-light'],
         // Code blocks: White with a Silver border, 8px radius, 13.5px mono,
-        // 1.55 line height. Colours are the DESIGN.md tokens.
+        // 1.55 line height. Colors are the DESIGN.md tokens.
         styleOverrides: {
           borderRadius: '8px',
           borderWidth: '1px',

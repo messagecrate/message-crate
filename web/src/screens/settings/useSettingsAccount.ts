@@ -1,0 +1,53 @@
+import type { UseMutationResult } from "@tanstack/react-query";
+import { type AccountProfileChange, useUpdateAccountProfile } from "../../hooks/useAccountProfile";
+import type { AccountProfile } from "../../lib/account";
+import { keys } from "../../lib/queryKeys";
+import { useRouteCache, useRouteMutation, useRouteQuery } from "../../lib/routeQuery";
+import { getAccount, getAccountProfile, updateAccount } from "../../lib/serverApi";
+
+/**
+ * The account a Settings screen is about.
+ *
+ * With no id it is the logged-in account, from the entry every other screen
+ * reads. With an id it is an account the owner has opened from User
+ * Accounts, read from the same `/v1/accounts/{id}` row under the owner's list
+ * entry, so a change to the list refreshes it.
+ */
+export function useSettingsAccount(managedAccountId?: number): {
+  profile: AccountProfile | null;
+  loading: boolean;
+  error: string;
+} {
+  const { data, isPending, error } = useRouteQuery(
+    managedAccountId === undefined
+      ? keys.accountProfile.all
+      : keys.ownerAccounts.member(managedAccountId),
+    (signal) =>
+      managedAccountId === undefined
+        ? getAccountProfile({ signal })
+        : getAccount(managedAccountId, { signal }),
+  );
+  return { profile: data ?? null, loading: isPending, error: error ? error.message : "" };
+}
+
+/**
+ * Change the name, time zone or identities of the account a Settings screen
+ * is about: the logged-in one, or one the owner opened.
+ *
+ * The server answers with the account as it now stands, which goes into the
+ * entry the screen reads, and the account's cache is marked stale once the
+ * write settles.
+ */
+export function useUpdateSettingsProfile(
+  managedAccountId?: number,
+): UseMutationResult<AccountProfile, Error, AccountProfileChange> {
+  const cache = useRouteCache();
+  const own = useUpdateAccountProfile();
+  const managed = useRouteMutation<AccountProfile, Error, AccountProfileChange>({
+    mutationFn: (body) => updateAccount(managedAccountId ?? 0, body),
+    onSuccess: (profile) => {
+      cache.set(keys.ownerAccounts.member(profile.account_id), profile);
+    },
+  });
+  return managedAccountId === undefined ? own : managed;
+}

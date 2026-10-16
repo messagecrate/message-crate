@@ -6,7 +6,11 @@ import ContactSortMenu from "../components/ContactSortMenu";
 import ExportAddressBookButton from "../components/ExportAddressBookButton";
 import GroupsMenu from "../components/GroupsMenu";
 import InfiniteOffsetList from "../components/InfiniteOffsetList";
-import { useSetRightToolbar } from "../components/useRightToolbar";
+import { useContactGroups } from "../hooks/useContactGroups";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { useResetOnChange } from "../hooks/useResetOnChange";
+import { useSetRightToolbar } from "../hooks/useRightToolbar";
+import { useSelectAll } from "../hooks/useSelectAll";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
 import {
   contactBelongsToGroup,
@@ -35,10 +39,6 @@ import { listContacts } from "../lib/serverApi";
 import type { components } from "../lib/serverApi.types";
 import { useTimeZone } from "../lib/timeZone";
 import { UNKNOWN_GROUP } from "../lib/unknownGroup";
-import { useContactGroups } from "../lib/useContactGroups";
-import { useDebouncedValue } from "../lib/useDebouncedValue";
-import { useResetOnChange } from "../lib/useResetOnChange";
-import { useSelectAll } from "../lib/useSelectAll";
 
 /** How long the search waits after the last key before it asks the server. */
 export const FILTER_DEBOUNCE_MS = 300;

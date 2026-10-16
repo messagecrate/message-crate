@@ -43,14 +43,14 @@ Messages list, Trash, the three search modes, and the Settings pages.
 
 Writes are not mapped. Every route handler that would change data answers 501
 with "Not available: web-next reads the vault through /v1 and has not mapped
-writes yet", so renaming, labelling, merging, trashing, importing a vCard,
+writes yet", so renaming, labeling, merging, trashing, importing a vCard,
 changing the profile or password, and creating an account all fail visibly.
 Undo and redo are not features of web-next: the history engine is unwired and
 its controls are gone from the list menus.
 
 Some reads have no `/v1` route and are approximated or absent; they are listed
 with their nearest routes under "What the `/v1` API cannot serve" below. Two
-behaviours were observed on this build: right-clicking a message search result
+behaviors were observed on this build: right-clicking a message search result
 opens no menu, and clicking a message hit opens the conversation and then
 walks it back one page of 80 at a time until it reaches the message, so a hit
 from 2014 in a long thread takes a while to appear.
@@ -150,7 +150,7 @@ attachments. Messages page newest first; scrolling up loads older pages and a
 floating "Newest messages" button jumps back. Find in conversation (Ctrl+F)
 counts matches, steps through them and highlights the term. Day separators sit
 between calendar days. Images render inline, other files as links, and missing
-or unplayable media as labelled placeholders.
+or unplayable media as labeled placeholders.
 
 ![Find in conversation](web-next/thread-find.png)
 
@@ -222,7 +222,7 @@ in without one, display name, phone numbers, and a danger zone for deleting
 all messages or the account. Access: one API token to generate or delete.
 Storage: attachment usage, import history, and the largest attachments.
 Appearance: list badge toggles, contact initials, light and dark theme with
-four colour seeds, a share string, preset swatches, and date and time formats
+four color seeds, a share string, preset swatches, and date and time formats
 with custom patterns.
 
 ![Settings, Account](web-next/settings-account.png)
@@ -235,7 +235,7 @@ with custom patterns.
 
 ![Settings, Appearance](web-next/settings-appearance.png)
 
-![Settings, Appearance, theme colours](web-next/settings-appearance-theme.png)
+![Settings, Appearance, theme colors](web-next/settings-appearance-theme.png)
 
 ![Settings, Appearance, date and time](web-next/settings-appearance-datetime.png)
 
@@ -399,7 +399,7 @@ has no such feature.
 Mapping web-next's screens onto the `/v1` API in September 2026 (#412)
 surfaced the list below: things the screens do, or did, that the API does not
 serve. Each entry names the screen, what it needs, and the nearest route at
-the time. It is the first written account of which behaviours would need API
+the time. It is the first written account of which behaviors would need API
 support if they were carried into `web/`. Nothing here is decided: a gap is a
 fact about the API, not a request to build it, and the list is not rewritten
 until someone scopes the port.

@@ -211,7 +211,7 @@ The old volume remains on the old computer until `docker volume rm message-crate
 Once the counts match, neither file is needed any more, because the restored volume holds everything they held.
 Each copy left behind is one more place the messages can be read from.
 `message-crate-data.tar.gz` is deleted from the new computer, with `rm` or `Remove-Item` as on the old computer.
-The encrypted copy is deleted everywhere it went: the new computer, the old computer, and the USB drive or network share it travelled through.
+The encrypted copy is deleted everywhere it went: the new computer, the old computer, and the USB drive or network share it traveled through.
 
 ### Encrypt the disk that holds the volume
 

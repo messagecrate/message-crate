@@ -861,7 +861,7 @@ async fn creating_a_run_records_the_scope_the_tool_and_the_counts() {
 }
 
 #[tokio::test]
-async fn a_scope_the_server_cannot_honour_is_refused_and_no_run_is_recorded() {
+async fn a_scope_the_server_cannot_honor_is_refused_and_no_run_is_recorded() {
     let (fixture, alice, _dinner, _menu) = fixture_with_two_conversations().await;
     let bob = register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
     crate::test_support::seed_one_message(&fixture.state, bob.account_id).await;
@@ -1597,7 +1597,7 @@ async fn a_deleted_message_leaves_its_place_empty_and_closing_drops_the_list() {
     assert_eq!(
         snapshot_rows(&fixture, other_id).await,
         0,
-        "cancelling drops the list"
+        "canceling drops the list"
     );
 }
 
@@ -1759,7 +1759,7 @@ async fn a_second_start_closes_the_first_and_its_list_goes() {
 }
 
 /// A running Export Run with no page read for an hour is closed as
-/// cancelled and its list deleted; one whose page was read within the hour
+/// canceled and its list deleted; one whose page was read within the hour
 /// is left running. The times are passed in, never waited for (#2080).
 #[tokio::test]
 async fn a_run_idle_past_the_hour_is_closed_and_one_read_within_it_is_not() {

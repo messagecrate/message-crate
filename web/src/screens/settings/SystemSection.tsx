@@ -5,6 +5,7 @@ import { CheckIcon, DownloadIcon, XIcon } from "../../components/icons";
 import OpenPathButton from "../../components/OpenPathButton";
 import PathPicker from "../../components/PathPicker";
 import PlainButton from "../../components/PlainButton";
+import { useToolsStatus } from "../../hooks/useToolsStatus";
 import { getBaseUrl } from "../../lib/api";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { APP_BUILD } from "../../lib/build";
@@ -24,7 +25,7 @@ import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware"
 import { toolStatusLine, troubleshootingSentence } from "../../lib/toolStatusCopy";
 import type { ToolName } from "../../lib/types";
 import { accentLinkClass } from "../../lib/uiStyles";
-import { useToolsStatus } from "../../lib/useToolsStatus";
+import { AccountStagingUsage } from "./StagingDirectoryUsage";
 
 const sectionHeadingClass =
   "m-0 mb-2 text-[12px] font-semibold uppercase tracking-[0.05em] text-muted";
@@ -523,6 +524,7 @@ export function SystemSection() {
         <p className={settingsHelpClass}>
           Each Import Run gets a directory here while it runs. For example {helpExample}
         </p>
+        <AccountStagingUsage className={settingsNoteLayoutClass} />
       </div>
 
       <Checkbox

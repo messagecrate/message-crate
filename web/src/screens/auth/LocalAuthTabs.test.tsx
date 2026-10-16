@@ -24,7 +24,7 @@ function renderTabs(serverState: "unclaimed" | "closed" | "open") {
 
 /**
  * The card offers what the server says is on offer. These three cases are the
- * whole of the entry screen's behaviour, and the reason the server reports one
+ * whole of the entry screen's behavior, and the reason the server reports one
  * value rather than the facts behind it: the mapping lives in one place.
  */
 describe("LocalAuthTabs", () => {

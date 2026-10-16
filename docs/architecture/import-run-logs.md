@@ -1,11 +1,13 @@
 # Import Run logs
 
-Where the desktop app keeps each Import Run's log, what a line of it holds,
-and who reads it. The decisions were made on #1340 and #1665; the code is
-`crates/libs/log-lines` (the line format, shared with the server's log),
+Where the desktop app keeps each Import Run's log, and its own log beside
+them, what a line of each holds, and who reads it. The decisions were made
+on #1340, #1665 and #2185; the code is `crates/libs/log-lines` (the line
+format, shared with the server's log),
 `crates/core/message-crate-core/src/run_log.rs` (a run log's lines),
-`src-tauri/src/app_directories.rs` (writing) and `src-tauri/src/run_logs.rs`
-(listing and reading).
+`src-tauri/src/app_directories.rs` (writing a run log),
+`src-tauri/src/app_log.rs` (writing the desktop app's log) and
+`src-tauri/src/run_logs.rs` (listing and reading both).
 
 *The server's own log is a separate thing, with its own rules: [The server's
 log](server-log.md).*
@@ -16,6 +18,7 @@ log](server-log.md).*
 |---|---|---|---|
 | The server's log | The Data Directory of the server | The owner | Owner Home → **Logs**, in a browser or the desktop app |
 | An Import Run's log | The Logs Directory of the computer that ran the import | The owner, and the account that ran the run | Owner Home → **Logs** (the owner), and the run's row in Settings → Storage (the account), in the desktop app on that computer |
+| The desktop app's log | The Logs Directory of the computer the app runs on | The owner | Owner Home → **Logs**, as **Desktop app**, in the desktop app on that computer |
 
 A browser reads the server's log only, because a run log never leaves the
 computer that ran the import.
@@ -62,6 +65,19 @@ account sees a log whose line names its own id and the id of the Message
 Crate it is signed in to, because account 7 of another Message Crate is
 another account. A log with no account line is the owner's alone.
 
+The line is also what ties a run's directory in the Staging Directory to its
+run (#2822). When an account opens Import, the desktop app lists the run
+directories whose log names that account and the Message Crate it is signed
+in to, asks the server how each run stands, and deletes the directory of
+every run the server reports as closed. It adds one `INFO` line to the run's
+log naming the run and the directory. A run that is running, a run the
+server does not report, and a directory whose log has no account line all
+keep their directory.
+
+Why the log and not the server's `run_dir`: the server holds the path of a
+running run only for Resume, and a directory is on one computer. The log is
+on the computer that holds the directory, and it names the run.
+
 Why the Message Crate's id and not the address: two Message Crates can answer
 at one address. The desktop app's own server and a Docker one both answer at
 `http://127.0.0.1:8080`, and a database rebuilt with `create-database` starts
@@ -69,6 +85,46 @@ its account and Import Run ids at the same numbers again. The server writes
 the id (`GET /v1/server`, `id`) when its database is made and never changes
 it. The address is in the line for a person to read, and one address can be
 written several ways (`localhost` or `127.0.0.1`), so nothing compares it.
+
+## The desktop app's log
+
+What the desktop app does and fails at outside an Import Run goes to one
+log of its own, `desktop-app.log` in the Logs Directory: an event no window
+received, a program in the Tools Directory whose record could not be
+written, a server whose processes will not end with it, and the warnings
+the Apple Messages Reader writes during the Import screen's identity check,
+which runs before any Import Run exists. Its lines are in the format below,
+at `WARN`, because each is something the app went on without.
+Nothing deletes it, and every start of the app writes on into it. It is
+made when its first line is written, so an app with nothing to say has
+none.
+
+Why: a desktop starts the app with standard error thrown away, so a line
+written only there was lost. The server's log and each run's log had a
+place to go, and the app's own decisions outside a run had none
+([#2185](https://github.com/messagecrate/message-crate/issues/2185)).
+
+One line still goes to standard error: the one that says the Message Crate
+Directory could not be made. Why: with no Message Crate Directory there is
+no Logs Directory to write it in. A line written before the app has named
+the Logs Directory, or one the log cannot take, goes there too, as the one
+place left.
+
+The owner reads it, in the desktop app on that computer, as **Desktop
+app** in the Logs panel. It names no account, so the listing gives it to
+the owner alone, as it does a run log with no account line. Like a run
+log, it is a plain file that the computer's own user can open with or
+without Message Crate ("A filter, not a guard", below).
+
+A line of it names only paths inside Message Crate's own directories, such
+as the Tools Directory and the Scratch Directory. The path of a backup the
+identity check reads is written as "the backup", in the form the window
+gave it, which is the form the Reader names it in. The Reader's other lines
+from the identity check are not written at all: they say how far it got,
+and one of them names the phone, such as "Decrypted iOS backup: Sam's
+iPhone". Why: the log is offered to the owner of whichever Message Crate
+the app is signed in to, and a backup's path or a phone's name can name the
+person whose phone it is.
 
 ## One line per event, with its time and level
 

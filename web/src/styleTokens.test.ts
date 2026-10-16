@@ -135,7 +135,7 @@ describe("focus rings", () => {
       .join("\n");
   };
 
-  // A ring offset is a box-shadow in a colour of its own, white unless a class
+  // A ring offset is a box-shadow in a color of its own, white unless a class
   // sets it, so it drew a white line round every focused button in the dark
   // theme (#1703). `focusRingClass` leaves the gap as an outline offset, which shows
   // whatever surface the element sits on.

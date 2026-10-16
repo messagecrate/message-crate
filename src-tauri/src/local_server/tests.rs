@@ -121,7 +121,7 @@ fn probe_reports_a_free_port() {
 }
 
 #[test]
-fn probe_recognises_a_message_crate() {
+fn probe_recognizes_a_message_crate() {
     let server = message_crate();
     assert_eq!(probe(*server.address()), Probe::MessageCrate);
 }
