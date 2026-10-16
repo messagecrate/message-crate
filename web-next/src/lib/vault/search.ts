@@ -57,7 +57,7 @@ const TOP_MATCH_POOL = 6;
 type List = "contacts" | "conversations" | "messages";
 
 /**
- * The import source ids the vault's `source:` word accepts (`SOURCE_IDS` in
+ * The import source ids the server's `source:` word accepts (`SOURCE_IDS` in
  * `crates/libs/api-types`); it refuses any other value.
  */
 const SOURCE_IDS = new Set([

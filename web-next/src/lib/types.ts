@@ -58,7 +58,7 @@ export type YearThread = {
   messageCount: number;
   /**
    * Attachments in this year thread. Read through `/v1`, it counts the
-   * messages that carry one, because the vault counts no attachments by year.
+   * messages that carry one, because the server counts no attachments by year.
    */
   attachmentCount: number;
   dateStart: string;

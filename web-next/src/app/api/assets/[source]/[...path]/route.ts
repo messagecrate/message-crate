@@ -20,7 +20,7 @@ function authError(err: unknown): NextResponse | null {
  * Attachment bytes, proxied from `GET /v1/assets/{sha256}`. The vault
  * addresses assets by content hash, so the last path segment is the sha256
  * (`toAttachment` in `lib/vault/messages.ts` puts it in `assetsPath`). The
- * `[source]` segment stays in the URL web-next builds; the vault ignores it.
+ * `[source]` segment stays in the URL web-next builds; this route ignores it.
  */
 export async function GET(_req: Request, { params }: Params) {
   const { path: parts } = await params;

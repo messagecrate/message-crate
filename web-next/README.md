@@ -48,8 +48,8 @@ Sign in with user `demo` and an empty password. The vault host comes from
   — the reads each screen needs, shaped into the row types in `src/lib/types.ts`.
 - `src/lib/db.ts` — the barrel pages and route handlers import; it re-exports
   the modules above.
-- `src/app/api/auth/login` — `POST /v1/auth/login`; the token and account id
-  go in httpOnly cookies. Logout revokes the token.
+- `src/app/api/auth/login` — `POST /v1/session`; the token and account id
+  go in httpOnly cookies. Logout ends the Session with `DELETE /v1/session`.
 - `src/app/api/assets/[source]/[sha256]` — proxies `GET /v1/assets/{sha256}`.
 - Display preferences live in a cookie (`src/lib/vault/prefs.ts`): the vault
   has no preferences route.

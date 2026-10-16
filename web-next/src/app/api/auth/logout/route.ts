@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-/** End the vault session (`DELETE /v1/session`) and clear the cookies. */
+/** End the Session (`DELETE /v1/session`) and clear the cookies. */
 export async function POST() {
   const token = await getSessionTokenFromCookies();
   if (token) {
