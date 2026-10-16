@@ -49,6 +49,8 @@ echo "==> web lint + format check"
 (cd web && npx biome ci .)
 echo "==> web timed-wait rule still catches every form"
 (cd web && npx biome lint --error-on-warnings src/test/noTimedWaitsInTests.canary.ts)
+echo "==> web Tauri-mock rule still catches every form"
+(cd web && npx biome lint --error-on-warnings src/test/noTauriMocksOutsideDesktop.canary.ts)
 echo "==> web noRestrictedImports lists agree"
 node scripts/check-biome-restricted-imports.mjs
 echo "==> web type-check"

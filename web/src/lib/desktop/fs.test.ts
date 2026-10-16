@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { invokeSaveDownload } from "./fs";
+import { nth } from "../../test/nth";
+import { invokeOpenPath, invokeSaveDownload, invokeSaveFile } from "./fs";
 
 const invoke = vi.fn();
 
@@ -24,5 +25,59 @@ describe("invokeSaveDownload", () => {
       url,
       fileName: "Café clip.mov",
     });
+  });
+});
+
+describe("invokeOpenPath", () => {
+  beforeEach(() => {
+    invoke.mockReset();
+  });
+
+  // The desktop process checks the path against the run directories it made;
+  // a root from the window would be the setting as it is now.
+  it("hands the desktop app the path alone", async () => {
+    invoke.mockResolvedValue(undefined);
+
+    await invokeOpenPath("/home/sam/message-crate/staging");
+
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("open_path", {
+      path: "/home/sam/message-crate/staging",
+    });
+  });
+});
+
+describe("invokeSaveFile", () => {
+  beforeEach(() => {
+    invoke.mockReset();
+  });
+
+  it("sends the bytes as the raw body and the name as a header, with no path", async () => {
+    invoke.mockResolvedValue(true);
+
+    await expect(invokeSaveFile(new Uint8Array([1, 2, 255]), "Café photo.jpg")).resolves.toBe(true);
+
+    expect(invoke).toHaveBeenCalledTimes(1);
+    const [command, body, options] = nth(invoke.mock.calls, 0);
+    expect(command).toBe("save_file");
+    // The bytes as they are, not a JSON array, and the name as a header.
+    expect(body).toBeInstanceOf(Uint8Array);
+    expect([...(body as Uint8Array)]).toEqual([1, 2, 255]);
+    expect(options).toEqual({ headers: { "file-name": '"Caf\\u00e9 photo.jpg"' } });
+  });
+
+  it("escapes a name outside ASCII, an emoji's two halves included, so it fits in a header", async () => {
+    invoke.mockResolvedValue(true);
+
+    await invokeSaveFile(new Uint8Array([120]), "😀.png");
+
+    expect(nth(invoke.mock.calls, 0)[2]).toEqual({
+      headers: { "file-name": '"\\ud83d\\ude00.png"' },
+    });
+  });
+
+  it("reports false when the dialog is closed without a choice", async () => {
+    invoke.mockResolvedValue(false);
+
+    await expect(invokeSaveFile(new Uint8Array([1]), "address-book.csv")).resolves.toBe(false);
   });
 });

@@ -24,7 +24,7 @@ heavy jobs read them:
 | `check-tauri` | `rust` | `cargo check`, Clippy at `-D warnings`, rustdoc at `-D warnings` with private items, and `cargo test` on `src-tauri` |
 | `windows-config` | `server_config` | `cargo test -p message-crate-server --lib "config::tests::"` on `windows-latest` |
 | `windows-local-server` | `local_server` | `cargo test --manifest-path src-tauri/Cargo.toml --lib "local_server::"` on `windows-latest` |
-| `web` | `web` | `biome ci`, `biome lint --error-on-warnings` on the timed-wait rule's canary, `check-biome-restricted-imports.mjs`, `check-generated-api-types.sh`, `npm run build`, `npm test` |
+| `web` | `web` | `biome ci`, `biome lint --error-on-warnings` on the timed-wait and Tauri-mock rules' canaries, `check-biome-restricted-imports.mjs`, `check-generated-api-types.sh`, `npm run build`, `npm test` |
 | `docs` | `docs` | `npm ci`, `astro check`, `astro build` — the site without rustdoc or the HTTP API catalog |
 | `license` | always | `check-license.sh` |
 | `docker-context` ("Docker build context") | always | `check-docker-context.sh`: the Dockerfile's build context, and every `FROM` pinned by tag and digest |

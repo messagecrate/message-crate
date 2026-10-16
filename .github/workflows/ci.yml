@@ -361,6 +361,11 @@ jobs:
       - name: The timed-wait rule still catches every form
         run: cd web && npx biome lint --error-on-warnings src/test/noTimedWaitsInTests.canary.ts
 
+      # The same for the rule that refuses a mock of Tauri's packages outside
+      # web/src/lib/desktop/ (web/biome-plugins/noTauriMocksOutsideDesktop.grit).
+      - name: The Tauri-mock rule still catches every form
+        run: cd web && npx biome lint --error-on-warnings src/test/noTauriMocksOutsideDesktop.canary.ts
+
       - name: Biome's restricted-import lists agree
         run: node scripts/check-biome-restricted-imports.mjs
 
