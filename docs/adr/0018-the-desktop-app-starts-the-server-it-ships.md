@@ -164,8 +164,9 @@ starts the server again and why. For that start, a restart for the network
 setting, and a Retry after any failure, it tells the window when a Message
 Crate answers and when the start fails. The web app shows it across the top
 of the page, under the header of the message shell and of Owner Home, where a
-refused display name shows too (#2991). The login card has no header and
-shows the state itself. It reads
+refused display name shows too (#2991), and above Profile Setup and the
+screen that says a profile could not be loaded. The login card shows the
+state itself. It reads
 "The server stopped answering. Restarting it…" ("The server stopped." for
 one that exited), clears itself once the server answers, and after a failure
 shows why, with Try again. The window listens for the app's word rather than

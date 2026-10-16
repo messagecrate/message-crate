@@ -4,6 +4,7 @@ import AuthErrorFooter from "../components/AuthErrorFooter";
 import AuthSubmitButton from "../components/AuthSubmitButton";
 import Button from "../components/Button";
 import { PersonIcon, PhoneIcon } from "../components/icons";
+import LocalServerNotice from "../components/LocalServerNotice";
 import Select, { ListBoxItem, selectItemClassName } from "../components/Select";
 import TextField from "../components/TextField";
 import TimeZoneField from "../components/TimeZoneField";
@@ -31,7 +32,6 @@ import {
   authCardClass,
   authCardFooterClass,
   authTitleClass,
-  pageCenterClass,
 } from "../lib/uiStyles";
 
 /** The zone an account has until someone chooses one (`accounts.time_zone`'s default). */
@@ -304,105 +304,114 @@ export default function OnboardingScreen() {
   const canAddHandle = Boolean(handles[handles.length - 1]?.handle.trim());
 
   return (
-    <div className={pageCenterClass}>
-      <div className={authCardClass}>
-        <div className={authCardBodyClass}>
-          <h1 className={`${authTitleClass} !mb-2`}>Profile Setup</h1>
-          <p className="mt-0 mb-4 text-[0.875rem] text-muted">
-            So we can match imported messages to you.
-          </p>
-
-          <TextField
-            label="Display Name"
-            value={displayName}
-            onChange={setDisplayName}
-            placeholder="Your name"
-          />
-
-          <TimeZoneField
-            label="Time Zone"
-            value={timeZone}
-            onChange={setTimeZone}
-            className="mt-4"
-          />
-
-          <div className="mt-4 mb-2 block text-[0.875rem] font-medium text-text">Your Accounts</div>
-
-          {handles.map((h, i) => {
-            const invalid = invalidIds.includes(h.id);
-            return (
-              <div key={h.id} className="mb-2 flex items-center gap-2">
-                <Select
-                  selectedKey={h.service}
-                  onSelectionChange={(k) => {
-                    const service = parseSelectKey(k, OFFERED_SERVICES);
-                    if (service) updateHandle(i, "service", service);
-                  }}
-                  className="w-[140px] shrink-0"
-                  aria-label={`Account ${i + 1} type`}
-                >
-                  {OFFERED_SERVICE_OPTIONS.map((s) => (
-                    <ListBoxItem key={s.value} id={s.value} className={selectItemClassName}>
-                      {s.label}
-                    </ListBoxItem>
-                  ))}
-                </Select>
-                <TextField
-                  value={h.handle}
-                  onChange={(v) => updateHandle(i, "handle", v)}
-                  onBlur={() => revalidate(handles)}
-                  leadingIcon={serviceIcon(h.service)}
-                  placeholder={identityPlaceholder(h.service)}
-                  className="min-w-0 flex-1"
-                  inputClassName={invalid ? "!border-danger" : undefined}
-                  isInvalid={invalid}
-                  aria-label={`Account ${i + 1} value`}
-                />
-                {handles.length > 1 ? (
-                  <Button
-                    variant="ghostDanger"
-                    size="icon"
-                    onPress={() => removeHandle(i)}
-                    aria-label={`Remove account ${i + 1}`}
-                  >
-                    ×
-                  </Button>
-                ) : null}
-              </div>
-            );
-          })}
-
-          {handles.length < MAX_ACCOUNT_ROWS ? (
-            <div className="mt-3 flex justify-end">
-              <Button variant="secondary" size="sm" onPress={addHandle} disabled={!canAddHandle}>
-                + Add account
-              </Button>
-            </div>
-          ) : (
-            <p className="mt-1.5 text-right text-[0.75rem] text-muted">
-              {hiddenIdentities > 0
-                ? `${hiddenIdentities} more ${hiddenIdentities === 1 ? "is" : "are"} in Settings.`
-                : "Add the rest in Settings after setup."}
+    // A column, so the desktop app's server notice sits above the card and
+    // the card stays centered in the height left below it.
+    <div className="flex h-screen flex-col bg-bg">
+      <LocalServerNotice />
+      {/* `pageCenterClass` without its full-window minimum, which would
+          push the card below the window while the notice shows. */}
+      <div className="box-border flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-4">
+        <div className={authCardClass}>
+          <div className={authCardBodyClass}>
+            <h1 className={`${authTitleClass} !mb-2`}>Profile Setup</h1>
+            <p className="mt-0 mb-4 text-[0.875rem] text-muted">
+              So we can match imported messages to you.
             </p>
-          )}
-        </div>
 
-        <div className={authCardFooterClass}>
-          {/* A value that does not read as an account is reported in the same
+            <TextField
+              label="Display Name"
+              value={displayName}
+              onChange={setDisplayName}
+              placeholder="Your name"
+            />
+
+            <TimeZoneField
+              label="Time Zone"
+              value={timeZone}
+              onChange={setTimeZone}
+              className="mt-4"
+            />
+
+            <div className="mt-4 mb-2 block text-[0.875rem] font-medium text-text">
+              Your Accounts
+            </div>
+
+            {handles.map((h, i) => {
+              const invalid = invalidIds.includes(h.id);
+              return (
+                <div key={h.id} className="mb-2 flex items-center gap-2">
+                  <Select
+                    selectedKey={h.service}
+                    onSelectionChange={(k) => {
+                      const service = parseSelectKey(k, OFFERED_SERVICES);
+                      if (service) updateHandle(i, "service", service);
+                    }}
+                    className="w-[140px] shrink-0"
+                    aria-label={`Account ${i + 1} type`}
+                  >
+                    {OFFERED_SERVICE_OPTIONS.map((s) => (
+                      <ListBoxItem key={s.value} id={s.value} className={selectItemClassName}>
+                        {s.label}
+                      </ListBoxItem>
+                    ))}
+                  </Select>
+                  <TextField
+                    value={h.handle}
+                    onChange={(v) => updateHandle(i, "handle", v)}
+                    onBlur={() => revalidate(handles)}
+                    leadingIcon={serviceIcon(h.service)}
+                    placeholder={identityPlaceholder(h.service)}
+                    className="min-w-0 flex-1"
+                    inputClassName={invalid ? "!border-danger" : undefined}
+                    isInvalid={invalid}
+                    aria-label={`Account ${i + 1} value`}
+                  />
+                  {handles.length > 1 ? (
+                    <Button
+                      variant="ghostDanger"
+                      size="icon"
+                      onPress={() => removeHandle(i)}
+                      aria-label={`Remove account ${i + 1}`}
+                    >
+                      ×
+                    </Button>
+                  ) : null}
+                </div>
+              );
+            })}
+
+            {handles.length < MAX_ACCOUNT_ROWS ? (
+              <div className="mt-3 flex justify-end">
+                <Button variant="secondary" size="sm" onPress={addHandle} disabled={!canAddHandle}>
+                  + Add account
+                </Button>
+              </div>
+            ) : (
+              <p className="mt-1.5 text-right text-[0.75rem] text-muted">
+                {hiddenIdentities > 0
+                  ? `${hiddenIdentities} more ${hiddenIdentities === 1 ? "is" : "are"} in Settings.`
+                  : "Add the rest in Settings after setup."}
+              </p>
+            )}
+          </div>
+
+          <div className={authCardFooterClass}>
+            {/* A value that does not read as an account is reported in the same
               place as anything the server sends back, so there is one line on
               this card that carries what is wrong. */}
-          <AuthErrorFooter error={validationError || error} />
-          {/* One row: the way back on the left, the way on at half width on
+            <AuthErrorFooter error={validationError || error} />
+            {/* One row: the way back on the left, the way on at half width on
               the right, matching the button on the card before this one. */}
-          <div className="mt-6 flex items-center justify-between gap-3">
-            <AuthBackButton label="Back to login" onClick={logout} />
-            <AuthSubmitButton
-              onClick={handleSubmit}
-              disabled={!canSubmit || busy}
-              className="w-1/2"
-            >
-              {busy ? "Saving…" : "Continue to Message Crate"}
-            </AuthSubmitButton>
+            <div className="mt-6 flex items-center justify-between gap-3">
+              <AuthBackButton label="Back to login" onClick={logout} />
+              <AuthSubmitButton
+                onClick={handleSubmit}
+                disabled={!canSubmit || busy}
+                className="w-1/2"
+              >
+                {busy ? "Saving…" : "Continue to Message Crate"}
+              </AuthSubmitButton>
+            </div>
           </div>
         </div>
       </div>
