@@ -610,8 +610,11 @@ second try at once meets the same busy database. It never tries a write
 again: it shows the write's failure with its `detail`. The pool
 (`crates/server/server/src/db/engine.rs`) holds 8 connections: two import
 batches and the sweep of unreferenced files after an Import Run
-(`asset_store::sweep_after_run`) can each hold one for a whole run, and
-under write-ahead logging the rest serve reads side by side. A request waits
+(`asset_store::sweep_after_run`) can each hold one for a whole run. The
+background move of a Session's expiry (`auth::ExpiryMoves`, under
+[Credentials and reach](#credentials-and-reach)) holds one more for up to
+the busy timeout while an import holds the write lock. Under write-ahead
+logging the rest serve reads side by side. A request waits
 10 seconds for a connection, and a write waits SQLite's 15-second busy
 timeout for the write lock. Why: with 4 connections, two imports and a sweep
 left one for every other request, and a request waited sqlx's default 30

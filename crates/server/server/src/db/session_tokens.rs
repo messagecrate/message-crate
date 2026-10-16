@@ -6,7 +6,6 @@ use chrono::{DateTime, Utc};
 pub use message_crate_api_types::AppKind;
 use rand::TryRng;
 use sqlx::SqliteConnection;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::db::audit_trail::{self, AuditActor, AuditReason};
 use crate::db::unix_secs;
@@ -148,7 +147,8 @@ pub struct Session {
     /// `None` until a request names its app.
     pub app: Option<ConnectingApp>,
     /// The move of its expiry the lookup that found it made due, for
-    /// [`spawn_expiry_move`] to write. `None` when the move would be less
+    /// [`move_session_expiry`] to write (`auth::ExpiryMoves` writes it apart
+    /// from the request). `None` when the move would be less
     /// than [`SESSION_EXTEND_STEP_SECS`].
     pub expiry_move: Option<ExpiryMove>,
 }
@@ -264,56 +264,6 @@ pub async fn move_session_expiry(
         .await
         .context("commit the Session's new expiry")?;
     Ok(())
-}
-
-/// Whether a move of a Session's expiry is running in the background.
-static EXPIRY_MOVE_RUNNING: AtomicBool = AtomicBool::new(false);
-
-/// Holds `running` set while a move runs, and clears it when dropped, so a
-/// move that fails, panics or is cancelled lets the next one start.
-struct MoveRunning<'a>(&'a AtomicBool);
-
-impl<'a> MoveRunning<'a> {
-    /// Set `running`, or `None` when it is set already.
-    fn claim(running: &'a AtomicBool) -> Option<Self> {
-        (!running.swap(true, Ordering::AcqRel)).then_some(Self(running))
-    }
-}
-
-impl Drop for MoveRunning<'_> {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::Release);
-    }
-}
-
-/// Write `expiry_move` in a task of its own, on a connection of its own from
-/// `pool`, so the request that made it due is served without waiting for
-/// the write lock. One move runs at a time: while one runs, another is
-/// dropped, and a later request makes it again. So an import holding the
-/// write lock keeps at most one connection waiting on it. A move the busy
-/// timeout ends is dropped without a word; any other failure is logged.
-/// Either way the Session expires when it would have without the move.
-pub fn spawn_expiry_move(pool: &sqlx::SqlitePool, expiry_move: ExpiryMove) {
-    let Some(running) = MoveRunning::claim(&EXPIRY_MOVE_RUNNING) else {
-        return;
-    };
-    let pool = pool.clone();
-    crate::request_id::spawn_in_current_span(async move {
-        let _running = running;
-        let moved = async {
-            let mut conn = pool.acquire().await.context("acquire a connection")?;
-            move_session_expiry(&mut conn, &expiry_move).await
-        }
-        .await;
-        if let Err(err) = moved
-            && !crate::api_error::is_database_busy(&err)
-        {
-            tracing::warn!(
-                error = %format!("{err:#}"),
-                "The Session's expiry could not be moved"
-            );
-        }
-    });
 }
 
 /// The hash of `account_id`'s Session token, or `None` when the account
@@ -986,17 +936,6 @@ mod tests {
             stored_expiry(&mut conn).await,
             unix_secs(used) + SESSION_IDLE_SECS
         );
-    }
-
-    /// One move runs at a time: a second is refused while the first runs,
-    /// and allowed once the first has ended however it ended.
-    #[test]
-    fn one_move_runs_at_a_time() {
-        let running = AtomicBool::new(false);
-        let first = MoveRunning::claim(&running).expect("nothing runs yet");
-        assert!(MoveRunning::claim(&running).is_none(), "one is running");
-        drop(first);
-        assert!(MoveRunning::claim(&running).is_some(), "the first ended");
     }
 
     /// A Session left unused for 7 days is refused.

@@ -2,6 +2,10 @@
 //! may do, the `require_*` guards each route runs, and the extractors that
 //! run a guard before a handler can start.
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use anyhow::Context;
 use axum::extract::FromRef;
 use axum::http::{HeaderMap, header};
 use message_crate_api_types::{APP_HEADER, APP_VERSION_HEADER};
@@ -262,6 +266,7 @@ impl<S> axum::extract::FromRequestParts<S> for AuthIdentity
 where
     S: Send + Sync,
     SqlitePool: FromRef<S>,
+    ExpiryMoves: FromRef<S>,
 {
     type Rejection = ApiError;
 
@@ -269,7 +274,12 @@ where
         parts: &mut axum::http::request::Parts,
         state: &S,
     ) -> Result<Self, Self::Rejection> {
-        resolve_auth(&parts.headers, &SqlitePool::from_ref(state)).await
+        resolve_auth(
+            &parts.headers,
+            &SqlitePool::from_ref(state),
+            &ExpiryMoves::from_ref(state),
+        )
+        .await
     }
 }
 
@@ -282,6 +292,7 @@ impl<S> axum::extract::OptionalFromRequestParts<S> for AuthIdentity
 where
     S: Send + Sync,
     SqlitePool: FromRef<S>,
+    ExpiryMoves: FromRef<S>,
 {
     type Rejection = ApiError;
 
@@ -292,9 +303,13 @@ where
         if parts.headers.get(header::AUTHORIZATION).is_none() {
             return Ok(None);
         }
-        resolve_auth(&parts.headers, &SqlitePool::from_ref(state))
-            .await
-            .map(Some)
+        resolve_auth(
+            &parts.headers,
+            &SqlitePool::from_ref(state),
+            &ExpiryMoves::from_ref(state),
+        )
+        .await
+        .map(Some)
     }
 }
 
@@ -309,6 +324,7 @@ macro_rules! auth_guard {
         where
             S: Send + Sync,
             SqlitePool: FromRef<S>,
+            ExpiryMoves: FromRef<S>,
         {
             type Rejection = ApiError;
 
@@ -316,7 +332,11 @@ macro_rules! auth_guard {
                 parts: &mut axum::http::request::Parts,
                 state: &S,
             ) -> Result<Self, Self::Rejection> {
-                let auth = resolve_auth(&parts.headers, &SqlitePool::from_ref(state)).await?;
+                let auth = resolve_auth(
+            &parts.headers,
+            &SqlitePool::from_ref(state),
+            &ExpiryMoves::from_ref(state),
+        ).await?;
                 $check(&auth)?;
                 Ok(Self(auth))
             }
@@ -400,7 +420,11 @@ pub fn bearer_token(headers: &HeaderMap) -> Result<String, ApiError> {
 /// # Errors
 ///
 /// Returns unauthorized when the token is missing or invalid.
-pub async fn resolve_auth(headers: &HeaderMap, db: &SqlitePool) -> Result<AuthIdentity, ApiError> {
+pub async fn resolve_auth(
+    headers: &HeaderMap,
+    db: &SqlitePool,
+    expiry_moves: &ExpiryMoves,
+) -> Result<AuthIdentity, ApiError> {
     let token = bearer_token(headers)?;
     // Always look up against SQLite so rotate/delete in Settings takes effect
     // without restarting serve (no process-local token cache).
@@ -414,9 +438,65 @@ pub async fn resolve_auth(headers: &HeaderMap, db: &SqlitePool) -> Result<AuthId
     .await?;
     // Written apart from the request, which never waits for the write lock.
     if let Some(expiry_move) = expiry_move {
-        session_tokens::spawn_expiry_move(db, expiry_move);
+        expiry_moves.spawn(db, expiry_move);
     }
     Ok(identity)
+}
+
+/// Writes the moves of Sessions' expiries apart from the requests that made
+/// them due, one at a time. A sub-state of the server's state, so every
+/// request shares the one that is running.
+#[derive(Debug, Clone, Default)]
+pub struct ExpiryMoves(Arc<AtomicBool>);
+
+impl ExpiryMoves {
+    /// Write `expiry_move` in a task of its own, on a connection of its own
+    /// from `pool`, so the request that made it due is served without
+    /// waiting for the write lock. While a move runs, another is dropped,
+    /// and a later request makes it again, so an import holding the write
+    /// lock keeps at most one connection waiting on it. A move the busy
+    /// timeout or the pool's acquire timeout ends is dropped without a word;
+    /// any other failure is logged. Either way the Session expires when it
+    /// would have without the move.
+    pub(crate) fn spawn(&self, pool: &SqlitePool, expiry_move: session_tokens::ExpiryMove) {
+        let Some(running) = MoveRunning::claim(&self.0) else {
+            return;
+        };
+        let pool = pool.clone();
+        crate::request_id::spawn_in_current_span(async move {
+            let _running = running;
+            let moved = async {
+                let mut conn = pool.acquire().await.context("acquire a connection")?;
+                session_tokens::move_session_expiry(&mut conn, &expiry_move).await
+            }
+            .await;
+            if let Err(err) = moved
+                && !crate::api_error::is_database_busy(&err)
+            {
+                tracing::warn!(
+                    error = %format!("{err:#}"),
+                    "The Session's expiry could not be moved"
+                );
+            }
+        });
+    }
+}
+
+/// Holds a flag set while a move runs, and clears it when dropped, so a move
+/// that fails, panics or is cancelled lets the next one start.
+struct MoveRunning(Arc<AtomicBool>);
+
+impl MoveRunning {
+    /// Set `running`, or `None` when it is set already.
+    fn claim(running: &Arc<AtomicBool>) -> Option<Self> {
+        (!running.swap(true, Ordering::AcqRel)).then(|| Self(Arc::clone(running)))
+    }
+}
+
+impl Drop for MoveRunning {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
 }
 
 /// Longest Build the server records. A real one is under thirty characters.
@@ -440,24 +520,18 @@ pub(crate) fn connecting_app(headers: &HeaderMap) -> Option<session_tokens::Conn
 /// Credential-specific bit not yet folded into `AuthCapability`: a session
 /// carries no extra state, an API token carries its own (pre-intersection)
 /// permissions. Both kinds load `AccountAuth` the same way so the disabled
-/// check in [`resolve_auth_on_conn`] runs exactly once.
+/// check in [`resolve_auth_and_expiry_move`] runs exactly once.
 enum Credential {
     Session,
     ApiToken(Permissions),
 }
 
-/// Resolve a Bearer credential on an existing connection, as it stands at
-/// `now`: a Session or an API token that has expired by then is refused.
-///
-/// `app` is the app the request named, if it named one. It is recorded on a
-/// session and ignored for an API token, which belongs to a program rather
-/// than to either app. It never decides whether the request is served.
+/// [`resolve_auth_and_expiry_move`] without the move, for a test that
+/// resolves a credential on a connection of its own.
 ///
 /// # Errors
 ///
-/// Unauthorized when the token matches nothing, which includes an API token
-/// on the owner's account (`api_tokens::lookup_account_for_api_token` refuses
-/// it); forbidden when the account is disabled.
+/// As [`resolve_auth_and_expiry_move`].
 #[cfg(test)]
 pub(crate) async fn resolve_auth_on_conn(
     conn: &mut SqliteConnection,
@@ -470,10 +544,21 @@ pub(crate) async fn resolve_auth_on_conn(
         .map(|(identity, _)| identity)
 }
 
-/// [`resolve_auth_on_conn`], with the move of a Session's expiry the request
-/// made due, for the caller to write ([`session_tokens::spawn_expiry_move`]).
-/// `None` for an API token, and for a Session whose move would be too small
-/// to write.
+/// Resolve a Bearer credential on an existing connection, as it stands at
+/// `now`: a Session or an API token that has expired by then is refused.
+/// Also answers the move of a Session's expiry the request made due, for
+/// the caller to write ([`ExpiryMoves::spawn`]): `None` for an API token,
+/// and for a Session whose move would be too small to write.
+///
+/// `app` is the app the request named, if it named one. It is recorded on a
+/// session and ignored for an API token, which belongs to a program rather
+/// than to either app. It never decides whether the request is served.
+///
+/// # Errors
+///
+/// Unauthorized when the token matches nothing, which includes an API token
+/// on the owner's account (`api_tokens::lookup_account_for_api_token` refuses
+/// it); forbidden when the account is disabled.
 async fn resolve_auth_and_expiry_move(
     conn: &mut SqliteConnection,
     token: &str,
