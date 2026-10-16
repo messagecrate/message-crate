@@ -3,9 +3,9 @@
 //! wrote nothing, or a report that dropped a skip count or a file's parse
 //! error, passed them.
 
-use message_crate_core::GoSmsProConfig;
 use message_crate_core::testutil::TestRun;
 use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_test_run};
+use message_crate_core::{GoSmsProConfig, RunIssueStep};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -277,12 +277,9 @@ fn run_sends_an_import_error_for_each_file_it_cannot_read() {
 
     let issues = issues.lock().unwrap();
     assert_eq!(issues.len(), 22, "{issues:?}");
-    assert!(
-        issues
-            .iter()
-            .all(|i| i.kind == message_crate_core::RunIssueKind::Error
-                && i.step == message_crate_core::RunIssueStep::Parse)
-    );
+    assert!(issues.iter().all(
+        |i| i.kind == message_crate_core::RunIssueKind::Error && i.step == RunIssueStep::Parse
+    ));
     assert!(
         issues
             .iter()
