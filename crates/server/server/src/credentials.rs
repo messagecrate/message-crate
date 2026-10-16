@@ -224,7 +224,7 @@ pub(crate) async fn hash_owner_password(password: &str) -> Result<String, ApiErr
     if password.is_empty() {
         return Err(ApiError::validation("the owner must have a password"));
     }
-    require_hashable(password)?;
+    require_password_within_cap("password", password)?;
     let password = password.to_owned();
     run_argon2("password hash", move || hash_password(&password)).await
 }
@@ -235,20 +235,21 @@ pub(crate) async fn hash_user_password(password: &str) -> Result<Option<String>,
     if password.is_empty() {
         return Ok(None);
     }
-    require_hashable(password)?;
+    require_password_within_cap("password", password)?;
     let password = password.to_owned();
     run_argon2("password hash", move || hash_password(&password).map(Some)).await
 }
 
-/// Refuse a password over [`MAX_PASSWORD_CHARS`], in the wording of every
-/// length cap ([`capped_untrimmed`]). The password is not trimmed: a space
-/// at either end is part of it.
+/// Refuse a password over [`MAX_PASSWORD_CHARS`], naming `field`, the body
+/// field that sent it, in the wording of every length cap
+/// ([`capped_untrimmed`]). The password is not trimmed: a space at either
+/// end is part of it.
 ///
 /// # Errors
 ///
-/// `validation-failed` naming the cap when `password` is over it.
-pub(crate) fn require_hashable(password: &str) -> Result<(), ApiError> {
-    capped_untrimmed("password", password, MAX_PASSWORD_CHARS)?;
+/// `validation-failed` naming `field` and the cap when `password` is over it.
+pub(crate) fn require_password_within_cap(field: &str, password: &str) -> Result<(), ApiError> {
+    capped_untrimmed(field, password, MAX_PASSWORD_CHARS)?;
     Ok(())
 }
 

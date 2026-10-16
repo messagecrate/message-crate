@@ -13,7 +13,7 @@ use sqlx::{SqliteConnection, SqlitePool};
 use crate::api_error::ApiError;
 use crate::auth::AuthIdentity;
 use crate::credentials::RefusalWait;
-use crate::credentials::{normalize_username, require_hashable, verify_login_password};
+use crate::credentials::{normalize_username, require_password_within_cap, verify_login_password};
 use crate::db::audit_trail::{self, AuditReason};
 use crate::db::session_tokens::ConnectingApp;
 use crate::db::{account_profile, api_tokens, dedupe, session_tokens};
@@ -187,7 +187,7 @@ pub async fn create_session(
     }
     // Before the lookup, so the answer is the same whether or not the
     // username names an account.
-    require_hashable(&req.password)?;
+    require_password_within_cap("password", &req.password)?;
     let app = crate::auth::connecting_app(&headers);
     // `log_in` has given its connection back by the time it answers, so a
     // refusal waits holding none.

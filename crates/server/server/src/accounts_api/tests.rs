@@ -298,13 +298,16 @@ async fn a_password_is_at_most_128_characters_however_many_bytes_they_take() {
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let cap = crate::credentials::MAX_PASSWORD_CHARS;
     assert_eq!(cap, 128);
-    let refused = |status: StatusCode, text: &str, what: &str| {
+    let refused_as = |field: &str, status: StatusCode, text: &str, what: &str| {
         let problem = expect_problem(status, text, ProblemType::ValidationFailed);
         assert_eq!(
             problem.errors,
-            Some(vec!["password: must be at most 128 characters".to_string()]),
+            Some(vec![format!("{field}: must be at most 128 characters")]),
             "{what}: {text}"
         );
+    };
+    let refused = |status: StatusCode, text: &str, what: &str| {
+        refused_as("password", status, text, what);
     };
 
     // Creation.
@@ -355,6 +358,41 @@ async fn a_password_is_at_most_128_characters_however_many_bytes_they_take() {
     assert_eq!(
         login_status(&state, "carol", &four_byte).await,
         StatusCode::CREATED
+    );
+
+    // A current password over the cap is refused naming that field, not the
+    // new password, on a change and on a deletion.
+    let owner_path = format!("{}/password", member(owner.account_id));
+    let (status, text) = put_json_raw(
+        &state,
+        &owner_path,
+        &owner.token,
+        serde_json::json!({
+            "password": "fresh",
+            "password_confirmation": "fresh",
+            "current_password": over,
+        }),
+    )
+    .await;
+    refused_as(
+        "current_password",
+        status,
+        &text,
+        "current password on a change",
+    );
+    let carol = log_in(&state, "carol", &four_byte).await;
+    let (status, text) = delete_json_raw(
+        &state,
+        &member(id),
+        carol["token"].as_str().unwrap(),
+        serde_json::json!({ "confirm": true, "current_password": over }),
+    )
+    .await;
+    refused_as(
+        "current_password",
+        status,
+        &text,
+        "current password on a deletion",
     );
 }
 

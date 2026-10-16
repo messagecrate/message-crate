@@ -30,7 +30,7 @@ use crate::config::Config;
 use crate::credentials::RefusalWait;
 use crate::credentials::{
     change_password_on_conn, hash_owner_password, hash_user_password, passwords_match,
-    require_hashable, require_username_free, require_valid_username,
+    require_password_within_cap, require_username_free, require_valid_username,
 };
 use crate::db::audit_trail::{self, AuditAction, AuditActor, Details, NewEntry};
 use crate::db::handles::{self, ApiIdentityService, Identity};
@@ -1081,7 +1081,7 @@ async fn require_current_password(
     password_hash: Option<&str>,
     current: &str,
 ) -> Result<(), ApiError> {
-    require_hashable(current)?;
+    require_password_within_cap("current_password", current)?;
     if !passwords_match(password_hash, current).await? {
         return Err(refusal_wait.refuse("current password is incorrect").await);
     }

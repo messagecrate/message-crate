@@ -1,7 +1,6 @@
 import { useState } from "react";
 import Button from "../../components/Button";
 import { textInputClass } from "../../components/TextField";
-import { MAX_PASSWORD_CHARS } from "../../lib/account";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { useAuth } from "../../lib/authContext";
 import { useRouteMutation } from "../../lib/routeQuery";
@@ -98,7 +97,6 @@ export function ChangePasswordSection({
             <span className="mb-1 block text-[0.813rem] font-medium">Current password</span>
             <input
               type="password"
-              maxLength={MAX_PASSWORD_CHARS}
               value={currentPw}
               onChange={(e) => setCurrentPw(e.target.value)}
               autoComplete="current-password"
@@ -111,7 +109,6 @@ export function ChangePasswordSection({
           <span className="mb-1 block text-[0.813rem] font-medium">New password</span>
           <input
             type="password"
-            maxLength={MAX_PASSWORD_CHARS}
             value={newPw}
             onChange={(e) => setNewPw(e.target.value)}
             autoComplete="new-password"
@@ -123,7 +120,6 @@ export function ChangePasswordSection({
           <span className="mb-1 block text-[0.813rem] font-medium">Confirm new password</span>
           <input
             type="password"
-            maxLength={MAX_PASSWORD_CHARS}
             value={confirmPw}
             onChange={(e) => setConfirmPw(e.target.value)}
             autoComplete="new-password"
