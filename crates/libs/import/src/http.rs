@@ -5,7 +5,6 @@
 //! [`message_crate_http::auth_check`]; the session type here is
 //! [`message_crate_http::HttpSession`].
 
-use message_crate_api_types::ImportMode;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -52,13 +51,6 @@ pub(crate) struct AssetUpload<'a> {
     pub multipart_threshold: usize,
 }
 
-/// How an Import Run ended, for `/v1/imports/{id}/complete`.
-pub(crate) struct ImportOutcome<'a> {
-    /// `completed`, `completed_with_issues`, or `failed`.
-    pub status: &'a str,
-    pub bytes_uploaded: u64,
-}
-
 /// How long the Upload waits for the answer to a request that sends a piece
 /// (an import batch, an attachment, or a part of one) beyond the server's
 /// own limit for the piece to arrive: the server's wait for an import slot
@@ -95,19 +87,6 @@ pub(crate) fn piece_wait(http: &HttpSession, url: &str, token: &str) -> Result<D
     let (status, text) = read_body(what, response)?;
     let stated: ServerUploadTimes = ok_json(what, status, &text)?;
     Ok(Duration::from_secs(stated.upload_piece_secs) + ANSWER_WAIT)
-}
-
-/// The answer to `POST /v1/imports`: the new Import Run's id.
-#[derive(Debug, Deserialize)]
-struct CreateImportResponse {
-    id: i64,
-}
-
-/// The Import Run `POST /v1/imports/{id}/complete` answers. Only `id` is read: it
-/// names the run the server closed.
-#[derive(Debug, Deserialize)]
-struct ImportRun {
-    id: i64,
 }
 
 /// The answer to `POST /v1/assets/{sha256}/uploads`.
@@ -329,87 +308,6 @@ impl Session {
             );
         }
         ok_json::<CreateImportBatchResponse>(&what, status, &text)
-    }
-
-    /// Create an Import Run on the server and return its id. Every batch is
-    /// posted into it; the bearer token names the account.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the server refuses, which includes an account
-    /// that already has a running Import Run.
-    pub(crate) fn start_import(
-        &self,
-        source: &str,
-        mode: ImportMode,
-        tool: Option<&str>,
-        phone_country: Option<&str>,
-    ) -> Result<i64> {
-        let what = "Import Run start";
-        let mut body = serde_json::json!({
-            "source": source,
-            "mode": mode,
-        });
-        if let Some(tool) = tool {
-            body["tool"] = serde_json::Value::String(tool.to_string());
-        }
-        if let Some(phone_country) = phone_country {
-            body["phone_country"] = serde_json::Value::String(phone_country.to_string());
-        }
-        let response = self
-            .http
-            .server_request(Method::POST, &self.url, "/v1/imports", &self.token)
-            .timeout(Duration::from_secs(60))
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send()
-            .with_context(|| format!("{what} failed"))?;
-        let (status, text) = read_body(what, response)?;
-        let parsed: CreateImportResponse = ok_json(what, status, &text)?;
-        Ok(parsed.id)
-    }
-
-    /// Record how the Import Run ended.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the server refuses.
-    pub(crate) fn complete_import(
-        &self,
-        import_id: i64,
-        outcome: &ImportOutcome<'_>,
-    ) -> Result<()> {
-        let what = format!("Import Run {import_id} completion");
-        let body = serde_json::json!({
-            "status": outcome.status,
-            "bytes_uploaded": outcome.bytes_uploaded,
-        });
-        let response = self
-            .http
-            .server_request(
-                Method::POST,
-                &self.url,
-                &format!("/v1/imports/{import_id}/complete"),
-                &self.token,
-            )
-            // The server hides the duplicates of the whole account before it
-            // completes the run, a pass whose time grows with every message
-            // the account holds. 600 s is the ten minutes the web app gives
-            // the same call.
-            .timeout(Duration::from_secs(600))
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send()
-            .with_context(|| format!("{what} failed"))?;
-        let (status, text) = read_body(&what, response)?;
-        let closed: ImportRun = ok_json(&what, status, &text)?;
-        if closed.id != import_id {
-            return Err(anyhow!(
-                "the server closed Import Run {} when asked to complete Import Run {import_id}",
-                closed.id
-            ));
-        }
-        Ok(())
     }
 }
 
@@ -664,31 +562,6 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("read part 1"), "{err:#}");
         abort.assert();
-    }
-
-    /// A server that answers the completion of one Import Run with another
-    /// has not closed the run the Upload holds, so the completion fails and
-    /// names both runs.
-    #[test]
-    fn complete_import_fails_when_the_server_closes_another_run() {
-        let server = MockServer::start();
-        let _complete = server.mock(|when, then| {
-            when.method(POST).path("/v1/imports/7/complete");
-            then.status(200).json_body(serde_json::json!({ "id": 9 }));
-        });
-        let err = session(server.base_url())
-            .complete_import(
-                7,
-                &ImportOutcome {
-                    status: "completed",
-                    bytes_uploaded: 0,
-                },
-            )
-            .unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "the server closed Import Run 9 when asked to complete Import Run 7"
-        );
     }
 
     #[test]

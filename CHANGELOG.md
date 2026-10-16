@@ -29,6 +29,12 @@ carry their date on the heading.
   and each such number is written with its + in that country. Each card
   becomes one new contact with its numbers and email addresses. Nothing is
   loaded until you load the file (#916).
+- 2026-10-15: **Log in on the website for one visit only.** The login card
+  has a **Keep me logged in** box, ticked to start with. Untick it on a
+  shared or borrowed computer, and the browser forgets the Session when the
+  tab closes. A new tab asks to log in again. **Log out** still ends the
+  Session itself. The desktop app is unchanged: it logs out when its window
+  closes (#2205).
 - 2026-10-15: **A WhatsApp group event shows in the conversation.** When a
   member joined or left a group, or someone renamed it or changed its
   picture, the conversation now shows a line saying so, such as "Ada joined
@@ -237,6 +243,8 @@ carry their date on the heading.
   identity's shape decide it, as adding an identity does. A row whose
   service can't take its identity, such as an email address on WhatsApp, is
   refused (#916).
+- 2026-10-15: The way the desktop app sends an import's conversations to
+  the server was reworked inside, with nothing visible (#2053).
 - 2026-10-15: **The desktop app keeps everything in one directory.** The
   app now makes a directory named message-crate in your home directory and
   keeps its Message Crate's data, the Staging Directory, exports, Import Run

@@ -55,6 +55,8 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverApi")>()),
   getServerState: vi.fn(),
   login: vi.fn(),
+  claimServer: vi.fn(),
+  createAccount: vi.fn(),
 }));
 
 vi.mock("../lib/serverHealth", async (importOriginal) => ({
@@ -64,7 +66,7 @@ vi.mock("../lib/serverHealth", async (importOriginal) => ({
 }));
 
 import { getBaseUrl } from "../lib/api";
-import { getServerState, login as serverLogin } from "../lib/serverApi";
+import { claimServer, createAccount, getServerState, login as serverLogin } from "../lib/serverApi";
 import {
   checkServerHealth,
   checkServerHealthWithRetry,
@@ -82,6 +84,8 @@ const checkServerHealthMock = vi.mocked(checkServerHealth);
 const checkServerHealthWithRetryMock = vi.mocked(checkServerHealthWithRetry);
 const getServerStateMock = vi.mocked(getServerState);
 const serverLoginMock = vi.mocked(serverLogin);
+const claimServerMock = vi.mocked(claimServer);
+const createAccountMock = vi.mocked(createAccount);
 
 /**
  * The card's connect asks again after a server's error before it says
@@ -185,6 +189,8 @@ describe("LoginScreen", () => {
     skipRetry();
     getServerStateMock.mockReset();
     serverLoginMock.mockReset();
+    claimServerMock.mockReset();
+    createAccountMock.mockReset();
     startFakeClock();
   });
 
@@ -770,6 +776,101 @@ describe("LoginScreen", () => {
     // Submitting with the username still empty reaches the handler's own check,
     // which is enough to show the form is what drives it.
     expect(screen.getByText("Username is required.")).toBeInTheDocument();
+  });
+
+  /** Fill the login form with a login the faked server accepts, without submitting it. */
+  async function fillLogin(user: ReturnType<typeof setupUser>) {
+    serverLoginMock.mockResolvedValue({ token: "mc-user-ada", account_id: 7, username: "ada" });
+    await fill(user, screen.getByRole("textbox", { name: "Username" }), "ada");
+    await fill(user, screen.getByLabelText("Password"), "hunter22");
+  }
+
+  it("offers Keep me logged in on the website, ticked, and keeps the login", async () => {
+    stubServer();
+    const user = setupUser();
+    renderScreen();
+    await settle();
+
+    expect(screen.getByRole("checkbox", { name: "Keep me logged in" })).toBeChecked();
+    await fillLogin(user);
+    await user.click(screen.getByRole("button", { name: "Log in" }));
+    await settle();
+
+    expect(login).toHaveBeenCalledWith("", "mc-user-ada", 7, "kept");
+  });
+
+  it("logs in for this visit only with Keep me logged in unticked", async () => {
+    stubServer();
+    const user = setupUser();
+    renderScreen();
+    await settle();
+
+    await user.click(screen.getByRole("checkbox", { name: "Keep me logged in" }));
+    await fillLogin(user);
+    await user.click(screen.getByRole("button", { name: "Log in" }));
+    await settle();
+
+    expect(login).toHaveBeenCalledWith("", "mc-user-ada", 7, "visit");
+  });
+
+  it("offers no Keep me logged in in the desktop app, and keeps the login", async () => {
+    tauriState.isTauri = true;
+    stubServer();
+    const user = setupUser();
+    renderScreen();
+    await settle();
+
+    expect(screen.queryByRole("checkbox", { name: "Keep me logged in" })).not.toBeInTheDocument();
+    await fillLogin(user);
+    await user.click(screen.getByRole("button", { name: "Log in" }));
+    await settle();
+
+    expect(login).toHaveBeenCalledWith("http://127.0.0.1:8080", "mc-user-ada", 7, "kept");
+  });
+
+  it("logs a new account in for this visit only with Keep me logged in unticked", async () => {
+    stubServer();
+    createAccountMock.mockResolvedValue({
+      token: "mc-user-new",
+      account_id: 9,
+    } as Awaited<ReturnType<typeof createAccount>>);
+    const user = setupUser();
+    renderScreen();
+    await settle();
+
+    await user.click(screen.getByRole("tab", { name: "Create Account" }));
+    const keep = screen.getByRole("checkbox", { name: "Keep me logged in" });
+    expect(keep).toBeChecked();
+    await user.click(keep);
+    await fill(user, screen.getByRole("textbox", { name: "Username" }), "ada");
+    await fill(user, screen.getByLabelText("Password"), "hunter22");
+    await fill(user, screen.getByLabelText("Confirm Password"), "hunter22");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await settle();
+
+    expect(login).toHaveBeenCalledWith("", "mc-user-new", 9, "visit");
+  });
+
+  it("logs the new owner in for this visit only with Keep me logged in unticked", async () => {
+    stubServer("unclaimed");
+    claimServerMock.mockResolvedValue({
+      token: "mc-user-owner",
+      account_id: 1,
+      username: "admin",
+    });
+    const user = setupUser();
+    renderScreen();
+    await settle();
+
+    const keep = screen.getByRole("checkbox", { name: "Keep me logged in" });
+    expect(keep).toBeChecked();
+    await user.click(keep);
+    await fill(user, screen.getByLabelText("Password"), "hunter22");
+    await fill(user, screen.getByLabelText("Confirm Password"), "hunter22");
+    await user.click(screen.getByRole("button", { name: "Create Owner" }));
+    await settle();
+
+    expect(login).toHaveBeenCalledWith("", "mc-user-owner", 1, "visit");
   });
 
   it("calls the new-account action Continue, since profile setup finishes it", async () => {

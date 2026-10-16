@@ -1,11 +1,12 @@
 import { type FormEvent, useState } from "react";
 import AuthErrorFooter from "../../components/AuthErrorFooter";
-import AuthSubmitButton from "../../components/AuthSubmitButton";
 import { setBaseUrl } from "../../lib/api";
 import { useAuth } from "../../lib/authContext";
 import { login as serverLogin } from "../../lib/serverApi";
 import { useAsyncAction } from "../../lib/useAsyncAction";
 import CredentialFields from "./CredentialFields";
+import KeepLoggedInSubmit from "./KeepLoggedInSubmit";
+import { useKeepLoggedIn } from "./useKeepLoggedIn";
 
 /** Username and password login. */
 export default function LoginForm({
@@ -18,6 +19,7 @@ export default function LoginForm({
   const { login } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const keep = useKeepLoggedIn();
   const { busy, error, run } = useAsyncAction();
 
   // A real submit, so the browser treats this as a login: Enter in either
@@ -39,7 +41,7 @@ export default function LoginForm({
       const res = await serverLogin({ username, password });
       // Awaited so the profile lookup inside `login` has decided where to send
       // the user before this form drops its busy state.
-      await login(url, res.token, res.account_id);
+      await login(url, res.token, res.account_id, keep.lifetime);
     });
   };
 
@@ -52,9 +54,9 @@ export default function LoginForm({
         disabled={disabled}
       />
 
-      <AuthSubmitButton disabled={busy || disabled}>
+      <KeepLoggedInSubmit choice={keep} disabled={busy || disabled}>
         {busy ? "Logging in…" : "Log in"}
-      </AuthSubmitButton>
+      </KeepLoggedInSubmit>
 
       {/* Pushed to the foot of the panel so the message lands just above the
           rule that closes the card, clear of the action that produced it. The
