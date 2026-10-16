@@ -12,6 +12,7 @@ import {
   TrashRoute,
 } from "./components/BrowseRoutes";
 import ImportExportRoute from "./components/ImportExportRoute";
+import NoticeBar from "./components/NoticeBar";
 import { useIsOwner } from "./hooks/useIsOwner";
 import { useNeedsProfileSetup } from "./hooks/useNeedsProfileSetup";
 import { useAuth } from "./lib/authContext";
@@ -147,7 +148,14 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthShell>
-        <AppRoutes />
+        {/* The notice bar sits above every screen and pushes it down, so
+            each screen fills the height left below it. */}
+        <div className="flex h-screen flex-col">
+          <NoticeBar />
+          <div className="min-h-0 flex-1">
+            <AppRoutes />
+          </div>
+        </div>
       </AuthShell>
     </ThemeProvider>
   );

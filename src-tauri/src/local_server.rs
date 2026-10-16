@@ -41,22 +41,31 @@
 //! server and its ffmpeg the way closing the app does. The server's own
 //! watch is then left for a server the system would not put in a job. An
 //! app started again before that server is gone finds it answering and uses
-//! it. The screens ask for the state every three seconds while it is ready
-//! (`READY_POLL_MS` in `web/src/screens/auth/useLocalServer.ts`), and the check that
-//! finds the address free starts the app's own.
+//! it. The login card asks for the state every three seconds while it is
+//! ready (`READY_POLL_MS` in `web/src/screens/auth/useLocalServer.ts`), and
+//! the check that finds the address free starts the app's own. A Message
+//! Crate the app only found is checked only then.
 //!
-//! The same checks ask the app's own server whether it still answers. One
-//! that runs but no longer answers is killed once [`UNANSWERED_CHECKS`]
-//! checks in a row find no Message Crate there, and the login card says it
-//! stopped rather than that it is ready (#2204). While a desktop job runs it
-//! is not killed, since an import can keep it from answering in time.
+//! The app's own ready server is checked whether a screen asks or not: the
+//! thread that watches it asks the address every [`CHECK_INTERVAL`] for as
+//! long as it runs (#2695), and the login card's requests for the state ask
+//! too. One that runs but no longer answers is killed once
+//! [`UNANSWERED_CHECKS`] checks in a row find no Message Crate there (#2204).
+//! While a desktop job runs it is not killed, since an import can keep it
+//! from answering in time.
 //!
-//! The app's own server that exits on its own once ready, as in a crash or
-//! an out-of-memory kill, is started again, so an Upload in progress gets its
-//! server back without anyone pressing Retry (#2089). It is started again at
-//! most [`MAX_RESTARTS`] times within [`RESTART_WINDOW`]. The exit after
-//! that fails the start, so a server that dies at once is not started
-//! forever. Retry on the login card starts the count again.
+//! The app's own server that was killed for not answering, or that exits on
+//! its own once ready, as in a crash or an out-of-memory kill, is started
+//! again, so an Upload in progress gets its server back without anyone
+//! pressing Retry (#2089). It is started again at most [`MAX_RESTARTS`] times
+//! within [`RESTART_WINDOW`]. The next end fails the start, so a server that
+//! dies at once is not started forever. Retry on the login card starts the
+//! count again.
+//!
+//! The window is told, with a [`Notice`], when the app's own server is
+//! started again this way, when the new one answers, and when it cannot be
+//! started, so whatever screen is open can say so rather than fail with
+//! network errors (#2695). [`LocalServer::on_notice`] says how to tell it.
 //!
 //! What happens next is decided by one pure function, [`step`], from the
 //! state the app has, the network setting the person wants, and what just
@@ -72,7 +81,7 @@ use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -93,6 +102,11 @@ const START_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// How often a running server is checked on.
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
+
+/// How often the app's own ready server is asked whether it still answers,
+/// whether or not a screen asks for the state. The login card asks as often
+/// (`READY_POLL_MS` in `web/src/screens/auth/useLocalServer.ts`).
+const CHECK_INTERVAL: Duration = Duration::from_secs(3);
 
 /// How long connecting to the address may take. Nothing listening on this
 /// computer is known at once.
@@ -122,9 +136,10 @@ const LOCKED_OUT_PROBES: u32 = 1200;
 /// import can keep the server from answering in time.
 const UNANSWERED_CHECKS: u32 = 2;
 
-/// How many times the app's own server, once ready, is started again after
-/// it exits on its own within [`RESTART_WINDOW`] (#2089). The exit after that
-/// fails the start, so a server that dies at once is not started forever.
+/// How many times the app's own server, once ready, is started again within
+/// [`RESTART_WINDOW`] after it exits on its own (#2089) or is killed for not
+/// answering (#2695). The end after that fails the start, so a server that
+/// dies at once is not started forever.
 const MAX_RESTARTS: u32 = 3;
 
 /// How far back the restarts counted against [`MAX_RESTARTS`] reach. A
@@ -229,6 +244,38 @@ pub enum Status {
     },
 }
 
+/// What the window is told about the app's own server while it is started
+/// again after it stopped (#2695). The screens show it across the top of the
+/// page, whichever screen is open.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum Notice {
+    /// The app's own server stopped answering or exited, and is being
+    /// started again.
+    Restarting,
+    /// A Message Crate answers again at the address.
+    Answering,
+    /// The server could not be started again.
+    Failed {
+        /// One sentence a person can act on.
+        message: String,
+        /// The server's own last output, for a bug report.
+        details: String,
+    },
+}
+
+/// Which [`Notice`] [`step`] asks for. [`LocalServer`] fills in the words
+/// from the state it reports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NoticeKind {
+    /// [`Notice::Restarting`].
+    Restarting,
+    /// [`Notice::Answering`].
+    Answering,
+    /// [`Notice::Failed`].
+    Failed,
+}
+
 /// What the app has at its own address.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Phase {
@@ -286,9 +333,13 @@ struct State {
     /// How many desktop jobs run. A ready server is not restarted while any
     /// does, since the job may be an import into it.
     jobs: usize,
-    /// When the app's own server was started again after it exited on its
-    /// own, within the last [`RESTART_WINDOW`]. Retry empties it.
+    /// When the app's own server was started again after it stopped, within
+    /// the last [`RESTART_WINDOW`]. Retry empties it.
     restarts: Vec<Instant>,
+    /// Whether the app's own server stopped and the window was told so, and
+    /// no Message Crate has answered since. Stays set through a failed
+    /// restart, so the window is told when a later Retry brings one back.
+    recovering: bool,
 }
 
 impl Default for State {
@@ -298,6 +349,7 @@ impl Default for State {
             wanted_open: false,
             jobs: 0,
             restarts: Vec::new(),
+            recovering: false,
         }
     }
 }
@@ -323,6 +375,9 @@ enum Event {
         /// What the app's server last wrote, for a failure report when the
         /// answer ends it. Empty when the app runs no server.
         output: String,
+        /// When the answer came. Given with the event, so [`step`] reads no
+        /// clock.
+        found_at: Instant,
     },
     /// The app's server wrote [`LISTENING_LINE`].
     Listening,
@@ -347,8 +402,9 @@ enum Event {
         /// Why.
         error: String,
     },
-    /// The screens asked for the state: a found Message Crate, or the app's
-    /// own ready server, is asked again whether it still answers.
+    /// The screens asked for the state, or [`CHECK_INTERVAL`] passed: a
+    /// found Message Crate, or the app's own ready server, is asked again
+    /// whether it still answers.
     Check,
     /// A desktop job started.
     JobStarted,
@@ -372,11 +428,15 @@ enum Action {
     },
     /// Kill the server program the app started.
     Kill,
+    /// Tell the window how the app's own server is getting on.
+    Notify(NoticeKind),
 }
 
 /// Decide what follows `event`. The only place the state changes; it does no
 /// I/O, so every rule is tested without a process.
 fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
+    let was_recovering = state.recovering;
+    let was_failed = matches!(state.phase, Phase::PortTaken | Phase::Failed { .. });
     let mut actions = Vec::new();
     match event {
         Event::Requested { open } => {
@@ -402,7 +462,11 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
             state.wanted_open = open;
             restart_if_wanted(&mut state, &mut actions);
         }
-        Event::Probed { answer, output } => match (&state.phase, answer) {
+        Event::Probed {
+            answer,
+            output,
+            found_at,
+        } => match (&state.phase, answer) {
             (
                 Phase::Probing | Phase::Found { checking: true } | Phase::Lost { .. },
                 Probe::MessageCrate,
@@ -454,10 +518,10 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
                     };
                 } else {
                     // The server still runs but does not answer. Killing it
-                    // ends it, and no `ChildExited` follows a kill, so the
-                    // phase becomes `Failed` here.
-                    own_server_ended(&mut state, "Message Crate stopped answering.", output);
+                    // ends it, and no `ChildExited` follows a kill, so it is
+                    // started again here.
                     actions.push(Action::Kill);
+                    start_own_again(&mut state, &mut actions, found_at, output);
                 }
             }
             (
@@ -513,27 +577,7 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
             }
             // A crash or an out-of-memory kill: started again, so an Upload
             // in progress gets its server back, unless it keeps exiting.
-            Phase::Own { .. } => {
-                state.restarts.retain(|&restart| {
-                    found_at.saturating_duration_since(restart) < RESTART_WINDOW
-                });
-                if state.restarts.len() < MAX_RESTARTS as usize {
-                    state.restarts.push(found_at);
-                    state.phase = Phase::Starting {
-                        open: state.wanted_open,
-                    };
-                    actions.push(Action::Spawn {
-                        open: state.wanted_open,
-                    });
-                } else {
-                    let message = format!(
-                        "Message Crate stopped {} times within {} minutes.",
-                        MAX_RESTARTS + 1,
-                        RESTART_WINDOW.as_secs() / 60
-                    );
-                    own_server_ended(&mut state, &message, output);
-                }
-            }
+            Phase::Own { .. } => start_own_again(&mut state, &mut actions, found_at, output),
             _ => {}
         },
         Event::Deadline { output } => {
@@ -574,19 +618,87 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
             }
             restart_if_wanted(&mut state, &mut actions);
         }
-        Event::Stopped => match state.phase {
-            Phase::Starting { .. } | Phase::Own { .. } => {
-                own_server_ended(&mut state, "Message Crate stopped.", String::new());
-                actions.push(Action::Kill);
+        Event::Stopped => {
+            // The window is closing too, and has nothing to be told.
+            state.recovering = false;
+            match state.phase {
+                Phase::Starting { .. } | Phase::Own { .. } => {
+                    own_server_ended(&mut state, "Message Crate stopped.", String::new());
+                    actions.push(Action::Kill);
+                }
+                // A probe under way must not start a server once the app closes.
+                Phase::Probing | Phase::Found { .. } | Phase::Lost { .. } => {
+                    state.phase = Phase::Idle;
+                }
+                Phase::Idle | Phase::PortTaken | Phase::Failed { .. } => {}
             }
-            // A probe under way must not start a server once the app closes.
-            Phase::Probing | Phase::Found { .. } | Phase::Lost { .. } => {
-                state.phase = Phase::Idle;
-            }
-            Phase::Idle | Phase::PortTaken | Phase::Failed { .. } => {}
-        },
+        }
     }
+    tell_recovery(&mut state, &mut actions, was_recovering, was_failed);
     (state, actions)
+}
+
+/// The app's own ready server has stopped: it exited on its own, or it was
+/// killed for not answering. It is started again the way the person wants
+/// it, unless it was started again [`MAX_RESTARTS`] times within
+/// [`RESTART_WINDOW`] before `found_at`; then the start fails with `output`,
+/// what it last wrote.
+fn start_own_again(
+    state: &mut State,
+    actions: &mut Vec<Action>,
+    found_at: Instant,
+    output: String,
+) {
+    state.recovering = true;
+    state
+        .restarts
+        .retain(|&restart| found_at.saturating_duration_since(restart) < RESTART_WINDOW);
+    if state.restarts.len() < MAX_RESTARTS as usize {
+        state.restarts.push(found_at);
+        state.phase = Phase::Starting {
+            open: state.wanted_open,
+        };
+        actions.push(Action::Spawn {
+            open: state.wanted_open,
+        });
+    } else {
+        let message = format!(
+            "Message Crate stopped {} times within {} minutes.",
+            MAX_RESTARTS + 1,
+            RESTART_WINDOW.as_secs() / 60
+        );
+        own_server_ended(state, &message, output);
+    }
+}
+
+/// Tell the window how a restart of the app's own server after it stopped is
+/// going: that it began, that it failed, and once a Message Crate answers
+/// again, which may follow a Retry after a failure. `was_recovering` and
+/// `was_failed` are what held before this step.
+fn tell_recovery(
+    state: &mut State,
+    actions: &mut Vec<Action>,
+    was_recovering: bool,
+    was_failed: bool,
+) {
+    if !state.recovering {
+        return;
+    }
+    let notice = match state.phase {
+        Phase::Own { .. } | Phase::Found { .. } => {
+            state.recovering = false;
+            Some(NoticeKind::Answering)
+        }
+        Phase::PortTaken | Phase::Failed { .. } => (!was_failed).then_some(NoticeKind::Failed),
+        Phase::Idle => {
+            state.recovering = false;
+            None
+        }
+        Phase::Probing | Phase::Starting { .. } | Phase::Lost { .. } => {
+            (!was_recovering).then_some(NoticeKind::Restarting)
+        }
+    };
+    actions.extend(notice.map(Action::Notify));
 }
 
 /// The app's own server has ended, whether it was starting or ready: it
@@ -771,6 +883,24 @@ impl Inner {
         }
     }
 
+    /// The [`Notice`] of `kind`, with the words of the state reported now.
+    fn notice(&self, kind: NoticeKind) -> Notice {
+        match kind {
+            NoticeKind::Restarting => Notice::Restarting,
+            NoticeKind::Answering => Notice::Answering,
+            NoticeKind::Failed => match self.status() {
+                Status::Failed {
+                    message, details, ..
+                } => Notice::Failed { message, details },
+                // `step` asks for this notice only from a failed state.
+                _ => Notice::Failed {
+                    message: "Message Crate could not be started again.".into(),
+                    details: String::new(),
+                },
+            },
+        }
+    }
+
     /// Kill the server this app started, with every process it started,
     /// and wait for it to end.
     fn kill(&mut self) {
@@ -782,11 +912,23 @@ impl Inner {
     }
 }
 
+/// What tells the window a [`Notice`].
+struct Notifier(Box<dyn Fn(Notice) + Send + Sync>);
+
+impl std::fmt::Debug for Notifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Notifier")
+    }
+}
+
 /// The app's own Message Crate: its state, and the process when the app
 /// started one. Cheap to clone; every clone is the same server.
 #[derive(Debug, Clone)]
 pub struct LocalServer {
     inner: Arc<Mutex<Inner>>,
+    /// What tells the window a [`Notice`], once [`LocalServer::on_notice`]
+    /// has set it. Before that a notice goes nowhere.
+    notifier: Arc<OnceLock<Notifier>>,
     /// [`LocalServer::apply`] notifies this after each event has gone
     /// through [`step`], so a test can wait for the phase it is about rather
     /// than poll for it.
@@ -808,6 +950,7 @@ impl Default for LocalServer {
                 deadline: Instant::now(),
                 generation: 0,
             })),
+            notifier: Arc::default(),
             #[cfg(test)]
             changed: Arc::default(),
         }
@@ -892,6 +1035,12 @@ impl LocalServer {
         self.apply_now(Event::Stopped);
     }
 
+    /// Tell the window each [`Notice`] through `notify` from now on. Set
+    /// once, when the app starts; a second call is ignored.
+    pub fn on_notice(&self, notify: impl Fn(Notice) + Send + Sync + 'static) {
+        let _ = self.notifier.set(Notifier(Box::new(notify)));
+    }
+
     /// [`Self::apply`] with the lock taken here.
     fn apply_now(&self, event: Event) {
         let mut inner = self.lock();
@@ -911,6 +1060,11 @@ impl LocalServer {
                     Action::Probe => self.probe_in_background(inner, Duration::ZERO),
                     Action::ProbeLater => self.probe_in_background(inner, POLL_INTERVAL),
                     Action::Kill => inner.kill(),
+                    Action::Notify(kind) => {
+                        if let Some(notifier) = self.notifier.get() {
+                            (notifier.0)(inner.notice(kind));
+                        }
+                    }
                     Action::Spawn { open } => {
                         if let Err(error) = self.spawn(inner, open) {
                             events.push_back(Event::SpawnFailed { error });
@@ -956,7 +1110,14 @@ impl LocalServer {
         let mut inner = self.lock();
         if inner.generation == asked {
             let output = joined(&inner.output);
-            self.apply(&mut inner, Event::Probed { answer, output });
+            self.apply(
+                &mut inner,
+                Event::Probed {
+                    answer,
+                    output,
+                    found_at: Instant::now(),
+                },
+            );
         }
     }
 
@@ -986,10 +1147,12 @@ impl LocalServer {
 
     /// Check on the server of `generation` until it ends or is replaced:
     /// whether it listens, whether it exited, and whether it has taken too
-    /// long.
+    /// long. Once it is ready, ask the address every [`CHECK_INTERVAL`]
+    /// whether it still answers, whether or not a screen asks (#2695).
     fn watch(&self, generation: u64) {
         let server = self.clone();
         thread::spawn(move || {
+            let mut checked = Instant::now();
             loop {
                 thread::sleep(POLL_INTERVAL);
                 let mut inner = server.lock();
@@ -1028,6 +1191,12 @@ impl LocalServer {
                 }
                 if inner.listened.load(Ordering::Relaxed) {
                     server.apply(&mut inner, Event::Listening);
+                }
+                if matches!(inner.state.phase, Phase::Own { .. })
+                    && checked.elapsed() >= CHECK_INTERVAL
+                {
+                    checked = Instant::now();
+                    server.apply(&mut inner, Event::Check);
                 }
                 if matches!(inner.state.phase, Phase::Starting { .. })
                     && Instant::now() >= inner.deadline

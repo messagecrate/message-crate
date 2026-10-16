@@ -50,7 +50,7 @@ export function AuthGuard() {
 function ProfileLoadFailed({ error }: { error: string }) {
   const { retry } = useAccountProfile();
   return (
-    <div className="flex h-screen flex-col items-center justify-center gap-4 bg-bg p-6 font-sans text-text">
+    <div className="flex h-full flex-col items-center justify-center gap-4 bg-bg p-6 font-sans text-text">
       <div className="max-w-md text-center" role="alert">
         <p className="m-0 font-semibold text-[0.938rem]">Your profile could not be loaded.</p>
         <p className="m-0 mt-1 text-[0.813rem] text-muted">{error}</p>

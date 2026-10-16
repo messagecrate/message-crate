@@ -16,7 +16,7 @@ import { Z_POPOVER } from "./zLayers";
  * it was drawn in and the browser fitted a scrollbar it had no use for.
  */
 export const pageCenterClass =
-  "min-h-screen box-border flex items-center justify-center bg-bg p-4 overflow-y-auto";
+  "min-h-full box-border flex items-center justify-center bg-bg p-4 overflow-y-auto";
 /**
  * Every auth card is at least 576 × 608 and never scrolls, so nothing moves
  * underneath the user as they step between Login and Create Account. The

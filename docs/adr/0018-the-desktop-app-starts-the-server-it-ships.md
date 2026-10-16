@@ -149,3 +149,19 @@ The app's button reads "Open Message Crate directory" and opens the parent.
 Nothing is moved from the app-data directory: an app that kept a database
 there starts a new Message Crate in `data`, and the CHANGELOG says how to
 bring the old one across.
+
+## Note, 2026-10-16: the app checks its own server on its own
+
+The checks of 2026-10-11 ran only while the login card was open, so a server
+that stopped answering while the person browsed went unnoticed, and every
+screen failed with network errors (#2695). The thread that watches the app's
+own server now asks the address every three seconds for as long as the
+server runs, whether a screen asks or not. A Message Crate the app only
+found is still checked only by the login card. A server killed for not
+answering is started again like one that exits, and counts against the same
+limit of three restarts in ten minutes. The app tells the window when it
+starts the server again, when the new one answers, and when it cannot start
+it, and the web app shows it in a notice bar across the top of every screen:
+"The server stopped answering. Restarting it…", which clears itself once the
+server answers, or why it could not be started, with Try again. The window
+listens for the app's word rather than asking, so no screen polls.

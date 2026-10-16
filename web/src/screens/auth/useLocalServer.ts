@@ -9,8 +9,10 @@ export const STARTING_POLL_MS = 500;
 /**
  * How often a ready server is asked again. A Message Crate the app only found
  * (Docker on this computer) can stop at any time; asking lets the app see
- * that and start its own in its place. The app's own server can stop
- * answering while it still runs; asking lets the app see that and stop it.
+ * that and start its own in its place. The app checks its own server on its
+ * own as often, whether the login card asks or not (`CHECK_INTERVAL` in
+ * `src-tauri/src/local_server.rs`), and says what it found through the
+ * notice bar (`components/NoticeBar.tsx`).
  */
 export const READY_POLL_MS = 3000;
 

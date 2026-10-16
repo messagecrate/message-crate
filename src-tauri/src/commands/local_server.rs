@@ -6,6 +6,19 @@ use crate::local_server::{self, Launch, LocalServer, Status};
 use std::path::Path;
 use tauri::{AppHandle, Manager, State};
 
+/// How the app's own server is getting on while it is started again after
+/// it stopped. Payload: [`local_server::Notice`]. The window shows it across
+/// the top of the page (`web/src/components/NoticeBar.tsx`).
+pub const NOTICE: &str = "local-server:notice";
+
+/// Send each [`local_server::Notice`] to the window as [`NOTICE`].
+pub fn send_notices(app: &AppHandle) {
+    let handle = app.clone();
+    app.state::<LocalServer>().on_notice(move |notice| {
+        super::events::emit(&handle, NOTICE, notice);
+    });
+}
+
 /// The directory inside the installed app that holds the built website. It
 /// matches the `bundle.resources` target in `tauri.conf.json`.
 const WEBSITE_RESOURCE: &str = "website";
