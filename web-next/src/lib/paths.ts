@@ -69,12 +69,10 @@ function loadRawConfig(): RawConfig {
 }
 
 export function dbPath(): string {
-  const fromEnv = process.env.VAULT_DB?.trim();
-  if (fromEnv) {
-    return path.isAbsolute(fromEnv) ? fromEnv : path.join(/*turbopackIgnore: true*/ repoRoot(), fromEnv);
-  }
-  const cfg = loadRawConfig();
-  return resolveConfiguredPath(cfg.paths?.db, DEFAULT_DB);
+  return resolveConfiguredPath(
+    process.env.VAULT_DB?.trim() || loadRawConfig().paths?.db,
+    DEFAULT_DB,
+  );
 }
 
 /** Parent of vault.db — better-sqlite3 fails if this directory is missing. */
@@ -86,12 +84,10 @@ export function ensureDbParentDir(): string {
 }
 
 export function dataDir(): string {
-  const fromEnv = process.env.VAULT_DATA_DIR?.trim();
-  if (fromEnv) {
-    return path.isAbsolute(fromEnv) ? fromEnv : path.join(/*turbopackIgnore: true*/ repoRoot(), fromEnv);
-  }
-  const cfg = loadRawConfig();
-  return resolveConfiguredPath(cfg.paths?.data_dir, DEFAULT_DATA_DIR);
+  return resolveConfiguredPath(
+    process.env.VAULT_DATA_DIR?.trim() || loadRawConfig().paths?.data_dir,
+    DEFAULT_DATA_DIR,
+  );
 }
 
 export function accountDataDir(accountId: string): string {
