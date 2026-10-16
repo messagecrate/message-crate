@@ -822,18 +822,18 @@ fn mark_unfetched(
         return;
     }
     let failed: HashSet<&str> = failed.iter().map(|f| f.sha256.as_str()).collect();
-    for att in by_conv
+    for attachment in by_conv
         .values_mut()
         .flat_map(|(_, messages)| messages.iter_mut())
         .flat_map(|message| message.attachments.iter_mut())
     {
-        let unfetched = att
+        let unfetched = attachment
             .digest_sha256
             .as_deref()
             .and_then(asset_key)
             .is_some_and(|sha| failed.contains(sha.as_str()));
         if unfetched {
-            att.missing_reason = Some(ir::missing_reason::NOT_FETCHED.to_string());
+            attachment.missing_reason = Some(ir::missing_reason::NOT_FETCHED.to_string());
         }
     }
 }
@@ -861,15 +861,15 @@ fn note_asset_refs(
     other_paths: &mut BTreeMap<String, BTreeSet<String>>,
 ) -> Vec<(String, Option<String>)> {
     let mut refused = Vec::new();
-    for att in &message.attachments {
+    for attachment in &message.attachments {
         let ExportPath {
             rel,
             refused: refused_path,
-        } = export_path(att);
+        } = export_path(attachment);
         if let Some(path) = refused_path {
             refused.push((path, rel.clone()));
         }
-        let (Some(sha), Some(rel)) = (att.sha256.as_deref().and_then(asset_key), rel) else {
+        let (Some(sha), Some(rel)) = (attachment.sha256.as_deref().and_then(asset_key), rel) else {
             continue;
         };
         let first = assets.entry(sha.clone()).or_insert_with(|| rel.clone());

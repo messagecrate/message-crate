@@ -243,9 +243,9 @@ fn attachments_in<'a>(
         document_messages(documents),
         files,
         PathSources::OnDisk,
-        |att| {
-            let hint = attachment_size_hint(att);
-            let source = match (att.bytes.take(), att.path.as_deref()) {
+        |attachment| {
+            let hint = attachment_size_hint(attachment);
+            let source = match (attachment.bytes.take(), attachment.path.as_deref()) {
                 (Some(bytes), _) => AttachmentSource::Bytes(bytes),
                 (None, Some(rel)) => AttachmentSource::Path(
                     dir.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR)),
@@ -282,7 +282,7 @@ fn missing_reasons(documents: &[ConversationDocument]) -> Vec<Option<String>> {
         .iter()
         .flat_map(|document| document.messages.iter())
         .flat_map(|message| message.attachments.iter())
-        .map(|att| att.missing_reason.clone())
+        .map(|attachment| attachment.missing_reason.clone())
         .collect()
 }
 
@@ -296,16 +296,16 @@ fn keep_missing_reasons(
     report: &mut ExportReport,
 ) {
     let mut missing = 0;
-    for (att, reason) in documents
+    for (attachment, reason) in documents
         .iter_mut()
         .flat_map(|document| document.messages.iter_mut())
         .flat_map(|message| message.attachments.iter_mut())
         .zip(reasons)
     {
-        if att.missing_reason.as_deref() == Some(missing_reason::FILE_MISSING) {
+        if attachment.missing_reason.as_deref() == Some(missing_reason::FILE_MISSING) {
             missing += 1;
             if reason.is_some() {
-                att.missing_reason = reason;
+                attachment.missing_reason = reason;
             }
         }
     }

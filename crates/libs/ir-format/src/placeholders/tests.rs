@@ -191,14 +191,14 @@ fn a_symlink_named_like_a_placeholder_is_replaced_by_a_real_placeholder() {
 #[test]
 fn placeholders_refuse_a_directory_without_the_sentinel_and_remove_nothing() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let att = tmp.path().join("attachments");
-    fs::create_dir_all(att.join("2024")).expect("write");
-    fs::write(att.join("photo.jpg"), b"mine").expect("write");
-    fs::write(att.join("2024/video.mp4"), b"mine").expect("write");
+    let attachments_dir = tmp.path().join("attachments");
+    fs::create_dir_all(attachments_dir.join("2024")).expect("write");
+    fs::write(attachments_dir.join("photo.jpg"), b"mine").expect("write");
+    fs::write(attachments_dir.join("2024/video.mp4"), b"mine").expect("write");
 
     assert!(materialize_placeholders(tmp.path()).is_err());
 
-    assert!(att.join("photo.jpg").is_file());
-    assert!(att.join("2024/video.mp4").is_file());
-    assert!(!att.join("placeholder.jpg").exists());
+    assert!(attachments_dir.join("photo.jpg").is_file());
+    assert!(attachments_dir.join("2024/video.mp4").is_file());
+    assert!(!attachments_dir.join("placeholder.jpg").exists());
 }

@@ -152,13 +152,13 @@ fn a_path_that_leaves_the_export_directory_is_refused_whether_or_not_its_fingerp
     let new_sha = assets_api::Sha256::of_bytes(b"bytes the store has never seen");
 
     for sha in [&stored_sha, &new_sha] {
-        let att = AttachmentRecord {
+        let attachment = AttachmentRecord {
             path: Some("../escape.txt".to_string()),
             ..claimed(sha.as_str(), None)
         };
         let mut stats = AssetStats::default();
 
-        let err = store_claimed_or_path(&att, Some(&export_dir), &assets_dir, &mut stats, 2)
+        let err = store_claimed_or_path(&attachment, Some(&export_dir), &assets_dir, &mut stats, 2)
             .expect_err("the path is refused");
         assert!(
             matches!(
@@ -224,14 +224,14 @@ fn an_asset_store_that_cannot_be_written_is_an_internal_failure() {
     // A file where the store's directory should be.
     let assets_dir = tmp.path().join("assets");
     std::fs::write(&assets_dir, b"not a directory").unwrap();
-    let att = AttachmentRecord {
+    let attachment = AttachmentRecord {
         path: Some("photo.png".to_string()),
         sha256: None,
         ..claimed("", None)
     };
 
     let err = store_claimed_or_path(
-        &att,
+        &attachment,
         Some(&export_dir),
         &assets_dir,
         &mut AssetStats::default(),
@@ -251,13 +251,13 @@ fn an_asset_store_that_cannot_be_written_is_an_internal_failure() {
 #[test]
 fn a_malformed_fingerprint_without_a_path_is_refused_naming_the_original_name() {
     let tmp = TempDir::new().unwrap();
-    let att = AttachmentRecord {
+    let attachment = AttachmentRecord {
         original_name: Some("holiday.jpg".to_string()),
         ..claimed("not-a-fingerprint", None)
     };
 
     let err = store_claimed_or_path(
-        &att,
+        &attachment,
         None,
         &tmp.path().join("assets"),
         &mut AssetStats::default(),
@@ -283,7 +283,7 @@ fn a_malformed_fingerprint_is_refused_before_a_conversion() {
     let export_dir = tmp.path().join("export");
     std::fs::create_dir_all(&export_dir).unwrap();
     std::fs::write(export_dir.join("photo.jpg"), b"some bytes").unwrap();
-    let att = AttachmentRecord {
+    let attachment = AttachmentRecord {
         path: Some("photo.jpg".to_string()),
         ..claimed("not-a-fingerprint", Some("image/jpeg"))
     };
@@ -296,7 +296,7 @@ fn a_malformed_fingerprint_is_refused_before_a_conversion() {
                 ..append_opts(&assets, &export_dir, "")
             },
             &assets,
-            vec![att.clone()],
+            vec![attachment.clone()],
             &mut AssetStats::default(),
             tmp.path(),
             2,

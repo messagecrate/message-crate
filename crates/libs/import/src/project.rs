@@ -70,10 +70,10 @@ pub fn message_line(
                 digest,
                 size,
             } => {
-                if let Some(att) = message.attachments.get_mut(*index) {
-                    att.digest_sha256 = Some(digest.clone());
-                    att.size_bytes = Some(*size);
-                    att.missing_reason = None;
+                if let Some(attachment) = message.attachments.get_mut(*index) {
+                    attachment.digest_sha256 = Some(digest.clone());
+                    attachment.size_bytes = Some(*size);
+                    attachment.missing_reason = None;
                 }
             }
             AttachmentProjection::Missing {
@@ -81,11 +81,11 @@ pub fn message_line(
                 reason,
                 size,
             } => {
-                if let Some(att) = message.attachments.get_mut(*index) {
-                    att.digest_sha256 = None;
-                    att.missing_reason = Some(reason.clone());
+                if let Some(attachment) = message.attachments.get_mut(*index) {
+                    attachment.digest_sha256 = None;
+                    attachment.missing_reason = Some(reason.clone());
                     if let Some(size) = size {
-                        att.size_bytes = Some(*size);
+                        attachment.size_bytes = Some(*size);
                     }
                 }
             }

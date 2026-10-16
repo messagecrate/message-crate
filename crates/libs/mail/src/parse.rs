@@ -696,15 +696,15 @@ mod tests {
         );
 
         assert_eq!(parsed.attachments.len(), 1);
-        let att = &parsed.attachments[0];
-        assert_eq!(att.meta.original_name.as_deref(), Some("photo.jpg"));
-        assert_eq!(att.meta.mime_type.as_deref(), Some("image/jpeg"));
-        assert_eq!(att.meta.digest_sha256.as_deref(), Some("deadbeef"));
-        assert_eq!(att.meta.size_bytes, Some(13));
-        assert!(att.is_sticker);
-        assert_eq!(att.transcription.as_deref(), Some("a beach"));
-        assert_eq!(att.sticker_effect.as_deref(), Some("stroke"));
-        assert_eq!(att.bytes, b"\xff\xd8\xfffakejpeg".to_vec());
+        let attachment = &parsed.attachments[0];
+        assert_eq!(attachment.meta.original_name.as_deref(), Some("photo.jpg"));
+        assert_eq!(attachment.meta.mime_type.as_deref(), Some("image/jpeg"));
+        assert_eq!(attachment.meta.digest_sha256.as_deref(), Some("deadbeef"));
+        assert_eq!(attachment.meta.size_bytes, Some(13));
+        assert!(attachment.is_sticker);
+        assert_eq!(attachment.transcription.as_deref(), Some("a beach"));
+        assert_eq!(attachment.sticker_effect.as_deref(), Some("stroke"));
+        assert_eq!(attachment.bytes, b"\xff\xd8\xfffakejpeg".to_vec());
     }
 
     /// A message whose attachments are a text file, a picture, and a web page.

@@ -78,7 +78,7 @@ fn safe_source(
 
 /// Convert/compress when requested; `None` means fall through to claimed-sha / path store.
 fn try_store_converted(
-    att: &mut AttachmentRecord,
+    attachment: &mut AttachmentRecord,
     opts: &ImportOptions<'_>,
     assets_dir: &Path,
     asset_stats: &mut AssetStats,
@@ -91,7 +91,7 @@ fn try_store_converted(
     }
     // A blank path converts nothing. `store_claimed_or_path`, which runs
     // next, refuses it through `safe_source`.
-    let Some(rel) = att.path.as_deref().and_then(trimmed) else {
+    let Some(rel) = attachment.path.as_deref().and_then(trimmed) else {
         return Ok(None);
     };
     let Some(source) = safe_source(export_dir, rel, line)? else {
@@ -103,7 +103,7 @@ fn try_store_converted(
     let Some(resolved) = import_media::resolve_for_store(
         opts.media_tools,
         &source,
-        att.mime_type.as_deref(),
+        attachment.mime_type.as_deref(),
         media,
         media_work,
     )
@@ -114,12 +114,12 @@ fn try_store_converted(
     // `stage_all_files` logs it once the import's files are staged.
     asset_stats.hevc_fallback.record(resolved.hevc_failure);
     // Bytes may have changed; drop any claimed SHA-256 fingerprint from the export.
-    att.sha256 = None;
-    att.mime_type = resolved.mime_type.or(att.mime_type.take());
+    attachment.sha256 = None;
+    attachment.mime_type = resolved.mime_type.or(attachment.mime_type.take());
     assets_api::hash_and_store(
         &resolved.path,
         assets_dir,
-        att.mime_type.as_deref(),
+        attachment.mime_type.as_deref(),
         asset_stats,
     )
     .map_err(StagingError::Internal)
@@ -130,19 +130,19 @@ fn try_store_converted(
 /// whether or not a file is there (an HTTP batch never carries one, #2259)
 /// and whatever the media mode.
 fn stated_sha256(
-    att: &AttachmentRecord,
+    attachment: &AttachmentRecord,
     line: usize,
 ) -> Result<Option<assets_api::Sha256>, ImportFailure> {
-    let Some(sha) = att.sha256.as_deref().and_then(trimmed) else {
+    let Some(sha) = attachment.sha256.as_deref().and_then(trimmed) else {
         return Ok(None);
     };
     assets_api::Sha256::parse(sha)
         .map(Some)
         .map_err(|_| ImportFailure::AttachmentSha256Invalid {
-            path: att
+            path: attachment
                 .path
                 .clone()
-                .or_else(|| att.original_name.clone())
+                .or_else(|| attachment.original_name.clone())
                 .unwrap_or_default(),
             stated: sha.to_string(),
             line,
@@ -153,7 +153,7 @@ fn stated_sha256(
 /// store already holds) or by hashing its file, counting the ones whose file
 /// is missing.
 fn store_claimed_or_path(
-    att: &AttachmentRecord,
+    attachment: &AttachmentRecord,
     export_dir: Option<&Path>,
     assets_dir: &Path,
     asset_stats: &mut AssetStats,
@@ -163,13 +163,13 @@ fn store_claimed_or_path(
     // file: `attachments.path` keeps the path as sent, and an Export writes
     // the file there, so a path the check refuses is never stored. A path of
     // spaces is checked too, and refused as `.` is.
-    let safe_path = att
+    let safe_path = attachment
         .path
         .as_deref()
         .map(|rel| safe_source(export_dir, rel, line))
         .transpose()?
         .flatten();
-    if let Some(claimed) = stated_sha256(att, line)? {
+    if let Some(claimed) = stated_sha256(attachment, line)? {
         if let Some(found) = assets_api::lookup_by_sha256(assets_dir, &claimed) {
             asset_stats.deduped += 1;
             // The stored bytes decide the type where they can, as when the
@@ -177,8 +177,8 @@ fn store_claimed_or_path(
             // as storing reads it: one that is not a type falls back to what
             // the attachment's path says.
             let declared = assets_api::resolve_mime(
-                att.mime_type.as_deref(),
-                Path::new(att.path.as_deref().unwrap_or_default()),
+                attachment.mime_type.as_deref(),
+                Path::new(attachment.path.as_deref().unwrap_or_default()),
             );
             let mime_type =
                 assets_api::record_media_type(assets_dir, &claimed, declared.as_deref())
@@ -190,7 +190,7 @@ fn store_claimed_or_path(
                 &source,
                 &claimed,
                 assets_dir,
-                att.mime_type.as_deref(),
+                attachment.mime_type.as_deref(),
                 false,
             ) {
                 Ok((stored, already)) => {
@@ -209,7 +209,7 @@ fn store_claimed_or_path(
                 // the sender's to fix, naming the line and the path as sent.
                 Err(AssetError::Mismatch { claimed, actual }) => {
                     Err(ImportFailure::AttachmentMismatch {
-                        path: att.path.clone().unwrap_or_default(),
+                        path: attachment.path.clone().unwrap_or_default(),
                         stated: claimed,
                         actual,
                         line,
@@ -227,7 +227,7 @@ fn store_claimed_or_path(
         return assets_api::hash_and_store(
             &source,
             assets_dir,
-            att.mime_type.as_deref(),
+            attachment.mime_type.as_deref(),
             asset_stats,
         )
         .map_err(StagingError::Internal);
@@ -251,16 +251,22 @@ fn prepare_attachments(
     }
 
     let mut prepared = Vec::with_capacity(attachments.len());
-    for mut att in attachments {
+    for mut attachment in attachments {
         // Before a conversion, which drops the stated fingerprint.
-        stated_sha256(&att, line)?;
-        let stored =
-            match try_store_converted(&mut att, opts, assets_dir, asset_stats, media_work, line)? {
-                Some(stored) => Some(stored),
-                None => store_claimed_or_path(&att, export_dir, assets_dir, asset_stats, line)?,
-            };
+        stated_sha256(&attachment, line)?;
+        let stored = match try_store_converted(
+            &mut attachment,
+            opts,
+            assets_dir,
+            asset_stats,
+            media_work,
+            line,
+        )? {
+            Some(stored) => Some(stored),
+            None => store_claimed_or_path(&attachment, export_dir, assets_dir, asset_stats, line)?,
+        };
         prepared.push(PreparedAttachment {
-            record: att,
+            record: attachment,
             stored,
         });
     }
@@ -1227,29 +1233,32 @@ fn attachment_row(
     prepared: &PreparedAttachment,
     assets_dir: &Path,
 ) -> StagingAttachment {
-    let att = &prepared.record;
+    let attachment = &prepared.record;
     let (sha256, assets_path, mime_type) = match &prepared.stored {
         Some(stored) => (
             Some(stored.sha256.clone()),
             Some(stored.assets_path.clone()),
-            stored.mime_type.clone().or_else(|| att.mime_type.clone()),
+            stored
+                .mime_type
+                .clone()
+                .or_else(|| attachment.mime_type.clone()),
         ),
-        None => (None, None, att.mime_type.clone()),
+        None => (None, None, attachment.mime_type.clone()),
     };
     let size_bytes = stored_size_bytes(assets_dir, assets_path.as_deref())
-        .or_else(|| att.size_bytes.map(|n| n as i64));
+        .or_else(|| attachment.size_bytes.map(|n| n as i64));
     let missing_reason = if sha256.is_none() {
-        att.missing_reason.clone()
+        attachment.missing_reason.clone()
     } else {
         None
     };
     StagingAttachment {
         message_id,
-        path: att.path.clone(),
-        original_name: att.original_name.clone(),
+        path: attachment.path.clone(),
+        original_name: attachment.original_name.clone(),
         mime_type,
-        is_sticker: att.is_sticker as i64,
-        transcription: att.transcription.clone(),
+        is_sticker: attachment.is_sticker as i64,
+        transcription: attachment.transcription.clone(),
         sha256,
         assets_path,
         size_bytes,

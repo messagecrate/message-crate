@@ -205,7 +205,7 @@ impl ExportWriter {
     /// the per-exporter hook. It is called once per attachment, in document
     /// order, and returns where that attachment's bytes come from plus a
     /// size hint for the progress totals. Exporters carrying bytes on the document move them out with
-    /// `att.bytes.take()`; path-backed exporters return
+    /// `attachment.bytes.take()`; path-backed exporters return
     /// [`AttachmentSource::Path`] from their own source list.
     ///
     /// Folds conversation, attachment and obfuscation counts into `report`.
@@ -230,14 +230,19 @@ impl ExportWriter {
             cancel,
         };
         let spool = self.spool.as_ref();
-        let mut source_for = |att: &mut Attachment| match spool.and_then(|s| s.source(att)) {
-            Some(spooled) => spooled,
-            None => source_for(att),
-        };
+        let mut source_for =
+            |attachment: &mut Attachment| match spool.and_then(|s| s.source(attachment)) {
+                Some(spooled) => spooled,
+                None => source_for(attachment),
+            };
         if self.use_queue {
             let units: Vec<ConversationUnit> = documents
                 .into_iter()
-                .map(|document| ConversationUnit::from_document(document, |_, att| source_for(att)))
+                .map(|document| {
+                    ConversationUnit::from_document(document, |_, attachment| {
+                        source_for(attachment)
+                    })
+                })
                 .collect();
             let options = WriteQueueOptions {
                 files: self.files,
@@ -402,7 +407,9 @@ mod tests {
         writer
             .finish(
                 vec![document],
-                &mut |att: &mut Attachment| (sources.next().unwrap(), att.size_bytes),
+                &mut |asked_about: &mut Attachment| {
+                    (sources.next().unwrap(), asked_about.size_bytes)
+                },
                 &CancelFlag::default(),
                 &mut ExportReport::default(),
             )
@@ -502,9 +509,9 @@ mod tests {
         assert_eq!(names_in(&out), [".message-crate-export", "attachments"]);
 
         let mut document = document_with_bytes();
-        let att = &mut document.messages[0].attachments[0];
-        att.bytes = None;
-        att.digest_sha256 = Some(digest);
+        let attachment = &mut document.messages[0].attachments[0];
+        attachment.bytes = None;
+        attachment.digest_sha256 = Some(digest);
         let mut report = ExportReport::default();
         writer
             .finish(

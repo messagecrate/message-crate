@@ -742,14 +742,14 @@ fn build_eml(message: &MailMessage) -> Result<Vec<u8>> {
     } else {
         let mut parts = Vec::with_capacity(message.attachments.len() + 1);
         parts.push(text);
-        for (i, att) in message.attachments.iter().enumerate() {
-            let mime = part_content_type(att.meta.mime_type.as_deref());
-            let filename = att
+        for (i, attachment) in message.attachments.iter().enumerate() {
+            let mime = part_content_type(attachment.meta.mime_type.as_deref());
+            let filename = attachment
                 .meta
                 .original_name
                 .clone()
                 .unwrap_or_else(|| format!("attachment-{i}"));
-            parts.push(attachment_part(mime, filename, &att.bytes));
+            parts.push(attachment_part(mime, filename, &attachment.bytes));
         }
         MimePart::new("multipart/mixed", parts)
     };

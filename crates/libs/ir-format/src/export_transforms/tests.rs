@@ -79,10 +79,14 @@ fn obfuscate_keeps_me_on_a_sent_message_and_replaces_a_real_name() {
 #[test]
 fn obfuscate_skips_staged_media_and_writes_placeholders() {
     let tmp = crate::export_dir();
-    let att = tmp.path().join("attachments");
-    fs::create_dir_all(&att).unwrap();
+    let attachments_dir = tmp.path().join("attachments");
+    fs::create_dir_all(&attachments_dir).unwrap();
     // Pretend an exporter staged a real file (should be removed).
-    fs::write(att.join("real-photo.jpg"), b"REAL_JPEG_BYTES_SHOULD_GO").unwrap();
+    fs::write(
+        attachments_dir.join("real-photo.jpg"),
+        b"REAL_JPEG_BYTES_SHOULD_GO",
+    )
+    .unwrap();
 
     let mut documents = vec![document_with_image_attachment()];
     let transforms = ExportTransforms {
@@ -96,10 +100,10 @@ fn obfuscate_skips_staged_media_and_writes_placeholders() {
     let outcome = apply_transforms(&mut documents, tmp.path(), &transforms).unwrap();
     assert_eq!(outcome.obfuscated_documents, 1);
 
-    assert!(!att.join("real-photo.jpg").exists());
-    assert!(att.join("placeholder.jpg").is_file());
-    assert!(att.join("placeholder.mp4").is_file());
-    assert!(att.join("placeholder.bin").is_file());
+    assert!(!attachments_dir.join("real-photo.jpg").exists());
+    assert!(attachments_dir.join("placeholder.jpg").is_file());
+    assert!(attachments_dir.join("placeholder.mp4").is_file());
+    assert!(attachments_dir.join("placeholder.bin").is_file());
     assert_eq!(
         documents[0].messages[0].attachments[0].path.as_deref(),
         Some("attachments/placeholder.jpg")
@@ -147,9 +151,9 @@ fn obfuscate_drops_the_real_files_size() {
 #[test]
 fn finish_leaves_a_copied_file_as_it_is() {
     let tmp = crate::export_dir();
-    let att = tmp.path().join("attachments");
-    fs::create_dir_all(&att).unwrap();
-    fs::write(att.join("keep.bin"), b"already-cloned").unwrap();
+    let attachments_dir = tmp.path().join("attachments");
+    fs::create_dir_all(&attachments_dir).unwrap();
+    fs::write(attachments_dir.join("keep.bin"), b"already-cloned").unwrap();
     let mut documents = vec![document_with_image_attachment()];
     documents[0].messages[0].attachments[0].path = Some("attachments/keep.bin".into());
     let transforms = ExportTransforms {
@@ -162,7 +166,10 @@ fn finish_leaves_a_copied_file_as_it_is() {
         documents[0].messages[0].attachments[0].path.as_deref(),
         Some("attachments/keep.bin")
     );
-    assert_eq!(fs::read(att.join("keep.bin")).unwrap(), b"already-cloned");
+    assert_eq!(
+        fs::read(attachments_dir.join("keep.bin")).unwrap(),
+        b"already-cloned"
+    );
 }
 
 /// A group conversation in which every string holds its own `LEAK-<n>`
@@ -419,21 +426,21 @@ fn obfuscate_keeps_each_reaction_and_replaces_only_who_reacted() {
 fn media_disabled_clears_each_attachment_path_bytes_and_fingerprint() {
     let tmp = crate::export_dir();
     let mut documents = vec![document_with_image_attachment()];
-    let att = &mut documents[0].messages[0].attachments[0];
-    att.bytes = Some(vec![1, 2, 3]);
-    att.digest_sha256 = Some("ab".repeat(32));
+    let attachment = &mut documents[0].messages[0].attachments[0];
+    attachment.bytes = Some(vec![1, 2, 3]);
+    attachment.digest_sha256 = Some("ab".repeat(32));
     let transforms = ExportTransforms {
         files: AttachmentFiles::Skip,
         ..ExportTransforms::none()
     };
     apply_transforms(&mut documents, tmp.path(), &transforms).unwrap();
 
-    let att = &documents[0].messages[0].attachments[0];
-    assert_eq!(att.path, None);
-    assert_eq!(att.bytes, None);
-    assert_eq!(att.digest_sha256, None);
+    let attachment = &documents[0].messages[0].attachments[0];
+    assert_eq!(attachment.path, None);
+    assert_eq!(attachment.bytes, None);
+    assert_eq!(attachment.digest_sha256, None);
     assert_eq!(
-        att.mime_type.as_deref(),
+        attachment.mime_type.as_deref(),
         Some("image/jpeg"),
         "the metadata stays"
     );

@@ -30,10 +30,10 @@ fn a_received_message_names_its_sender_recipients_text_and_picture() {
     );
     assert_eq!(p.body, "Look at this");
     assert_eq!(p.attachments.len(), 1);
-    let att = &p.attachments[0];
-    assert_eq!(att.content_type, "image/jpeg");
-    assert_eq!(att.name.as_deref(), Some("IMG_1.jpg"));
-    assert_eq!(att.data.len(), 100);
+    let attachment = &p.attachments[0];
+    assert_eq!(attachment.content_type, "image/jpeg");
+    assert_eq!(attachment.name.as_deref(), Some("IMG_1.jpg"));
+    assert_eq!(attachment.data.len(), 100);
     assert_eq!(p.fields["message-type"], "m-retrieve-conf");
     assert_eq!(
         p.fields["content-type"],

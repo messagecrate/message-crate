@@ -138,13 +138,13 @@ impl AttachmentSpool {
         state.sizes.get(digest).copied()
     }
 
-    /// Where `att`'s bytes come from when its digest was spooled: the
+    /// Where `attachment`'s bytes come from when its digest was spooled: the
     /// spooled file, with the payload's size for the progress totals.
     /// `None` for an attachment the spool does not hold.
-    pub fn source(&self, att: &Attachment) -> Option<(AttachmentSource, Option<u64>)> {
-        let digest = att.digest_sha256.as_deref()?;
+    pub fn source(&self, attachment: &Attachment) -> Option<(AttachmentSource, Option<u64>)> {
+        let digest = attachment.digest_sha256.as_deref()?;
         let path = self.path(digest)?;
-        let size = att.size_bytes.or_else(|| self.size(digest));
+        let size = attachment.size_bytes.or_else(|| self.size(digest));
         Some((AttachmentSource::Path(path), size))
     }
 }
@@ -208,14 +208,14 @@ mod tests {
         let cache = tempfile::tempdir().unwrap();
         let spool = AttachmentSpool::new(cache.path());
         let digest = spool.put(b"photo").unwrap();
-        let mut att = Attachment {
+        let mut attachment = Attachment {
             digest_sha256: Some(digest.clone()),
             ..sample_attachment()
         };
-        let (source, size) = spool.source(&att).unwrap();
+        let (source, size) = spool.source(&attachment).unwrap();
         assert!(matches!(source, AttachmentSource::Path(p) if p == spool.path(&digest).unwrap()));
         assert_eq!(size, Some(5));
-        att.digest_sha256 = Some("0000".into());
-        assert!(spool.source(&att).is_none(), "not spooled");
+        attachment.digest_sha256 = Some("0000".into());
+        assert!(spool.source(&attachment).is_none(), "not spooled");
     }
 }
