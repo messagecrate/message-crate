@@ -440,11 +440,9 @@ async fn work_through_with(
         tracing::info!(
             thumbnails = stats.thumbnails,
             previews = stats.previews,
-            removed = stats.removed,
             dropped = stats.dropped,
             shared = stats.shared,
             not_made = stats.not_made,
-            not_removed = stats.not_removed,
             not_dropped = stats.not_dropped,
             not_decided = stats.not_decided,
             "The queued Assets are done"
