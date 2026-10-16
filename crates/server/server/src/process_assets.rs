@@ -207,7 +207,7 @@ fn original_path(assets_dir: &Path, row: &StoredOriginal, account_id: i64) -> Op
         assets_dir,
         &row.assets_path,
         account_id,
-        &format!("Asset {}", row.sha256),
+        &crate::asset_store::describe_original(&row.sha256),
     )
 }
 
