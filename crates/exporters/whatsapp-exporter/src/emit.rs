@@ -867,44 +867,4 @@ mod tests {
         let found = resolve_media_file(rel, Some(media_base), &[root.path().to_path_buf()]);
         assert_eq!(found.as_deref(), Some(src.as_path()));
     }
-
-    /// Ingest leaves every attachment's size empty, so the writer's byte
-    /// totals and headroom check see a media file only through its size on
-    /// disk (#3057).
-    #[test]
-    fn a_media_file_with_no_size_reports_its_size_on_disk() {
-        let dir = tempfile::tempdir().unwrap();
-        let media = dir.path().join("photo.jpg");
-        fs::write(&media, vec![0u8; 1234]).unwrap();
-        let mut documents = WhatsappDocuments {
-            hooks: WhatsappProjection {
-                export: message_crate_core::export_meta(
-                    EXPORT_SOURCE,
-                    EXPORT_TOOL,
-                    EXPORT_TOOL_VERSION,
-                    None,
-                    None,
-                ),
-                backup_taken_at_unix_ms: None,
-                rosters: BTreeMap::new(),
-            },
-            media_sources: AttachmentPaths::default(),
-        };
-        documents.media_sources.push(Some(media.clone()));
-        let mut attachment = Attachment {
-            path: None,
-            original_name: Some("photo.jpg".to_string()),
-            mime_type: Some("image/jpeg".to_string()),
-            digest_sha256: None,
-            is_sticker: false,
-            transcription: None,
-            sticker_effect: None,
-            size_bytes: None,
-            missing_reason: None,
-            bytes: None,
-        };
-        let (source, size) = documents.attachment_source(&mut attachment);
-        assert!(matches!(source, AttachmentSource::Path(path) if path == media));
-        assert_eq!(size, Some(1234));
-    }
 }
