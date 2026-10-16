@@ -10,8 +10,8 @@ import { ProfileDangerZone } from "./ProfileDangerZone";
 import { sectionTitleClass } from "./profileStyles";
 
 /**
- * Account settings: username, password, status, permissions, API tokens,
- * danger zone.
+ * Account settings: username, last login and app (an account the owner
+ * opened), password, status, permissions, API tokens, danger zone.
  *
  * Given `managedAccountId`, the account is one the owner opened from
  * User Accounts. The owner reads when it last logged in and which app it
