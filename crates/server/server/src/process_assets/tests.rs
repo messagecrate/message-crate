@@ -1296,8 +1296,9 @@ async fn a_missing_original_is_planned_from_the_decision_recorded_for_it() {
 /// #2866: an original whose stored path leaves the account's assets
 /// directory, by climbing out with `..` or by being absolute, is passed
 /// over: the pass neither reads the file it names nor records anything for
-/// its row, and says so in the server's log with the account, the path and
-/// the Asset, so the damaged row can be found.
+/// its row, counts it among the originals it could not process, and says so
+/// in the server's log with the account, the path and the Asset, so the
+/// damaged row can be found.
 #[tokio::test]
 async fn an_original_whose_stored_path_leaves_the_assets_directory_is_passed_over() {
     let (opened, dir) = open_db().await;
@@ -1353,7 +1354,7 @@ async fn an_original_whose_stored_path_leaves_the_assets_directory_is_passed_ove
     .await;
 
     decided.unwrap();
-    assert_eq!(counted.unwrap(), stats(2, 0, 0, 2, 0));
+    assert_eq!(counted.unwrap(), stats(2, 0, 0, 0, 2));
     for (id, sha, assets_path) in &attachments {
         let shown: Option<i64> =
             sqlx::query_scalar("SELECT shown_as_is FROM attachments WHERE id = $1")

@@ -76,7 +76,8 @@ pub struct ProcessAssetsStats {
     /// original that named none, such as the rows of a second source
     /// imported after they were made.
     pub shared: u64,
-    /// Originals whose Preview or Thumbnail could not be made.
+    /// Originals whose Preview or Thumbnail could not be made, an original
+    /// whose stored path the pass refuses to read among them.
     pub not_made: u64,
     /// Damaged Previews and Thumbnails that could not be dropped.
     pub not_dropped: u64,
@@ -480,7 +481,8 @@ struct Outcome {
     shared: u64,
     /// Why a Preview or Thumbnail that was wanted was not made. Each
     /// version's reason is also recorded on the original's rows
-    /// ([`AccountPass::record_not_made`]).
+    /// ([`AccountPass::record_not_made`]); an original whose stored path is
+    /// refused is not read, so nothing is known to record.
     not_made: Option<anyhow::Error>,
     /// Why each damaged version that could not be dropped stayed.
     not_dropped: Vec<anyhow::Error>,
@@ -675,7 +677,14 @@ impl<'a> AccountPass<'a> {
     /// short by a killed run is made again.
     async fn process(&self, db: &SqlitePool, row: &StoredOriginal) -> Outcome {
         let Some(source_path) = original_path(&self.assets_dir, row, self.account_id) else {
-            return Outcome::default();
+            // Counted among the failures, so the run says it and does not
+            // end as though everything was done.
+            return Outcome {
+                not_made: Some(anyhow::anyhow!(
+                    "its stored path is not a plain relative one, so it is not read"
+                )),
+                ..Outcome::default()
+            };
         };
         let state = |version: Version| {
             preview_file(
