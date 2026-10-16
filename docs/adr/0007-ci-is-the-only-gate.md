@@ -6,22 +6,23 @@ carry them. The two scripts under `scripts/` decide nothing: `check-pr.sh` is a
 fast pre-flight that catches the mistakes not worth a round trip, and
 `check-all.sh` runs the whole set locally for anyone who wants it before
 pushing, except the Docker image build, off Windows the Windows-only cases
-of the server config tests, and the secret scan when gitleaks is not
-installed.
+of the server config tests and the desktop app's local-server tests, and the
+secret scan when gitleaks is not installed.
 
-`ci.yml` holds thirteen jobs on a ready pull request. On a draft, all of them
-skip. A `changes` job diffs the branch against its base and publishes five
-booleans — `rust`, `web`, `docs`, `docker`, `server_config` — and the heavy
-jobs read them:
+`ci.yml` holds fourteen jobs on a ready pull request. On a draft, all of them
+skip. A `changes` job diffs the branch against its base and publishes six
+booleans — `rust`, `web`, `docs`, `docker`, `server_config`, `local_server` —
+and the heavy jobs read them:
 
 | Job | Runs when | What it does |
 | --- | --- | --- |
-| `changes` | always, except on a draft | Diffs against the base and outputs `rust`, `web`, `docs`, `docker`, `server_config` |
+| `changes` | always, except on a draft | Diffs against the base and outputs `rust`, `web`, `docs`, `docker`, `server_config`, `local_server` |
 | `fmt` | `rust` | `cargo fmt --check` on the workspace and on `src-tauri` |
 | `clippy` | `rust` | `cargo clippy --workspace --all-targets -- -D warnings` |
 | `test` | `rust` | `cargo build --workspace` and `cargo test --workspace` |
 | `check-tauri` | `rust` | `cargo check`, Clippy at `-D warnings`, and `cargo test` on `src-tauri` |
 | `windows-config` | `server_config` | `cargo test -p message-crate-server --lib "config::tests::"` on `windows-latest` |
+| `windows-local-server` | `local_server` | `cargo test --manifest-path src-tauri/Cargo.toml --lib "local_server::"` on `windows-latest` |
 | `web` | `web` | `biome ci`, `biome lint --error-on-warnings` on the timed-wait rule's canary, `check-biome-restricted-imports.mjs`, `check-generated-api-types.sh`, `npm run build`, `npm test` |
 | `docs` | `docs` | `npm ci`, `astro check`, `astro build` — the site without rustdoc or the HTTP API catalog |
 | `license` | always | `check-license.sh` |
@@ -30,10 +31,12 @@ jobs read them:
 | `secrets` | pull requests only | `check-secrets.sh`: gitleaks reads every commit the pull request adds, with the default rules plus `.gitleaks.toml`'s rule for `mc-user-` and `mc-api-` tokens and its allowlist of test vectors |
 | `version` | always | `check-version-lockstep.sh`: the four product version files and their lockfiles agree, and on a `v*` tag agree with the tag; then `check-changelog.sh`: `CHANGELOG.md`'s width, tight lists and dated entries |
 
-The ruleset requires twelve of them: every job but `secrets`.
-The maintainer adds `secrets` to the required checks once it has run green
-(#3093). GitHub's own secret scanning and push protection are on for the
-repository as well. They block a provider token at `git push`, and the gitleaks job finds what
+The ruleset requires twelve of them: every job but `secrets` and
+`windows-local-server`. The maintainer adds `secrets` to the required checks
+once it has run green (#3093), and `windows-local-server` once it has run
+green, for the reason the ruleset requires `windows-config` (#2788).
+GitHub's own secret scanning and push protection are on for the repository
+as well. They block a provider token at `git push`, and the gitleaks job finds what
 their patterns miss, such as a pasted Session or API token. The job runs on
 pull requests only, like `docker-build`, so the release jobs do not need it:
 a tag carries commits a pull request already scanned.
@@ -66,6 +69,20 @@ passed. So the job holds back only a pull request that changes the config
 paths or a workflow. Any other pull request merges without a Windows build.
 On a push, a tag or a manual run it runs like every other job, and the `docker` and
 `release` jobs need it, so a release waits for it (#2683).
+`src-tauri/src/local_server.rs` and everything under
+`src-tauri/src/local_server/` set `local_server` as well as `rust`, and so
+does any change to a workflow. The `windows-local-server` job reads it, and
+skips and runs as `windows-config` does, but the ruleset does not require it
+yet (above). Closing the desktop app ends the server it started and every
+process that server started, such as ffmpeg converting a video. On Windows a
+Job Object does that (`src-tauri/src/local_server/process_tree.rs`), and the
+`check-tauri` job runs on Linux, where the process-group code runs instead.
+The job's tests start a stand-in server in the Job Object with a child of
+its own, then kill the server, or end it alone and close the job's handle,
+and see both processes end (#1962). macOS runs the process-group code the
+Linux tests cover. `Cargo.lock` does not set `local_server`, so a dependency
+bump does not start a Windows build on a pull request. The push to `main`
+runs the job.
 
 `src-tauri`'s Clippy stays inside `check-tauri` rather than the `clippy` job,
 because its build needs the webkit and gtk system packages that job already
