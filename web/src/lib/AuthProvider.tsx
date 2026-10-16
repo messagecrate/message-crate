@@ -18,7 +18,7 @@ import {
 import { logout as serverLogout } from "./serverApi";
 import { SessionQueryClientProvider } from "./sessionQueryClient";
 import { onSessionRefused } from "./sessionRefusal";
-import { fetchAccountProfileFor } from "./useAccountProfile";
+import { warmAccountProfile } from "./useAccountProfile";
 import { useLogoutOnWindowClose } from "./windowCloseLogout";
 
 /**
@@ -93,9 +93,8 @@ function SessionProvider({ children }: { children: ReactNode }) {
       if (check === "valid") {
         // Warm the profile before the app renders. Whether this account still
         // owes profile setup is read from it, so fetching it here keeps the
-        // guards from deciding against an empty cache. A profile that fails
-        // to load is left to the guards, which hold until it loads.
-        await fetchAccountProfileFor(queryClient, login.accountId, true);
+        // guards from deciding against an empty cache.
+        await warmAccountProfile(queryClient, login.accountId);
         if (!cancelled) setRestored(true);
         return;
       }
@@ -150,7 +149,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
       // Fetch the profile before the app renders: it carries whether this
       // account still owes profile setup or a password change, and the guards
       // read it from there rather than from anything decided here.
-      await fetchAccountProfileFor(queryClient, accountId, true);
+      await warmAccountProfile(queryClient, accountId);
 
       if (authEpoch.current !== epoch) return; // A later login or logout replaced this one.
 

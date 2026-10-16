@@ -400,6 +400,12 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
         </p>
       ))}
 
+      {props.startError ? (
+        <p role="alert" className="mt-2 mb-0 text-[0.813rem] text-danger">
+          {props.startError}
+        </p>
+      ) : null}
+
       <div className="mt-2 flex gap-3">
         <Button
           variant="primary"
