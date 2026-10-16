@@ -117,7 +117,7 @@ fn payload_too_large_message(kind: &str, bytes: Option<usize>) -> String {
     format!(
         "{kind} rejected: HTTP 413 Payload Too Large{size}. \
          Cloudflare Free/Pro caps proxied uploads at ~100 MB. \
-         The import chunks message imports under {batch_mib} MiB and large assets via multipart; \
+         The Import Run splits message imports under {batch_mib} MiB and sends large assets in multipart parts; \
          if this still fails, raise nginx client_max_body_size for /v1 (need ≥20m for 16 MiB parts) \
          or tunnel to the server on :8080."
     )
