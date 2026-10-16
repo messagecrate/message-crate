@@ -622,12 +622,12 @@ export interface paths {
          *     picks among them, as adding an identity does. `Text Message` carries a
          *     phone number, an email address or any other name; `Email` is an email
          *     address on Text Message; `WhatsApp` carries a phone number or one of
-         *     WhatsApp's own ids (`…@lid`, `…@g.us`, `…@s.whatsapp.net`, `…@c.us`,
-         *     `…@broadcast`, `…@newsletter`), which are `other`. An identity written exactly as the account keys it on
+         *     WhatsApp's own ids (`…@lid`, `…@g.us`, `…@broadcast`, `…@newsletter`),
+         *     which are `other`. An identity written exactly as the account keys it on
          *     that service is that identity, whatever its type, so an exported file
          *     loads back as it was. A row whose address the service cannot carry, such
          *     as an email address on `WhatsApp` (an `@` address at any other domain),
-         *     is refused.
+         *     is refused, where adding an identity stores it as `other`.
          *
          *     Rows that share a `contact_id` are one contact. An id the account holds
          *     names that contact, a blank id makes a new contact for that row, and any

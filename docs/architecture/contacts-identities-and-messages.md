@@ -539,11 +539,14 @@ refused. An identity written exactly as the account keys it on the row's
 service is that identity, with the type it was stored with, so an exported
 file loads back as it was. A WhatsApp id such as `…@lid` is `other` on
 WhatsApp, held or new, and is never read as an email address there: a new
-`@` address on WhatsApp is `other` when its domain is one of WhatsApp's own
-(`lid`, `g.us`, `s.whatsapp.net`, `c.us`, `broadcast`, `newsletter`), and any
-other is an email address, which WhatsApp cannot carry, so the row is
-refused. Export writes `Email`
-for an email address and the service's own word for anything else. Why: a
+`@` address on WhatsApp is `other` when its domain is one an import stores
+that way (`lid`, `g.us`, `broadcast`, `newsletter`, in lower case), and any
+other, `…@s.whatsapp.net` included, is an email address, which WhatsApp
+cannot carry, so the row is refused. Adding an identity on the screen
+stores such an address as `other` instead; the load refuses it because a
+person who writes an email address on WhatsApp in a sheet has made a
+mistake the sheet can fix. Export writes `Email` for an email address and
+the service's own word for anything else. Why: a
 person editing the sheet reads the services by the names the screen gives
 them, and a type column could only disagree with the service and the address,
 which together already decide it. Rejected: an `identity_type` column, which

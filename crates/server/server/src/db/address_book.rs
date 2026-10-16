@@ -392,26 +392,21 @@ impl Snapshot {
     }
 }
 
-/// The domains of WhatsApp's own ids: a person's `…@lid` and
-/// `…@s.whatsapp.net` (once `…@c.us`), a group's `…@g.us`, a broadcast list's
-/// `…@broadcast` and a channel's `…@newsletter`.
-const WHATSAPP_ID_DOMAINS: [&str; 6] = [
-    "lid",
-    "s.whatsapp.net",
-    "c.us",
-    "g.us",
-    "broadcast",
-    "newsletter",
-];
+/// The domains of the WhatsApp ids an import stores as `other`: a person
+/// WhatsApp knows by no number (`…@lid`), a group (`…@g.us`), the Status
+/// chat (`status@broadcast`) and a channel (`…@newsletter`). A phone id
+/// (`…@s.whatsapp.net`) is not one: the WhatsApp exporter writes it as the
+/// `+` number (`whatsapp-exporter/src/jid.rs`), so the file writes the number.
+const WHATSAPP_ID_DOMAINS: [&str; 4] = ["lid", "g.us", "broadcast", "newsletter"];
 
 /// Whether `address` is one of WhatsApp's own ids rather than an email
-/// address: an `@` followed by one of [`WHATSAPP_ID_DOMAINS`].
+/// address: an `@` followed by one of [`WHATSAPP_ID_DOMAINS`], in lower case
+/// as WhatsApp writes it. `…@LID` is not one, because a new identity is keyed
+/// as written and would match no id an import stored.
 fn is_whatsapp_id(address: &str) -> bool {
-    address.rsplit_once('@').is_some_and(|(_, domain)| {
-        WHATSAPP_ID_DOMAINS
-            .iter()
-            .any(|known| known.eq_ignore_ascii_case(domain))
-    })
+    address
+        .rsplit_once('@')
+        .is_some_and(|(_, domain)| WHATSAPP_ID_DOMAINS.contains(&domain))
 }
 
 /// The `service` value the `handles` table stores, or `None` for any other
@@ -583,10 +578,10 @@ fn row_identity(
                 row.identity
             ));
         }
-        // WhatsApp's own ids (`…@lid`, `…@g.us`, `…@s.whatsapp.net`) are
-        // `other` there, as an import and the screen store them, and are
-        // never an email address. Any other `@` address on WhatsApp is an
-        // email address, which WhatsApp cannot carry, and is refused below.
+        // WhatsApp's own ids ([`WHATSAPP_ID_DOMAINS`]) are `other` there, as
+        // an import stores them, and are never an email address. Any other
+        // `@` address on WhatsApp is an email address, which WhatsApp cannot
+        // carry, and is refused below, as the decision on #916 asks.
         (None, FileService::Whatsapp) if is_whatsapp_id(&row.identity) => IdentityType::Other,
         (None, _) => shape,
     };

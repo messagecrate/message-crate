@@ -306,7 +306,7 @@ async fn a_row_is_typed_by_its_service_and_its_shape() {
         "a,Ada,Text Message,555-0100 x99,",
         "a,Ada,WhatsApp,+15555550100,",
         "a,Ada,whatsapp,AMAZON,",
-        "a,Ada,WhatsApp,123456789012345@LID,",
+        "a,Ada,WhatsApp,123456789012345@lid,",
     ]);
     loaded(&mut conn, &text, LoadMode::Append).await;
     let ada = contact_named(&mut conn, "Ada").await;
@@ -317,7 +317,7 @@ async fn a_row_is_typed_by_its_service_and_its_shape() {
             "phone/email/ada@example.org",
             "phone/other/555-0100 x99",
             "phone/phone/5555550100",
-            "whatsapp/other/123456789012345@LID",
+            "whatsapp/other/123456789012345@lid",
             "whatsapp/other/AMAZON",
             "whatsapp/phone/+15555550100",
         ]
@@ -384,6 +384,7 @@ async fn an_address_its_service_does_not_carry_is_refused_with_its_row() {
         "a,Ada,Text Message,+15555550100,",
         "b,Bao,WhatsApp,bao@example.com,",
         "c,Cy,Email,+15555550102,",
+        "d,Di,WhatsApp,15555550103@s.whatsapp.net,",
     ]);
     let reasons = refused(&mut conn, &text, LoadMode::Append).await;
     assert_eq!(
@@ -391,6 +392,7 @@ async fn an_address_its_service_does_not_carry_is_refused_with_its_row() {
         [
             "row 3: bao@example.com is an email address, and WhatsApp carries no email addresses",
             "row 4: \"+15555550102\" is not an email address: it needs one @ with text on both sides",
+            "row 5: 15555550103@s.whatsapp.net is an email address, and WhatsApp carries no email addresses",
         ]
     );
 }

@@ -70,11 +70,16 @@ pub fn parse_vcf(text: &str) -> Vec<VcfCard> {
 /// Join vCard continuation lines (starting with a space or tab) onto the line before.
 ///
 /// A vCard 2.1 value in quoted-printable continues instead on the next line
-/// when it ends with a soft line break, an `=`, which is dropped.
+/// when it ends with a soft line break, an `=`, which is dropped. A card's
+/// `BEGIN:VCARD` or `END:VCARD` never continues one, so a malformed last
+/// value cannot swallow the end of its card.
 fn unfold_lines(text: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for line in text.lines() {
+        let starts_or_ends_a_card = line.trim_end().eq_ignore_ascii_case("BEGIN:VCARD")
+            || line.trim_end().eq_ignore_ascii_case("END:VCARD");
         if let Some(last) = out.last_mut()
+            && !starts_or_ends_a_card
             && is_quoted_printable(last)
             && last.ends_with('=')
         {
@@ -292,6 +297,17 @@ mod tests {
              TEL;TYPE=HOME:+15555550119\nTEL:\nEND:VCARD\n";
         let cards = parse_vcf(text);
         assert_eq!(cards[0].phones, vec!["+15555550119", "+15555550119"]);
+    }
+
+    /// A quoted-printable value that ends its card with a stray `=` does not
+    /// take the card's `END:VCARD` with it.
+    #[test]
+    fn parse_vcf_ends_a_card_after_a_quoted_printable_value_ending_in_a_soft_break() {
+        let text = "BEGIN:VCARD\nTEL:555-0100\nNOTE;ENCODING=QUOTED-PRINTABLE:a=\nEND:VCARD\n\
+             BEGIN:VCARD\nTEL:555-0101\nEND:VCARD\n";
+        let cards = parse_vcf(text);
+        assert_eq!(cards.len(), 2);
+        assert_eq!(cards[0].phones, vec!["555-0100"]);
     }
 
     /// vCard 4.0 writes a number as a `tel:` URI.
