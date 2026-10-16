@@ -10,6 +10,13 @@ import { createContext, useContext } from "react";
 import type { AccountRunDirectories } from "./importRun";
 import type { PrefLifetime } from "./storage";
 
+/**
+ * How long a saved login lasts: `"kept"` past this visit, or `"visit"` until
+ * the tab closes. The saved login's storage lifetime, named for the login
+ * screens so they need not reach into `storage.ts`.
+ */
+export type LoginLifetime = PrefLifetime;
+
 export interface AuthState {
   serverUrl: string;
   token: string | null;
@@ -27,7 +34,7 @@ interface AuthContextValue extends AuthState {
     serverUrl: string,
     token: string,
     accountId: number,
-    lifetime?: PrefLifetime,
+    lifetime?: LoginLifetime,
   ) => Promise<void>;
   /** Save a new session token after the user changes their password. */
   updateToken: (token: string) => void;

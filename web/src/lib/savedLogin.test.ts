@@ -12,7 +12,7 @@ import {
   savedLoginLifetime,
   startingAuthState,
 } from "./savedLogin";
-import type { PrefLifetime } from "./storage";
+import { type PrefLifetime, writePref } from "./storage";
 
 const getSession = vi.fn();
 const setToken = vi.fn();
@@ -26,6 +26,7 @@ vi.mock("./serverApi", () => ({
   getSession: () => getSession(),
 }));
 
+const SAVED_LOGIN_KEY = "message-crate-auth";
 const HERE = "http://127.0.0.1:8080";
 const ELSEWHERE = "http://crate.example:8080";
 
@@ -147,16 +148,15 @@ describe("a login kept for this visit only", () => {
     expect(loadSavedLogin()).toBeNull();
   });
 
-  it("leaves a login another tab kept when it is forgotten", () => {
-    // Another tab kept its login; this tab then logged in for this visit
-    // only, which a tab of its own does without touching the other's.
-    localStorage.setItem(
-      "message-crate-auth",
+  it("leaves a login another tab kept after it when it is forgotten", () => {
+    // This tab logged in for this visit only. Another tab then logged in with
+    // the box ticked, which writes localStorage and clears only its own
+    // sessionStorage.
+    saveLoginFor(HERE, "visit");
+    writePref(
+      SAVED_LOGIN_KEY,
       JSON.stringify({ serverUrl: HERE, token: "other-tab-token", accountId: 8 }),
-    );
-    sessionStorage.setItem(
-      "message-crate-auth",
-      JSON.stringify({ serverUrl: HERE, token: "session-token", accountId: 7 }),
+      "kept",
     );
 
     forgetSavedLogin();

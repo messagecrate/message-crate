@@ -8,8 +8,8 @@
  * in" on the website's login card. Ticked, it is in `localStorage` and the
  * next visit starts logged in. Unticked, it is in `sessionStorage`, which a
  * new tab starts without and the browser clears when the tab closes (#2205).
- * The browser brings that back with a tab it reopens or a session it
- * restores, and a duplicated tab gets a copy, so only logging out ends the
+ * The browser brings that back with a tab it reopens, or with the tabs it
+ * reopens after a restart, and a duplicated tab gets a copy, so only logging out ends the
  * Session itself. The server address is always in `localStorage`: it is a
  * setting, not part of the login.
  */
@@ -65,8 +65,9 @@ export function saveLogin(state: AuthState, lifetime: PrefLifetime): void {
 }
 
 /**
- * Delete the saved login from where it is. A login kept by another tab stays
- * when this tab's login was for this visit only. The server address stays: it
+ * Delete the saved login from where it is. When this tab logged in for this
+ * visit only and another tab kept a login after it, that kept login stays,
+ * and is the one the next visit starts with. The server address stays: it
  * is a setting.
  */
 export function forgetSavedLogin(): void {

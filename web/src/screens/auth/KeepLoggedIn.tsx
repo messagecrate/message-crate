@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from "react";
 import AuthSubmitButton from "../../components/AuthSubmitButton";
 import Checkbox from "../../components/Checkbox";
-import type { PrefLifetime } from "../../lib/storage";
+import type { LoginLifetime } from "../../lib/authContext";
 import { isTauri } from "../../lib/tauriCheck";
 
 /** What "Keep me logged in" says, and whether the card shows it at all. */
@@ -11,7 +11,7 @@ export type KeepLoggedInChoice = {
   keep: boolean;
   setKeep: (keep: boolean) => void;
   /** How long the saved login lasts: kept past this visit, or for this visit only. */
-  lifetime: PrefLifetime;
+  lifetime: LoginLifetime;
 };
 
 /**

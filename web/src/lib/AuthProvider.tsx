@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getToken } from "./api";
 import { applyApiSession, useApiSession } from "./apiSession";
-import { AuthContext, type AuthState } from "./authContext";
+import { AuthContext, type AuthState, type LoginLifetime } from "./authContext";
 import { type AccountRunDirectories, deleteRunDirectories } from "./importRun";
 import { LogoutPromptContext, type LogoutPromptState } from "./logoutPromptContext";
 import { isUploadRunning, pauseRunningUpload } from "./runningUpload";
@@ -17,7 +17,6 @@ import {
 } from "./savedLogin";
 import { logout as serverLogout } from "./serverApi";
 import { SessionQueryClientProvider } from "./sessionQueryClient";
-import type { PrefLifetime } from "./storage";
 import { onSessionRefused } from "./sessionRefusal";
 import { fetchAccountProfileFor } from "./useAccountProfile";
 import { useLogoutOnWindowClose } from "./windowCloseLogout";
@@ -138,7 +137,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
       serverUrl: string,
       token: string,
       accountId: number,
-      lifetime: PrefLifetime = "kept",
+      lifetime: LoginLifetime = "kept",
     ) => {
       const epoch = ++authEpoch.current;
       // One call, and it cannot be incomplete: every cached entry is named
