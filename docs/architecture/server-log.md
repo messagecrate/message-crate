@@ -197,6 +197,15 @@ value bound into the statement.
 The trace layer writes no second `ERROR` line for the `5xx`, only the
 response's `INFO` line.
 
+A response whose body fails after its status was sent, such as a download
+that hits a disk error partway, leaves one `ERROR` line with the body's
+error, under the request's span (`BodyFailures` and `log_body_failure` in
+`crates/server/server/src/middleware.rs`). Why: the response's `INFO` line
+is written when the response starts, so it says `status=200` for a download
+the client got cut off, and tower-http's own classifier decides at the
+status and never looks at the body
+([#2870](https://github.com/messagecrate/message-crate/issues/2870)).
+
 A source whose text the error before it already is, or already ends with
 after a `: `, is left out of the chain (`error_chain` in
 `crates/server/server/src/api_error.rs`). A cause whose words only happen to

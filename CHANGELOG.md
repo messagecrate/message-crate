@@ -1512,6 +1512,12 @@ carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-16: **An Edit address book load erases what it removed from the
+  database's files.** An **Edit** load deletes for good the identities its
+  file no longer lists that nothing else uses, but left them readable in the
+  write-ahead log beside the database, so a copy of the files made right
+  after the load still held them. The server now clears the log after an
+  Edit load, as it does after any other delete for good (#2981).
 - 2026-10-15: **A number from an Apple Messages backup keeps the country
   the phone read it in.** A number written without its country code, such
   as `07700 900123`, was stored with its country unknown, though the backup
@@ -1561,6 +1567,12 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-16: **A download cut off by an error shows in the server's log.**
+  When an attachment or a log file failed partway through its download, such
+  as on a disk error, the server's log showed only the download's start,
+  as a success, so the Logs panel read it as a download that worked. The
+  failure now leaves an error line naming what went wrong, with the
+  request's id (#2870).
 - 2026-10-15: **A failed request's log line names the database step that
   failed.** When a request fails because of a database problem, its line in
   the server's log now says which database step failed, such as `read the
