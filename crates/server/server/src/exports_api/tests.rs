@@ -944,7 +944,7 @@ async fn the_list_is_newest_first_filters_by_status_and_refuses_unknown_values()
         json!({ "kind": "query", "list": "messages", "q": "pizza" }),
     )
     .await;
-    // The second start closed the first as cancelled.
+    // The second start closed the first as `cancelled`.
 
     let list: Value = get_json(&fixture.state, "/v1/exports", &alice.token).await;
     assert_eq!(list["total"], 2);
@@ -1701,7 +1701,7 @@ async fn closures(
 }
 
 /// An account has one running Export Run: a second start closes the first
-/// as cancelled and deletes its list, a page of the first is refused as for
+/// as `cancelled` and deletes its list, a page of the first is refused as for
 /// any run that is not running, and the Audit Trail says a new Export
 /// replaced it (#2080).
 #[tokio::test]
@@ -1843,4 +1843,29 @@ async fn a_run_idle_past_the_hour_is_closed_and_one_read_within_it_is_not() {
     assert_eq!(entries[0].actor, AuditActor::Server);
     assert_eq!(entries[0].export_run_id, Some(run.id));
     assert_eq!(entries[0].at, closed_at.to_rfc3339());
+}
+
+/// A page past the end of a run's list hands over nothing and still counts
+/// as a page read, which is how the desktop app keeps a run open while it
+/// fetches the Assets (#2080).
+#[tokio::test]
+async fn a_page_past_the_end_counts_as_a_page_read() {
+    let (fixture, alice, _dinner, _menu) = fixture_with_two_conversations().await;
+    let run = create_run(&fixture, &alice.token, json!({ "kind": "everything" })).await;
+    let id = run["id"].as_i64().unwrap();
+    let last_read = || async {
+        let mut conn = fixture.conn().await;
+        sqlx::query_scalar::<_, Option<String>>(
+            "SELECT last_page_read_at FROM exports WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap()
+    };
+    assert_eq!(last_read().await, None);
+
+    let (ids, total) = run_page_ids(&fixture, &alice.token, id, "offset=3&limit=1").await;
+    assert_eq!((ids.len(), total), (0, 3));
+    assert!(last_read().await.is_some());
 }

@@ -1315,7 +1315,10 @@ that records the new run, the running one is closed as `cancelled` and its
 list deleted. A start is never refused because a run is open. The server
 also closes as `cancelled` a running run with no page read for an hour,
 counted from its last page or, before the first, from its start; it looks
-once a minute, and when it starts. A client still reading a run closed
+once a minute, and when it starts. A page past the end of the list hands
+over nothing and still counts as a page read, so the desktop app reads one
+every ten minutes while it fetches the run's Assets, which read no page. A
+client still reading a run closed
 either way gets the `409 Conflict` any run that is not running answers, and
 the desktop app's Export fails with a sentence saying it was canceled. Each
 closure is an `export_run_closed` entry in the Audit Trail, with the reason

@@ -256,8 +256,9 @@ pub fn run(
     let outcome = exporter.export_into_directory(&export, &mut on_progress);
     // The client closes the run either way, so the server's record says how
     // it ended: cancelled only when the person asked, failed for any other
-    // error. A run the server already closed is left as it is. A close that fails after the files are written is a warning,
-    // not a failed export: the directory is complete, only the record is not.
+    // error. A run the server already closed is left as it is. A close that
+    // fails after the files are written is a warning, not a failed export:
+    // the directory is complete, only the record is not.
     let action = close_action(&outcome);
     if let Some(action) = action
         && let Err(error) = exporter.close_export(export.id, action)
@@ -494,8 +495,9 @@ impl<'a> Export<'a> {
     /// server that is away: a run whose close fails is closed by the server
     /// once no page of it is read for an hour. A completed or failed run
     /// keeps every retry even when Cancel is pressed during its close, so
-    /// the server records how it ended rather than as cancelled. A failed close is returned as it
-    /// is, never as [`Cancelled`]: the caller logs it.
+    /// the server records how it ended rather than `cancelled`. A failed
+    /// close is returned as it is, never as [`Cancelled`]: the caller logs
+    /// it.
     fn close_export(&self, export_id: i64, action: CloseAction) -> Result<ExportRun> {
         let cfg = self.cfg;
         let close = || {

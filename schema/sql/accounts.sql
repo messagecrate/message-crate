@@ -321,7 +321,7 @@ CREATE TABLE IF NOT EXISTS exports (
     messages_delivered INTEGER NOT NULL DEFAULT 0,
     -- When a page of the run's messages was last read; NULL until the first.
     -- A running run with no page read for an hour, counted from this or
-    -- from `started_at` before the first, is closed as cancelled.
+    -- from `started_at` before the first, is closed as `cancelled`.
     last_page_read_at TEXT
 );
 
@@ -329,7 +329,7 @@ CREATE INDEX IF NOT EXISTS ix_exports_account_started
     ON exports(account_id, started_at DESC);
 
 -- At most one running Export Run per account. Starting an Export closes the
--- account's running run as cancelled in the same transaction, so the index
+-- account's running run as `cancelled` in the same transaction, so the index
 -- never refuses a start; it holds the rule against a racing client, as
 -- `ux_imports_active_account` does for imports.
 CREATE UNIQUE INDEX IF NOT EXISTS ux_exports_active_account

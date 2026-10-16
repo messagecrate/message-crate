@@ -168,6 +168,17 @@ fn id_list(raw: Option<String>) -> Result<Vec<i64>> {
     }
 }
 
+/// A run [`start_export`] recorded, and the run it closed to make room.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StartedExport {
+    /// The new run's id.
+    pub id: i64,
+    /// The account's running run the start closed as `cancelled`, if it had
+    /// one. The caller logs it once its transaction commits
+    /// ([`log_closed`]).
+    pub replaced: Option<i64>,
+}
+
 /// Record a new run as `running` with zero counts and return its id. The
 /// caller lists the run's messages and then sets the counts with
 /// [`record_counts`], in the same transaction. The run starts at `now`.
@@ -186,8 +197,11 @@ pub async fn start_export(
     conn: &mut SqliteConnection,
     args: &StartExportArgs<'_>,
     now: DateTime<Utc>,
-) -> Result<i64> {
-    replace_running_export(conn, args.account_id, now).await?;
+) -> Result<StartedExport> {
+    let replaced = close_runs(conn, Closure::Replaced(args.account_id), now)
+        .await?
+        .first()
+        .map(|&(export_id, _)| export_id);
     let (kind, list, query, conversation_ids, message_ids) = match args.scope {
         ExportScope::Everything => ("everything", None, None, None, None),
         ExportScope::Query { list, q } => {
@@ -223,7 +237,7 @@ pub async fn start_export(
     .fetch_one(&mut *conn)
     .await
     .context("insert an Export Run")?;
-    Ok(id)
+    Ok(StartedExport { id, replaced })
 }
 
 /// Set the four counts on a run, computed from the messages it listed.
@@ -276,44 +290,84 @@ pub async fn get_export(
     row.as_ref().map(export_from_row).transpose()
 }
 
-/// Close the account's running run, when it has one, as `cancelled` at
-/// `now`, delete its list of messages, and record in the Audit Trail that a
-/// new Export replaced it, by the person starting that Export. Returns the
-/// closed run's id.
-async fn replace_running_export(
+/// Which running runs [`close_runs`] closes, and why.
+#[derive(Debug, Clone, Copy)]
+enum Closure<'a> {
+    /// The account's running run, which a new Export replaces, by the person
+    /// starting it.
+    Replaced(i64),
+    /// Every running run with no page read since this time, or none read at
+    /// all and started before it, closed by the server.
+    Idle(&'a str),
+}
+
+/// The condition, over `exports`, of a running run with no page read since
+/// `$1`, or none read at all and started before it.
+const IDLE_RUN_SQL: &str = "status = 'running' AND COALESCE(last_page_read_at, started_at) < $1";
+
+/// Close the running runs `closure` names as `cancelled` at `now`, delete
+/// their lists of messages, and record each closure in the Audit Trail with
+/// its reason. Returns each closed run's id and account. Call it inside a
+/// write transaction, and [`log_closed`] once it commits.
+async fn close_runs(
     conn: &mut SqliteConnection,
-    account_id: i64,
+    closure: Closure<'_>,
     now: DateTime<Utc>,
-) -> Result<Option<i64>> {
-    let replaced: Option<i64> = sqlx::query_scalar(
-        "UPDATE exports SET status = 'cancelled', finished_at = $2
-         WHERE account_id = $1 AND status = 'running'
-         RETURNING id",
-    )
-    .bind(account_id)
-    .bind(now.to_rfc3339())
-    .fetch_optional(&mut *conn)
-    .await
-    .context("close the account's running Export Run")?;
-    let Some(export_id) = replaced else {
-        return Ok(None);
+) -> Result<Vec<(i64, Option<i64>)>> {
+    let (condition, reason) = match closure {
+        Closure::Replaced(_) => (
+            "account_id = $1 AND status = 'running'",
+            AuditReason::Replaced,
+        ),
+        Closure::Idle(_) => (IDLE_RUN_SQL, AuditReason::Idle),
     };
-    delete_run_messages(conn, export_id).await?;
-    audit_trail::record_export_run_closed(
-        conn,
-        account_id,
-        export_id,
-        AuditReason::Replaced,
-        AuditActor::logged_in_as(account_id),
-        now,
-    )
-    .await?;
-    tracing::info!(
-        account_id,
-        export_id,
-        "A new Export Run replaced the account's running one, which was canceled"
-    );
-    Ok(Some(export_id))
+    let query = sqlx::query_as::<_, (i64, Option<i64>)>(sqlx::AssertSqlSafe(format!(
+        "UPDATE exports SET status = 'cancelled', finished_at = $2
+         WHERE {condition}
+         RETURNING id, account_id"
+    )));
+    let query = match closure {
+        Closure::Replaced(account_id) => query.bind(account_id),
+        Closure::Idle(cutoff) => query.bind(cutoff.to_owned()),
+    };
+    let closed = query
+        .bind(now.to_rfc3339())
+        .fetch_all(&mut *conn)
+        .await
+        .context("close running Export Runs")?;
+    for &(export_id, account_id) in &closed {
+        delete_run_messages(conn, export_id).await?;
+        // A running run always has its account: deleting the account closes
+        // its runs first.
+        let Some(account_id) = account_id else {
+            continue;
+        };
+        let actor = match closure {
+            Closure::Replaced(_) => AuditActor::logged_in_as(account_id),
+            Closure::Idle(_) => AuditActor::Server,
+        };
+        audit_trail::record_export_run_closed(conn, account_id, export_id, reason, actor, now)
+            .await?;
+    }
+    Ok(closed)
+}
+
+/// Write the server's log line for a run the server closed as `cancelled`
+/// for `reason`, once the closure has committed.
+pub(crate) fn log_closed(export_id: i64, account_id: Option<i64>, reason: AuditReason) {
+    if reason == AuditReason::Idle {
+        tracing::info!(
+            account_id,
+            export_id,
+            "No page of an Export Run was read for an hour, so it was canceled"
+        );
+    } else {
+        tracing::info!(
+            account_id,
+            export_id,
+            "A new Export Run replaced the account's running one, which was canceled"
+        );
+    }
 }
 
 /// Delete the list of messages a run matched at creation.
@@ -325,10 +379,6 @@ async fn delete_run_messages(conn: &mut SqliteConnection, export_id: i64) -> Res
         .context("delete an Export Run's list of messages")?;
     Ok(())
 }
-
-/// The condition, over `exports`, of a running run with no page read since
-/// `$1`, or none read at all and started before it.
-const IDLE_RUN_SQL: &str = "status = 'running' AND COALESCE(last_page_read_at, started_at) < $1";
 
 /// Close every running run with no page read for [`IDLE_EXPORT_RUN_LIMIT`]
 /// at `now` as `cancelled`, delete their lists of messages, and record each
@@ -353,39 +403,10 @@ pub async fn close_idle_runs(conn: &mut SqliteConnection, now: DateTime<Utc>) ->
     let mut tx = begin_write(conn)
         .await
         .context("begin a write transaction")?;
-    let closed: Vec<(i64, Option<i64>)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "UPDATE exports SET status = 'cancelled', finished_at = $2
-         WHERE {IDLE_RUN_SQL}
-         RETURNING id, account_id"
-    )))
-    .bind(&cutoff)
-    .bind(now.to_rfc3339())
-    .fetch_all(&mut *tx)
-    .await
-    .context("close idle Export Runs")?;
-    for &(export_id, account_id) in &closed {
-        delete_run_messages(&mut tx, export_id).await?;
-        // A running run always has its account: deleting the account closes
-        // its runs first.
-        if let Some(account_id) = account_id {
-            audit_trail::record_export_run_closed(
-                &mut tx,
-                account_id,
-                export_id,
-                AuditReason::Idle,
-                AuditActor::Server,
-                now,
-            )
-            .await?;
-        }
-    }
+    let closed = close_runs(&mut tx, Closure::Idle(&cutoff), now).await?;
     tx.commit().await.context("commit the closed Export Runs")?;
     for &(export_id, account_id) in &closed {
-        tracing::info!(
-            account_id,
-            export_id,
-            "No page of an Export Run was read for an hour, so it was canceled"
-        );
+        log_closed(export_id, account_id, AuditReason::Idle);
     }
     Ok(closed.into_iter().map(|(export_id, _)| export_id).collect())
 }

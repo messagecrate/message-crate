@@ -500,7 +500,8 @@ async fn each_run_table_records_its_own_runs_credential() {
         crate::test_support::fixed_instant(),
     )
     .await
-    .unwrap();
+    .unwrap()
+    .id;
     assert_eq!(import_id, export_id, "the test needs one id in both tables");
 
     let session = CredentialUsed::Session(Some(ConnectingApp {

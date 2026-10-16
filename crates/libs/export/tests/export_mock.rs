@@ -1891,10 +1891,10 @@ fn a_cancel_while_the_run_cannot_be_recorded_makes_no_further_retry() {
 
 /// A Cancel pressed while the close of a finished run is failing does not
 /// cut its retries short: the server closes a run left running only as
-/// cancelled, an hour later, so the run would be recorded as something the
-/// person did not choose. The close is tried
-/// again and the run is recorded as completed. The retry takes the real
-/// first backoff, about half a second; nothing here depends on its length.
+/// `cancelled`, an hour later, so the run would be recorded as something
+/// the person did not choose. The close is tried again and the run is
+/// recorded as completed. The retry takes the real first backoff, about half
+/// a second; nothing here depends on its length.
 #[test]
 fn a_cancel_while_a_finished_run_is_closed_keeps_the_close_retrying() {
     let dir = tempdir().unwrap();

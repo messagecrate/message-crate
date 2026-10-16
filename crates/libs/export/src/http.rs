@@ -77,7 +77,7 @@ pub(crate) struct ExportMessagesArgs<'a> {
 /// `409 Conflict`: the run is no longer running, because the server closed
 /// it. It does that when another Export of the account starts, and when no
 /// page of the run was read for an hour.
-pub const RUN_CANCELED_ON_SERVER: &str = "The Export was canceled because the server closed its Export Run before every page was read. Starting another Export of this account cancels the one running, from this app or from a program, and so does an hour with no page read. Start the Export again.";
+pub const RUN_CANCELED_ON_SERVER: &str = "The Export was canceled because another Export of this account started, or because the server heard nothing from it for an hour. Start the Export again.";
 
 /// The error for a page the server refused because the run is no longer
 /// running. It is context over the server's [`HttpError`], so its text is
@@ -450,18 +450,6 @@ mod tests {
         )
         .expect_err("a 409 is an error");
         assert_eq!(err.to_string(), RUN_CANCELED_ON_SERVER);
-        assert!(is_run_canceled_on_server(&err.context("read a page")));
-        let err = export_messages(
-            &http,
-            ExportMessagesArgs {
-                base_url: &server.base_url(),
-                token: "mc_test",
-                export_id: 7,
-                limit: 2,
-                offset: 0,
-            },
-        )
-        .expect_err("a 409 is an error");
         assert_eq!(
             format!("{err:#}"),
             format!(
@@ -473,6 +461,7 @@ mod tests {
             message_crate_http::classify_retry(&err),
             message_crate_http::RetryKind::Permanent
         );
+        assert!(is_run_canceled_on_server(&err.context("read a page")));
     }
 
     /// A cancel goes to the cancel route and a refusal names it a cancellation.

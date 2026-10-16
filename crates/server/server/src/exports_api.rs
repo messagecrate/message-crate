@@ -113,7 +113,7 @@ pub async fn start_export_run(
     let mut tx = crate::db::begin_write(conn).await?;
     crate::auth::require_account_row(&mut tx, account_id).await?;
     let filter = scope_filter(&mut tx, account_id, scope, clock).await?;
-    let export_id = exports::start_export(
+    let started = exports::start_export(
         &mut tx,
         &StartExportArgs {
             account_id,
@@ -123,6 +123,7 @@ pub async fn start_export_run(
         now,
     )
     .await?;
+    let export_id = started.id;
     crate::db::audit_trail::record_run_credential(
         &mut tx,
         crate::db::audit_trail::RunTable::Exports,
@@ -138,6 +139,13 @@ pub async fn start_export_run(
         .await?
         .ok_or_else(|| ApiError::Internal(anyhow::anyhow!("export run vanished before commit")))?;
     tx.commit().await?;
+    if let Some(replaced) = started.replaced {
+        exports::log_closed(
+            replaced,
+            Some(account_id),
+            crate::db::audit_trail::AuditReason::Replaced,
+        );
+    }
     Ok(run)
 }
 
