@@ -13,7 +13,7 @@ use sqlx::{SqliteConnection, SqlitePool};
 use crate::api_error::ApiError;
 use crate::auth::AuthIdentity;
 use crate::credentials::RefusalWait;
-use crate::credentials::{MAX_PASSWORD_BYTES, normalize_username, verify_login_password};
+use crate::credentials::{normalize_username, require_password_within_cap, verify_login_password};
 use crate::db::audit_trail::{self, AuditReason};
 use crate::db::session_tokens::ConnectingApp;
 use crate::db::{account_profile, api_tokens, dedupe, session_tokens};
@@ -22,12 +22,17 @@ use crate::server::{Created, DemoState};
 use crate::server_api::DemoBuild;
 
 /// Username and password, the body of `POST /v1/session`.
+// `max_length` takes only a literal; `the_reference_states_the_password_cap`
+// holds each to `MAX_PASSWORD_CHARS`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateSessionRequest {
     /// Login username.
     pub username: String,
-    /// Login password.
+    /// Login password, empty for an account with none. A password is at most
+    /// 128 characters, so a longer one is refused with
+    /// `422 Unprocessable Entity` before the username is looked up.
     #[serde(default)]
+    #[schema(max_length = 128)]
     pub password: String,
 }
 
@@ -182,9 +187,7 @@ pub async fn create_session(
     }
     // Before the lookup, so the answer is the same whether or not the
     // username names an account.
-    if req.password.len() > MAX_PASSWORD_BYTES {
-        return Err(ApiError::validation("password is too long"));
-    }
+    require_password_within_cap("password", &req.password)?;
     let app = crate::auth::connecting_app(&headers);
     // `log_in` has given its connection back by the time it answers, so a
     // refusal waits holding none.

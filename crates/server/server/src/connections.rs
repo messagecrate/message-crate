@@ -7,7 +7,7 @@
 //! opened a connection and sent nothing, or sent its headers a byte at a
 //! time, held a task and a file handle for as long as it liked, and any
 //! number of them could. A body is held to time in the router instead
-//! ([`crate::server::with_server_layers`]), with the upload time limits.
+//! ([`crate::server::with_server_layers`]), with the body time limits.
 //!
 //! These limits keep one slow or stuck client from holding the server. They
 //! do not make it safe to reach from the internet.

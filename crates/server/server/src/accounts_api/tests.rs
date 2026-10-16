@@ -287,6 +287,116 @@ async fn the_owner_creates_accounts_with_a_short_password_or_none() {
     assert_eq!(login_status(&state, "dave", "a").await, StatusCode::CREATED);
 }
 
+/// Assert `text` is the `validation-failed` that names `field` over the
+/// 128-character password cap.
+fn expect_cap_refusal(field: &str, status: StatusCode, text: &str, what: &str) {
+    let problem = expect_problem(status, text, ProblemType::ValidationFailed);
+    assert_eq!(
+        problem.errors,
+        Some(vec![format!("{field}: must be at most 128 characters")]),
+        "{what}: {text}"
+    );
+}
+
+/// A password is capped at 128 characters, counted as a username is: in
+/// characters, not bytes, so 128 letters that take two or four bytes each
+/// pass. One character more is refused, naming the cap, when an account is
+/// created, at login, and when the password is changed.
+#[tokio::test]
+async fn a_password_is_at_most_128_characters_however_many_bytes_they_take() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let cap = crate::credentials::MAX_PASSWORD_CHARS;
+    assert_eq!(cap, 128);
+    let refused = |status: StatusCode, text: &str, what: &str| {
+        expect_cap_refusal("password", status, text, what);
+    };
+
+    // Creation.
+    let two_byte = "é".repeat(cap);
+    let (_, created): (String, serde_json::Value) = post_created_json(
+        &state,
+        "/v1/accounts",
+        &owner.token,
+        serde_json::json!({ "username": "carol", "password": two_byte }),
+    )
+    .await;
+    let id = created["account_id"].as_i64().unwrap();
+    let (status, text) = post_json_raw(
+        &state,
+        "/v1/accounts",
+        &owner.token,
+        serde_json::json!({ "username": "dave", "password": "é".repeat(cap + 1) }),
+    )
+    .await;
+    refused(status, &text, "creation");
+
+    // Login.
+    let login = log_in(&state, "carol", &two_byte).await;
+    let token = login["token"].as_str().unwrap();
+    let (status, text) = log_in_raw(&state, "carol", &"é".repeat(cap + 1)).await;
+    refused(status, &text, "login");
+
+    // Change.
+    let path = format!("{}/password", member(id));
+    let four_byte = "🔑".repeat(cap);
+    let over = "🔑".repeat(cap + 1);
+    let (status, text) = put_json_raw(
+        &state,
+        &path,
+        token,
+        serde_json::json!({ "password": over, "password_confirmation": over }),
+    )
+    .await;
+    refused(status, &text, "change");
+    let changed: ReplaceAccountPasswordResponse = put_json(
+        &state,
+        &path,
+        token,
+        serde_json::json!({ "password": four_byte, "password_confirmation": four_byte }),
+    )
+    .await;
+    assert!(!changed.token.is_empty());
+    assert_eq!(
+        login_status(&state, "carol", &four_byte).await,
+        StatusCode::CREATED
+    );
+}
+
+/// A current password over the cap is refused naming `current_password`,
+/// not the new password, on a password change and on an account deletion.
+#[tokio::test]
+async fn a_current_password_over_the_cap_is_refused_by_its_own_name() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let over = "a".repeat(crate::credentials::MAX_PASSWORD_CHARS + 1);
+
+    let (status, text) = put_json_raw(
+        &state,
+        &format!("{}/password", member(owner.account_id)),
+        &owner.token,
+        serde_json::json!({
+            "password": "fresh",
+            "password_confirmation": "fresh",
+            "current_password": over,
+        }),
+    )
+    .await;
+    expect_cap_refusal("current_password", status, &text, "a change");
+
+    let carol = register_via_api(&state, "carol", "hunter2hunter2").await;
+    let (status, text) = delete_json_raw(
+        &state,
+        &member(carol.account_id),
+        &carol.token,
+        serde_json::json!({ "confirm": true, "current_password": over }),
+    )
+    .await;
+    expect_cap_refusal("current_password", status, &text, "a deletion");
+}
+
 /// A stranger's registration answers the new row and the Session the server
 /// opened on it, so the person is logged in on creation. It never grants
 /// anything beyond an ordinary account: the owner is claimed at a fixed id,
@@ -407,7 +517,7 @@ async fn a_closed_server_refuses_before_it_hashes_the_password() {
             .unwrap();
     }
 
-    let too_long = "x".repeat(crate::credentials::MAX_PASSWORD_BYTES + 1);
+    let too_long = "x".repeat(crate::credentials::MAX_PASSWORD_CHARS + 1);
     let (status, text) = post_logged_out(
         &state,
         "/v1/accounts",

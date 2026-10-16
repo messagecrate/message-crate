@@ -377,28 +377,32 @@ async fn the_owner_needs_one_character_and_a_user_needs_none() {
     assert!(verify_login_password(Some(&user_hash), "a").await.unwrap());
     assert!(!verify_login_password(Some(&user_hash), "b").await.unwrap());
 
-    // The maximum is in bytes, not characters, because that is what Argon2
-    // costs. Exactly the limit is accepted; one byte more is not.
-    let at_limit = "a".repeat(MAX_PASSWORD_BYTES);
-    let owner_at_limit = hash_owner_password(&at_limit)
-        .await
-        .expect("exactly the limit is allowed");
-    assert!(verify_password(&owner_at_limit, &at_limit));
-    hash_user_password(&at_limit)
-        .await
-        .expect("exactly the limit is allowed");
-    let over = "a".repeat(MAX_PASSWORD_BYTES + 1);
-    for refused in [
-        hash_owner_password(&over).await.map(Some),
-        hash_user_password(&over).await,
-    ] {
-        assert!(
-            matches!(
-                refused,
-                Err(ApiError::ValidationFailed(ref m)) if m == &["password is too long"]
-            ),
-            "one byte over: {refused:?}"
-        );
+    // The maximum is in characters, as a username's is, not bytes: 128
+    // letters pass whether each takes one byte, two or four. One more is
+    // refused.
+    for letter in ["a", "é", "🔑"] {
+        let at_limit = letter.repeat(MAX_PASSWORD_CHARS);
+        let owner_at_limit = hash_owner_password(&at_limit)
+            .await
+            .expect("exactly the limit is allowed");
+        assert!(verify_password(&owner_at_limit, &at_limit));
+        hash_user_password(&at_limit)
+            .await
+            .expect("exactly the limit is allowed");
+        let over = letter.repeat(MAX_PASSWORD_CHARS + 1);
+        for refused in [
+            hash_owner_password(&over).await.map(Some),
+            hash_user_password(&over).await,
+        ] {
+            assert!(
+                matches!(
+                    refused,
+                    Err(ApiError::ValidationFailed(ref m))
+                        if m == &["password: must be at most 128 characters"]
+                ),
+                "one {letter:?} over: {refused:?}"
+            );
+        }
     }
 }
 
@@ -517,4 +521,62 @@ fn a_username_is_one_to_128_characters_of_a_known_set() {
     // pasted name with a trailing newline is accepted and stored trimmed.
     assert!(require_valid_username("  matt  ").is_ok());
     assert_eq!(normalize_username("  matt\n"), "matt");
+}
+
+/// The API reference states the password cap on every password a request
+/// sends, as `maxLength` and in words, so a client learns it before the
+/// server refuses one. `max_length` takes only a literal, so this holds each
+/// to [`MAX_PASSWORD_CHARS`]. `password_confirmation` must equal `password`,
+/// so its description says that instead.
+#[test]
+fn the_reference_states_the_password_cap() {
+    let doc: serde_json::Value =
+        serde_json::from_str(&crate::openapi::dump_openapi_json()).unwrap();
+    let schemas = doc["components"]["schemas"].as_object().unwrap();
+    let mut found = Vec::new();
+    for (schema, body) in schemas {
+        let Some(properties) = body["properties"].as_object() else {
+            continue;
+        };
+        for (field, property) in properties {
+            let is_string = property["type"] == "string"
+                || property["type"]
+                    .as_array()
+                    .is_some_and(|types| types.iter().any(|t| t == "string"));
+            if !field.contains("password") || !is_string {
+                continue;
+            }
+            found.push(format!("{schema}.{field}"));
+            assert_eq!(
+                property["maxLength"], MAX_PASSWORD_CHARS,
+                "{schema}.{field}: {property}"
+            );
+            if field != "password_confirmation" {
+                let described = property["description"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                assert!(
+                    described.contains("128 characters"),
+                    "{schema}.{field} does not state the cap: {described}"
+                );
+            }
+        }
+    }
+    found.sort();
+    assert_eq!(
+        found,
+        [
+            "ClaimServerRequest.password",
+            "CreateAccountRequest.password",
+            "CreateSessionRequest.password",
+            "DeleteAccountRequest.current_password",
+            "ReplaceAccountPasswordRequest.current_password",
+            "ReplaceAccountPasswordRequest.password",
+            "ReplaceAccountPasswordRequest.password_confirmation",
+        ],
+        "every password field a request sends"
+    );
 }

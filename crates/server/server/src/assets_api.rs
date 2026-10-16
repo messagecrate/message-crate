@@ -27,7 +27,7 @@ use crate::asset_store::sidecar_path;
 use crate::asset_uploads;
 use crate::auth::{AuthIdentity, ImportAccess, ImportOrExportAccess, resolve_import_account};
 use crate::request_body::{
-    content_type_base, discard_body, stream_body_to_file, upload_body_bounded, upload_content_type,
+    body_time_bounded, content_type_base, discard_body, stream_body_to_file, upload_content_type,
 };
 use crate::server::{AssetState, Created};
 
@@ -35,7 +35,7 @@ pub(crate) mod media_links;
 mod ranges;
 
 use crate::config::Config;
-use crate::request_body::UploadTimeLimits;
+use crate::request_body::BodyTimeLimits;
 use media_links::AssetReadAccess;
 use sqlx::SqlitePool;
 
@@ -1102,7 +1102,7 @@ fn require_content_type(headers: &HeaderMap) -> Result<(), ApiError> {
 pub(crate) async fn replace_asset(
     State(db): State<SqlitePool>,
     State(cfg): State<Arc<Config>>,
-    State(upload_time_limits): State<UploadTimeLimits>,
+    State(body_time_limits): State<BodyTimeLimits>,
     ImportAccess(auth): ImportAccess,
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
@@ -1115,10 +1115,10 @@ pub(crate) async fn replace_asset(
     let max_body_bytes =
         usize::try_from(asset_uploads::asset_max_bytes(&db).await?).unwrap_or(usize::MAX);
 
-    // The body is held to the server's upload time limits, as an import
+    // The body is held to the server's body time limits, as an import
     // batch's is: a client that stops sending part-way, or sends a byte now
     // and then, holds the connection and the temp file only so long.
-    let body = upload_body_bounded(request.into_body(), upload_time_limits);
+    let body = body_time_bounded(request.into_body(), body_time_limits);
     if let Some(stored) = existing {
         discard_body(body, max_body_bytes).await?;
         return Ok(Asset::stored(stored, true).into_response());
@@ -1281,7 +1281,7 @@ pub(crate) async fn create_asset_upload(
     State(db): State<SqlitePool>,
     State(cfg): State<Arc<Config>>,
     State(assets): State<AssetState>,
-    State(upload_time_limits): State<UploadTimeLimits>,
+    State(body_time_limits): State<BodyTimeLimits>,
     ImportAccess(auth): ImportAccess,
     AxumPath(sha256): AxumPath<Sha256>,
     Json(body): Json<CreateAssetUploadRequest>,
@@ -1292,7 +1292,7 @@ pub(crate) async fn create_asset_upload(
     let bytes = body.bytes;
     let sha = sha256.clone();
     let limits = assets.upload_limits(&db).await?;
-    let stall = upload_time_limits.stall;
+    let stall = body_time_limits.stall;
     let result = run_blocking("upload start", move || {
         asset_uploads::start_upload(&assets_dir, &sha, bytes, mime.as_deref(), limits, stall)
     })
@@ -1346,7 +1346,7 @@ pub(crate) async fn create_asset_upload(
 )]
 pub(crate) async fn replace_asset_upload_part(
     State(cfg): State<Arc<Config>>,
-    State(upload_time_limits): State<UploadTimeLimits>,
+    State(body_time_limits): State<BodyTimeLimits>,
     ImportAccess(auth): ImportAccess,
     headers: HeaderMap,
     AxumPath((sha256, upload_id, part)): AxumPath<(Sha256, String, u32)>,
@@ -1378,7 +1378,7 @@ pub(crate) async fn replace_asset_upload_part(
     }
     // One read of the body is in memory at a time, never the whole part
     // (#2114).
-    temp.receive(upload_body_bounded(request.into_body(), upload_time_limits))
+    temp.receive(body_time_bounded(request.into_body(), body_time_limits))
         .await?;
     let written = run_blocking("upload part", move || asset_uploads::put_part(temp)).await?;
     Ok(Json(ReplaceAssetUploadPartResponse {

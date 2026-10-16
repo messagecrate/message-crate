@@ -34,7 +34,7 @@ use crate::config::Config;
 use crate::db::demo_account_build::DemoDataSize;
 use crate::db::{account_profile, server_settings, storage};
 use crate::extract::Json;
-use crate::request_body::UploadTimeLimits;
+use crate::request_body::BodyTimeLimits;
 use crate::server::{AppState, Created, DemoState, WalError};
 
 /// Run `read`, a blocking read of the server's log files, off the async
@@ -94,25 +94,30 @@ pub struct Server {
     pub asset_max_bytes: u64,
     /// Seconds a request body, such as an import batch, an attachment, or a
     /// part of one, may go with no byte arriving before the server stops
-    /// reading it and answers `408 Request Timeout` (`upload-stalled`): the config
-    /// file's `[server] upload_stall_secs`, 60 unless it sets one.
-    pub upload_stall_secs: u64,
+    /// reading it and answers `408 Request Timeout` (`body-stalled`): the config
+    /// file's `[server] body_stall_secs`, 60 unless it sets one.
+    pub body_stall_secs: u64,
     /// Seconds a whole request body may take to arrive, from the start of
     /// the read, before the server stops reading it and answers
-    /// `408 Request Timeout` (`upload-stalled`): the config file's
-    /// `[server] upload_piece_secs`, 300 unless it sets one. The desktop
+    /// `408 Request Timeout` (`body-stalled`): the config file's
+    /// `[server] body_total_secs`, 300 unless it sets one. The desktop
     /// app's Upload sizes its wait for each upload from it.
-    pub upload_piece_secs: u64,
+    pub body_total_secs: u64,
 }
 
 /// Body for claiming a Message Crate.
+// `max_length` takes only a literal; `the_reference_states_the_password_cap`
+// holds each to `MAX_PASSWORD_CHARS`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct ClaimServerRequest {
     /// Login username for the owner, which the server trims: 1 to 128
     /// characters, each a letter A to Z, a digit, `_`, `-` or `.`. Any other
     /// is refused with `422 Unprocessable Entity`.
     pub username: String,
-    /// Password for the owner. Must satisfy the server's password policy.
+    /// Password for the owner: one character or more, at most 128
+    /// characters, counted as characters rather than bytes and not trimmed.
+    /// Empty or over 128 is refused with `422 Unprocessable Entity`.
+    #[schema(max_length = 128)]
     pub password: String,
 }
 
@@ -133,7 +138,7 @@ async fn state_on_conn(conn: &mut sqlx::SqliteConnection) -> Result<ServerState,
 ///
 /// Also reports this Message Crate's id, the server's Build, its Schema
 /// Fingerprint, whether the Demo Account exists, the attachment size limit,
-/// and the upload time limits.
+/// and the body time limits.
 #[utoipa::path(
     get,
     path = "/v1/server",
@@ -143,7 +148,7 @@ async fn state_on_conn(conn: &mut sqlx::SqliteConnection) -> Result<ServerState,
 pub async fn get_server(
     State(db): State<SqlitePool>,
     State(demo): State<DemoState>,
-    State(upload_time_limits): State<UploadTimeLimits>,
+    State(body_time_limits): State<BodyTimeLimits>,
 ) -> Result<Json<Server>, ApiError> {
     let mut conn = db.acquire().await?;
     Ok(Json(Server {
@@ -156,8 +161,8 @@ pub async fn get_server(
         version: crate::BUILD.to_string(),
         schema_fingerprint: crate::db::schema::SCHEMA_FINGERPRINT,
         asset_max_bytes: server_settings::load(&mut conn).await?.asset_max_bytes,
-        upload_stall_secs: upload_time_limits.stall.as_secs(),
-        upload_piece_secs: upload_time_limits.piece.as_secs(),
+        body_stall_secs: body_time_limits.stall.as_secs(),
+        body_total_secs: body_time_limits.total.as_secs(),
     }))
 }
 

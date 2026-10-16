@@ -1,5 +1,5 @@
 //! Reading a request body: its media type, its declared length, the time
-//! limits an upload body is held to, and reading it into memory or to a file
+//! limits every body is held to, and reading it into memory or to a file
 //! within a cap.
 
 use std::path::Path;
@@ -37,42 +37,42 @@ pub(crate) fn declared_over(headers: &HeaderMap, limit: usize) -> bool {
         .is_some_and(|bytes| bytes > limit as u64)
 }
 
-/// How long the server waits for one upload body to arrive: an import
-/// batch, an attachment, or a part of one. Each holds a connection and a
-/// file while it reads, and an import batch holds one of the two import
-/// slots too, so a client that stops sending part-way, such as a laptop that
-/// goes to sleep, or one that sends a byte now and then, must not hold them
-/// for good.
+/// How long the server waits for one request body to arrive. Every body
+/// holds a connection while it arrives, an upload (an import batch, an
+/// attachment, or a part of one) holds a file too, and an import batch holds
+/// one of the two import slots, so a client that stops sending part-way,
+/// such as a laptop that goes to sleep, or one that sends a byte now and
+/// then, must not hold them for good.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct UploadTimeLimits {
+pub struct BodyTimeLimits {
     /// How long a body may go with no byte arriving: `[server]
-    /// upload_stall_secs`.
+    /// body_stall_secs`.
     pub(crate) stall: std::time::Duration,
     /// How long a whole body may take to arrive, from the start of the read:
-    /// `[server] upload_piece_secs`.
-    pub(crate) piece: std::time::Duration,
+    /// `[server] body_total_secs`.
+    pub(crate) total: std::time::Duration,
 }
 
-impl UploadTimeLimits {
+impl BodyTimeLimits {
     /// The limits `server` sets.
     pub fn of(server: &crate::config::ServerConfig) -> Self {
         Self {
-            stall: std::time::Duration::from_secs(server.upload_stall_secs),
-            piece: std::time::Duration::from_secs(server.upload_piece_secs),
+            stall: std::time::Duration::from_secs(server.body_stall_secs),
+            total: std::time::Duration::from_secs(server.body_total_secs),
         }
     }
 }
 
-/// Why the read of an upload body ended before the body did.
+/// Why the read of a body ended before the body did.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum BodyTooSlow {
-    /// Nothing arrived for [`UploadTimeLimits::stall`].
+    /// Nothing arrived for [`BodyTimeLimits::stall`].
     #[error(
         "no bytes of the body arrived for {} seconds, so the server stopped reading it and stored none of it",
         .0.as_secs()
     )]
     Stalled(std::time::Duration),
-    /// The body was still arriving at [`UploadTimeLimits::piece`].
+    /// The body was still arriving at [`BodyTimeLimits::total`].
     #[error(
         "the body was still arriving {} seconds after it started, so the server stopped reading it and stored none of it",
         .0.as_secs()
@@ -80,16 +80,16 @@ pub(crate) enum BodyTooSlow {
     Overdue(std::time::Duration),
 }
 
-/// An upload's `body`, ending with a [`BodyTooSlow`] error once
-/// `limits.stall` passes with no chunk arriving, or `limits.piece` passes
+/// `body`, ending with a [`BodyTooSlow`] error once
+/// `limits.stall` passes with no chunk arriving, or `limits.total` passes
 /// from the start of the read. Reading it answers `408 Request Timeout`
-/// (`upload-stalled`) then ([`body_read_error`]).
-pub(crate) fn upload_body_bounded(
+/// (`body-stalled`) then ([`body_read_error`]).
+pub(crate) fn body_time_bounded(
     body: axum::body::Body,
-    limits: UploadTimeLimits,
+    limits: BodyTimeLimits,
 ) -> axum::body::Body {
     type BoxError = Box<dyn std::error::Error + Send + Sync>;
-    let deadline = tokio::time::Instant::now() + limits.piece;
+    let deadline = tokio::time::Instant::now() + limits.total;
     let chunks =
         futures_util::stream::unfold(Some(body.into_data_stream()), move |stream| async move {
             let mut stream = stream?;
@@ -97,7 +97,7 @@ pub(crate) fn upload_body_bounded(
             let (wait_until, too_slow) = if idle_end < deadline {
                 (idle_end, BodyTooSlow::Stalled(limits.stall))
             } else {
-                (deadline, BodyTooSlow::Overdue(limits.piece))
+                (deadline, BodyTooSlow::Overdue(limits.total))
             };
             match tokio::time::timeout_at(wait_until, stream.next()).await {
                 Ok(Some(chunk)) => Some((chunk.map_err(BoxError::from), Some(stream))),
@@ -117,9 +117,9 @@ pub(crate) fn is_jsonl_content_type(base: &str) -> bool {
 /// The problem a failed read of a request body answers. `limit_request_body`
 /// wraps a body with no `Content-Length` in `Limited`, which ends the stream
 /// with a `LengthLimitError` once the body passes its cap: that body is too
-/// large. [`upload_body_bounded`] ends it with [`BodyTooSlow`] once it
+/// large. [`body_time_bounded`] ends it with [`BodyTooSlow`] once it
 /// stalls or runs past its time: the connection failed, not the data, so it
-/// answers `upload-stalled`. Any other failure leaves the body unreadable.
+/// answers `body-stalled`. Any other failure leaves the body unreadable.
 fn body_read_error(error: axum::Error) -> ApiError {
     let mut source: Option<&(dyn std::error::Error + 'static)> = Some(&error);
     while let Some(cause) = source {
@@ -132,7 +132,7 @@ fn body_read_error(error: axum::Error) -> ApiError {
         .unwrap_or_else(|| ApiError::MalformedBody(format!("failed to read body: {error}")))
 }
 
-/// The `upload-stalled` problem when [`upload_body_bounded`] ended the body
+/// The `body-stalled` problem when [`body_time_bounded`] ended the body
 /// whose read failed with `error`, found anywhere in its chain of causes, so
 /// a body read by Axum's own extractors answers it as well as one the
 /// server reads itself.
@@ -140,7 +140,7 @@ pub(crate) fn body_too_slow(error: &(dyn std::error::Error + 'static)) -> Option
     let mut source = Some(error);
     while let Some(cause) = source {
         if let Some(too_slow) = cause.downcast_ref::<BodyTooSlow>() {
-            return Some(ApiError::UploadStalled(format!(
+            return Some(ApiError::BodyStalled(format!(
                 "{too_slow}: the connection stopped delivering the body and nothing is wrong \
                  with the data, so sending the same request again can succeed"
             )));
