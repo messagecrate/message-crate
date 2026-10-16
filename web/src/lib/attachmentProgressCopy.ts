@@ -4,7 +4,7 @@ import type { AttachmentMediaMode } from "./types";
 /**
  * Staging's attachments line for the run's attachment mode. Staging copies
  * the originals under Convert media and Convert & Compress media too; the
- * Media stage converts them afterwards, so only Skip reads differently here.
+ * Media Stage converts them afterwards, so only Skip reads differently here.
  */
 export function formatAttachmentProgress(input: {
   mode: AttachmentMediaMode;

@@ -47,7 +47,7 @@ const OMITTABLE_VERDICTS: ReadonlySet<SizeVerdict> = new Set([
  * path, so exact equality against `row.path`/`row.name` only catches the
  * simple case. `item.endsWith(...)` catches the compound form without the
  * conversation-name prefix tripping it up. `stableStem`
- * catches a file the Media stage renamed with a `-mv` suffix between the
+ * catches a file the Media Stage renamed with a `-mv` suffix between the
  * Review and the Upload — `stem.pop()` on the path already strips any
  * `{name}:` prefix, since it only looks at the last `/`-separated segment.
  */
@@ -91,7 +91,7 @@ function isApprovedOmission(
  * A finished Upload with item-level problems is `completed_with_issues` —
  * unless `approved` already told the user about them: the plan the user
  * approved at their last Review (the Media Review's plan when the run had a
- * Media stage, the Staging Review's otherwise) is diffed against the issues
+ * Media Stage, the Staging Review's otherwise) is diffed against the issues
  * the run reported, and a skip the plan already forecast is not news. Without
  * `approved` every issue counts.
  */

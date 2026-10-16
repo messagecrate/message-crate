@@ -961,6 +961,9 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-16: **The Resume panel writes Media Stage as the rest of the app
+  does.** When an Import Run stopped during the Media Stage, the panel that
+  offers to resume it wrote "Media stage" (#3125).
 - 2026-10-16: **A closed Import Run's directory no longer stays on disk.**
   When a discard reached the server only after the app had read the run as
   still running, the run's directory, staged photos and videos included,

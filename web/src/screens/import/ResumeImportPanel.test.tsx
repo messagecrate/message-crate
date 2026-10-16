@@ -91,7 +91,7 @@ describe("ResumeImportPanel", () => {
     expect(onDiscard).toHaveBeenCalledTimes(1);
   });
 
-  it("offers to resume a run that died mid Media stage", async () => {
+  it("offers to resume a run that died mid Media Stage", async () => {
     const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
@@ -104,7 +104,7 @@ describe("ResumeImportPanel", () => {
     expect(screen.getByText("Finish preparing your media")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "The Media stage did not finish. Resuming it processes the files it had not reached yet.",
+        "The Media Stage did not finish. Resuming it processes the files it had not reached yet.",
       ),
     ).toBeInTheDocument();
 

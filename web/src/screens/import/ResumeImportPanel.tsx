@@ -41,7 +41,7 @@ const COPY: Record<ResumableKind, PanelCopy> = {
   resume_media: {
     heading: () => "Finish preparing your media",
     body: () =>
-      "The Media stage did not finish. Resuming it processes the files it had not reached yet.",
+      "The Media Stage did not finish. Resuming it processes the files it had not reached yet.",
     primary: { label: "Resume", action: "resume" },
     secondary: { label: "Discard this import", action: "discard" },
   },
@@ -127,7 +127,7 @@ export default function ResumeImportPanel({
   secret?: SnapshotSecret | null;
   /**
    * Set when the last attempt to act on this decision failed partway
-   * through — today, only a resume at a Review or in the Media stage whose
+   * through — today, only a resume at a Review or in the Media Stage whose
    * recompute of the staged directory failed (a transient read, not a run that
    * actually failed: only an explicit discard ends a run, so it is still
    * here to try again). Null the rest of the time.

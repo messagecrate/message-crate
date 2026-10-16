@@ -1,7 +1,7 @@
 //! Recompute what a staged directory holds, for the reviews.
 //!
 //! Everything here is measured from the directory. The one estimate is what the
-//! Media stage will do to a file's size, and it is labeled as an estimate all
+//! Media Stage will do to a file's size, and it is labeled as an estimate all
 //! the way to the screen.
 //!
 //! This is always recomputed from the directory, never read back
@@ -38,7 +38,7 @@ use ir_format::read_conversation_jsonl;
 /// How often [`summarize_staging`] reports progress, over attachments.
 ///
 /// Matches the media crate's own cadence (its private `MEDIA_PROGRESS_EVERY`
-/// is 100 too) so a summary and the Media stage over the same directory feel
+/// is 100 too) so a summary and the Media Stage over the same directory feel
 /// the same to whatever is watching progress.
 const SUMMARY_PROGRESS_EVERY: usize = 100;
 
@@ -55,8 +55,8 @@ pub struct AttachmentForecast {
     pub name: String,
     /// Bytes on disk now.
     pub size_bytes: u64,
-    /// Bytes expected after the Media stage. Equal to `size_bytes` when there
-    /// is nothing for the Media stage to do.
+    /// Bytes expected after the Media Stage. Equal to `size_bytes` when there
+    /// is nothing for the Media Stage to do.
     pub estimate_bytes: u64,
     /// How it is expected to land against the limit.
     pub verdict: SizeVerdict,
@@ -105,7 +105,7 @@ pub struct StagingSummary {
     /// the same number the verdicts used.
     pub asset_max_bytes: u64,
     /// The attachment mode Staging recorded for the run. The screen decides
-    /// from it whether the run has a Media stage, so after Staging that
+    /// from it whether the run has a Media Stage, so after Staging that
     /// choice comes from the directory and not from the form the run started
     /// with. Sent under the form's name for it ([`MediaMode::form_name`]),
     /// because that is the screen's vocabulary.
@@ -134,7 +134,7 @@ pub struct SummaryProgress {
 /// Recompute a staged directory's summary: exact conversation/message/attachment
 /// counts plus a per-attachment size forecast, for the reviews.
 ///
-/// Walks the same `*.jsonl` list the Media stage walks. For each attachment
+/// Walks the same `*.jsonl` list the Media Stage walks. For each attachment
 /// already carrying a `missing_reason`, this counts it and stops there: no
 /// bytes, no forecast row. Such an attachment is settled whether or not its
 /// `path` still points at a file on disk (a `convert_failed` original keeps
@@ -144,7 +144,7 @@ pub struct SummaryProgress {
 ///
 /// Everything else reads its length from disk (never the document's stale
 /// `size_bytes`). A recorded path whose stem already ends in `-mv` names a
-/// derivative the Media stage has committed and will never touch again
+/// derivative the Media Stage has committed and will never touch again
 /// (`pending_in`'s own exclusion rule, in `transcode.rs`); it is classified
 /// on that size alone, with no probe and `estimate_bytes` equal to
 /// `size_bytes`. Applying a mode's growth or shrink factor to it would
@@ -152,7 +152,7 @@ pub struct SummaryProgress {
 /// when [`media::needs_probe`] says it is close enough to the limit to
 /// matter and `options.mode` converts or compresses, then classified with
 /// [`media::classify_probed`]. Under [`MediaMode::Clone`] and
-/// [`MediaMode::Disabled`] the Media stage does nothing, so probing is skipped
+/// [`MediaMode::Disabled`] the Media Stage does nothing, so probing is skipped
 /// entirely, `estimate_bytes` equals `size_bytes`, and the file is
 /// classified on its current size alone. Skipping the probe is not an
 /// optimization: probing would forecast work that will never run.

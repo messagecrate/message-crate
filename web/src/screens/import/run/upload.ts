@@ -15,7 +15,7 @@ import { moveStage } from "./serverCalls";
 /**
  * Upload to the server and record the outcome: the tail end shared by a
  * resumed run (jumps straight here), the Staging Review when there is no
- * Media stage, and the Media Review. Never throws: an Upload failure is
+ * Media Stage, and the Media Review. Never throws: an Upload failure is
  * folded into the finished summary via `finishImport`, exactly like any
  * other terminal outcome.
  */
