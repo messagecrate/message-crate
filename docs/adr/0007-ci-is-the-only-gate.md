@@ -376,7 +376,9 @@ is `true`.
 `github-release` writes anything with the GitHub token, and the Docker image
 goes to Docker Hub under its own secret rather than to GitHub Packages. The
 workflow now grants `contents: read`, and `github-release` alone asks for
-`contents: write`.
+`contents: write`. `docker` and `github-release` also ask for
+`id-token: write` and `attestations: write`, and nothing more, because each
+writes a build provenance attestation for what it publishes (#2096).
 
 `docs.yml` took two corrections while the pull-request docs build moved into
 `ci.yml`. Its concurrency group was a bare `pages` with

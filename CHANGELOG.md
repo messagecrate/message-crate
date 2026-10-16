@@ -29,6 +29,11 @@ carry their date on the heading.
   and each such number is written with its + in that country. Each card
   becomes one new contact with its numbers and email addresses. Nothing is
   loaded until you load the file (#916).
+- 2026-10-15: **Check that a download is the one the release built.** Each
+  release now lists a `SHA256SUMS` file beside the installers, and every
+  installer and the Docker image carry a signed record of the release run
+  that built them. The GitHub CLI checks that record. The install pages say
+  how to check a download on each system (#2096).
 - 2026-10-15: **Log in on the website for one visit only.** The login card
   has a **Keep me logged in** box, ticked to start with. Untick it on a
   shared or borrowed computer, and the browser forgets the Session when the
@@ -243,6 +248,12 @@ carry their date on the heading.
   identity's shape decide it, as adding an identity does. A row whose
   service can't take its identity, such as an email address on WhatsApp, is
   refused (#916).
+- 2026-10-15: The way the desktop app opens an Import Run on the server was
+  reworked inside, with nothing visible (#2858).
+- 2026-10-15: **The Import screen says Resume for an interrupted import.**
+  When an import stopped during Staging or Media, its button now reads
+  **Resume**, where it read **Pick up** and **Carry on**. The headings read
+  "Resume your last import" and "Resume where you left off" (#2856).
 - 2026-10-15: The way the desktop app sends an import's conversations to
   the server was reworked inside, with nothing visible (#2053).
 - 2026-10-15: **The desktop app keeps everything in one directory.** The

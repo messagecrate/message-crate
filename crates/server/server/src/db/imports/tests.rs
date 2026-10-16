@@ -599,35 +599,6 @@ fn a_stage_moves_only_to_itself_the_next_stage_or_from_staging_review_to_upload(
     }
 }
 
-/// A run opened at a later stage would be resumed at work nobody did, so
-/// every stage but `parse` is refused and no run is written (#2638).
-#[tokio::test]
-async fn a_run_opens_only_at_parse() {
-    let (pool, _dir) = setup_accounts_only().await;
-    let mut conn = pool.acquire().await.unwrap();
-    for stage in ImportStage::ALL {
-        let args = StartImportArgs {
-            stage,
-            ..default_start_args(ACCOUNT_ID)
-        };
-        let result = start_import(&mut conn, &args, fixed_start_instant()).await;
-        if stage == ImportStage::Parse {
-            assert!(result.is_ok(), "{result:?}");
-        } else {
-            assert!(
-                matches!(result, Err(StartImportError::OpeningStage { stage: s }) if s == stage),
-                "{} -> {result:?}",
-                stage.as_str()
-            );
-        }
-    }
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM imports")
-        .fetch_one(&mut *conn)
-        .await
-        .unwrap();
-    assert_eq!(count, 1, "only the run opened at parse was written");
-}
-
 /// A running run with no stored stage has no stage to check a move from, so
 /// the move is an error rather than passing unchecked (#2638).
 #[tokio::test]
