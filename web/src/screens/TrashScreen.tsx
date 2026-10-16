@@ -220,6 +220,9 @@ export default function TrashScreen() {
   // rest of it.
   const offerEmptyTrash = !nothingInTrash || searching;
 
+  // The selected conversation's name, for its panel and the delete dialog alike.
+  const selectedName = selected ? conversationName(selected) : null;
+
   const confirmDelete = () => {
     if (pending === null) return;
     switch (pending.kind) {
@@ -293,20 +296,21 @@ export default function TrashScreen() {
             {selectedId !== null ? (
               selectedLoading ? (
                 <div className="text-[0.875rem] text-muted">Loading…</div>
-              ) : selected ? (
+              ) : selected && selectedName !== null ? (
                 // Keyed by the selection, so a Restore error or a Restore still
                 // answering for the last conversation selected stays with it.
                 <SelectedConversation
                   key={selectedId}
                   conversation={selected}
+                  name={selectedName}
                   canDelete={canDelete}
                   dialogBusy={dialogBusy}
                   onRestored={clearSelection}
-                  onDelete={(name) =>
+                  onDelete={() =>
                     setPending({
                       kind: "conversation",
                       id: selectedId,
-                      name,
+                      name: selectedName,
                       messageCount: selected.message_count,
                     })
                   }
@@ -476,20 +480,20 @@ export default function TrashScreen() {
 /** The trashed conversation selected in the list column, with Restore and Delete. */
 function SelectedConversation({
   conversation,
+  name,
   canDelete,
   dialogBusy,
   onRestored,
   onDelete,
 }: {
   conversation: Conversation;
+  name: string;
   canDelete: boolean;
   dialogBusy: boolean;
   onRestored: () => void;
-  /** Ask to delete the conversation for good, named as this panel names it. */
-  onDelete: (name: string) => void;
+  onDelete: () => void;
 }) {
   const restoreConversation = useRestoreConversation();
-  const name = conversationName(conversation);
   return (
     <div className="rounded border border-border bg-elevated p-4">
       {/* Clamped as the conversation list clamps a group's names, since an untitled group is named after everyone in it. */}
@@ -516,7 +520,7 @@ function SelectedConversation({
           variant="danger"
           disabled={!canDelete || restoreConversation.isPending || dialogBusy}
           title={canDelete ? undefined : CANNOT_DELETE}
-          onClick={() => onDelete(name)}
+          onClick={onDelete}
         >
           Delete
         </Button>
