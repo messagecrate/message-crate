@@ -28,9 +28,11 @@ use session::{
     Session, group_vendor_id, group_vendor_id_with_name, is_notification, is_outgoing,
     parse_message_date, resolve_sender, session_key,
 };
-use staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
+use staging::{
+    AttachmentPaths, AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup,
+};
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 const EXPORT_SOURCE: &str = message_crate_core::Exporter::Imazing.source_id();
@@ -168,7 +170,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
                     export,
                     backup_taken_at_unix_ms,
                     tz,
-                    sources: VecDeque::new(),
+                    sources: AttachmentPaths::default(),
                 },
                 report,
             })
@@ -187,7 +189,7 @@ struct ImazingDocuments {
     /// The source file of each attachment of the documents projected so
     /// far, in the order the writer asks for them
     /// ([`ImazingProjection::sources`]).
-    sources: VecDeque<Option<PathBuf>>,
+    sources: AttachmentPaths,
 }
 
 impl Project for ImazingDocuments {
@@ -209,7 +211,9 @@ impl Project for ImazingDocuments {
         };
         let chat_id = pending.chat_id.clone();
         let document = project_conversation(&chat_id, &mut pending, &hooks, report)?;
-        self.sources.extend(hooks.sources.into_inner());
+        for source in hooks.sources.into_inner() {
+            self.sources.push(source);
+        }
         Some(document)
     }
 
@@ -217,17 +221,9 @@ impl Project for ImazingDocuments {
         &mut self,
         attachment: &mut Attachment,
     ) -> (AttachmentSource, Option<u64>) {
-        match self.sources.pop_front().flatten() {
-            Some(path) => {
-                // iMazing's rows carry no size; stat the source so the byte
-                // counters and the headroom check see it.
-                let hint = attachment
-                    .size_bytes
-                    .or_else(|| std::fs::metadata(&path).ok().map(|m| m.len()));
-                (AttachmentSource::Path(path), hint)
-            }
-            None => (AttachmentSource::Missing, attachment.size_bytes),
-        }
+        // iMazing's rows carry no size, so the source's size on disk is
+        // what the byte counters and the headroom check see.
+        self.sources.next_source(attachment)
     }
 }
 

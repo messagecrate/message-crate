@@ -18,8 +18,10 @@ use ir::{
 use message_crate_core::{ConvertRun, Counter, ExportReport, project_conversation};
 use message_crate_csv::format_local_ts;
 use serde_json::Map;
-use staging::{AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup};
-use std::collections::{BTreeMap, VecDeque};
+use staging::{
+    AttachmentPaths, AttachmentSource, Project, ReadBackup, WriterSetup, convert_backup,
+};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -125,7 +127,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
                         ),
                         backup_taken_at_unix_ms,
                     },
-                    media_sources: VecDeque::new(),
+                    media_sources: AttachmentPaths::default(),
                 },
                 report,
             })
@@ -139,7 +141,7 @@ struct WhatsappDocuments {
     hooks: WhatsappProjection,
     /// The media file of each attachment of the documents projected so
     /// far, in the order the writer asks for them.
-    media_sources: VecDeque<Option<PathBuf>>,
+    media_sources: AttachmentPaths,
 }
 
 impl Project for WhatsappDocuments {
@@ -159,11 +161,7 @@ impl Project for WhatsappDocuments {
         &mut self,
         attachment: &mut Attachment,
     ) -> (AttachmentSource, Option<u64>) {
-        let hint = attachment.size_bytes;
-        match self.media_sources.pop_front().flatten() {
-            Some(path) => (AttachmentSource::Path(path), hint),
-            None => (AttachmentSource::Missing, hint),
-        }
+        self.media_sources.next_source(attachment)
     }
 }
 
@@ -527,14 +525,14 @@ fn queue_media(
 }
 
 /// Collect source paths in the same order attachments will appear on documents.
-fn collect_media_sources(conversation: &PendingConversation, out: &mut VecDeque<Option<PathBuf>>) {
+fn collect_media_sources(conversation: &PendingConversation, out: &mut AttachmentPaths) {
     for message in &conversation.messages {
         if message.attachments.is_empty() {
             continue;
         }
         let source = message.extra_str("media_source").to_string();
         for _ in &message.attachments {
-            out.push_back((!source.is_empty()).then(|| PathBuf::from(&source)));
+            out.push((!source.is_empty()).then(|| PathBuf::from(&source)));
         }
     }
 }
