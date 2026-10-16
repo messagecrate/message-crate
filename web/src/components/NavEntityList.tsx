@@ -49,6 +49,8 @@ export default function NavEntityList({
   // The slug of the set whose page is open, decoded, so a name with spaces
   // or other escaped characters compares as itself.
   const openSlug = slugFromPath(location.pathname, copy.routeBase);
+  const permanentOpen = location.pathname === copy.permanentRoute;
+  const emptyOpen = location.pathname === copy.emptyRoute;
 
   const create = async (name: string) => {
     if (collection.isReserved(name)) {
@@ -110,7 +112,8 @@ export default function NavEntityList({
         {copy.permanentRoute && copy.permanentLabel ? (
           <PlainButton
             onPress={() => navigate(copy.permanentRoute as string)}
-            className={navGlyphButtonRowClass(location.pathname === copy.permanentRoute)}
+            className={navGlyphButtonRowClass(permanentOpen)}
+            aria-current={permanentOpen ? "page" : undefined}
           >
             <span className={NAV_NESTED_ROW_CLASS}>
               <span className={NAV_LEADING_GLYPH_CLASS}>{emptyIcon}</span>
@@ -127,6 +130,7 @@ export default function NavEntityList({
                 <PlainButton
                   onPress={() => navigate(href)}
                   className={`${NAV_NESTED_ROW_CLASS} cursor-pointer border-none bg-transparent p-0 text-left text-inherit`}
+                  aria-current={active ? "page" : undefined}
                 >
                   <span className={NAV_LEADING_GLYPH_CLASS}>{icon}</span>
                   <span className="min-w-0 truncate">{name}</span>
@@ -171,7 +175,8 @@ export default function NavEntityList({
 
         <PlainButton
           onPress={() => navigate(copy.emptyRoute)}
-          className={navGlyphButtonRowClass(location.pathname === copy.emptyRoute)}
+          className={navGlyphButtonRowClass(emptyOpen)}
+          aria-current={emptyOpen ? "page" : undefined}
         >
           <span className={NAV_NESTED_ROW_CLASS}>
             <span className={NAV_LEADING_GLYPH_CLASS}>{emptyIcon}</span>

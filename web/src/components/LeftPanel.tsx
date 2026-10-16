@@ -279,6 +279,7 @@ export default function LeftPanel({
                     <PlainButton
                       onPress={() => navigate(`/?q=${encodeURIComponent(g.query)}`)}
                       className={`${NAV_NESTED_ROW_CLASS} cursor-pointer border-none bg-transparent p-0 text-left text-inherit`}
+                      aria-current={active ? "page" : undefined}
                     >
                       <span className={NAV_LEADING_GLYPH_CLASS}>
                         <SearchIcon size={15} className="shrink-0" />

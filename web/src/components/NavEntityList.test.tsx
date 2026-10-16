@@ -97,6 +97,38 @@ describe("NavEntityList row menu", () => {
   });
 });
 
+describe("NavEntityList current row", () => {
+  /** The rows whose button says it is the current page, by name. */
+  function currentRows(): string[] {
+    return screen
+      .getAllByRole("button")
+      .filter((button) => button.getAttribute("aria-current") === "page")
+      .map((button) => button.textContent ?? "");
+  }
+
+  it.each([
+    ["/group/Family", "Family"],
+    ["/unknown", "Unknown"],
+    ["/no-group", "No Contact Group"],
+  ])("marks the open Contact Group row at %s, and no other", (path, row) => {
+    renderGroups(path, ["Family", "Work"]);
+    expect(currentRows()).toEqual([row]);
+  });
+
+  it.each([
+    ["/tag/Receipts", "Receipts"],
+    ["/no-tag", "No Message Tag"],
+  ])("marks the open Message Tag row at %s, and no other", (path, row) => {
+    renderTags(path, ["Receipts", "Travel"]);
+    expect(currentRows()).toEqual([row]);
+  });
+
+  it("marks no row when no set is open", () => {
+    renderGroups("/contacts", ["Family", "Work"]);
+    expect(currentRows()).toEqual([]);
+  });
+});
+
 describe("NavEntityList navigation", () => {
   it("follows a renamed group to its new slug when viewing that group's page", async () => {
     routes.updateContactGroup.mockResolvedValue({ id: 1, name: "Fam" });
