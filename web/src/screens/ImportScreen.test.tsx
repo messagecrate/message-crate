@@ -6,13 +6,14 @@
 // can't answer falls through to the form rather than blocking it.
 
 import { QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { errorText } from "../lib/apiErrorMessage";
 import type { StagingSummary } from "../lib/desktop/staging";
 import type { ActiveImportRun } from "../lib/importRun";
 import { keys } from "../lib/queryKeys";
 import type { MediaToolName } from "../lib/types";
+import { act } from "../test/act";
 import { activeImportRun } from "../test/apiShapes";
 import { deferred } from "../test/deferred";
 import { settle, startFakeClock, stopFakeClock } from "../test/fakeTimers";
