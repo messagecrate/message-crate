@@ -152,6 +152,27 @@ describe("useNameCollectionActions", () => {
     expect(routes.remove).toHaveBeenCalledWith(12);
   });
 
+  // The server matches a set's name with its own `lower()`, which lowers each
+  // letter on its own (`lower_each_letter` in `sqlite_functions.rs`): `İ` is
+  // `i`, and a word-final `Σ` is `σ`. `toLowerCase` gives `i` plus a
+  // combining dot, and `ς`, so it would miss sets the server calls the same.
+  it("matches a name letter by letter, as the server's lower() does", async () => {
+    const routes = fakeRoutes();
+    const sets = [
+      { id: 12, name: "istanbul" },
+      { id: 13, name: "οδοσ" },
+    ];
+    client.setQueryData(KEY, sets);
+    routes.list.mockResolvedValue(sets);
+    const { result } = renderHook(() => useNameCollectionActions(groupsOver(routes)), { wrapper });
+    await result.current.remove("İstanbul");
+    expect(routes.remove).toHaveBeenCalledWith(12);
+    await result.current.remove("ΟΔΟΣ");
+    expect(routes.remove).toHaveBeenCalledWith(13);
+    await expect(result.current.ensure("İSTANBUL")).resolves.toBe("istanbul");
+    expect(routes.create).not.toHaveBeenCalled();
+  });
+
   it("asks the server once when the cache does not hold the name", async () => {
     const routes = fakeRoutes();
     routes.list.mockResolvedValue([{ id: 7, name: "Holiday" }]);

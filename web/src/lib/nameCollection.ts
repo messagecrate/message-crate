@@ -100,16 +100,29 @@ export type NameCollection = {
 
 /**
  * The key a name is looked up by among the reserved names: trimmed, with
- * ASCII letters lower-cased and every other character as it is. The server
- * lower-cases letters the same way here (`to_ascii_lowercase` in
- * `named_membership.rs`), so a name such as `UNKNOWN` spelled with the Kelvin
- * sign (U+212A), which `toLowerCase` would turn into `unknown`, is refused by
- * neither side. Matching a name against the account's own sets is another
- * rule: the server compares those with its Unicode `lower()`, which is why
- * `useIdOf` and `ensure` use `toLowerCase`.
+ * the letters A to Z lower-cased and every other character as it is. The
+ * server folds the same way, A to Z only (`to_ascii_lowercase` in
+ * `db/named_membership.rs`), so a name such as `UNKNOWN` spelled with the
+ * Kelvin sign (U+212A), which `toLowerCase` would turn into `unknown`, is
+ * refused by neither side. Matching a name against the account's own sets
+ * uses another fold: `setNameKey`.
  */
 function reservedKey(name: string): string {
   return name.trim().replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+}
+
+/**
+ * The key two set names are matched by: each letter lowered on its own, with
+ * `İ` (U+0130) lowered to a plain `i`. The server matches a set's name with
+ * its own `lower()` (`lower_each_letter` in `db/sqlite_functions.rs`), which
+ * lowers this way. `toLowerCase` reads a letter's neighbors, lowering a
+ * word-final `Σ` to `ς`, and lowers `İ` to `i` and a combining dot, so it
+ * would miss a set the server calls the same name.
+ */
+function setNameKey(name: string): string {
+  let key = "";
+  for (const letter of name) key += letter === "\u0130" ? "i" : letter.toLowerCase();
+  return key;
 }
 
 export function createNameCollection(config: NameCollectionConfig): NameCollection {
@@ -152,9 +165,10 @@ type ChipRow = { id: string | number } & Record<string, unknown>;
  * row already has the name under another spelling changes nothing.
  */
 export function withName(names: readonly string[], name: string, enable: boolean): string[] {
-  const has = names.some((n) => n.toLowerCase() === name.toLowerCase());
+  const key = setNameKey(name);
+  const has = names.some((n) => setNameKey(n) === key);
   if (enable) return has ? [...names] : [...names, name];
-  return names.filter((n) => n.toLowerCase() !== name.toLowerCase());
+  return names.filter((n) => setNameKey(n) !== key);
 }
 
 /** Rewrite one cache entry so the rows named by `ids` gain or lose the name. */
@@ -204,9 +218,9 @@ function useIdOf(collection: NameCollection): (name: string) => Promise<number> 
   const cache = useRouteCache();
   return useCallback(
     async (name: string) => {
-      const wanted = name.trim().toLowerCase();
+      const wanted = setNameKey(name.trim());
       const find = (sets: NamedSet[] | undefined) =>
-        sets?.find((set) => set.name.toLowerCase() === wanted)?.id;
+        sets?.find((set) => setNameKey(set.name) === wanted)?.id;
       const hit = find(cache.read<NamedSet[]>(collection.key));
       if (hit !== undefined) return hit;
       const fresh = find(
@@ -342,7 +356,7 @@ export function useNameCollectionActions(collection: NameCollection): NameCollec
   );
   const error = latest.error;
 
-  // Creates `ensure` has sent and the server has not answered, by lowercased
+  // Creates `ensure` has sent and the server has not answered, by `setNameKey`
   // name, so a second `ensure` for the same name waits for the first rather
   // than reading a list the first create has not reached yet.
   const ensuring = useRef(new Map<string, Promise<NamedSet>>());
@@ -359,12 +373,12 @@ export function useNameCollectionActions(collection: NameCollection): NameCollec
       // rendered, which can predate a create still settling: "family" right
       // after "Family" finds the set instead of sending a second create.
       ensure: async (name: string) => {
-        const wanted = name.trim().toLowerCase();
+        const wanted = setNameKey(name.trim());
         const listed = async () => {
           const sets = await cache.fetch<NamedSet[]>(collection.key, (signal) =>
             fetchSets(collection, signal),
           );
-          return sets.find((set) => set.name.toLowerCase() === wanted)?.name;
+          return sets.find((set) => setNameKey(set.name) === wanted)?.name;
         };
         const inFlight = ensuring.current.get(wanted);
         if (inFlight) {

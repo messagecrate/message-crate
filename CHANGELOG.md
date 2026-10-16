@@ -522,7 +522,10 @@ carry their date on the heading.
   Tag name the server accepts.** A name written with a letter that only looks
   like a plain one, such as the Kelvin sign in place of `K` in `UNKNOWN`, was
   refused as reserved when you created or renamed a Contact Group or Message
-  Tag on the website, though the server would have taken it (#3037).
+  Tag on the website, though the server would have taken it. And a name
+  typed with `İ` or a capital `Σ` now finds the Contact Group or Message Tag
+  the server holds under that name, such as `istanbul` for `İstanbul`,
+  where the website used to say it was not found (#3037).
 - 2026-10-16: **A display name the server refuses after you leave Settings
   says so.** A display name typed on Settings → Profile, or on an account's
   Profile in Owner Home, saves when you leave Settings for another screen.
