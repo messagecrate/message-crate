@@ -1057,11 +1057,12 @@ mod with_a_script {
 /// tests above cover the process group; Linux and macOS share that code.
 ///
 /// The server here is this test program, run again as a stand-in. Started as
-/// the parent, it starts itself once more as a child, the way the server
-/// starts ffmpeg, writes the child's process id, and waits for it. The child
-/// waits for nothing and runs until something ends it. Each test reads the
-/// child's id from the parent's output, so it is told when both have started,
-/// and waits on the processes' handles, so it is told when each has ended.
+/// the parent, it waits to be told it is in the Job Object, then starts
+/// itself once more as a child, the way the server starts ffmpeg, writes the
+/// child's process id, and waits for it. The child runs until something ends
+/// it. Each test reads the child's id from the parent's output, so it is told
+/// when both have started, and waits on the processes' handles, so it is told
+/// when each has ended.
 #[cfg(windows)]
 mod in_a_job {
     use super::*;
@@ -1087,7 +1088,16 @@ mod in_a_job {
     fn stand_in() {
         match std::env::var(ROLE).as_deref() {
             Ok("parent") => {
+                // The app puts the server in its job just after starting it,
+                // and the real server starts nothing in that moment. The
+                // stand-in waits for the line that says the job holds it, so
+                // its child always starts inside the job.
+                let mut go = String::new();
+                std::io::stdin()
+                    .read_line(&mut go)
+                    .expect("read the go-ahead");
                 let mut child = run_as("child")
+                    .stdin(Stdio::null())
                     .stdout(Stdio::null())
                     .spawn()
                     .expect("start the child");
@@ -1115,16 +1125,29 @@ mod in_a_job {
         command
     }
 
+    /// The stand-in server, started the way the app starts its server, with
+    /// a handle to it and to the child it started.
+    struct Started {
+        server: ServerProcess,
+        parent: OwnedHandle,
+        child: OwnedHandle,
+    }
+
     /// Start the stand-in server the way the app starts its server, and
-    /// return it once it has started its child, with a handle to the child.
-    fn start_server() -> (ServerProcess, OwnedHandle) {
+    /// return it once it has started its child.
+    fn start_server() -> Started {
         let mut command = run_as("parent");
         command
-            .stdin(Stdio::null())
+            .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
         hide_console(&mut command);
         let mut server = ServerProcess::spawn(&mut command).expect("start the stand-in server");
+        // `spawn` returns with the server in the job: tell it to go on.
+        let mut go = server.child().stdin.take().unwrap();
+        writeln!(go, "go").expect("tell the stand-in server to go on");
+        drop(go);
+        let parent = open_process(server.child().id());
         let stdout = server.child().stdout.take().unwrap();
         let child = BufReader::new(stdout)
             .lines()
@@ -1132,7 +1155,11 @@ mod in_a_job {
             .find_map(|line| line.split_once(CHILD_LINE).map(|(_, pid)| pid.to_owned()))
             .expect("the stand-in server ended before it started its child");
         let child = open_process(child.trim().parse().unwrap());
-        (server, child)
+        Started {
+            server,
+            parent,
+            child,
+        }
     }
 
     /// A handle to process `pid`, to wait on and to end it with. A running
@@ -1173,8 +1200,11 @@ mod in_a_job {
     /// The app closing: `stop` kills its server this way.
     #[test]
     fn killing_the_server_ends_the_process_it_started() {
-        let (mut server, child) = start_server();
-        let parent = open_process(server.child().id());
+        let Started {
+            server,
+            parent,
+            child,
+        } = start_server();
 
         server.kill();
 
@@ -1187,8 +1217,11 @@ mod in_a_job {
     /// when the app ends.
     #[test]
     fn the_process_the_server_started_ends_when_the_job_handle_closes() {
-        let (mut server, child) = start_server();
-        let parent = open_process(server.child().id());
+        let Started {
+            mut server,
+            parent,
+            child,
+        } = start_server();
 
         server.child().kill().expect("end the stand-in server");
         assert!(ends(&parent), "the server outlived its own end");
