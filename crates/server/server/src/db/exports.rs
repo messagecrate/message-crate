@@ -381,11 +381,8 @@ async fn close_runs(
         .fetch_all(&mut *conn)
         .await
         .context("close running Export Runs")?;
-    for &ClosedRun {
-        id: export_id,
-        account_id,
-    } in &closed
-    {
+    for run in &closed {
+        let (export_id, account_id) = (run.id, run.account_id);
         delete_run_messages(conn, export_id).await?;
         // A running run always has its account: deleting the account closes
         // its runs first.

@@ -1156,8 +1156,7 @@ pub async fn max_earlier_version_id(conn: &mut SqliteConnection) -> Result<i64> 
         .context("read the highest earlier version id")
 }
 
-/// The lowest and highest staged message id under a mapped conversation,
-/// each `None` when nothing is staged.
+/// The bounds [`staged_message_id_bounds`] reads.
 #[derive(Debug, Clone, Copy, sqlx::FromRow)]
 pub struct StagedIdBounds {
     /// The lowest staged message id.

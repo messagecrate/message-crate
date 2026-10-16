@@ -885,11 +885,11 @@ async fn identity_use(
     handle_id: i64,
 ) -> Result<IdentityUse> {
     #[derive(sqlx::FromRow)]
-    struct Refers {
+    struct UseFlags {
         person: bool,
         holder: bool,
     }
-    let Refers { person, holder } = sqlx::query_as::<_, Refers>(
+    let UseFlags { person, holder } = sqlx::query_as::<_, UseFlags>(
         "SELECT
            EXISTS (SELECT 1 FROM participants WHERE handle_id = $2)
            OR EXISTS (SELECT 1 FROM staging_participants WHERE handle_id = $2)
