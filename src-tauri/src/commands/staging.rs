@@ -13,7 +13,7 @@
 //!
 //! `summarize_staging` and `transcode_staging` take only the directory. They
 //! read the run's media settings from it, where `extract` recorded them
-//! ([`staging::read_media_settings`]), so a summary, the Media stage it
+//! ([`staging::read_media_settings`]), so a summary, the Media Stage it
 //! forecasts, and the Staging before them all work to the one set of values
 //! the Import Run was started with.
 //!
@@ -163,16 +163,16 @@ fn plural_s(count: usize) -> &'static str {
     if count == 1 { "" } else { "s" }
 }
 
-/// One human-readable sentence describing the Media stage's outcome.
+/// One human-readable sentence describing the Media Stage's outcome.
 ///
 /// Used both as the `desktop-job:finished` payload's `summary` field (so a
 /// client that falls back to raw JSON still has readable text) and, when
 /// either count is nonzero, as a `desktop-job:log` line so the same wording is
-/// visible while the Media stage runs, not only after it finishes.
+/// visible while the Media Stage runs, not only after it finishes.
 ///
 /// `too_large` and `failed` get separate clauses on purpose: a `too_large`
 /// file WAS converted. It just came out over the limit and will not be
-/// uploaded, which is a different fact from `failed`, a file the Media stage
+/// uploaded, which is a different fact from `failed`, a file the Media Stage
 /// could not convert at all. The report has no per-file reasons (those are written
 /// into the conversation files' `missing_reason` instead), so this can only
 /// speak in counts.
@@ -197,27 +197,27 @@ fn transcode_summary(report: &TranscodeReport) -> String {
     format!("{}.", clauses.join("; "))
 }
 
-/// Run the Media stage over a staged directory, after the Staging Review
+/// Run the Media Stage over a staged directory, after the Staging Review
 /// approves it.
 ///
 /// Follows `extract`'s job shape: the job starts through [`start_job`], with
-/// a cancel flag of its own, the Media stage runs on a background thread, and
+/// a cancel flag of its own, the Media Stage runs on a background thread, and
 /// progress/log/finished go back as `desktop-job:*` events so the UI reuses
-/// one progress view. A canceled Media stage is reported through
+/// one progress view. A canceled Media Stage is reported through
 /// `desktop-job:error` the same way any other failure is. That is exactly how
 /// a canceled `extract` run already behaves (`extract` never special-cases
 /// its own cancellation either; `spawn_job`'s generic `Err` handling covers
-/// both). An earlier version of this command ended a canceled Media stage
+/// both). An earlier version of this command ended a canceled Media Stage
 /// quietly instead (a `desktop-job:log` line, `Ok(())`, no
 /// `desktop-job:error`); that left `awaitDesktopJob`'s promise on the web
 /// side permanently unsettled (no `desktop-job:finished`, no
 /// `desktop-job:error`), wedging the screen with `running` stuck true and no
 /// way back except restarting the app. Do not restore the quiet path.
 ///
-/// Each file the Media stage could not convert goes to the window as a
-/// `desktop-job:issue` the moment the Media stage gives up on it, so the
+/// Each file the Media Stage could not convert goes to the window as a
+/// `desktop-job:issue` the moment the Media Stage gives up on it, so the
 /// window has written it into the run record before an app that closes
-/// during the Media stage stops.
+/// during the Media Stage stops.
 /// The report carries counts only, so a nonzero `failed`/`too_large` count
 /// is also surfaced as one summarizing `desktop-job:log` line (see
 /// [`transcode_summary`]).
@@ -512,7 +512,7 @@ mod tests {
 
     #[test]
     fn a_staged_directory_is_read_with_the_settings_its_staging_recorded() {
-        // The summary and the Media stage are given only the directory, so they
+        // The summary and the Media Stage are given only the directory, so they
         // cannot be handed a mode the run did not start with (#1153).
         let made = made();
         let recorded = TranscodeOptions {
@@ -535,7 +535,7 @@ mod tests {
     #[test]
     fn a_paused_run_resumes_and_is_deleted_after_the_staging_directory_changes() {
         // Issue #1154, through what a resume runs: the run record is read,
-        // the staged directory is checked for the summary and the Media stage,
+        // the staged directory is checked for the summary and the Media Stage,
         // and the directory is deleted, all after the setting moved.
         let made = made();
         let options = TranscodeOptions {
