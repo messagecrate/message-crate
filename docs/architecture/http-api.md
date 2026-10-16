@@ -825,6 +825,17 @@ security scheme with its scopes, so every route says which it accepts.
   settings and the installation's storage totals, because the owner holds no
   messages. It also reads the country list (`GET /v1/phone-countries`),
   because the owner picks the country of a number on an account it manages.
+  A Session ends after 7 days unused, and after 30 days from the login
+  however much it is used. A login sets its expiry 7 days ahead. A request
+  that the Session serves moves the expiry to 7 days after the request, but
+  never past 30 days after the login, and writes it only when the move is
+  an hour or more, so a Session in use writes at most once an hour. A
+  password change renews the Session for 7 days, and starts its 30 days
+  again. Why: a Session forgotten on a shared computer ends within a week,
+  while an account in daily use never sees the shorter limit, and the cap
+  bounds how long one Session token lasts however it is used. The Audit
+  Trail reads a Session's moved expiry from `session_extensions`, because
+  its own entries are never edited.
 - An **API token** is a named credential an account makes for a program, with
   the scopes the person chose from `import` and `export`, capped by the
   account's own. The cap holds on every request, when the token is made, and

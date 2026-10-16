@@ -94,7 +94,9 @@ The Audit Trail: what each user did, and when, for everything `imports` and
 account it is about and that account's `username`, with counts and names in
 `details`. A session's `logged_in` row carries `session_expires_at`, and the
 `session_ended` row that closes it points back through `session_entry_id`; a
-session with no such row reads as expired from its expiry. Deleting an account
+session with no such row reads as expired from its expiry, or from the later
+one in `session_extensions`, where each use of the session records how far it
+moved its expiry, because no `audit_entries` row is ever changed. Deleting an account
 sets `account_id` NULL here and on its `imports` and `exports`, which keep the
 `username`, and marks each of them with `deletion_entry_id`, the id of the
 account's `account_deleted` row, by which the deleted account is read apart
