@@ -1,11 +1,10 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { TimeZoneContext } from "../lib/timeZone";
 import type { Message } from "../lib/types";
-import { message, participant } from "../test/apiShapes";
-import { BUBBLES } from "../test/bubbles";
+import { attachment, message, participant } from "../test/apiShapes";
+import { BUBBLES, renderBubbleInUtc } from "../test/bubbles";
 import MessageBubble from "./MessageBubble";
 
 afterEach(() => {
@@ -13,7 +12,7 @@ afterEach(() => {
 });
 
 /** Ada renaming a group she shares with Bo, from `source`, at 15:04 UTC. */
-function renaming(source: string, service: string): Message {
+function renaming(source: string, service: string, fields: Partial<Message> = {}): Message {
   return message({
     source,
     service,
@@ -32,17 +31,19 @@ function renaming(source: string, service: string): Message {
         participant({ identity: "+1666", name: "Bo" }),
       ],
     },
+    ...fields,
   });
+}
+
+/** `MessageBubble` with the Find term "trip", as a conversation draws it while Find is open. */
+function FindingTrip({ message }: { message: Message }) {
+  return <MessageBubble message={message} highlight="trip" />;
 }
 
 describe("MessageBubble announcements", () => {
   for (const { source, service, label } of BUBBLES) {
-    it(`draws a ${label} announcement as a line with its time, with no sender or bubble`, () => {
-      render(
-        <TimeZoneContext.Provider value="UTC">
-          <MessageBubble message={renaming(source, service)} highlight="trip" />
-        </TimeZoneContext.Provider>,
-      );
+    it(`draws a ${label} announcement as a line with its time and no sender`, () => {
+      renderBubbleInUtc(FindingTrip, renaming(source, service));
 
       const line = screen.getByRole("note");
       expect(line).toHaveTextContent("Ada named the conversation “Trip” · 3:04 PM");
@@ -51,4 +52,31 @@ describe("MessageBubble announcements", () => {
       expect(screen.queryByText(service, { exact: false })).not.toBeInTheDocument();
     });
   }
+
+  it("keeps an announcement's attachments, reactions and deletion mark", () => {
+    renderBubbleInUtc(
+      FindingTrip,
+      renaming("imessage", "iMessage", {
+        text: "Ada changed the group photo.",
+        deletion: "deleted_in_source_app",
+        attachments: [attachment({ original_name: "group.jpg", missing_reason: "file_missing" })],
+        tapbacks: [
+          {
+            emoji: null,
+            is_from_me: false,
+            kind: "loved",
+            part_index: 0,
+            sender: "+1666",
+            sender_display_name: null,
+          },
+        ],
+      }),
+    );
+
+    expect(screen.getByRole("note")).toHaveTextContent(
+      "Ada changed the group photo. · 3:04 PM · Deleted in Apple Messages",
+    );
+    expect(screen.getByText("group.jpg (missing — file not found)")).toBeInTheDocument();
+    expect(screen.getByText("❤️ 1")).toHaveAttribute("title", "Bo");
+  });
 });

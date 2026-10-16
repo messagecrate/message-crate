@@ -52,7 +52,14 @@ function MessageBubble({
   onAttachmentClick?: AttachmentClickHandler;
 }) {
   if (message.is_announcement) {
-    return <AnnouncementLine message={message} highlight={highlight} isActive={isActive} />;
+    return (
+      <AnnouncementLine
+        message={message}
+        highlight={highlight}
+        isActive={isActive}
+        onAttachmentClick={onAttachmentClick}
+      />
+    );
   }
   const props = { message, highlight, isActive, showSender, onAttachmentClick };
 

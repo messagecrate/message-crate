@@ -128,6 +128,21 @@ export function tapbackGroups(m: Message): TapbackGroup[] {
 }
 
 /**
+ * The frame every message row shares, a bubble's, a flat row's or an
+ * announcement's: the `msg-<id>` anchor a jump to the message lands on, and
+ * the background of the active Find match.
+ */
+export function messageRowFrame(
+  messageId: number | string,
+  isActive: boolean | undefined,
+): { id: string; background: string } {
+  return {
+    id: `msg-${messageId}`,
+    background: isActive ? "bg-search-active" : "bg-transparent",
+  };
+}
+
+/**
  * A chat bubble's shape, marked or not: round corners with the tail corner on
  * the author's side, its width, padding and text size. Each caller adds colors.
  */
@@ -180,7 +195,7 @@ function MarkedBubble({
  * source as the product does: "· Deleted in Apple Messages". An Unsent message
  * says so in its bubble, and an unmarked one carries no note.
  */
-function DeletionNote({ deletion, source }: { deletion?: Deletion | null; source: string }) {
+export function DeletionNote({ deletion, source }: { deletion?: Deletion | null; source: string }) {
   if (deletion !== "deleted_in_source_app") return null;
   return <span>· {deletedInSourceText(source)}</span>;
 }
@@ -383,13 +398,14 @@ export function ChatBubbleRow({
   const mine = message.is_from_me;
   const { deletion, source } = message;
   const versions = useEarlierVersions(message);
+  const frame = messageRowFrame(message.id, isActive);
 
   return (
     <div
-      id={`msg-${message.id}`}
+      id={frame.id}
       className={`flex flex-col px-4 py-[0.2rem] ${
         mine ? "mb-[0.15rem] items-end" : "mb-[0.4rem] items-start"
-      } ${isActive ? "bg-search-active" : "bg-transparent"}`}
+      } ${frame.background}`}
     >
       {showSender && senderLabel ? (
         <div
@@ -448,13 +464,9 @@ function ServiceRow({
   isActive?: boolean;
   children: ReactNode;
 }) {
+  const frame = messageRowFrame(messageId, isActive);
   return (
-    <div
-      id={`msg-${messageId}`}
-      className={`border-b border-border px-6 py-2 ${
-        isActive ? "bg-search-active" : "bg-transparent"
-      }`}
-    >
+    <div id={frame.id} className={`border-b border-border px-6 py-2 ${frame.background}`}>
       {children}
     </div>
   );

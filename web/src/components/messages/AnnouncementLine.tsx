@@ -1,36 +1,61 @@
 import { formatClockTime } from "../../lib/formatDate";
 import { useTimeZone } from "../../lib/timeZone";
-import { bubbleBody, type MessageBubbleProps } from "./chatBubbleShared";
+import MessageAttachments from "../MessageAttachments";
+import {
+  bubbleBody,
+  DeletionNote,
+  type MessageBubbleProps,
+  messageRowFrame,
+  tapbackGroups,
+} from "./chatBubbleShared";
 
 /**
  * An announcement (a group renamed, a member added or removed) drawn as an
  * event of the conversation: a centered line of small, muted text with its
  * time, and no bubble, avatar or sender name (#3050). Every source draws it
- * alike. The Find term is marked in it, and the Find match it is gets the
- * active background, as a message's row does.
+ * alike. The Find term is marked in it, and when it is the active Find match,
+ * it gets the active background, as a message's row does. What else it
+ * carries is kept: the "Deleted in" note after its time, and under the line
+ * its attachments, such as a new group photo, and its reactions.
  */
 export default function AnnouncementLine({
   message,
   highlight,
   isActive,
-}: Pick<MessageBubbleProps, "message" | "highlight" | "isActive">) {
+  onAttachmentClick,
+}: Omit<MessageBubbleProps, "showSender">) {
   const time = formatClockTime(message.timestamp, useTimeZone());
   const body = (message.text || "").trim();
+  const tapbacks = tapbackGroups(message);
+  const frame = messageRowFrame(message.id, isActive);
 
   return (
     <div
-      id={`msg-${message.id}`}
-      role="note"
-      className={`my-[0.4rem] px-4 py-[0.2rem] text-center text-[0.75rem] text-muted ${
-        isActive ? "bg-search-active" : "bg-transparent"
-      }`}
+      id={frame.id}
+      className={`my-[0.4rem] flex flex-col items-center px-4 py-[0.2rem] ${frame.background}`}
     >
-      {body ? (
-        <>
-          <span className="whitespace-pre-wrap break-words">{bubbleBody(body, highlight)}</span> ·{" "}
-        </>
+      <div role="note" className="text-center text-[0.75rem] text-muted">
+        {body ? (
+          <>
+            <span className="whitespace-pre-wrap break-words">{bubbleBody(body, highlight)}</span> ·{" "}
+          </>
+        ) : null}
+        <span>{time}</span> <DeletionNote deletion={message.deletion} source={message.source} />
+      </div>
+      <MessageAttachments message={message} onAttachmentClick={onAttachmentClick} />
+      {tapbacks.length > 0 ? (
+        <div className="mt-1 flex flex-wrap justify-center gap-1">
+          {tapbacks.map((t) => (
+            <span
+              key={t.emoji}
+              title={t.senderNames.join(", ")}
+              className="rounded-full border border-border bg-elevated px-[0.35rem] py-[0.1rem] text-[0.75rem] text-text"
+            >
+              {t.emoji} {t.count}
+            </span>
+          ))}
+        </div>
       ) : null}
-      <span>{time}</span>
     </div>
   );
 }
