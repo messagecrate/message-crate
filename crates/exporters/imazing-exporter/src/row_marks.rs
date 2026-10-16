@@ -5,7 +5,7 @@
 //! iMazing writes each as text with no id. A reaction names its reactor by
 //! display name and never by address, a reply names the quoted message by
 //! its sender and date, a deletion is a date, and an edit is a date with no
-//! earlier text. The exporter reads what the text says and no more: a
+//! earlier text. The exporter keeps only part of what the text says: a
 //! reaction keeps its emoji alone, a reply is linked by its date within the
 //! chat, and an edit is a version with no text (#2030, #2045).
 

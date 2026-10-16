@@ -127,8 +127,9 @@ carry their date on the heading.
   command runs, rather than unhealthy after five minutes. So does a container
   that runs no server at all, such as a shell (#2132, #2541, #2542).
 - 2026-10-09: **An iMazing import keeps reactions, replies, deleted messages
-  and edits.** Each reaction in an iMazing export is kept with its emoji.
-  Who gave it is not kept (#2045). A reply is linked to the message it
+  and edits.** Each reaction in an iMazing export is kept with its emoji,
+  and a sticker reaction shows as a sticker. Who gave it is not kept, your
+  own reactions included (#2045). A reply is linked to the message it
   quotes when that message is in the same conversation of the export, and
   stays a reply without a link otherwise. A message deleted on the phone
   before the export is marked **Deleted in the source app**. An edited
@@ -911,13 +912,6 @@ carry their date on the heading.
 
 #### Importing
 
-- 2026-10-16: **An iMazing import reads each reaction's emoji as iMazing
-  writes it.** iMazing writes a reaction as "Sam reacted with 👍 on
-  1/1/2020 12:04:00 PM", and the import read "Sam reacted with" as the
-  name of the person who reacted, and never recognized your own reactions,
-  which iMazing names "You". A reaction now keeps its emoji alone, and a
-  sticker reaction shows as a sticker. A line saying a reaction was
-  removed adds no reaction (#2045).
 - 2026-10-16: **A closed Import Run's directory no longer stays on disk.**
   When a discard reached the server only after the app had read the run as
   still running, the run's directory, staged photos and videos included,

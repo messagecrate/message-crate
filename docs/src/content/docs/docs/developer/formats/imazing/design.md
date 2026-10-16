@@ -136,7 +136,7 @@ Non-senders are invisible in the CSV.
 
 ## Reactions, replies, deletions and edits
 
-iMazing writes each of the four as text with no id, and the exporter reads what the text says and no more (`row_marks.rs`, [#2030](https://github.com/messagecrate/message-crate/issues/2030)). The row counts below were measured on the maintainer's export of 83,079 rows on 2026-10-09, and the line grammar of the `Reactions` cell on the same export's 681 Messages CSVs on 2026-10-15 ([#2045](https://github.com/messagecrate/message-crate/issues/2045)).
+iMazing writes each of the four as text with no id, and the exporter keeps only part of what the text says (`row_marks.rs`, [#2030](https://github.com/messagecrate/message-crate/issues/2030)). The row counts below were measured on the maintainer's export of 83,079 rows on 2026-10-09, and the line grammar of the `Reactions` cell on the same export's 681 Messages CSVs on 2026-10-15 ([#2045](https://github.com/messagecrate/message-crate/issues/2045)).
 
 ### Reactions
 
