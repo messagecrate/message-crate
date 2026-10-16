@@ -1556,10 +1556,10 @@ carry their date on the heading.
 - 2026-10-16: **Making Previews and Thumbnails reads only an account's own
   attachments.** When the server makes Previews and Thumbnails, it passes
   over an Asset whose stored location points outside the account's
-  attachments in the Data Directory, counts it among the attachments it
-  could not process, and says so in its log with the account, the Asset and
-  its stored location. Before, it read the file at that location and made a
-  Preview or Thumbnail of it (#2866).
+  attachments in the Data Directory. It says so in its log, with the
+  account, the Asset and its stored location, and `process-assets` ends by
+  counting such Assets as a failure. Before, it read the file at that
+  location and made a Preview or Thumbnail of it (#2866).
 - 2026-10-15: **A failed request's log line names the database step that
   failed.** When a request fails because of a database problem, its line in
   the server's log now says which database step failed, such as `read the
