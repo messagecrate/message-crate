@@ -2,15 +2,11 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const invoke = vi.fn();
-const save = vi.fn();
+const invokeSaveFile = vi.fn();
 const isTauri = vi.fn();
 
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (...args: unknown[]) => invoke(...args),
-}));
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  save: (...args: unknown[]) => save(...args),
+vi.mock("./desktop/fs", () => ({
+  invokeSaveFile: (...args: unknown[]) => invokeSaveFile(...args),
 }));
 vi.mock("./tauriCheck", () => ({
   isTauri: () => isTauri(),
@@ -21,8 +17,7 @@ import { saveFile } from "./saveFile";
 
 describe("saveFile", () => {
   beforeEach(() => {
-    invoke.mockReset();
-    save.mockReset();
+    invokeSaveFile.mockReset();
     isTauri.mockReset();
   });
 
@@ -53,39 +48,27 @@ describe("saveFile", () => {
     expect(nth(created, 0).type).toBe("text/csv");
     expect(await nth(created, 0).text()).toBe("a,b\n");
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:address-book");
-    expect(invoke).not.toHaveBeenCalled();
+    expect(invokeSaveFile).not.toHaveBeenCalled();
   });
 
-  it("has the desktop app ask where to save and write the file, with no path from the window", async () => {
+  it("hands the desktop app the bytes and the name, with no path from the window", async () => {
     isTauri.mockReturnValue(true);
-    invoke.mockResolvedValue(true);
+    invokeSaveFile.mockResolvedValue(true);
 
     expect(await saveFile("Café photo.jpg", new Blob([new Uint8Array([1, 2, 255])]))).toBe(true);
 
-    expect(save).not.toHaveBeenCalled();
-    expect(invoke).toHaveBeenCalledTimes(1);
-    const [command, body, options] = nth(invoke.mock.calls, 0);
-    expect(command).toBe("save_file");
-    // The bytes as they are, not a JSON array, and the name as a header.
-    expect(body).toBeInstanceOf(Uint8Array);
-    expect([...(body as Uint8Array)]).toEqual([1, 2, 255]);
-    expect(options).toEqual({ headers: { "file-name": '"Caf\\u00e9 photo.jpg"' } });
-  });
-
-  it("escapes a name outside ASCII, an emoji's two halves included, so it fits in a header", async () => {
-    isTauri.mockReturnValue(true);
-    invoke.mockResolvedValue(true);
-
-    await saveFile("😀.png", new Blob(["x"]));
-
-    expect(nth(invoke.mock.calls, 0)[2]).toEqual({
-      headers: { "file-name": '"\\ud83d\\ude00.png"' },
-    });
+    expect(invokeSaveFile).toHaveBeenCalledTimes(1);
+    const call = nth(invokeSaveFile.mock.calls, 0);
+    expect(call).toHaveLength(2);
+    const [bytes, fileName] = call;
+    expect(bytes).toBeInstanceOf(Uint8Array);
+    expect([...(bytes as Uint8Array)]).toEqual([1, 2, 255]);
+    expect(fileName).toBe("Café photo.jpg");
   });
 
   it("reports false when the desktop app's dialog is closed without a choice", async () => {
     isTauri.mockReturnValue(true);
-    invoke.mockResolvedValue(false);
+    invokeSaveFile.mockResolvedValue(false);
 
     expect(await saveFile("address-book.csv", new Blob(["a,b\n"]))).toBe(false);
   });
