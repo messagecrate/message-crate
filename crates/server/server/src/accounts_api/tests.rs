@@ -287,6 +287,17 @@ async fn the_owner_creates_accounts_with_a_short_password_or_none() {
     assert_eq!(login_status(&state, "dave", "a").await, StatusCode::CREATED);
 }
 
+/// Assert `text` is the `validation-failed` that names `field` over the
+/// 128-character password cap.
+fn expect_cap_refusal(field: &str, status: StatusCode, text: &str, what: &str) {
+    let problem = expect_problem(status, text, ProblemType::ValidationFailed);
+    assert_eq!(
+        problem.errors,
+        Some(vec![format!("{field}: must be at most 128 characters")]),
+        "{what}: {text}"
+    );
+}
+
 /// A password is capped at 128 characters, counted as a username is: in
 /// characters, not bytes, so 128 letters that take two or four bytes each
 /// pass. One character more is refused, naming the cap, when an account is
@@ -298,16 +309,8 @@ async fn a_password_is_at_most_128_characters_however_many_bytes_they_take() {
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let cap = crate::credentials::MAX_PASSWORD_CHARS;
     assert_eq!(cap, 128);
-    let refused_as = |field: &str, status: StatusCode, text: &str, what: &str| {
-        let problem = expect_problem(status, text, ProblemType::ValidationFailed);
-        assert_eq!(
-            problem.errors,
-            Some(vec![format!("{field}: must be at most 128 characters")]),
-            "{what}: {text}"
-        );
-    };
     let refused = |status: StatusCode, text: &str, what: &str| {
-        refused_as("password", status, text, what);
+        expect_cap_refusal("password", status, text, what);
     };
 
     // Creation.
@@ -359,13 +362,20 @@ async fn a_password_is_at_most_128_characters_however_many_bytes_they_take() {
         login_status(&state, "carol", &four_byte).await,
         StatusCode::CREATED
     );
+}
 
-    // A current password over the cap is refused naming that field, not the
-    // new password, on a change and on a deletion.
-    let owner_path = format!("{}/password", member(owner.account_id));
+/// A current password over the cap is refused naming `current_password`,
+/// not the new password, on a password change and on an account deletion.
+#[tokio::test]
+async fn a_current_password_over_the_cap_is_refused_by_its_own_name() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let over = "a".repeat(crate::credentials::MAX_PASSWORD_CHARS + 1);
+
     let (status, text) = put_json_raw(
         &state,
-        &owner_path,
+        &format!("{}/password", member(owner.account_id)),
         &owner.token,
         serde_json::json!({
             "password": "fresh",
@@ -374,26 +384,17 @@ async fn a_password_is_at_most_128_characters_however_many_bytes_they_take() {
         }),
     )
     .await;
-    refused_as(
-        "current_password",
-        status,
-        &text,
-        "current password on a change",
-    );
-    let carol = log_in(&state, "carol", &four_byte).await;
+    expect_cap_refusal("current_password", status, &text, "a change");
+
+    let carol = register_via_api(&state, "carol", "hunter2hunter2").await;
     let (status, text) = delete_json_raw(
         &state,
-        &member(id),
-        carol["token"].as_str().unwrap(),
+        &member(carol.account_id),
+        &carol.token,
         serde_json::json!({ "confirm": true, "current_password": over }),
     )
     .await;
-    refused_as(
-        "current_password",
-        status,
-        &text,
-        "current password on a deletion",
-    );
+    expect_cap_refusal("current_password", status, &text, "a deletion");
 }
 
 /// A stranger's registration answers the new row and the Session the server

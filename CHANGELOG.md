@@ -255,9 +255,9 @@ carry their date on the heading.
   password up to 1,024 bytes, which is 1,024 letters but only 256 emoji. It
   now counts characters, as it does for a username, and takes up to 128 of
   any kind, which leaves room for any generated password or passphrase. A
-  longer one is refused when an account is created, at login, and when a
-  password is changed, and the screen says "password: must be at most 128
-  characters" (#2996).
+  longer one is refused when an account is created or deleted, at login, and
+  when a password is changed, and the screen says a password is at most 128
+  characters (#2996).
 - 2026-10-16: **Message Crate spells American.** Screens and the user guide
   now say "canceled", "grayed out", "recognized" and "labeled": a stopped
   import reads "Import canceled", and a stopped run in the import and
