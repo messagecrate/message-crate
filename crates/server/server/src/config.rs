@@ -159,8 +159,9 @@ pub struct ServerConfig {
     pub asset_part_size: usize,
     /// Seconds a request body may go with no byte arriving before the server
     /// stops reading it and answers `body-stalled`. Every body is held to
-    /// it. An attachment upload nothing has been written to for this long,
-    /// with no request to it running, is abandoned and removed
+    /// it. An answer the client takes no byte of for this long closes its
+    /// connection. An attachment upload nothing has been written to for this
+    /// long, with no request to it running, is abandoned and removed
     /// (`asset_store::sweep_incoming`). Default 60. Must be greater than 0.
     #[serde(default = "default_body_stall_secs")]
     pub body_stall_secs: u64,

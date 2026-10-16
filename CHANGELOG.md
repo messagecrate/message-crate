@@ -1574,6 +1574,14 @@ carry their date on the heading.
 
 #### The server
 
+- 2026-10-16: **A download nobody reads no longer holds the server.** A
+  client that stopped reading an answer part-way, such as a browser tab that
+  hung mid-download, kept its connection, and the export file or attachment
+  it was reading, for as long as the operating system kept the connection.
+  The server now closes the connection once the client has taken none of the
+  answer for `body_stall_secs` (60 seconds unless the config file sets
+  another). A download that is still moving, however slowly, is never cut
+  off (#2984).
 - 2026-10-16: **Making Previews and Thumbnails reads only an account's own
   attachments.** When the server makes Previews and Thumbnails, it passes
   over an Asset whose stored location points outside the account's
