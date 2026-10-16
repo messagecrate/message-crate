@@ -17,7 +17,7 @@ vi.mock("../../lib/serverApi", () => ({ loadAddressBook: vi.fn() }));
 // The vCard conversion beside Load has tests of its own.
 vi.mock("./ConvertVcardFile", () => ({ ConvertVcardFile: () => null }));
 
-vi.mock("../../lib/authContext", () => authModule({ accountId: 7 }));
+vi.mock("../../hooks/useAuth", () => authModule({ accountId: 7 }));
 
 const post = vi.mocked(loadAddressBook);
 

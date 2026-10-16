@@ -22,7 +22,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type RenderOptions, type RenderResult, render } from "@testing-library/react";
 import { type ReactElement, type ReactNode, useState } from "react";
-import type { useAuth } from "../lib/authContext";
+import type { useAuth } from "../hooks/useAuth";
 
 /**
  * A query client with retries and background refetching off.
@@ -100,7 +100,7 @@ export const mockedAuth = {
 } satisfies AuthValue;
 
 /**
- * The module a test's `vi.mock("<path>/lib/authContext", () => authModule())`
+ * The module a test's `vi.mock("<path>/hooks/useAuth", () => authModule())`
  * puts in place of the real one: `useAuth` returns `mockedAuth` with
  * `overrides` laid over it.
  *
@@ -111,7 +111,7 @@ export const mockedAuth = {
  *
  * The `vi.mock` call stays in each test file, because Vitest hoists only the
  * `vi.mock` calls written in the test file itself. Vitest runs the factory
- * when a module first imports `authContext`; when that module is imported
+ * when a module first imports `useAuth`; when that module is imported
  * before this one, `authModule` does not exist yet, and the factory imports
  * it itself: `vi.mock(path, async () => (await import("<path>/test/providers")).authModule())`.
  */

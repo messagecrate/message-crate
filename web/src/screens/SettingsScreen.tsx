@@ -9,10 +9,10 @@ import { AppearanceSection } from "./settings/AppearanceSection";
 import { AuditTrailSection } from "./settings/AuditTrailSection";
 import { ConvertSection } from "./settings/ConvertSection";
 import { NewAccountPanel } from "./settings/NewAccountPanel";
-import { useNameEdit } from "./settings/nameEdit";
 import { ProfileSettingsPanel } from "./settings/ProfileSettingsPanel";
 import { StorageSection } from "./settings/StorageSection";
 import { SystemSection } from "./settings/SystemSection";
+import { useNameEdit } from "./settings/useNameEdit";
 import { useSettingsAccount } from "./settings/useSettingsAccount";
 
 const ALL_TABS = [

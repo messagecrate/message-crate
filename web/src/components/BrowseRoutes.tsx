@@ -8,6 +8,7 @@
 import { type ReactNode, useCallback, useState } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useContactGroups } from "../hooks/useContactGroups";
+import { useListQuery } from "../hooks/useMarkedWords";
 import { useMessageTags } from "../hooks/useMessageTags";
 import { groupFromSlug } from "../lib/contactGroups";
 import { tagFromSlug } from "../lib/messageTags";
@@ -21,12 +22,11 @@ import {
   TAG_PARAM,
   VIEW_PARAM,
 } from "../lib/resultsView";
-import { useListQuery } from "../lib/searchFields";
 import { trashed } from "../lib/searchQuery";
 import type { Conversation } from "../lib/types";
 import ContactList from "../screens/ContactList";
 import ConversationList from "../screens/ConversationList";
-import { type NavItem, useAppLayout, useLayoutNavItem, useLayoutSection } from "./appLayoutContext";
+import type { NavItem } from "./appLayoutContext";
 import CheckedContactsPanel from "./CheckedContactsPanel";
 import ContactDrawer from "./ContactDrawer";
 import {
@@ -39,6 +39,7 @@ import ListColumn from "./ListColumn";
 import MessageRoute from "./MessageRoute";
 import ResultsColumn from "./ResultsColumn";
 import RightPane from "./RightPane";
+import { useAppLayout, useLayoutNavItem, useLayoutSection } from "./useLayoutSection";
 
 /** Scrollable content column that hosts the routed screen. */
 const mainPaneClass = "min-w-0 flex-1 overflow-auto bg-bg text-text";

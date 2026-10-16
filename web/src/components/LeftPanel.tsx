@@ -4,16 +4,15 @@ import { useAccountProfile } from "../hooks/useAccountProfile";
 import { useColumnResize } from "../hooks/useColumnResize";
 import { useContactGroups } from "../hooks/useContactGroups";
 import { useMessageTags } from "../hooks/useMessageTags";
+import { useReportColumnResizing } from "../hooks/useReportColumnResizing";
 import { useWindowWidth } from "../hooks/useWindowWidth";
 import { errorLine } from "../lib/apiErrorMessage";
 import { canUseImportExportWithProfile } from "../lib/desktopFeatures";
-import { type SavedSearch, useSavedSearchActions, useSavedSearches } from "../lib/savedSearches";
 import { isTauri } from "../lib/tauriCheck";
 import { resizeHandleGutterClass } from "../lib/tw";
 import type { NavItem } from "./appLayoutContext";
 import ColumnResizeHandle from "./ColumnResizeHandle";
 import { COLUMN_DIVIDER_CLASS } from "./columnDivider";
-import { useReportColumnResizing } from "./columnResizeState";
 import GroupsNav from "./GroupsNav";
 import {
   ContactsIcon,
@@ -48,6 +47,7 @@ import PlainButton from "./PlainButton";
 import PopupMenu from "./PopupMenu";
 import SavedSearchForm from "./SavedSearchForm";
 import { type ImportAttention, useImportAttention } from "./useImportAttention";
+import { type SavedSearch, useSavedSearchActions, useSavedSearches } from "./useSavedSearches";
 
 /** The Import entry's badge: its word, and the sentence its tooltip reads. */
 const IMPORT_BADGE: Record<ImportAttention, { label: string; title: string }> = {

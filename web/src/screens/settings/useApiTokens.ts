@@ -1,11 +1,11 @@
 import type { UseMutationResult } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
-import { useRevealApiToken } from "../../components/apiTokenRevealState";
+import { useRouteMutation, useRouteQuery } from "../../hooks/useRouteQuery";
 import { errorLine } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
-import { useRouteMutation, useRouteQuery } from "../../lib/routeQuery";
 import { createApiToken, deleteApiToken, listApiTokens, renameApiToken } from "../../lib/serverApi";
 import type { components } from "../../lib/serverApi.types";
+import { useRevealApiToken } from "./useRevealApiToken";
 
 const fetchTokens = (signal: AbortSignal) => listApiTokens({ signal });
 

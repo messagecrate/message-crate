@@ -7,7 +7,7 @@ import { nth } from "../../test/nth";
 import { useHandleMutations } from "./useHandleMutations";
 
 const mutate = vi.hoisted(() => vi.fn());
-vi.mock("../../lib/contactDetail", () => ({
+vi.mock("../../hooks/useUpdateContact", () => ({
   useUpdateContact: () => ({ mutate, isPending: false, error: null }),
 }));
 

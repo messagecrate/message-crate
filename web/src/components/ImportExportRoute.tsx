@@ -1,7 +1,8 @@
 import { type ReactNode, Suspense } from "react";
 import { Navigate } from "react-router-dom";
 import { useAccountProfile } from "../hooks/useAccountProfile";
-import { useAuth } from "../lib/authContext";
+import { useAuth } from "../hooks/useAuth";
+import { useImportRunState } from "../hooks/useImportRunState";
 import {
   type ImportExportBlock,
   type ImportExportFeature,
@@ -9,7 +10,6 @@ import {
 } from "../lib/desktopFeatures";
 import { desktopJobRunningText } from "../lib/desktopJob";
 import { isTauri } from "../lib/tauriCheck";
-import { useImportRunState } from "../screens/import/importRunStore";
 import Button from "./Button";
 
 const TITLE: Record<ImportExportFeature, string> = { import: "Import", export: "Export" };

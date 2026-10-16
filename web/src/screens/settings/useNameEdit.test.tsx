@@ -24,7 +24,7 @@ const getAccountProfile = vi.hoisted(() => vi.fn());
 const updateAccountProfile = vi.hoisted(() => vi.fn());
 const getAccount = vi.hoisted(() => vi.fn());
 const updateAccount = vi.hoisted(() => vi.fn());
-vi.mock("../../lib/authContext", () => authModule());
+vi.mock("../../hooks/useAuth", () => authModule());
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),
   getAccountProfile: (...a: unknown[]) => getAccountProfile(...a),

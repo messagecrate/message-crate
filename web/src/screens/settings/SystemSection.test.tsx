@@ -43,7 +43,7 @@ vi.mock("../../lib/localServer", async (importOriginal) => ({
   startLocalServer: () => startLocalServer(),
 }));
 
-vi.mock("../../lib/authContext", () => authModule({ accountId: 7 }));
+vi.mock("../../hooks/useAuth", () => authModule({ accountId: 7 }));
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),

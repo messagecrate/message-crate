@@ -2,7 +2,6 @@ import { keepPreviousData } from "@tanstack/react-query";
 import { useState } from "react";
 import { errorLine } from "../lib/apiErrorMessage";
 import { type AuditTrailKey, keys } from "../lib/queryKeys";
-import { useRouteQuery } from "../lib/routeQuery";
 import type { DeletedAccount } from "../lib/serverApi";
 import {
   type AuditTrailParams,
@@ -10,6 +9,7 @@ import {
   listAuditTrail,
   listDeletedAccounts,
 } from "../lib/serverApi";
+import { useRouteQuery } from "./useRouteQuery";
 
 /** Entries the Audit Trail shows per page. */
 export const AUDIT_TRAIL_PAGE_SIZE = 50;

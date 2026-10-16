@@ -2,8 +2,8 @@
  * Desktop only: closing the window logs out, then closes it.
  */
 import { useEffect, useRef } from "react";
-import { destroyWindow, onWindowCloseRequested } from "./desktop/window";
-import { isTauri } from "./tauriCheck";
+import { destroyWindow, onWindowCloseRequested } from "../lib/desktop/window";
+import { isTauri } from "../lib/tauriCheck";
 
 /**
  * Hold the desktop window open on close until `revokeSession` has ended the

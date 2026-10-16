@@ -42,7 +42,7 @@ const listApiTokens = vi.hoisted(() => vi.fn());
 const listServerLogLines = vi.hoisted(() => vi.fn());
 const listServerLogFiles = vi.hoisted(() => vi.fn());
 
-vi.mock("../lib/authContext", () =>
+vi.mock("../hooks/useAuth", () =>
   authModule({ logout: vi.fn(), updateToken: vi.fn(), accountId: 1 }),
 );
 

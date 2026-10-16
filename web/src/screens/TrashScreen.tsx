@@ -4,25 +4,27 @@ import Button from "../components/Button";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ContactLabel from "../components/ContactLabel";
 import { useAccountProfile } from "../hooks/useAccountProfile";
+import { useRoutePagedList, useRouteQuery } from "../hooks/useRouteQuery";
+import { useSearchFields } from "../hooks/useSearchFields";
 import { errorLine } from "../lib/apiErrorMessage";
 import { contactLabelText } from "../lib/contactLabel";
 import { conversationName } from "../lib/conversationName";
 import { isNearEnd } from "../lib/listPaging";
 import { countOf } from "../lib/plural";
 import { keys } from "../lib/queryKeys";
-import { type PagedFetchPage, useRoutePagedList, useRouteQuery } from "../lib/routeQuery";
-import { unsupportedFieldWords, useSearchFields } from "../lib/searchFields";
+import type { PagedFetchPage } from "../lib/routeQuery";
+import { unsupportedFieldWords } from "../lib/searchFields";
 import { trashed } from "../lib/searchQuery";
 import { getConversation, listContacts, listConversations } from "../lib/serverApi";
 import type { components } from "../lib/serverApi.types";
+import type { Conversation } from "../lib/types";
 import {
   useDeleteContact,
   useDeleteConversation,
   useEmptyTrash,
   useRestoreContact,
   useRestoreConversation,
-} from "../lib/trash";
-import type { Conversation } from "../lib/types";
+} from "./trash/useEmptyTrash";
 
 /**
  * Trash holds two kinds of thing, and this pane is where both come back — or

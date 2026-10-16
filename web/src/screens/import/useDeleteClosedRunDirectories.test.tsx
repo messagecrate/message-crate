@@ -9,11 +9,11 @@ import { invokeDeleteClosedRunDir, invokeListAccountRunDirs } from "../../lib/de
 import { getImport, getServerState } from "../../lib/serverApi";
 import { settle, startFakeClock, stopFakeClock } from "../../test/fakeTimers";
 import { authModule, Providers } from "../../test/providers";
-import { useDeleteClosedRunDirectories } from "./closedRunDirectories";
+import { useDeleteClosedRunDirectories } from "./useDeleteClosedRunDirectories";
 
 const desktop = vi.hoisted(() => ({ isTauri: true }));
 
-vi.mock("../../lib/authContext", () => authModule({ accountId: 7 }));
+vi.mock("../../hooks/useAuth", () => authModule({ accountId: 7 }));
 vi.mock("../../lib/tauriCheck", () => ({ isTauri: () => desktop.isTauri }));
 vi.mock("../../lib/desktop/runDir", () => ({
   invokeListAccountRunDirs: vi.fn(),

@@ -18,7 +18,7 @@ import { BUILD_POLL_MS, DemoAccountCard } from "./DemoAccountCard";
 const getDemoAccount = vi.hoisted(() => vi.fn());
 const replaceDemoAccount = vi.hoisted(() => vi.fn());
 
-vi.mock("../../lib/authContext", () => authModule({ accountId: 1 }));
+vi.mock("../../hooks/useAuth", () => authModule({ accountId: 1 }));
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),

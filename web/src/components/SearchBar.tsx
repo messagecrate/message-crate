@@ -21,6 +21,7 @@ import {
   Text,
 } from "react-aria-components";
 import { useDismissable } from "../hooks/useDismissable";
+import { useMarkedWords } from "../hooks/useMarkedWords";
 import { lazyChunk } from "../lib/chunkLoad";
 import {
   clearRecentSearches,
@@ -28,12 +29,7 @@ import {
   pushRecentSearch,
   type SearchScope,
 } from "../lib/recentSearches";
-import {
-  type MarkedWord,
-  SEARCH_LIST_NAMES,
-  type SearchList,
-  useMarkedWords,
-} from "../lib/searchFields";
+import { type MarkedWord, SEARCH_LIST_NAMES, type SearchList } from "../lib/searchFields";
 import { removeToken } from "../lib/searchQuery";
 import { focusRingClass, popupShadowClass } from "../lib/uiStyles";
 import { Z_INLINE_PANEL, Z_POPOVER } from "../lib/zLayers";

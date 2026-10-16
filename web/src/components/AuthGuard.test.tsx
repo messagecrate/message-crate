@@ -27,7 +27,7 @@ vi.mock("../hooks/useAccountProfile", () => ({
   }),
 }));
 
-vi.mock("../lib/authContext", () => authModule(() => authState));
+vi.mock("../hooks/useAuth", () => authModule(() => authState));
 
 afterEach(() => {
   cleanup();

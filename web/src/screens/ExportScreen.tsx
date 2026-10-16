@@ -7,10 +7,10 @@ import FormRow from "../components/FormRow";
 import PathPicker from "../components/PathPicker";
 import Select, { selectItemClassName } from "../components/Select";
 import TextField from "../components/TextField";
+import { useAuth } from "../hooks/useAuth";
 import { useRunDesktopJob } from "../hooks/useRunDesktopJob";
 import { getBaseUrl } from "../lib/api";
 import { errorLine, errorText } from "../lib/apiErrorMessage";
-import { useAuth } from "../lib/authContext";
 import {
   EXPORT_FORMATS,
   type ExportFormat,

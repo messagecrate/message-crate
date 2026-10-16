@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 import Button from "../../components/Button";
 import PhoneCountrySelect from "../../components/PhoneCountrySelect";
+import { usePhoneCountries } from "../../hooks/usePhoneCountries";
 import { errorLine } from "../../lib/apiErrorMessage";
-import { usePhoneCountries } from "../../lib/phoneCountries";
 import { saveFile } from "../../lib/saveFile";
 import { convertVcardToAddressBook } from "../../lib/serverApi";
 

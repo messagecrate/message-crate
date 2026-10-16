@@ -26,7 +26,7 @@ import { authModule, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
 import ConversationList from "./ConversationList";
 
-vi.mock("../lib/authContext", () => authModule());
+vi.mock("../hooks/useAuth", () => authModule());
 
 vi.mock("../lib/serverApi", () => ({
   // messageTags.ts pulls slug helpers from contactGroups.ts, whose module-level

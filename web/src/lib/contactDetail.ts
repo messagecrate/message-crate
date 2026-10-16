@@ -1,11 +1,9 @@
-import type { UseMutationResult } from "@tanstack/react-query";
-import { keys } from "./queryKeys";
-import { useRouteCache, useRouteMutation, useRouteQuery } from "./routeQuery";
-import { getContact, updateContact } from "./serverApi";
 import type { components } from "./serverApi.types";
 
 /**
- * One contact in full, as the contact drawer shows it.
+ * One contact in full, as the contact drawer shows it (`useContactDetail` in
+ * `components/useContactDetail.ts`) and changes it (`useUpdateContact` in
+ * `hooks/useUpdateContact.ts`).
  *
  * `useContactDetailCache` was the last hand-built piece of it: a `Map`, its
  * own in-flight guard, and a `mc-contact-detail-changed` browser event that
@@ -18,54 +16,4 @@ import type { components } from "./serverApi.types";
 export type ContactDetail = components["schemas"]["Contact"];
 export type ContactHandle = components["schemas"]["Identity"];
 /** One change to a contact: its name, or one identity added, updated or removed. */
-type ContactChange = components["schemas"]["UpdateContactRequest"];
-
-/**
- * The contact behind an open drawer. Skipped entirely when no contact is open.
- *
- * `error` is why the last load failed, and `retry` asks again. Without them a
- * drawer whose contact could not be loaded stayed on "Loading…" for good.
- */
-export function useContactDetail(contactId: string | null): {
-  detail: ContactDetail | null;
-  loading: boolean;
-  error: Error | null;
-  retry: () => void;
-} {
-  const { data, isPending, error, refetch } = useRouteQuery(
-    keys.contacts.detail(contactId ?? ""),
-    (signal) => getContact(contactId ?? "", { signal }),
-    { enabled: contactId !== null },
-  );
-  return {
-    detail: contactId ? (data ?? null) : null,
-    loading: isPending,
-    error: contactId ? error : null,
-    retry: () => {
-      void refetch();
-    },
-  };
-}
-
-/**
- * Change one thing about a contact.
- *
- * The server answers with the contact as it now stands, so the answer goes
- * straight into the entry the drawer reads, and the drawer shows it before
- * anything is fetched again. The contact list and every conversation that
- * names the contact show the old name until the account's cache, marked stale
- * once the write settles, is fetched again.
- */
-export function useUpdateContact(): UseMutationResult<
-  ContactDetail,
-  Error,
-  { contactId: string; body: ContactChange }
-> {
-  const cache = useRouteCache();
-  return useRouteMutation<ContactDetail, Error, { contactId: string; body: ContactChange }>({
-    mutationFn: ({ contactId, body }) => updateContact(contactId, body),
-    onSuccess: (detail, { contactId }) => {
-      cache.set(keys.contacts.detail(contactId), detail);
-    },
-  });
-}
+export type ContactChange = components["schemas"]["UpdateContactRequest"];

@@ -47,7 +47,7 @@ vi.mock("../lib/api", async (importOriginal) => ({
   getBaseUrl: () => "http://127.0.0.1:8080",
 }));
 
-vi.mock("../lib/authContext", () => authModule({ token: "test-token" }));
+vi.mock("../hooks/useAuth", () => authModule({ token: "test-token" }));
 
 afterEach(() => {
   cleanup();

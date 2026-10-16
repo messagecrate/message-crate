@@ -1,8 +1,8 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import MessageBubble from "../../components/MessageBubble";
 import { NearScreenRoot } from "../../hooks/useNearScreen";
+import { useTimeZone } from "../../hooks/useTimeZone";
 import { errorLine } from "../../lib/apiErrorMessage";
-import { useTimeZone } from "../../lib/timeZone";
 import type { Message, MessageAttachment } from "../../lib/types";
 import { conversationRows } from "./conversationLayout";
 import type { Landing } from "./useConversationMessages";

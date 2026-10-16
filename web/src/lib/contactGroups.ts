@@ -1,8 +1,4 @@
-import {
-  createNameCollection,
-  useNameCollectionActions,
-  useSetNamedSetMembers,
-} from "./nameCollection";
+import { createNameCollection } from "./nameCollection";
 import { keys } from "./queryKeys";
 import reservedNames from "./reservedNames.json";
 import { forGroup } from "./searchQuery";
@@ -103,13 +99,3 @@ export function contactBelongsToGroup(
 
 /** Build the contact-list query for a group page plus optional typed search. */
 export const groupListQuery = contactGroups.listQuery;
-
-/** Create, rename, delete, and set membership on Contact Groups. */
-export function useContactGroupActions() {
-  return useNameCollectionActions(contactGroups);
-}
-
-/** Put contacts in or out of one Contact Group, drawn before the server answers. */
-export function useSetContactGroupMembers() {
-  return useSetNamedSetMembers(contactGroups);
-}

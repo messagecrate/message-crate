@@ -1,9 +1,9 @@
 import { useState } from "react";
 import Button from "../../components/Button";
 import { textInputClass } from "../../components/TextField";
+import { useAuth } from "../../hooks/useAuth";
+import { useRouteMutation } from "../../hooks/useRouteQuery";
 import { errorLine } from "../../lib/apiErrorMessage";
-import { useAuth } from "../../lib/authContext";
-import { useRouteMutation } from "../../lib/routeQuery";
 import { changePassword, setAccountPassword } from "../../lib/serverApi";
 import { sectionTitleClass } from "./profileStyles";
 

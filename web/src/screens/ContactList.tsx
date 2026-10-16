@@ -6,18 +6,16 @@ import ContactSortMenu from "../components/ContactSortMenu";
 import ExportAddressBookButton from "../components/ExportAddressBookButton";
 import GroupsMenu from "../components/GroupsMenu";
 import InfiniteOffsetList from "../components/InfiniteOffsetList";
+import { useContactGroupActions } from "../hooks/useContactGroupActions";
 import { useContactGroups } from "../hooks/useContactGroups";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useResetOnChange } from "../hooks/useResetOnChange";
 import { useSetRightToolbar } from "../hooks/useRightToolbar";
+import { useRoutePagedList } from "../hooks/useRouteQuery";
 import { useSelectAll } from "../hooks/useSelectAll";
+import { useTimeZone } from "../hooks/useTimeZone";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
-import {
-  contactBelongsToGroup,
-  groupListQuery,
-  useContactGroupActions,
-  useSetContactGroupMembers,
-} from "../lib/contactGroups";
+import { contactBelongsToGroup, groupListQuery } from "../lib/contactGroups";
 import { contactLabelText } from "../lib/contactLabel";
 import {
   type ContactSortState,
@@ -33,12 +31,12 @@ import { PAGE_SIZE_CONTACTS_FIRST, PAGE_SIZE_FIRST } from "../lib/listPaging";
 import { checksFromMembers, clearAllMembers } from "../lib/membership";
 import { keys } from "../lib/queryKeys";
 import { applyCheckedRange } from "../lib/rangeCheck";
-import { type PagedFetchPage, useRoutePagedList } from "../lib/routeQuery";
+import type { PagedFetchPage } from "../lib/routeQuery";
 import { hasFieldToken, stripFieldTokens } from "../lib/searchFields";
 import { listContacts } from "../lib/serverApi";
 import type { components } from "../lib/serverApi.types";
-import { useTimeZone } from "../lib/timeZone";
 import { UNKNOWN_GROUP } from "../lib/unknownGroup";
+import { useSetContactGroupMembers } from "./contacts/useSetContactGroupMembers";
 
 /** How long the search waits after the last key before it asks the server. */
 export const FILTER_DEBOUNCE_MS = 300;

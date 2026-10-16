@@ -5,9 +5,9 @@ import {
   desktopLogDownload,
   desktopLogSource,
   UNREADABLE_RUN_LOG,
-  useDesktopLogs,
-  useLogReader,
 } from "../../../components/logs/logSource";
+import { useDesktopLogs } from "../../../hooks/useDesktopLogs";
+import { useLogReader } from "../../../hooks/useLogReader";
 import { canReadDesktopLogs } from "../../../lib/desktopFeatures";
 import { isTauri } from "../../../lib/tauriCheck";
 

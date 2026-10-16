@@ -2,7 +2,8 @@
 
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ThemeProvider, useTheme } from "./ThemeProvider";
+import { useTheme } from "../components/useTheme";
+import { ThemeProvider } from "./ThemeProvider";
 
 describe("ThemeProvider with browser storage blocked", () => {
   beforeEach(() => {

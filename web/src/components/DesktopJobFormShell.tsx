@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { type DesktopJobName, desktopJobRunningText, useDesktopJob } from "../lib/desktopJob";
+import { useDesktopJob } from "../hooks/useDesktopJob";
+import { type DesktopJobName, desktopJobRunningText } from "../lib/desktopJob";
 import Button from "./Button";
 import ProgressBar from "./ProgressBar";
 

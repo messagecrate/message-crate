@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Checkbox, Radio, RadioGroup, ToggleButton } from "react-aria-components";
 import { parseSelectKey } from "../lib/selectKey";
-import { useTheme } from "../lib/ThemeProvider";
 import type { ThemeSeeds } from "../lib/theme";
 import { focusOutlineClass, focusRingClass } from "../lib/uiStyles";
 import { ToggleCheckIcon } from "./icons";
 import PlainButton from "./PlainButton";
 import { ColorRow, formatCompare } from "./theme/ThemeColorRow";
+import { useTheme } from "./useTheme";
 
 const SEED_FIELDS: {
   key: keyof ThemeSeeds;
