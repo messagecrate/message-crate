@@ -326,9 +326,11 @@ mod tests {
             }));
         });
         server.mock(|when, then| {
-            when.method(GET).path("/v1/imports/7");
+            when.method(GET)
+                .path("/v1/imports")
+                .query_param("status", "running");
             then.status(200)
-                .json_body(json!({ "id": 7, "mode": "append" }));
+                .json_body(json!({ "items": [{ "id": 7, "mode": "append" }] }));
         });
         server
     }
