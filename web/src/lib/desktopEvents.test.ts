@@ -4,8 +4,7 @@
 // tests/fixtures/desktop-events/events.json from the real structs, and this
 // test checks every payload in it against its TypeScript type (#2109): a
 // field renamed or removed in Rust, a field the TypeScript type lacks, or a
-// word outside a TypeScript union fails here, with one exception that the
-// header of src-tauri/src/commands/events/fixture.rs names.
+// word outside a TypeScript union fails here.
 //
 // Each type's shape below is checked against the type by the compiler, so a
 // field renamed in TypeScript fails the type-check, and the payloads then
@@ -71,7 +70,7 @@ const PROGRESS = {
 
 const ISSUE = {
   kind: { skip: true, error: true, note: true, resolved: true },
-  step: { parse: true, attachments: true, prepare: true, media: true, upload: true },
+  step: { parse: true, attachments: true, media: true, upload: true },
   item: "string",
   reason: "string",
   conversation: { optional: "string" },

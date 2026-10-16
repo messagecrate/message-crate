@@ -11,7 +11,8 @@
 //! [`DesktopJobErrorEvent`].
 
 use message_crate_core::{
-    Canceled, IssueSink, LogSink, ProgressEvent, ProgressSink, RunIssue, RunIssueKind, WriteStatus,
+    Canceled, IssueSink, LogSink, ProgressEvent, ProgressSink, RunIssue, RunIssueKind,
+    RunIssueStep, WriteStatus,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -218,8 +219,8 @@ impl From<ProgressEvent> for WindowEvent {
 pub struct ImportIssueEvent {
     /// What the row is, sent as its lowercase word.
     pub kind: RunIssueKind,
-    /// The step that raised it, such as `attachments`.
-    pub step: String,
+    /// The step that raised it.
+    pub step: RunIssueStep,
     /// What was affected.
     pub item: String,
     /// Why, in one sentence.
@@ -236,7 +237,7 @@ impl From<&RunIssue> for ImportIssueEvent {
     fn from(issue: &RunIssue) -> Self {
         Self {
             kind: issue.kind,
-            step: issue.step.clone(),
+            step: issue.step,
             item: issue.item.clone(),
             reason: issue.reason.clone(),
             conversation: issue.conversation.clone(),
@@ -688,7 +689,7 @@ mod tests {
     fn a_staging_row_keeps_its_conversation() {
         let json = serde_json::to_value(ImportIssueEvent::from(&RunIssue {
             kind: message_crate_core::RunIssueKind::Error,
-            step: "attachments".into(),
+            step: RunIssueStep::Attachments,
             item: "/backup/IMG_0001.MOV".into(),
             reason: "could not be decrypted: No space left on device".into(),
             conversation: Some("c.jsonl".into()),
@@ -703,7 +704,7 @@ mod tests {
     fn a_run_issue_is_sent_as_an_import_issue() {
         let json = serde_json::to_value(ImportIssueEvent::from(&RunIssue {
             kind: message_crate_core::RunIssueKind::Error,
-            step: "attachments".into(),
+            step: RunIssueStep::Attachments,
             item: "/backup/IMG_0001.MOV".into(),
             reason: "could not be decrypted: No space left on device".into(),
             conversation: None,

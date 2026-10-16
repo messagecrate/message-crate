@@ -3,7 +3,7 @@
 //! wrote nothing, or a report that dropped the bad-date count, passed them.
 
 use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_test_run};
-use message_crate_core::{OpenExtractConfig, RunIssue};
+use message_crate_core::{OpenExtractConfig, RunIssue, RunIssueStep};
 use std::fs;
 
 const ALL_CONVERSATIONS_CSV: &str = "\
@@ -68,8 +68,8 @@ fn run_sends_an_import_error_for_an_unreadable_csv_and_a_note_for_a_name_only_co
         .find(|i| i.kind == message_crate_core::RunIssueKind::Error)
         .expect("an error row");
     assert_eq!(
-        (error.step.as_str(), error.item.as_str()),
-        ("parse", broken.as_str())
+        (error.step, error.item.as_str()),
+        (RunIssueStep::Parse, broken.as_str())
     );
     let notes: Vec<&RunIssue> = issues
         .iter()
@@ -79,7 +79,7 @@ fn run_sends_an_import_error_for_an_unreadable_csv_and_a_note_for_a_name_only_co
         notes,
         [&RunIssue {
             kind: message_crate_core::RunIssueKind::Note,
-            step: "parse".into(),
+            step: RunIssueStep::Parse,
             item: format!("{} (Mystery Person)", input.join("all_conversations.csv").display()),
             reason: "This conversation names its person with no phone number or email address, so it is kept under the name alone.".into(),
             conversation: None,

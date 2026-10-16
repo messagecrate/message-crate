@@ -154,7 +154,11 @@ export interface ImportIssueEvent {
    * file on a later try.
    */
   kind: RunIssueKind;
-  step: "parse" | "attachments" | "prepare" | "media" | "upload";
+  /**
+   * The step that raised the row: `RunIssueStep` in
+   * `crates/core/message-crate-core/src/pipeline.rs`.
+   */
+  step: "parse" | "attachments" | "media" | "upload";
   item: string;
   reason: string;
   /**

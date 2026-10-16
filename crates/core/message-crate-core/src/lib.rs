@@ -42,8 +42,8 @@ pub use exporters::{
 };
 pub use pipeline::{
     CSV_NOT_READ, ExportReport, IssueSink, NAME_ONLY_CONVERSATION_NOTE, RunIssue, RunIssueKind,
-    RunResult, discover_files, export_meta, file_modified_unix_ms, newest_file_modified_unix_ms,
-    prepare_outputs, project_conversation, unreadable_parts_note,
+    RunIssueStep, RunResult, discover_files, export_meta, file_modified_unix_ms,
+    newest_file_modified_unix_ms, prepare_outputs, project_conversation, unreadable_parts_note,
 };
 pub use process::{
     CancelFlag, Canceled, LogSink, Sinks, check_cancel, is_canceled, parallel_for_each,
