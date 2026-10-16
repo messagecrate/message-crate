@@ -510,6 +510,11 @@ Rust formatter is `rustfmt`. CI gates Clippy and rustdoc at `-D warnings` on the
 cargo fmt --all -- --check
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
+# Rustdoc at -D warnings, private items included (what CI runs: a step of
+# the clippy job and of check-tauri; check-pr.sh runs both)
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
+RUSTDOCFLAGS="-D warnings" cargo doc --manifest-path src-tauri/Cargo.toml --no-deps --document-private-items
+
 # Rewrite Rust (workspace + src-tauri) and web/ (Biome)
 ./scripts/format-all.sh
 
@@ -592,7 +597,7 @@ cd docs && npm ci && npm run check && npm run build
 
 Not gated by CI `web-next/` (`npm run lint` / `npm test` there if that tree is edited).
 
-Clippy is a CI job (`-D warnings`, workspace and `src-tauri`), and so is rustdoc (`RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items`, workspace and `src-tauri`). `./scripts/check-pr.sh` runs both locally (`rust-analyzer.check.command` is `clippy` in `.vscode/settings.json`).
+Clippy is a CI job (`-D warnings`, workspace and `src-tauri`). `./scripts/check-pr.sh` runs it locally (`rust-analyzer.check.command` is `clippy` in `.vscode/settings.json`).
 
 ### Releases and versions
 
