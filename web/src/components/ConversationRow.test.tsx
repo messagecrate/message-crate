@@ -46,6 +46,28 @@ describe("ConversationRow", () => {
     expect(row.textContent).toBe("Ada LovelaceText Message");
   });
 
+  it("names an untitled group after everyone in it, as the header and Trash do", () => {
+    render(
+      <ConversationRow
+        conversation={conversation({
+          is_group: true,
+          participants: [
+            participant({ name: "Ann", identity: "+15550101" }),
+            participant({ name: "Bob", identity: "+15550102" }),
+            participant({ name: "Cy", identity: "+15550103" }),
+          ],
+        })}
+        isSelected={false}
+        onClick={() => {}}
+        checked={false}
+        onCheckChange={() => {}}
+      />,
+    );
+    expect(screen.getByRole("checkbox", { name: "Select Ann, Bob, Cy" })).toBeTruthy();
+    // The title a person reads, which the row draws name by name.
+    expect(screen.getByRole("button").textContent).toContain("Ann, Bob, Cy");
+  });
+
   it("names a group with nobody in it as the Messages list does", () => {
     render(
       <ConversationRow
