@@ -217,7 +217,7 @@ fn at(phase: Phase, wanted_open: bool) -> State {
         wanted_open,
         jobs: 0,
         restarts: Vec::new(),
-        recovering: false,
+        recovering: None,
     }
 }
 
@@ -274,7 +274,7 @@ fn the_apps_own_server_is_started_again_when_it_exits() {
         actions,
         [
             Action::Spawn { open: false },
-            Action::Notify(NoticeKind::Restarting)
+            Action::Notify(NoticeKind::Restarting(Stop::Exited))
         ]
     );
     assert_eq!(state.phase, Phase::Starting { open: false });
@@ -285,7 +285,7 @@ fn the_apps_own_server_is_started_again_when_it_exits() {
         actions,
         [
             Action::Spawn { open: true },
-            Action::Notify(NoticeKind::Restarting)
+            Action::Notify(NoticeKind::Restarting(Stop::Exited))
         ]
     );
     assert_eq!(state.phase, Phase::Starting { open: true });
@@ -310,7 +310,7 @@ fn a_server_that_keeps_exiting_is_started_again_only_a_few_times() {
         actions,
         [
             Action::Spawn { open: false },
-            Action::Notify(NoticeKind::Restarting)
+            Action::Notify(NoticeKind::Restarting(Stop::Exited))
         ]
     );
 
@@ -334,7 +334,7 @@ fn a_server_that_keeps_exiting_is_started_again_only_a_few_times() {
         actions,
         [
             Action::Spawn { open: false },
-            Action::Notify(NoticeKind::Restarting)
+            Action::Notify(NoticeKind::Restarting(Stop::Exited))
         ]
     );
 }
@@ -355,7 +355,7 @@ fn exits_far_apart_are_always_started_again() {
             actions,
             [
                 Action::Spawn { open: false },
-                Action::Notify(NoticeKind::Restarting)
+                Action::Notify(NoticeKind::Restarting(Stop::Exited))
             ],
             "{time:?}"
         );
@@ -472,7 +472,7 @@ fn the_apps_own_server_is_killed_and_started_again_once_it_stops_answering() {
         [
             Action::Kill,
             Action::Spawn { open: false },
-            Action::Notify(NoticeKind::Restarting)
+            Action::Notify(NoticeKind::Restarting(Stop::Unanswered))
         ]
     );
     assert_eq!(state.phase, Phase::Starting { open: false });
@@ -545,7 +545,7 @@ fn a_restart_that_fails_tells_the_window_and_so_does_a_retry_that_answers() {
 
     let (state, actions) = step(restarting, Event::Stopped);
     assert_eq!(actions, [Action::Kill]);
-    assert!(!state.recovering);
+    assert!(state.recovering.is_none());
 }
 
 /// An import can keep the server from answering in time, so the app's own
@@ -573,7 +573,7 @@ fn the_apps_own_server_is_not_killed_for_not_answering_while_a_job_runs() {
         [
             Action::Kill,
             Action::Spawn { open: false },
-            Action::Notify(NoticeKind::Restarting)
+            Action::Notify(NoticeKind::Restarting(Stop::Unanswered))
         ]
     );
     assert_eq!(state.phase, Phase::Starting { open: false });
@@ -1088,7 +1088,12 @@ mod with_a_script {
         // no Message Crate, and the server is killed and started again. The
         // new one says it listens, so the window is told it answers.
         let wait = Duration::from_secs(60);
-        assert_eq!(notices.recv_timeout(wait), Ok(Notice::Restarting));
+        assert_eq!(
+            notices.recv_timeout(wait),
+            Ok(Notice::Restarting {
+                cause: Stop::Unanswered
+            })
+        );
         assert_eq!(notices.recv_timeout(wait), Ok(Notice::Answering));
         let running = server.lock().server.as_ref().map(ServerProcess::id);
         assert!(running.is_some_and(|pid| pid != first), "{running:?}");

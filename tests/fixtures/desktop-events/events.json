@@ -152,5 +152,23 @@
       "total": 0,
       "waiting": "wtsexporter"
     }
+  ],
+  "local-server:notice": [
+    {
+      "cause": "unanswered",
+      "state": "restarting"
+    },
+    {
+      "cause": "exited",
+      "state": "restarting"
+    },
+    {
+      "state": "answering"
+    },
+    {
+      "details": "database is locked",
+      "message": "Message Crate stopped 4 times within 10 minutes.",
+      "state": "failed"
+    }
   ]
 }

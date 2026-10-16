@@ -42,13 +42,16 @@ export async function invokeOpenMessageCrateDirectory(): Promise<void> {
 /**
  * What the desktop app tells the window while it starts its own Message
  * Crate again after it stopped answering or exited (`Notice` in
- * `src-tauri/src/local_server.rs`): that it is restarting it, that a Message
- * Crate answers again, or that it could not start it.
+ * `src-tauri/src/local_server.rs`): that it is restarting it and why, that a
+ * Message Crate answers again, or that it could not start it.
  */
 export type LocalServerNotice =
-  | { state: "restarting" }
+  | { state: "restarting"; cause: "unanswered" | "exited" }
   | { state: "answering" }
   | { state: "failed"; message: string; details: string };
+
+/** The channel of `LocalServerNotice`: `NOTICE` in `src-tauri/src/commands/local_server.rs`. */
+export const LOCAL_SERVER_NOTICE = "local-server:notice";
 
 /**
  * Call `handler` with each notice the desktop app sends about its own
@@ -57,5 +60,5 @@ export type LocalServerNotice =
 export async function onLocalServerNotice(
   handler: (notice: LocalServerNotice) => void,
 ): Promise<UnlistenFn> {
-  return listen<LocalServerNotice>("local-server:notice", (event) => handler(event.payload));
+  return listen<LocalServerNotice>(LOCAL_SERVER_NOTICE, (event) => handler(event.payload));
 }

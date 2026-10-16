@@ -1,6 +1,7 @@
 //! Writes `tests/fixtures/desktop-events/events.json`: payloads of every event
 //! the window reads as a typed object, built from the structs in
-//! [`super`], keyed by the channel each is sent on.
+//! [`super`] and the app's own server's [`Notice`], keyed by the channel each
+//! is sent on.
 //! `web/src/lib/desktopEvents.test.ts` reads the file back and checks every
 //! payload against its TypeScript type in `web/src/lib/types.ts`, so a field
 //! renamed or removed on either side fails a test (#2109).
@@ -26,6 +27,8 @@ use super::{
     DesktopJobErrorEvent, ERROR, FILE_DONE, FILE_WRITTEN, ISSUE, ImportFileDoneEvent,
     ImportIssueEvent, ImportProgressEvent, PROGRESS, Step, WindowEvent,
 };
+use crate::commands::local_server::NOTICE;
+use crate::local_server::{Notice, Stop};
 use crate::tool_downloads::Program;
 
 /// The committed fixture, from the repository root.
@@ -120,12 +123,26 @@ fn payloads() -> Value {
     .into_iter()
     .map(to_json);
 
-    let channels: [(&str, Vec<Value>); 5] = [
+    // The app's own server stopped each way, answered again, and failed.
+    let notice = every!(Stop: Unanswered, Exited)
+        .into_iter()
+        .map(|cause| Notice::Restarting { cause })
+        .chain([
+            Notice::Answering,
+            Notice::Failed {
+                message: "Message Crate stopped 4 times within 10 minutes.".into(),
+                details: "database is locked".into(),
+            },
+        ])
+        .map(to_json);
+
+    let channels: [(&str, Vec<Value>); 6] = [
         (PROGRESS, progress.collect()),
         (ISSUE, issue.collect()),
         (FILE_DONE, file_done.collect()),
         (FILE_WRITTEN, file_written.collect()),
         (ERROR, error.collect()),
+        (NOTICE, notice.collect()),
     ];
     Value::Object(
         channels

@@ -14,6 +14,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { LOCAL_SERVER_NOTICE, type LocalServerNotice } from "./desktop/localServer";
 import type {
   DesktopJobErrorEvent,
   ImportFileDoneEvent,
@@ -47,6 +48,17 @@ type Shape<T> = {
   [K in keyof T]-?: undefined extends T[K]
     ? Optional<ValueShape<NonNullable<T[K]>>>
     : ValueShape<T[K]>;
+};
+
+/** Every key of any member of the union `U`. */
+type KeysOfUnion<U> = U extends unknown ? keyof U : never;
+
+/**
+ * A tagged union as one object type, for `Shape`: each field any member has,
+ * with every value it takes, optional when some member lacks it.
+ */
+type Flat<U> = {
+  [K in KeysOfUnion<U>]: U extends Record<K, infer V> ? V : undefined;
 };
 
 type AnyValueShape = "boolean" | "number" | "string" | Record<string, true>;
@@ -92,6 +104,13 @@ const ERROR = {
   user_message: { optional: "string" },
   canceled: "boolean",
 } satisfies Shape<DesktopJobErrorEvent>;
+
+const NOTICE = {
+  state: { restarting: true, answering: true, failed: true },
+  cause: { optional: { unanswered: true, exited: true } },
+  message: { optional: "string" },
+  details: { optional: "string" },
+} satisfies Shape<Flat<LocalServerNotice>>;
 
 const FIXTURE_PATH = fileURLToPath(
   new URL("../../../tests/fixtures/desktop-events/events.json", import.meta.url),
@@ -160,6 +179,10 @@ describe("the desktop app's job events", () => {
     checkChannel("desktop-job:error", ERROR);
   });
 
+  it("local-server:notice matches LocalServerNotice", () => {
+    checkChannel(LOCAL_SERVER_NOTICE, NOTICE);
+  });
+
   it("the fixture holds no channel this test does not check", () => {
     expect(Object.keys(fixture).sort()).toEqual([
       "desktop-job:error",
@@ -167,6 +190,7 @@ describe("the desktop app's job events", () => {
       "desktop-job:file-written",
       "desktop-job:issue",
       "desktop-job:progress",
+      "local-server:notice",
     ]);
   });
 });

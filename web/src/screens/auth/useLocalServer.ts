@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { errorText } from "../../lib/apiErrorMessage";
 import { invokeLocalServerStatus, type LocalServerStatus } from "../../lib/desktop/localServer";
-import { startLocalServer } from "../../lib/localServer";
+import { startFailure, startLocalServer } from "../../lib/localServer";
 
 /** How often a starting server is asked how it is getting on. */
 export const STARTING_POLL_MS = 500;
@@ -15,16 +14,6 @@ export const STARTING_POLL_MS = 500;
  * notice bar (`components/NoticeBar.tsx`).
  */
 export const READY_POLL_MS = 3000;
-
-/** What the app says when it cannot even ask for its server to be started. */
-function failed(error: unknown): LocalServerStatus {
-  return {
-    status: "failed",
-    reason: "start_failed",
-    message: "Message Crate could not be started.",
-    details: errorText(error),
-  };
-}
 
 /**
  * The desktop app's own Message Crate, for the login card.
@@ -64,11 +53,11 @@ export function useLocalServer(active: boolean): {
             : null;
       if (wait !== null) {
         timer.current = setTimeout(() => {
-          invokeLocalServerStatus().then(settle, (error: unknown) => settle(failed(error)));
+          invokeLocalServerStatus().then(settle, (error: unknown) => settle(startFailure(error)));
         }, wait);
       }
     };
-    startLocalServer().then(settle, (error: unknown) => settle(failed(error)));
+    startLocalServer().then(settle, (error: unknown) => settle(startFailure(error)));
   }, [stop]);
 
   useEffect(() => {

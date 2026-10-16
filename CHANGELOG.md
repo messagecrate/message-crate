@@ -517,8 +517,9 @@ carry their date on the heading.
   left every screen failing with network errors. The app now checks on its
   own every few seconds, starts a server that stopped answering again, and
   says so in a bar across the top of the page: **The server stopped
-  answering. Restarting it…** clears itself once the server answers. If it
-  cannot be started, the bar says why and offers **Try again** (#2695).
+  answering. Restarting it…** clears itself once the server answers. A
+  server that crashed gets the same bar. If it cannot be started, the bar
+  says why and offers **Try again** (#2695).
 - 2026-10-16: **A group with no name reads the same everywhere.** A
   group conversation without a title was named after everyone in it in the
   conversation list, such as "Ann, Bob, Cy", but as "3 participants" in its

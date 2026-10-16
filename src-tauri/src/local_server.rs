@@ -250,9 +250,11 @@ pub enum Status {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum Notice {
-    /// The app's own server stopped answering or exited, and is being
-    /// started again.
-    Restarting,
+    /// The app's own server stopped, and is being started again.
+    Restarting {
+        /// How it stopped, for the screens to choose their words.
+        cause: Stop,
+    },
     /// A Message Crate answers again at the address.
     Answering,
     /// The server could not be started again.
@@ -264,12 +266,22 @@ pub enum Notice {
     },
 }
 
+/// How the app's own ready server stopped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Stop {
+    /// It still ran, and was killed because it no longer answered.
+    Unanswered,
+    /// It exited on its own, as in a crash or an out-of-memory kill.
+    Exited,
+}
+
 /// Which [`Notice`] [`step`] asks for. [`LocalServer`] fills in the words
 /// from the state it reports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NoticeKind {
     /// [`Notice::Restarting`].
-    Restarting,
+    Restarting(Stop),
     /// [`Notice::Answering`].
     Answering,
     /// [`Notice::Failed`].
@@ -339,7 +351,8 @@ struct State {
     /// Whether the app's own server stopped and the window was told so, and
     /// no Message Crate has answered since. Stays set through a failed
     /// restart, so the window is told when a later Retry brings one back.
-    recovering: bool,
+    /// Holds how it stopped.
+    recovering: Option<Stop>,
 }
 
 impl Default for State {
@@ -349,7 +362,7 @@ impl Default for State {
             wanted_open: false,
             jobs: 0,
             restarts: Vec::new(),
-            recovering: false,
+            recovering: None,
         }
     }
 }
@@ -435,7 +448,7 @@ enum Action {
 /// Decide what follows `event`. The only place the state changes; it does no
 /// I/O, so every rule is tested without a process.
 fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
-    let was_recovering = state.recovering;
+    let was_recovering = state.recovering.is_some();
     let was_failed = matches!(state.phase, Phase::PortTaken | Phase::Failed { .. });
     let mut actions = Vec::new();
     match event {
@@ -521,7 +534,7 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
                     // ends it, and no `ChildExited` follows a kill, so it is
                     // started again here.
                     actions.push(Action::Kill);
-                    start_own_again(&mut state, &mut actions, found_at, output);
+                    start_own_again(&mut state, &mut actions, found_at, output, Stop::Unanswered);
                 }
             }
             (
@@ -577,7 +590,9 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
             }
             // A crash or an out-of-memory kill: started again, so an Upload
             // in progress gets its server back, unless it keeps exiting.
-            Phase::Own { .. } => start_own_again(&mut state, &mut actions, found_at, output),
+            Phase::Own { .. } => {
+                start_own_again(&mut state, &mut actions, found_at, output, Stop::Exited);
+            }
             _ => {}
         },
         Event::Deadline { output } => {
@@ -620,7 +635,7 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
         }
         Event::Stopped => {
             // The window is closing too, and has nothing to be told.
-            state.recovering = false;
+            state.recovering = None;
             match state.phase {
                 Phase::Starting { .. } | Phase::Own { .. } => {
                     own_server_ended(&mut state, "Message Crate stopped.", String::new());
@@ -638,9 +653,9 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
     (state, actions)
 }
 
-/// The app's own ready server has stopped: it exited on its own, or it was
-/// killed for not answering. It is started again the way the person wants
-/// it, unless it was started again [`MAX_RESTARTS`] times within
+/// The app's own ready server has stopped as `stop` says: it exited on its
+/// own, or it was killed for not answering. It is started again the way the
+/// person wants it, unless it was started again [`MAX_RESTARTS`] times within
 /// [`RESTART_WINDOW`] before `found_at`; then the start fails with `output`,
 /// what it last wrote.
 fn start_own_again(
@@ -648,8 +663,9 @@ fn start_own_again(
     actions: &mut Vec<Action>,
     found_at: Instant,
     output: String,
+    stop: Stop,
 ) {
-    state.recovering = true;
+    state.recovering = Some(stop);
     state
         .restarts
         .retain(|&restart| found_at.saturating_duration_since(restart) < RESTART_WINDOW);
@@ -681,21 +697,21 @@ fn tell_recovery(
     was_recovering: bool,
     was_failed: bool,
 ) {
-    if !state.recovering {
+    let Some(stop) = state.recovering else {
         return;
-    }
+    };
     let notice = match state.phase {
         Phase::Own { .. } | Phase::Found { .. } => {
-            state.recovering = false;
+            state.recovering = None;
             Some(NoticeKind::Answering)
         }
         Phase::PortTaken | Phase::Failed { .. } => (!was_failed).then_some(NoticeKind::Failed),
         Phase::Idle => {
-            state.recovering = false;
+            state.recovering = None;
             None
         }
         Phase::Probing | Phase::Starting { .. } | Phase::Lost { .. } => {
-            (!was_recovering).then_some(NoticeKind::Restarting)
+            (!was_recovering).then_some(NoticeKind::Restarting(stop))
         }
     };
     actions.extend(notice.map(Action::Notify));
@@ -886,7 +902,7 @@ impl Inner {
     /// The [`Notice`] of `kind`, with the words of the state reported now.
     fn notice(&self, kind: NoticeKind) -> Notice {
         match kind {
-            NoticeKind::Restarting => Notice::Restarting,
+            NoticeKind::Restarting(cause) => Notice::Restarting { cause },
             NoticeKind::Answering => Notice::Answering,
             NoticeKind::Failed => match self.status() {
                 Status::Failed {
