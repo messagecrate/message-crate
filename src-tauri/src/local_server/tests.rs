@@ -1075,7 +1075,9 @@ mod in_a_job {
     /// The environment variable that tells [`stand_in`] which process to be.
     const ROLE: &str = "MESSAGE_CRATE_STAND_IN_ROLE";
 
-    /// The line the parent writes before the child's process id.
+    /// What the parent writes before the child's process id. libtest has
+    /// already written `test <name> ... ` on the same line, with no line
+    /// break, so the words are looked for anywhere in a line.
     const CHILD_LINE: &str = "stand-in child: ";
 
     /// The stand-in server and its child, when this test program is run
@@ -1127,7 +1129,7 @@ mod in_a_job {
         let child = BufReader::new(stdout)
             .lines()
             .map_while(Result::ok)
-            .find_map(|line| line.strip_prefix(CHILD_LINE).map(str::to_owned))
+            .find_map(|line| line.split_once(CHILD_LINE).map(|(_, pid)| pid.to_owned()))
             .expect("the stand-in server ended before it started its child");
         let child = open_process(child.trim().parse().unwrap());
         (server, child)
