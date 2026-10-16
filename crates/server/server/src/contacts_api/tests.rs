@@ -3956,7 +3956,9 @@ async fn a_vcard_conversion_refuses_a_name_in_a_charset_it_cannot_read() {
     let problem = crate::test_support::expect_problem(status, &text, ProblemType::ValidationFailed);
     assert_eq!(
         problem.errors.unwrap(),
-        ["card 2 writes its FN in the charset \"X-MADE-UP\", which Message Crate cannot read"]
+        [
+            "card 2 writes its FN in the character set \"X-MADE-UP\", which Message Crate cannot read"
+        ]
     );
 }
 

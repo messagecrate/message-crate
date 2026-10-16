@@ -317,8 +317,8 @@ pub(crate) struct GetVcardAddressBookQuery {
 /// A vCard 2.1 quoted-printable value is read in the charset its `CHARSET`
 /// names, such as `SHIFT_JIS` or `ISO-8859-1`, and as UTF-8 when it names
 /// none. A body that holds no `BEGIN:VCARD` line, and a card that writes its
-/// name, a number or an email address in a charset with no WHATWG label,
-/// answer `422 Unprocessable Entity`.
+/// name, a number or an email address in a charset Message Crate cannot
+/// read, answer `422 Unprocessable Entity`.
 #[utoipa::path(
     post,
     path = "/v1/contacts/vcard-address-book",
@@ -365,23 +365,12 @@ pub(crate) async fn get_vcard_address_book(
     let body = read_body_limited(request.into_body(), MAX_VCARD_BYTES).await?;
     let content = std::str::from_utf8(&body)
         .map_err(|_| ApiError::MalformedBody("vCard file is not UTF-8 text".into()))?;
-    let book = address_book::from_vcard(content, country).map_err(vcard_refusal)?;
-    let Some(csv) = book else {
+    let Some(csv) = address_book::from_vcard(content, country)? else {
         return Err(ApiError::validation(
             "the file holds no vCard: it has no BEGIN:VCARD line",
         ));
     };
     Ok(address_book_attachment(csv))
-}
-
-/// A card in a charset the reader cannot read is the caller's to fix, so it
-/// answers `422 Unprocessable Entity` naming the card and the charset; any
-/// other failure is the server's.
-fn vcard_refusal(err: anyhow::Error) -> ApiError {
-    match err.downcast::<::contacts::UnknownCharset>() {
-        Ok(unknown) => ApiError::validation(unknown.to_string()),
-        Err(err) => ApiError::from(err),
-    }
 }
 
 /// An address book answered as a file: `text/csv`, as an attachment named

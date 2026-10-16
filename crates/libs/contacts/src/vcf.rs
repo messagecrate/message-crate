@@ -3,10 +3,10 @@
 use encoding_rs::{Encoding, UTF_8, WINDOWS_1252};
 
 /// A card names a `CHARSET` for a quoted-printable value that the reader
-/// does not know, so the value cannot be read as text.
+/// cannot read, so the value cannot be read as text.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error(
-    "card {card} writes its {property} in the charset {charset:?}, which Message Crate cannot read"
+    "card {card} writes its {property} in the character set {charset:?}, which Message Crate cannot read"
 )]
 pub struct UnknownCharset {
     /// The card's position in the file, counted from 1.
@@ -61,15 +61,16 @@ impl VcfCard {
 /// A vCard 2.1 quoted-printable value is decoded in the charset its
 /// `CHARSET` parameter names, by its WHATWG label: UTF-8, Shift_JIS, GBK,
 /// Big5, EUC-KR, the Windows and ISO-8859 sets, KOI8 and the rest. As in a
-/// browser, ISO-8859-1 is read as Windows-1252, which most files labelled
+/// browser, ISO-8859-1 is read as Windows-1252, which most files labeled
 /// ISO-8859-1 are. A value with no `CHARSET` is read as UTF-8, and as
 /// Windows-1252 when its bytes are not UTF-8.
 ///
 /// # Errors
 ///
 /// [`UnknownCharset`] when a quoted-printable `FN`, `N`, `TEL` or `EMAIL`
-/// names a charset that has no WHATWG label, rather than reading the name
-/// wrong.
+/// names a charset Message Crate cannot read, rather than reading the name
+/// wrong: a label WHATWG does not list, or one it maps to its replacement
+/// encoding, which would turn every character into U+FFFD.
 pub fn parse_vcf(text: &str) -> Result<Vec<VcfCard>, UnknownCharset> {
     let lines = unfold_lines(text);
     let mut cards = Vec::new();
@@ -90,11 +91,7 @@ pub fn parse_vcf(text: &str) -> Result<Vec<VcfCard>, UnknownCharset> {
         let Some(card) = current.as_mut() else {
             continue;
         };
-        apply_line(card, line).map_err(|(property, charset)| UnknownCharset {
-            card: cards.len() + 1,
-            property,
-            charset,
-        })?;
+        apply_line(card, cards.len() + 1, line)?;
     }
 
     Ok(cards)
@@ -143,13 +140,17 @@ fn is_quoted_printable(line: &str) -> bool {
     })
 }
 
-/// The `CHARSET` parameter of a property line, as written, if it has one.
+/// The `CHARSET` parameter of a property line, if it has one, without the
+/// double quotes vCard 3.0 and 4.0 allow around a parameter value.
 fn charset_param(name: &str) -> Option<&str> {
     name.split(';').skip(1).find_map(|param| {
         let (key, value) = param.split_once('=')?;
-        key.trim()
-            .eq_ignore_ascii_case("CHARSET")
-            .then(|| value.trim())
+        let value = value.trim();
+        let value = value
+            .strip_prefix('"')
+            .and_then(|inner| inner.strip_suffix('"'))
+            .unwrap_or(value);
+        key.trim().eq_ignore_ascii_case("CHARSET").then_some(value)
     })
 }
 
@@ -187,13 +188,14 @@ fn decode_quoted_printable(value: &str, encoding: &'static Encoding) -> String {
     encoding.decode_without_bom_handling(&out).0.into_owned()
 }
 
-/// Apply one `PROP;params:value` line to the card being built.
+/// Apply one `PROP;params:value` line to the card being built, the
+/// `card_number`th card of the file.
 ///
 /// # Errors
 ///
-/// The property's name and its `CHARSET` when the value is quoted-printable
-/// in a charset with no WHATWG label.
-fn apply_line(card: &mut VcfCard, line: &str) -> Result<(), (String, String)> {
+/// [`UnknownCharset`] when the value is quoted-printable in a charset
+/// Message Crate cannot read.
+fn apply_line(card: &mut VcfCard, card_number: usize, line: &str) -> Result<(), UnknownCharset> {
     let Some((name, value)) = line.split_once(':') else {
         return Ok(());
     };
@@ -207,17 +209,23 @@ fn apply_line(card: &mut VcfCard, line: &str) -> Result<(), (String, String)> {
         return Ok(());
     }
     let decoded;
-    let value = if is_quoted_printable(line) {
-        let encoding = match charset_param(name) {
-            None => UTF_8,
-            Some(label) => Encoding::for_label_no_replacement(label.as_bytes())
-                .ok_or_else(|| (base.clone(), label.to_string()))?,
+    let value =
+        if is_quoted_printable(line) {
+            let encoding =
+                match charset_param(name) {
+                    None => UTF_8,
+                    Some(label) => Encoding::for_label_no_replacement(label.as_bytes())
+                        .ok_or_else(|| UnknownCharset {
+                            card: card_number,
+                            property: base.clone(),
+                            charset: label.to_string(),
+                        })?,
+                };
+            decoded = decode_quoted_printable(value, encoding);
+            decoded.as_str()
+        } else {
+            value
         };
-        decoded = decode_quoted_printable(value, encoding);
-        decoded.as_str()
-    } else {
-        value
-    };
 
     match base.as_str() {
         "FN" => card.fn_raw = unescape(value),
@@ -411,7 +419,18 @@ mod tests {
         assert_eq!(cards[0].n_given, "太郎");
     }
 
-    /// Most files labelled ISO-8859-1 are Windows-1252, where `=80` is the
+    /// vCard 3.0 and 4.0 allow a parameter value in double quotes.
+    #[test]
+    fn parse_vcf_reads_a_charset_written_in_double_quotes() {
+        let text = "BEGIN:VCARD\nVERSION:3.0\n\
+             N;CHARSET=\"Shift_JIS\";ENCODING=QUOTED-PRINTABLE:=8E=52=93=63;;;;\n\
+             FN;CHARSET=\"UTF-8\";ENCODING=QUOTED-PRINTABLE:Dupr=C3=A9\nEND:VCARD\n";
+        let cards = parse_vcf(text).unwrap();
+        assert_eq!(cards[0].n_family, "山田");
+        assert_eq!(cards[0].fn_raw, "Dupré");
+    }
+
+    /// Most files labeled ISO-8859-1 are Windows-1252, where `=80` is the
     /// euro sign rather than a control character. Bytes with no `CHARSET`
     /// that are not UTF-8 are read the same way.
     #[test]
@@ -444,7 +463,7 @@ mod tests {
         );
         assert_eq!(
             refused.to_string(),
-            "card 2 writes its N in the charset \"X-MADE-UP\", which Message Crate cannot read"
+            "card 2 writes its N in the character set \"X-MADE-UP\", which Message Crate cannot read"
         );
         let skipped = "BEGIN:VCARD\nFN:Ada\n\
              NOTE;CHARSET=X-MADE-UP;ENCODING=QUOTED-PRINTABLE:=82\nEND:VCARD\n";

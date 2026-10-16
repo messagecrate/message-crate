@@ -1519,11 +1519,14 @@ pub async fn export_csv(
 ///
 /// # Errors
 ///
-/// Returns [`::contacts::UnknownCharset`] when a card writes its name,
-/// a number or an email address in a charset the reader cannot read, and an
-/// error when the CSV cannot be written.
-pub fn from_vcard(text: &str, country: Option<&'static phone::Country>) -> Result<Option<String>> {
-    let cards = ::contacts::parse_vcf(text)?;
+/// [`VcardError::UnknownCharset`] when a card writes its name, a number or
+/// an email address in a charset Message Crate cannot read, and
+/// [`VcardError::Failed`] when the CSV cannot be written.
+pub fn from_vcard(
+    text: &str,
+    country: Option<&'static phone::Country>,
+) -> Result<Option<String>, VcardError> {
+    let cards = ::contacts::parse_vcf(text).map_err(VcardError::UnknownCharset)?;
     if cards.is_empty() {
         return Ok(None);
     }
@@ -1547,7 +1550,17 @@ pub fn from_vcard(text: &str, country: Option<&'static phone::Country>) -> Resul
             rows.push(row(FileService::Email, email.clone()));
         }
     }
-    write_book(rows).map(Some)
+    write_book(rows).map(Some).map_err(VcardError::Failed)
+}
+
+/// Why a vCard file did not convert to an address book.
+#[derive(Debug)]
+pub enum VcardError {
+    /// A card writes a value in a charset Message Crate cannot read; the
+    /// person can fix the file.
+    UnknownCharset(::contacts::UnknownCharset),
+    /// Something failed that changing the file would not help.
+    Failed(anyhow::Error),
 }
 
 /// The number `written` as the address book writes it: its `+` form in
