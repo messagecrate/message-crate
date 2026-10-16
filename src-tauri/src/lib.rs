@@ -99,6 +99,9 @@ pub fn run() {
             ));
             app.manage(ExportDirectories::at(directory.exports()));
             app.manage(directory.clone());
+            // The window is told when the app's own server is started again
+            // after it stopped, whichever screen is open (#2695).
+            commands::local_server::send_notices(app.handle());
             std::thread::spawn(move || app_directories::sweep_at_start_up(&directory));
             Ok(())
         })

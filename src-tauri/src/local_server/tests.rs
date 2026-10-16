@@ -217,6 +217,7 @@ fn at(phase: Phase, wanted_open: bool) -> State {
         wanted_open,
         jobs: 0,
         restarts: Vec::new(),
+        recovering: false,
     }
 }
 
@@ -225,6 +226,7 @@ fn probed(answer: Probe) -> Event {
     Event::Probed {
         answer,
         output: String::new(),
+        found_at: Instant::now(),
     }
 }
 
@@ -268,13 +270,30 @@ fn exits_at(mut state: State, times: &[Instant]) -> (State, Vec<Action>) {
 fn the_apps_own_server_is_started_again_when_it_exits() {
     let now = Instant::now();
     let (state, actions) = step(at(own(false), false), exit_found_at(now, "crashed"));
-    assert_eq!(actions, [Action::Spawn { open: false }]);
+    assert_eq!(
+        actions,
+        [
+            Action::Spawn { open: false },
+            Action::Notify(NoticeKind::Restarting(Stop::Exited))
+        ]
+    );
     assert_eq!(state.phase, Phase::Starting { open: false });
 
     // Started the way the person wants it now.
     let (state, actions) = step(at(own(false), true), exit_found_at(now, "crashed"));
-    assert_eq!(actions, [Action::Spawn { open: true }]);
+    assert_eq!(
+        actions,
+        [
+            Action::Spawn { open: true },
+            Action::Notify(NoticeKind::Restarting(Stop::Exited))
+        ]
+    );
     assert_eq!(state.phase, Phase::Starting { open: true });
+
+    // The window is told once the new one answers.
+    let (state, actions) = step(state, Event::Listening);
+    assert_eq!(actions, [Action::Notify(NoticeKind::Answering)]);
+    assert_eq!(state.phase, own(true));
 }
 
 /// A server that keeps exiting is not started forever: after
@@ -287,10 +306,16 @@ fn a_server_that_keeps_exiting_is_started_again_only_a_few_times() {
         .map(|n| now + Duration::from_secs(n.into()))
         .collect();
     let (state, actions) = exits_at(at(own(false), false), &times[..times.len() - 1]);
-    assert_eq!(actions, [Action::Spawn { open: false }]);
+    assert_eq!(
+        actions,
+        [
+            Action::Spawn { open: false },
+            Action::Notify(NoticeKind::Restarting(Stop::Exited))
+        ]
+    );
 
     let (state, actions) = exits_at(state, &times[times.len() - 1..]);
-    assert_eq!(actions, []);
+    assert_eq!(actions, [Action::Notify(NoticeKind::Failed)]);
     assert_eq!(
         state.phase,
         Phase::Failed {
@@ -305,7 +330,13 @@ fn a_server_that_keeps_exiting_is_started_again_only_a_few_times() {
     assert_eq!(actions, [Action::Probe]);
     let (state, _) = step(state, probed(Probe::Free));
     let (_, actions) = exits_at(state, &[now + RESTART_WINDOW / 2]);
-    assert_eq!(actions, [Action::Spawn { open: false }]);
+    assert_eq!(
+        actions,
+        [
+            Action::Spawn { open: false },
+            Action::Notify(NoticeKind::Restarting(Stop::Exited))
+        ]
+    );
 }
 
 /// Exits further apart than [`RESTART_WINDOW`] are each started again: only
@@ -320,7 +351,14 @@ fn exits_far_apart_are_always_started_again() {
     for time in times {
         let actions;
         (state, actions) = exits_at(state, &[time]);
-        assert_eq!(actions, [Action::Spawn { open: false }], "{time:?}");
+        assert_eq!(
+            actions,
+            [
+                Action::Spawn { open: false },
+                Action::Notify(NoticeKind::Restarting(Stop::Exited))
+            ],
+            "{time:?}"
+        );
     }
 }
 
@@ -400,9 +438,10 @@ fn a_found_message_crate_is_asked_again_and_replaced_when_it_stops() {
 }
 
 /// The app's own server that still runs but no longer answers is killed and
-/// reported stopped, rather than left ready while every screen fails (#2204).
+/// started again, rather than left ready while every screen fails (#2204,
+/// #2695). The window is told when it is killed and when the new one answers.
 #[test]
-fn the_apps_own_server_is_killed_once_it_stops_answering() {
+fn the_apps_own_server_is_killed_and_started_again_once_it_stops_answering() {
     let ready = at(own(false), false);
     let (state, actions) = step(ready, Event::Check);
     assert_eq!(actions, [Action::Probe]);
@@ -423,26 +462,131 @@ fn the_apps_own_server_is_killed_once_it_stops_answering() {
     assert_eq!(actions, []);
     assert!(matches!(state.phase, Phase::Own { .. }), "{state:?}");
 
-    // The next check that finds nothing answering ends it.
+    // The next check that finds nothing answering ends it, and starts it
+    // again the way the person wants it.
     let (state, actions) = step(state, Event::Check);
     assert_eq!(actions, [Action::Probe]);
+    let (state, actions) = step(state, probed(Probe::Free));
+    assert_eq!(
+        actions,
+        [
+            Action::Kill,
+            Action::Spawn { open: false },
+            Action::Notify(NoticeKind::Restarting(Stop::Unanswered))
+        ]
+    );
+    assert_eq!(state.phase, Phase::Starting { open: false });
+
+    let (state, actions) = step(state, Event::Listening);
+    assert_eq!(actions, [Action::Notify(NoticeKind::Answering)]);
+    assert_eq!(state.phase, own(false));
+}
+
+/// A server that stops answering counts against the same limit as one that
+/// exits: one that keeps stopping is not started forever, and the window is
+/// told it stopped, with what it last wrote.
+#[test]
+fn a_server_that_keeps_stopping_answering_is_started_again_only_a_few_times() {
+    let now = Instant::now();
+    let mut state = at(own(false), false);
+    state.restarts = vec![now; MAX_RESTARTS as usize];
+    let (state, _) = step(state, Event::Check);
+    let (state, _) = step(state, probed(Probe::Free));
+    let (state, _) = step(state, Event::Check);
     let (state, actions) = step(
         state,
         Event::Probed {
             answer: Probe::Free,
             output: "stuck here".into(),
+            found_at: now,
         },
     );
-    assert_eq!(actions, [Action::Kill]);
-    // What it last wrote is kept for a bug report.
+    assert_eq!(actions, [Action::Kill, Action::Notify(NoticeKind::Failed)]);
     assert_eq!(
         state.phase,
         Phase::Failed {
             reason: FailureReason::StartFailed,
-            message: "Message Crate stopped answering.".into(),
+            message: "Message Crate stopped 4 times within 10 minutes.".into(),
             details: "stuck here".into(),
         }
     );
+}
+
+/// A restart that fails stays failed, and the window is told why. Once a
+/// Retry brings a Message Crate back, the window is told it answers.
+/// Closing the app during a restart tells the window nothing.
+#[test]
+fn a_restart_that_fails_tells_the_window_and_so_does_a_retry_that_answers() {
+    let (restarting, _) = step(
+        at(own(false), false),
+        exit_found_at(Instant::now(), "crashed"),
+    );
+
+    let (state, actions) = step(
+        restarting.clone(),
+        Event::SpawnFailed {
+            error: "no such file".into(),
+        },
+    );
+    assert_eq!(actions, [Action::Notify(NoticeKind::Failed)]);
+    assert!(matches!(state.phase, Phase::Failed { .. }), "{state:?}");
+
+    // Retry on the login card or on the notice.
+    let (state, actions) = step(state, Event::Requested { open: false });
+    assert_eq!(actions, [Action::Probe]);
+    let (state, actions) = step(state, probed(Probe::Free));
+    assert_eq!(actions, [Action::Spawn { open: false }]);
+    let (state, actions) = step(state, Event::Listening);
+    assert_eq!(actions, [Action::Notify(NoticeKind::Answering)]);
+    // Told once.
+    let (state, _) = step(state, Event::Check);
+    let (_, actions) = step(state, probed(Probe::MessageCrate));
+    assert_eq!(actions, []);
+
+    let (state, actions) = step(restarting, Event::Stopped);
+    assert_eq!(actions, [Action::Kill]);
+    assert!(!state.recovering);
+}
+
+/// A Retry after a failure the app did not reach by restarting, such as a
+/// first start that failed, is told too: the window may be showing that
+/// failure, and nothing else would clear it.
+#[test]
+fn a_retry_after_any_failure_tells_the_window_how_it_ends() {
+    let failed = at(
+        Phase::Failed {
+            reason: FailureReason::StartFailed,
+            message: "Message Crate took too long to start.".into(),
+            details: String::new(),
+        },
+        false,
+    );
+    let (state, actions) = step(failed, Event::Requested { open: false });
+    assert_eq!(actions, [Action::Probe]);
+    let (state, _) = step(state, probed(Probe::Free));
+    let (_, actions) = step(state, Event::Listening);
+    assert_eq!(actions, [Action::Notify(NoticeKind::Answering)]);
+
+    // The first start of all is the login card's to show, and tells nothing.
+    let (state, _) = step(at(Phase::Idle, false), Event::Requested { open: false });
+    let (state, _) = step(state, probed(Probe::Free));
+    let (_, actions) = step(state, Event::Listening);
+    assert_eq!(actions, []);
+}
+
+/// A restart for the network setting that fails leaves every screen failing
+/// as much as a crash does, so the window is told.
+#[test]
+fn a_restart_for_the_network_setting_that_fails_tells_the_window() {
+    let (state, actions) = step(at(own(false), false), Event::Configured { open: true });
+    assert_eq!(actions, [Action::Kill, Action::Spawn { open: true }]);
+    let (_, actions) = step(
+        state,
+        Event::Deadline {
+            output: String::new(),
+        },
+    );
+    assert_eq!(actions, [Action::Kill, Action::Notify(NoticeKind::Failed)]);
 }
 
 /// An import can keep the server from answering in time, so the app's own
@@ -465,8 +609,15 @@ fn the_apps_own_server_is_not_killed_for_not_answering_while_a_job_runs() {
     assert_eq!(actions, [], "the misses during the job do not count");
     let (state, _) = step(state, Event::Check);
     let (state, actions) = step(state, probed(Probe::Other));
-    assert_eq!(actions, [Action::Kill]);
-    assert!(matches!(state.phase, Phase::Failed { .. }), "{state:?}");
+    assert_eq!(
+        actions,
+        [
+            Action::Kill,
+            Action::Spawn { open: false },
+            Action::Notify(NoticeKind::Restarting(Stop::Unanswered))
+        ]
+    );
+    assert_eq!(state.phase, Phase::Starting { open: false });
 }
 
 /// An answer to a check the app's own server is not waiting for is not
@@ -948,18 +1099,22 @@ mod with_a_script {
         assert!(matches!(settled(&server), Status::Failed { .. }));
     }
 
-    /// A server that says it listens and then never answers is ready until
-    /// the screens' checks find nothing there, and is then killed (#2204).
+    /// A server that says it listens and then never answers is found by the
+    /// app's own checks, with no screen asking for the state, killed, and
+    /// started again (#2695). The checks run on a clock, so this test waits
+    /// on one.
     #[test]
-    fn a_ready_server_that_never_answers_is_killed_by_the_checks() {
+    fn a_ready_server_that_never_answers_is_killed_and_started_again_by_the_apps_own_checks() {
         let dir = tempfile::tempdir().unwrap();
-        // The line to keep comes first, so it is kept before the app sees
-        // the server listen: both go through the same pipe and reader.
         let program = script(
             dir.path(),
-            &format!("echo 'stuck here'\necho '{LISTENING_LINE}{OWN_ADDRESS}'\nexec sleep 600"),
+            &format!("echo '{LISTENING_LINE}{OWN_ADDRESS}'\nexec sleep 600"),
         );
         let server = LocalServer::default();
+        let (told, notices) = std::sync::mpsc::channel();
+        server.on_notice(move |notice| {
+            let _ = told.send(notice);
+        });
         server.ensure_started(launch_at(free_address(), &program, dir.path()));
         assert_eq!(
             settled(&server),
@@ -967,32 +1122,25 @@ mod with_a_script {
                 started_by_app: true
             }
         );
-        let pid = server.lock().server.as_ref().unwrap().id();
+        let first = server.lock().server.as_ref().unwrap().id();
 
-        // Ask for the state the way the screens do. Each time is a check of
-        // the address, where nothing listens.
-        let Status::Failed {
-            message, details, ..
-        } = (|| {
-            let deadline = Instant::now() + Duration::from_secs(20);
-            loop {
-                let status = server.status();
-                if !matches!(status, Status::Ready { .. }) {
-                    return status;
-                }
-                assert!(Instant::now() < deadline, "the server stayed ready");
-                thread::sleep(Duration::from_millis(20));
-            }
-        })()
-        else {
-            panic!("a server that never answers must not stay ready");
-        };
-        assert_eq!(message, "Message Crate stopped answering.");
-        // What it last wrote is kept for a bug report.
-        assert!(details.contains("stuck here"), "{details}");
-        assert!(server.lock().server.is_none());
+        // Nothing asks for the state, which would check the address: the
+        // app checks on its own. Nothing listens there, so the checks find
+        // no Message Crate, and the server is killed and started again. The
+        // new one says it listens, so the window is told it answers.
+        let wait = Duration::from_secs(60);
+        assert_eq!(
+            notices.recv_timeout(wait),
+            Ok(Notice::Restarting {
+                cause: Stop::Unanswered
+            })
+        );
+        assert_eq!(notices.recv_timeout(wait), Ok(Notice::Answering));
+        let running = server.lock().server.as_ref().map(ServerProcess::id);
+        assert!(running.is_some_and(|pid| pid != first), "{running:?}");
+        server.stop();
         assert!(
-            ends_or_is_killed(libc::pid_t::try_from(pid).unwrap()),
+            ends_or_is_killed(libc::pid_t::try_from(first).unwrap()),
             "the server outlived the kill"
         );
     }
