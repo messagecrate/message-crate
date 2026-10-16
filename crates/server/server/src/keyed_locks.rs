@@ -8,6 +8,12 @@
 //! does the job but never shrinks: one entry per asset ever completed, for the
 //! life of the process. [`KeyedLocks`] shrinks it again. The guard removes its
 //! key on drop unless another task is already waiting on the same mutex.
+//!
+//! A task that stops waiting, because its `lock` future is dropped, as an
+//! import batch's is when its client goes, can leave its key behind when
+//! the holder left first and saw it waiting. The next lock of that key takes
+//! the entry over and removes it as it leaves, so at most one such entry
+//! stays per key.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard, PoisonError};
