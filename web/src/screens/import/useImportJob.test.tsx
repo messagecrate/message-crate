@@ -2795,6 +2795,17 @@ describe("useImportJob wiring", () => {
       expect(createImportMock).toHaveBeenCalledTimes(1);
     });
 
+    it("drops the last start's failure when the form changes", async () => {
+      invokeImessageBackupIdentitiesMock.mockRejectedValue("the backup password is wrong");
+      const { result } = renderJob();
+      await act(async () => {
+        await result.current.startImport(imessageForm());
+      });
+      expect(result.current.startError).not.toBeNull();
+      act(() => result.current.clearStartError());
+      expect(result.current.startError).toBeNull();
+    });
+
     it("goes on without a stop when the backup was read and sent from no address", async () => {
       invokeImessageBackupIdentitiesMock.mockResolvedValue([]);
       setProfile({ phones: [], emails: [] });
@@ -3341,6 +3352,7 @@ describe("useImportJob resumeAtReview", () => {
     seedImportRun(auth.accountId, {
       ...LEFT_BEHIND,
       resumeError: "The directory could not be read.",
+      startError: "The backup password is wrong",
     });
     const seen: ImportRunState[] = [];
     const unsubscribe = importRunStore.subscribe(() => seen.push(importRunStore.get()));
@@ -3361,6 +3373,7 @@ describe("useImportJob resumeAtReview", () => {
       importRunId: 1,
     });
     expect(atStart.resumeError).toBeNull();
+    expect(atStart.startError).toBeNull();
   });
 
   it("recomputes the summary fresh from the directory and lands on the Staging Review for a run waiting there", async () => {

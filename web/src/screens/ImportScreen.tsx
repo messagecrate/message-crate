@@ -44,6 +44,7 @@ import { restoreFormFromSnapshot, snapshotSecret } from "./import/formSnapshot";
 import ImportFormFields from "./import/ImportFormFields";
 import ImportRunView from "./import/ImportRunView";
 import {
+  type ImportFormFieldAction,
   type ImportPathField,
   importFormReducer,
   importJobValues,
@@ -122,6 +123,7 @@ export default function ImportScreen() {
     returnToForm,
     continueAfterIdentityStop,
     cancelIdentityStop,
+    clearStartError,
     runDirDeleteFailure,
     discardRun,
     dismissRunDirDeleteFailure,
@@ -445,7 +447,6 @@ export default function ImportScreen() {
       try {
         const profile = await fetchAccountProfile();
         if (cancelled) return;
-        if (!profile) throw new Error("profile unavailable");
         const phones = phoneNumbers(profile);
         setProfilePhones({ phones, ready: true, error: false });
         if (descriptor.asksWhatsappOwnerPhone) {
@@ -494,6 +495,7 @@ export default function ImportScreen() {
     const gen = ++sourceChangeGenRef.current;
     lastMethodRef.current[importSourceFor(resolved).id] = resolved;
     const paths = rememberedPathsFor(resolved);
+    clearStartError();
     dispatch({ type: "source", source: resolved, paths });
     const loadedBackup = paths.backupPath;
 
@@ -526,8 +528,15 @@ export default function ImportScreen() {
     })();
   }
 
+  /** Set or toggle a field the person edits; the last start's failure was about the form before it. */
+  const editField = (action: ImportFormFieldAction) => {
+    clearStartError();
+    dispatch(action);
+  };
+
   /** Set a path field, and remember it for the source when the source keeps it. */
   const changePath = (field: ImportPathField, path: string) => {
+    clearStartError();
     dispatch({ type: "path", field, value: path });
     if (!getRememberImporterPaths()) return;
     if (field === "backupPath") {
@@ -548,7 +557,7 @@ export default function ImportScreen() {
       {phase === "form" && resumeChecked && resume.kind === "none" && (
         <ImportFormFields
           form={form}
-          dispatch={dispatch}
+          dispatch={editField}
           onSourceChange={handleSourceChange}
           onPathChange={changePath}
           pathStats={pathStats}

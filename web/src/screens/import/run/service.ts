@@ -136,6 +136,7 @@ export function createImportRunService(deps: ImportRunDeps) {
     form: ImportJobFormValues,
     resume?: Resume,
   ): Promise<void> {
+    store.set({ startError: null });
     let identities: string[] | null = null;
     const identityRead = resume
       ? null
@@ -144,7 +145,7 @@ export function createImportRunService(deps: ImportRunDeps) {
       // The probe reads the backup (and, for an encrypted one, decrypts
       // it) before any run exists, which can take seconds: mark the run
       // busy for that stretch so the Import button reflects it.
-      store.set({ running: true, startError: null, sourceIdentities: null });
+      store.set({ running: true, sourceIdentities: null });
       try {
         const read = await readIdentityCheck(account, form, identityRead.ios);
         // The account logged out during the probe: what was just read
@@ -167,7 +168,6 @@ export function createImportRunService(deps: ImportRunDeps) {
       }
     } else {
       store.set({
-        startError: null,
         sourceIdentities: resume?.at === "staging" ? (resume.run.identities ?? null) : null,
       });
     }
@@ -213,6 +213,12 @@ export function createImportRunService(deps: ImportRunDeps) {
     if (!form) return;
     ctx.scratch.pendingIdentityForm = null;
     await asWork(() => runImport(ctx, account.token, form, store.get().sourceIdentities));
+  }
+
+  /** Drop the last start's failure: the form it was about has changed. */
+  function clearStartError(account: RunAccount): void {
+    if (!ownsRun(account) || store.get().startError === null) return;
+    store.set({ startError: null });
   }
 
   /** Leave the identity stop; nothing was created, so only the phase moves. */
@@ -333,6 +339,7 @@ export function createImportRunService(deps: ImportRunDeps) {
     store.set({
       ...CLEARED_RUN,
       resumeError: null,
+      startError: null,
       form: known,
       runDir,
       importRunId: runId,
@@ -425,6 +432,7 @@ export function createImportRunService(deps: ImportRunDeps) {
     startImport,
     continueAfterIdentityStop,
     cancelIdentityStop,
+    clearStartError,
     approve,
     resumeAtReview,
     // Another account's run is that account's to cancel, stop or leave.

@@ -80,6 +80,18 @@ export function fetchAccountProfileFor(
   return client.fetchQuery({ queryKey: key, queryFn: () => getAccountProfile() });
 }
 
+/**
+ * Fill the profile's entry at login, before the app renders. A profile that
+ * fails to load is left to the guards, which read the entry and hold until it
+ * loads, so the failure is not this caller's to report.
+ */
+export async function warmAccountProfile(
+  client: ReturnType<typeof useQueryClient>,
+  accountId: number,
+): Promise<void> {
+  await fetchAccountProfileFor(client, accountId, true).catch(() => {});
+}
+
 /** The same, for a caller that is already inside the logged-in tree. */
 export function useFetchAccountProfile(): (force?: boolean) => Promise<AccountProfile> {
   const client = useQueryClient();

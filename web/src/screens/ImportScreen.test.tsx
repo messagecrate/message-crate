@@ -51,6 +51,7 @@ const cancelMock = vi.hoisted(() => vi.fn());
 const returnToFormMock = vi.hoisted(() => vi.fn());
 const continueAfterIdentityStopMock = vi.hoisted(() => vi.fn());
 const cancelIdentityStopMock = vi.hoisted(() => vi.fn());
+const clearStartErrorMock = vi.hoisted(() => vi.fn());
 const getActiveImportRunMock = vi.hoisted(() => vi.fn());
 const discardImportRunMock = vi.hoisted(() => vi.fn());
 const invokeDeleteRunDirMock = vi.hoisted(() => vi.fn());
@@ -93,6 +94,7 @@ vi.mock("./import/useImportJob", async (importOriginal) => {
       returnToForm: returnToFormMock,
       continueAfterIdentityStop: continueAfterIdentityStopMock,
       cancelIdentityStop: cancelIdentityStopMock,
+      clearStartError: clearStartErrorMock,
       runDirDeleteFailure: hookState.runDirDeleteFailure,
       // The real one never throws: a failed delete is kept for the notice,
       // a refused close is its outcome, and its reading of the run record
@@ -158,8 +160,19 @@ vi.mock("../lib/tauriCheck", async (importOriginal) => ({
 }));
 
 vi.mock("./import/ImportFormFields", () => ({
-  default: (props: { startError: string | null }) => (
-    <div data-testid="import-form">{props.startError}</div>
+  default: (props: {
+    startError: string | null;
+    dispatch: (action: { type: "set"; field: "backupPassword"; value: string }) => void;
+  }) => (
+    <div data-testid="import-form">
+      {props.startError}
+      <button
+        type="button"
+        onClick={() => props.dispatch({ type: "set", field: "backupPassword", value: "hunter2" })}
+      >
+        form-type-password
+      </button>
+    </div>
   ),
 }));
 
@@ -253,6 +266,7 @@ describe("ImportScreen entering Import", () => {
     returnToFormMock.mockReset();
     continueAfterIdentityStopMock.mockReset();
     cancelIdentityStopMock.mockReset();
+    clearStartErrorMock.mockReset();
     getActiveImportRunMock.mockReset();
     discardImportRunMock.mockReset();
     discardImportRunMock.mockResolvedValue(undefined);
@@ -310,6 +324,17 @@ describe("ImportScreen entering Import", () => {
 
     await settle();
     expect(screen.getByTestId("import-form")).toHaveTextContent("The backup password is wrong.");
+  });
+
+  it("drops the last start's failure when a field of the form changes", async () => {
+    getActiveImportRunMock.mockResolvedValue(null);
+    hookState.startError = "The backup password is wrong.";
+    renderWithProviders(<ImportScreen />);
+    await settle();
+
+    await setupUser().click(screen.getByRole("button", { name: "form-type-password" }));
+
+    expect(clearStartErrorMock).toHaveBeenCalled();
   });
 
   it("falls through to the form when the server cannot answer", async () => {
@@ -991,6 +1016,7 @@ describe("ImportScreen during a run", () => {
     returnToFormMock.mockReset();
     continueAfterIdentityStopMock.mockReset();
     cancelIdentityStopMock.mockReset();
+    clearStartErrorMock.mockReset();
     getActiveImportRunMock.mockReset();
     getActiveImportRunMock.mockResolvedValue(null);
     discardImportRunMock.mockReset();
