@@ -8,7 +8,7 @@ import {
 } from "react";
 import { getAccountId } from "../../lib/api";
 import { errorLine } from "../../lib/apiErrorMessage";
-import { reportNameRefusal } from "../../lib/nameRefusals";
+import { dismissNameRefusal, reportNameRefusal } from "../../lib/nameRefusals";
 
 /**
  * A display name typed on the Profile tab and not yet saved, with the
@@ -74,6 +74,9 @@ export function useNameEdit(origin: NameEditOrigin): NameEdit {
       const accountId = getAccountId();
       try {
         await send(next || null);
+        // The name is saved, so an earlier refusal from this Profile no
+        // longer holds.
+        dismissNameRefusal(originRef.current.profilePath);
         if (sending.current !== next) return;
         // Only the name that was sent is cleared. A name typed while it was
         // on the way stays, to be saved in its turn.
@@ -81,7 +84,8 @@ export function useNameEdit(origin: NameEditOrigin): NameEdit {
       } catch (e) {
         if (sending.current !== next) return;
         if (mounted.current) setError(errorLine(e));
-        else reportNameRefusal({ accountId, ...originRef.current, reason: errorLine(e) });
+        else
+          reportNameRefusal({ accountId, ...originRef.current, name: next, reason: errorLine(e) });
       } finally {
         if (sending.current === next) sending.current = null;
       }

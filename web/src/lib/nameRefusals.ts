@@ -13,6 +13,8 @@ export interface NameRefusal {
   profilePath: string;
   /** The account the name was for when it is not the logged-in one: an account the owner opened. */
   username: string | null;
+  /** The name that was sent; empty when the save cleared the name. */
+  name: string;
   /** Why the server refused it, as one line. */
   reason: string;
 }
@@ -33,12 +35,19 @@ export function reportNameRefusal(refusal: NameRefusal): void {
   ]);
 }
 
-/** Stop showing the refusal from the Profile at `profilePath`. */
+/**
+ * Stop showing the refusal from the Profile at `profilePath`: the person
+ * dismissed it, or a later save from that Profile went through.
+ */
 export function dismissNameRefusal(profilePath: string): void {
+  if (!nameRefusals.get().some((r) => r.profilePath === profilePath)) return;
   nameRefusals.set(nameRefusals.get().filter((r) => r.profilePath !== profilePath));
 }
 
-// Logging out, or in as another account, drops every refusal held.
-onAccountIdChange(() => {
+/** Drop every refusal held, for a test that must start without one. */
+export function clearNameRefusals(): void {
   if (nameRefusals.get().length > 0) nameRefusals.set([]);
-});
+}
+
+// Logging out, or in as another account, drops every refusal held.
+onAccountIdChange(clearNameRefusals);

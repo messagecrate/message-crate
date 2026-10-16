@@ -102,7 +102,9 @@ describe("a display name refused after Settings is left", () => {
     await settle();
 
     const notice = screen.getByRole("alert");
-    expect(notice).toHaveTextContent("Your display name wasn't saved: Database is busy");
+    expect(notice).toHaveTextContent(
+      `Your display name "Stored Name Jr" wasn't saved: Database is busy`,
+    );
 
     await user.click(screen.getByRole("link", { name: "Go to Profile" }));
     expect(screen.getByRole("status", { name: "Location" })).toHaveTextContent(
@@ -129,7 +131,7 @@ describe("a display name refused after Settings is left", () => {
     await settle();
 
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "bob's display name wasn't saved: Display name is too long",
+      `bob's display name "Bob Smith" wasn't saved: Display name is too long`,
     );
     expect(screen.getByRole("link", { name: "Go to Profile" })).toHaveAttribute(
       "href",
@@ -164,6 +166,30 @@ describe("a display name refused after Settings is left", () => {
     save.reject(new ApiError(401, "session expired"));
     await settle();
 
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("goes once a later save from the same Profile goes through", async () => {
+    const save = deferred<AccountProfile>();
+    updateAccountProfile.mockReturnValueOnce(save.promise);
+    const user = setupUser();
+    renderApp("/settings?tab=profile");
+    await settle();
+
+    await fill(user, nameField(), " Jr");
+    await user.click(screen.getByRole("link", { name: "Search" }));
+    save.reject(new ApiError(503, "database is busy"));
+    await settle();
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+
+    updateAccountProfile.mockResolvedValue({ ...own, preferred_name: "Stored Name Jr" });
+    await user.click(screen.getByRole("link", { name: "Go to Profile" }));
+    await settle();
+    await fill(user, nameField(), " Jr");
+    await user.keyboard("{Enter}");
+    await settle();
+
+    expect(updateAccountProfile).toHaveBeenLastCalledWith({ preferred_name: "Stored Name Jr" });
     expect(screen.queryByRole("alert")).toBeNull();
   });
 

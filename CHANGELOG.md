@@ -516,8 +516,9 @@ carry their date on the heading.
   Profile in Owner Home, saves when you leave Settings for another screen.
   When the server refused that save, the name was dropped without a word.
   Now a line across the top of the page says "Your display name wasn't
-  saved" and why, with a link back to the Profile it came from. It stays
-  until you dismiss it (#2991).
+  saved", with the name you typed and why, and a link back to the Profile
+  it came from. It stays until you dismiss it or save a name from that
+  Profile (#2991).
 - 2026-10-16: **A group with no name reads the same everywhere.** A
   group conversation without a title was named after everyone in it in the
   conversation list, such as "Ann, Bob, Cy", but as "3 participants" in its
