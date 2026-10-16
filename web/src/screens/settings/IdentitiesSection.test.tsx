@@ -142,32 +142,76 @@ describe("IdentitiesSection", () => {
     expect(screen.getByRole("button", { name: "Add identity" })).toBeEnabled();
   });
 
-  it("adds an email address on the phone service and closes the dialog when the server's answer holds it", async () => {
+  /**
+   * Have the identities list answer with `rows` until `mutateAsync` is
+   * called, then with what `change` makes of them: the server making the
+   * change. A `change` that returns its input is a server that answers
+   * without making it.
+   */
+  function serverLists(rows: Identity[], change: (rows: Identity[]) => Identity[]) {
+    let onServer = rows;
+    listAccountIdentities.mockImplementation(async () => onServer);
+    mutateAsync.mockImplementation(async () => {
+      onServer = change(onServer);
+      return profile;
+    });
+  }
+
+  /** A row the server lists for an identity with no messages. */
+  const listedWithNoMessages = (address: string, service: string): Identity => ({
+    ...nth(identities, 2),
+    address,
+    service,
+  });
+
+  it("adds an email address on the phone service and closes the dialog when the identities list holds it", async () => {
     const user = setupUser();
-    mutateAsync.mockResolvedValue({ ...profile, emails: [...profile.emails, "new@example.com"] });
+    serverLists(identities, (rows) => [...rows, listedWithNoMessages("new@example.com", "email")]);
     render(<IdentitiesSection profile={profile} />);
+    await settle();
 
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Add identity" }));
     const dialog = screen.getByRole("dialog", { name: "Add identity" });
     await user.click(within(dialog).getByRole("button", { name: /Service/ }));
     await user.click(screen.getByRole("option", { name: "Email" }));
-    await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "new@example.com");
+    await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "New@example.com");
     await user.click(within(dialog).getByRole("button", { name: "Add" }));
 
     // `email` is no service the server takes: an email address is on the
     // phone service, and the server types it by the address (#1631).
     expect(mutateAsync).toHaveBeenCalledWith({
-      identities: [{ address: "new@example.com", service: "phone" }],
+      identities: [{ address: "New@example.com", service: "phone" }],
     });
     await settle();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByText("The server did not add that identity.")).not.toBeInTheDocument();
+    expect(screen.getByText("new@example.com")).toBeInTheDocument();
   });
 
-  it("removes an email address on the phone service and closes the dialog when the server's answer no longer holds it", async () => {
+  it("closes the dialog when the server lists the number added in its own form", async () => {
     const user = setupUser();
-    mutateAsync.mockResolvedValue({ ...profile, emails: ["bob@example.com"] });
+    serverLists(identities, (rows) => [...rows, listedWithNoMessages("+15555550199", "whatsapp")]);
+    render(<IdentitiesSection profile={profile} />);
+    await settle();
+
+    await user.click(screen.getByRole("button", { name: "Add identity" }));
+    const dialog = screen.getByRole("dialog", { name: "Add identity" });
+    await user.click(within(dialog).getByRole("button", { name: /Service/ }));
+    await user.click(screen.getByRole("option", { name: "WhatsApp" }));
+    await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "+1 555 555 0199");
+    await user.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    await settle();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Remove +15555550199 (WhatsApp)" }),
+    ).toBeInTheDocument();
+  });
+
+  it("removes an email address on the phone service and closes the dialog when the identities list no longer holds it", async () => {
+    const user = setupUser();
+    serverLists(identities, (rows) => rows.filter((row) => row.address !== "archer@example.com"));
     render(<IdentitiesSection profile={profile} />);
 
     await settle();
@@ -182,12 +226,93 @@ describe("IdentitiesSection", () => {
     await settle();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByText("The server did not remove that identity.")).not.toBeInTheDocument();
+    expect(screen.queryByText("archer@example.com")).not.toBeInTheDocument();
+  });
+
+  it("closes the dialog when the number added is one the account holds, typed another way", async () => {
+    const user = setupUser();
+    // The server stores `(555) 555-0100` as the `+15555550100` it already
+    // holds, so the list gains no row.
+    serverLists(identities, (rows) => rows);
+    render(<IdentitiesSection profile={profile} />);
+    await settle();
+
+    await user.click(screen.getByRole("button", { name: "Add identity" }));
+    const dialog = screen.getByRole("dialog", { name: "Add identity" });
+    await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "(555) 555-0100");
+    await user.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    await settle();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("closes the dialog when a number the account holds is typed in its national form", async () => {
+    const user = setupUser();
+    const london = listedWithNoMessages("+447700900123", "phone");
+    // The server stores `07700 900123` as the `+447700900123` it holds.
+    serverLists([...identities, london], (rows) => rows);
+    render(<IdentitiesSection profile={profile} />);
+    await settle();
+
+    await user.click(screen.getByRole("button", { name: "Add identity" }));
+    const dialog = screen.getByRole("dialog", { name: "Add identity" });
+    await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "07700 900123");
+    await user.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    await settle();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("says the change was sent when the identities list cannot be read after it", async () => {
+    const user = setupUser();
+    serverLists(identities, (rows) => rows.filter((row) => row.address !== "archer@example.com"));
+    render(<IdentitiesSection profile={profile} />);
+    await settle();
+    listAccountIdentities.mockRejectedValue(new Error("network down"));
+
+    await user.click(screen.getByRole("button", { name: "Remove archer@example.com (Email)" }));
+    const dialog = screen.getByRole("dialog", { name: "Remove identity?" });
+    await user.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    await settle();
+    expect(
+      within(dialog).getByText(
+        "The change was sent, but the identities list could not be read to confirm it. Network down",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  // Neither a number nor an email address: the profile lists neither, and
+  // the identities list names each with its service (#2738).
+  const lid = listedWithNoMessages("123456789012345@lid", "whatsapp");
+  const sam = listedWithNoMessages("sam", "phone");
+
+  it.each([
+    ["a WhatsApp internal id", lid, "Remove 123456789012345@lid (WhatsApp)"],
+    ["a name on Text Message", sam, "Remove sam (Text Message)"],
+  ])("removes %s the profile does not list, and the row goes", async (_, row, button) => {
+    const user = setupUser();
+    serverLists([...identities, lid, sam], (rows) => rows.filter((r) => r !== row));
+    render(<IdentitiesSection profile={profile} />);
+
+    await settle();
+    await user.click(screen.getByRole("button", { name: button }));
+    const dialog = screen.getByRole("dialog", { name: "Remove identity?" });
+    await user.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    expect(mutateAsync).toHaveBeenCalledWith({
+      remove_identities: [{ address: row.address, service: row.service }],
+    });
+    await settle();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: button })).not.toBeInTheDocument();
   });
 
   it("keeps the dialog open and says why when the server did not add the identity", async () => {
     const user = setupUser();
-    mutateAsync.mockResolvedValue(profile);
+    serverLists(identities, (rows) => rows);
     render(<IdentitiesSection profile={profile} />);
+    await settle();
 
     await user.click(screen.getByRole("button", { name: "Add identity" }));
     const dialog = screen.getByRole("dialog", { name: "Add identity" });
@@ -267,10 +392,11 @@ describe("IdentitiesSection", () => {
     expect(within(table).getByText("WhatsApp")).toBeInTheDocument();
   });
 
-  it("closes the dialog when the server's answer names WhatsApp for a number on Text Message", async () => {
+  it("closes the dialog when the identities list holds a number on Text Message on WhatsApp too", async () => {
     const user = setupUser();
-    mutateAsync.mockResolvedValue(both);
+    serverLists(identities, (rows) => [...rows, whatsapp]);
     render(<IdentitiesSection profile={profile} />);
+    await settle();
 
     await user.click(screen.getByRole("button", { name: "Add identity" }));
     const dialog = screen.getByRole("dialog", { name: "Add identity" });
@@ -288,10 +414,11 @@ describe("IdentitiesSection", () => {
 
   it("keeps the dialog open when a WhatsApp add of a number on Text Message added nothing", async () => {
     const user = setupUser();
-    // The answer holds the number on Text Message alone, so the WhatsApp
+    // The list holds the number on Text Message alone, so the WhatsApp
     // identity was not added.
-    mutateAsync.mockResolvedValue(profile);
+    serverLists(identities, (rows) => rows);
     render(<IdentitiesSection profile={profile} />);
+    await settle();
 
     await user.click(screen.getByRole("button", { name: "Add identity" }));
     const dialog = screen.getByRole("dialog", { name: "Add identity" });
@@ -310,8 +437,7 @@ describe("IdentitiesSection", () => {
 
   it("closes the dialog when the WhatsApp identity of a number also on Text Message is gone", async () => {
     const user = setupUser();
-    listAccountIdentities.mockResolvedValue([identities[0], whatsapp]);
-    mutateAsync.mockResolvedValue(profile);
+    serverLists([nth(identities, 0), whatsapp], (rows) => rows.filter((row) => row !== whatsapp));
     render(<IdentitiesSection profile={both} />);
 
     // The server's rows replace the placeholder rows, buttons and all.
@@ -329,10 +455,9 @@ describe("IdentitiesSection", () => {
     expect(screen.queryByText("The server did not remove that identity.")).not.toBeInTheDocument();
   });
 
-  it("keeps the dialog open when the server's answer still names WhatsApp for the number", async () => {
+  it("keeps the dialog open when the identities list still holds the number on WhatsApp", async () => {
     const user = setupUser();
-    listAccountIdentities.mockResolvedValue([identities[0], whatsapp]);
-    mutateAsync.mockResolvedValue(both);
+    serverLists([nth(identities, 0), whatsapp], (rows) => rows);
     render(<IdentitiesSection profile={both} />);
 
     // The server's rows replace the placeholder rows, buttons and all.
