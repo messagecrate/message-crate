@@ -45,10 +45,8 @@ concurrency:
 # Every job reads the repository and nothing else. The one job that writes,
 # github-release, asks for contents: write on its own. The Docker image goes
 # to Docker Hub with its own secret, not to GitHub Packages, so no job needs
-# packages: write. The docker and github-release jobs also ask for
-# id-token: write and attestations: write, which a build provenance
-# attestation needs: the first to sign it with the workflow's OIDC identity,
-# the second to store it with the repository.
+# packages: write. Any other job that needs more asks for it in its own
+# permissions block, which says why.
 permissions:
   contents: read
 
@@ -502,6 +500,8 @@ jobs:
     needs: [changes, fmt, clippy, test, check-tauri, windows-config, web, docs, license, docker-context, version]
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # id-token signs the image's build provenance attestation with the
+    # workflow's OIDC identity, and attestations stores it with the repository.
     permissions:
       contents: read
       id-token: write
@@ -579,9 +579,10 @@ jobs:
       # `gh attestation verify oci://docker.io/bitrealm/message-crate:<tag>
       # --repo messagecrate/message-crate` can check it. The attestation is
       # stored with the repository and pushed to Docker Hub beside the image.
-      # The action names Docker Hub docker.io. create-storage-record is off,
-      # because it needs artifact-metadata: write as well, and the job asks
-      # for id-token and attestations alone.
+      # subject-name spells out the docker.io/ registry, because the action
+      # needs the registry in the name to push the attestation to it.
+      # create-storage-record is off, because it needs artifact-metadata:
+      # write as well, and the job asks for id-token and attestations alone.
       - name: Attest the image's build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
@@ -717,6 +718,9 @@ jobs:
     needs: [changes, release, docker]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # contents creates the release. id-token signs the installers' build
+    # provenance attestation with the workflow's OIDC identity, and
+    # attestations stores it with the repository.
     permissions:
       contents: write
       id-token: write

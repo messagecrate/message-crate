@@ -33,7 +33,7 @@ sha256sum --ignore-missing -c SHA256SUMS
 ```
 
 On macOS, `shasum -a 256 <file>.dmg` prints the SHA-256, which must match the line for that file in `SHA256SUMS`.
-On Windows, PowerShell's `Get-FileHash <file>.msi` prints it in capital letters, and the comparison ignores case.
+On Windows, PowerShell's `Get-FileHash <file>.msi` prints it in capital letters. Capital and small letters count as the same when matching it against `SHA256SUMS`.
 
 `SHA256SUMS` sits on the same download page as the installers, so it can only show that a download arrived whole.
 A build provenance attestation goes further.
@@ -45,6 +45,7 @@ gh attestation verify <file> --repo messagecrate/message-crate
 ```
 
 It reports that verification succeeded, and names the workflow and the tag, when the file is one that workflow built.
+The Docker image carries the same kind of record, which [Run Message Crate with Docker](/docs/user/features/owner/run-with-docker/#check-the-image) checks.
 
 ## Install
 
