@@ -1439,6 +1439,12 @@ carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-16: **An announcement reads as an event of the conversation.** A
+  group renamed, or a member added or removed, was drawn in a bubble with a
+  sender's name, as if someone had sent it. The conversation now shows it as
+  a centered line of small, muted text with its time, in its place among the
+  messages, and Find still finds its text. The next message names its sender
+  again (#3050).
 - 2026-10-15: **A screen reader hears which Contact Group, Message Tag or
   Saved Search is open.** The left panel's row for the open Contact Group,
   Unknown, No Contact Group, Message Tag, No Message Tag or Saved Search is

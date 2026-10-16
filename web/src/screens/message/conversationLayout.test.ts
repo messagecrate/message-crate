@@ -85,4 +85,14 @@ describe("conversationRows", () => {
       true, // a new day
     ]);
   });
+
+  it("starts a run after an announcement, so the next message names its sender", () => {
+    const renamed = { ...message(2, "2026-07-02T08:05:00Z", ada), is_announcement: true };
+    const rows = conversationRows(
+      [message(1, "2026-07-02T08:00:00Z", ada), renamed, message(3, "2026-07-02T08:10:00Z", ada)],
+      "UTC",
+      NOW,
+    );
+    expect(rows.map((r) => r.startsRun)).toEqual([true, false, true]);
+  });
 });

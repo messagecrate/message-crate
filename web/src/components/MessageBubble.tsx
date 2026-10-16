@@ -1,5 +1,6 @@
 import { memo } from "react";
 import type { Message, MessageAttachment } from "../lib/types";
+import AnnouncementLine from "./messages/AnnouncementLine";
 import DiscordBubble from "./messages/DiscordBubble";
 import ImessageBubble from "./messages/ImessageBubble";
 import InstagramBubble from "./messages/InstagramBubble";
@@ -50,6 +51,9 @@ function MessageBubble({
   showSender?: boolean;
   onAttachmentClick?: AttachmentClickHandler;
 }) {
+  if (message.is_announcement) {
+    return <AnnouncementLine message={message} highlight={highlight} isActive={isActive} />;
+  }
   const props = { message, highlight, isActive, showSender, onAttachmentClick };
 
   switch (resolveBubbleKind(message)) {
