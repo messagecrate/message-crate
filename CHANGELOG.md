@@ -518,11 +518,10 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
-- 2026-10-16: **The website and the desktop app have an icon.** The
-  website named no icon, so the browser asked for one on every page, logged
-  a "404 Not Found" error in its console, and showed a blank tab icon. The
-  website now has an icon, and the desktop app shows the same one in place
-  of its plain blue square (#3014).
+- 2026-10-16: **The website has an icon.** The website named no icon, so
+  the browser asked for one on every page, logged an error in its console,
+  and showed a blank tab icon. The browser tab now shows the website's icon
+  (#3014).
 - 2026-10-16: **A display name the server refuses after you leave Settings
   says so.** A display name typed on Settings → Profile, or on an account's
   Profile in Owner Home, saves when you leave Settings for another screen.
@@ -837,6 +836,9 @@ carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-16: **The desktop app has the website's icon.** The desktop app
+  showed a plain blue square as its icon. It now shows the same icon as the
+  website (#3014).
 - 2026-10-15: **The app starts its own Message Crate again after it stops.**
   When the Message Crate the desktop app started for itself stopped on its
   own, as in a crash, the login card said it stopped and waited for you to
