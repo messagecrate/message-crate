@@ -360,7 +360,6 @@ mod changed_content_dedupe;
 mod completion;
 mod conversations;
 mod edits;
-mod handlers;
 mod identities;
 mod import_runs;
 mod participants;
