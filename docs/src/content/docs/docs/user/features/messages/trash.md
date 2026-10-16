@@ -92,7 +92,7 @@ The button is disabled on the `demo` account.
 
 ## What deleting erases from the disk
 
-Deleting a conversation or a contact from Trash, **Empty Trash**, **Delete all messages**, and deleting an account each erase the deleted text from the database's files, not only from the screens.
+Deleting a conversation or a contact from Trash, **Empty Trash**, **Delete all messages**, deleting an account, and an **Edit** load of an [address book](/docs/user/features/settings/account-and-profile/#address-book) each erase the deleted text from the database's files, not only from the screens.
 The server writes zeros over the deleted rows and the space they freed, writes the search index again without their words, and clears the write-ahead log, the `messagecrate.db-wal` file beside the database.
 A copy of the database's files made afterwards holds none of the deleted text.
 

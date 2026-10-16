@@ -906,7 +906,9 @@ fn plan(rows: &[FileRow], snapshot: &Snapshot) -> Result<Vec<FileContact>, Vec<S
 ///
 /// The whole load is one transaction. A file that breaks a rule is refused
 /// whole, with one sentence for each bad row, and nothing is written. Each
-/// contact the load changes is stamped `now`.
+/// contact the load changes is stamped `now`. An Edit load deletes for good
+/// the names and identities the file no longer carries, so after it commits
+/// the write-ahead log is cleared of them ([`crate::db::erase`]).
 ///
 /// # Errors
 ///
@@ -930,6 +932,9 @@ pub async fn load(
     let file = plan(&rows, &snapshot).map_err(LoadError::Refused)?;
     let counts = apply(&mut tx, account_id, &snapshot, &file, mode, now).await?;
     tx.commit().await.context("commit the address book load")?;
+    if mode == LoadMode::Edit {
+        crate::db::erase::clear_write_ahead_log(conn).await;
+    }
     Ok(counts)
 }
 
