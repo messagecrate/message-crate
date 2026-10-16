@@ -1059,7 +1059,7 @@ fn an_asset_the_server_does_not_have_is_named_in_the_report_and_every_conversati
         .collect();
     let menus: Vec<_> = attachments
         .iter()
-        .filter(|att| att.digest_sha256.as_deref() == Some(MENU_SHA))
+        .filter(|attachment| attachment.digest_sha256.as_deref() == Some(MENU_SHA))
         .collect();
     assert!(!menus.is_empty(), "the menu is in the conversation file");
     for menu in menus {
@@ -1071,7 +1071,7 @@ fn an_asset_the_server_does_not_have_is_named_in_the_report_and_every_conversati
     }
     for photo in attachments
         .iter()
-        .filter(|att| att.digest_sha256.as_deref() == Some(PHOTO_SHA))
+        .filter(|attachment| attachment.digest_sha256.as_deref() == Some(PHOTO_SHA))
     {
         assert_eq!(photo.missing_reason, None, "the photo was fetched");
     }

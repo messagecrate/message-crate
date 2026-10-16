@@ -180,7 +180,7 @@ mod tests {
             document.messages.iter_mut(),
             AttachmentFiles::Originals,
             paths,
-            |att| (sources.next().unwrap(), att.size_bytes),
+            |sized| (sources.next().unwrap(), sized.size_bytes),
             &LogSink::none(),
         );
         let needed = counted.bytes_to_write(OutputFormat::Csv);

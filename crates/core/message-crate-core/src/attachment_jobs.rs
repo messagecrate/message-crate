@@ -258,9 +258,10 @@ pub fn document_messages(
 /// The size to report for an attachment before its bytes are read: the
 /// record's own size, else the length of the bytes held in memory, else
 /// unknown (the progress total grows once the file loads).
-pub fn attachment_size_hint(att: &Attachment) -> Option<u64> {
-    att.size_bytes
-        .or_else(|| att.bytes.as_ref().map(|b| b.len() as u64))
+pub fn attachment_size_hint(attachment: &Attachment) -> Option<u64> {
+    attachment
+        .size_bytes
+        .or_else(|| attachment.bytes.as_ref().map(|b| b.len() as u64))
 }
 
 /// One job per attachment across `messages`, in the order given. The
@@ -272,10 +273,10 @@ pub fn attachment_jobs<'a>(
     let mut jobs = Vec::new();
     for message in messages {
         let timestamp_unix_ms = message.timestamp_unix_ms;
-        for att in &mut message.attachments {
-            let hint = attachment_size_hint(att);
+        for attachment in &mut message.attachments {
+            let hint = attachment_size_hint(attachment);
             jobs.push(AttachmentJob {
-                attachment: att,
+                attachment,
                 timestamp_unix_ms,
                 size_hint: hint,
             });

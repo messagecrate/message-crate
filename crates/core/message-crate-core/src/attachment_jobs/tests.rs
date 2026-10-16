@@ -16,12 +16,12 @@ fn clone_writes_file_and_fills_hash() {
     let dir = tempfile::tempdir().unwrap();
     let att_dir = dir.path().join("attachments");
     std::fs::create_dir_all(&att_dir).unwrap();
-    let mut att = empty_att("photo.jpg");
+    let mut attachment = empty_att("photo.jpg");
     let bytes = b"hello-photo";
     let progress = Mutex::new(Vec::new());
     {
         let mut jobs = [AttachmentJob {
-            attachment: &mut att,
+            attachment: &mut attachment,
             timestamp_unix_ms: 1_609_459_200_000,
             size_hint: Some(bytes.len() as u64),
         }];
@@ -36,10 +36,16 @@ fn clone_writes_file_and_fills_hash() {
         )
         .unwrap();
     }
-    assert!(att.path.as_deref().unwrap().starts_with("attachments/"));
-    assert_eq!(att.size_bytes, Some(bytes.len() as u64));
-    assert_eq!(att.digest_sha256.as_ref().unwrap().len(), 64);
-    let dest = dir.path().join(att.path.as_ref().unwrap());
+    assert!(
+        attachment
+            .path
+            .as_deref()
+            .unwrap()
+            .starts_with("attachments/")
+    );
+    assert_eq!(attachment.size_bytes, Some(bytes.len() as u64));
+    assert_eq!(attachment.digest_sha256.as_ref().unwrap().len(), 64);
+    let dest = dir.path().join(attachment.path.as_ref().unwrap());
     assert_eq!(std::fs::read(dest).unwrap(), bytes);
     let last = progress.lock().unwrap().last().cloned().unwrap();
     assert_eq!(last.done, 1);
@@ -90,11 +96,11 @@ fn the_byte_total_ends_at_the_bytes_actually_copied() {
 fn disabled_skips_without_loading() {
     let dir = tempfile::tempdir().unwrap();
     let att_dir = dir.path().join("attachments");
-    let mut att = empty_att("photo.jpg");
+    let mut attachment = empty_att("photo.jpg");
     let loaded = AtomicBool::new(false);
     {
         let mut jobs = [AttachmentJob {
-            attachment: &mut att,
+            attachment: &mut attachment,
             timestamp_unix_ms: 0,
             size_hint: Some(99),
         }];
@@ -113,8 +119,8 @@ fn disabled_skips_without_loading() {
         .unwrap();
     }
     assert!(!loaded.load(Ordering::Relaxed));
-    assert_eq!(att.missing_reason.as_deref(), Some("not_copied"));
-    assert!(att.path.is_none());
+    assert_eq!(attachment.missing_reason.as_deref(), Some("not_copied"));
+    assert!(attachment.path.is_none());
     assert!(!att_dir.exists() || std::fs::read_dir(&att_dir).unwrap().next().is_none());
 }
 
@@ -247,9 +253,13 @@ fn a_fatal_load_error_stops_the_run_and_marks_nothing_missing() {
     assert_eq!(err.to_string(), "imessage-reader stopped before finishing");
     assert_eq!(asked, [0, 1], "nothing is loaded after the fatal error");
     assert!(atts[0].path.is_some(), "the job before it was staged");
-    for att in &atts[1..] {
-        assert_eq!(att.missing_reason, None, "{:?}", att.original_name);
-        assert_eq!(att.path, None, "{:?}", att.original_name);
+    for attachment in &atts[1..] {
+        assert_eq!(
+            attachment.missing_reason, None,
+            "{:?}",
+            attachment.original_name
+        );
+        assert_eq!(attachment.path, None, "{:?}", attachment.original_name);
     }
 }
 
@@ -327,7 +337,7 @@ fn clone_mode_reports_nothing_to_the_log_sink() {
     let dir = tempfile::tempdir().unwrap();
     let att_dir = dir.path().join("attachments");
     std::fs::create_dir_all(&att_dir).unwrap();
-    let mut att = empty_att("photo.jpg");
+    let mut attachment = empty_att("photo.jpg");
     let bytes = b"hello-photo";
     let lines = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
     let sink_lines = std::sync::Arc::clone(&lines);
@@ -336,7 +346,7 @@ fn clone_mode_reports_nothing_to_the_log_sink() {
     });
     {
         let mut jobs = [AttachmentJob {
-            attachment: &mut att,
+            attachment: &mut attachment,
             timestamp_unix_ms: 1_609_459_200_000,
             size_hint: Some(bytes.len() as u64),
         }];
@@ -479,8 +489,8 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
     // reader can find the bytes again — and the file holds what the loader
     // gave for that index, which is how the flat index maps to the document.
     let atts = &documents[0].messages[0].attachments;
-    for (att, expected) in atts.iter().zip([FIRST, SECOND]) {
-        let path = att.path.as_deref().expect("a path was recorded");
+    for (attachment, expected) in atts.iter().zip([FIRST, SECOND]) {
+        let path = attachment.path.as_deref().expect("a path was recorded");
         assert!(path.starts_with("attachments/"), "got {path}");
         assert_eq!(
             std::fs::read(dir.path().join(path)).expect("read the staged file"),
@@ -488,16 +498,17 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
             "the file must hold the bytes the loader gave for its index"
         );
         assert_eq!(
-            att.digest_sha256
+            attachment
+                .digest_sha256
                 .as_ref()
                 .expect("a digest was recorded")
                 .len(),
             64
         );
-        assert_eq!(att.size_bytes, Some(expected.len() as u64));
+        assert_eq!(attachment.size_bytes, Some(expected.len() as u64));
         // And nothing is left in memory, or a large export holds every
         // attachment at once.
-        assert!(att.bytes.is_none(), "in-memory bytes must be freed");
+        assert!(attachment.bytes.is_none(), "in-memory bytes must be freed");
     }
     assert_ne!(
         atts[0].digest_sha256, atts[1].digest_sha256,
@@ -561,19 +572,19 @@ fn staging_the_same_bytes_twice_writes_one_file() {
 /// A wrong total makes a long export's progress bar meaningless.
 #[test]
 fn the_size_hint_prefers_the_recorded_size_then_the_bytes_in_hand() {
-    let mut att = empty_att("photo.jpg");
-    assert_eq!(attachment_size_hint(&att), None, "nothing to go on");
+    let mut attachment = empty_att("photo.jpg");
+    assert_eq!(attachment_size_hint(&attachment), None, "nothing to go on");
 
-    att.bytes = Some(vec![0u8; 12]);
+    attachment.bytes = Some(vec![0u8; 12]);
     assert_eq!(
-        attachment_size_hint(&att),
+        attachment_size_hint(&attachment),
         Some(12),
         "the bytes in memory are the fallback"
     );
 
-    att.size_bytes = Some(9_999);
+    attachment.size_bytes = Some(9_999);
     assert_eq!(
-        attachment_size_hint(&att),
+        attachment_size_hint(&attachment),
         Some(9_999),
         "the record's own size wins, because it is what the source said"
     );
@@ -606,11 +617,11 @@ fn an_empty_file_is_recorded_as_missing_rather_than_staged() {
     let dir = tempfile::tempdir().unwrap();
     let att_dir = dir.path().join("attachments");
     std::fs::create_dir_all(&att_dir).unwrap();
-    let mut att = empty_att("empty.jpg");
+    let mut attachment = empty_att("empty.jpg");
 
     {
         let mut jobs = [AttachmentJob {
-            attachment: &mut att,
+            attachment: &mut attachment,
             timestamp_unix_ms: 1_609_459_200_000,
             size_hint: None,
         }];
@@ -626,9 +637,9 @@ fn an_empty_file_is_recorded_as_missing_rather_than_staged() {
         .unwrap();
     }
 
-    assert_eq!(att.missing_reason.as_deref(), Some("file_missing"));
-    assert!(att.path.is_none(), "nothing was staged");
-    assert!(att.digest_sha256.is_none());
+    assert_eq!(attachment.missing_reason.as_deref(), Some("file_missing"));
+    assert!(attachment.path.is_none(), "nothing was staged");
+    assert!(attachment.digest_sha256.is_none());
     assert_eq!(
         std::fs::read_dir(&att_dir).unwrap().count(),
         0,
@@ -776,10 +787,10 @@ fn an_attachment_name_the_file_system_cannot_take_does_not_stop_the_run() {
 fn a_name_with_no_plain_extension_is_staged_without_one() {
     let dir = tempfile::tempdir().unwrap();
     let att_dir = dir.path().join("attachments");
-    let mut att = empty_att("Notes v1.2 (draft?)");
+    let mut attachment = empty_att("Notes v1.2 (draft?)");
     {
         let mut jobs = [AttachmentJob {
-            attachment: &mut att,
+            attachment: &mut attachment,
             timestamp_unix_ms: 1_609_459_200_000,
             size_hint: None,
         }];
@@ -794,12 +805,15 @@ fn a_name_with_no_plain_extension_is_staged_without_one() {
         )
         .unwrap();
     }
-    let staged = att.path.as_deref().unwrap();
+    let staged = attachment.path.as_deref().unwrap();
     let name = staged.strip_prefix("attachments/").unwrap();
     assert!(!name.contains('.'), "{name}");
     assert!(dir.path().join(staged).is_file());
-    assert_eq!(att.original_name.as_deref(), Some("Notes v1.2 (draft?)"));
-    assert_eq!(att.missing_reason, None);
+    assert_eq!(
+        attachment.original_name.as_deref(),
+        Some("Notes v1.2 (draft?)")
+    );
+    assert_eq!(attachment.missing_reason, None);
 }
 
 /// An extension is kept only when it is at most ten ASCII letters and

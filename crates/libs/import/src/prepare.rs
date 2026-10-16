@@ -290,9 +290,11 @@ fn scan_attachments(
     };
     for message in messages {
         let mut projections = Vec::with_capacity(message.attachments.len());
-        for (index, att) in message.attachments.iter().enumerate() {
+        for (index, attachment) in message.attachments.iter().enumerate() {
             scan.count += 1;
-            projections.push(scan_one_attachment(ctx, name, att, index, &mut scan)?);
+            projections.push(scan_one_attachment(
+                ctx, name, attachment, index, &mut scan,
+            )?);
         }
         scan.projections.push(projections);
     }
@@ -308,34 +310,34 @@ fn scan_attachments(
 fn scan_one_attachment(
     ctx: &PrepareContext<'_>,
     name: &str,
-    att: &Attachment,
+    attachment: &Attachment,
     index: usize,
     scan: &mut AttachmentScan,
 ) -> Result<AttachmentProjection> {
-    let Some(rel) = att.path.as_deref().and_then(ir::trimmed) else {
+    let Some(rel) = attachment.path.as_deref().and_then(ir::trimmed) else {
         // No path means the bytes were never staged. Exports made with Skip
         // look like this, and the reason the exporter set (`not_copied`)
         // explains why.
         // Keep the metadata so the thread still shows the file was there.
         scan.skipped += 1;
-        if att.missing_reason.is_none() {
+        if attachment.missing_reason.is_none() {
             // An exporter dropped the path without saying why. That is a
             // defect, so it earns an Import Errors row; a deliberate skip
             // does not.
             scan.skips.push(AttachmentSkip {
                 conversation: name.to_string(),
-                item: format!("{name}:{}", attachment_label(att, index)),
+                item: format!("{name}:{}", attachment_label(attachment, index)),
                 reason: "attachment has no file path in the export".into(),
             });
         }
         return Ok(AttachmentProjection::Missing {
             index,
-            reason: att
+            reason: attachment
                 .missing_reason
                 .as_deref()
                 .unwrap_or(missing_reason::NO_PATH)
                 .into(),
-            size: att.size_bytes,
+            size: attachment.size_bytes,
         });
     };
     let Some(abs) = resolve_attachment(ctx.input, rel)? else {
@@ -350,12 +352,12 @@ fn scan_one_attachment(
         // than a plain missing file, so it is kept.
         return Ok(AttachmentProjection::Missing {
             index,
-            reason: att
+            reason: attachment
                 .missing_reason
                 .as_deref()
                 .unwrap_or(missing_reason::FILE_MISSING)
                 .into(),
-            size: att.size_bytes,
+            size: attachment.size_bytes,
         });
     };
     let file_len = std::fs::metadata(&abs)
@@ -379,15 +381,20 @@ fn scan_one_attachment(
             size: Some(file_len),
         });
     }
-    let claimed = att.digest_sha256.as_deref().and_then(ir::trimmed);
-    let digest = ctx
-        .digests
-        .resolve(&abs, claimed, att.size_bytes, name, rel, &mut |warning| {
+    let claimed = attachment.digest_sha256.as_deref().and_then(ir::trimmed);
+    let digest = ctx.digests.resolve(
+        &abs,
+        claimed,
+        attachment.size_bytes,
+        name,
+        rel,
+        &mut |warning| {
             scan.warnings.push(warning);
-        })?;
+        },
+    )?;
     scan.unique
         .entry(digest.clone())
-        .or_insert_with(|| (rel.to_string(), att.mime_type.clone()));
+        .or_insert_with(|| (rel.to_string(), attachment.mime_type.clone()));
     Ok(AttachmentProjection::Digested {
         index,
         digest,

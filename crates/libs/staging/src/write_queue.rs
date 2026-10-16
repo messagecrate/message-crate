@@ -62,9 +62,9 @@ impl AttachmentSource {
     /// record, with the size to report; `Missing` when the exporter held
     /// none. The `source_for` hook of every exporter whose attachments
     /// arrive as bytes rather than files.
-    pub fn take_bytes(att: &mut Attachment) -> (Self, Option<u64>) {
-        let hint = attachment_size_hint(att);
-        match att.bytes.take() {
+    pub fn take_bytes(attachment: &mut Attachment) -> (Self, Option<u64>) {
+        let hint = attachment_size_hint(attachment);
+        match attachment.bytes.take() {
             Some(bytes) => (Self::Bytes(bytes), hint),
             None => (Self::Missing, hint),
         }
@@ -104,7 +104,7 @@ impl ConversationUnit {
     ///
     /// The closure sees each attachment in message order and receives it as
     /// `&mut`, so an exporter carrying bytes on the document can move them
-    /// out with `att.bytes.take()` instead of copying them.
+    /// out with `attachment.bytes.take()` instead of copying them.
     pub fn from_document(
         mut document: ConversationDocument,
         mut source_for: impl FnMut(usize, &mut ir::Attachment) -> (AttachmentSource, Option<u64>),
@@ -113,8 +113,8 @@ impl ConversationUnit {
         let mut flat = 0usize;
         for (message_index, message) in document.messages.iter_mut().enumerate() {
             let timestamp_unix_ms = message.timestamp_unix_ms;
-            for (attachment_index, att) in message.attachments.iter_mut().enumerate() {
-                let (source, size_hint) = counted_source(source_for(flat, att));
+            for (attachment_index, attachment) in message.attachments.iter_mut().enumerate() {
+                let (source, size_hint) = counted_source(source_for(flat, attachment));
                 attachments.push(UnitAttachment {
                     message_index,
                     attachment_index,
@@ -709,7 +709,7 @@ fn write_one_unit(
     let mut jobs: Vec<AttachmentJob<'_>> = Vec::new();
     for (message_index, message) in document.messages.iter_mut().enumerate() {
         let fallback_ts = timestamps.get(message_index).copied().unwrap_or(0);
-        for (attachment_index, att) in message.attachments.iter_mut().enumerate() {
+        for (attachment_index, attachment) in message.attachments.iter_mut().enumerate() {
             let slot = slots.remove(&(message_index, attachment_index));
             let (source, size_hint, timestamp_unix_ms) = match slot {
                 Some(a) => (a.source, a.size_hint, a.timestamp_unix_ms),
@@ -717,7 +717,7 @@ fn write_one_unit(
             };
             sources.push(source);
             jobs.push(AttachmentJob {
-                attachment: att,
+                attachment,
                 timestamp_unix_ms,
                 size_hint,
             });
@@ -763,8 +763,8 @@ fn write_one_unit(
 
     ir_format::clear_attachments_when_skipped(&mut document, options.files);
     for message in &mut document.messages {
-        for att in &mut message.attachments {
-            att.bytes = None;
+        for attachment in &mut message.attachments {
+            attachment.bytes = None;
         }
     }
 

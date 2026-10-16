@@ -530,11 +530,11 @@ async fn export_includes_attachment_missing_reason() {
     assert_eq!(res.items.len(), 1);
     assert_eq!(res.items[0].service.as_deref(), Some("sms"));
     assert_eq!(res.items[0].attachments.len(), 1);
-    let att = &res.items[0].attachments[0];
-    assert!(att.sha256.is_none());
-    assert_eq!(att.missing_reason.as_deref(), Some("file_missing"));
-    assert_eq!(att.original_name.as_deref(), Some("gone.bin"));
-    assert_eq!(att.mime_type.as_deref(), Some("image/png"));
+    let attachment = &res.items[0].attachments[0];
+    assert!(attachment.sha256.is_none());
+    assert_eq!(attachment.missing_reason.as_deref(), Some("file_missing"));
+    assert_eq!(attachment.original_name.as_deref(), Some("gone.bin"));
+    assert_eq!(attachment.mime_type.as_deref(), Some("image/png"));
 }
 
 #[tokio::test]

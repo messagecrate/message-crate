@@ -25,8 +25,8 @@ pub(crate) fn normalize_document_for_compare(document: &mut ConversationDocument
             }
             message.imessage = imessage.into_option();
         }
-        for att in &mut message.attachments {
-            clear_attachment_ephemera(att);
+        for attachment in &mut message.attachments {
+            clear_attachment_ephemera(attachment);
         }
         empty_to_none(&mut message.sender.identity);
         empty_to_none(&mut message.sender.display_name);
@@ -45,14 +45,14 @@ pub(crate) fn normalize_document_for_compare(document: &mut ConversationDocument
 
 /// Drop fields that exist only while packaging (bytes, empty strings).
 #[cfg(test)]
-fn clear_attachment_ephemera(att: &mut Attachment) {
-    att.bytes = None;
-    empty_to_none(&mut att.path);
-    empty_to_none(&mut att.original_name);
-    empty_to_none(&mut att.mime_type);
-    empty_to_none(&mut att.digest_sha256);
-    empty_to_none(&mut att.transcription);
-    empty_to_none(&mut att.sticker_effect);
+fn clear_attachment_ephemera(attachment: &mut Attachment) {
+    attachment.bytes = None;
+    empty_to_none(&mut attachment.path);
+    empty_to_none(&mut attachment.original_name);
+    empty_to_none(&mut attachment.mime_type);
+    empty_to_none(&mut attachment.digest_sha256);
+    empty_to_none(&mut attachment.transcription);
+    empty_to_none(&mut attachment.sticker_effect);
 }
 
 /// Replace a blank or whitespace-only string with `None`.

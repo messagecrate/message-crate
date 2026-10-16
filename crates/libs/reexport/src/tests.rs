@@ -1769,7 +1769,11 @@ fn a_backup_s_attachments_are_staged_into_the_run_s_log_and_progress() {
     let spool = read.spool.as_ref().unwrap();
     let gone: Vec<PathBuf> = documents[0].messages[0].attachments[1..]
         .iter()
-        .map(|att| spool.path(att.digest_sha256.as_deref().unwrap()).unwrap())
+        .map(|attachment| {
+            spool
+                .path(attachment.digest_sha256.as_deref().unwrap())
+                .unwrap()
+        })
         .collect();
     for path in &gone {
         fs::remove_file(path).unwrap();

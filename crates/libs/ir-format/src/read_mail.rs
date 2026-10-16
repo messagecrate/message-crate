@@ -139,11 +139,11 @@ fn ir_message_from_mail(message: &MailMessage) -> Message {
 
 /// Map one mail attachment into [`Attachment`].
 fn attachment_from_mail(a: &mail::MailAttachment) -> Attachment {
-    let mut att: Attachment = a.into();
-    att.bytes = if a.bytes.is_empty() {
+    let mut attachment: Attachment = a.into();
+    attachment.bytes = if a.bytes.is_empty() {
         None
     } else {
         Some(a.bytes.clone())
     };
-    att
+    attachment
 }

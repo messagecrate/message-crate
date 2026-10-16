@@ -265,13 +265,13 @@ pub struct ExportPath {
 /// through [`ir::safe_attachment_path`] like every other reader of an
 /// attachment path. A refused path is not used: the attachment falls back to
 /// `attachments/{sha256}`, the name an attachment with no path gets.
-pub fn export_path(att: &Attachment) -> ExportPath {
-    let by_fingerprint = att
+pub fn export_path(attachment: &Attachment) -> ExportPath {
+    let by_fingerprint = attachment
         .sha256
         .as_deref()
         .and_then(ir::trimmed)
         .map(|sha| format!("attachments/{sha}"));
-    let Some(path) = att.path.as_deref().and_then(ir::trimmed) else {
+    let Some(path) = attachment.path.as_deref().and_then(ir::trimmed) else {
         return ExportPath {
             rel: by_fingerprint,
             refused: None,
@@ -287,24 +287,24 @@ pub fn export_path(att: &Attachment) -> ExportPath {
     } else {
         ExportPath {
             rel: by_fingerprint,
-            refused: att.path.clone(),
+            refused: attachment.path.clone(),
         }
     }
 }
 
 /// Map one server attachment record onto the shared attachment type.
-fn to_ir_attachment(att: &Attachment) -> IrAttachment {
+fn to_ir_attachment(attachment: &Attachment) -> IrAttachment {
     IrAttachment {
-        path: export_path(att).rel,
-        original_name: att.original_name.clone(),
-        mime_type: att.mime_type.clone(),
-        digest_sha256: att.sha256.clone(),
-        is_sticker: att.is_sticker,
-        transcription: att.transcription.clone(),
+        path: export_path(attachment).rel,
+        original_name: attachment.original_name.clone(),
+        mime_type: attachment.mime_type.clone(),
+        digest_sha256: attachment.sha256.clone(),
+        is_sticker: attachment.is_sticker,
+        transcription: attachment.transcription.clone(),
         sticker_effect: None,
         // The server's attachment shape carries no byte length.
         size_bytes: None,
-        missing_reason: att.missing_reason.clone(),
+        missing_reason: attachment.missing_reason.clone(),
         bytes: None,
     }
 }

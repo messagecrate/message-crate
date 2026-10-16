@@ -19,7 +19,7 @@ fn no_sinks() -> Sinks<'static> {
     }
 }
 
-fn att(name: &str) -> Attachment {
+fn attachment(name: &str) -> Attachment {
     Attachment {
         original_name: Some(name.into()),
         ..ir::testutil::sample_attachment()
@@ -32,7 +32,9 @@ fn document_with(who: &str, count: usize) -> ConversationDocument {
     let mut document = ir::testutil::sample_document("hello");
     document.conversation.chat_identifier = who.into();
     document.conversation.participants[0].identity = Some(who.into());
-    document.messages[0].attachments = (0..count).map(|i| att(&format!("f{i}.jpg"))).collect();
+    document.messages[0].attachments = (0..count)
+        .map(|i| attachment(&format!("f{i}.jpg")))
+        .collect();
     document
 }
 
@@ -913,7 +915,7 @@ fn a_drain_the_disk_cannot_hold_is_refused_before_anything_is_written() {
 
 #[test]
 fn take_bytes_moves_the_bytes_out_of_the_attachment() {
-    let mut with_bytes = att("a.jpg");
+    let mut with_bytes = attachment("a.jpg");
     with_bytes.bytes = Some(b"jpeg".to_vec());
     let (source, hint) = AttachmentSource::take_bytes(&mut with_bytes);
     assert!(matches!(source, AttachmentSource::Bytes(ref b) if b == b"jpeg"));
@@ -923,7 +925,7 @@ fn take_bytes_moves_the_bytes_out_of_the_attachment() {
         "the bytes are moved, not copied"
     );
 
-    let mut without = att("b.jpg");
+    let mut without = attachment("b.jpg");
     let (source, _) = AttachmentSource::take_bytes(&mut without);
     assert!(matches!(source, AttachmentSource::Missing));
 }
@@ -1065,8 +1067,9 @@ fn a_missing_attachment_is_not_counted_against_the_disk() {
     let tmp = tempfile::tempdir().unwrap();
     let mut document = document_with(&test_number(6), 1);
     document.messages[0].attachments[0].size_bytes = Some(u64::MAX / 2);
-    let unit =
-        ConversationUnit::from_document(document, |_, att| AttachmentSource::take_bytes(att));
+    let unit = ConversationUnit::from_document(document, |_, attachment| {
+        AttachmentSource::take_bytes(attachment)
+    });
     assert!(matches!(
         unit.attachments[0].source,
         AttachmentSource::Missing

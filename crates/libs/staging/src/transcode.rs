@@ -385,8 +385,8 @@ fn pending_in(
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for message in &document.messages {
-        for att in &message.attachments {
-            let Some(rel) = att.path.as_deref() else {
+        for attachment in &message.attachments {
+            let Some(rel) = attachment.path.as_deref() else {
                 continue;
             };
             if !seen.insert(rel.to_string()) {
@@ -616,9 +616,9 @@ fn patch_all_matching(
     patch: impl Fn(&mut Attachment),
 ) {
     for message in &mut document.messages {
-        for att in &mut message.attachments {
-            if att.path.as_deref() == Some(recorded_rel) {
-                patch(att);
+        for attachment in &mut message.attachments {
+            if attachment.path.as_deref() == Some(recorded_rel) {
+                patch(attachment);
             }
         }
     }
@@ -745,12 +745,12 @@ fn apply_transcode(
                 // recovered original first, exactly like the `Skipped` heal
                 // arm below, then record the failure on it.
                 let r = disk_attachment_fields(src)?;
-                patch_all_matching(document, recorded_rel, |att| {
-                    att.path = Some(r.rel.clone());
-                    att.digest_sha256 = Some(r.digest.clone());
-                    att.size_bytes = Some(r.size);
-                    att.mime_type.clone_from(&r.mime);
-                    att.missing_reason = Some(reason.clone());
+                patch_all_matching(document, recorded_rel, |attachment| {
+                    attachment.path = Some(r.rel.clone());
+                    attachment.digest_sha256 = Some(r.digest.clone());
+                    attachment.size_bytes = Some(r.size);
+                    attachment.mime_type.clone_from(&r.mime);
+                    attachment.missing_reason = Some(reason.clone());
                 });
             } else {
                 // The original is untouched on disk. Clearing `path` here
@@ -759,8 +759,8 @@ fn apply_transcode(
                 // `pending_in` (which skips `path == None`) would never
                 // retry it. So only the reason changes, and everything else
                 // (path, digest, size, mime) stays exactly as recorded.
-                patch_all_matching(document, recorded_rel, |att| {
-                    att.missing_reason = Some(reason.clone());
+                patch_all_matching(document, recorded_rel, |attachment| {
+                    attachment.missing_reason = Some(reason.clone());
                 });
             }
             write_conversation_jsonl_to(jsonl, document)?;
@@ -774,12 +774,12 @@ fn apply_transcode(
                 // this file. Repoint it back at the recovered original so a
                 // resume does not chase a name that can never exist.
                 let r = disk_attachment_fields(src)?;
-                patch_all_matching(document, recorded_rel, |att| {
-                    att.path = Some(r.rel.clone());
-                    att.digest_sha256 = Some(r.digest.clone());
-                    att.size_bytes = Some(r.size);
-                    att.mime_type.clone_from(&r.mime);
-                    att.missing_reason = None;
+                patch_all_matching(document, recorded_rel, |attachment| {
+                    attachment.path = Some(r.rel.clone());
+                    attachment.digest_sha256 = Some(r.digest.clone());
+                    attachment.size_bytes = Some(r.size);
+                    attachment.mime_type.clone_from(&r.mime);
+                    attachment.missing_reason = None;
                 });
                 write_conversation_jsonl_to(jsonl, document)?;
             }
@@ -819,12 +819,12 @@ fn apply_transcode(
             let digest = file_io::file_sha256(&marker)?;
             let rel = attachment_rel(&final_path)?;
             let mime = mime_for_rel(&rel);
-            patch_all_matching(document, recorded_rel, |att| {
-                att.path = Some(rel.clone());
-                att.digest_sha256 = Some(digest.clone());
-                att.size_bytes = Some(produced_len);
-                att.mime_type.clone_from(&mime);
-                att.missing_reason = None;
+            patch_all_matching(document, recorded_rel, |attachment| {
+                attachment.path = Some(rel.clone());
+                attachment.digest_sha256 = Some(digest.clone());
+                attachment.size_bytes = Some(produced_len);
+                attachment.mime_type.clone_from(&mime);
+                attachment.missing_reason = None;
             });
             write_conversation_jsonl_to(jsonl, document)?;
             // The `-mv` suffix in `final_derivative_name` makes this
@@ -862,14 +862,15 @@ fn recorded_at<'a>(
         .messages
         .iter()
         .flat_map(|message| &message.attachments)
-        .filter(move |att| att.path.as_deref() == Some(recorded_rel))
+        .filter(move |attachment| attachment.path.as_deref() == Some(recorded_rel))
 }
 
 /// True when an earlier attempt recorded that it could not convert the file at
 /// `recorded_rel`.
 fn had_convert_failure(document: &ConversationDocument, recorded_rel: &str) -> bool {
-    recorded_at(document, recorded_rel).any(|att| {
-        att.missing_reason
+    recorded_at(document, recorded_rel).any(|attachment| {
+        attachment
+            .missing_reason
             .as_deref()
             .is_some_and(missing_reason::is_convert_failed)
     })
@@ -890,7 +891,7 @@ fn media_issue(
 ) -> RunIssue {
     let conversation = jsonl.file_name().and_then(|n| n.to_str()).unwrap_or("?");
     let name = recorded_at(document, recorded_rel)
-        .find_map(|att| att.original_name.as_deref().and_then(ir::trimmed))
+        .find_map(|attachment| attachment.original_name.as_deref().and_then(ir::trimmed))
         .unwrap_or("The attachment");
     RunIssue {
         kind,
@@ -936,12 +937,12 @@ fn apply_repoint(
     report: &mut TranscodeReport,
 ) -> Result<()> {
     let r = disk_attachment_fields(derivative)?;
-    patch_all_matching(document, recorded_rel, |att| {
-        att.path = Some(r.rel.clone());
-        att.digest_sha256 = Some(r.digest.clone());
-        att.size_bytes = Some(r.size);
-        att.mime_type.clone_from(&r.mime);
-        att.missing_reason = None;
+    patch_all_matching(document, recorded_rel, |attachment| {
+        attachment.path = Some(r.rel.clone());
+        attachment.digest_sha256 = Some(r.digest.clone());
+        attachment.size_bytes = Some(r.size);
+        attachment.mime_type.clone_from(&r.mime);
+        attachment.missing_reason = None;
     });
     write_conversation_jsonl_to(jsonl, document)?;
     report.repointed += 1;
@@ -967,11 +968,11 @@ fn apply_too_large(
         item_rel,
         size,
     ));
-    patch_all_matching(document, recorded_rel, |att| {
-        att.path = None;
-        att.digest_sha256 = None;
-        att.missing_reason = Some(missing_reason::TOO_LARGE.to_string());
-        att.size_bytes = Some(size);
+    patch_all_matching(document, recorded_rel, |attachment| {
+        attachment.path = None;
+        attachment.digest_sha256 = None;
+        attachment.missing_reason = Some(missing_reason::TOO_LARGE.to_string());
+        attachment.size_bytes = Some(size);
     });
     write_conversation_jsonl_to(jsonl, document)?;
     report.too_large += 1;
@@ -996,11 +997,11 @@ fn apply_unrecoverable(
         RunIssueKind::Skip,
         "was lost when an earlier Media Stage stopped partway, so it was left out",
     ));
-    patch_all_matching(document, recorded_rel, |att| {
-        att.path = None;
-        att.digest_sha256 = None;
-        att.missing_reason = Some(missing_reason::FILE_MISSING.to_string());
-        att.size_bytes = None;
+    patch_all_matching(document, recorded_rel, |attachment| {
+        attachment.path = None;
+        attachment.digest_sha256 = None;
+        attachment.missing_reason = Some(missing_reason::FILE_MISSING.to_string());
+        attachment.size_bytes = None;
     });
     write_conversation_jsonl_to(jsonl, document)?;
     report.missing += 1;

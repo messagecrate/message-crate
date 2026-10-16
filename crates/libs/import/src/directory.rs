@@ -121,8 +121,9 @@ pub(crate) fn resolve_attachment(export_root: &Path, rel: &str) -> Result<Option
 ///
 /// Falls back to the position in the message so two pathless attachments in one
 /// conversation stay distinguishable.
-pub(crate) fn attachment_label(att: &ir::Attachment, index: usize) -> String {
-    att.original_name
+pub(crate) fn attachment_label(attachment: &ir::Attachment, index: usize) -> String {
+    attachment
+        .original_name
         .as_deref()
         .and_then(ir::trimmed)
         .map_or_else(|| format!("attachment {index}"), str::to_string)

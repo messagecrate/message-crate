@@ -21,10 +21,10 @@ pub fn clear_attachments_when_skipped(document: &mut ConversationDocument, files
         return;
     }
     for message in &mut document.messages {
-        for att in &mut message.attachments {
-            att.path = None;
-            att.bytes = None;
-            att.digest_sha256 = None;
+        for attachment in &mut message.attachments {
+            attachment.path = None;
+            attachment.bytes = None;
+            attachment.digest_sha256 = None;
         }
     }
 }
@@ -123,8 +123,8 @@ fn obfuscate_document(document: &mut ConversationDocument, anon: &mut Obfuscator
         if let Some(im) = message.imessage.as_mut() {
             obfuscate_imessage(im, anon);
         }
-        for att in &mut message.attachments {
-            obfuscate_attachment(att);
+        for attachment in &mut message.attachments {
+            obfuscate_attachment(attachment);
         }
         // The vendor bag is raw source attributes and can carry the real
         // sender address, so obfuscated output drops it whole. `android_type`
@@ -225,23 +225,27 @@ fn obfuscate_participant(p: &mut Participant, anon: &mut Obfuscator) {
 }
 
 /// Replace an attachment with the placeholder file for its media class.
-fn obfuscate_attachment(att: &mut Attachment) {
-    let class = classify_attachment(att.mime_type.as_deref(), att.path.as_deref());
+fn obfuscate_attachment(attachment: &mut Attachment) {
+    let class = classify_attachment(attachment.mime_type.as_deref(), attachment.path.as_deref());
     let rel = placeholder_rel_path(class);
-    att.path = Some(rel.to_string());
+    attachment.path = Some(rel.to_string());
     let ext = Path::new(rel)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("bin");
-    att.original_name = Some(format!("attachment.{ext}"));
-    if att.transcription.as_deref().is_some_and(|s| !s.is_empty()) {
-        att.transcription = Some("[redacted]".into());
+    attachment.original_name = Some(format!("attachment.{ext}"));
+    if attachment
+        .transcription
+        .as_deref()
+        .is_some_and(|s| !s.is_empty())
+    {
+        attachment.transcription = Some("[redacted]".into());
     }
     // The digest and the size both describe the real file the export
     // leaves out.
-    att.digest_sha256 = None;
-    att.size_bytes = None;
-    att.bytes = None;
+    attachment.digest_sha256 = None;
+    attachment.size_bytes = None;
+    attachment.bytes = None;
 }
 
 pub(crate) struct TransformOutcome {

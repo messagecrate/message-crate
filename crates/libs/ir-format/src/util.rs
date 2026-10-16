@@ -39,11 +39,11 @@ pub(crate) fn recover_stem_suffix(document: &mut ConversationDocument, file_stem
 /// Missing paths yield an empty buffer. IO failures return an error. The
 /// loader every writer that embeds attachment bytes uses, including the
 /// merged archives other crates implement.
-pub fn load_attachment_bytes(att: &Attachment, output_dir: &Path) -> Result<Vec<u8>> {
-    if let Some(b) = &att.bytes {
+pub fn load_attachment_bytes(attachment: &Attachment, output_dir: &Path) -> Result<Vec<u8>> {
+    if let Some(b) = &attachment.bytes {
         return Ok(b.clone());
     }
-    match read_attachment_file(att, output_dir) {
+    match read_attachment_file(attachment, output_dir) {
         Ok(Some(bytes)) => Ok(bytes),
         Ok(None) => Ok(Vec::new()),
         Err(err) => Err(err),
@@ -56,8 +56,11 @@ pub fn load_attachment_bytes(att: &Attachment, output_dir: &Path) -> Result<Vec<
 /// that want lenient behavior map with `.ok().flatten()`.
 ///
 /// The relative path is validated via [`ir::safe_attachment_path`].
-pub(crate) fn read_attachment_file(att: &Attachment, output_dir: &Path) -> Result<Option<Vec<u8>>> {
-    let Some(rel) = att.path.as_deref() else {
+pub(crate) fn read_attachment_file(
+    attachment: &Attachment,
+    output_dir: &Path,
+) -> Result<Option<Vec<u8>>> {
+    let Some(rel) = attachment.path.as_deref() else {
         return Ok(None);
     };
     let path = ir::safe_attachment_path(output_dir, rel)?;
@@ -131,11 +134,11 @@ mod tests {
 
     #[test]
     fn strict_prefers_in_memory_bytes() {
-        let mut att = att_with_path("attachments/missing.bin");
-        att.bytes = Some(vec![1, 2, 3]);
+        let mut attachment = att_with_path("attachments/missing.bin");
+        attachment.bytes = Some(vec![1, 2, 3]);
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(
-            load_attachment_bytes(&att, dir.path()).unwrap(),
+            load_attachment_bytes(&attachment, dir.path()).unwrap(),
             vec![1, 2, 3]
         );
     }
@@ -148,14 +151,21 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         let mut f = fs::File::create(&path).unwrap();
         f.write_all(b"hello").unwrap();
-        let att = att_with_path(rel);
-        assert_eq!(load_attachment_bytes(&att, dir.path()).unwrap(), b"hello");
+        let attachment = att_with_path(rel);
+        assert_eq!(
+            load_attachment_bytes(&attachment, dir.path()).unwrap(),
+            b"hello"
+        );
     }
 
     #[test]
     fn read_file_returns_none_for_missing() {
-        let att = att_with_path("attachments/missing.bin");
+        let attachment = att_with_path("attachments/missing.bin");
         let dir = tempfile::tempdir().unwrap();
-        assert!(read_attachment_file(&att, dir.path()).unwrap().is_none());
+        assert!(
+            read_attachment_file(&attachment, dir.path())
+                .unwrap()
+                .is_none()
+        );
     }
 }

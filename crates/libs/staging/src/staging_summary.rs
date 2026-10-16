@@ -211,11 +211,11 @@ pub fn summarize_staging(
                     Direction::Incoming => *received += 1,
                 }
             }
-            for att in &message.attachments {
+            for attachment in &message.attachments {
                 attachments.push(AttachmentRef {
-                    path: att.path.clone(),
-                    missing_reason: att.missing_reason.clone(),
-                    original_name: att.original_name.clone(),
+                    path: attachment.path.clone(),
+                    missing_reason: attachment.missing_reason.clone(),
+                    original_name: attachment.original_name.clone(),
                 });
             }
         }
@@ -239,16 +239,16 @@ pub fn summarize_staging(
     // `attachments` only. The module docs on aliasing say why.
     let mut classified_paths: HashSet<String> = HashSet::new();
     let mut done = 0usize;
-    for att in attachments {
+    for attachment in attachments {
         summary.attachments += 1;
-        if att.missing_reason.is_none()
-            && let Some(rel) = att.path.as_deref()
+        if attachment.missing_reason.is_none()
+            && let Some(rel) = attachment.path.as_deref()
             && classified_paths.insert(rel.to_string())
         {
             classify_one(
                 run_dir,
                 rel,
-                att.original_name.as_deref(),
+                attachment.original_name.as_deref(),
                 options,
                 tools,
                 has_media_step,
