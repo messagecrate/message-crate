@@ -79,11 +79,11 @@ fn obfuscate_keeps_me_on_a_sent_message_and_replaces_a_real_name() {
 #[test]
 fn obfuscate_skips_staged_media_and_writes_placeholders() {
     let tmp = crate::export_dir();
-    let attachment = tmp.path().join("attachments");
-    fs::create_dir_all(&attachment).unwrap();
+    let attachments_dir = tmp.path().join("attachments");
+    fs::create_dir_all(&attachments_dir).unwrap();
     // Pretend an exporter staged a real file (should be removed).
     fs::write(
-        attachment.join("real-photo.jpg"),
+        attachments_dir.join("real-photo.jpg"),
         b"REAL_JPEG_BYTES_SHOULD_GO",
     )
     .unwrap();
@@ -100,10 +100,10 @@ fn obfuscate_skips_staged_media_and_writes_placeholders() {
     let outcome = apply_transforms(&mut documents, tmp.path(), &transforms).unwrap();
     assert_eq!(outcome.obfuscated_documents, 1);
 
-    assert!(!attachment.join("real-photo.jpg").exists());
-    assert!(attachment.join("placeholder.jpg").is_file());
-    assert!(attachment.join("placeholder.mp4").is_file());
-    assert!(attachment.join("placeholder.bin").is_file());
+    assert!(!attachments_dir.join("real-photo.jpg").exists());
+    assert!(attachments_dir.join("placeholder.jpg").is_file());
+    assert!(attachments_dir.join("placeholder.mp4").is_file());
+    assert!(attachments_dir.join("placeholder.bin").is_file());
     assert_eq!(
         documents[0].messages[0].attachments[0].path.as_deref(),
         Some("attachments/placeholder.jpg")
@@ -151,9 +151,9 @@ fn obfuscate_drops_the_real_files_size() {
 #[test]
 fn finish_leaves_a_copied_file_as_it_is() {
     let tmp = crate::export_dir();
-    let attachment = tmp.path().join("attachments");
-    fs::create_dir_all(&attachment).unwrap();
-    fs::write(attachment.join("keep.bin"), b"already-cloned").unwrap();
+    let attachments_dir = tmp.path().join("attachments");
+    fs::create_dir_all(&attachments_dir).unwrap();
+    fs::write(attachments_dir.join("keep.bin"), b"already-cloned").unwrap();
     let mut documents = vec![document_with_image_attachment()];
     documents[0].messages[0].attachments[0].path = Some("attachments/keep.bin".into());
     let transforms = ExportTransforms {
@@ -167,7 +167,7 @@ fn finish_leaves_a_copied_file_as_it_is() {
         Some("attachments/keep.bin")
     );
     assert_eq!(
-        fs::read(attachment.join("keep.bin")).unwrap(),
+        fs::read(attachments_dir.join("keep.bin")).unwrap(),
         b"already-cloned"
     );
 }
