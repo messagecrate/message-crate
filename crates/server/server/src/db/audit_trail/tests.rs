@@ -198,7 +198,7 @@ async fn a_used_session_reads_as_expired_at_its_moved_expiry() {
         .await
         .unwrap();
     let used = login + chrono::Duration::days(3);
-    crate::db::session_tokens::lookup_session(&mut conn, &token, used)
+    crate::db::session_tokens::use_session(&mut conn, &token, used)
         .await
         .unwrap()
         .unwrap();

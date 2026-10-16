@@ -229,11 +229,11 @@ carry their date on the heading.
 
 ### Design
 
-- 2026-10-15: **A Session ends after seven days unused.** A Session that is
-  not used for seven days ends, and you log in again. Each use starts the
-  seven days again, up to 30 days after the login, so an account in daily
-  use is asked to log in once a month, as before. A Session forgotten on a
-  shared computer now ends within a week. The database format changed: an
+- 2026-10-15: **A Session ends after 7 days unused.** A Session that is not
+  used for 7 days ends, and you log in again. Each use starts the 7 days
+  again, up to 30 days after the login, so an account in daily use is asked
+  to log in once a month, as before. A Session forgotten on a shared
+  computer now ends within a week. The database format changed: an
   existing Message Crate is rebuilt empty on first start and its messages
   must be imported again (#2131).
 - 2026-10-15: The way the desktop app sends an import's conversations to

@@ -18,10 +18,10 @@ Ticked, which is how each form opens, the browser keeps the Session, and the nex
 Unticked, the browser forgets the Session when the tab closes, and a new tab asks to log in again, which suits a shared or borrowed computer.
 A browser that reopens a closed tab, or reopens its tabs after a restart, brings the Session back with it, and a duplicated tab shares it.
 **Log out** is what ends the Session itself.
+The desktop app shows no such box, because it logs out when its window closes.
 
 A Session also ends on its own after 7 days in which it isn't used, and 30 days after the login however much it is used.
 Each use within those 30 days starts the 7 days again, so an account in daily use is asked to log in once a month.
-The desktop app shows no such box, because it logs out when its window closes.
 
 ## What the Owner sees
 

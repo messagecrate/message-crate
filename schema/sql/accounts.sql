@@ -542,8 +542,8 @@ BEGIN
 END;
 
 -- When a Session that has been used expires, under the `logged_in` entry of
--- the login that opened it. Each use moves a Session's expiry seven days
--- ahead, up to thirty days after the login, and an Audit Trail entry is
+-- the login that opened it. Each use moves a Session's expiry 7 days
+-- ahead, up to 30 days after the login, and an Audit Trail entry is
 -- never edited, so the latest expiry is kept here, where the Audit Trail
 -- reads it. It outlives the session row, which a new login replaces.
 CREATE TABLE IF NOT EXISTS session_extensions (

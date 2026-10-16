@@ -460,7 +460,7 @@ pub async fn resolve_auth_on_conn(
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<AuthIdentity, ApiError> {
     let resolved = if let Some(session) =
-        session_tokens::lookup_session(&mut *conn, token, now).await?
+        session_tokens::use_session(&mut *conn, token, now).await?
     {
         if let Some(app) = app {
             // A record, not a check: a failed write still serves the

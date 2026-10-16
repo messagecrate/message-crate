@@ -219,7 +219,7 @@ async fn change_password_transaction_updates_all_credentials() {
             .unwrap()
     );
     assert!(
-        session_tokens::lookup_session(
+        session_tokens::use_session(
             &mut conn,
             &old_session,
             crate::test_support::fixed_instant()
@@ -229,7 +229,7 @@ async fn change_password_transaction_updates_all_credentials() {
         .is_none()
     );
     assert_eq!(
-        session_tokens::lookup_session(
+        session_tokens::use_session(
             &mut conn,
             &new_session,
             crate::test_support::fixed_instant()
@@ -302,7 +302,7 @@ async fn change_password_transaction_rolls_back_every_credential() {
             .unwrap()
     );
     assert_eq!(
-        session_tokens::lookup_session(
+        session_tokens::use_session(
             &mut conn,
             &old_session,
             crate::test_support::fixed_instant()

@@ -139,7 +139,7 @@ impl TestFixture {
     /// open a session on it, and start one running Import Run for it, all
     /// straight into the database, for a test that calls an import handler
     /// function directly rather than over HTTP. The session is made at
-    /// [`crate::test_support::fixed_instant`] and expires seven days after it,
+    /// [`crate::test_support::fixed_instant`] and expires 7 days after it,
     /// so the router, which checks expiry against the clock, refuses it; a
     /// test that sends a token over HTTP makes its own at
     /// [`crate::test_support::routed_credential_instant`].

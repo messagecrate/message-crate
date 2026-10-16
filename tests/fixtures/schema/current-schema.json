@@ -42,12 +42,8 @@
     "message_versions_fts_docsize",
     "message_versions_fts_idx",
     "server_settings",
-    "staging_message_versions",
-    "contact_group_members_set_aside",
-    "import_contacts_set_aside",
-    "message_crate",
-    "participants_set_aside",
-    "session_extensions"
+    "session_extensions",
+    "staging_message_versions"
   ],
   "indexes": [
     "ix_imports_account_started",
@@ -90,9 +86,7 @@
     "ix_messages_owner_handle_id",
     "ix_messages_reply_to",
     "ix_messages_sender_timestamp",
-    "ix_staging_message_versions_message_id",
-    "ix_attachments_import_id",
-    "ux_exports_active_account"
+    "ix_staging_message_versions_message_id"
   ],
   "triggers": [
     "messages_fts_ai",
@@ -103,9 +97,7 @@
     "attachments_fts_au",
     "message_versions_fts_ad",
     "message_versions_fts_ai",
-    "message_versions_fts_au",
-    "audit_entries_never_deleted",
-    "audit_entries_never_edited"
+    "message_versions_fts_au"
   ],
   "metadata": [
     "messages_fts_triggers_v1"
