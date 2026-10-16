@@ -120,10 +120,7 @@ fn reactions_replies_deletions_and_edits_reach_the_message() {
     };
     assert_eq!(
         lunch.reactions,
-        vec![
-            reaction("\u{2764}\u{fe0f}"),
-            reaction("\u{1f44d}"),
-        ]
+        vec![reaction("\u{2764}\u{fe0f}"), reaction("\u{1f44d}"),]
     );
     assert_eq!(
         by_text("Yes at noon").reply_to,
