@@ -157,7 +157,7 @@ pub fn run(
             // dir, preferences plist included; a backup someone extracted by
             // hand has it under the input directory. The form's number covers a
             // backup that carries no owner key (the Business app, a moved key).
-            Platform::Ios => match owner_from_backup(&media_roots, &mut messages).or(form_owner) {
+            Platform::Ios => match owner_from_backup(&media_roots, &context.log).or(form_owner) {
                 Some(owner) => owner,
                 None => bail!(
                     "the backup does not contain your WhatsApp phone number; \
