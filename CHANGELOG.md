@@ -22,6 +22,14 @@ carry their date on the heading.
 
 ### Features
 
+- 2026-10-16: **Open an Audit Trail entry's lines in the server's log.**
+  Each entry on Owner Home's **Audit Trail** that a request made has a
+  **View in log** link. It opens **Logs** on the server's log at every level
+  with the request's id in **Search the log**, so only that request's lines
+  show, in place of matching the entry to its lines by time. When the log
+  holds none of them, **Logs** says so. The holder's own Audit Trail in
+  Settings has no link, because a holder cannot read the server's log
+  (#3060).
 - 2026-10-16: **The desktop app keeps a log of its own.** What the desktop
   app went on without outside an import, such as a program it downloaded
   whose record it could not write, was written where nobody could see it.
@@ -1578,6 +1586,14 @@ carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-16: **Add a WhatsApp internal id or a sender name as an
+  identity.** **Add identity**, in Settings and on a contact, and **Your
+  Accounts** at setup refused anything but a phone number on **Text
+  Message** and **WhatsApp**, so a WhatsApp internal id such as
+  `123456789012345@lid` or a sender name such as `AMAZON`, which an import
+  adds and Settings can remove, could not be added by hand. Both services now
+  take any value, as the server does. **Email** still asks for an email
+  address (#3090).
 - 2026-10-16: **An Edit address book load erases what it removed from the
   database's files.** An **Edit** load deletes for good the identities its
   file no longer lists that nothing else uses, but left them readable in the
@@ -1960,6 +1976,9 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-16: A conversation file written by an earlier build is refused
+  when you import it. Read the backup again with this build to write a file
+  the import takes (#3094).
 - 2026-10-16: A program that reads Import Runs, Export Runs or the Audit
   Trail from your Message Crate and looks for the status "cancelled" must
   look for "canceled" instead, the spelling the screens use (#2279).

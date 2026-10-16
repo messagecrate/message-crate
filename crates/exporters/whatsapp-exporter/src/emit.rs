@@ -239,20 +239,19 @@ fn ingest_chat(
         }
 
         let is_from_me = message.from_me;
-        let (sender_identity, sender_display_name) = if is_from_me {
-            (String::new(), None)
+        let sender = if is_from_me {
+            ir::Sender::default()
         } else if group {
             let sender = Person::sender(message);
             let identity = sender
                 .identity
                 .as_ref()
-                .map(|(identity, _)| identity.clone())
-                .unwrap_or_default();
-            let name = sender.name.clone();
+                .map(|(identity, _)| identity.clone());
+            let display_name = sender.name.clone();
             roster.add(sender);
-            (identity, name)
+            ir::Sender::new(identity, display_name)
         } else {
-            (chat_id.clone(), chat_name.clone())
+            ir::Sender::new(Some(chat_id.clone()), chat_name.clone())
         };
 
         // A group event the fork gives a text is an announcement with that
@@ -274,8 +273,7 @@ fn ingest_chat(
         pending.messages.push(PendingMessage {
             sort_key: timestamp_ms(ts_raw),
             is_from_me,
-            sender_identity,
-            sender_display_name,
+            sender,
             text,
             attachments,
             extra: {
@@ -319,7 +317,7 @@ fn ingest_chat(
     }
 
     // The phone numbers name an untitled group's file.
-    pending.participant_e164s = roster.numbers;
+    pending.participant_handles = roster.numbers;
     Some((chat_id, pending, roster.participants))
 }
 
@@ -653,7 +651,7 @@ fn reaction_from_json(reaction: &ReactionJson) -> Option<Reaction> {
     })
 }
 
-/// WhatsApp deltas of the shared [`ir::pending_to_document`] projection.
+/// WhatsApp deltas of the shared [`ir::project_pending`] projection.
 struct WhatsappProjection {
     export: ExportMeta,
     /// Every message's Backup Date.

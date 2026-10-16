@@ -171,8 +171,11 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             direction,
             service,
             message_kind,
-            sender_identity,
-            sender_display_name,
+            sender: ir::Sender {
+                identity: sender_identity,
+                display_name: sender_display_name,
+                country: None,
+            },
             owner_identity: optional_header(headers, hn::MESSAGE_OWNER_IDENTITY),
             subject,
             text,
@@ -185,7 +188,6 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             reply_to,
             imessage,
             source,
-            sender_country: None,
             backup_taken_at_unix_ms,
         },
         attachments,
@@ -496,8 +498,11 @@ mod tests {
             owner_display_name: Some("Me".into()),
             message: Message {
                 direction: Direction::Outgoing,
-                sender_identity: Some("+15555550100".into()),
-                sender_display_name: Some("Me".into()),
+                sender: ir::Sender {
+                    identity: Some("+15555550100".into()),
+                    display_name: Some("Me".into()),
+                    country: None,
+                },
                 text: "hello roundtrip".into(),
                 source: Some(VendorFields {
                     android_type: Some(2),
@@ -515,7 +520,7 @@ mod tests {
         assert_eq!(parsed.message.text, "hello roundtrip");
         assert_eq!(parsed.message.direction, Direction::Outgoing);
         assert_eq!(
-            parsed.message.sender_identity.as_deref(),
+            parsed.message.sender.identity.as_deref(),
             Some("+15555550100")
         );
         assert_eq!(parsed.owner_identity, "+15555550100");
@@ -608,7 +613,10 @@ mod tests {
                 guid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into(),
                 service: Transport::IMessage,
                 message_kind: MessageKind::IMessage,
-                sender_display_name: Some("Sam".into()),
+                sender: ir::Sender {
+                    display_name: Some("Sam".into()),
+                    ..base.message.sender.clone()
+                },
                 subject: Some("MMS subject".into()),
                 text: "full bag".into(),
                 reactions: reactions.clone(),
@@ -652,7 +660,7 @@ mod tests {
         assert_eq!(parsed.participants[0].identity, "+15555550101");
         assert_eq!(parsed.participants[0].display_name.as_deref(), Some("Sam"));
         assert_eq!(parsed.participants[1].display_name, None);
-        assert_eq!(parsed.message.sender_display_name.as_deref(), Some("Sam"));
+        assert_eq!(parsed.message.sender.display_name.as_deref(), Some("Sam"));
         assert_eq!(parsed.message.subject.as_deref(), Some("MMS subject"));
         assert_eq!(
             parsed.message.text, "full bag",

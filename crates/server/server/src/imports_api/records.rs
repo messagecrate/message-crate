@@ -406,10 +406,10 @@ fn message_from_ir(
     } else {
         (
             handle_value(
-                msg.sender_identity.as_deref(),
-                msg.sender_display_name.as_deref(),
+                msg.sender.identity.as_deref(),
+                msg.sender.display_name.as_deref(),
             ),
-            stated_country(msg.sender_country.as_deref())?,
+            stated_country(msg.sender.country.as_deref())?,
         )
     };
 

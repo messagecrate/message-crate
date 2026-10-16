@@ -10,11 +10,14 @@ import AuditTrailTable from "./AuditTrailTable";
 export default function AuditTrail({
   of,
   showAccount,
+  logHref,
 }: {
   /** Whose Audit Trail to read. */
   of: AuditTrailOf;
   /** Show the Account column: the owner's list of every account. */
   showAccount: boolean;
+  /** Where an entry's request's lines in the server's log are read; Owner Home's alone. */
+  logHref?: (requestId: string) => string;
 }) {
   const trail = useAuditTrail(of);
   if (trail.loading) return <p className={`${sectionHintClass} mt-3`}>Loading the Audit Trail…</p>;
@@ -26,6 +29,7 @@ export default function AuditTrail({
       page={trail.page}
       onPageChange={trail.setPage}
       showAccount={showAccount}
+      logHref={logHref}
     />
   );
 }

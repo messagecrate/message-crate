@@ -190,7 +190,9 @@ A column heading sorts the table by that column.
 A dash stands for a zero or a missing date.
 
 **Add identity** opens a dialog with a **Service** and an **Identity** field.
-A phone number must hold 7 to 15 digits, and spaces, dots, dashes, and parentheses are accepted.
+Under **Email**, the Identity must be an email address.
+**Text Message** and **WhatsApp** take any value, not only a phone number, such as a WhatsApp internal id like `123456789012345@lid` or a sender name like `AMAZON`, as an import adds them.
+A mistyped phone number is added as typed.
 An Identity already in the list on the same service is refused.
 The same number on **Text Message** and on **WhatsApp** counts as two Identities, so both can be listed.
 

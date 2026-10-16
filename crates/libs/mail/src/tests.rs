@@ -23,9 +23,11 @@ pub(crate) fn base_sms() -> MailMessage {
             direction: Direction::Incoming,
             service: ir::Transport::Sms,
             message_kind: ir::MessageKind::Sms,
-            sender_identity: Some("+15555550101".into()),
-            sender_display_name: Some("Sam".into()),
-            sender_country: None,
+            sender: ir::Sender {
+                identity: Some("+15555550101".into()),
+                display_name: Some("Sam".into()),
+                country: None,
+            },
             owner_identity: None,
             subject: None,
             text: "hello from sms".into(),
@@ -203,7 +205,7 @@ fn encodes_email_handles_and_imessage_message_id() {
         identity: "friend@example.com".into(),
         display_name: Some("Friend".into()),
     }];
-    message.message.sender_identity = Some("friend@example.com".into());
+    message.message.sender.identity = Some("friend@example.com".into());
     message.owner_identity = "me@example.com".into();
     message.message.service = ir::Transport::IMessage;
     message.message.message_kind = ir::MessageKind::IMessage;
@@ -233,8 +235,8 @@ fn encodes_email_handles_and_imessage_message_id() {
 fn outgoing_uses_me_and_stable_subject() {
     let mut message = base_sms();
     message.message.direction = Direction::Outgoing;
-    message.message.sender_identity = Some("+15555550100".into());
-    message.message.sender_display_name = Some("Me".into());
+    message.message.sender.identity = Some("+15555550100".into());
+    message.message.sender.display_name = Some("Me".into());
     message.message.text = "body must not become subject".into();
 
     let tmp = tempfile::tempdir().unwrap();
@@ -291,8 +293,8 @@ fn outgoing_to_a_peer_with_no_name_is_titled_with_the_peer_identity() {
     let mut message = base_sms();
     message.participants[0].display_name = None;
     message.message.direction = Direction::Outgoing;
-    message.message.sender_identity = Some("+15555550100".into());
-    message.message.sender_display_name = Some("Me".into());
+    message.message.sender.identity = Some("+15555550100".into());
+    message.message.sender.display_name = Some("Me".into());
 
     let (subject, to) = subject_and_to(&message);
     assert_eq!(subject, "Message with +15555550101");
@@ -310,8 +312,8 @@ fn a_roster_that_lists_the_owner_first_still_addresses_the_other_person() {
         },
     );
     message.message.direction = Direction::Outgoing;
-    message.message.sender_identity = Some("+15555550100".into());
-    message.message.sender_display_name = Some("Me".into());
+    message.message.sender.identity = Some("+15555550100".into());
+    message.message.sender.display_name = Some("Me".into());
 
     let (subject, to) = subject_and_to(&message);
     assert_eq!(subject, "Message with Sam");
@@ -324,7 +326,7 @@ fn a_roster_that_lists_the_owner_first_still_addresses_the_other_person() {
 fn an_empty_roster_takes_the_peer_from_the_chat_identifier() {
     let mut message = base_sms();
     message.participants.clear();
-    message.message.sender_identity = None;
+    message.message.sender.identity = None;
 
     let tmp = tempfile::tempdir().unwrap();
     let path = write_conversation_mbox(&tmp.path().join("c.mbox"), &[message]).unwrap();
@@ -339,8 +341,8 @@ fn an_empty_roster_takes_the_peer_from_the_chat_identifier() {
 fn caller_id_owner_display_and_imessage_extension_headers() {
     let mut message = base_sms();
     message.message.direction = Direction::Outgoing;
-    message.message.sender_identity = Some("+15555550100".into());
-    message.message.sender_display_name = Some("+15555550100".into());
+    message.message.sender.identity = Some("+15555550100".into());
+    message.message.sender.display_name = Some("+15555550100".into());
     message.owner_display_name = Some("+15555550100".into());
     message.export_source = "imessage".into();
     message.message.message_kind = ir::MessageKind::IMessage;
@@ -463,7 +465,7 @@ fn each_mbox_record_starts_with_its_sender_and_utc_date() {
     outgoing.message.timestamp_unix_ms = 1_401_700_000_000; // 2014-06-02 09:06:40 UTC
     let mut from_email = base_sms();
     from_email.message.guid = "ccddeeff00112233445566778899aabb".into();
-    from_email.message.sender_identity = Some("sam@example.com".into());
+    from_email.message.sender.identity = Some("sam@example.com".into());
     from_email.message.timestamp_unix_ms = 1_401_700_001_000;
 
     let tmp = tempfile::tempdir().unwrap();
@@ -867,8 +869,8 @@ fn with_every_x_me_text(value: &str, direction: Direction) -> MailMessage {
     message.participants[0].identity = value.into();
     message.owner_identity = value.into();
     message.message.guid = value.into();
-    message.message.sender_identity = text();
-    message.message.sender_display_name = text();
+    message.message.sender.identity = text();
+    message.message.sender.display_name = text();
     message.message.owner_identity = text();
     message.message.subject = text();
     message.message.reactions = vec![ir::Reaction {
@@ -1239,7 +1241,7 @@ fn an_identity_with_a_line_break_keeps_the_address_headers_whole() {
                 let mut message = base_sms();
                 message.conversation_type = conversation_type.into();
                 message.message.direction = direction;
-                message.message.sender_identity = Some(sender.into());
+                message.message.sender.identity = Some(sender.into());
                 message.owner_identity = owner.into();
                 message.participants[0].identity = peer.into();
                 let case = format!("{conversation_type} {direction:?} {sender:?}");

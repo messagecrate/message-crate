@@ -260,7 +260,7 @@ fn senders(document: &ir::ConversationDocument) -> Vec<Option<&str>> {
     document
         .messages
         .iter()
-        .map(|m| m.sender_identity.as_deref().filter(|h| !h.is_empty()))
+        .map(|m| m.sender.identity.as_deref().filter(|h| !h.is_empty()))
         .collect()
 }
 
@@ -298,7 +298,7 @@ fn a_per_chat_file_with_three_senders_is_one_group() {
         vec![Some("+15555550122"), Some("+15555550133"), None, None]
     );
     assert_eq!(
-        document.messages[2].sender_display_name.as_deref(),
+        document.messages[2].sender.display_name.as_deref(),
         Some("Cathy Arp")
     );
 }

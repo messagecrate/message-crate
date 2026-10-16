@@ -318,7 +318,8 @@ fn envelope_sender(message: &MailMessage) -> String {
     let identity = match message.message.direction {
         Direction::Incoming => message
             .message
-            .sender_identity
+            .sender
+            .identity
             .as_deref()
             .and_then(ir::trimmed)
             .or_else(|| peer_identity(message).and_then(ir::trimmed))
@@ -493,13 +494,15 @@ fn peer_display_name<'a>(message: &'a MailMessage, peer: &str) -> Option<&'a str
         .or_else(|| {
             message
                 .message
-                .sender_display_name
+                .sender
+                .display_name
                 .as_deref()
                 .and_then(ir::trimmed)
                 .filter(|_| {
                     message
                         .message
-                        .sender_identity
+                        .sender
+                        .identity
                         .as_deref()
                         .is_some_and(|h| h == peer)
                 })
@@ -808,11 +811,12 @@ fn envelope_addresses(message: &MailMessage) -> (Address<'static>, Address<'stat
             Direction::Incoming => {
                 let sender = message
                     .message
-                    .sender_identity
+                    .sender
+                    .identity
                     .as_deref()
                     .and_then(ir::trimmed)
                     .unwrap_or("unknown");
-                synthetic_address(sender, message.message.sender_display_name.as_deref())
+                synthetic_address(sender, message.message.sender.display_name.as_deref())
             }
             Direction::Outgoing => owner_address(message),
         };
@@ -829,7 +833,7 @@ fn envelope_addresses(message: &MailMessage) -> (Address<'static>, Address<'stat
         Direction::Incoming => (
             synthetic_address(
                 peer,
-                peer_name.or(message.message.sender_display_name.as_deref()),
+                peer_name.or(message.message.sender.display_name.as_deref()),
             ),
             owner_address(message),
         ),
@@ -896,11 +900,11 @@ fn conversation_headers<'m>(
         [
             (
                 headers::SENDER_IDENTITY,
-                message.message.sender_identity.clone(),
+                message.message.sender.identity.clone(),
             ),
             (
                 headers::SENDER_DISPLAY_NAME,
-                message.message.sender_display_name.clone(),
+                message.message.sender.display_name.clone(),
             ),
             (
                 headers::OWNER_IDENTITY,

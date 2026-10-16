@@ -22,6 +22,7 @@ import { OwnerAuditTrailPanel } from "./owner/OwnerAuditTrailPanel";
 import { OwnerDashboardPanel } from "./owner/OwnerDashboardPanel";
 import { OwnerLogsPanel } from "./owner/OwnerLogsPanel";
 import { ServerSettingsPanel } from "./owner/ServerSettingsPanel";
+import { REQUEST_PARAM } from "./owner/serverLogOfRequest";
 
 /** What the side panel lists, in its order. */
 const SECTIONS = ["dashboard", "settings", "accounts", "audit-trail", "logs"] as const;
@@ -161,7 +162,9 @@ export default function OwnerHome() {
               {section === "settings" && <ServerSettingsPanel />}
               {section === "accounts" && <OwnerAccountsPanel filter={accountSearch} />}
               {section === "audit-trail" && <OwnerAuditTrailPanel />}
-              {section === "logs" && <OwnerLogsPanel />}
+              {section === "logs" && (
+                <OwnerLogsPanel request={searchParams.get(REQUEST_PARAM) || undefined} />
+              )}
             </div>
           )}
         </main>
