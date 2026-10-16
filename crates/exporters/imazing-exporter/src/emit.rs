@@ -997,8 +997,8 @@ impl ProjectionHooks for ImazingProjection<'_> {
         })
     }
 
-    /// The reactions the row's `Reactions` cell holds, each under its
-    /// reactor's display name and no address.
+    /// The reactions the row's `Reactions` cell holds, each its emoji
+    /// alone, with no reactor.
     fn reactions(&self, message: &PendingMessage) -> Vec<Reaction> {
         row_marks::parse_reactions(message.extra_str("reactions_cell"))
     }

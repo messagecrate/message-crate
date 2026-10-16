@@ -1502,11 +1502,10 @@ async fn reactions_and_message_flags_are_read_back_as_imported() {
     assert_eq!(flags(&plain), (false, false, false), "{plain}");
 }
 
-/// An iMazing reaction names its reactor by display name alone, because the
-/// CSV carries no address. The import kept the identity and dropped the
-/// name, so the reaction was read back from nobody and the web showed it as
-/// from "Someone". The name is now stored on the reaction and read back,
-/// and makes no identity (#2044).
+/// A source can name a reactor by display name alone, with no address. The
+/// import kept the identity and dropped the name, so the reaction was read
+/// back from nobody and the web showed it as from "Someone". The name is
+/// now stored on the reaction and read back, and makes no identity (#2044).
 #[tokio::test]
 async fn a_reaction_named_with_no_identity_is_read_back_by_its_name() {
     let (fixture, alice) = fixture_with_account().await;

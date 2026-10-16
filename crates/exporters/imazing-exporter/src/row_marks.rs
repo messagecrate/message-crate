@@ -5,167 +5,58 @@
 //! iMazing writes each as text with no id. A reaction names its reactor by
 //! display name and never by address, a reply names the quoted message by
 //! its sender and date, a deletion is a date, and an edit is a date with no
-//! earlier text. The exporter reads what the text says and no more: a
-//! reactor is kept by name, a reply is linked by its date within the chat,
-//! and an edit is a version with no text (#2030).
+//! earlier text. The exporter keeps only part of what the text says: a
+//! reaction keeps its emoji alone, a reply is linked by its date within the
+//! chat, and an edit is a version with no text (#2030, #2045).
 
 use message_ir::{Deletion, EarlierVersion, Reaction};
 
-/// What iMazing names the account holder in a reaction line, as its own
-/// window does. The export carries no other name for them: outgoing rows
-/// name no sender.
-const OWN_REACTOR_NAME: &str = "Me";
+/// What a reaction line writes between the reactor's name and the emoji.
+const REACTED_WITH: &str = " reacted with ";
 
-/// What a reaction line may put between its name, its emoji and its time.
-const SEPARATORS: &[char] = &[',', ':', ';', '-', '\u{2013}', '\u{2014}', '\u{b7}'];
+/// What a reaction line writes between the emoji and the time.
+const ON: &str = " on ";
+
+/// What iMazing writes in place of the emoji for a sticker reaction.
+const A_STICKER: &str = "a sticker";
 
 /// The reactions a `Reactions` cell holds, one per line, in the order
-/// written. A line names the reactor, the emoji, and when they reacted, in
-/// the US `M/D/YYYY` form or the `YYYY-MM-DD` form the rest of the CSV
-/// uses. The name is the text before the emoji, or after it when nothing
-/// comes before, or before the time when the line has no emoji, or the
-/// whole line when it has neither. The time is read past: a reaction has
-/// no time of its own in the conversation file.
+/// written. iMazing writes each line as
+/// `<Name> reacted with <emoji> on <M/D/YYYY h:mm:ss AM/PM>`, where the
+/// name is a contact name, a phone number, or `You` for the account
+/// holder. Only the emoji is kept (#2045): the name and the time are read
+/// past, so no reaction names its reactor or is the holder's own. A line
+/// saying a reaction was removed
+/// (`<Name> removed the reaction <emoji> on <time>`) is no reaction, and
+/// neither is a line in any other shape.
 pub(crate) fn parse_reactions(cell: &str) -> Vec<Reaction> {
     cell.lines().filter_map(parse_reaction_line).collect()
 }
 
-/// One reaction line, or `None` for a blank one.
+/// One `reacted with` line's reaction, or `None` for any other line. The
+/// emoji is the text between `reacted with` and the last ` on `, so a name
+/// with ` on ` in it is read past. A sticker reaction is kind `sticker`
+/// with no emoji, as Apple Messages writes it, because iMazing writes the
+/// words `a sticker` where the emoji goes.
 fn parse_reaction_line(line: &str) -> Option<Reaction> {
-    let line = line.trim();
-    if line.is_empty() {
+    let (head, time) = line.trim().rsplit_once(ON)?;
+    let (_name, emoji) = head.rsplit_once(REACTED_WITH)?;
+    if emoji.is_empty() || time.is_empty() {
         return None;
     }
-    let (name, emoji) = match emoji_run(line) {
-        Some((start, end)) => {
-            let before = clean_name(&line[..start]);
-            let name = if before.is_empty() {
-                clean_name(before_date(&line[end..]))
-            } else {
-                before
-            };
-            (name, Some(line[start..end].to_string()))
-        }
-        None => (clean_name(before_date(line)), None),
+    let (kind, emoji) = if emoji == A_STICKER {
+        ("sticker", None)
+    } else {
+        ("emoji", Some(emoji.to_string()))
     };
     Some(Reaction {
         part_index: 0,
-        kind: "emoji".into(),
+        kind: kind.into(),
         emoji,
-        is_from_me: name.eq_ignore_ascii_case(OWN_REACTOR_NAME),
+        is_from_me: false,
         reactor_identity: None,
-        reactor_display_name: (!name.is_empty()).then(|| name.to_string()),
+        reactor_display_name: None,
     })
-}
-
-/// `text` without the whitespace and separators around it.
-fn clean_name(text: &str) -> &str {
-    text.trim()
-        .trim_matches(|c: char| c.is_whitespace() || SEPARATORS.contains(&c))
-}
-
-/// `text` up to the first date in it, US (`M/D/YYYY`) or `YYYY-MM-DD`, or
-/// all of it.
-fn before_date(text: &str) -> &str {
-    let us = us_date_at(text);
-    let iso = iso_date_at(text);
-    match us.into_iter().chain(iso).min() {
-        Some(at) => &text[..at],
-        None => text,
-    }
-}
-
-/// The byte offset of the first `YYYY-MM-DD` in `text`.
-fn iso_date_at(text: &str) -> Option<usize> {
-    let bytes = text.as_bytes();
-    (0..bytes.len())
-        .filter(|&i| i == 0 || !bytes[i - 1].is_ascii_digit())
-        .find(|&i| matches_shape(&bytes[i..], b"dddd-dd-dd"))
-}
-
-/// The byte offset of the first `M/D/YYYY` in `text`, with one or two
-/// digits for the month and the day.
-fn us_date_at(text: &str) -> Option<usize> {
-    let bytes = text.as_bytes();
-    (0..bytes.len())
-        .filter(|&i| i == 0 || !bytes[i - 1].is_ascii_digit())
-        .find(|&i| {
-            let mut at = i;
-            for (min, max) in [(1, 2), (1, 2), (4, 4)] {
-                let digits = bytes[at..]
-                    .iter()
-                    .take_while(|b| b.is_ascii_digit())
-                    .count();
-                if digits < min || digits > max {
-                    return false;
-                }
-                at += digits;
-                if max == 4 {
-                    return true;
-                }
-                if bytes.get(at) != Some(&b'/') {
-                    return false;
-                }
-                at += 1;
-            }
-            false
-        })
-}
-
-/// The byte range of the first run of emoji-like characters in `line`:
-/// the emoji with its joiners, variation selectors and skin tones. The run
-/// starts at an emoji-like character, or at the character a variation
-/// selector or keycap turns into one, as `\u{203c}\u{fe0f}` (the Emphasize
-/// tapback) and `1\u{fe0f}\u{20e3}` are written: their first character is
-/// punctuation or a digit by itself. A selector or joiner on its own never
-/// starts a run: it belongs to the character before it.
-fn emoji_run(line: &str) -> Option<(usize, usize)> {
-    let mut chars = line.char_indices().peekable();
-    let start = loop {
-        let (at, c) = chars.next()?;
-        let next = chars.peek().map(|&(_, next)| next);
-        let selector_next = next.is_some_and(is_emoji_selector);
-        if (is_emoji_like(c) && !is_emoji_selector(c) && c != '\u{200D}')
-            || (selector_next && starts_with_a_selector(c))
-        {
-            break at;
-        }
-    };
-    let end = line[start..]
-        .char_indices()
-        .skip(1)
-        .find(|&(_, c)| !is_emoji_like(c))
-        .map_or(line.len(), |(at, _)| start + at);
-    Some((start, end))
-}
-
-/// Whether a selector after `c` makes it an emoji: a digit, `#`, `*`, or a
-/// symbol. A letter it does not, because some CJK names are written with
-/// a variation selector after a letter (`\u{8fbb}\u{fe00}`), and the
-/// selector keeps the name's character a letter.
-fn starts_with_a_selector(c: char) -> bool {
-    c.is_ascii_digit() || (!c.is_whitespace() && !c.is_alphanumeric())
-}
-
-/// Whether `c` turns the character before it into an emoji: a variation
-/// selector or the keycap sign.
-fn is_emoji_selector(c: char) -> bool {
-    matches!(u32::from(c), 0x20E3 | 0xFE00..=0xFE0F)
-}
-
-/// Whether `c` can be part of an emoji rather than of a name or a time: a
-/// symbol or pictograph, or a character that joins or varies one. Letters
-/// of every script, digits and punctuation are not, unless a selector
-/// follows them ([`emoji_run`]).
-fn is_emoji_like(c: char) -> bool {
-    match u32::from(c) {
-        // Zero-width joiner, skin tones, and the selectors.
-        0x200D | 0x1F3FB..=0x1F3FF => true,
-        _ if is_emoji_selector(c) => true,
-        // General and CJK punctuation.
-        0x2000..=0x206F | 0x3000..=0x303F => false,
-        cp => cp >= 0x2190 && !c.is_alphanumeric(),
-    }
 }
 
 /// The date a `Replying to` cell quotes, as written: the first
@@ -222,101 +113,88 @@ pub(crate) fn textless_edit(edited_at_unix_ms: Option<i64>) -> EarlierVersion {
 mod tests {
     use super::*;
 
-    /// Each reaction of `cell` as `(reactor's name, emoji, is from me)`.
-    fn names_and_emoji(cell: &str) -> Vec<(Option<String>, Option<String>, bool)> {
+    /// Each reaction of `cell` as `(kind, emoji)`, after checking that
+    /// none names its reactor or is the account holder's.
+    fn kinds_and_emoji(cell: &str) -> Vec<(String, Option<String>)> {
         parse_reactions(cell)
             .into_iter()
-            .map(|r| (r.reactor_display_name, r.emoji, r.is_from_me))
+            .map(|r| {
+                assert_eq!(r.part_index, 0);
+                assert!(!r.is_from_me, "{r:?}");
+                assert_eq!(r.reactor_identity, None);
+                assert_eq!(r.reactor_display_name, None);
+                (r.kind, r.emoji)
+            })
             .collect()
     }
 
-    /// `(name, emoji, from me)` as [`names_and_emoji`] lists it.
-    fn one(
-        name: Option<&str>,
-        emoji: Option<&str>,
-        from_me: bool,
-    ) -> (Option<String>, Option<String>, bool) {
-        (name.map(str::to_string), emoji.map(str::to_string), from_me)
+    /// `(kind "emoji", emoji)` as [`kinds_and_emoji`] lists it.
+    fn emoji(emoji: &str) -> (String, Option<String>) {
+        ("emoji".into(), Some(emoji.into()))
     }
 
-    /// Each line is one reaction: the name before the emoji, the emoji with
-    /// its selectors and joiners whole, the time read past, and `Me` the
-    /// account holder.
+    /// Each `reacted with` line of a cell is one reaction, its emoji whole
+    /// with its variation selector, joiners and skin tone, whoever the line
+    /// names: a contact, a phone number, or `You`.
     #[test]
-    fn a_line_is_a_name_an_emoji_and_a_time() {
+    fn each_reacted_with_line_is_its_emoji() {
         assert_eq!(
-            names_and_emoji(
-                "Bob Sample \u{2764}\u{fe0f} 1/1/2020 12:04:00 PM\n\
-                 Me \u{1f44d}\u{1f3fb} 1/1/2020 12:05:00 PM\n\
-                 \n\
-                 Ana Lima-Costa, \u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467} - 12/31/2019 9:00:00 AM"
+            kinds_and_emoji(
+                "Bob Sample reacted with \u{2764}\u{fe0f} on 1/1/2020 12:04:00 PM\n\
+                 You reacted with \u{1f44d}\u{1f3fb} on 1/1/2020 12:05:00 PM\n\
+                 +1 (321) 555-0100 reacted with \u{203c}\u{fe0f} on 12/31/2019 9:00:00 AM\n\
+                 Ana Lima-Costa reacted with \u{1f926}\u{200d}\u{2640}\u{fe0f} on 1/2/2020 10:15:30 AM"
             ),
             vec![
-                one(Some("Bob Sample"), Some("\u{2764}\u{fe0f}"), false),
-                one(Some("Me"), Some("\u{1f44d}\u{1f3fb}"), true),
-                one(
-                    Some("Ana Lima-Costa"),
-                    Some("\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}"),
-                    false
-                ),
+                emoji("\u{2764}\u{fe0f}"),
+                emoji("\u{1f44d}\u{1f3fb}"),
+                emoji("\u{203c}\u{fe0f}"),
+                emoji("\u{1f926}\u{200d}\u{2640}\u{fe0f}"),
             ]
         );
-        let reaction = &parse_reactions("Bob \u{1f602} 1/1/2020 1:00:00 PM")[0];
-        assert_eq!(reaction.part_index, 0);
-        assert_eq!(reaction.kind, "emoji");
-        assert_eq!(reaction.reactor_identity, None);
     }
 
-    /// A name after the emoji, a name in another script, and a line with no
-    /// emoji each keep the name without the time, whichever way the time is
-    /// written.
+    /// A name with ` on ` in it is read past, and the emoji is still the
+    /// text before the time.
     #[test]
-    fn the_name_is_found_either_side_of_the_emoji_or_before_the_time() {
+    fn the_emoji_is_read_from_the_end_of_the_line() {
         assert_eq!(
-            names_and_emoji(
-                "\u{1f602} Bob Sample 1/1/2020 1:00:00 PM\n\
-                 \u{1f602} Bob Sample 2020-01-01 13:00:00\n\
-                 \u{5c71}\u{7530} \u{1f389} 1/1/2020 1:01:00 PM\n\
-                 Bob Sample 1/1/2020 1:02:00 PM\n\
-                 Bob Sample 2020-01-01 13:02:00\n\
-                 Bob Sample"
+            kinds_and_emoji("Jo on Main St reacted with \u{1f602} on 1/1/2020 1:00:00 PM"),
+            vec![emoji("\u{1f602}")]
+        );
+    }
+
+    /// A sticker reaction, which iMazing writes as the words `a sticker`,
+    /// is kind `sticker` with no emoji.
+    #[test]
+    fn a_sticker_reaction_has_no_emoji() {
+        assert_eq!(
+            kinds_and_emoji("Bob Sample reacted with a sticker on 1/1/2020 12:04:00 PM"),
+            vec![("sticker".into(), None)]
+        );
+    }
+
+    /// A removed reaction, a blank line, and a line in neither shape give
+    /// no reaction, and the lines around them still do.
+    #[test]
+    fn a_removed_reaction_or_another_line_is_no_reaction() {
+        assert_eq!(
+            kinds_and_emoji("You removed the reaction \u{1f44d} on 1/1/2020 12:06:00 PM"),
+            vec![]
+        );
+        assert_eq!(
+            kinds_and_emoji(
+                "Bob Sample reacted with \u{1f44d} on 1/1/2020 12:04:00 PM\n\
+                 \n\
+                 Bob Sample \u{1f44d} 1/1/2020 12:05:00 PM\n\
+                 Bob Sample reacted with  on 1/1/2020 12:06:00 PM\n\
+                 Bob Sample reacted with \u{1f44d} on \n\
+                 You reacted with \u{1f602} on 1/1/2020 12:07:00 PM"
             ),
-            vec![
-                one(Some("Bob Sample"), Some("\u{1f602}"), false),
-                one(Some("Bob Sample"), Some("\u{1f602}"), false),
-                one(Some("\u{5c71}\u{7530}"), Some("\u{1f389}"), false),
-                one(Some("Bob Sample"), None, false),
-                one(Some("Bob Sample"), None, false),
-                one(Some("Bob Sample"), None, false),
-            ]
+            vec![emoji("\u{1f44d}"), emoji("\u{1f602}")]
         );
         assert_eq!(parse_reactions(""), vec![]);
         assert_eq!(parse_reactions(" \n "), vec![]);
-    }
-
-    /// An emoji whose first character is punctuation or a digit by itself,
-    /// made an emoji by the selector after it (the Emphasize tapback, a
-    /// keycap, a trademark sign), is read whole, and the name before it
-    /// keeps no part of it. A digit in a name stays in the name, and so
-    /// does a letter a variation selector follows.
-    #[test]
-    fn a_selector_makes_the_character_before_it_part_of_the_emoji() {
-        assert_eq!(
-            names_and_emoji(
-                "Bob Sample \u{203c}\u{fe0f} 1/1/2020 12:04:00 PM\n\
-                 Bob Sample 1\u{fe0f}\u{20e3} 1/1/2020 12:05:00 PM\n\
-                 \u{2122}\u{fe0f} Bob Sample 1/1/2020 12:06:00 PM\n\
-                 Agent 47 \u{1f44d} 1/1/2020 12:07:00 PM\n\
-                 \u{8fbb}\u{fe00} \u{1f44d} 1/1/2020 12:08:00 PM"
-            ),
-            vec![
-                one(Some("Bob Sample"), Some("\u{203c}\u{fe0f}"), false),
-                one(Some("Bob Sample"), Some("1\u{fe0f}\u{20e3}"), false),
-                one(Some("Bob Sample"), Some("\u{2122}\u{fe0f}"), false),
-                one(Some("Agent 47"), Some("\u{1f44d}"), false),
-                one(Some("\u{8fbb}\u{fe00}"), Some("\u{1f44d}"), false),
-            ]
-        );
     }
 
     /// The date is found with or without a sender before it, with or
