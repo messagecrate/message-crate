@@ -13,6 +13,9 @@ import type { components } from "./serverApi.types";
 /** Where a running Import Run is: the server's `ImportStage`. */
 export type ImportStage = components["schemas"]["ImportStage"];
 
+/** How an Import Run stands: the server's `ImportStatus`. */
+export type ImportStatus = components["schemas"]["ImportStatus"];
+
 /** Identity of the backup an Import Run was started from. */
 export type SourceFingerprint = {
   path: string;
