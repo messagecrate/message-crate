@@ -1,6 +1,5 @@
 import { formatClockTime } from "../../lib/formatDate";
 import { useTimeZone } from "../../lib/timeZone";
-import MessageAttachments from "../MessageAttachments";
 import {
   bubbleBody,
   ChatBubbleRow,
@@ -22,7 +21,6 @@ export default function SmsBubble({
   const nameSender = namesSender(message);
   const body = (message.text || "").trim();
   const service = message.service?.trim() || message.source?.trim();
-  const hasAttachments = message.attachments.length > 0;
 
   return (
     <ChatBubbleRow
@@ -33,11 +31,7 @@ export default function SmsBubble({
       senderLabel={senderName(message)}
       timeLabel={time}
       meta={service ? <span className="uppercase tracking-[0.04em]">{service}</span> : null}
-      footer={
-        hasAttachments ? (
-          <MessageAttachments message={message} onAttachmentClick={onAttachmentClick} />
-        ) : undefined
-      }
+      onAttachmentClick={onAttachmentClick}
     >
       {bubbleBody(body, highlight)}
     </ChatBubbleRow>
