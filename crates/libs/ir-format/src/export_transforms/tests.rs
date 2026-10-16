@@ -9,7 +9,7 @@ use message_crate_core::{ExportReport, OutputFormat};
 use serde_json::{Value, json};
 use std::fs;
 
-/// ir's sample conversation, its one message `hi` with a JPEG
+/// `ir`'s sample conversation, its one message `hi` with a JPEG
 /// attached.
 fn doc_with_image_attachment() -> ConversationDocument {
     let mut doc = ir::testutil::sample_document("hi");

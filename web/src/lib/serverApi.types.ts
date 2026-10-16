@@ -2719,7 +2719,7 @@ export interface components {
             source_identities?: unknown;
             /**
              * @description Name of the program that runs the import, such as
-             *     `import`, stored on the run trimmed. Null when the
+             *     `message-crate-import`, stored on the run trimmed. Null when the
              *     request leaves it out, or blank. Over 64 characters is refused with
              *     `422 Unprocessable Entity`.
              */

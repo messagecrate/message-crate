@@ -15278,7 +15278,7 @@
               "string",
               "null"
             ],
-            "description": "Name of the program that runs the import, such as\n`import`, stored on the run trimmed. Null when the\nrequest leaves it out, or blank. Over 64 characters is refused with\n`422 Unprocessable Entity`.",
+            "description": "Name of the program that runs the import, such as\n`message-crate-import`, stored on the run trimmed. Null when the\nrequest leaves it out, or blank. Over 64 characters is refused with\n`422 Unprocessable Entity`.",
             "maxLength": 64
           }
         }

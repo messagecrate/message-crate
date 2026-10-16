@@ -21,7 +21,7 @@ use ir::{Attachment, ConversationDocument};
 use serde_json::json;
 use tempfile::tempdir;
 
-/// One SMS conversation used by most mock-server tests: ir's sample
+/// One SMS conversation used by most mock-server tests: `ir`'s sample
 /// conversation, with the message guid the mock server matches on.
 fn sample_doc() -> ConversationDocument {
     let mut doc = sample_document("hello there");

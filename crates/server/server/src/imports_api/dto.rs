@@ -51,7 +51,7 @@ pub(crate) struct CreateImportRequest {
     #[serde(default)]
     pub(crate) phone_country: Option<String>,
     /// Name of the program that runs the import, such as
-    /// `import`, stored on the run trimmed. Null when the
+    /// `message-crate-import`, stored on the run trimmed. Null when the
     /// request leaves it out, or blank. Over 64 characters is refused with
     /// `422 Unprocessable Entity`.
     #[serde(default)]
