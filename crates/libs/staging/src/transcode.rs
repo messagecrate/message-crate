@@ -136,7 +136,8 @@ pub(crate) const COMMITTED_SUFFIX: &str = "-mv";
 /// one set of values.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TranscodeOptions {
-    /// Convert or Compress. Clone and Disabled make the Media stage a no-op.
+    /// `convert` or `compress`. `clone` and `disabled` make the Media stage a
+    /// no-op.
     pub mode: MediaMode,
     /// Video targets, from the import form.
     pub compress: CompressOptions,

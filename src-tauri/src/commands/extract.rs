@@ -395,8 +395,8 @@ fn build_exporter_config(
 ) -> Result<ExporterConfig, String> {
     let mut form = Form {
         output: output_dir.to_string(),
-        // Staging copies the originals under Copy, Convert and Compress, and
-        // the desktop runs the Media Stage itself after the Staging Review,
+        // Staging copies the originals under Copy, Convert media and Convert &
+        // Compress media, and the desktop runs the Media Stage itself after the Staging Review,
         // so converting waits until the person has approved it.
         attachments: if options.attachment_media == MediaMode::Disabled {
             AttachmentFiles::Skip

@@ -215,8 +215,9 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   const blockedBy = runningJob !== null && runningJob !== "Import Run" ? runningJob : null;
 
   // A WhatsApp import runs wtsexporter and can't start without it; one still
-  // downloading is waited for. Convert and Compress run ffmpeg and ffprobe
-  // after Staging, so a missing one is said here and blocks nothing yet.
+  // downloading is waited for. Convert media and Convert & Compress media run
+  // ffmpeg and ffprobe after Staging, so a missing one is said here and blocks
+  // nothing yet.
   const tools = useToolsStatus().data ?? null;
   const wtsexporterBlocked =
     source.needsWtsexporter && tools !== null && !toolUsable(tools.wtsexporter);

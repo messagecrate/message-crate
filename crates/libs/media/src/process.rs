@@ -350,7 +350,7 @@ fn starting_line(verb: &str, total: usize, bytes: u64) -> String {
     )
 }
 
-/// The line that ends a Convert or Compress pass over staged attachments:
+/// The line that ends a `convert` or `compress` pass over staged attachments:
 /// the files processed and skipped, and the attachments' size before and
 /// after. The write queue's own pass ends with it too, so both passes word
 /// it alike.

@@ -108,7 +108,7 @@ export interface DesktopJobErrorEvent {
 /** A program the desktop app keeps in its Tools Directory, as `tools_status` names it. */
 export type ToolName = "ffmpeg" | "ffprobe" | "wtsexporter";
 
-/** The programs Convert and Compress run. */
+/** The programs Convert media and Convert & Compress media run. */
 export type MediaToolName = "ffmpeg" | "ffprobe";
 
 /**
