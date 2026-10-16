@@ -1439,6 +1439,11 @@ carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-16: **WhatsApp, Instagram and SMS messages show their
+  reactions.** Only Apple Messages and Discord messages drew the reactions
+  left on them. A WhatsApp, Instagram or SMS message, and an iMazing message
+  drawn as SMS, now shows each reaction with its count under the message,
+  and pointing at it names who reacted (#3054).
 - 2026-10-16: **An announcement reads as an event of the conversation.** A
   group renamed, or a member added or removed, was drawn in a bubble with a
   sender's name, as if someone had sent it. The conversation now shows it as

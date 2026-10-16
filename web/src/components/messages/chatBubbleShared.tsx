@@ -4,6 +4,7 @@ import { highlightText } from "../../lib/highlightText";
 import { useTimeZone } from "../../lib/timeZone";
 import type { Message, MessageAttachment, MessageTapback } from "../../lib/types";
 import { focusRingClass } from "../../lib/uiStyles";
+import MessageAttachments from "../MessageAttachments";
 import PlainButton from "../PlainButton";
 
 /** A message's mark: Deleted in the source app, or Unsent. */
@@ -395,10 +396,12 @@ function senderColorClass(palette: BubblePalette): string {
 }
 
 /**
- * Chat-row chrome: aligned bubble, optional sender label, timestamp under bubble.
+ * Chat-row chrome: aligned bubble, optional sender label, the message's
+ * attachments and then its reactions under the bubble, timestamp under those.
  *
- * A marked message is a `MarkedBubble` holding `children` and `footer`, and the
- * time of one Deleted in the source app reads "<time> · Deleted in <source>".
+ * A marked message is a `MarkedBubble` holding `children`, the attachments
+ * and the reactions, and the time of one Deleted in the source app reads
+ * "<time> · Deleted in <source>".
  * The time of an edited message reads "<time> · Edited", and "Edited" opens
  * its earlier versions under the bubble.
  */
@@ -411,12 +414,12 @@ export function ChatBubbleRow({
   timeLabel,
   meta,
   children,
-  footer,
+  onAttachmentClick,
 }: {
   /**
    * The message: its id, its author's side, its mark (which draws the bubble
    * muted and dashed), the source the Deleted in the source app note names,
-   * and its earlier versions.
+   * its earlier versions, its attachments and its reactions.
    */
   message: Message;
   isActive?: boolean;
@@ -426,9 +429,17 @@ export function ChatBubbleRow({
   timeLabel: string;
   meta?: ReactNode;
   children?: ReactNode;
-  footer?: ReactNode;
+  onAttachmentClick?: (attachment: MessageAttachment) => void;
 }) {
   const hasBubble = children != null && children !== false && children !== "";
+  const hasAttachments = message.attachments.length > 0;
+  const footer =
+    hasAttachments || message.tapbacks.length > 0 ? (
+      <>
+        <MessageAttachments message={message} onAttachmentClick={onAttachmentClick} />
+        <TapbackChips message={message} className={hasAttachments ? "mt-1" : "mt-0"} />
+      </>
+    ) : null;
   const mine = message.is_from_me;
   const { deletion, source } = message;
   const versions = useEarlierVersions(message);

@@ -21,7 +21,7 @@ const ATTACHMENT_LABEL = missingAttachmentChipLabel(ATTACHMENT);
 /** The text of a message whose bubble a test looks for, or checks is gone. */
 const KEPT_TEXT = "See you at noon";
 
-/** A reaction, drawn as ❤️ by the bubbles that draw reactions. The sender only names who reacted. */
+/** A reaction, drawn as ❤️, left by Ada at +1555. */
 const LOVED = {
   emoji: null,
   is_from_me: false,
@@ -40,7 +40,7 @@ function markedBubble(text: string): HTMLElement {
   return bubble;
 }
 
-describe.each(BUBBLES)("$label bubble", ({ Bubble, source, service, label, drawsReactions }) => {
+describe.each(BUBBLES)("$label bubble", ({ Bubble, source, service, label }) => {
   it("keeps the text of a message Deleted in the source app, muted in a dashed outline, and names the source beside its time", () => {
     renderInUtc(
       Bubble,
@@ -107,14 +107,35 @@ describe.each(BUBBLES)("$label bubble", ({ Bubble, source, service, label, draws
     expect(screen.queryByText(ATTACHMENT_LABEL)).not.toBeInTheDocument();
   });
 
-  it(`${drawsReactions ? "draws" : "draws no"} reactions on an unmarked message`, () => {
+  it("draws the reactions of an unmarked message, naming who reacted", () => {
     renderInUtc(Bubble, imessageMessage({ source, service, text: KEPT_TEXT, tapbacks: [LOVED] }));
 
-    if (drawsReactions) {
-      expect(screen.getByText(/❤️/)).toBeInTheDocument();
-    } else {
-      expect(screen.queryByText(/❤️/)).not.toBeInTheDocument();
-    }
+    expect(screen.getByText("❤️ 1")).toHaveAttribute("title", "Ada");
+  });
+
+  it("keeps the reactions of a message Deleted in the source app inside its dashed outline", () => {
+    renderInUtc(
+      Bubble,
+      imessageMessage({
+        source,
+        service,
+        text: KEPT_TEXT,
+        tapbacks: [LOVED],
+        deletion: "deleted_in_source_app",
+      }),
+    );
+
+    expect(markedBubble(KEPT_TEXT)).toContainElement(screen.getByText("❤️ 1"));
+  });
+
+  it("draws an Unsent message without its reactions", () => {
+    renderInUtc(
+      Bubble,
+      imessageMessage({ source, service, text: "", tapbacks: [LOVED], deletion: "unsent" }),
+    );
+
+    expect(markedBubble("Unsent")).toHaveTextContent(/^Unsent$/);
+    expect(screen.queryByText(/❤️/)).not.toBeInTheDocument();
   });
 
   it("draws an unmarked message with no dashed outline and no note", () => {
@@ -124,22 +145,3 @@ describe.each(BUBBLES)("$label bubble", ({ Bubble, source, service, label, draws
     expect(screen.queryByText(/Deleted in|Unsent/)).not.toBeInTheDocument();
   });
 });
-
-/**
- * Only the bubbles that draw reactions can show whether an Unsent message
- * leaves its reactions out; the "draws reactions" test above pins which ones.
- */
-describe.each(BUBBLES.filter((b) => b.drawsReactions))(
-  "$label bubble, reactions",
-  ({ Bubble, source, service }) => {
-    it("draws an Unsent message without its reactions", () => {
-      renderInUtc(
-        Bubble,
-        imessageMessage({ source, service, text: "", tapbacks: [LOVED], deletion: "unsent" }),
-      );
-
-      expect(markedBubble("Unsent")).toHaveTextContent(/^Unsent$/);
-      expect(screen.queryByText(/❤️/)).not.toBeInTheDocument();
-    });
-  },
-);
