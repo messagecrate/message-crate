@@ -330,7 +330,7 @@ A run resumed at a Review, Media, or Upload keeps them, because none of those re
 
 | The run stopped | The screen reads | The button |
 |---|---|---|
-| Before Staging began copying | `Resume your last import` | **Start over** reads the backup from the beginning with the same settings. |
+| Before Staging began copying | `Your last import did not finish` | **Start over** reads the backup from the beginning with the same settings. |
 | During Staging | `Finish copying your backup` | **Resume** reads the backup again and skips the conversations already copied. |
 | During Staging, and the backup has changed since | `The backup has changed` | **Start over** reads it fresh, because copying more of it would mix two backups in one directory. |
 | At a Review | `Resume where you left off` | **Show me the summary** reads the staged files again and returns to the Review. |

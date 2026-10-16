@@ -53,7 +53,7 @@ describe("ResumeImportPanel", () => {
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
-    expect(screen.getByText("Resume your last import")).toBeInTheDocument();
+    expect(screen.getByText("Your last import did not finish")).toBeInTheDocument();
     expect(
       screen.getByText(
         "The extract did not finish. Starting again reuses your settings and reads the backup from the beginning.",
