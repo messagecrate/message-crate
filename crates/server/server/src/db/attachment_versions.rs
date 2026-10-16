@@ -506,9 +506,13 @@ pub async fn file_of(
     // type column from the row that holds the minimum, so each file comes
     // with its oldest row's media type, and rows that differ only in media
     // type are not a disagreement about the file.
-    let mut named =
-        sqlx::query_as::<_, (String, Option<String>, i64)>(sqlx::AssertSqlSafe(format!(
-            "SELECT a.{path_column}, a.{mime_column}, MIN(a.id)
+    #[derive(sqlx::FromRow)]
+    struct NamedVersion {
+        path: String,
+        mime: Option<String>,
+    }
+    let mut named = sqlx::query_as::<_, NamedVersion>(sqlx::AssertSqlSafe(format!(
+        "SELECT a.{path_column} AS path, a.{mime_column} AS mime, MIN(a.id)
          FROM attachments a
          JOIN messages m ON m.id = a.message_id
          WHERE m.account_id = $1 AND a.sha256 = $2
@@ -516,14 +520,14 @@ pub async fn file_of(
          GROUP BY a.{path_column}
          ORDER BY MIN(a.id)
          LIMIT 2"
-        )))
-        .bind(account_id)
-        .bind(original_sha)
-        .fetch_all(&mut *conn)
-        .await
-        .context("read the file an original's version is stored in")?
-        .into_iter()
-        .map(|(path, mime, _oldest)| (path, mime));
+    )))
+    .bind(account_id)
+    .bind(original_sha)
+    .fetch_all(&mut *conn)
+    .await
+    .context("read the file an original's version is stored in")?
+    .into_iter()
+    .map(|row| (row.path, row.mime));
     let first = named.next();
     if let (Some((first_path, _)), Some((other_path, _))) = (&first, named.next()) {
         tracing::warn!(
@@ -586,7 +590,7 @@ pub async fn converted_file_is_named(
 ///
 /// Returns an error naming the step when the query fails.
 pub async fn named_files(conn: &mut SqliteConnection, account_id: i64) -> Result<Vec<NamedFiles>> {
-    sqlx::query_as(
+    sqlx::query_as::<_, NamedFiles>(
         "SELECT a.sha256, a.assets_path, a.preview_sha256, a.preview_assets_path,
                 a.thumbnail_sha256, a.thumbnail_assets_path
          FROM attachments a
@@ -676,7 +680,7 @@ pub async fn not_made_for_import(
 ) -> Result<Vec<NotMadeAttachment>> {
     let [thumbnail_reason, thumbnail_kind] = Version::Thumbnail.not_made_columns();
     let [preview_reason, preview_kind] = Version::Preview.not_made_columns();
-    let rows: Vec<NotMadeRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+    let rows = sqlx::query_as::<_, NotMadeRow>(sqlx::AssertSqlSafe(format!(
         "SELECT id, original_name, mime_type, size_bytes,
                 {thumbnail_kind} AS thumbnail_kind, {thumbnail_reason} AS thumbnail_reason,
                 {preview_kind} AS preview_kind, {preview_reason} AS preview_reason

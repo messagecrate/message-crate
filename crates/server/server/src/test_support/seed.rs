@@ -59,11 +59,20 @@ pub async fn insert_account_with_id(
 /// `accounts` row at `id`, as stored, for a test that checks the row rather
 /// than what the server grants.
 pub async fn stored_permissions(conn: &mut sqlx::SqliteConnection, id: i64) -> (i64, i64, i64) {
-    sqlx::query_as("SELECT can_import, can_export, can_delete FROM accounts WHERE id = $1")
-        .bind(id)
-        .fetch_one(&mut *conn)
-        .await
-        .unwrap_or_else(|e| panic!("read the permission columns of account {id}: {e:#}"))
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        can_import: i64,
+        can_export: i64,
+        can_delete: i64,
+    }
+    let row = sqlx::query_as::<_, Row>(
+        "SELECT can_import, can_export, can_delete FROM accounts WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap_or_else(|e| panic!("read the permission columns of account {id}: {e:#}"));
+    (row.can_import, row.can_export, row.can_delete)
 }
 
 /// Store an attachment size limit directly, the way a test lowers the body

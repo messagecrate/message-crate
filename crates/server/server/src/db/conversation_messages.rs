@@ -1013,7 +1013,12 @@ pub async fn get_conversation_messages(
 
     // The message's place in the order: its timestamp, `sort_order` and id,
     // the three keys every message list sorts by.
-    let anchor: Option<(StoredTime, i64)> = sqlx::query_as_with(
+    #[derive(sqlx::FromRow)]
+    struct Anchor {
+        timestamp: StoredTime,
+        sort_order: i64,
+    }
+    let anchor = sqlx::query_as_with::<_, Anchor, _>(
         sqlx::AssertSqlSafe(format!(
             "SELECT m.timestamp, m.sort_order FROM messages m WHERE {where_sql} AND m.id = ?"
         )),
@@ -1028,7 +1033,11 @@ pub async fn get_conversation_messages(
     .fetch_optional(&mut *conn)
     .await
     .context("read the place of the message a page of a conversation is read beside")?;
-    let Some((timestamp, sort_order)) = anchor else {
+    let Some(Anchor {
+        timestamp,
+        sort_order,
+    }) = anchor
+    else {
         return Err(MessagePageError::Invalid(format!(
             "{parameter}: message {anchor_id} is not in this conversation"
         )));

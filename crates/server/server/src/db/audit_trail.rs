@@ -905,13 +905,22 @@ pub async fn record_session_end(
     actor: AuditActor,
     now: DateTime<Utc>,
 ) -> Result<()> {
-    let login: Option<(Option<i64>, Option<String>)> =
-        sqlx::query_as("SELECT account_id, username FROM audit_entries WHERE id = $1")
+    #[derive(sqlx::FromRow)]
+    struct Login {
+        account_id: Option<i64>,
+        username: Option<String>,
+    }
+    let login =
+        sqlx::query_as::<_, Login>("SELECT account_id, username FROM audit_entries WHERE id = $1")
             .bind(login_entry_id)
             .fetch_optional(&mut *conn)
             .await
             .context("read the login an ending Session belongs to")?;
-    let Some((account_id, username)) = login else {
+    let Some(Login {
+        account_id,
+        username,
+    }) = login
+    else {
         return Ok(());
     };
     let entry = NewEntry {
@@ -1206,7 +1215,12 @@ pub async fn page(
         "SELECT src, id FROM ({sources}) {filter}
          ORDER BY at DESC, src DESC, id DESC LIMIT {limit} OFFSET {offset}"
     );
-    let mut rows = sqlx::query_as::<_, (String, i64)>(sqlx::AssertSqlSafe(page_sql)).bind(&at);
+    #[derive(sqlx::FromRow)]
+    struct PageRow {
+        src: String,
+        id: i64,
+    }
+    let mut rows = sqlx::query_as::<_, PageRow>(sqlx::AssertSqlSafe(page_sql)).bind(&at);
     if let Some(id) = id {
         rows = rows.bind(id);
     }
@@ -1216,7 +1230,7 @@ pub async fn page(
         .context("read a page of the Audit Trail")?;
 
     let mut items = Vec::with_capacity(rows.len());
-    for (src, id) in rows {
+    for PageRow { src, id } in rows {
         let item = match Source::from_tag(&src)? {
             Source::Entry => load_entry(conn, id).await?,
             Source::Expiry => load_expiry(conn, id).await?,
@@ -1232,7 +1246,7 @@ pub async fn page(
 
 /// A deleted account as the Audit Trail remembers it: the username its
 /// entries and runs keep, and when it was deleted.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct DeletedAccount {
     /// The id of its `account_deleted` entry, which every entry and run about
     /// the account carries once it is deleted. Two accounts deleted under one
@@ -1262,21 +1276,13 @@ pub async fn deleted_accounts_page(
         .fetch_one(&mut *conn)
         .await
         .context("count deleted accounts")?;
-    let rows: Vec<(i64, String, String)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT id, username, at {DELETED}
+    let items = sqlx::query_as::<_, DeletedAccount>(sqlx::AssertSqlSafe(format!(
+        "SELECT id, username, at AS deleted_at {DELETED}
          ORDER BY username COLLATE NOCASE, at DESC, id DESC LIMIT {limit} OFFSET {offset}"
     )))
     .fetch_all(&mut *conn)
     .await
     .context("list deleted accounts")?;
-    let items = rows
-        .into_iter()
-        .map(|(id, username, deleted_at)| DeletedAccount {
-            id,
-            username,
-            deleted_at,
-        })
-        .collect();
     Ok((items, u64::try_from(total).unwrap_or(0)))
 }
 

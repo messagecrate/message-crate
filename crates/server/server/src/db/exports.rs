@@ -359,7 +359,12 @@ async fn close_runs(
     closure: RunClosure<'_>,
     now: DateTime<Utc>,
 ) -> Result<Vec<(i64, Option<i64>)>> {
-    let query = sqlx::query_as::<_, (i64, Option<i64>)>(sqlx::AssertSqlSafe(format!(
+    #[derive(sqlx::FromRow)]
+    struct Closed {
+        id: i64,
+        account_id: Option<i64>,
+    }
+    let query = sqlx::query_as::<_, Closed>(sqlx::AssertSqlSafe(format!(
         "UPDATE exports SET status = 'canceled', finished_at = $2
          WHERE {condition}
          RETURNING id, account_id",
@@ -369,11 +374,14 @@ async fn close_runs(
         RunClosure::Replaced(account_id) => query.bind(account_id),
         RunClosure::Idle(cutoff) => query.bind(cutoff.to_owned()),
     };
-    let closed = query
+    let closed: Vec<(i64, Option<i64>)> = query
         .bind(now.to_rfc3339())
         .fetch_all(&mut *conn)
         .await
-        .context("close running Export Runs")?;
+        .context("close running Export Runs")?
+        .into_iter()
+        .map(|row| (row.id, row.account_id))
+        .collect();
     for &(export_id, account_id) in &closed {
         delete_run_messages(conn, export_id).await?;
         // A running run always has its account: deleting the account closes

@@ -59,7 +59,11 @@ pub async fn sources_in_import_order(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<Vec<String>> {
-    let rows: Vec<(String,)> = sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        source: String,
+    }
+    let rows = sqlx::query_as::<_, Row>(
         r"
         SELECT m.source, MIN(m.id) AS first_id
         FROM messages m
@@ -75,7 +79,7 @@ pub async fn sources_in_import_order(
     .fetch_all(&mut *conn)
     .await
     .context("read the account's import sources in import order")?;
-    Ok(rows.into_iter().map(|(source,)| source).collect())
+    Ok(rows.into_iter().map(|row| row.source).collect())
 }
 
 // ── Content keys ─────────────────────────────────────────────────────────
@@ -94,6 +98,13 @@ pub struct ContentKeyRow {
     pub body: Option<String>,
     /// The sender the message is matched by ([`sender_for_key_sql`]).
     pub sender_normalized: Option<String>,
+}
+
+/// One attachment digest of one message.
+#[derive(sqlx::FromRow)]
+struct AttachmentDigest {
+    message_id: i64,
+    sha256: String,
 }
 
 /// Which of the account's messages [`content_key_inputs`] loads.
@@ -152,11 +163,11 @@ pub async fn content_key_inputs(
         ",
         sender = sender_for_key_sql(),
     );
-    let mut query = sqlx::query_as(AssertSqlSafe(sql)).bind(account_id);
+    let mut query = sqlx::query_as::<_, ContentKeyRow>(AssertSqlSafe(sql)).bind(account_id);
     if let KeyScope::Changed(ids) = scope {
         query = query.bind(serde_json::to_string(ids)?);
     }
-    let rows: Vec<ContentKeyRow> = query
+    let rows = query
         .fetch_all(&mut *conn)
         .await
         .context("read the messages whose content keys are made")?;
@@ -180,13 +191,22 @@ pub async fn content_key_inputs(
         ",
         holder = super::account_profile::is_account_identity_sql("h", "c.account_id"),
     );
-    let participant_rows: Vec<(i64, String)> = sqlx::query_as(AssertSqlSafe(participant_sql))
+    #[derive(sqlx::FromRow)]
+    struct ParticipantRow {
+        conversation_id: i64,
+        normalized: String,
+    }
+    let participant_rows = sqlx::query_as::<_, ParticipantRow>(AssertSqlSafe(participant_sql))
         .bind(account_id)
         .fetch_all(&mut *conn)
         .await
         .context("read the group conversations' participant handles")?;
     let mut group_handles: HashMap<i64, Vec<String>> = HashMap::new();
-    for (conversation_id, handle) in participant_rows {
+    for ParticipantRow {
+        conversation_id,
+        normalized: handle,
+    } in participant_rows
+    {
         group_handles
             .entry(conversation_id)
             .or_default()
@@ -196,7 +216,7 @@ pub async fn content_key_inputs(
     // One scan for attachment hashes belonging to this account's message id range.
     let min_id = rows.first().map_or(0, |r| r.id);
     let max_id = rows.last().map_or(0, |r| r.id);
-    let att_rows: Vec<(i64, String)> = sqlx::query_as(
+    let att_rows = sqlx::query_as::<_, AttachmentDigest>(
         r"
         SELECT a.message_id, a.sha256
         FROM attachments a
@@ -215,8 +235,8 @@ pub async fn content_key_inputs(
     .await
     .context("read the messages' attachment digests")?;
     let mut shas_by_msg: HashMap<i64, Vec<String>> = HashMap::new();
-    for (message_id, sha) in att_rows {
-        shas_by_msg.entry(message_id).or_default().push(sha);
+    for AttachmentDigest { message_id, sha256 } in att_rows {
+        shas_by_msg.entry(message_id).or_default().push(sha256);
     }
 
     Ok(Some(ContentKeyInputs {
@@ -235,7 +255,12 @@ pub async fn stored_content_keys(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<HashMap<i64, String>> {
-    Ok(sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        id: i64,
+        content_key: String,
+    }
+    Ok(sqlx::query_as::<_, Row>(
         r"
         SELECT m.id, m.content_key
         FROM messages m
@@ -248,6 +273,7 @@ pub async fn stored_content_keys(
     .await
     .context("read the account's stored content keys")?
     .into_iter()
+    .map(|row| (row.id, row.content_key))
     .collect())
 }
 
@@ -365,7 +391,7 @@ pub struct ExactRow {
 pub async fn exact_rows(conn: &mut SqliteConnection, account_id: i64) -> Result<Vec<ExactRow>> {
     // One scan of messages + one aggregated attachment pass, then group in Rust.
     // Avoids N round-trips (one SELECT + several UPDATEs per duplicate key).
-    sqlx::query_as(AssertSqlSafe(format!(
+    sqlx::query_as::<_, ExactRow>(AssertSqlSafe(format!(
         r"
         SELECT m.id, m.source, m.content_key, COALESCE(ac.n, 0) AS att_count,
                m.time_precision, COALESCE(rc.n, 0) AS run_messages
@@ -448,7 +474,7 @@ pub async fn near_message_rows(
             NearRows::Keyed => format!("AND {HAS_CONTENT_KEY_SQL}"),
         },
     );
-    sqlx::query_as(AssertSqlSafe(sql))
+    sqlx::query_as::<_, NearMessageRow>(AssertSqlSafe(sql))
         .bind(account_id)
         .fetch_all(&mut *conn)
         .await
@@ -465,7 +491,7 @@ pub async fn attachment_digests(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<HashMap<i64, Vec<String>>> {
-    let att_rows: Vec<(i64, String)> = sqlx::query_as(
+    let att_rows = sqlx::query_as::<_, AttachmentDigest>(
         r"
         SELECT a.message_id, a.sha256
         FROM attachments a
@@ -481,8 +507,8 @@ pub async fn attachment_digests(
     .await
     .context("read the account's attachment digests")?;
     let mut shas_by_msg: HashMap<i64, Vec<String>> = HashMap::new();
-    for (message_id, sha) in att_rows {
-        shas_by_msg.entry(message_id).or_default().push(sha);
+    for AttachmentDigest { message_id, sha256 } in att_rows {
+        shas_by_msg.entry(message_id).or_default().push(sha256);
     }
     Ok(shas_by_msg)
 }
@@ -499,7 +525,12 @@ pub async fn duplicate_flags(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<HashMap<i64, i64>> {
-    Ok(sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        id: i64,
+        duplicate_of: i64,
+    }
+    Ok(sqlx::query_as::<_, Row>(
         r"
         SELECT m.id, m.duplicate_of
         FROM messages m
@@ -512,6 +543,7 @@ pub async fn duplicate_flags(
     .await
     .context("read the account's duplicate flags")?
     .into_iter()
+    .map(|row| (row.id, row.duplicate_of))
     .collect())
 }
 

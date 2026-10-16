@@ -614,12 +614,14 @@ pub struct StagedCopy<'a> {
 /// What decides whether a second copy of a staged message gives its text:
 /// when the backup the row was read from was made, and whether its text
 /// came from a file without a date.
+#[derive(sqlx::FromRow)]
 pub struct StagedText {
     /// When the newest backup with a date the row was read from was made,
     /// or `None` when no copy's file said.
     pub backup_taken_at: Option<StoredTime>,
     /// Whether the row's text came from a copy from a file without a date
     /// (`staging_messages.undated_body`).
+    #[sqlx(rename = "undated_body")]
     pub undated: bool,
 }
 
@@ -629,16 +631,13 @@ pub struct StagedText {
 ///
 /// Returns an error when the query fails.
 pub async fn staged_text(conn: &mut SqliteConnection, staged: i64) -> Result<StagedText> {
-    let (backup_taken_at, undated): (Option<StoredTime>, bool) =
-        sqlx::query_as("SELECT backup_taken_at, undated_body FROM staging_messages WHERE id = $1")
-            .bind(staged)
-            .fetch_one(&mut *conn)
-            .await
-            .context("read a staged message's backup date")?;
-    Ok(StagedText {
-        backup_taken_at,
-        undated,
-    })
+    sqlx::query_as::<_, StagedText>(
+        "SELECT backup_taken_at, undated_body FROM staging_messages WHERE id = $1",
+    )
+    .bind(staged)
+    .fetch_one(&mut *conn)
+    .await
+    .context("read a staged message's backup date")
 }
 
 /// Give the staged message `staged` the mark `deletion` of another copy of
@@ -1167,9 +1166,14 @@ pub async fn staged_message_id_bounds(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<(Option<i64>, Option<i64>)> {
-    sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct Bounds {
+        low: Option<i64>,
+        high: Option<i64>,
+    }
+    let bounds = sqlx::query_as::<_, Bounds>(
         r"
-        SELECT MIN(sm.id), MAX(sm.id)
+        SELECT MIN(sm.id) AS low, MAX(sm.id) AS high
         FROM staging_messages sm
         JOIN _promote_conv_map cm ON cm.staging_id = sm.conversation_id
         WHERE sm.account_id = $1
@@ -1178,7 +1182,8 @@ pub async fn staged_message_id_bounds(
     .bind(account_id)
     .fetch_one(&mut *conn)
     .await
-    .context("read the range of staged message ids")
+    .context("read the range of staged message ids")?;
+    Ok((bounds.low, bounds.high))
 }
 
 /// The column list and SELECT every staged-message insert shares; the caller

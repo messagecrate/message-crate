@@ -102,6 +102,8 @@ pub(crate) fn is_group_type(conversation_type: &str) -> bool {
     conversation_type.eq_ignore_ascii_case("group")
 }
 
+/// One row of a [`conversation_row_select`]-shaped query.
+#[derive(sqlx::FromRow)]
 struct RawConversation {
     id: i64,
     conversation_type: String,
@@ -110,15 +112,6 @@ struct RawConversation {
     first_message_at: Option<String>,
     last_message_at: Option<String>,
 }
-
-type RawConversationRow = (
-    i64,
-    String,
-    Option<String>,
-    i64,
-    Option<String>,
-    Option<String>,
-);
 
 /// One page of the conversation list for `q`, a query in the search language.
 ///
@@ -280,32 +273,10 @@ async fn load_conversation_rows(
     sql: impl SqlSafeStr,
     params: &[SqlParam],
 ) -> anyhow::Result<Vec<ConversationSummary>> {
-    let rows: Vec<RawConversationRow> = sqlx::query_as_with(sql, bind_args(params))
+    let rows = sqlx::query_as_with::<_, RawConversation, _>(sql, bind_args(params))
         .fetch_all(&mut *conn)
         .await
         .context("read conversation rows")?;
-    let rows: Vec<RawConversation> = rows
-        .into_iter()
-        .map(
-            |(
-                id,
-                conversation_type,
-                shown_title,
-                message_count,
-                first_message_at,
-                last_message_at,
-            )| {
-                RawConversation {
-                    id,
-                    conversation_type,
-                    shown_title,
-                    message_count,
-                    first_message_at,
-                    last_message_at,
-                }
-            },
-        )
-        .collect();
 
     let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
     let mut participants = load_for_conversations(conn, &ids)
@@ -371,6 +342,13 @@ pub fn display_service_label(sources: &[String]) -> String {
     "unknown".into()
 }
 
+/// One source of one conversation, for [`load_conversation_sources`].
+#[derive(sqlx::FromRow)]
+struct SourceRow {
+    conversation_id: i64,
+    source: String,
+}
+
 /// Source ids per conversation, for conversations holding messages from more than one import.
 async fn load_conversation_sources(
     conn: &mut SqliteConnection,
@@ -387,7 +365,7 @@ async fn load_conversation_sources(
                  GROUP BY conversation_id, source
                  ORDER BY conversation_id, source"
             );
-            let mut q = sqlx::query_as::<_, (i64, String)>(sqlx::AssertSqlSafe(sql));
+            let mut q = sqlx::query_as::<_, SourceRow>(sqlx::AssertSqlSafe(sql));
             for id in chunk {
                 q = q.bind(*id);
             }
@@ -396,7 +374,11 @@ async fn load_conversation_sources(
                 .await
                 .context("read the sources of the conversations")?;
             let mut out = Vec::new();
-            for (cid, source) in rows {
+            for SourceRow {
+                conversation_id: cid,
+                source,
+            } in rows
+            {
                 if source.trim().is_empty() {
                     continue;
                 }
@@ -438,7 +420,13 @@ pub async fn list_conversation_source_stats(
         return Ok(None);
     }
 
-    let rows: Vec<(String, i64, i64)> = sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        source: String,
+        message_count: i64,
+        unique_count: i64,
+    }
+    let rows = sqlx::query_as::<_, Row>(
         "SELECT source,
                     COUNT(*) AS message_count,
                     SUM(CASE WHEN duplicate_of IS NULL THEN 1 ELSE 0 END) AS unique_count
@@ -452,22 +440,28 @@ pub async fn list_conversation_source_stats(
     .await
     .context("count a conversation's messages by source")?;
 
-    let total_unique: i64 = rows.iter().map(|(_, _, u)| *u).sum();
+    let total_unique: i64 = rows.iter().map(|row| row.unique_count).sum();
     let sources = rows
         .into_iter()
-        .map(|(source, message_count, unique_count)| {
-            let percentage = if total_unique > 0 {
-                (unique_count as f64) * 100.0 / (total_unique as f64)
-            } else {
-                0.0
-            };
-            ConversationSource {
-                backup_name: source,
-                message_count: message_count.max(0) as u64,
-                unique_count: unique_count.max(0) as u64,
-                percentage: (percentage * 10.0).round() / 10.0,
-            }
-        })
+        .map(
+            |Row {
+                 source,
+                 message_count,
+                 unique_count,
+             }| {
+                let percentage = if total_unique > 0 {
+                    (unique_count as f64) * 100.0 / (total_unique as f64)
+                } else {
+                    0.0
+                };
+                ConversationSource {
+                    backup_name: source,
+                    message_count: message_count.max(0) as u64,
+                    unique_count: unique_count.max(0) as u64,
+                    percentage: (percentage * 10.0).round() / 10.0,
+                }
+            },
+        )
         .collect();
     Ok(Some(sources))
 }

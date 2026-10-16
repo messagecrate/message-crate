@@ -124,8 +124,13 @@ pub struct Table {
 ///
 /// Returns an error when the schema cannot be read.
 pub async fn tables(conn: &mut SqliteConnection) -> Result<Vec<Table>> {
-    let tables: Vec<(String, String)> = sqlx::query_as(
-        "SELECT name, COALESCE(sql, '') FROM sqlite_master
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        name: String,
+        sql: String,
+    }
+    let tables = sqlx::query_as::<_, Row>(
+        "SELECT name, COALESCE(sql, '') AS sql FROM sqlite_master
          WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'
          ORDER BY name",
     )
@@ -134,7 +139,7 @@ pub async fn tables(conn: &mut SqliteConnection) -> Result<Vec<Table>> {
     .context("list the database's tables")?;
     Ok(tables
         .into_iter()
-        .map(|(name, sql)| Table {
+        .map(|Row { name, sql }| Table {
             name,
             is_virtual: sql
                 .trim_start()
@@ -378,8 +383,14 @@ async fn row_owner(
             deletion: deletion("t", columns),
         }));
     }
-    let keys: Vec<(String, String, String)> = sqlx::query_as(
-        "SELECT fk.\"table\", fk.\"from\", fk.\"to\"
+    #[derive(sqlx::FromRow)]
+    struct ForeignKey {
+        parent: String,
+        from: String,
+        to: String,
+    }
+    let keys = sqlx::query_as::<_, ForeignKey>(
+        "SELECT fk.\"table\" AS parent, fk.\"from\", fk.\"to\"
          FROM pragma_foreign_key_list($1) fk
          JOIN pragma_table_info($1) col ON col.name = fk.\"from\"
          WHERE col.\"notnull\" = 1
@@ -389,7 +400,7 @@ async fn row_owner(
     .fetch_all(&mut *conn)
     .await
     .context("read a table's required foreign keys")?;
-    for (parent, from, to) in &keys {
+    for ForeignKey { parent, from, to } in &keys {
         let parent_columns = table_columns(conn, parent).await?;
         if parent_columns.iter().any(|c| c == "account_id") {
             return Ok(Some(RowOwner {

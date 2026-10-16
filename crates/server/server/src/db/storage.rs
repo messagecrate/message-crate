@@ -140,7 +140,7 @@ pub async fn attachment_bytes(conn: &mut SqliteConnection, scope: Scope) -> Resu
 /// One account's share of the messages held, as the owner's Dashboard
 /// lists it: an id, a username and numbers, nothing that names a person or a
 /// conversation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct AccountText {
     pub account_id: i64,
     pub username: String,
@@ -203,8 +203,9 @@ pub async fn messages_bytes(conn: &mut SqliteConnection) -> Result<i64> {
 /// SQLite's `BLOB` type first.
 pub async fn text_by_account(conn: &mut SqliteConnection) -> Result<Vec<AccountText>> {
     let bytes_of = |column: &str| format!("COALESCE(LENGTH(CAST({column} AS BLOB)), 0)");
-    let rows: Vec<(i64, String, i64, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT a.id, a.username, COUNT(m.id), COALESCE(SUM({} + {}), 0) \
+    sqlx::query_as::<_, AccountText>(sqlx::AssertSqlSafe(format!(
+        "SELECT a.id AS account_id, a.username, COUNT(m.id) AS message_count, \
+                COALESCE(SUM({} + {}), 0) AS text_bytes \
          FROM accounts a LEFT JOIN messages m ON m.account_id = a.id \
          GROUP BY a.id, a.username \
          ORDER BY CASE WHEN a.id = $1 THEN 0 ELSE 1 END, a.username",
@@ -214,18 +215,7 @@ pub async fn text_by_account(conn: &mut SqliteConnection) -> Result<Vec<AccountT
     .bind(OWNER_ACCOUNT_ID)
     .fetch_all(&mut *conn)
     .await
-    .context("count each account's messages and text bytes")?;
-    Ok(rows
-        .into_iter()
-        .map(
-            |(account_id, username, message_count, text_bytes)| AccountText {
-                account_id,
-                username,
-                message_count,
-                text_bytes,
-            },
-        )
-        .collect())
+    .context("count each account's messages and text bytes")
 }
 
 /// Split `messages_bytes` across the accounts by each one's share of the

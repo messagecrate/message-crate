@@ -84,9 +84,17 @@ pub fn generate_api_token() -> Result<String> {
     generate_prefixed_token("mc-api-")
 }
 
-/// One token's row as a Bearer lookup reads it: account_id, can_import,
-/// can_export, expires_at, disabled, label, token_hint.
-type TokenAuthRow = (i64, i64, i64, Option<String>, i64, String, String);
+/// One token's row as a Bearer lookup reads it.
+#[derive(sqlx::FromRow)]
+struct TokenAuthRow {
+    account_id: i64,
+    can_import: i64,
+    can_export: i64,
+    expires_at: Option<String>,
+    disabled: i64,
+    label: String,
+    token_hint: String,
+}
 
 /// Look up which account owns this API token Bearer value at `now`.
 /// On a successful match, sets `last_accessed_at` to `now`; a failed update
@@ -103,7 +111,7 @@ pub async fn lookup_account_for_api_token(
 ) -> Result<Option<ApiTokenAuth>> {
     let now = unix_secs(now);
     let token_hash = hash_api_token(token);
-    let row: Option<TokenAuthRow> = sqlx::query_as(
+    let row = sqlx::query_as::<_, TokenAuthRow>(
         "SELECT account_id, can_import, can_export, expires_at, disabled, label, token_hint
          FROM account_api_tokens WHERE token_hash = $1",
     )
@@ -112,7 +120,15 @@ pub async fn lookup_account_for_api_token(
     .await
     .context("look up the API token a Bearer value names")?;
     match row {
-        Some((account_id, can_import, can_export, expires_at, disabled, label, token_hint)) => {
+        Some(TokenAuthRow {
+            account_id,
+            can_import,
+            can_export,
+            expires_at,
+            disabled,
+            label,
+            token_hint,
+        }) => {
             // No API token acts as the owner
             // (`docs/adr/0008-the-owner-holds-no-messages.md`). The route
             // that issues tokens refuses the owner, but a token row on the
@@ -226,21 +242,22 @@ pub async fn create_api_token(
 
 /// Raw row for [`list_api_tokens`] before disabled/expiry mapping into
 /// [`ApiTokenRow`].
-type ApiTokenRowRaw = (
-    i64,
-    String,
-    i64,
-    i64,
-    String,
-    String,
-    Option<String>,
-    Option<String>,
-    i64,
-);
+#[derive(sqlx::FromRow)]
+struct ApiTokenRowRaw {
+    id: i64,
+    label: String,
+    can_import: i64,
+    can_export: i64,
+    token_hint: String,
+    created_at: String,
+    last_accessed_at: Option<String>,
+    expires_at: Option<String>,
+    disabled: i64,
+}
 
 impl From<ApiTokenRowRaw> for ApiTokenRow {
     fn from(
-        (
+        ApiTokenRowRaw {
             id,
             label,
             can_import,
@@ -250,7 +267,7 @@ impl From<ApiTokenRowRaw> for ApiTokenRow {
             last_accessed_at,
             expires_at,
             disabled,
-        ): ApiTokenRowRaw,
+        }: ApiTokenRowRaw,
     ) -> Self {
         Self {
             id,
@@ -274,7 +291,7 @@ pub async fn list_api_tokens(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<Vec<ApiTokenRow>> {
-    let rows: Vec<ApiTokenRowRaw> = sqlx::query_as(
+    let rows = sqlx::query_as::<_, ApiTokenRowRaw>(
         "SELECT id, label, can_import, can_export, token_hint, created_at, last_accessed_at, expires_at, disabled
          FROM account_api_tokens
          WHERE account_id = $1
@@ -298,7 +315,7 @@ pub async fn get_api_token(
     account_id: i64,
     id: i64,
 ) -> Result<Option<ApiTokenRow>> {
-    let row: Option<ApiTokenRowRaw> = sqlx::query_as(
+    let row = sqlx::query_as::<_, ApiTokenRowRaw>(
         "SELECT id, label, can_import, can_export, token_hint, created_at, last_accessed_at, expires_at, disabled
          FROM account_api_tokens
          WHERE account_id = $1 AND id = $2",

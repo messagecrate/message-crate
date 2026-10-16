@@ -405,7 +405,12 @@ pub async fn linked_handle_id(
         OnService::Only(service) => (Some(service), true),
         OnService::Preferring(service) => (service, false),
     };
-    let row = sqlx::query_as::<_, (i64, String)>(
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        handle_id: i64,
+        service: String,
+    }
+    let row = sqlx::query_as::<_, Row>(
         "SELECT ch.handle_id, h.service
          FROM contact_handles ch
          JOIN handles h ON h.id = ch.handle_id
@@ -428,7 +433,7 @@ pub async fn linked_handle_id(
     .fetch_optional(&mut *conn)
     .await
     .context("read the contact's identity for an address")?;
-    Ok(row.map(|(id, service)| (id, IdentityService::parse(&service))))
+    Ok(row.map(|row| (row.handle_id, IdentityService::parse(&row.service))))
 }
 
 /// Where an identity goes when it leaves its contact.
@@ -531,8 +536,13 @@ pub async fn take_identities_off(
 ) -> Result<Vec<IdentityMoved>> {
     let mut new_contact_of: HashMap<(String, String), i64> = HashMap::new();
     let mut out = Vec::with_capacity(handle_ids.len());
+    #[derive(sqlx::FromRow)]
+    struct Key {
+        normalized: String,
+        handle_type: String,
+    }
     for &handle_id in handle_ids {
-        let key: Option<(String, String)> = sqlx::query_as(
+        let key = sqlx::query_as::<_, Key>(
             "SELECT normalized, handle_type FROM handles WHERE account_id = $1 AND id = $2",
         )
         .bind(account_id)
@@ -540,9 +550,14 @@ pub async fn take_identities_off(
         .fetch_optional(&mut *conn)
         .await
         .context("read an identity's address and type")?;
-        let Some(key) = key else {
+        let Some(Key {
+            normalized,
+            handle_type,
+        }) = key
+        else {
             continue;
         };
+        let key = (normalized, handle_type);
         if let Some(&contact_id) = new_contact_of.get(&key) {
             let goes = IdentityGoes::To(contact_id, Origin::Import);
             out.push(move_identity(conn, account_id, handle_id, goes).await?);
@@ -873,7 +888,12 @@ async fn identity_use(
     account_id: i64,
     handle_id: i64,
 ) -> Result<IdentityUse> {
-    let (person, holder): (bool, bool) = sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct Use {
+        person: bool,
+        holder: bool,
+    }
+    let Use { person, holder } = sqlx::query_as::<_, Use>(
         "SELECT
            EXISTS (SELECT 1 FROM participants WHERE handle_id = $2)
            OR EXISTS (SELECT 1 FROM staging_participants WHERE handle_id = $2)
@@ -887,7 +907,7 @@ async fn identity_use(
                         AND conversation_type = 'one-to-one' COLLATE NOCASE)
            OR EXISTS (SELECT 1 FROM staging_conversations
                       WHERE account_id = $1 AND chat_handle_id = $2
-                        AND conversation_type = 'one-to-one' COLLATE NOCASE),
+                        AND conversation_type = 'one-to-one' COLLATE NOCASE) AS person,
            EXISTS (SELECT 1 FROM messages WHERE account_id = $1 AND owner_handle_id = $2)
            OR EXISTS (SELECT 1 FROM staging_messages
                       WHERE account_id = $1 AND owner_handle_id = $2)
@@ -895,7 +915,7 @@ async fn identity_use(
            OR EXISTS (SELECT 1 FROM participants_set_aside WHERE handle_id = $2)
            OR EXISTS (SELECT 1 FROM conversations WHERE account_id = $1 AND chat_handle_id = $2)
            OR EXISTS (SELECT 1 FROM staging_conversations
-                      WHERE account_id = $1 AND chat_handle_id = $2)",
+                      WHERE account_id = $1 AND chat_handle_id = $2) AS holder",
     )
     .bind(account_id)
     .bind(handle_id)
