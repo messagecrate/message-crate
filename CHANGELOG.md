@@ -518,6 +518,11 @@ carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-16: **The website and the desktop app have an icon.** The
+  website named no icon, so the browser asked for one on every page, logged
+  a "404 Not Found" error in its console, and showed a blank tab icon. The
+  website now has an icon, and the desktop app shows the same one in place
+  of its plain blue square (#3014).
 - 2026-10-16: **A display name the server refuses after you leave Settings
   says so.** A display name typed on Settings → Profile, or on an account's
   Profile in Owner Home, saves when you leave Settings for another screen.
