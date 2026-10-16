@@ -1,5 +1,8 @@
 import type { IdentityType } from "./handleKind";
 
+/** A conversation's shape, as `conversations.conversation_type` stores it. */
+export type ConversationType = "group" | "one-to-one";
+
 export type ContactSection =
   | "all"
   | "no-messages"

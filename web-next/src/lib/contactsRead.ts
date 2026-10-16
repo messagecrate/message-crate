@@ -691,7 +691,7 @@ export function loadContactThreadsPage(
   const allConvIds = handleIds.length
     ? contactConversationIds(handleIds, opts)
     : [];
-  // Enable sources that appear in 1:1 or groups so group-only archives stay selectable.
+  // Enable sources that appear in one-to-one conversations or groups so group-only archives stay selectable.
   const anySourceCounts =
     allConvIds.length === oneToOneIds.length
       ? sourceCounts

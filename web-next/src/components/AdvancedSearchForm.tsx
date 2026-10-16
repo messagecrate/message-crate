@@ -6,11 +6,11 @@ import {
   type AdvancedSearchForm as FormState,
   type AttachmentFilter,
   type CountFilterInput,
-  type ConversationType,
   type CountComparator,
   type DateFilterInput,
   type DateFilterMode,
 } from "@/lib/searchQuery";
+import type { ConversationType } from "@/lib/types";
 import { useState, type ReactNode } from "react";
 import { ChevronDownIcon, ChevronRightIcon } from "./icons";
 

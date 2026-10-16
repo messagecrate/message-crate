@@ -2,11 +2,11 @@
 
 import type {
   ContactDetail,
+  ConversationType,
   GroupParticipant,
   MessageRow,
   YearThread,
 } from "@/lib/types";
-import type { ConversationType } from "@/lib/searchQuery";
 import { formatSourceLabel } from "@/lib/sourceLabels";
 import {
   memo,

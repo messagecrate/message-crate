@@ -30,10 +30,9 @@
  * message date (`>=D`, `<D`, `D1..D2`, bare `D` = before).
  */
 
-/** Inclusive lower bound / upper bound, both `YYYY-MM-DD`. */
-/** A conversation's shape, as `conversations.conversation_type` stores it. */
-export type ConversationType = "group" | "one-to-one";
+import type { ConversationType } from "./types";
 
+/** Inclusive lower bound / upper bound, both `YYYY-MM-DD`. */
 export type DateBounds = {
   from: string | null;
   to: string | null;

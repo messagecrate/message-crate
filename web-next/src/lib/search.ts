@@ -16,11 +16,10 @@ import {
   hasSearchCriteria,
   parseSearchQuery,
   toFtsMatch,
-  type ConversationType,
   type DateBounds,
   type ParsedSearchQuery,
 } from "./searchQuery";
-import type { ContactListItem } from "./types";
+import type { ContactListItem, ConversationType } from "./types";
 import { openWritableVaultDb } from "./vaultSchema";
 
 /** Query-time phone variants for LIKE matching (raw, E.164, digits). */
@@ -106,7 +105,7 @@ export type SearchMessageHit = {
 export type SearchConversationHit = {
   conversationId: number;
   conversationType: ConversationType;
-  /** Contact represented by a direct conversation, when its handle is assigned. */
+  /** Contact represented by a one-to-one conversation, when its handle is assigned. */
   contactId: number | null;
   title: string;
   chatIdentifier: string;
@@ -121,7 +120,7 @@ export type SearchResult = {
   query: string;
   parsed: ParsedSearchQuery;
   totalConversations: number;
-  /** Every distinct contact represented by matching direct conversations. */
+  /** Every distinct contact represented by matching one-to-one conversations. */
   contactIds: number[];
   hits: SearchConversationHit[];
   /** Flat message rows when `group:none`. */

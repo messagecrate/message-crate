@@ -1,5 +1,5 @@
 import type { SearchConversationHit } from "@/lib/search";
-import type { ConversationType } from "@/lib/searchQuery";
+import type { ConversationType } from "@/lib/types";
 
 export type SearchResultKey = `direct:${string}` | `group:${number}`;
 export type SelectedSearchResultGroup = {

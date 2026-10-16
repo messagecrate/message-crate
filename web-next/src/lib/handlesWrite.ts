@@ -69,12 +69,12 @@ export function handleIdForRaw(
 
 /**
  * A handle has no trash of its own: what goes in the trash is the handle's
- * 1:1 conversation (`trashed_conversations`), as on the server.
+ * one-to-one conversation (`trashed_conversations`), as on the server.
  */
 const ONE_TO_ONE_CONVERSATIONS_OF_HANDLE = `SELECT id FROM conversations
    WHERE account_id = ? AND conversation_type = 'one-to-one' AND chat_handle_id = ?`;
 
-/** Take one handle's 1:1 conversation out of the trash. */
+/** Take one handle's one-to-one conversation out of the trash. */
 export function untrashHandleConversations(
   db: Database.Database,
   accountId: string,
@@ -86,7 +86,7 @@ export function untrashHandleConversations(
   ).run(accountId, accountId, handleId);
 }
 
-/** Take these handles' 1:1 conversations out of the trash (e.g. after assigning to a contact). */
+/** Take these handles' one-to-one conversations out of the trash (e.g. after assigning to a contact). */
 export function clearTrashedHandles(
   db: Database.Database,
   handles: string[],
@@ -98,11 +98,11 @@ export function clearTrashedHandles(
 }
 
 /**
- * Put these handles' 1:1 conversations in the trash (owned or unassigned).
+ * Put these handles' one-to-one conversations in the trash (owned or unassigned).
  * `handleType` applies to every handle in the batch when given; otherwise each
  * handle's type is inferred from its raw shape.
  *
- * Returns the handles that have no 1:1 conversation (a handle seen only in
+ * Returns the handles that have no one-to-one conversation (a handle seen only in
  * group chats): nothing was trashed for them, and the caller decides whether
  * that refuses the request.
  */
@@ -133,14 +133,14 @@ export function trashHandlesInDb(
   return nothingToTrash;
 }
 
-/** The error for handles that have no 1:1 conversation to trash. */
+/** The error for handles that have no one-to-one conversation to trash. */
 export function noConversationToTrash(handles: string[]): Error {
   return new Error(
     `nothing to trash: no one-to-one conversation for ${handles.join(", ")}`,
   );
 }
 
-/** Move a handle's 1:1 conversation into Trash (the handle may still belong to a contact). */
+/** Move a handle's one-to-one conversation into Trash (the handle may still belong to a contact). */
 export function trashHandle(handle: string, handleType?: IdentityType): void {
   const accountId = currentAccountId();
   const trimmed = handle.trim();
@@ -159,7 +159,7 @@ export function trashHandle(handle: string, handleType?: IdentityType): void {
   resetDb();
 }
 
-/** Restore a handle's 1:1 conversation from Trash. */
+/** Restore a handle's one-to-one conversation from Trash. */
 export function restoreHandle(handle: string, handleType?: IdentityType): void {
   const accountId = currentAccountId();
   const trimmed = handle.trim();
@@ -178,7 +178,7 @@ export function restoreHandle(handle: string, handleType?: IdentityType): void {
 }
 
 /**
- * Permanently remove a handle's trashed 1:1 conversation (cascades
+ * Permanently remove a handle's trashed one-to-one conversation (cascades
  * messages/attachments) and its trash entry. Contact ownership is OK
  * (messages-only trash for a live contact).
  */
