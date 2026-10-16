@@ -767,6 +767,7 @@ describe("OwnerHome", () => {
     // Profile holds what the holder sets about themselves, and not these.
     await user.click(screen.getByRole("tab", { name: "Profile" }));
     await settle();
+    expect(screen.getByRole("heading", { name: "Display Name" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Last Login" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "App" })).not.toBeInTheDocument();
   });
@@ -1089,6 +1090,7 @@ describe("OwnerHome", () => {
     expect(screen.queryByRole("heading", { name: "Status" })).not.toBeInTheDocument();
     // Last Login and App are the owner's view of another account.
     expect(screen.queryByRole("heading", { name: "Last Login" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "App" })).not.toBeInTheDocument();
   });
 
   it("sets an account's password from its Settings, typed twice the same way", async () => {
