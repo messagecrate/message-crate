@@ -98,8 +98,8 @@ fn one_to_one_roster_holds_the_peer_named_from_the_subject() {
     assert_eq!(roster, vec![(Some("+14075550107"), Some("Alice"))]);
 
     let message = &alice.messages[0];
-    assert_eq!(message.sender_identity.as_deref(), Some("+14075550107"));
-    assert_eq!(message.sender_display_name.as_deref(), Some("Alice"));
+    assert_eq!(message.sender.identity.as_deref(), Some("+14075550107"));
+    assert_eq!(message.sender.display_name.as_deref(), Some("Alice"));
 }
 
 /// A group holds every peer, and an incoming message names the peer whose
@@ -132,7 +132,7 @@ fn group_roster_holds_both_peers_and_the_sender_is_the_one_in_from() {
 
     let message = &group.messages[0];
     assert_eq!(message.text.trim(), "Hello group from Bob");
-    assert_eq!(message.sender_identity.as_deref(), Some("+14075550108"));
+    assert_eq!(message.sender.identity.as_deref(), Some("+14075550108"));
 }
 
 /// A mail that names the peer but records no address still gets its own
@@ -432,7 +432,7 @@ fn a_group_member_named_by_email_address_is_keyed_by_their_number() {
         .iter()
         .find(|m| m.text.trim() == "reply from Carol")
         .expect("Carol's reply is in the group");
-    assert_eq!(reply.sender_identity.as_deref(), Some("+14075550111"));
+    assert_eq!(reply.sender.identity.as_deref(), Some("+14075550111"));
     assert!(
         documents.contains_key("+14075550111"),
         "Carol's own conversation"

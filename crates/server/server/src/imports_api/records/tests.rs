@@ -261,7 +261,7 @@ fn parse_ir_lines_reports_a_message_with_an_impossible_timestamp_as_a_failure() 
         .participant("+15555550101", Some("Sam"))
         .to_string();
     // The timestamp is the input under test, so the line stays written out.
-    let msg = r#"{"guid":"g1","timestamp_unix_ms":9223372036854775807,"time_precision":"milliseconds","direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}"#;
+    let msg = r#"{"guid":"g1","timestamp_unix_ms":9223372036854775807,"time_precision":"milliseconds","direction":"incoming","service":"sms","message_kind":"sms","sender":{"identity":"+15555550101","display_name":"Sam"},"subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}"#;
     let failure = parse_ir_lines([header, msg.to_string()]).unwrap_err();
     match failure {
         ImportFailure::Invalid { line, .. } => assert_eq!(line, 2),
@@ -280,7 +280,7 @@ fn parse_ir_lines_refuses_messages_without_a_guid_naming_every_line() {
     // The guids are the input under test, so the lines stay written out.
     let msg = |guid: &str| {
         format!(
-            r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"time_precision":"milliseconds","direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}}"#
+            r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"time_precision":"milliseconds","direction":"incoming","service":"sms","message_kind":"sms","sender":{{"identity":"+15555550101","display_name":"Sam"}},"subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}}"#
         )
     };
     let lines = [header.to_string(), msg("g1"), msg(""), msg("   ")];

@@ -483,7 +483,7 @@ fn one_attachment_batch(path: &str, sha: Option<&str>) -> String {
     let digest = sha.map_or("null".to_string(), |sha| format!(r#""{sha}""#));
     format!(
         r#"{header}
-{{"guid":"g-att","timestamp_unix_ms":1700000000000,"time_precision":"milliseconds","direction":"incoming","service":"whatsapp","message_kind":"sms","sender_identity":"+15555550151","sender_display_name":null,"subject":null,"text":"x","attachments":[{{"path":"{path}","original_name":"a.bin","mime_type":"application/octet-stream","digest_sha256":{digest},"is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}
+{{"guid":"g-att","timestamp_unix_ms":1700000000000,"time_precision":"milliseconds","direction":"incoming","service":"whatsapp","message_kind":"sms","sender":{{"identity":"+15555550151","display_name":null}},"subject":null,"text":"x","attachments":[{{"path":"{path}","original_name":"a.bin","mime_type":"application/octet-stream","digest_sha256":{digest},"is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}
 "#
     )
 }

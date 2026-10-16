@@ -155,7 +155,21 @@ mod tests {
                 .to_string(),
             format!("this file is schema version 16; Message Crate reads version {SCHEMA_VERSION}")
         );
-        assert_eq!(SCHEMA_VERSION, 17);
+    }
+
+    /// Version 17 carried a message's sender as `sender_identity`,
+    /// `sender_display_name` and `sender_country`; version 18 carries one
+    /// `sender` object. A version-17 file is refused by its version, never
+    /// read as a file whose messages have no sender.
+    #[test]
+    fn refuses_a_version_17_file_by_name() {
+        assert_eq!(
+            check_schema_version_in_json(r#"{"schema_version":17,"export":{}}"#)
+                .unwrap_err()
+                .to_string(),
+            format!("this file is schema version 17; Message Crate reads version {SCHEMA_VERSION}")
+        );
+        assert_eq!(SCHEMA_VERSION, 18);
     }
 
     #[test]

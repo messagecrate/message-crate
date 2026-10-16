@@ -347,7 +347,8 @@ impl<'a> Conversation<'a> {
     /// group message whose sender is unknown.
     fn sender_of<'m>(&'m self, message: &'m Message) -> Option<&'m str> {
         message
-            .sender_identity
+            .sender
+            .identity
             .as_deref()
             .and_then(trimmed)
             .or_else(|| {
@@ -376,7 +377,8 @@ impl<'a> Conversation<'a> {
             _ if self.name_only => self.peers.first().map(|name| (*name).to_string()),
             Direction::Incoming => sender.map(|handle| {
                 message
-                    .sender_display_name
+                    .sender
+                    .display_name
                     .as_deref()
                     .and_then(trimmed)
                     .or_else(|| self.display_name(handle))
@@ -431,7 +433,8 @@ impl<'a> Conversation<'a> {
                 // address no peer has, which the importer reads as no sender.
                 let sender = self.sender_of(message).unwrap_or("unknown");
                 let name = message
-                    .sender_display_name
+                    .sender
+                    .display_name
                     .as_deref()
                     .and_then(trimmed)
                     .or_else(|| self.display_name(sender));

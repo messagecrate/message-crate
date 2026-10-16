@@ -407,9 +407,9 @@ pub fn project_conversation<H: ProjectionHooks + ?Sized>(
     if !keep {
         return None;
     }
-    let (document, tally) = pending_to_document(chat_id, conversation, hooks);
-    report.absorb_tally(tally);
-    Some(document)
+    let projection = pending_to_document(chat_id, conversation, hooks);
+    report.absorb_tally(projection.tally);
+    Some(projection.document)
 }
 
 /// Create and canonicalize the output directory, canonicalize every input,

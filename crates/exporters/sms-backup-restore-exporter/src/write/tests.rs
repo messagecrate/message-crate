@@ -143,15 +143,15 @@ fn a_group_mms_keeps_its_addresses_and_attachment() {
     let incoming = &mut document.messages[0];
     incoming.message_kind = MessageKind::Mms;
     incoming.source = None;
-    incoming.sender_identity = Some("+15555550102".into());
-    incoming.sender_display_name = Some("Lee".into());
+    incoming.sender.identity = Some("+15555550102".into());
+    incoming.sender.display_name = Some("Lee".into());
     incoming.attachments = vec![ir_attachment("pic.jpg", b"first image")];
     let mut outgoing = incoming.clone();
     outgoing.guid = "outgoing".into();
     outgoing.timestamp_unix_ms += 1000;
     outgoing.direction = Direction::Outgoing;
-    outgoing.sender_identity = Some(OWNER.into());
-    outgoing.sender_display_name = None;
+    outgoing.sender.identity = Some(OWNER.into());
+    outgoing.sender.display_name = None;
     outgoing.text = "nice".into();
     outgoing.attachments.clear();
     document.messages.push(outgoing);
@@ -164,11 +164,11 @@ fn a_group_mms_keeps_its_addresses_and_attachment() {
 
     assert_eq!(incoming.direction, Direction::Incoming);
     assert_eq!(incoming.text, "look");
-    assert_eq!(incoming.sender_identity.as_deref(), Some("+15555550102"));
+    assert_eq!(incoming.sender.identity.as_deref(), Some("+15555550102"));
     // A group's `contact_name` holds the participants' names, as SMS Backup
     // & Restore writes it, so it names the group and not the sender.
     assert_eq!(contact_name(incoming), Some("Ana, Lee"));
-    assert_eq!(incoming.sender_display_name, None);
+    assert_eq!(incoming.sender.display_name, None);
     assert_eq!(
         addrs(incoming),
         [
@@ -220,7 +220,7 @@ fn an_incoming_sms_keeps_its_sender_and_contact_name() {
         "a text stays an <sms>"
     );
     assert_eq!(message.direction, Direction::Incoming);
-    assert_eq!(message.sender_identity.as_deref(), Some("+15555550101"));
+    assert_eq!(message.sender.identity.as_deref(), Some("+15555550101"));
     assert_eq!(contact_name(message), Some("Sam"));
     assert_eq!(message.text, "hello ir");
 }
@@ -252,7 +252,7 @@ fn a_one_to_one_photo_from_another_app_keeps_its_conversation_sender_subject_and
     );
     let read_back = &read[0].messages[0];
     assert_eq!(read_back.direction, Direction::Incoming);
-    assert_eq!(read_back.sender_identity.as_deref(), Some("+15555550101"));
+    assert_eq!(read_back.sender.identity.as_deref(), Some("+15555550101"));
     assert_eq!(read_back.subject.as_deref(), Some("Holiday"));
     assert_eq!(read_back.text, "look at this");
     assert_eq!(read_back.attachments.len(), 1);
@@ -278,13 +278,13 @@ fn a_text_only_group_message_from_another_app_stays_in_its_group() {
     let incoming = &mut document.messages[0];
     incoming.source = None;
     incoming.message_kind = MessageKind::Sms;
-    incoming.sender_identity = Some("+15555550102".into());
-    incoming.sender_display_name = Some("Lee".into());
+    incoming.sender.identity = Some("+15555550102".into());
+    incoming.sender.display_name = Some("Lee".into());
     let mut outgoing = incoming.clone();
     outgoing.timestamp_unix_ms += 1000;
     outgoing.direction = Direction::Outgoing;
-    outgoing.sender_identity = Some(OWNER.into());
-    outgoing.sender_display_name = None;
+    outgoing.sender.identity = Some(OWNER.into());
+    outgoing.sender.display_name = None;
     outgoing.text = "me".into();
     document.messages.push(outgoing);
 
@@ -303,9 +303,9 @@ fn a_text_only_group_message_from_another_app_stays_in_its_group() {
         panic!("two messages: {:?}", read[0].messages)
     };
     assert_eq!(incoming.direction, Direction::Incoming);
-    assert_eq!(incoming.sender_identity.as_deref(), Some("+15555550102"));
+    assert_eq!(incoming.sender.identity.as_deref(), Some("+15555550102"));
     assert_eq!(contact_name(incoming), Some("Sam, Lee"));
-    assert_eq!(incoming.sender_display_name, None);
+    assert_eq!(incoming.sender.display_name, None);
     assert_eq!(incoming.text, "who is in?");
     assert!(incoming.attachments.is_empty());
     assert_eq!(outgoing.direction, Direction::Outgoing);
@@ -337,7 +337,7 @@ fn a_group_with_one_identified_participant_is_named_as_one_to_one() {
     );
     let message = &read[0].messages[0];
     assert_eq!(contact_name(message), Some("Sam"));
-    assert_eq!(message.sender_display_name.as_deref(), Some("Sam"));
+    assert_eq!(message.sender.display_name.as_deref(), Some("Sam"));
 }
 
 /// Two participants with one identity written two ways, or the owner listed
@@ -367,7 +367,7 @@ fn a_group_the_reader_finds_one_peer_in_is_named_as_one_to_one() {
         let message = &read[0].messages[0];
         assert_eq!(contact_name(message), Some("Sam"), "{handle}");
         assert_eq!(
-            message.sender_display_name.as_deref(),
+            message.sender.display_name.as_deref(),
             Some("Sam"),
             "{handle}"
         );
@@ -382,8 +382,8 @@ fn a_sent_sms_carrying_the_owners_address_stays_in_the_peers_chat() {
     let message = &mut document.messages[0];
     message.source = None;
     message.direction = Direction::Outgoing;
-    message.sender_identity = Some(OWNER.into());
-    message.sender_display_name = Some("Me".into());
+    message.sender.identity = Some(OWNER.into());
+    message.sender.display_name = Some("Me".into());
     message.subject = Some("Tonight".into());
 
     let read = round_trip(&[document]);
@@ -413,7 +413,7 @@ fn a_received_message_with_an_empty_sender_address_is_from_the_peer() {
     let mut document = ir::testutil::sample_document("text");
     let text = &mut document.messages[0];
     text.source = None;
-    text.sender_identity = Some(String::new());
+    text.sender.identity = Some(String::new());
     let mut photo = text.clone();
     photo.timestamp_unix_ms += 1000;
     photo.text = "photo".into();
@@ -426,8 +426,8 @@ fn a_received_message_with_an_empty_sender_address_is_from_the_peer() {
     let [text, photo] = read[0].messages.as_slice() else {
         panic!("two messages: {:?}", read[0].messages)
     };
-    assert_eq!(text.sender_identity.as_deref(), Some("+15555550101"));
-    assert_eq!(photo.sender_identity.as_deref(), Some("+15555550101"));
+    assert_eq!(text.sender.identity.as_deref(), Some("+15555550101"));
+    assert_eq!(photo.sender.identity.as_deref(), Some("+15555550101"));
     assert_eq!(
         addrs(photo),
         [

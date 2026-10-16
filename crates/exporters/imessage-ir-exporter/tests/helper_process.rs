@@ -231,19 +231,19 @@ fn messages_from_either_owner_address_are_sent_by_the_owner() {
     assert_eq!(phone_chat.export.owner_identity.as_deref(), Some(OWNER));
     let nice = message_with_guid(&phone_chat, "guid-2");
     assert_eq!(nice.direction, Direction::Outgoing);
-    assert_eq!(nice.sender_identity.as_deref(), Some(OWNER));
+    assert_eq!(nice.sender.identity.as_deref(), Some(OWNER));
     assert_eq!(nice.owner_identity.as_deref(), Some(OWNER));
     let still_me = message_with_guid(&phone_chat, "guid-5");
     assert_eq!(still_me.direction, Direction::Outgoing);
     assert_eq!(
-        still_me.sender_identity.as_deref(),
+        still_me.sender.identity.as_deref(),
         Some(OWNER),
         "a NULL caller id falls back to the conversation's owner"
     );
     let from_the_car = message_with_guid(&phone_chat, "guid-6");
     assert_eq!(from_the_car.direction, Direction::Outgoing);
     assert_eq!(
-        from_the_car.sender_identity.as_deref(),
+        from_the_car.sender.identity.as_deref(),
         Some(OWNER),
         "a `tel:`-prefixed caller id is the same owner address, spelled as \
          the identities list spells it (#686)"
@@ -251,7 +251,7 @@ fn messages_from_either_owner_address_are_sent_by_the_owner() {
     assert_eq!(from_the_car.owner_identity.as_deref(), Some(OWNER));
     let photo = message_with_guid(&phone_chat, "guid-1");
     assert_eq!(photo.direction, Direction::Incoming);
-    assert_eq!(photo.sender_identity.as_deref(), Some(FRIEND_PHONE));
+    assert_eq!(photo.sender.identity.as_deref(), Some(FRIEND_PHONE));
 
     let email_chat = document_for(&output, FRIEND_EMAIL);
     assert_eq!(
@@ -261,7 +261,7 @@ fn messages_from_either_owner_address_are_sent_by_the_owner() {
     );
     let from_mac = message_with_guid(&email_chat, "guid-4");
     assert_eq!(from_mac.direction, Direction::Outgoing);
-    assert_eq!(from_mac.sender_identity.as_deref(), Some(OWNER_EMAIL));
+    assert_eq!(from_mac.sender.identity.as_deref(), Some(OWNER_EMAIL));
     assert_eq!(from_mac.owner_identity.as_deref(), Some(OWNER_EMAIL));
     let roster: Vec<_> = email_chat
         .conversation
@@ -565,11 +565,11 @@ fn a_handles_country_reaches_the_conversation_file() {
         gb.conversation.participants[0].country.as_deref(),
         Some("GB")
     );
-    assert_eq!(gb.messages[0].sender_country.as_deref(), Some("GB"));
+    assert_eq!(gb.messages[0].sender.country.as_deref(), Some("GB"));
 
     let none = in_chat("07700 900456");
     assert_eq!(none.conversation.participants[0].country, None);
-    assert_eq!(none.messages[0].sender_country, None);
+    assert_eq!(none.messages[0].sender.country, None);
 
     // The server imports this output from its own copy, and that copy must
     // be what the exporter writes. Only each message's Backup Date, read

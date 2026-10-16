@@ -37,7 +37,7 @@ pub use identity::{
 pub use projection::{
     PendingReply, ProjectedRole, Projection, ProjectionHooks, ProjectionTally, SortKeyUnit,
     default_message_kind, default_participants, display_names_for_handles, ensure_conversation,
-    message_time, pending_to_document, prepare_conversation, project_pending,
+    message_time, pending_to_document, prepare_conversation,
 };
 pub use schema_version::{
     UnsupportedSchemaVersion, check_schema_version, check_schema_version_in_json,
@@ -154,15 +154,17 @@ impl std::error::Error for UnknownDeletion {}
 
 /// Schema version written into every [`ConversationDocument`].
 ///
-/// Version 15 adds the country an identity was read in (`country`,
-/// `sender_country`); version 14 had none. Version 16 names a one-to-one
+/// Version 15 adds the country an identity was read in (`country`, and
+/// the sender's); version 14 had none. Version 16 names a one-to-one
 /// conversation `one-to-one` in
 /// [`ConversationMeta::conversation_type`], where version 15 said
 /// `individual`. Version 17 dates each message by the backup it came from
 /// ([`Message::backup_taken_at_unix_ms`]) and says when the file was written
 /// ([`ExportMeta::exported_at_unix_ms`]), where version 16 gave the whole
-/// file one backup date.
-pub const SCHEMA_VERSION: u32 = 17;
+/// file one backup date. Version 18 carries a message's sender as one
+/// [`Message::sender`] object, where version 17 wrote `sender_identity`,
+/// `sender_display_name` and `sender_country` beside each other.
+pub const SCHEMA_VERSION: u32 = 18;
 
 /// One exported conversation: export metadata, conversation roster and
 /// stats, and messages.
@@ -505,6 +507,24 @@ impl MessageKind {
     }
 }
 
+/// The person who sent a message. Every fact about a sender travels in this
+/// one value, so a new fact is added here and nowhere else in the file.
+/// Each fact is optional: a source can name a sender by address alone, by
+/// name alone, or not at all.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sender {
+    /// The sender's address: a phone number, an email address, or the
+    /// source's own handle. The owner's identity for an outgoing message.
+    pub identity: Option<String>,
+    /// The sender's display name.
+    pub display_name: Option<String>,
+    /// The country the source read [`Self::identity`] in, as
+    /// [`Participant::country`] says. `None`, and left out of the file,
+    /// when the source names none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
+}
+
 /// One message in a conversation: sender, body text, and attachments.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
@@ -525,15 +545,8 @@ pub struct Message {
     pub service: Transport,
     /// Row shape.
     pub message_kind: MessageKind,
-    /// Identity of the actual sender (the owner's identity for outgoing).
-    pub sender_identity: Option<String>,
-    /// Display name of the actual sender.
-    pub sender_display_name: Option<String>,
-    /// The country the source read the sender's identity in, as
-    /// [`Participant::country`] says. `None`, and left out of the file,
-    /// when the source names none.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sender_country: Option<String>,
+    /// Who sent the message: the owner for an outgoing one.
+    pub sender: Sender,
     /// The owner's own address on this message: the one it was sent from
     /// (outgoing) or received at (incoming). `None` when the source knows
     /// only one owner address, which is then `export.owner_identity`.
@@ -691,7 +704,7 @@ pub struct Attachment {
     pub bytes: Option<Vec<u8>>,
 }
 
-/// Vendor leftovers. Display names live on `sender_display_name`, not here.
+/// Vendor leftovers. Display names live on [`Sender::display_name`], not here.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct VendorFields {
     /// Android `type` attribute from the source (e.g. 1 = received, 2 = sent).
@@ -831,15 +844,20 @@ pub fn nonempty(s: &str) -> Option<String> {
 /// One mebibyte, for byte counts shown or compared in MiB.
 pub const MIB: u64 = 1024 * 1024;
 
-/// Owner identity for outgoing rows: identity + display (`"Me"` if identity set but name missing).
-pub fn owner_sender(export: &ExportMeta) -> (Option<String>, Option<String>) {
-    let handle = export.owner_identity.as_deref().and_then(nonempty);
-    let display = export
+/// The sender of an outgoing row: the owner's identity and display name
+/// (`"Me"` when the identity is set and the name is missing).
+pub fn owner_sender(export: &ExportMeta) -> Sender {
+    let identity = export.owner_identity.as_deref().and_then(nonempty);
+    let display_name = export
         .owner_display_name
         .as_deref()
         .and_then(nonempty)
-        .or_else(|| handle.as_ref().map(|_| "Me".into()));
-    (handle, display)
+        .or_else(|| identity.as_ref().map(|_| "Me".into()));
+    Sender {
+        identity,
+        display_name,
+        country: None,
+    }
 }
 
 /// Export and conversation metadata without messages (JSONL header line
@@ -974,7 +992,7 @@ pub struct PendingConversation {
     /// Participant handles: a phone number in E.164 form where the source
     /// gives one, else the source's own handle (an email address, a short
     /// code, a name).
-    pub participant_e164s: Vec<String>,
+    pub participant_handles: Vec<String>,
     /// Messages awaiting conversion to [`Message`].
     pub messages: Vec<PendingMessage>,
     /// Whether this is a group conversation.
@@ -991,12 +1009,12 @@ impl PendingConversation {
         chat_id: impl Into<String>,
         is_group: bool,
         display_name: Option<String>,
-        participant_e164s: Vec<String>,
+        participant_handles: Vec<String>,
     ) -> Self {
         Self {
             chat_id: chat_id.into(),
             display_name,
-            participant_e164s,
+            participant_handles,
             messages: Vec::new(),
             is_group,
             has_attachments: false,

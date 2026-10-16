@@ -78,8 +78,8 @@ fn sms_and_mms_document() -> ConversationDocument {
         m.text = text.into();
         m.attachments = attachments;
         if direction == Direction::Outgoing {
-            m.sender_identity = Some("+15555550100".into());
-            m.sender_display_name = Some("Me".into());
+            m.sender.identity = Some("+15555550100".into());
+            m.sender.display_name = Some("Me".into());
         }
         m
     };
@@ -220,8 +220,8 @@ fn a_group_lists_every_peer_and_names_the_sender() {
         display_name: Some("Bo".into()),
         country: None,
     });
-    document.messages[0].sender_identity = Some("+15555550102".into());
-    document.messages[0].sender_display_name = Some("Bo".into());
+    document.messages[0].sender.identity = Some("+15555550102".into());
+    document.messages[0].sender.display_name = Some("Bo".into());
     let tmp = tempfile::tempdir().unwrap();
     archive()
         .write(
@@ -433,7 +433,7 @@ fn a_sent_group_message_names_no_one_in_its_subject() {
             })
             .collect();
         document.messages[0].direction = Direction::Outgoing;
-        document.messages[0].sender_identity = None;
+        document.messages[0].sender.identity = None;
         let tmp = tempfile::tempdir().unwrap();
         archive()
             .write(
@@ -469,8 +469,8 @@ fn a_conversation_keyed_by_a_name_is_written_with_the_bare_name() {
         display_name: Some("Alice".into()),
         country: None,
     }];
-    document.messages[0].sender_identity = None;
-    document.messages[0].sender_display_name = Some("Alice".into());
+    document.messages[0].sender.identity = None;
+    document.messages[0].sender.display_name = Some("Alice".into());
     let tmp = tempfile::tempdir().unwrap();
     archive()
         .write(

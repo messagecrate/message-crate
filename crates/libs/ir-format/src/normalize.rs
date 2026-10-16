@@ -28,8 +28,8 @@ pub(crate) fn normalize_document_for_compare(document: &mut ConversationDocument
         for att in &mut message.attachments {
             clear_attachment_ephemera(att);
         }
-        empty_to_none(&mut message.sender_identity);
-        empty_to_none(&mut message.sender_display_name);
+        empty_to_none(&mut message.sender.identity);
+        empty_to_none(&mut message.sender.display_name);
         empty_to_none(&mut message.subject);
     }
     empty_to_none(&mut document.export.owner_identity);

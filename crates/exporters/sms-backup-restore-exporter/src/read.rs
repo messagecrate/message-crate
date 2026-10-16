@@ -5,7 +5,7 @@ use anyhow::{Result, bail};
 use ir::{
     ConversationDocument, ExportMeta, Message, MessageKind, Participant, PendingAttachment,
     PendingConversation, PendingMessage, Projection, ProjectionHooks, Transport, VendorFields,
-    prepare_conversation, project_pending,
+    pending_to_document, prepare_conversation,
 };
 use message_crate_core::{
     AttachmentFiles, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, RunLogLevel,
@@ -287,7 +287,7 @@ struct MessageRow {
 struct ConversationInProgress {
     kind: ConversationKind,
     /// The conversation as the shared projection reads it: each
-    /// participant's handle key in `participant_e164s`, the group title in
+    /// participant's handle key in `participant_handles`, the group title in
     /// `display_name`.
     pending: PendingConversation,
     /// Each message's [`MessageRow`], in the order the read added them.
@@ -474,7 +474,7 @@ fn add_record(
     Ok(())
 }
 
-/// SMS Backup & Restore deltas of the shared [`project_pending`] projection,
+/// SMS Backup & Restore deltas of the shared [`pending_to_document`] projection,
 /// for one conversation.
 struct SbrProjection<'a> {
     export: &'a ExportMeta,
@@ -509,7 +509,7 @@ impl SbrProjection<'_> {
                     .or_insert_with(|| name.to_string());
             }
             if let Some(name) = sbr::contact_name(&self.row(message).contact_name, self.kind) {
-                for peer in &conversation.participant_e164s {
+                for peer in &conversation.participant_handles {
                     names
                         .entry(peer.clone())
                         .or_insert_with(|| name.to_string());
@@ -562,7 +562,7 @@ impl ProjectionHooks for SbrProjection<'_> {
     fn participants(&self, _chat_id: &str, conversation: &PendingConversation) -> Vec<Participant> {
         let names = self.names_by_handle(conversation);
         conversation
-            .participant_e164s
+            .participant_handles
             .iter()
             .map(|handle| Participant {
                 identity: Some(handle.clone()),
@@ -609,7 +609,7 @@ fn to_document(
         mut document,
         tally,
         kept,
-    } = project_pending(&pending.chat_id, &pending, &hooks);
+    } = pending_to_document(&pending.chat_id, &pending, &hooks);
     report.sent += tally.sent;
     report.received += tally.received;
     report.duplicates_dropped += tally.duplicates;
@@ -646,7 +646,10 @@ fn describe(
         .and_then(|attrs| attrs.get("address"))
         .and_then(serde_json::Value::as_str)
         .filter(|address| !address.trim().is_empty());
-    let with = address.map_or_else(|| conversation.participant_e164s.join(", "), str::to_string);
+    let with = address.map_or_else(
+        || conversation.participant_handles.join(", "),
+        str::to_string,
+    );
     format!("message of {time} with {with}")
 }
 

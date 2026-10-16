@@ -327,13 +327,15 @@ impl SharedMessage {
             },
             service,
             message_kind,
-            sender_identity: if self.from_me {
-                None
-            } else {
-                Some(chat_id.into())
+            sender: ir::Sender {
+                identity: if self.from_me {
+                    None
+                } else {
+                    Some(chat_id.into())
+                },
+                display_name: None,
+                country: None,
             },
-            sender_display_name: None,
-            sender_country: None,
             owner_identity: None,
             subject: None,
             text: self.text.clone(),
@@ -734,7 +736,7 @@ impl<R: Rng> Seeder<'_, R> {
                         SourceFlavor::IMessage,
                     );
                     if i == 2 && ua.name_alias.is_some() && !from_me {
-                        msg.sender_identity = Some(String::new());
+                        msg.sender.identity = Some(String::new());
                     }
                     if should_attach_jpg(i, msg_count, seeder.cfg) {
                         seeder.add_jpg_attachment(&mut msg, i);
@@ -828,7 +830,7 @@ impl<R: Rng> Seeder<'_, R> {
                         peer,
                         SourceFlavor::IMessage,
                     );
-                    msg.sender_identity = sender;
+                    msg.sender.identity = sender;
                     if should_attach_jpg(i, msg_count, seeder.cfg) {
                         seeder.add_jpg_attachment(&mut msg, i + group.index);
                     } else if should_attach_other(i, msg_count, seeder.cfg) {
@@ -1201,9 +1203,11 @@ impl<R: Rng> Seeder<'_, R> {
             },
             service,
             message_kind,
-            sender_identity: if from_me { None } else { Some(peer.into()) },
-            sender_display_name: None,
-            sender_country: None,
+            sender: ir::Sender {
+                identity: if from_me { None } else { Some(peer.into()) },
+                display_name: None,
+                country: None,
+            },
             owner_identity: None,
             subject: None,
             text,

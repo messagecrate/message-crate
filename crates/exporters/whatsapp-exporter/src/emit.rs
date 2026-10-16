@@ -321,7 +321,7 @@ fn ingest_chat(
     }
 
     // The phone numbers name an untitled group's file.
-    pending.participant_e164s = roster.numbers;
+    pending.participant_handles = roster.numbers;
     Some((chat_id, pending, roster.participants))
 }
 
