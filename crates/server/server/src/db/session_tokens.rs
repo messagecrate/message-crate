@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc};
 pub use message_crate_api_types::AppKind;
 use rand::TryRng;
 use sqlx::SqliteConnection;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::db::audit_trail::{self, AuditActor, AuditReason};
 use crate::db::unix_secs;
@@ -146,9 +147,13 @@ pub struct Session {
     pub account_id: i64,
     /// `None` until a request names its app.
     pub app: Option<ConnectingApp>,
+    /// The move of its expiry the lookup that found it made due, for
+    /// [`spawn_expiry_move`] to write. `None` when the move would be less
+    /// than [`SESSION_EXTEND_STEP_SECS`].
+    pub expiry_move: Option<ExpiryMove>,
 }
 
-/// The row `use_session` reads.
+/// The row `lookup_session` reads.
 #[derive(sqlx::FromRow)]
 struct SessionRow {
     account_id: i64,
@@ -161,21 +166,15 @@ struct SessionRow {
     login_entry_id: Option<i64>,
 }
 
-/// Use the session this Bearer names (by hash), when it is live at `now`:
-/// return it, and move its expiry to [`extended_expiry`] when that is far
-/// enough ahead to write. Expired rows are removed.
-///
-/// The move never waits for the database's write lock, because every
-/// request a Session makes comes through here. When another connection
-/// holds the lock, such as an import, the move is skipped and a later
-/// request makes it. A move that fails for any other reason is logged.
-/// Either way the request is served, and the Session expires when it would
-/// have without the move.
+/// Look up the session this Bearer names (by hash) that is live at `now`.
+/// Expired rows are removed. The session found carries the move of its
+/// expiry this use is due, if any ([`Session::expiry_move`]); the lookup
+/// writes nothing for it.
 ///
 /// # Errors
 ///
 /// Returns an error when the lookup or delete fails.
-pub async fn use_session(
+pub async fn lookup_session(
     conn: &mut SqliteConnection,
     token: &str,
     now: DateTime<Utc>,
@@ -207,79 +206,114 @@ pub async fn use_session(
         return Ok(None);
     };
     // A `created_at` that does not parse leaves the expiry where it is.
-    if let Some(next) = row
+    let expiry_move = row
         .created_at
         .parse::<u64>()
         .ok()
         .and_then(|created| extended_expiry(created, expires_at, now))
-        && let Err(err) =
-            extend_session_unless_busy(conn, &token_hash, row.login_entry_id, next).await
-        && !crate::api_error::is_database_busy(&err)
-    {
-        tracing::warn!(
-            account_id = row.account_id,
-            error = %format!("{err:#}"),
-            "The Session's expiry could not be moved"
-        );
-    }
+        .map(|expires_at| ExpiryMove {
+            token_hash,
+            login_entry_id: row.login_entry_id,
+            expires_at,
+        });
     Ok(Some(Session {
         account_id: row.account_id,
         app: ConnectingApp::from_columns(row.app_kind, row.app_build),
+        expiry_move,
     }))
 }
 
-/// [`extend_session`] with the connection's busy timeout at zero, so a write
-/// lock another connection holds answers `SQLITE_BUSY` at once rather than
-/// after the timeout. The timeout is put back however the move ends.
-async fn extend_session_unless_busy(
-    conn: &mut SqliteConnection,
-    token_hash: &str,
+/// A move of a Session's expiry that a use made due: the Session, by the
+/// hash of its token, its `logged_in` entry, and the new expiry in Unix
+/// seconds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpiryMove {
+    token_hash: String,
     login_entry_id: Option<i64>,
     expires_at: u64,
-) -> Result<()> {
-    let waits: i64 = sqlx::query_scalar("PRAGMA busy_timeout")
-        .fetch_one(&mut *conn)
-        .await
-        .context("read the connection's busy timeout")?;
-    sqlx::query("PRAGMA busy_timeout = 0")
-        .execute(&mut *conn)
-        .await
-        .context("stop the connection waiting for the write lock")?;
-    let moved = extend_session(conn, token_hash, login_entry_id, expires_at).await;
-    sqlx::query(sqlx::AssertSqlSafe(format!(
-        "PRAGMA busy_timeout = {waits}"
-    )))
-    .execute(&mut *conn)
-    .await
-    .context("put the connection's busy timeout back")?;
-    moved
 }
 
-/// Move the Session `token_hash` names to expire at `expires_at`, and record
-/// the new expiry for the Audit Trail under its `logged_in` entry, when a
-/// login made it. Both writes happen or neither does.
-async fn extend_session(
+/// Write `expiry_move`: the Session's new expiry, and the same expiry for
+/// the Audit Trail under its `logged_in` entry, when a login made it. Both
+/// writes happen or neither does. A Session ended or replaced since the
+/// lookup matches no row, and its `logged_in` entry already has the entry
+/// that ended it, so the Audit Trail reads nothing from the record.
+///
+/// # Errors
+///
+/// Returns an error when a write fails, including `SQLITE_BUSY` once the
+/// busy timeout runs out.
+pub async fn move_session_expiry(
     conn: &mut SqliteConnection,
-    token_hash: &str,
-    login_entry_id: Option<i64>,
-    expires_at: u64,
+    expiry_move: &ExpiryMove,
 ) -> Result<()> {
     let mut tx = crate::db::begin_write(conn)
         .await
         .context("begin a write transaction")?;
     sqlx::query("UPDATE account_session_tokens SET expires_at = $1 WHERE token_hash = $2")
-        .bind(expires_at.to_string())
-        .bind(token_hash)
+        .bind(expiry_move.expires_at.to_string())
+        .bind(expiry_move.token_hash.as_str())
         .execute(&mut *tx)
         .await
         .context("move the Session's expiry")?;
-    if let Some(login_entry_id) = login_entry_id {
-        audit_trail::record_session_extended(&mut tx, login_entry_id, expires_at).await?;
+    if let Some(login_entry_id) = expiry_move.login_entry_id {
+        audit_trail::record_session_extended(&mut tx, login_entry_id, expiry_move.expires_at)
+            .await?;
     }
     tx.commit()
         .await
         .context("commit the Session's new expiry")?;
     Ok(())
+}
+
+/// Whether a move of a Session's expiry is running in the background.
+static EXPIRY_MOVE_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Holds `running` set while a move runs, and clears it when dropped, so a
+/// move that fails, panics or is cancelled lets the next one start.
+struct MoveRunning<'a>(&'a AtomicBool);
+
+impl<'a> MoveRunning<'a> {
+    /// Set `running`, or `None` when it is set already.
+    fn claim(running: &'a AtomicBool) -> Option<Self> {
+        (!running.swap(true, Ordering::AcqRel)).then_some(Self(running))
+    }
+}
+
+impl Drop for MoveRunning<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+/// Write `expiry_move` in a task of its own, on a connection of its own from
+/// `pool`, so the request that made it due is served without waiting for
+/// the write lock. One move runs at a time: while one runs, another is
+/// dropped, and a later request makes it again. So an import holding the
+/// write lock keeps at most one connection waiting on it. A move the busy
+/// timeout ends is dropped without a word; any other failure is logged.
+/// Either way the Session expires when it would have without the move.
+pub fn spawn_expiry_move(pool: &sqlx::SqlitePool, expiry_move: ExpiryMove) {
+    let Some(running) = MoveRunning::claim(&EXPIRY_MOVE_RUNNING) else {
+        return;
+    };
+    let pool = pool.clone();
+    crate::request_id::spawn_in_current_span(async move {
+        let _running = running;
+        let moved = async {
+            let mut conn = pool.acquire().await.context("acquire a connection")?;
+            move_session_expiry(&mut conn, &expiry_move).await
+        }
+        .await;
+        if let Err(err) = moved
+            && !crate::api_error::is_database_busy(&err)
+        {
+            tracing::warn!(
+                error = %format!("{err:#}"),
+                "The Session's expiry could not be moved"
+            );
+        }
+    });
 }
 
 /// The hash of `account_id`'s Session token, or `None` when the account
@@ -418,7 +452,7 @@ pub(crate) async fn live_login_entry(
     .await
     .context("read the login entry of the account's Session")?;
     let now = unix_secs(now);
-    // An `expires_at` that does not parse counts as expired, as in `use_session`.
+    // An `expires_at` that does not parse counts as expired, as in `lookup_session`.
     Ok(found.and_then(|(login_entry_id, expires_at)| {
         login_entry_id.filter(|_| expires_at.parse::<u64>().is_ok_and(|expires| expires > now))
     }))
@@ -613,6 +647,22 @@ pub async fn revoke_account_sessions(
     Ok(())
 }
 
+/// Look up the session `token` names at `now` and write the move of its
+/// expiry the lookup made due, as a request and the move it spawns do, for
+/// a test to wait on both.
+#[cfg(test)]
+pub(crate) async fn use_session_at(
+    conn: &mut SqliteConnection,
+    token: &str,
+    now: DateTime<Utc>,
+) -> Result<Option<Session>> {
+    let session = lookup_session(conn, token, now).await?;
+    if let Some(expiry_move) = session.as_ref().and_then(|s| s.expiry_move.as_ref()) {
+        move_session_expiry(conn, expiry_move).await?;
+    }
+    Ok(session)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -720,7 +770,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn use_session_rejects_an_expired_session() {
+    async fn lookup_rejects_expired_session() {
         let (pool, _dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
@@ -733,7 +783,7 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            use_session(&mut conn, &token, fixed_instant())
+            lookup_session(&mut conn, &token, fixed_instant())
                 .await
                 .unwrap()
                 .is_none()
@@ -744,7 +794,7 @@ mod tests {
     /// session is live up to the second before it expires, and refused from
     /// that second on, and the refused row is removed.
     #[tokio::test]
-    async fn use_session_rejects_a_session_from_the_second_it_expires() {
+    async fn lookup_rejects_a_session_from_the_second_it_expires() {
         let (pool, _dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
@@ -752,18 +802,10 @@ mod tests {
             .await
             .unwrap();
         let expiry = fixed_instant() + chrono::Duration::hours(1);
-        // Made 30 days before it expires, so it is at its cap and the
-        // lookups below cannot move its expiry.
-        let created = unix_secs(expiry) - SESSION_MAX_SECS;
-        sqlx::query("UPDATE account_session_tokens SET created_at = $1")
-            .bind(created.to_string())
-            .execute(&mut *conn)
-            .await
-            .unwrap();
 
         let last_second = expiry - chrono::Duration::seconds(1);
         assert!(
-            use_session(&mut conn, &token, last_second)
+            lookup_session(&mut conn, &token, last_second)
                 .await
                 .unwrap()
                 .is_some()
@@ -776,13 +818,13 @@ mod tests {
         );
         assert_eq!(live_session_hash(&mut conn, 7, expiry).await.unwrap(), None);
         assert!(
-            use_session(&mut conn, &token, expiry)
+            lookup_session(&mut conn, &token, expiry)
                 .await
                 .unwrap()
                 .is_none()
         );
         assert!(
-            use_session(&mut conn, &token, last_second)
+            lookup_session(&mut conn, &token, last_second)
                 .await
                 .unwrap()
                 .is_none(),
@@ -841,7 +883,7 @@ mod tests {
         assert_eq!(
             extended_expiry(login, first_expiry, login + 3 * DAY),
             Some(login + 10 * DAY),
-            "a use three days in lasts 7 days from then"
+            "a use 3 days in lasts 7 days from then"
         );
         assert_eq!(
             extended_expiry(login, first_expiry, login + 3599),
@@ -878,7 +920,7 @@ mod tests {
             .unwrap();
         let used = fixed_instant() + chrono::Duration::days(6);
         assert!(
-            use_session(&mut conn, &token, used)
+            use_session_at(&mut conn, &token, used)
                 .await
                 .unwrap()
                 .is_some()
@@ -897,7 +939,7 @@ mod tests {
 
         let soon_after = used + chrono::Duration::minutes(59);
         assert!(
-            use_session(&mut conn, &token, soon_after)
+            use_session_at(&mut conn, &token, soon_after)
                 .await
                 .unwrap()
                 .is_some()
@@ -911,19 +953,18 @@ mod tests {
         // Past the first 7 days, the Session the use moved is still live.
         let past_first_expiry = fixed_instant() + chrono::Duration::days(8);
         assert!(
-            use_session(&mut conn, &token, past_first_expiry)
+            use_session_at(&mut conn, &token, past_first_expiry)
                 .await
                 .unwrap()
                 .is_some()
         );
     }
 
-    /// A move that meets a write lock another connection holds, such as an
-    /// import's, is skipped at once, and the request is served. The
-    /// connection's busy timeout is set to wait without end, so a move that
-    /// waited for the lock would never return, and it is put back after.
+    /// A lookup writes nothing for the move it makes due: it reports it, so
+    /// the request it serves never waits for the write lock, and the move
+    /// is written apart.
     #[tokio::test]
-    async fn a_move_that_meets_a_held_write_lock_is_skipped_without_waiting() {
+    async fn a_lookup_reports_the_move_and_writes_nothing() {
         let (pool, _dir) = crate::test_support::schema_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
@@ -931,35 +972,31 @@ mod tests {
             .await
             .unwrap();
         let first_expiry = stored_expiry(&mut conn).await;
-        let mut writer = pool.acquire().await.unwrap();
-        sqlx::query(crate::db::engine::BEGIN_IMMEDIATE_SQL)
-            .execute(&mut *writer)
-            .await
-            .unwrap();
-        sqlx::query("PRAGMA busy_timeout = 2147483647")
-            .execute(&mut *conn)
-            .await
-            .unwrap();
 
         let used = fixed_instant() + chrono::Duration::days(3);
-        assert!(
-            use_session(&mut conn, &token, used)
-                .await
-                .unwrap()
-                .is_some()
-        );
-
-        let waits: i64 = sqlx::query_scalar("PRAGMA busy_timeout")
-            .fetch_one(&mut *conn)
+        let session = lookup_session(&mut conn, &token, used)
             .await
+            .unwrap()
             .unwrap();
-        assert_eq!(waits, 2_147_483_647, "the busy timeout is put back");
-        sqlx::query("ROLLBACK").execute(&mut *writer).await.unwrap();
+        assert_eq!(stored_expiry(&mut conn).await, first_expiry);
+
+        let expiry_move = session.expiry_move.expect("a move is due");
+        move_session_expiry(&mut conn, &expiry_move).await.unwrap();
         assert_eq!(
             stored_expiry(&mut conn).await,
-            first_expiry,
-            "the move was skipped"
+            unix_secs(used) + SESSION_IDLE_SECS
         );
+    }
+
+    /// One move runs at a time: a second is refused while the first runs,
+    /// and allowed once the first has ended however it ended.
+    #[test]
+    fn one_move_runs_at_a_time() {
+        let running = AtomicBool::new(false);
+        let first = MoveRunning::claim(&running).expect("nothing runs yet");
+        assert!(MoveRunning::claim(&running).is_none(), "one is running");
+        drop(first);
+        assert!(MoveRunning::claim(&running).is_some(), "the first ended");
     }
 
     /// A Session left unused for 7 days is refused.
@@ -973,14 +1010,14 @@ mod tests {
             .unwrap();
         let used = fixed_instant() + chrono::Duration::days(2);
         assert!(
-            use_session(&mut conn, &token, used)
+            use_session_at(&mut conn, &token, used)
                 .await
                 .unwrap()
                 .is_some()
         );
         let idle = used + chrono::Duration::days(7);
         assert!(
-            use_session(&mut conn, &token, idle)
+            use_session_at(&mut conn, &token, idle)
                 .await
                 .unwrap()
                 .is_none()
@@ -999,7 +1036,7 @@ mod tests {
         for day in 1..30 {
             let used = fixed_instant() + chrono::Duration::days(day);
             assert!(
-                use_session(&mut conn, &token, used)
+                use_session_at(&mut conn, &token, used)
                     .await
                     .unwrap()
                     .is_some(),
@@ -1008,7 +1045,12 @@ mod tests {
         }
         let cap = fixed_instant() + chrono::Duration::days(30);
         assert_eq!(stored_expiry(&mut conn).await, unix_secs(cap));
-        assert!(use_session(&mut conn, &token, cap).await.unwrap().is_none());
+        assert!(
+            use_session_at(&mut conn, &token, cap)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -1035,7 +1077,7 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            use_session(&mut conn, &token, fixed_instant())
+            lookup_session(&mut conn, &token, fixed_instant())
                 .await
                 .unwrap()
                 .is_some()
@@ -1046,7 +1088,7 @@ mod tests {
                 .unwrap()
         );
         assert!(
-            use_session(&mut conn, &token, fixed_instant())
+            lookup_session(&mut conn, &token, fixed_instant())
                 .await
                 .unwrap()
                 .is_none()

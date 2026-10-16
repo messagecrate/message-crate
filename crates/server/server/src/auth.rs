@@ -405,13 +405,18 @@ pub async fn resolve_auth(headers: &HeaderMap, db: &SqlitePool) -> Result<AuthId
     // Always look up against SQLite so rotate/delete in Settings takes effect
     // without restarting serve (no process-local token cache).
     let mut conn = db.acquire().await?;
-    resolve_auth_on_conn(
+    let (identity, expiry_move) = resolve_auth_and_expiry_move(
         &mut conn,
         &token,
         connecting_app(headers).as_ref(),
         chrono::Utc::now(),
     )
-    .await
+    .await?;
+    // Written apart from the request, which never waits for the write lock.
+    if let Some(expiry_move) = expiry_move {
+        session_tokens::spawn_expiry_move(db, expiry_move);
+    }
+    Ok(identity)
 }
 
 /// Longest Build the server records. A real one is under thirty characters.
@@ -453,14 +458,31 @@ enum Credential {
 /// Unauthorized when the token matches nothing, which includes an API token
 /// on the owner's account (`api_tokens::lookup_account_for_api_token` refuses
 /// it); forbidden when the account is disabled.
-pub async fn resolve_auth_on_conn(
+#[cfg(test)]
+pub(crate) async fn resolve_auth_on_conn(
     conn: &mut SqliteConnection,
     token: &str,
     app: Option<&session_tokens::ConnectingApp>,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<AuthIdentity, ApiError> {
+    resolve_auth_and_expiry_move(conn, token, app, now)
+        .await
+        .map(|(identity, _)| identity)
+}
+
+/// [`resolve_auth_on_conn`], with the move of a Session's expiry the request
+/// made due, for the caller to write ([`session_tokens::spawn_expiry_move`]).
+/// `None` for an API token, and for a Session whose move would be too small
+/// to write.
+async fn resolve_auth_and_expiry_move(
+    conn: &mut SqliteConnection,
+    token: &str,
+    app: Option<&session_tokens::ConnectingApp>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<(AuthIdentity, Option<session_tokens::ExpiryMove>), ApiError> {
+    let mut expiry_move = None;
     let resolved = if let Some(session) =
-        session_tokens::use_session(&mut *conn, token, now).await?
+        session_tokens::lookup_session(&mut *conn, token, now).await?
     {
         if let Some(app) = app {
             // A record, not a check: a failed write still serves the
@@ -474,6 +496,7 @@ pub async fn resolve_auth_on_conn(
                 );
             }
         }
+        expiry_move = session.expiry_move;
         // The app this request named, or the one the session last recorded.
         let used = CredentialUsed::Session(app.cloned().or(session.app));
         Some((session.account_id, Credential::Session, used))
@@ -515,11 +538,14 @@ pub async fn resolve_auth_on_conn(
         }
     };
 
-    Ok(AuthIdentity {
-        account_id,
-        capability,
-        credential: used,
-    })
+    Ok((
+        AuthIdentity {
+            account_id,
+            capability,
+            credential: used,
+        },
+        expiry_move,
+    ))
 }
 
 /// `Ok` while `account_id` still has its row, else

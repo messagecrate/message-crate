@@ -290,7 +290,7 @@ async fn logout_on_conn_leaves_registered_account() {
         Some("alice")
     );
     assert!(
-        session_tokens::use_session(&mut conn, &token, crate::test_support::fixed_instant())
+        session_tokens::lookup_session(&mut conn, &token, crate::test_support::fixed_instant())
             .await
             .unwrap()
             .is_none()

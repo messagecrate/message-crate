@@ -829,7 +829,9 @@ security scheme with its scopes, so every route says which it accepts.
   however much it is used. A login sets its expiry 7 days ahead. A request
   that the Session serves moves the expiry to 7 days after the request, but
   never past 30 days after the login, and writes it only when the move is
-  an hour or more, so a Session in use writes at most once an hour. A
+  an hour or more, so a Session in use writes at most once an hour. The
+  move is written in the background, one at a time, so a request never
+  waits for the write lock an import holds. A
   password change renews the Session for 7 days, and starts its 30 days
   again. Why: a Session forgotten on a shared computer ends within a week,
   while an account in daily use never sees the shorter limit, and the cap
