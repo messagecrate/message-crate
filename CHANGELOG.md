@@ -223,6 +223,8 @@ carry their date on the heading.
 
 ### Design
 
+- 2026-10-15: The way the desktop app sends an import's conversations to
+  the server was reworked inside, with nothing visible (#2053).
 - 2026-10-15: **The desktop app keeps everything in one directory.** The
   app now makes a directory named message-crate in your home directory and
   keeps its Message Crate's data, the Staging Directory, exports, Import Run

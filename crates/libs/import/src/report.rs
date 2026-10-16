@@ -123,17 +123,6 @@ pub struct ImportReport {
     /// conversation: the next Upload sends what this one did not.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_away: Option<ServerAway>,
-    /// `true` when the Upload could not complete the Import Run it started:
-    /// the server refused the request, or no answer came. The server may then
-    /// still hold the run as running, so `ok` is `false`. A paused run
-    /// (`cancelled`) is returned with this flag set, and
-    /// [`crate::ProgressEvent::Finished`] fires, because the caller tells a
-    /// pause from a failure by `cancelled`. For a run that did not pause,
-    /// `run` returns the refusal as its error instead, and only the report on
-    /// disk carries the flag. A completion refused because the session ended
-    /// sets `session_refused` too. The flag is always `false` when the caller
-    /// handed the Upload its Import Run, because the caller then completes it.
-    pub completion_refused: bool,
     /// Account id the token resolved to.
     pub account: i64,
     /// Username the server reports for that account.
@@ -264,25 +253,6 @@ pub fn format_duration_ms(ms: u64) -> String {
     }
 }
 
-/// Three-way Import Run status for `/v1/imports/{id}/complete`, read from the
-/// Upload's report rather than from whether the Upload returned. `failed` has a
-/// zero floor: cancelled (the run halted, see [`ImportReport::cancelled`]), or
-/// nothing landed at all. A skip-only repeat Upload is a no-op,
-/// not a failure. Item-level failures beside successes are
-/// `completed_with_issues`.
-pub fn outcome_status(report: &ImportReport) -> &'static str {
-    let nothing_landed = report.conversations_total > 0
-        && report.conversations_ok == 0
-        && report.conversations_skipped == 0;
-    if report.cancelled || nothing_landed {
-        return "failed";
-    }
-    if report.conversations_failed > 0 || report.messages_failed > 0 {
-        return "completed_with_issues";
-    }
-    "completed"
-}
-
 /// Format a millisecond count as seconds with one decimal place, like `3.3s`.
 pub(crate) fn format_ms_seconds(ms: u64) -> String {
     format!("{:.1}s", ms as f64 / 1000.0)
@@ -389,7 +359,6 @@ mod tests {
             cancelled: false,
             session_refused: false,
             server_away: None,
-            completion_refused: false,
             account: 1,
             username: "user".into(),
             mode: ImportMode::Append,
@@ -563,42 +532,6 @@ mod tests {
             "chat.jsonl took 5.5s in all: 0.1s reading the file, 0.3s finding and hashing \
              3 Assets, 2.0s uploading 2.0 KB, and 3.0s importing messages."
         );
-    }
-
-    #[test]
-    fn outcome_status_matches_the_spec_verdicts() {
-        // Clean run.
-        assert_eq!(outcome_status(&sample_report()), "completed");
-
-        // Cancelled is failed regardless of counts.
-        let mut cancelled = sample_report();
-        cancelled.cancelled = true;
-        assert_eq!(outcome_status(&cancelled), "failed");
-
-        // Nothing landed at all: the zero floor.
-        let mut nothing = sample_report();
-        nothing.ok = false;
-        nothing.conversations_ok = 0;
-        nothing.conversations_failed = 10;
-        assert_eq!(outcome_status(&nothing), "failed");
-
-        // A skip-only repeat Upload is a no-op, not a failure.
-        let mut skips = sample_report();
-        skips.conversations_ok = 0;
-        skips.conversations_skipped = 10;
-        assert_eq!(outcome_status(&skips), "completed");
-
-        // Item-level failures beside successes.
-        let mut partial = sample_report();
-        partial.ok = false;
-        partial.conversations_ok = 8;
-        partial.conversations_failed = 2;
-        assert_eq!(outcome_status(&partial), "completed_with_issues");
-
-        // Message failures inside ok conversations.
-        let mut msgs = sample_report();
-        msgs.messages_failed = 3;
-        assert_eq!(outcome_status(&msgs), "completed_with_issues");
     }
 
     #[test]

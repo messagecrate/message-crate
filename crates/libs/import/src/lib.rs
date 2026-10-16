@@ -22,7 +22,6 @@ mod project;
 mod report;
 mod run;
 
-pub use directory::detect_source;
 pub use journal::{JOURNAL_NAME, LOG_NAME, REPORT_NAME};
 pub use message_crate_api_types::ImportMode;
 pub use message_crate_http::AuthError;
