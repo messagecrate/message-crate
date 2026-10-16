@@ -9,9 +9,11 @@
 # to the pin is what it checks the next night. It downloads each .gz, checks
 # its SHA-256, unpacks it and checks the program's SHA-256, as
 # src-tauri/src/tool_downloads/fetch.rs does. Then it asks ffprobe about
-# VIDEO with the arguments of crates/libs/media/src/probe.rs, converts VIDEO
-# with ffmpeg the way the media pass re-encodes a video (convert_video in
-# crates/libs/media/src/process.rs), and asks ffprobe what it wrote.
+# VIDEO with the arguments of probe_media in crates/libs/media/src/probe.rs,
+# converts VIDEO with ffmpeg the two ways the media pass encodes a video in
+# crates/libs/media/src/process.rs (H.264 for Convert, HEVC for Compress),
+# and asks ffprobe what each wrote. Those arguments are copies: a change to
+# them there is a change here too, and the comments beside them say so.
 #
 # Usage: scripts/check-windows-arm-ffmpeg.sh VIDEO
 set -euo pipefail
@@ -107,21 +109,37 @@ fetch "$ffprobe_asset" "$ffprobe_gz_sha" "$ffprobe_sha" "$work/ffprobe.exe"
 probe() {
   "$work/ffprobe.exe" -v error -select_streams v:0 \
     -show_entries stream=codec_name,width,height,avg_frame_rate,bit_rate \
-    -of csv=p=0 "$1" | tr -d '\r' | grep -v '^[[:space:]]*$' | head -n 1
+    -of csv=p=0 "$1" | tr -d '\r' | { grep -v '^[[:space:]]*$' || true; } | head -n 1
 }
 
 before=$(probe "$video")
 echo "ffprobe on $video: $before"
 [ -n "$before" ] || fail "ffprobe reported no video stream in $video"
 
-# The media pass's re-encode: H.264 at 30 frames a second, AAC audio.
-converted="$work/converted.mp4"
-"$work/ffmpeg.exe" -hide_banner -y -i "$video" -vf fps=30 -c:v libx264 -crf 23 \
-  -preset medium -c:a aac -b:a 128k -movflags +faststart "$converted"
+# Convert VIDEO to NAME.mp4 with the encoder arguments that follow, and
+# check that ffprobe reports CODEC for what ffmpeg wrote.
+convert() {
+  local name=$1 codec=$2
+  shift 2
+  local out="$work/$name.mp4"
+  "$work/ffmpeg.exe" -hide_banner -y -i "$video" "$@" "$out"
+  local after
+  after=$(probe "$out")
+  echo "ffprobe on the $name file: $after"
+  case "$after" in
+    "$codec",*) ;;
+    *) fail "the $name file is not $codec: '$after'" ;;
+  esac
+}
 
-after=$(probe "$converted")
-echo "ffprobe on the converted file: $after"
-case "$after" in
-  h264,*) echo "ffmpeg and ffprobe run on this computer." ;;
-  *) fail "the converted file is not H.264: '$after'" ;;
-esac
+# Convert's re-encode (convert_video): H.264 at 30 frames a second, AAC.
+convert converted h264 -vf fps=30 -c:v libx264 -crf 23 -preset medium \
+  -c:a aac -b:a 128k -movflags +faststart
+
+# Compress's encode (compress_video) at its 720p setting: HEVC, AAC.
+convert compressed hevc \
+  -vf "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(1280,ih))'" \
+  -c:v libx265 -crf 22 -preset medium -tag:v hvc1 -c:a aac -b:a 128k \
+  -movflags +faststart
+
+echo "ffmpeg and ffprobe run on this computer."

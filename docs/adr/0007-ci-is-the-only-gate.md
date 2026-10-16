@@ -130,7 +130,7 @@ Windows runs under emulation, and nothing else runs them there.
 `scripts/check-windows-arm-ffmpeg.sh` downloads exactly the files
 `src-tauri/src/tool_downloads/pins.rs` pins for that platform, checks their
 pinned SHA-256 as the app does, asks ffprobe about a committed video and
-converts it with ffmpeg the way the media pass does (#2370). The workflow gates
+converts it with ffmpeg the two ways the media pass encodes video (#2370). The workflow gates
 nothing: it has no pull request trigger and is not in the ruleset's required
 list. A scheduled run does nothing when `main` is still at the commit the
 previous scheduled run saw. Its verdict arrives after the merge, so it reports
