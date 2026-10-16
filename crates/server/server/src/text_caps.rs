@@ -16,8 +16,6 @@
 //! checks it with [`required_capped_text`], so that refusal has one wording
 //! too, `"<field> required"`.
 
-use crate::api_error::ApiError;
-
 /// Most characters in a name a person types: an account's display name and a
 /// contact's name.
 pub const MAX_PERSON_NAME_CHARS: usize = 200;
@@ -65,12 +63,6 @@ pub struct TooLong {
     unit: &'static str,
 }
 
-impl From<TooLong> for ApiError {
-    fn from(error: TooLong) -> Self {
-        Self::validation(error.to_string())
-    }
-}
-
 /// A value that may not be blank and is, or is over its cap.
 #[derive(Debug, thiserror::Error)]
 pub enum RequiredTextError {
@@ -80,12 +72,6 @@ pub enum RequiredTextError {
     /// The trimmed value is over its cap.
     #[error(transparent)]
     TooLong(#[from] TooLong),
-}
-
-impl From<RequiredTextError> for ApiError {
-    fn from(error: RequiredTextError) -> Self {
-        Self::validation(error.to_string())
-    }
 }
 
 /// The sentence of each [`TooLong`] among `results`, in order, for a route
@@ -181,6 +167,7 @@ pub fn capped_json(field: &str, json: &str, max_bytes: usize) -> Result<(), TooL
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api_error::ApiError;
 
     fn refusal<E: Into<ApiError>>(result: Result<impl std::fmt::Debug, E>) -> Vec<String> {
         match result.map_err(Into::into) {

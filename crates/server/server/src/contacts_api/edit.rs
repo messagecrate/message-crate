@@ -11,7 +11,6 @@ use super::{
     AddContactIdentityRequest, RemoveContactIdentityRequest, UpdateContactIdentityRequest,
     UpdateContactRequest,
 };
-use crate::api_error::ApiError;
 use crate::db::WriteTx;
 use crate::db::contacts::OnService;
 use crate::db::contacts::{self, contact_id_for_handle};
@@ -53,16 +52,6 @@ impl From<sqlx::Error> for ContactEditError {
 impl From<anyhow::Error> for ContactEditError {
     fn from(error: anyhow::Error) -> Self {
         Self::Failed(error)
-    }
-}
-
-impl From<ContactEditError> for ApiError {
-    fn from(error: ContactEditError) -> Self {
-        match error {
-            ContactEditError::Refused(message) => Self::validation(message),
-            ContactEditError::Country(error) => error.into(),
-            ContactEditError::Failed(cause) => Self::Internal(cause),
-        }
     }
 }
 
