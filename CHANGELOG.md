@@ -127,10 +127,8 @@ carry their date on the heading.
   command runs, rather than unhealthy after five minutes. So does a container
   that runs no server at all, such as a shell (#2132, #2541, #2542).
 - 2026-10-09: **An iMazing import keeps reactions, replies, deleted messages
-  and edits.** Each reaction in an iMazing export is kept with its emoji and
-  whether the account holder gave it. The export names the person who
-  reacted by display name alone, with no phone number or address, so a
-  reaction is not matched to a contact. A reply is linked to the message it
+  and edits.** Each reaction in an iMazing export is kept with its emoji.
+  Who gave it is not kept (#2045). A reply is linked to the message it
   quotes when that message is in the same conversation of the export, and
   stays a reply without a link otherwise. A message deleted on the phone
   before the export is marked **Deleted in the source app**. An edited
@@ -908,6 +906,13 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-16: **An iMazing import reads each reaction's emoji as iMazing
+  writes it.** iMazing writes a reaction as "Sam reacted with 👍 on
+  1/1/2020 12:04:00 PM", and the import read "Sam reacted with" as the
+  name of the person who reacted, and never recognized your own reactions,
+  which iMazing names "You". A reaction now keeps its emoji alone, and a
+  sticker reaction shows as a sticker. A line saying a reaction was
+  removed adds no reaction (#2045).
 - 2026-10-15: **An Apple Messages import stops when its identity check
   cannot run.** Before an import, Message Crate reads which addresses the
   backup's phone sent from and compares them with your profile. When the
@@ -929,13 +934,6 @@ carry their date on the heading.
   reader skipped were written to the Import Run's log as ordinary lines, so
   the level filter in the Logs panel did not find them under Warn. They are
   now written at the warning level (#2047).
-- 2026-10-15: **A reaction shows the name of whoever gave it when the
-  backup has no address for them.** An iMazing export names the person who
-  reacted by display name alone. The name was dropped on import, so the
-  reaction read as from "Someone". It is now kept and shown, and still never
-  matched to a contact. The database format changed: an existing Message
-  Crate is rebuilt empty on first start and its messages must be imported
-  again (#2044).
 - 2026-10-15: **A WhatsApp conversation stays on WhatsApp when its file is
   imported again.** A message file written by Export names the source the
   messages were stored under, and an import put a WhatsApp conversation on
