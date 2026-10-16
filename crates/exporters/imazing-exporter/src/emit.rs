@@ -213,17 +213,20 @@ impl Project for ImazingDocuments {
         Some(document)
     }
 
-    fn attachment_source(&mut self, att: &mut Attachment) -> (AttachmentSource, Option<u64>) {
+    fn attachment_source(
+        &mut self,
+        attachment: &mut Attachment,
+    ) -> (AttachmentSource, Option<u64>) {
         match self.sources.pop_front().flatten() {
             Some(path) => {
                 // iMazing's rows carry no size; stat the source so the byte
                 // counters and the headroom check see it.
-                let hint = att
+                let hint = attachment
                     .size_bytes
                     .or_else(|| std::fs::metadata(&path).ok().map(|m| m.len()));
                 (AttachmentSource::Path(path), hint)
             }
-            None => (AttachmentSource::Missing, att.size_bytes),
+            None => (AttachmentSource::Missing, attachment.size_bytes),
         }
     }
 }
@@ -1019,18 +1022,22 @@ impl ProjectionHooks for ImazingProjection<'_> {
         )]
     }
 
-    fn attachment_to_ir(&self, att: &PendingAttachment, message: &PendingMessage) -> Attachment {
+    fn attachment_to_ir(
+        &self,
+        attachment: &PendingAttachment,
+        message: &PendingMessage,
+    ) -> Attachment {
         // A message's attachments have different names: the row's file, and
         // a Live Photo video named as the picture with the video's extension.
         let source = message
             .attachments
             .iter()
-            .position(|held| held.rel_path == att.rel_path)
+            .position(|held| held.rel_path == attachment.rel_path)
             .map(|index| message.extra_str(&attachment_source_key(index)))
             .filter(|source| !source.is_empty())
             .map(PathBuf::from);
         self.sources.borrow_mut().push(source);
-        pending_attachment_to_ir(att, message)
+        pending_attachment_to_ir(attachment, message)
     }
 
     /// A group's members come from its key, never from its chat id. A

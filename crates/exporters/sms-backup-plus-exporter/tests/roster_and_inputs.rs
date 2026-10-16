@@ -337,13 +337,16 @@ fn a_jpeg_part_is_exactly_one_jpg_attachment_and_a_plain_sms_has_none() {
     let mms = &alice.messages[1];
     assert_eq!(mms.text.trim(), "Picture from Alice");
     assert_eq!(mms.attachments.len(), 1, "{:?}", mms.attachments);
-    let att = &mms.attachments[0];
-    let name = att.original_name.as_deref().expect("a generated name");
+    let attachment = &mms.attachments[0];
+    let name = attachment
+        .original_name
+        .as_deref()
+        .expect("a generated name");
     assert!(name.ends_with(".jpg"), "name {name}");
-    assert_eq!(att.mime_type.as_deref(), Some("image/jpeg"));
-    let path = att.path.as_deref().expect("staged");
+    assert_eq!(attachment.mime_type.as_deref(), Some("image/jpeg"));
+    let path = attachment.path.as_deref().expect("staged");
     assert!(path.ends_with(".jpg"), "path {path}");
-    assert_eq!(att.missing_reason, None);
+    assert_eq!(attachment.missing_reason, None);
     assert!(out.join(path).is_file(), "{path} was written");
 }
 
