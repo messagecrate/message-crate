@@ -27,6 +27,7 @@
 //! `message-crate-core`. Why this is its own crate:
 //! `docs/adr/0012-four-crates-in-the-export-pipeline.md`.
 
+mod attachment_paths;
 mod convert;
 mod counted_attachments;
 mod export_writer;
@@ -37,6 +38,7 @@ mod staging_summary;
 mod transcode;
 mod write_queue;
 
+pub use attachment_paths::AttachmentPaths;
 pub use convert::{Project, ReadBackup, WriterSetup, convert_backup};
 pub use counted_attachments::{CountedAttachments, PathSources};
 pub use export_writer::{ExportWriter, ExportWriterParts};

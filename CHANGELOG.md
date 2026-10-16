@@ -979,6 +979,19 @@ carry their date on the heading.
 
 #### Importing
 
+- 2026-10-16: **Cancel stops a WhatsApp import while it decrypts an
+  encrypted iPhone backup.** Cancel waited for Message Crate to finish
+  decrypting WhatsApp's files, which takes a long time when the backup holds
+  a lot of WhatsApp media. It now stops the decrypt at once (#3034).
+- 2026-10-16: **A WhatsApp import counts its media before it copies them.**
+  The disk space check before an import, and the bytes on the progress bar,
+  left out every WhatsApp photo, video and voice message, so a large media
+  directory could fill the disk instead of being refused first. Each media
+  file is now counted by its size on disk (#3057).
+- 2026-10-16: **An unreadable WhatsApp preferences file is a warning in the
+  run log.** When the iPhone backup's WhatsApp preferences file could not be
+  read, the run log said so at `INFO`, so the Logs panel's **Warn** filter
+  did not find it. It is now written at `WARN` (#3070).
 - 2026-10-16: **The Resume panel writes Media Stage as the rest of the app
   does.** When an Import Run stopped during the Media Stage, the panel that
   offers to resume it wrote "Media stage" (#3125).
