@@ -38,6 +38,8 @@ pub struct MediaProbe {
 /// Returns an error when ffprobe is missing, exits non-zero, or reports a
 /// line this cannot read.
 pub(crate) fn probe_media(tools: &InstalledTools, path: &Path) -> Result<MediaProbe> {
+    // scripts/check-windows-arm-ffmpeg.sh asks ffprobe the same question on
+    // Windows on ARM each night, so a change here is a change there too.
     let out = tools.run_ffprobe(
         &[
             "-v",

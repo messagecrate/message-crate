@@ -1137,6 +1137,8 @@ fn convert_video(
         let _ = fs::remove_file(&tmp);
 
         // Light standardize encode (H.264, 30fps, no aggressive downscale).
+        // scripts/check-windows-arm-ffmpeg.sh runs this encode on Windows on
+        // ARM each night, so a change here is a change there too.
         let args = vec![
             "-y".into(),
             "-i".into(),
@@ -1241,6 +1243,8 @@ fn compress_video(
 
     with_temp_output(&tmp, || {
         // Prefer libx265; fall back to libx264.
+        // scripts/check-windows-arm-ffmpeg.sh runs this encode on Windows on
+        // ARM each night, so a change here is a change there too.
         let mut hevc_args = base_video_args(path, &vf);
         hevc_args.extend([
             "-c:v".into(),
