@@ -146,6 +146,16 @@ pub(super) async fn batches_path(
     format!("/v1/imports/{run}/batches")
 }
 
+/// The id of the Import Run whose batches are posted to `batches_path`, a
+/// path [`batches_path`] gave.
+pub(super) fn import_id_of(batches_path: &str) -> i64 {
+    batches_path
+        .trim_start_matches("/v1/imports/")
+        .trim_end_matches("/batches")
+        .parse()
+        .unwrap()
+}
+
 /// One `source` conversation with `+15555550107`, one message per guid. The
 /// message `g-gone` carries a missing attachment and a tapback, so a wipe
 /// that leaves children behind shows.
@@ -263,11 +273,7 @@ async fn posted_run(
     body: String,
 ) -> i64 {
     let path = batches_path(state, token, source).await;
-    let import_id: i64 = path
-        .trim_start_matches("/v1/imports/")
-        .trim_end_matches("/batches")
-        .parse()
-        .unwrap();
+    let import_id = import_id_of(&path);
     let (status, text) =
         crate::test_support::post_raw(state, &path, token, "application/jsonl", body).await;
     assert_eq!(status, axum::http::StatusCode::OK, "{text}");

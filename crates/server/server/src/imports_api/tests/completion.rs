@@ -60,11 +60,7 @@ async fn shortcuts(
 async fn completing_an_import_with_messages_creates_its_saved_search_and_contact_group() {
     let (state, _fixture, token) = importer().await;
     let path = batches_path(&state, &token, "whatsapp").await;
-    let import_id: i64 = path
-        .trim_start_matches("/v1/imports/")
-        .trim_end_matches("/batches")
-        .parse()
-        .unwrap();
+    let import_id = import_id_of(&path);
     let (status, text) = crate::test_support::post_raw(
         &state,
         &path,
@@ -135,11 +131,7 @@ async fn completing_an_import_with_messages_creates_its_saved_search_and_contact
 async fn completing_a_run_counts_its_messages_whatever_the_body_says() {
     let (state, _fixture, token) = importer().await;
     let path = batches_path(&state, &token, "whatsapp").await;
-    let import_id: i64 = path
-        .trim_start_matches("/v1/imports/")
-        .trim_end_matches("/batches")
-        .parse()
-        .unwrap();
+    let import_id = import_id_of(&path);
     let (status, text) = crate::test_support::post_raw(
         &state,
         &path,
@@ -255,11 +247,7 @@ async fn two_import_runs_from_one_source_on_one_day_make_two_contact_groups() {
 async fn an_import_leaves_a_hand_made_contact_group_with_its_name_alone() {
     let (state, _fixture, token) = importer().await;
     let path = batches_path(&state, &token, "whatsapp").await;
-    let import_id: i64 = path
-        .trim_start_matches("/v1/imports/")
-        .trim_end_matches("/batches")
-        .parse()
-        .unwrap();
+    let import_id = import_id_of(&path);
     let account = run_account(&state, import_id).await;
     let (status, text) = crate::test_support::post_raw(
         &state,
