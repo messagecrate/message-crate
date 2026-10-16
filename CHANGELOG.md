@@ -22,6 +22,13 @@ carry their date on the heading.
 
 ### Features
 
+- 2026-10-15: **A phone's contacts convert to the address book.** Settings →
+  Profile → Address book has Convert a vCard file, which turns the .vcf file
+  a phone or Google Contacts exports into the address book CSV, to edit in a
+  spreadsheet and then load. Pick the country for numbers saved without +,
+  and each such number is written with its + in that country. Each card
+  becomes one new contact with its numbers and email addresses. Nothing is
+  loaded until you load the file (#916).
 - 2026-10-15: **Check that a download is the one the release built.** Each
   release now lists a `SHA256SUMS` file beside the installers, and every
   installer and the Docker image carry a signed record of the release run
@@ -241,6 +248,13 @@ carry their date on the heading.
   computer now ends within a week. The database format changed: an
   existing Message Crate is rebuilt empty on first start and its messages
   must be imported again (#2131).
+- 2026-10-15: **The address book names services as the screen does.** Its
+  columns are now contact_id, display_name, service, identity and groups.
+  The service is Text Message, Email or WhatsApp, the names offered where an
+  identity is added, and the type column is gone: the service and the
+  identity's shape decide it, as adding an identity does. A row whose
+  service can't take its identity, such as an email address on WhatsApp, is
+  refused (#916).
 - 2026-10-15: The way the desktop app opens an Import Run on the server was
   reworked inside, with nothing visible (#2858).
 - 2026-10-15: **The Import screen says Resume for an interrupted import.**
@@ -1809,6 +1823,9 @@ carry their date on the heading.
 
 ### Upgrading
 
+- 2026-10-15: An address book exported by an earlier build is refused when
+  you load it, because its columns changed. Export it again from the
+  Contacts screen and make the edits in the new file (#916).
 - 2026-10-15: The desktop app starts a new Message Crate in message-crate
   in your home directory, and no longer reads the data, exports and logs it
   kept in the operating system's app-data directory. This release rebuilds

@@ -2592,7 +2592,7 @@ async fn list_contacts_filters_service_or() {
 }
 
 /// The header every address book starts with.
-const ADDRESS_BOOK_HEADER: &str = "contact_id,display_name,groups,service,identity_type,identity";
+const ADDRESS_BOOK_HEADER: &str = "contact_id,display_name,service,identity,groups";
 
 /// `POST /v1/contacts` with a `text/csv` body.
 async fn load_address_book(
@@ -2651,9 +2651,9 @@ async fn an_address_book_loads_and_a_bad_one_is_a_422_naming_each_row() {
     let (fixture, account) = fixture_with_account().await;
     let bad = format!(
         "{ADDRESS_BOOK_HEADER}\n\
-         a,Dana,,phone,phone,+15555550100\n\
-         b,Eli,,carrier pigeon,phone,+15555550101\n\
-         c,Flo,,phone,email,flo.example.com\n"
+         a,Dana,Text Message,+15555550100,\n\
+         b,Eli,carrier pigeon,+15555550101,\n\
+         c,Flo,Email,flo.example.com,\n"
     );
     let (status, text) = load_address_book(&fixture, &account, "", bad).await;
     let problem = crate::test_support::expect_problem(
@@ -2671,8 +2671,8 @@ async fn an_address_book_loads_and_a_bad_one_is_a_422_naming_each_row() {
 
     let good = format!(
         "{ADDRESS_BOOK_HEADER}\n\
-         a,Dana,Family,phone,phone,+15555550100\n\
-         a,Dana,Family,phone,email,dana@example.com\n"
+         a,Dana,Text Message,+15555550100,Family\n\
+         a,Dana,Email,dana@example.com,Family\n"
     );
     let (status, text) = load_address_book(&fixture, &account, "", good).await;
     assert_eq!(status, StatusCode::OK, "{text}");
@@ -2702,7 +2702,7 @@ async fn the_mode_parameter_picks_append_or_edit() {
         crate::test_support::get_json(&fixture.state, "/v1/contacts", &account.token).await;
     let id = page["items"][0]["id"].as_i64().unwrap();
     // The contact stays in the file with a different identity.
-    let file = format!("{ADDRESS_BOOK_HEADER}\n{id},Contact 0,,phone,email,zero@example.com\n");
+    let file = format!("{ADDRESS_BOOK_HEADER}\n{id},Contact 0,Email,zero@example.com,\n");
 
     for query in ["", "?mode=append"] {
         let (status, text) = load_address_book(&fixture, &account, query, file.clone()).await;
@@ -2745,7 +2745,7 @@ async fn an_address_book_that_is_not_text_csv_is_a_415() {
         "/v1/contacts",
         &account.token,
         "text/csv; charset=utf-8",
-        format!("{ADDRESS_BOOK_HEADER}\n,Dana,,phone,phone,+15555550100\n"),
+        format!("{ADDRESS_BOOK_HEADER}\n,Dana,Text Message,+15555550100,\n"),
     )
     .await;
     assert_eq!(
@@ -2759,7 +2759,7 @@ async fn an_address_book_that_is_not_text_csv_is_a_415() {
 /// to make up the size.
 fn address_book_of(len: usize) -> String {
     let head = format!("{ADDRESS_BOOK_HEADER}\n,");
-    let tail = ",,phone,phone,+15555550100\n";
+    let tail = ",Text Message,+15555550100,\n";
     let padding = len
         .checked_sub(head.len() + tail.len())
         .expect("len holds the fixed part of the file");
@@ -2828,11 +2828,11 @@ async fn the_address_book_export_answers_a_csv_attachment() {
         assert_eq!(lines[0], ADDRESS_BOOK_HEADER);
         assert_eq!(lines.len(), 3, "{text}");
         assert!(
-            lines[1].ends_with(",Contact 0,,phone,phone,'+15555550100"),
+            lines[1].ends_with(",Contact 0,Text Message,'+15555550100,"),
             "{text}"
         );
         assert!(
-            lines[2].ends_with(",Contact 1,,phone,phone,'+15555550101"),
+            lines[2].ends_with(",Contact 1,Text Message,'+15555550101,"),
             "{text}"
         );
     }
@@ -3632,7 +3632,7 @@ async fn an_address_book_load_on_the_demo_account_is_refused() {
     };
 
     // Edit with the identity cells blank would delete the Unknown for good.
-    let edit = format!("{ADDRESS_BOOK_HEADER}\n{contact_id},,,,,\n");
+    let edit = format!("{ADDRESS_BOOK_HEADER}\n{contact_id},,,,\n");
     let (status, text) = load_address_book(&fixture, &visitor, "?mode=edit", edit).await;
     crate::test_support::expect_problem(
         status,
@@ -3640,7 +3640,7 @@ async fn an_address_book_load_on_the_demo_account_is_refused() {
         crate::problem::ProblemType::DemoAccountProtected,
     );
     // Append would store a new person, by name and number.
-    let append = format!("{ADDRESS_BOOK_HEADER}\na,Real Person,,phone,phone,+15555550199\n");
+    let append = format!("{ADDRESS_BOOK_HEADER}\na,Real Person,Text Message,+15555550199,\n");
     let (status, text) = load_address_book(&fixture, &visitor, "", append).await;
     crate::test_support::expect_problem(
         status,
@@ -3683,7 +3683,7 @@ async fn an_address_book_load_needs_no_import_export_or_delete_permission() {
         .await
         .unwrap();
     }
-    let append = format!("{ADDRESS_BOOK_HEADER}\na,Ada Lovelace,,phone,phone,+15555550142\n");
+    let append = format!("{ADDRESS_BOOK_HEADER}\na,Ada Lovelace,Text Message,+15555550142,\n");
     let (status, text) = load_address_book(&fixture, &account, "", append).await;
     assert_eq!(status, StatusCode::OK, "{text}");
 }
@@ -3854,4 +3854,90 @@ async fn mutate_committed(
     .await?;
     tx.commit().await?;
     Ok(changed)
+}
+
+/// `POST /v1/contacts/vcard-address-book` with the vCard `body` and the query
+/// `query`: the status, the `Content-Type`, the `Content-Disposition`, and
+/// the body.
+async fn get_vcard_address_book(
+    fixture: &TestFixture,
+    account: &RegisteredAccount,
+    query: &str,
+    body: &str,
+    accept: Option<&str>,
+) -> (StatusCode, String, String, String) {
+    let server = crate::test_support::serve(&fixture.state).await;
+    let mut request = server
+        .post(&format!("/v1/contacts/vcard-address-book{query}"))
+        .bearer_auth(&account.token)
+        .header(reqwest::header::CONTENT_TYPE, "text/vcard; charset=utf-8")
+        .body(body.to_string());
+    if let Some(accept) = accept {
+        request = request.header(reqwest::header::ACCEPT, accept);
+    }
+    let response = request.send().await.unwrap();
+    let status = response.status();
+    let header = |name: reqwest::header::HeaderName| {
+        response
+            .headers()
+            .get(name)
+            .map(|v| v.to_str().unwrap().to_string())
+            .unwrap_or_default()
+    };
+    let content_type = header(reqwest::header::CONTENT_TYPE);
+    let disposition = header(reqwest::header::CONTENT_DISPOSITION);
+    // Read the body before `server` drops and aborts the task.
+    let text = response.text().await.unwrap();
+    (status, content_type, disposition, text)
+}
+
+/// A vCard file converts to an address book attachment the person edits and
+/// loads, and nothing goes into the account: the conversion stores nothing.
+/// The answer is a file, so an `Accept` of `text/csv` is answered.
+#[tokio::test]
+async fn a_vcard_file_converts_to_an_address_book_attachment_and_stores_nothing() {
+    let (fixture, account) = fixture_with_account().await;
+    let cards = "BEGIN:VCARD\nVERSION:3.0\nFN:Dana\nTEL;TYPE=CELL:(555) 555-0100\n\
+                 EMAIL:dana@example.com\nEND:VCARD\n";
+    for accept in [None, Some("text/csv")] {
+        let (status, content_type, disposition, text) =
+            get_vcard_address_book(&fixture, &account, "?country=US", cards, accept).await;
+        assert_eq!(status, StatusCode::OK, "{accept:?}: {text}");
+        assert_eq!(content_type, "text/csv; charset=utf-8");
+        assert_eq!(disposition, "attachment; filename=\"address-book.csv\"");
+        assert_eq!(
+            text,
+            format!(
+                "{ADDRESS_BOOK_HEADER}\n\
+                 card1,Dana,Text Message,'+15555550100,\n\
+                 card1,Dana,Email,dana@example.com,\n"
+            )
+        );
+    }
+    let page: serde_json::Value =
+        crate::test_support::get_json(&fixture.state, "/v1/contacts", &account.token).await;
+    assert_eq!(page["total"], 0, "the conversion stored a contact");
+}
+
+/// A country the server does not list, and a file with no card in it, are
+/// the caller's to fix.
+#[tokio::test]
+async fn a_vcard_conversion_refuses_an_unknown_country_and_a_file_with_no_card() {
+    let (fixture, account) = fixture_with_account().await;
+    let card = "BEGIN:VCARD\nFN:Dana\nTEL:5555550100\nEND:VCARD\n";
+    let (status, _, _, text) =
+        get_vcard_address_book(&fixture, &account, "?country=Narnia", card, None).await;
+    let problem = crate::test_support::expect_problem(status, &text, ProblemType::ValidationFailed);
+    assert_eq!(
+        problem.errors.unwrap(),
+        ["country \"Narnia\" is not a country GET /v1/phone-countries lists"]
+    );
+
+    let (status, _, _, text) =
+        get_vcard_address_book(&fixture, &account, "", "Name,Phone\nDana,555\n", None).await;
+    let problem = crate::test_support::expect_problem(status, &text, ProblemType::ValidationFailed);
+    assert_eq!(
+        problem.errors.unwrap(),
+        ["the file holds no vCard: it has no BEGIN:VCARD line"]
+    );
 }
