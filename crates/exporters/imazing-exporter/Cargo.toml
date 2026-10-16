@@ -10,7 +10,6 @@ autotests = false
 anyhow = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
-csv = { workspace = true }
 hex = { workspace = true }
 message-crate-csv = { path = "../../libs/csv" }
 message-crate-core = { path = "../../core/message-crate-core" }
@@ -18,7 +17,6 @@ file-io = { workspace = true }
 ir = { path = "../../libs/ir" }
 ir-format = { path = "../../libs/ir-format" }
 staging = { path = "../../libs/staging" }
-media = { path = "../../libs/media" }
 phone = { path = "../../libs/phone" }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

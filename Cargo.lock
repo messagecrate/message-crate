@@ -1140,9 +1140,7 @@ dependencies = [
 name = "go-sms-mms"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "mms-parts",
- "phone",
  "regex",
  "tempfile",
 ]
@@ -1157,7 +1155,6 @@ dependencies = [
  "file-io",
  "go-sms-mms",
  "ir",
- "ir-format",
  "media",
  "message-crate-core",
  "message-crate-csv",
@@ -1590,12 +1587,10 @@ dependencies = [
  "anyhow",
  "chrono",
  "chrono-tz",
- "csv",
  "file-io",
  "hex",
  "ir",
  "ir-format",
- "media",
  "message-crate-core",
  "message-crate-csv",
  "phone",
@@ -1945,7 +1940,6 @@ name = "media"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "csv",
  "file-io",
  "rustix",
  "serde",
@@ -2219,11 +2213,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
- "csv",
  "hex",
  "ir",
  "ir-format",
- "media",
  "message-crate-core",
  "message-crate-csv",
  "phone",
@@ -3117,7 +3109,6 @@ dependencies = [
  "android-fields",
  "anyhow",
  "chrono",
- "csv",
  "file-io",
  "hex",
  "ir",
