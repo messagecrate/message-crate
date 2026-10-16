@@ -128,10 +128,12 @@ impl LogWriter {
         Ok(Self { file })
     }
 
-    /// Write `msg` at `level`, stamped with the time, and flush so a crash
+    /// Write `message` at `level`, stamped with the time, and flush so a crash
     /// still leaves the last message on disk.
-    fn line(&mut self, level: RunLogLevel, msg: &str) {
-        let _ = self.file.write_all(format_run_log(level, msg).as_bytes());
+    fn line(&mut self, level: RunLogLevel, message: &str) {
+        let _ = self
+            .file
+            .write_all(format_run_log(level, message).as_bytes());
         let _ = self.file.flush();
     }
 }

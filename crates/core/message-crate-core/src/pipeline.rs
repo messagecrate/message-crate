@@ -211,7 +211,7 @@ pub struct ExportReport {
     /// Attachment files saved to the output.
     pub attachments_saved: u64,
     /// Documents whose handles, names and bodies were obfuscated.
-    pub obfuscated_docs: u64,
+    pub obfuscated_documents: u64,
     /// What failed, one sentence for each item that names it, such as an
     /// [`crate::item_line`] (capped by each exporter). The summary gives
     /// them under the Import Errors heading.
@@ -308,7 +308,8 @@ impl ExportReport {
     /// The line that says how many conversations were obfuscated, `None`
     /// when none were.
     pub fn obfuscated_line(&self) -> Option<String> {
-        (self.obfuscated_docs > 0).then(|| CONVERSATIONS_OBFUSCATED.line(self.obfuscated_docs))
+        (self.obfuscated_documents > 0)
+            .then(|| CONVERSATIONS_OBFUSCATED.line(self.obfuscated_documents))
     }
 
     /// Append the summary lines to `out`: where the export went, then each
@@ -393,9 +394,9 @@ pub fn project_conversation<H: ProjectionHooks + ?Sized>(
     if !keep {
         return None;
     }
-    let (doc, tally) = pending_to_document(chat_id, conversation, hooks);
+    let (document, tally) = pending_to_document(chat_id, conversation, hooks);
     report.absorb_tally(tally);
-    Some(doc)
+    Some(document)
 }
 
 /// Create and canonicalize the output directory, canonicalize every input,

@@ -182,7 +182,7 @@ pub fn starts_with_message_type(data: &[u8]) -> bool {
 /// Returns the first byte that breaks a rule and which shape it broke.
 pub fn decode(data: &[u8]) -> Result<Message> {
     let mut cur = Cursor::new(data);
-    let mut msg = Message::default();
+    let mut message = Message::default();
     if !starts_with_message_type(data) {
         return Err(wsp::Error {
             at: 0,
@@ -197,7 +197,7 @@ pub fn decode(data: &[u8]) -> Result<Message> {
         })?;
         if code == CONTENT_TYPE {
             let ct = wsp::content_type(&mut cur)?;
-            msg.parts = if ct.is_multipart() {
+            message.parts = if ct.is_multipart() {
                 wsp::multipart(&mut cur)?
             } else {
                 vec![Part {
@@ -207,15 +207,15 @@ pub fn decode(data: &[u8]) -> Result<Message> {
                     data: data[cur.pos..].to_vec(),
                 }]
             };
-            msg.content_type = Some(ct);
-            return Ok(msg);
+            message.content_type = Some(ct);
+            return Ok(message);
         }
-        header(code, &mut cur, &mut msg)?;
+        header(code, &mut cur, &mut message)?;
     }
 }
 
 /// Decode and store the header with `code` (rule 3).
-fn header(code: u8, cur: &mut Cursor<'_>, msg: &mut Message) -> Result<()> {
+fn header(code: u8, cur: &mut Cursor<'_>, message: &mut Message) -> Result<()> {
     match code {
         MESSAGE_TYPE => {
             let at = cur.pos;
@@ -223,7 +223,7 @@ fn header(code: u8, cur: &mut Cursor<'_>, msg: &mut Message) -> Result<()> {
                 at,
                 what: "message-type token",
             })?;
-            msg.message_type = Some(match t {
+            message.message_type = Some(match t {
                 0x00 => MessageType::SendReq,
                 0x04 => MessageType::RetrieveConf,
                 other => MessageType::Other(other | 0x80),
@@ -231,27 +231,27 @@ fn header(code: u8, cur: &mut Cursor<'_>, msg: &mut Message) -> Result<()> {
             return Ok(());
         }
         FROM => {
-            msg.from = from_value(cur)?;
+            message.from = from_value(cur)?;
             return Ok(());
         }
         TO => {
-            msg.to.push(string(cur)?);
+            message.to.push(string(cur)?);
             return Ok(());
         }
         CC => {
-            msg.cc.push(string(cur)?);
+            message.cc.push(string(cur)?);
             return Ok(());
         }
         BCC => {
-            msg.bcc.push(string(cur)?);
+            message.bcc.push(string(cur)?);
             return Ok(());
         }
         DATE => {
-            msg.date = Some(long_integer(cur)?);
+            message.date = Some(long_integer(cur)?);
             return Ok(());
         }
         SUBJECT => {
-            msg.subject = Some(string(cur)?);
+            message.subject = Some(string(cur)?);
             return Ok(());
         }
         _ => {}
@@ -376,7 +376,7 @@ fn header(code: u8, cur: &mut Cursor<'_>, msg: &mut Message) -> Result<()> {
             });
         }
     };
-    msg.headers.insert(name.to_string(), value);
+    message.headers.insert(name.to_string(), value);
     Ok(())
 }
 

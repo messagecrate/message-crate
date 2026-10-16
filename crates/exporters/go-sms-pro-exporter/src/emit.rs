@@ -172,9 +172,9 @@ trait SkippedCsv<const N: usize> {
 /// Append parsed XML SMS rows to pending conversations.
 fn add_xml_messages(
     conversations: &mut BTreeMap<String, PendingConversation>,
-    msgs: Vec<XmlMessage>,
+    messages: Vec<XmlMessage>,
 ) {
-    for message in msgs {
+    for message in messages {
         let chat_id = message.other.key();
         let conversation = ensure_conversation(conversations, chat_id, false, None, Vec::new());
         conversation.messages.push(PendingMessage {
@@ -593,7 +593,7 @@ impl Ingest<'_> {
     /// Add every SMS row from one backup XML. Parse failures are recorded in
     /// the report and the file is skipped.
     fn ingest_xml(&mut self, xml_path: &Path) {
-        let (msgs, stats) = match parse_xml_file(xml_path) {
+        let (messages, stats) = match parse_xml_file(xml_path) {
             Ok(parsed) => parsed,
             Err(err) => {
                 self.report.error(
@@ -620,7 +620,7 @@ impl Ingest<'_> {
                 detail,
             );
         }
-        add_xml_messages(&mut self.conversations, msgs);
+        add_xml_messages(&mut self.conversations, messages);
     }
 
     /// Add the MMS in one PDU file. A stub (the placeholder GO SMS Pro
@@ -880,15 +880,15 @@ mod tests {
         let xml = || test_message("xml", "hello", &[]);
         let pdu = || test_message("pdu", "hello", &["a1"]);
         for rows in [vec![xml(), pdu()], vec![pdu(), xml()]] {
-            let (msgs, report) = project(rows);
-            assert_eq!(msgs.len(), 1);
+            let (messages, report) = project(rows);
+            assert_eq!(messages.len(), 1);
             assert_eq!(report.duplicates_dropped, 1);
-            assert_eq!(msgs[0].attachments.len(), 1);
+            assert_eq!(messages[0].attachments.len(), 1);
             assert_eq!(
-                msgs[0].source.as_ref().unwrap().fields["source_kind"],
+                messages[0].source.as_ref().unwrap().fields["source_kind"],
                 "pdu"
             );
-            assert_eq!(msgs[0].timestamp_unix_ms, 1_609_459_200_250);
+            assert_eq!(messages[0].timestamp_unix_ms, 1_609_459_200_250);
         }
     }
 
@@ -896,21 +896,21 @@ mod tests {
     fn distinct_mms_with_one_caption_in_one_second_are_both_kept() {
         // Two MMS sharing second, direction, and caption but with different
         // media are distinct messages: both rows survive.
-        let (msgs, _) = project(vec![
+        let (messages, _) = project(vec![
             test_message("pdu", "photo", &["a1"]),
             test_message("pdu", "photo", &["a2"]),
         ]);
-        assert_eq!(msgs.len(), 2);
-        assert_ne!(msgs[0].guid, msgs[1].guid);
+        assert_eq!(messages.len(), 2);
+        assert_ne!(messages[0].guid, messages[1].guid);
     }
 
     #[test]
     fn plain_sms_duplicates_dropped() {
-        let (msgs, report) = project(vec![
+        let (messages, report) = project(vec![
             test_message("xml", "hi", &[]),
             test_message("xml", "hi", &[]),
         ]);
-        assert_eq!(msgs.len(), 1);
+        assert_eq!(messages.len(), 1);
         assert_eq!(report.duplicates_dropped, 1);
     }
 
@@ -931,12 +931,12 @@ mod tests {
             let addresses = PduAddresses::of(&parsed);
             pdu_pending_message(parsed, addresses.sender, Vec::new())
         };
-        let (msgs, _) = project(vec![pending("15555550122"), pending("15555550133")]);
+        let (messages, _) = project(vec![pending("15555550122"), pending("15555550133")]);
         assert_eq!(
-            msgs.len(),
+            messages.len(),
             2,
             "Lee's message was dropped as a duplicate of Ana's"
         );
-        assert_ne!(msgs[0].guid, msgs[1].guid);
+        assert_ne!(messages[0].guid, messages[1].guid);
     }
 }

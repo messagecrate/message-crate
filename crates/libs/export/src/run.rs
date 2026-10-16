@@ -593,10 +593,10 @@ impl<'a> Export<'a> {
                     total_so_far: fetched.total_messages,
                 },
             );
-            for msg in page.items {
+            for message in page.items {
                 if !cfg.skip_attachments {
                     for (path, rel) in
-                        note_asset_refs(&msg, &mut fetched.assets, &mut fetched.other_paths)
+                        note_asset_refs(&message, &mut fetched.assets, &mut fetched.other_paths)
                     {
                         let line = refused_path_line(&path, rel.as_deref());
                         if fetched.refused_paths.insert(path) {
@@ -604,12 +604,12 @@ impl<'a> Export<'a> {
                         }
                     }
                 }
-                let ir = to_ir_message(&msg, cfg.skip_attachments)?;
+                let ir = to_ir_message(&message, cfg.skip_attachments)?;
                 let (_, messages) = fetched
                     .by_conv
-                    .entry(conversation_key(&msg))
+                    .entry(conversation_key(&message))
                     // Keep first message as seed for conversation metadata.
-                    .or_insert_with(|| (msg.clone(), Vec::new()));
+                    .or_insert_with(|| (message.clone(), Vec::new()));
                 messages.push(ir);
             }
             match next_offset(offset, limit, page.total) {
@@ -730,26 +730,28 @@ impl<'a> Export<'a> {
         &self,
         by_conv: BTreeMap<String, (Message, Vec<ir::Message>)>,
     ) -> Result<u64> {
-        let mut docs: Vec<ir::ConversationDocument> = by_conv
+        let mut documents: Vec<ir::ConversationDocument> = by_conv
             .into_values()
             .map(|(seed, messages)| {
-                let mut doc =
+                let mut document =
                     build_document(&seed.source, &seed, messages, self.cfg.exported_at_unix_ms);
                 // Disambiguate same chat across sources.
-                if !doc.export.source.trim().is_empty() {
-                    doc.packaging_stem_suffix =
-                        Some(format!("__{}", sanitize_source_suffix(&doc.export.source)));
+                if !document.export.source.trim().is_empty() {
+                    document.packaging_stem_suffix = Some(format!(
+                        "__{}",
+                        sanitize_source_suffix(&document.export.source)
+                    ));
                 }
-                doc
+                document
             })
             .collect();
         // Two groups from one source can still share a title or their people.
-        let mut names: Vec<&mut ir::ConversationDocument> = docs.iter_mut().collect();
+        let mut names: Vec<&mut ir::ConversationDocument> = documents.iter_mut().collect();
         ir_format::give_each_document_its_own_file(&mut names).map_err(anyhow::Error::msg)?;
-        for doc in &docs {
-            ir_format::write_conversation_jsonl(&self.cfg.out_dir, doc)?;
+        for document in &documents {
+            ir_format::write_conversation_jsonl(&self.cfg.out_dir, document)?;
         }
-        Ok(docs.len() as u64)
+        Ok(documents.len() as u64)
     }
 
     /// Record that this Export Run finished, then rewrite the journal in its
@@ -823,7 +825,7 @@ fn mark_unfetched(
     for att in by_conv
         .values_mut()
         .flat_map(|(_, messages)| messages.iter_mut())
-        .flat_map(|msg| msg.attachments.iter_mut())
+        .flat_map(|message| message.attachments.iter_mut())
     {
         let unfetched = att
             .digest_sha256
@@ -854,12 +856,12 @@ fn asset_key(sha256: &str) -> Option<String> {
 /// another path goes into `other_paths`, because staging names a file by
 /// date and fingerprint and one file sent on two days has two paths.
 fn note_asset_refs(
-    msg: &Message,
+    message: &Message,
     assets: &mut HashMap<String, String>,
     other_paths: &mut BTreeMap<String, BTreeSet<String>>,
 ) -> Vec<(String, Option<String>)> {
     let mut refused = Vec::new();
-    for att in &msg.attachments {
+    for att in &message.attachments {
         let ExportPath {
             rel,
             refused: refused_path,

@@ -58,9 +58,9 @@ pub fn read_conversation_csv(path: &Path) -> Result<ConversationDocument> {
         );
     }
 
-    let mut doc = header.into_document(messages);
-    crate::util::recover_stem_suffix(&mut doc, path.file_stem());
-    Ok(doc)
+    let mut document = header.into_document(messages);
+    crate::util::recover_stem_suffix(&mut document, path.file_stem());
+    Ok(document)
 }
 
 /// Rebuild the conversation header from the first CSV row's conversation columns.

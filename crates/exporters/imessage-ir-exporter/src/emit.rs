@@ -830,7 +830,7 @@ fn chat_to_unit(
     let loads = std::mem::take(&mut conversation.attachment_loads);
     let document = chat_to_document(chat_identifier, conversation, use_caller_id, dates);
     let mut loads = loads.into_iter();
-    ConversationUnit::from_doc(document, |_, attachment| {
+    ConversationUnit::from_document(document, |_, attachment| {
         attachment_source(loads.next(), attachment)
     })
 }

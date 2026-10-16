@@ -120,37 +120,38 @@ pub fn parse_pdu_bytes(path: &Path, data: &[u8]) -> Result<ParsedPdu, PduError> 
     if !mms::starts_with_message_type(data) {
         return Err(PduError::Stub);
     }
-    let msg = mms::decode(data).map_err(PduError::Malformed)?;
-    let is_sent = match msg.message_type {
+    let message = mms::decode(data).map_err(PduError::Malformed)?;
+    let is_sent = match message.message_type {
         Some(MessageType::SendReq) => true,
         Some(MessageType::RetrieveConf) => false,
         Some(other) => return Err(PduError::NotAMessage(other.name())),
         None => return Err(PduError::NotAMessage("a PDU without a type".to_string())),
     };
-    let sender = msg.from.as_deref().and_then(address_value);
+    let sender = message.from.as_deref().and_then(address_value);
     let mut recipients: Vec<String> = Vec::new();
-    for addr in msg.to.iter().chain(&msg.cc).chain(&msg.bcc) {
+    for addr in message.to.iter().chain(&message.cc).chain(&message.bcc) {
         if let Some(d) = address_value(addr)
             && !recipients.contains(&d)
         {
             recipients.push(d);
         }
     }
-    let timestamp = msg
+    let timestamp = message
         .date
         .and_then(|d| i64::try_from(d).ok())
         .or_else(|| timestamp_from_filename(path))
         .unwrap_or(0);
 
-    let shaped: Vec<mms_parts::Part<'_>> = msg.parts.iter().map(shaped_part).collect();
+    let shaped: Vec<mms_parts::Part<'_>> = message.parts.iter().map(shaped_part).collect();
     let parts_body = mms_parts::body_of(&shaped);
     let attachments = parts_body
         .attachments
         .iter()
-        .map(|&index| attachment(&msg.parts[index]))
+        .map(|&index| attachment(&message.parts[index]))
         .collect();
     let body = if parts_body.text.is_empty() {
-        msg.subject
+        message
+            .subject
             .as_deref()
             .map(|s| decode_gosms_emojis(s.trim()))
             .unwrap_or_default()
@@ -158,14 +159,14 @@ pub fn parse_pdu_bytes(path: &Path, data: &[u8]) -> Result<ParsedPdu, PduError> 
         parts_body.text
     };
 
-    let mut fields = msg.headers;
-    if let Some(s) = &msg.subject {
+    let mut fields = message.headers;
+    if let Some(s) = &message.subject {
         fields.insert("subject".to_string(), s.clone());
     }
-    if let Some(t) = msg.message_type {
+    if let Some(t) = message.message_type {
         fields.insert("message-type".to_string(), t.name());
     }
-    if let Some(ct) = &msg.content_type {
+    if let Some(ct) = &message.content_type {
         fields.insert("content-type".to_string(), ct.media.clone());
     }
 

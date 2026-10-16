@@ -7,11 +7,11 @@ use std::sync::LazyLock;
 
 const OWNER: &str = "+15555550100";
 
-/// Write `docs` with a session, then read the backup back with the SBR reader.
-fn round_trip(docs: &[ConversationDocument]) -> Vec<ConversationDocument> {
+/// Write `documents` with a session, then read the backup back with the SBR reader.
+fn round_trip(documents: &[ConversationDocument]) -> Vec<ConversationDocument> {
     let tmp = tempfile::tempdir().unwrap();
     let mut session = SbrBackupSession::create(tmp.path()).unwrap();
-    for document in docs {
+    for document in documents {
         session.append_document(document).unwrap();
     }
     let path = session.finish().unwrap();
@@ -29,8 +29,8 @@ fn read_with_bytes(
 ) -> (Vec<ConversationDocument>, crate::ReadReport) {
     let spool_dir = tempfile::tempdir().unwrap();
     let spool = AttachmentSpool::new(spool_dir.path());
-    let (mut docs, report) = crate::read_backup(path, read_options(owners, &spool)).unwrap();
-    for attachment in docs
+    let (mut documents, report) = crate::read_backup(path, read_options(owners, &spool)).unwrap();
+    for attachment in documents
         .iter_mut()
         .flat_map(|document| document.messages.iter_mut())
         .flat_map(|message| message.attachments.iter_mut())
@@ -41,7 +41,7 @@ fn read_with_bytes(
             .and_then(|digest| spool.path(digest))
             .map(|spooled| fs::read(spooled).unwrap());
     }
-    (docs, report)
+    (documents, report)
 }
 
 /// Sinks that drop what they get, and a cancel flag nobody sets, for
@@ -457,9 +457,9 @@ fn restored_mms_parts_get_back_their_own_attachment_bytes() {
     )
     .unwrap();
     let owners = [OWNER.to_string()];
-    let (docs, _) = read_with_bytes(&input, &owners);
+    let (documents, _) = read_with_bytes(&input, &owners);
     assert_eq!(
-        docs[0].messages[0].attachments.len(),
+        documents[0].messages[0].attachments.len(),
         3,
         "a.jpg, c.jpg, a-copy.jpg"
     );
@@ -475,7 +475,7 @@ fn restored_mms_parts_get_back_their_own_attachment_bytes() {
         ]
     };
 
-    let read = round_trip(&docs);
+    let read = round_trip(&documents);
     assert_eq!(
         part_payloads(&read[0].messages[0]),
         payloads(Some(b"first"))
@@ -483,7 +483,7 @@ fn restored_mms_parts_get_back_their_own_attachment_bytes() {
 
     // The second attachment lost its digest: it falls back to the first
     // attachment not already taken, not to the first in the list.
-    let mut transformed = docs.clone();
+    let mut transformed = documents.clone();
     transformed[0].messages[0].attachments[1].digest_sha256 = None;
     let read = round_trip(&transformed);
     assert_eq!(
@@ -524,7 +524,7 @@ fn the_archive_writes_only_sms_and_mms_and_counts_the_rest() {
     no_service.imessage = None;
     no_service.text = "hello no service".into();
     imessage.messages.push(no_service);
-    let docs = [
+    let documents = [
         ir::testutil::sample_document("hello ir"),
         imessage,
         ir::testutil::sample_whatsapp_document("hello whatsapp"),
@@ -532,7 +532,9 @@ fn the_archive_writes_only_sms_and_mms_and_counts_the_rest() {
 
     let tmp = tempfile::tempdir().unwrap();
     let mut report = message_crate_core::ExportReport::default();
-    SbrArchive.write(tmp.path(), &docs, &mut report).unwrap();
+    SbrArchive
+        .write(tmp.path(), &documents, &mut report)
+        .unwrap();
     let path = sbr::default_backup_path(tmp.path());
     let text = fs::read_to_string(&path).unwrap();
     assert!(text.contains(r#"count="3""#), "{text}");
