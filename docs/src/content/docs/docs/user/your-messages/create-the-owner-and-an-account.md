@@ -18,7 +18,7 @@ Real messages never go into the Demo Account. It can't import, so that no backup
 ## Create the Owner
 
 1. Open the desktop app. A Message Crate with no Owner shows **Create Owner**. Whoever fills it in first becomes the Owner.
-2. Enter a **Username** and a **Password**, and repeat the password in **Confirm Password**.
+2. Enter a **Username** and a **Password**, and repeat the password in **Confirm Password**. A password is at most 128 characters.
 3. Select **Create Owner**.
 
 ![The Create Owner form, filled in](../../../../../assets/user-guide/create-owner.png)
